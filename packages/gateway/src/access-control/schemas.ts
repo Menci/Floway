@@ -55,11 +55,3 @@ export const accessRequirementSchema = z.discriminatedUnion('permission', [
   z.object({ permission: z.literal('User.Audit') }),
   z.object({ permission: z.literal('Upstream.Edit'), level: z.enum(['models', 'full']) }),
 ]);
-
-export const groupTransferSchema = z.object({
-  id: positiveInteger,
-  name: z.string().min(1).max(64),
-  createdAt: z.string().min(1),
-  deletedAt: z.string().min(1).nullable(),
-  memberIds: z.array(positiveInteger).refine(ids => new Set(ids).size === ids.length, { message: 'memberIds contains duplicates' }),
-}).strict();

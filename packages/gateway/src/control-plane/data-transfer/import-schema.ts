@@ -1,14 +1,14 @@
 import { z } from 'zod';
 
-import { accessRecordInputSchema, groupTransferSchema } from '../../access-control/schemas.ts';
-import type { AccessRecordInput, Group } from '../../access-control/types.ts';
+import { accessRecordInputSchema } from '../../access-control/schemas.ts';
+import type { AccessRecordInput } from '../../access-control/types.ts';
 import { parseWebSearchConfigStrict } from '../../data-plane/tools/web-search/config.ts';
 import type { WebSearchConfig } from '../../data-plane/tools/web-search/types.ts';
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { isOpenAIResponsesRetentionSeconds, OPENAI_RESPONSES_RETENTION_MAX_SECONDS, OPENAI_RESPONSES_RETENTION_MIN_SECONDS } from '../../repo/openai-responses-retention.ts';
 import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { SEED_ADMIN_USER_ID } from '../../repo/seed-admin.ts';
-import type { ApiKey, UpstreamMetricRecord, PerformanceMetric, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
+import type { ApiKey, Group, UpstreamMetricRecord, PerformanceMetric, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { RETENTION_MAX_SECONDS } from '../../shared/retention.ts';
 import { parseServerSecret } from '../../shared/server-secret.ts';
@@ -253,6 +253,14 @@ const userSchema = z.object({
   deletedAt: nullableStringSchema('deletedAt'),
   createdAt: nonEmptyStringSchema('createdAt'),
 });
+
+const groupTransferSchema = z.object({
+  id: positiveIntegerSchema('id'),
+  name: nonEmptyStringWithError('name must be a non-empty string').max(64, { error: 'name must be 64 characters or fewer' }),
+  createdAt: nonEmptyStringSchema('createdAt'),
+  deletedAt: nullableStringSchema('deletedAt'),
+  memberIds: z.array(positiveIntegerSchema('memberIds entries')).refine(ids => new Set(ids).size === ids.length, { error: 'memberIds contains duplicates' }),
+}).strict();
 
 const sequentialArraySchema = <T>(
   schema: z.ZodType<T>,

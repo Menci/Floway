@@ -6,7 +6,6 @@ import {
   type AccessPrincipal,
   type AccessRecord,
   type AccessRecordInput,
-  type Group,
   validateAccessRecordInput,
 } from '../../src/access-control/types.ts';
 import { buildKeyToUserMap } from '../../src/control-plane/shared/key-to-user.ts';
@@ -39,6 +38,7 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
+  Group,
   GroupsRepo,
   ModelsRefreshFailureInput,
   ModelsRefreshSuccessInput,
@@ -177,7 +177,7 @@ class MemoryGroupsRepo implements GroupsRepo {
     return Promise.resolve(group ? { ...group } : null);
   }
 
-  create(name: string): Promise<Group> {
+  async create(name: string): Promise<Group> {
     if (this.groups.some(group => usernamesMatch(group.name, name) && group.deletedAt === null)) {
       throw new Error(`group name taken: ${name}`);
     }
@@ -188,16 +188,15 @@ class MemoryGroupsRepo implements GroupsRepo {
       deletedAt: null,
     };
     this.groups.push(group);
-    return Promise.resolve({ ...group });
+    return { ...group };
   }
 
-  save(group: Group): Promise<void> {
+  async save(group: Group): Promise<void> {
     const collision = this.groups.find(candidate => usernamesMatch(candidate.name, group.name) && candidate.deletedAt === null && candidate.id !== group.id);
     if (collision && group.deletedAt === null) throw new Error(`group name taken: ${group.name}`);
     const index = this.groups.findIndex(candidate => candidate.id === group.id);
     if (index < 0) this.groups.push({ ...group });
     else this.groups[index] = { ...group };
-    return Promise.resolve();
   }
 
   softDelete(id: number): Promise<boolean> {

@@ -22,6 +22,7 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
+  Group,
   GroupsRepo,
   ModelsRefreshFailureInput,
   ModelsRefreshSuccessInput,
@@ -80,7 +81,6 @@ import {
   type AccessRecordInput,
   type AccessScope,
   type AccessValues,
-  type Group,
   validateAccessRecordInput,
 } from '../access-control/types.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';

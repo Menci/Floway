@@ -1,4 +1,4 @@
-import type { AccessPrincipal, AccessRecord, AccessRecordInput, Group } from '../access-control/types.ts';
+import type { AccessPrincipal, AccessRecord, AccessRecordInput } from '../access-control/types.ts';
 import type { WebSearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector } from '@floway-dev/protocols/common';
@@ -37,6 +37,13 @@ export interface User {
   // dev-only passwordless shortcut when ADMIN_KEY is unset).
   passwordHash: string | null;
   isAdmin: boolean;
+  createdAt: string;
+  deletedAt: string | null;
+}
+
+export interface Group {
+  id: number;
+  name: string;
   createdAt: string;
   deletedAt: string | null;
 }

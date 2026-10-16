@@ -9,21 +9,21 @@
 // with the same care as a DB backup.
 
 import { parseImportData, type SerializedProxy } from './import-schema.ts';
-import type { AccessRecordInput, Group } from '../../access-control/types.ts';
+import type { AccessRecordInput } from '../../access-control/types.ts';
 import { parseWebSearchConfigDefault, parseWebSearchConfigStrict } from '../../data-plane/tools/web-search/config.ts';
 import type { WebSearchConfig } from '../../data-plane/tools/web-search/types.ts';
 import { notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_FALLBACK_IDS } from '../../repo/proxy-fallback-list.ts';
-import type { ApiKey, UpstreamMetricRecord, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
+import type { ApiKey, Group, UpstreamMetricRecord, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
 import { type exportQuery, type importBody } from '../schemas.ts';
 import { saveUpstreams } from '../shared/save-upstreams.ts';
 import { type FullSerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 
 interface ExportPayload {
-  version: 22;
+  version: 23;
   exportedAt: string;
   data: {
     users: User[];
@@ -41,7 +41,7 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 22;
+const EXPORT_VERSION = 23;
 
 const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly ApiKey[], mode: 'merge' | 'replace'): string | null => {
   const ids = new Map<string, number>();

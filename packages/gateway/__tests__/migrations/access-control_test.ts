@@ -5,7 +5,7 @@ import { test } from 'vitest';
 import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
-const MIGRATION = '0091_access_control.sql';
+const MIGRATION = '0092_access_control.sql';
 
 test('the access-control migration translates user upstream caps and grants self audit', () => {
   const db = new DatabaseSync(':memory:');

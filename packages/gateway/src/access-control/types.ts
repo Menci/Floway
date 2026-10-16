@@ -55,13 +55,6 @@ export interface AccessCheck {
   requirement: AccessRequirement;
 }
 
-export interface Group {
-  id: number;
-  name: string;
-  createdAt: string;
-  deletedAt: string | null;
-}
-
 export const accessScopeDepth = (scope: AccessScope): number => {
   switch (scope.kind) {
   case 'upstreams':

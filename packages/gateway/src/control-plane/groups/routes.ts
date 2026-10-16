@@ -1,7 +1,7 @@
-import type { Group } from '../../access-control/types.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
+import type { Group } from '../../repo/types.ts';
 import type { createGroupBody, updateGroupBody } from '../schemas.ts';
 
 const parseGroupId = (raw: string): number | null => {

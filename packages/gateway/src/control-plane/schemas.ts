@@ -264,12 +264,12 @@ const groupMemberIdsSchema = z.array(z.number().int().positive())
   .refine(ids => new Set(ids).size === ids.length, { message: 'memberIds contains duplicates' });
 
 export const createGroupBody = z.object({
-  name: z.string().min(1).max(64),
+  name: z.string().trim().min(1).max(64),
   memberIds: groupMemberIdsSchema.optional(),
 });
 
 export const updateGroupBody = z.object({
-  name: z.string().min(1).max(64).optional(),
+  name: z.string().trim().min(1).max(64).optional(),
   memberIds: groupMemberIdsSchema.optional(),
 }).refine(body => body.name !== undefined || body.memberIds !== undefined, { message: 'Provide a name or memberIds to update.' });
 
@@ -759,7 +759,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(22, { error: 'version must be 22 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(23, { error: 'version must be 23 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });
