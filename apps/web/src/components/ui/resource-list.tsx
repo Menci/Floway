@@ -87,6 +87,7 @@ export function ResourceListActions(props: ResourceListActionsProps) {
   const createButton = createLabel !== undefined && (
     <Button
       appearance="primary"
+      className="flex-none whitespace-nowrap"
       disabled={busy}
       icon={<AddRegular />}
       onClick={'onCreate' in props ? props.onCreate : undefined}
@@ -102,6 +103,7 @@ export function ResourceListActions(props: ResourceListActionsProps) {
         <Button
           appearance={appearance}
           aria-label={refreshLabel}
+          className="flex-none"
           disabled={disabled}
           disabledFocusable={refreshing}
           icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
