@@ -114,7 +114,8 @@ describe('fit IR streaming', () => {
       expect(result.candidates?.[0].content?.parts?.filter(p => p.text !== undefined && !p.thought).map(p => p.text).join('')).toBe('A😀中B');
       expect(result.candidates?.[0].content?.parts?.find(p => p.functionCall !== undefined)?.functionCall).toMatchObject({ name: 'tool', args: { a: 1 } });
       expect(result.usageMetadata?.promptTokenCount).toBe(11);
-      const last = frames.at(-1); expect(last?.type === 'event' && !('error' in last.event) && last.event.candidates?.[0].finishReason).toBe('STOP');
+      expect(frames).toContainEqual(expect.objectContaining({ event: expect.objectContaining({ candidates: [expect.objectContaining({ index: 0, finishReason: 'STOP' })] }) }));
+      expect(frames.at(-1)).toMatchObject({ event: { usageMetadata: { promptTokenCount: 11 } } });
     });
   }
 
@@ -228,24 +229,60 @@ describe('fit IR streaming', () => {
     expect(out).toContainEqual(expect.objectContaining({ type: 'response.audio.delta', delta: 'YWJj' }));
   });
 
-  it('keeps multi-choice candidate ends with the final usage', async () => {
+  it('emits each candidate end before pulling the next choice or late final usage', async () => {
     const b = createIRBuilder(2);
-    b.choice(0); b.choice(1); b.assign(['model'], 'm'); b.initialize(['usage'], { input_tokens_inclusive: 3 }); b.event({ type: 'start', id: 's' });
+    b.choice(0); b.choice(1); b.assign(['model'], 'm'); b.event({ type: 'start', id: 's' });
+    let nextChoicePulled = false;
+    let usagePulled = false;
+    const source = async function* () {
+      yield* b.drain();
+      for (const [choice, text] of ['a', 'b'].entries()) {
+        if (choice === 1) nextChoicePulled = true;
+        b.initialize(['choices', choice, 'items', 0], { type: 'message', content: [] });
+        b.initialize(['choices', choice, 'items', 0, 'content', 0], { type: 'text', text: '' });
+        b.append(['choices', choice, 'items', 0, 'content', 0, 'text'], text);
+        b.event({ type: 'part_end', choice, item: 0, part: 0 });
+        b.event({ type: 'item_end', choice, item: 0 });
+        b.event({ type: 'choice_end', choice, finish_reason: choice === 0 ? 'stop' : 'length' });
+        yield* b.drain();
+      }
+      usagePulled = true;
+      b.initialize(['usage'], { input_tokens_inclusive: 3 });
+      b.event({ type: 'finish', status: 'completed' });
+      yield* b.drain();
+    };
+    const output = events(geminiGenerateContentFromIR(source(), options));
+    const result = [];
     for (const [choice, text] of ['a', 'b'].entries()) {
-      b.initialize(['choices', choice, 'items', 0], { type: 'message', content: [] });
-      b.initialize(['choices', choice, 'items', 0, 'content', 0], { type: 'text', text: '' });
-      b.append(['choices', choice, 'items', 0, 'content', 0, 'text'], text);
-      b.event({ type: 'part_end', choice, item: 0, part: 0 });
-      b.event({ type: 'item_end', choice, item: 0 });
+      const body = await output.next();
+      expect(body).toMatchObject({ done: false, value: { candidates: [{ index: choice, content: { parts: [{ text }] } }] } });
+      result.push(body.value);
+      const terminal = await output.next();
+      expect(terminal).toEqual({ done: false, value: { responseId: 'target', modelVersion: 'm', candidates: [{ index: choice, finishReason: choice === 0 ? 'STOP' : 'MAX_TOKENS' }] } });
+      result.push(terminal.value);
+      expect(nextChoicePulled).toBe(choice === 1);
+      expect(usagePulled).toBe(false);
     }
-    b.event({ type: 'choice_end', choice: 0, finish_reason: 'stop' }); b.event({ type: 'choice_end', choice: 1, finish_reason: 'length' }); b.event({ type: 'finish', status: 'completed' });
-    const frames = [...b.drain()];
-    const result = await collect(events(geminiGenerateContentFromIR(iterate(frames), options)));
-    const final = result.at(-1)!;
-    expect('error' in final).toBe(false);
-    if ('error' in final) throw new Error('Unexpected GenerateContent error');
-    expect(final.candidates?.map(c => c.finishReason)).toEqual(['STOP', 'MAX_TOKENS']);
-    expect(final.usageMetadata?.promptTokenCount).toBe(3);
+    const usage = await output.next();
+    expect(usage).toEqual({ done: false, value: { responseId: 'target', modelVersion: 'm', usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 0, totalTokenCount: 3 } } });
+    expect(usagePulled).toBe(true);
+    result.push(usage.value);
+    expect(await output.next()).toEqual({ done: true, value: undefined });
+    expect(await reassembleGeminiGenerateContentEvents(iterate(result))).toEqual({
+      responseId: 'target', modelVersion: 'm', usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 0, totalTokenCount: 3 },
+      candidates: [
+        { index: 0, content: { role: 'model', parts: [{ text: 'a' }] }, finishReason: 'STOP' },
+        { index: 1, content: { role: 'model', parts: [{ text: 'b' }] }, finishReason: 'MAX_TOKENS' },
+      ],
+    });
+  });
+
+  it('ends at candidate termination without emitting an empty final frame when usage is absent', async () => {
+    const frames = await collect(events(geminiGenerateContentFromIR(iterate(completeIR([{ type: 'message', content: [{ type: 'text', text: 'answer' }] }])), options)));
+    expect(frames).toEqual([
+      { responseId: 'target', modelVersion: 'model', candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'answer' }] } }] },
+      { responseId: 'target', modelVersion: 'model', candidates: [{ index: 0, finishReason: 'STOP' }] },
+    ]);
   });
 
   it('does not apply one choice termination to another choice tool', async () => {

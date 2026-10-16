@@ -62,7 +62,6 @@ export const geminiGenerateContentFromIR = async function* (
   const lastKinds = new Map<number, 'text' | 'thought' | 'other'>();
   const mappings = new Map<string, TextSegment[]>();
   const segmentsByChoice = new Map<number, Map<number, TextSegment[]>>();
-  const terminalCandidates = new Map<number, GeminiGenerateContentCandidate>();
   const pendingText = new Map<number, PendingTextQueue>();
   const sourceLengths = new Map<string, number>();
 
@@ -354,13 +353,11 @@ export const geminiGenerateContentFromIR = async function* (
       units.delete(irPartPath(record.choice, record.item, record.part));
     }
 
-    if (record.type === 'choice_end') terminalCandidates.set(record.choice, terminalCandidate(record, state, collector));
+    if (record.type === 'choice_end') yield emit({ candidates: [terminalCandidate(record, state, collector)] });
 
-    if (record.type === 'finish') {
+    if (record.type === 'finish' && state.usage !== undefined) {
       const serviceTier = state.service_tier === 'fast' ? FAST_SERVICE_TIER : state.service_tier === 'default' ? 'standard' : state.service_tier;
-      const candidates = [...terminalCandidates.entries()].toSorted(([a], [b]) => a - b).map(([, candidate]) => candidate);
-      const usageMetadata = state.usage === undefined ? undefined : { ...usageFromIR(state.usage), ...(serviceTier === undefined ? {} : { serviceTier }) };
-      yield emit({ candidates, ...(usageMetadata === undefined ? {} : { usageMetadata }) });
+      yield emit({ usageMetadata: { ...usageFromIR(state.usage), ...(serviceTier === undefined ? {} : { serviceTier }) } });
     }
   }
 };

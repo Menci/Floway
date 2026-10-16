@@ -155,6 +155,7 @@ export { reassembleGeminiGenerateContentEvents } from './gemini-generate-content
 export {
   GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE,
   isGeminiGenerateContentErrorEvent,
+  isGeminiGenerateContentCandidateFinishedEvent,
   isGeminiGenerateContentTerminalEvent,
   collectGeminiGenerateContentProtocolEventsToResult,
 } from './gemini-generate-content/to-result.ts';

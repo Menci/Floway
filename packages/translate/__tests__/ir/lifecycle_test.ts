@@ -218,7 +218,7 @@ test.each([['ChatCompletions', openaiChatCompletionsFromIR], ['Responses', opena
     expect(frames.at(-1).event).toMatchObject({ type: 'response.incomplete', response: { incomplete_details: { reason: 'max_output_tokens' }, output: [{ arguments: '{"x":', status: 'incomplete' }] } });
   } else {
     expect(frames.flatMap(frame => frame.event.candidates?.flatMap((candidate: any) => candidate.content?.parts ?? []) ?? [])).toEqual([]);
-    expect(frames.at(-1).event.candidates[0].finishReason).toBe('MAX_TOKENS');
+    expect(frames.flatMap(frame => frame.event.candidates ?? []).filter(candidate => candidate.finishReason !== undefined)).toEqual([{ index: 0, finishReason: 'MAX_TOKENS' }]);
   }
 });
 

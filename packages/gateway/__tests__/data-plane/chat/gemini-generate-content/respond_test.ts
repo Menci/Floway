@@ -1,15 +1,19 @@
 import { Hono } from 'hono';
-import { test } from 'vitest';
+import { beforeEach, expect, test } from 'vitest';
 
 import { respondGeminiGenerateContent, geminiGenerateContentInternalRpcErrorResponse } from '../../../../src/data-plane/chat/gemini-generate-content/respond.ts';
+import { initRepo } from '../../../../src/repo/index.ts';
+import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventFrame } from '@floway-dev/protocols/common';
-import type { GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentErrorResponse, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { ExecuteResult, InternalDebugError } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const encoder = new TextEncoder();
+
+beforeEach(() => { initRepo(new InMemoryRepo()); });
 
 const testTelemetryModelIdentity = {
   model: 'test-model',
@@ -25,6 +29,61 @@ const requestGeminiGenerateContentResponse = async (result: ExecuteResult<Protoc
   app.get('/', async c => await respondGeminiGenerateContent(c, result, false, ctx()));
   return await app.request('/');
 };
+
+test.each([false, true])('Gemini response consumes all candidate completions and late usage (stream=%s)', async stream => {
+  const events: GeminiGenerateContentStreamEvent[] = [
+    { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'first' }] }, finishReason: 'STOP' }] },
+    { candidates: [{ index: 1, content: { role: 'model', parts: [{ text: 'second' }] }, finishReason: 'MAX_TOKENS' }] },
+    { usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5 } },
+  ];
+  let consumed = 0;
+  const app = new Hono().get('/', c => respondGeminiGenerateContent(c, {
+    type: 'events', events: (async function* () { for (const event of events) { consumed++; yield eventFrame(event); } })(), modelIdentity: testTelemetryModelIdentity,
+  }, stream, ctx()));
+  const response = await app.request('/');
+  const text = await response.text();
+  assertEquals(response.status, 200);
+  assertEquals(consumed, 3);
+  if (stream) {
+    expect(text.split('\n').filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6)))).toMatchObject(events);
+  } else {
+    expect(JSON.parse(text)).toMatchObject({ candidates: events.flatMap(event => 'candidates' in event ? event.candidates ?? [] : []), usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5 } });
+  }
+});
+
+test.each([false, true])('Gemini response stops at prompt blocking (stream=%s)', async stream => {
+  const blocked = { promptFeedback: { blockReason: 'SAFETY' } };
+  const app = new Hono().get('/', c => respondGeminiGenerateContent(c, {
+    type: 'events', events: (async function* () { yield eventFrame(blocked); throw new Error('Trailing frame pulled'); })(), modelIdentity: testTelemetryModelIdentity,
+  }, stream, ctx()));
+  const response = await app.request('/');
+  const text = await response.text();
+  assertEquals(response.status, 200);
+  assertEquals(stream ? text.split('\n').filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6))) : [JSON.parse(text)], [blocked]);
+});
+
+test.each([false, true])('Gemini response terminates immediately on an error (stream=%s)', async stream => {
+  const error = { error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'quota exceeded' } };
+  const app = new Hono().get('/', c => respondGeminiGenerateContent(c, {
+    type: 'events', events: (async function* () { yield eventFrame(error); throw new Error('Trailing frame pulled'); })(), modelIdentity: testTelemetryModelIdentity,
+  }, stream, ctx()));
+  const response = await app.request('/');
+  const text = await response.text();
+  assertEquals(response.status, stream ? 200 : 429);
+  assertEquals(JSON.parse(text), error);
+});
+
+test.each([false, true])('Gemini response exposes EOF without any candidate completion (stream=%s)', async stream => {
+  const app = new Hono().get('/', c => respondGeminiGenerateContent(c, {
+    type: 'events', events: (async function* () { yield eventFrame({ candidates: [{ content: { parts: [{ text: 'unfinished' }] } }] }); })(), modelIdentity: testTelemetryModelIdentity,
+  }, stream, ctx()));
+  const response = await app.request('/');
+  const text = await response.text();
+  assertEquals(response.status, stream ? 200 : 502);
+  const errors = stream ? text.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line)) : [JSON.parse(text)];
+  assertEquals(errors.length, 1);
+  assertEquals(errors[0].error.message, 'Gemini generateContent stream ended without a terminal event.');
+});
 
 test('respondGeminiGenerateContent preserves non-stream Gemini generateContent error event HTTP code', async () => {
   const errorEvent: GeminiGenerateContentErrorResponse = {
