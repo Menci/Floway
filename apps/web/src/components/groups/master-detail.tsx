@@ -1,5 +1,5 @@
 import { DeleteRegular, DismissRegular, EditRegular, PersonAddRegular, SearchRegular } from '@fluentui/react-icons';
-import { useState, type Ref } from 'react';
+import { useState } from 'react';
 
 import { GroupBadge } from './badge';
 import type { ControlPlaneGroup, ControlPlaneUser } from '../../api/types';
@@ -14,7 +14,7 @@ import { StatusBadge } from '../ui/status-badge';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
-const { Avatar, Button, List, ListItem, Popover, PopoverSurface, PopoverTrigger, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
+const { Avatar, Button, List, ListItem, Popover, PopoverSurface, PopoverTrigger, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, makeStyles, mergeClasses } = fluentComponents;
 
 const useStyles = makeStyles({
   layout: {
@@ -94,12 +94,12 @@ export function GroupsMasterDetail({ disabled, groups, onCreate, onDelete, onEdi
             <TableCell className="whitespace-nowrap">{user.upstreamIds === null ? t('dashboard.users.upstreams.all') : t('dashboard.users.upstreams.count', { count: user.upstreamIds.length })}</TableCell>
             <TableCell><ConfirmFlyout
               actionLabel={t('dashboard.groupsManagement.remove.confirm')}
+              disabled={disabled}
+              icon={<DismissRegular />}
               message={t('dashboard.groupsManagement.remove.message', { username: user.username, group: selected.name })}
               onConfirm={() => onMemberChange(selected, user, false)}
               title={t('dashboard.groupsManagement.remove.title')}
-              trigger={props => <Tooltip content={t('dashboard.groupsManagement.actions.remove', { username: user.username })} relationship="label">
-                <Button {...props} as="button" appearance="subtle" aria-label={t('dashboard.groupsManagement.actions.remove', { username: user.username })} disabled={disabled} icon={<DismissRegular />} ref={props.ref as Ref<HTMLButtonElement>} size="small" />
-              </Tooltip>}
+              triggerLabel={t('dashboard.groupsManagement.actions.remove', { username: user.username })}
             /></TableCell>
           </TableRow>)}</TableBody>
         </Table>
