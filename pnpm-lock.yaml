@@ -15,7 +15,7 @@ patchedDependencies:
     hash: 481fc61758af35cca4b19ff47a4f7515c1750ef5fef628a5e2e80fb602f3e4bd
     path: patches/@discoveryjs__json-ext@1.1.0.patch
   '@fluentui/react-charts@9.3.22':
-    hash: a8bd95e1c6e43665fa49850716d2bf5e123b05b959f4b88cc83526cbedeeed35
+    hash: 618fdd1d8ffe8cc4fc2217fd60b196e811ec48ed6816698c60d1f02f832d6c73
     path: patches/@fluentui__react-charts@9.3.22.patch
   '@reclaimprotocol/tls@0.1.2':
     hash: 14d55564bb8f6d1cadd22c1ebf4d5604df7dc5420d4510843debe80b7a9ddada
@@ -176,7 +176,7 @@ importers:
         version: link:../../packages/proxy
       '@fluentui/react-charts':
         specifier: ^9.3.22
-        version: 9.3.22(patch_hash=a8bd95e1c6e43665fa49850716d2bf5e123b05b959f4b88cc83526cbedeeed35)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)
+        version: 9.3.22(patch_hash=618fdd1d8ffe8cc4fc2217fd60b196e811ec48ed6816698c60d1f02f832d6c73)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)
       '@fluentui/react-components':
         specifier: ^9.74.4
         version: 9.74.4(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)
@@ -6485,7 +6485,7 @@ snapshots:
     transitivePeerDependencies:
       - scheduler
 
-  '@fluentui/react-charts@9.3.22(patch_hash=a8bd95e1c6e43665fa49850716d2bf5e123b05b959f4b88cc83526cbedeeed35)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)':
+  '@fluentui/react-charts@9.3.22(patch_hash=618fdd1d8ffe8cc4fc2217fd60b196e811ec48ed6816698c60d1f02f832d6c73)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)':
     dependencies:
       '@fluentui/chart-utilities': 1.1.39
       '@fluentui/react-button': 9.10.1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)

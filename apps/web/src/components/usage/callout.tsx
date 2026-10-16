@@ -17,8 +17,8 @@ const calloutRows = (chart: UsageChartModel, point: CalloutPoint): CalloutRow[] 
 
 // A point the dataset has no reading for leaves the body empty, and an empty
 // body renders as a blank box rather than as a callout. The native hover hides
-// that box through `useFluentChartFrame`; a chart drawing its own tooltip has no
-// such rule, so it asks this before mounting one.
+// that box through the shared chart frame; a chart drawing its own tooltip has
+// no such rule, so it asks this before mounting one.
 export const hasUsageCallout = (chart: UsageChartModel, point: CalloutPoint | null): point is CalloutPoint =>
   point !== null && calloutRows(chart, point).length > 0;
 

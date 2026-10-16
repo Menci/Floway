@@ -7,14 +7,14 @@ import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { AssumedChartHover } from '../charts/assumed-hover';
 import { chartTickValues, formatAxisDate, type ChartBucket } from '../charts/dashboard-time';
-import { useChartFrame, useFluentChartFrame } from '../charts/frame-styles';
+import { useChartFrame } from '../charts/frame-styles';
 import { ChartHost } from '../charts/host';
 import { chartMargins, chartPlotWidth, chartTickCount } from '../charts/layout';
 import { chartHoverPointer, LinkedChartAssumedHover, nearestChartPoint, useLinkedChartHover, type ChartHoverPointer } from '../charts/linked-hover';
 import { FluentChartPointMarkers } from '../charts/point-markers';
 import { visibleSeriesData } from '../charts/series-selection';
 
-const { makeStyles, mergeClasses } = fluentComponents;
+const { makeStyles } = fluentComponents;
 
 // Distinct hues are how a multi-series plot is read, so the series paint is
 // deliberately left in the UA's `forced-color-adjust: preserve-parent-color`
@@ -37,9 +37,7 @@ const useAreaBoundaryStyles = makeStyles({
 export function UsageChart({ chart, hidden, valueFormatter }: { chart: UsageChartModel; hidden: Set<string>; valueFormatter: (value: number) => string }) {
   const { t } = useTranslation();
   const areaBoundaryStyles = useAreaBoundaryStyles();
-  const frameStyles = useChartFrame();
-  const fluentFrameStyles = useFluentChartFrame();
-  const chartRootStyles = useMemo(() => ({ root: mergeClasses(frameStyles.root, fluentFrameStyles.root) }), [fluentFrameStyles.root, frameStyles.root]);
+  const chartRootStyles = useChartFrame();
   const entryByLegend = useMemo(() => new Map(chart.entries.map(entry => [entry.legend, entry])), [chart.entries]);
   const visibleData = useMemo(() => visibleSeriesData(chart.entries, chart.plot.data, hidden), [chart.entries, chart.plot.data, hidden]);
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
