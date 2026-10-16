@@ -89,7 +89,7 @@ export function GroupsMasterDetail({ disabled, groups, onCreate, onDelete, onEdi
           </TableRow></TableHeader>
           <TableBody>{users.filter(user => members.has(user.id)).map(user => <TableRow className="h-11" key={user.id}>
             <TableCell className="!pl-[var(--floway-panel-inset)]"><UserIdentity user={user} /></TableCell>
-            <TableCell><StatusBadge tone={user.isAdmin ? 'accent' : 'neutral'}>{t(`dashboard.users.role.${user.isAdmin ? 'admin' : 'operator'}`)}</StatusBadge></TableCell>
+            <TableCell className="whitespace-nowrap"><StatusBadge tone={user.isAdmin ? 'accent' : 'neutral'}>{t(`dashboard.users.role.${user.isAdmin ? 'admin' : 'operator'}`)}</StatusBadge></TableCell>
             <TableCell className="whitespace-nowrap">{user.upstreamIds === null ? t('dashboard.users.upstreams.all') : t('dashboard.users.upstreams.count', { count: user.upstreamIds.length })}</TableCell>
             <TableCell><TooltipIconButton disabled={disabled} icon={<DismissRegular />} label={t('dashboard.groupsManagement.actions.remove', { username: user.username })} onClick={() => void onMemberChange(selected, user, false)} /></TableCell>
           </TableRow>)}</TableBody>

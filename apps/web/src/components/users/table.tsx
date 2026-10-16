@@ -73,7 +73,7 @@ export function UsersTable({
                   <Avatar aria-hidden color="neutral" name={user.username} size={24} />
                   <Tooltip content={user.username} relationship="label"><RowTitleButton onClick={() => onEdit(user)}>{user.username}</RowTitleButton></Tooltip>
                 </div></TableCell>
-                <TableCell>
+                <TableCell className="whitespace-nowrap">
                   <StatusBadge tone={user.isAdmin ? 'accent' : 'neutral'}>
                     {t(`dashboard.users.role.${user.isAdmin ? 'admin' : 'operator'}`)}
                   </StatusBadge>
