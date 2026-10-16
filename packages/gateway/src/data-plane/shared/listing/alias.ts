@@ -61,7 +61,7 @@ export interface ListedAliasInputs {
   // data-plane response, and non-admin control-plane responses. False
   // for admin sessions on the control plane: the alias-edit dialog
   // needs to see every target the operator wired, including typos and
-  // targets on upstreams the admin self-restricted out of, so the
+  // targets that are typo'd, removed, or currently unavailable, so the
   // configuration is editable end to end.
   readonly narrowTargets: boolean;
 }
@@ -216,7 +216,7 @@ const commonOpaqueBlobCompatibilityScope = (
 // operator state (target IDs from upstreams they have no access to, plus
 // typo'd / removed model IDs). `narrowTargets=false` is the admin-debug
 // view: every configured target survives so the dashboard's alias editor
-// can render the full configuration even when the admin self-restricted.
+// can render the full configured target list, including unavailable targets.
 const buildAliasedFrom = (
   alias: ModelAliasRecord,
   addressableModelIds: readonly AddressableIdEntry[],

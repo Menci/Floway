@@ -4,7 +4,7 @@ import { clientLoader } from '../../src/routes/dashboard-providers-upstreams-edi
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), listModels: vi.fn(), loadAux: vi.fn() }));
 
-vi.mock('../../src/routes/guards', () => ({ requireDashboardAdmin: vi.fn() }));
+vi.mock('../../src/routes/guards', () => ({ requireDashboardUser: vi.fn() }));
 vi.mock('../../src/api/client', () => ({
   api: { api: { upstreams: { ':id': { $get: mocks.get, 'list-models': { $post: mocks.listModels } } } } },
   callApi: (operation: () => unknown) => operation(),
@@ -19,6 +19,7 @@ beforeEach(() => {
   mocks.get.mockResolvedValue({
     data: {
       id: 'up_saved',
+      editLevel: 'full',
       modelsCache: { fetchedAt: 100, lastError: null, modelCount: 2 },
       cachedModels: [{ upstreamModelId: 'cached-model', publicModelId: 'cached-model', kind: 'chat', endpoints: { openaiResponses: {} } }],
     }, error: null,

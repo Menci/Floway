@@ -9,7 +9,6 @@ import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import { generateServerSecret } from '../../shared/server-secret.ts';
 import type { changeOwnPasswordBody, createUserBody, updateUserBody } from '../schemas.ts';
-import { loadKnownUpstreamIds, unknownUpstreamIdsError } from '../shared/upstream-ids.ts';
 
 const parseUserId = (raw: string): number | null => {
   const n = Number(raw);
@@ -25,20 +24,27 @@ const unknownGroupsError = async (ids: readonly number[] | undefined): Promise<s
 
 export const listUsers = async (c: AuthedContext) => {
   const repo = getRepo();
-  const [users, knownUpstreamIds] = await Promise.all([repo.users.list(), loadKnownUpstreamIds()]);
-  const groupIdsByUser = await repo.groups.listIdsByUserIds(users.map(user => user.id));
-  return c.json(users.map(user => userToAdminWire(user, knownUpstreamIds, groupIdsByUser.get(user.id)!)));
+  const users = await repo.users.list();
+  const [records, groupIdsByUser] = await Promise.all([
+    repo.accessRecords.listByPrincipals(users.map(user => ({ kind: 'user' as const, id: user.id }))),
+    repo.groups.listIdsByUserIds(users.map(user => user.id)),
+  ]);
+  const recordCounts = Map.groupBy(records, record => record.principal.id);
+  return c.json(users.map(user => userToAdminWire(user, groupIdsByUser.get(user.id)!, recordCounts.get(user.id)?.length ?? 0)));
 };
 
 export const getUserDirectory = async (c: AuthedContext) => {
-  const [directory, knownUpstreamIds] = await Promise.all([getRepo().readUserDirectory(), loadKnownUpstreamIds()]);
+  const repo = getRepo();
+  const [directory, records] = await Promise.all([repo.readUserDirectory(), repo.accessRecords.list()]);
+  const userRecords = Map.groupBy(records.filter(record => record.principal.kind === 'user'), record => record.principal.id);
+  const groupRecords = Map.groupBy(records.filter(record => record.principal.kind === 'group'), record => record.principal.id);
   const groupIds = new Map(directory.users.map(user => [user.id, [] as number[]]));
   for (const group of directory.groups) {
     for (const userId of group.memberIds) groupIds.get(userId)!.push(group.id);
   }
   return c.json({
-    users: directory.users.map(user => userToAdminWire(user, knownUpstreamIds, groupIds.get(user.id)!)),
-    groups: directory.groups,
+    users: directory.users.map(user => userToAdminWire(user, groupIds.get(user.id)!, userRecords.get(user.id)?.length ?? 0)),
+    groups: directory.groups.map(group => ({ ...group, accessRecordCount: groupRecords.get(group.id)?.length ?? 0 })),
   });
 };
 
@@ -51,17 +57,10 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   if (await repo.users.findByUsername(body.username)) {
     return c.json({ error: 'That username is already taken (usernames are case-insensitive).' }, 400);
   }
-  const knownUpstreamIds = await loadKnownUpstreamIds();
-  if (body.upstreamIds !== undefined) {
-    const upstreamErr = unknownUpstreamIdsError(body.upstreamIds, knownUpstreamIds);
-    if (upstreamErr) return c.json({ error: upstreamErr }, 400);
-  }
-
   const user = await repo.users.createNewUser({
     username: body.username,
     passwordHash: await hashPassword(body.password),
     isAdmin: body.isAdmin ?? false,
-    upstreamIds: body.upstreamIds ?? null,
     createdAt: new Date().toISOString(),
     deletedAt: null,
   });
@@ -78,10 +77,25 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
     dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: 0,
   };
-  await repo.apiKeys.save(defaultKey);
+  await Promise.all([
+    repo.apiKeys.save(defaultKey),
+    repo.accessRecords.save({
+      principal: { kind: 'user', id: user.id },
+      scope: { kind: 'upstreams' },
+      sortOrder: 0,
+      values: { 'Model.Use': true },
+    }),
+    repo.accessRecords.save({
+      principal: { kind: 'user', id: user.id },
+      scope: { kind: 'user', userId: user.id },
+      sortOrder: 0,
+      values: { 'User.Audit': true },
+    }),
+  ]);
   if (body.groupIds !== undefined) await repo.groups.replaceUserGroups(user.id, body.groupIds);
 
-  return c.json({ user: userToAdminWire(user, knownUpstreamIds, await repo.groups.listIdsByUserId(user.id)) }, 201);
+  const records = await repo.accessRecords.listByPrincipal({ kind: 'user', id: user.id });
+  return c.json({ user: userToAdminWire(user, await repo.groups.listIdsByUserId(user.id), records.length) }, 201);
 };
 
 export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
@@ -104,17 +118,10 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     const dup = await repo.users.findByUsername(body.username);
     if (dup && dup.id !== id) return c.json({ error: 'username taken' }, 400);
   }
-  const knownUpstreamIds = await loadKnownUpstreamIds();
-  if (body.upstreamIds !== undefined) {
-    const err = unknownUpstreamIdsError(body.upstreamIds, knownUpstreamIds);
-    if (err) return c.json({ error: err }, 400);
-  }
-
   const overrides: Partial<User> = {};
   if (body.username !== undefined) overrides.username = body.username;
   if (body.password !== undefined) overrides.passwordHash = await hashPassword(body.password);
   if (body.isAdmin !== undefined) overrides.isAdmin = body.isAdmin;
-  if (body.upstreamIds !== undefined) overrides.upstreamIds = body.upstreamIds;
   const next: User = { ...existing, ...overrides };
   await repo.users.save(next, body.groupIds);
 
@@ -124,7 +131,8 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     else await repo.sessions.deleteByUserId(id);
   }
 
-  return c.json(userToAdminWire(next, knownUpstreamIds, await repo.groups.listIdsByUserId(id)));
+  const records = await repo.accessRecords.listByPrincipal({ kind: 'user', id });
+  return c.json(userToAdminWire(next, await repo.groups.listIdsByUserId(id), records.length));
 };
 
 export const deleteUser = async (c: AuthedContext) => {
@@ -146,6 +154,7 @@ export const deleteUser = async (c: AuthedContext) => {
   await repo.apiKeys.softDeleteByUserId(id);
   await repo.sessions.deleteByUserId(id);
   await repo.groups.deleteMembershipsByUserId(id);
+  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id });
   const ok = await repo.users.softDelete(id);
   if (!ok) return c.json({ error: 'user not found' }, 404);
   return c.json({ ok: true });

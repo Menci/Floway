@@ -57,7 +57,6 @@ const buildUser = (overrides: Partial<User> = {}): User => ({
   username: 'http_test',
   passwordHash: null,
   isAdmin: false,
-  upstreamIds: null,
   createdAt: '2026-01-01T00:00:00.000Z',
   deletedAt: null,
   ...overrides,

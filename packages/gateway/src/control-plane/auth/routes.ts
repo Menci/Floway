@@ -6,7 +6,6 @@ import type { User } from '../../repo/types.ts';
 import { isProductionRequest } from '../../runtime/is-production-request.ts';
 import { dummyPasswordHash, verifyPassword } from '../../shared/passwords.ts';
 import type { authLoginBody } from '../schemas.ts';
-import { loadKnownUpstreamIds } from '../shared/upstream-ids.ts';
 import { userToSessionWire } from '../users/wire.ts';
 import { getEnvOptional, timingSafeEqual } from '@floway-dev/platform';
 
@@ -45,8 +44,8 @@ const resolveLoginUser = async (c: CtxWithJson<typeof authLoginBody>): Promise<U
 export const authLogin = async (c: CtxWithJson<typeof authLoginBody>) => {
   const user = await resolveLoginUser(c);
   if (!user) return c.json({ error: 'Invalid username or password' }, 401);
-  const [session, knownUpstreamIds] = await Promise.all([getRepo().sessions.create(user.id), loadKnownUpstreamIds()]);
-  return c.json({ token: session.id, user: userToSessionWire(user, knownUpstreamIds) });
+  const session = await getRepo().sessions.create(user.id);
+  return c.json({ token: session.id, user: userToSessionWire(user) });
 };
 
 export const authLogout = async (c: AuthedContext) => {
@@ -60,7 +59,7 @@ export const authMe = async (c: AuthedContext) => {
   const sessionId = sessionIdFromContext(c);
   const apiKey = c.get('apiKey');
   return c.json({
-    user: userToSessionWire(user, await loadKnownUpstreamIds()),
+    user: userToSessionWire(user),
     viaApiKey: !sessionId,
     apiKey: apiKey ? { id: apiKey.id, name: apiKey.name } : null,
   });

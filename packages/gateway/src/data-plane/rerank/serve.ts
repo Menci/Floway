@@ -75,6 +75,7 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
   let usageSettled = false;
   try {
     const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
+      subject: ctx.user,
       upstreamIds: ctx.upstreamIds,
       model,
       kind: 'rerank',

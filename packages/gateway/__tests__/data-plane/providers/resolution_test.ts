@@ -1,10 +1,10 @@
 import { describe, expect, test, vi } from 'vitest';
 
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
-import { enumerateModelCandidates, enumerateRealModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
+import { enumerateModelCandidates as enumerateModelCandidatesRaw, enumerateRealModelCandidates as enumerateRealModelCandidatesRaw } from '../../../src/data-plane/providers/resolution.ts';
 import { createModelsRefreshScheduler, modelsRefreshTarget, refreshModelsExplicit } from '../../../src/execution/models-refresh.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { buildCustomUpstreamRecord, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, setupAppTest, testAdminUser, warmModelsForTest } from '../../test-utils/app.ts';
 import { directFetcher, type InternalModel, type ProviderModel } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch as withMockedFetchRaw } from '@floway-dev/test-utils';
 
@@ -25,6 +25,12 @@ const testScheduler = (promise: Promise<unknown>): void => {
   promise.catch(err => console.error('[background]', err));
 };
 const scheduleRefresh = createModelsRefreshScheduler('TEST', testScheduler);
+const enumerateModelCandidates = (
+  input: Omit<Parameters<typeof enumerateModelCandidatesRaw>[0], 'subject'>,
+) => enumerateModelCandidatesRaw({ subject: testAdminUser, ...input });
+const enumerateRealModelCandidates = (
+  ...args: Parameters<typeof enumerateRealModelCandidatesRaw> extends [unknown, ...infer Rest] ? Rest : never
+) => enumerateRealModelCandidatesRaw(testAdminUser, ...args);
 
 test('a cold candidate read schedules refresh without waiting for upstream I/O', async () => {
   const { repo } = await setupAppTest();
@@ -66,10 +72,10 @@ test('scheduler registration failures propagate rather than looking like an upst
     config: { baseUrl: 'https://custom.example.com', authStyle: 'none', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [], modelsFetch: { enabled: false }, models: [] },
   }));
   const providers = await listModelProviders(null);
-  expect(() => enumerateRealModelCandidates('model', 'chat', providers, {
+  await expect(enumerateRealModelCandidates('model', 'chat', providers, {
     fetcherForUpstream: () => directFetcher,
     scheduleRefresh: () => { throw new Error('scheduler unavailable'); },
-  })).toThrow('scheduler unavailable');
+  })).rejects.toThrow('scheduler unavailable');
 });
 
 test('enumerateRealModelCandidates only loads the selected providers\' catalogs', async () => {
@@ -109,7 +115,7 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
       await refreshModelsExplicit(modelsRefreshTarget(first), 'TEST');
       const warmed = (await listModelProviders(null)).find(provider => provider.upstreamId === 'up_first');
       if (!warmed) throw new Error('warmed provider missing');
-      const { candidates } = enumerateRealModelCandidates('target-model', 'chat', [warmed], { fetcherForUpstream: () => directFetcher, scheduleRefresh });
+      const { candidates } = await enumerateRealModelCandidates('target-model', 'chat', [warmed], { fetcherForUpstream: () => directFetcher, scheduleRefresh });
 
       assertEquals(candidates[0]?.model.id, 'target-model');
       assertEquals(candidates[0]?.provider.upstreamId, 'up_first');
@@ -154,8 +160,8 @@ test('enumerateRealModelCandidates rejects a model id disabled on that upstream 
 
   await warmModelsForTest();
   const providers = await listModelProviders(null);
-  const enabled = enumerateRealModelCandidates('enabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduleRefresh });
-  const disabled = enumerateRealModelCandidates('disabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduleRefresh });
+  const enabled = await enumerateRealModelCandidates('enabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduleRefresh });
+  const disabled = await enumerateRealModelCandidates('disabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduleRefresh });
   assertEquals(enabled.candidates[0]?.model.id, 'enabled-model');
   assertEquals(disabled.candidates.length, 0);
 });

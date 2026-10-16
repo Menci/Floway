@@ -1,5 +1,5 @@
 import type { ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
-import type { ModelAliasesRepo } from '../../repo/types.ts';
+import type { ModelAliasesRepo, User } from '../../repo/types.ts';
 import { enumerateAddressableModelIds, listedRealModels } from '../shared/listing/addressable.ts';
 import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
@@ -42,19 +42,21 @@ export const toPublicModel = (model: InternalModel): PublicModel => {
 };
 
 export const loadModels = async (
+  subject: User,
   upstreamFilter: readonly string[] | null,
   scheduleRefresh: ModelsRefreshScheduler,
   aliasRepo: ModelAliasesRepo,
 ): Promise<PublicModelsResponse> => {
+  const gatewayMetadataSubject = subject.isAdmin ? subject : { ...subject, isAdmin: true };
   // Data-plane responses always narrow `aliasedFrom.targets` to the
   // caller's reachable set (and never expose typo'd / removed target
   // ids), but the alias's metadata is still computed gateway-wide so
   // every caller sees the same numbers.
   const [callerAddressable, gatewayAddressable, aliases] = await Promise.all([
-    enumerateAddressableModelIds(upstreamFilter, scheduleRefresh),
+    enumerateAddressableModelIds(subject, upstreamFilter, scheduleRefresh),
     upstreamFilter === null
       ? Promise.resolve(null)
-      : enumerateAddressableModelIds(null, scheduleRefresh),
+      : enumerateAddressableModelIds(gatewayMetadataSubject, null, scheduleRefresh),
     aliasRepo.list(),
   ]);
   const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;

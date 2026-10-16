@@ -2,7 +2,17 @@ import { createOpenAIResponsesHttpStore, type OpenAIResponsesStatefulStore } fro
 import { AffinityRequestContext } from '../../src/data-plane/chat/shared/affinity/index.ts';
 import type { ChatGatewayCtx } from '../../src/data-plane/chat/shared/gateway-ctx.ts';
 import type { GatewayCtx } from '../../src/data-plane/shared/gateway-ctx.ts';
+import type { User } from '../../src/repo/types.ts';
 import { stubModelCandidate } from '@floway-dev/test-utils';
+
+const testUser: User = {
+  id: 1,
+  username: 'admin',
+  passwordHash: null,
+  isAdmin: true,
+  createdAt: '1970-01-01T00:00:00.000Z',
+  deletedAt: null,
+};
 
 // Shared minimal GatewayCtx for tests that exercise serve / respond /
 // interceptor code in isolation. Defaults satisfy every required field; pass
@@ -12,6 +22,7 @@ import { stubModelCandidate } from '@floway-dev/test-utils';
 // into the overrides.
 export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx => ({
   apiKeyId: 'key_test',
+  user: testUser,
   requestStartedAt: 0,
   upstreamIds: null,
   wantsStream: false,

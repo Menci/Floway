@@ -3,10 +3,10 @@ import { describe, expect, test, vi } from 'vitest';
 import { toPublicModel } from '../../../src/data-plane/models/load.ts';
 import { compareModelIds, getModelsFromProviders } from '../../../src/data-plane/providers/catalog.ts';
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
-import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
+import { enumerateModelCandidates as enumerateModelCandidatesRaw } from '../../../src/data-plane/providers/resolution.ts';
 import { createModelsRefreshScheduler } from '../../../src/execution/models-refresh.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { buildCustomUpstreamRecord, copilotModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, copilotModels, setupAppTest, testAdminUser, warmModelsForTest } from '../../test-utils/app.ts';
 import type { InternalModel, ProviderModel } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch as withMockedFetchRaw } from '@floway-dev/test-utils';
 
@@ -28,6 +28,9 @@ const sortedIds = (ids: readonly string[]): string[] => [...ids].sort(compareMod
 const testScheduler = (promise: Promise<unknown>): void => {
   promise.catch(err => console.error('[background]', err));
 };
+const enumerateModelCandidates = (
+  input: Omit<Parameters<typeof enumerateModelCandidatesRaw>[0], 'subject'>,
+) => enumerateModelCandidatesRaw({ subject: testAdminUser, ...input });
 const scheduleRefresh = createModelsRefreshScheduler('TEST', testScheduler);
 
 test('compareModelIds pushes ids containing "/" to the tail', () => {

@@ -307,6 +307,8 @@ test('SQL usage overview matches the in-memory oracle across filters, facets, ax
   const options: UsageOverviewQueryOptions = {
     actorUserId: 1,
     isAdmin: true,
+    visibleUserIds: [],
+    visibleUpstreams: [],
     start: '2026-11-01T05',
     end: '2026-11-01T08',
     groupBy: 'model',
@@ -378,6 +380,8 @@ test('SQL usage overview preserves request-only and metric-only storage identiti
   const overview = await repo.usage.queryOverview({
     actorUserId: 1,
     isAdmin: true,
+    visibleUserIds: [],
+    visibleUpstreams: [],
     start: '2026-07-12T00',
     end: '2026-07-12T01',
     groupBy: 'model',
@@ -411,6 +415,8 @@ test('SQL usage overview validates scoped metric rows before dashboard filters',
   await assertRejects(() => repo.usage.queryOverview({
     actorUserId: 1,
     isAdmin: true,
+    visibleUserIds: [],
+    visibleUpstreams: [],
     start: '2026-07-12T00',
     end: '2026-07-12T01',
     groupBy: 'model',
@@ -430,6 +436,8 @@ test('SQL usage overview uses key-hour indexes for an actor-scoped aggregate', a
   await repo.usage.queryOverview({
     actorUserId: 1,
     isAdmin: true,
+    visibleUserIds: [],
+    visibleUpstreams: [],
     start: '2026-07-12T00',
     end: '2026-07-12T01',
     groupBy: 'keyId',
@@ -464,6 +472,8 @@ test('SQL usage overview returns grouped term cardinality rather than raw storag
   const overview = await repo.usage.queryOverview({
     actorUserId: 1,
     isAdmin: true,
+    visibleUserIds: [],
+    visibleUpstreams: [],
     start: '2026-07-12T00',
     end: '2026-07-12T01',
     groupBy: 'model',

@@ -1,5 +1,7 @@
 import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
 import { upstreamErrorMessage as errorMessage } from './shared.ts';
+import { fullUpstreamActionError } from '../../access-control/upstream-edit.ts';
+import { userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
@@ -39,6 +41,8 @@ const parseCopilotDraftConfig = (config: unknown): { config: Record<string, unkn
 
 export const copilotOAuthDeviceLoginStart = async (c: CtxWithJson<typeof copilotOAuthDeviceLoginStartBody>) => {
   const { record } = c.req.valid('json');
+  const accessError = await fullUpstreamActionError(userFromContext(c), record.id);
+  if (accessError) return c.json({ error: accessError.error }, accessError.status);
   if (record.kind !== 'copilot') return c.json({ error: 'Upstream is not a Copilot upstream' }, 400);
 
   let githubHost: string;
@@ -69,6 +73,8 @@ export const copilotOAuthDeviceLoginStart = async (c: CtxWithJson<typeof copilot
 // picks up the fresh credential immediately.
 export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotOAuthDeviceLoginPollBody>) => {
   const { record, deviceCode } = c.req.valid('json');
+  const accessError = await fullUpstreamActionError(userFromContext(c), record.id);
+  if (accessError) return c.json({ status: 'error' as const, error: accessError.error }, accessError.status);
   if (record.kind !== 'copilot') return c.json({ status: 'error' as const, error: 'Upstream is not a Copilot upstream' }, 400);
 
   // Config-validation errors (e.g. unknown proxy id in the override) surface
@@ -175,6 +181,8 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
 // snapshot rather than blanking the card.
 export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
   const { record } = c.req.valid('json');
+  const accessError = await fullUpstreamActionError(userFromContext(c), record.id);
+  if (accessError) return c.json({ error: accessError.error }, accessError.status);
   if (record.kind !== 'copilot') return c.json({ error: 'Upstream is not a Copilot upstream' }, 400);
 
   let githubHost: string;

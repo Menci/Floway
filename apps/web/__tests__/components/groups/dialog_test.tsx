@@ -8,6 +8,7 @@ import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 
 const group: ControlPlaneGroup = {
+  accessRecordCount: 0,
   id: 3, name: 'Operators', hue: 120, createdAt: '', deletedAt: null, memberIds: [2],
 };
 

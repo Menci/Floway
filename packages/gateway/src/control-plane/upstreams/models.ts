@@ -1,7 +1,8 @@
 import { modelsCacheStatus, reshapeModelForDashboard } from './models-cache-projection.ts';
 import { upstreamErrorMessage as errorMessage } from './shared.ts';
+import { resolveUpstreamEditLevel } from '../../access-control/upstream-edit.ts';
 import { discoverDraftModels, isModelsRefreshConfigurationError, modelsRefreshErrorMessage, modelsRefreshTarget, refreshModelsExplicit } from '../../execution/models-refresh.ts';
-import type { AuthedContext } from '../../middleware/auth.ts';
+import { type AuthedContext, userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
@@ -61,6 +62,9 @@ export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) =>
 // an edit that wins before discovery begins.
 export const fetchSavedModels = async (c: AuthedContext<'/:id/list-models'>) => {
   const id = c.req.param('id');
+  if (await resolveUpstreamEditLevel(userFromContext(c), id) === 'off') {
+    return c.json({ error: 'Upstream not found' }, 404);
+  }
   const record = await getRepo().upstreams.getById(id);
   if (record === null) return c.json({ error: 'Upstream not found' }, 404);
   const target = modelsRefreshTarget(record);

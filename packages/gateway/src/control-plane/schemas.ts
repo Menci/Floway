@@ -17,6 +17,7 @@
 
 import { z } from 'zod';
 
+import { accessRecordInputSchema, accessTargetSchema } from '../access-control/schemas.ts';
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
@@ -247,16 +248,10 @@ export const USERNAME_PATTERN = /^[a-zA-Z0-9_.\-]{1,64}$/;
 
 const usernameSchema = z.string().regex(USERNAME_PATTERN, 'username must be 1-64 chars of [A-Za-z0-9_.-]');
 
-// null leaves this level unrestricted; an empty list grants no upstreams.
-const upstreamIdsValueSchema = z.array(z.string().min(1))
-  .refine(arr => new Set(arr).size === arr.length, { message: 'upstreamIds contains duplicates' })
-  .nullable();
-
 export const createUserBody = z.object({
   username: usernameSchema,
   password: passwordSchema,
   isAdmin: z.boolean().optional(),
-  upstreamIds: upstreamIdsValueSchema.optional(),
   groupIds: z.array(z.number().int().positive()).optional(),
 });
 
@@ -264,20 +259,30 @@ export const updateUserBody = z.object({
   username: usernameSchema.optional(),
   password: passwordSchema.optional(),
   isAdmin: z.boolean().optional(),
-  upstreamIds: upstreamIdsValueSchema.optional(),
   groupIds: z.array(z.number().int().positive()).optional(),
 });
+
+const groupMemberIdsSchema = z.array(z.number().int().positive())
+  .refine(ids => new Set(ids).size === ids.length, { message: 'memberIds contains duplicates' });
 
 export const createGroupBody = z.object({
   name: z.string().trim().min(1).max(64),
   hue: z.number().int().min(0).max(359),
-  memberIds: z.array(z.number().int().positive()).optional(),
+  memberIds: groupMemberIdsSchema.optional(),
 });
 
 export const updateGroupBody = z.object({
   name: z.string().trim().min(1).max(64).optional(),
   hue: z.number().int().min(0).max(359).optional(),
-  memberIds: z.array(z.number().int().positive()).optional(),
+  memberIds: groupMemberIdsSchema.optional(),
+}).refine(body => body.name !== undefined || body.hue !== undefined || body.memberIds !== undefined, { message: 'Provide a name, hue, or memberIds to update.' });
+
+export const accessRecordBody = accessRecordInputSchema;
+
+export const resolveAccessBody = z.object({
+  userId: z.number().int().positive(),
+  target: accessTargetSchema,
+  excludeRecordId: z.number().int().positive().optional(),
 });
 
 export const changeOwnPasswordBody = z.object({
@@ -312,7 +317,7 @@ const keySourceShape = {
 
 export const createKeyBody = z.object({
   name: z.string().min(1),
-  upstream_ids: upstreamIdsValueSchema.optional(),
+  upstream_ids: z.array(z.string().min(1)).refine(arr => new Set(arr).size === arr.length, { message: 'upstream_ids contains duplicates' }).nullable().optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
   responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
   ...keySourceShape,
@@ -322,7 +327,7 @@ export const rotateKeyBody = z.object(keySourceShape);
 
 export const updateKeyBody = z.object({
   name: z.string().min(1).optional(),
-  upstream_ids: upstreamIdsValueSchema.optional(),
+  upstream_ids: z.array(z.string().min(1)).refine(arr => new Set(arr).size === arr.length, { message: 'upstream_ids contains duplicates' }).nullable().optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
   responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
 });
@@ -611,6 +616,9 @@ export const resetBackoffBody = z.object({
   upstream_id: z.string().min(1).optional(),
 });
 
+export const proxyOptionsQuery = z.object({ upstream_id: z.string().min(1) });
+export const upstreamOptionsQuery = z.object({ view: z.enum(['key', 'audit', 'all']).optional() });
+
 // --- search config ---
 
 export const webSearchConfigSchema = z.object({
@@ -755,7 +763,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(22, { error: 'version must be 22 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(23, { error: 'version must be 23 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });

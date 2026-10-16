@@ -24,7 +24,7 @@ test('user directory projects both membership directions from one repository sna
   const response = await request('/user-directory', adminSession);
   expect(response.status).toBe(200);
   const body = await response.json() as { users: Array<{ id: number; groupIds: number[]; passwordHash?: string }>; groups: Array<{ id: number; memberIds: number[] }> };
-  expect(body.groups).toEqual([{ ...group, memberIds: [2] }]);
+  expect(body.groups).toEqual([{ ...group, memberIds: [2], accessRecordCount: 0 }]);
   expect(body.users.find(user => user.id === 2)?.groupIds).toEqual([group.id]);
   expect(body.users.find(user => user.id === 1)?.groupIds).toEqual([]);
   expect(body.users.every(user => !Object.hasOwn(user, 'passwordHash'))).toBe(true);
@@ -66,9 +66,11 @@ test('deleting a group clears memberships', async () => {
   const { adminSession, repo } = await setupAppTest();
   const group = await repo.groups.create('Operators', 120);
   await repo.groups.replaceMembers(group.id, [2]);
+  await repo.accessRecords.save({ principal: { kind: 'group', id: group.id }, scope: { kind: 'upstreams' }, sortOrder: 0, values: { 'Model.Use': true } });
   const response = await request(`/groups/${group.id}`, adminSession, { method: 'DELETE' });
   assertEquals(response.status, 200);
   assertEquals(await repo.groups.listIdsByUserId(2), []);
+  assertEquals(await repo.accessRecords.listByPrincipal({ kind: 'group', id: group.id }), []);
 });
 
 test('updates color without changing membership and rejects invalid hue angles', async () => {

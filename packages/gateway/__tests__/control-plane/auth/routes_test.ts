@@ -146,7 +146,6 @@ test('/auth/login with username + matching password issues a session', async () 
     username: 'alice',
     passwordHash: await hashPassword('hunter2'),
     isAdmin: false,
-    upstreamIds: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     deletedAt: null,
   });
@@ -169,7 +168,6 @@ test('/auth/login matches the username case-insensitively', async () => {
     username: 'Alice',
     passwordHash: await hashPassword('hunter2'),
     isAdmin: false,
-    upstreamIds: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     deletedAt: null,
   });
@@ -191,7 +189,6 @@ test('/auth/login with wrong password is rejected', async () => {
     username: 'alice',
     passwordHash: await hashPassword('hunter2'),
     isAdmin: false,
-    upstreamIds: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     deletedAt: null,
   });
@@ -211,7 +208,6 @@ test('/auth/login refuses a user with no password set (must use admin reset path
     username: 'pending',
     passwordHash: null,
     isAdmin: false,
-    upstreamIds: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     deletedAt: null,
   });

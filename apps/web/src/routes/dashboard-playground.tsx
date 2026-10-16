@@ -10,13 +10,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-playground';
-import { useDashboardOutletContext } from './dashboard';
 import { requireDashboardSession } from './guards';
 import { api, callApi } from '../api/client';
 import type { ApiKey, ControlPlaneModel } from '../api/types';
 import { indexCatalog } from '../components/models/catalog-index';
 import { ModelInfoBadges } from '../components/models/info-badges';
-import { effectiveUpstreamCap, reachableModels } from '../components/models/reachability';
+import { reachableModels } from '../components/models/reachability';
 import { bingAccentForeground, bingAccentForegroundHover } from '../components/playground/bing-chat-tokens';
 import { PlaygroundComposer } from '../components/playground/composer';
 import { PlaygroundEditDialog, type PlaygroundMessageDraft } from '../components/playground/edit-dialog';
@@ -146,7 +145,6 @@ const randomId = () => crypto.randomUUID();
 
 export default function DashboardPlayground({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
-  const { user } = useDashboardOutletContext();
   const s = useStyles();
   const [playgroundApi, setPlaygroundApi] = useState<PlaygroundApi>('openaiResponses');
   const [keyId, setKeyId] = useState(loaderData.keys?.[0]?.id ?? '');
@@ -173,15 +171,9 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const narrow = useMediaQuery('(max-width: 1100px)');
 
   const selectedKey = loaderData.keys?.find(key => key.id === keyId) ?? null;
-  const cap = useMemo(
-    () => effectiveUpstreamCap(selectedKey?.upstream_ids ?? null, user.upstreamIds),
-    [selectedKey, user.upstreamIds],
-  );
+  const cap = selectedKey?.upstream_ids ?? null;
   const catalog = useMemo(() => indexCatalog(loaderData.models), [loaderData.models]);
-  const models = useMemo(
-    () => reachableModels(loaderData.models ?? [], cap, model => model.kind === 'chat'),
-    [cap, loaderData.models],
-  );
+  const models = reachableModels(loaderData.models ?? [], cap, model => model.kind === 'chat');
   const selectedModel = models.find(model => model.id === publicModelId) ?? models[0] ?? null;
   const imageEnabled = supportsImageInput(selectedModel);
   const effortOptions = selectedModel?.chat?.reasoning?.effort?.supported ?? [];

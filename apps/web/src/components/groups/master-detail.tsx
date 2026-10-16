@@ -82,17 +82,15 @@ export function GroupsMasterDetail({ disabled, groups, onCreate, onDelete, onEdi
       </header>
       {members.size === 0 ? <EmptyState title={t('dashboard.groupsManagement.members.empty')} /> : <ScrollArea axes="horizontal" className="min-w-0">
         <Table aria-label={t('dashboard.groupsManagement.fields.members')} className="min-w-[520px]" style={{ tableLayout: 'auto' }}>
-          <TableColumns widths={[null, null, null, '56px']} />
+          <TableColumns widths={[null, null, '56px']} />
           <TableHeader><TableRow>
             <TableHeaderCell className="!pl-[var(--floway-panel-inset)]">{t('dashboard.users.table.username')}</TableHeaderCell>
             <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.role')}</TableHeaderCell>
-            <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.upstreams')}</TableHeaderCell>
             <TableHeaderCell><span className="sr-only">{t('dashboard.users.table.actions')}</span></TableHeaderCell>
           </TableRow></TableHeader>
           <TableBody>{users.filter(user => members.has(user.id)).map(user => <TableRow className="h-11" key={user.id}>
             <TableCell className="!pl-[var(--floway-panel-inset)]"><UserIdentity user={user} /></TableCell>
             <TableCell className="whitespace-nowrap"><StatusBadge tone={user.isAdmin ? 'accent' : 'neutral'}>{t(`dashboard.users.role.${user.isAdmin ? 'admin' : 'operator'}`)}</StatusBadge></TableCell>
-            <TableCell className="whitespace-nowrap">{user.upstreamIds === null ? t('dashboard.users.upstreams.all') : t('dashboard.users.upstreams.count', { count: user.upstreamIds.length })}</TableCell>
             <TableCell><ConfirmFlyout
               actionLabel={t('dashboard.groupsManagement.remove.confirm')}
               disabled={disabled}

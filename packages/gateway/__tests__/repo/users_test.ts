@@ -10,7 +10,6 @@ const sampleUser = (over: Partial<User> = {}): User => ({
   username: 'alice',
   passwordHash: 'pbkdf2-sha256$600000$YQ==$YQ==',
   isAdmin: false,
-  upstreamIds: null,
   createdAt: '2026-06-07T00:00:00.000Z',
   deletedAt: null,
   ...over,
@@ -73,16 +72,6 @@ describe.each(backends)('UsersRepo (%s)', (_label, makeRepo) => {
     await repo.users.save(sampleUser({ id: 2, username: 'alice', isAdmin: false }));
     await repo.users.save(sampleUser({ id: 2, username: 'alice', isAdmin: true }));
     expect((await repo.users.getById(2))?.isAdmin).toBe(true);
-  });
-
-  test('upstreamIds round-trip unrestricted, empty, and populated restrictions', async () => {
-    const repo = await makeRepo();
-    await repo.users.save(sampleUser({ id: 2, username: 'a', upstreamIds: null }));
-    await repo.users.save(sampleUser({ id: 3, username: 'b', upstreamIds: ['up_one', 'up_two'] }));
-    await repo.users.save(sampleUser({ id: 4, username: 'c', upstreamIds: [] }));
-    expect((await repo.users.getById(2))?.upstreamIds).toBeNull();
-    expect((await repo.users.getById(3))?.upstreamIds).toEqual(['up_one', 'up_two']);
-    expect((await repo.users.getById(4))?.upstreamIds).toEqual([]);
   });
 
   test('findByUsername does not return soft-deleted rows', async () => {

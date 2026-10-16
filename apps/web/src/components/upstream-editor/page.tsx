@@ -50,6 +50,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const rewrite = useEntryRewrite();
   const toasts = useOutcomeToasts();
   const [record, setRecord] = useState(data.record);
+  const editLevel = data.editLevel ?? 'full';
   // Two provider patches can be in flight at once -- refreshing a credential
   // and probing a quota are separate buttons, neither disabling the other -- so
   // the second one's continuation holds the render the first was dispatched
@@ -228,7 +229,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
         ? await callApi(() => api.api.upstreams.$post({
             json: createBody(record, values, data.preserveCredentials === true ? { preserveStoredSecret: true } : undefined),
           }))
-        : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
+        : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values, editLevel) }));
       if (result.error) { handle.settle(); setSaving(false); setSaveError(result.error.message); return; }
       const saved: UpstreamRecord = result.data;
       if (invalidatesPendingFetch) cancelModelsRefresh();
@@ -276,6 +277,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
             discovered={discovered ?? []}
             onPatch={applyProviderPatch}
             onRefreshModels={requestModels}
+            modelsOnly={editLevel === 'models'}
             proxies={data.proxies}
             record={record}
             runtime={data.runtime}

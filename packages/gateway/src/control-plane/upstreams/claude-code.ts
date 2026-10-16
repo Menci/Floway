@@ -1,5 +1,6 @@
 import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
 import { upstreamErrorMessage as errorMessage } from './shared.ts';
+import { fullUpstreamActionError } from '../../access-control/upstream-edit.ts';
 import { userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -30,13 +31,17 @@ import {
 // front-end to merge into its draft.
 
 export const claudeCodeOAuthAuthorizeUrl = async (c: CtxWithJson<typeof claudeCodeOAuthAuthorizeUrlBody>) => {
-  const { challenge, state } = c.req.valid('json');
+  const { record, challenge, state } = c.req.valid('json');
+  const accessError = await fullUpstreamActionError(userFromContext(c), record.id);
+  if (accessError) return c.json({ error: accessError.error }, accessError.status);
   const authorize_url = buildClaudeCodeAuthorizeUrl({ state, codeChallenge: challenge, kind: 'oauth' });
   return c.json({ authorize_url });
 };
 
 export const claudeCodeSetupTokenAuthorizeUrl = async (c: CtxWithJson<typeof claudeCodeSetupTokenAuthorizeUrlBody>) => {
-  const { challenge, state } = c.req.valid('json');
+  const { record, challenge, state } = c.req.valid('json');
+  const accessError = await fullUpstreamActionError(userFromContext(c), record.id);
+  if (accessError) return c.json({ error: accessError.error }, accessError.status);
   const authorize_url = buildClaudeCodeAuthorizeUrl({ state, codeChallenge: challenge, kind: 'setup-token' });
   return c.json({ authorize_url });
 };
@@ -44,6 +49,8 @@ export const claudeCodeSetupTokenAuthorizeUrl = async (c: CtxWithJson<typeof cla
 export const claudeCodeOAuthExchange = async (c: CtxWithJson<typeof claudeCodeOAuthExchangeBody>) => {
   const body = c.req.valid('json');
   const { record } = body;
+  const accessError = await fullUpstreamActionError(userFromContext(c), record.id);
+  if (accessError) return c.json({ error: accessError.error }, accessError.status);
   if (record.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
 
   let fetcher: Fetcher;
@@ -87,6 +94,8 @@ export const claudeCodeOAuthExchange = async (c: CtxWithJson<typeof claudeCodeOA
 
 export const claudeCodeSetupTokenExchange = async (c: CtxWithJson<typeof claudeCodeSetupTokenExchangeBody>) => {
   const { record, callback } = c.req.valid('json');
+  const accessError = await fullUpstreamActionError(userFromContext(c), record.id);
+  if (accessError) return c.json({ error: accessError.error }, accessError.status);
   if (record.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
 
   let fetcher: Fetcher;
@@ -130,6 +139,8 @@ export const claudeCodeSetupTokenExchange = async (c: CtxWithJson<typeof claudeC
 
 export const claudeCodeOAuthRefresh = async (c: CtxWithJson<typeof claudeCodeOAuthRefreshBody>) => {
   const { record } = c.req.valid('json');
+  const accessError = await fullUpstreamActionError(userFromContext(c), record.id);
+  if (accessError) return c.json({ error: accessError.error }, accessError.status);
   if (record.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
   // Refresh delegates to the data plane's `ensureClaudeCodeAccessToken`
   // with `force: true` so operator clicks and data-plane requests share
@@ -179,6 +190,8 @@ export const claudeCodeOAuthRefresh = async (c: CtxWithJson<typeof claudeCodeOAu
 
 export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>) => {
   const { record } = c.req.valid('json');
+  const accessError = await fullUpstreamActionError(userFromContext(c), record.id);
+  if (accessError) return c.json({ error: accessError.error }, accessError.status);
   if (record.kind !== 'claude-code') return c.json({ error: 'Quota probe is only supported for claude-code upstreams' }, 400);
   const actor = userFromContext(c).id;
 

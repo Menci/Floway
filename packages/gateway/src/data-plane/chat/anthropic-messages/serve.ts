@@ -28,6 +28,7 @@ export const anthropicMessagesServe = {
     const { payload, ctx, headers } = args;
     const anthropicBeta = parseAnthropicBetaHeader(headers.get('anthropic-beta'));
     const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
+      subject: ctx.user,
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
       kind: 'chat',
@@ -65,6 +66,7 @@ export const anthropicMessagesServe = {
     const { payload, ctx, headers } = args;
     const anthropicBeta = parseAnthropicBetaHeader(headers.get('anthropic-beta'));
     const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
+      subject: ctx.user,
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
       kind: 'chat',

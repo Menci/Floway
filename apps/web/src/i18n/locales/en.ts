@@ -93,6 +93,7 @@ const en = {
         usage: 'Usage',
         performance: 'Performance',
         users: 'Users & Groups',
+        permissions: 'Permissions',
         backupRestore: 'Backup / Restore',
         settings: 'Settings',
       },
@@ -118,7 +119,9 @@ const en = {
         performance:
             'Monitor latency, throughput, and upstream performance signals',
         users:
-            'Manage console users, groups, and upstream access',
+            'Manage console users and groups',
+        permissions:
+            'Inspect and edit access records across users, groups, and resources',
         backupRestore:
             'Download a full copy of everything this gateway holds, or restore it from an earlier export',
         unavailable: 'This view could not be loaded',
@@ -257,16 +260,10 @@ const en = {
           username: 'Username',
           role: 'Role',
           groups: 'Groups',
-          upstreams: 'Upstream access',
           created: 'Created',
           actions: 'Actions',
         },
         role: { admin: 'Administrator', operator: 'Operator' },
-        upstreams: {
-          all: 'All upstreams',
-          count_one: '{{count, number}} upstream',
-          count_other: '{{count, number}} upstreams',
-        },
         dialog: {
           createTitle: 'New user',
           editTitle: 'Edit {{username}}',
@@ -311,12 +308,40 @@ const en = {
         members: { count_one: '{{count, number}} member', count_other: '{{count, number}} members', empty: 'This group has no members', allAdded: 'All users are already members', noMatches: 'No matching users' },
         dialog: { createTitle: 'New group', editTitle: 'Edit {{name}}' },
         fields: { name: 'Name', members: 'Members', hue: 'Color' },
-        delete: { title: 'Delete group', message: 'Delete {{name}}? Its membership will be removed.' },
+        delete: { title: 'Delete group', message: 'Delete {{name}}? Its membership and permissions will be removed.' },
         toast: {
           create: { pending: 'Creating group {{name}}', success: 'Created group {{name}}' },
           edit: { pending: 'Saving group {{name}}', success: 'Saved group {{name}}' },
           delete: { pending: 'Deleting group {{name}}', success: 'Deleted group {{name}}' },
         },
+      },
+      accessControl: {
+        actions: { add: 'Add access record', edit: 'Edit access record', delete: 'Delete access record', resolve: 'Test access', save: 'Save access record', refresh: 'Refresh permissions' },
+        fields: { principal: 'Principal', scope: 'Scope', order: 'Order', permissions: 'Permissions' },
+        scope: {
+          visual: 'Visual', json: 'JSON', kind: 'Resource type', instance: 'Resource', model: 'Model', unknown: 'Unknown {{id}}',
+          kinds: { upstream: 'Upstream', user: 'User', group: 'Group' },
+        },
+        principal: { user: 'User: {{name}}', group: 'Group: {{name}}' },
+        permissions: {
+          'Model.Use': 'Use models',
+          'Upstream.Audit': 'Attribute upstream telemetry',
+          'Upstream.Edit': 'Edit upstream',
+          'User.Audit': 'Attribute user telemetry',
+        },
+        states: { inherit: 'Inherit', inheritOn: 'Inherit (on)', inheritOff: 'Inherit (off)', inheritModels: 'Inherit (models)', inheritFull: 'Inherit (full)', on: 'On', off: 'Off', models: 'Models', full: 'Full' },
+        dialog: { createTitle: 'New access record', editTitle: 'Edit access record' },
+        toast: {
+          create: { pending: 'Creating access record', success: 'Created access record' },
+          edit: { pending: 'Saving access record', success: 'Saved access record' },
+          delete: { pending: 'Deleting access record', success: 'Deleted access record' },
+        },
+        validation: { scopeRequired: 'Select a scope.', emptyRecord: 'Set at least one permission to On, Off, Models, or Full.' },
+        delete: { title: 'Delete access record', message: 'Delete this access record? The principal will immediately fall back to inherited permissions.' },
+        empty: 'No access records',
+        inherited: 'Inherited from',
+        administratorBypass: 'Administrators bypass access records. Demote this user before editing their permissions.',
+        resolve: { title: 'Test effective access', user: 'User', target: 'Target', result: 'Effective permissions' },
       },
       upstreamAccess: {
         title: 'Limit available upstreams',

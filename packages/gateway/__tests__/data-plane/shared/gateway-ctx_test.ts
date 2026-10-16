@@ -30,7 +30,6 @@ const buildUser = (overrides: Partial<User> = {}): User => ({
   username: 'tester',
   passwordHash: null,
   isAdmin: false,
-  upstreamIds: null,
   createdAt: '2026-01-01T00:00:00.000Z',
   deletedAt: null,
   ...overrides,
@@ -38,8 +37,8 @@ const buildUser = (overrides: Partial<User> = {}): User => ({
 
 // Mirrors the production guarantee: by the time a data-plane handler runs,
 // auth middleware has stamped apiKey + user on the context. Tests that want to
-// model an unrestricted key on an uncapped user can rely on the defaults;
-// tests that want to model a capped key or user override at the handler.
+// model an unrestricted key can rely on the defaults; tests that want to
+// model a narrowed key override it at the handler.
 const makeApp = (): Hono<{ Variables: AuthVars }> => {
   const app = new Hono<{ Variables: AuthVars }>();
   app.use('*', async (c, next) => {
@@ -62,10 +61,11 @@ describe('createGatewayCtxFromHono', () => {
     await app.request('/test');
     assertExists(ctx);
     assertEquals(ctx.apiKeyId, 'key-1');
+    assertEquals(ctx.user.id, 1);
     assertEquals(ctx.upstreamIds, ['up-1', 'up-2']);
   });
 
-  test('passes upstreamIds through as null on an unrestricted key + uncapped user', async () => {
+  test('passes upstreamIds through as null on an unrestricted key', async () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
@@ -158,36 +158,15 @@ describe('createGatewayCtxFromHono', () => {
     assertEquals(ctx.backgroundScheduler, scheduler);
   });
 
-  test('upstreamIds is the intersection of the per-user cap and the per-key whitelist', async () => {
-    // Drives the headline multi-tenant invariant: an unrestricted key under a
-    // capped user must not route to upstreams outside the user's cap.
+  test('upstreamIds preserves the per-key narrowing list verbatim', async () => {
     const app = makeApp();
-    const collected: { capOnly?: readonly string[] | null; both?: readonly string[] | null; keyOnly?: readonly string[] | null } = {};
-    app.get('/cap-only', c => {
-      // Unrestricted key (apiKey.upstreamIds null) under a capped user.
-      c.set('user', buildUser({ upstreamIds: ['up-a'] }));
-      collected.capOnly = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER }).upstreamIds;
-      return c.text('ok');
-    });
-    app.get('/both', c => {
-      // Per-key whitelist further narrows the user cap and preserves per-key order.
-      c.set('user', buildUser({ upstreamIds: ['up-a', 'up-b'] }));
+    let upstreamIds: readonly string[] | null | undefined;
+    app.get('/test', c => {
       c.set('apiKey', buildApiKey({ upstreamIds: ['up-b', 'up-c'] }));
-      collected.both = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER }).upstreamIds;
+      upstreamIds = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER }).upstreamIds;
       return c.text('ok');
     });
-    app.get('/key-only', c => {
-      // Uncapped user with a per-key whitelist falls through to the per-key
-      // list verbatim.
-      c.set('apiKey', buildApiKey({ upstreamIds: ['up-x'] }));
-      collected.keyOnly = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER }).upstreamIds;
-      return c.text('ok');
-    });
-    await app.request('/cap-only');
-    await app.request('/both');
-    await app.request('/key-only');
-    assertEquals(collected.capOnly, ['up-a']);
-    assertEquals(collected.both, ['up-b']);
-    assertEquals(collected.keyOnly, ['up-x']);
+    await app.request('/test');
+    assertEquals(upstreamIds, ['up-b', 'up-c']);
   });
 });

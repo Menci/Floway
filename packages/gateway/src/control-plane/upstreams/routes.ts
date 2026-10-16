@@ -1,17 +1,19 @@
 import type { Context } from 'hono';
 
 import { cachedModelsForDashboard, modelsCacheStatus } from './models-cache-projection.ts';
-import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson } from './serialize.ts';
+import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson, upstreamRecordToModelsJson } from './serialize.ts';
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
 import type { FullSerializedUpstreamRecord, ModelsCacheStatus, RedactedSerializedUpstreamRecord } from './types.ts';
+import { checkMany } from '../../access-control/check.ts';
+import { resolveUpstreamEditLevel, resolveUpstreamEditLevels } from '../../access-control/upstream-edit.ts';
 import { storedCatalogSize } from '../../data-plane/providers/catalog.ts';
-import { type AuthedContext } from '../../middleware/auth.ts';
-import { type CtxWithJson } from '../../middleware/zod-validator.ts';
+import { type AuthedContext, userFromContext } from '../../middleware/auth.ts';
+import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import type { StoredUpstreamRecord } from '../../repo/types.ts';
 import { shortId } from '../../shared/short-id.ts';
-import type { createUpstreamBody, updateUpstreamBody } from '../schemas.ts';
+import type { createUpstreamBody, updateUpstreamBody, upstreamOptionsQuery } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
 import { saveUpstream } from '../shared/save-upstreams.ts';
 import { nextSortOrder } from '../shared/sort-order.ts';
@@ -70,8 +72,9 @@ const serializeForResponse = async (
   record: StoredUpstreamRecord,
   knownProxyIds: ReadonlySet<string>,
   baseSerialize: (r: UpstreamRecord) => SerializedUpstreamRecord = upstreamRecordToJson,
+  includeQuota = true,
 ): Promise<UpstreamWithCacheResponse> => {
-  const codexQuota = await codexQuotaForResponse(record);
+  const codexQuota = includeQuota ? await codexQuotaForResponse(record) : {};
   const serialized = baseSerialize(record);
   return {
     ...serialized,
@@ -158,9 +161,16 @@ const validateProxyFallbackList = (
   return { ok: true };
 };
 
-export const listUpstreams = async (c: Context) => {
+export const listUpstreams = async (c: AuthedContext) => {
   const [items, knownProxyIds] = await Promise.all([getRepo().upstreams.list(), loadKnownProxyIds()]);
-  return c.json(await Promise.all(items.map(record => serializeForResponse(record, knownProxyIds))));
+  const levels = await resolveUpstreamEditLevels(userFromContext(c), items.map(item => item.id));
+  return c.json(await Promise.all(items.flatMap(record => {
+    const editLevel = levels.get(record.id)!;
+    if (editLevel === 'off') return [];
+    const serializer = editLevel === 'full' ? upstreamRecordToJson : upstreamRecordToModelsJson;
+    return [serializeForResponse(record, knownProxyIds, serializer, editLevel === 'full')
+      .then(serialized => ({ ...serialized, editLevel }))];
+  })));
 };
 
 // Picker dataset for the per-key upstream whitelist editor. Non-admin users
@@ -168,9 +178,34 @@ export const listUpstreams = async (c: Context) => {
 // see operator-tuned config (model lists, flag overrides, copilot user info,
 // etc.). This minimal projection is the only upstream surface mounted outside
 // the admin zone.
-export const listUpstreamOptions = async (c: Context) => {
+export const listUpstreamOptions = async (c: CtxWithQuery<typeof upstreamOptionsQuery>) => {
   const items = await getRepo().upstreams.list();
+  const subject = userFromContext(c);
+  const view = c.req.valid('query').view ?? 'key';
+  if (view === 'all' && !subject.isAdmin) return c.json({ error: 'Admin privileges required' }, 403);
+  let visibleIds = new Set(items.map(item => item.id));
+  if (!subject.isAdmin && view === 'audit') {
+    const allowed = await checkMany(subject, items.map(item => ({
+      target: { kind: 'upstream' as const, upstreamId: item.id },
+      requirement: { permission: 'Upstream.Audit' as const },
+    })));
+    visibleIds = new Set(items.filter((_item, index) => allowed[index]).map(item => item.id));
+  } else if (!subject.isAdmin && view === 'key') {
+    const checks = items.flatMap(item => {
+      const rawIds = item.modelsCache?.models.map(model => model.id).filter(Boolean) ?? [];
+      const ids = new Set(rawIds.flatMap(id => item.modelPrefix === null
+        ? [id]
+        : item.modelPrefix.addressable.map(form => form === 'prefixed' ? `${item.modelPrefix!.prefix}${id}` : id)));
+      return [
+        { item, check: { target: { kind: 'upstream' as const, upstreamId: item.id }, requirement: { permission: 'Model.Use' as const } } },
+        ...[...ids].map(modelId => ({ item, check: { target: { kind: 'upstreamModel' as const, upstreamId: item.id, modelId }, requirement: { permission: 'Model.Use' as const } } })),
+      ];
+    });
+    const allowed = await checkMany(subject, checks.map(entry => entry.check));
+    visibleIds = new Set(checks.filter((_entry, index) => allowed[index]).map(entry => entry.item.id));
+  }
   return c.json(items
+    .filter(item => visibleIds.has(item.id))
     .slice()
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map(upstream => ({
@@ -208,11 +243,15 @@ export const getUpstreamBlueprint = (c: Context) => {
 // stored catalog without starting or waiting for a refresh.
 export const getUpstream = async (c: AuthedContext<'/:id'>) => {
   const id = c.req.param('id');
+  const editLevel = await resolveUpstreamEditLevel(userFromContext(c), id);
+  if (editLevel === 'off') return c.json({ error: 'upstream not found' }, 404);
   const [record, knownProxyIds] = await Promise.all([getRepo().upstreams.getById(id), loadKnownProxyIds()]);
   if (!record) return c.json({ error: 'upstream not found' }, 404);
+  const serializer = editLevel === 'full' ? upstreamRecordToFullJson : upstreamRecordToModelsJson;
   return c.json({
-    ...await serializeForResponse(record, knownProxyIds, upstreamRecordToFullJson),
+    ...await serializeForResponse(record, knownProxyIds, serializer, editLevel === 'full'),
     cachedModels: cachedModelsForDashboard(record),
+    editLevel,
   });
 };
 
@@ -285,10 +324,36 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
 
 export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '/:id'>) => {
   const id = c.req.param('id');
+  const editLevel = await resolveUpstreamEditLevel(userFromContext(c), id);
+  if (editLevel === 'off') return c.json({ error: 'Upstream not found' }, 404);
   const existing = await getRepo().upstreams.getById(id);
   if (!existing) return c.json({ error: 'Upstream not found' }, 404);
 
   const body = c.req.valid('json');
+  if (editLevel === 'models') {
+    const allowedTopLevel = new Set(['disabled_public_model_ids', 'model_prefix', 'config']);
+    const blockedTopLevel = Object.keys(body).filter(key => !allowedTopLevel.has(key));
+    if (blockedTopLevel.length > 0) {
+      return c.json({ error: `Upstream.Edit.Models cannot change: ${blockedTopLevel.join(', ')}` }, 403);
+    }
+    if (body.config !== undefined) {
+      if (!isRecord(body.config)) return c.json({ error: 'config must be an object' }, 400);
+      const allowedConfig = existing.kind === 'custom' ? new Set(['models', 'modelsFetch']) : new Set(['models']);
+      const blockedConfig = Object.keys(body.config).filter(key => !allowedConfig.has(key));
+      if (blockedConfig.length > 0) {
+        return c.json({ error: `Upstream.Edit.Models cannot change config: ${blockedConfig.join(', ')}` }, 403);
+      }
+      if (existing.kind !== 'custom' && existing.kind !== 'azure' && existing.kind !== 'ollama') {
+        return c.json({ error: `Upstream.Edit.Models cannot change ${existing.kind} config` }, 403);
+      }
+      if (existing.kind === 'custom' && 'modelsFetch' in body.config) {
+        const modelsFetch = body.config.modelsFetch;
+        if (!isRecord(modelsFetch) || Object.keys(modelsFetch).some(key => key !== 'enabled')) {
+          return c.json({ error: 'Upstream.Edit.Models can only change modelsFetch.enabled' }, 403);
+        }
+      }
+    }
+  }
   if (body.kind !== undefined && body.kind !== existing.kind) {
     return c.json({ error: 'kind cannot be changed' }, 400);
   }
@@ -342,7 +407,12 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
     if (patchedCodexConfig !== undefined) {
       next = { ...next, config: patchedCodexConfig };
     } else {
-      const config = mergeConfigPatch(existing.kind, existing.config, body.config);
+      let configPatch = body.config;
+      if (editLevel === 'models' && existing.kind === 'custom' && isRecord(body.config.modelsFetch)) {
+        const custom = assertCustomUpstreamRecord(existing);
+        configPatch = { ...body.config, modelsFetch: { ...custom.config.modelsFetch, ...body.config.modelsFetch } };
+      }
+      const config = mergeConfigPatch(existing.kind, existing.config, configPatch);
       if (!config.ok) return c.json({ error: config.error }, 400);
       next = { ...next, config: config.value };
     }
@@ -353,7 +423,11 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   next = { ...next, config: config.value };
 
   const saved = await saveUpstream({ previous: existing, next });
-  return c.json(await serializeForResponse(saved, knownProxyIds, upstreamRecordToFullJson));
+  const serializer = editLevel === 'full' ? upstreamRecordToFullJson : upstreamRecordToModelsJson;
+  return c.json({
+    ...await serializeForResponse(saved, knownProxyIds, serializer, editLevel === 'full'),
+    editLevel,
+  });
 };
 
 export const deleteUpstream = async (c: AuthedContext<'/:id'>) => {

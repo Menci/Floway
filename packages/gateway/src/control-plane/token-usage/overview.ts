@@ -52,12 +52,14 @@ export const tokenUsageOverview = async (c: Ctx) => {
   const { start, end, groupBy, bucket, timezoneOffsetMinutes, filters } = params.value;
   const repo = getRepo();
   const identity = await loadTelemetryOverviewIdentity(c);
-  const identityError = telemetryIdentityError(identity, groupBy, filters.userId, filters.keyId);
+  const identityError = telemetryIdentityError(identity, filters.keyId);
   if (identityError !== null) return c.json({ error: identityError.error }, identityError.status);
 
   const overview = await repo.usage.queryOverview({
     actorUserId: identity.actor.id,
     isAdmin: identity.actor.isAdmin,
+    visibleUserIds: [...identity.visibleUserIds],
+    visibleUpstreams: [...identity.visibleUpstreams],
     start,
     end,
     groupBy,
@@ -74,7 +76,7 @@ export const tokenUsageOverview = async (c: Ctx) => {
       timezoneOffsetMinutes,
     }),
   });
-  const metadata = telemetryIdentityMetadata(identity);
+  const metadata = telemetryIdentityMetadata(identity, overview.dimensionValues.userIds);
 
   return c.json({
     ...overview,

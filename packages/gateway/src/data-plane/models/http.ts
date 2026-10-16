@@ -9,7 +9,7 @@ import { loadModels } from './load.ts';
 import { isOmpUserAgent, toOmpCatalog } from './omp-catalog.ts';
 import { isPiUserAgent, toPiCatalog } from './pi-catalog.ts';
 import { createModelsRefreshScheduler } from '../../execution/models-refresh.ts';
-import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import { effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
@@ -90,10 +90,10 @@ export const serveModels = async (c: Context): Promise<Response> => {
     const scheduleRefresh = createModelsRefreshScheduler(runtimeLocation, backgroundSchedulerFromContext(c));
 
     if (isCodexUserAgent(userAgent)) {
-      return Response.json(await loadCodexCatalog(userAgent, upstreamIds, scheduleRefresh));
+      return Response.json(await loadCodexCatalog(userFromContext(c), userAgent, upstreamIds, scheduleRefresh));
     }
 
-    const publicCatalog = await loadModels(upstreamIds, scheduleRefresh, getRepo().modelAliases);
+    const publicCatalog = await loadModels(userFromContext(c), upstreamIds, scheduleRefresh, getRepo().modelAliases);
     if (isPiUserAgent(userAgent)) {
       const endpoint = new URL(c.req.url);
       endpoint.search = '';

@@ -81,7 +81,7 @@ export const loadUsagePageData = async (
   const [usageResult, searchResult, upstreamsResult] = await Promise.all([
     loadUsageOverview(range, groupBy, filters, loadedAt, signal),
     callApi(() => api.api['search-usage'].$get({ query: searchQuery }, { init: { signal } })),
-    callApi(() => api.api['upstream-options'].$get({}, { init: { signal } })),
+    callApi(() => api.api['upstream-options'].$get({ query: { view: 'audit' } }, { init: { signal } })),
   ]);
   const searchData = searchResult.error ? null : searchResult.data;
   if (searchData !== null && (Array.isArray(searchData) || searchData.view !== searchView)) {

@@ -294,6 +294,8 @@ it('SQL Performance overview matches the in-memory oracle across every grouping 
   const options: PerformanceOverviewQueryOptions = {
     actorUserId: 1,
     isAdmin: true,
+    visibleUserIds: [],
+    visibleUpstreams: [],
     start: '2026-11-01T05',
     end: '2026-11-01T07',
     groupBy: 'model',
@@ -333,6 +335,8 @@ it('SQL Performance overview rejects a histogram row without its summary identit
   await expect(repo.performance.queryOverview({
     actorUserId: 1,
     isAdmin: true,
+    visibleUserIds: [],
+    visibleUpstreams: [],
     start: '2026-06-30T00',
     end: '2026-06-30T23',
     groupBy: 'model',
@@ -359,6 +363,8 @@ it('SQL Performance overview ignores out-of-scope orphan histograms under key gr
   const overview = await repo.performance.queryOverview({
     actorUserId: 1,
     isAdmin: true,
+    visibleUserIds: [],
+    visibleUpstreams: [],
     start: '2026-06-30T00',
     end: '2026-06-30T23',
     groupBy: 'keyId',
@@ -387,6 +393,8 @@ it('Performance overview repositories reject inconsistent upper bounds for one m
     await expect(repo.performance.queryOverview({
       actorUserId: 1,
       isAdmin: true,
+      visibleUserIds: [],
+      visibleUpstreams: [],
       start: '2026-06-30T00',
       end: '2026-06-30T23',
       groupBy: 'model',
@@ -421,6 +429,8 @@ it('SQL Performance overview uses actor indexes and returns aggregate cardinalit
   const overview = await repo.performance.queryOverview({
     actorUserId: 1,
     isAdmin: true,
+    visibleUserIds: [],
+    visibleUpstreams: [],
     start: '2026-06-01T00',
     end: '2026-08-01T00',
     groupBy: 'keyId',

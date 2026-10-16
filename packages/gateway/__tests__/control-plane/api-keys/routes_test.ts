@@ -112,24 +112,21 @@ test('PATCH /api/keys/:id rejects unknown upstream ids with a descriptive error'
   }
 });
 
-test('PATCH /api/keys/:id rejects entries outside the user-level upstream cap', async () => {
+test('PATCH /api/keys/:id stores existing upstreams even when the user ACL currently excludes one', async () => {
   const { repo, apiKey } = await setupAppTest();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_a', name: 'A' }));
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_b', name: 'B' }));
-  // Tighten the user cap to up_a only; the key owner cannot expand to up_b.
-  const owner = await repo.users.getById(apiKey.userId);
-  if (!owner) throw new Error('owner missing');
-  await repo.users.save({ ...owner, upstreamIds: ['up_a'] });
+  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: apiKey.userId });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: apiKey.userId },
+    scope: { kind: 'upstream', upstreamId: 'up_a' },
+    sortOrder: 0,
+    values: { 'Model.Use': true },
+  });
 
-  const allowed = await ownerPatch(apiKey.id, { upstream_ids: ['up_a'] }, apiKey.key);
-  assertEquals(allowed.status, 200);
-
-  const blocked = await ownerPatch(apiKey.id, { upstream_ids: ['up_a', 'up_b'] }, apiKey.key);
-  assertEquals(blocked.status, 400);
-  const body = (await blocked.json()) as { error?: string };
-  if (!String(body.error).includes('up_b')) {
-    throw new Error(`expected error to mention up_b; got ${body.error}`);
-  }
+  const response = await ownerPatch(apiKey.id, { upstream_ids: ['up_a', 'up_b'] }, apiKey.key);
+  assertEquals(response.status, 200);
+  assertEquals((await repo.apiKeys.getById(apiKey.id))?.upstreamIds, ['up_a', 'up_b']);
 });
 
 test('PATCH /api/keys/:id rejects duplicate ids inside the whitelist', async () => {

@@ -5,6 +5,7 @@
 // This gateway entrypoint permits type exports only.
 
 export type * from './app.ts';
+export type * from './access-control/types.ts';
 export type * from './control-plane/proxies/serialize.ts';
 export type * from './control-plane/usage-types.ts';
 export type * from './control-plane/upstreams/types.ts';

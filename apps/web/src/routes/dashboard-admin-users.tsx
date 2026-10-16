@@ -7,8 +7,8 @@ import type { Route } from './+types/dashboard-admin-users';
 import { useDashboardOutletContext } from './dashboard';
 import { requireDashboardAdmin } from './guards';
 import { api, callApi } from '../api/client';
-import { mapResult, mergeResults } from '../api/partial-results';
-import type { ControlPlaneGroup, ControlPlaneModel, ControlPlaneUser, ControlPlaneUserDirectory, UpstreamOption } from '../api/types';
+import { mergeResults } from '../api/partial-results';
+import type { ControlPlaneGroup, ControlPlaneUser, ControlPlaneUserDirectory } from '../api/types';
 import { GroupDialog } from '../components/groups/dialog';
 import { GroupsMasterDetail } from '../components/groups/master-detail';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
@@ -32,30 +32,22 @@ const { Button, Tab, TabList, Text } = fluentComponents;
 // `null` is a failed fetch, not an empty deployment: a gateway always has a user.
 interface LoaderData {
   directory: ControlPlaneUserDirectory | null;
-  upstreams: UpstreamOption[] | null;
-  models: ControlPlaneModel[] | null;
   error: string | null;
 }
 
 const loadPageData = async (
-  current: Pick<LoaderData, 'directory' | 'upstreams' | 'models'>,
+  current: Pick<LoaderData, 'directory'>,
   signal?: AbortSignal,
 ): Promise<LoaderData> => {
-  const [directoryResult, upstreamsResult, modelsResult] = await Promise.all([
-    callApi(() => api.api['user-directory'].$get(undefined, { init: { signal } })),
-    callApi(() => api.api['upstream-options'].$get(undefined, { init: { signal } })),
-    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } }, { init: { signal } })),
-  ]);
+  const directoryResult = await callApi(() => api.api['user-directory'].$get(undefined, { init: { signal } }));
   const { values, error } = mergeResults(current, {
     directory: directoryResult,
-    upstreams: upstreamsResult,
-    models: mapResult(modelsResult, body => body.data),
   });
   return { ...values, error };
 };
 
-const unloadedPageData: Pick<LoaderData, 'directory' | 'upstreams' | 'models'> = {
-  directory: null, upstreams: null, models: null,
+const unloadedPageData: Pick<LoaderData, 'directory'> = {
+  directory: null,
 };
 
 export async function clientLoader(): Promise<LoaderData> {
@@ -156,10 +148,10 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
     await refresh();
   };
 
-  const { directory, models, upstreams } = data;
+  const { directory } = data;
   const users = directory?.users ?? null;
   const groups = directory?.groups ?? null;
-  const loaded = users !== null && groups !== null && upstreams !== null && models !== null;
+  const loaded = users !== null && groups !== null;
   const needle = query.trim().toLowerCase();
   const visibleUsers = users?.filter(user => user.username.toLowerCase().includes(needle));
   const visibleGroups = groups?.filter(group => group.name.toLowerCase().includes(needle));
@@ -256,10 +248,8 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           key={editorDialog.invocation.key}
           mode="create"
           groups={editorDialog.invocation.value.groups}
-          models={models}
           onOpenChange={open => { if (!open) editorDialog.close(); }}
           onSaved={() => afterSaved()}
-          upstreams={upstreams}
         />}
         {editorDialog.invocation?.value.kind === 'edit' && <UserDialog
           open={editorDialog.isOpen}
@@ -267,10 +257,8 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           key={editorDialog.invocation.key}
           mode="edit"
           groups={editorDialog.invocation.value.groups}
-          models={models}
           onOpenChange={open => { if (!open) editorDialog.close(); }}
           onSaved={afterSaved}
-          upstreams={upstreams}
           user={editorDialog.invocation.value.user}
         />}
         {groupDialog.invocation && <GroupDialog

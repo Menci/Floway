@@ -9,6 +9,7 @@
 // with the same care as a DB backup.
 
 import { parseImportData, type SerializedProxy } from './import-schema.ts';
+import type { AccessRecordInput } from '../../access-control/types.ts';
 import { parseWebSearchConfigDefault, parseWebSearchConfigStrict } from '../../data-plane/tools/web-search/config.ts';
 import type { WebSearchConfig } from '../../data-plane/tools/web-search/types.ts';
 import { notifyDisabledBestEffort } from '../../dump/registry.ts';
@@ -23,11 +24,12 @@ import { type FullSerializedUpstreamRecord, upstreamRecordToFullJson } from '../
 import type { UpstreamRecord } from '@floway-dev/provider';
 
 interface ExportPayload {
-  version: 22;
+  version: 23;
   exportedAt: string;
   data: {
     users: User[];
     groups: Array<Group & { memberIds: number[] }>;
+    accessRecords: AccessRecordInput[];
     apiKeys: ApiKey[];
     upstreams: FullSerializedUpstreamRecord[];
     proxies: SerializedProxy[];
@@ -40,7 +42,7 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 22;
+const EXPORT_VERSION = 23;
 
 const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly ApiKey[], mode: 'merge' | 'replace'): string | null => {
   const ids = new Map<string, number>();
@@ -104,9 +106,10 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
   const includePerformance = c.req.valid('query').include_performance === '1';
   const memberships = await repo.groups.listMemberships();
 
-  const [users, groups, apiKeys, usage, webSearchUsage, upstreamMetrics, performance, rawWebSearchConfig, upstreams, proxies] = await Promise.all([
+  const [users, groups, accessRecords, apiKeys, usage, webSearchUsage, upstreamMetrics, performance, rawWebSearchConfig, upstreams, proxies] = await Promise.all([
     repo.users.listIncludingDeleted(),
     repo.groups.listIncludingDeleted(),
+    repo.accessRecords.list(),
     repo.apiKeys.listIncludingDeleted(),
     repo.usage.listAll(),
     repo.webSearchUsage.listAll(),
@@ -123,6 +126,7 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
     data: {
       users,
       groups: groups.map(group => ({ ...group, memberIds: memberships.get(group.id) ?? [] })),
+      accessRecords: accessRecords.map(({ principal, scope, sortOrder, values }) => ({ principal, scope, sortOrder, values })),
       apiKeys,
       upstreams: upstreams.map(upstreamRecordToFullJson),
       proxies: proxies.map(proxy => ({ id: proxy.id, name: proxy.name, url: proxy.url, dial_timeout_seconds: proxy.dialTimeoutSeconds })),
@@ -142,7 +146,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const { mode, data: rawData } = c.req.valid('json');
   const parsed = parseImportData(rawData);
   if (parsed.type === 'invalid') return c.json({ error: parsed.error }, 400);
-  const { users, groups, apiKeys, upstreams, proxies, usage, searchUsage, upstreamMetrics, performance, performanceIncluded, searchConfig } = parsed.data;
+  const { users, groups, accessRecords, apiKeys, upstreams, proxies, usage, searchUsage, upstreamMetrics, performance, performanceIncluded, searchConfig } = parsed.data;
 
   const repo = getRepo();
   // Merge mode needs each key's prior dump policy to identify transitions that
@@ -183,6 +187,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
       repo.proxyBackoffs.deleteAll(),
       repo.openaiResponsesSnapshots.deleteAll(),
       repo.openaiResponsesItems.deleteAll(),
+      repo.accessRecords.deleteAll(),
       repo.groups.deleteAll(),
       repo.users.deleteAll(),
     ];
@@ -193,6 +198,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   // Users precede their API keys, and proxies precede upstream fallback refs.
   for (const user of users) await repo.users.save(user);
   await repo.groups.restore(groups);
+  for (const record of accessRecords) await repo.accessRecords.save(record);
   for (const proxy of proxies) {
     await repo.proxies.save({
       id: proxy.id,
@@ -223,6 +229,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     imported: {
       users: users.length,
       groups: groups.length,
+      accessRecords: accessRecords.length,
       apiKeys: apiKeys.length,
       upstreams: upstreams.length,
       proxies: proxies.length,

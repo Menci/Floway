@@ -81,7 +81,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   // would leave the whole page unavailable to them.
   const [initialOverview, upstreams, runtime] = await Promise.all([
     callApi(() => api.api.performance.overview.$get({ query })),
-    callApi(() => api.api['upstream-options'].$get()),
+    callApi(() => api.api['upstream-options'].$get({ query: { view: 'audit' } })),
     callApi(() => api.api['runtime-info'].$get()),
   ]);
   const regionAvailable = runtime.error ? null : runtime.data.kind === 'cloudflare';

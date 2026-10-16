@@ -195,13 +195,24 @@ test('/api/token-usage all-by-user view aggregates across keys per user', async 
   assertEquals(displayQuantity(body[0], 'input'), '10');
 });
 
-test('/api/token-usage rejects all-by-user from a non-admin user', async () => {
-  const { apiKey } = await setupAppTest();
+test('/api/token-usage all-by-user follows a non-admin User.Audit scope', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.usage.set({
+    keyId: apiKey.id,
+    model: 'gpt-5',
+    upstream: 'up_a',
+    modelKey: 'gpt-5',
+    hour: '2026-03-15T10',
+    pricingSelector: {},
+    requests: 1,
+    metrics: tokenUsageMetrics({ input: 10 }, null),
+  });
   const response = await requestApp(
     '/api/token-usage?start=2026-03-15T00&end=2026-03-16T00&view=all-by-user',
     { headers: { 'x-api-key': apiKey.key } },
   );
-  assertEquals(response.status, 403);
+  assertEquals(response.status, 200);
+  assertEquals((await response.json()).map((record: { userId: number }) => record.userId), [2]);
 });
 
 test('/api/token-usage merges Claude variants into backend base model records', async () => {

@@ -1,5 +1,13 @@
 import { aggregatePerformanceForDisplay } from './performance-overview-oracle.ts';
 import { partitionTelemetryOverviewRecords } from './telemetry-overview-oracle.ts';
+import {
+  accessScopeDepth,
+  accessScopeOrderGroup,
+  type AccessPrincipal,
+  type AccessRecord,
+  type AccessRecordInput,
+  validateAccessRecordInput,
+} from '../../src/access-control/types.ts';
 import { buildKeyToUserMap } from '../../src/control-plane/shared/key-to-user.ts';
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
@@ -21,6 +29,7 @@ import type {
   ApiKey,
   ApiKeyRepo,
   ApiKeyUpdate,
+  AccessRecordsRepo,
   ExpirationDomain,
   ExpirationSweepCompletion,
   ExpirationSweepClaim,
@@ -85,7 +94,6 @@ const SEED_ADMIN_USER: User = {
   username: 'admin',
   passwordHash: null,
   isAdmin: true,
-  upstreamIds: null,
   createdAt: new Date(0).toISOString(),
   deletedAt: null,
 };
@@ -280,6 +288,93 @@ class MemoryGroupsRepo implements GroupsRepo {
   deleteAll(): Promise<void> {
     this.groups = [];
     this.members.clear();
+    return Promise.resolve();
+  }
+}
+
+const principalKey = (principal: AccessPrincipal): string => `${principal.kind}:${principal.id}`;
+
+class MemoryAccessRecordsRepo implements AccessRecordsRepo {
+  private nextId = 1;
+  private records: AccessRecord[] = [];
+
+  list(): Promise<AccessRecord[]> {
+    return Promise.resolve(this.records.map(record => structuredClone(record)));
+  }
+
+  getById(id: number): Promise<AccessRecord | null> {
+    const record = this.records.find(candidate => candidate.id === id);
+    return Promise.resolve(record ? structuredClone(record) : null);
+  }
+
+  listByPrincipal(principal: AccessPrincipal): Promise<AccessRecord[]> {
+    return this.listByPrincipals([principal]);
+  }
+
+  listByPrincipals(principals: readonly AccessPrincipal[]): Promise<AccessRecord[]> {
+    const keys = new Set(principals.map(principalKey));
+    return Promise.resolve(this.records
+      .filter(record => keys.has(principalKey(record.principal)))
+      .map(record => structuredClone(record)));
+  }
+
+  async save(input: AccessRecordInput): Promise<AccessRecord> {
+    validateAccessRecordInput(input);
+    const now = new Date().toISOString();
+    const scope = JSON.stringify(input.scope);
+    const index = this.records.findIndex(record => principalKey(record.principal) === principalKey(input.principal) && JSON.stringify(record.scope) === scope);
+    const duplicateOrder = this.records.find((record, recordIndex) =>
+      recordIndex !== index
+      && principalKey(record.principal) === principalKey(input.principal)
+      && accessScopeDepth(record.scope) === accessScopeDepth(input.scope)
+      && accessScopeOrderGroup(record.scope) === accessScopeOrderGroup(input.scope)
+      && record.sortOrder === input.sortOrder);
+    if (duplicateOrder) throw new Error(`Access record sortOrder ${input.sortOrder} is already used at this scope level`);
+    const record: AccessRecord = index < 0
+      ? { id: this.nextId++, ...structuredClone(input), createdAt: now, updatedAt: now }
+      : { ...this.records[index], ...structuredClone(input), updatedAt: now };
+    if (index < 0) this.records.push(record);
+    else this.records[index] = record;
+    return structuredClone(record);
+  }
+
+  async replace(id: number, input: AccessRecordInput): Promise<AccessRecord | null> {
+    validateAccessRecordInput(input);
+    const index = this.records.findIndex(record => record.id === id);
+    if (index < 0) return null;
+    const duplicateScope = this.records.find((record, recordIndex) =>
+      recordIndex !== index
+      && principalKey(record.principal) === principalKey(input.principal)
+      && JSON.stringify(record.scope) === JSON.stringify(input.scope));
+    if (duplicateScope) throw new Error('Access record already exists for this principal and scope');
+    const duplicateOrder = this.records.find((record, recordIndex) =>
+      recordIndex !== index
+      && principalKey(record.principal) === principalKey(input.principal)
+      && accessScopeDepth(record.scope) === accessScopeDepth(input.scope)
+      && accessScopeOrderGroup(record.scope) === accessScopeOrderGroup(input.scope)
+      && record.sortOrder === input.sortOrder);
+    if (duplicateOrder) throw new Error(`Access record sortOrder ${input.sortOrder} is already used at this scope level`);
+    const next = { ...this.records[index], ...structuredClone(input), updatedAt: new Date().toISOString() };
+    this.records[index] = next;
+    return structuredClone(next);
+  }
+
+  delete(id: number): Promise<boolean> {
+    const length = this.records.length;
+    this.records = this.records.filter(record => record.id !== id);
+    return Promise.resolve(this.records.length < length);
+  }
+
+  deleteByPrincipal(principal: AccessPrincipal): Promise<number> {
+    const length = this.records.length;
+    const key = principalKey(principal);
+    this.records = this.records.filter(record => principalKey(record.principal) !== key);
+    return Promise.resolve(length - this.records.length);
+  }
+
+  deleteAll(): Promise<void> {
+    this.records = [];
+    this.nextId = 1;
     return Promise.resolve();
   }
 }
@@ -501,10 +596,6 @@ const aggregateMemoryOverview = (
   const axes: UsageOverviewAxis[] = ['series', 'none', 'keyId', 'userId', 'model', 'upstream'];
   const result = new Map<UsageOverviewAxis, UsageOverviewRecord[]>();
   for (const axis of axes) {
-    if (axis === 'userId' && !opts.isAdmin) {
-      result.set(axis, []);
-      continue;
-    }
     const aggregates = new Map<string, UsageOverviewRecord>();
     for (const record of records) {
       if (axis === 'keyId' && !visibleKeyIds.has(record.keyId)) continue;
@@ -578,20 +669,25 @@ class MemoryUsageRepo implements UsageRepo {
     const records = [...this.store.values()]
       .filter(record => record.hour >= opts.start && record.hour < opts.end)
       .map(record => this.toRecord(record));
-    const scoped = !opts.isAdmin || opts.groupBy === 'keyId'
+    const scoped = opts.groupBy === 'keyId'
       ? records.filter(record => keyToUser.get(record.keyId) === opts.actorUserId)
       : records;
+    const visibleUserIds = new Set(opts.visibleUserIds);
+    const visibleUpstreams = new Set(opts.visibleUpstreams);
+    const authorized = scoped.filter(record => opts.isAdmin
+      || visibleUserIds.has(memoryUsageUserIdForKey(record.keyId, keyToUser))
+      || (record.upstream !== null && visibleUpstreams.has(record.upstream)));
     const visibleKeyIds = new Set([...keyToUser]
       .filter(([, userId]) => userId === opts.actorUserId)
       .map(([keyId]) => keyId));
-    const partitioned = partitionTelemetryOverviewRecords(scoped, {
+    const partitioned = partitionTelemetryOverviewRecords(authorized, {
       keyId: {
         value: record => record.keyId,
         includeFacet: record => visibleKeyIds.has(record.keyId),
       },
       userId: {
         value: record => String(memoryUsageUserIdForKey(record.keyId, keyToUser)),
-        includeFacet: () => opts.isAdmin,
+        includeFacet: () => true,
       },
       model: { value: record => record.model },
       upstream: { value: record => usageUpstreamDimensionValue(record.upstream) },
@@ -762,14 +858,19 @@ class MemoryPerformanceRepo implements PerformanceRepo {
     const scoped = opts.groupBy === 'keyId'
       ? records.filter(record => visibleKeyIds.has(record.keyId))
       : records;
-    const partitioned = partitionTelemetryOverviewRecords(scoped, {
+    const visibleUserIds = new Set(opts.visibleUserIds);
+    const visibleUpstreams = new Set(opts.visibleUpstreams);
+    const authorized = scoped.filter(record => opts.isAdmin
+      || visibleUserIds.has(keyToUser.get(record.keyId) ?? tokenUsageUnattributedUserId)
+      || visibleUpstreams.has(record.upstream));
+    const partitioned = partitionTelemetryOverviewRecords(authorized, {
       model: { value: record => record.model },
       upstream: { value: record => record.upstream },
       operation: { value: record => record.operation },
       runtimeLocation: { value: record => record.runtimeLocation },
       userId: {
         value: record => keyToUser.get(record.keyId)?.toString() ?? null,
-        includeFacet: () => opts.isAdmin,
+        includeFacet: () => true,
       },
       keyId: {
         value: record => record.keyId,
@@ -795,7 +896,7 @@ class MemoryPerformanceRepo implements PerformanceRepo {
     }, keyToUser, visibleKeyIds);
     return {
       series,
-      axes: { ...axes, userId: opts.isAdmin ? axes.userId : [] },
+      axes,
       dimensionValues: {
         models: partitioned.dimensionValues.model,
         upstreams: partitioned.dimensionValues.upstream,
@@ -1651,6 +1752,7 @@ export class InMemoryRepo implements Repo {
   apiKeys: ApiKeyRepo;
   users: MemoryUsersRepo;
   groups: MemoryGroupsRepo;
+  accessRecords: AccessRecordsRepo;
   sessions: SessionsRepo;
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
@@ -1677,6 +1779,7 @@ export class InMemoryRepo implements Repo {
   constructor() {
     this.groups = new MemoryGroupsRepo();
     this.users = new MemoryUsersRepo(this.groups);
+    this.accessRecords = new MemoryAccessRecordsRepo();
     this.sessions = new MemorySessionsRepo();
     this.expirationSweeps = new MemoryExpirationSweepsRepo();
     this.scheduledMaintenance = new MemoryScheduledMaintenanceRepo();
