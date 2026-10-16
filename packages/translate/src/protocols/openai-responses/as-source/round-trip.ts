@@ -69,11 +69,13 @@ const replayItemMaterial = (item: OpenAIResponsesAssistantTurnItem): TypedReplay
 const responsesReplayCheckMaterialV1 = (turn: OpenAIResponsesAssistantTurn): IRJSONValue => replayMaterialsByType(turn.map(replayItemMaterial));
 
 export const inspectOpenAIResponsesAssistantTurn = (turn: OpenAIResponsesAssistantTurn): RoundTripAssistantTurnInspection<OpenAIResponsesAssistantTurn> => {
-  const item = turn.at(-1);
+  // Hosted-item expansion appends restored calls after the completed assistant
+  // content. Those calls remain part of this sidecar's signed turn.
+  const index = turn.findLastIndex(item => item.type !== 'function_call' && item.type !== 'custom_tool_call');
+  const item = turn[index];
   if (item === undefined || !isOpenAIResponsesEncryptedReasoning(item)) return { turn };
   const { encrypted_content, ...body } = item;
-  const assistantTurn = turn.slice(0, -1);
-  if (item.summary.length > 0 || (item.content !== undefined && item.content.length > 0)) assistantTurn.push(body);
+  const assistantTurn = [...turn.slice(0, index), ...(item.summary.length > 0 || (item.content !== undefined && item.content.length > 0) ? [body] : []), ...turn.slice(index + 1)];
   return {
     sidecar: encrypted_content,
     turn: assistantTurn,

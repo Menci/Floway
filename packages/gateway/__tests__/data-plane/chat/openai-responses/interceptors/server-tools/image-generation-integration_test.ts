@@ -276,11 +276,6 @@ test.each([
   assert(completed?.type === 'response.completed');
   const next = makeCtx([...completed.response.output, { type: 'message', role: 'user', content: 'next' }], 'generate');
   const nextCtx = gatewayCtx();
-  const privatePayloads = new Map<string, unknown>();
-  for (const item of completed.response.output) {
-    if (item.type === 'image_generation_call') privatePayloads.set(item.id, ctx.store.getPrivatePayload(item.id));
-  }
-  nextCtx.store.beginAttempt(privatePayloads);
   await drain(await shim(next, nextCtx, async () => {
     const original = next.payload.input.find(item => item.type === 'function_call');
     assertEquals(original, restored);
