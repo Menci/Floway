@@ -131,7 +131,7 @@ describe('Anthropic Messages affinity egress', () => {
     ]);
   });
 
-  test('adds an originless signature to a first thinking block without a natural signature', async () => {
+  test('wraps the initial empty signature when thinking has no signature delta', async () => {
     const output: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [];
     for await (const frame of wrapAnthropicMessagesAffinityEgress(frames([
       eventFrame({ type: 'content_block_start', index: 0, content_block: { signature: '', type: 'thinking', thinking: '' } }),
@@ -144,7 +144,7 @@ describe('Anthropic Messages affinity egress', () => {
     expect(output.slice(0, 4)).toEqual([
       eventFrame({ type: 'content_block_start', index: 0, content_block: { signature: '', type: 'thinking', thinking: '' } }),
       eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'visible' } }),
-      eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'wrapped:synthetic' } }),
+      eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'wrapped:' } }),
       eventFrame({ type: 'content_block_stop', index: 0 }),
     ]);
   });
