@@ -409,8 +409,8 @@ export const prepareToolsForShim = (
 // context window through the diagnostic that explains it.
 const MAX_MALFORMED_WIRE_DUMP_CHARS = 1024;
 
-// Public result fields depend on include. Keep the full IR and call data
-// privately so replay does not depend on that selection.
+// Public result fields depend on include. Keep the full IR and original
+// function-call snapshot so replay does not depend on that selection.
 export interface WebSearchCallPrivatePayload {
   v: 1;
   functionCallItem: OpenAIResponsesFunctionToolCallItemEx;
@@ -723,10 +723,6 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
             dispatcher: ({ intercepted, loopState }) => {
               const commands = intercepted.parsedArguments ?? {};
               const slot = planShimSlots(parseWebSearchOperations(intercepted.parsedArguments), commands, intercepted.functionCall.name, state, loopState);
-              const functionCallItem: OpenAIResponsesFunctionToolCallItemEx = {
-                type: 'function_call', call_id: intercepted.functionCall.call_id, name: intercepted.functionCall.name,
-                arguments: JSON.stringify(intercepted.parsedArguments ?? {}), status: 'completed',
-              };
               return [{
                 id: slot.id,
                 startItem: { type: 'web_search_call', status: 'in_progress' },
@@ -745,7 +741,7 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
                     : { type: 'web_search_call', status: 'completed', action: ir.action };
                   const privatePayload: WebSearchCallPrivatePayload = {
                     v: 1,
-                    functionCallItem,
+                    functionCallItem: intercepted.functionCall,
                     ir,
                   };
                   return {

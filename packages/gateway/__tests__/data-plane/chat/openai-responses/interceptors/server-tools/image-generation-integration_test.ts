@@ -8,7 +8,7 @@ import { mockChatGatewayCtx } from '../../../../../test-utils/gateway-ctx.ts';
 import { createInMemoryImageProcessor, initExternalResourceFetcher, initImageProcessor } from '@floway-dev/platform';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { type EventResult, type ExecuteResult, type FlagId, type OpenAIImagesEditsRequest } from '@floway-dev/provider';
 import { assert, assertEquals, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -119,8 +119,7 @@ const rateLimitResponse = (retryAfterMs: number | null): Response => {
 
 // One scripted upstream turn: the orchestrator calls image_generation with the
 // given prompt, then the upstream completes.
-const callTurn = (outputIndex: number, callId: string, prompt: string): ProtocolFrame<OpenAIResponsesStreamEventEx>[] => {
-  const args = JSON.stringify({ prompt });
+const callTurn = (outputIndex: number, callId: string, prompt: string, args = JSON.stringify({ prompt })): ProtocolFrame<OpenAIResponsesStreamEventEx>[] => {
   return [
     eventFrame({ type: 'response.created', response: emptyResult('in_progress') }),
     eventFrame({ type: 'response.output_item.added', output_index: outputIndex, item: { type: 'function_call', call_id: callId, name: 'image_generation', arguments: '', status: 'in_progress' } }),
@@ -252,6 +251,42 @@ test('generates an image end-to-end and emits the native lifecycle', async () =>
   assertEquals(item.status, 'completed');
   assertEquals(item.result, 'R0VO');
   assertEquals(item.action, 'generate');
+});
+
+test.each([
+  { raw: ' { "prompt" : "\\u732b" }\n', prompt: '\u732b' },
+  { raw: '{prompt:"repaired"}', prompt: 'repaired' },
+])('image execution and client replay retain original call identity and arguments: $raw', async ({ raw, prompt }) => {
+  stub.nextGenerations = [jsonResponse(REMOTE_PNG_B64)];
+  const invocation = makeCtx([{ type: 'message', role: 'user', content: 'draw' }], 'generate');
+  const ctx = gatewayCtx();
+  const inputs: CanonicalOpenAIResponsesInputItem[][] = [];
+  const run = scriptedRun([callTurn(0, 'native_call', prompt, raw), messageTurn('answer')]);
+  const events = await drain(await shim(invocation, ctx, async () => {
+    inputs.push(structuredClone(invocation.payload.input));
+    return await run();
+  }));
+  assertEquals(stub.generationsCalls.length, 1);
+  assertEquals(stub.generationsCalls[0].prompt, prompt);
+  const restored = inputs[1].find(item => item.type === 'function_call');
+  assert(restored?.type === 'function_call');
+  assertEquals(restored.call_id, 'native_call');
+  assertEquals(restored.arguments, raw);
+  const completed = events.find(event => event.type === 'response.completed');
+  assert(completed?.type === 'response.completed');
+  const next = makeCtx([...completed.response.output, { type: 'message', role: 'user', content: 'next' }], 'generate');
+  const nextCtx = gatewayCtx();
+  const privatePayloads = new Map<string, unknown>();
+  for (const item of completed.response.output) {
+    if (item.type === 'image_generation_call') privatePayloads.set(item.id, ctx.store.getPrivatePayload(item.id));
+  }
+  nextCtx.store.beginAttempt(privatePayloads);
+  await drain(await shim(next, nextCtx, async () => {
+    const original = next.payload.input.find(item => item.type === 'function_call');
+    assertEquals(original, restored);
+    return await scriptedRun([messageTurn('done')])();
+  }));
+  assertEquals(stub.generationsCalls.length, 1);
 });
 
 test('generates an image from an additional_tools declaration without moving the item', async () => {
