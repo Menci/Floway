@@ -222,6 +222,7 @@ const en = {
         },
       },
       users: {
+        tabs: { users: 'Users', groups: 'Groups' },
         empty: 'No users found',
         actions: {
           create: 'New user',

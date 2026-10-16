@@ -211,6 +211,7 @@ const zhHansCN = {
         },
       },
       users: {
+        tabs: { users: '用户', groups: '用户组' },
         empty: '没有用户',
         actions: {
           create: '新建用户',

@@ -166,8 +166,8 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
       />
 
       <TabList aria-label={t('dashboard.nav.users')} onTabSelect={(_, event) => setTab(event.value === 'groups' ? 'groups' : 'users')} selectedValue={tab}>
-        <Tab value="users">{t('dashboard.users.table.label')}</Tab>
-        <Tab value="groups">{t('dashboard.groupsManagement.table.label')}</Tab>
+        <Tab value="users">{t('dashboard.users.tabs.users')}</Tab>
+        <Tab value="groups">{t('dashboard.users.tabs.groups')}</Tab>
       </TabList>
 
       {pageError && (
