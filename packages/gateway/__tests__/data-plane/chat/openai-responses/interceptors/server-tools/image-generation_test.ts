@@ -16,7 +16,7 @@ import {
   resolveImageOperation,
   SHIM_TOOL_NAME,
   synthesizeImageGenerationCallId,
-  transformInputItemsForImageGeneration,
+  expandImageGenerationCall,
 } from '../../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/image-generation.ts';
 import type { OpenAIResponsesInvocation } from '../../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { initRepo } from '../../../../../../src/repo/index.ts';
@@ -383,7 +383,7 @@ test('a request inspector reuses decoded bytes after generated results become re
     output_format: 'jpeg',
   };
   const initial = inspect([generated]);
-  const replay = inspect(transformInputItemsForImageGeneration([generated], SHIM_TOOL_NAME));
+  const replay = inspect(expandImageGenerationCall(generated, SHIM_TOOL_NAME));
   assert(initial.sources[0] === replay.sources[0]);
 });
 
@@ -394,20 +394,21 @@ test('auto generation pivots to edit when a generated image is fed back', () => 
   assert(initial.ok);
   assertEquals(initial.action, 'generate');
 
-  const replayInput = transformInputItemsForImageGeneration([
+  const replayInput = expandImageGenerationCall(
     { type: 'image_generation_call', id: 'ig_replay', status: 'completed', result: PNG_B64 },
-  ], SHIM_TOOL_NAME);
+    SHIM_TOOL_NAME,
+  );
   const replay = resolveImageOperation(config, inspect(replayInput));
   assert(replay.ok);
   assertEquals(replay.action, 'edit');
   assertEquals(replay.sources.length, 1);
 });
 
-// ── transformInputItemsForImageGeneration ──
+// ── expandImageGenerationCall ──
 
-test('transformInputItemsForImageGeneration rewrites a completed call into a function_call + output pair and feeds the image back', () => {
-  const out = transformInputItemsForImageGeneration(
-    [{ type: 'image_generation_call', id: 'ig_1', status: 'completed', result: PNG_B64, revised_prompt: 'a red dot', output_format: 'jpeg' }],
+test('expandImageGenerationCall rewrites a completed call into a function_call + output pair and feeds the image back', () => {
+  const out = expandImageGenerationCall(
+    { type: 'image_generation_call', id: 'ig_1', status: 'completed', result: PNG_B64, revised_prompt: 'a red dot', output_format: 'jpeg' },
     'image_generation',
   );
   assertEquals(out.length, 3);
@@ -426,18 +427,18 @@ test('transformInputItemsForImageGeneration rewrites a completed call into a fun
   assertEquals((imageBlock as { image_url: string }).image_url, `data:image/jpeg;base64,${PNG_B64}`);
 });
 
-test('transformInputItemsForImageGeneration does not feed back an image for a failed call', () => {
-  const out = transformInputItemsForImageGeneration(
-    [{ type: 'image_generation_call', id: 'ig_f', status: 'failed', error: { message: 'x', code: 'server_error' } }],
+test('expandImageGenerationCall does not feed back an image for a failed call', () => {
+  const out = expandImageGenerationCall(
+    { type: 'image_generation_call', id: 'ig_f', status: 'failed', error: { message: 'x', code: 'server_error' } },
     'image_generation',
   );
   assertEquals(out.length, 2);
   assertFalse(out.some(i => i.type === 'message'));
 });
 
-test('transformInputItemsForImageGeneration encodes a failed call as ok:false with error detail', () => {
-  const out = transformInputItemsForImageGeneration(
-    [{ type: 'image_generation_call', id: 'ig_2', status: 'failed', revised_prompt: 'x', error: { message: 'overloaded', code: 'EngineOverloaded' } }],
+test('expandImageGenerationCall encodes a failed call as ok:false with error detail', () => {
+  const out = expandImageGenerationCall(
+    { type: 'image_generation_call', id: 'ig_2', status: 'failed', revised_prompt: 'x', error: { message: 'overloaded', code: 'EngineOverloaded' } },
     'image_generation',
   );
   assert(out[1].type === 'function_call_output');
@@ -447,13 +448,6 @@ test('transformInputItemsForImageGeneration encodes a failed call as ok:false wi
   assertEquals(parsed.error.code, 'EngineOverloaded');
   assertEquals(parsed.error.message, 'overloaded');
   assertEquals(parsed.error.retryable, true);
-});
-
-test('transformInputItemsForImageGeneration passes non-image items through untouched', () => {
-  const message: CanonicalOpenAIResponsesInputItem = { type: 'message', role: 'user', content: 'hi' };
-  const out = transformInputItemsForImageGeneration([message], 'image_generation');
-  assertEquals(out.length, 1);
-  assertEquals(out[0], message);
 });
 
 // ── imageTerminal ──
@@ -546,9 +540,9 @@ test('prepareImageGenerationConfig preserves a remote mask for materialization',
   assertEquals(result.config.mask.invalidUrlParam, 'tools[0].input_image_mask.image_url');
 });
 
-test('transformInputItemsForImageGeneration preserves error type and retryability on replay', () => {
-  const out = transformInputItemsForImageGeneration(
-    [{ type: 'image_generation_call', id: 'ig_3', status: 'failed', error: { message: 'blocked', code: 'content_filter', type: 'image_generation_user_error' } }],
+test('expandImageGenerationCall preserves error type and retryability on replay', () => {
+  const out = expandImageGenerationCall(
+    { type: 'image_generation_call', id: 'ig_3', status: 'failed', error: { message: 'blocked', code: 'content_filter', type: 'image_generation_user_error' } },
     'image_generation',
   );
   assert(out[1].type === 'function_call_output');
@@ -654,9 +648,9 @@ test('imageGenerationServerTool fetches repeated remote edit sources once', asyn
 
   assert(result.type === 'active');
   assertEquals(urls, ['https://example.com/source.png']);
-  const transformed = result.transformItems?.(input, SHIM_TOOL_NAME);
-  assert(transformed?.[0].type === 'message' && Array.isArray(transformed[0].content));
-  const first = transformed[0].content[0];
+  assertEquals(result.expandHistoryItem?.(input[0], SHIM_TOOL_NAME), undefined);
+  assert(input[0].type === 'message' && Array.isArray(input[0].content));
+  const first = input[0].content[0];
   assert(first.type === 'input_image');
   assertEquals(first.image_url, 'https://example.com/source.png');
 });
@@ -952,7 +946,7 @@ test('image dispatcher exposes a newly introduced invalid edit source as an inva
   };
   assertThrows(
     () => result.hosted?.dispatcher({
-      intercepted: { callId: 'call_live_invalid', name: SHIM_TOOL_NAME, arguments: { prompt: 'edit it' } },
+      intercepted: { functionCall: { type: 'function_call', call_id: 'call_live_invalid', name: SHIM_TOOL_NAME, arguments: '{"prompt":"edit it"}', status: 'completed' }, parsedArguments: { prompt: 'edit it' } },
       loopState: { iterationCount: 2, remainingToolCalls: undefined },
     }),
     Error,
@@ -966,7 +960,7 @@ test('image dispatch budget caps real backend calls per response, not ReAct turn
   const result = await imageGenerationServerTool(makeCtx({ tools: [{ type: 'image_generation', action: 'generate' }] }), gatewayCtx());
   assert(result.type === 'active' && result.hosted !== undefined);
   const dispatch = result.hosted.dispatcher;
-  const intercepted = { callId: 'c', name: SHIM_TOOL_NAME, argumentsJson: '{}', arguments: { prompt: 'x' } };
+  const intercepted = { functionCall: { type: 'function_call' as const, call_id: 'c', name: SHIM_TOOL_NAME, arguments: '{"prompt":"x"}', status: 'completed' }, parsedArguments: { prompt: 'x' } };
   const loopState = { iterationCount: 1, remainingToolCalls: undefined };
 
   for (let i = 0; i < 10; i++) {
