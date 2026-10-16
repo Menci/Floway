@@ -298,6 +298,7 @@ const en = {
         createdDefaultKey: 'A Default API key is created with each new user.',
       },
       groupsManagement: {
+        remove: { title: 'Remove member', message: 'Remove {{username}} from {{group}}?', confirm: 'Remove' },
         empty: 'No groups found',
         search: 'Search groups',
         searchJoin: 'Search and join a group',

@@ -63,6 +63,7 @@ export function ResourceListPanel({ className, rowHeight = DEFAULT_ROW_HEIGHT, s
 }
 
 type ResourceListActionsProps = {
+  children?: ReactNode;
   appearance?: 'subtle';
   createDisabled?: boolean;
   disabled?: boolean;
@@ -81,7 +82,7 @@ type ResourceListActionsProps = {
 // whose data failed to load can withhold create and still offer the refresh
 // that recovers from it.
 export function ResourceListActions(props: ResourceListActionsProps) {
-  const { appearance, createDisabled = false, createLabel, createTrailingIcon, disabled = false, onRefresh, refreshLabel, refreshing = false } = props;
+  const { appearance, children, createDisabled = false, createLabel, createTrailingIcon, disabled = false, onRefresh, refreshLabel, refreshing = false } = props;
   const busy = disabled || createDisabled || refreshing;
   const createButton = createLabel !== undefined && (
     <Button
@@ -96,7 +97,7 @@ export function ResourceListActions(props: ResourceListActionsProps) {
   );
 
   return (
-    <div aria-busy={refreshing} className="flex items-center gap-2 flex-none">
+    <div aria-busy={refreshing} className="flex items-center gap-2 flex-none max-w-full">
       <Tooltip content={refreshLabel} relationship="label">
         <Button
           appearance={appearance}
@@ -107,6 +108,7 @@ export function ResourceListActions(props: ResourceListActionsProps) {
           onClick={onRefresh}
         />
       </Tooltip>
+      {children}
       {createButton && (props.createTrigger === undefined ? createButton : props.createTrigger(createButton))}
       <span aria-live="polite" className="sr-only">{refreshing ? `${refreshLabel}…` : ''}</span>
     </div>

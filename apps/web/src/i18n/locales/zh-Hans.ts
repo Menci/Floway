@@ -285,6 +285,7 @@ const zhHansCN = {
         createdDefaultKey: '每个新用户都会自动创建一个 Default API 密钥。',
       },
       groupsManagement: {
+        remove: { title: '移除成员', message: '从 {{group}} 移除 {{username}}？', confirm: '移除' },
         empty: '没有用户组',
         search: '搜索用户组',
         searchJoin: '搜索并加入用户组',

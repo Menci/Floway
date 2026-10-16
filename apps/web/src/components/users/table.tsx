@@ -5,8 +5,7 @@ import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { dateTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
-import { GroupBadge } from '../groups/badge';
-import { Chip } from '../ui/chip';
+import { GroupBadges } from '../groups/badges';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { RowTitleButton } from '../ui/row-title';
 import { ScrollArea } from '../ui/scroll-area';
@@ -53,7 +52,7 @@ export function UsersTable({
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
       <Table aria-label={t('dashboard.users.table.label')} className="min-w-[820px]" style={{ tableLayout: 'auto' }}>
-        <TableColumns widths={['22%', null, null, null, null, TABLE_ACTIONS_WIDTH]} />
+        <TableColumns widths={['22%', null, '40%', null, null, TABLE_ACTIONS_WIDTH]} />
         <TableHeader>
           <TableRow>
             <TableHeaderCell>{t('dashboard.users.table.username')}</TableHeaderCell>
@@ -78,11 +77,7 @@ export function UsersTable({
                     {t(`dashboard.users.role.${user.isAdmin ? 'admin' : 'operator'}`)}
                   </StatusBadge>
                 </TableCell>
-                <TableCell><div className="flex items-center gap-1 min-w-0">
-                  {user.groupIds.length === 0 && <span className="text-fui-fg3">{'\u2014'}</span>}
-                  {user.groupIds.slice(0, 2).map(id => <span className="min-w-0 max-w-[160px] inline-flex" key={id}><GroupBadge group={groups.find(group => group.id === id)!} /></span>)}
-                  {user.groupIds.length > 2 && <Tooltip content={groups.filter(group => user.groupIds.slice(2).includes(group.id)).map(group => group.name).join('\n')} relationship="description"><Chip className="winui-focus-rect flex-none" tabIndex={0}>{`+${user.groupIds.length - 2}`}</Chip></Tooltip>}
-                </div></TableCell>
+                <TableCell><GroupBadges groups={user.groupIds.map(id => groups.find(group => group.id === id)!)} /></TableCell>
                 <TableCell className="whitespace-nowrap">
                   {user.upstreamIds === null
                     ? t('dashboard.users.upstreams.all')

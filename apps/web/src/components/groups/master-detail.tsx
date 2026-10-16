@@ -1,10 +1,11 @@
 import { DeleteRegular, DismissRegular, EditRegular, PersonAddRegular, SearchRegular } from '@fluentui/react-icons';
-import { useState } from 'react';
+import { useState, type Ref } from 'react';
 
 import { GroupBadge } from './badge';
 import type { ControlPlaneGroup, ControlPlaneUser } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
+import { ConfirmFlyout } from '../ui/confirm-flyout';
 import { EmptyState } from '../ui/empty-state';
 import { Input } from '../ui/fluent-form-controls';
 import { Panel } from '../ui/panel';
@@ -13,7 +14,7 @@ import { StatusBadge } from '../ui/status-badge';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
-const { Avatar, Button, List, ListItem, Popover, PopoverSurface, PopoverTrigger, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, makeStyles, mergeClasses } = fluentComponents;
+const { Avatar, Button, List, ListItem, Popover, PopoverSurface, PopoverTrigger, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 
 const useStyles = makeStyles({
   layout: {
@@ -36,7 +37,7 @@ export function GroupsMasterDetail({ disabled, groups, onCreate, onDelete, onEdi
   onCreate: () => void;
   onDelete: (group: ControlPlaneGroup) => void;
   onEdit: (group: ControlPlaneGroup) => void;
-  onMemberChange: (group: ControlPlaneGroup, user: ControlPlaneUser, included: boolean) => Promise<void>;
+  onMemberChange: (group: ControlPlaneGroup, user: ControlPlaneUser, included: boolean) => Promise<string | null>;
   onSelect: (id: number) => void;
   selectedId: number | null;
   users: ControlPlaneUser[];
@@ -91,7 +92,15 @@ export function GroupsMasterDetail({ disabled, groups, onCreate, onDelete, onEdi
             <TableCell className="!pl-[var(--floway-panel-inset)]"><UserIdentity user={user} /></TableCell>
             <TableCell className="whitespace-nowrap"><StatusBadge tone={user.isAdmin ? 'accent' : 'neutral'}>{t(`dashboard.users.role.${user.isAdmin ? 'admin' : 'operator'}`)}</StatusBadge></TableCell>
             <TableCell className="whitespace-nowrap">{user.upstreamIds === null ? t('dashboard.users.upstreams.all') : t('dashboard.users.upstreams.count', { count: user.upstreamIds.length })}</TableCell>
-            <TableCell><TooltipIconButton disabled={disabled} icon={<DismissRegular />} label={t('dashboard.groupsManagement.actions.remove', { username: user.username })} onClick={() => void onMemberChange(selected, user, false)} /></TableCell>
+            <TableCell><ConfirmFlyout
+              actionLabel={t('dashboard.groupsManagement.remove.confirm')}
+              message={t('dashboard.groupsManagement.remove.message', { username: user.username, group: selected.name })}
+              onConfirm={() => onMemberChange(selected, user, false)}
+              title={t('dashboard.groupsManagement.remove.title')}
+              trigger={props => <Tooltip content={t('dashboard.groupsManagement.actions.remove', { username: user.username })} relationship="label">
+                <Button {...props} as="button" appearance="subtle" aria-label={t('dashboard.groupsManagement.actions.remove', { username: user.username })} disabled={disabled} icon={<DismissRegular />} ref={props.ref as Ref<HTMLButtonElement>} size="small" />
+              </Tooltip>}
+            /></TableCell>
           </TableRow>)}</TableBody>
         </Table>
       </ScrollArea>}
@@ -109,7 +118,7 @@ export function UserIdentity({ user }: { user: ControlPlaneUser }) {
 function AddMember({ disabled, group, onAdd, users }: {
   disabled: boolean;
   group: ControlPlaneGroup;
-  onAdd: (user: ControlPlaneUser) => Promise<void>;
+  onAdd: (user: ControlPlaneUser) => Promise<string | null>;
   users: ControlPlaneUser[];
 }) {
   const { t } = useTranslation();

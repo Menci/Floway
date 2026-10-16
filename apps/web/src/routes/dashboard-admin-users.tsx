@@ -157,16 +157,19 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   const visibleUsers = users?.filter(user => user.username.toLowerCase().includes(needle));
   const visibleGroups = groups?.filter(group => group.name.toLowerCase().includes(needle));
 
-  const changeMember = async (group: ControlPlaneGroup, user: ControlPlaneUser, included: boolean) => {
-    if (changingMember) return;
+  const changeMember = async (group: ControlPlaneGroup, user: ControlPlaneUser, included: boolean): Promise<string | null> => {
     setChangingMember(true);
     const param = { id: String(group.id), userId: String(user.id) };
     try {
       const result = included
         ? await callApi(() => api.api.groups[':id'].members[':userId'].$put({ param }))
         : await callApi(() => api.api.groups[':id'].members[':userId'].$delete({ param }));
-      if (result.error) { setPageError(result.error.message); return; }
+      if (result.error) {
+        if (included) setPageError(result.error.message);
+        return result.error.message;
+      }
       await refresh();
+      return null;
     } finally {
       setChangingMember(false);
     }
@@ -175,15 +178,6 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   return (
     <section className="dashboard-page">
       <DashboardPageHeader
-        actions={<ResourceListActions
-          createDisabled={!loaded}
-          createLabel={t(tab === 'users' ? 'dashboard.users.actions.create' : 'dashboard.groupsManagement.actions.create')}
-          disabled={refreshing || deleting || deletingGroup}
-          onCreate={() => tab === 'users' ? editorDialog.open({ kind: 'create' }) : groupDialog.open({})}
-          onRefresh={() => void refresh()}
-          refreshLabel={t(tab === 'users' ? 'dashboard.users.actions.refresh' : 'dashboard.groupsManagement.actions.refresh')}
-          refreshing={refreshing}
-        />}
         description={t('dashboard.pages.users')}
         title={t('dashboard.nav.users')}
       />
@@ -193,7 +187,17 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           <Tab value="users"><span className="inline-flex items-baseline gap-1.5">{t('dashboard.users.tabs.users')}{users && <Text className="text-fui-fg3 proportional-nums">{users.length}</Text>}</span></Tab>
           <Tab value="groups"><span className="inline-flex items-baseline gap-1.5">{t('dashboard.users.tabs.groups')}{groups && <Text className="text-fui-fg3 proportional-nums">{groups.length}</Text>}</span></Tab>
         </TabList>
-        <Input aria-label={t(tab === 'users' ? 'dashboard.users.search' : 'dashboard.groupsManagement.search')} className="w-[260px] max-[560px]:w-full" contentBefore={<SearchRegular />} onChange={(_, value) => setQuery(value.value)} placeholder={t(tab === 'users' ? 'dashboard.users.search' : 'dashboard.groupsManagement.search')} value={query} />
+        <ResourceListActions
+          createDisabled={!loaded}
+          createLabel={t(tab === 'users' ? 'dashboard.users.actions.create' : 'dashboard.groupsManagement.actions.create')}
+          disabled={refreshing || deleting || deletingGroup || changingMember}
+          onCreate={() => tab === 'users' ? editorDialog.open({ kind: 'create' }) : groupDialog.open({})}
+          onRefresh={() => void refresh()}
+          refreshLabel={t(tab === 'users' ? 'dashboard.users.actions.refresh' : 'dashboard.groupsManagement.actions.refresh')}
+          refreshing={refreshing}
+        >
+          <Input aria-label={t(tab === 'users' ? 'dashboard.users.search' : 'dashboard.groupsManagement.search')} className="w-[260px]" contentBefore={<SearchRegular />} onChange={(_, value) => setQuery(value.value)} placeholder={t(tab === 'users' ? 'dashboard.users.search' : 'dashboard.groupsManagement.search')} value={query} />
+        </ResourceListActions>
       </div>
 
       {pageError && (
