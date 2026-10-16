@@ -1,13 +1,10 @@
 import { fluentComponents } from '../../fluent';
-import { hueBadgeTone, hueFromString } from '../../lib/hue';
-import { useBadgeHue } from '../ui/badge-hue';
 
 const { Avatar } = fluentComponents;
 
-// Identity hues customize PersonPicture's neutral fill while retaining its
-// geometry and initials sizing.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/PersonPicture/PersonPicture.xaml#L65-L66
+// Identity pictures intentionally use Fluent Web's username-derived palette
+// and typography rather than WinUI PersonPicture's neutral appearance.
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-avatar/library/src/components/Avatar/useAvatar.tsx#L35-L39
 export function UserAvatar({ username }: { username: string }) {
-  const hue = useBadgeHue(hueBadgeTone(hueFromString(username)));
-  return <Avatar aria-hidden color="colorful" initials={hue} name={username} size={24} />;
+  return <Avatar aria-hidden color="colorful" idForColor={username} name={username} size={24} />;
 }

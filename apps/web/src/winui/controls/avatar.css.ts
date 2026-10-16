@@ -10,9 +10,10 @@ export const avatarCss = `
   color: var(--winui-text-fill-primary);
 }
 
-/* Initials scale with the picture, independently of the surrounding text.
+/* Neutral PersonPicture initials scale with the picture. Explicit identity
+   colors retain Fluent Web's typography along with its palette.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/PersonPicture/PersonPicture.cpp#L593-L601 */
-.fui-Avatar .fui-Avatar__initials.fui-Avatar__initials {
+.fui-Avatar[data-winui-avatar-color='neutral'] .fui-Avatar__initials.fui-Avatar__initials {
   font-size: max(1px, calc(var(--floway-person-picture-size) * 0.42));
 }
 `;

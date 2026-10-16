@@ -1,27 +1,11 @@
 import { converter } from 'culori/fn';
 import { describe, expect, it } from 'vitest';
 
-import { hueBadgeTone, hueFromString, HUE_RAIL_GRADIENT, pickDistinctHue } from '../../src/lib/hue';
+import { hueBadgeTone, HUE_RAIL_GRADIENT, pickDistinctHue } from '../../src/lib/hue';
 
 const toOklch = converter('oklch');
 
 const everyHue = Array.from({ length: 360 }, (_, hue) => hue);
-
-describe('hueFromString', () => {
-  it.each(['alice', 'Alice', 'preview.many', '用户', '🧑‍💻'])('assigns a stable hue within the circle to %s', name => {
-    const hue = hueFromString(name);
-    expect(hueFromString(name)).toBe(hue);
-    expect(Number.isInteger(hue)).toBe(true);
-    expect(hue).toBeGreaterThanOrEqual(0);
-    expect(hue).toBeLessThan(360);
-  });
-
-  it('spreads similar usernames across the hue circle', () => {
-    const hues = Array.from({ length: 100 }, (_, index) => hueFromString(`user${index}`));
-    expect(new Set(hues).size).toBeGreaterThan(75);
-    expect(Math.max(...hues) - Math.min(...hues)).toBeGreaterThan(300);
-  });
-});
 
 // The ladder @proj-airi/chromatic states, restated here so a change to the
 // subject's constants has to be a deliberate edit on both sides rather than a
