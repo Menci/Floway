@@ -49,7 +49,6 @@
 |---|---|---|
 | CI | `.github/workflows/build.yaml` | Builds and publishes deployment images. |
 | CI | `.github/workflows/verify.yaml` | Validates every repository change. |
-| Skill | `$audit-copilot-workarounds` | Audits Copilot compatibility workarounds. |
 | Skill | `$backfill-usage-pricing` | Reprices recorded model usage. |
 | Skill | `$deploy-to-cloudflare` | Deploys Floway to Cloudflare. |
 | Skill | `$fetching-models-pricing` | Researches provider model pricing. |
