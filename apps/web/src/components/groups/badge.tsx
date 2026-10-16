@@ -19,7 +19,7 @@ export function GroupBadge({ group }: { group: Pick<ControlPlaneGroup, 'name' | 
 }
 
 export function GroupBadgeLink({ group }: { group: Pick<ControlPlaneGroup, 'id' | 'name' | 'hue'> }) {
-  return <Link className="winui-focus-rect inline-flex flex-none min-w-0 max-w-full rounded-full no-underline hover:underline" to={`/dashboard/admin/users?tab=groups&group=${group.id}`}><GroupBadge group={group} /></Link>;
+  return <Link className="winui-focus-rect inline-flex flex-none min-w-0 max-w-full rounded-full no-underline" to={`/dashboard/admin/users?tab=groups&group=${group.id}`}><GroupBadge group={group} /></Link>;
 }
 
 export function GroupTag({ disabled, group }: { disabled: boolean; group: ControlPlaneGroup }) {
