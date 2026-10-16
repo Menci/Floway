@@ -8,7 +8,7 @@ import { recordTokenUsage, tokenUsageFromOpenAIImagesBody } from '../../../../sh
 import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-loader.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
-import { decodeForgivingBase64, encodeHex, isImageMediaType, mediaTypeEssence, parseSSEStream } from '@floway-dev/protocols/common';
+import { decodeForgivingBase64, encodeHex, isImageMediaType, isJsonObject, mediaTypeEssence, parseSSEStream } from '@floway-dev/protocols/common';
 import {
   collectOpenAIResponsesToolEntries,
   createRandomOpenAIResponsesItemId,
@@ -1321,9 +1321,21 @@ const streamImageGeneration = (
   return finish({ ok: true, b64: finalB64, echo: finalEcho });
 };
 
+interface ImageGenerationCallPrivatePayload {
+  functionCallItem: OpenAIResponsesFunctionToolCallItemEx;
+}
+
+const isImageGenerationCallPrivatePayload = (value: unknown): value is ImageGenerationCallPrivatePayload => {
+  if (!isJsonObject(value)) return false;
+  const call = value.functionCallItem;
+  return isJsonObject(call) && call.type === 'function_call'
+    && typeof call.call_id === 'string' && typeof call.name === 'string' && typeof call.arguments === 'string';
+};
+
 export const expandImageGenerationCall = (
   item: OpenAIResponsesInputImageGenerationCall,
   toolName: string,
+  getPrivatePayload?: (id: string) => unknown,
 ): CanonicalOpenAIResponsesInputItem[] => {
   const out: CanonicalOpenAIResponsesInputItem[] = [];
   const id = item.id !== undefined && item.id.length > 0 ? item.id : synthesizeImageGenerationCallId();
@@ -1342,10 +1354,17 @@ export const expandImageGenerationCall = (
         },
       })
     : JSON.stringify({ ok: true, status: 'completed', id });
-  const functionCall: OpenAIResponsesFunctionToolCallItemEx = {
-    type: 'function_call', call_id: `cc_from_${id}`, name: toolName,
-    arguments: JSON.stringify({ prompt: item.revised_prompt ?? '' }), status: 'completed',
-  };
+  const privatePayload = getPrivatePayload?.(id);
+  let functionCall: OpenAIResponsesFunctionToolCallItemEx;
+  if (privatePayload === undefined) {
+    functionCall = {
+      type: 'function_call', call_id: `cc_from_${id}`, name: toolName,
+      arguments: JSON.stringify({ prompt: item.revised_prompt ?? '' }), status: 'completed',
+    };
+  } else {
+    if (!isImageGenerationCallPrivatePayload(privatePayload)) throw new TypeError('Invalid image generation replay payload');
+    functionCall = privatePayload.functionCallItem;
+  }
   const functionCallOutput: OpenAIResponsesFunctionCallOutputItem = {
     type: 'function_call_output',
     call_id: functionCall.call_id,
@@ -1379,7 +1398,7 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
   const hasReplayInput = invocation.payload.input.some(i => i.type === 'image_generation_call');
   if (!hasHostedTool && !hasReplayInput) return { type: 'inactive' };
   const expandHistoryItem = (item: CanonicalOpenAIResponsesInputItem, toolName: string) => item.type === 'image_generation_call'
-    ? expandImageGenerationCall(item, toolName)
+    ? expandImageGenerationCall(item, toolName, id => gatewayCtx.store.getPrivatePayload(id))
     : undefined;
 
   if (!hasHostedTool) {
@@ -1508,12 +1527,13 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
             { type: 'response.image_generation_call.generating' },
           ],
           async *run() {
-            return budgetExhausted
+            const result = budgetExhausted
               ? imageTerminal(promptArg, 'generate', {
                   ok: false,
                   error: { type: 'image_generation_error', code: 'tool_call_budget_exhausted', message: `Image generation budget (${IMAGE_ITERATION_CAP} attempts) reached for this response. Summarize and finish without another image.`, retryable: false },
                 })
               : yield* streamImageGeneration(promptArg, operation.action, operation.action === 'edit', sources, state)();
+            return { ...result, privatePayload: { functionCallItem: intercepted.functionCall } };
           },
         }];
       },

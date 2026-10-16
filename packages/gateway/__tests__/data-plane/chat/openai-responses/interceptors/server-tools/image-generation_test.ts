@@ -427,6 +427,27 @@ test('expandImageGenerationCall rewrites a completed call into a function_call +
   assertEquals((imageBlock as { image_url: string }).image_url, `data:image/jpeg;base64,${PNG_B64}`);
 });
 
+test('image replay uses the original helper call rather than revised prompt or synthesized identity', () => {
+  const functionCallItem = {
+    type: 'function_call' as const, id: 'fc_original', call_id: 'call_original', name: 'original_alias',
+    arguments: ' { "prompt" : "\\u732b", "options" : [true, null, 9007199254740993] }\n', status: 'completed',
+  };
+  const output = expandImageGenerationCall(
+    { type: 'image_generation_call', id: 'ig_1', status: 'completed', result: PNG_B64, revised_prompt: 'different prompt' },
+    'new_alias', () => ({ functionCallItem }),
+  );
+  assertEquals(output[0], functionCallItem);
+  assert(output[1].type === 'function_call_output');
+  assertEquals(output[1].call_id, 'call_original');
+});
+
+test('image replay exposes malformed tool-private state', () => {
+  assertThrows(() => expandImageGenerationCall(
+    { type: 'image_generation_call', id: 'ig_1', status: 'completed', result: PNG_B64 },
+    'image_generation', () => ({ functionCallItem: { type: 'function_call', arguments: 1 } }),
+  ), TypeError, 'Invalid image generation replay payload');
+});
+
 test('expandImageGenerationCall does not feed back an image for a failed call', () => {
   const out = expandImageGenerationCall(
     { type: 'image_generation_call', id: 'ig_f', status: 'failed', result: null, error: { message: 'x', code: 'server_error' } },
