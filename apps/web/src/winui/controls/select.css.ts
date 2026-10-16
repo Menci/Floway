@@ -349,6 +349,20 @@ export const selectCss = `
   padding-inline: 11px;
 }
 
+/* ComboBoxItem uses system focus visuals with FocusVisualMargin -3. Fluent's
+   active-descendant ring draws only the primary band; complete the pair on
+   its existing pseudo-element and expand it by the combined stroke depth.
+   The list's presenter inset keeps the outer edges inside the flyout.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L605-L614
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L144-L145
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Option/useOptionStyles.styles.ts#L46-L63 */
+.fui-Option.fui-Option[data-activedescendant-focusvisible]:not([aria-disabled='true'])::after {
+  border: var(--winui-focus-visual-primary-thickness) solid var(--winui-focus-stroke-outer);
+  border-radius: calc(3px + var(--winui-focus-visual-depth));
+  box-shadow: inset 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
+  inset: calc(-1 * var(--winui-focus-visual-depth));
+}
+
 /* Item states run on the subtle-fill ramp. A disabled item runs neither state,
    and Fluent agrees by withholding its interactive atom, so the guard keeps
    these rules from outranking it.

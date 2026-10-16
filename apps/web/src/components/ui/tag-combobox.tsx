@@ -1,10 +1,10 @@
 import { ChevronDown12Regular } from '@fluentui/react-icons';
 import { useState, type ReactNode } from 'react';
 
-import { LISTBOX_POSITIONING } from './fluent-form-controls';
+import { listboxRenderer, LISTBOX_POSITIONING, type ListboxRenderFunction } from './fluent-form-controls';
 import { fluentComponents } from '../../fluent';
 
-const { TagPicker, TagPickerControl, TagPickerGroup, TagPickerInput, TagPickerList, TagPickerOption, Text } = fluentComponents;
+const { TagPicker, TagPickerControl, TagPickerGroup, TagPickerInput, TagPickerList, TagPickerOption } = fluentComponents;
 
 export interface TagComboboxOption { value: string; label: string }
 
@@ -22,6 +22,10 @@ export function TagCombobox({ disabled, emptyMessage, label, onChange, options, 
   const [query, setQuery] = useState('');
   const needle = query.trim().toLowerCase();
   const visible = options.filter(option => !value.includes(option.value) && option.label.toLowerCase().includes(needle));
+  const renderList: ListboxRenderFunction = (Component, props) => listboxRenderer(false, emptyMessage)(Component, {
+    ...props,
+    children: visible.map(option => <TagPickerOption key={option.value} text={option.label} value={option.value}>{renderOption(option)}</TagPickerOption>),
+  });
   return <TagPicker
     disabled={disabled}
     onOpenChange={(_, data) => { if (!data.open) setQuery(''); }}
@@ -35,10 +39,6 @@ export function TagCombobox({ disabled, emptyMessage, label, onChange, options, 
       </TagPickerGroup>
       <TagPickerInput aria-label={label} onChange={event => setQuery(event.target.value)} placeholder={value.length === 0 ? placeholder : undefined} value={query} />
     </TagPickerControl>
-    <TagPickerList>
-      {visible.length === 0
-        ? <Text className="text-fui-fg2 px-3 py-2" role="status">{emptyMessage}</Text>
-        : visible.map(option => <TagPickerOption key={option.value} text={option.label} value={option.value}>{renderOption(option)}</TagPickerOption>)}
-    </TagPickerList>
+    <TagPickerList>{renderList}</TagPickerList>
   </TagPicker>;
 }
