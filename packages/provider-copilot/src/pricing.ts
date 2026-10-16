@@ -196,6 +196,21 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   // https://github.com/github/docs/blob/f067ad0f9840f1b4afb5a801a77f74ef70951189/data/tables/copilot/model-release-status.yml
   // https://cloud.google.com/vertex-ai/generative-ai/pricing
   [/^gemini-3\.[678]-flash$/, tokenBasePricing({ input_tokens: '0.75', input_cache_read_tokens: '0.075', output_tokens: '3.75' })],
+  // Gemini 4 Argon reached Copilot GA on 2026-10-13, billed at Google's list
+  // price. Google runs the same promotional card in both places — $2.00 input,
+  // $0.10 cached input, $10.00 output — through 2026-11-30, doubling on
+  // 2026-12-01; recheck then. GitHub quotes it as a single Default tier and
+  // models.dev agrees on all three rates. Two properties separate it from the
+  // 3.x Gemini rows above: Google lists one band for its 1M-token window
+  // instead of repricing above 200k, and its only caching is implicit, so
+  // there is no cache-write rate to quote. Google sells Batch/Flex/Priority
+  // lanes too, but with no published `serviceTier` coordinate for Copilot this
+  // entry stays Base-only.
+  // https://github.blog/changelog/2026-10-13-gemini-4-argon-in-github-copilot/
+  // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
+  // https://ai.google.dev/gemini-api/docs/pricing#gemini-4-argon
+  // https://github.com/anomalyco/models.dev/blob/03312cc3c02d44bac48abd405d181fcc9c85881d/models/google/gemini-4-argon.toml
+  ['gemini-4-argon', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.1', output_tokens: '10' })],
   // xAI reprices the whole request at 2× once the prompt reaches 200k tokens.
   // Cached-read is xAI's own published $0.30/$0.60; Copilot's catalog and
   // LiteLLM both carry $0.50/$1.00 for that metric, which the vendor contradicts.

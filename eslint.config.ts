@@ -174,7 +174,7 @@ const commonConfig: Linter.Config = {
     'stylistic/space-infix-ops': ['error'],
     'stylistic/no-trailing-spaces': ['error'],
     'stylistic/eol-last': ['error', 'always'],
-    'stylistic/no-multiple-empty-lines': ['error', { max: 1, maxEOF: 0 }],
+    'stylistic/no-multiple-empty-lines': ['error', { max: 1, maxBOF: 0, maxEOF: 0 }],
     'stylistic/brace-style': ['error', '1tbs', { allowSingleLine: true }],
     'stylistic/object-curly-newline': ['error', {
       ObjectExpression: { multiline: true, consistent: true },

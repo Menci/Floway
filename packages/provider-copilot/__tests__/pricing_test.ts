@@ -107,6 +107,16 @@ test('Copilot Gemini 3.6, 3.7 and 3.8 Flash share one rate across every prompt l
   assertEquals(priceRequest(pricingForCopilotPublicModelId('gemini-3.5-flash'), { inputTokens: 0 }).rates, published({ input_tokens: '1.5', input_cache_read_tokens: '0.15', output_tokens: '9' }));
 });
 
+test('Copilot Gemini 4 Argon keeps one band across its whole 1M-token window', () => {
+  const base = published({ input_tokens: '2', input_cache_read_tokens: '0.1', output_tokens: '10' });
+  const pricing = pricingForCopilotPublicModelId('gemini-4-argon');
+  assertEquals(priceRequest(pricing, { inputTokens: 0 }).rates, base);
+  // Google sells Batch, Flex and Priority lanes for this model, but Copilot's
+  // billing surface names no tier for it; an unserved tier must not invent one.
+  assertEquals(priceRequest(pricing, { serviceTier: 'priority', inputTokens: 0 }).rates, base);
+  assertEquals(priceRequest(pricing, { inputTokens: 1048576 }).rates, base);
+});
+
 test('Copilot pricing resolves exact and regex model families', () => {
   assertEquals(priceRequest(pricingForCopilotPublicModelId('gpt-5.4'), { inputTokens: 0 }).rates, published({ input_tokens: '2.5', input_cache_read_tokens: '0.25', output_tokens: '15' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('gpt-5.3-codex'), { inputTokens: 0 }).rates, published({ input_tokens: '1.75', input_cache_read_tokens: '0.175', output_tokens: '14' }));

@@ -1,4 +1,3 @@
-
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from '../as-source/content.ts';
 import { geminiGenerateContentReasoningEffort } from '../as-source/reasoning.ts';
