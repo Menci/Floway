@@ -1,4 +1,3 @@
-
 import { klona } from 'klona/json';
 
 import { anthropicMessagesReasoningBlockToOpenAIResponsesReasoning } from './reasoning.ts';

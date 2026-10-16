@@ -1,4 +1,3 @@
-
 import type { AnthropicMessagesCountTokensInterceptor, AnthropicMessagesInterceptor, AnthropicMessagesInvocation } from './types.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';

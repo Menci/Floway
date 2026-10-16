@@ -1,4 +1,3 @@
-
 import type { OpenAIResponsesInterceptor } from './types.ts';
 import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf } from '@floway-dev/provider';

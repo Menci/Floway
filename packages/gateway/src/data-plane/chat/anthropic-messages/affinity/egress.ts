@@ -4,7 +4,7 @@ import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 interface OpenBlock {
   readonly type: string;
-  readonly first: boolean;
+  readonly initialSignature?: string;
   signatureEvent?: SignatureDeltaEvent;
 }
 
@@ -22,7 +22,8 @@ export const wrapAnthropicMessagesAffinityEgress = async function* (
 ): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   // Anthropic Messages exposes real block boundaries. A first block that cannot carry a
   // signature is shifted behind one redacted prefix; thinking stays visible
-  // while only its latest signature waits for content_block_stop.
+  // while its latest signature waits for content_block_stop. Without a signature
+  // delta, preserve the initial value; non-string values use the redacted prefix.
   const openBlocks = new Map<number, OpenBlock>();
   let syntheticPrefixEmitted = false;
   let firstBlockSeen = false;
@@ -48,14 +49,14 @@ export const wrapAnthropicMessagesAffinityEgress = async function* (
     index: number,
     block: OpenBlock,
   ): Promise<AnthropicMessagesStreamEventEx | null> => {
-    if (block.signatureEvent === undefined && (!block.first || block.type !== 'thinking')) return null;
+    if (block.signatureEvent === undefined && block.initialSignature === undefined) return null;
     if (block.signatureEvent === undefined) {
       return {
         type: 'content_block_delta',
         index: index + indexOffset,
         delta: {
           type: 'signature_delta',
-          signature: await options.codec.wrap(undefined, options.affinity, 'anthropic-messages.thinking.signature'),
+          signature: await options.codec.wrap(block.initialSignature, options.affinity, 'anthropic-messages.thinking.signature'),
         },
       };
     }
@@ -91,9 +92,12 @@ export const wrapAnthropicMessagesAffinityEgress = async function* (
     if (event.type === 'content_block_start') {
       const first = !firstBlockSeen;
       firstBlockSeen = true;
-      openBlocks.set(event.index, { type: event.content_block.type, first });
+      const initialSignature = event.content_block.type === 'thinking' && typeof event.content_block.signature === 'string'
+        ? event.content_block.signature
+        : undefined;
+      openBlocks.set(event.index, { type: event.content_block.type, initialSignature });
 
-      if (first && event.content_block.type !== 'thinking' && event.content_block.type !== 'redacted_thinking') {
+      if (first && initialSignature === undefined && event.content_block.type !== 'redacted_thinking') {
         for (const synthetic of await syntheticEvents()) yield eventFrame(synthetic);
         indexOffset = 1;
       }

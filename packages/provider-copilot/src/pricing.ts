@@ -43,6 +43,18 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   ['claude-sonnet-5-5', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' })],
   ['claude-sonnet-5', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' })],
   [/^claude-sonnet-4(-[56])?$/, tokenBasePricing({ input_tokens: '3', input_cache_read_tokens: '0.3', input_cache_write_tokens: '3.75', output_tokens: '15' })],
+  // GitHub bills Haiku 5.5 at Anthropic's provider list price, with the whole
+  // request entering the long-context band above 100,000 input tokens.
+  // https://github.blog/changelog/2026-10-07-claude-haiku-5-5-in-github-copilot/
+  // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
+  // https://platform.claude.com/docs/en/models/haiku-5-5/overview
+  ['claude-haiku-5-5', modelPricing(
+    tokenPricingEntry({ input_tokens: '0.1', input_cache_read_tokens: '0.01', input_cache_write_tokens: '0.125', output_tokens: '0.5' }),
+    tokenPricingEntry(
+      { input_tokens: '0.5', input_cache_read_tokens: '0.05', input_cache_write_tokens: '0.625', output_tokens: '2.5' },
+      { inputTokens: { operator: 'gt', value: 100000 } },
+    ),
+  )],
   ['claude-haiku-4-5', tokenBasePricing({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', output_tokens: '5' })],
   // Fable 5.1 keeps Fable 5's input/output rates and cuts cache reads to
   // 0.025×. GitHub lists no separate Fast lane.

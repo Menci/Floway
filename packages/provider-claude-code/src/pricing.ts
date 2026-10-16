@@ -29,6 +29,13 @@ const OPUS_5_5_PRICING = fastPricing(
   { input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', input_cache_write_1h_tokens: '8', output_tokens: '20' },
   { input_tokens: '8', input_cache_read_tokens: '0.4', input_cache_write_tokens: '10', input_cache_write_1h_tokens: '16', output_tokens: '40' },
 );
+const HAIKU_5_5_PRICING = modelPricing(
+  tokenPricingEntry({ input_tokens: '0.1', input_cache_read_tokens: '0.01', input_cache_write_tokens: '0.125', input_cache_write_1h_tokens: '0.2', output_tokens: '0.5' }),
+  tokenPricingEntry(
+    { input_tokens: '0.5', input_cache_read_tokens: '0.05', input_cache_write_tokens: '0.625', input_cache_write_1h_tokens: '1', output_tokens: '2.5' },
+    { inputTokens: { operator: 'gt', value: 100000 } },
+  ),
+);
 const FABLE_5_1_PRICING = tokenBasePricing({ input_tokens: '10', input_cache_read_tokens: '0.25', input_cache_write_tokens: '12.5', input_cache_write_1h_tokens: '20', output_tokens: '50' });
 
 const CLAUDE_CODE_MODEL_PRICING: Record<string, ModelPricing> = {
@@ -45,6 +52,11 @@ const CLAUDE_CODE_MODEL_PRICING: Record<string, ModelPricing> = {
   'claude-sonnet-5-5': SONNET_5_PRICING,
   'claude-sonnet-5': SONNET_5_PRICING,
   'claude-sonnet-4-6': SONNET_PRICING,
+  // Haiku 5.5 prices the whole request at its long-context rate when the
+  // prompt exceeds 100,000 input tokens.
+  // https://platform.claude.com/docs/en/models/haiku-5-5/overview
+  // https://github.com/anomalyco/models.dev/blob/bde18f10ee3da7d5eb4cc07bfd3d374a93a8f025/providers/anthropic/models/claude-haiku-5-5.toml
+  'claude-haiku-5-5': HAIKU_5_5_PRICING,
   // Fable 5.1 keeps Fable 5's base rates while cutting cache reads to 0.025×.
   // https://platform.claude.com/docs/en/models/fable-5-1/overview
   // https://platform.claude.com/docs/en/about-claude/pricing
