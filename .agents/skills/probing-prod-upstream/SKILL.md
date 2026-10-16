@@ -22,9 +22,10 @@ refresh token and leave production holding an invalid predecessor, interrupting
 production token renewal. This is a production continuity constraint. Do not
 extract refresh tokens, invoke refresh endpoints, call automatic-refresh helpers
 (including `ensureCodexAccessToken` and `ensureClaudeCodeAccessToken`), or route
-through a gateway operation that may trigger renewal. Use the existing access
-token. If it is missing, expired, or rejected, stop probing that account and
-report the blocker; let production own renewal. Never write probe credentials
+through a gateway operation that may trigger renewal. For providers with
+refresh-token renewal, use the existing access token. If it is missing, expired,
+or rejected, stop probing that account and report the blocker; let production
+own renewal. Never write probe credentials
 or token state back to production.
 
 ## Select the upstream and egress
