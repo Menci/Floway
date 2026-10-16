@@ -116,7 +116,7 @@ function AddMember({ disabled, group, onAdd, users }: {
   return <Popover onOpenChange={(_, data) => { setOpen(data.open); setQuery(''); }} open={open} positioning={{ position: 'below', align: 'end' }} trapFocus>
     <PopoverTrigger disableButtonEnhancement><Button disabled={disabled} icon={<PersonAddRegular />}>{t('dashboard.groupsManagement.actions.add')}</Button></PopoverTrigger>
     <PopoverSurface aria-label={group.name} className="w-[min(320px,calc(100vw-32px))] !p-2 grid gap-1">
-      <Input aria-label={t('dashboard.users.search')} contentBefore={<SearchRegular />} onChange={(_, data) => setQuery(data.value)} placeholder={t('dashboard.users.search')} value={query} />
+      <Input aria-label={t('dashboard.users.search')} autoFocus contentBefore={<SearchRegular />} onChange={(_, data) => setQuery(data.value)} placeholder={t('dashboard.users.search')} value={query} />
       <div className="grid max-h-[260px] overflow-auto">
         {visible.length === 0 && <Text className="text-fui-fg2 px-2 py-2" role="status">{t(users.length === 0 ? 'dashboard.groupsManagement.members.allAdded' : 'dashboard.groupsManagement.members.noMatches')}</Text>}
         {visible.map(user => <Button appearance="subtle" className="!justify-start" disabled={disabled} key={user.id} onClick={() => { setOpen(false); void onAdd(user); }}><UserIdentity user={user} /></Button>)}
