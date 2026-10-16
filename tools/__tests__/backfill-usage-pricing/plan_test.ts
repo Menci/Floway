@@ -52,6 +52,27 @@ const intent = {
   mode: 'fill' as const,
 };
 
+test('backfill blocks guessing scheduled prices for historical hourly rows', async () => {
+  const path = await createDatabase();
+  const mutate = new DatabaseSync(path);
+  const pricing = {
+    entries: [
+      { rates: { input_tokens: '0.01' } },
+      { selector: { timeWindow: { timeZone: 'UTC', weekdays: [1, 2, 3, 4, 5], start: '12:00', end: '18:00' } }, rates: { input_tokens: '0.02' } },
+    ],
+  };
+  mutate.prepare('UPDATE upstreams SET config_json = ?').run(JSON.stringify({ models: [{ kind: 'chat', endpoints: { openaiResponses: {} }, upstreamModelId: 'wire', pricing }] }));
+  mutate.close();
+  const read = await openNodeDatabase(path, 'read');
+  try {
+    const built = await buildPlan(read, { ...intent, metrics: ['input_tokens'] });
+    assertEquals(built.plan.operations, []);
+    assertEquals(built.plan.blockers.map(blocker => blocker.code), ['historical-time-window-unknown']);
+  } finally {
+    await read.close();
+  }
+});
+
 test('plan and apply share one guarded SQL path and preserve missing metric prices', async () => {
   const read = await openNodeDatabase(await createDatabase(), 'read');
   const built = await buildPlan(read, { ...intent, metrics: [...intent.metrics] }, {

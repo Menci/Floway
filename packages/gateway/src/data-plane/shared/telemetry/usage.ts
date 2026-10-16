@@ -1,4 +1,5 @@
 import { currentHour } from './hour.ts';
+import { priceRequestWithCalendars, PricingHolidayCalendarUnavailableError } from './pricing-holidays.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type { TokenUsage, UsageQuantities } from '../../../repo/types.ts';
 import { tokenUsageQuantities, usageMetrics } from '../../../repo/usage-metrics.ts';
@@ -249,7 +250,16 @@ export const recordUsage = async (
   pricingFacts: PricingRuntimeFacts,
   requestStartedAt: number,
 ): Promise<void> => {
-  const priced = priceRequest(modelIdentity.pricing, { ...pricingFacts, requestStartedAt });
+  const hour = currentHour();
+  const facts = { ...pricingFacts, requestStartedAt };
+  const priced = await priceRequestWithCalendars(modelIdentity.pricing, facts).catch(error => {
+    if (!(error instanceof PricingHolidayCalendarUnavailableError)) throw error;
+    // Metered usage survives a calendar outage. A NULL price is unknown, not
+    // free or Base: guessing here would permanently persist the wrong cost.
+    console.error('Failed to resolve usage price:', error);
+    const unpriced = priceRequest(null, facts);
+    return { ...unpriced, selector: { ...unpriced.selector, unpriced: 'holiday-calendar-unavailable' } };
+  });
   const metrics = usageMetrics(quantities, priced.rates);
   await Promise.all([
     getRepo().usage.record({
@@ -257,7 +267,7 @@ export const recordUsage = async (
       model: modelIdentity.model,
       upstream: modelIdentity.upstream,
       modelKey: modelIdentity.modelKey,
-      hour: currentHour(),
+      hour,
       pricingSelector: priced.selector,
       requests: 1,
       metrics,

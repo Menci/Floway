@@ -1,6 +1,6 @@
 import { ToolError } from './errors.ts';
 import { MODEL_CATALOG_REVISION } from '@floway-dev/gateway';
-import { canonicalPricingSelectorKey, type ModelPricing, type PriceVector, validateModelPricing } from '@floway-dev/protocols/common';
+import { canonicalPricingSelectorKey, parsePricingSelectorKey, type ModelPricing, type PriceVector, validateModelPricing } from '@floway-dev/protocols/common';
 import { assertUpstreamProviderKind, isRecord, modelsField, pricingField, type UpstreamModelConfig, type UpstreamProviderKind } from '@floway-dev/provider';
 import { pricingForClaudeCodeModelKey } from '@floway-dev/provider-claude-code';
 import { pricingForCodexModelKey } from '@floway-dev/provider-codex';
@@ -116,10 +116,20 @@ export const resolveUsagePricing = (
 export const ratesForStoredSelector = (
   pricing: ModelPricing,
   selectorKey: string,
-): { exact: boolean; rates: PriceVector | null } => {
+): { exact: boolean; rates: PriceVector | null; unavailableReason?: string } => {
   validateModelPricing(pricing);
+  const selector = parsePricingSelectorKey(selectorKey);
+  if (selector.unpriced !== undefined) {
+    return { exact: false, rates: null, unavailableReason: 'Usage recorded without its holiday calendar cannot reconstruct request-start pricing' };
+  }
+  if (pricing.entries.some(entry => entry.selector?.timeWindow !== undefined) && selector.timeWindow === undefined) {
+    return { exact: false, rates: null, unavailableReason: 'Hourly usage without a time-window selector cannot reconstruct request-start pricing' };
+  }
   const exact = pricing.entries.find(entry => canonicalPricingSelectorKey(entry.selector) === selectorKey);
   if (exact !== undefined) return { exact: true, rates: exact.rates };
+  if (selector.timeWindow !== undefined) {
+    return { exact: false, rates: null, unavailableReason: 'The stored time-window rule is absent from the current pricing catalog' };
+  }
   const base = pricing.entries.find(entry => canonicalPricingSelectorKey(entry.selector) === '{}');
   return { exact: false, rates: base?.rates ?? null };
 };

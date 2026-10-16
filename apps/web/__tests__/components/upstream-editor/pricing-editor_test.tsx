@@ -29,7 +29,7 @@ describe('read-only pricing editor', () => {
 });
 
 describe('scheduled pricing editor', () => {
-  it('authors a weekday window with holiday exceptions and preserves it on reload', () => {
+  it('authors a weekday window with an automatic holiday calendar and preserves it on reload', () => {
     const onChange = vi.fn();
     const value = { entries: [{ rates: { input_tokens: '0.000001' } }] };
     const view = renderInApp(<PricingEditor kind="chat" value={value} onChange={onChange} readOnly={false} />);
@@ -41,10 +41,10 @@ describe('scheduled pricing editor', () => {
     fireEvent.change(view.getByLabelText(text('end')), { target: { value: '12:00' } });
     fireEvent.click(view.getByRole('checkbox', { name: text('saturday') }));
     fireEvent.click(view.getByRole('checkbox', { name: text('sunday') }));
-    fireEvent.change(view.getByLabelText(text('excludedDates')), { target: { value: '2026-10-01\n2026-10-02' } });
+    fireEvent.click(view.getByRole('checkbox', { name: text('excludeChinaHolidays') }));
     const pricing = onChange.mock.lastCall![0] as ModelPricing;
     expect(pricing.entries[1]?.selector?.timeWindow).toEqual({
-      timeZone: 'Asia/Shanghai', weekdays: [1, 2, 3, 4, 5], start: '09:00', end: '12:00', excludedDates: ['2026-10-01', '2026-10-02'],
+      timeZone: 'Asia/Shanghai', weekdays: [1, 2, 3, 4, 5], start: '09:00', end: '12:00', excludeHolidays: 'CN',
     });
     expect(pricing.entries[1]?.rates).toEqual(value.entries[0]!.rates);
     expect(collectModelPricingIssues(pricing)).toEqual([]);
@@ -52,7 +52,7 @@ describe('scheduled pricing editor', () => {
     const reloaded = renderInApp(<PricingEditor kind="chat" value={pricing} onChange={onChange} readOnly />);
     fireEvent.click(reloaded.getByText(/09:00–12:00/));
     expect((reloaded.getByLabelText(text('timeZone')) as HTMLInputElement).value).toBe('Asia/Shanghai');
-    expect((reloaded.getByLabelText(text('excludedDates')) as HTMLTextAreaElement).value).toBe('2026-10-01\n2026-10-02');
+    expect((reloaded.getByRole('checkbox', { name: text('excludeChinaHolidays') }) as HTMLInputElement).checked).toBe(true);
     onChange.mockClear();
     fireEvent.click(reloaded.getByRole('checkbox', { name: text('sunday') }));
     expect(onChange).not.toHaveBeenCalled();
