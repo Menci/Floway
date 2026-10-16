@@ -1,8 +1,10 @@
 import { divideDecimalString, parseNonNegativeDecimalString, type DecimalString } from './decimal.ts';
+import type { PricingHolidayFacts } from './pricing-holidays.ts';
 import { canonicalPricingTimeWindow, compilePricingTimeWindow, pricingTimeWindowsOverlap, type PricingTimeWindowCoordinate } from './pricing-time-window.ts';
 import { billableServiceTier } from './usage.ts';
 
 export type { PricingTimeWindowCoordinate } from './pricing-time-window.ts';
+export { PricingHolidayCalendarRequiredError, pricingHolidayDate, type PricingHolidayCalendar, type PricingHolidayFacts } from './pricing-holidays.ts';
 
 // Disjoint billing metrics a single request can be charged on. Every count
 // keyed by these is non-overlapping: a prompt token is counted under exactly
@@ -47,6 +49,7 @@ export type PricingRuntimeFacts = Readonly<{
   serviceTier?: string | null;
   inputTokens?: number;
   requestStartedAt?: number;
+  holidays?: PricingHolidayFacts;
 }>;
 
 type PricingRuntimeFactKey<Value> = {
@@ -134,6 +137,13 @@ const canonicalThreshold = (value: PricingCoordinateValue, path: string): Pricin
 export const canonicalizePricingSelector = (selector: PricingSelector | undefined): PricingSelector => {
   const canonical: Record<string, PricingCoordinateValue> = {};
   for (const axisId of Object.keys(selector ?? {}).toSorted()) {
+    // Usage-only state: keep unresolved prices out of a successfully priced
+    // hourly bucket. This is not a configurable or matchable pricing axis.
+    if (axisId === 'unpriced') {
+      if (selector![axisId] !== 'holiday-calendar-unavailable') throw new RangeError('unknown unpriced usage reason');
+      canonical[axisId] = selector![axisId];
+      continue;
+    }
     const axis = axisById.get(axisId);
     if (!axis) throw new RangeError(`unknown pricing selector axis: ${axisId}`);
     const value = selector![axisId];
@@ -212,6 +222,7 @@ export const collectModelPricingIssues = (pricing: ModelPricing): readonly Model
     }
     try {
       const selector = canonicalizePricingSelector(entry.selector);
+      if (selector.unpriced !== undefined) throw new RangeError('unpriced is reserved for usage records, not pricing rules');
       if (typeof selector.serviceTier === 'string' && billableServiceTier(selector.serviceTier) === null) {
         throw new RangeError('pricing selector serviceTier must not denote Base; omit the coordinate instead');
       }
@@ -341,7 +352,7 @@ export const validateModelPricing = (pricing: ModelPricing): void => {
 
 interface CompiledModelPricing {
   ratesBySelectorKey: ReadonlyMap<string, PriceVector>;
-  timeWindows: readonly { scope: PricingSelector; coordinate: PricingTimeWindowCoordinate; matches: (timestamp: number) => boolean }[];
+  timeWindows: readonly { scope: PricingSelector; coordinate: PricingTimeWindowCoordinate; matches: ReturnType<typeof compilePricingTimeWindow> }[];
   thresholdBandsByAxisAndScope: ReadonlyMap<string, ReadonlyMap<string, readonly PricingThresholdCoordinate[]>>;
 }
 
@@ -416,16 +427,17 @@ const thresholdMatches = (coordinate: PricingThresholdCoordinate, fact: number):
 
 export const priceRequest = (pricing: ModelPricing | null, facts: PricingRuntimeFacts): PricedRequest => {
   const compiled = pricing ? compileModelPricing(pricing) : undefined;
+  const equalityFacts = { ...facts, serviceTier: billableServiceTier(facts.serviceTier) };
   const selector: Record<string, PricingCoordinateValue> = {};
   for (const axis of PRICING_AXES) {
     if (axis.kind !== 'equality') continue;
-    const fact = facts[axis.fact];
+    const fact = equalityFacts[axis.fact];
     if (fact != null) selector[axis.id] = fact;
   }
   if (compiled && compiled.timeWindows.length > 0) {
     const timestamp = facts.requestStartedAt;
     if (timestamp === undefined || !Number.isFinite(new Date(timestamp).getTime())) throw new RangeError('time-window pricing requires a valid requestStartedAt timestamp');
-    const window = compiled.timeWindows.find(window => scopeMatches(window.scope, selector) && window.matches(timestamp));
+    const window = compiled.timeWindows.find(window => scopeMatches(window.scope, selector) && window.matches(timestamp, facts.holidays));
     if (window) selector.timeWindow = window.coordinate;
   }
   for (const axis of PRICING_AXES) {

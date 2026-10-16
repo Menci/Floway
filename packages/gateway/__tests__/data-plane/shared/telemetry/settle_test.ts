@@ -5,6 +5,7 @@ import { initRepo } from '../../../../src/repo/index.ts';
 import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
+import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 import { assertEquals, mockPerfTelemetryContext } from '@floway-dev/test-utils';
 
@@ -142,5 +143,35 @@ test.each(['tokens', 'measurement'])('settle %s keeps start-time prices when a r
     ]);
   } finally {
     vi.useRealTimers();
+  }
+});
+
+test('calendar outages preserve metered usage with unknown prices and report the original cause', async () => {
+  const networkError = new Error('calendar offline');
+  initExternalResourceFetcher(async () => { throw networkError; });
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    // The same hourly bucket already has successfully priced Base usage.
+    settle(ctx(), undefined, { ...testTelemetryModelIdentity, pricing: { entries: [{ rates: { input_tokens: '1' } }] } }, { input: 3 }, false);
+    await Promise.all(background);
+    settle({ ...ctx(), requestStartedAt: Date.parse('2026-10-16T01:00:00Z') }, undefined, {
+      ...testTelemetryModelIdentity,
+      pricing: {
+        entries: [
+          { rates: { input_tokens: '1' } },
+          { selector: { timeWindow: { timeZone: 'UTC', weekdays: [5], start: '01:00', end: '04:00', excludeHolidays: 'CN' } }, rates: { input_tokens: '2' } },
+        ],
+      },
+    }, { input: 10 }, false);
+    await Promise.all(background);
+    const rows = await repo.usage.listAll();
+    expect(rows).toHaveLength(2);
+    const unpriced = rows.find(row => row.pricingSelector.unpriced === 'holiday-calendar-unavailable');
+    expect(unpriced?.metrics).toEqual([{ metric: 'input_tokens', quantity: '10', unitPrice: null }]);
+    expect(unpriced?.requests).toBe(1);
+    expect(rows.find(row => !row.pricingSelector.unpriced)?.metrics).toEqual([{ metric: 'input_tokens', quantity: '3', unitPrice: '1' }]);
+    expect(log).toHaveBeenCalledWith('Failed to resolve usage price:', expect.objectContaining({ cause: expect.objectContaining({ cause: networkError }) }));
+  } finally {
+    log.mockRestore();
   }
 });

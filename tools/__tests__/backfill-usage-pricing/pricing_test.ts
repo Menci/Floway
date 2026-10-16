@@ -90,5 +90,13 @@ test('backfill resolves the stored time window without using the current clock',
   };
   const selectorKey = canonicalPricingSelectorKey({ timeWindow });
   assertEquals(ratesForStoredSelector(pricing, selectorKey), { exact: true, rates: { input_tokens: '2' } });
-  assertEquals(ratesForStoredSelector(pricing, '{}'), { exact: true, rates: { input_tokens: '1' } });
+  assertEquals(ratesForStoredSelector(pricing, '{}'), {
+    exact: false, rates: null, unavailableReason: 'Hourly usage without a time-window selector cannot reconstruct request-start pricing',
+  });
+  assertEquals(ratesForStoredSelector(basePricing({ input_tokens: '1' }), selectorKey), {
+    exact: false, rates: null, unavailableReason: 'The stored time-window rule is absent from the current pricing catalog',
+  });
+  assertEquals(ratesForStoredSelector(basePricing({ input_tokens: '1' }), '{"unpriced":"holiday-calendar-unavailable"}'), {
+    exact: false, rates: null, unavailableReason: 'Usage recorded without its holiday calendar cannot reconstruct request-start pricing',
+  });
 });

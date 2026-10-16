@@ -474,7 +474,7 @@ test('modelsField rejects flagOverrides with an unknown flag id', () => {
 });
 
 test('pricingField retains configured time windows and validates calendar conditions', () => {
-  const timeWindow = { timeZone: 'Asia/Shanghai', weekdays: [5, 1], start: '09:00', end: '12:00', excludedDates: ['2026-10-01'] };
+  const timeWindow = { timeZone: 'Asia/Shanghai', weekdays: [5, 1], start: '09:00', end: '12:00', excludeHolidays: 'CN' as const };
   const value = {
     entries: [
       { rates: { input_tokens: '1' } },
@@ -482,6 +482,6 @@ test('pricingField retains configured time windows and validates calendar condit
     ],
   };
   expect(pricingField(JSON.parse(JSON.stringify(value)), 'pricing')?.entries[1]?.selector?.timeWindow).toEqual({ ...timeWindow, weekdays: [1, 5] });
-  value.entries[1]!.selector!.timeWindow.end = '08:00';
-  expect(() => pricingField(value, 'pricing')).toThrow(/start < end/);
+  value.entries[1]!.selector!.timeWindow.end = '25:00';
+  expect(() => pricingField(value, 'pricing')).toThrow(/HH:mm/);
 });

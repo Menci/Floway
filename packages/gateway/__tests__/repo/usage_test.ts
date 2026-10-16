@@ -487,7 +487,7 @@ test('SQL usage overview returns grouped term cardinality rather than raw storag
 
 for (const backend of backends) test(`${backend.name}: time-window selectors and price snapshots survive persistence in the same hour`, async () => {
   const repo = await backend.make();
-  const timeWindow = { timeZone: 'Asia/Shanghai', weekdays: [1, 2, 3, 4, 5], start: '09:00', end: '12:00', excludedDates: ['2026-10-01'] };
+  const timeWindow = { timeZone: 'Asia/Shanghai', weekdays: [1, 2, 3, 4, 5], start: '09:00', end: '12:00', excludeHolidays: 'CN' as const };
   await repo.usage.record(record({ pricingSelector: { timeWindow }, metrics: [{ metric: 'input_tokens', quantity: '10', unitPrice: '2' }] }));
   await repo.usage.record(record({ pricingSelector: {}, metrics: [{ metric: 'input_tokens', quantity: '10', unitPrice: '1' }] }));
   const rows = await repo.usage.listAll();
@@ -495,4 +495,17 @@ for (const backend of backends) test(`${backend.name}: time-window selectors and
   assertEquals(rows.find(row => row.pricingSelector.timeWindow)?.pricingSelector, { timeWindow });
   assertEquals(rows.find(row => row.pricingSelector.timeWindow)?.metrics, [{ metric: 'input_tokens', quantity: '10', unitPrice: '2' }]);
   assertEquals(rows.find(row => !row.pricingSelector.timeWindow)?.metrics, [{ metric: 'input_tokens', quantity: '10', unitPrice: '1' }]);
+});
+
+for (const backend of backends) for (const unknownFirst of [true, false]) test(`${backend.name}: calendar outages never inherit Base prices (unknown first: ${unknownFirst})`, async () => {
+  const repo = await backend.make();
+  const records = [
+    record({ pricingSelector: { unpriced: 'holiday-calendar-unavailable' }, metrics: [{ metric: 'input_tokens', quantity: '10', unitPrice: null }] }),
+    record({ pricingSelector: {}, metrics: [{ metric: 'input_tokens', quantity: '3', unitPrice: '1' }] }),
+  ];
+  for (const row of unknownFirst ? records : records.toReversed()) await repo.usage.record(row);
+  const rows = await repo.usage.listAll();
+  assertEquals(rows.length, 2);
+  assertEquals(rows.find(row => row.pricingSelector.unpriced)?.metrics, [{ metric: 'input_tokens', quantity: '10', unitPrice: null }]);
+  assertEquals(rows.find(row => !row.pricingSelector.unpriced)?.metrics, [{ metric: 'input_tokens', quantity: '3', unitPrice: '1' }]);
 });

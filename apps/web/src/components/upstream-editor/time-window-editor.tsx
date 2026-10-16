@@ -1,6 +1,6 @@
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
-import { Checkbox, Input, Textarea } from '../ui/fluent-form-controls';
+import { Checkbox, Input } from '../ui/fluent-form-controls';
 import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import type { PricingTimeWindowCoordinate } from '@floway-dev/protocols/browser';
 
@@ -42,11 +42,12 @@ export function TimeWindowEditor({ value, onChange, readOnly }: {
           onChange={(_, data) => onChange({ ...value, weekdays: data.checked ? [...value.weekdays, index + 1].toSorted((a, b) => a - b) : value.weekdays.filter(day => day !== index + 1) })}
         />)}
       </div>
-      <Field label={t(`${key}excludedDates`)} hint={t(`${key}excludedDatesHint`)}>
-        <Textarea
-          value={value.excludedDates?.join('\n') ?? ''}
+      <Field hint={t(`${key}holidaysHint`)}>
+        <Checkbox
+          label={t(`${key}excludeChinaHolidays`)}
+          checked={value.excludeHolidays === 'CN'}
           readOnly={readOnly}
-          onChange={(_, data) => onChange({ ...value, excludedDates: data.value === '' ? [] : data.value.split('\n').map(date => date.trim()) })}
+          onChange={(_, data) => onChange({ ...value, excludeHolidays: data.checked ? 'CN' : undefined })}
         />
       </Field>
     </>}

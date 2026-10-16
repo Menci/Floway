@@ -847,13 +847,13 @@ const en = {
           timeWindow: {
             enabled: 'Limit to a time window',
             timeZone: 'Time zone',
-            hint: 'Use an IANA time zone, such as Asia/Shanghai. Prices use the request start time. Add a rule for each daily window; split overnight windows at midnight. All windows must use the same time zone.',
+            hint: 'Use an IANA time zone, such as Asia/Shanghai. Prices use the request start time. Overnight windows are supported; equal start and end means all day. Weekdays use the local date at the request instant. All windows must use the same time zone.',
             start: 'Start (HH:mm, inclusive)',
             end: 'End (HH:mm, exclusive; 24:00 allowed)',
             weekdays: 'Days of the week',
             monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday', thursday: 'Thursday', friday: 'Friday', saturday: 'Saturday', sunday: 'Sunday',
-            excludedDates: 'Excluded dates',
-            excludedDatesHint: 'One YYYY-MM-DD date per line, in this time zone. Maintain holiday dates here; excluded dates do not match this window.',
+            excludeChinaHolidays: 'Exclude mainland China public holidays',
+            holidaysHint: 'Holiday dates are synchronized automatically and use Asia/Shanghai. Weekend make-up workdays still follow the selected weekdays. If calendar data is unavailable, usage is recorded without a price.',
           },
           pricingIssue: {
             timeWindowConflict: 'Time windows must use the same time zone and must not overlap within compatible service tiers.',

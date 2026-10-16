@@ -803,13 +803,13 @@ const zhHansCN = {
           timeWindow: {
             enabled: '限定计价时段',
             timeZone: '时区',
-            hint: '使用 IANA 时区，例如 Asia/Shanghai。按请求开始时间计价。每天多个时段分别添加规则，跨午夜的时段在午夜拆分。所有时段必须使用同一时区。',
+            hint: '使用 IANA 时区，例如 Asia/Shanghai。按请求开始时间计价。支持跨午夜，开始与结束相同表示全天。星期按请求发生时的当地日期判断。所有时段必须使用同一时区。',
             start: '开始时间（HH:mm，含）',
             end: '结束时间（HH:mm，不含；支持 24:00）',
             weekdays: '每周适用日期',
             monday: '周一', tuesday: '周二', wednesday: '周三', thursday: '周四', friday: '周五', saturday: '周六', sunday: '周日',
-            excludedDates: '排除日期',
-            excludedDatesHint: '每行一个 YYYY-MM-DD 日期，以当前时区为准。请在此维护节假日，排除日期不匹配此时段。',
+            excludeChinaHolidays: '排除中国大陆节假日',
+            holidaysHint: '节假日自动同步，日期按北京时间判断。周末调休上班仍遵循所选星期。日历数据不可用时保留用量，价格记为未知。',
           },
           pricingIssue: {
             timeWindowConflict: '所有计价时段必须使用同一时区，且可同时匹配的服务层级中的时段不能重叠。',

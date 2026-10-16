@@ -272,6 +272,10 @@ const createPlan = (
       continue;
     }
     const selected = ratesForStoredSelector(resolution.pricing, pricingSelector);
+    if (selected.unavailableReason !== undefined) {
+      if (intent.mode === 'overwrite' || nullRows > 0) blockers.push({ code: 'historical-time-window-unknown', message: selected.unavailableReason });
+      continue;
+    }
     const proposedUnitPrice = selected.rates?.[metric];
     if (proposedUnitPrice === undefined) {
       if (nullRows > 0) skipped.push({ pricingSelector, metric, nullRows, reason: 'metric-unpriced' });

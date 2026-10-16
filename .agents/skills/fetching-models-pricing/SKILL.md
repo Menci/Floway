@@ -12,12 +12,12 @@ Maintain the per-token rate cards in:
 | Copilot | `packages/provider-copilot/src/pricing.ts` | Copilot `/models` | model vendor's first-party API |
 | Codex | `packages/provider-codex/src/pricing.ts` | authenticated `/codex/models` | OpenAI API pricing |
 | Claude Code | `packages/provider-claude-code/src/pricing.ts` | authenticated Anthropic `/v1/models` | Anthropic API pricing |
-| Ollama | `packages/provider-ollama/src/pricing.ts` | `/api/tags` + `/api/show` | Ollama official standard rates; vendor/host valuation for other models |
+| Ollama | `packages/provider-ollama/src/pricing.ts` | `/api/tags` + `/api/show` | Ollama official rates and schedules; vendor/host valuation for other models |
 
 Copilot, Codex and Claude Code use API-equivalent valuation. Ollama uses its
-published standard token rates for covered models and retains vendor/host
-valuation for other models. These are request estimates; account consumption
-from `/api/usage` includes Ollama billing adjustments such as off-peak discounts.
+published token rates and peak/off-peak schedules for covered models and retains
+vendor/host valuation for other models. These are request-start-time estimates;
+account consumption from `/api/usage` remains authoritative.
 
 `ModelPricing.entries[].rates` stores decimal-string USD prices per one base
 `BillingMetric` unit. The ten-member `BILLING_METRICS` array in
@@ -31,7 +31,7 @@ subset for a model.
 1. Fetch the provider's live catalog and diff its ids against the table's
    string and RegExp keys. Record new, retired, and renamed models.
 2. Find a defensible rate source for every new id:
-   - For Ollama, prefer its own published standard rates at https://ollama.com/pricing; verify cloud aliases against official model tag pages.
+   - For Ollama, prefer its own published rates and schedules at https://ollama.com/pricing; verify cloud aliases against official model tag pages.
    - Otherwise prefer the model vendor's first-party API.
    - For open weights with no vendor API, use the cheapest credible commodity
      host that publishes the required metrics.
@@ -102,6 +102,20 @@ subset for a model.
      lookup.
    - A missing exact selector uses the whole Base vector. Do not synthesize an
      undocumented Cartesian combination.
+   - Encode published recurring schedules with `timeWindow`: named time zone,
+     ISO weekdays (Monday=1), inclusive `start` and exclusive `end` in HH:mm.
+     An earlier end wraps midnight; equal times mean all day. Weekdays refer
+     to the request instant, including after midnight. All windows for a model
+     use one zone, and distinct windows in compatible service tiers cannot
+     overlap. Requests are priced at their start time, not settlement time.
+   - Use `excludeHolidays: 'CN'` only when the rate source explicitly excludes
+     Chinese public holidays. The gateway resolves mainland civil dates from
+     a maintained calendar; operators do not maintain date lists. A calendar
+     outage records metered usage with unknown prices and logs the error.
+   - Keep schedules specific to the hosting provider. Ollama's DeepSeek
+     schedule differs from DeepSeek's own API and has no Chinese-holiday
+     exclusion: https://ollama.com/pricing and
+     https://api-docs.deepseek.com/quick_start/pricing/.
    - Return `null` when no defensible price exists. Never extrapolate from an
      adjacent version or similarly named model.
 5. Increment `MODEL_CATALOG_REVISION` in
@@ -114,7 +128,10 @@ subset for a model.
 7. Run all affected provider tests, typecheck, lint, and the full test suite.
 8. If an existing rate changed, use `$backfill-usage-pricing` for the intended
    historical usage slice. Catalog revisioning changes future snapshots; it
-   does not rewrite recorded `unit_price` values.
+   does not rewrite recorded `unit_price` values. Historical rows without a
+   time-window selector cannot reconstruct request-start pricing from hourly
+   aggregates. Do not apply a new schedule's Base rate to such rows as though
+   it were a historical recomputation.
 
 ## Catalog Revision Policy
 
@@ -145,8 +162,8 @@ ineligible.
   market prices.
 - Ollama legacy subscribers still use session/weekly limits. Identify billing
   mode from `/api/balance`, not the tier name. Its inference APIs report cached
-  token counts; keep their normal protocol accounting. Standard-rate estimates
-  do not infer peak/off-peak billing from a response service tier.
+  token counts; keep their normal protocol accounting. Peak/off-peak prices
+  follow the published clock, never an inferred response service tier.
 - Do not use a cheaper OpenRouter mirror when the vendor itself sells the
   model; that is another host's price.
 - Verify ambiguous version names against release notes before sharing a rate.
