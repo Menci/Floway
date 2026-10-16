@@ -3,7 +3,11 @@ import type { IRJSONObject, IRJSONValue } from '../../../ir/types.ts';
 import { computeRoundTripReplayCheck, replayMaterialsByType, verifyRoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripAssistantTurnInspection } from '../../../round-trip/replay.ts';
+import { canonicalTextParts, isPureTextPart, type PureTextPart } from '../../../round-trip/text-parts.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputContent, OpenAIResponsesOutputContentBlock, OpenAIResponsesOutputItemEx, OpenAIResponsesOutputReasoning  } from '@floway-dev/protocols/openai-responses';
+
+const isOpenAIResponsesPureTextPart = <Part extends OpenAIResponsesInputContent | OpenAIResponsesOutputContentBlock | OpenAIResponsesOutputReasoning['summary'][number] | NonNullable<OpenAIResponsesOutputReasoning['content']>[number]>(part: Part): part is Part & PureTextPart =>
+  isPureTextPart(part, ['input_text', 'output_text', 'summary_text', 'reasoning_text'], ['annotations', 'logprobs']);
 
 export const OPENAI_RESPONSES_REPLAY_CHECK_VERSION = 1;
 
@@ -30,15 +34,15 @@ const replayItemMaterial = (item: OpenAIResponsesAssistantTurnItem): TypedReplay
   if (item.type === 'reasoning') return {
     type: item.type,
     ...replayItemStatus(item),
-    summary: item.summary.map(part => ({ type: part.type, text: part.text })),
-    content: item.content?.map(part => ({ type: part.type, text: part.text })) ?? [],
+    summary: canonicalTextParts(item.summary, isOpenAIResponsesPureTextPart).map(part => ({ type: part.type, text: part.text })),
+    content: canonicalTextParts(item.content ?? [], isOpenAIResponsesPureTextPart).map(part => ({ type: part.type, text: part.text })),
   };
   if (item.type === 'message') return {
     type: item.type,
     ...replayItemStatus(item),
     content: replayMaterialsByType(typeof item.content === 'string'
       ? [{ type: 'output_text', text: item.content }]
-      : item.content.map(responseMessagePartMaterial)),
+      : canonicalTextParts(item.content, isOpenAIResponsesPureTextPart).map(responseMessagePartMaterial)),
   };
   if (item.type === 'function_call') return {
     type: item.type,

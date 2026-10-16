@@ -3,8 +3,12 @@ import type { IRJSONObject } from '../../../ir/types.ts';
 import { computeRoundTripReplayCheck, verifyRoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripAssistantTurnInspection } from '../../../round-trip/replay.ts';
+import { canonicalTextParts, isPureTextPart, type PureTextPart } from '../../../round-trip/text-parts.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
+
+const isGeminiGenerateContentPureTextPart = <Part extends GeminiGenerateContentPart>(part: Part): part is Part & PureTextPart =>
+  isPureTextPart(part);
 
 export const GEMINI_GENERATE_CONTENT_REPLAY_CHECK_VERSION = 1;
 
@@ -19,7 +23,7 @@ const geminiReplayCheckMaterialV1 = (turn: GeminiGenerateContentAssistantTurn): 
   const inlineData: { mimeType: string; data: string; audioTranscription?: string }[] = [];
   const functionCall: { id?: string; name: string; args?: IRJSONObject }[] = [];
 
-  for (const content of turn) for (const part of content.parts ?? []) {
+  for (const content of turn) for (const part of canonicalTextParts(content.parts ?? [], isGeminiGenerateContentPureTextPart)) {
     if (part.thought !== true && part.text !== undefined) text.push(part.text);
     if (part.inlineData !== undefined) inlineData.push({
       mimeType: part.inlineData.mimeType,

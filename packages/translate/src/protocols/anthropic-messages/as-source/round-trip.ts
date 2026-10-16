@@ -3,8 +3,14 @@ import type { IRJSONObject, IRJSONValue } from '../../../ir/types.ts';
 import { computeRoundTripReplayCheck, replayMaterialsByType, verifyRoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripAssistantTurnInspection } from '../../../round-trip/replay.ts';
+import { canonicalTextParts, isPureTextPart, type PureTextPart } from '../../../round-trip/text-parts.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesAssistantMessage, AnthropicMessagesRedactedThinkingBlock } from '@floway-dev/protocols/anthropic-messages';
+
+type AnthropicMessagesTextPart = NonNullable<Exclude<AnthropicMessagesAssistantTurn[number]['content'], string>>[number];
+
+const isAnthropicMessagesPureTextPart = <Part extends AnthropicMessagesTextPart>(part: Part): part is Part & PureTextPart =>
+  isPureTextPart(part, ['text'], ['citations']);
 
 export const ANTHROPIC_MESSAGES_REPLAY_CHECK_VERSION = 1;
 
@@ -19,7 +25,7 @@ const messagesReplayCheckMaterialV1 = (turn: AnthropicMessagesAssistantTurn): IR
       blocks.push({ type: 'text', text: message.content, citations: [] });
       continue;
     }
-    for (const block of message.content) {
+    for (const block of canonicalTextParts<AnthropicMessagesTextPart>(message.content, isAnthropicMessagesPureTextPart)) {
       if (block.type === 'text') blocks.push({
         type: block.type,
         text: block.text,
