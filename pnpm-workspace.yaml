@@ -13,7 +13,7 @@ onlyBuiltDependencies:
   - unrs-resolver
   - workerd
 
-# The @fluentui/react-charts patch carries four fixes, all in code the package
+# The @fluentui/react-charts patch carries five fixes, all in code the package
 # ships prebuilt, so none of them can be reached from a prop:
 #
 #   - CartesianChart measures its parent in an effect and publishes the result
@@ -25,6 +25,13 @@ onlyBuiltDependencies:
 #     and `containerHeight - margins.top` is negative until it arrives. A
 #     negative `width`/`height` on an SVG `rect` is an error, so the values are
 #     clamped at zero.
+#   - That same rect answers a pointer that is not over a series, and its width
+#     was the x of the last *nice tick* rather than the axis end — the two agree
+#     only when the window happens to end on a tick. Everything past that tick
+#     fell outside the hover target, so the right of the plot (and, above or
+#     below the plotted band, the whole of it) went dead to the pointer while
+#     the chart's own vertical line and callout never appeared. The width now
+#     comes from the scale's range, which is the plot's own right edge.
 #   - LineChart pushes two elements into `pointsForLine` without a key.
 #   - The date axis rounds its domain outward twice — unconditionally through
 #     d3's `nice()`, and again by 10% per side in markers mode — so the first
@@ -38,6 +45,7 @@ onlyBuiltDependencies:
 #     domain currently"), so both roundings are gated on the caller not having
 #     supplied ticks.
 #
+# https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/charts/react-charts/library/src/components/AreaChart/AreaChart.tsx#L1127-L1130
 # https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/charts/react-charts/library/src/utilities/utilities.ts#L463-L468
 # https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/charts/react-charts/library/src/utilities/utilities.ts#L2232-L2265
 # https://github.com/d3/d3/blob/ca958d45217b4c15332d971b935451a6d4c978f4/docs/d3-scale/time.md#L111-L124

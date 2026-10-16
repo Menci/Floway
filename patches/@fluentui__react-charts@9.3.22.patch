@@ -2,7 +2,9 @@ diff --git a/lib/components/AreaChart/AreaChart.js b/lib/components/AreaChart/Ar
 index 1000ec66f9f2447b572ced78f9b106da400a6edc..6cdc4a36c694f159ea6b109a62ba465b6931b7af 100644
 --- a/lib/components/AreaChart/AreaChart.js
 +++ b/lib/components/AreaChart/AreaChart.js
-@@ -910,8 +910,8 @@ export const AreaChart = /*#__PURE__*/ React.forwardRef((props, forwardedRef)=>{
+@@ -909,9 +909,9 @@ export const AreaChart = /*#__PURE__*/ React.forwardRef((props, forwardedRef)=>{
+-                const width1 = _xAxisRectScale(ticks[ticks.length - 1]);
++                const width1 = _xAxisRectScale.range()[1];
                  const rectHeight = props.containerHeight - _margins.top;
                  return /*#__PURE__*/ React.createElement(React.Fragment, null, /*#__PURE__*/ React.createElement("g", null, /*#__PURE__*/ React.createElement("rect", {
                      id: _rectId,
@@ -81,7 +83,9 @@ diff --git a/lib-commonjs/components/AreaChart/AreaChart.js b/lib-commonjs/compo
 index 5204125c8498f697d3673b3017ec7e6cbbbe960e..d44cf7a974d14d42e79528051f049fedee2e5ea8 100644
 --- a/lib-commonjs/components/AreaChart/AreaChart.js
 +++ b/lib-commonjs/components/AreaChart/AreaChart.js
-@@ -916,8 +916,8 @@ const AreaChart = /*#__PURE__*/ _react.forwardRef((props, forwardedRef)=>{
+@@ -915,9 +915,9 @@ const AreaChart = /*#__PURE__*/ _react.forwardRef((props, forwardedRef)=>{
+-                const width1 = _xAxisRectScale(ticks[ticks.length - 1]);
++                const width1 = _xAxisRectScale.range()[1];
                  const rectHeight = props.containerHeight - _margins.top;
                  return /*#__PURE__*/ _react.createElement(_react.Fragment, null, /*#__PURE__*/ _react.createElement("g", null, /*#__PURE__*/ _react.createElement("rect", {
                      id: _rectId,
