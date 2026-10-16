@@ -1,4 +1,4 @@
-import { computeOpenAIChatCompletionsReplayCheck, createOpenAIChatCompletionsSidecarCarrier } from './round-trip.ts';
+import { collectOpenAIChatCompletionsTextViews, computeOpenAIChatCompletionsReplayCheck, createOpenAIChatCompletionsSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import { irItemPath, irPartPath, irPathKey } from '../../../ir/operation-paths.ts';
 import { createIROrdinalMapper } from '../../../ir/ordinal-mapper.ts';
@@ -408,7 +408,7 @@ export const openaiChatCompletionsFromIR = async function* (
       if (nativeChoice === undefined) throw new Error(`Missing Chat Completions choice ${record.choice} at choice_end`);
       const replayCheck = await computeOpenAIChatCompletionsReplayCheck(nativeChoice.message);
       const input = toOpenAIChatCompletionsInputAssistantTurn<ContentStates>(nativeChoice.message, outputState(record.choice));
-      const data = await options.roundTrip.prepareSidecar(record.choice, replayCheck, input.turn, input.state);
+      const data = await options.roundTrip.prepareSidecar(record.choice, replayCheck, input.turn, input.state, collectOpenAIChatCompletionsTextViews(input.turn));
       yield deltaFrame(record.choice, { reasoning_details: createOpenAIChatCompletionsSidecarCarrier(data) }, tier);
       yield chunk([{ index: record.choice, delta: {}, finish_reason: record.finish_reason }], tierFields(tier));
       continue;

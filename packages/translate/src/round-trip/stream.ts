@@ -1,6 +1,7 @@
 import type { AssistantTurnByProtocol, AssistantTurnFor } from './assistant-turn.ts';
 import type { AssistantTurnSidecarCodec } from './codec.ts';
 import type { RoundTripReplayCheck } from './replay-check.ts';
+import type { CanonicalTextView } from './text-parts.ts';
 import type { AssistantTurnStateFor } from './thin/assistant-turn.ts';
 import { collectContentViews, createReferenceBuilder, finalizeAssistantTurnReferences, type ContentStates, type FieldStates, type ReferenceBuilder } from './thin/reference-builder.ts';
 
@@ -20,6 +21,7 @@ export interface RoundTripWriter<Protocol extends keyof AssistantTurnByProtocol>
     replayCheck: RoundTripReplayCheck,
     turn: AssistantTurnFor<Protocol>,
     contentState: AssistantTurnStateFor<Protocol, ContentStates>,
+    textViews: ReadonlyMap<object, CanonicalTextView>,
   ) => Promise<string>;
 }
 
@@ -38,14 +40,14 @@ export const createRoundTripStream = <
   };
   const writer: RoundTripWriter<Source> = {
     builder,
-    prepareSidecar: async (choice, replayCheck, turn, contentState) => {
+    prepareSidecar: async (choice, replayCheck, turn, contentState, textViews) => {
       const pending = turns.get(choice);
       if (pending === undefined) throw new Error(`Missing native assistant turn for choice ${choice}`);
       const finalized = await finalizeAssistantTurnReferences(
         pending.turn,
         pending.fieldState,
         builder,
-        collectContentViews(turn, contentState),
+        collectContentViews(turn, contentState, textViews),
       );
       return await codec.encode(source, { target, ...finalized, replayCheck });
     },

@@ -1,9 +1,13 @@
 import type { IRJSONObject } from '../../../ir/types.ts';
 import { computeRoundTripReplayCheck, verifyRoundTripReplayCheck, type RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripAssistantTurnInspection } from '../../../round-trip/replay.ts';
+import { canonicalTextParts, collectCanonicalTextViews, isPureTextPart, type CanonicalTextView, type PureTextPart } from '../../../round-trip/text-parts.ts';
 import type { ReplayCandidate } from '../../../round-trip/thin/assistant-turn.ts';
 import { isPlainJSONObject, requireJSONObject } from '../../../shared/json/object.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
+
+const isGeminiGenerateContentPureTextPart = <Part extends GeminiGenerateContentPart>(part: Part): part is Part & PureTextPart =>
+  isPureTextPart(part);
 
 export const GEMINI_GENERATE_CONTENT_REPLAY_CHECK_VERSION = 1;
 
@@ -18,7 +22,7 @@ const geminiReplayCheckMaterialV1 = (turn: GeminiGenerateContentAssistantTurn): 
   const inlineData: { mimeType: string; data: string; audioTranscription?: string }[] = [];
   const functionCall: { id?: string; name: string; args?: IRJSONObject }[] = [];
 
-  for (const content of turn) for (const part of content.parts ?? []) {
+  for (const content of turn) for (const part of canonicalTextParts(content.parts ?? [], isGeminiGenerateContentPureTextPart)) {
     if (part.thought !== true && part.text !== undefined) text.push(part.text);
     if (part.inlineData !== undefined) inlineData.push({
       mimeType: part.inlineData.mimeType,
@@ -50,16 +54,15 @@ export const inspectGeminiGenerateContentAssistantTurn = (turn: GeminiGenerateCo
     if (content.parts === undefined) return [content];
     const parts = content.parts.flatMap(part => {
       if (typeof part.thoughtSignature !== 'string') {
-        collectPartCandidates(candidates, part);
         return [part];
       }
       const { thoughtSignature, ...body } = part;
       sidecars.push(thoughtSignature);
-      collectPartCandidates(candidates, body);
       return Object.keys(body).length === 0 ? [] : [body];
     });
     return parts.length === 0 && content.parts.length > 0 ? [] : [{ ...content, parts }];
   });
+  for (const content of assistantTurn) for (const part of canonicalTextParts(content.parts ?? [], isGeminiGenerateContentPureTextPart)) collectPartCandidates(candidates, part);
   return {
     sidecars,
     turn: assistantTurn,
@@ -83,3 +86,9 @@ export const verifyGeminiGenerateContentReplayCheck = (
 // Gemini returns model-side thought signatures as Part metadata.
 // https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures
 export const createGeminiGenerateContentSidecarCarrier = (data: string): GeminiGenerateContentSidecarCarrier => ({ thoughtSignature: data });
+
+export const collectGeminiGenerateContentTextViews = (turn: GeminiGenerateContentAssistantTurn): Map<object, CanonicalTextView> => {
+  const views = new Map<object, CanonicalTextView>();
+  for (const content of turn) if (content.parts !== undefined) collectCanonicalTextViews(content.parts, isGeminiGenerateContentPureTextPart, views);
+  return views;
+};

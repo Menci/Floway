@@ -1,4 +1,4 @@
-import { computeGeminiGenerateContentReplayCheck, createGeminiGenerateContentSidecarCarrier } from './round-trip.ts';
+import { collectGeminiGenerateContentTextViews, computeGeminiGenerateContentReplayCheck, createGeminiGenerateContentSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import type { IRCollector } from '../../../ir/collector.ts';
 import { irItemPath, irPartPath, irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/operation-paths.ts';
@@ -425,7 +425,7 @@ export const geminiGenerateContentFromIR = async function* (
       stateParts.length = assistantTurn[0].parts?.length ?? 0;
       const assistantState: GeminiGenerateContentAssistantState<ContentStates> = [{ parts: stateParts }];
       const replayCheck = await computeGeminiGenerateContentReplayCheck(assistantTurn);
-      const data = await options.roundTrip.prepareSidecar(record.choice, replayCheck, assistantTurn, assistantState);
+      const data = await options.roundTrip.prepareSidecar(record.choice, replayCheck, assistantTurn, assistantState, collectGeminiGenerateContentTextViews(assistantTurn));
       yield emitPart(record.choice, createGeminiGenerateContentSidecarCarrier(data));
       yield emit({ candidates: [terminalCandidate(record, state, collector)] });
     }

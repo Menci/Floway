@@ -1,4 +1,4 @@
-import { computeAnthropicMessagesReplayCheck, createAnthropicMessagesSidecarCarrier } from './round-trip.ts';
+import { collectAnthropicMessagesTextViews, computeAnthropicMessagesReplayCheck, createAnthropicMessagesSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import type { IRCollector } from '../../../ir/collector.ts';
 import { isIRItemPath, isIRPartPath, irPathKey } from '../../../ir/operation-paths.ts';
@@ -343,7 +343,7 @@ export const anthropicMessagesFromIR = async function* (
       };
       const assistantState: AnthropicMessagesAssistantState<ContentStates> = { content: contentState };
       const replayCheck = await computeAnthropicMessagesReplayCheck([assistantTurn]);
-      const data = await options.roundTrip.prepareSidecar(0, replayCheck, assistantTurn, assistantState);
+      const data = await options.roundTrip.prepareSidecar(0, replayCheck, assistantTurn, assistantState, collectAnthropicMessagesTextViews([assistantTurn]));
       const carrier = createAnthropicMessagesSidecarCarrier(data);
       yield emit({ type: 'content_block_start', index: nextBlockIndex, content_block: carrier });
       yield emit({ type: 'content_block_stop', index: nextBlockIndex });

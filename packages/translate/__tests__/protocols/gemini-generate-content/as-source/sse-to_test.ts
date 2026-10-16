@@ -24,9 +24,9 @@ test('resolves delayed Gemini audio atoms within the complete emitted data field
   let prepared = false;
   const roundTrip: RoundTripWriter<'geminiGenerateContent'> = {
     builder: references,
-    prepareSidecar: async (_choice, _check, turn, state) => {
-      const views = collectContentViews(turn, state);
-      expect([...views.values()]).toEqual(['YQ==']);
+    prepareSidecar: async (_choice, _check, turn, state, textViews) => {
+      const views = collectContentViews(turn, state, textViews);
+      expect([...views.values()]).toEqual([{ text: 'YQ==', offset: 0 }]);
       const finalizer = await createReferenceFinalizer(references, views);
       expect(await finalizer.finalizeField('Q==', field)).toMatchObject({ value: [[0, 1, 4]] });
       prepared = true;
@@ -53,9 +53,9 @@ test.each(['{"x":1,}', '{"x": 1}'])('tracks the emitted canonical JSON view with
   let prepared = false;
   const roundTrip: RoundTripWriter<'geminiGenerateContent'> = {
     builder: references,
-    prepareSidecar: async (_choice, _check, turn, state) => {
-      const views = collectContentViews(turn, state);
-      expect([...views.values()]).toContain('{"x":1}');
+    prepareSidecar: async (_choice, _check, turn, state, textViews) => {
+      const views = collectContentViews(turn, state, textViews);
+      expect([...views.values()]).toContainEqual({ text: '{"x":1}', offset: 0 });
       const finalizer = await createReferenceFinalizer(references, views);
       expect(await finalizer.finalizeField(original, field)).toBe(original);
       prepared = true;

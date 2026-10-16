@@ -1,7 +1,8 @@
 import { Tag } from 'cbor-x';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { IRJSONObject } from '../../../src/ir/types.ts';
+import { collectAnthropicMessagesTextViews } from '../../../src/protocols/anthropic-messages/as-source/round-trip.ts';
 import type { AnthropicMessagesThinAssistantTurn } from '../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
 import type { OpenAIChatCompletionsAssistantState, OpenAIChatCompletionsInputAssistantTurn } from '../../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
 import { hashRoundTripContent } from '../../../src/round-trip/replay-check.ts';
@@ -23,6 +24,46 @@ import {
 import { parseJSONObject } from '../../../src/shared/json/object.ts';
 
 describe('ReferenceBuilder', () => {
+  it('hashes one canonical text run only once across multiple content IDs and shifts their ranges', async () => {
+    const builder = createReferenceBuilder();
+    const left = 'left segment '.repeat(30);
+    const right = 'right segment '.repeat(30);
+    const fields = [createFieldState('text'), createFieldState('text')];
+    const contents = [createContentState(builder, 'text'), createContentState(builder, 'text')];
+    appendContent(builder, contents[0], left, [appendField(builder, fields[0], left)]);
+    appendContent(builder, contents[1], right, [appendField(builder, fields[1], right)]);
+    const turn = { role: 'assistant' as const, content: [{ type: 'text' as const, text: left, citations: null }, { type: 'text' as const, text: right, citations: null }] };
+    const views = collectContentViews(turn, { content: contents.map(text => ({ text })) }, collectAnthropicMessagesTextViews([turn]));
+    const finalizer = await createReferenceFinalizer(builder, views);
+    const digest = vi.spyOn(crypto.subtle, 'digest');
+    try {
+      expect(await finalizer.finalizeField(left, fields[0])).toMatchObject({ value: [[0, 0, left.length]] });
+      expect(await finalizer.finalizeField(right, fields[1])).toMatchObject({ value: [[0, left.length, left.length + right.length]] });
+      expect(digest).toHaveBeenCalledTimes(1);
+    } finally {
+      digest.mockRestore();
+    }
+    expect(finalizer.referencedContents).toEqual([await hashRoundTripContent(left + right)]);
+  });
+
+  it('coalesces shifted ranges across canonical parts and preserves original-leaf validation', async () => {
+    const builder = createReferenceBuilder();
+    const field = createFieldState('text');
+    const contents = [createContentState(builder, 'text'), createContentState(builder, 'text')];
+    const left = 'prefix \ud83d';
+    const right = '\ude00 suffix';
+    appendContent(builder, contents[0], left, [appendField(builder, field, left)]);
+    appendContent(builder, contents[1], right, [appendField(builder, field, right)]);
+    const turn = { role: 'assistant' as const, content: [{ type: 'text' as const, text: left, citations: null }, { type: 'text' as const, text: right, citations: null }] };
+    const state = { content: contents.map(text => ({ text })) };
+    const finalizer = await createReferenceFinalizer(builder, collectContentViews(turn, state, collectAnthropicMessagesTextViews([turn])));
+    expect(await finalizer.finalizeField(left + right, field)).toMatchObject({ value: [0] });
+    const changed = { ...turn, content: [{ ...turn.content[0], text: 'changed' }, turn.content[1]] };
+    const changedFinalizer = await createReferenceFinalizer(builder, collectContentViews(changed, state, collectAnthropicMessagesTextViews([changed])));
+    expect(await changedFinalizer.finalizeField(left + right, field)).toBe(left + right);
+    expect(changedFinalizer.referencedContents).toEqual([]);
+  });
+
   it('resolves every original SSE atom within one merged IR append', async () => {
     const builder = createReferenceBuilder();
     const field = createFieldState('text');

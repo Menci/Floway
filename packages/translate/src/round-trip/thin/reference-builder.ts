@@ -6,6 +6,7 @@ import { parseJSONObject, requireJSONObject } from '../../shared/json/object.ts'
 import type { AssistantTurnByProtocol, AssistantTurnFor } from '../assistant-turn.ts';
 import { encodeSidecarValue } from '../codec.ts';
 import { hashRoundTripContent } from '../replay-check.ts';
+import type { CanonicalTextView } from '../text-parts.ts';
 
 const builderBrand: unique symbol = Symbol('ReferenceBuilder');
 const fieldStateBrand: unique symbol = Symbol('FieldState');
@@ -155,21 +156,25 @@ const pairedChildren = function* (value: unknown, state: unknown): Generator<rea
   for (const [key, childState] of Object.entries(state)) yield [Reflect.get(value, key), childState];
 };
 
-export function collectContentViews(value: unknown, contentState: ContentState): Map<ContentId, string>;
+export function collectContentViews(value: unknown, contentState: ContentState): Map<ContentId, CanonicalTextView>;
 export function collectContentViews<Protocol extends keyof AssistantTurnByProtocol>(
   turn: AssistantTurnFor<Protocol>,
   contentState: AssistantTurnStateFor<Protocol, ContentStates>,
-): Map<ContentId, string>;
-export function collectContentViews(turn: unknown, contentState: unknown): Map<ContentId, string> {
-  const views = new Map<ContentId, string>();
-  const visit = (value: unknown, state: unknown): void => {
+  textViews?: ReadonlyMap<object, CanonicalTextView>,
+): Map<ContentId, CanonicalTextView>;
+export function collectContentViews(turn: unknown, contentState: unknown, textViews?: ReadonlyMap<object, CanonicalTextView>): Map<ContentId, CanonicalTextView> {
+  const views = new Map<ContentId, CanonicalTextView>();
+  const visit = (value: unknown, state: unknown, canonical?: CanonicalTextView): void => {
     if (isContentState(state)) {
       const data = contentData(state);
       const view = textView(data.restoration, value);
-      if (view === data.text) views.set(data.contentId, view);
+      if (view === data.text) views.set(data.contentId, canonical ?? { text: view, offset: 0 });
       return;
     }
-    for (const [childValue, childState] of pairedChildren(value, state)) visit(childValue, childState);
+    const view = typeof value === 'object' && value !== null ? textViews?.get(value) : undefined;
+    for (const [childValue, childState] of pairedChildren(value, state)) {
+      visit(childValue, childState, view !== undefined && isContentState(childState) && contentData(childState).restoration === 'text' ? view : undefined);
+    }
   };
   visit(turn, contentState);
   return views;
@@ -195,7 +200,6 @@ interface ReferenceSegment {
 }
 
 interface ResolvedSegment {
-  readonly contentId: ContentId;
   readonly content: string;
   readonly start: number;
   readonly endExclusive: number;
@@ -203,7 +207,7 @@ interface ResolvedSegment {
 
 interface FinalizationState {
   readonly referencedContents: Uint8Array[];
-  readonly hashIndexByContentId: Map<ContentId, number>;
+  readonly hashIndexByContent: Map<string, number>;
   readonly hashIndexByDigest: Map<string, number>;
 }
 
@@ -215,16 +219,16 @@ interface ReferenceFinalizer {
   ) => Promise<OriginalFor<Kind> | ThinReferenceFor<Kind>>;
 }
 
-export const createReferenceFinalizer = async (builder: ReferenceBuilder, contentViews: ReadonlyMap<ContentId, string>): Promise<ReferenceFinalizer> => {
+export const createReferenceFinalizer = async (builder: ReferenceBuilder, contentViews: ReadonlyMap<ContentId, CanonicalTextView>): Promise<ReferenceFinalizer> => {
   const builderState = stateOf(builder);
   const state: FinalizationState = {
     referencedContents: [],
-    hashIndexByContentId: new Map(),
+    hashIndexByContent: new Map(),
     hashIndexByDigest: new Map(),
   };
 
-  const hashIndex = async (contentId: ContentId, content: string): Promise<number> => {
-    const existing = state.hashIndexByContentId.get(contentId);
+  const hashIndex = async (content: string): Promise<number> => {
+    const existing = state.hashIndexByContent.get(content);
     if (existing !== undefined) return existing;
     const digest = await hashRoundTripContent(content);
     const key = contentHashKey(digest);
@@ -234,7 +238,7 @@ export const createReferenceFinalizer = async (builder: ReferenceBuilder, conten
       state.referencedContents.push(digest);
       state.hashIndexByDigest.set(key, index);
     }
-    state.hashIndexByContentId.set(contentId, index);
+    state.hashIndexByContent.set(content, index);
     return index;
   };
 
@@ -249,13 +253,16 @@ export const createReferenceFinalizer = async (builder: ReferenceBuilder, conten
       const piece = builderState.pieces[partId];
       const resolution = builderState.resolutions.get(partId);
       if (piece === undefined || resolution === undefined) return original;
-      const content = contentViews.get(resolution.contentId);
-      if (content === undefined || content.slice(resolution.start, resolution.endExclusive) !== piece) return original;
-      resolved.push({ contentId: resolution.contentId, content, start: resolution.start, endExclusive: resolution.endExclusive });
+      const view = contentViews.get(resolution.contentId);
+      if (view === undefined) return original;
+      const start = view.offset + resolution.start;
+      const endExclusive = view.offset + resolution.endExclusive;
+      if (view.text.slice(start, endExclusive) !== piece) return original;
+      resolved.push({ content: view.text, start, endExclusive });
     }
     const segments: ReferenceSegment[] = [];
     for (const resolution of resolved) {
-      const index = await hashIndex(resolution.contentId, resolution.content);
+      const index = await hashIndex(resolution.content);
       const previous = segments.at(-1);
       if (previous?.hashIndex === index && previous.endExclusive === resolution.start) previous.endExclusive = resolution.endExclusive;
       else segments.push({ hashIndex: index, start: resolution.start, endExclusive: resolution.endExclusive, contentLength: resolution.content.length });
@@ -288,7 +295,7 @@ export const finalizeAssistantTurnReferences = async <Protocol extends keyof Ass
   turn: AssistantTurnFor<Protocol>,
   fieldState: AssistantTurnStateFor<Protocol, FieldStates>,
   builder: ReferenceBuilder,
-  contentViews: ReadonlyMap<ContentId, string>,
+  contentViews: ReadonlyMap<ContentId, CanonicalTextView>,
 ): Promise<FinalizedAssistantTurn<ThinAssistantTurnFor<Protocol, ThinReference>>> => {
   const finalizer = await createReferenceFinalizer(builder, contentViews);
   const minimumReferenceCost = encodeSidecarValue(new Tag([0], THIN_TAGS.text)).byteLength;

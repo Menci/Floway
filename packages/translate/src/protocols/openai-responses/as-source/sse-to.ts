@@ -1,6 +1,6 @@
 import { restoreNamespaceOutputItem, type NamespaceToolNames } from './namespace-tools.ts';
 import { createRandomOpenAIResponsesResponseId } from './response-id.ts';
-import { computeOpenAIResponsesReplayCheck, createOpenAIResponsesSidecarCarrier } from './round-trip.ts';
+import { collectOpenAIResponsesTextViews, computeOpenAIResponsesReplayCheck, createOpenAIResponsesSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import type { IRCollector } from '../../../ir/collector.ts';
 import { irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/operation-paths.ts';
@@ -817,7 +817,7 @@ export const openaiResponsesFromIR = async function* (
       nativeState.length = nativeOutput.length;
       const replayCheck = await computeOpenAIResponsesReplayCheck(nativeOutput);
       const input = toOpenAIResponsesInputAssistantTurn<ContentStates>(nativeOutput, nativeState);
-      const data = await options.roundTrip.prepareSidecar(0, replayCheck, input.turn, input.state);
+      const data = await options.roundTrip.prepareSidecar(0, replayCheck, input.turn, input.state, collectOpenAIResponsesTextViews(input.turn));
       sidecar = { ...createOpenAIResponsesSidecarCarrier(createRandomOpenAIResponsesItemId('reasoning'), data), status: 'completed' };
       const outputIndex = outputUnits.length;
       yield emit({ type: 'response.output_item.added', output_index: outputIndex, item: sidecar });

@@ -61,7 +61,7 @@ test('keeps the whole field literal when a done snapshot supplies a suffix witho
   ]);
 
   expect(captured.appends).toEqual([{ text: 'hel', partIds: [0] }, { text: 'lo' }]);
-  expect([...collectContentViews('hello', captured.content).values()]).toEqual(['hello']);
+  expect([...collectContentViews('hello', captured.content).values()]).toEqual([{ text: 'hello', offset: 0 }]);
   const itemState = captured.fieldState[0];
   if (itemState === undefined || !('content' in itemState)) throw new Error('Responses message state was not collected');
   if (!Array.isArray(itemState.content)) throw new Error('Responses message content state was not collected');

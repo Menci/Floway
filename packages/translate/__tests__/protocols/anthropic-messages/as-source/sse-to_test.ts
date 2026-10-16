@@ -31,9 +31,9 @@ test.each(['text', 'refusal', 'audio'] as const)('resolves blocked %s against th
   let prepared = false;
   const roundTrip: RoundTripWriter<'anthropicMessages'> = {
     builder: references,
-    prepareSidecar: async (_choice, _check, turn, state) => {
-      const views = collectContentViews(turn, state);
-      expect([...views.values()]).toContain('Hi');
+    prepareSidecar: async (_choice, _check, turn, state, textViews) => {
+      const views = collectContentViews(turn, state, textViews);
+      expect([...views.values()]).toContainEqual({ text: 'Hi', offset: 0 });
       const finalizer = await createReferenceFinalizer(references, views);
       expect(await finalizer.finalizeField('Hi', field)).toMatchObject({ value: [0] });
       expect(finalizer.referencedContents).toEqual([await hashRoundTripContent('Hi')]);
@@ -105,9 +105,9 @@ test.each(['{"x":1,}', '{"x": 1}'])('tracks the emitted canonical JSON view with
   let prepared = false;
   const roundTrip: RoundTripWriter<'anthropicMessages'> = {
     builder: references,
-    prepareSidecar: async (_choice, _check, turn, state) => {
-      const views = collectContentViews(turn, state);
-      expect([...views.values()]).toContain('{"x":1}');
+    prepareSidecar: async (_choice, _check, turn, state, textViews) => {
+      const views = collectContentViews(turn, state, textViews);
+      expect([...views.values()]).toContainEqual({ text: '{"x":1}', offset: 0 });
       const finalizer = await createReferenceFinalizer(references, views);
       expect(await finalizer.finalizeField(original, field)).toBe(original);
       prepared = true;

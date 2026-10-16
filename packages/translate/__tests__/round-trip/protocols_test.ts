@@ -297,7 +297,7 @@ describe('assistant-turn sidecar protocols', () => {
       ],
     };
     const mixedContentCheck = await computeOpenAIResponsesReplayCheck([mixedContentMessage]);
-    expect(await verifyResponsesTurn([{ ...mixedContentMessage, content: [mixedContentMessage.content[1], mixedContentMessage.content[0], mixedContentMessage.content[2]] }, turn[2]], mixedContentCheck)).toBe(true);
+    expect(await verifyResponsesTurn([{ ...mixedContentMessage, content: [mixedContentMessage.content[1], mixedContentMessage.content[0], mixedContentMessage.content[2]] }, turn[2]], mixedContentCheck)).toBe(false);
     expect(await verifyResponsesTurn([{ ...mixedContentMessage, content: [mixedContentMessage.content[2], mixedContentMessage.content[1], mixedContentMessage.content[0]] }, turn[2]], mixedContentCheck)).toBe(false);
 
     const inputTextMessage = { type: 'message' as const, role: 'assistant' as const, content: [{ type: 'input_text' as const, text: 'input body' }] };
@@ -502,6 +502,7 @@ describe('assistant-turn sidecar protocols', () => {
     ]);
     expect(turns.map(({ role, items }) => [role, items.length])).toEqual([['assistant', 2], ['bare', 1], ['assistant', 1]]);
     const check = await computeGeminiGenerateContentReplayCheck(inspectGeminiGenerateContentAssistantTurn(turn).turn);
+    expect(await verifyGeminiTurn([{ ...turn[0], parts: [turn[0].parts![1], turn[0].parts![0], turn[0].parts![3], turn[0].parts![2]] }, turn[1]], check)).toBe(true);
     const moved = [
       {
         role: 'model', parts: [
@@ -513,7 +514,7 @@ describe('assistant-turn sidecar protocols', () => {
       },
       { role: 'model', parts: [] },
     ];
-    expect(await verifyGeminiTurn(moved, check)).toBe(true);
+    expect(await verifyGeminiTurn(moved, check)).toBe(false);
     expect(await verifyGeminiTurn([
       { ...moved[0], parts: [{ text: 'edited answer', thoughtSignature: 'opaque-sidecar' }, ...moved[0].parts.slice(1)] },
       { role: 'model', parts: [] },
