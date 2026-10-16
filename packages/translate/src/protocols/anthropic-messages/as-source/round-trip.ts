@@ -34,18 +34,13 @@ const messagesReplayCheckMaterialV1 = (turn: AnthropicMessagesAssistantTurn): IR
 };
 
 export const inspectAnthropicMessagesAssistantTurn = (turn: AnthropicMessagesAssistantTurn): RoundTripAssistantTurnInspection<AnthropicMessagesAssistantTurn> => {
-  const sidecars: string[] = [];
-  const assistantTurn = turn.map(message => typeof message.content === 'string' ? message : {
-    ...message,
-    content: message.content.filter(block => {
-      if (block.type !== 'redacted_thinking') return true;
-      sidecars.push(block.data);
-      return false;
-    }),
-  });
+  const message = turn.at(-1);
+  if (message === undefined || typeof message.content === 'string') return { turn };
+  const block = message.content.at(-1);
+  if (block?.type !== 'redacted_thinking') return { turn };
   return {
-    sidecars,
-    turn: assistantTurn,
+    sidecar: block.data,
+    turn: [...turn.slice(0, -1), { ...message, content: message.content.slice(0, -1) }],
   };
 };
 

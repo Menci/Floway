@@ -1,5 +1,5 @@
-import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
 import { createRoundTripStream } from '../../../round-trip/stream.ts';
+import type { TranslateSidecarCodec } from '../../../types.ts';
 import { irFromOpenAIResponses } from '../../openai-responses/as-target/sse-from.ts';
 import { openaiChatCompletionsFromIR } from '../as-source/sse-to.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -9,7 +9,7 @@ import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-
 export const translateToSourceEvents = (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   streamOptions: OpenAIChatCompletionsStreamOptionsEx,
-  codec: AssistantTurnSidecarCodec,
+  codec: TranslateSidecarCodec,
 ): AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> => {
   const outputOptions = { continuousUsageStats: streamOptions.include_usage === true && streamOptions.continuous_usage_stats === true };
   const stream = createRoundTripStream('openaiChatCompletions', 'openaiResponses', codec);

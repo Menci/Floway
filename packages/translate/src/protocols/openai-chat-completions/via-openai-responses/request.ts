@@ -1,9 +1,9 @@
 import { klona } from 'klona/json';
 
 import { openaiChatCompletionsContentToOpenAIResponsesInputContent, openaiChatCompletionsContentToText } from './content.ts';
-import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
+import type { TranslateSidecarCodec } from '../../../types.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
 import { hasOpenAIChatCompletionsReasoning, inspectOpenAIChatCompletionsAssistantTurn, verifyOpenAIChatCompletionsReplayCheck } from '../as-source/round-trip.ts';
 import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
@@ -61,7 +61,7 @@ const translateAssistantContent = (message: OpenAIChatCompletionsAssistantMessag
 
 export const buildTargetRequest = async (
   payload: OpenAIChatCompletionsPayload,
-  codec: AssistantTurnSidecarCodec,
+  codec: TranslateSidecarCodec,
 ): Promise<CanonicalOpenAIResponsesPayload> => {
   const instructions: string[] = [];
   const input: CanonicalOpenAIResponsesInputItem[] = [];

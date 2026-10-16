@@ -1,7 +1,7 @@
 
-import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
+import type { TranslateSidecarCodec } from '../../../types.ts';
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
 import { geminiGenerateContentReasoningEffort } from '../as-source/reasoning.ts';
@@ -179,7 +179,7 @@ const buildTools = (payload: GeminiGenerateContentPayload): OpenAIResponsesTool[
 export const buildTargetRequest = async (
   payload: GeminiGenerateContentPayload,
   model: string,
-  codec: AssistantTurnSidecarCodec,
+  codec: TranslateSidecarCodec,
 ): Promise<CanonicalOpenAIResponsesPayload> => {
   const input: CanonicalOpenAIResponsesInputItem[] = [];
   const request: CanonicalOpenAIResponsesPayload = {

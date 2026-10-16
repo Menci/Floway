@@ -9,7 +9,7 @@ import { computeOpenAIChatCompletionsReplayCheck, createOpenAIChatCompletionsSid
 import { partitionOpenAIResponsesTurns } from '../../src/protocols/openai-responses/as-source/conversation-turns.ts';
 import { computeOpenAIResponsesReplayCheck, createOpenAIResponsesSidecarCarrier, inspectOpenAIResponsesAssistantTurn, verifyOpenAIResponsesReplayCheck } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
 import { toOpenAIResponsesInputAssistantTurn } from '../../src/protocols/openai-responses/as-target/assistant-turn.ts';
-import type { RoundTripSidecarEnvelope } from '../../src/round-trip/codec.ts';
+import type { RoundTripSidecarEnvelope } from '../../src/round-trip/sidecar.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesAssistantMessage, AnthropicMessagesMessage } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentContent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
@@ -90,7 +90,7 @@ describe('assistant-turn sidecar protocols', () => {
     const turn = { ...ordinary, reasoning_details: [...details, ...createOpenAIChatCompletionsSidecarCarrier('opaque')] };
     const before = structuredClone(turn);
     const inspection = inspectOpenAIChatCompletionsAssistantTurn(turn);
-    expect(inspection).toEqual({ sidecars: ['opaque'], turn: ordinary });
+    expect(inspection).toEqual({ sidecar: 'opaque', turn: ordinary });
     expect(turn).toEqual(before);
     const check = await computeOpenAIChatCompletionsReplayCheck(ordinary);
     expect(await verifyOpenAIChatCompletionsReplayCheck(inspection.turn, check)).toBe(true);
@@ -105,7 +105,7 @@ describe('assistant-turn sidecar protocols', () => {
     const turn: AnthropicMessagesAssistantMessage[] = [{ ...ordinary[0], content: [...blocks, createAnthropicMessagesSidecarCarrier('opaque')] }];
     const before = structuredClone(turn);
     const inspection = inspectAnthropicMessagesAssistantTurn(turn);
-    expect(inspection).toEqual({ sidecars: ['opaque'], turn: ordinary });
+    expect(inspection).toEqual({ sidecar: 'opaque', turn: ordinary });
     expect(turn).toEqual(before);
     const check = await computeAnthropicMessagesReplayCheck(ordinary);
     expect(await verifyAnthropicMessagesReplayCheck(inspection.turn, check)).toBe(true);
@@ -123,7 +123,7 @@ describe('assistant-turn sidecar protocols', () => {
     const turn = [...ordinary, carrier];
     const before = structuredClone(turn);
     const inspection = inspectOpenAIResponsesAssistantTurn(turn);
-    expect(inspection).toEqual({ sidecars: ['opaque'], turn: ordinary });
+    expect(inspection).toEqual({ sidecar: 'opaque', turn: ordinary });
     expect(turn).toEqual(before);
     const check = await computeOpenAIResponsesReplayCheck(ordinary);
     expect(await verifyOpenAIResponsesReplayCheck(inspection.turn, check)).toBe(true);
@@ -140,7 +140,7 @@ describe('assistant-turn sidecar protocols', () => {
     const turn = [attached];
     const before = structuredClone(turn);
     const inspection = inspectOpenAIResponsesAssistantTurn(turn);
-    expect(inspection).toEqual({ sidecars: ['opaque'], turn: [reasoning] });
+    expect(inspection).toEqual({ sidecar: 'opaque', turn: [reasoning] });
     expect(turn).toEqual(before);
     const check = await computeOpenAIResponsesReplayCheck([reasoning]);
     expect(await verifyOpenAIResponsesReplayCheck(inspection.turn, check)).toBe(true);
@@ -152,14 +152,14 @@ describe('assistant-turn sidecar protocols', () => {
 
   it('extracts Gemini signatures from attached bodies and removes standalone carriers without mutating input', async () => {
     const functionCall = { id: 'call', name: 'lookup', args: { q: 'a' } };
-    const ordinary: GeminiGenerateContentContent[] = [{ role: 'model', parts: [{ text: 'answer' }, { functionCall }, { text: 'native thought', thought: true }] }];
+    const ordinary: GeminiGenerateContentContent[] = [{ role: 'model', parts: [{ text: 'answer', thoughtSignature: 'on-text' }, { functionCall, thoughtSignature: 'on-call' }, { text: 'native thought', thought: true }, createGeminiGenerateContentSidecarCarrier('standalone-part')] }];
     const turn: GeminiGenerateContentContent[] = [
       { role: 'model', parts: [{ text: 'answer', thoughtSignature: 'on-text' }, { functionCall, thoughtSignature: 'on-call' }, { text: 'native thought', thought: true }, createGeminiGenerateContentSidecarCarrier('standalone-part')] },
       { role: 'model', parts: [createGeminiGenerateContentSidecarCarrier('standalone-content')] },
     ];
     const before = structuredClone(turn);
     const inspection = inspectGeminiGenerateContentAssistantTurn(turn);
-    expect(inspection).toEqual({ sidecars: ['on-text', 'on-call', 'standalone-part', 'standalone-content'], turn: ordinary });
+    expect(inspection).toEqual({ sidecar: 'standalone-content', turn: ordinary });
     expect(turn).toEqual(before);
     const check = await computeGeminiGenerateContentReplayCheck(ordinary);
     expect(await verifyGeminiGenerateContentReplayCheck(inspection.turn, check)).toBe(true);
@@ -197,7 +197,7 @@ describe('assistant-turn sidecar protocols', () => {
   it('checks complete Chat body, readable summary, and ordered tool identities and arguments', async () => {
     const turn = chatTurn();
     const inspection = inspectOpenAIChatCompletionsAssistantTurn(turn);
-    expect(inspection.sidecars).toEqual(['opaque-sidecar']);
+    expect(inspection.sidecar).toBe('opaque-sidecar');
     const check = await computeOpenAIChatCompletionsReplayCheck(inspection.turn);
     expect(await verifyChatTurn(turn, check)).toBe(true);
     expect(await verifyChatTurn({ ...turn, audio: { id: 'edited-audio' } }, check)).toBe(true);
@@ -278,13 +278,13 @@ describe('assistant-turn sidecar protocols', () => {
       ...turn.slice(1),
     ];
     expect(await verifyResponsesTurn(changedOutputCitation, check)).toBe(true);
-    expect(await verifyResponsesTurn([turn[2], ...turn.slice(0, 2)], check)).toBe(true);
+    expect(await verifyResponsesTurn([turn[1], turn[0], turn[2]], check)).toBe(true);
     expect(await verifyResponsesTurn(turn, { ...check, version: 99 })).toBe(false);
 
     const secondCall = { ...turn[1] as Extract<OpenAIResponsesOutputItemEx, { type: 'function_call' }>, call_id: 'call-b', name: 'other', arguments: '{"q":"b"}' };
-    const twoCalls = [turn[0], turn[1], turn[2], secondCall];
+    const twoCalls = [turn[0], turn[1], secondCall, turn[2]];
     const twoCallsCheck = await computeOpenAIResponsesReplayCheck(inspectOpenAIResponsesAssistantTurn(twoCalls).turn);
-    expect(await verifyResponsesTurn([turn[0], secondCall, turn[2], turn[1]], twoCallsCheck)).toBe(false);
+    expect(await verifyResponsesTurn([turn[0], secondCall, turn[1], turn[2]], twoCallsCheck)).toBe(false);
     expect(await verifyResponsesTurn([turn[1], secondCall, turn[0], turn[2]], twoCallsCheck)).toBe(true);
 
     const mixedContentMessage = {
@@ -419,53 +419,50 @@ describe('assistant-turn sidecar protocols', () => {
     expect(await verifyResponsesTurn([{ ...imageCall, result: 'changed-image' }, imageTurn[1]], imageCheck)).toBe(false);
   });
 
-  it('merges adjacent Messages roles into runs and checks bodies in order within each block type', async () => {
-    const first = messagesTurn()[0];
-    const second: AnthropicMessagesAssistantMessage = { role: 'assistant', content: [{ type: 'text', text: 'continued', citations: null }] };
+  it('merges adjacent Messages roles while keeping the carrier terminal and checks each block type in order', async () => {
+    type Block = Exclude<AnthropicMessagesAssistantMessage['content'], string>[number];
+    const message = messagesTurn()[0];
+    if (typeof message.content === 'string') throw new Error('Expected block content');
+    const [text, thinking, call, carrier] = message.content;
+    if (text.type !== 'text' || thinking.type !== 'thinking' || call.type !== 'tool_use' || carrier.type !== 'redacted_thinking') throw new Error('Unexpected Messages fixture');
+    const first = { ...message, content: [text, thinking, call] };
+    const continued: Extract<Block, { type: 'text' }> = { type: 'text', text: 'continued', citations: null };
+    const second: AnthropicMessagesAssistantMessage = { role: 'assistant', content: [continued, carrier] };
     const user: AnthropicMessagesMessage = { role: 'user', content: 'question' };
     const turns = partitionAnthropicMessagesTurns([first, second, user]);
     expect(turns.map(({ role, items }) => [role, items.length])).toEqual([['assistant', 2], ['user', 1]]);
     expect(turns.map(({ items }) => items).flat()).toEqual([first, second, user]);
     const assistantTurn = [first, second];
     const inspection = inspectAnthropicMessagesAssistantTurn(assistantTurn);
-    expect(inspection.sidecars).toEqual(['opaque-sidecar']);
+    expect(inspection.sidecar).toBe('opaque-sidecar');
     const check = await computeAnthropicMessagesReplayCheck(inspection.turn);
     expect(await verifyMessagesTurn(assistantTurn, check)).toBe(true);
-    const changed = (blocks: AnthropicMessagesAssistantMessage['content']): AnthropicMessagesAssistantMessage[] => [{ role: 'assistant', content: blocks }];
-    const blocks = first.content as Exclude<AnthropicMessagesAssistantMessage['content'], string>;
+    const changed = (blocks: Block[]): AnthropicMessagesAssistantMessage[] =>
+      [{ role: 'assistant', content: [...blocks, carrier] }];
     for (const changedTurn of [
-      changed([{ ...blocks[0] as Extract<typeof blocks[number], { type: 'text' }>, text: 'edited' }, ...blocks.slice(1)]),
-      changed([blocks[0], blocks[1], { ...blocks[2] as Extract<typeof blocks[number], { type: 'tool_use' }>, id: 'edited-call' }, blocks[3]]),
-      changed([blocks[0], blocks[1], { ...blocks[2] as Extract<typeof blocks[number], { type: 'tool_use' }>, name: 'edited-name' }, blocks[3]]),
-      changed([blocks[0], blocks[1], { ...blocks[2] as Extract<typeof blocks[number], { type: 'tool_use' }>, input: { q: 'changed' } }, blocks[3]]),
-      [first, { ...second, content: [{ type: 'text' as const, text: 'edited continued', citations: null }] }],
+      changed([{ ...text, text: 'edited' }, thinking, call, continued]),
+      changed([text, thinking, { ...call, id: 'edited-call' }, continued]),
+      changed([text, thinking, { ...call, name: 'edited-name' }, continued]),
+      changed([text, thinking, { ...call, input: { q: 'changed' } }, continued]),
+      changed([text, thinking, call, { ...continued, text: 'edited continued' }]),
     ]) expect(await verifyMessagesTurn(changedTurn, check)).toBe(false);
-    expect(await verifyMessagesTurn([...changed([blocks[0], blocks[2], blocks[1], blocks[3]]), second], check)).toBe(true);
-    expect(await verifyMessagesTurn(changed([blocks[2], blocks[0], blocks[3], blocks[1], ...(second.content as Exclude<typeof second.content, string>)]), check)).toBe(true);
-    expect(await verifyMessagesTurn(changed([...(second.content as Exclude<typeof second.content, string>), ...blocks]), check)).toBe(false);
-
-    const secondTool = { type: 'tool_use' as const, id: 'tool-b', name: 'other', input: { q: 'b' } };
-    const twoTools = changed([...blocks, secondTool]);
+    expect(await verifyMessagesTurn(changed([text, call, thinking, continued]), check)).toBe(true);
+    expect(await verifyMessagesTurn(changed([call, text, thinking, continued]), check)).toBe(true);
+    expect(await verifyMessagesTurn(changed([continued, text, thinking, call]), check)).toBe(false);
+    const secondTool = { ...call, id: 'tool-b', name: 'other', input: { q: 'b' } };
+    const twoTools = changed([text, thinking, call, secondTool, continued]);
     const twoToolsCheck = await computeAnthropicMessagesReplayCheck(inspectAnthropicMessagesAssistantTurn(twoTools).turn);
-    expect(await verifyMessagesTurn(changed([blocks[0], blocks[1], secondTool, blocks[2], blocks[3]]), twoToolsCheck)).toBe(false);
-    expect(await verifyMessagesTurn(changed([blocks[0], blocks[2], secondTool, blocks[1], blocks[3]]), twoToolsCheck)).toBe(true);
-    const settingsTurn: AnthropicMessagesAssistantMessage[] = [
-      { ...first, clear_at: 'never', output_config: null },
-      second,
-    ];
+    expect(await verifyMessagesTurn(changed([text, thinking, secondTool, call, continued]), twoToolsCheck)).toBe(false);
+    expect(await verifyMessagesTurn(changed([text, call, secondTool, thinking, continued]), twoToolsCheck)).toBe(true);
+    const settingsTurn: AnthropicMessagesAssistantMessage[] = [{ ...first, clear_at: 'never', output_config: null }, second];
     const settingsCheck = await computeAnthropicMessagesReplayCheck(inspectAnthropicMessagesAssistantTurn(settingsTurn).turn);
     expect(await verifyMessagesTurn(settingsTurn, settingsCheck)).toBe(true);
     expect(await verifyMessagesTurn([{ ...settingsTurn[0], clear_at: 'next_user_message' }, second], settingsCheck)).toBe(true);
-    expect(await verifyMessagesTurn([{ role: 'assistant', content: [...blocks, ...(second.content as Exclude<typeof second.content, string>)] }], check)).toBe(true);
     const stringContentCheck = await computeAnthropicMessagesReplayCheck([{ role: 'assistant', content: 'plain text' }]);
     expect(await verifyMessagesTurn([{ role: 'assistant', content: [{ type: 'text', text: 'plain text', citations: null }] }], stringContentCheck)).toBe(true);
-    expect(await verifyMessagesTurn([{
-      ...first, content: [
-        { ...blocks[0] as Extract<typeof blocks[number], { type: 'text' }>, cache_control: { type: 'ephemeral' } },
-        { ...blocks[1] as Extract<typeof blocks[number], { type: 'thinking' }>, signature: 'different-signature' },
-        ...blocks.slice(2),
-      ],
-    }, second], check)).toBe(true);
+    expect(await verifyMessagesTurn(changed([
+      { ...text, cache_control: { type: 'ephemeral' } }, { ...thinking, signature: 'different-signature' }, call, continued,
+    ]), check)).toBe(true);
   });
 
   it('checks Messages text, citations, thinking, and JSON tool input', async () => {
@@ -493,7 +490,7 @@ describe('assistant-turn sidecar protocols', () => {
     }], citedCheck)).toBe(false);
   });
 
-  it('groups Gemini model contents, permits carrier and cross-kind movement, and checks each body kind in order', async () => {
+  it('groups Gemini model contents, permits ordinary cross-kind movement, and keeps the carrier terminal', async () => {
     const turn = geminiTurn();
     const turns = partitionGeminiGenerateContentTurns([
       ...turn,
@@ -505,18 +502,18 @@ describe('assistant-turn sidecar protocols', () => {
     const moved = [
       {
         role: 'model', parts: [
-          { text: 'answer-a', thoughtSignature: 'opaque-sidecar' },
+          { text: 'answer-a' },
           turn[0].parts![2],
           turn[0].parts![1],
           turn[0].parts![3],
         ],
       },
-      { role: 'model', parts: [] },
+      { role: 'model', parts: [createGeminiGenerateContentSidecarCarrier('opaque-sidecar')] },
     ];
     expect(await verifyGeminiTurn(moved, check)).toBe(true);
     expect(await verifyGeminiTurn([
-      { ...moved[0], parts: [{ text: 'edited answer', thoughtSignature: 'opaque-sidecar' }, ...moved[0].parts.slice(1)] },
-      { role: 'model', parts: [] },
+      { ...moved[0], parts: [{ text: 'edited answer' }, ...moved[0].parts.slice(1)] },
+      moved[1],
     ], check)).toBe(false);
     const functionCall = turn[0].parts![1].functionCall!;
     const replacePart = (index: number, part: NonNullable<GeminiGenerateContentContent['parts']>[number]): GeminiGenerateContentContent[] => [{
@@ -561,15 +558,15 @@ describe('assistant-turn sidecar protocols', () => {
     const turn: GeminiGenerateContentContent[] = [{
       role: 'model', parts: [
         { text: 'thinking', thought: true },
-        { thoughtSignature: 'opaque-sidecar', functionCall },
-        { text: 'answer' },
+        { functionCall },
+        { text: 'answer', thoughtSignature: 'opaque-sidecar' },
       ],
     }];
     const check = await computeGeminiGenerateContentReplayCheck(inspectGeminiGenerateContentAssistantTurn(turn).turn);
     const replay = [{
       role: 'model' as const, parts: [
-        { thoughtSignature: 'opaque-sidecar', functionCall },
-        { text: 'answer' },
+        { functionCall },
+        { text: 'answer', thoughtSignature: 'opaque-sidecar' },
       ],
     }];
     expect(await verifyGeminiTurn(replay, check)).toBe(true);

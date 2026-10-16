@@ -1,8 +1,8 @@
 import { klona } from 'klona/json';
 
-import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
+import type { TranslateSidecarCodec } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from '../as-source/content.ts';
@@ -188,7 +188,7 @@ const buildTools = (payload: GeminiGenerateContentPayload): AnthropicMessagesToo
 export const buildTargetRequest = async (
   payload: GeminiGenerateContentPayload,
   model: string,
-  codec: AssistantTurnSidecarCodec,
+  codec: TranslateSidecarCodec,
   options: { fallbackMaxOutputTokens: number | undefined },
 ): Promise<AnthropicMessagesPayload> => {
   // Gemini generateContent can omit maxOutputTokens, but AnthropicMessagesPayload requires max_tokens.

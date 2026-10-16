@@ -65,15 +65,13 @@ const replayItemMaterial = (item: OpenAIResponsesAssistantTurnItem): TypedReplay
 const responsesReplayCheckMaterialV1 = (turn: OpenAIResponsesAssistantTurn): IRJSONValue => replayMaterialsByType(turn.map(replayItemMaterial));
 
 export const inspectOpenAIResponsesAssistantTurn = (turn: OpenAIResponsesAssistantTurn): RoundTripAssistantTurnInspection<OpenAIResponsesAssistantTurn> => {
-  const sidecars: string[] = [];
-  const assistantTurn = turn.flatMap(item => {
-    if (!isOpenAIResponsesEncryptedReasoning(item)) return [item];
-    sidecars.push(item.encrypted_content);
-    const { encrypted_content: _encryptedContent, ...body } = item;
-    return item.summary.length === 0 && (item.content === undefined || item.content.length === 0) ? [] : [body];
-  });
+  const item = turn.at(-1);
+  if (item === undefined || !isOpenAIResponsesEncryptedReasoning(item)) return { turn };
+  const { encrypted_content, ...body } = item;
+  const assistantTurn = turn.slice(0, -1);
+  if (item.summary.length > 0 || (item.content !== undefined && item.content.length > 0)) assistantTurn.push(body);
   return {
-    sidecars,
+    sidecar: encrypted_content,
     turn: assistantTurn,
   };
 };

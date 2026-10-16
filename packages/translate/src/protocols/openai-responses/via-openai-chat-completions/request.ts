@@ -1,9 +1,9 @@
 import { klona } from 'klona/json';
 
 import { openaiResponsesContentToOpenAIChatCompletionsContent, openaiResponsesContentToText } from './content.ts';
-import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
+import type { TranslateSidecarCodec } from '../../../types.ts';
 import { restrictAllowedTools } from '../as-source/allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
@@ -178,7 +178,7 @@ export interface TargetRequestResult {
   customToolNames: Set<string>;
 }
 
-export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx, codec: AssistantTurnSidecarCodec): Promise<TargetRequestResult> => {
+export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx, codec: TranslateSidecarCodec): Promise<TargetRequestResult> => {
   const canonical = canonicalizeOpenAIResponsesPayload(source);
   const { payload, names: namespaceToolNames, flattenInput } = flattenNamespaceTools(canonical);
   rejectProgrammaticOpenAIResponsesPayload(payload, 'OpenAI Chat Completions');

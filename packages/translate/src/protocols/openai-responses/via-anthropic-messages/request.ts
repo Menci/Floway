@@ -1,11 +1,10 @@
 import { klona } from 'klona/json';
 
 import { openaiResponsesReasoningToAnthropicMessagesUpstreamBlock } from './reasoning.ts';
-import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { parseJSONObject } from '../../../shared/json/object.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
-import type { RemoteImageLoader } from '../../../types.ts';
+import type { TranslateSidecarCodec, RemoteImageLoader } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-messages/as-target/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
@@ -286,7 +285,7 @@ const translateToolChoice = (
 
 export const buildTargetRequest = async (
   source: OpenAIResponsesRequestPayloadEx,
-  codec: AssistantTurnSidecarCodec,
+  codec: TranslateSidecarCodec,
   options: BuildTargetRequestOptions,
 ): Promise<TargetRequestResult> => {
   const canonical = canonicalizeOpenAIResponsesPayload(source);

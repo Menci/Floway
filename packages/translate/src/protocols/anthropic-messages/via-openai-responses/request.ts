@@ -2,9 +2,9 @@
 import { klona } from 'klona/json';
 
 import { anthropicMessagesReasoningBlockToOpenAIResponsesReasoning } from './reasoning.ts';
-import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
+import type { TranslateSidecarCodec } from '../../../types.ts';
 import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
 import { inspectAnthropicMessagesAssistantTurn, verifyAnthropicMessagesReplayCheck } from '../as-source/round-trip.ts';
@@ -263,7 +263,7 @@ const translateMetadata = (metadata: AnthropicMessagesMetadataEx): Record<string
 
 export const buildTargetRequest = async (
   payload: AnthropicMessagesPayload,
-  codec: AssistantTurnSidecarCodec,
+  codec: TranslateSidecarCodec,
 ): Promise<CanonicalOpenAIResponsesPayload> => {
   // Preserve the source `output_config.effort` value as-is, even if the chosen
   // OpenAI Responses upstream may reject it. Translation stays pairwise and leaves

@@ -1,9 +1,10 @@
 import type { AssistantTurnByProtocol, AssistantTurnFor } from './assistant-turn.ts';
-import { hasRoundTripTarget, type AssistantTurnSidecarCodec } from './codec.ts';
+import { decodeRoundTripSidecar, hasRoundTripTarget } from './sidecar.ts';
+import type { TranslateSidecarCodec } from '../types.ts';
 import type { RoundTripReplayCheck } from './replay-check.ts';
 
 export interface RoundTripAssistantTurnInspection<Turn> {
-  sidecars: string[];
+  sidecar?: string;
   turn: Turn;
 }
 
@@ -20,14 +21,14 @@ export const roundTripAssistantTurn = async <Source extends keyof AssistantTurnB
   source: Source,
   target: Target,
   turn: SourceTurn,
-  codec: AssistantTurnSidecarCodec,
+  codec: TranslateSidecarCodec,
   inspect: (turn: SourceTurn) => RoundTripAssistantTurnInspection<SourceTurn>,
   verify: (turn: SourceTurn, replayCheck: RoundTripReplayCheck) => Promise<boolean>,
 ): Promise<RoundTripAssistantTurn<Target> | undefined> => {
   const inspection = inspect(turn);
-  if (inspection.sidecars.length !== 1) return undefined;
+  if (inspection.sidecar === undefined) return undefined;
 
-  const decoded = await codec.decode(source, inspection.sidecars[0]);
+  const decoded = await decodeRoundTripSidecar(codec, source, inspection.sidecar);
   if (decoded === undefined) return undefined;
 
   if (!hasRoundTripTarget(decoded, target) || !(await verify(inspection.turn, decoded.replayCheck))) return undefined;

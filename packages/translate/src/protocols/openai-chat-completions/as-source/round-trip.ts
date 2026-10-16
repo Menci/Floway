@@ -67,15 +67,12 @@ const chatReplayCheckMaterialV1 = (turn: OpenAIChatCompletionsAssistantTurn): IR
 });
 
 export const inspectOpenAIChatCompletionsAssistantTurn = (turn: OpenAIChatCompletionsAssistantTurn): RoundTripAssistantTurnInspection<OpenAIChatCompletionsAssistantTurn> => {
-  const sidecars: string[] = [];
-  const details = reasoningDetails(turn).filter(value => {
-    if (!isRecord(value) || value.type !== 'reasoning.encrypted' || typeof value.data !== 'string') return true;
-    sidecars.push(value.data);
-    return false;
-  });
+  const details = reasoningDetails(turn);
+  const last = details.at(-1);
+  if (!isRecord(last) || last.type !== 'reasoning.encrypted' || typeof last.data !== 'string') return { turn };
   return {
-    sidecars,
-    turn: Array.isArray(turn.reasoning_details) ? { ...turn, reasoning_details: details } : turn,
+    sidecar: last.data,
+    turn: { ...turn, reasoning_details: details.slice(0, -1) },
   };
 };
 

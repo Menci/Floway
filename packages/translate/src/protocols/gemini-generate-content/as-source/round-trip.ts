@@ -37,20 +37,16 @@ const geminiReplayCheckMaterialV1 = (turn: GeminiGenerateContentAssistantTurn): 
 };
 
 export const inspectGeminiGenerateContentAssistantTurn = (turn: GeminiGenerateContentAssistantTurn): RoundTripAssistantTurnInspection<GeminiGenerateContentAssistantTurn> => {
-  const sidecars: string[] = [];
-  const assistantTurn = turn.flatMap(content => {
-    if (content.parts === undefined) return [content];
-    const parts = content.parts.flatMap(part => {
-      if (typeof part.thoughtSignature !== 'string') return [part];
-      const { thoughtSignature, ...body } = part;
-      sidecars.push(thoughtSignature);
-      return Object.keys(body).length === 0 ? [] : [body];
-    });
-    return parts.length === 0 && content.parts.length > 0 ? [] : [{ ...content, parts }];
-  });
+  const content = turn.at(-1);
+  if (content?.parts === undefined) return { turn };
+  const part = content.parts.at(-1);
+  if (part === undefined || typeof part.thoughtSignature !== 'string') return { turn };
+  const { thoughtSignature, ...body } = part;
+  const parts = content.parts.slice(0, -1);
+  if (Object.keys(body).length > 0) parts.push(body);
   return {
-    sidecars,
-    turn: assistantTurn,
+    sidecar: thoughtSignature,
+    turn: parts.length === 0 ? turn.slice(0, -1) : [...turn.slice(0, -1), { ...content, parts }],
   };
 };
 

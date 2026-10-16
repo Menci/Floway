@@ -1,9 +1,8 @@
 import { klona } from 'klona/json';
 
-import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
-import type { RemoteImageLoader } from '../../../types.ts';
+import type { TranslateSidecarCodec, RemoteImageLoader } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-messages/as-target/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
@@ -208,7 +207,7 @@ const CHAT_TOOL_CHOICES = {
 
 export const buildTargetRequest = async (
   payload: OpenAIChatCompletionsPayload,
-  codec: AssistantTurnSidecarCodec,
+  codec: TranslateSidecarCodec,
   options: BuildTargetRequestOptions,
 ): Promise<AnthropicMessagesPayload> => {
   // Hoist the leading contiguous run of system/developer messages to

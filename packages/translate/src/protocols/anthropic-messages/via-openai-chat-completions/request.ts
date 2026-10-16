@@ -1,9 +1,9 @@
 import { klona } from 'klona/json';
 
 import { openAIChatCompletionsReasoningTextFromAnthropicMessagesBlock } from './reasoning.ts';
-import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
+import type { TranslateSidecarCodec } from '../../../types.ts';
 import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
 import { inspectAnthropicMessagesAssistantTurn, verifyAnthropicMessagesReplayCheck } from '../as-source/round-trip.ts';
@@ -268,7 +268,7 @@ const translateAnthropicMessagesToolChoice = (toolChoice?: AnthropicMessagesPayl
 
 export const buildTargetRequest = async (
   payload: AnthropicMessagesPayload,
-  codec: AssistantTurnSidecarCodec,
+  codec: TranslateSidecarCodec,
 ): Promise<OpenAIChatCompletionsPayload> => {
   const clientTools = filterAnthropicMessagesClientTools(payload.tools);
   // Pass effort through verbatim; per-upstream enum acceptance (e.g. some

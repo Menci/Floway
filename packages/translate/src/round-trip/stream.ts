@@ -1,6 +1,7 @@
 import type { AssistantTurnByProtocol, AssistantTurnFor } from './assistant-turn.ts';
-import type { AssistantTurnSidecarCodec } from './codec.ts';
+import type { TranslateSidecarCodec } from '../types.ts';
 import type { RoundTripReplayCheck } from './replay-check.ts';
+import type { RoundTripSidecar } from './sidecar.ts';
 
 export interface RoundTripReader<Protocol extends keyof AssistantTurnByProtocol> {
   onAssistantTurn: (choice: number, turn: AssistantTurnFor<Protocol>) => void;
@@ -13,7 +14,7 @@ export interface RoundTripWriter {
 export const createRoundTripStream = <
   Source extends keyof AssistantTurnByProtocol,
   Target extends keyof AssistantTurnByProtocol,
->(source: Source, target: Target, codec: AssistantTurnSidecarCodec) => {
+>(source: Source, target: Target, codec: TranslateSidecarCodec) => {
   const turns = new Map<number, AssistantTurnFor<Target>>();
   const reader: RoundTripReader<Target> = {
     onAssistantTurn: (choice, turn) => { turns.set(choice, turn); },
@@ -22,7 +23,7 @@ export const createRoundTripStream = <
     prepareSidecar: async (choice, replayCheck) => {
       const assistantTurn = turns.get(choice);
       if (assistantTurn === undefined) throw new Error(`Missing native assistant turn for choice ${choice}`);
-      return await codec.encode(source, { target, assistantTurn, replayCheck });
+      return await codec.encode({ source, target, assistantTurn, replayCheck } satisfies RoundTripSidecar<Target>);
     },
   };
   return { reader, writer };

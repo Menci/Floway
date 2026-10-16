@@ -23,10 +23,11 @@ import the source protocol's subpath and call
    belong to their protocol: `as-target/sse-from.ts` consumes upstream SSE and
    `as-source/sse-to.ts` emits client SSE with its sidecar. The return path is
    upstream SSE → IR SSE → client SSE with sidecar. IR stays internal to translate.
-6. **Assistant-turn round trips** — keep authenticated sidecar codecs, replay
+6. **Assistant-turn round trips** — keep owner-specific sidecar validation, replay
    validation, and native stream coordination under `round-trip/`. Source replay
    inspection and carriers belong in `as-source/round-trip.ts`; native assistant-turn
    shapes and output-to-input converters belong in `as-target/assistant-turn.ts`.
+   Transport encoding is injected through `TranslationContext.sidecarCodec`.
 7. **Protocol-independent utility** — keep it in `shared/`, with tests under
    `__tests__/shared/`. Protocol behavior belongs in its owning protocol directory.
 
