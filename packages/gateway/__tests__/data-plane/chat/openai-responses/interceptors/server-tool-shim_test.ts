@@ -10,11 +10,12 @@ import {
   sumUsage,
   type InterceptedFunctionCall,
   type ServerToolResultSlot,
+  type ServerToolRegistration,
   type TurnSummary,
   type UpstreamTerminal,
 } from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tool-shim.ts';
-import { imageGenerationServerTool } from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/image-generation.ts';
-import { SHIM_TOOL_NAME, webSearchServerTool } from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/web-search.ts';
+import { imageGenerationServerTool, expandImageGenerationCall } from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/image-generation.ts';
+import { SHIM_TOOL_NAME, expandWebSearchCall, webSearchServerTool } from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/web-search.ts';
 import type { OpenAIResponsesInterceptor, OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { createNonOpenAIResponsesSourceStore } from '../../../../../src/data-plane/chat/openai-responses/items/store.ts';
 import type { ChatGatewayCtx } from '../../../../../src/data-plane/chat/shared/gateway-ctx.ts';
@@ -55,6 +56,142 @@ import { assert, assertEquals, assertFalse, assertRejects, stubModelCandidate } 
 import { routeOpenAIResponses } from '@floway-dev/translate/openai-responses';
 
 const withOpenAIResponsesWebSearchShim = withOpenAIResponsesServerToolShim([webSearchServerTool]);
+
+const replaySearch: ServerToolRegistration = (_invocation, ctx) => ({
+  type: 'active', baseToolName: 'web_search',
+  expandHistoryItem: (item, name) => item.type === 'web_search_call' ? expandWebSearchCall(item, name, id => ctx.store.getPrivatePayload(id)) : undefined,
+});
+const replayImage: ServerToolRegistration = () => ({ type: 'active', baseToolName: 'image_generation', expandHistoryItem: (item, name) => item.type === 'image_generation_call' ? expandImageGenerationCall(item, name) : undefined });
+
+const seedSearchHistory = (ctx: ChatGatewayCtx, id: string): void => {
+  ctx.store.registerPrivatePayload(id, {
+    v: 1,
+    functionCallItem: { type: 'function_call', call_id: id, name: 'web_search', arguments: '{}', status: 'completed' },
+    ir: { action: { type: 'search', queries: [id] }, results: [] },
+  });
+};
+
+const historyShape = (items: CanonicalOpenAIResponsesInputItem[]) => items.map(item => item.type === 'function_call' || item.type === 'function_call_output'
+  ? `${item.type}:${item.call_id}` : item.type === 'message' ? `message:${item.role}` : item.type);
+
+test('history expansion receives individual items and keeps generated feedback behind parallel calls', async () => {
+  const source: CanonicalOpenAIResponsesInputItem[] = [
+    { type: 'web_search_call', id: 'first' },
+    { type: 'function_call', call_id: 'client', name: 'client', arguments: '{}' },
+    { type: 'web_search_call', id: 'second' },
+    { type: 'additional_tools', role: 'developer', tools: [] },
+    { type: 'message', role: 'assistant', content: 'next turn' },
+  ];
+  const original = structuredClone(source);
+  const seen: CanonicalOpenAIResponsesInputItem[] = [];
+  const registration: ServerToolRegistration = () => ({
+    type: 'active', baseToolName: 'search',
+    expandHistoryItem: item => {
+      seen.push(item);
+      if (item.type !== 'web_search_call') return undefined;
+      assert(typeof item.id === 'string');
+      return [
+        { type: 'function_call', call_id: item.id, name: 'search', arguments: '{}' },
+        { type: 'function_call_output', call_id: item.id, output: 'result' },
+      ];
+    },
+  });
+  const inv = makeInvocation({ payload: { input: source } });
+  await runShimAndDrain(withOpenAIResponsesServerToolShim([registration]), inv, makeGatewayCtx(), async () => {
+    assertEquals(seen, source);
+    assertEquals(historyShape(inv.payload.input), [
+      'function_call:first', 'function_call:client', 'function_call:second',
+      'function_call_output:first', 'function_call_output:second', 'additional_tools', 'message:assistant',
+    ]);
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+  assertEquals(source, original);
+});
+
+test.each([true, false])('history places mixed hosted results after the call batch and preserves tool inventories (search registration first: %s)', async searchFirst => {
+  const ctx = makeGatewayCtx();
+  seedSearchHistory(ctx, 'search');
+  const tail: CanonicalOpenAIResponsesInputItem = { type: 'reasoning', id: 'rs_tail', summary: [], encrypted_content: 'opaque' };
+  const additional: CanonicalOpenAIResponsesInputItem = { type: 'additional_tools', role: 'developer', tools: [] };
+  const loaded: CanonicalOpenAIResponsesInputItem = { type: 'tool_search_output', call_id: 'load', execution: 'client', tools: [] };
+  const source: CanonicalOpenAIResponsesInputItem[] = [
+    { type: 'message', role: 'user', content: 'question' },
+    tail,
+    { type: 'message', role: 'assistant', content: 'before calls' },
+    { type: 'web_search_call', id: 'search' },
+    { type: 'image_generation_call', id: 'ig_1', status: 'completed', result: 'aGVsbG8=', output_format: 'png' },
+    additional, loaded,
+    { type: 'message', role: 'user', content: 'next' },
+  ];
+  const original = structuredClone(source);
+  const inv = makeInvocation({ payload: { input: source } });
+  const shim = withOpenAIResponsesServerToolShim(searchFirst ? [replaySearch, replayImage] : [replayImage, replaySearch]);
+  await runShimAndDrain(shim, inv, ctx, async () => {
+    assertEquals(historyShape(inv.payload.input), [
+      'message:user', 'reasoning', 'message:assistant', 'function_call:search', 'function_call:cc_from_ig_1',
+      'function_call_output:search', 'function_call_output:cc_from_ig_1', 'message:user', 'additional_tools', 'tool_search_output', 'message:user',
+    ]);
+    assertEquals(inv.payload.input[1], tail);
+    const image = inv.payload.input[7];
+    assert(image.type === 'message' && Array.isArray(image.content));
+    assertEquals(image.content[1], { type: 'input_image', image_url: 'data:image/png;base64,aGVsbG8=', detail: 'auto' });
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+  assertEquals(source, original);
+});
+
+test.each(['additional_tools', 'tool_search_output'] as const)('history flushes hosted results before the user-side %s boundary', async type => {
+  const ctx = makeGatewayCtx();
+  for (const id of ['first', 'second']) seedSearchHistory(ctx, id);
+  const inventory: CanonicalOpenAIResponsesInputItem = type === 'additional_tools'
+    ? { type, role: 'developer', tools: [{ type: 'function', name: 'client' }] }
+    : { type, call_id: 'load', execution: 'client', tools: [{ type: 'function', name: 'client' }] };
+  const source: CanonicalOpenAIResponsesInputItem[] = [
+    { type: 'web_search_call', id: 'first' },
+    inventory,
+    { type: 'function_call', call_id: 'client', name: 'client', arguments: '{}' },
+    { type: 'web_search_call', id: 'second' },
+    { type: 'function_call_output', call_id: 'client', output: 'client result' },
+    { type: 'message', role: 'user', content: 'next' },
+  ];
+  const original = structuredClone(source);
+  const inv = makeInvocation({ payload: { input: source } });
+  await runShimAndDrain(withOpenAIResponsesServerToolShim([replaySearch]), inv, ctx, async () => {
+    assertEquals(historyShape(inv.payload.input), [
+      'function_call:first', 'function_call_output:first', type,
+      'function_call:client', 'function_call:second', 'function_call_output:second', 'function_call_output:client', 'message:user',
+    ]);
+    assertEquals(inv.payload.input[2], inventory);
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+  assertEquals(source, original);
+});
+
+test('history preserves original result boundaries while placing parallel hosted results after their assistant turn', async () => {
+  const ctx = makeGatewayCtx();
+  for (const id of ['first', 'second', 'third']) seedSearchHistory(ctx, id);
+  const inv = makeInvocation({
+    payload: {
+      input: [
+        { type: 'reasoning', id: 'rs_first', summary: [], encrypted_content: 'first' },
+        { type: 'web_search_call', id: 'first' },
+        { type: 'function_call', call_id: 'client', name: 'client', arguments: '{}', status: 'completed' },
+        { type: 'web_search_call', id: 'second' },
+        { type: 'function_call_output', call_id: 'client', output: 'client result' },
+        { type: 'reasoning', id: 'rs_second', summary: [], encrypted_content: 'second' },
+        { type: 'web_search_call', id: 'third' },
+      ],
+    },
+  });
+  await runShimAndDrain(withOpenAIResponsesServerToolShim([replaySearch]), inv, ctx, async () => {
+    assertEquals(historyShape(inv.payload.input), [
+      'reasoning', 'function_call:first', 'function_call:client', 'function_call:second',
+      'function_call_output:first', 'function_call_output:second', 'function_call_output:client',
+      'reasoning', 'function_call:third', 'function_call_output:third',
+    ]);
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+});
 
 const emptyResult = (id: string, status: OpenAIResponsesResultEx['status']): OpenAIResponsesResultEx => ({
   id,
@@ -676,13 +813,91 @@ test('shim drives one search then a final message in two upstream turns', async 
   assertEquals(tail[1].type, 'function_call_output');
   assert(tail[0].type === 'function_call');
   // Shim replay preserves the upstream's original shim call
-  // verbatim (call_id, name, jsonrepair-canonical args) so the upstream
+  // verbatim (call_id, name, original arguments) so the upstream
   // model on turn 2 sees its prior assistant turn unchanged.
   assertEquals(tail[0].call_id, 'call_1');
   const events = eventPayloads(frames);
   const wsCallTypes = events.filter(e => e.type.startsWith('response.web_search_call'));
   assertEquals(wsCallTypes.length, 3);
   assertEquals(events[events.length - 1].type, 'response.completed');
+});
+
+test('public output and internal continuations replay complete assistant/tool turns through the same expansion', async () => {
+  const { backend } = makeStubDeps();
+  const inv = makeInvocation();
+  const ctx = makeGatewayCtx();
+  const inputs: CanonicalOpenAIResponsesInputItem[][] = [];
+  const searchTurn = (id: string): ScriptedTurn => {
+    const tail: OpenAIResponsesOutputItemEx = { type: 'reasoning', id: `rs_${id}`, summary: [], encrypted_content: `opaque_${id}`, status: 'completed' };
+    return [
+      ...searchCallTurn(0, id, id).slice(0, -1),
+      eventFrame({ type: 'response.output_item.added', output_index: 1, item: tail }),
+      eventFrame({ type: 'response.output_item.done', output_index: 1, item: tail }),
+      mkResponseCompleted(),
+    ];
+  };
+  const script = scriptedRun([searchTurn('first'), searchTurn('second'), messageTurn('answer')]);
+  const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, ctx, async () => {
+    inputs.push(structuredClone(inv.payload.input));
+    return await script.run();
+  });
+  assertEquals(script.callCount(), 3);
+  assertEquals(backend.calls.length, 2);
+  const firstTurn = ['reasoning', 'function_call:first', 'function_call_output:first'];
+  const secondTurn = ['reasoning', 'function_call:second', 'function_call_output:second'];
+  assertEquals(historyShape(inputs[1]), ['message:user', ...firstTurn]);
+  assertEquals(historyShape(inputs[2]), ['message:user', ...firstTurn, ...secondTurn]);
+  const output = findResponseCompleted(frames).response.output;
+  assertEquals(output.map(item => item.type), ['reasoning', 'web_search_call', 'reasoning', 'web_search_call', 'message']);
+  const next = makeInvocation({
+    payload: {
+      input: [
+        { type: 'message', role: 'user', content: 'hi' },
+        ...output as CanonicalOpenAIResponsesInputItem[],
+        { type: 'message', role: 'user', content: 'next' },
+      ],
+    },
+  });
+  await runShimAndDrain(withOpenAIResponsesWebSearchShim, next, ctx, async () => {
+    assertEquals(historyShape(next.payload.input), ['message:user', ...firstTurn, ...secondTurn, 'message:assistant', 'message:user']);
+    return await scriptedRun([messageTurn('followup')]).run();
+  });
+  assertEquals(backend.calls.length, 2);
+});
+
+test.each([true, false])('hosted output preserves mixed parallel call order on client replay (hosted first: %s)', async hostedFirst => {
+  const { backend } = makeStubDeps();
+  const inv = makeInvocation();
+  const ctx = makeGatewayCtx();
+  const hosted = { type: 'function_call' as const, id: 'fc_hosted', call_id: 'hosted', name: SHIM_TOOL_NAME, arguments: '{"search_query":[{"q":"test"}]}', status: 'completed' as const };
+  const client = { type: 'function_call' as const, id: 'fc_client', call_id: 'client', name: 'client_tool', arguments: '{}', status: 'completed' as const };
+  const calls = hostedFirst ? [hosted, client] : [client, hosted];
+  const tail: OpenAIResponsesOutputItemEx = { type: 'reasoning', id: 'rs_tail', summary: [], encrypted_content: 'native' };
+  const events: ScriptedTurn = [mkResponseCreated()];
+  calls.forEach((item, index) => events.push(
+    eventFrame({ type: 'response.output_item.added', output_index: index, item: { ...item, arguments: '', status: 'in_progress' } }),
+    eventFrame({ type: 'response.output_item.done', output_index: index, item }),
+  ));
+  events.push(
+    eventFrame({ type: 'response.output_item.added', output_index: 2, item: tail }),
+    eventFrame({ type: 'response.output_item.done', output_index: 2, item: tail }),
+    mkResponseCompleted(),
+  );
+  const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, ctx, scriptedRun([events]).run);
+  const output = findResponseCompleted(frames).response.output;
+  assert(output.findIndex(item => item.type === 'reasoning') < output.findIndex(item => item.type === 'web_search_call'));
+  const next = makeInvocation({
+    payload: { input: [...output as CanonicalOpenAIResponsesInputItem[], { type: 'function_call_output', call_id: 'client', output: 'client result' }] },
+  });
+  await runShimAndDrain(withOpenAIResponsesWebSearchShim, next, ctx, async () => {
+    assertEquals(next.payload.input.filter(item => item.type === 'function_call').map(item => item.call_id), calls.map(item => item.call_id));
+    assertEquals(next.payload.input.filter(item => item.type === 'function_call_output').map(item => item.call_id), ['hosted', 'client']);
+    const lastCall = next.payload.input.findLastIndex(item => item.type === 'function_call');
+    const firstResult = next.payload.input.findIndex(item => item.type === 'function_call_output');
+    assert(lastCall < firstResult);
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+  assertEquals(backend.calls.length, 1);
 });
 
 test('translated source with a no-backing store still replays private search state across turns', async () => {
@@ -2171,22 +2386,10 @@ test('usage cached_tokens never reported on any turn is omitted from wire (no fa
   assertEquals(completed.response.usage?.output_tokens_details, undefined);
 });
 
-test('next-turn function_call echo always carries the canonical re-stringified shim call args (single shape unified with client-roundtrip)', async () => {
-  // The dispatcher always overwrites the intercepted call's
-  // arguments with the canonical re-stringified form, regardless of
-  // whether the upstream string was already valid JSON. This
-  // unifies the in-session multi-turn echo with the client-roundtrip
-  // pairs produced by `transformInputItemsForWebSearch` (which build args
-  // from structured IR data, not a wire string), so upstream sees
-  // exactly one `arguments` shape regardless of how the pair
-  // re-entered the conversation. Trailing-comma input is the
-  // strongest case — without this rewrite a openai-chat-completions
-  // upstream would 400 on the broken raw string — but the same
-  // canonical form is also used for already-valid input.
-  makeStubDeps();
+test('search execution repairs a trailing comma in model arguments', async () => {
+  const { backend } = makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation();
-  // Trailing-comma JSON survives jsonrepair but is not valid strict JSON.
   const brokenArgs = '{"search_query":[{"q":"q"}],}';
   const brokenTurn: ScriptedTurn = [
     mkResponseCreated(),
@@ -2205,9 +2408,8 @@ test('next-turn function_call echo always carries the canonical re-stringified s
     | { type: 'function_call'; arguments: string }
     | undefined;
   assert(fc !== undefined);
-  // Canonical JSON form (JSON.stringify of the parsed object) — no
-  // trailing comma, valid strict JSON.
-  assertEquals(fc.arguments, '{"search_query":[{"q":"q"}]}');
+  assertEquals(fc.arguments, JSON.stringify({ search_query: [{ q: 'q' }] }));
+  assertEquals((backend.calls[0].request as WebSearchProviderRequest).query, 'q');
 });
 
 test('upstream sends bare `error` frame BEFORE any response.created: shim throws from the events iterator (no synthetic response.failed with empty identity)', async () => {
@@ -5017,7 +5219,7 @@ test('consumeTurn dispatches a hosted call whose added item carried a namespace'
     mkResponseCompleted(),
   ), createMergeState(), true);
 
-  assertEquals(result.records.map(record => record.intercepted.name), [SHIM_TOOL_NAME]);
+  assertEquals(result.records.map(record => record.intercepted.functionCall.name), [SHIM_TOOL_NAME]);
   assertEquals(result.summary.sawClientToolCall, false);
   assertEquals(outputItemDoneEvents(result.downstreamFrames), []);
 });
@@ -5234,9 +5436,8 @@ test('consumeTurn intercepts the shim tool and does NOT forward its 4 events', a
 
   assertEquals(result.records.length, 1);
   assertEquals(result.records[0].intercepted, {
-    callId: 'cc_1',
-    name: SHIM_TOOL_NAME,
-    arguments: { search_query: [{ q: 'hello' }] },
+    functionCall: { type: 'function_call', call_id: 'cc_1', name: SHIM_TOOL_NAME, arguments: '{"search_query":[{"q":"hello"}]}', status: 'completed' },
+    parsedArguments: { search_query: [{ q: 'hello' }] },
   });
   assertEquals(result.summary.dispatched.length, 1);
   const downstreamTypes = eventTypesOf(result.downstreamFrames);
@@ -5266,8 +5467,8 @@ test('consumeTurn intercepts two shim calls within one turn', async () => {
     true,
   );
   assertEquals(result.records.length, 2);
-  assertEquals(result.records[0].intercepted.arguments, { open: [{ ref_id: 'https://x' }] });
-  assertEquals(result.records[1].intercepted.arguments, { find: [{ ref_id: 'https://x', pattern: 'p' }] });
+  assertEquals(result.records[0].intercepted.parsedArguments, { open: [{ ref_id: 'https://x' }] });
+  assertEquals(result.records[1].intercepted.parsedArguments, { find: [{ ref_id: 'https://x', pattern: 'p' }] });
 });
 
 test('consumeTurn synthesizes response.failed when upstream terminates without closing a shim call', async () => {
@@ -5321,7 +5522,7 @@ test('consumeTurn dispatches at function_call.done with .done args canonical ove
     state,
     true,
   );
-  assertEquals(result.records[0].intercepted.arguments, { search_query: [{ q: 'x' }] });
+  assertEquals(result.records[0].intercepted.parsedArguments, { search_query: [{ q: 'x' }] });
 });
 
 test('consumeTurn live-forwards non-shim function_calls and sets sawClientToolCall', async () => {
@@ -5446,6 +5647,27 @@ test('consumeTurn single iteration ending in message: forwards full message life
   ]);
 });
 
+test.each([
+  ' { "nested" : [true, null, {"n":9007199254740993,"huge":1e309}] }\n',
+  '{"text":"\\u5496\\u5561 \\\\ \\"quoted\\"","__proto__":{"key":"value"}}',
+  '{prompt:"repair me"}',
+])('consumeTurn retains original function call fields and argument tokens: %s', async raw => {
+  const call: OpenAIResponsesOutputItemEx = {
+    type: 'function_call', id: 'fc_raw', call_id: 'call_raw', name: SHIM_TOOL_NAME,
+    arguments: raw, status: 'completed', encrypted_function_args: null, caller: { type: 'direct' },
+  };
+  const result = await consumeTurn(framesOf(
+    mkResponseCreated(),
+    eventFrame({ type: 'response.output_item.added', output_index: 0, item: { ...call, arguments: '', status: 'in_progress' } }),
+    eventFrame({ type: 'response.function_call_arguments.delta', output_index: 0, item_id: 'fc_raw', delta: raw }),
+    eventFrame({ type: 'response.output_item.done', output_index: 0, item: call }),
+    mkResponseCompleted(),
+  ), createMergeState(), true);
+  assertEquals(result.records.length, 1);
+  assertEquals(result.records[0].intercepted.functionCall, call);
+  assert(result.records[0].intercepted.parsedArguments !== null);
+});
+
 test('consumeTurn one shim call then message in same turn: FORWARDS the message live (shim call is consumed)', async () => {
   const state = createMergeState();
   const result = await consumeTurn(
@@ -5464,10 +5686,7 @@ test('consumeTurn one shim call then message in same turn: FORWARDS the message 
 
   assertEquals(result.records.length, 1);
   assertEquals(state.accumulatedOutput.size, 1);
-  // Recording dispatcher doesn't emit lifecycle frames so the shim's
-  // reserved slot stays empty in accumulatedOutput, but outputIndex was
-  // still bumped. The message therefore lands at index 1.
-  assertEquals(state.accumulatedOutput.get(1)?.type, 'message');
+  assertEquals(state.accumulatedOutput.get(0)?.type, 'message');
   assertEquals(eventTypesOf(result.downstreamFrames), [
     'response.created',
     'response.in_progress',
@@ -5988,7 +6207,7 @@ test('consumeTurnStreaming yields forwarded frames before upstream completes', a
   while (!(await iter.next()).done) { /* drain */ }
 });
 
-test('dispatcher start frames yield IN-LINE at function_call.done (shim call slot precedes later items)', async () => {
+test('dispatcher start frames follow assistant content that arrives after the hosted function call', async () => {
   const state = createMergeState();
   let dispatchOrder = 0;
   const records: DispatchRecord[] = [];
@@ -6035,13 +6254,10 @@ test('dispatcher start frames yield IN-LINE at function_call.done (shim call slo
     && f.event.item.type === 'message');
   assert(syntheticIdx >= 0);
   assert(messageAddedIdx >= 0);
-  assert(syntheticIdx < messageAddedIdx, `expected dispatcher start frame BEFORE later live items (synth=${syntheticIdx}, msgAdded=${messageAddedIdx})`);
+  assert(messageAddedIdx < syntheticIdx, `expected assistant content before the hosted lifecycle (synth=${syntheticIdx}, msgAdded=${messageAddedIdx})`);
 });
 
-test('shim call output_index is reserved at output_item.added so interleaved items get later indices', async () => {
-  // Reserving at `.added` (rather than `.done`) keeps a non-shim call
-  // item arriving between added and done from stealing the shim's
-  // would-be downstream index.
+test('interleaved non-call progress keeps streaming before the deferred hosted call batch', async () => {
   const state = createMergeState();
   const dispatcher = () => [] as ServerToolResultSlot[];
 
@@ -6073,7 +6289,7 @@ test('shim call output_index is reserved at output_item.added so interleaved ite
   const igForwarded = result.downstreamFrames.find(f =>
     f.type === 'event' && f.event.type === 'response.image_generation_call.in_progress');
   assert(igForwarded?.type === 'event');
-  assertEquals((igForwarded.event as { output_index: number }).output_index, 1);
+  assertEquals((igForwarded.event as { output_index: number }).output_index, 0);
 });
 
 test('consumeTurn live-forwards indexed progress events without hardcoded event-type lists', async () => {
