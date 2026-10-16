@@ -930,6 +930,28 @@ test.each([true, false])('hosted output preserves mixed parallel call order on c
   assertEquals(backend.calls.length, 1);
 });
 
+test.each([
+  { raw: ' { "search_query" : [ { "q" : "spaces" } ] }\n', query: 'spaces' },
+  { raw: '{"search_query":[{"q":"\\u5496\\u5561"}]}', query: '\u5496\u5561' },
+  { raw: '{search_query:[{q:"repaired"}]}', query: 'repaired' },
+])('hosted search executes parsed arguments while replaying the original string: $raw', async ({ raw, query }) => {
+  const { backend } = makeStubDeps();
+  const inv = makeInvocation();
+  const ctx = makeGatewayCtx();
+  const script = scriptedRun([fcTurn(0, 'call_raw', SHIM_TOOL_NAME, raw), messageTurn('answer')]);
+  const inputs: CanonicalOpenAIResponsesInputItem[][] = [];
+  await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, ctx, async () => {
+    inputs.push(structuredClone(inv.payload.input));
+    return await script.run();
+  });
+  assertEquals(backend.calls.length, 1);
+  assertEquals((backend.calls[0].request as WebSearchProviderRequest).query, query);
+  const restored = inputs[1].find(item => item.type === 'function_call');
+  assert(restored?.type === 'function_call');
+  assertEquals(restored.call_id, 'call_raw');
+  assertEquals(restored.arguments, raw);
+});
+
 test('translated source with a no-backing store still replays private search state across turns', async () => {
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
@@ -2416,7 +2438,7 @@ test('usage cached_tokens never reported on any turn is omitted from wire (no fa
   assertEquals(completed.response.usage?.output_tokens_details, undefined);
 });
 
-test('search execution repairs a trailing comma in model arguments', async () => {
+test('next-turn echo retains original arguments while execution repairs a trailing comma', async () => {
   const { backend } = makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation();
@@ -2438,7 +2460,7 @@ test('search execution repairs a trailing comma in model arguments', async () =>
     | { type: 'function_call'; arguments: string }
     | undefined;
   assert(fc !== undefined);
-  assertEquals(fc.arguments, JSON.stringify({ search_query: [{ q: 'q' }] }));
+  assertEquals(fc.arguments, brokenArgs);
   assertEquals((backend.calls[0].request as WebSearchProviderRequest).query, 'q');
 });
 
