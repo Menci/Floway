@@ -28,7 +28,7 @@ const payload = (): OpenAIResponsesRequestPayloadEx => ({
 
 const messagesRequestOptions = { fallbackMaxOutputTokens: undefined, loadRemoteImage: async () => null };
 
-test.each(['additional_tools', 'tool_search_output'] as const)('keeps inventory-only %s transparent within an ordinary assistant turn', async type => {
+test.each(['additional_tools', 'tool_search_output'] as const)('keeps %s as a user-side boundary between ordinary assistant turns', async type => {
   const source: CanonicalOpenAIResponsesPayload = {
     model: 'm',
     input: [
@@ -38,10 +38,12 @@ test.each(['additional_tools', 'tool_search_output'] as const)('keeps inventory-
     ],
   };
   expect((await buildChatRequest(source, createTestSidecarCodec())).target.messages).toEqual([
-    { role: 'assistant', content: 'A', tool_calls: [{ type: 'function', id: 'c', function: { name: 'lookup', arguments: '{}' } }] },
+    { role: 'assistant', content: 'A' },
+    { role: 'assistant', content: null, tool_calls: [{ type: 'function', id: 'c', function: { name: 'lookup', arguments: '{}' } }] },
   ]);
   expect((await buildMessagesRequest(source, createTestSidecarCodec(), messagesRequestOptions)).target.messages).toEqual([
-    { role: 'assistant', content: [{ type: 'text', text: 'A' }, { type: 'tool_use', id: 'c', name: 'lookup', input: {}, cache_control: { type: 'ephemeral' } }] },
+    { role: 'assistant', content: [{ type: 'text', text: 'A' }] },
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'lookup', input: {}, cache_control: { type: 'ephemeral' } }] },
   ]);
 });
 

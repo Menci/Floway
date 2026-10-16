@@ -5,7 +5,6 @@ export type OpenAIResponsesConversationTurn = { role: 'assistant' | 'bare'; item
 export const partitionOpenAIResponsesTurns = (input: readonly CanonicalOpenAIResponsesInputItem[]): OpenAIResponsesConversationTurn[] => {
   const turns: OpenAIResponsesConversationTurn[] = [];
   for (const item of input) {
-    if (item.type === 'additional_tools' || item.type === 'tool_search_output') continue;
     const role = isOpenAIResponsesAssistantInputItem(item) ? 'assistant' : 'bare';
     const previous = turns.at(-1);
     if (previous?.role === role) previous.items.push(item);

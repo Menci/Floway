@@ -123,3 +123,32 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('allocates bare
   expect([...result.namespaceToolNames.sourceToTarget]).toEqual([['a.b.run', 'a_b_run'], ['a_b.run', 'a_b_run_2']]);
   expect(result.target.messages).toHaveLength(3);
 });
+
+it.each(['additional_tools', 'tool_search_output'] as const)('restores assistant turns independently across a user-side %s boundary', async type => {
+  for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
+    const codec = createTestSidecarCodec();
+    const nativeTurns = ['first', 'second'].map(text => target === 'openaiChatCompletions'
+      ? { role: 'assistant' as const, content: text, reasoning_content: `opaque ${text}` }
+      : { role: 'assistant' as const, content: [{ type: 'thinking' as const, thinking: text, signature: `opaque ${text}` }] });
+    const turns: CanonicalOpenAIResponsesPayload['input'][] = ['first', 'second'].map(text => [
+      { type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] },
+    ]);
+    const carriers = await Promise.all(turns.map(async (turn, index) => createOpenAIResponsesSidecarCarrier(`carrier_${index}`, await codec.encode('openaiResponses', {
+      target, assistantTurn: nativeTurns[index], replayCheck: await computeOpenAIResponsesReplayCheck(turn),
+    }))));
+    const inventory = type === 'additional_tools'
+      ? { type, role: 'developer' as const, tools: [{ type: 'function' as const, name: 'lookup' }] }
+      : { type, call_id: 'load', execution: 'client' as const, tools: [{ type: 'function' as const, name: 'lookup' }] };
+    const source: CanonicalOpenAIResponsesPayload = {
+      model: 'test', input: [carriers[0], ...turns[0], inventory, carriers[1], ...turns[1]],
+    };
+    const original = structuredClone(source);
+    const result = target === 'openaiChatCompletions'
+      ? await buildChatRequest(source, codec)
+      : await buildMessagesRequest(source, codec, { loadRemoteImage: async () => null, fallbackMaxOutputTokens: undefined });
+
+    expect(result.target.messages).toEqual(nativeTurns);
+    expect(result.target.tools).toHaveLength(1);
+    expect(source).toEqual(original);
+  }
+});
