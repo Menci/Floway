@@ -14,7 +14,7 @@ const backends: ReadonlyArray<readonly [string, RepoFactory]> = [
 describe.each(backends)('access-control repos (%s)', (_label, makeRepo) => {
   test('groups persist members in both lookup directions', async () => {
     const repo = await makeRepo();
-    const group = await repo.groups.create('Operators');
+    const group = await repo.groups.create('Operators', 120);
     await repo.groups.replaceMembers(group.id, [3, 2, 3]);
 
     expect(await repo.groups.listMemberIds(group.id)).toEqual([2, 3]);
@@ -24,7 +24,7 @@ describe.each(backends)('access-control repos (%s)', (_label, makeRepo) => {
 
   test('soft-deleted groups no longer contribute principal membership', async () => {
     const repo = await makeRepo();
-    const group = await repo.groups.create('Operators');
+    const group = await repo.groups.create('Operators', 120);
     await repo.groups.replaceMembers(group.id, [2]);
     await repo.groups.softDelete(group.id);
 

@@ -2,7 +2,9 @@ diff --git a/lib/components/AreaChart/AreaChart.js b/lib/components/AreaChart/Ar
 index 1000ec66f9f2447b572ced78f9b106da400a6edc..6cdc4a36c694f159ea6b109a62ba465b6931b7af 100644
 --- a/lib/components/AreaChart/AreaChart.js
 +++ b/lib/components/AreaChart/AreaChart.js
-@@ -910,8 +910,8 @@ export const AreaChart = /*#__PURE__*/ React.forwardRef((props, forwardedRef)=>{
+@@ -909,9 +909,9 @@ export const AreaChart = /*#__PURE__*/ React.forwardRef((props, forwardedRef)=>{
+-                const width1 = _xAxisRectScale(ticks[ticks.length - 1]);
++                const width1 = _xAxisRectScale.range()[1];
                  const rectHeight = props.containerHeight - _margins.top;
                  return /*#__PURE__*/ React.createElement(React.Fragment, null, /*#__PURE__*/ React.createElement("g", null, /*#__PURE__*/ React.createElement("rect", {
                      id: _rectId,
@@ -27,7 +29,7 @@ index 1ac969766a34f8da2957812edd55b935d9de8985..fe60b9e60cf2214c59d290ada5a4f5bd
          if (props.showYAxisLables) {
              const maxYAxisLabelLength = calculateMaxYAxisLabelLength(classes.yAxis);
 diff --git a/lib/components/LineChart/LineChart.js b/lib/components/LineChart/LineChart.js
-index 3eb0732414a7275dd80bfb99600e29fe7e5fd591..f0801a6d245336633257db6e46415ff510b6d0c5 100644
+index 3eb0732414a7275dd80bfb99600e29fe7e5fd591..b06012be98f24092ad3a5d28f5c8015c7b6cb8ad 100644
 --- a/lib/components/LineChart/LineChart.js
 +++ b/lib/components/LineChart/LineChart.js
 @@ -441,7 +441,9 @@ const PATH_MULTIPLY_SIZE = 2.5;
@@ -52,6 +54,52 @@ index 3eb0732414a7275dd80bfb99600e29fe7e5fd591..f0801a6d245336633257db6e46415ff5
                              id: circleId,
                              key: circleId,
                              r: calculateMarkerRadius({
+@@ -958,7 +962,7 @@ const PATH_MULTIPLY_SIZE = 2.5;
+         });
+     }
+     // Helper function to update highlight circle, vertical line, and callout for large datasets
+-    const _updateLargeDatasetHighlightAndCallout = (linenumber, lineHeight, pointToHighlight, xAxisCalloutData, formattedDate, yScale)=>{
++    const _updateLargeDatasetHighlightAndCallout = (linenumber, lineHeight, pointToHighlight, xAxisCalloutData, formattedDate, yScale, mouseEvent)=>{
+         // Check if this point is plottable. If not, close the popover and return.
+         const xPoint = _xAxisScale(pointToHighlight.x);
+         const yPoint = yScale(pointToHighlight.y);
+@@ -967,15 +971,24 @@ const PATH_MULTIPLY_SIZE = 2.5;
+         }
+         const found = findCalloutPoints(calloutPointsRef.current, pointToHighlight.x);
+         const pointToHighlightUpdated = nearestCircleToHighlight === null || nearestCircleToHighlight !== null && pointToHighlight !== null && (nearestCircleToHighlight.x !== pointToHighlight.x || nearestCircleToHighlight.y !== pointToHighlight.y);
++        // A pointer carries the callout on the cursor, so it keeps moving inside
++        // one point's span; the "point changed" guard below would otherwise
++        // freeze it. A keyboard focus has no pointer to follow, so it takes the
++        // anchored point and the guard applies to it unchanged.
++        if (found && mouseEvent !== undefined) {
++            updatePosition(mouseEvent.clientX, mouseEvent.clientY);
++        }
+         // if no points need to be called out then don't show vertical line and callout card
+         if (found && pointToHighlightUpdated) {
+             _uniqueCallOutID = `#${_staticHighlightCircle}_${linenumber}`;
+             d3Select(`#${_staticHighlightCircle}_${linenumber}`).attr('cx', `${xPoint}`).attr('cy', `${yPoint}`).attr('visibility', 'visibility');
+             d3Select(`#${_verticalLine}`).attr('transform', ()=>`translate(${xPoint}, ${yPoint})`).attr('visibility', 'visibility').attr('y2', `${lineHeight - 5 - yPoint}`);
+-            const targetElement = document.getElementById(`${_staticHighlightCircle}_${linenumber}`);
+-            const rect = targetElement.getBoundingClientRect();
+             setNearestCircleToHighlight(pointToHighlight);
+-            updatePosition(rect.x, rect.y);
++            if (mouseEvent === undefined) {
++                const targetElement = document.getElementById(`${_staticHighlightCircle}_${linenumber}`);
++                const rect = targetElement.getBoundingClientRect();
++                updatePosition(rect.x, rect.y);
++            }
+             setStackCalloutProps(found);
+             setYValueHover(found.values);
+             setDataPointCalloutProps(found);
+@@ -1046,7 +1059,7 @@ const PATH_MULTIPLY_SIZE = 2.5;
+         const { xAxisCalloutData } = lineChartData[linenumber].data[index];
+         const formattedDate = xPointToHighlight instanceof Date ? formatDateToLocaleString(xPointToHighlight, props.culture, props.useUTC) : xPointToHighlight;
+         const pointToHighlight = lineChartData[linenumber].data[index];
+-        _updateLargeDatasetHighlightAndCallout(linenumber, lineHeight, pointToHighlight, xAxisCalloutData, formattedDate, yScale);
++        _updateLargeDatasetHighlightAndCallout(linenumber, lineHeight, pointToHighlight, xAxisCalloutData, formattedDate, yScale, mouseEvent);
+     };
+     function _handleFocus(event, lineId, x, xAxisCalloutData, circleId, targetElement, xAxisCalloutAccessibilityData) {
+         _uniqueCallOutID = circleId;
 diff --git a/lib/utilities/utilities.js b/lib/utilities/utilities.js
 index 0b5acb8f82a4655b3d6d59eafe123567738cb08d..a43c04ad7bde922589d25c0fc98d6b4119c66f4f 100644
 --- a/lib/utilities/utilities.js
@@ -81,7 +129,9 @@ diff --git a/lib-commonjs/components/AreaChart/AreaChart.js b/lib-commonjs/compo
 index 5204125c8498f697d3673b3017ec7e6cbbbe960e..d44cf7a974d14d42e79528051f049fedee2e5ea8 100644
 --- a/lib-commonjs/components/AreaChart/AreaChart.js
 +++ b/lib-commonjs/components/AreaChart/AreaChart.js
-@@ -916,8 +916,8 @@ const AreaChart = /*#__PURE__*/ _react.forwardRef((props, forwardedRef)=>{
+@@ -915,9 +915,9 @@ const AreaChart = /*#__PURE__*/ _react.forwardRef((props, forwardedRef)=>{
+-                const width1 = _xAxisRectScale(ticks[ticks.length - 1]);
++                const width1 = _xAxisRectScale.range()[1];
                  const rectHeight = props.containerHeight - _margins.top;
                  return /*#__PURE__*/ _react.createElement(_react.Fragment, null, /*#__PURE__*/ _react.createElement("g", null, /*#__PURE__*/ _react.createElement("rect", {
                      id: _rectId,
@@ -106,7 +156,7 @@ index bcf76c184cfe345e19d58fb199b478c4005539b1..d6873b1f11fd056ed5e648f842ddd1c0
          if (props.showYAxisLables) {
              const maxYAxisLabelLength = calculateMaxYAxisLabelLength(classes.yAxis);
 diff --git a/lib-commonjs/components/LineChart/LineChart.js b/lib-commonjs/components/LineChart/LineChart.js
-index 9aa30c4008883b4910888cfeb3c4b2d9858f8efd..fc40aaa95726cfe022afdc1410a0c55d85e463bf 100644
+index 9aa30c4008883b4910888cfeb3c4b2d9858f8efd..5a8be851afc1139c6268952699e986e5967cb150 100644
 --- a/lib-commonjs/components/LineChart/LineChart.js
 +++ b/lib-commonjs/components/LineChart/LineChart.js
 @@ -446,7 +446,9 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
@@ -131,6 +181,52 @@ index 9aa30c4008883b4910888cfeb3c4b2d9858f8efd..fc40aaa95726cfe022afdc1410a0c55d
                              id: circleId,
                              key: circleId,
                              r: (0, _index1.calculateMarkerRadius)({
+@@ -963,7 +967,7 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
+         });
+     }
+     // Helper function to update highlight circle, vertical line, and callout for large datasets
+-    const _updateLargeDatasetHighlightAndCallout = (linenumber, lineHeight, pointToHighlight, xAxisCalloutData, formattedDate, yScale)=>{
++    const _updateLargeDatasetHighlightAndCallout = (linenumber, lineHeight, pointToHighlight, xAxisCalloutData, formattedDate, yScale, mouseEvent)=>{
+         // Check if this point is plottable. If not, close the popover and return.
+         const xPoint = _xAxisScale(pointToHighlight.x);
+         const yPoint = yScale(pointToHighlight.y);
+@@ -972,15 +976,24 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
+         }
+         const found = (0, _index1.findCalloutPoints)(calloutPointsRef.current, pointToHighlight.x);
+         const pointToHighlightUpdated = nearestCircleToHighlight === null || nearestCircleToHighlight !== null && pointToHighlight !== null && (nearestCircleToHighlight.x !== pointToHighlight.x || nearestCircleToHighlight.y !== pointToHighlight.y);
++        // A pointer carries the callout on the cursor, so it keeps moving inside
++        // one point's span; the "point changed" guard below would otherwise
++        // freeze it. A keyboard focus has no pointer to follow, so it takes the
++        // anchored point and the guard applies to it unchanged.
++        if (found && mouseEvent !== undefined) {
++            updatePosition(mouseEvent.clientX, mouseEvent.clientY);
++        }
+         // if no points need to be called out then don't show vertical line and callout card
+         if (found && pointToHighlightUpdated) {
+             _uniqueCallOutID = `#${_staticHighlightCircle}_${linenumber}`;
+             (0, _d3selection.select)(`#${_staticHighlightCircle}_${linenumber}`).attr('cx', `${xPoint}`).attr('cy', `${yPoint}`).attr('visibility', 'visibility');
+             (0, _d3selection.select)(`#${_verticalLine}`).attr('transform', ()=>`translate(${xPoint}, ${yPoint})`).attr('visibility', 'visibility').attr('y2', `${lineHeight - 5 - yPoint}`);
+-            const targetElement = document.getElementById(`${_staticHighlightCircle}_${linenumber}`);
+-            const rect = targetElement.getBoundingClientRect();
+             setNearestCircleToHighlight(pointToHighlight);
+-            updatePosition(rect.x, rect.y);
++            if (mouseEvent === undefined) {
++                const targetElement = document.getElementById(`${_staticHighlightCircle}_${linenumber}`);
++                const rect = targetElement.getBoundingClientRect();
++                updatePosition(rect.x, rect.y);
++            }
+             setStackCalloutProps(found);
+             setYValueHover(found.values);
+             setDataPointCalloutProps(found);
+@@ -1051,7 +1064,7 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
+         const { xAxisCalloutData } = lineChartData[linenumber].data[index];
+         const formattedDate = xPointToHighlight instanceof Date ? (0, _chartutilities.formatDateToLocaleString)(xPointToHighlight, props.culture, props.useUTC) : xPointToHighlight;
+         const pointToHighlight = lineChartData[linenumber].data[index];
+-        _updateLargeDatasetHighlightAndCallout(linenumber, lineHeight, pointToHighlight, xAxisCalloutData, formattedDate, yScale);
++        _updateLargeDatasetHighlightAndCallout(linenumber, lineHeight, pointToHighlight, xAxisCalloutData, formattedDate, yScale, mouseEvent);
+     };
+     function _handleFocus(event, lineId, x, xAxisCalloutData, circleId, targetElement, xAxisCalloutAccessibilityData) {
+         _uniqueCallOutID = circleId;
 diff --git a/lib-commonjs/utilities/utilities.js b/lib-commonjs/utilities/utilities.js
 index 5c6ff58f9d48df22a503c82b4917824813927d8f..990b9a9f2944ddd0cf3654e631f13b79f55fda0e 100644
 --- a/lib-commonjs/utilities/utilities.js

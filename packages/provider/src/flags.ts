@@ -63,8 +63,7 @@ export type FlagDefaults = Readonly<Record<FlagId, boolean>>;
 // Used by operator override storage (upstream-level
 // `UpstreamRecord.flagOverrides`, per-model
 // `UpstreamModelConfig.flagOverrides`) and by the per-model default
-// deltas a provider computes inside its `create` — see
-// `defaultFlagsForCopilotModel`.
+// deltas a provider computes inside its `create`.
 export type FlagOverrides = Partial<Record<FlagId, boolean>>;
 
 // Shape validator + canonicalizer shared by every entry point that
@@ -116,15 +115,11 @@ export const parseFlagOverridesWire = (value: unknown): FlagOverrides =>
 // Canonical layer order across every provider:
 //   1. Provider upstream default (per-kind constant)
 //   2. Operator upstream override (`UpstreamRecord.flagOverrides`)
-//   3. Per-model layer — the provider's per-model default
-//      (`defaultFlagsForCopilotModel(model)`) for an auto row, the operator's
-//      `UpstreamModelConfig.flagOverrides` for a manual row; the two row
-//      kinds are defined on `UpstreamModelConfig` in `model-config.ts`.
-//      Never both, since an auto/manual row cannot be the other.
+//   3. Per-model layer — the provider's per-model default for an auto row,
+//      or the operator's `UpstreamModelConfig.flagOverrides` for a manual row.
+//      The row kinds are defined on `UpstreamModelConfig` in `model-config.ts`.
 //
 // Placing per-model last lets provider-declared technical necessities
-// (e.g. Copilot forcing rewrite-mid-conv-system-to-user on for
-// Claude < 4.8, whose Vertex backend rejects inline `role:'system'`)
 // survive an upstream-wide operator override. Operators who genuinely
 // want to opt out of a provider's per-model call switch the row to
 // Manual and override there — explicit and visible in the dashboard.

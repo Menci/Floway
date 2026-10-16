@@ -44,6 +44,7 @@ export interface User {
 export interface Group {
   id: number;
   name: string;
+  hue: number;
   createdAt: string;
   deletedAt: string | null;
 }
@@ -285,9 +286,16 @@ export interface UsersRepo {
   createNewUser(template: Omit<User, 'id'>): Promise<User>;
   // Throws when the username is already taken by another active row, so
   // duplicate-username races surface instead of silently overwriting state.
-  save(user: User): Promise<void>;
+  save(user: User, groupIds?: readonly number[]): Promise<void>;
   softDelete(id: number): Promise<boolean>;
   deleteAll(): Promise<void>;
+}
+
+export type GroupWithMembers = Group & { memberIds: number[] };
+
+export interface UserDirectory {
+  users: User[];
+  groups: GroupWithMembers[];
 }
 
 export interface GroupsRepo {
@@ -295,10 +303,15 @@ export interface GroupsRepo {
   listIncludingDeleted(): Promise<Group[]>;
   getById(id: number): Promise<Group | null>;
   findByName(name: string): Promise<Group | null>;
-  create(name: string): Promise<Group>;
+  create(name: string, hue: number): Promise<Group>;
   save(group: Group): Promise<void>;
+  // Restore supplied IDs and memberships atomically, including name swaps.
+  restore(groups: readonly GroupWithMembers[]): Promise<void>;
   softDelete(id: number): Promise<boolean>;
   listMemberIds(groupId: number): Promise<number[]>;
+  listMemberships(): Promise<Map<number, number[]>>;
+  setMember(groupId: number, userId: number, included: boolean): Promise<void>;
+  replaceUserGroups(userId: number, groupIds: readonly number[]): Promise<void>;
   listIdsByUserId(userId: number): Promise<number[]>;
   listIdsByUserIds(userIds: readonly number[]): Promise<Map<number, number[]>>;
   replaceMembers(groupId: number, userIds: readonly number[]): Promise<void>;
@@ -612,6 +625,8 @@ export interface UpstreamMetricsRepo {
 }
 
 export interface Repo {
+  // Active users, groups and their memberships must share one read snapshot.
+  readUserDirectory(): Promise<UserDirectory>;
   upstreamMetrics: UpstreamMetricsRepo;
   apiKeys: ApiKeyRepo;
   users: UsersRepo;

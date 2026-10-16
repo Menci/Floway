@@ -90,7 +90,7 @@ test('access-record writes reject unknown principals, invalid scope permissions,
 test('access resolve uses group grants and returns the effective level map', async () => {
   const { adminSession, repo } = await setupAppTest();
   await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: 2 });
-  const group = await repo.groups.create('Operators');
+  const group = await repo.groups.create('Operators', 120);
   await repo.groups.replaceMembers(group.id, [2]);
   await repo.accessRecords.save({
     principal: { kind: 'group', id: group.id },

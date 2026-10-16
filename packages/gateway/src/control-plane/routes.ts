@@ -6,7 +6,7 @@ import { createKey, deleteKey, listKeys, rotateKey, updateKey } from './api-keys
 import { authLogin, authLogout, authMe } from './auth/routes.ts';
 import { exportData, importData } from './data-transfer/routes.ts';
 import { dumpRoutes } from './dump.ts';
-import { createGroup, deleteGroup, listGroups, updateGroup } from './groups/routes.ts';
+import { createGroup, deleteGroup, listGroups, setGroupMember, updateGroup } from './groups/routes.ts';
 import { createAlias, deleteAlias, listAliases, updateAlias } from './model-aliases/routes.ts';
 import { controlPlaneModels } from './models/routes.ts';
 import { performanceOverview } from './performance/routes.ts';
@@ -23,7 +23,7 @@ import { copilotOAuthDeviceLoginPoll, copilotOAuthDeviceLoginStart, copilotQuota
 import { fetchSavedModels, previewModels } from './upstreams/models.ts';
 import { ollamaUsage } from './upstreams/ollama.ts';
 import { createUpstream, deleteUpstream, getUpstream, getUpstreamBlueprint, listUpstreamOptions, listUpstreams, updateUpstream } from './upstreams/routes.ts';
-import { changeOwnPassword, createUser, deleteUser, listUsers, updateUser } from './users/routes.ts';
+import { changeOwnPassword, createUser, deleteUser, getUserDirectory, listUsers, updateUser } from './users/routes.ts';
 import { type AuthedContext, type AuthVars, userFromContext } from '../middleware/auth.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
 import { getRuntimeInfo } from '../runtime/runtime-info.ts';
@@ -98,6 +98,7 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
     .use('*', adminOnlyMiddleware)
     .get('/upstream-metrics', zValidator('query', upstreamMetricsQuery), upstreamMetrics)
     .get('/users', listUsers)
+    .get('/user-directory', getUserDirectory)
     .post('/users', zValidator('json', createUserBody), createUser)
     .patch('/users/:id', zValidator('json', updateUserBody), updateUser)
     .delete('/users/:id', deleteUser)
@@ -110,6 +111,8 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
     .put('/access-records/:id', zValidator('json', accessRecordBody), updateAccessRecord)
     .delete('/access-records/:id', deleteAccessRecord)
     .post('/access-resolve', zValidator('json', resolveAccessBody), resolveAccess)
+    .put('/groups/:id/members/:userId', setGroupMember(true))
+    .delete('/groups/:id/members/:userId', setGroupMember(false))
     .get('/upstreams', listUpstreams)
     .post('/upstreams/codex/import/preview', zValidator('json', codexImportPreviewBody), codexImportPreview)
     .post('/upstreams/preview-models', zValidator('json', previewModelsBody), previewModels)

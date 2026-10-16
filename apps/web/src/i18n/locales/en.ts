@@ -119,7 +119,7 @@ const en = {
         performance:
             'Monitor latency, throughput, and upstream performance signals',
         users:
-            'Manage console users, permissions, telemetry access, and upstream scopes',
+            'Manage console users and groups',
         permissions:
             'Inspect and edit access records across users, groups, and resources',
         backupRestore:
@@ -225,6 +225,7 @@ const en = {
         },
       },
       users: {
+        search: 'Search users',
         tabs: { users: 'Users', groups: 'Groups' },
         empty: 'No users found',
         actions: {
@@ -233,7 +234,7 @@ const en = {
           resetPasswordNamed: 'Reset the password of user {{name}}',
           delete: 'Delete user',
           deleteNamed: 'Delete user {{name}}',
-          refresh: 'Refresh users',
+          refresh: 'Refresh users and groups',
           save: 'Save changes',
         },
         toast: {
@@ -259,20 +260,10 @@ const en = {
           username: 'Username',
           role: 'Role',
           groups: 'Groups',
-          permissions: 'Permissions',
           created: 'Created',
           actions: 'Actions',
         },
         role: { admin: 'Administrator', operator: 'Operator' },
-        groups: {
-          count_one: '{{count, number}} group',
-          count_other: '{{count, number}} groups',
-        },
-        permissions: {
-          admin: 'Administrator',
-          count_one: '{{count, number}} direct record',
-          count_other: '{{count, number}} direct records',
-        },
         dialog: {
           createTitle: 'New user',
           editTitle: 'Edit {{username}}',
@@ -304,14 +295,20 @@ const en = {
         createdDefaultKey: 'A Default API key is created with each new user.',
       },
       groupsManagement: {
+        more_one: 'Show {{count, number}} more group',
+        more_other: 'Show {{count, number}} more groups',
+        remove: { title: 'Remove member', message: 'Remove {{username}} from {{group}}?', confirm: 'Remove' },
         empty: 'No groups found',
-        actions: { create: 'New group', edit: 'Edit group', delete: 'Delete group', refresh: 'Refresh groups' },
-        table: { label: 'Floway groups', name: 'Name', members: 'Members', permissions: 'Permissions', created: 'Created', actions: 'Actions' },
-        members: { count_one: '{{count, number}} member', count_other: '{{count, number}} members' },
-        permissions: { count_one: '{{count, number}} record', count_other: '{{count, number}} records' },
+        search: 'Search groups',
+        searchJoin: 'Search and join a group',
+        noMatches: 'No matching groups',
+        allJoined: 'Already in every group',
+        invalidName: 'Enter a name between 1 and 64 characters',
+        actions: { create: 'New group', save: 'Save changes', edit: 'Edit group', delete: 'Delete group', add: 'Add member', remove: 'Remove {{username}} from group', leave: 'Leave {{name}}' },
+        members: { count_one: '{{count, number}} member', count_other: '{{count, number}} members', empty: 'This group has no members', allAdded: 'All users are already members', noMatches: 'No matching users' },
         dialog: { createTitle: 'New group', editTitle: 'Edit {{name}}' },
-        fields: { name: 'Name', members: 'Members' },
-        delete: { title: 'Delete group', message: 'Delete {{name}}? Membership and permissions granted by this group will be removed.' },
+        fields: { name: 'Name', members: 'Members', hue: 'Color' },
+        delete: { title: 'Delete group', message: 'Delete {{name}}? Its membership and permissions will be removed.' },
         toast: {
           create: { pending: 'Creating group {{name}}', success: 'Created group {{name}}' },
           edit: { pending: 'Saving group {{name}}', success: 'Saved group {{name}}' },

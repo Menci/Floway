@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
+import { AddRegular, SearchRegular } from '@fluentui/react-icons';
+import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 
 import { useTranslation } from '../i18n/translation';
@@ -6,14 +7,14 @@ import type { Route } from './+types/dashboard-admin-users';
 import { useDashboardOutletContext } from './dashboard';
 import { requireDashboardAdmin } from './guards';
 import { api, callApi } from '../api/client';
-import { mapResult, mergeResults } from '../api/partial-results';
-import type { AccessRecord, ControlPlaneGroup, ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../api/types';
-import type { ScopeExpressionData } from '../components/access-control/scope-expression';
+import { mergeResults } from '../api/partial-results';
+import type { ControlPlaneGroup, ControlPlaneUser, ControlPlaneUserDirectory } from '../api/types';
 import { GroupDialog } from '../components/groups/dialog';
-import { GroupsTable } from '../components/groups/table';
+import { GroupsMasterDetail } from '../components/groups/master-detail';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
+import { Input } from '../components/ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { Panel } from '../components/ui/panel';
@@ -26,41 +27,27 @@ import { UsersTable } from '../components/users/table';
 import { fluentComponents } from '../fluent';
 import { useAuthStore } from '../stores/auth-store';
 
-const { Tab, TabList } = fluentComponents;
+const { Button, Tab, TabList, Text } = fluentComponents;
 
 // `null` is a failed fetch, not an empty deployment: a gateway always has a user.
 interface LoaderData {
-  users: ControlPlaneUser[] | null;
-  groups: ControlPlaneGroup[] | null;
-  accessRecords: AccessRecord[] | null;
-  upstreams: UpstreamOption[] | null;
-  models: ControlPlaneModel[] | null;
+  directory: ControlPlaneUserDirectory | null;
   error: string | null;
 }
 
 const loadPageData = async (
-  current: Pick<LoaderData, 'users' | 'groups' | 'accessRecords' | 'upstreams' | 'models'>,
+  current: Pick<LoaderData, 'directory'>,
   signal?: AbortSignal,
 ): Promise<LoaderData> => {
-  const [usersResult, groupsResult, accessRecordsResult, upstreamsResult, modelsResult] = await Promise.all([
-    callApi(() => api.api.users.$get(undefined, { init: { signal } })),
-    callApi(() => api.api.groups.$get(undefined, { init: { signal } })),
-    callApi(() => api.api['access-records'].$get(undefined, { init: { signal } })),
-    callApi(() => api.api['upstream-options'].$get({ query: { view: 'all' } }, { init: { signal } })),
-    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } }, { init: { signal } })),
-  ]);
+  const directoryResult = await callApi(() => api.api['user-directory'].$get(undefined, { init: { signal } }));
   const { values, error } = mergeResults(current, {
-    users: usersResult,
-    groups: groupsResult,
-    accessRecords: accessRecordsResult,
-    upstreams: upstreamsResult,
-    models: mapResult(modelsResult, body => body.data),
+    directory: directoryResult,
   });
   return { ...values, error };
 };
 
-const unloadedPageData: Pick<LoaderData, 'users' | 'groups' | 'accessRecords' | 'upstreams' | 'models'> = {
-  users: null, groups: null, accessRecords: null, upstreams: null, models: null,
+const unloadedPageData: Pick<LoaderData, 'directory'> = {
+  directory: null,
 };
 
 export async function clientLoader(): Promise<LoaderData> {
@@ -76,18 +63,28 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   const [data, setData] = useState<LoaderData>(loaderData);
   const [pageError, setPageError] = useState<string | null>(loaderData.error);
   const [searchParams, setSearchParams] = useSearchParams();
+  const selectedGroupId = searchParams.has('group') ? Number(searchParams.get('group')) : null;
+  const [changingMember, setChangingMember] = useState(false);
   const tab = searchParams.get('tab') === 'groups' ? 'groups' : 'users';
+  const [search, setSearch] = useState<{ tab: 'users' | 'groups'; query: string }>({ tab, query: '' });
+  const query = search.tab === tab ? search.query : '';
+  const setQuery = (query: string) => setSearch({ tab, query });
   const setTab = (next: 'users' | 'groups') => setSearchParams(current => {
     const params = new URLSearchParams(current);
     if (next === 'users') params.delete('tab'); else params.set('tab', 'groups');
     return params;
-  }, { replace: true });
-  const editorDialog = useDialogInvocation<{ kind: 'create' } | { kind: 'edit'; user: ControlPlaneUser }>();
+  });
+  const setSelectedGroupId = (id: number) => setSearchParams(current => {
+    const params = new URLSearchParams(current);
+    params.set('tab', 'groups');
+    params.set('group', String(id));
+    return params;
+  });
+  const editorDialog = useDialogInvocation<({ kind: 'create' } | { kind: 'edit'; user: ControlPlaneUser }) & { groups: ControlPlaneGroup[] }>();
   const passwordDialog = useDialogInvocation<ControlPlaneUser>();
   const deleteDialog = useDialogInvocation<ControlPlaneUser>();
   const groupDialog = useDialogInvocation<{ group?: ControlPlaneGroup }>();
   const deleteGroupDialog = useDialogInvocation<ControlPlaneGroup>();
-  const [groupAfterUserExit, setGroupAfterUserExit] = useState<ControlPlaneGroup | null>(null);
 
   // The error belongs to its attempt, so opening another user's dialog clears it.
   const openDeleteDialog = (target: ControlPlaneUser) => {
@@ -151,32 +148,72 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
     await refresh();
   };
 
-  const { accessRecords, groups, models, upstreams, users } = data;
-  const loaded = users !== null && groups !== null && accessRecords !== null && upstreams !== null && models !== null;
-  const accessData = useMemo<ScopeExpressionData>(() => ({
-    groups: groups ?? [], models: models ?? [], upstreams: upstreams ?? [], users: users ?? [],
-  }), [groups, models, upstreams, users]);
+  const { directory } = data;
+  const users = directory?.users ?? null;
+  const groups = directory?.groups ?? null;
+  const loaded = users !== null && groups !== null;
+  const needle = query.trim().toLowerCase();
+  const visibleUsers = users?.filter(user => user.username.toLowerCase().includes(needle));
+  const visibleGroups = groups?.filter(group => group.name.toLowerCase().includes(needle));
+  const activeGroupId = visibleGroups?.find(group => group.id === selectedGroupId)?.id ?? visibleGroups?.[0]?.id;
+  useEffect(() => {
+    if (tab !== 'groups' || groups === null || (needle && activeGroupId === undefined)) return;
+    const canonicalId = activeGroupId === undefined ? null : String(activeGroupId);
+    if (searchParams.get('group') === canonicalId) return;
+    setSearchParams(current => {
+      const params = new URLSearchParams(current);
+      if (canonicalId === null) params.delete('group'); else params.set('group', canonicalId);
+      return params;
+    }, { replace: true });
+  }, [activeGroupId, groups, needle, searchParams, setSearchParams, tab]);
+
+  const changeMember = async (group: ControlPlaneGroup, user: ControlPlaneUser, included: boolean): Promise<string | null> => {
+    setChangingMember(true);
+    const param = { id: String(group.id), userId: String(user.id) };
+    try {
+      const result = included
+        ? await callApi(() => api.api.groups[':id'].members[':userId'].$put({ param }))
+        : await callApi(() => api.api.groups[':id'].members[':userId'].$delete({ param }));
+      if (result.error) {
+        if (included) setPageError(result.error.message);
+        return result.error.message;
+      }
+      await refresh();
+      return null;
+    } finally {
+      setChangingMember(false);
+    }
+  };
 
   return (
     <section className="dashboard-page">
       <DashboardPageHeader
         actions={<ResourceListActions
-          createDisabled={!loaded}
-          createLabel={t(tab === 'users' ? 'dashboard.users.actions.create' : 'dashboard.groupsManagement.actions.create')}
-          disabled={deleting}
-          onCreate={() => tab === 'users' ? editorDialog.open({ kind: 'create' }) : groupDialog.open({})}
+          disabled={deleting || deletingGroup || changingMember}
           onRefresh={() => void refresh()}
-          refreshLabel={t(tab === 'users' ? 'dashboard.users.actions.refresh' : 'dashboard.groupsManagement.actions.refresh')}
+          refreshLabel={t('dashboard.users.actions.refresh')}
           refreshing={refreshing}
         />}
         description={t('dashboard.pages.users')}
         title={t('dashboard.nav.users')}
       />
 
-      <TabList aria-label={t('dashboard.nav.users')} onTabSelect={(_, event) => setTab(event.value === 'groups' ? 'groups' : 'users')} selectedValue={tab}>
-        <Tab value="users">{t('dashboard.users.tabs.users')}</Tab>
-        <Tab value="groups">{t('dashboard.users.tabs.groups')}</Tab>
-      </TabList>
+      <div className="flex items-center justify-between gap-3 flex-wrap -mb-1">
+        <TabList aria-label={t('dashboard.nav.users')} onTabSelect={(_, event) => { setTab(event.value === 'groups' ? 'groups' : 'users'); setQuery(''); }} selectedValue={tab}>
+          <Tab value="users"><span className="inline-flex items-baseline gap-1.5">{t('dashboard.users.tabs.users')}{users && <Text className="text-fui-fg3 proportional-nums">{users.length}</Text>}</span></Tab>
+          <Tab value="groups"><span className="inline-flex items-baseline gap-1.5">{t('dashboard.users.tabs.groups')}{groups && <Text className="text-fui-fg3 proportional-nums">{groups.length}</Text>}</span></Tab>
+        </TabList>
+        <div className="flex items-center gap-2 max-w-full">
+          <Input aria-label={t(tab === 'users' ? 'dashboard.users.search' : 'dashboard.groupsManagement.search')} className="w-[260px]" contentBefore={<SearchRegular />} onChange={(_, value) => setQuery(value.value)} placeholder={t(tab === 'users' ? 'dashboard.users.search' : 'dashboard.groupsManagement.search')} value={query} />
+          <Button
+            appearance="primary"
+            className="flex-none whitespace-nowrap"
+            disabled={!loaded || refreshing || deleting || deletingGroup || changingMember}
+            icon={<AddRegular />}
+            onClick={() => tab === 'users' ? editorDialog.open({ kind: 'create', groups: groups! }) : groupDialog.open({})}
+          >{t(tab === 'users' ? 'dashboard.users.actions.create' : 'dashboard.groupsManagement.actions.create')}</Button>
+        </div>
+      </div>
 
       {pageError && (
         <OutcomeMessageBar onDismiss={() => setPageError(null)}>
@@ -185,66 +222,52 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
       )}
 
       {!loaded ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
-        <ResourceListPanel>
-          {tab === 'users' ? <UsersTable
-            actorId={actor.id}
-            disabled={refreshing || deleting}
-            onDelete={openDeleteDialog}
-            onEdit={user => editorDialog.open({ kind: 'edit', user })}
-            onResetPassword={passwordDialog.open}
-            users={users}
-          /> : <GroupsTable
-            disabled={refreshing || deletingGroup}
-            groups={groups}
-            onDelete={group => { setDeleteGroupError(null); deleteGroupDialog.open(group); }}
-            onEdit={group => groupDialog.open({ group })}
-          />}
-        </ResourceListPanel>
+        {tab === 'users' ? <ResourceListPanel><UsersTable
+          actorId={actor.id}
+          disabled={refreshing || deleting}
+          onDelete={openDeleteDialog}
+          onEdit={user => editorDialog.open({ kind: 'edit', user, groups })}
+          onResetPassword={passwordDialog.open}
+          users={visibleUsers!}
+          groups={groups}
+        /></ResourceListPanel> : needle && visibleGroups!.length === 0 ? <Panel><EmptyStateLine>{t('dashboard.groupsManagement.noMatches')}</EmptyStateLine></Panel> : <GroupsMasterDetail
+          disabled={refreshing || deletingGroup || changingMember}
+          groups={visibleGroups!}
+          users={users}
+          selectedId={activeGroupId ?? null}
+          onSelect={setSelectedGroupId}
+          onCreate={() => groupDialog.open({})}
+          onMemberChange={changeMember}
+          onDelete={group => { setDeleteGroupError(null); deleteGroupDialog.open(group); }}
+          onEdit={group => groupDialog.open({ group })}
+        />}
 
         {editorDialog.invocation?.value.kind === 'create' && <UserDialog
           open={editorDialog.isOpen}
           actorId={actor.id}
-          accessData={accessData}
-          accessRecords={accessRecords}
-          groups={groups}
           key={editorDialog.invocation.key}
           mode="create"
+          groups={editorDialog.invocation.value.groups}
           onOpenChange={open => { if (!open) editorDialog.close(); }}
           onSaved={() => afterSaved()}
-          onAccessChanged={refresh}
         />}
         {editorDialog.invocation?.value.kind === 'edit' && <UserDialog
           open={editorDialog.isOpen}
           actorId={actor.id}
-          accessData={accessData}
-          accessRecords={accessRecords}
-          groups={groups}
           key={editorDialog.invocation.key}
           mode="edit"
+          groups={editorDialog.invocation.value.groups}
           onOpenChange={open => { if (!open) editorDialog.close(); }}
-          onExited={() => {
-            if (groupAfterUserExit === null) return;
-            setTab('groups');
-            groupDialog.open({ group: groupAfterUserExit });
-            setGroupAfterUserExit(null);
-          }}
-          onOpenGroup={group => {
-            setGroupAfterUserExit(group);
-          }}
           onSaved={afterSaved}
-          onAccessChanged={refresh}
           user={editorDialog.invocation.value.user}
         />}
         {groupDialog.invocation && <GroupDialog
-          accessData={accessData}
-          accessRecords={accessRecords}
           group={groupDialog.invocation.value.group}
+          groups={groups}
           key={groupDialog.invocation.key}
-          onAccessChanged={refresh}
           onOpenChange={open => { if (!open) groupDialog.close(); }}
-          onSaved={refresh}
+          onSaved={async id => { await refresh(); setSelectedGroupId(id); }}
           open={groupDialog.isOpen}
-          users={users}
         />}
         {passwordDialog.invocation && <PasswordDialog
           open={passwordDialog.isOpen}

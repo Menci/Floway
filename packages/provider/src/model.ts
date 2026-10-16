@@ -172,11 +172,9 @@ export interface InternalAliasedFrom {
 // Per-upstream projection returned by every provider's `getProvidedModels` and
 // the shape every provider's `callXxx(model, ...)` takes at dispatch time.
 // Carries the same metadata as `InternalModel` plus `providerData` (opaque
-// provider-private invocation data, not a universal upstream-id field —
-// Copilot uses it for raw variants, Claude Code for a dated wire id, and other
-// providers may omit it or carry a different private shape), `enabledFlags`
-// (the effective flag set for the model on the emitting upstream, already
-// resolved through every layer), and `flagOverrides` (optional dashboard-only
+// provider-private invocation data whose shape is owned by the emitting
+// provider), `enabledFlags` (the effective flag set for the model on the
+// emitting upstream, already resolved through every layer), and `flagOverrides` (optional dashboard-only
 // view of the per-model layer that fed into `enabledFlags`). Providers only
 // ever see their own emission — the surrounding `InternalModel` map is
 // assembled by the registry.
@@ -194,8 +192,7 @@ export interface ProviderModel extends ModelMetadata {
   // model. Absent when the provider has no per-model call on this
   // model; when present, the map is non-empty (producers elide empty
   // overlays before emission). Populated only for providers with a
-  // per-model rule (e.g., Copilot's Claude < 4.8 system-rewrite clause); other
-  // providers leave it undefined.
+  // per-model rule; other providers leave it undefined.
   //
   // The data plane consumes the already-resolved `enabledFlags` and
   // never re-layers this. The field exists so the dashboard's

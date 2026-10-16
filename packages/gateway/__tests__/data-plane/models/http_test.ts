@@ -595,7 +595,7 @@ test('/v1/models surfaces the actionable "no upstream configured" hint when no p
   assertEquals(response.status, 502);
   assertEquals(await response.json(), {
     error: {
-      message: 'No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard',
+      message: 'No upstream provider configured — add and enable an upstream in the dashboard',
       type: 'api_error',
     },
   });
@@ -610,7 +610,7 @@ test('/v1/models exposes actionable discovery failures and stack traces to OMP',
   });
   assertEquals(response.status, 502);
   const body = await response.json() as { error: { message: string; type: string; stack: string } };
-  assertEquals(body.error.message, 'No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard');
+  assertEquals(body.error.message, 'No upstream provider configured — add and enable an upstream in the dashboard');
   assertEquals(body.error.type, 'internal_error');
   expect(body.error.stack).toContain('getModelsFromProviders');
 });

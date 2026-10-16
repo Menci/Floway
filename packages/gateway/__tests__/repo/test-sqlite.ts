@@ -157,11 +157,15 @@ class SqlJsPreparedStatement implements SqlPreparedStatement {
     return Promise.resolve(row);
   }
 
-  all<T = Record<string, unknown>>(): Promise<SqlResult<T>> {
+  execute<T = Record<string, unknown>>(): SqlResult<T> {
     const [result] = this.db.exec(this.query, this.bound as unknown[]);
-    if (!result) return Promise.resolve({ results: [], success: true, meta: {} });
-    const results = result.values.map(values => Object.fromEntries(result.columns.map((column, index) => [column, values[index]])) as T);
-    return Promise.resolve({ results, success: true, meta: {} });
+    const results = result ? result.values.map(values => Object.fromEntries(result.columns.map((column, index) => [column, values[index]])) as T) : [];
+    const [changesResult] = this.db.exec('SELECT changes() AS changes');
+    return { results, success: true, meta: { changes: Number(changesResult.values[0][0]) } };
+  }
+
+  all<T = Record<string, unknown>>(): Promise<SqlResult<T>> {
+    return Promise.resolve(this.execute<T>());
   }
 
   run(): Promise<SqlResult> {
@@ -179,6 +183,21 @@ class SqlJsSqlDatabase implements SqlDatabase {
 
   prepare(query: string): SqlPreparedStatement {
     return new SqlJsPreparedStatement(this.db, query);
+  }
+
+  async batch(statements: SqlPreparedStatement[]): Promise<SqlResult[]> {
+    this.db.run('BEGIN');
+    try {
+      const results = statements.map(statement => {
+        if (!(statement instanceof SqlJsPreparedStatement)) throw new Error('batch requires statements from this SQLite adapter');
+        return statement.execute();
+      });
+      this.db.run('COMMIT');
+      return results;
+    } catch (error) {
+      this.db.run('ROLLBACK');
+      throw error;
+    }
   }
 
   exec(sql: string): Promise<unknown> {

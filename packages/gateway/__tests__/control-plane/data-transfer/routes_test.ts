@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 import { exportData, importData } from '../../../src/control-plane/data-transfer/routes.ts';
 import { exportQuery, importBody } from '../../../src/control-plane/schemas.ts';
@@ -8,10 +8,12 @@ import { DEFAULT_WEB_SEARCH_CONFIG } from '../../../src/data-plane/tools/web-sea
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { zValidator } from '../../../src/middleware/zod-validator.ts';
 import { initRepo } from '../../../src/repo/index.ts';
-import type { ApiKey, PerformanceTelemetryRecord, WebSearchUsageRecord, StoredOpenAIResponsesItem, StoredUpstreamRecord, UsageRecord, User } from '../../../src/repo/types.ts';
+import { SqlRepo } from '../../../src/repo/sql.ts';
+import type { ApiKey, GroupWithMembers, Repo, PerformanceTelemetryRecord, WebSearchUsageRecord, StoredOpenAIResponsesItem, StoredUpstreamRecord, UsageRecord, User } from '../../../src/repo/types.ts';
 import { tokenUsageMetrics } from '../../../src/repo/usage-metrics.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
+import { createSqliteTestDb } from '../../repo/test-sqlite.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { ALL_PROVIDER_KINDS } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -312,8 +314,7 @@ const PERFORMANCE_2: PerformanceTelemetryRecord = {
   ],
 };
 
-const setup = () => {
-  const repo = new InMemoryRepo();
+const setup = (repo: Repo = new InMemoryRepo()) => {
   initRepo(repo);
   const app = new Hono();
   app.get('/export', zValidator('query', exportQuery), exportData);
@@ -350,6 +351,54 @@ const latestImportData = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+const transferGroup = (id: number, name: string, deletedAt: string | null = null): GroupWithMembers => ({
+  id, name, hue: 120, createdAt: '2026-10-16T00:00:00Z', deletedAt, memberIds: [1],
+});
+
+describe.each([
+  ['memory', () => Promise.resolve(new InMemoryRepo())],
+  ['sql', async () => new SqlRepo(await createSqliteTestDb())],
+] as const)('group imports (%s)', (_label, makeRepo) => {
+  test.each(['replace', 'merge'])('rejects duplicate active group names before any %s writes', async mode => {
+    const { app, repo } = setup(await makeRepo());
+    await repo.apiKeys.save(KEY_A);
+    await repo.groups.restore([transferGroup(1, 'Original')]);
+    const before = (await doExport(app)).data;
+    const result = await doImport(app, mode, latestImportData({ groups: [transferGroup(2, 'Ops'), transferGroup(3, 'ops')] }));
+    expect(result.status).toBe(400);
+    expect(result.body.error).toContain('active group names conflict');
+    expect((await doExport(app)).data).toEqual(before);
+  });
+
+  test('rejects a merge conflict with a retained group before changing users or keys', async () => {
+    const { app, repo } = setup(await makeRepo());
+    await repo.apiKeys.save(KEY_A);
+    await repo.groups.restore([transferGroup(1, 'Ops')]);
+    const before = (await doExport(app)).data;
+    const result = await doImport(app, 'merge', latestImportData({ groups: [transferGroup(2, 'ops')] }));
+    expect(result.status).toBe(400);
+    expect((await doExport(app)).data).toEqual(before);
+  });
+
+  test('merges group name swaps and name reuse after soft deletion', async () => {
+    const { app, repo } = setup(await makeRepo());
+    await repo.groups.restore([transferGroup(1, 'Ops'), transferGroup(2, 'Research'), transferGroup(3, 'Billing')]);
+    const groups = [transferGroup(1, 'Research'), transferGroup(2, 'Ops'), transferGroup(4, 'Billing'), transferGroup(3, 'Billing', '2026-10-17T00:00:00Z')];
+    expect((await doImport(app, 'merge', latestImportData({ groups }))).status).toBe(200);
+    expect((await repo.groups.list()).map(group => group.name)).toEqual(['Research', 'Ops', 'Billing']);
+    expect(await repo.groups.listMemberIds(4)).toEqual([1]);
+  });
+
+  test('round-trips distinct Unicode cases and soft-deleted names', async () => {
+    const { app, repo } = setup(await makeRepo());
+    const groups = [transferGroup(1, '\u00c4'), transferGroup(2, '\u00e4'), transferGroup(3, '\u00c4', '2026-10-17T00:00:00Z')];
+    expect((await doImport(app, 'replace', latestImportData({ groups }))).status).toBe(200);
+    const backup = await doExport(app);
+    expect((await doImport(app, 'replace', backup.data, backup.version)).status).toBe(200);
+    expect((await repo.groups.listIncludingDeleted()).map(group => group.name)).toEqual(['\u00c4', '\u00e4', '\u00c4']);
+  });
+});
+
 const EMPTY_ACCESS_TRANSFER = { groups: [], accessRecords: [] } as const;
 
 test('export and import preserve groups, access records, and key restrictions', async () => {
@@ -357,7 +406,7 @@ test('export and import preserve groups, access records, and key restrictions', 
   const restrictedKey = { ...KEY_B, userId: USER_BOB.id, upstreamIds: [] };
   await repo.users.save(SEED_ADMIN);
   await repo.users.save(USER_BOB);
-  await repo.groups.save({ id: 1, name: 'Operators', createdAt: '2026-02-01T00:00:00.000Z', deletedAt: null });
+  await repo.groups.save({ id: 1, name: 'Operators', hue: 120, createdAt: '2026-02-01T00:00:00.000Z', deletedAt: null });
   await repo.groups.replaceMembers(1, [USER_BOB.id]);
   await repo.accessRecords.save({
     principal: { kind: 'group', id: 1 },
@@ -375,7 +424,7 @@ test('export and import preserve groups, access records, and key restrictions', 
 
   const imported = await doImport(app, 'replace', exported.data, exported.version);
   assertEquals(imported.status, 200);
-  assertEquals(await repo.groups.list(), [{ id: 1, name: 'Operators', createdAt: '2026-02-01T00:00:00.000Z', deletedAt: null }]);
+  assertEquals(await repo.groups.list(), [{ id: 1, name: 'Operators', hue: 120, createdAt: '2026-02-01T00:00:00.000Z', deletedAt: null }]);
   assertEquals(await repo.groups.listMemberIds(1), [USER_BOB.id]);
   const [record] = await repo.accessRecords.list();
   assertEquals({ principal: record.principal, scope: record.scope, sortOrder: record.sortOrder, values: record.values }, {
@@ -1344,11 +1393,14 @@ test('import rejects missing latest-v23 arrays before clearing existing data', a
   await repo.webSearchUsage.set(WEB_SEARCH_USAGE_1);
 
   const missingApiKeys = await doImport(app, 'replace', latestImportData({ apiKeys: undefined }));
+  const missingGroups = await doImport(app, 'replace', latestImportData({ groups: undefined }));
   const missingUsage = await doImport(app, 'replace', latestImportData({ usage: undefined }));
   const missingWebSearchUsage = await doImport(app, 'replace', latestImportData({ searchUsage: undefined }));
 
   assertEquals(missingApiKeys.status, 400);
   assertEquals(missingApiKeys.body.error, 'invalid apiKeys: apiKeys must be an array');
+  assertEquals(missingGroups.status, 400);
+  assertEquals(missingGroups.body.error, 'invalid groups: groups must be an array');
   assertEquals(missingUsage.status, 400);
   assertEquals(missingUsage.body.error, 'invalid usage: usage must be an array');
   assertEquals(missingWebSearchUsage.status, 400);

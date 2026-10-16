@@ -67,7 +67,7 @@ export const LISTBOX_POSITIONING = {
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L582-L586
 const EXPAND_ICON = <ChevronDown12Regular />;
 
-type ListboxRenderFunction = (
+export type ListboxRenderFunction = (
   ListboxComponent: ElementType<ListboxProps>,
   listboxProps: Omit<ListboxProps, 'as'>,
 ) => ReactNode;
@@ -122,7 +122,7 @@ function ScrollableListbox({
           https://w3c.github.io/aria/#mustContain */}
       <div className="floway-combobox-listbox-content">
         {Children.toArray(children).length === 0
-          ? <Option disabled value="">{emptyMessage ?? t(freeform ? 'common.noSuggestions' : 'common.noOptions')}</Option>
+          ? <Option checkIcon={null} disabled value="">{emptyMessage ?? t(freeform ? 'common.noSuggestions' : 'common.noOptions')}</Option>
           : children}
       </div>
     </div>,
@@ -132,7 +132,7 @@ function ScrollableListbox({
 // MUI and Ant Design suppress the message outright on a free-text field, taking
 // an empty suggestion list for a non-failure. A row stating there is nothing to
 // suggest announces no failure either, and keeps the control from changing shape.
-const listboxRenderer = (freeform: boolean, emptyMessage: string | undefined): ListboxRenderFunction =>
+export const listboxRenderer = (freeform: boolean, emptyMessage: string | undefined): ListboxRenderFunction =>
   (ListboxComponent, listboxProps) => (
     <ScrollableListbox ListboxComponent={ListboxComponent} emptyMessage={emptyMessage} freeform={freeform} listboxProps={listboxProps} />
   );

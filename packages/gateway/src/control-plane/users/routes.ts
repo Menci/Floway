@@ -15,6 +15,13 @@ const parseUserId = (raw: string): number | null => {
   return Number.isInteger(n) && n >= 1 ? n : null;
 };
 
+const unknownGroupsError = async (ids: readonly number[] | undefined): Promise<string | null> => {
+  if (ids === undefined) return null;
+  const known = new Set((await getRepo().groups.list()).map(group => group.id));
+  const missing = ids.filter(id => !known.has(id));
+  return missing.length === 0 ? null : `Unknown group ids: ${missing.join(', ')}`;
+};
+
 export const listUsers = async (c: AuthedContext) => {
   const repo = getRepo();
   const users = await repo.users.list();
@@ -23,16 +30,29 @@ export const listUsers = async (c: AuthedContext) => {
     repo.groups.listIdsByUserIds(users.map(user => user.id)),
   ]);
   const recordCounts = Map.groupBy(records, record => record.principal.id);
-  return c.json(users.map(user => ({
-    ...userToAdminWire(user),
-    groupIds: groupIdsByUser.get(user.id) ?? [],
-    accessRecordCount: recordCounts.get(user.id)?.length ?? 0,
-  })));
+  return c.json(users.map(user => userToAdminWire(user, groupIdsByUser.get(user.id)!, recordCounts.get(user.id)?.length ?? 0)));
+};
+
+export const getUserDirectory = async (c: AuthedContext) => {
+  const repo = getRepo();
+  const [directory, records] = await Promise.all([repo.readUserDirectory(), repo.accessRecords.list()]);
+  const userRecords = Map.groupBy(records.filter(record => record.principal.kind === 'user'), record => record.principal.id);
+  const groupRecords = Map.groupBy(records.filter(record => record.principal.kind === 'group'), record => record.principal.id);
+  const groupIds = new Map(directory.users.map(user => [user.id, [] as number[]]));
+  for (const group of directory.groups) {
+    for (const userId of group.memberIds) groupIds.get(userId)!.push(group.id);
+  }
+  return c.json({
+    users: directory.users.map(user => userToAdminWire(user, groupIds.get(user.id)!, userRecords.get(user.id)?.length ?? 0)),
+    groups: directory.groups.map(group => ({ ...group, accessRecordCount: groupRecords.get(group.id)?.length ?? 0 })),
+  });
 };
 
 export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   const body = c.req.valid('json');
   const repo = getRepo();
+  const groupError = await unknownGroupsError(body.groupIds);
+  if (groupError) return c.json({ error: groupError }, 400);
 
   if (await repo.users.findByUsername(body.username)) {
     return c.json({ error: 'That username is already taken (usernames are case-insensitive).' }, 400);
@@ -72,8 +92,10 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
       values: { 'User.Audit': true },
     }),
   ]);
+  if (body.groupIds !== undefined) await repo.groups.replaceUserGroups(user.id, body.groupIds);
 
-  return c.json({ user: userToAdminWire(user) }, 201);
+  const records = await repo.accessRecords.listByPrincipal({ kind: 'user', id: user.id });
+  return c.json({ user: userToAdminWire(user, await repo.groups.listIdsByUserId(user.id), records.length) }, 201);
 };
 
 export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
@@ -85,6 +107,8 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
 
   const existing = await repo.users.getById(id);
   if (!existing) return c.json({ error: 'user not found' }, 404);
+  const groupError = await unknownGroupsError(body.groupIds);
+  if (groupError) return c.json({ error: groupError }, 400);
 
   if (id === SEED_ADMIN_USER_ID && body.isAdmin === false) return c.json({ error: 'user 1 cannot be demoted' }, 400);
   if (id === actorId && body.isAdmin === false) {
@@ -99,7 +123,7 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
   if (body.password !== undefined) overrides.passwordHash = await hashPassword(body.password);
   if (body.isAdmin !== undefined) overrides.isAdmin = body.isAdmin;
   const next: User = { ...existing, ...overrides };
-  await repo.users.save(next);
+  await repo.users.save(next, body.groupIds);
 
   if (body.password !== undefined) {
     const sessionId = sessionIdFromContext(c);
@@ -107,7 +131,8 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     else await repo.sessions.deleteByUserId(id);
   }
 
-  return c.json(userToAdminWire(next));
+  const records = await repo.accessRecords.listByPrincipal({ kind: 'user', id });
+  return c.json(userToAdminWire(next, await repo.groups.listIdsByUserId(id), records.length));
 };
 
 export const deleteUser = async (c: AuthedContext) => {

@@ -1,6 +1,7 @@
 CREATE TABLE groups (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL COLLATE NOCASE,
+  hue INTEGER NOT NULL CHECK (hue >= 0 AND hue < 360),
   created_at TEXT NOT NULL,
   deleted_at TEXT
 );

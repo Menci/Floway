@@ -104,7 +104,7 @@ export default function DashboardAdminPermissions({ loaderData }: Route.Componen
             <TableHeaderCell>{t('dashboard.accessControl.fields.scope')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.accessControl.fields.permissions')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.accessControl.fields.order')}</TableHeaderCell>
-            <TableTrailingHeader>{t('dashboard.groupsManagement.table.actions')}</TableTrailingHeader>
+            <TableTrailingHeader>{t('dashboard.users.table.actions')}</TableTrailingHeader>
           </TableRow></TableHeader>
           <TableBody>{accessRecords.map(record => <TableRow key={record.id}>
             <TableCell>{principalName(record, users, groups, t)}</TableCell>

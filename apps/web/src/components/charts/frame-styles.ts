@@ -42,11 +42,6 @@ export const useChartFrame = makeStyles({
     // edges even though Fluent Charts and Recharts emit different SVG trees.
     '& .fui-cart__xAxis .tick:first-of-type text, & .recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-label:first-of-type text': { textAnchor: 'start' },
     '& .fui-cart__xAxis .tick:last-of-type text, & .recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-label:last-of-type text': { textAnchor: 'end' },
-  },
-});
-
-export const useFluentChartFrame = makeStyles({
-  root: {
     // Fluent answers a null custom callout by falling back to its own built-in
     // stack callout rather than by closing the popover. Our callouts are
     // tables, so the absence of one identifies that fallback.

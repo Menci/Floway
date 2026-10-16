@@ -252,12 +252,14 @@ export const createUserBody = z.object({
   username: usernameSchema,
   password: passwordSchema,
   isAdmin: z.boolean().optional(),
+  groupIds: z.array(z.number().int().positive()).optional(),
 });
 
 export const updateUserBody = z.object({
   username: usernameSchema.optional(),
   password: passwordSchema.optional(),
   isAdmin: z.boolean().optional(),
+  groupIds: z.array(z.number().int().positive()).optional(),
 });
 
 const groupMemberIdsSchema = z.array(z.number().int().positive())
@@ -265,13 +267,15 @@ const groupMemberIdsSchema = z.array(z.number().int().positive())
 
 export const createGroupBody = z.object({
   name: z.string().trim().min(1).max(64),
+  hue: z.number().int().min(0).max(359),
   memberIds: groupMemberIdsSchema.optional(),
 });
 
 export const updateGroupBody = z.object({
   name: z.string().trim().min(1).max(64).optional(),
+  hue: z.number().int().min(0).max(359).optional(),
   memberIds: groupMemberIdsSchema.optional(),
-}).refine(body => body.name !== undefined || body.memberIds !== undefined, { message: 'Provide a name or memberIds to update.' });
+}).refine(body => body.name !== undefined || body.hue !== undefined || body.memberIds !== undefined, { message: 'Provide a name, hue, or memberIds to update.' });
 
 export const accessRecordBody = accessRecordInputSchema;
 

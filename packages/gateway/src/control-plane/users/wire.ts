@@ -6,7 +6,9 @@ export const userToSessionWire = (user: User) => ({
   isAdmin: user.isAdmin,
 });
 
-export const userToAdminWire = (user: User) => ({
+export const userToAdminWire = (user: User, groupIds: readonly number[], accessRecordCount: number) => ({
   ...userToSessionWire(user),
+  groupIds,
+  accessRecordCount,
   createdAt: user.createdAt,
 });

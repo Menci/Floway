@@ -86,6 +86,7 @@ export function ResourceListActions(props: ResourceListActionsProps) {
   const createButton = createLabel !== undefined && (
     <Button
       appearance="primary"
+      className="flex-none whitespace-nowrap"
       disabled={busy}
       icon={<AddRegular />}
       onClick={'onCreate' in props ? props.onCreate : undefined}
@@ -96,11 +97,12 @@ export function ResourceListActions(props: ResourceListActionsProps) {
   );
 
   return (
-    <div aria-busy={refreshing} className="flex items-center gap-2 flex-none">
+    <div aria-busy={refreshing} className="flex items-center gap-2 flex-none max-w-full">
       <Tooltip content={refreshLabel} relationship="label">
         <Button
           appearance={appearance}
           aria-label={refreshLabel}
+          className="flex-none"
           disabled={disabled}
           disabledFocusable={refreshing}
           icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}

@@ -1,0 +1,40 @@
+import { PeopleTeam16Regular } from '@fluentui/react-icons';
+import { Link } from 'react-router';
+
+import type { ControlPlaneGroup } from '../../api/types';
+import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
+import { hueBadgeTone } from '../../lib/hue';
+import { useBadgeHue } from '../ui/badge-hue';
+import { Chip } from '../ui/chip';
+import { TruncationTooltip } from '../ui/truncation-tooltip';
+
+const { Tag } = fluentComponents;
+
+export function GroupBadge({ group }: { group: Pick<ControlPlaneGroup, 'name' | 'hue'> }) {
+  const hue = useBadgeHue(hueBadgeTone(group.hue));
+  return <TruncationTooltip content={group.name} relationship="label">
+    {measureRef => <Chip className={hue.className} icon={<PeopleTeam16Regular />} style={hue.style} textRef={measureRef}>{group.name}</Chip>}
+  </TruncationTooltip>;
+}
+
+export function GroupBadgeLink({ group }: { group: Pick<ControlPlaneGroup, 'id' | 'name' | 'hue'> }) {
+  return <Link className="winui-focus-rect inline-flex flex-none min-w-0 max-w-full rounded-full no-underline" to={`/dashboard/admin/users?tab=groups&group=${group.id}`}><GroupBadge group={group} /></Link>;
+}
+
+export function GroupTag({ disabled, group }: { disabled: boolean; group: ControlPlaneGroup }) {
+  const { t } = useTranslation();
+  const hue = useBadgeHue(hueBadgeTone(group.hue));
+  return <Tag
+    appearance="outline"
+    className={`max-w-full ${hue.className}`}
+    disabled={disabled}
+    dismissIcon={{ 'aria-label': t('dashboard.groupsManagement.actions.leave', { name: group.name }) }}
+    icon={<PeopleTeam16Regular />}
+    primaryText={{ className: 'truncate !pb-0' }}
+    shape="circular"
+    size="small"
+    style={disabled ? undefined : hue.style}
+    value={String(group.id)}
+  >{group.name}</Tag>;
+}

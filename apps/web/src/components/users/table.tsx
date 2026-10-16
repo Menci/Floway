@@ -1,16 +1,20 @@
 import { DeleteRegular, EditRegular, KeyRegular } from '@fluentui/react-icons';
 
-import type { ControlPlaneUser } from '../../api/types';
+import { UserAvatar } from './avatar';
+import type { ControlPlaneGroup, ControlPlaneUser } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { dateTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
+import { GroupBadges } from '../groups/badges';
 import { ResourceListEmptyState } from '../ui/resource-list';
+import { RowTitleButton } from '../ui/row-title';
 import { ScrollArea } from '../ui/scroll-area';
 import { StatusBadge } from '../ui/status-badge';
 import { TABLE_ACTIONS_WIDTH, TableActions, TableTrailingHeader } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
+import { TruncationTooltip } from '../ui/truncation-tooltip';
 
 const {
   Table,
@@ -29,6 +33,7 @@ export function UsersTable({
   onEdit,
   onResetPassword,
   users,
+  groups,
 }: {
   actorId: number;
   disabled: boolean;
@@ -36,6 +41,7 @@ export function UsersTable({
   onEdit: (user: ControlPlaneUser) => void;
   onResetPassword: (user: ControlPlaneUser) => void;
   users: ControlPlaneUser[];
+  groups: ControlPlaneGroup[];
 }) {
   const { t } = useTranslation();
   const locale = useLocale();
@@ -46,15 +52,14 @@ export function UsersTable({
 
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table aria-label={t('dashboard.users.table.label')} className="min-w-[720px]">
-        <TableColumns widths={[null, null, null, null, null, TABLE_ACTIONS_WIDTH]} />
+      <Table aria-label={t('dashboard.users.table.label')} className="min-w-[820px]" style={{ tableLayout: 'auto' }}>
+        <TableColumns widths={['22%', null, '40%', null, TABLE_ACTIONS_WIDTH]} />
         <TableHeader>
           <TableRow>
             <TableHeaderCell>{t('dashboard.users.table.username')}</TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.users.table.role')}</TableHeaderCell>
+            <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.role')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.groups')}</TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.users.table.permissions')}</TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.users.table.created')}</TableHeaderCell>
+            <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.created')}</TableHeaderCell>
             <TableTrailingHeader>{t('dashboard.users.table.actions')}</TableTrailingHeader>
           </TableRow>
         </TableHeader>
@@ -63,24 +68,19 @@ export function UsersTable({
             const protectedUser = user.id === 1 || user.id === actorId;
             return (
               <TableRow key={user.id}>
-                {/* The one name column that wraps instead of trimming: a
-                    username has no second line to reveal it and no tooltip, so
-                    the row grows to hold it. */}
-                <TableCell>{user.username}</TableCell>
-                <TableCell>
+                <TableCell><div className="flex items-center gap-2 min-w-0">
+                  <UserAvatar username={user.username} />
+                  <TruncationTooltip content={user.username} relationship="label">{measureRef => <RowTitleButton onClick={() => onEdit(user)} ref={measureRef}>{user.username}</RowTitleButton>}</TruncationTooltip>
+                </div></TableCell>
+                <TableCell className="whitespace-nowrap">
                   <StatusBadge tone={user.isAdmin ? 'accent' : 'neutral'}>
                     {t(`dashboard.users.role.${user.isAdmin ? 'admin' : 'operator'}`)}
                   </StatusBadge>
                 </TableCell>
-                <TableCell>
-                  {t('dashboard.users.groups.count', { count: user.groupIds.length })}
-                </TableCell>
-                <TableCell>
-                  {user.isAdmin ? t('dashboard.users.permissions.admin') : t('dashboard.users.permissions.count', { count: user.accessRecordCount })}
-                </TableCell>
+                <TableCell><GroupBadges groups={user.groupIds.map(id => groups.find(group => group.id === id)!)} /></TableCell>
                 <TableCell>
                   <Tooltip content={dateTime(user.createdAt, locale)} relationship="description">
-                    <span className="winui-focus-rect" tabIndex={0}>
+                    <span className="winui-focus-rect whitespace-nowrap" tabIndex={0}>
                       {shortDate(user.createdAt, locale)}
                     </span>
                   </Tooltip>

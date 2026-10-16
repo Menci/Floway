@@ -138,7 +138,7 @@ test('/api/token-usage/overview shows the union of visible user rows and upstrea
 test('/api/token-usage/overview expands Group scopes to current members', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save(adminKey);
-  const group = await repo.groups.create('Admins');
+  const group = await repo.groups.create('Admins', 120);
   await repo.groups.replaceMembers(group.id, [1]);
   await repo.accessRecords.save({
     principal: { kind: 'user', id: apiKey.userId },

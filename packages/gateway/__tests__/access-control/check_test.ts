@@ -58,7 +58,7 @@ test('same-depth model patterns use sortOrder without an implicit exact priority
 });
 
 test('direct and group principals combine by the highest permission', async () => {
-  const grantingGroup = await repo.groups.create('operators');
+  const grantingGroup = await repo.groups.create('operators', 120);
   await repo.groups.replaceMembers(grantingGroup.id, [subject.id]);
   await repo.accessRecords.save({
     principal: { kind: 'user', id: subject.id },
@@ -77,7 +77,7 @@ test('direct and group principals combine by the highest permission', async () =
 });
 
 test('a Group scope expands to its current members for User.Audit', async () => {
-  const targetGroup = await repo.groups.create('team');
+  const targetGroup = await repo.groups.create('team', 120);
   await repo.groups.replaceMembers(targetGroup.id, [7]);
   await repo.accessRecords.save({
     principal: { kind: 'user', id: subject.id },

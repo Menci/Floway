@@ -5,11 +5,10 @@ import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
 import { api, callApi } from '../../api/client';
-import type { AccessRecord, ControlPlaneGroup, ControlPlaneUser } from '../../api/types';
+import type { ControlPlaneGroup, ControlPlaneUser } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
-import { AccessRecordsSection, type InheritedAccessRecord } from '../access-control/records-section';
-import type { ScopeExpressionData } from '../access-control/scope-expression';
+import { UserGroupsField } from '../groups/field';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
@@ -30,16 +29,12 @@ interface UserFormValues {
   username: string;
   password: string;
   isAdmin: boolean;
+  groupIds: string[];
 }
 
 interface UserDialogCommonProps {
   actorId: number;
-  accessData: ScopeExpressionData;
-  accessRecords: AccessRecord[];
   groups: ControlPlaneGroup[];
-  onAccessChanged: () => Promise<void>;
-  onExited?: () => void;
-  onOpenGroup?: (group: ControlPlaneGroup) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   onSaved: (userId?: number) => Promise<void>;
@@ -62,6 +57,7 @@ export function UserDialog(props: UserDialogProps) {
       username: z.string().regex(/^[a-zA-Z0-9_.-]{1,64}$/, 'dashboard.users.validation.username'),
       password: z.string().max(1024, 'dashboard.users.validation.passwordMax'),
       isAdmin: z.boolean(),
+      groupIds: z.array(z.string()),
     }).superRefine((value, ctx) => {
       if (mode === 'create' && !value.password) {
         ctx.addIssue({ code: 'custom', message: 'dashboard.users.validation.passwordRequired', path: ['password'] });
@@ -77,12 +73,7 @@ export function UserDialog(props: UserDialogProps) {
   const values = useWatch({ control }) as UserFormValues;
   const adminLocked = props.mode === 'edit' && (props.user.id === 1 || props.user.id === actorId);
   const close = useCallback(() => onOpenChange(false), [onOpenChange]);
-  const { discardConfirmation, requestClose, requestCloseThen } = useDiscardGuard({ onClose: close, values });
-  const inherited: InheritedAccessRecord[] = user === null ? [] : props.groups
-    .filter(group => user.groupIds.includes(group.id))
-    .flatMap(group => props.accessRecords
-      .filter(record => record.principal.kind === 'group' && record.principal.id === group.id)
-      .map(record => ({ record, sourceGroup: group })));
+  const { discardConfirmation, requestClose } = useDiscardGuard({ onClose: close, values });
 
   const save = async (form: UserFormValues) => {
     // disabledFocusable leaves the submit button submittable while saving, so this guard is what makes the second press inert.
@@ -98,12 +89,14 @@ export function UserDialog(props: UserDialogProps) {
               username,
               password: form.password,
               isAdmin: form.isAdmin,
+              groupIds: form.groupIds.map(Number),
             },
           }))
         : await callApi(() => api.api.users[':id'].$patch({
             param: { id: String(props.user.id) }, json: {
               username,
               ...(!adminLocked ? { isAdmin: form.isAdmin } : {}),
+              groupIds: form.groupIds.map(Number),
             },
           }));
       if (result.error) {
@@ -132,7 +125,6 @@ export function UserDialog(props: UserDialogProps) {
         </DialogActions>
       }
       onOpenChange={(_, data) => { if (!data.open && !saving) requestClose(); }}
-      onExited={props.onExited}
       onSubmit={() => void handleSubmit(save)()}
       title={<DialogTitle>{props.mode === 'create'
         ? t('dashboard.users.dialog.createTitle')
@@ -152,6 +144,7 @@ export function UserDialog(props: UserDialogProps) {
           </Field>
         )}
       />
+      <Controller control={control} name="groupIds" render={({ field }) => <UserGroupsField disabled={saving} groups={props.groups} onChange={field.onChange} value={field.value} />} />
       {mode === 'create' && (
         <Controller
           control={control}
@@ -180,18 +173,6 @@ export function UserDialog(props: UserDialogProps) {
         header={t('dashboard.users.form.administrator')}
         icon={<PersonKey24Regular />}
       />
-      {mode === 'edit' && <AccessRecordsSection
-        bypass={props.user.isAdmin}
-        data={props.accessData}
-        inherited={inherited}
-        onChanged={props.onAccessChanged}
-        onOpenInheritedSource={groupId => {
-          const group = props.groups.find(candidate => candidate.id === groupId);
-          if (group) requestCloseThen(() => props.onOpenGroup?.(group));
-        }}
-        principal={{ kind: 'user', id: props.user.id }}
-        records={props.accessRecords}
-      />}
       {mode === 'create' && (
         <MessageBar intent="info"><MessageBarBody>{t('dashboard.users.createdDefaultKey')}</MessageBarBody></MessageBar>
       )}
@@ -205,5 +186,6 @@ const userFormDefaults = (user: ControlPlaneUser | null): UserFormValues => {
     username: user?.username ?? '',
     password: '',
     isAdmin: user?.isAdmin ?? false,
+    groupIds: user?.groupIds.map(String) ?? [],
   };
 };
