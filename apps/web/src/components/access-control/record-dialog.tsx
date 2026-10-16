@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
@@ -12,6 +12,7 @@ import { DialogShell } from '../ui/dialog-shell';
 import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
+import { useDiscardGuard } from '../ui/use-discard-guard';
 import type { AccessPrincipal, AccessScope, AccessValues, UpstreamEditLevel } from '@floway-dev/gateway/browser';
 
 const { Button, DialogActions, DialogTitle, Field, Option, Tab, TabList } = fluentComponents;
@@ -45,44 +46,62 @@ export function AccessRecordDialog({ data, fixedPrincipal, onOpenChange, onSaved
 }) {
   const { t } = useTranslation();
   const toasts = useOutcomeToasts();
-  const [scope, setScope] = useState<AccessScope | null>(record?.scope ?? { kind: 'upstreams' });
+  const [scope, setScope] = useState<AccessScope | null>(record?.scope ?? null);
   const [scopeMode, setScopeMode] = useState<'visual' | 'json'>('visual');
-  const [scopeJson, setScopeJson] = useState(() => JSON.stringify(record?.scope ?? { kind: 'upstreams' }, null, 2));
+  const [scopeJson, setScopeJson] = useState(() => record ? JSON.stringify(record.scope, null, 2) : '');
   const [scopeError, setScopeError] = useState<string | null>(null);
   const [values, setValues] = useState<AccessValues>(record?.values ?? {});
-  const [inherited, setInherited] = useState<AccessValues>({});
+  const [resolution, setResolution] = useState<{
+    request: { userId: number; target: NonNullable<ReturnType<typeof scopeToTarget>>; excludeRecordId?: number };
+    values?: AccessValues;
+    error?: string;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { control, handleSubmit } = useForm<FormValues>({
     resolver: zodResolver(z.object({ principal: z.string().min(1), sortOrder: z.number().int().nonnegative() })),
     defaultValues: {
-      principal: principalValue(fixedPrincipal ?? record?.principal ?? { kind: 'user', id: data.users[0]?.id ?? 0 }),
+      principal: principalValue(fixedPrincipal ?? record?.principal ?? { kind: 'user', id: (data.users.find(user => !user.isAdmin) ?? data.users[0])?.id ?? 0 }),
       sortOrder: record?.sortOrder ?? suggestedSortOrder,
     },
   });
 
-  const concreteTarget = scopeToTarget(scope);
-  const selectedPrincipal = useWatch({ control, name: 'principal' });
-  const principal = fixedPrincipal ?? parsePrincipal(selectedPrincipal);
-  useEffect(() => {
-    if (!open || concreteTarget === null || principal?.kind !== 'user') return;
-    const controller = new AbortController();
-    void callApi(() => api.api['access-resolve'].$post({
-      json: {
+  const formValues = useWatch({ control }) as FormValues;
+  const concreteTarget = useMemo(() => scopeToTarget(scope), [scope]);
+  const selectedPrincipal = formValues.principal;
+  const principal = useMemo(() => fixedPrincipal ?? parsePrincipal(selectedPrincipal), [fixedPrincipal, selectedPrincipal]);
+  const administratorBypass = principal?.kind === 'user' && data.users.some(user => user.id === principal.id && user.isAdmin);
+  const resolutionRequest = useMemo(() => concreteTarget !== null && principal?.kind === 'user'
+    ? {
         userId: principal.id,
         target: concreteTarget,
         ...(record ? { excludeRecordId: record.id } : {}),
-      },
+      }
+    : null, [concreteTarget, principal, record]);
+  const currentResolution = resolution?.request === resolutionRequest ? resolution : null;
+  const close = useCallback(() => onOpenChange(false), [onOpenChange]);
+  const { discardConfirmation, requestClose } = useDiscardGuard({
+    onClose: close,
+    values: { formValues, scope, scopeJson, values },
+  });
+  useEffect(() => {
+    if (!open || resolutionRequest === null) return;
+    const controller = new AbortController();
+    void callApi(() => api.api['access-resolve'].$post({
+      json: resolutionRequest,
     }, { init: { signal: controller.signal } })).then(result => {
-      if (!controller.signal.aborted && result.data) setInherited(result.data.values as AccessValues);
+      if (controller.signal.aborted) return;
+      if (result.error) setResolution({ request: resolutionRequest, error: result.error.message });
+      else setResolution({ request: resolutionRequest, values: result.data.values as AccessValues });
     });
     return () => controller.abort();
-  }, [concreteTarget, open, principal, record]);
+  }, [open, resolutionRequest]);
 
   const permissions = useMemo(() => permissionsForScope(scope), [scope]);
-  const visibleInherited = concreteTarget !== null && principal?.kind === 'user' ? inherited : {};
   const changeScope = (next: AccessScope | null) => {
     setScope(next);
+    setScopeJson(next === null ? '' : JSON.stringify(next, null, 2));
+    setScopeError(null);
     const nextPermissions = permissionsForScope(next);
     setValues(current => Object.fromEntries(Object.entries(current).filter(([permission]) => nextPermissions.includes(permission as Permission))) as AccessValues);
   };
@@ -100,13 +119,13 @@ export function AccessRecordDialog({ data, fixedPrincipal, onOpenChange, onSaved
   };
   const selectMode = (mode: 'visual' | 'json') => {
     if (mode === 'visual' && scopeMode === 'json' && parseJsonScope() === null) return;
-    if (mode === 'json' && scope !== null) setScopeJson(JSON.stringify(scope, null, 2));
+    if (mode === 'json') setScopeJson(scope === null ? '' : JSON.stringify(scope, null, 2));
     setScopeMode(mode);
   };
 
   const save = async (form: FormValues) => {
     if (saving) return;
-    const finalScope = scopeMode === 'json' ? parseJsonScope() : scope;
+    const finalScope = scopeMode === 'json' ? parseJsonScope() : validateVisualScope(scope, setScopeError, t('dashboard.accessControl.validation.scopeRequired'));
     if (finalScope === null) return;
     if (Object.keys(values).length === 0) {
       setError(t('dashboard.accessControl.validation.emptyRecord'));
@@ -132,12 +151,12 @@ export function AccessRecordDialog({ data, fixedPrincipal, onOpenChange, onSaved
     await onSaved();
   };
 
-  return <DialogShell
+  return <>{discardConfirmation}<DialogShell
     actions={<DialogActions>
-      <Button disabled={saving} onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
-      <Button appearance="primary" disabledFocusable={saving} type="submit">{t('dashboard.accessControl.actions.save')}</Button>
+      <Button disabled={saving} onClick={requestClose}>{t('common.cancel')}</Button>
+      <Button appearance="primary" disabled={administratorBypass} disabledFocusable={saving} type="submit">{t('dashboard.accessControl.actions.save')}</Button>
     </DialogActions>}
-    onOpenChange={(_, event) => !event.open && !saving && onOpenChange(false)}
+    onOpenChange={(_, event) => !event.open && !saving && requestClose()}
     onSubmit={() => void handleSubmit(save)()}
     open={open}
     title={<DialogTitle>{t(record ? 'dashboard.accessControl.dialog.editTitle' : 'dashboard.accessControl.dialog.createTitle')}</DialogTitle>}
@@ -149,6 +168,7 @@ export function AccessRecordDialog({ data, fixedPrincipal, onOpenChange, onSaved
         {data.groups.map(group => <Option key={`group:${group.id}`} value={`group:${group.id}`}>{t('dashboard.accessControl.principal.group', { name: group.name })}</Option>)}
       </Dropdown>
     </Field>} />}
+    {administratorBypass && <OutcomeMessageBar intent="info">{t('dashboard.accessControl.administratorBypass')}</OutcomeMessageBar>}
 
     <Field label={t('dashboard.accessControl.fields.scope')} validationMessage={scopeError ?? undefined} validationState={scopeError ? 'error' : undefined}>
       <TabList onTabSelect={(_, tab) => selectMode(tab.value === 'json' ? 'json' : 'visual')} selectedValue={scopeMode} size="small">
@@ -156,7 +176,7 @@ export function AccessRecordDialog({ data, fixedPrincipal, onOpenChange, onSaved
         <Tab value="json">{t('dashboard.accessControl.scope.json')}</Tab>
       </TabList>
       {scopeMode === 'visual'
-        ? <ScopeExpression data={data} onChange={next => { changeScope(next); if (next) setScopeJson(JSON.stringify(next, null, 2)); }} value={scope} />
+        ? <ScopeExpression data={data} onChange={changeScope} value={scope} />
         : <Textarea aria-label={t('dashboard.accessControl.scope.json')} autoComplete="off" className="font-mono min-h-36" name="scopeJson" onChange={event => setScopeJson(event.target.value)} spellCheck={false} value={scopeJson} />}
     </Field>
 
@@ -165,8 +185,10 @@ export function AccessRecordDialog({ data, fixedPrincipal, onOpenChange, onSaved
     </Field>} />
 
     {permissions.map(permission => <PermissionField
-      inherited={visibleInherited[permission]}
+      inherited={currentResolution?.values?.[permission]}
+      inheritedKnown={currentResolution?.values !== undefined}
       key={permission}
+      disabled={administratorBypass}
       onChange={value => setValues(current => {
         if (value !== undefined) return { ...current, [permission]: value };
         const next = { ...current };
@@ -176,26 +198,33 @@ export function AccessRecordDialog({ data, fixedPrincipal, onOpenChange, onSaved
       permission={permission}
       value={values[permission]}
     />)}
+    {currentResolution?.error && <OutcomeMessageBar onDismiss={() => setResolution(null)}>{currentResolution.error}</OutcomeMessageBar>}
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
-  </DialogShell>;
+  </DialogShell></>;
 }
 
-function PermissionField({ inherited, onChange, permission, value }: {
+function PermissionField({ disabled, inherited, inheritedKnown, onChange, permission, value }: {
+  disabled: boolean;
   inherited: boolean | UpstreamEditLevel | undefined;
+  inheritedKnown: boolean;
   onChange: (value: boolean | UpstreamEditLevel | undefined) => void;
   permission: Permission;
   value: boolean | UpstreamEditLevel | undefined;
 }) {
   const { t } = useTranslation();
   const selected = value === undefined ? 'inherit' : typeof value === 'boolean' ? value ? 'on' : 'off' : value;
-  const inheritedLabel = inherited === true || inherited === 'models' || inherited === 'full'
-    ? t('dashboard.accessControl.states.inheritOn')
-    : t('dashboard.accessControl.states.inheritOff');
+  const inheritedLabel = !inheritedKnown
+    ? t('dashboard.accessControl.states.inherit')
+    : permission === 'Upstream.Edit' && inherited === 'models'
+      ? t('dashboard.accessControl.states.inheritModels')
+      : permission === 'Upstream.Edit' && inherited === 'full'
+        ? t('dashboard.accessControl.states.inheritFull')
+        : inherited === true ? t('dashboard.accessControl.states.inheritOn') : t('dashboard.accessControl.states.inheritOff');
   const options = permission === 'Upstream.Edit'
     ? [['inherit', inheritedLabel], ['off', t('dashboard.accessControl.states.off')], ['models', t('dashboard.accessControl.states.models')], ['full', t('dashboard.accessControl.states.full')]] as const
     : [['inherit', inheritedLabel], ['off', t('dashboard.accessControl.states.off')], ['on', t('dashboard.accessControl.states.on')]] as const;
   return <Field label={t(`dashboard.accessControl.permissions.${permission}`)}>
-    <Dropdown onOptionSelect={(_, option) => {
+    <Dropdown disabled={disabled} onOptionSelect={(_, option) => {
       if (!option.optionValue) return;
       onChange(option.optionValue === 'inherit' ? undefined : option.optionValue === 'on' ? true : option.optionValue === 'off' && permission !== 'Upstream.Edit' ? false : option.optionValue as UpstreamEditLevel);
     }} selectedOptions={[selected]} value={options.find(([key]) => key === selected)?.[1] ?? selected}>
@@ -221,3 +250,14 @@ const parsePrincipal = (value: string): AccessPrincipal | null => {
 const principalLabel = (principal: AccessPrincipal | null, data: ScopeExpressionData) => principal?.kind === 'user'
   ? data.users.find(user => user.id === principal.id)?.username ?? String(principal.id)
   : principal?.kind === 'group' ? data.groups.find(group => group.id === principal.id)?.name ?? String(principal.id) : '';
+
+const validateVisualScope = (scope: AccessScope | null, setError: (message: string) => void, requiredMessage: string): AccessScope | null => {
+  if (scope === null) {
+    setError(requiredMessage);
+    return null;
+  }
+  const parsed = scopeSchema.safeParse(scope);
+  if (parsed.success) return parsed.data;
+  setError(parsed.error.message);
+  return null;
+};

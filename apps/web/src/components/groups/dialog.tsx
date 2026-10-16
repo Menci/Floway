@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
@@ -14,6 +14,7 @@ import { Input } from '../ui/fluent-form-controls';
 import { MultiselectCombobox } from '../ui/multiselect-combobox';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
+import { useDiscardGuard } from '../ui/use-discard-guard';
 
 const { Button, DialogActions, DialogTitle, Field } = fluentComponents;
 interface GroupForm { name: string; memberIds: string[] }
@@ -36,7 +37,10 @@ export function GroupDialog({ accessData, accessRecords, group, onAccessChanged,
     resolver: zodResolver(z.object({ name: z.string().trim().min(1).max(64), memberIds: z.array(z.string()) })),
     defaultValues: { name: group?.name ?? '', memberIds: group?.memberIds.map(String) ?? [] },
   });
-  const memberIds = useWatch({ control, name: 'memberIds' });
+  const values = useWatch({ control }) as GroupForm;
+  const memberIds = values.memberIds;
+  const close = useCallback(() => onOpenChange(false), [onOpenChange]);
+  const { discardConfirmation, requestClose } = useDiscardGuard({ onClose: close, values });
 
   const save = async (form: GroupForm) => {
     if (saving) return;
@@ -59,12 +63,12 @@ export function GroupDialog({ accessData, accessRecords, group, onAccessChanged,
     await onSaved();
   };
 
-  return <DialogShell
+  return <>{discardConfirmation}<DialogShell
     actions={<DialogActions>
-      <Button disabled={saving} onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
+      <Button disabled={saving} onClick={requestClose}>{t('common.cancel')}</Button>
       <Button appearance="primary" disabledFocusable={saving} type="submit">{t('dashboard.users.actions.save')}</Button>
     </DialogActions>}
-    onOpenChange={(_, event) => !event.open && !saving && onOpenChange(false)}
+    onOpenChange={(_, event) => !event.open && !saving && requestClose()}
     onSubmit={() => void handleSubmit(save)()}
     open={open}
     title={<DialogTitle>{t(group ? 'dashboard.groupsManagement.dialog.editTitle' : 'dashboard.groupsManagement.dialog.createTitle', { name: group?.name ?? '' })}</DialogTitle>}
@@ -88,5 +92,5 @@ export function GroupDialog({ accessData, accessRecords, group, onAccessChanged,
       records={accessRecords}
     />}
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
-  </DialogShell>;
+  </DialogShell></>;
 }

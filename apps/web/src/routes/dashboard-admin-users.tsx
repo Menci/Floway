@@ -87,6 +87,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   const deleteDialog = useDialogInvocation<ControlPlaneUser>();
   const groupDialog = useDialogInvocation<{ group?: ControlPlaneGroup }>();
   const deleteGroupDialog = useDialogInvocation<ControlPlaneGroup>();
+  const [groupAfterUserExit, setGroupAfterUserExit] = useState<ControlPlaneGroup | null>(null);
 
   // The error belongs to its attempt, so opening another user's dialog clears it.
   const openDeleteDialog = (target: ControlPlaneUser) => {
@@ -221,6 +222,15 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           key={editorDialog.invocation.key}
           mode="edit"
           onOpenChange={open => { if (!open) editorDialog.close(); }}
+          onExited={() => {
+            if (groupAfterUserExit === null) return;
+            setTab('groups');
+            groupDialog.open({ group: groupAfterUserExit });
+            setGroupAfterUserExit(null);
+          }}
+          onOpenGroup={group => {
+            setGroupAfterUserExit(group);
+          }}
           onSaved={afterSaved}
           onAccessChanged={refresh}
           user={editorDialog.invocation.value.user}

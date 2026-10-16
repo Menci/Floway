@@ -20,12 +20,24 @@ export const useDiscardGuard = <T,>({ onClose, values }: { onClose: () => void; 
   const { t } = useTranslation();
   const prompt = useDialogInvocation<void>();
   const discarding = useRef(false);
+  const afterClose = useRef<(() => void) | null>(null);
   const [openedWith] = useState(() => JSON.stringify(values));
   const dirty = JSON.stringify(values) !== openedWith;
 
+  const finishClose = useCallback(() => {
+    const callback = afterClose.current;
+    afterClose.current = null;
+    onClose();
+    callback?.();
+  }, [onClose]);
   const requestClose = useCallback(() => {
+    afterClose.current = null;
     if (dirty) prompt.open(); else onClose();
   }, [dirty, onClose, prompt]);
+  const requestCloseThen = useCallback((callback: () => void) => {
+    afterClose.current = callback;
+    if (dirty) prompt.open(); else finishClose();
+  }, [dirty, finishClose, prompt]);
 
   // Closing the guarded dialog in the same commit that closes this one would
   // unmount the surface mid-exit, so the discard is done from the exit.
@@ -38,12 +50,16 @@ export const useDiscardGuard = <T,>({ onClose, values }: { onClose: () => void; 
     onExited={() => {
       if (!discarding.current) return;
       discarding.current = false;
-      onClose();
+      finishClose();
     }}
-    onOpenChange={open => { if (!open) prompt.close(); }}
+    onOpenChange={open => {
+      if (open) return;
+      if (!discarding.current) afterClose.current = null;
+      prompt.close();
+    }}
     open={prompt.isOpen}
     title={t('common.discard.title')}
   />;
 
-  return { discardConfirmation, requestClose };
+  return { discardConfirmation, requestClose, requestCloseThen };
 };

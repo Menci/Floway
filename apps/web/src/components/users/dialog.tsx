@@ -38,6 +38,8 @@ interface UserDialogCommonProps {
   accessRecords: AccessRecord[];
   groups: ControlPlaneGroup[];
   onAccessChanged: () => Promise<void>;
+  onExited?: () => void;
+  onOpenGroup?: (group: ControlPlaneGroup) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   onSaved: (userId?: number) => Promise<void>;
@@ -75,12 +77,12 @@ export function UserDialog(props: UserDialogProps) {
   const values = useWatch({ control }) as UserFormValues;
   const adminLocked = props.mode === 'edit' && (props.user.id === 1 || props.user.id === actorId);
   const close = useCallback(() => onOpenChange(false), [onOpenChange]);
-  const { discardConfirmation, requestClose } = useDiscardGuard({ onClose: close, values });
+  const { discardConfirmation, requestClose, requestCloseThen } = useDiscardGuard({ onClose: close, values });
   const inherited: InheritedAccessRecord[] = user === null ? [] : props.groups
     .filter(group => user.groupIds.includes(group.id))
     .flatMap(group => props.accessRecords
       .filter(record => record.principal.kind === 'group' && record.principal.id === group.id)
-      .map(record => ({ record, sourceName: group.name })));
+      .map(record => ({ record, sourceGroup: group })));
 
   const save = async (form: UserFormValues) => {
     // disabledFocusable leaves the submit button submittable while saving, so this guard is what makes the second press inert.
@@ -130,6 +132,7 @@ export function UserDialog(props: UserDialogProps) {
         </DialogActions>
       }
       onOpenChange={(_, data) => { if (!data.open && !saving) requestClose(); }}
+      onExited={props.onExited}
       onSubmit={() => void handleSubmit(save)()}
       title={<DialogTitle>{props.mode === 'create'
         ? t('dashboard.users.dialog.createTitle')
@@ -182,6 +185,10 @@ export function UserDialog(props: UserDialogProps) {
         data={props.accessData}
         inherited={inherited}
         onChanged={props.onAccessChanged}
+        onOpenInheritedSource={groupId => {
+          const group = props.groups.find(candidate => candidate.id === groupId);
+          if (group) requestCloseThen(() => props.onOpenGroup?.(group));
+        }}
         principal={{ kind: 'user', id: props.user.id }}
         records={props.accessRecords}
       />}

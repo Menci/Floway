@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { AccessRecordDialog } from './record-dialog';
 import { ScopeExpression, type ScopeExpressionData } from './scope-expression';
 import { api, callApi } from '../../api/client';
-import type { AccessRecord } from '../../api/types';
+import type { AccessRecord, ControlPlaneGroup } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { type TFunction, useTranslation } from '../../i18n/translation';
 import { ConfirmDialog } from '../ui/confirm-dialog';
@@ -15,18 +15,19 @@ import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { useDialogInvocation } from '../ui/use-dialog-invocation';
 import type { AccessPrincipal, AccessValues } from '@floway-dev/gateway/browser';
 
-const { Button, Text } = fluentComponents;
+const { Button, Link, Text } = fluentComponents;
 
 export interface InheritedAccessRecord {
   record: AccessRecord;
-  sourceName: string;
+  sourceGroup: Pick<ControlPlaneGroup, 'id' | 'name'>;
 }
 
-export function AccessRecordsSection({ bypass = false, data, inherited = [], onChanged, principal, records }: {
+export function AccessRecordsSection({ bypass = false, data, inherited = [], onChanged, onOpenInheritedSource, principal, records }: {
   bypass?: boolean;
   data: ScopeExpressionData;
   inherited?: InheritedAccessRecord[];
   onChanged: () => Promise<void>;
+  onOpenInheritedSource?: (groupId: number) => void;
   principal: AccessPrincipal;
   records: AccessRecord[];
 }) {
@@ -72,7 +73,13 @@ export function AccessRecordsSection({ bypass = false, data, inherited = [], onC
             onEdit={bypass ? undefined : () => editor.open({ record })}
             record={record}
           />)}
-          {inherited.map(({ record, sourceName }) => <RecordRow data={data} inheritedFrom={sourceName} key={`${sourceName}:${record.id}`} record={record} />)}
+          {inherited.map(({ record, sourceGroup }) => <RecordRow
+            data={data}
+            inheritedFrom={sourceGroup}
+            key={`${sourceGroup.id}:${record.id}`}
+            onOpenInheritedSource={onOpenInheritedSource ? () => onOpenInheritedSource(sourceGroup.id) : undefined}
+            record={record}
+          />)}
         </div>}
 
     {editor.invocation && <AccessRecordDialog
@@ -99,11 +106,12 @@ export function AccessRecordsSection({ bypass = false, data, inherited = [], onC
   </section>;
 }
 
-function RecordRow({ data, inheritedFrom, onDelete, onEdit, record }: {
+function RecordRow({ data, inheritedFrom, onDelete, onEdit, onOpenInheritedSource, record }: {
   data: ScopeExpressionData;
-  inheritedFrom?: string;
+  inheritedFrom?: Pick<ControlPlaneGroup, 'id' | 'name'>;
   onDelete?: () => void;
   onEdit?: () => void;
+  onOpenInheritedSource?: () => void;
   record: AccessRecord;
 }) {
   const { t } = useTranslation();
@@ -112,7 +120,12 @@ function RecordRow({ data, inheritedFrom, onDelete, onEdit, record }: {
       <ScopeExpression data={data} readOnly value={record.scope} />
       <Text className="text-fui-fg2" size={200}>
         {permissionSummary(record.values, t)}
-        {inheritedFrom && ` · ${t('dashboard.accessControl.inherited', { name: inheritedFrom })}`}
+        {inheritedFrom && <>
+          {' · '}{t('dashboard.accessControl.inherited')}{' '}
+          {onOpenInheritedSource
+            ? <Link as="button" onClick={onOpenInheritedSource}>{inheritedFrom.name}</Link>
+            : inheritedFrom.name}
+        </>}
       </Text>
     </div>
     {onEdit && onDelete && <div className="flex items-center gap-1">
