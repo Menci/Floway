@@ -67,11 +67,43 @@ export const colorPickerCss = `
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ColorPicker/ColorPicker_themeresources.xaml#L33
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Slider_themeresources.xaml#L169 */
   .fui-ColorSlider__thumb.fui-ColorSlider__thumb::before {
+    --winui-color-picker-thumb-hover: #171717;
     background-color: var(--winui-text-fill-primary);
     border-color: var(--winui-control-solid-fill-default);
     border-width: calc(
       (var(--fui-Slider__thumb--size) - var(--winui-color-picker-inner-thumb-size)) / 2
     );
+  }
+
+  /* SystemChromeAltLowColor, the pointer-over thumb resource, is stated per
+     scheme in the legacy palette that ColorPickerSlider still consumes.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L212
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L4137 */
+  @media (prefers-color-scheme: dark) {
+    .fui-ColorSlider__thumb.fui-ColorSlider__thumb::before {
+      --winui-color-picker-thumb-hover: #f2f2f2;
+    }
+  }
+
+  .fui-ColorSlider__input:enabled:hover:not(:active) ~ .fui-ColorSlider__thumb.fui-ColorSlider__thumb::before {
+    background-color: var(--winui-color-picker-thumb-hover);
+  }
+
+  /* ColorPickerSlider changes its inner dot per CommonState. The disabled
+     track is a translucent overlay over the separate gradient rectangle.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ColorPicker/ColorPicker.xaml#L455-L473
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ColorPicker/ColorPicker_themeresources.xaml#L5-L9 */
+  .fui-ColorSlider__input:disabled ~ .fui-ColorSlider__thumb.fui-ColorSlider__thumb::before {
+    background-color: var(--winui-control-strong-fill-disabled);
+  }
+
+  .fui-ColorSlider__input:disabled ~ .fui-ColorSlider__rail.fui-ColorSlider__rail::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background-color: var(--winui-accent-fill-disabled);
+    pointer-events: none;
   }
 
   /* ColorSpectrum's one pointer state.
