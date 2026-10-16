@@ -62,8 +62,29 @@ const restoreCBORValue = (value: unknown): unknown => mapCBORValue(value, value 
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
+type AuthenticatedSidecar = Record<string, unknown> & { kind: number };
+
+const hasValidKind = (envelope: Record<string, unknown>): envelope is AuthenticatedSidecar =>
+  typeof envelope.kind === 'number' && Number.isInteger(envelope.kind);
+
 export const createSidecarCodecFactory = (secret: string): SidecarCodecFactory => {
   const cryptoKey = crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+  const decodeCache = new Map<string, Promise<AuthenticatedSidecar | undefined>>();
+  const decodeEnvelope = async (encoded: string): Promise<AuthenticatedSidecar | undefined> => {
+    let buffer: Uint8Array;
+    try {
+      buffer = decodeForgivingBase64(encoded);
+    } catch {
+      return undefined;
+    }
+    const signature = buffer.subarray(0, SIGNATURE_LENGTH);
+    const data = buffer.subarray(SIGNATURE_LENGTH);
+    if (!await crypto.subtle.verify('HMAC', await cryptoKey, Uint8Array.from(signature), Uint8Array.from(data))) return undefined;
+    const envelope: unknown = decodeCBOR(data);
+    if (!isRecord(envelope)) throw new TypeError('Authenticated sidecar envelope is invalid');
+    if (!hasValidKind(envelope)) throw new TypeError('Authenticated sidecar kind is invalid');
+    return envelope;
+  };
   return {
     getForKind: kind => ({
       encode: async payload => {
@@ -75,22 +96,21 @@ export const createSidecarCodecFactory = (secret: string): SidecarCodecFactory =
         return encodeBase64(combined);
       },
       decode: async encoded => {
-        let buffer: Uint8Array;
-        try {
-          buffer = decodeForgivingBase64(encoded);
-        } catch {
-          return undefined;
+        for (;;) {
+          let pending = decodeCache.get(encoded);
+          if (pending === undefined) {
+            pending = decodeEnvelope(encoded);
+            decodeCache.set(encoded, pending);
+          }
+          const envelope = await pending;
+          if (envelope?.kind !== kind) return undefined;
+          // A matching caller takes the cached object; concurrent callers decode
+          // independently after ownership has already been transferred.
+          if (decodeCache.get(encoded) !== pending) continue;
+          decodeCache.delete(encoded);
+          if (!Object.hasOwn(envelope, 'payload')) throw new TypeError('Authenticated sidecar payload is missing');
+          return { payload: restoreCBORValue(envelope.payload) };
         }
-        const signature = buffer.subarray(0, SIGNATURE_LENGTH);
-        const data = buffer.subarray(SIGNATURE_LENGTH);
-        if (!await crypto.subtle.verify('HMAC', await cryptoKey, Uint8Array.from(signature), Uint8Array.from(data))) return undefined;
-        const envelope: unknown = decodeCBOR(data);
-        if (!isRecord(envelope)) throw new TypeError('Authenticated sidecar envelope is invalid');
-        const decodedKind = envelope.kind;
-        if (typeof decodedKind !== 'number' || !Number.isInteger(decodedKind)) throw new TypeError('Authenticated sidecar kind is invalid');
-        if (decodedKind !== kind) return undefined;
-        if (!Object.hasOwn(envelope, 'payload')) throw new TypeError('Authenticated sidecar payload is missing');
-        return { payload: restoreCBORValue(envelope.payload) };
       },
     }),
   };

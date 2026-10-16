@@ -1,5 +1,5 @@
 import { decode, encode, Tag } from 'cbor-x';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createSidecarCodecFactory, encodeCBORValue, SidecarKind } from '../../../../src/data-plane/chat/shared/sidecar-codec.ts';
 import { decodeForgivingBase64, decodeHex, encodeBase64, encodeBase64url } from '@floway-dev/protocols/common';
@@ -63,6 +63,62 @@ describe('signed CBOR sidecars', () => {
     const payload = new Tag(42, 65539);
     expect(await factory.getForKind(SidecarKind.TranslateRoundTrip).decode(await sign(encode({ kind: 1, payload })))).toBeUndefined();
     await expect(factory.getForKind(SidecarKind.TranslateRoundTrip).decode(await sign(encode({ kind: 0, payload })))).rejects.toThrow('Raw JSON sidecar tag requires a string');
+  });
+  it('shares pending authentication across kinds until the matching owner takes the payload', async () => {
+    const codecs = createSidecarCodecFactory(secret);
+    const owner = codecs.getForKind(SidecarKind.TranslateRoundTrip);
+    const other = codecs.getForKind(Number(1));
+    const payload = { nested: { value: 'original' }, bytes: new Uint8Array([1, 2]) };
+    const encoded = await owner.encode(payload);
+    const verify = vi.spyOn(crypto.subtle, 'verify');
+    try {
+      expect(await Promise.all([other.decode(encoded), other.decode(encoded)])).toEqual([undefined, undefined]);
+      const first = await owner.decode(encoded);
+      expect(first).toEqual({ payload });
+      expect(verify).toHaveBeenCalledTimes(1);
+      const value = record(first?.payload);
+      record(value.nested).value = 'changed';
+      if (!(value.bytes instanceof Uint8Array)) throw new TypeError('Expected bytes');
+      value.bytes[0] = 9;
+      expect(await owner.decode(encoded)).toEqual({ payload });
+      expect(verify).toHaveBeenCalledTimes(2);
+    } finally {
+      verify.mockRestore();
+    }
+  });
+  it('gives concurrent matching callers independently owned payloads', async () => {
+    const codecs = createSidecarCodecFactory(secret);
+    const owner = codecs.getForKind(SidecarKind.TranslateRoundTrip);
+    const other = codecs.getForKind(Number(1));
+    const payload = { nested: { value: 'original' } };
+    const encoded = await owner.encode(payload);
+    const verify = vi.spyOn(crypto.subtle, 'verify');
+    try {
+      const [foreign, ...results] = await Promise.all([other.decode(encoded), owner.decode(encoded), owner.decode(encoded), owner.decode(encoded)]);
+      expect(foreign).toBeUndefined();
+      expect(results).toEqual([{ payload }, { payload }, { payload }]);
+      expect(verify).toHaveBeenCalledTimes(3);
+      const first = results[0];
+      if (first === undefined) throw new Error('Expected decoded sidecar');
+      record(record(first.payload).nested).value = 'changed';
+      expect(results.slice(1)).toEqual([{ payload }, { payload }]);
+    } finally {
+      verify.mockRestore();
+    }
+  });
+  it('caches failed authentication within one factory only', async () => {
+    const encoded = await factory.getForKind(SidecarKind.TranslateRoundTrip).encode('value');
+    const codecs = createSidecarCodecFactory('another-key');
+    const verify = vi.spyOn(crypto.subtle, 'verify');
+    try {
+      expect(await codecs.getForKind(SidecarKind.TranslateRoundTrip).decode(encoded)).toBeUndefined();
+      expect(await codecs.getForKind(Number(1)).decode(encoded)).toBeUndefined();
+      expect(verify).toHaveBeenCalledTimes(1);
+      expect(await createSidecarCodecFactory('another-key').getForKind(SidecarKind.TranslateRoundTrip).decode(encoded)).toBeUndefined();
+      expect(verify).toHaveBeenCalledTimes(2);
+    } finally {
+      verify.mockRestore();
+    }
   });
   it('rejects altered signatures, altered kinds, and another secret', async () => {
     const encoded = await factory.getForKind(SidecarKind.TranslateRoundTrip).encode({ value: 1 });
