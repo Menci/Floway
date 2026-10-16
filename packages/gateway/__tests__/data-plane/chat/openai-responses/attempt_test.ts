@@ -580,7 +580,7 @@ test('generate preserves order and downgrades a disallowed system turn across tr
 test('generate seeds privatePayload before interceptors so the web-search shim replays the prior wsc results on echo', async () => {
   // End-to-end contract: when a stateless client (e.g. Codex CLI) echoes a
   // prior gateway-created web_search_call by its emitted id, the web-search shim's
-  // `transformItems` (which runs as part of the interceptor chain) must
+  // `expandHistoryItem` (which runs as part of the interceptor chain) must
   // find the persisted `payload.private` and emit the cached function_call
   // + function_call_output pair to upstream — NOT the not-preserved
   // placeholder.
@@ -625,7 +625,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   });
 
   // Capture the upstream-bound body so we can verify what the shim produced
-  // after the echoed wsc passed through transformItems.
+  // after the echoed wsc passed through expandHistoryItem.
   let capturedBody: { input?: unknown[] } | undefined;
   const upstreamResponse = makeOpenAIResponsesResult();
   // The shim's multi-turn loop requires `response.created` (carrying a model
