@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import type { ChartBucket } from '../../../src/components/charts/dashboard-time';
-import { LinkedChartHoverProvider, useLinkedChartHover, type ChartHoverBucket } from '../../../src/components/charts/linked-hover';
+import { LinkedChartHoverProvider, useLinkedChartHover } from '../../../src/components/charts/linked-hover';
 import { UsageChart } from '../../../src/components/usage/chart';
 import { buildTokenChart } from '../../../src/components/usage/plot';
 import type { DisplayUsageRecord } from '../../../src/components/usage/types';
@@ -11,16 +11,16 @@ import { renderInApp } from '../../render';
 
 afterEach(() => vi.restoreAllMocks());
 
-function HoverSource({ interval }: { interval: ChartHoverBucket }) {
-  const { report } = useLinkedChartHover<ChartHoverBucket>([]);
+function HoverSource({ xRatio }: { xRatio: number }) {
+  const { report } = useLinkedChartHover();
   useEffect(() => {
-    report(interval);
+    report({ xRatio, yRatio: 0.5 });
     return () => report(null);
-  }, [interval, report]);
+  }, [report, xRatio]);
   return null;
 }
 
-it('renders its own callout and cursor for an assumed hover from another chart', async () => {
+it('renders its own callout for the bucket nearest the position another chart reports', async () => {
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 720, 320));
   const hour = 3_600_000;
   const buckets: ChartBucket[] = [0, 1].map(index => ({
@@ -45,7 +45,7 @@ it('renders its own callout and cursor for an assumed hover from another chart',
     buckets,
   });
   const view = renderInApp(<LinkedChartHoverProvider>
-    <HoverSource interval={{ start: hour - 60_000, end: hour + 60_000 }} />
+    <HoverSource xRatio={0.6} />
     <UsageChart chart={chart} hidden={new Set()} valueFormatter={String} />
   </LinkedChartHoverProvider>);
   await waitFor(() => expect(view.container.querySelector('[data-chart-assumed-hover-cursor]')).not.toBeNull());

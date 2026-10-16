@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Area, CartesianGrid, ComposedChart, Line, Tooltip, XAxis, YAxis, type TooltipContentProps } from 'recharts';
 
-import { upstreamMetricsHoverBuckets, upstreamMetricsPlotRows, type UpstreamMetricsChart } from './plot';
+import { upstreamMetricsPlotRows, type UpstreamMetricsChart } from './plot';
 import { useTranslation } from '../../i18n/translation';
 import { formatUsdNumber } from '../../lib/decimal-display';
 import { numericDate } from '../../lib/format-time';
@@ -13,7 +13,7 @@ import { formatAxisDate } from '../charts/dashboard-time';
 import { chartTickStyle, useChartFrame } from '../charts/frame-styles';
 import { ChartHost } from '../charts/host';
 import { chartMargins, chartPlotWidth, chartTickCount } from '../charts/layout';
-import { chartHoverPointer, LinkedChartAssumedHover, useLinkedChartHover, type ChartHoverPointerStore } from '../charts/linked-hover';
+import { chartHoverPointer, chartPointerOffset, LinkedChartAssumedHover, nearestChartPoint, useLinkedChartHover, type ChartHoverPointerStore } from '../charts/linked-hover';
 import { colorForHue } from '../charts/palette';
 import { seriesRunBoundaryPoints } from '../charts/point-markers';
 import { ChartSection } from '../charts/section';
@@ -49,12 +49,8 @@ function MetricsCallout({ active, coordinate, label, payload, element, formatter
     getBoundingClientRect: () => {
       const rect = element.getBoundingClientRect();
       const pointer = pointerStore.getSnapshot();
-      return new DOMRect(
-        rect.left + (pointer === null ? coordinate.x : pointer.xRatio * rect.width),
-        rect.top + (pointer === null ? coordinate.y : pointer.yRatio * rect.height),
-        0,
-        0,
-      );
+      const offset = pointer === null ? null : chartPointerOffset(pointer, rect);
+      return new DOMRect(rect.left + (offset?.x ?? coordinate.x), rect.top + (offset?.y ?? coordinate.y), 0, 0);
     },
   };
   return <ChartCalloutPopover pointerStore={pointerStore} target={target}>
@@ -66,7 +62,7 @@ function MetricsCallout({ active, coordinate, label, payload, element, formatter
   </ChartCalloutPopover>;
 }
 
-export function UpstreamMetricsChartSection({ chart, start, end, step }: { chart: UpstreamMetricsChart; start: number; end: number; step: number }) {
+export function UpstreamMetricsChartSection({ chart, start, end }: { chart: UpstreamMetricsChart; start: number; end: number }) {
   const { t } = useTranslation();
   const locale = useLocale();
   const frameStyles = useChartFrame();
@@ -96,8 +92,7 @@ export function UpstreamMetricsChartSection({ chart, start, end, step }: { chart
       .sort((left, right) => (priorities.get(right) ?? Number.NEGATIVE_INFINITY) - (priorities.get(left) ?? Number.NEGATIVE_INFINITY) || unitAxisTieBreakers[right] - unitAxisTieBreakers[left]);
   }, [chart.entries, hidden]);
   const data = useMemo(() => upstreamMetricsPlotRows(chart, start, end), [chart, end, start]);
-  const hoverBuckets = useMemo(() => upstreamMetricsHoverBuckets(data, start, end, step), [data, end, start, step]);
-  const linkedHover = useLinkedChartHover(hoverBuckets);
+  const linkedHover = useLinkedChartHover();
   const [realHover, setRealHover] = useState(false);
   const axes = useMemo(() => new Map(units.map(unit => [unit, metricAxis(chart.entries.filter(entry => entry.unit === unit).flatMap(entry => data.flatMap(row => entry.id in row.values ? [row.values[entry.id]!] : [])), unit)])), [chart.entries, data, units]);
   const series = withUniqueSeriesLegends(chart.entries);
@@ -124,9 +119,7 @@ export function UpstreamMetricsChartSection({ chart, start, end, step }: { chart
           margin={{ top: chartMargins.top, right: chartMargins.right, bottom: 0, left: 0 }}
           onMouseMove={(state, event) => {
             setRealHover(true);
-            linkedHover.report(state.isTooltipActive
-              ? hoverBuckets.find(bucket => bucket.timestamp === state.activeLabel || String(bucket.timestamp) === state.activeLabel) ?? null
-              : null, chartHoverPointer(element, event.clientX, event.clientY));
+            linkedHover.report(state.isTooltipActive ? chartHoverPointer(element, event.clientX, event.clientY) : null);
           }}
           width={size.width}
         >
@@ -193,21 +186,24 @@ export function UpstreamMetricsChartSection({ chart, start, end, step }: { chart
             />;
           })}
         </ComposedChart>;
+        const assumedCallout = (row: (typeof data)[number]) => {
+          if (realHover) return null;
+          const rows = series.flatMap(entry => {
+            const value = row.values[entry.id];
+            return value === undefined || hidden.has(entry.id) ? [] : [{ key: entry.id, label: entry.legend, color: colorForHue(entry.hue), values: [formatters[entry.unit](value)] }];
+          });
+          if (rows.length === 0) return null;
+          const x = chartMargins.left + (row.timestamp - start) / (end - start) * plotWidth;
+          return <AssumedChartHover bottom={chartMargins.bottom} element={element} pointerStore={linkedHover.pointerStore} top={chartMargins.top} x={x}>
+            <ChartCalloutTable columns={[{ key: 'value', label: t('dashboard.upstreamMetrics.value') }]} rows={rows} title={formatAxisDate(new Date(row.timestamp))} />
+          </AssumedChartHover>;
+        };
         return <>
           {renderedChart}
-          <LinkedChartAssumedHover store={linkedHover.assumedStore}>{assumed => {
-            const row = realHover || assumed === null ? undefined : data[assumed.index];
-            if (row === undefined) return null;
-            const rows = series.flatMap(entry => {
-              const value = row.values[entry.id];
-              return value === undefined || hidden.has(entry.id) ? [] : [{ key: entry.id, label: entry.legend, color: colorForHue(entry.hue), values: [formatters[entry.unit](value)] }];
-            });
-            if (rows.length === 0) return null;
-            const x = chartMargins.left + (row.timestamp - start) / (end - start) * plotWidth;
-            return <AssumedChartHover bottom={chartMargins.bottom} element={element} pointerStore={linkedHover.pointerStore} top={chartMargins.top} x={x}>
-              <ChartCalloutTable columns={[{ key: 'value', label: t('dashboard.upstreamMetrics.value') }]} rows={rows} title={formatAxisDate(new Date(row.timestamp))} />
-            </AssumedChartHover>;
-          }}</LinkedChartAssumedHover>
+          <LinkedChartAssumedHover hover={linkedHover.assumedHover} resolve={pointer => {
+            const time = start + pointer.xRatio * (end - start);
+            return nearestChartPoint(data, time, row => row.timestamp);
+          }}>{assumedCallout}</LinkedChartAssumedHover>
         </>;
       }}
     </ChartHost>

@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 
-export interface ChartHoverBucket {
-  start: number;
-  end: number;
-}
+import { chartMargins, chartPlotWidth } from './layout';
+
+// Shares are of the plot rather than of the chart box: every chart reserves the
+// same frame, so the same share is the same instant in both.
 export interface ChartHoverPointer { xRatio: number; yRatio: number }
 
 export interface ChartHoverPointerStore {
@@ -13,54 +13,50 @@ export interface ChartHoverPointerStore {
 
 interface LinkedHoverState {
   sourceId: string;
-  interval: ChartHoverBucket;
+  pointer: ChartHoverPointer;
 }
 
 interface LinkedChartHoverStore extends ChartHoverPointerStore {
   getHover: () => LinkedHoverState | null;
-  report: (sourceId: string, interval: ChartHoverBucket | null, pointer: ChartHoverPointer | null) => void;
+  report: (sourceId: string, pointer: ChartHoverPointer | null) => void;
   subscribeHover: (listener: () => void) => () => void;
 }
 
-export interface AssumedChartHoverStore<T extends ChartHoverBucket> {
-  getSnapshot: () => T | null;
+export interface AssumedChartHover {
+  getPointer: () => ChartHoverPointer | null;
   subscribe: (listener: () => void) => () => void;
 }
 
 const LinkedHoverContext = createContext<LinkedChartHoverStore | null>(null);
 
 const createLinkedHoverStore = (): LinkedChartHoverStore => {
-  let pointer: ChartHoverPointer | null = null;
   let hover: LinkedHoverState | null = null;
-  const pointerListeners = new Set<() => void>();
-  const hoverListeners = new Set<() => void>();
-  const publishPointer = (next: ChartHoverPointer | null) => {
-    if (pointer?.xRatio === next?.xRatio && pointer?.yRatio === next?.yRatio) return;
-    pointer = next;
-    for (const listener of pointerListeners) listener();
+  const listeners = new Set<() => void>();
+  const publish = (next: LinkedHoverState | null) => {
+    hover = next;
+    for (const listener of listeners) listener();
   };
   return {
     getHover: () => hover,
-    getSnapshot: () => pointer,
-    report: (sourceId, interval, nextPointer) => {
-      if (interval !== null) {
-        publishPointer(nextPointer);
-        if (hover?.sourceId === sourceId && hover.interval.start === interval.start && hover.interval.end === interval.end) return;
-        hover = { sourceId, interval };
-      } else {
+    getSnapshot: () => hover?.pointer ?? null,
+    report: (sourceId, pointer) => {
+      if (pointer === null) {
+        // A chart that another chart has already taken the hover over from must
+        // not clear it on its way out.
         if (hover?.sourceId !== sourceId) return;
-        hover = null;
-        publishPointer(null);
+        publish(null);
+        return;
       }
-      for (const listener of hoverListeners) listener();
+      if (hover?.sourceId === sourceId && hover.pointer.xRatio === pointer.xRatio && hover.pointer.yRatio === pointer.yRatio) return;
+      publish({ sourceId, pointer });
     },
     subscribe: listener => {
-      pointerListeners.add(listener);
-      return () => pointerListeners.delete(listener);
+      listeners.add(listener);
+      return () => listeners.delete(listener);
     },
     subscribeHover: listener => {
-      hoverListeners.add(listener);
-      return () => hoverListeners.delete(listener);
+      listeners.add(listener);
+      return () => listeners.delete(listener);
     },
   };
 };
@@ -68,43 +64,66 @@ const createLinkedHoverStore = (): LinkedChartHoverStore => {
 export const chartHoverPointer = (element: HTMLElement, clientX: number, clientY: number): ChartHoverPointer => {
   const rect = element.getBoundingClientRect();
   return {
-    xRatio: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
-    yRatio: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height)),
+    xRatio: (clientX - rect.left - chartMargins.left) / chartPlotWidth(rect.width),
+    yRatio: (clientY - rect.top) / rect.height,
   };
 };
 
-// A coarse target follows the source interval's right edge: 09:59-10:01
-// therefore selects 10:00-11:00 rather than the preceding hour.
-export const assumedChartHoverBucket = <T extends ChartHoverBucket>(
-  buckets: readonly T[],
-  interval: ChartHoverBucket | null,
-): T | null => interval === null ? null : buckets.find(bucket => bucket.end >= interval.end) ?? null;
+/** The plot position a pointer share stands for, in the chart box. */
+export const chartPointerOffset = (pointer: ChartHoverPointer, rect: DOMRect): { x: number; y: number } => ({
+  x: chartMargins.left + pointer.xRatio * chartPlotWidth(rect.width),
+  y: pointer.yRatio * rect.height,
+});
+
+// A hover is a position, not a time: every chart answers the pointer's own
+// share of the plot with the point nearest that position. Both plot libraries
+// pick the nearest point on the axis -- Fluent bisects the series and keeps the
+// nearer of the straddling pair, Recharts walks the ticks and stops at the
+// midpoint -- and both keep the earlier of two equidistant points, so the two
+// agree on which point a position selects.
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/charts/react-charts/library/src/components/AreaChart/AreaChart.tsx#L192-L227
+// https://github.com/recharts/recharts/blob/v3.10.1/src/util/getActiveCoordinate.ts#L180-L207
+export const nearestChartPoint = <T,>(points: readonly T[], position: number, at: (point: T) => number): T | null => {
+  let nearest: T | null = null;
+  let distance = Number.POSITIVE_INFINITY;
+  for (const point of points) {
+    const candidate = Math.abs(at(point) - position);
+    if (candidate >= distance) continue;
+    nearest = point;
+    distance = candidate;
+  }
+  return nearest;
+};
 
 export function LinkedChartHoverProvider({ children }: { children: ReactNode }) {
   const [store] = useState(createLinkedHoverStore);
   return <LinkedHoverContext value={store}>{children}</LinkedHoverContext>;
 }
 
-export const useLinkedChartHover = <T extends ChartHoverBucket>(buckets: readonly T[]) => {
+export const useLinkedChartHover = () => {
   const id = useId();
   const context = useContext(LinkedHoverContext);
   const [localStore] = useState(createLinkedHoverStore);
   const store = context ?? localStore;
-  const report = useCallback((bucket: T | null, pointer: ChartHoverPointer | null = null) => {
-    store.report(id, bucket, pointer);
-  }, [id, store]);
-  useEffect(() => () => store.report(id, null, null), [id, store]);
-  const assumedStore = useMemo<AssumedChartHoverStore<T>>(() => ({
-    getSnapshot: () => {
+  const report = useCallback((pointer: ChartHoverPointer | null) => store.report(id, pointer), [id, store]);
+  useEffect(() => () => store.report(id, null), [id, store]);
+  const assumedHover = useMemo<AssumedChartHover>(() => ({
+    getPointer: () => {
       const hover = store.getHover();
-      return hover?.sourceId === id ? null : assumedChartHoverBucket(buckets, hover?.interval ?? null);
+      return hover === null || hover.sourceId === id ? null : hover.pointer;
     },
     subscribe: store.subscribeHover,
-  }), [buckets, id, store]);
-  return { assumedStore, pointerStore: store, report };
+  }), [id, store]);
+  return { assumedHover, pointerStore: store, report };
 };
 
-export function LinkedChartAssumedHover<T extends ChartHoverBucket>({ children, store }: { children: (bucket: T | null) => ReactNode; store: AssumedChartHoverStore<T> }) {
-  const bucket = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
-  return children(bucket);
+export function LinkedChartAssumedHover<T>({ children, hover, resolve }: {
+  children: (point: T) => ReactNode;
+  hover: AssumedChartHover;
+  resolve: (pointer: ChartHoverPointer) => T | null;
+}) {
+  const pointer = useSyncExternalStore(hover.subscribe, hover.getPointer, hover.getPointer);
+  if (pointer === null) return null;
+  const point = resolve(pointer);
+  return point === null ? null : children(point);
 }

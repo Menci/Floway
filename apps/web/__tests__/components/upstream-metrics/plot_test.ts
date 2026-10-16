@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { buildUpstreamMetricsChart, gaugePoints, upstreamMetricsHoverBuckets, upstreamMetricsPlotRows } from '../../../src/components/upstream-metrics/plot';
+import { buildUpstreamMetricsChart, gaugePoints, upstreamMetricsPlotRows } from '../../../src/components/upstream-metrics/plot';
 import type { UpstreamMetricRecord } from '@floway-dev/gateway/browser';
 import { upstreamMetricIdentityKey, type UpstreamMetricDisplay, type UpstreamMetricIdentity } from '@floway-dev/provider/browser';
 import { resolveUpstreamMetricDisplay as resolveClaudeMetric } from '@floway-dev/provider-claude-code/browser';
@@ -56,13 +56,4 @@ it('uses current upstream identity and keeps sparse observation times', () => {
 
 it('retains only real observations within the requested range', () => {
   expect(gaugePoints([{ timestamp: 1_000, value: 20 }, { timestamp: 61_000, value: 0 }], 30_000, 120_000)).toEqual([{ timestamp: 61_000, value: 0 }]);
-});
-
-it('centres metric hover intervals on their sampled point using the query step', () => {
-  expect(upstreamMetricsHoverBuckets([{ timestamp: 10 * 60 * 60_000 }], 0, 24 * 60 * 60_000, 2 * 60_000)).toEqual([{
-    index: 0,
-    timestamp: 10 * 60 * 60_000,
-    start: 9 * 60 * 60_000 + 59 * 60_000,
-    end: 10 * 60 * 60_000 + 60_000,
-  }]);
 });

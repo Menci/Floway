@@ -1,5 +1,4 @@
 import type { UpstreamMetricsMetadata } from './data';
-import type { ChartHoverBucket } from '../charts/linked-hover';
 import { hueForSeriesSlot } from '../charts/palette';
 import type { SeriesLegendEntry } from '../charts/series-legends';
 import type { UpstreamMetricRecord } from '@floway-dev/gateway/browser';
@@ -13,7 +12,6 @@ export interface UpstreamMetricsChart {
   values: Map<string, Array<{ timestamp: number; value: number }>>;
   hiddenByDefault: Set<string>;
 }
-export interface UpstreamMetricsHoverBucket extends ChartHoverBucket { index: number; timestamp: number }
 
 export const buildUpstreamMetricsChart = (
   records: readonly UpstreamMetricRecord[],
@@ -56,17 +54,3 @@ export const upstreamMetricsPlotRows = (chart: UpstreamMetricsChart, start: numb
   }
   return [...changes].sort(([left], [right]) => left - right).map(([timestamp, atTime]) => ({ timestamp, values: Object.fromEntries(atTime.map(change => [change.id, change.value])) }));
 };
-
-// Query rows retain their real sample timestamp rather than the SQL bucket
-// boundary, so the point owns half of the query step on either side.
-export const upstreamMetricsHoverBuckets = (
-  rows: readonly { timestamp: number }[],
-  start: number,
-  end: number,
-  step: number,
-): UpstreamMetricsHoverBucket[] => rows.map((row, index) => ({
-  index,
-  timestamp: row.timestamp,
-  start: Math.max(start, row.timestamp - step / 2),
-  end: Math.min(end, row.timestamp + step / 2),
-}));
