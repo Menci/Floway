@@ -5,9 +5,10 @@ import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
 import { api, callApi } from '../../api/client';
-import type { ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../../api/types';
+import type { ControlPlaneGroup, ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
+import { UserGroupsField } from '../groups/field';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
@@ -31,11 +32,13 @@ interface UserFormValues {
   isAdmin: boolean;
   upstreamOverride: boolean;
   upstreamIds: string[];
+  groupIds: string[];
 }
 
 interface UserDialogCommonProps {
   actorId: number;
   models: ControlPlaneModel[];
+  groups: ControlPlaneGroup[];
   onOpenChange: (open: boolean) => void;
   open: boolean;
   onSaved: (userId?: number) => Promise<void>;
@@ -61,6 +64,7 @@ export function UserDialog(props: UserDialogProps) {
       isAdmin: z.boolean(),
       upstreamOverride: z.boolean(),
       upstreamIds: z.array(z.string()),
+      groupIds: z.array(z.string()),
     }).superRefine((value, ctx) => {
       if (mode === 'create' && !value.password) {
         ctx.addIssue({ code: 'custom', message: 'dashboard.users.validation.passwordRequired', path: ['password'] });
@@ -94,6 +98,7 @@ export function UserDialog(props: UserDialogProps) {
               password: form.password,
               isAdmin: form.isAdmin,
               upstreamIds,
+              groupIds: form.groupIds.map(Number),
             },
           }))
         : await callApi(() => api.api.users[':id'].$patch({
@@ -101,6 +106,7 @@ export function UserDialog(props: UserDialogProps) {
               username,
               ...(!adminLocked ? { isAdmin: form.isAdmin } : {}),
               upstreamIds,
+              groupIds: form.groupIds.map(Number),
             },
           }));
       if (result.error) {
@@ -148,6 +154,7 @@ export function UserDialog(props: UserDialogProps) {
           </Field>
         )}
       />
+      <Controller control={control} name="groupIds" render={({ field }) => <UserGroupsField disabled={saving} groups={props.groups} onChange={field.onChange} value={field.value} />} />
       {mode === 'create' && (
         <Controller
           control={control}
@@ -202,5 +209,6 @@ const userFormDefaults = (user: ControlPlaneUser | null): UserFormValues => {
     isAdmin: user?.isAdmin ?? false,
     upstreamOverride: user?.upstreamIds !== null && user?.upstreamIds !== undefined,
     upstreamIds: user?.upstreamIds ?? [],
+    groupIds: user?.groupIds.map(String) ?? [],
   };
 };

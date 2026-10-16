@@ -21,7 +21,7 @@ describe('user upstream limits', () => {
     const onSaved = vi.fn(async () => {});
     renderInApp(<OutcomeToastProvider><UserDialog
       {...(mode === 'create' ? { mode } : { mode, user })}
-      actorId={1} models={[]} onOpenChange={vi.fn()} onSaved={onSaved} open upstreams={[]}
+      actorId={1} groups={[]} models={[]} onOpenChange={vi.fn()} onSaved={onSaved} open upstreams={[]}
     /></OutcomeToastProvider>);
     const toggle = screen.getByRole('switch', { name: i18n.t('dashboard.upstreamAccess.title') });
     if (mode === 'create') {

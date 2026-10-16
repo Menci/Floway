@@ -18,7 +18,7 @@ test('groups create, update, and project membership onto the user list', async (
   const { adminSession } = await setupAppTest();
   const created = await request('/groups', adminSession, {
     method: 'POST',
-    body: JSON.stringify({ name: 'Operators', memberIds: [2] }),
+    body: JSON.stringify({ name: 'Operators', hue: 120, memberIds: [2] }),
   });
   assertEquals(created.status, 201);
   const group = (await created.json()) as { id: number; name: string; memberIds: number[] };
@@ -41,16 +41,71 @@ test('group membership rejects unknown users', async () => {
   const { adminSession } = await setupAppTest();
   const response = await request('/groups', adminSession, {
     method: 'POST',
-    body: JSON.stringify({ name: 'Operators', memberIds: [999] }),
+    body: JSON.stringify({ name: 'Operators', hue: 120, memberIds: [999] }),
   });
   assertEquals(response.status, 400);
 });
 
 test('deleting a group clears memberships', async () => {
   const { adminSession, repo } = await setupAppTest();
-  const group = await repo.groups.create('Operators');
+  const group = await repo.groups.create('Operators', 120);
   await repo.groups.replaceMembers(group.id, [2]);
   const response = await request(`/groups/${group.id}`, adminSession, { method: 'DELETE' });
   assertEquals(response.status, 200);
   assertEquals(await repo.groups.listIdsByUserId(2), []);
+});
+
+test('updates color without changing membership and rejects invalid hue angles', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  const group = await repo.groups.create('Platform', 250);
+  await repo.groups.replaceMembers(group.id, [2]);
+  const response = await request(`/groups/${group.id}`, adminSession, { method: 'PATCH', body: JSON.stringify({ hue: 150 }) });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ hue: 150, memberIds: [2] });
+  for (const hue of [-1, 360, 12.5]) {
+    expect((await request('/groups', adminSession, { method: 'POST', body: JSON.stringify({ name: 'Invalid', hue }) })).status).toBe(400);
+  }
+});
+
+test('member operations are idempotent and reject missing records', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  const group = await repo.groups.create('Platform', 250);
+  const path = `/groups/${group.id}/members/2`;
+  expect((await request(path, adminSession, { method: 'PUT' })).status).toBe(200);
+  expect((await request(path, adminSession, { method: 'PUT' })).status).toBe(200);
+  expect(await repo.groups.listMemberIds(group.id)).toEqual([2]);
+  expect((await request(`/groups/${group.id}/members/999`, adminSession, { method: 'PUT' })).status).toBe(404);
+  expect((await request('/groups/999/members/2', adminSession, { method: 'DELETE' })).status).toBe(404);
+  expect((await request(path, adminSession, { method: 'DELETE' })).status).toBe(200);
+  expect((await request(path, adminSession, { method: 'DELETE' })).status).toBe(200);
+  expect(await repo.groups.listMemberIds(group.id)).toEqual([]);
+});
+
+test('user edits replace group selection and validate before changing the user', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  const first = await repo.groups.create('Platform', 250);
+  const second = await repo.groups.create('Research', 150);
+  const patch = (body: unknown) => request('/users/2', adminSession, { method: 'PATCH', body: JSON.stringify(body) });
+  expect((await patch({ groupIds: [first.id, second.id] })).status).toBe(200);
+  expect(await repo.groups.listIdsByUserId(2)).toEqual([first.id, second.id]);
+  expect((await patch({ groupIds: [second.id] })).status).toBe(200);
+  expect(await repo.groups.listMemberIds(first.id)).toEqual([]);
+  const before = await repo.users.getById(2);
+  expect((await patch({ username: 'unexpected', groupIds: [999] })).status).toBe(400);
+  expect(await repo.users.getById(2)).toEqual(before);
+  expect(await repo.groups.listIdsByUserId(2)).toEqual([second.id]);
+  expect((await patch({ groupIds: [] })).status).toBe(200);
+  expect(await repo.groups.listMemberIds(second.id)).toEqual([]);
+});
+
+test('new users can join groups and deleted users disappear from the roster', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  const group = await repo.groups.create('Platform', 250);
+  const response = await request('/users', adminSession, { method: 'POST', body: JSON.stringify({ username: 'new.member', password: 'password', groupIds: [group.id] }) });
+  expect(response.status).toBe(201);
+  const { user } = await response.json() as { user: { id: number; groupIds: number[] } };
+  expect(user.groupIds).toEqual([group.id]);
+  expect(await repo.groups.listMemberIds(group.id)).toEqual([user.id]);
+  expect((await request(`/users/${user.id}`, adminSession, { method: 'DELETE' })).status).toBe(200);
+  expect(await repo.groups.listMemberIds(group.id)).toEqual([]);
 });

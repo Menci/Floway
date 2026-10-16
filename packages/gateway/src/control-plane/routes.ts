@@ -5,7 +5,7 @@ import { createKey, deleteKey, listKeys, rotateKey, updateKey } from './api-keys
 import { authLogin, authLogout, authMe } from './auth/routes.ts';
 import { exportData, importData } from './data-transfer/routes.ts';
 import { dumpRoutes } from './dump.ts';
-import { createGroup, deleteGroup, listGroups, updateGroup } from './groups/routes.ts';
+import { createGroup, deleteGroup, listGroups, setGroupMember, updateGroup } from './groups/routes.ts';
 import { createAlias, deleteAlias, listAliases, updateAlias } from './model-aliases/routes.ts';
 import { controlPlaneModels } from './models/routes.ts';
 import { performanceOverview } from './performance/routes.ts';
@@ -84,6 +84,8 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
     .post('/groups', zValidator('json', createGroupBody), createGroup)
     .patch('/groups/:id', zValidator('json', updateGroupBody), updateGroup)
     .delete('/groups/:id', deleteGroup)
+    .put('/groups/:id/members/:userId', setGroupMember(true))
+    .delete('/groups/:id/members/:userId', setGroupMember(false))
     .get('/upstreams', listUpstreams)
     .get('/upstreams/blueprint', getUpstreamBlueprint)
     .post('/upstreams/copilot/oauth/device-login/start', zValidator('json', copilotOAuthDeviceLoginStartBody), copilotOAuthDeviceLoginStart)

@@ -101,6 +101,7 @@ const validateProxyFallbackReferences = (
 export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
   const repo = getRepo();
   const includePerformance = c.req.valid('query').include_performance === '1';
+  const memberships = await repo.groups.listMemberships();
 
   const [users, groups, apiKeys, usage, webSearchUsage, upstreamMetrics, performance, rawWebSearchConfig, upstreams, proxies] = await Promise.all([
     repo.users.listIncludingDeleted(),
@@ -120,7 +121,7 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
     exportedAt: new Date().toISOString(),
     data: {
       users,
-      groups: await Promise.all(groups.map(async group => ({ ...group, memberIds: await repo.groups.listMemberIds(group.id) }))),
+      groups: groups.map(group => ({ ...group, memberIds: memberships.get(group.id) ?? [] })),
       apiKeys,
       upstreams: upstreams.map(upstreamRecordToFullJson),
       proxies: proxies.map(proxy => ({ id: proxy.id, name: proxy.name, url: proxy.url, dial_timeout_seconds: proxy.dialTimeoutSeconds })),

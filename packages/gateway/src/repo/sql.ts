@@ -343,8 +343,8 @@ class SqlUsersRepo implements UsersRepo {
     return { ...template, id: row.id };
   }
 
-  async save(user: User): Promise<void> {
-    await this.db
+  async save(user: User, groupIds?: readonly number[]): Promise<void> {
+    const save = this.db
       .prepare(
         `INSERT INTO users (${USER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
@@ -362,8 +362,8 @@ class SqlUsersRepo implements UsersRepo {
         serializeUpstreamIds(user.upstreamIds),
         user.createdAt,
         user.deletedAt,
-      )
-      .run();
+      );
+    await runStatements(this.db, [save, ...(groupIds === undefined ? [] : userGroupStatements(this.db, user.id, groupIds))]);
   }
 
   async softDelete(id: number): Promise<boolean> {
@@ -382,17 +382,26 @@ class SqlUsersRepo implements UsersRepo {
 interface GroupRow {
   id: number;
   name: string;
+  hue: number;
   created_at: string;
   deleted_at: string | null;
 }
 
-const GROUP_COLUMNS = 'id, name, created_at, deleted_at';
+const GROUP_COLUMNS = 'id, name, hue, created_at, deleted_at';
 const toGroup = (row: GroupRow): Group => ({
   id: row.id,
   name: row.name,
+  hue: row.hue,
   createdAt: row.created_at,
   deletedAt: row.deleted_at,
 });
+
+const userGroupStatements = (db: SqlDatabase, userId: number, groupIds: readonly number[]) => [
+  db.prepare('DELETE FROM group_members WHERE user_id = ?').bind(userId),
+  db.prepare(`INSERT INTO group_members (group_id, user_id, created_at)
+    SELECT DISTINCT CAST(value AS INTEGER), ?, ? FROM json_each(?)`)
+    .bind(userId, new Date().toISOString(), JSON.stringify(groupIds)),
+];
 
 class SqlGroupsRepo implements GroupsRepo {
   constructor(private db: SqlDatabase) {}
@@ -417,28 +426,58 @@ class SqlGroupsRepo implements GroupsRepo {
     return row ? toGroup(row) : null;
   }
 
-  async create(name: string): Promise<Group> {
+  async create(name: string, hue: number): Promise<Group> {
     const now = new Date().toISOString();
     const row = await this.db.prepare(
-      `INSERT INTO groups (id, name, created_at, deleted_at)
-       SELECT COALESCE(MAX(id), 0) + 1, ?, ?, NULL FROM groups
+      `INSERT INTO groups (id, name, hue, created_at, deleted_at)
+       SELECT COALESCE(MAX(id), 0) + 1, ?, ?, ?, NULL FROM groups
        RETURNING ${GROUP_COLUMNS}`,
-    ).bind(name, now).first<GroupRow>();
+    ).bind(name, hue, now).first<GroupRow>();
     if (!row) throw new Error('groups.create: insert returned no rows');
     return toGroup(row);
   }
 
   async save(group: Group): Promise<void> {
     await this.db.prepare(
-      `INSERT INTO groups (${GROUP_COLUMNS}) VALUES (?, ?, ?, ?)
-       ON CONFLICT (id) DO UPDATE SET name = excluded.name, deleted_at = excluded.deleted_at`,
-    ).bind(group.id, group.name, group.createdAt, group.deletedAt).run();
+      `INSERT INTO groups (${GROUP_COLUMNS}) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET name = excluded.name, hue = excluded.hue, deleted_at = excluded.deleted_at`,
+    ).bind(group.id, group.name, group.hue, group.createdAt, group.deletedAt).run();
   }
 
   async softDelete(id: number): Promise<boolean> {
-    const result = await this.db.prepare('UPDATE groups SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL')
-      .bind(new Date().toISOString(), id).run();
-    return (result.meta.changes ?? 0) > 0;
+    const existing = await this.getById(id);
+    if (!existing) return false;
+    await runStatements(this.db, [
+      this.db.prepare('DELETE FROM group_members WHERE group_id = ?').bind(id),
+      this.db.prepare('UPDATE groups SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL').bind(new Date().toISOString(), id),
+    ]);
+    return true;
+  }
+
+  async listMemberships(): Promise<Map<number, number[]>> {
+    const { results } = await this.db.prepare('SELECT group_id, user_id FROM group_members ORDER BY group_id, user_id').all<{ group_id: number; user_id: number }>();
+    const members = new Map<number, number[]>();
+    for (const row of results) {
+      const ids = members.get(row.group_id);
+      if (ids) ids.push(row.user_id);
+      else members.set(row.group_id, [row.user_id]);
+    }
+    return members;
+  }
+
+  async setMember(groupId: number, userId: number, included: boolean): Promise<void> {
+    if (included) {
+      await this.db.prepare(`INSERT OR IGNORE INTO group_members (group_id, user_id, created_at)
+        SELECT groups.id, users.id, ? FROM groups CROSS JOIN users
+        WHERE groups.id = ? AND users.id = ? AND groups.deleted_at IS NULL AND users.deleted_at IS NULL`)
+        .bind(new Date().toISOString(), groupId, userId).run();
+    } else {
+      await this.db.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').bind(groupId, userId).run();
+    }
+  }
+
+  async replaceUserGroups(userId: number, groupIds: readonly number[]): Promise<void> {
+    await runStatements(this.db, userGroupStatements(this.db, userId, groupIds));
   }
 
   async listMemberIds(groupId: number): Promise<number[]> {
@@ -472,12 +511,12 @@ class SqlGroupsRepo implements GroupsRepo {
   }
 
   async replaceMembers(groupId: number, userIds: readonly number[]): Promise<void> {
-    await this.db.prepare('DELETE FROM group_members WHERE group_id = ?').bind(groupId).run();
-    const createdAt = new Date().toISOString();
-    for (const userId of [...new Set(userIds)].toSorted((a, b) => a - b)) {
-      await this.db.prepare('INSERT INTO group_members (group_id, user_id, created_at) VALUES (?, ?, ?)')
-        .bind(groupId, userId, createdAt).run();
-    }
+    await runStatements(this.db, [
+      this.db.prepare('DELETE FROM group_members WHERE group_id = ?').bind(groupId),
+      this.db.prepare(`INSERT INTO group_members (group_id, user_id, created_at)
+        SELECT ?, CAST(value AS INTEGER), ? FROM json_each(?) GROUP BY value`)
+        .bind(groupId, new Date().toISOString(), JSON.stringify(userIds)),
+    ]);
   }
 
   async deleteMembershipsByUserId(userId: number): Promise<number> {
@@ -486,8 +525,7 @@ class SqlGroupsRepo implements GroupsRepo {
   }
 
   async deleteAll(): Promise<void> {
-    await this.db.prepare('DELETE FROM group_members').run();
-    await this.db.prepare('DELETE FROM groups').run();
+    await runStatements(this.db, [this.db.prepare('DELETE FROM group_members'), this.db.prepare('DELETE FROM groups')]);
   }
 }
 

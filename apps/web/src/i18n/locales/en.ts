@@ -222,6 +222,7 @@ const en = {
         },
       },
       users: {
+        search: 'Search users',
         tabs: { users: 'Users', groups: 'Groups' },
         empty: 'No users found',
         actions: {
@@ -261,10 +262,6 @@ const en = {
           actions: 'Actions',
         },
         role: { admin: 'Administrator', operator: 'Operator' },
-        groups: {
-          count_one: '{{count, number}} group',
-          count_other: '{{count, number}} groups',
-        },
         upstreams: {
           all: 'All upstreams',
           count_one: '{{count, number}} upstream',
@@ -302,11 +299,15 @@ const en = {
       },
       groupsManagement: {
         empty: 'No groups found',
-        actions: { create: 'New group', edit: 'Edit group', delete: 'Delete group', refresh: 'Refresh groups' },
-        table: { label: 'Floway groups', name: 'Name', members: 'Members', created: 'Created', actions: 'Actions' },
-        members: { count_one: '{{count, number}} member', count_other: '{{count, number}} members' },
+        search: 'Search groups',
+        searchJoin: 'Search and join a group',
+        noMatches: 'No matching groups',
+        allJoined: 'Already in every group',
+        invalidName: 'Enter a name between 1 and 64 characters',
+        actions: { create: 'New group', save: 'Save changes', edit: 'Edit group', delete: 'Delete group', refresh: 'Refresh groups', add: 'Add member', remove: 'Remove {{username}} from group', leave: 'Leave {{name}}' },
+        members: { count_one: '{{count, number}} member', count_other: '{{count, number}} members', empty: 'This group has no members', allAdded: 'All users are already members', noMatches: 'No matching users' },
         dialog: { createTitle: 'New group', editTitle: 'Edit {{name}}' },
-        fields: { name: 'Name', members: 'Members' },
+        fields: { name: 'Name', members: 'Members', hue: 'Color' },
         delete: { title: 'Delete group', message: 'Delete {{name}}? Its membership will be removed.' },
         toast: {
           create: { pending: 'Creating group {{name}}', success: 'Created group {{name}}' },

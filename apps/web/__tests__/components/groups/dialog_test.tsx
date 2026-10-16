@@ -1,26 +1,23 @@
 import { fireEvent, screen } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
 
-import type { ControlPlaneGroup, ControlPlaneUser } from '../../../src/api/types';
+import type { ControlPlaneGroup } from '../../../src/api/types';
 import { GroupDialog } from '../../../src/components/groups/dialog';
 import { OutcomeToastProvider } from '../../../src/components/ui/outcome-toast';
 import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 
-const user: ControlPlaneUser = {
-  id: 2, username: 'alice', isAdmin: false, createdAt: '', upstreamIds: null, groupIds: [3],
-};
 const group: ControlPlaneGroup = {
-  id: 3, name: 'Operators', createdAt: '', deletedAt: null, memberIds: [2],
+  id: 3, name: 'Operators', hue: 120, createdAt: '', deletedAt: null, memberIds: [2],
 };
 
-test('guards a group name or membership draft before closing', async () => {
+test('guards a group draft before closing', async () => {
   renderInApp(<OutcomeToastProvider><GroupDialog
     group={group}
     onOpenChange={vi.fn()}
     onSaved={async () => {}}
     open
-    users={[user]}
+    groups={[group]}
   /></OutcomeToastProvider>);
   fireEvent.change(screen.getByLabelText(i18n.t('dashboard.groupsManagement.fields.name')), { target: { value: 'Renamed' } });
 

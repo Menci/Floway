@@ -16,16 +16,25 @@ const parseUserId = (raw: string): number | null => {
   return Number.isInteger(n) && n >= 1 ? n : null;
 };
 
+const unknownGroupsError = async (ids: readonly number[] | undefined): Promise<string | null> => {
+  if (ids === undefined) return null;
+  const known = new Set((await getRepo().groups.list()).map(group => group.id));
+  const missing = ids.filter(id => !known.has(id));
+  return missing.length === 0 ? null : `Unknown group ids: ${missing.join(', ')}`;
+};
+
 export const listUsers = async (c: AuthedContext) => {
   const repo = getRepo();
   const [users, knownUpstreamIds] = await Promise.all([repo.users.list(), loadKnownUpstreamIds()]);
   const groupIdsByUser = await repo.groups.listIdsByUserIds(users.map(user => user.id));
-  return c.json(users.map(user => userToAdminWire(user, knownUpstreamIds, groupIdsByUser.get(user.id) ?? [])));
+  return c.json(users.map(user => userToAdminWire(user, knownUpstreamIds, groupIdsByUser.get(user.id)!)));
 };
 
 export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   const body = c.req.valid('json');
   const repo = getRepo();
+  const groupError = await unknownGroupsError(body.groupIds);
+  if (groupError) return c.json({ error: groupError }, 400);
 
   if (await repo.users.findByUsername(body.username)) {
     return c.json({ error: 'That username is already taken (usernames are case-insensitive).' }, 400);
@@ -58,8 +67,9 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
     openaiResponsesRetentionSeconds: 0,
   };
   await repo.apiKeys.save(defaultKey);
+  if (body.groupIds !== undefined) await repo.groups.replaceUserGroups(user.id, body.groupIds);
 
-  return c.json({ user: userToAdminWire(user, knownUpstreamIds, []) }, 201);
+  return c.json({ user: userToAdminWire(user, knownUpstreamIds, await repo.groups.listIdsByUserId(user.id)) }, 201);
 };
 
 export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
@@ -71,6 +81,8 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
 
   const existing = await repo.users.getById(id);
   if (!existing) return c.json({ error: 'user not found' }, 404);
+  const groupError = await unknownGroupsError(body.groupIds);
+  if (groupError) return c.json({ error: groupError }, 400);
 
   if (id === SEED_ADMIN_USER_ID && body.isAdmin === false) return c.json({ error: 'user 1 cannot be demoted' }, 400);
   if (id === actorId && body.isAdmin === false) {
@@ -92,7 +104,7 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
   if (body.isAdmin !== undefined) overrides.isAdmin = body.isAdmin;
   if (body.upstreamIds !== undefined) overrides.upstreamIds = body.upstreamIds;
   const next: User = { ...existing, ...overrides };
-  await repo.users.save(next);
+  await repo.users.save(next, body.groupIds);
 
   if (body.password !== undefined) {
     const sessionId = sessionIdFromContext(c);

@@ -260,6 +260,7 @@ const userSchema = z.object({
 const groupTransferSchema = z.object({
   id: positiveIntegerSchema('id'),
   name: nonEmptyStringWithError('name must be a non-empty string').max(64, { error: 'name must be 64 characters or fewer' }),
+  hue: z.number().int().min(0).max(359),
   createdAt: nonEmptyStringSchema('createdAt'),
   deletedAt: nullableStringSchema('deletedAt'),
   memberIds: z.array(positiveIntegerSchema('memberIds entries')).refine(ids => new Set(ids).size === ids.length, { error: 'memberIds contains duplicates' }),

@@ -52,6 +52,7 @@ export const selectCss = `
    https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Combobox/useComboboxStyles.styles.ts#L30
    https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Combobox/useComboboxStyles.styles.ts#L121 */
 .fui-Dropdown.fui-Dropdown,
+.fui-TagPickerControl.fui-TagPickerControl,
 .fui-Combobox.fui-Combobox {
   --colorPaletteRedBorder2: var(--colorNeutralStroke1);
   background-color: var(--floway-select-fill, var(--winui-control-fill-default));
@@ -70,7 +71,9 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L473-L487 */
 .fui-Dropdown.fui-Dropdown:not(:focus-within),
 .fui-Dropdown.fui-Dropdown:focus-within,
+.fui-TagPickerControl.fui-TagPickerControl:not(:focus-within),
 .fui-Combobox.fui-Combobox:not(:focus-within),
+.fui-TagPickerControl.fui-TagPickerControl:focus-within,
 .fui-Combobox.fui-Combobox:focus-within {
   border-color: var(--floway-select-stroke, var(--winui-control-elevation-border-color));
 }
@@ -106,6 +109,7 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L33
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L55 */
 .fui-Dropdown.fui-Dropdown:hover:not(:has(.fui-Dropdown__button:disabled)),
+.fui-TagPickerControl.fui-TagPickerControl:hover:not(:has(.fui-TagPickerInput:disabled)),
 .fui-Combobox.fui-Combobox:hover:not(:has(.fui-Combobox__input:disabled)) {
   background-color: var(--floway-select-fill-hover, var(--winui-control-fill-secondary));
   border-color: var(--floway-select-stroke, var(--winui-control-elevation-border-color));
@@ -130,6 +134,7 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L504
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L328 */
 .fui-Dropdown.fui-Dropdown:has([data-fui-focus-visible]),
+.fui-TagPickerControl.fui-TagPickerControl:has([data-fui-focus-visible]),
 .fui-Combobox.fui-Combobox:has([data-fui-focus-visible]) {
   box-shadow: var(
     --floway-select-focus-shadow,
@@ -144,6 +149,7 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L346
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L572 */
 .fui-Dropdown.fui-Dropdown:has([data-fui-focus-visible])::before,
+.fui-TagPickerControl.fui-TagPickerControl:has([data-fui-focus-visible])::before,
 .fui-Combobox.fui-Combobox:has([data-fui-focus-visible])::before {
   background-color: var(--winui-accent-fill-default);
   border-radius: 1.5px;
@@ -163,6 +169,7 @@ export const selectCss = `
    draws an accent bar along the bottom edge.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L473-L487 */
 .fui-Dropdown.fui-Dropdown::after,
+.fui-TagPickerControl.fui-TagPickerControl::after,
 .fui-Combobox.fui-Combobox::after {
   content: none;
 }
@@ -179,6 +186,7 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L505-L528
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ComboBox_Partial.cpp#L850-L870 */
 .fui-Dropdown.fui-Dropdown:active:not(:has(.fui-Dropdown__button:disabled)),
+.fui-TagPickerControl.fui-TagPickerControl:active:not(:has(.fui-TagPickerInput:disabled)),
 .fui-Combobox.fui-Combobox:active:not(:has(.fui-Combobox__input:disabled)) {
   background-color: var(--floway-select-fill-pressed, var(--winui-control-fill-tertiary));
   border-color: var(--floway-select-stroke, var(--winui-control-stroke-default));
@@ -204,6 +212,7 @@ export const selectCss = `
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L35
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L57 */
 .fui-Dropdown.fui-Dropdown:has(.fui-Dropdown__button:disabled),
+.fui-TagPickerControl.fui-TagPickerControl:has(.fui-TagPickerInput:disabled),
 .fui-Combobox.fui-Combobox:has(.fui-Combobox__input:disabled) {
   background-color: var(--winui-control-fill-disabled);
   border-color: var(--winui-control-stroke-default);
@@ -214,6 +223,7 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L59 */
 .fui-Dropdown:has(.fui-Dropdown__button:disabled) .fui-Dropdown__expandIcon.fui-Dropdown__expandIcon,
 .fui-Dropdown:has(.fui-Dropdown__button:disabled) .fui-Dropdown__clearButton.fui-Dropdown__clearButton,
+.fui-TagPickerControl:has(.fui-TagPickerInput:disabled) .fui-TagPickerControl__expandIcon.fui-TagPickerControl__expandIcon,
 .fui-Combobox:has(.fui-Combobox__input:disabled) .fui-Combobox__expandIcon.fui-Combobox__expandIcon,
 .fui-Combobox:has(.fui-Combobox__input:disabled) .fui-Combobox__clearIcon.fui-Combobox__clearIcon {
   color: var(--winui-text-fill-disabled);
@@ -224,6 +234,7 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L58
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L582 */
 .fui-Dropdown__expandIcon.fui-Dropdown__expandIcon,
+.fui-TagPickerControl__expandIcon.fui-TagPickerControl__expandIcon,
 .fui-Combobox__expandIcon.fui-Combobox__expandIcon {
   color: var(--winui-text-fill-secondary);
   font-size: 12px;

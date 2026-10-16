@@ -360,7 +360,7 @@ test('export and import preserve empty upstream restrictions separately from unr
   const restrictedKey = { ...KEY_B, userId: USER_BOB.id, upstreamIds: [] };
   await repo.users.save(SEED_ADMIN);
   await repo.users.save(restrictedUser);
-  await repo.groups.save({ id: 1, name: 'Operators', createdAt: '2026-02-01T00:00:00.000Z', deletedAt: null });
+  await repo.groups.save({ id: 1, name: 'Operators', hue: 120, createdAt: '2026-02-01T00:00:00.000Z', deletedAt: null });
   await repo.groups.replaceMembers(1, [USER_BOB.id]);
   await repo.apiKeys.save(KEY_A);
   await repo.apiKeys.save(restrictedKey);
@@ -374,7 +374,7 @@ test('export and import preserve empty upstream restrictions separately from unr
   assertEquals(imported.status, 200);
   assertEquals((await repo.users.getById(SEED_ADMIN.id))?.upstreamIds, null);
   assertEquals((await repo.users.getById(USER_BOB.id))?.upstreamIds, []);
-  assertEquals(await repo.groups.list(), [{ id: 1, name: 'Operators', createdAt: '2026-02-01T00:00:00.000Z', deletedAt: null }]);
+  assertEquals(await repo.groups.list(), [{ id: 1, name: 'Operators', hue: 120, createdAt: '2026-02-01T00:00:00.000Z', deletedAt: null }]);
   assertEquals(await repo.groups.listMemberIds(1), [USER_BOB.id]);
   assertEquals((await repo.apiKeys.getById(KEY_A.id))?.upstreamIds, null);
   assertEquals((await repo.apiKeys.getById(KEY_B.id))?.upstreamIds, []);

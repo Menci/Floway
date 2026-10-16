@@ -257,6 +257,7 @@ export const createUserBody = z.object({
   password: passwordSchema,
   isAdmin: z.boolean().optional(),
   upstreamIds: upstreamIdsValueSchema.optional(),
+  groupIds: z.array(z.number().int().positive()).optional(),
 });
 
 export const updateUserBody = z.object({
@@ -264,15 +265,18 @@ export const updateUserBody = z.object({
   password: passwordSchema.optional(),
   isAdmin: z.boolean().optional(),
   upstreamIds: upstreamIdsValueSchema.optional(),
+  groupIds: z.array(z.number().int().positive()).optional(),
 });
 
 export const createGroupBody = z.object({
   name: z.string().trim().min(1).max(64),
+  hue: z.number().int().min(0).max(359),
   memberIds: z.array(z.number().int().positive()).optional(),
 });
 
 export const updateGroupBody = z.object({
   name: z.string().trim().min(1).max(64).optional(),
+  hue: z.number().int().min(0).max(359).optional(),
   memberIds: z.array(z.number().int().positive()).optional(),
 });
 

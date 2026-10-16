@@ -211,6 +211,7 @@ const zhHansCN = {
         },
       },
       users: {
+        search: '搜索用户',
         tabs: { users: '用户', groups: '用户组' },
         empty: '没有用户',
         actions: {
@@ -250,9 +251,6 @@ const zhHansCN = {
           actions: '操作',
         },
         role: { admin: '管理员', operator: '操作员' },
-        groups: {
-          count_other: '{{count, number}} 个用户组',
-        },
         upstreams: {
           all: '全部上游',
           count_other: '{{count, number}} 个上游',
@@ -288,11 +286,15 @@ const zhHansCN = {
       },
       groupsManagement: {
         empty: '没有用户组',
-        actions: { create: '新建用户组', edit: '编辑用户组', delete: '删除用户组', refresh: '刷新用户组' },
-        table: { label: 'Floway 用户组', name: '名称', members: '成员', created: '创建时间', actions: '操作' },
-        members: { count_other: '{{count, number}} 个成员' },
+        search: '搜索用户组',
+        searchJoin: '搜索并加入用户组',
+        noMatches: '没有匹配的用户组',
+        allJoined: '已加入全部用户组',
+        invalidName: '请输入 1 至 64 个字符的名称',
+        actions: { create: '新建用户组', save: '保存更改', edit: '编辑用户组', delete: '删除用户组', refresh: '刷新用户组', add: '添加成员', remove: '从组中移除 {{username}}', leave: '退出 {{name}}' },
+        members: { count_other: '{{count, number}} 名成员', empty: '这个用户组还没有成员', allAdded: '所有用户都已加入该组', noMatches: '没有匹配的用户' },
         dialog: { createTitle: '新建用户组', editTitle: '编辑 {{name}}' },
-        fields: { name: '名称', members: '成员' },
+        fields: { name: '名称', members: '成员', hue: '颜色' },
         delete: { title: '删除用户组', message: '删除 {{name}}？该组的成员关系将被移除。' },
         toast: {
           create: { pending: '正在创建用户组 {{name}}', success: '已创建用户组 {{name}}' },

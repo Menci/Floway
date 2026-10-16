@@ -50,6 +50,7 @@ export const textInputCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L96
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L173-L175 */
 .fui-Input.fui-Input,
+.fui-TagPickerControl.fui-TagPickerControl,
 .fui-Combobox.fui-Combobox {
   min-height: 34px;
 }
