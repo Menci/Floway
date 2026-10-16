@@ -8,7 +8,7 @@ import { useDashboardOutletContext } from './dashboard';
 import { requireDashboardAdmin } from './guards';
 import { api, callApi } from '../api/client';
 import { mapResult, mergeResults } from '../api/partial-results';
-import type { ControlPlaneGroup, ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../api/types';
+import type { ControlPlaneGroup, ControlPlaneModel, ControlPlaneUser, ControlPlaneUserDirectory, UpstreamOption } from '../api/types';
 import { GroupDialog } from '../components/groups/dialog';
 import { GroupsMasterDetail } from '../components/groups/master-detail';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
@@ -31,34 +31,31 @@ const { Button, Tab, TabList, Text } = fluentComponents;
 
 // `null` is a failed fetch, not an empty deployment: a gateway always has a user.
 interface LoaderData {
-  users: ControlPlaneUser[] | null;
-  groups: ControlPlaneGroup[] | null;
+  directory: ControlPlaneUserDirectory | null;
   upstreams: UpstreamOption[] | null;
   models: ControlPlaneModel[] | null;
   error: string | null;
 }
 
 const loadPageData = async (
-  current: Pick<LoaderData, 'users' | 'groups' | 'upstreams' | 'models'>,
+  current: Pick<LoaderData, 'directory' | 'upstreams' | 'models'>,
   signal?: AbortSignal,
 ): Promise<LoaderData> => {
-  const [usersResult, groupsResult, upstreamsResult, modelsResult] = await Promise.all([
-    callApi(() => api.api.users.$get(undefined, { init: { signal } })),
-    callApi(() => api.api.groups.$get(undefined, { init: { signal } })),
+  const [directoryResult, upstreamsResult, modelsResult] = await Promise.all([
+    callApi(() => api.api['user-directory'].$get(undefined, { init: { signal } })),
     callApi(() => api.api['upstream-options'].$get(undefined, { init: { signal } })),
     callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } }, { init: { signal } })),
   ]);
   const { values, error } = mergeResults(current, {
-    users: usersResult,
-    groups: groupsResult,
+    directory: directoryResult,
     upstreams: upstreamsResult,
     models: mapResult(modelsResult, body => body.data),
   });
   return { ...values, error };
 };
 
-const unloadedPageData: Pick<LoaderData, 'users' | 'groups' | 'upstreams' | 'models'> = {
-  users: null, groups: null, upstreams: null, models: null,
+const unloadedPageData: Pick<LoaderData, 'directory' | 'upstreams' | 'models'> = {
+  directory: null, upstreams: null, models: null,
 };
 
 export async function clientLoader(): Promise<LoaderData> {
@@ -91,7 +88,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
     params.set('group', String(id));
     return params;
   });
-  const editorDialog = useDialogInvocation<{ kind: 'create' } | { kind: 'edit'; user: ControlPlaneUser }>();
+  const editorDialog = useDialogInvocation<({ kind: 'create' } | { kind: 'edit'; user: ControlPlaneUser }) & { groups: ControlPlaneGroup[] }>();
   const passwordDialog = useDialogInvocation<ControlPlaneUser>();
   const deleteDialog = useDialogInvocation<ControlPlaneUser>();
   const groupDialog = useDialogInvocation<{ group?: ControlPlaneGroup }>();
@@ -159,7 +156,9 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
     await refresh();
   };
 
-  const { groups, models, upstreams, users } = data;
+  const { directory, models, upstreams } = data;
+  const users = directory?.users ?? null;
+  const groups = directory?.groups ?? null;
   const loaded = users !== null && groups !== null && upstreams !== null && models !== null;
   const needle = query.trim().toLowerCase();
   const visibleUsers = users?.filter(user => user.username.toLowerCase().includes(needle));
@@ -219,7 +218,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
             className="flex-none whitespace-nowrap"
             disabled={!loaded || refreshing || deleting || deletingGroup || changingMember}
             icon={<AddRegular />}
-            onClick={() => tab === 'users' ? editorDialog.open({ kind: 'create' }) : groupDialog.open({})}
+            onClick={() => tab === 'users' ? editorDialog.open({ kind: 'create', groups: groups! }) : groupDialog.open({})}
           >{t(tab === 'users' ? 'dashboard.users.actions.create' : 'dashboard.groupsManagement.actions.create')}</Button>
         </div>
       </div>
@@ -235,7 +234,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           actorId={actor.id}
           disabled={refreshing || deleting}
           onDelete={openDeleteDialog}
-          onEdit={user => editorDialog.open({ kind: 'edit', user })}
+          onEdit={user => editorDialog.open({ kind: 'edit', user, groups })}
           onResetPassword={passwordDialog.open}
           users={visibleUsers!}
           groups={groups}
@@ -256,7 +255,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           actorId={actor.id}
           key={editorDialog.invocation.key}
           mode="create"
-          groups={groups}
+          groups={editorDialog.invocation.value.groups}
           models={models}
           onOpenChange={open => { if (!open) editorDialog.close(); }}
           onSaved={() => afterSaved()}
@@ -267,7 +266,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           actorId={actor.id}
           key={editorDialog.invocation.key}
           mode="edit"
-          groups={groups}
+          groups={editorDialog.invocation.value.groups}
           models={models}
           onOpenChange={open => { if (!open) editorDialog.close(); }}
           onSaved={afterSaved}

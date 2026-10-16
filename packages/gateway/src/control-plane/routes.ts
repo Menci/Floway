@@ -22,7 +22,7 @@ import { copilotOAuthDeviceLoginPoll, copilotOAuthDeviceLoginStart, copilotQuota
 import { fetchSavedModels, previewModels } from './upstreams/models.ts';
 import { ollamaUsage } from './upstreams/ollama.ts';
 import { createUpstream, deleteUpstream, getUpstream, getUpstreamBlueprint, listUpstreamOptions, listUpstreams, updateUpstream } from './upstreams/routes.ts';
-import { changeOwnPassword, createUser, deleteUser, listUsers, updateUser } from './users/routes.ts';
+import { changeOwnPassword, createUser, deleteUser, getUserDirectory, listUsers, updateUser } from './users/routes.ts';
 import { type AuthedContext, type AuthVars, userFromContext } from '../middleware/auth.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
 import { getRuntimeInfo } from '../runtime/runtime-info.ts';
@@ -77,6 +77,7 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
     .use('*', adminOnlyMiddleware)
     .get('/upstream-metrics', zValidator('query', upstreamMetricsQuery), upstreamMetrics)
     .get('/users', listUsers)
+    .get('/user-directory', getUserDirectory)
     .post('/users', zValidator('json', createUserBody), createUser)
     .patch('/users/:id', zValidator('json', updateUserBody), updateUser)
     .delete('/users/:id', deleteUser)

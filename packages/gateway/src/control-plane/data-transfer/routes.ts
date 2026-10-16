@@ -13,6 +13,7 @@ import { parseWebSearchConfigDefault, parseWebSearchConfigStrict } from '../../d
 import type { WebSearchConfig } from '../../data-plane/tools/web-search/types.ts';
 import { notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
+import { groupNameKey } from '../../repo/group-names.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_FALLBACK_IDS } from '../../repo/proxy-fallback-list.ts';
 import type { ApiKey, Group, UpstreamMetricRecord, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
@@ -149,6 +150,16 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const preImportKeys = await repo.apiKeys.listIncludingDeleted();
   const apiKeyIdentityError = validateApiKeyIdentities(apiKeys, mode === 'merge' ? preImportKeys : [], mode);
   if (apiKeyIdentityError) return c.json({ error: `invalid apiKeys: ${apiKeyIdentityError}` }, 400);
+  const importedGroupIds = new Set(groups.map(group => group.id));
+  const retainedGroups = mode === 'merge' ? (await repo.groups.list()).filter(group => !importedGroupIds.has(group.id)) : [];
+  const groupNames = new Map<string, number>();
+  for (const group of [...retainedGroups, ...groups]) {
+    if (group.deletedAt !== null) continue;
+    const key = groupNameKey(group.name);
+    const previousId = groupNames.get(key);
+    if (previousId !== undefined) return c.json({ error: `invalid groups: active group names conflict for ids ${previousId} and ${group.id}` }, 400);
+    groupNames.set(key, group.id);
+  }
   const preImportRetentionById = new Map<string, number | null>(preImportKeys.map(key => [key.id, key.dumpRetentionSeconds]));
 
   const existingProxyIdsForRefs = mode === 'merge' ? (await repo.proxies.list()).map(proxy => proxy.id) : [];
@@ -181,10 +192,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
 
   // Users precede their API keys, and proxies precede upstream fallback refs.
   for (const user of users) await repo.users.save(user);
-  for (const { memberIds, ...group } of groups) {
-    await repo.groups.save(group);
-    await repo.groups.replaceMembers(group.id, memberIds);
-  }
+  await repo.groups.restore(groups);
   for (const proxy of proxies) {
     await repo.proxies.save({
       id: proxy.id,

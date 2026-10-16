@@ -30,6 +30,18 @@ export const listUsers = async (c: AuthedContext) => {
   return c.json(users.map(user => userToAdminWire(user, knownUpstreamIds, groupIdsByUser.get(user.id)!)));
 };
 
+export const getUserDirectory = async (c: AuthedContext) => {
+  const [directory, knownUpstreamIds] = await Promise.all([getRepo().readUserDirectory(), loadKnownUpstreamIds()]);
+  const groupIds = new Map(directory.users.map(user => [user.id, [] as number[]]));
+  for (const group of directory.groups) {
+    for (const userId of group.memberIds) groupIds.get(userId)!.push(group.id);
+  }
+  return c.json({
+    users: directory.users.map(user => userToAdminWire(user, knownUpstreamIds, groupIds.get(user.id)!)),
+    groups: directory.groups,
+  });
+};
+
 export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   const body = c.req.valid('json');
   const repo = getRepo();

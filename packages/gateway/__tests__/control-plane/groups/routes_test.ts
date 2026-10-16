@@ -12,6 +12,22 @@ test('group management routes require admin', async () => {
   const { apiKey } = await setupAppTest();
   const response = await requestApp('/api/groups', { headers: { 'x-api-key': apiKey.key } });
   assertEquals(response.status, 403);
+  assertEquals((await requestApp('/api/user-directory', { headers: { 'x-api-key': apiKey.key } })).status, 403);
+});
+
+test('user directory projects both membership directions from one repository snapshot', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  const group = await repo.groups.create('Operators', 120);
+  await repo.groups.replaceMembers(group.id, [2]);
+  repo.users.list = () => { throw new Error('directory must not assemble separate repository reads'); };
+  repo.groups.list = () => { throw new Error('directory must not assemble separate repository reads'); };
+  const response = await request('/user-directory', adminSession);
+  expect(response.status).toBe(200);
+  const body = await response.json() as { users: Array<{ id: number; groupIds: number[]; passwordHash?: string }>; groups: Array<{ id: number; memberIds: number[] }> };
+  expect(body.groups).toEqual([{ ...group, memberIds: [2] }]);
+  expect(body.users.find(user => user.id === 2)?.groupIds).toEqual([group.id]);
+  expect(body.users.find(user => user.id === 1)?.groupIds).toEqual([]);
+  expect(body.users.every(user => !Object.hasOwn(user, 'passwordHash'))).toBe(true);
 });
 
 test('groups create, update, and project membership onto the user list', async () => {

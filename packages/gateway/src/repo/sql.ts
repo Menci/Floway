@@ -17,6 +17,7 @@ import type {
   ApiKeyUpdate,
   ExpirationSweepsRepo,
   Group,
+  GroupWithMembers,
   GroupsRepo,
   AgentSetupMutation,
   AgentSetupRecord,
@@ -55,6 +56,7 @@ import type {
   UsageOverviewResult,
   UsageRepo,
   User,
+  UserDirectory,
   UsersRepo,
 } from './types.ts';
 import {
@@ -403,6 +405,18 @@ const userGroupStatements = (db: SqlDatabase, userId: number, groupIds: readonly
     .bind(userId, new Date().toISOString(), JSON.stringify(groupIds)),
 ];
 
+const saveGroupStatement = (db: SqlDatabase, group: Group) => db.prepare(
+  `INSERT INTO groups (${GROUP_COLUMNS}) VALUES (?, ?, ?, ?, ?)
+   ON CONFLICT (id) DO UPDATE SET name = excluded.name, hue = excluded.hue, deleted_at = excluded.deleted_at`,
+).bind(group.id, group.name, group.hue, group.createdAt, group.deletedAt);
+
+const groupMemberStatements = (db: SqlDatabase, groupId: number, userIds: readonly number[]) => [
+  db.prepare('DELETE FROM group_members WHERE group_id = ?').bind(groupId),
+  db.prepare(`INSERT INTO group_members (group_id, user_id, created_at)
+    SELECT ?, CAST(value AS INTEGER), ? FROM json_each(?) GROUP BY value`)
+    .bind(groupId, new Date().toISOString(), JSON.stringify(userIds)),
+];
+
 class SqlGroupsRepo implements GroupsRepo {
   constructor(private db: SqlDatabase) {}
 
@@ -438,10 +452,19 @@ class SqlGroupsRepo implements GroupsRepo {
   }
 
   async save(group: Group): Promise<void> {
-    await this.db.prepare(
-      `INSERT INTO groups (${GROUP_COLUMNS}) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT (id) DO UPDATE SET name = excluded.name, hue = excluded.hue, deleted_at = excluded.deleted_at`,
-    ).bind(group.id, group.name, group.hue, group.createdAt, group.deletedAt).run();
+    await saveGroupStatement(this.db, group).run();
+  }
+
+  async restore(groups: readonly GroupWithMembers[]): Promise<void> {
+    if (groups.length === 0) return;
+    if (!this.db.batch) throw new Error('groups.restore requires atomic SQL batch support');
+    // Release the imported IDs' names inside the same batch so valid renames
+    // and name swaps never depend on the order of records in the backup.
+    await this.db.batch([
+      this.db.prepare('UPDATE groups SET deleted_at = ? WHERE id IN (SELECT value FROM json_each(?))')
+        .bind(new Date().toISOString(), JSON.stringify(groups.map(group => group.id))),
+      ...groups.flatMap(group => [saveGroupStatement(this.db, group), ...groupMemberStatements(this.db, group.id, group.memberIds)]),
+    ]);
   }
 
   async softDelete(id: number): Promise<boolean> {
@@ -511,12 +534,7 @@ class SqlGroupsRepo implements GroupsRepo {
   }
 
   async replaceMembers(groupId: number, userIds: readonly number[]): Promise<void> {
-    await runStatements(this.db, [
-      this.db.prepare('DELETE FROM group_members WHERE group_id = ?').bind(groupId),
-      this.db.prepare(`INSERT INTO group_members (group_id, user_id, created_at)
-        SELECT ?, CAST(value AS INTEGER), ? FROM json_each(?) GROUP BY value`)
-        .bind(groupId, new Date().toISOString(), JSON.stringify(userIds)),
-    ]);
+    await runStatements(this.db, groupMemberStatements(this.db, groupId, userIds));
   }
 
   async deleteMembershipsByUserId(userId: number): Promise<number> {
@@ -1864,7 +1882,38 @@ export class SqlRepo implements Repo {
   scheduledMaintenance: ScheduledMaintenanceRepo;
   agentSetup: AgentSetupRepository;
 
-  constructor(db: SqlDatabase) {
+  async readUserDirectory(): Promise<UserDirectory> {
+    // One SQLite statement gives users, groups and membership the same read
+    // snapshot, including when another request creates or deletes a group.
+    const { results } = await this.db.prepare(`
+      SELECT 'user' AS kind, id, json_object(
+        'id', id, 'username', username, 'password_hash', password_hash,
+        'is_admin', is_admin, 'upstream_ids', upstream_ids,
+        'created_at', created_at, 'deleted_at', deleted_at
+      ) AS record FROM users WHERE deleted_at IS NULL
+      UNION ALL
+      SELECT 'group' AS kind, id, json_object(
+        'id', id, 'name', name, 'hue', hue, 'created_at', created_at, 'deleted_at', deleted_at,
+        'memberIds', (SELECT json_group_array(user_id) FROM (
+          SELECT group_members.user_id FROM group_members JOIN users ON users.id = group_members.user_id
+          WHERE group_members.group_id = groups.id AND users.deleted_at IS NULL ORDER BY group_members.user_id
+        ))
+      ) AS record FROM groups WHERE deleted_at IS NULL
+      ORDER BY kind, id
+    `).all<{ kind: 'user' | 'group'; record: string }>();
+    const users: User[] = [];
+    const groups: GroupWithMembers[] = [];
+    for (const row of results) {
+      if (row.kind === 'user') users.push(toUser(JSON.parse(row.record) as UserRow));
+      else {
+        const group = JSON.parse(row.record) as GroupRow & { memberIds: number[] };
+        groups.push({ ...toGroup(group), memberIds: group.memberIds });
+      }
+    }
+    return { users, groups };
+  }
+
+  constructor(private readonly db: SqlDatabase) {
     this.upstreamMetrics = new SqlUpstreamMetricsRepo(db);
     this.users = new SqlUsersRepo(db);
     this.groups = new SqlGroupsRepo(db);

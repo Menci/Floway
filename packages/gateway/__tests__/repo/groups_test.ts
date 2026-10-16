@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
+import { recordCompletedStatements } from './recording-sql.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { Group, Repo } from '../../src/repo/types.ts';
@@ -81,4 +82,104 @@ describe.each(backends)('GroupsRepo (%s)', (_label, makeRepo) => {
     expect(await repo.groups.listMemberIds(1)).toEqual([2]);
     expect((await repo.users.getById(1))?.username).toBe('renamed');
   });
+
+  test.each([
+    ['ASCII', 'Platform', 'platform', true],
+    ['Latin', '\u00c4', '\u00e4', false],
+    ['Greek', '\u03a3', '\u03c3', false],
+    ['mixed ASCII and Unicode', 'TEAM-\u00c4', 'team-\u00c4', true],
+    ['mixed Unicode cases', 'TEAM-\u00c4', 'team-\u00e4', false],
+  ])('uses SQLite NOCASE for %s group names', async (_label, first, second, equal) => {
+    const repo = await makeRepo();
+    await repo.groups.create(first, 120);
+    expect((await repo.groups.findByName(second))?.name).toBe(equal ? first : undefined);
+    if (equal) {
+      await expect(repo.groups.create(second, 120)).rejects.toThrow();
+      await expect(repo.groups.save(sampleGroup({ id: 2, name: second }))).rejects.toThrow();
+    } else {
+      await repo.groups.create(second, 120);
+      expect(await repo.groups.list()).toHaveLength(2);
+    }
+  });
+
+  test('restores name swaps and memberships without disturbing other groups', async () => {
+    const repo = await makeRepo();
+    await repo.groups.save(sampleGroup({ id: 1, name: 'Ops' }));
+    await repo.groups.save(sampleGroup({ id: 2, name: 'Research' }));
+    await repo.groups.save(sampleGroup({ id: 3, name: 'Untouched' }));
+    await repo.groups.replaceMembers(3, [1]);
+    await repo.groups.restore([
+      { ...sampleGroup({ id: 1, name: 'Research' }), memberIds: [1] },
+      { ...sampleGroup({ id: 2, name: 'Ops' }), memberIds: [] },
+    ]);
+    expect((await repo.groups.list()).map(group => group.name)).toEqual(['Research', 'Ops', 'Untouched']);
+    expect(await repo.groups.listMemberIds(1)).toEqual([1]);
+    expect(await repo.groups.listMemberIds(2)).toEqual([]);
+    expect(await repo.groups.listMemberIds(3)).toEqual([1]);
+  });
+
+  test('rolls back a failed group restore including released names and memberships', async () => {
+    const repo = await makeRepo();
+    await repo.groups.save(sampleGroup({ id: 1, name: 'Original' }));
+    await repo.groups.replaceMembers(1, [1]);
+    const before = await repo.groups.listIncludingDeleted();
+    await expect(repo.groups.restore([
+      { ...sampleGroup({ id: 1, name: 'Ops' }), memberIds: [] },
+      { ...sampleGroup({ id: 2, name: 'ops' }), memberIds: [] },
+    ])).rejects.toThrow();
+    expect(await repo.groups.listIncludingDeleted()).toEqual(before);
+    expect(await repo.groups.listMemberIds(1)).toEqual([1]);
+  });
+
+  test('directory snapshots include only active users, groups and their memberships', async () => {
+    const repo = await makeRepo();
+    const admin = (await repo.users.getById(1))!;
+    await repo.users.save({ ...admin, id: 2, username: 'deleted', deletedAt: '2026-10-16T00:00:00Z' });
+    await repo.groups.save(sampleGroup());
+    await repo.groups.save(sampleGroup({ id: 2, name: 'Deleted', deletedAt: '2026-10-16T00:00:00Z' }));
+    await repo.groups.replaceMembers(1, [1, 2, 999]);
+    await repo.groups.replaceMembers(2, [1]);
+    expect(await repo.readUserDirectory()).toEqual({
+      users: [admin], groups: [{ ...sampleGroup(), memberIds: [1] }],
+    });
+  });
+});
+
+test('SQL directory reads users and membership in one statement before a concurrent deletion', async () => {
+  const db = await createSqliteTestDb();
+  const writer = new SqlRepo(db);
+  await writer.groups.save(sampleGroup());
+  await writer.groups.replaceMembers(1, [1]);
+  const completed: import('./recording-sql.ts').CompletedStatement[] = [];
+  const observed = recordCompletedStatements(db, completed);
+  const reader = new SqlRepo({
+    prepare(query) {
+      const statement = observed.prepare(query);
+      return {
+        bind: (...values) => statement.bind(...values),
+        first: () => statement.first(),
+        run: () => statement.run(),
+        async all<T>() {
+          const result = await statement.all<T>();
+          await writer.groups.softDelete(1);
+          return result;
+        },
+      };
+    },
+    exec: sql => db.exec(sql),
+  });
+  const directory = await reader.readUserDirectory();
+  expect(completed).toHaveLength(1);
+  expect(directory.users.map(user => user.id)).toEqual([1]);
+  expect(directory.groups).toEqual([{ ...sampleGroup(), memberIds: [1] }]);
+  expect((await writer.readUserDirectory()).groups).toEqual([]);
+});
+
+test('group restore requires atomic batches before changing any records', async () => {
+  const db = await createSqliteTestDb();
+  const writer = new SqlRepo(db);
+  await writer.groups.save(sampleGroup());
+  const reader = new SqlRepo({ prepare: query => db.prepare(query), exec: sql => db.exec(sql) });
+  await expect(reader.groups.restore([{ ...sampleGroup({ name: 'Changed' }), memberIds: [] }])).rejects.toThrow('atomic SQL batch support');
+  expect(await writer.groups.list()).toEqual([sampleGroup()]);
 });

@@ -12,7 +12,7 @@ const groups: ControlPlaneGroup[] = [
   { id: 2, name: 'Research', hue: 150, memberIds: [1], createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
 ];
 const user: ControlPlaneUser = { id: 1, username: 'frank', isAdmin: true, upstreamIds: null, groupIds: [1, 2], createdAt: '2026-10-01T00:00:00Z' };
-const loaderData = { users: [user], groups, models: [], upstreams: [], error: null };
+const loaderData = { directory: { users: [user], groups }, models: [], upstreams: [], error: null };
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -74,7 +74,7 @@ test('retains the selected group when switching tabs', async () => {
 });
 
 test('clears the unavailable group address when no groups remain', async () => {
-  const { router } = renderPage('/dashboard/admin/users?tab=groups&group=2', { ...loaderData, groups: [] });
+  const { router } = renderPage('/dashboard/admin/users?tab=groups&group=2', { ...loaderData, directory: { users: [{ ...user, groupIds: [] }], groups: [] } });
   await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('group')).toBeNull());
   expect(screen.getByText('No groups found')).toBeTruthy();
 });
@@ -98,4 +98,67 @@ test('opens hidden group links from the overflow control', async () => {
   await act(async () => { fireEvent.click(screen.getByRole('link', { name: 'Research' })); });
   await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('group')).toBe('2'));
   expect(screen.getByRole('option', { name: 'Research' }).getAttribute('aria-selected')).toBe('true');
+});
+
+test('retains the complete directory and edit membership when refreshing it fails', async () => {
+  const requested: string[] = [];
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+    const path = new URL(String(input), 'http://localhost').pathname;
+    requested.push(path);
+    if (path === '/api/user-directory') return Response.json({ error: 'Directory unavailable' }, { status: 503 });
+    if (path === '/api/upstream-options') return Response.json([]);
+    if (path === '/api/models') return Response.json({ data: [] });
+    throw new Error(`Unexpected request: ${path}`);
+  });
+  renderPage();
+  await screen.findByRole('button', { name: 'frank' });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Refresh users and groups' })); });
+  await screen.findByText('Directory unavailable');
+  expect(screen.getByRole('link', { name: 'Platform' })).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Research' })).toBeTruthy();
+  expect(requested.toSorted()).toEqual(['/api/models', '/api/upstream-options', '/api/user-directory']);
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'frank' })); });
+  const dialog = screen.getByRole('dialog');
+  expect(dialog.textContent).toContain('Platform');
+  expect(dialog.textContent).toContain('Research');
+});
+
+test('refreshes both membership directions from the same directory response', async () => {
+  const group = { ...groups[0], id: 3, name: 'New group' };
+  const updated = { users: [{ ...user, groupIds: [3] }], groups: [group] };
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+    const path = new URL(String(input), 'http://localhost').pathname;
+    if (path === '/api/user-directory') return Response.json(updated);
+    if (path === '/api/upstream-options') return Response.json([]);
+    if (path === '/api/models') return Response.json({ data: [] });
+    throw new Error(`Unexpected request: ${path}`);
+  });
+  renderPage();
+  await screen.findByRole('button', { name: 'frank' });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Refresh users and groups' })); });
+  await screen.findByRole('link', { name: 'New group' });
+  expect(screen.queryByRole('link', { name: 'Platform' })).toBeNull();
+  await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /^Groups/ })); });
+  expect(screen.getByRole('option', { name: 'New group' }).getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('table').textContent).toContain('frank');
+});
+
+test('keeps an open user editor paired with the group metadata it was opened with', async () => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+    const path = new URL(String(input), 'http://localhost').pathname;
+    if (path === '/api/user-directory') return Response.json({ users: [{ ...user, groupIds: [] }], groups: [] });
+    if (path === '/api/upstream-options') return Response.json([]);
+    if (path === '/api/models') return Response.json({ data: [] });
+    throw new Error(`Unexpected request: ${path}`);
+  });
+  renderPage();
+  const name = await screen.findByRole('button', { name: 'frank' });
+  const refresh = screen.getByRole('button', { name: 'Refresh users and groups' });
+  const groupTab = screen.getByRole('tab', { name: /^Groups/ });
+  await act(async () => { fireEvent.click(name); });
+  expect(screen.getByRole('dialog').textContent).toContain('Research');
+  await act(async () => { fireEvent.click(refresh); });
+  await waitFor(() => expect(groupTab.querySelector('.proportional-nums')?.textContent).toBe('0'));
+  expect(screen.getByRole('dialog').textContent).toContain('Platform');
+  expect(screen.getByRole('dialog').textContent).toContain('Research');
 });

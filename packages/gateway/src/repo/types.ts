@@ -292,6 +292,13 @@ export interface UsersRepo {
   deleteAll(): Promise<void>;
 }
 
+export type GroupWithMembers = Group & { memberIds: number[] };
+
+export interface UserDirectory {
+  users: User[];
+  groups: GroupWithMembers[];
+}
+
 export interface GroupsRepo {
   list(): Promise<Group[]>;
   listIncludingDeleted(): Promise<Group[]>;
@@ -299,6 +306,8 @@ export interface GroupsRepo {
   findByName(name: string): Promise<Group | null>;
   create(name: string, hue: number): Promise<Group>;
   save(group: Group): Promise<void>;
+  // Restore supplied IDs and memberships atomically, including name swaps.
+  restore(groups: readonly GroupWithMembers[]): Promise<void>;
   softDelete(id: number): Promise<boolean>;
   listMemberIds(groupId: number): Promise<number[]>;
   listMemberships(): Promise<Map<number, number[]>>;
@@ -605,6 +614,8 @@ export interface UpstreamMetricsRepo {
 }
 
 export interface Repo {
+  // Active users, groups and their memberships must share one read snapshot.
+  readUserDirectory(): Promise<UserDirectory>;
   upstreamMetrics: UpstreamMetricsRepo;
   apiKeys: ApiKeyRepo;
   users: UsersRepo;
