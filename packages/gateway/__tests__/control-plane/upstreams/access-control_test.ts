@@ -1,7 +1,10 @@
 import { expect, test } from 'vitest';
 
+import { MODEL_CATALOG_REVISION } from '../../../src/repo/models-cache-contract.ts';
+import { modelsRefreshIdentity, seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { projectCustomModels } from '@floway-dev/provider-custom';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const customRecord = () => buildCustomUpstreamRecord({
@@ -16,7 +19,7 @@ const customRecord = () => buildCustomUpstreamRecord({
     ingressHeadersRules: [{ key: 'x-secret', value: 'value' }],
     pathOverrides: { '/chat/completions': '/private/chat' },
     modelsFetch: { enabled: true, endpoint: '/private/models' },
-    models: [],
+    models: [{ upstreamModelId: 'gpt-5', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
   },
 });
 
@@ -140,4 +143,40 @@ test('provider credential actions require Full and keep create drafts admin-only
   await grant(repo, apiKey.userId, 'full');
   assertEquals((await call('up_restricted')).status, 200);
   assertEquals((await call('')).status, 403);
+});
+
+test('upstream options apply key, audit, and all view predicates', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const upstream = customRecord();
+  await saveUpstreamForTest(repo.upstreams, upstream);
+  const stored = await repo.upstreams.getById(upstream.id);
+  if (!stored) throw new Error('upstream missing');
+  await seedModelsCache(repo.upstreams, upstream.id, modelsRefreshIdentity(stored), {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 1,
+    models: projectCustomModels(stored),
+  });
+  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: apiKey.userId });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: apiKey.userId },
+    scope: { kind: 'upstreamModel', upstreamId: upstream.id, model: { kind: 'regex', value: '^gpt-[45]$' } },
+    sortOrder: 0,
+    values: { 'Model.Use': true },
+  });
+
+  const keyView = await requestApp('/api/upstream-options?view=key', { headers: { 'x-api-key': apiKey.key } });
+  const auditBefore = await requestApp('/api/upstream-options?view=audit', { headers: { 'x-api-key': apiKey.key } });
+  const all = await requestApp('/api/upstream-options?view=all', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals((await keyView.json()).map((item: { id: string }) => item.id), [upstream.id]);
+  assertEquals(await auditBefore.json(), []);
+  assertEquals(all.status, 403);
+
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: apiKey.userId },
+    scope: { kind: 'upstream', upstreamId: upstream.id },
+    sortOrder: 0,
+    values: { 'Upstream.Audit': true },
+  });
+  const auditAfter = await requestApp('/api/upstream-options?view=audit', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals((await auditAfter.json()).map((item: { id: string }) => item.id), [upstream.id]);
 });

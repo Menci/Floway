@@ -5,16 +5,17 @@ import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
 import { api, callApi } from '../../api/client';
-import type { ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../../api/types';
+import type { AccessRecord, ControlPlaneGroup, ControlPlaneUser } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
+import { AccessRecordsSection, type InheritedAccessRecord } from '../access-control/records-section';
+import type { ScopeExpressionData } from '../access-control/scope-expression';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
 import { SettingsCard, SettingsSwitch } from '../ui/settings-card';
 import { useDiscardGuard } from '../ui/use-discard-guard';
-import { UpstreamAccessControl } from '../upstreams/access-control';
 
 const {
   Button,
@@ -29,17 +30,17 @@ interface UserFormValues {
   username: string;
   password: string;
   isAdmin: boolean;
-  upstreamOverride: boolean;
-  upstreamIds: string[];
 }
 
 interface UserDialogCommonProps {
   actorId: number;
-  models: ControlPlaneModel[];
+  accessData: ScopeExpressionData;
+  accessRecords: AccessRecord[];
+  groups: ControlPlaneGroup[];
+  onAccessChanged: () => Promise<void>;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   onSaved: (userId?: number) => Promise<void>;
-  upstreams: UpstreamOption[];
 }
 
 type UserDialogProps = UserDialogCommonProps & (
@@ -48,7 +49,7 @@ type UserDialogProps = UserDialogCommonProps & (
 );
 
 export function UserDialog(props: UserDialogProps) {
-  const { actorId, mode, models, onOpenChange, onSaved, upstreams } = props;
+  const { actorId, mode, onOpenChange, onSaved } = props;
   const { t } = useTranslation();
   const toasts = useOutcomeToasts();
   const user = props.mode === 'edit' ? props.user : null;
@@ -59,8 +60,6 @@ export function UserDialog(props: UserDialogProps) {
       username: z.string().regex(/^[a-zA-Z0-9_.-]{1,64}$/, 'dashboard.users.validation.username'),
       password: z.string().max(1024, 'dashboard.users.validation.passwordMax'),
       isAdmin: z.boolean(),
-      upstreamOverride: z.boolean(),
-      upstreamIds: z.array(z.string()),
     }).superRefine((value, ctx) => {
       if (mode === 'create' && !value.password) {
         ctx.addIssue({ code: 'custom', message: 'dashboard.users.validation.passwordRequired', path: ['password'] });
@@ -77,6 +76,11 @@ export function UserDialog(props: UserDialogProps) {
   const adminLocked = props.mode === 'edit' && (props.user.id === 1 || props.user.id === actorId);
   const close = useCallback(() => onOpenChange(false), [onOpenChange]);
   const { discardConfirmation, requestClose } = useDiscardGuard({ onClose: close, values });
+  const inherited: InheritedAccessRecord[] = user === null ? [] : props.groups
+    .filter(group => user.groupIds.includes(group.id))
+    .flatMap(group => props.accessRecords
+      .filter(record => record.principal.kind === 'group' && record.principal.id === group.id)
+      .map(record => ({ record, sourceName: group.name })));
 
   const save = async (form: UserFormValues) => {
     // disabledFocusable leaves the submit button submittable while saving, so this guard is what makes the second press inert.
@@ -85,7 +89,6 @@ export function UserDialog(props: UserDialogProps) {
     setError(null);
     try {
       const username = form.username.trim();
-      const upstreamIds = form.upstreamOverride ? form.upstreamIds : null;
       const handle = toasts.start(t(`dashboard.users.toast.${mode}.pending`, { username }));
       const result = props.mode === 'create'
         ? await callApi(() => api.api.users.$post({
@@ -93,14 +96,12 @@ export function UserDialog(props: UserDialogProps) {
               username,
               password: form.password,
               isAdmin: form.isAdmin,
-              upstreamIds,
             },
           }))
         : await callApi(() => api.api.users[':id'].$patch({
             param: { id: String(props.user.id) }, json: {
               username,
               ...(!adminLocked ? { isAdmin: form.isAdmin } : {}),
-              upstreamIds,
             },
           }));
       if (result.error) {
@@ -144,7 +145,7 @@ export function UserDialog(props: UserDialogProps) {
             validationMessage={errors.username?.message ? t(errors.username.message) : undefined}
             validationState={errors.username ? 'error' : undefined}
           >
-            <Input {...field} autoComplete="off" disabled={saving} />
+            <Input {...field} autoComplete="off" disabled={saving} spellCheck={false} />
           </Field>
         )}
       />
@@ -176,17 +177,14 @@ export function UserDialog(props: UserDialogProps) {
         header={t('dashboard.users.form.administrator')}
         icon={<PersonKey24Regular />}
       />
-      <UpstreamAccessControl
-        available={upstreams}
-        disabled={saving}
-        ids={values.upstreamIds}
-        models={models}
-        onChange={next => {
-          setValue('upstreamOverride', next.override);
-          setValue('upstreamIds', next.ids);
-        }}
-        override={values.upstreamOverride}
-      />
+      {mode === 'edit' && <AccessRecordsSection
+        bypass={props.user.isAdmin}
+        data={props.accessData}
+        inherited={inherited}
+        onChanged={props.onAccessChanged}
+        principal={{ kind: 'user', id: props.user.id }}
+        records={props.accessRecords}
+      />}
       {mode === 'create' && (
         <MessageBar intent="info"><MessageBarBody>{t('dashboard.users.createdDefaultKey')}</MessageBarBody></MessageBar>
       )}
@@ -200,7 +198,5 @@ const userFormDefaults = (user: ControlPlaneUser | null): UserFormValues => {
     username: user?.username ?? '',
     password: '',
     isAdmin: user?.isAdmin ?? false,
-    upstreamOverride: user?.upstreamIds !== null && user?.upstreamIds !== undefined,
-    upstreamIds: user?.upstreamIds ?? [],
   };
 };

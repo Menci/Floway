@@ -278,6 +278,7 @@ export const accessRecordBody = accessRecordInputSchema;
 export const resolveAccessBody = z.object({
   userId: z.number().int().positive(),
   target: accessTargetSchema,
+  excludeRecordId: z.number().int().positive().optional(),
 });
 
 export const changeOwnPasswordBody = z.object({
@@ -612,6 +613,7 @@ export const resetBackoffBody = z.object({
 });
 
 export const proxyOptionsQuery = z.object({ upstream_id: z.string().min(1) });
+export const upstreamOptionsQuery = z.object({ view: z.enum(['key', 'audit', 'all']).optional() });
 
 // --- search config ---
 

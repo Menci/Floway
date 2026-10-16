@@ -11,7 +11,7 @@ import { createAlias, deleteAlias, listAliases, updateAlias } from './model-alia
 import { controlPlaneModels } from './models/routes.ts';
 import { performanceOverview } from './performance/routes.ts';
 import { createProxy, deleteProxy, listAllBackoffs, listProxies, listProxyBackoffs, listProxyOptions, resetProxyBackoffs, testProxy, updateProxy } from './proxies/routes.ts';
-import { accessRecordBody, upstreamMetricsQuery, authLoginBody, changeOwnPasswordBody, claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexImportExchangeBody, codexImportPreviewBody, codexOAuthAuthorizeUrlBody, codexOAuthRefreshBody, codexRateLimitResetConsumeBody, codexRateLimitResetCreditsBody, copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody, createAliasBody, createGroupBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, importBody, modelsQuery, ollamaUsageBody, performanceQuery, previewModelsBody, proxyOptionsQuery, resetBackoffBody, resolveAccessBody, rotateKeyBody, testProxyBody, tokenUsageOverviewQuery, tokenUsageQuery, updateAliasBody, updateGroupBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody, webSearchConfigSchema, webSearchUsageQuery } from './schemas.ts';
+import { accessRecordBody, upstreamMetricsQuery, upstreamOptionsQuery, authLoginBody, changeOwnPasswordBody, claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexImportExchangeBody, codexImportPreviewBody, codexOAuthAuthorizeUrlBody, codexOAuthRefreshBody, codexRateLimitResetConsumeBody, codexRateLimitResetCreditsBody, copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody, createAliasBody, createGroupBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, importBody, modelsQuery, ollamaUsageBody, performanceQuery, previewModelsBody, proxyOptionsQuery, resetBackoffBody, resolveAccessBody, rotateKeyBody, testProxyBody, tokenUsageOverviewQuery, tokenUsageQuery, updateAliasBody, updateGroupBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody, webSearchConfigSchema, webSearchUsageQuery } from './schemas.ts';
 import { getWebSearchConfigRoute, putWebSearchConfigRoute, testWebSearchConfigRoute } from './search-config/routes.ts';
 import { webSearchUsage } from './search-usage/routes.ts';
 import { tokenUsageOverview } from './token-usage/overview.ts';
@@ -84,7 +84,7 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
   // to specific upstreams. Returns id/name/provider/enabled only — no config,
   // no flag overrides, no model lists. Model.Use remains the authorization
   // gate at catalog and dispatch time; this endpoint only feeds picker labels.
-  .get('/api/upstream-options', listUpstreamOptions)
+  .get('/api/upstream-options', zValidator('query', upstreamOptionsQuery), listUpstreamOptions)
   .route('/api/dump', dumpRoutes)
   // Per-user Agent Setup lease control routes (POST / PUT / heartbeat). Not
   // admin-gated. The public GET/HEAD setup-script routes are mounted separately

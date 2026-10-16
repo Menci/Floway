@@ -33,7 +33,6 @@ const renderKeyDialog = (onOpenChange: (open: boolean) => void) => renderInApp(
       onSaved={vi.fn()}
       open
       upstreams={[]}
-      userUpstreamIds={null}
     />
   </OutcomeToastProvider>,
 );

@@ -1,4 +1,4 @@
-import { checkMany } from '../../access-control/check.ts';
+import { checkManyForManagement } from '../../access-control/check.ts';
 import type { AccessRecordInput, AccessTarget } from '../../access-control/types.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
@@ -67,11 +67,15 @@ const requirementsFor = (target: AccessTarget) => target.kind === 'user'
       ];
 
 export const resolveAccess = async (c: CtxWithJson<typeof resolveAccessBody>) => {
-  const { userId, target } = c.req.valid('json');
+  const { userId, target, excludeRecordId } = c.req.valid('json');
   const user = await getRepo().users.getById(userId);
   if (!user) return c.json({ error: 'user not found' }, 404);
   const requirements = requirementsFor(target);
-  const allowed = await checkMany(user, requirements.map(requirement => ({ target, requirement })));
+  const allowed = await checkManyForManagement(
+    user,
+    requirements.map(requirement => ({ target, requirement })),
+    new Set(excludeRecordId === undefined ? [] : [excludeRecordId]),
+  );
   if (target.kind === 'user') return c.json({ values: { 'User.Audit': allowed[0] } });
   if (target.kind === 'upstreamModel') return c.json({ values: { 'Model.Use': allowed[0] } });
   return c.json({

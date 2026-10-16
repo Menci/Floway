@@ -6,7 +6,7 @@ import type { RuntimeInfo, UpstreamEditorValues } from './data';
 import { modelPrefixIsValid, publicModelId } from './data';
 import { ApiPathsSection, ProviderConfigSection } from './provider-config';
 import { EditorSection } from './section';
-import type { ProxyRecord, UpstreamRecord } from '../../api/types';
+import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
@@ -34,6 +34,7 @@ export function UpstreamConfigSidebar({
   discovered,
   onPatch,
   onRefreshModels,
+  modelsOnly = false,
   proxies,
   record,
   runtime,
@@ -42,7 +43,8 @@ export function UpstreamConfigSidebar({
   discovered: UpstreamModelConfig[];
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
   onRefreshModels: () => void;
-  proxies: ProxyRecord[];
+  modelsOnly?: boolean;
+  proxies: Array<{ id: string; name: string }>;
   record: UpstreamRecord;
   runtime: RuntimeInfo;
 }) {
@@ -57,73 +59,75 @@ export function UpstreamConfigSidebar({
   return <ScrollArea axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" noTabIndex viewportClassName="scroll-py-1">
     <div className={PANEL_INSET_CLASS}>
       <aside className="grid gap-7">
-        <EditorSection title={t('dashboard.upstreamEditor.fields.name')}>
-          <Controller
-            control={control}
-            name="name"
-            render={({ field }) => (
+        <div aria-disabled={modelsOnly || undefined} className="contents" inert={modelsOnly || undefined}>
+          <EditorSection title={t('dashboard.upstreamEditor.fields.name')}>
+            <Controller
+              control={control}
+              name="name"
+              render={({ field }) => (
+                <Field
+                  validationMessage={errors.name?.message ? t(errors.name.message) : undefined}
+                  validationState={errors.name ? 'error' : undefined}
+                >
+                  <Input
+                    aria-label={t('dashboard.upstreamEditor.fields.name')}
+                    name={field.name}
+                    onBlur={field.onBlur}
+                    onChange={(_, data) => field.onChange(data.value)}
+                    ref={field.ref}
+                    required
+                    value={field.value}
+                  />
+                </Field>
+              )}
+            />
+          </EditorSection>
+          <EditorSection
+            inline
+            title={t('dashboard.upstreamEditor.sections.hue')}
+            description={t('dashboard.upstreamEditor.hue.description')}
+          >
+            <UpstreamHueEditor kind={record.kind} />
+          </EditorSection>
+          <EditorSection title={t('dashboard.upstreamEditor.sections.proxy')} description={t('dashboard.upstreamEditor.proxy.description')}>
+            <ProxyFallbackEditor proxies={proxies} runtime={runtime} />
+          </EditorSection>
+          <EditorSection
+            error={errors.config?.message ? t(errors.config.message) : undefined}
+            title={t('dashboard.upstreamEditor.sections.connection')}
+          >
+            <ProviderConfigSection record={record} onPatch={onPatch} onRefreshModels={onRefreshModels} />
+          </EditorSection>
+          {(record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code' || record.kind === 'ollama') && <EditorSection
+            title={t('dashboard.upstreamEditor.usageRefresh.title')}
+          >
+            <Controller control={control} name="usageRefreshIntervalMinutes" render={({ field }) => (
               <Field
-                validationMessage={errors.name?.message ? t(errors.name.message) : undefined}
-                validationState={errors.name ? 'error' : undefined}
+                label={{ children: infoLabelSlot(t('dashboard.upstreamEditor.usageRefresh.interval'), usageRefreshInfo) }}
+                validationMessage={errors.usageRefreshIntervalMinutes?.message ? t(errors.usageRefreshIntervalMinutes.message) : undefined}
+                validationState={errors.usageRefreshIntervalMinutes ? 'error' : undefined}
               >
                 <Input
-                  aria-label={t('dashboard.upstreamEditor.fields.name')}
+                  type="number"
+                  disabled={usageRefreshDisabled}
+                  min={0}
+                  step={1}
+                  placeholder="0"
                   name={field.name}
                   onBlur={field.onBlur}
-                  onChange={(_, data) => field.onChange(data.value)}
                   ref={field.ref}
-                  required
-                  value={field.value}
+                  value={field.value === 0 ? '' : String(field.value)}
+                  onChange={(_, data) => field.onChange(Number(data.value))}
                 />
               </Field>
-            )}
-          />
-        </EditorSection>
-        <EditorSection
-          inline
-          title={t('dashboard.upstreamEditor.sections.hue')}
-          description={t('dashboard.upstreamEditor.hue.description')}
-        >
-          <UpstreamHueEditor kind={record.kind} />
-        </EditorSection>
-        <EditorSection title={t('dashboard.upstreamEditor.sections.proxy')} description={t('dashboard.upstreamEditor.proxy.description')}>
-          <ProxyFallbackEditor proxies={proxies} runtime={runtime} />
-        </EditorSection>
-        <EditorSection
-          error={errors.config?.message ? t(errors.config.message) : undefined}
-          title={t('dashboard.upstreamEditor.sections.connection')}
-        >
-          <ProviderConfigSection record={record} onPatch={onPatch} onRefreshModels={onRefreshModels} />
-        </EditorSection>
-        {(record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code' || record.kind === 'ollama') && <EditorSection
-          title={t('dashboard.upstreamEditor.usageRefresh.title')}
-        >
-          <Controller control={control} name="usageRefreshIntervalMinutes" render={({ field }) => (
-            <Field
-              label={{ children: infoLabelSlot(t('dashboard.upstreamEditor.usageRefresh.interval'), usageRefreshInfo) }}
-              validationMessage={errors.usageRefreshIntervalMinutes?.message ? t(errors.usageRefreshIntervalMinutes.message) : undefined}
-              validationState={errors.usageRefreshIntervalMinutes ? 'error' : undefined}
-            >
-              <Input
-                type="number"
-                disabled={usageRefreshDisabled}
-                min={0}
-                step={1}
-                placeholder="0"
-                name={field.name}
-                onBlur={field.onBlur}
-                ref={field.ref}
-                value={field.value === 0 ? '' : String(field.value)}
-                onChange={(_, data) => field.onChange(Number(data.value))}
-              />
-            </Field>
-          )} />
-        </EditorSection>}
-        {record.kind === 'custom' && (
-          <EditorSection title={t('dashboard.upstreamEditor.sections.apiPaths')}>
-            <ApiPathsSection record={record} />
-          </EditorSection>
-        )}
+            )} />
+          </EditorSection>}
+          {record.kind === 'custom' && (
+            <EditorSection title={t('dashboard.upstreamEditor.sections.apiPaths')}>
+              <ApiPathsSection record={record} />
+            </EditorSection>
+          )}
+        </div>
         <EditorSection
           title={t('dashboard.upstreamEditor.sections.prefix')}
           description={t('dashboard.upstreamEditor.prefixDescription')}
@@ -191,7 +195,7 @@ function DisabledModelsCombobox({ catalogAvailable, discovered }: { catalogAvail
   </div>;
 }
 
-function ProxyFallbackEditor({ proxies, runtime }: { proxies: ProxyRecord[]; runtime: RuntimeInfo }) {
+function ProxyFallbackEditor({ proxies, runtime }: { proxies: Array<{ id: string; name: string }>; runtime: RuntimeInfo }) {
   const { t } = useTranslation();
   const idPrefix = useId();
   const { control } = useFormContext<UpstreamEditorValues>();

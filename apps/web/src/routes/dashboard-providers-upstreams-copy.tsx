@@ -101,6 +101,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   );
   return {
     ...aux,
+    editLevel: 'full' as const,
     mode: 'create' as const,
     record,
     discovered: null,

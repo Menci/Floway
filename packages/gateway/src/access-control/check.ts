@@ -80,7 +80,11 @@ const satisfies = (value: boolean | UpstreamEditLevel, requirement: AccessRequir
     ? editRank[value as UpstreamEditLevel] >= editRank[requirement.level]
     : value === true;
 
-export const checkMany = async (subject: User, checks: readonly AccessCheck[]): Promise<boolean[]> => {
+const evaluateMany = async (
+  subject: User,
+  checks: readonly AccessCheck[],
+  excludedRecordIds: ReadonlySet<number>,
+): Promise<boolean[]> => {
   for (const check of checks) assertCompatible(check.target, check.requirement);
   if (subject.isAdmin) return checks.map(() => true);
   if (checks.length === 0) return [];
@@ -93,7 +97,10 @@ export const checkMany = async (subject: User, checks: readonly AccessCheck[]): 
     repo.accessRecords.listByPrincipals(principals),
     repo.groups.listIdsByUserIds(targetUserIds),
   ]);
-  const recordsByPrincipal = Map.groupBy(records, record => `${record.principal.kind}:${record.principal.id}`);
+  const recordsByPrincipal = Map.groupBy(
+    records.filter(record => !excludedRecordIds.has(record.id)),
+    record => `${record.principal.kind}:${record.principal.id}`,
+  );
 
   return checks.map(({ target, requirement }) => {
     const permission = requirementPermission(requirement);
@@ -109,6 +116,15 @@ export const checkMany = async (subject: User, checks: readonly AccessCheck[]): 
     return satisfies(combineValues(principalValues, permission), requirement);
   });
 };
+
+export const checkMany = async (subject: User, checks: readonly AccessCheck[]): Promise<boolean[]> =>
+  await evaluateMany(subject, checks, new Set());
+
+export const checkManyForManagement = async (
+  subject: User,
+  checks: readonly AccessCheck[],
+  excludedRecordIds: ReadonlySet<number>,
+): Promise<boolean[]> => await evaluateMany(subject, checks, excludedRecordIds);
 
 export const check = async (subject: User, target: AccessTarget, requirement: AccessRequirement): Promise<boolean> =>
   (await checkMany(subject, [{ target, requirement }]))[0]!;

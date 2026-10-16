@@ -49,7 +49,7 @@ const loaderData = {
 };
 
 const renderPage = (data: Parameters<typeof DashboardMonitorUsage>[0]['loaderData']) => {
-  const user = { id: 1, username: 'admin', isAdmin: true, upstreamIds: null };
+  const user = { id: 1, username: 'admin', isAdmin: true };
   const router = createMemoryRouter([{
     path: '/',
     Component: () => <Outlet context={{ user }} />,
@@ -186,7 +186,7 @@ describe('usage dimension controls', () => {
   it('loads the overview contract and derives Search scope from the actor', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'admin-session',
-      user: { id: 1, username: 'admin', isAdmin: true, upstreamIds: null },
+      user: { id: 1, username: 'admin', isAdmin: true },
     });
     stubUsageGateway();
 
@@ -200,7 +200,7 @@ describe('usage dimension controls', () => {
   it('keeps token charts available when upstream names fail to load', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'admin-session',
-      user: { id: 1, username: 'admin', isAdmin: true, upstreamIds: null },
+      user: { id: 1, username: 'admin', isAdmin: true },
     });
     stubUsageGateway(() => Response.json({ error: 'Unavailable' }, { status: 500 }));
 

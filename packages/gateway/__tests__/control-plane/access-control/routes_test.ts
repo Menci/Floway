@@ -108,3 +108,18 @@ test('access resolve uses group grants and returns the effective level map', asy
     values: { 'Model.Use': true, 'Upstream.Audit': false, 'Upstream.Edit': 'models' },
   });
 });
+
+test('access resolve can exclude the edited record to expose inherited state', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  const record = await repo.accessRecords.save({
+    principal: { kind: 'user', id: 2 },
+    scope: { kind: 'upstream', upstreamId: 'up_a' },
+    sortOrder: 0,
+    values: { 'Model.Use': false },
+  });
+  const body = { userId: 2, target: { kind: 'upstream' as const, upstreamId: 'up_a' } };
+  const current = await request('/access-resolve', adminSession, { method: 'POST', body: JSON.stringify(body) });
+  const inherited = await request('/access-resolve', adminSession, { method: 'POST', body: JSON.stringify({ ...body, excludeRecordId: record.id }) });
+  assertEquals((await current.json()).values['Model.Use'], false);
+  assertEquals((await inherited.json()).values['Model.Use'], true);
+});
