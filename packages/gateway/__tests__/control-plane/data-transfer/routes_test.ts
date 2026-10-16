@@ -330,13 +330,10 @@ const doExport = async (app: Hono, includePerformance = false) => {
 };
 
 const doImport = async (app: Hono, mode: string, data: unknown, version: unknown = 22) => {
-  const normalizedData = typeof data === 'object' && data !== null && !Array.isArray(data)
-    ? { groups: [], ...data }
-    : data;
   const resp = await app.request('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode, version, data: normalizedData }),
+    body: JSON.stringify({ mode, version, data }),
   });
   return { status: resp.status, body: (await resp.json()) as Record<string, any> };
 };
@@ -513,6 +510,7 @@ test('import replace writes upstreams and clears replaced collections', async ()
   });
 
   const result = await doImport(app, 'replace', {
+    groups: [],
     users: [SEED_ADMIN],
     apiKeys: [KEY_B],
     upstreams: [upstreamRecordToFullJson(AZURE_UPSTREAM)],
@@ -602,6 +600,7 @@ test('import replace handles performance inclusion explicitly', async () => {
   assertEquals(await repo.performance.listAll(), [PERFORMANCE_1]);
 
   const replace = await doImport(app, 'replace', {
+    groups: [],
     users: [SEED_ADMIN],
     apiKeys: [],
     upstreams: [],
@@ -737,6 +736,7 @@ test('import rejects missing upstreams before clearing existing data', async () 
   await repo.usage.set(USAGE_1);
 
   const result = await doImport(app, 'replace', {
+    groups: [],
     users: [SEED_ADMIN],
     apiKeys: [KEY_B],
     usage: [USAGE_2],
@@ -763,6 +763,7 @@ test('ollama upstreams export and import round-trip', async () => {
   assertEquals(exportedOllama.config, OLLAMA_UPSTREAM.config);
 
   const replaceResult = await doImport(app, 'replace', {
+    groups: [],
     users: [SEED_ADMIN],
     apiKeys: [],
     upstreams: [exportedOllama],
@@ -787,6 +788,7 @@ test('codex upstreams export and import round-trip with state intact', async () 
   assertEquals(exportedCodex.state, CODEX_UPSTREAM.state);
 
   const replaceResult = await doImport(app, 'replace', {
+    groups: [],
     users: [SEED_ADMIN],
     apiKeys: [],
     upstreams: [exportedCodex],
@@ -804,6 +806,7 @@ test('codex import rejects when state is missing', async () => {
   const { app } = setup();
   const { state: _dropped, ...stateless } = upstreamRecordToFullJson(CODEX_UPSTREAM);
   const result = await doImport(app, 'replace', {
+    groups: [],
     users: [SEED_ADMIN],
     apiKeys: [],
     upstreams: [{ ...stateless, state: null }],
@@ -821,6 +824,7 @@ test('codex import rejects unknown keys in state', async () => {
   const { app } = setup();
   const exported = upstreamRecordToFullJson(CODEX_UPSTREAM);
   const result = await doImport(app, 'replace', {
+    groups: [],
     users: [SEED_ADMIN],
     apiKeys: [],
     upstreams: [{ ...exported, state: { ...(exported.state as object), smuggled: 'x' } }],
@@ -881,6 +885,7 @@ test('import rejects invalid records before clearing existing data', async () =>
   await repo.webSearchUsage.set(WEB_SEARCH_USAGE_1);
 
   const badApiKeys = await doImport(app, 'replace', {
+    groups: [],
     users: [SEED_ADMIN],
     apiKeys: [{ ...KEY_B, key: '' }],
     upstreams: [],
@@ -891,6 +896,7 @@ test('import rejects invalid records before clearing existing data', async () =>
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   });
   const badUsage = await doImport(app, 'replace', {
+    groups: [],
     users: [SEED_ADMIN],
     apiKeys: [],
     upstreams: [],
@@ -901,6 +907,7 @@ test('import rejects invalid records before clearing existing data', async () =>
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   });
   const badUpstream = await doImport(app, 'replace', {
+    groups: [],
     users: [SEED_ADMIN],
     apiKeys: [],
     upstreams: [{ ...upstreamRecordToFullJson(CUSTOM_UPSTREAM), config: { baseUrl: 'https://custom.example.com', authStyle: 'bearer', apiKey: 'sk', endpoints: { bogus: {} } } }],
@@ -911,6 +918,7 @@ test('import rejects invalid records before clearing existing data', async () =>
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   });
   const badFixes = await doImport(app, 'replace', {
+    groups: [],
     users: [SEED_ADMIN],
     apiKeys: [],
     upstreams: [{ ...upstreamRecordToFullJson(CUSTOM_UPSTREAM), flag_overrides: { 'made-up-fix': true } }],
@@ -921,6 +929,7 @@ test('import rejects invalid records before clearing existing data', async () =>
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   });
   const badWebSearchUsage = await doImport(app, 'replace', {
+    groups: [],
     users: [SEED_ADMIN],
     apiKeys: [],
     upstreams: [],
@@ -1339,13 +1348,13 @@ test('import rejects missing latest-v22 arrays before clearing existing data', a
 test('import validates mode and data before mutating', async () => {
   const { app } = setup();
 
-  const invalidMode = await doImport(app, 'invalid', {}, 22);
+  const invalidMode = await doImport(app, 'invalid', { groups: [] }, 22);
   const missingData = await app.request('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mode: 'replace', version: 22 }),
   });
-  const missingUpstreams = await doImport(app, 'merge', {}, 22);
+  const missingUpstreams = await doImport(app, 'merge', { groups: [] }, 22);
   const emptyMerge = await doImport(app, 'merge', latestImportData(), 22);
 
   assertEquals(invalidMode.status, 400);
@@ -1525,6 +1534,7 @@ test('v22 import rejects api_keys whose user_id does not appear in the payload',
   await repo.users.save(SEED_ADMIN);
 
   const result = await doImport(app, 'replace', {
+    groups: [],
     users: [SEED_ADMIN],
     apiKeys: [{ ...KEY_A, userId: 99 }],
     upstreams: [],
@@ -1543,6 +1553,7 @@ test('v22 import rejects malformed users (bad username, bad password_hash)', asy
   const { app } = setup();
 
   const badUsername = await doImport(app, 'replace', {
+    groups: [],
     users: [{ ...USER_BOB, username: 'has space' }],
     apiKeys: [],
     upstreams: [],
@@ -1556,6 +1567,7 @@ test('v22 import rejects malformed users (bad username, bad password_hash)', asy
   assertEquals(String(badUsername.body.error).startsWith('invalid users at index 0:'), true);
 
   const badHash = await doImport(app, 'replace', {
+    groups: [],
     users: [{ ...USER_BOB, passwordHash: 'argon2$10000$$' }],
     apiKeys: [],
     upstreams: [],
@@ -1601,6 +1613,7 @@ test('replace-mode import clears sessions before writing users', async () => {
   await repo.sessions.create(USER_BOB.id);
 
   const result = await doImport(app, 'replace', {
+    groups: [],
     users: [SEED_ADMIN, USER_BOB],
     apiKeys: [],
     upstreams: [],
@@ -1621,6 +1634,7 @@ test('replace-mode import clears sessions before writing users', async () => {
 test('v22 import rejects users[i].upstreamIds === undefined', async () => {
   const { app } = setup();
   const result = await doImport(app, 'replace', {
+    groups: [],
     users: [SEED_ADMIN, { ...USER_BOB, upstreamIds: undefined }],
     apiKeys: [],
     upstreams: [],
@@ -1637,6 +1651,7 @@ test('v22 import rejects users[i].upstreamIds === undefined', async () => {
 test('v22 import rejects users[i].deletedAt of non-string non-null type', async () => {
   const { app } = setup();
   const result = await doImport(app, 'replace', {
+    groups: [],
     users: [SEED_ADMIN, { ...USER_BOB, deletedAt: 42 }],
     apiKeys: [],
     upstreams: [],
@@ -1653,6 +1668,7 @@ test('v22 import rejects users[i].deletedAt of non-string non-null type', async 
 test('v22 replace import refuses payload missing user 1', async () => {
   const { app } = setup();
   const result = await doImport(app, 'replace', {
+    groups: [],
     users: [USER_BOB],
     apiKeys: [],
     upstreams: [],
@@ -1721,6 +1737,7 @@ test('any data bearing a historical version is rejected on the version gate, bef
   // A perfectly well-formed current-version payload — only the version stamp
   // is historical. It must still be refused on the version alone.
   const wellFormed = {
+    groups: [],
     users: [SEED_ADMIN],
     apiKeys: [KEY_A],
     upstreams: [upstreamRecordToFullJson(CUSTOM_UPSTREAM)],

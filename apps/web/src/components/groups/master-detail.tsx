@@ -109,7 +109,7 @@ export function GroupsMasterDetail({ disabled, groups, onCreate, onDelete, onEdi
   </Panel>;
 }
 
-export function UserIdentity({ user }: { user: ControlPlaneUser }) {
+function UserIdentity({ user }: { user: ControlPlaneUser }) {
   return <div className="flex items-center gap-2 min-w-0">
     <UserAvatar username={user.username} />
     <span className="truncate">{user.username}</span>

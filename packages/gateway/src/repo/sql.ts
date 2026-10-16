@@ -506,7 +506,7 @@ class SqlGroupsRepo implements GroupsRepo {
          AND groups.deleted_at IS NULL
        ORDER BY group_members.user_id, group_members.group_id`,
     ).bind(JSON.stringify([...new Set(userIds)])).all<{ user_id: number; group_id: number }>();
-    for (const row of results) result.get(row.user_id)?.push(row.group_id);
+    for (const row of results) result.get(row.user_id)!.push(row.group_id);
     return result;
   }
 
@@ -521,7 +521,7 @@ class SqlGroupsRepo implements GroupsRepo {
 
   async deleteMembershipsByUserId(userId: number): Promise<number> {
     const result = await this.db.prepare('DELETE FROM group_members WHERE user_id = ?').bind(userId).run();
-    return result.meta.changes ?? 0;
+    return result.meta.changes!;
   }
 
   async deleteAll(): Promise<void> {

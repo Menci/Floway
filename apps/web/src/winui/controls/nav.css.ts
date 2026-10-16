@@ -87,10 +87,10 @@ export const navCss = `
    an endpoint of that animation and a sub-item is rendered nowhere the measured
    indicator is drawn, so both keep a pseudo-element.
 
-   Those two take the shared pill geometry at NavigationViewSelectionIndicator's
-   own 2px radius, with Fluent's fixed indicator height released so the inset
-   sets the length; the measured indicator is pinned at 20px to match what that
-   inset gives them on the stock row.
+   Those two take selectionPill's fixed length and
+   NavigationViewSelectionIndicator's 2px radius. Fluent's fixed height is
+   released so the shared insets determine their length independently of the
+   measured sidebar indicator.
 
    The accent is substituted rather than declared: the key frame Fluent ends
    this pseudo-element's entrance on paints background from
