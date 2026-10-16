@@ -14,6 +14,7 @@ import { StatusBadge } from '../ui/status-badge';
 import { TABLE_ACTIONS_WIDTH, TableActions, TableTrailingHeader } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
+import { TruncationTooltip } from '../ui/truncation-tooltip';
 
 const {
   Table,
@@ -70,7 +71,7 @@ export function UsersTable({
               <TableRow key={user.id}>
                 <TableCell><div className="flex items-center gap-2 min-w-0">
                   <UserAvatar username={user.username} />
-                  <Tooltip content={user.username} relationship="label"><RowTitleButton onClick={() => onEdit(user)}>{user.username}</RowTitleButton></Tooltip>
+                  <TruncationTooltip content={user.username} relationship="label">{measureRef => <RowTitleButton onClick={() => onEdit(user)} ref={measureRef}>{user.username}</RowTitleButton>}</TruncationTooltip>
                 </div></TableCell>
                 <TableCell className="whitespace-nowrap">
                   <StatusBadge tone={user.isAdmin ? 'accent' : 'neutral'}>

@@ -298,6 +298,8 @@ const en = {
         createdDefaultKey: 'A Default API key is created with each new user.',
       },
       groupsManagement: {
+        more_one: 'Show {{count, number}} more group',
+        more_other: 'Show {{count, number}} more groups',
         remove: { title: 'Remove member', message: 'Remove {{username}} from {{group}}?', confirm: 'Remove' },
         empty: 'No groups found',
         search: 'Search groups',

@@ -1,12 +1,13 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 
-import { GroupBadge } from './badge';
+import { GroupBadge, GroupBadgeLink } from './badge';
 import { visibleBadgeCount } from './overflow';
 import type { ControlPlaneGroup } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { Chip } from '../ui/chip';
 
-const { Tooltip, makeStyles } = fluentComponents;
+const { Popover, PopoverSurface, PopoverTrigger, Tooltip, makeStyles } = fluentComponents;
 
 const useStyles = makeStyles({
   // Badge visibility must not change the column's intrinsic width and feed
@@ -16,10 +17,13 @@ const useStyles = makeStyles({
 });
 
 export function GroupBadges({ groups }: { groups: ControlPlaneGroup[] }) {
+  const { t } = useTranslation();
   const styles = useStyles();
   const container = useRef<HTMLDivElement>(null);
   const measurement = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(groups.length);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const [tooltipVisible, setTooltipVisible] = useState(false);
   useLayoutEffect(() => {
     const row = container.current;
     const rail = measurement.current;
@@ -42,10 +46,15 @@ export function GroupBadges({ groups }: { groups: ControlPlaneGroup[] }) {
   const count = Math.min(visible, groups.length);
   const hidden = groups.slice(count);
   return <div className={styles.row} ref={container} data-group-badges>
-    {groups.slice(0, count).map(group => <span className="inline-flex flex-none" data-visible-badge key={group.id}><GroupBadge group={group} /></span>)}
-    {hidden.length > 0 && <Tooltip content={hidden.map(group => group.name).join('\n')} relationship="description">
-      <Chip className="winui-focus-rect flex-none" data-overflow-count={hidden.length} tabIndex={0}>{`+${hidden.length}`}</Chip>
-    </Tooltip>}
+    {groups.slice(0, count).map(group => <span className="inline-flex flex-none" data-visible-badge key={group.id}><GroupBadgeLink group={group} /></span>)}
+    {hidden.length > 0 && <Popover onOpenChange={(_, data) => { setOverflowOpen(data.open); setTooltipVisible(false); }} open={overflowOpen} positioning={{ position: 'below', align: 'start' }}>
+      <Tooltip content={hidden.map(group => group.name).join('\n')} onVisibleChange={(_, data) => setTooltipVisible(data.visible)} relationship="description" visible={!overflowOpen && tooltipVisible}>
+        <PopoverTrigger disableButtonEnhancement><button aria-label={t('dashboard.groupsManagement.more', { count: hidden.length })} className="winui-focus-rect inline-flex flex-none rounded-full bg-transparent border-0 p-0 cursor-pointer" type="button"><Chip data-overflow-count={hidden.length}>{`+${hidden.length}`}</Chip></button></PopoverTrigger>
+      </Tooltip>
+      <PopoverSurface aria-label={t('dashboard.users.table.groups')} className="grid justify-items-start gap-2 max-w-[calc(100vw-32px)] !p-3">
+        {hidden.map(group => <GroupBadgeLink group={group} key={group.id} />)}
+      </PopoverSurface>
+    </Popover>}
     <div aria-hidden className={styles.measurement} inert ref={measurement}>
       {groups.map(group => <span className="inline-flex flex-none" data-measure-badge key={group.id}><GroupBadge group={group} /></span>)}
       {groups.map((group, index) => <span className="inline-flex flex-none" data-measure-overflow key={group.id}><Chip>{`+${index + 1}`}</Chip></span>)}

@@ -1,5 +1,5 @@
 import { AddRegular, SearchRegular } from '@fluentui/react-icons';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 
 import { useTranslation } from '../i18n/translation';
@@ -74,15 +74,23 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   const [data, setData] = useState<LoaderData>(loaderData);
   const [pageError, setPageError] = useState<string | null>(loaderData.error);
   const [searchParams, setSearchParams] = useSearchParams();
-  const [query, setQuery] = useState('');
-  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+  const selectedGroupId = searchParams.has('group') ? Number(searchParams.get('group')) : null;
   const [changingMember, setChangingMember] = useState(false);
   const tab = searchParams.get('tab') === 'groups' ? 'groups' : 'users';
+  const [search, setSearch] = useState<{ tab: 'users' | 'groups'; query: string }>({ tab, query: '' });
+  const query = search.tab === tab ? search.query : '';
+  const setQuery = (query: string) => setSearch({ tab, query });
   const setTab = (next: 'users' | 'groups') => setSearchParams(current => {
     const params = new URLSearchParams(current);
     if (next === 'users') params.delete('tab'); else params.set('tab', 'groups');
     return params;
-  }, { replace: true });
+  });
+  const setSelectedGroupId = (id: number) => setSearchParams(current => {
+    const params = new URLSearchParams(current);
+    params.set('tab', 'groups');
+    params.set('group', String(id));
+    return params;
+  });
   const editorDialog = useDialogInvocation<{ kind: 'create' } | { kind: 'edit'; user: ControlPlaneUser }>();
   const passwordDialog = useDialogInvocation<ControlPlaneUser>();
   const deleteDialog = useDialogInvocation<ControlPlaneUser>();
@@ -156,6 +164,17 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   const needle = query.trim().toLowerCase();
   const visibleUsers = users?.filter(user => user.username.toLowerCase().includes(needle));
   const visibleGroups = groups?.filter(group => group.name.toLowerCase().includes(needle));
+  const activeGroupId = visibleGroups?.find(group => group.id === selectedGroupId)?.id ?? visibleGroups?.[0]?.id;
+  useEffect(() => {
+    if (tab !== 'groups' || groups === null || (needle && activeGroupId === undefined)) return;
+    const canonicalId = activeGroupId === undefined ? null : String(activeGroupId);
+    if (searchParams.get('group') === canonicalId) return;
+    setSearchParams(current => {
+      const params = new URLSearchParams(current);
+      if (canonicalId === null) params.delete('group'); else params.set('group', canonicalId);
+      return params;
+    }, { replace: true });
+  }, [activeGroupId, groups, needle, searchParams, setSearchParams, tab]);
 
   const changeMember = async (group: ControlPlaneGroup, user: ControlPlaneUser, included: boolean): Promise<string | null> => {
     setChangingMember(true);
@@ -224,7 +243,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           disabled={refreshing || deletingGroup || changingMember}
           groups={visibleGroups!}
           users={users}
-          selectedId={selectedGroupId}
+          selectedId={activeGroupId ?? null}
           onSelect={setSelectedGroupId}
           onCreate={() => groupDialog.open({})}
           onMemberChange={changeMember}
@@ -260,7 +279,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           groups={groups}
           key={groupDialog.invocation.key}
           onOpenChange={open => { if (!open) groupDialog.close(); }}
-          onSaved={async id => { setSelectedGroupId(id); await refresh(); }}
+          onSaved={async id => { await refresh(); setSelectedGroupId(id); }}
           open={groupDialog.isOpen}
         />}
         {passwordDialog.invocation && <PasswordDialog

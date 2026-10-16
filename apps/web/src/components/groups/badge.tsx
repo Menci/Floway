@@ -1,4 +1,5 @@
 import { PeopleTeam16Regular } from '@fluentui/react-icons';
+import { Link } from 'react-router';
 
 import type { ControlPlaneGroup } from '../../api/types';
 import { fluentComponents } from '../../fluent';
@@ -15,6 +16,10 @@ export function GroupBadge({ group }: { group: Pick<ControlPlaneGroup, 'name' | 
   return <TruncationTooltip content={group.name} relationship="label">
     {measureRef => <Chip className={hue.className} icon={<PeopleTeam16Regular />} style={hue.style} textRef={measureRef}>{group.name}</Chip>}
   </TruncationTooltip>;
+}
+
+export function GroupBadgeLink({ group }: { group: Pick<ControlPlaneGroup, 'id' | 'name' | 'hue'> }) {
+  return <Link className="winui-focus-rect inline-flex flex-none min-w-0 max-w-full rounded-full no-underline hover:underline" to={`/dashboard/admin/users?tab=groups&group=${group.id}`}><GroupBadge group={group} /></Link>;
 }
 
 export function GroupTag({ disabled, group }: { disabled: boolean; group: ControlPlaneGroup }) {
