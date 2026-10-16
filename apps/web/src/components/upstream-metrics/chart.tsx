@@ -96,6 +96,10 @@ export function UpstreamMetricsChartSection({ chart, start, end }: { chart: Upst
   const [realHover, setRealHover] = useState(false);
   const axes = useMemo(() => new Map(units.map(unit => [unit, metricAxis(chart.entries.filter(entry => entry.unit === unit).flatMap(entry => data.flatMap(row => entry.id in row.values ? [row.values[entry.id]!] : [])), unit)])), [chart.entries, data, units]);
   const series = withUniqueSeriesLegends(chart.entries);
+  // Areas paint under lines, so they render first and a native tooltip lists
+  // them in that order. A tooltip this chart draws for another chart's hover
+  // builds its rows itself, so it follows the same order rather than the model's.
+  const drawOrder = series.toSorted((left, right) => Number(left.form === 'line') - Number(right.form === 'line'));
   if (chart.entries.length === 0) return null;
   const numberFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
   const formatters: Record<UpstreamMetricUnit, (value: number) => string> = {
@@ -160,7 +164,7 @@ export function UpstreamMetricsChartSection({ chart, start, end }: { chart: Upst
             portal={element}
             wrapperStyle={{ position: 'static', transform: 'none' }}
           />
-          {series.toSorted((left, right) => Number(left.form === 'line') - Number(right.form === 'line')).map(entry => {
+          {drawOrder.map(entry => {
             const Series = entry.form === 'area' ? Area : Line;
             const color = colorForHue(entry.hue);
             const values = data.map(row => row.values[entry.id]);
@@ -188,7 +192,7 @@ export function UpstreamMetricsChartSection({ chart, start, end }: { chart: Upst
         </ComposedChart>;
         const assumedCallout = (row: (typeof data)[number]) => {
           if (realHover) return null;
-          const rows = series.flatMap(entry => {
+          const rows = drawOrder.flatMap(entry => {
             const value = row.values[entry.id];
             return value === undefined || hidden.has(entry.id) ? [] : [{ key: entry.id, label: entry.legend, color: colorForHue(entry.hue), values: [formatters[entry.unit](value)] }];
           });

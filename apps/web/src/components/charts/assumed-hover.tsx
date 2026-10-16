@@ -1,11 +1,16 @@
 import type { ReactNode } from 'react';
 
 import { ChartCalloutPopover } from './callout-popover';
-import type { ChartHoverPointerStore } from './linked-hover';
+import { chartPointerOffset, type ChartHoverPointerStore } from './linked-hover';
 
+// The cursor line states where the other chart is hovering, so it stands on its
+// own wherever that position lands in this plot. The popover is the part that
+// can have nothing to say -- a point the dataset has no reading for -- and it is
+// left off then, matching a native hover, which keeps its vertical line and lets
+// the frame's own rule hide the empty callout.
 export function AssumedChartHover({ bottom, children, element, pointerStore, top, x }: {
   bottom: number;
-  children: ReactNode;
+  children?: ReactNode;
   element: HTMLElement;
   pointerStore: ChartHoverPointerStore;
   top: number;
@@ -15,9 +20,10 @@ export function AssumedChartHover({ bottom, children, element, pointerStore, top
     getBoundingClientRect: () => {
       const rect = element.getBoundingClientRect();
       const pointer = pointerStore.getSnapshot();
+      const offset = pointer === null ? null : chartPointerOffset(pointer, rect);
       return new DOMRect(
-        rect.left + (pointer?.xRatio ?? x / rect.width) * rect.width,
-        rect.top + (pointer?.yRatio ?? (top + (rect.height - top - bottom) / 2) / rect.height) * rect.height,
+        rect.left + (offset?.x ?? x),
+        rect.top + (offset?.y ?? top + (rect.height - top - bottom) / 2),
         0,
         0,
       );
@@ -30,6 +36,6 @@ export function AssumedChartHover({ bottom, children, element, pointerStore, top
       data-chart-assumed-hover-cursor=""
       style={{ bottom, left: x, top }}
     />
-    <ChartCalloutPopover pointerStore={pointerStore} target={target}>{children}</ChartCalloutPopover>
+    {children == null ? null : <ChartCalloutPopover pointerStore={pointerStore} target={target}>{children}</ChartCalloutPopover>}
   </>;
 }

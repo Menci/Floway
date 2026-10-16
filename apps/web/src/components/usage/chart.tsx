@@ -1,7 +1,7 @@
 import { AreaChart, LineChart, type CustomizedCalloutData } from '@fluentui/react-charts';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 
-import { UsageChartCallout } from './callout';
+import { hasUsageCallout, UsageChartCallout } from './callout';
 import type { CalloutPoint, UsageChartModel } from './types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
@@ -94,9 +94,10 @@ export function UsageChart({ chart, hidden, valueFormatter }: { chart: UsageChar
     };
     const timestamp = data.x instanceof Date ? data.x.getTime() : Number(data.x);
     const bucket = chart.buckets.find(candidate => candidate.date.getTime() === timestamp);
-    const callout = renderCallout(point);
-    return bucket && callout ? <UsageRealHover bucket={bucket} onChange={reportRealHover}>{callout}</UsageRealHover> : callout;
-  }, [chart.buckets, entryByLegend, renderCallout, reportRealHover]);
+    return bucket && hasUsageCallout(chart, point)
+      ? <UsageRealHover bucket={bucket} onChange={reportRealHover}>{renderCallout(point)}</UsageRealHover>
+      : renderCallout(point);
+  }, [chart, entryByLegend, renderCallout, reportRealHover]);
 
   const hasData = visibleData.lineChartData?.some(series => series.data.length > 0) ?? false;
 
@@ -157,10 +158,11 @@ export function UsageChart({ chart, hidden, valueFormatter }: { chart: UsageChar
               return entry && value ? [{ id: entry.id, label: entry.label, color: series.color!, value: Number(value.y) }] : [];
             }) ?? [],
           };
-          const callout = renderCallout(point);
-          if (callout === null) return null;
+          const callout = hasUsageCallout(chart, point) ? renderCallout(point) : null;
           const x = chartMargins.left + (last === first ? 0.5 : (timestamp - first) / (last - first)) * chartPlotWidth(size.width);
-          return <AssumedChartHover bottom={chartMargins.bottom} element={element} pointerStore={pointerStore} top={chartMargins.top} x={x}>{callout}</AssumedChartHover>;
+          return <AssumedChartHover bottom={chartMargins.bottom} element={element} pointerStore={pointerStore} top={chartMargins.top} x={x}>
+            {callout}
+          </AssumedChartHover>;
         };
         return <>
           {renderedChart}

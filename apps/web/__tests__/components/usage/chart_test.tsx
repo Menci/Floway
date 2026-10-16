@@ -83,3 +83,35 @@ it('hides run-interior markers while retaining their focusable data points', asy
   expect(circles[1]!.getAttribute('aria-label')).toContain('1:00 - 2:00');
   expect(circles[1]!.getAttribute('tabindex')).toBe('0');
 });
+
+it('draws no assumed tooltip at a bucket the visible series has no reading for', async () => {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 720, 320));
+  const hour = 3_600_000;
+  const buckets: ChartBucket[] = [0, 1, 2].map(index => ({
+    key: `bucket-${index}`,
+    label: `${index}:00 - ${index + 1}:00`,
+    date: new Date(index * hour),
+    start: index * hour,
+    end: (index + 1) * hour,
+  }));
+  // The group has a reading in buckets 0 and 2 only, so bucket 1 is empty: a
+  // position near it resolves to a bucket whose callout body has no rows.
+  const chart = buildTokenChart({
+    records: [
+      { bucket: 'bucket-0', group: 'key-1', requests: 1, metrics: { input_tokens: '10' }, cost: null },
+      { bucket: 'bucket-2', group: 'key-1', requests: 1, metrics: { input_tokens: '30' }, cost: null },
+    ],
+    dimensionOptions: [{ value: 'key-1', label: 'Key 1' }],
+    metric: 'total',
+    range: 'today',
+    buckets,
+  });
+  const view = renderInApp(<LinkedChartHoverProvider>
+    <HoverSource xRatio={0.5} />
+    <UsageChart chart={chart} hidden={new Set()} valueFormatter={String} />
+  </LinkedChartHoverProvider>);
+  // The cursor line alone is correct wherever the hover is; a caller that has
+  // nothing to say must not mount the popover around it either.
+  await waitFor(() => expect(view.container.querySelector('[data-chart-assumed-hover-cursor]')).not.toBeNull());
+  expect(screen.queryByRole('status')).toBeNull();
+});
