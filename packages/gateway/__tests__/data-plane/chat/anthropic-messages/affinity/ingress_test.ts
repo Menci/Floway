@@ -56,6 +56,35 @@ test('removes thinking and redacted blocks whose affinity belongs to another can
   });
 });
 
+test('strips the marker from thinking that never carried a signature on every candidate', async () => {
+  const candidateA = candidate('upstream-a');
+  const candidateB = candidate('upstream-b');
+  const marker = await codec.wrap(undefined, targetFor(candidateA), 'anthropic-messages.thinking.signature');
+  const prepared = await analyzeAnthropicMessagesAffinity({
+    model: 'model',
+    max_tokens: 100,
+    messages: [{
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 'visible reasoning', signature: marker },
+        { citations: null, type: 'text', text: 'answer' },
+      ],
+    }],
+  }, codec);
+
+  for (const target of [candidateA, candidateB]) {
+    const evaluation = acceptedAffinityEvaluation(prepared, target);
+    expect(evaluation.degrades).toBe(false);
+    expect(evaluation.materialize().messages[0]).toEqual({
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 'visible reasoning' },
+        { citations: null, type: 'text', text: 'answer' },
+      ],
+    });
+  }
+});
+
 test('removes assistant messages emptied by affinity block stripping', async () => {
   const candidateA = candidate('upstream-a');
   const candidateB = candidate('upstream-b');
