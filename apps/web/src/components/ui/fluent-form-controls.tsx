@@ -122,7 +122,7 @@ function ScrollableListbox({
           https://w3c.github.io/aria/#mustContain */}
       <div className="floway-combobox-listbox-content">
         {Children.toArray(children).length === 0
-          ? <Option disabled value="">{emptyMessage ?? t(freeform ? 'common.noSuggestions' : 'common.noOptions')}</Option>
+          ? <Option checkIcon={null} disabled value="">{emptyMessage ?? t(freeform ? 'common.noSuggestions' : 'common.noOptions')}</Option>
           : children}
       </div>
     </div>,
