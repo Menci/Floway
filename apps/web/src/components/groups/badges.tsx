@@ -9,6 +9,8 @@ import { Chip } from '../ui/chip';
 const { Tooltip, makeStyles } = fluentComponents;
 
 const useStyles = makeStyles({
+  // Badge visibility must not change the column's intrinsic width and feed
+  // back into its own overflow decision.
   row: { contain: 'inline-size', position: 'relative', overflow: 'hidden', width: '100%', minWidth: 0, height: '24px', display: 'flex', alignItems: 'center', gap: 'var(--spacingHorizontalXS)' },
   measurement: { position: 'absolute', visibility: 'hidden', pointerEvents: 'none', display: 'flex', width: 'max-content', top: 0, left: 0 },
 });

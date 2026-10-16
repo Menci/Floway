@@ -37,7 +37,7 @@ export function ConfirmFlyout({ actionLabel, message, onConfirm, title, trigger 
     trapFocus
   >
     <PopoverTrigger disableButtonEnhancement>{trigger}</PopoverTrigger>
-    <PopoverSurface aria-labelledby={titleId} className="w-[min(320px,calc(100vw-32px))] grid gap-3">
+    <PopoverSurface aria-labelledby={titleId} className="w-[min(320px,calc(100vw-32px))] grid gap-3 [overflow-wrap:anywhere]">
       <Text id={titleId} weight="semibold">{title}</Text>
       <Text>{message}</Text>
       {error && <OutcomeMessageBar>{error}</OutcomeMessageBar>}
