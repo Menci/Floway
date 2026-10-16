@@ -1,4 +1,4 @@
-import { SearchRegular } from '@fluentui/react-icons';
+import { AddRegular, SearchRegular } from '@fluentui/react-icons';
 import { useCallback, useState } from 'react';
 import { useSearchParams } from 'react-router';
 
@@ -27,7 +27,7 @@ import { UsersTable } from '../components/users/table';
 import { fluentComponents } from '../fluent';
 import { useAuthStore } from '../stores/auth-store';
 
-const { Tab, TabList, Text } = fluentComponents;
+const { Button, Tab, TabList, Text } = fluentComponents;
 
 // `null` is a failed fetch, not an empty deployment: a gateway always has a user.
 interface LoaderData {
@@ -178,6 +178,12 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   return (
     <section className="dashboard-page">
       <DashboardPageHeader
+        actions={<ResourceListActions
+          disabled={deleting || deletingGroup || changingMember}
+          onRefresh={() => void refresh()}
+          refreshLabel={t('dashboard.users.actions.refresh')}
+          refreshing={refreshing}
+        />}
         description={t('dashboard.pages.users')}
         title={t('dashboard.nav.users')}
       />
@@ -187,17 +193,16 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           <Tab value="users"><span className="inline-flex items-baseline gap-1.5">{t('dashboard.users.tabs.users')}{users && <Text className="text-fui-fg3 proportional-nums">{users.length}</Text>}</span></Tab>
           <Tab value="groups"><span className="inline-flex items-baseline gap-1.5">{t('dashboard.users.tabs.groups')}{groups && <Text className="text-fui-fg3 proportional-nums">{groups.length}</Text>}</span></Tab>
         </TabList>
-        <ResourceListActions
-          createDisabled={!loaded}
-          createLabel={t(tab === 'users' ? 'dashboard.users.actions.create' : 'dashboard.groupsManagement.actions.create')}
-          disabled={refreshing || deleting || deletingGroup || changingMember}
-          onCreate={() => tab === 'users' ? editorDialog.open({ kind: 'create' }) : groupDialog.open({})}
-          onRefresh={() => void refresh()}
-          refreshLabel={t(tab === 'users' ? 'dashboard.users.actions.refresh' : 'dashboard.groupsManagement.actions.refresh')}
-          refreshing={refreshing}
-        >
+        <div className="flex items-center gap-2 max-w-full">
           <Input aria-label={t(tab === 'users' ? 'dashboard.users.search' : 'dashboard.groupsManagement.search')} className="w-[260px]" contentBefore={<SearchRegular />} onChange={(_, value) => setQuery(value.value)} placeholder={t(tab === 'users' ? 'dashboard.users.search' : 'dashboard.groupsManagement.search')} value={query} />
-        </ResourceListActions>
+          <Button
+            appearance="primary"
+            className="flex-none whitespace-nowrap"
+            disabled={!loaded || refreshing || deleting || deletingGroup || changingMember}
+            icon={<AddRegular />}
+            onClick={() => tab === 'users' ? editorDialog.open({ kind: 'create' }) : groupDialog.open({})}
+          >{t(tab === 'users' ? 'dashboard.users.actions.create' : 'dashboard.groupsManagement.actions.create')}</Button>
+        </div>
       </div>
 
       {pageError && (

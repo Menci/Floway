@@ -220,7 +220,7 @@ const zhHansCN = {
           resetPasswordNamed: '重置用户 {{name}} 的密码',
           delete: '删除用户',
           deleteNamed: '删除用户 {{name}}',
-          refresh: '刷新用户',
+          refresh: '刷新用户和用户组',
           save: '保存更改',
         },
         toast: {
@@ -292,7 +292,7 @@ const zhHansCN = {
         noMatches: '没有匹配的用户组',
         allJoined: '已加入全部用户组',
         invalidName: '请输入 1 至 64 个字符的名称',
-        actions: { create: '新建用户组', save: '保存更改', edit: '编辑用户组', delete: '删除用户组', refresh: '刷新用户组', add: '添加成员', remove: '从组中移除 {{username}}', leave: '退出 {{name}}' },
+        actions: { create: '新建用户组', save: '保存更改', edit: '编辑用户组', delete: '删除用户组', add: '添加成员', remove: '从组中移除 {{username}}', leave: '退出 {{name}}' },
         members: { count_other: '{{count, number}} 名成员', empty: '这个用户组还没有成员', allAdded: '所有用户都已加入该组', noMatches: '没有匹配的用户' },
         dialog: { createTitle: '新建用户组', editTitle: '编辑 {{name}}' },
         fields: { name: '名称', members: '成员', hue: '颜色' },

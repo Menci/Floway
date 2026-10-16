@@ -13,8 +13,9 @@ import { ScrollArea } from '../ui/scroll-area';
 import { StatusBadge } from '../ui/status-badge';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
+import { UserAvatar } from '../users/avatar';
 
-const { Avatar, Button, List, ListItem, Popover, PopoverSurface, PopoverTrigger, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, makeStyles, mergeClasses } = fluentComponents;
+const { Button, List, ListItem, Popover, PopoverSurface, PopoverTrigger, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, makeStyles, mergeClasses } = fluentComponents;
 
 const useStyles = makeStyles({
   layout: {
@@ -110,7 +111,7 @@ export function GroupsMasterDetail({ disabled, groups, onCreate, onDelete, onEdi
 
 export function UserIdentity({ user }: { user: ControlPlaneUser }) {
   return <div className="flex items-center gap-2 min-w-0">
-    <Avatar aria-hidden color="neutral" name={user.username} size={24} />
+    <UserAvatar username={user.username} />
     <span className="truncate">{user.username}</span>
   </div>;
 }

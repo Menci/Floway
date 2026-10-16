@@ -231,7 +231,7 @@ const en = {
           resetPasswordNamed: 'Reset the password of user {{name}}',
           delete: 'Delete user',
           deleteNamed: 'Delete user {{name}}',
-          refresh: 'Refresh users',
+          refresh: 'Refresh users and groups',
           save: 'Save changes',
         },
         toast: {
@@ -305,7 +305,7 @@ const en = {
         noMatches: 'No matching groups',
         allJoined: 'Already in every group',
         invalidName: 'Enter a name between 1 and 64 characters',
-        actions: { create: 'New group', save: 'Save changes', edit: 'Edit group', delete: 'Delete group', refresh: 'Refresh groups', add: 'Add member', remove: 'Remove {{username}} from group', leave: 'Leave {{name}}' },
+        actions: { create: 'New group', save: 'Save changes', edit: 'Edit group', delete: 'Delete group', add: 'Add member', remove: 'Remove {{username}} from group', leave: 'Leave {{name}}' },
         members: { count_one: '{{count, number}} member', count_other: '{{count, number}} members', empty: 'This group has no members', allAdded: 'All users are already members', noMatches: 'No matching users' },
         dialog: { createTitle: 'New group', editTitle: 'Edit {{name}}' },
         fields: { name: 'Name', members: 'Members', hue: 'Color' },

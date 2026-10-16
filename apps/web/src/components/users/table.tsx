@@ -1,5 +1,6 @@
 import { DeleteRegular, EditRegular, KeyRegular } from '@fluentui/react-icons';
 
+import { UserAvatar } from './avatar';
 import type { ControlPlaneGroup, ControlPlaneUser } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
@@ -22,7 +23,6 @@ const {
   TableHeaderCell,
   TableRow,
   Tooltip,
-  Avatar,
 } = fluentComponents;
 
 export function UsersTable({
@@ -69,7 +69,7 @@ export function UsersTable({
             return (
               <TableRow key={user.id}>
                 <TableCell><div className="flex items-center gap-2 min-w-0">
-                  <Avatar aria-hidden color="neutral" name={user.username} size={24} />
+                  <UserAvatar username={user.username} />
                   <Tooltip content={user.username} relationship="label"><RowTitleButton onClick={() => onEdit(user)}>{user.username}</RowTitleButton></Tooltip>
                 </div></TableCell>
                 <TableCell className="whitespace-nowrap">
