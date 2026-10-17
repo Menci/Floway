@@ -44,7 +44,7 @@ export const encodeCBORValue = (value: unknown): Uint8Array => encoder.encode(ma
   return value;
 }));
 
-const restoreCBORValue = (value: unknown): unknown => mapCBORValue(value, value => {
+const restoreCBORValue = (value: unknown): unknown => {
   if (value instanceof Tag && value.tag === RAW_JSON_TAG) {
     if (typeof value.value !== 'string') throw new TypeError('Raw JSON sidecar tag requires a string');
     return rawJSON.rawJSON(value.value);
@@ -57,8 +57,14 @@ const restoreCBORValue = (value: unknown): unknown => mapCBORValue(value, value 
     if (!(value.value instanceof Uint8Array)) throw new TypeError('Base64URL sidecar tag requires bytes');
     return encodeBase64url(value.value);
   }
+  if (value instanceof Tag || value instanceof Uint8Array || rawJSON.isRawJSON(value)) return value;
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index++) value[index] = restoreCBORValue(value[index]);
+  } else if (typeof value === 'object' && value !== null) {
+    for (const [key, child] of Object.entries(value)) Reflect.set(value, key, restoreCBORValue(child));
+  }
   return value;
-});
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
