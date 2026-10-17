@@ -230,13 +230,13 @@ export const irFromAnthropicMessages = async function* (
       if (!started) throw new Error('Messages message_stop arrived before message_start');
       if (blocks.size > 0) throw new Error('Messages message_stop arrived with open content blocks');
       const nativeResult = nativeAccumulator.result();
-      const contentState: NonNullable<AnthropicMessagesAssistantState<FieldStates>['content']> = [];
-      contentState.length = nativeResult.content.length;
+      const contentFields: NonNullable<AnthropicMessagesAssistantState<FieldStates>['content']> = [];
+      contentFields.length = nativeResult.content.length;
       [...blockStates.entries()].toSorted(([left], [right]) => left - right).forEach(([, block], index) => {
-        if (block.fieldState !== undefined) contentState[index] = block.fieldState;
+        if (block.fieldState !== undefined) contentFields[index] = block.fieldState;
       });
       const content = nativeResult.content.map(block => block.type === 'tool_use' ? { ...block, input: requireJSONObject(block.input) } : block);
-      options.roundTrip.onAssistantTurn(0, { role: 'assistant', content }, { content: contentState });
+      options.roundTrip.onAssistantTurn(0, { role: 'assistant', content }, { content: contentFields });
       ir.choice(0).end(finishReason);
       ir.event({ type: 'finish', status: finishReason === 'length' ? 'incomplete' : 'completed' });
       finished = true;
