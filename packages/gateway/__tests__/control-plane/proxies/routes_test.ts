@@ -217,7 +217,8 @@ test('POST /api/proxies/test returns 400 for an unparseable URL', async () => {
 });
 
 test('GET /api/proxies/:id/backoffs returns rows scoped to the proxy', async () => {
-  const { repo, adminSession } = await setupAppTest();
+  const { repo, adminSession, copilotUpstream } = await setupAppTest();
+  await saveUpstreamForTest(repo.upstreams, { ...copilotUpstream, id: 'up_a', name: 'Primary Copilot', hue: 210 });
   await repo.proxyBackoffs.recordDialFailure('p_a', 'up_a', 'boom');
   await repo.proxyBackoffs.recordDialFailure('p_b', 'up_a', 'boom');
 
@@ -227,12 +228,15 @@ test('GET /api/proxies/:id/backoffs returns rows scoped to the proxy', async () 
   assertEquals(rows.length, 1);
   assertEquals(rows[0].proxy_id, 'p_a');
   assertEquals(rows[0].upstream_id, 'up_a');
+  assertEquals(rows[0].upstream, { id: 'up_a', name: 'Primary Copilot', kind: 'copilot', hue: 210 });
   assertEquals(rows[0].fail_count, 1);
   assertEquals(rows[0].last_error, 'boom');
 });
 
 test('GET /api/proxies/backoffs returns every backoff row regardless of proxy', async () => {
-  const { repo, adminSession } = await setupAppTest();
+  const { repo, adminSession, copilotUpstream } = await setupAppTest();
+  await saveUpstreamForTest(repo.upstreams, { ...copilotUpstream, id: 'up_a', name: 'Primary Copilot', hue: 210 });
+  await saveUpstreamForTest(repo.upstreams, { ...copilotUpstream, id: 'up_b', name: 'Backup Copilot', hue: 120 });
   await repo.proxyBackoffs.recordDialFailure('p_a', 'up_a', 'boom');
   await repo.proxyBackoffs.recordDialFailure('p_b', 'up_b', 'kaboom');
 
@@ -242,6 +246,16 @@ test('GET /api/proxies/backoffs returns every backoff row regardless of proxy', 
   assertEquals(rows.length, 2);
   const pairs = rows.map(r => `${r.proxy_id}/${r.upstream_id}`).sort();
   assertEquals(pairs, ['p_a/up_a', 'p_b/up_b']);
+  assertEquals(rows.map(row => row.upstream.name).sort(), ['Backup Copilot', 'Primary Copilot']);
+});
+
+test('GET /api/proxies/backoffs fails when a row references a missing upstream', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.proxyBackoffs.recordDialFailure('p_a', 'up_missing', 'boom');
+
+  const resp = await requestApp('/api/proxies/backoffs', authed(adminSession));
+  assertEquals(resp.status, 500);
+  assertEquals((await resp.text()).includes('Proxy backoff references missing upstream up_missing'), true);
 });
 
 test('POST /api/proxies/:id/backoffs/reset with no body clears every row for the proxy', async () => {

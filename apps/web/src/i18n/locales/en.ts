@@ -1507,6 +1507,8 @@ const en = {
         },
         backoff: {
           title: 'Backoff',
+          summary_one: 'This proxy is in backoff for {{count, number}} upstream.',
+          summary_other: 'This proxy is in backoff for {{count, number}} upstreams.',
           remaining: 'resumes in {{duration}}',
           expiring: 'resuming',
           failures_one: '{{count, number}} failure',

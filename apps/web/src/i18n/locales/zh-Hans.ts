@@ -1431,6 +1431,7 @@ const zhHansCN = {
         },
         backoff: {
           title: '退避',
+          summary_other: '此代理正在对 {{count, number}} 个上游进行退避。',
           remaining: '{{duration}} 后恢复',
           expiring: '正在恢复',
           failures_other: '{{count, number}} 次失败',
