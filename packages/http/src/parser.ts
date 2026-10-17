@@ -6,7 +6,7 @@ import { decodeChunked } from './chunked.ts';
 import { HttpProtocolError } from './errors.ts';
 import { STATUS_LINE, TCHAR, trimFieldValueOws, validateFieldValueBytes } from './grammar.ts';
 import { readHeadSection } from './read-head-section.ts';
-import type { RawHttpResponse } from './types.ts';
+import type { HttpContentDecoders, RawHttpResponse } from './types.ts';
 
 /**
  * Bridge a wire-faithful {@link RawHttpResponse} to a Web `Response`. The
@@ -18,7 +18,7 @@ import type { RawHttpResponse } from './types.ts';
  * `parseHttpResponse` transparently skips 1xx interim heads, so anything
  * reaching this function should already be a final 2xx..5xx response.
  */
-export const toWebResponse = (raw: RawHttpResponse): Response => {
+export const toWebResponse = (raw: RawHttpResponse, contentDecoders?: HttpContentDecoders): Response => {
   if (raw.status < 200 || raw.status > 599) {
     // Web Response only models the 200..599 final-status range. A 1xx
     // slipped through is a programmer error inside this package, not an
@@ -40,7 +40,7 @@ export const toWebResponse = (raw: RawHttpResponse): Response => {
     return new Response(null, { status: raw.status, statusText: raw.statusText, headers: raw.headers });
   }
   const headers = new Headers(raw.headers);
-  const body = decodeContentEncoding(raw.body, headers);
+  const body = decodeContentEncoding(raw.body, headers, contentDecoders);
   return new Response(body, { status: raw.status, statusText: raw.statusText, headers });
 };
 
@@ -48,23 +48,45 @@ export const toWebResponse = (raw: RawHttpResponse): Response => {
 // transport starts at HTTP/1.1 framing and otherwise hands callers compressed
 // bytes. Keep both paths on the same Response contract so protocol parsers see
 // the advertised body rather than a content coding.
-// TODO: Claude Code advertises gzip, deflate, br, zstd. Add platform-injected
-// streaming br/zstd decoders before accepting those codings here; #400 requires
-// explicit client Accept-Encoding values to continue reaching the upstream.
-const decodeContentEncoding = (body: ReadableStream<Uint8Array>, headers: Headers): ReadableStream<Uint8Array> => {
-  const encoding = headers.get('content-encoding')?.toLowerCase();
-  if (encoding === undefined || encoding === 'identity') return body;
-  if (encoding !== 'gzip' && encoding !== 'deflate') {
-    void body.cancel();
-    throw new HttpProtocolError(
-      `socket transport cannot decode upstream Content-Encoding ${JSON.stringify(encoding)}; supported codings are gzip and deflate`,
-      'UNSUPPORTED_CONTENT_ENCODING',
-    );
+// Additional codecs come from the runtime, without importing its APIs here or
+// changing the caller's Accept-Encoding. Each factory owns one decoding stream.
+const portableContentDecoders = new Map([
+  ['gzip', () => new DecompressionStream('gzip')],
+  ['deflate', () => new DecompressionStream('deflate')],
+]);
+
+const decodeContentEncoding = (
+  body: ReadableStream<Uint8Array>,
+  headers: Headers,
+  contentDecoders?: HttpContentDecoders,
+): ReadableStream<Uint8Array> => {
+  const encoding = headers.get('content-encoding');
+  if (encoding === null) return body;
+  const codings = encoding.toLowerCase().split(',').map(coding => coding.trim()).filter(coding => coding !== 'identity');
+  if (codings.length === 0) return body;
+  try {
+    // RFC 9110 §8.4 lists codings in application order; unwrap in reverse.
+    // https://www.rfc-editor.org/rfc/rfc9110.html#section-8.4
+    const factories = codings.reverse().map(coding => {
+      const factory = contentDecoders?.get(coding) ?? portableContentDecoders.get(coding);
+      if (factory === undefined) {
+        const supported = [...new Set([...portableContentDecoders.keys(), ...(contentDecoders?.keys() ?? [])])];
+        throw new HttpProtocolError(
+          `socket transport cannot decode upstream Content-Encoding ${JSON.stringify(coding)}; supported codings are ${supported.join(', ')}`,
+          'UNSUPPORTED_CONTENT_ENCODING',
+        );
+      }
+      return factory;
+    });
+    for (const factory of factories) body = body.pipeThrough(factory() as never);
+  } catch (error) {
+    void body.cancel(error).catch(() => {});
+    throw error;
   }
 
   headers.delete('content-encoding');
   headers.delete('content-length');
-  return body.pipeThrough(new DecompressionStream(encoding) as never);
+  return body;
 };
 
 /**

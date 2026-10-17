@@ -10,7 +10,7 @@ import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
-import { TruncationTooltip } from '../ui/truncation-tooltip';
+import { ProviderBadge } from '../upstreams/provider-badge';
 
 const { Button, Text } = fluentComponents;
 
@@ -53,32 +53,34 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
   };
 
   return <section className="grid gap-2" aria-label={t('dashboard.proxy.backoff.title')}>
-    <div className="flex items-center justify-between gap-2">
-      <Text weight="semibold">{t('dashboard.proxy.backoff.title')}</Text>
-      <Button appearance="subtle" disabledFocusable={resetting} icon={<ArrowResetRegular />} onClick={() => void reset()} size="small">
+    <OutcomeMessageBar
+      action={<Button disabledFocusable={resetting} icon={<ArrowResetRegular />} onClick={() => void reset()} size="small">
         {t('dashboard.proxy.backoff.resetAll')}
-      </Button>
-    </div>
+      </Button>}
+      intent="warning"
+    >
+      {t('dashboard.proxy.backoff.summary', { count: active.length })}
+    </OutcomeMessageBar>
 
-    <ul className="m-0 grid gap-1 p-0 list-none">
+    <ul className="m-0 min-w-0 list-none p-0">
       {active.map(row => {
         const remaining = row.expires_at - nowSeconds;
-        return <li className="flex items-center gap-3 rounded-md bg-fui-bg2 px-3 py-2" key={`${row.proxy_id}:${row.upstream_id}`}>
-          <TruncationTooltip content={row.upstream_id} relationship="label">
-            {measureRef => <Text block size={200} className="winui-focus-rect min-w-0 flex-1 font-mono mono-size-xs" ref={measureRef} tabIndex={0} truncate wrap={false}>{row.upstream_id}</Text>}
-          </TruncationTooltip>
-          <Text size={200} className="text-fui-fg2">
-            {remaining <= 0
-              ? t('dashboard.proxy.backoff.expiring')
-              : t('dashboard.proxy.backoff.remaining', { duration: formatCountdown(remaining, locale) })}
-          </Text>
-          <Text size={200} className="text-fui-fg3">{t('dashboard.proxy.backoff.failures', { count: row.fail_count })}</Text>
-          {row.last_error && <TruncationTooltip content={row.last_error} relationship="label">
-            {measureRef => <Text block size={200} className="winui-focus-rect max-w-[220px] text-fui-fg3" ref={measureRef} tabIndex={0} truncate wrap={false}>{row.last_error}</Text>}
-          </TruncationTooltip>}
-          <Button appearance="subtle" disabledFocusable={resetting} onClick={() => void reset(row.upstream_id)} size="small">
-            {t('dashboard.proxy.backoff.reset')}
-          </Button>
+        return <li className="grid min-w-0 gap-1 border-0 border-t border-solid border-fui-divider py-3 first:border-t-0 first:pt-1 last:pb-1" key={`${row.proxy_id}:${row.upstream_id}`}>
+          <div className="flex min-w-0 items-start justify-between gap-3">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+              <ProviderBadge label={row.upstream.name} upstream={row.upstream} />
+              <div className="flex flex-wrap gap-x-3 text-fui-fg2 text-[12px] leading-4">
+                <span className="tabular-nums">{t('dashboard.proxy.backoff.failures', { count: row.fail_count })}</span>
+                <span className="tabular-nums">{remaining <= 0
+                  ? t('dashboard.proxy.backoff.expiring')
+                  : t('dashboard.proxy.backoff.remaining', { duration: formatCountdown(remaining, locale) })}</span>
+              </div>
+            </div>
+            <Button className="flex-none" disabledFocusable={resetting} onClick={() => void reset(row.upstream_id)} size="small">
+              {t('dashboard.proxy.backoff.reset')}
+            </Button>
+          </div>
+          {row.last_error && <Text block className="font-mono" size={200}>{row.last_error}</Text>}
         </li>;
       })}
     </ul>

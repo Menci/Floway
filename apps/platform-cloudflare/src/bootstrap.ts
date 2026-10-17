@@ -2,6 +2,7 @@ import { DurableObjectExecutionCellNamespace, type ExecutionDurableObjectNamespa
 import { ExecutionCellChannelBroker } from './execution-cell-channel-broker.ts';
 import { createCloudflareExternalResourceFetcher } from './external-resource-fetcher.ts';
 import { cloudflareFetch } from './fetch.ts';
+import { cloudflareHttpContentDecoders } from './http-content-decoders.ts';
 import { createCloudflareImageProcessor, type ImagesBinding } from './image-processor.ts';
 import { KvImageCacheStore, type KvNamespace } from './kv-image-cache-store.ts';
 import { R2FileStore, type R2BucketLike } from './r2-file-store.ts';
@@ -60,7 +61,7 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
   initRuntimeKind('cloudflare');
   initTimingSafeEqual(timingSafeEqual);
   initExternalResourceFetcher(createCloudflareExternalResourceFetcher());
-  initFetch(cloudflareFetch);
+  initFetch(cloudflareFetch, cloudflareHttpContentDecoders);
   const files = new R2FileStore(env.FILES);
   initFileStore(files);
   initImageCacheStore(new KvImageCacheStore(env.KV, IMAGE_CACHE_POLICY));

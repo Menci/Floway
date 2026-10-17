@@ -4,7 +4,7 @@ import { concat, utf8Bytes } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
 import { TCHAR, validateFieldValueBytes, validateRequestTargetBytes } from './grammar.ts';
 import { parseHttpResponse, toWebResponse } from './parser.ts';
-import type { DuplexStream, HttpRequest, ReplayableBody } from './types.ts';
+import type { DuplexStream, HttpContentDecoders, HttpRequest, ReplayableBody } from './types.ts';
 
 // Plaintext chunk size used when streaming the request body to the writer.
 // Each writer.write() maps 1:1 to one record on a record-framed writer, so
@@ -57,6 +57,7 @@ export const fetchOnStream = async (
   stream: DuplexStream,
   request: HttpRequest,
   prefix?: Uint8Array,
+  contentDecoders?: HttpContentDecoders,
 ): Promise<Response> => {
   // RFC 9110 §6.4.1: a HEAD response carries no body even when
   // Content-Length is set. Detecting that here is a one-line carve-out,
@@ -162,5 +163,5 @@ export const fetchOnStream = async (
     writer.releaseLock();
   }
 
-  return toWebResponse(await parseHttpResponse(stream.readable));
+  return toWebResponse(await parseHttpResponse(stream.readable), contentDecoders);
 };

@@ -2,7 +2,7 @@ import { createFetcher } from './fetcher.ts';
 import { loadProxyCatalog } from './proxy-catalog.ts';
 import { getRepo } from '../repo/index.ts';
 import { entryMatchesColo, isDirectFallbackId } from '../repo/proxy-fallback-list.ts';
-import { getFetch, getSocketDial } from '@floway-dev/platform';
+import { getFetch, getHttpContentDecoders, getSocketDial } from '@floway-dev/platform';
 import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
 import { runDirectConnectRequest, runProxiedRequest } from '@floway-dev/proxy';
 
@@ -71,6 +71,7 @@ const createFetcherResolver = async (
       runDirectFetch: getFetch(),
       runDirectConnect: runDirectConnectRequest,
       socketDial: getSocketDial,
+      contentDecoders: getHttpContentDecoders,
     });
   };
 };
