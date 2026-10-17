@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { ScopeExpression, type ScopeExpressionData } from '../../../src/components/access-control/scope-expression';
+import { ScopeEditor, ScopeExpression, type ScopeExpressionData } from '../../../src/components/access-control/scope-expression';
 import { setLanguage } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 import type { AccessScope } from '@floway-dev/gateway/browser';
@@ -22,12 +22,25 @@ const data: ScopeExpressionData = {
 
 afterEach(async () => await setLanguage('en'));
 
-const renderEditor = (initial: AccessScope | null = null) => {
+test.each(['exact', 'regex'] as const)('uses standard resource badges and the shared monospace ramp for %s scopes', kind => {
+  const { container } = renderInApp(<ScopeExpression data={data} readOnly value={{ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind, value: 'gpt-5' } }} />);
+  expect(getComputedStyle(container.querySelector('.fui-Tag')!).height).toBe('24px');
+  expect(container.querySelector('.font-mono')).toBeTruthy();
+  expect(container.querySelector('.mono-size-xs')).toBeNull();
+  expect(container.querySelector('.floway-scope-expression-model-icon')).toBeTruthy();
+  const segments = [...container.querySelectorAll('.floway-scope-expression-segment')];
+  expect(segments).toHaveLength(3);
+  expect(segments.every(segment => segment.firstElementChild!.classList.contains('floway-scope-expression-slash'))).toBe(true);
+  expect(segments.every(segment => segment.childElementCount === 2)).toBe(true);
+});
+
+const renderEditor = (initial: AccessScope | null = null, purpose: 'scope' | 'filter' = 'scope') => {
   const changed = vi.fn();
   function Editor() {
     const [value, setValue] = useState(initial);
+    const [kindHint, setKindHint] = useState<'group'>();
     return <>
-      <ScopeExpression data={data} onChange={next => { changed(next); setValue(next); }} value={value} />
+      <ScopeEditor data={data} kindHint={kindHint} onChange={(next, hint) => { changed(next); setValue(next); setKindHint(hint); }} purpose={purpose} value={value} />
       <output data-testid="scope">{JSON.stringify(value)}</output>
     </>;
   }
@@ -35,19 +48,119 @@ const renderEditor = (initial: AccessScope | null = null) => {
   return { ...rendered, changed };
 };
 
-test('starts as only a focusable slash and narrows resource types as the user types', () => {
-  renderEditor();
+test('removes one model, upstream and resource-type segment per click', () => {
+  const { changed } = renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } });
+  for (const expected of [{ kind: 'upstream', upstreamId: 'up_a' }, { kind: 'upstreams' }, null]) {
+    fireEvent.click(screen.getByRole('button', { name: 'Remove last scope segment' }));
+    expect(changed).toHaveBeenLastCalledWith(expected);
+    expect(screen.queryByRole('combobox')).toBeNull();
+  }
+  expect(screen.queryByRole('button', { name: 'Remove last scope segment' })).toBeNull();
+});
+
+test('uses the field clear icon inside the scope removal button', () => {
+  renderEditor({ kind: 'upstream', upstreamId: 'up_a' });
+  const icon = screen.getByRole('button', { name: 'Remove last scope segment' }).querySelector('svg')!;
+  expect(icon.style.width).toBe('12px');
+  expect(icon.style.height).toBe('12px');
+  expect(icon.getAttribute('viewBox')).toBe('0 0 12 12');
+});
+
+test('removing a group keeps the Group prefix', () => {
+  const { changed } = renderEditor({ kind: 'group', groupId: 3 });
+  fireEvent.click(screen.getByRole('button', { name: 'Remove last scope segment' }));
+  expect(changed).toHaveBeenLastCalledWith(null);
+  expect(screen.getByRole('button', { name: 'Group' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Resource' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Remove last scope segment' }));
+  expect(screen.queryByRole('button', { name: 'Group' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Remove last scope segment' })).toBeNull();
+});
+
+test('removing the last segment while editing discards its draft', () => {
+  const { changed } = renderEditor({ kind: 'user', userId: 2 });
+  fireEvent.click(screen.getByRole('button', { name: 'alice' }));
+  fireEvent.change(screen.getByRole('combobox', { name: 'Resource' }), { target: { value: 'draft' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Remove last scope segment' }));
+  expect(changed).toHaveBeenLastCalledWith({ kind: 'users' });
+  expect(screen.queryByRole('combobox')).toBeNull();
+});
+
+test.each(['exact', 'regex'] as const)('navigable %s scopes select prefixes without entering edit mode', kind => {
+  const navigate = vi.fn();
+  const scope = { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind, value: 'gpt-5' } } as const;
+  const { container } = renderInApp(<ScopeExpression data={data} onNavigate={navigate} readOnly value={scope} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Upstream' }));
+  expect(navigate).toHaveBeenLastCalledWith({ kind: 'upstreams' }, undefined);
+  fireEvent.click(screen.getByRole('button', { name: 'Copilot' }));
+  expect(navigate).toHaveBeenLastCalledWith({ kind: 'upstream', upstreamId: 'up_a' });
+  fireEvent.click(container.querySelectorAll('.floway-scope-expression-slash')[2]!);
+  expect(navigate).toHaveBeenLastCalledWith(scope);
+  expect(screen.queryByRole('combobox')).toBeNull();
+});
+
+test.each([
+  [null, 'Resource type', ''],
+  [{ kind: 'upstreams' }, 'Resource', ''],
+  [{ kind: 'upstream', upstreamId: 'up_a' }, 'Model', ''],
+  [{ kind: 'user', userId: 2 }, 'Resource', 'alice'],
+  [{ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } }, 'Model', 'gpt-5'],
+] as const)('clicking editor whitespace activates the last segment for %j', (scope, label, value) => {
+  const { container } = renderEditor(scope);
+  fireEvent.click(container.querySelector('.floway-scope-editor')!);
+  const input = screen.getByRole<HTMLInputElement>('combobox', { name: label });
+  expect(input.value).toBe(value);
+  expect(document.activeElement).toBe(input);
+});
+
+test.each([0, 1, 2])('clicking slash %i edits its following segment', index => {
+  const { container } = renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } });
+  fireEvent.click(container.querySelectorAll('.floway-scope-expression-slash')[index]!);
+  expect(screen.getByRole<HTMLInputElement>('combobox', { name: ['Resource type', 'Resource', 'Model'][index] }).value).toBe(['Upstream', 'Copilot', 'gpt-5'][index]);
+});
+
+test('clicking the slash of an active segment preserves and focuses its draft', () => {
+  const { container, changed } = renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } });
+  fireEvent.click(container.querySelector('.floway-scope-editor')!);
+  const input = screen.getByRole<HTMLInputElement>('combobox', { name: 'Model' });
+  fireEvent.change(input, { target: { value: 'draft-model' } });
+  fireEvent.mouseDown(container.querySelectorAll('.floway-scope-expression-slash')[2]!);
+  fireEvent.click(container.querySelectorAll('.floway-scope-expression-slash')[2]!);
+  expect(input.value).toBe('draft-model');
+  expect(document.activeElement).toBe(input);
+  expect(changed).not.toHaveBeenCalled();
+});
+
+test('a disabled scope surface and its slash never activate editing', () => {
+  const { container } = renderInApp(<ScopeEditor data={data} readOnly value={{ kind: 'upstreams' }} />);
+  fireEvent.click(container.querySelector('.floway-scope-editor')!);
+  fireEvent.click(container.querySelector('.floway-scope-expression-slash')!);
+  expect(screen.queryByRole('combobox')).toBeNull();
+});
+
+test('starts with a slash and an ellipsis button and puts matching resource types first', () => {
+  const { container } = renderEditor();
 
   const root = screen.getByRole('button', { name: 'Resource type' });
-  expect(root.textContent).toBe('/');
+  expect(root.classList.contains('floway-scope-expression-append')).toBe(true);
+  expect(root.querySelector('svg')).toBeTruthy();
+  expect(container.querySelector('.floway-scope-expression-slash')!.textContent).toBe('/');
   expect(screen.queryByText('Select')).toBeNull();
   expect(screen.queryByText('All')).toBeNull();
 
-  fireEvent.focus(root);
+  fireEvent.click(root);
   const input = screen.getByRole('combobox', { name: 'Resource type' });
   expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['User', 'Upstream', 'Group']);
   fireEvent.change(input, { target: { value: 'u' } });
-  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['User', 'Upstream']);
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['User', 'Upstream', 'Group']);
+  fireEvent.change(input, { target: { value: 'Upstream' } });
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Upstream', 'User', 'Group']);
+});
+
+test('the read-only root has only a slash and no append button', () => {
+  const { container } = renderInApp(<ScopeExpression data={data} readOnly value={null} />);
+  expect(container.querySelector('.floway-scope-expression')!.textContent).toBe('/');
+  expect(screen.queryByRole('button')).toBeNull();
 });
 
 test('advances from kind to upstream to model while storing each valid prefix', () => {
@@ -81,11 +194,79 @@ test('changing an upstream preserves the later model even when the new upstream 
   expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Model' }).value).toBe('');
 });
 
-test('keeps the current model first until the input becomes dirty, then restores normal candidate order', () => {
+test('scope filters can move back to either parent without retaining a model restriction', () => {
+  const { changed } = renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } }, 'filter');
+  fireEvent.click(screen.getByRole('button', { name: 'Copilot' }));
+  expect(screen.getAllByRole('option', { name: 'Copilot' })).toHaveLength(1);
+  fireEvent.click(screen.getByRole('option', { name: 'Copilot' }));
+  expect(changed).toHaveBeenLastCalledWith({ kind: 'upstream', upstreamId: 'up_a' });
+  fireEvent.click(screen.getByRole('button', { name: 'Upstream' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Upstream' }));
+  expect(changed).toHaveBeenLastCalledWith({ kind: 'upstreams' });
+});
+
+test.each(['scope', 'filter'] as const)('offers exact and regex candidates in the %s editor', purpose => {
+  renderEditor({ kind: 'upstream', upstreamId: 'up_a' }, purpose);
+  fireEvent.click(screen.getByRole('button', { name: 'Model' }));
+  fireEvent.change(screen.getByRole('combobox', { name: 'Model' }), { target: { value: 'gp' } });
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['gpt-5', 'gpt-6', 'gp', '/gp/']);
+});
+
+test('append buttons show ellipses only when another path segment is available', () => {
+  const { container } = renderEditor({ kind: 'upstreams' });
+  const append = screen.getByRole('button', { name: 'Resource' });
+  expect(append.classList.contains('floway-scope-expression-append')).toBe(true);
+  expect(append.querySelector('svg')).toBeTruthy();
+  expect(container.querySelectorAll('.floway-scope-expression-append')).toHaveLength(1);
+  fireEvent.click(append);
+  expect(screen.getByRole('combobox', { name: 'Resource' })).toBeTruthy();
+  expect(container.querySelector('.fui-Combobox__expandIcon')).toBeNull();
+});
+
+test.each(['user', 'group', 'upstreamModel'] as const)('complete %s paths have no append button', kind => {
+  const scope: AccessScope = kind === 'user' ? { kind, userId: 2 } : kind === 'group' ? { kind, groupId: 3 }
+    : { kind, upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } };
+  const { container } = renderEditor(scope);
+  expect(container.querySelector('.floway-scope-expression-append')).toBeNull();
+});
+
+test('lists matched models, custom entries, then every unmatched model', () => {
+  renderEditor({ kind: 'upstream', upstreamId: 'up_a' });
+  fireEvent.click(screen.getByRole('button', { name: 'Model' }));
+  const input = screen.getByRole('combobox', { name: 'Model' });
+  fireEvent.change(input, { target: { value: '^gpt-5$' } });
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['gpt-5', '^gpt-5$', '/^gpt-5$/', 'gpt-6']);
+  fireEvent.change(input, { target: { value: '^future$' } });
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['^future$', '/^future$/', 'gpt-5', 'gpt-6']);
+  fireEvent.change(input, { target: { value: '[' } });
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['[', 'gpt-5', 'gpt-6']);
+  fireEvent.change(input, { target: { value: '^GPT-5$' } });
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['^GPT-5$', '/^GPT-5$/', 'gpt-5', 'gpt-6']);
+});
+
+test('keeps unmatched real upstreams after matching upstreams without inventing a candidate', () => {
+  renderEditor({ kind: 'upstreams' });
+  fireEvent.click(screen.getByRole('button', { name: 'Resource' }));
+  fireEvent.change(screen.getByRole('combobox', { name: 'Resource' }), { target: { value: 'v' } });
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['vLLM', 'Copilot']);
+});
+
+test('Escape discards the draft without committing a freeform model', () => {
+  const { changed } = renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'gpt-5' }));
+  const input = screen.getByRole('combobox', { name: 'Model' });
+  fireEvent.change(input, { target: { value: 'discard-me' } });
+  fireEvent.keyDown(input, { key: 'Escape' });
+  expect(screen.queryByRole('combobox')).toBeNull();
+  expect(screen.getByRole('button', { name: 'gpt-5' })).toBeTruthy();
+  expect(changed).not.toHaveBeenCalled();
+});
+
+test('keeps an existing regex behind matching models even before the input changes', () => {
   const { container } = renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: 'gp' } });
 
   fireEvent.click(container.querySelector('.floway-scope-expression-regex')!.closest('button')!);
-  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['/gp/', 'gpt-5', 'gpt-6', 'gp']);
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['gpt-5', 'gpt-6', 'gp', '/gp/']);
 
   fireEvent.change(screen.getByRole('combobox', { name: 'Model' }), { target: { value: 'g' } });
   expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['gpt-5', 'gpt-6', 'g', '/g/']);
@@ -102,15 +283,41 @@ test('commits a freeform model on blur', async () => {
   await waitFor(() => expect(changed).toHaveBeenLastCalledWith({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'future-model' } }));
 });
 
-test('commits a freeform upstream on blur', async () => {
+test('does not commit an upstream draft on blur without selecting a real upstream', async () => {
   const { changed } = renderEditor({ kind: 'upstreams' });
 
   fireEvent.click(screen.getByRole('button', { name: 'Resource' }));
   const input = screen.getByRole('combobox', { name: 'Resource' });
   fireEvent.change(input, { target: { value: 'up_future' } });
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Copilot', 'vLLM']);
+  fireEvent.keyDown(input, { key: 'Tab', code: 'Tab' });
   fireEvent.blur(input);
 
-  await waitFor(() => expect(changed).toHaveBeenLastCalledWith({ kind: 'upstream', upstreamId: 'up_future' }));
+  await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
+  expect(changed).not.toHaveBeenCalled();
+  expect(screen.getByTestId('scope').textContent).toBe('{"kind":"upstreams"}');
+});
+
+test.each([
+  { scope: { kind: 'upstream', upstreamId: 'up_removed' } as AccessScope, description: 'Unknown upstream ID "up_removed"' },
+  { scope: { kind: 'user', userId: 99 } as AccessScope, description: 'Unknown user ID "99"' },
+  { scope: { kind: 'group', groupId: 99 } as AccessScope, description: 'Unknown group ID "99"' },
+])('shows a short unknown label and describes the missing resource: $description', async ({ scope, description }) => {
+  const { container } = renderInApp(<ScopeExpression data={data} readOnly value={scope} />);
+  const unknown = screen.getByText('Unknown');
+  expect(container.querySelector('.floway-scope-expression')!.textContent).not.toContain('99');
+  expect(container.querySelector('.floway-scope-expression')!.textContent).not.toContain('up_removed');
+  fireEvent.focus(unknown.closest('[tabindex]')!);
+  expect((await screen.findByRole('tooltip')).textContent).toBe(description);
+});
+
+test('editing an unknown upstream searches its ID but offers only real upstreams', () => {
+  const { changed } = renderEditor({ kind: 'upstream', upstreamId: 'up_removed' });
+  fireEvent.click(screen.getByRole('button', { name: 'Unknown' }));
+  expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Resource' }).value).toBe('up_removed');
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Copilot', 'vLLM']);
+  fireEvent.click(screen.getByRole('option', { name: 'vLLM' }));
+  expect(changed).toHaveBeenLastCalledWith({ kind: 'upstream', upstreamId: 'up_b' });
 });
 
 test('changing the resource type deletes incompatible later parts', () => {

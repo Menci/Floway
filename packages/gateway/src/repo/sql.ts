@@ -78,6 +78,7 @@ import { querySqlUsageOverview } from './usage-overview-sql.ts';
 import {
   accessScopeDepth,
   accessScopeOrderGroup,
+  AccessRecordConflictError,
   type AccessPrincipal,
   type AccessRecord,
   type AccessRecordInput,
@@ -583,12 +584,16 @@ class SqlAccessRecordsRepo implements AccessRecordsRepo {
 
   private async assertOrderAvailable(input: AccessRecordInput, excludingId?: number): Promise<void> {
     const existing = await this.listByPrincipal(input.principal);
+    if (existing.some(record => record.id !== excludingId && JSON.stringify(record.scope) === JSON.stringify(input.scope))) {
+      throw new AccessRecordConflictError('Access record already exists for this principal and scope');
+    }
+    if (input.scope.kind !== 'upstreamModel') return;
     const duplicateOrder = existing.find(record =>
       record.id !== excludingId
       && accessScopeDepth(record.scope) === accessScopeDepth(input.scope)
       && accessScopeOrderGroup(record.scope) === accessScopeOrderGroup(input.scope)
       && record.sortOrder === input.sortOrder);
-    if (duplicateOrder) throw new Error(`Access record sortOrder ${input.sortOrder} is already used at this scope level`);
+    if (duplicateOrder) throw new AccessRecordConflictError(`Access record sortOrder ${input.sortOrder} is already used at this scope level`);
   }
 
   async list(): Promise<AccessRecord[]> {
@@ -658,6 +663,28 @@ class SqlAccessRecordsRepo implements AccessRecordsRepo {
       id,
     ).first<AccessRecordRow>();
     return row ? parseAccessRecord(row) : null;
+  }
+
+  async reorderModel(upstreamId: string, expectedIds: readonly number[], ids: readonly number[]): Promise<AccessRecord[] | null> {
+    // Materialize the boundary and its original order before updating any row.
+    // A single guarded statement prevents partial ranks and stale drag snapshots.
+    const { results } = await this.db.prepare(
+      `WITH current_ids AS MATERIALIZED (
+         SELECT id FROM access_records
+         WHERE json_extract(scope_json, '$.kind') = 'upstreamModel'
+           AND json_extract(scope_json, '$.upstreamId') = ?
+         ORDER BY sort_order, id
+       ), valid_order AS MATERIALIZED (
+         SELECT json_group_array(id) = ? AS valid FROM current_ids
+       ), ranks AS (
+         SELECT CAST(value AS INTEGER) AS id, CAST(key AS INTEGER) AS rank FROM json_each(?)
+       )
+       UPDATE access_records SET
+         sort_order = (SELECT rank FROM ranks WHERE ranks.id = access_records.id), updated_at = ?
+       WHERE id IN (SELECT id FROM current_ids) AND (SELECT valid FROM valid_order)
+       RETURNING ${ACCESS_RECORD_COLUMNS}`,
+    ).bind(upstreamId, JSON.stringify(expectedIds), JSON.stringify(ids), new Date().toISOString()).all<AccessRecordRow>();
+    return results.length === 0 ? null : results.map(parseAccessRecord);
   }
 
   async delete(id: number): Promise<boolean> {

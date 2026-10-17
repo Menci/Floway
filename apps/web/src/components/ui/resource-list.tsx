@@ -35,15 +35,16 @@ const useStyles = makeStyles({
     },
     // The last row's edge and the card's own would otherwise stack into one
     // heavier line a pixel above the corner; the narrow-width list that stands
-    // in for a table draws the same separator.
-    '& :is(.fui-TableBody:not([data-reordering]) .fui-TableRow, .fui-List > .fui-ListItem):last-child, & .fui-TableBody:not([data-reordering]) .fui-TableRow:has(+ [data-table-expansion-row]:last-child)': {
+    // in for a table draws the same separator. Only the final body reaches the
+    // panel edge; earlier bodies are internal reorder segments.
+    '& .fui-TableBody:last-of-type:not([data-reordering]) .fui-TableRow:last-child, & .fui-List > .fui-ListItem:last-child, & .fui-TableBody:last-of-type:not([data-reordering]) .fui-TableRow:has(+ [data-table-expansion-row]:last-child)': {
       borderBottomStyle: 'none',
     },
     // A reorder gesture moves the rows without moving the markup, so the row
     // against the card's edge is no longer the last one in the document. The
     // two selectors are mutually exclusive rather than one overriding the
     // other, which leaves nothing for the atom order to decide.
-    '& .fui-TableBody[data-reordering] .fui-TableRow[data-reorder-edge="last"]': {
+    '& .fui-TableBody:last-of-type[data-reordering] .fui-TableRow[data-reorder-edge="last"]': {
       borderBottomStyle: 'none',
     },
   },

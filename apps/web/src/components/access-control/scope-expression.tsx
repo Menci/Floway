@@ -1,13 +1,17 @@
-import { BracesRegular, CubeRegular, DismissRegular, PeopleRegular, PersonRegular } from '@fluentui/react-icons';
-import { useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import { CubeRegular, MoreHorizontal16Regular, PeopleRegular, PersonRegular, TextAsteriskRegular } from '@fluentui/react-icons';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 
 import type { ControlPlaneGroup, ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { type TFunction, useTranslation } from '../../i18n/translation';
-import { Combobox } from '../ui/fluent-form-controls';
+import { GroupIdentity } from '../groups/identity';
+import { FieldClearIcon } from '../ui/field-clear-icon';
+import { InlineCombobox } from '../ui/inline-combobox';
 import { highlight, prismTokenStyles } from '../ui/prism';
+import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { ProviderBadge } from '../upstreams/provider-badge';
+import { UserIdentity } from '../users/identity';
 import type { AccessScope } from '@floway-dev/gateway/browser';
 
 const { Option, Tooltip, makeStyles, mergeClasses } = fluentComponents;
@@ -26,9 +30,42 @@ export interface ScopeExpressionData {
   users: ControlPlaneUser[];
 }
 
-export function ScopeExpression({ data, onChange, readOnly = false, value }: {
+export function ScopeEditor(props: Omit<ComponentProps<typeof ScopeExpression>, 'framed'>) {
+  return <ScopeExpression {...props} framed />;
+}
+
+function ScopeEditorSurface({ children, className, onRemove, readOnly }: { children: ReactNode; className?: string; onRemove?: () => void; readOnly: boolean }) {
+  const { t } = useTranslation();
+  const isWhitespace = (target: EventTarget, root: HTMLElement) => target === root || target === root.querySelector('.floway-scope-expression');
+  return <div aria-disabled={readOnly ? true : undefined} className={mergeClasses('floway-scope-editor', className)}
+    onMouseDown={event => {
+      if (!readOnly && isWhitespace(event.target, event.currentTarget)) event.preventDefault();
+    }}
+    onClick={event => {
+      if (!readOnly && isWhitespace(event.target, event.currentTarget)) {
+        activateSegment(event.currentTarget.querySelector('.floway-scope-expression')!.lastElementChild!);
+      }
+    }}
+  >
+    {children}
+    {onRemove && <TooltipIconButton disabled={readOnly} icon={<FieldClearIcon />} label={t('dashboard.accessControl.actions.removeScopeSegment')} onClick={onRemove} />}
+  </div>;
+}
+
+const activateSegment = (segment: Element) => {
+  const control = segment.querySelector<HTMLInputElement | HTMLButtonElement>('input, button')!;
+  control.focus();
+  control.click();
+};
+
+export function ScopeExpression({ className, data, framed = false, kindHint, onChange, onNavigate, purpose = 'scope', readOnly = false, value }: {
+  className?: string;
   data: ScopeExpressionData;
-  onChange?: (value: AccessScope | null) => void;
+  framed?: boolean;
+  kindHint?: 'group';
+  onChange?: (value: AccessScope | null, kindHint?: 'group') => void;
+  onNavigate?: (value: AccessScope | null, kindHint?: 'group') => void;
+  purpose?: 'scope' | 'filter';
   readOnly?: boolean;
   value: AccessScope | null;
 }) {
@@ -38,7 +75,10 @@ export function ScopeExpression({ data, onChange, readOnly = false, value }: {
   const [dirty, setDirty] = useState(false);
   const [pendingKind, setPendingKind] = useState<ScopeKind | null>(null);
   const editRevision = useRef(0);
-  const kind = pendingKind ?? kindFor(value);
+  // A deferred blur must not commit a draft after its editor is replaced.
+  useEffect(() => () => { editRevision.current++; }, []);
+  const kind = (purpose === 'scope' ? pendingKind : null) ?? kindFor(value) ?? kindHint ?? null;
+  const interactive = !readOnly || onNavigate !== undefined;
 
   const resetInput = (nextActive: Part | null, nextQuery = '') => {
     editRevision.current++;
@@ -51,24 +91,31 @@ export function ScopeExpression({ data, onChange, readOnly = false, value }: {
     if (value !== null) setPendingKind(null);
   };
   const activate = (part: Part) => {
+    if (onNavigate) {
+      if (part === 'kind') onNavigate(kind === 'upstream' ? { kind: 'upstreams' } : kind === 'user' ? { kind: 'users' } : null, kind === 'group' ? 'group' : undefined);
+      else if (part === 'instance' && hasUpstreamInstance(value)) onNavigate({ kind: 'upstream', upstreamId: value.upstreamId });
+      else onNavigate(value);
+      return;
+    }
     if (readOnly) return;
     resetInput(part, partValue(part, kind, value, data, t));
   };
   const commitKind = (nextKind: ScopeKind) => {
-    if (nextKind !== kindFor(value)) {
-      onChange?.(nextKind === 'upstream' ? { kind: 'upstreams' } : nextKind === 'user' ? { kind: 'users' } : null);
+    if (nextKind !== kindFor(value) || purpose === 'filter') {
+      if (nextKind === 'group') onChange?.(null, 'group');
+      else onChange?.(nextKind === 'upstream' ? { kind: 'upstreams' } : { kind: 'users' });
     }
     setPendingKind(nextKind);
     resetInput('instance');
   };
-  const commitInstance = (id: string, advance: boolean) => {
+  const commitInstance = (id: string) => {
     if (kind === 'upstream') {
-      const next = value?.kind === 'upstreamModel'
+      const next = value?.kind === 'upstreamModel' && purpose !== 'filter'
         ? { ...value, upstreamId: id }
         : { kind: 'upstream' as const, upstreamId: id };
       onChange?.(next);
       setPendingKind(null);
-      if (advance) resetInput('model'); else closeInput();
+      resetInput('model');
       return;
     }
     if (kind === 'user') onChange?.({ kind: 'user', userId: Number(id) });
@@ -86,7 +133,7 @@ export function ScopeExpression({ data, onChange, readOnly = false, value }: {
   };
   const commitOption = (part: Part, option: string) => {
     if (part === 'kind') commitKind(option as ScopeKind);
-    else if (part === 'instance') commitInstance(option, true);
+    else if (part === 'instance') commitInstance(option);
     else commitModel(option);
   };
   const commitBlur = () => {
@@ -95,8 +142,7 @@ export function ScopeExpression({ data, onChange, readOnly = false, value }: {
       return;
     }
     const trimmed = query.trim();
-    if (active === 'instance' && kind === 'upstream' && trimmed) commitInstance(trimmed, false);
-    else if (active === 'model' && trimmed) commitModel(`exact:${trimmed}`);
+    if (active === 'model' && trimmed) commitModel(`exact:${trimmed}`);
     else closeInput();
   };
   const onInputBlur = () => {
@@ -107,87 +153,127 @@ export function ScopeExpression({ data, onChange, readOnly = false, value }: {
   };
 
   const options = useMemo(
-    () => optionsFor(active, kind, query, dirty, value, data, t),
-    [active, data, dirty, kind, query, t, value],
+    () => optionsFor(active, kind, query, value, data, t),
+    [active, data, kind, query, t, value],
   );
   const input = active === null ? null : <PartInput
     ariaLabel={t(`dashboard.accessControl.scope.${active === 'kind' ? 'kind' : active === 'instance' ? 'instance' : 'model'}`)}
-    freeform={(active === 'instance' && kind === 'upstream') || active === 'model'}
+    emptyMessage={t('dashboard.accessControl.scope.noMatches')}
+    freeform={active === 'model'}
+    model={active === 'model'}
     name={`scope-${active}`}
     onBlur={onInputBlur}
     onChange={next => {
       setDirty(true);
-      setQuery(active === 'model' ? next.replace(/^\//, '').replace(/\/$/, '') : next);
+      setQuery(active === 'model' && purpose === 'scope' ? next.replace(/^\//, '').replace(/\/$/, '') : next);
     }}
     onSelect={option => commitOption(active, option)}
+    onCancel={closeInput}
     options={options}
     query={query}
+    resourceType={active === 'kind'}
+    regex={active === 'model' && value?.kind === 'upstreamModel' && value.model.kind === 'regex'}
   />;
   const hasInstance = instanceMatchesKind(kind, value);
+  const removeLast = () => {
+    resetInput(null);
+    if (value?.kind === 'upstreamModel') onChange?.({ kind: 'upstream', upstreamId: value.upstreamId });
+    else if (value?.kind === 'upstream') onChange?.({ kind: 'upstreams' });
+    else if (value?.kind === 'user') onChange?.({ kind: 'users' });
+    else if (value?.kind === 'group') onChange?.(null, 'group');
+    else onChange?.(null);
+    setPendingKind(value?.kind === 'group' ? 'group' : null);
+  };
 
-  return <div className="floway-scope-expression">
-    {active === 'kind'
+  const expression = <div aria-label={interactive ? t('dashboard.accessControl.fields.scope') : undefined} className={mergeClasses('floway-scope-expression', !framed && className)} role={interactive ? 'group' : undefined}
+    onMouseDown={event => {
+      if (onNavigate || (interactive && (event.target as HTMLElement).classList.contains('floway-scope-expression-slash'))) event.preventDefault();
+    }}
+    onClick={event => {
+      if (interactive && (event.target as HTMLElement).classList.contains('floway-scope-expression-slash')) {
+        activateSegment((event.target as HTMLElement).parentElement!);
+      }
+    }}
+  >
+    <span className="floway-scope-expression-segment">{active === 'kind'
       ? <><Slash />{input}</>
       : kind === null
-        ? <SlashTrigger label={t('dashboard.accessControl.scope.kind')} onActivate={() => activate('kind')} readOnly={readOnly} />
-        : <><Slash /><PartToken onActivate={() => activate('kind')} readOnly={readOnly}>{kindLabel(kind, t)}</PartToken></>}
+        ? <><Slash />{!readOnly && <AppendTrigger label={t('dashboard.accessControl.scope.kind')} onActivate={() => activate('kind')} />}</>
+        : <><Slash /><PartToken className="floway-scope-expression-kind" onActivate={() => activate('kind')} readOnly={!interactive}>{kindLabel(kind, t)}</PartToken></>}</span>
 
-    {kind !== null && (active === 'instance'
+    {kind !== null && (active === 'instance' || hasInstance || !readOnly) && <span className="floway-scope-expression-segment">{active === 'instance'
       ? <><Slash />{input}</>
       : hasInstance
-        ? <><Slash /><InstancePart data={data} kind={kind} onActivate={() => activate('instance')} readOnly={readOnly} t={t} value={value} /></>
-        : !readOnly && <SlashTrigger label={t('dashboard.accessControl.scope.instance')} onActivate={() => activate('instance')} />)}
+        ? <><Slash /><InstancePart data={data} kind={kind} onActivate={() => activate('instance')} readOnly={!interactive} t={t} value={value} /></>
+        : <><Slash /><AppendTrigger label={t('dashboard.accessControl.scope.instance')} onActivate={() => activate('instance')} /></>}</span>}
 
-    {kind === 'upstream' && hasUpstreamInstance(value) && (active === 'model'
+    {kind === 'upstream' && hasUpstreamInstance(value) && (active === 'model' || value.kind === 'upstreamModel' || !readOnly) && <span className="floway-scope-expression-segment">{active === 'model'
       ? <><Slash />{input}</>
       : value.kind === 'upstreamModel'
-        ? <><Slash /><ModelPart onActivate={() => activate('model')} readOnly={readOnly} scope={value} /></>
-        : !readOnly && <SlashTrigger label={t('dashboard.accessControl.scope.model')} onActivate={() => activate('model')} />)}
+        ? <><Slash /><ModelPart onActivate={() => activate('model')} readOnly={!interactive} scope={value} /></>
+        : <><Slash /><AppendTrigger label={t('dashboard.accessControl.scope.model')} onActivate={() => activate('model')} /></>}</span>}
   </div>;
+  return framed ? <ScopeEditorSurface className={className} onRemove={kind === null ? undefined : removeLast} readOnly={readOnly}>{expression}</ScopeEditorSurface> : expression;
 }
 
-function PartInput({ ariaLabel, freeform, name, onBlur, onChange, onSelect, options, query }: {
+function PartInput({ ariaLabel, emptyMessage, freeform, model, name, onBlur, onCancel, onChange, onSelect, options, query, regex, resourceType }: {
   ariaLabel: string;
+  emptyMessage: string;
   freeform: boolean;
+  model: boolean;
   name: string;
   onBlur: () => void;
+  onCancel: () => void;
   onChange: (value: string) => void;
   onSelect: (value: string) => void;
   options: ScopeOption[];
   query: string;
+  regex: boolean;
+  resourceType: boolean;
 }) {
-  return <Combobox
-    aria-label={ariaLabel}
-    autoComplete="off"
-    autoFocus
-    className="floway-scope-expression-input"
-    freeform={freeform}
-    input={{ onBlur }}
-    listWidth="content"
-    name={name}
-    onChange={event => onChange(event.target.value)}
-    open
-    onOptionSelect={(_, option) => option.optionValue && onSelect(option.optionValue)}
-    spellCheck={false}
-    value={query}
-  >
-    {options.map(option => <Option key={option.key} text={option.text} value={option.value}>
-      <span className={mergeClasses('floway-scope-expression-option', option.dimmed && 'floway-scope-expression-dimmed')}>{option.content}</span>
-    </Option>)}
-  </Combobox>;
+  const Icon = regex ? TextAsteriskRegular : CubeRegular;
+  return <span className={mergeClasses('floway-scope-expression-part', resourceType && 'floway-scope-expression-kind')}>
+    {model && <Icon className="floway-scope-expression-model-icon" />}
+    <InlineCombobox
+      aria-label={ariaLabel}
+      autoComplete="off"
+      autoFocus
+      className={mergeClasses('floway-scope-expression-input', model && 'font-mono')}
+      emptyMessage={emptyMessage}
+      // Unmatched resources remain visible, but must not become an automatic
+      // Tab completion just because they are first in the open list.
+      disableAutoFocus={!freeform}
+      freeform={freeform}
+      onBlur={onBlur}
+      onKeyDown={event => {
+        if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
+          event.preventDefault();
+          event.stopPropagation();
+          const segment = event.currentTarget.closest('.floway-scope-expression-segment')!;
+          onCancel();
+          requestAnimationFrame(() => segment.querySelector('button')?.focus());
+        }
+      }}
+      name={name}
+      onChange={event => onChange(event.target.value)}
+      defaultOpen
+      onOptionSelect={(_, option) => option.optionValue && onSelect(option.optionValue)}
+      spellCheck={false}
+      value={query}
+    >
+      {options.map(option => <Option key={option.key} text={option.text} value={option.value}>
+        <span className={mergeClasses('floway-scope-expression-option', option.dimmed && 'floway-scope-expression-dimmed')}>{option.content}</span>
+      </Option>)}
+    </InlineCombobox>
+  </span>;
+}
+
+function AppendTrigger({ label, onActivate }: { label: string; onActivate: () => void }) {
+  return <button aria-label={label} className="floway-scope-expression-part floway-scope-expression-append" onClick={onActivate} type="button"><MoreHorizontal16Regular /></button>;
 }
 
 function Slash() {
   return <span aria-hidden="true" className="floway-scope-expression-slash">/</span>;
-}
-
-function SlashTrigger({ label, onActivate, readOnly = false }: {
-  label: string;
-  onActivate: () => void;
-  readOnly?: boolean;
-}) {
-  if (readOnly) return <Slash />;
-  return <button aria-label={label} className="floway-scope-expression-slash floway-scope-expression-slash-trigger" onClick={onActivate} onFocus={onActivate} type="button">/</button>;
 }
 
 function PartToken({ children, className, onActivate, readOnly }: {
@@ -197,9 +283,10 @@ function PartToken({ children, className, onActivate, readOnly }: {
   readOnly: boolean;
 }) {
   const classes = mergeClasses('floway-scope-expression-part', className);
+  const content = typeof children === 'string' ? <span className="floway-control-label">{children}</span> : children;
   return readOnly
-    ? <span className={classes}>{children}</span>
-    : <button className={classes} onClick={onActivate} type="button">{children}</button>;
+    ? <span className={classes}>{content}</span>
+    : <button className={classes} onClick={onActivate} type="button">{content}</button>;
 }
 
 interface ScopeOption { key: string; value: string; text: string; content: ReactNode; dimmed?: boolean }
@@ -208,83 +295,55 @@ const optionsFor = (
   active: Part | null,
   kind: ScopeKind | null,
   query: string,
-  dirty: boolean,
   value: AccessScope | null,
   data: ScopeExpressionData,
   t: TFunction,
 ): ScopeOption[] => {
   const needle = query.toLowerCase();
-  let options: ScopeOption[] = [];
+  const matching: ScopeOption[] = [];
+  const unmatched: ScopeOption[] = [];
+  const custom: ScopeOption[] = [];
+  const add = (option: ScopeOption, matches: boolean) => (matches ? matching : unmatched).push(option);
   if (active === 'kind') {
-    options = (['user', 'upstream', 'group'] as const)
-      .map(candidate => {
-        const label = kindLabel(candidate, t);
-        return { key: candidate, value: candidate, text: label, content: label };
-      })
-      .filter(option => option.key.startsWith(needle) || option.text.toLowerCase().startsWith(needle));
+    for (const candidate of ['user', 'upstream', 'group'] as const) {
+      const label = kindLabel(candidate, t);
+      add({ key: candidate, value: candidate, text: label, content: label }, candidate.startsWith(needle) || label.toLowerCase().startsWith(needle));
+    }
   } else if (active === 'instance' && kind === 'upstream') {
-    options = data.upstreams
-      .filter(upstream => upstream.name.toLowerCase().includes(needle) || upstream.id.toLowerCase().includes(needle))
-      .map(upstream => ({ key: upstream.id, value: upstream.id, text: upstream.name, content: <ProviderBadge label={upstream.name} upstream={upstream} /> }));
-    if (query && !options.some(option => option.value === query)) {
-      options.push({ key: `literal:${query}`, value: query, text: query, content: query, dimmed: true });
+    for (const upstream of data.upstreams) {
+      add({ key: upstream.id, value: upstream.id, text: upstream.name, content: <ProviderBadge label={upstream.name} upstream={upstream} /> }, upstream.name.toLowerCase().includes(needle) || upstream.id.toLowerCase().includes(needle));
     }
   } else if (active === 'instance' && kind === 'user') {
-    options = data.users
-      .filter(user => user.username.toLowerCase().includes(needle))
-      .map(user => ({ key: String(user.id), value: String(user.id), text: user.username, content: <><PersonRegular />{user.username}</> }));
+    for (const user of data.users) {
+      add({ key: String(user.id), value: String(user.id), text: user.username, content: <UserIdentity username={user.username} /> }, user.username.toLowerCase().includes(needle));
+    }
   } else if (active === 'instance' && kind === 'group') {
-    options = data.groups
-      .filter(group => group.name.toLowerCase().includes(needle))
-      .map(group => ({ key: String(group.id), value: String(group.id), text: group.name, content: <><PeopleRegular />{group.name}</> }));
+    for (const group of data.groups) {
+      add({ key: String(group.id), value: String(group.id), text: group.name, content: <GroupIdentity group={group} /> }, group.name.toLowerCase().includes(needle));
+    }
   } else if (active === 'model' && hasUpstreamInstance(value)) {
     const ids = [...new Set(data.models.filter(model => model.upstreams.some(upstream => upstream.id === value.upstreamId)).map(model => model.id))]
       .sort((a, b) => a.localeCompare(b));
-    options = ids
-      .filter(id => id.toLowerCase().includes(needle))
-      .map(id => ({ key: id, value: `exact:${id}`, text: id, content: <><CubeRegular /><span className="floway-scope-expression-mono" translate="no">{id}</span></> }));
-    if (query && !ids.includes(query)) {
-      options.push({ key: `literal:${query}`, value: `exact:${query}`, text: query, content: <><CubeRegular /><span className="floway-scope-expression-mono" translate="no">{query}</span></>, dimmed: true });
+    const pattern = query ? draftPattern(query) : null;
+    for (const id of ids) {
+      add({ key: id, value: `exact:${id}`, text: id, content: <><CubeRegular className="floway-scope-expression-model-icon" /><span className="floway-control-label font-mono" translate="no">{id}</span></> }, id.toLowerCase().includes(needle) || pattern?.test(id) === true);
     }
-    if (query) {
-      options.push({ key: `regex:${query}`, value: `regex:${query}`, text: `/${query}/`, content: <><BracesRegular /><RegexPattern pattern={query} /></> });
+    if (query && !ids.includes(query)) {
+      custom.push({ key: `literal:${query}`, value: `exact:${query}`, text: query, content: <><CubeRegular className="floway-scope-expression-model-icon" /><span className="floway-control-label font-mono" translate="no">{query}</span></>, dimmed: true });
+    }
+    if (pattern !== null) {
+      custom.push({ key: `regex:${query}`, value: `regex:${query}`, text: `/${query}/`, content: <><TextAsteriskRegular className="floway-scope-expression-model-icon" /><RegexPattern pattern={query} /></> });
     }
   }
 
-  const current = dirty ? null : currentOption(active, kind, value, data, t);
-  return current === null ? options : [current, ...options.filter(option => option.value !== current.value)];
+  return [...matching, ...custom, ...unmatched];
 };
 
-const currentOption = (active: Part | null, kind: ScopeKind | null, value: AccessScope | null, data: ScopeExpressionData, t: TFunction): ScopeOption | null => {
-  if (active === 'kind' && kind !== null) {
-    const label = kindLabel(kind, t);
-    return { key: `current:${kind}`, value: kind, text: label, content: label };
+const draftPattern = (query: string): RegExp | null => {
+  try { return new RegExp(query); } catch (error) {
+    if (error instanceof SyntaxError) return null;
+    throw error;
   }
-  if (active === 'instance' && hasUpstreamInstance(value)) {
-    const upstream = data.upstreams.find(candidate => candidate.id === value.upstreamId);
-    return {
-      key: `current:${value.upstreamId}`,
-      value: value.upstreamId,
-      text: upstream?.name ?? value.upstreamId,
-      content: upstream ? <ProviderBadge label={upstream.name} upstream={upstream} /> : <><DismissRegular />{t('dashboard.accessControl.scope.unknown', { id: value.upstreamId })}</>,
-      dimmed: !upstream,
-    };
-  }
-  if (active === 'instance' && value?.kind === 'user') {
-    const user = data.users.find(candidate => candidate.id === value.userId);
-    return { key: `current:${value.userId}`, value: String(value.userId), text: user?.username ?? String(value.userId), content: <><PersonRegular />{user?.username ?? t('dashboard.accessControl.scope.unknown', { id: String(value.userId) })}</>, dimmed: !user };
-  }
-  if (active === 'instance' && value?.kind === 'group') {
-    const group = data.groups.find(candidate => candidate.id === value.groupId);
-    return { key: `current:${value.groupId}`, value: String(value.groupId), text: group?.name ?? String(value.groupId), content: <><PeopleRegular />{group?.name ?? t('dashboard.accessControl.scope.unknown', { id: String(value.groupId) })}</>, dimmed: !group };
-  }
-  if (active === 'model' && value?.kind === 'upstreamModel') {
-    const raw = value.model.value;
-    return value.model.kind === 'regex'
-      ? { key: `current:regex:${raw}`, value: `regex:${raw}`, text: `/${raw}/`, content: <><BracesRegular /><RegexPattern pattern={raw} /></> }
-      : { key: `current:exact:${raw}`, value: `exact:${raw}`, text: raw, content: <><CubeRegular /><span className="floway-scope-expression-mono" translate="no">{raw}</span></> };
-  }
-  return null;
 };
 
 function InstancePart({ data, kind, onActivate, readOnly, t, value }: {
@@ -299,19 +358,19 @@ function InstancePart({ data, kind, onActivate, readOnly, t, value }: {
     const upstream = data.upstreams.find(candidate => candidate.id === value.upstreamId);
     return upstream
       ? <PartToken onActivate={onActivate} readOnly={readOnly}><ProviderBadge label={upstream.name} upstream={upstream} /></PartToken>
-      : <UnknownPart label={t('dashboard.accessControl.scope.unknown', { id: value.upstreamId })} onActivate={onActivate} readOnly={readOnly} />;
+      : <UnknownPart description={t('dashboard.accessControl.scope.unknownUpstreamId', { id: value.upstreamId })} onActivate={onActivate} readOnly={readOnly} />;
   }
   if (kind === 'user' && value?.kind === 'user') {
     const user = data.users.find(candidate => candidate.id === value.userId);
     return user
-      ? <PartToken onActivate={onActivate} readOnly={readOnly}><PersonRegular />{user.username}</PartToken>
-      : <UnknownPart icon={<PersonRegular />} label={t('dashboard.accessControl.scope.unknown', { id: String(value.userId) })} onActivate={onActivate} readOnly={readOnly} />;
+      ? <PartToken onActivate={onActivate} readOnly={readOnly}><UserIdentity username={user.username} /></PartToken>
+      : <UnknownPart description={t('dashboard.accessControl.scope.unknownUserId', { id: String(value.userId) })} icon={<PersonRegular />} onActivate={onActivate} readOnly={readOnly} />;
   }
   if (kind === 'group' && value?.kind === 'group') {
     const group = data.groups.find(candidate => candidate.id === value.groupId);
     return group
-      ? <PartToken onActivate={onActivate} readOnly={readOnly}><PeopleRegular />{group.name}</PartToken>
-      : <UnknownPart icon={<PeopleRegular />} label={t('dashboard.accessControl.scope.unknown', { id: String(value.groupId) })} onActivate={onActivate} readOnly={readOnly} />;
+      ? <PartToken onActivate={onActivate} readOnly={readOnly}><GroupIdentity group={group} /></PartToken>
+      : <UnknownPart description={t('dashboard.accessControl.scope.unknownGroupId', { id: String(value.groupId) })} icon={<PeopleRegular />} onActivate={onActivate} readOnly={readOnly} />;
   }
   return null;
 }
@@ -321,24 +380,29 @@ function ModelPart({ onActivate, readOnly, scope }: {
   readOnly: boolean;
   scope: Extract<AccessScope, { kind: 'upstreamModel' }>;
 }) {
-  return <PartToken className="floway-scope-expression-mono" onActivate={onActivate} readOnly={readOnly}>
-    {scope.model.kind === 'regex' ? <><BracesRegular /><RegexPattern pattern={scope.model.value} /></> : <><CubeRegular /><span translate="no">{scope.model.value}</span></>}
+  return <PartToken onActivate={onActivate} readOnly={readOnly}>
+    {scope.model.kind === 'regex' ? <><TextAsteriskRegular className="floway-scope-expression-model-icon" /><RegexPattern pattern={scope.model.value} /></> : <><CubeRegular className="floway-scope-expression-model-icon" /><span className="floway-control-label font-mono" translate="no">{scope.model.value}</span></>}
   </PartToken>;
 }
 
 function RegexPattern({ pattern }: { pattern: string }) {
   const styles = useStyles();
-  return <span className={mergeClasses('floway-scope-expression-regex', styles.regex)} dangerouslySetInnerHTML={{ __html: highlight(`/${pattern}/`, 'javascript') }} translate="no" />;
+  return <span className={mergeClasses('floway-control-label font-mono floway-scope-expression-regex', styles.regex)} dangerouslySetInnerHTML={{ __html: highlight(`/${pattern}/`, 'javascript') }} translate="no" />;
 }
 
-function UnknownPart({ icon = <DismissRegular />, label, onActivate, readOnly }: {
+function UnknownPart({ description, icon, onActivate, readOnly }: {
+  description: string;
   icon?: ReactNode;
-  label: string;
   onActivate: () => void;
   readOnly: boolean;
 }) {
-  return <Tooltip content={label} relationship="description">
-    <span><PartToken className="floway-scope-expression-dimmed" onActivate={onActivate} readOnly={readOnly}>{icon}{label}</PartToken></span>
+  const { t } = useTranslation();
+  return <Tooltip content={description} relationship="description">
+    <span className="winui-focus-rect inline-flex max-w-full" tabIndex={readOnly ? 0 : undefined}>
+      <PartToken className="floway-scope-expression-dimmed" onActivate={onActivate} readOnly={readOnly}>{icon}
+        <span className="floway-control-label">{t('dashboard.accessControl.scope.unknownLabel')}</span>
+      </PartToken>
+    </span>
   </Tooltip>;
 }
 
@@ -353,6 +417,12 @@ const instanceMatchesKind = (kind: ScopeKind | null, scope: AccessScope | null) 
   ? hasUpstreamInstance(scope)
   : kind === 'user' ? scope?.kind === 'user' : kind === 'group' && scope?.kind === 'group';
 const partValue = (part: Part, kind: ScopeKind | null, value: AccessScope | null, data: ScopeExpressionData, t: TFunction): string => {
+  if (part === 'kind' && kind !== null) return kindLabel(kind, t);
   if (part === 'model' && value?.kind === 'upstreamModel') return value.model.value;
-  return currentOption(part, kind, value, data, t)?.text ?? '';
+  if (part === 'instance') {
+    if (hasUpstreamInstance(value)) return data.upstreams.find(upstream => upstream.id === value.upstreamId)?.name ?? value.upstreamId;
+    if (value?.kind === 'user') return data.users.find(user => user.id === value.userId)?.username ?? String(value.userId);
+    if (value?.kind === 'group') return data.groups.find(group => group.id === value.groupId)?.name ?? String(value.groupId);
+  }
+  return '';
 };

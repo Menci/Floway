@@ -276,6 +276,17 @@ export const selectCss = `
   inset-inline-end: -14px;
 }
 
+/* A separate clear action keeps Fluent's arrow visible. Its real button owns
+   the hit area, so the replacement glyph's extension must not cover the arrow.
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Combobox/useComboboxStyles.styles.ts */
+.fui-Combobox:has([data-combobox-clear-action]) {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.fui-Combobox__clearIcon[data-combobox-clear-action]::after {
+  display: none;
+}
+
 /* The drop-down surface. AcrylicInAppFillColorDefaultBrush is taken as the flat
    FallbackColor it declares for itself, because the flyout surfaces in this
    layer do no backdrop compositing.

@@ -326,6 +326,7 @@ export interface AccessRecordsRepo {
   listByPrincipals(principals: readonly AccessPrincipal[]): Promise<AccessRecord[]>;
   save(input: AccessRecordInput): Promise<AccessRecord>;
   replace(id: number, input: AccessRecordInput): Promise<AccessRecord | null>;
+  reorderModel(upstreamId: string, expectedIds: readonly number[], ids: readonly number[]): Promise<AccessRecord[] | null>;
   delete(id: number): Promise<boolean>;
   deleteByPrincipal(principal: AccessPrincipal): Promise<number>;
   deleteAll(): Promise<void>;

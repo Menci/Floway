@@ -1,10 +1,119 @@
 export const scopeExpressionCss = String.raw`
+/* Compound path editors use the existing TextBox brush and corner tokens.
+   Height remains content-driven so wrapped paths keep the same field surface.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L23-L30
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L48-L65 */
+.floway-scope-editor {
+  align-items: center;
+  background: var(--winui-control-fill-default);
+  border: 1px solid var(--winui-control-stroke-default);
+  border-bottom-color: var(--winui-control-strong-stroke-default);
+  border-radius: var(--winui-control-corner-radius);
+  display: inline-flex;
+  gap: 4px;
+  min-height: 34px;
+  max-width: 100%;
+  min-width: 240px;
+  padding: 0 11px;
+  position: relative;
+  width: max-content;
+}
+
+.floway-scope-editor > .floway-scope-expression {
+  flex: 1;
+}
+
+.floway-scope-editor:not([aria-disabled='true']),
+.floway-scope-expression[role='group'] .floway-scope-expression-slash {
+  cursor: text;
+}
+
+.floway-scope-editor:hover:not([aria-disabled='true']) {
+  background: var(--winui-control-fill-secondary);
+}
+
+.floway-scope-editor:focus-within:not([aria-disabled='true']) {
+  background: var(--winui-control-fill-input-active);
+  border-color: var(--winui-control-stroke-default);
+}
+
+.floway-scope-editor:focus-within::after {
+  border-bottom: 2px solid var(--winui-accent-base);
+  border-radius: inherit;
+  content: '';
+  inset: -1px;
+  pointer-events: none;
+  position: absolute;
+}
+
+.floway-scope-editor[aria-disabled='true'] {
+  background: var(--winui-control-fill-disabled);
+  color: var(--winui-text-fill-disabled);
+}
+
+.floway-scope-editor-header {
+  align-items: baseline;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  min-width: 0;
+}
+
+/* The inline mode switch shares its label's baseline; only the space below
+   the tab text is retained for the selection indicator. */
+.floway-scope-editor-header .fui-TabList {
+  align-items: baseline;
+}
+
+.floway-scope-editor-header .fui-Tab.fui-Tab {
+  align-items: baseline;
+  min-height: 0;
+  padding-top: 0;
+}
+
+.floway-principal-picker.fui-Combobox:has(.floway-principal-picker-avatar) {
+  column-gap: 0;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.floway-principal-picker.fui-Combobox:has(.floway-principal-picker-avatar):has([data-combobox-clear-action]) {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+}
+
+.floway-principal-picker-avatar {
+  align-items: center;
+  display: flex;
+  grid-area: 1 / 1;
+  padding-inline-start: 11px;
+  pointer-events: none;
+}
+
+.floway-principal-picker:has(.floway-principal-picker-avatar) .fui-Combobox__input {
+  grid-column: 2;
+  grid-row: 1;
+  padding-inline-start: 4px;
+}
+
+.floway-principal-picker:has(.floway-principal-picker-avatar) .fui-Combobox__expandIcon,
+.floway-principal-picker:has(.floway-principal-picker-avatar) .fui-Combobox__clearIcon {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.floway-principal-picker:has(.floway-principal-picker-avatar):has([data-combobox-clear-action]) .fui-Combobox__expandIcon {
+  grid-column: 4;
+}
+
 /* ScopeExpression follows WinUI BreadcrumbBar's inline item geometry: each
    item uses 1px horizontal / 3px vertical padding on a 20px line box, while
-   the separator gets 2px horizontal padding. Its -3 FocusVisualMargin grows
-   the two-stroke focus rectangle three pixels beyond the item. Scope values
-   deliberately use medium rather than BreadcrumbBarItemFontWeight Normal so
-   typed resource tokens remain distinct from their secondary-colour slashes.
+   each separator keeps 4px after it, with the same 4px between segments.
+   Grouping each separator with its following item preserves that geometry
+   in both standalone scopes and wrapping rich-text explanations.
+   Its -3 FocusVisualMargin grows
+   the two-stroke focus rectangle three pixels beyond the item. Type labels
+   deliberately use medium rather than BreadcrumbBarItemFontWeight Normal;
+   resource values retain their own identity and typography.
    The editor uses the existing WinUI-derived Combobox and popup rules when a
    part becomes active.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Breadcrumb/BreadcrumbBar.xaml#L208-L213
@@ -14,6 +123,14 @@ export const scopeExpressionCss = String.raw`
   align-items: center;
   display: flex;
   flex-wrap: wrap;
+  gap: var(--spacingHorizontalXS);
+  min-width: 0;
+}
+
+.floway-scope-expression-segment {
+  align-items: center;
+  display: inline-flex;
+  max-width: 100%;
   min-width: 0;
 }
 
@@ -21,7 +138,7 @@ export const scopeExpressionCss = String.raw`
   align-items: center;
   border-radius: var(--borderRadiusMedium);
   display: inline-flex;
-  font-weight: 500;
+  font-weight: var(--fontWeightRegular);
   gap: var(--spacingHorizontalXS);
   line-height: 20px;
   max-width: 100%;
@@ -30,8 +147,7 @@ export const scopeExpressionCss = String.raw`
   padding: 3px 1px;
 }
 
-button.floway-scope-expression-part,
-button.floway-scope-expression-slash-trigger {
+button.floway-scope-expression-part {
   background: transparent;
   border: 0;
   color: inherit;
@@ -39,18 +155,19 @@ button.floway-scope-expression-slash-trigger {
   font: inherit;
 }
 
-button.floway-scope-expression-part:hover,
-button.floway-scope-expression-slash-trigger:hover {
+.floway-scope-expression-part.floway-scope-expression-kind {
+  font-weight: 500;
+}
+
+button.floway-scope-expression-part:hover {
   color: var(--winui-text-fill-secondary);
 }
 
-button.floway-scope-expression-part:active,
-button.floway-scope-expression-slash-trigger:active {
+button.floway-scope-expression-part:active {
   color: var(--winui-text-fill-tertiary);
 }
 
-button.floway-scope-expression-part:focus-visible,
-button.floway-scope-expression-slash-trigger:focus-visible {
+button.floway-scope-expression-part:focus-visible {
   box-shadow: 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
   outline: var(--winui-focus-visual-primary-thickness) solid var(--winui-focus-stroke-outer);
   outline-offset: var(--winui-focus-visual-secondary-thickness);
@@ -60,16 +177,20 @@ button.floway-scope-expression-slash-trigger:focus-visible {
   color: var(--winui-text-fill-secondary);
   flex: none;
   line-height: 20px;
-  padding: 0 2px;
+  padding: 0 4px;
 }
 
-.floway-scope-expression > .floway-scope-expression-slash:first-child {
+.floway-scope-expression-segment > .floway-scope-expression-slash:first-child {
   padding-inline-start: 0;
 }
 
 .floway-scope-expression-input {
-  min-width: 132px;
-  width: min(280px, 60vw);
+  max-width: 100%;
+}
+
+.floway-scope-expression-append > svg {
+  height: 20px;
+  width: 16px;
 }
 
 .floway-scope-expression-dimmed {
@@ -83,12 +204,14 @@ button.floway-scope-expression-slash-trigger:focus-visible {
   min-width: 0;
 }
 
-.floway-scope-expression-mono {
-  font-family: var(--fontFamilyMonospace);
+.floway-scope-expression-regex {
+  overflow-wrap: anywhere;
 }
 
-.floway-scope-expression-regex {
-  font-family: var(--fontFamilyMonospace);
-  overflow-wrap: anywhere;
+.floway-scope-expression-model-icon {
+  flex: none;
+  font-size: 18px;
+  height: 18px;
+  width: 18px;
 }
 `;

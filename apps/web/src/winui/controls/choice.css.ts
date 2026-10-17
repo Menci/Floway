@@ -177,6 +177,14 @@ export const choiceCss = `
   margin: 0;
 }
 
+/* RadioButtons spaces layout cells separately from each RadioButton's label.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/RadioButtons/RadioButtons.xaml#L21-L25
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/RadioButtons/RadioButtons_themeresources.xaml#L17-L18 */
+.fui-RadioGroup.fui-RadioGroup {
+  column-gap: 7px;
+  row-gap: 8px;
+}
+
 /* WinUI states eight pixels as the label's own offset rather than a surround on
    the indicator, so Fluent's indicator margin goes and the root spaces its own
    children -- which also holds when the label sits before, after or above the

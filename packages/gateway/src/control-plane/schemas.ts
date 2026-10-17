@@ -17,7 +17,7 @@
 
 import { z } from 'zod';
 
-import { accessRecordInputSchema, accessTargetSchema } from '../access-control/schemas.ts';
+import { accessPrincipalSchema, accessRecordInputSchema, accessScopeSchema } from '../access-control/schemas.ts';
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
@@ -280,10 +280,17 @@ export const updateGroupBody = z.object({
 export const accessRecordBody = accessRecordInputSchema;
 
 export const resolveAccessBody = z.object({
-  userId: z.number().int().positive(),
-  target: accessTargetSchema,
+  principal: accessPrincipalSchema,
+  scope: accessScopeSchema,
   excludeRecordId: z.number().int().positive().optional(),
-});
+}).strict();
+
+export const reorderAccessRecordsBody = z.object({
+  expectedIds: z.array(z.number().int().positive()).min(2),
+  ids: z.array(z.number().int().positive()).min(2),
+}).strict().refine(({ expectedIds, ids }) => new Set(expectedIds).size === expectedIds.length
+  && new Set(ids).size === ids.length && expectedIds.length === ids.length && ids.every(id => expectedIds.includes(id)),
+{ message: 'Reordering must preserve exactly the same rule IDs.' });
 
 export const changeOwnPasswordBody = z.object({
   currentPassword: passwordSchema,

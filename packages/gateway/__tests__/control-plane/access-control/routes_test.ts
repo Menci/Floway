@@ -80,11 +80,15 @@ test('access-record writes reject unknown principals, invalid scope permissions,
     method: 'POST',
     body: JSON.stringify(modelUseRecord(2, 'up_a', 4)),
   })).status, 201);
-  const duplicateOrder = await request('/access-records', adminSession, {
+  const fixedOrder = await request('/access-records', adminSession, {
     method: 'POST',
     body: JSON.stringify(modelUseRecord(2, 'up_b', 4)),
   });
-  assertEquals(duplicateOrder.status, 400);
+  assertEquals(fixedOrder.status, 201);
+  const modelRecord = { principal: { kind: 'user', id: 2 }, scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } }, sortOrder: 4, values: { 'Model.Use': true } };
+  assertEquals((await request('/access-records', adminSession, { method: 'POST', body: JSON.stringify(modelRecord) })).status, 201);
+  const duplicateOrder = await request('/access-records', adminSession, { method: 'POST', body: JSON.stringify({ ...modelRecord, scope: { ...modelRecord.scope, model: { kind: 'regex', value: '^gpt-' } } }) });
+  assertEquals(duplicateOrder.status, 409);
 });
 
 test('access resolve uses group grants and returns the effective level map', async () => {
@@ -101,10 +105,10 @@ test('access resolve uses group grants and returns the effective level map', asy
 
   const response = await request('/access-resolve', adminSession, {
     method: 'POST',
-    body: JSON.stringify({ userId: 2, target: { kind: 'upstream', upstreamId: 'up_a' } }),
+    body: JSON.stringify({ principal: { kind: 'user', id: 2 }, scope: { kind: 'upstream', upstreamId: 'up_a' } }),
   });
   assertEquals(response.status, 200);
-  assertEquals(await response.json(), {
+  expect(await response.json()).toMatchObject({
     values: { 'Model.Use': true, 'Upstream.Audit': false, 'Upstream.Edit': 'models' },
   });
 });
@@ -117,9 +121,50 @@ test('access resolve can exclude the edited record to expose inherited state', a
     sortOrder: 0,
     values: { 'Model.Use': false },
   });
-  const body = { userId: 2, target: { kind: 'upstream' as const, upstreamId: 'up_a' } };
+  const body = { principal: { kind: 'user', id: 2 }, scope: { kind: 'upstream' as const, upstreamId: 'up_a' } };
   const current = await request('/access-resolve', adminSession, { method: 'POST', body: JSON.stringify(body) });
   const inherited = await request('/access-resolve', adminSession, { method: 'POST', body: JSON.stringify({ ...body, excludeRecordId: record.id }) });
   assertEquals((await current.json()).values['Model.Use'], false);
   assertEquals((await inherited.json()).values['Model.Use'], true);
+});
+
+test('group inheritance resolves ancestor scopes and excludes the edited cell', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  const group = await repo.groups.create('Operators', 120);
+  await repo.accessRecords.save({ principal: { kind: 'group', id: group.id }, scope: { kind: 'upstreams' }, sortOrder: 0, values: { 'Model.Use': true, 'Upstream.Edit': 'models' } });
+  const edited = await repo.accessRecords.save({ principal: { kind: 'group', id: group.id }, scope: { kind: 'upstream', upstreamId: 'up_a' }, sortOrder: 0, values: { 'Model.Use': false } });
+  const response = await request('/access-resolve', adminSession, { method: 'POST', body: JSON.stringify({ principal: { kind: 'group', id: group.id }, scope: edited.scope, excludeRecordId: edited.id }) });
+  expect(response.status).toBe(200);
+  const result = await response.json();
+  expect(result.values).toEqual({ 'Model.Use': true, 'Upstream.Audit': false, 'Upstream.Edit': 'models' });
+  expect(result.records).toHaveLength(1);
+  expect(result.records[0].scope).toEqual({ kind: 'upstreams' });
+});
+
+test('effective results identify personal overrides and never include descendants', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: 2 });
+  const group = await repo.groups.create('Operators', 120);
+  await repo.groups.replaceMembers(group.id, [2]);
+  const assigned = await repo.accessRecords.save({ principal: { kind: 'group', id: group.id }, scope: { kind: 'upstream', upstreamId: 'up_a' }, sortOrder: 0, values: { 'Model.Use': true } });
+  const personal = await repo.accessRecords.save({ principal: { kind: 'user', id: 2 }, scope: assigned.scope, sortOrder: 0, values: { 'Model.Use': false } });
+  await repo.accessRecords.save({ principal: personal.principal, scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } }, sortOrder: 0, values: { 'Model.Use': true } });
+  const response = await request('/access-resolve', adminSession, { method: 'POST', body: JSON.stringify({ principal: personal.principal, scope: personal.scope }) });
+  const result = await response.json();
+  expect(result.values['Model.Use']).toBe(false);
+  expect(result.records).toHaveLength(2);
+  expect(result.decisions.find((row: { recordId: number }) => row.recordId === assigned.id).permissions['Model.Use']).toMatchObject({ kind: 'overridden', by: { id: personal.id } });
+});
+
+test('reordering requires admin, a complete model boundary, and a current snapshot', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  const a = await repo.accessRecords.save({ principal: { kind: 'user', id: 2 }, scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: '^gpt' } }, sortOrder: 0, values: { 'Model.Use': false } });
+  const b = await repo.accessRecords.save({ principal: a.principal, scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } }, sortOrder: 1, values: { 'Model.Use': true } });
+  const json = { expectedIds: [a.id, b.id], ids: [b.id, a.id] };
+  expect((await request('/access-records/reorder', '', { method: 'POST', body: JSON.stringify(json) })).status).toBe(401);
+  const response = await request('/access-records/reorder', adminSession, { method: 'POST', body: JSON.stringify(json) });
+  expect(response.status).toBe(200);
+  expect((await response.json()).records.map((row: { id: number; sortOrder: number }) => [row.id, row.sortOrder]).sort((a: number[], b: number[]) => a[1]! - b[1]!)).toEqual([[b.id, 0], [a.id, 1]]);
+  expect((await request('/access-records/reorder', adminSession, { method: 'POST', body: JSON.stringify(json) })).status).toBe(409);
+  expect((await request('/access-records/reorder', adminSession, { method: 'POST', body: JSON.stringify({ expectedIds: [a.id, a.id], ids: [a.id, b.id] }) })).status).toBe(400);
 });

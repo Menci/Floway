@@ -46,6 +46,19 @@ export interface AccessRecordInput {
   values: AccessValues;
 }
 
+export type PermissionDecision = { kind: 'effective' } | { kind: 'overridden'; by: AccessRecord };
+export type PermissionDecisions = Partial<Record<AccessPermission, PermissionDecision>>;
+
+export interface AccessResolution {
+  values: AccessValues;
+  records: AccessRecord[];
+  decisions: Array<{ recordId: number; permissions: PermissionDecisions }>;
+}
+
+export class AccessRecordConflictError extends Error {
+  override name = 'AccessRecordConflictError';
+}
+
 export type AccessRequirement =
   | { permission: 'Model.Use' | 'Upstream.Audit' | 'User.Audit' }
   | { permission: 'Upstream.Edit'; level: Exclude<UpstreamEditLevel, 'off'> };

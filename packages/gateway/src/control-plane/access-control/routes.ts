@@ -1,9 +1,10 @@
-import { checkManyForManagement } from '../../access-control/check.ts';
-import type { AccessRecordInput, AccessTarget } from '../../access-control/types.ts';
+import { resolveAssignments } from '../../access-control/resolution.ts';
+import { AccessRecordConflictError, permissionsForScope } from '../../access-control/types.ts';
+import type { AccessPrincipal, AccessRecordInput } from '../../access-control/types.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { accessRecordBody, resolveAccessBody } from '../schemas.ts';
+import type { accessRecordBody, reorderAccessRecordsBody, resolveAccessBody } from '../schemas.ts';
 
 const parseRecordId = (raw: string): number | null => {
   const id = Number(raw);
@@ -18,8 +19,6 @@ const principalError = async (input: AccessRecordInput): Promise<string | null> 
   return exists ? null : `Unknown ${input.principal.kind} principal ${input.principal.id}`;
 };
 
-const writeError = (cause: unknown): string => cause instanceof Error ? cause.message : String(cause);
-
 export const listAccessRecords = async (c: AuthedContext) => c.json(await getRepo().accessRecords.list());
 
 export const createAccessRecord = async (c: CtxWithJson<typeof accessRecordBody>) => {
@@ -29,7 +28,8 @@ export const createAccessRecord = async (c: CtxWithJson<typeof accessRecordBody>
   try {
     return c.json(await getRepo().accessRecords.save(input), 201);
   } catch (cause) {
-    return c.json({ error: writeError(cause) }, 400);
+    if (cause instanceof AccessRecordConflictError) return c.json({ error: cause.message }, 409);
+    throw cause;
   }
 };
 
@@ -43,7 +43,8 @@ export const updateAccessRecord = async (c: CtxWithJson<typeof accessRecordBody>
     const record = await getRepo().accessRecords.replace(id, input);
     return record ? c.json(record) : c.json({ error: 'access record not found' }, 404);
   } catch (cause) {
-    return c.json({ error: writeError(cause) }, 400);
+    if (cause instanceof AccessRecordConflictError) return c.json({ error: cause.message }, 409);
+    throw cause;
   }
 };
 
@@ -55,34 +56,32 @@ export const deleteAccessRecord = async (c: AuthedContext) => {
     : c.json({ error: 'access record not found' }, 404);
 };
 
-const requirementsFor = (target: AccessTarget) => target.kind === 'user'
-  ? [{ permission: 'User.Audit' as const }]
-  : target.kind === 'upstreamModel'
-    ? [{ permission: 'Model.Use' as const }]
-    : [
-        { permission: 'Model.Use' as const },
-        { permission: 'Upstream.Audit' as const },
-        { permission: 'Upstream.Edit' as const, level: 'models' as const },
-        { permission: 'Upstream.Edit' as const, level: 'full' as const },
-      ];
-
 export const resolveAccess = async (c: CtxWithJson<typeof resolveAccessBody>) => {
-  const { userId, target, excludeRecordId } = c.req.valid('json');
-  const user = await getRepo().users.getById(userId);
-  if (!user) return c.json({ error: 'user not found' }, 404);
-  const requirements = requirementsFor(target);
-  const allowed = await checkManyForManagement(
-    user,
-    requirements.map(requirement => ({ target, requirement })),
-    new Set(excludeRecordId === undefined ? [] : [excludeRecordId]),
-  );
-  if (target.kind === 'user') return c.json({ values: { 'User.Audit': allowed[0] } });
-  if (target.kind === 'upstreamModel') return c.json({ values: { 'Model.Use': allowed[0] } });
-  return c.json({
-    values: {
-      'Model.Use': allowed[0],
-      'Upstream.Audit': allowed[1],
-      'Upstream.Edit': allowed[3] ? 'full' : allowed[2] ? 'models' : 'off',
-    },
-  });
+  const { principal, scope, excludeRecordId } = c.req.valid('json');
+  const repo = getRepo();
+  const subject = principal.kind === 'user' ? await repo.users.getById(principal.id) : await repo.groups.getById(principal.id);
+  if (!subject) return c.json({ error: `${principal.kind} not found` }, 404);
+  const groupIds = principal.kind === 'user' ? await repo.groups.listIdsByUserId(principal.id) : [];
+  const principals: AccessPrincipal[] = [principal, ...groupIds.map(id => ({ kind: 'group' as const, id }))];
+  const [records, targetGroups] = await Promise.all([
+    repo.accessRecords.listByPrincipals(principals),
+    scope.kind === 'user' ? repo.groups.listIdsByUserId(scope.userId) : Promise.resolve([]),
+  ]);
+  const resolution = resolveAssignments(records.filter(record => record.id !== excludeRecordId), scope, new Set(targetGroups));
+  if ('isAdmin' in subject && subject.isAdmin) {
+    resolution.values = Object.fromEntries(permissionsForScope(scope).map(permission => [permission, permission === 'Upstream.Edit' ? 'full' : true]));
+    resolution.decisions = [];
+  }
+  return c.json(resolution);
+};
+
+export const reorderAccessRecords = async (c: CtxWithJson<typeof reorderAccessRecordsBody>) => {
+  const { expectedIds, ids } = c.req.valid('json');
+  const repo = getRepo();
+  const first = await repo.accessRecords.getById(expectedIds[0]!);
+  if (first?.scope.kind !== 'upstreamModel') return c.json({ error: 'Rules do not belong to a model-pattern reorder segment.' }, 409);
+  const records = await repo.accessRecords.reorderModel(first.scope.upstreamId, expectedIds, ids);
+  return records === null
+    ? c.json({ error: 'Rules changed or cross a fixed priority boundary. Refresh before reordering.' }, 409)
+    : c.json({ records });
 };

@@ -57,7 +57,7 @@ test('same-depth model patterns use sortOrder without an implicit exact priority
   expect(await check(subject, { kind: 'upstreamModel', upstreamId: 'up_a', modelId: 'gpt-5' }, { permission: 'Model.Use' })).toBe(false);
 });
 
-test('direct and group principals combine by the highest permission', async () => {
+test('a personal value overrides a group grant at the same scope', async () => {
   const grantingGroup = await repo.groups.create('operators', 120);
   await repo.groups.replaceMembers(grantingGroup.id, [subject.id]);
   await repo.accessRecords.save({
@@ -73,7 +73,7 @@ test('direct and group principals combine by the highest permission', async () =
     values: { 'Model.Use': true },
   });
 
-  expect(await check(subject, { kind: 'upstream', upstreamId: 'up_a' }, { permission: 'Model.Use' })).toBe(true);
+  expect(await check(subject, { kind: 'upstream', upstreamId: 'up_a' }, { permission: 'Model.Use' })).toBe(false);
 });
 
 test('a Group scope expands to its current members for User.Audit', async () => {

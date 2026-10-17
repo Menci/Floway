@@ -3,6 +3,7 @@ import { partitionTelemetryOverviewRecords } from './telemetry-overview-oracle.t
 import {
   accessScopeDepth,
   accessScopeOrderGroup,
+  AccessRecordConflictError,
   type AccessPrincipal,
   type AccessRecord,
   type AccessRecordInput,
@@ -324,12 +325,12 @@ class MemoryAccessRecordsRepo implements AccessRecordsRepo {
     const scope = JSON.stringify(input.scope);
     const index = this.records.findIndex(record => principalKey(record.principal) === principalKey(input.principal) && JSON.stringify(record.scope) === scope);
     const duplicateOrder = this.records.find((record, recordIndex) =>
-      recordIndex !== index
+      input.scope.kind === 'upstreamModel' && recordIndex !== index
       && principalKey(record.principal) === principalKey(input.principal)
       && accessScopeDepth(record.scope) === accessScopeDepth(input.scope)
       && accessScopeOrderGroup(record.scope) === accessScopeOrderGroup(input.scope)
       && record.sortOrder === input.sortOrder);
-    if (duplicateOrder) throw new Error(`Access record sortOrder ${input.sortOrder} is already used at this scope level`);
+    if (duplicateOrder) throw new AccessRecordConflictError(`Access record sortOrder ${input.sortOrder} is already used at this scope level`);
     const record: AccessRecord = index < 0
       ? { id: this.nextId++, ...structuredClone(input), createdAt: now, updatedAt: now }
       : { ...this.records[index], ...structuredClone(input), updatedAt: now };
@@ -346,17 +347,29 @@ class MemoryAccessRecordsRepo implements AccessRecordsRepo {
       recordIndex !== index
       && principalKey(record.principal) === principalKey(input.principal)
       && JSON.stringify(record.scope) === JSON.stringify(input.scope));
-    if (duplicateScope) throw new Error('Access record already exists for this principal and scope');
+    if (duplicateScope) throw new AccessRecordConflictError('Access record already exists for this principal and scope');
     const duplicateOrder = this.records.find((record, recordIndex) =>
-      recordIndex !== index
+      input.scope.kind === 'upstreamModel' && recordIndex !== index
       && principalKey(record.principal) === principalKey(input.principal)
       && accessScopeDepth(record.scope) === accessScopeDepth(input.scope)
       && accessScopeOrderGroup(record.scope) === accessScopeOrderGroup(input.scope)
       && record.sortOrder === input.sortOrder);
-    if (duplicateOrder) throw new Error(`Access record sortOrder ${input.sortOrder} is already used at this scope level`);
+    if (duplicateOrder) throw new AccessRecordConflictError(`Access record sortOrder ${input.sortOrder} is already used at this scope level`);
     const next = { ...this.records[index], ...structuredClone(input), updatedAt: new Date().toISOString() };
     this.records[index] = next;
     return structuredClone(next);
+  }
+
+  reorderModel(upstreamId: string, expectedIds: readonly number[], ids: readonly number[]): Promise<AccessRecord[] | null> {
+    const segment = this.records.filter(record => record.scope.kind === 'upstreamModel' && record.scope.upstreamId === upstreamId)
+      .toSorted((left, right) => left.sortOrder - right.sortOrder || left.id - right.id);
+    if (JSON.stringify(segment.map(record => record.id)) !== JSON.stringify(expectedIds)) return Promise.resolve(null);
+    const now = new Date().toISOString();
+    const ranks = new Map(ids.map((id, rank) => [id, rank]));
+    const updated = segment.map(record => ({ ...record, sortOrder: ranks.get(record.id)!, updatedAt: now }));
+    const byId = new Map(updated.map(record => [record.id, record]));
+    this.records = this.records.map(record => byId.get(record.id) ?? record);
+    return Promise.resolve(structuredClone(updated));
   }
 
   delete(id: number): Promise<boolean> {
