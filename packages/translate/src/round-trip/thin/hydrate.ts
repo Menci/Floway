@@ -32,27 +32,17 @@ const hydrateValue = (value: unknown, referencedContents: readonly Uint8Array[] 
     if (text === undefined) return { ok: false, reason: 'missing-reference' };
     return { ok: true, value: value.restoration === 'text' ? text : parseJSONObject(text) };
   }
-  if (Array.isArray(value)) {
-    const result: unknown[] = [];
-    for (const child of value) {
-      const hydrated = hydrateValue(child, referencedContents, textsByHash);
-      if (!hydrated.ok) return hydrated;
-      result.push(hydrated.value);
-    }
-    return { ok: true, value: result };
-  }
   if (typeof value === 'object' && value !== null) {
-    const result: [string, unknown][] = [];
     for (const [key, child] of Object.entries(value)) {
       const hydrated = hydrateValue(child, referencedContents, textsByHash);
       if (!hydrated.ok) return hydrated;
-      result.push([key, hydrated.value]);
+      if (hydrated.value !== child) Reflect.set(value, key, hydrated.value);
     }
-    return { ok: true, value: Object.fromEntries(result) };
   }
   return { ok: true, value };
 };
 
+/** Consumes the exclusively owned turn decoded by the sidecar codec. */
 export const hydrateAssistantTurn = async <Protocol extends keyof AssistantTurnByProtocol>(
   _protocol: Protocol,
   candidates: readonly ReplayCandidate[],
