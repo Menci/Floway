@@ -3,13 +3,7 @@ import type { IRJSONObject, IRJSONValue } from '../../../ir/types.ts';
 import { computeRoundTripReplayCheck, verifyRoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripSidecarCandidate } from '../../../round-trip/replay.ts';
-import { canonicalTextParts, isPureTextPart, type PureTextPart } from '../../../round-trip/text-parts.ts';
 import type { OpenAIChatCompletionsAssistantExtensions, OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsAssistantOutputMessage, OpenAIChatCompletionsToolCallEx } from '@floway-dev/protocols/openai-chat-completions';
-
-type OpenAIChatCompletionsReplayPart = NonNullable<Exclude<OpenAIChatCompletionsAssistantTurn['content'], string>>[number];
-
-const isOpenAIChatCompletionsPureTextPart = <Part extends OpenAIChatCompletionsReplayPart>(part: Part): part is Part & PureTextPart =>
-  isPureTextPart(part, ['text']);
 
 export const OPENAI_CHAT_COMPLETIONS_REPLAY_CHECK_VERSION = 1;
 
@@ -37,10 +31,22 @@ const reasoningDetailsMaterial = (turn: OpenAIChatCompletionsAssistantTurn): IRJ
 
 const messageContentMaterial = (turn: OpenAIChatCompletionsAssistantTurn): IRJSONValue | undefined => {
   if (typeof turn.content === 'string' || turn.content === null || turn.content === undefined) return turn.content;
+  let text = '';
+  let hasText = false;
+  let refusal = '';
+  let hasRefusal = false;
+  for (const part of turn.content) {
+    if (part.type === 'text') {
+      hasText = true;
+      text += part.text;
+    } else {
+      hasRefusal = true;
+      refusal += part.refusal;
+    }
+  }
   const parts: IRJSONObject[] = [];
-  for (const part of canonicalTextParts(turn.content, isOpenAIChatCompletionsPureTextPart)) parts.push(part.type === 'text'
-    ? { type: 'text', text: part.text }
-    : { type: 'refusal', refusal: part.refusal });
+  if (hasText) parts.push({ type: 'text', text });
+  if (hasRefusal) parts.push({ type: 'refusal', refusal });
   return parts;
 };
 

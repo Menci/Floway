@@ -3,14 +3,7 @@ import type { IRJSONObject, IRJSONValue } from '../../../ir/types.ts';
 import { computeRoundTripReplayCheck, replayMaterialsByType, verifyRoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripSidecarCandidate } from '../../../round-trip/replay.ts';
-import { canonicalTextParts, isPureTextPart, type PureTextPart } from '../../../round-trip/text-parts.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputContent, OpenAIResponsesOutputContentBlock, OpenAIResponsesOutputItemEx, OpenAIResponsesOutputReasoning } from '@floway-dev/protocols/openai-responses';
-
-type OpenAIResponsesReplayPart = OpenAIResponsesInputContent | OpenAIResponsesOutputContentBlock
-  | OpenAIResponsesOutputReasoning['summary'][number] | NonNullable<OpenAIResponsesOutputReasoning['content']>[number];
-
-const isOpenAIResponsesPureTextPart = <Part extends OpenAIResponsesReplayPart>(part: Part): part is Part & PureTextPart =>
-  isPureTextPart(part, ['input_text', 'output_text', 'summary_text', 'reasoning_text'], ['annotations', 'logprobs']);
 
 export const OPENAI_RESPONSES_REPLAY_CHECK_VERSION = 1;
 
@@ -24,11 +17,24 @@ type TypedReplayMaterial = IRJSONObject & { type: string };
 export const isOpenAIResponsesEncryptedReasoning = (item: OpenAIResponsesAssistantTurnItem): item is Extract<OpenAIResponsesAssistantTurnItem, { type: 'reasoning' }> & { encrypted_content: string } =>
   item.type === 'reasoning' && typeof item.encrypted_content === 'string';
 
-const responseMessagePartMaterial = (part: OpenAIResponsesInputContent | OpenAIResponsesOutputContentBlock): TypedReplayMaterial => {
-  if (part.type === 'input_text' || part.type === 'output_text') return { type: part.type, text: part.text };
-  if (part.type === 'refusal') return { type: part.type, refusal: part.refusal };
-  return { type: part.type };
+const responseMessageMaterials = (content: string | Array<OpenAIResponsesInputContent | OpenAIResponsesOutputContentBlock>): [string, TypedReplayMaterial[]][] => {
+  if (typeof content === 'string') return [['output_text', [{ type: 'output_text', text: content }]]];
+  const textByType = new Map<'input_text' | 'output_text' | 'refusal', string>();
+  const other: TypedReplayMaterial[] = [];
+  for (const part of content) {
+    if (part.type === 'input_text' || part.type === 'output_text') {
+      textByType.set(part.type, (textByType.get(part.type) ?? '') + part.text);
+    } else if (part.type === 'refusal') {
+      textByType.set(part.type, (textByType.get(part.type) ?? '') + part.refusal);
+    } else other.push({ type: part.type });
+  }
+  return replayMaterialsByType([
+    ...[...textByType].map(([type, text]): TypedReplayMaterial => type === 'refusal' ? { type, refusal: text } : { type, text }),
+    ...other,
+  ]);
 };
+
+const concatenateResponseText = <Part extends { readonly text: string }>(parts: readonly Part[]): string => parts.map(part => part.text).join('');
 
 const replayItemStatus = (item: OpenAIResponsesAssistantTurnItem): { status?: string | null } =>
   'status' in item && item.status !== undefined ? { status: item.status } : {};
@@ -37,15 +43,13 @@ const replayItemMaterial = (item: OpenAIResponsesAssistantTurnItem): TypedReplay
   if (item.type === 'reasoning') return {
     type: item.type,
     ...replayItemStatus(item),
-    summary: canonicalTextParts(item.summary, isOpenAIResponsesPureTextPart).map(part => ({ type: part.type, text: part.text })),
-    content: canonicalTextParts(item.content ?? [], isOpenAIResponsesPureTextPart).map(part => ({ type: part.type, text: part.text })),
+    summary: concatenateResponseText(item.summary),
+    content: concatenateResponseText(item.content ?? []),
   };
   if (item.type === 'message') return {
     type: item.type,
     ...replayItemStatus(item),
-    content: replayMaterialsByType(typeof item.content === 'string'
-      ? [{ type: 'output_text', text: item.content }]
-      : canonicalTextParts(item.content, isOpenAIResponsesPureTextPart).map(responseMessagePartMaterial)),
+    content: responseMessageMaterials(item.content),
   };
   if (item.type === 'function_call') return {
     type: item.type,
