@@ -418,7 +418,7 @@ export const geminiGenerateContentFromIR = async function* (
     }
 
     if (record.type === 'choice_end') {
-      const nativeCandidate = nativeAccumulator.result().candidates?.find(candidate => candidate.index === record.choice);
+      const nativeCandidate = nativeAccumulator.candidate(record.choice);
       const assistantTurn: GeminiGenerateContentInputAssistantTurn = [{ role: 'model', parts: nativeCandidate?.content?.parts ?? [] }];
       const stateParts = partsState(record.choice);
       stateParts.length = assistantTurn[0].parts?.length ?? 0;

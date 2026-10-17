@@ -14,8 +14,11 @@ interface CandidateAccumulator {
   extras: Record<string, unknown>;
 }
 
+const finalizeCandidate = (state: CandidateAccumulator): GeminiGenerateContentCandidate => Object.assign(state.candidate, state.extras);
+
 export interface GeminiGenerateContentEventAccumulator {
   accept: (event: GeminiGenerateContentStreamEvent) => void;
+  candidate: (index: number) => GeminiGenerateContentCandidate | undefined;
   result: () => GeminiGenerateContentResult;
 }
 
@@ -47,13 +50,18 @@ export const createGeminiGenerateContentEventAccumulator = (): GeminiGenerateCon
     captureExtras(event as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_RESULT_KEYS, resultExtras);
   };
 
+  const candidate = (index: number): GeminiGenerateContentCandidate | undefined => {
+    const state = candidates.get(index);
+    return state === undefined ? undefined : finalizeCandidate(state);
+  };
+
   const result = (): GeminiGenerateContentResult => {
     const current: GeminiGenerateContentResult = { ...resultFields };
-    if (candidates.size > 0) current.candidates = [...candidates.entries()].toSorted(([a], [b]) => a - b).map(([, state]) => Object.assign(state.candidate, state.extras));
+    if (candidates.size > 0) current.candidates = [...candidates.entries()].toSorted(([a], [b]) => a - b).map(([, state]) => finalizeCandidate(state));
     return Object.assign(current, resultExtras);
   };
 
-  return { accept, result };
+  return { accept, candidate, result };
 };
 
 export async function reassembleGeminiGenerateContentEvents(events: AsyncIterable<GeminiGenerateContentStreamEvent>): Promise<GeminiGenerateContentResult> {
