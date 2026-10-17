@@ -6,7 +6,7 @@ import { captureExtras } from '../common/reassemble-extras.ts';
 // Field-fidelity contract: every field an upstream emits must reach the
 // non-streaming result. Known streaming fields use their protocol semantics;
 // unknown fields fall through to captureExtras so future extensions survive.
-const KNOWN_DELTA_KEYS = new Set(['audio', 'function_call', 'content', 'role', 'reasoning_text', 'reasoning_opaque', 'reasoning_items', 'refusal', 'tool_calls']);
+const KNOWN_DELTA_KEYS = new Set(['audio', 'function_call', 'content', 'role', 'reasoning_text', 'reasoning_opaque', 'reasoning_items', 'reasoning_details', 'refusal', 'tool_calls']);
 const KNOWN_TOOL_CALL_KEYS = new Set(['index', 'id', 'type', 'function', 'custom']);
 const KNOWN_CHOICE_KEYS = new Set(['index', 'delta', 'finish_reason', 'logprobs']);
 const KNOWN_CHUNK_KEYS = new Set(['id', 'object', 'created', 'model', 'choices', 'usage', 'system_fingerprint', 'service_tier']);
@@ -30,6 +30,7 @@ interface ChoiceAccumulator {
   reasoningOpaque?: string;
   refusal?: string;
   readonly reasoningItems: unknown[];
+  reasoningDetails?: unknown;
   finishReason: OpenAIChatCompletionsChoiceNonStreaming['finish_reason'];
   readonly toolCalls: Map<number, ToolCallAccumulator>;
   readonly choiceExtras: Record<string, unknown>;
@@ -70,6 +71,37 @@ const accumulateToolCalls = (choice: ChoiceAccumulator, value: OpenAIChatComplet
     if (isJsonObject(extraContent) && isJsonObject(extraContent.google) && typeof extraContent.google.thought_signature === 'string' && extraContent.google.thought_signature !== '') current.thoughtSignature ??= extraContent.google.thought_signature;
     choice.toolCalls.set(toolCall.index, current);
   }
+};
+
+// OpenRouter streams text/summary fragments with repeated indices; encrypted
+// entries are complete opaque blocks and must remain separate.
+// https://github.com/OpenRouterTeam/ai-sdk-provider/blob/e96af18b188cd2df507a2ecdc8b0976856e1f3a0/src/chat/index.ts#L774-L819
+const accumulateReasoningDetails = (current: unknown, incoming: unknown): unknown => {
+  if (!Array.isArray(incoming)) return incoming;
+  const details: unknown[] = Array.isArray(current) ? current : [];
+  for (const detail of incoming) {
+    const previous = details.at(-1);
+    if (!isJsonObject(previous) || !isJsonObject(detail)
+      || previous.type !== detail.type
+      || detail.type !== 'reasoning.text' && detail.type !== 'reasoning.summary'
+      || ['id', 'index', 'format'].some(key => previous[key] != null && detail[key] != null && previous[key] !== detail[key])) {
+      details.push(detail);
+      continue;
+    }
+    const field = detail.type === 'reasoning.text' ? 'text' : 'summary';
+    const previousText = previous[field];
+    const text = detail[field];
+    if (previousText != null && typeof previousText !== 'string' || text != null && typeof text !== 'string') {
+      details.push(detail);
+      continue;
+    }
+    const merged = { ...previous, ...detail };
+    if (typeof previousText === 'string') merged[field] = typeof text === 'string' ? previousText + text : previousText;
+    for (const key of ['id', 'index', 'format']) if (previous[key] != null && detail[key] == null) merged[key] = previous[key];
+    if (detail.type === 'reasoning.text' && typeof previous.signature === 'string' && previous.signature !== '') merged.signature = previous.signature;
+    details[details.length - 1] = merged;
+  }
+  return details;
 };
 
 const finalizedToolCalls = (choice: ChoiceAccumulator): OpenAIChatCompletionsToolCall[] =>
@@ -120,6 +152,7 @@ const finalizeChoice = (choice: ChoiceAccumulator): OpenAIChatCompletionsChoiceN
     ...(choice.reasoningText ? { reasoning_text: choice.reasoningText } : {}),
     ...(choice.reasoningOpaque !== undefined ? { reasoning_opaque: choice.reasoningOpaque } : {}),
     ...(choice.reasoningItems.length > 0 ? { reasoning_items: choice.reasoningItems } : {}),
+    ...(choice.reasoningDetails === undefined ? {} : { reasoning_details: choice.reasoningDetails }),
     ...choice.messageExtras,
   };
   return {
@@ -182,6 +215,7 @@ export const createOpenAIChatCompletionsEventAccumulator = (): OpenAIChatComplet
       if (typeof delta.reasoning_opaque === 'string') choice.reasoningOpaque = delta.reasoning_opaque;
       if (typeof delta.refusal === 'string') choice.refusal = (choice.refusal ?? '') + delta.refusal;
       if (Array.isArray(delta.reasoning_items)) choice.reasoningItems.push(...delta.reasoning_items);
+      if (delta.reasoning_details != null) choice.reasoningDetails = accumulateReasoningDetails(choice.reasoningDetails, delta.reasoning_details);
       if (delta.function_call !== undefined) {
         const call = choice.functionCall ??= { name: '', arguments: '' };
         if (delta.function_call.name !== undefined) call.name = delta.function_call.name;
