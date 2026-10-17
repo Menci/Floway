@@ -5,7 +5,9 @@ import { canonicalTextParts, collectCanonicalTextViews, isPureTextPart, type Can
 import type { ReplayCandidate } from '../../../round-trip/thin/assistant-turn.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputContent, OpenAIResponsesOutputContentBlock, OpenAIResponsesOutputItemEx, OpenAIResponsesOutputReasoning } from '@floway-dev/protocols/openai-responses';
 
-const isOpenAIResponsesPureTextPart = <Part extends OpenAIResponsesInputContent | OpenAIResponsesOutputContentBlock | OpenAIResponsesOutputReasoning['summary'][number] | NonNullable<OpenAIResponsesOutputReasoning['content']>[number]>(part: Part): part is Part & PureTextPart =>
+type OpenAIResponsesReplayPart = OpenAIResponsesInputContent | OpenAIResponsesOutputContentBlock | OpenAIResponsesOutputReasoning['summary'][number] | NonNullable<OpenAIResponsesOutputReasoning['content']>[number];
+
+const isOpenAIResponsesPureTextPart = <Part extends OpenAIResponsesReplayPart>(part: Part): part is Part & PureTextPart =>
   isPureTextPart(part, ['input_text', 'output_text', 'summary_text', 'reasoning_text'], ['annotations', 'logprobs']);
 
 export const OPENAI_RESPONSES_REPLAY_CHECK_VERSION = 1;

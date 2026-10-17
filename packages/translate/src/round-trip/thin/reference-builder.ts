@@ -1,12 +1,13 @@
 import { Tag } from 'cbor-x';
 
-import { contentHashKey, THIN_TAGS, type AssistantTurnStateFor, type JSONReference, type ReferencePart, type TextReference, type ThinAssistantTurnFor, type ThinReference } from './assistant-turn.ts';
+import { THIN_TAGS, type AssistantTurnStateFor, type JSONReference, type ReferencePart, type TextReference, type ThinAssistantTurnFor, type ThinReference } from './assistant-turn.ts';
 import type { IRJSONObject } from '../../ir/types.ts';
 import { parseJSONObject, requireJSONObject } from '../../shared/json/object.ts';
 import type { AssistantTurnByProtocol, AssistantTurnFor } from '../assistant-turn.ts';
 import { encodeSidecarValue } from '../codec.ts';
 import { hashRoundTripContent } from '../replay-check.ts';
 import type { CanonicalTextView } from '../text-parts.ts';
+import { encodeHex } from '@floway-dev/protocols/common';
 
 const builderBrand: unique symbol = Symbol('ReferenceBuilder');
 const fieldStateBrand: unique symbol = Symbol('FieldState');
@@ -205,12 +206,6 @@ interface ResolvedSegment {
   readonly endExclusive: number;
 }
 
-interface FinalizationState {
-  readonly referencedContents: Uint8Array[];
-  readonly hashIndexByContent: Map<string, number>;
-  readonly hashIndexByDigest: Map<string, number>;
-}
-
 interface ReferenceFinalizer {
   readonly referencedContents: Uint8Array[];
   finalizeField: <Kind extends Restoration>(
@@ -219,26 +214,24 @@ interface ReferenceFinalizer {
   ) => Promise<OriginalFor<Kind> | ThinReferenceFor<Kind>>;
 }
 
-export const createReferenceFinalizer = async (builder: ReferenceBuilder, contentViews: ReadonlyMap<ContentId, CanonicalTextView>): Promise<ReferenceFinalizer> => {
+export const createReferenceFinalizer = (builder: ReferenceBuilder, contentViews: ReadonlyMap<ContentId, CanonicalTextView>): ReferenceFinalizer => {
   const builderState = stateOf(builder);
-  const state: FinalizationState = {
-    referencedContents: [],
-    hashIndexByContent: new Map(),
-    hashIndexByDigest: new Map(),
-  };
+  const referencedContents: Uint8Array[] = [];
+  const hashIndexByContent = new Map<string, number>();
+  const hashIndexByDigest = new Map<string, number>();
 
   const hashIndex = async (content: string): Promise<number> => {
-    const existing = state.hashIndexByContent.get(content);
+    const existing = hashIndexByContent.get(content);
     if (existing !== undefined) return existing;
     const digest = await hashRoundTripContent(content);
-    const key = contentHashKey(digest);
-    let index = state.hashIndexByDigest.get(key);
+    const key = encodeHex(digest);
+    let index = hashIndexByDigest.get(key);
     if (index === undefined) {
-      index = state.referencedContents.length;
-      state.referencedContents.push(digest);
-      state.hashIndexByDigest.set(key, index);
+      index = referencedContents.length;
+      referencedContents.push(digest);
+      hashIndexByDigest.set(key, index);
     }
-    state.hashIndexByContent.set(content, index);
+    hashIndexByContent.set(content, index);
     return index;
   };
 
@@ -273,7 +266,7 @@ export const createReferenceFinalizer = async (builder: ReferenceBuilder, conten
     return new Tag(payload, fieldState.restoration === 'text' ? THIN_TAGS.text : THIN_TAGS.json) as ThinReferenceFor<Kind>;
   };
 
-  return { referencedContents: state.referencedContents, finalizeField };
+  return { referencedContents, finalizeField };
 };
 
 interface FinalizedAssistantTurn<Turn> {
@@ -297,7 +290,7 @@ export const finalizeAssistantTurnReferences = async <Protocol extends keyof Ass
   builder: ReferenceBuilder,
   contentViews: ReadonlyMap<ContentId, CanonicalTextView>,
 ): Promise<FinalizedAssistantTurn<ThinAssistantTurnFor<Protocol, ThinReference>>> => {
-  const finalizer = await createReferenceFinalizer(builder, contentViews);
+  const finalizer = createReferenceFinalizer(builder, contentViews);
   const minimumReferenceCost = encodeSidecarValue(new Tag([0], THIN_TAGS.text)).byteLength;
   const choices: ReferenceChoice[] = [];
   const collect = async (value: unknown, state: unknown): Promise<void> => {

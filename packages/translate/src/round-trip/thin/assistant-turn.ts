@@ -44,7 +44,7 @@ export type ThinState<T, Rule, States extends ThinStateLeaves> = T extends null 
         } extends infer State extends object ? keyof State extends never ? never : State : never : never
           : never;
 
-export interface ThinAssistantTurnByProtocol<Reference> {
+interface ThinAssistantTurnByProtocol<Reference> {
   openaiChatCompletions: OpenAIChatCompletionsThinAssistantTurn<Reference>;
   openaiResponses: OpenAIResponsesThinAssistantTurn<Reference>;
   anthropicMessages: AnthropicMessagesThinAssistantTurn<Reference>;
@@ -62,5 +62,3 @@ export type ThinAssistantTurnFor<Protocol extends keyof ThinAssistantTurnByProto
 export type AssistantTurnStateFor<Protocol extends keyof AssistantTurnStateByProtocol<States>, States extends ThinStateLeaves> = AssistantTurnStateByProtocol<States>[Protocol];
 
 export type ReplayCandidate = string | IRJSONObject;
-
-export const contentHashKey = (hash: Uint8Array): string => Array.from(hash, byte => byte.toString(16).padStart(2, '0')).join('');

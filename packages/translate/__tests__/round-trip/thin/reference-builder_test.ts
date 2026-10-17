@@ -34,7 +34,7 @@ describe('ReferenceBuilder', () => {
     appendContent(builder, contents[1], right, [appendField(builder, fields[1], right)]);
     const turn = { role: 'assistant' as const, content: [{ type: 'text' as const, text: left, citations: null }, { type: 'text' as const, text: right, citations: null }] };
     const views = collectContentViews(turn, { content: contents.map(text => ({ text })) }, collectAnthropicMessagesTextViews([turn]));
-    const finalizer = await createReferenceFinalizer(builder, views);
+    const finalizer = createReferenceFinalizer(builder, views);
     const digest = vi.spyOn(crypto.subtle, 'digest');
     try {
       expect(await finalizer.finalizeField(left, fields[0])).toMatchObject({ value: [[0, 0, left.length]] });
@@ -56,10 +56,10 @@ describe('ReferenceBuilder', () => {
     appendContent(builder, contents[1], right, [appendField(builder, field, right)]);
     const turn = { role: 'assistant' as const, content: [{ type: 'text' as const, text: left, citations: null }, { type: 'text' as const, text: right, citations: null }] };
     const state = { content: contents.map(text => ({ text })) };
-    const finalizer = await createReferenceFinalizer(builder, collectContentViews(turn, state, collectAnthropicMessagesTextViews([turn])));
+    const finalizer = createReferenceFinalizer(builder, collectContentViews(turn, state, collectAnthropicMessagesTextViews([turn])));
     expect(await finalizer.finalizeField(left + right, field)).toMatchObject({ value: [0] });
     const changed = { ...turn, content: [{ ...turn.content[0], text: 'changed' }, turn.content[1]] };
-    const changedFinalizer = await createReferenceFinalizer(builder, collectContentViews(changed, state, collectAnthropicMessagesTextViews([changed])));
+    const changedFinalizer = createReferenceFinalizer(builder, collectContentViews(changed, state, collectAnthropicMessagesTextViews([changed])));
     expect(await changedFinalizer.finalizeField(left + right, field)).toBe(left + right);
     expect(changedFinalizer.referencedContents).toEqual([]);
   });
@@ -73,7 +73,7 @@ describe('ReferenceBuilder', () => {
     appendContent(builder, content, '[');
     appendContent(builder, content, 'hello', [first, second]);
     appendContent(builder, content, ']');
-    const finalizer = await createReferenceFinalizer(builder, collectContentViews('[hello]', content));
+    const finalizer = createReferenceFinalizer(builder, collectContentViews('[hello]', content));
     expect(await finalizer.finalizeField('hello', field)).toMatchObject({ value: [[0, 1, 6]] });
   });
   it('resolves B SSE atoms directly into one A content occurrence', async () => {
@@ -88,7 +88,7 @@ describe('ReferenceBuilder', () => {
     appendContent(builder, content, 'lo', [second]);
     appendContent(builder, content, ']');
 
-    const finalizer = await createReferenceFinalizer(builder, collectContentViews('[hello]', content));
+    const finalizer = createReferenceFinalizer(builder, collectContentViews('[hello]', content));
     const reference = await finalizer.finalizeField('hello', field);
 
     if (!(reference instanceof Tag)) throw new Error('Expected a thin reference');
@@ -106,7 +106,7 @@ describe('ReferenceBuilder', () => {
     appendContent(builder, content, 'hel', [first]);
     appendContent(builder, content, 'lo', [second]);
 
-    const finalizer = await createReferenceFinalizer(builder, collectContentViews('hello', content));
+    const finalizer = createReferenceFinalizer(builder, collectContentViews('hello', content));
     const reference = await finalizer.finalizeField('hello', field);
 
     if (!(reference instanceof Tag)) throw new Error('Expected a thin reference');
@@ -121,7 +121,7 @@ describe('ReferenceBuilder', () => {
     const content = createContentState(builder, 'text');
     appendContent(builder, content, 'hel', [first]);
 
-    const finalizer = await createReferenceFinalizer(builder, collectContentViews('hel', content));
+    const finalizer = createReferenceFinalizer(builder, collectContentViews('hel', content));
     expect(await finalizer.finalizeField('hello', field)).toBe('hello');
     expect(finalizer.referencedContents).toEqual([]);
   });
@@ -134,7 +134,7 @@ describe('ReferenceBuilder', () => {
     appendContent(builder, content, 'hello', [partId]);
 
     const contentViews = collectContentViews('changed', content);
-    const finalizer = await createReferenceFinalizer(builder, contentViews);
+    const finalizer = createReferenceFinalizer(builder, contentViews);
     expect(contentViews).toEqual(new Map());
     expect(await finalizer.finalizeField('hello', field)).toBe('hello');
   });
@@ -164,7 +164,7 @@ describe('ReferenceBuilder', () => {
       ...collectContentViews('same', firstContent),
       ...collectContentViews('same', secondContent),
     ]);
-    const finalizer = await createReferenceFinalizer(builder, contentViews);
+    const finalizer = createReferenceFinalizer(builder, contentViews);
     const firstReference = await finalizer.finalizeField('same', firstField);
     const secondReference = await finalizer.finalizeField('same', secondField);
 
@@ -249,7 +249,7 @@ describe('ReferenceBuilder', () => {
       ...collectContentViews('visible A text', literalContent),
     ]);
 
-    const finalizer = await createReferenceFinalizer(builder, views);
+    const finalizer = createReferenceFinalizer(builder, views);
 
     expect(await finalizer.finalizeField('referenced', referenced)).toBeInstanceOf(Tag);
     expect(await finalizer.finalizeField('literal B text', literal)).toBe('literal B text');
@@ -287,7 +287,7 @@ describe('ReferenceBuilder', () => {
       ...collectContentViews(firstCarrier, firstResolved),
       ...collectContentViews(secondCarrier, secondResolved),
     ]);
-    const finalizer = await createReferenceFinalizer(builder, views);
+    const finalizer = createReferenceFinalizer(builder, views);
     const reference = await finalizer.finalizeField(text, field);
     if (!(reference instanceof Tag)) throw new Error('Expected a thin reference');
     expect(reference.value).toEqual([[0, 1, 3], [1, 1, 3]]);
@@ -303,7 +303,7 @@ it('uses the final JSON text view to reference and restore a B object', async ()
   const content = createContentState(builder, 'json');
   appendContent(builder, content, json, [partId]);
   const original = parseJSONObject(json);
-  const finalizer = await createReferenceFinalizer(builder, collectContentViews(original, content));
+  const finalizer = createReferenceFinalizer(builder, collectContentViews(original, content));
   const reference = await finalizer.finalizeField(original, field);
 
   expect(reference).toBeInstanceOf(Tag);
@@ -326,7 +326,7 @@ it('round-trips raw JSON numbers and keeps changed key order literal', async () 
   const content = createContentState(builder, 'json');
   appendContent(builder, content, json, [partId]);
   const original = parseJSONObject(json);
-  const finalizer = await createReferenceFinalizer(builder, collectContentViews(original, content));
+  const finalizer = createReferenceFinalizer(builder, collectContentViews(original, content));
   const reference = await finalizer.finalizeField(original, field);
   if (!(reference instanceof Tag) || reference.tag !== THIN_TAGS.json) throw new Error('Expected a JSON reference');
   const turn: AnthropicMessagesThinAssistantTurn<ThinReference> = { role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'lookup', input: reference }] };
@@ -339,7 +339,7 @@ it('round-trips raw JSON numbers and keeps changed key order literal', async () 
   const reorderedPart = appendField(builder, reorderedField, '{"a":1,"b":2}');
   const reorderedContent = createContentState(builder, 'text');
   appendContent(builder, reorderedContent, '{"a":1,"b":2}', [reorderedPart]);
-  const reorderedFinalizer = await createReferenceFinalizer(builder, collectContentViews('{"a":1,"b":2}', reorderedContent));
+  const reorderedFinalizer = createReferenceFinalizer(builder, collectContentViews('{"a":1,"b":2}', reorderedContent));
   const reorderedOriginal: IRJSONObject = { b: 2, a: 1 };
   expect(await reorderedFinalizer.finalizeField(reorderedOriginal, reorderedField)).toBe(reorderedOriginal);
 });
@@ -351,7 +351,7 @@ it('keeps JSON fields literal when their string pieces do not restore the origin
   const content = createContentState(builder, 'text');
   appendContent(builder, content, '{"x":1}', [partId]);
   const original: IRJSONObject = { x: 2 };
-  const finalizer = await createReferenceFinalizer(builder, collectContentViews('{"x":1}', content));
+  const finalizer = createReferenceFinalizer(builder, collectContentViews('{"x":1}', content));
 
   expect(await finalizer.finalizeField(original, field)).toBe(original);
   expect(finalizer.referencedContents).toEqual([]);
@@ -365,7 +365,7 @@ it('keeps the original JSON object when the collected B text is incomplete', asy
   const content = createContentState(builder, 'text');
   appendContent(builder, content, incomplete, [partId]);
   const original: IRJSONObject = { x: 1 };
-  const finalizer = await createReferenceFinalizer(builder, collectContentViews(incomplete, content));
+  const finalizer = createReferenceFinalizer(builder, collectContentViews(incomplete, content));
 
   expect(await finalizer.finalizeField(original, field)).toBe(original);
 });

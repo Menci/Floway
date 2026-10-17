@@ -290,7 +290,7 @@ export const irFromOpenAIChatCompletions = async function* (
   const readMessage = (index: number, choice: ChatChoiceState, delta: ChatDelta): void => {
     if (typeof delta.content === 'string' && delta.content !== '') {
       const field = choice.fieldState.content ??= createFieldState('text');
-      messagePart(index, choice, 'text').append('text', delta.content, [appendField(options.roundTrip.builder, field, delta.content)]);
+      appendFieldAtom(messagePart(index, choice, 'text'), 'text', delta.content, field);
       choice.coordinateIndex?.append(delta.content);
     }
     if (typeof delta.refusal === 'string' && delta.refusal !== '') {

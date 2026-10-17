@@ -114,21 +114,11 @@ export const openaiChatCompletionsFromIR = async function* (
   };
   const textState = (choice: number, field: ChatTextField): ContentState<'text'> => {
     const state = outputState(choice);
-    if (field === 'content') {
-      state.content ??= createContentState(options.roundTrip.builder, 'text');
-      return state.content;
-    }
-    if (field === 'refusal') {
-      state.refusal ??= createContentState(options.roundTrip.builder, 'text');
-      return state.refusal;
-    }
-    state.reasoning_text ??= createContentState(options.roundTrip.builder, 'text');
-    return state.reasoning_text;
+    return state[field] ??= createContentState(options.roundTrip.builder, 'text');
   };
   const toolState = (choice: number, ordinal: number, custom: boolean): ContentState<'text'> => {
     const choiceState = outputState(choice);
-    const toolCalls = choiceState.tool_calls ?? [];
-    choiceState.tool_calls = toolCalls;
+    const toolCalls = choiceState.tool_calls ??= [];
     const current = toolCalls[ordinal];
     if (current !== undefined) {
       if (custom && 'custom' in current && current.custom?.input !== undefined) return current.custom.input;

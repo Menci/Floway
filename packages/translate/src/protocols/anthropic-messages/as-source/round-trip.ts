@@ -6,9 +6,9 @@ import type { ReplayCandidate } from '../../../round-trip/thin/assistant-turn.ts
 import { isPlainJSONObject, requireJSONObject } from '../../../shared/json/object.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesAssistantMessage, AnthropicMessagesRedactedThinkingBlock } from '@floway-dev/protocols/anthropic-messages';
 
-type AnthropicMessagesTextPart = NonNullable<Exclude<AnthropicMessagesAssistantTurn[number]['content'], string>>[number];
+type AnthropicMessagesReplayPart = NonNullable<Exclude<AnthropicMessagesAssistantTurn[number]['content'], string>>[number];
 
-const isAnthropicMessagesPureTextPart = <Part extends AnthropicMessagesTextPart>(part: Part): part is Part & PureTextPart =>
+const isAnthropicMessagesPureTextPart = <Part extends AnthropicMessagesReplayPart>(part: Part): part is Part & PureTextPart =>
   isPureTextPart(part, ['text'], ['citations']);
 
 export const ANTHROPIC_MESSAGES_REPLAY_CHECK_VERSION = 1;
@@ -24,7 +24,7 @@ const messagesReplayCheckMaterialV1 = (turn: AnthropicMessagesAssistantTurn): IR
       blocks.push({ type: 'text', text: message.content, citations: [] });
       continue;
     }
-    for (const block of canonicalTextParts<AnthropicMessagesTextPart>(message.content, isAnthropicMessagesPureTextPart)) {
+    for (const block of canonicalTextParts<AnthropicMessagesReplayPart>(message.content, isAnthropicMessagesPureTextPart)) {
       if (block.type === 'text') blocks.push({
         type: block.type,
         text: block.text,
@@ -41,17 +41,13 @@ const messagesReplayCheckMaterialV1 = (turn: AnthropicMessagesAssistantTurn): IR
 export const inspectAnthropicMessagesAssistantTurn = (turn: AnthropicMessagesAssistantTurn): RoundTripAssistantTurnInspection<AnthropicMessagesAssistantTurn> => {
   const sidecars: string[] = [];
   const candidates: ReplayCandidate[] = [];
-  const assistantTurn = turn.map(message => {
-    if (typeof message.content === 'string') {
-      return message;
-    }
-    return {
-      ...message,
-      content: message.content.filter(block => {
-        if (block.type === 'redacted_thinking') { sidecars.push(block.data); return false; }
-        return true;
-      }),
-    };
+  const assistantTurn = turn.map(message => typeof message.content === 'string' ? message : {
+    ...message,
+    content: message.content.filter(block => {
+      if (block.type !== 'redacted_thinking') return true;
+      sidecars.push(block.data);
+      return false;
+    }),
   });
   for (const message of assistantTurn) {
     if (typeof message.content === 'string') candidates.push(message.content);
@@ -87,6 +83,6 @@ export const createAnthropicMessagesSidecarCarrier = (data: string): AnthropicMe
 
 export const collectAnthropicMessagesTextViews = (turn: AnthropicMessagesAssistantTurn): Map<object, CanonicalTextView> => {
   const views = new Map<object, CanonicalTextView>();
-  for (const message of turn) if (Array.isArray(message.content)) collectCanonicalTextViews<AnthropicMessagesTextPart>(message.content, isAnthropicMessagesPureTextPart, views);
+  for (const message of turn) if (Array.isArray(message.content)) collectCanonicalTextViews<AnthropicMessagesReplayPart>(message.content, isAnthropicMessagesPureTextPart, views);
   return views;
 };

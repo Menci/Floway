@@ -120,7 +120,6 @@ const finalizeChoice = (choice: ChoiceAccumulator): OpenAIChatCompletionsChoiceN
     ...(choice.reasoningText ? { reasoning_text: choice.reasoningText } : {}),
     ...(choice.reasoningOpaque !== undefined ? { reasoning_opaque: choice.reasoningOpaque } : {}),
     ...(choice.reasoningItems.length > 0 ? { reasoning_items: choice.reasoningItems } : {}),
-    ...(choice.refusal !== undefined ? { refusal: choice.refusal } : {}),
     ...choice.messageExtras,
   };
   return {

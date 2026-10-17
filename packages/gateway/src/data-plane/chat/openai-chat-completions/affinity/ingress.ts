@@ -1,12 +1,6 @@
+import { isEncryptedReasoningDetail } from './reasoning-details.ts';
 import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
-
-interface EncryptedReasoningDetail extends Record<string, unknown> { type: 'reasoning.encrypted'; data: string }
-
-const isEncryptedReasoningDetail = (value: unknown): value is EncryptedReasoningDetail => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-  return 'type' in value && value.type === 'reasoning.encrypted' && 'data' in value && typeof value.data === 'string';
-};
 
 export const analyzeOpenAIChatCompletionsAffinity = async (
   payload: OpenAIChatCompletionsPayload,

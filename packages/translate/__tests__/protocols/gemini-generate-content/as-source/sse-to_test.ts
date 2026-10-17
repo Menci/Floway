@@ -27,7 +27,7 @@ test('resolves delayed Gemini audio atoms within the complete emitted data field
     prepareSidecar: async (_choice, _check, turn, state, textViews) => {
       const views = collectContentViews(turn, state, textViews);
       expect([...views.values()]).toEqual([{ text: 'YQ==', offset: 0 }]);
-      const finalizer = await createReferenceFinalizer(references, views);
+      const finalizer = createReferenceFinalizer(references, views);
       expect(await finalizer.finalizeField('Q==', field)).toMatchObject({ value: [[0, 1, 4]] });
       prepared = true;
       return 'sidecar';
@@ -56,7 +56,7 @@ test.each(['{"x":1,}', '{"x": 1}'])('tracks the emitted canonical JSON view with
     prepareSidecar: async (_choice, _check, turn, state, textViews) => {
       const views = collectContentViews(turn, state, textViews);
       expect([...views.values()]).toContainEqual({ text: '{"x":1}', offset: 0 });
-      const finalizer = await createReferenceFinalizer(references, views);
+      const finalizer = createReferenceFinalizer(references, views);
       expect(await finalizer.finalizeField(original, field)).toBe(original);
       prepared = true;
       return 'sidecar';

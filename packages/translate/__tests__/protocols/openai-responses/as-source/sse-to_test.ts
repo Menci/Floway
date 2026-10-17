@@ -96,7 +96,7 @@ test('collects sparse namespace-restored Responses state from emitted IR atoms',
   expect(state[3]).toMatchObject({ arguments: {} });
   expect(4 in state).toBe(false);
 
-  const finalizer = await createReferenceFinalizer(references, collectContentViews(turn, state));
+  const finalizer = createReferenceFinalizer(references, collectContentViews(turn, state));
   for (const source of [functionArguments, messageText, refusal, reasoningSummary, reasoningContent, customInput]) {
     expect(await finalizer.finalizeField(source.original, source.state)).not.toBe(source.original);
   }

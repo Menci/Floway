@@ -11,7 +11,7 @@ type OpenAIResponsesItemRule<T> = T extends { type: 'message' }
         ? { input: TextRule }
         : never;
 
-export type OpenAIResponsesThinItem<T, Reference> = T extends unknown
+type OpenAIResponsesThinItem<T, Reference> = T extends unknown
   ? OpenAIResponsesItemRule<T> extends never ? T : ThinValue<T, OpenAIResponsesItemRule<T>, Reference>
   : never;
 export type OpenAIResponsesItemState<T, States extends ThinStateLeaves> = T extends unknown

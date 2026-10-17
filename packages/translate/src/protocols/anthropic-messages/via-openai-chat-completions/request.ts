@@ -1,6 +1,5 @@
 import { klona } from 'klona/json';
 
-import { openAIChatCompletionsReasoningTextFromAnthropicMessagesBlock } from './reasoning.ts';
 import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
@@ -94,11 +93,6 @@ type PendingAssistantMessage = {
   reasoningText: string[];
 };
 
-const recordPendingReasoningText = (pending: PendingAssistantMessage, block: AnthropicMessagesAssistantContentBlock): void => {
-  const reasoningText = openAIChatCompletionsReasoningTextFromAnthropicMessagesBlock(block);
-  if (reasoningText !== null) pending.reasoningText.push(reasoningText);
-};
-
 const flushPendingAssistantMessage = (messages: OpenAIChatCompletionsMessage[], pending: PendingAssistantMessage): void => {
   if (pending.textParts.length === 0 && pending.toolCalls.length === 0 && pending.reasoningText.length === 0) {
     return;
@@ -187,7 +181,7 @@ const translateAnthropicMessagesAssistant = (message: AnthropicMessagesAssistant
       pending.textParts.push(block.text);
       break;
     case 'thinking':
-      recordPendingReasoningText(pending, block);
+      if (block.thinking !== '') pending.reasoningText.push(block.thinking);
       break;
     case 'redacted_thinking':
       warnDroppedForeignAssistantReasoning('anthropicMessages', 'openaiChatCompletions');

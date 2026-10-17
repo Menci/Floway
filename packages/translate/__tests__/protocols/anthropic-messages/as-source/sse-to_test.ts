@@ -34,7 +34,7 @@ test.each(['text', 'refusal', 'audio'] as const)('resolves blocked %s against th
     prepareSidecar: async (_choice, _check, turn, state, textViews) => {
       const views = collectContentViews(turn, state, textViews);
       expect([...views.values()]).toContainEqual({ text: 'Hi', offset: 0 });
-      const finalizer = await createReferenceFinalizer(references, views);
+      const finalizer = createReferenceFinalizer(references, views);
       expect(await finalizer.finalizeField('Hi', field)).toMatchObject({ value: [0] });
       expect(finalizer.referencedContents).toEqual([await hashRoundTripContent('Hi')]);
       prepared = true;
@@ -83,7 +83,7 @@ test('resolves blocked reasoning in emitted summary/content order before live ap
   if (prepared === undefined) throw new Error('Messages sidecar was not prepared');
   const [, , turn, state] = prepared;
   expect(turn.content).toContainEqual(expect.objectContaining({ type: 'thinking', thinking: 'ABXC' }));
-  const finalizer = await createReferenceFinalizer(references, collectContentViews(turn, state));
+  const finalizer = createReferenceFinalizer(references, collectContentViews(turn, state));
   expect(await finalizer.finalizeField('ABC', summary)).toMatchObject({ value: [[0, 0, 2], [0, 3, 4]] });
   expect(await finalizer.finalizeField('X', content)).toMatchObject({ value: [[0, 2, 3]] });
   expect(finalizer.referencedContents).toEqual([await hashRoundTripContent('ABXC')]);
@@ -108,7 +108,7 @@ test.each(['{"x":1,}', '{"x": 1}'])('tracks the emitted canonical JSON view with
     prepareSidecar: async (_choice, _check, turn, state, textViews) => {
       const views = collectContentViews(turn, state, textViews);
       expect([...views.values()]).toContainEqual({ text: '{"x":1}', offset: 0 });
-      const finalizer = await createReferenceFinalizer(references, views);
+      const finalizer = createReferenceFinalizer(references, views);
       expect(await finalizer.finalizeField(original, field)).toBe(original);
       prepared = true;
       return 'sidecar';

@@ -5,7 +5,9 @@ import { canonicalTextParts, collectCanonicalTextViews, isPureTextPart, type Can
 import type { ReplayCandidate } from '../../../round-trip/thin/assistant-turn.ts';
 import type { OpenAIChatCompletionsAssistantExtensions, OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsAssistantOutputMessage, OpenAIChatCompletionsToolCallEx } from '@floway-dev/protocols/openai-chat-completions';
 
-const isOpenAIChatCompletionsPureTextPart = <Part extends NonNullable<Exclude<OpenAIChatCompletionsAssistantTurn['content'], string>>[number]>(part: Part): part is Part & PureTextPart =>
+type OpenAIChatCompletionsReplayPart = NonNullable<Exclude<OpenAIChatCompletionsAssistantTurn['content'], string>>[number];
+
+const isOpenAIChatCompletionsPureTextPart = <Part extends OpenAIChatCompletionsReplayPart>(part: Part): part is Part & PureTextPart =>
   isPureTextPart(part, ['text']);
 
 export const OPENAI_CHAT_COMPLETIONS_REPLAY_CHECK_VERSION = 1;

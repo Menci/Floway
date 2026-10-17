@@ -1,23 +1,17 @@
 import { Tag } from 'cbor-x';
 
-import { contentHashKey, THIN_TAGS, type ReplayCandidate, type ReferencePart, type ThinAssistantTurnFor, type ThinReference } from './assistant-turn.ts';
+import { THIN_TAGS, type ReplayCandidate, type ReferencePart, type ThinAssistantTurnFor, type ThinReference } from './assistant-turn.ts';
 import { parseJSONObject } from '../../shared/json/object.ts';
 import { rawJSON } from '../../shared/json/raw-json.ts';
 import type { AssistantTurnByProtocol, AssistantTurnFor } from '../assistant-turn.ts';
 import { hashRoundTripContent } from '../replay-check.ts';
+import { encodeHex } from '@floway-dev/protocols/common';
 
 export type HydrationResult<T> =
   | { ok: true; turn: T }
   | { ok: false; reason: 'missing-reference' };
 
 type HydrationValue = { ok: true; value: unknown } | { ok: false; reason: 'missing-reference' };
-
-const replayCandidateText = (candidate: ReplayCandidate): string => {
-  if (typeof candidate === 'string') return candidate;
-  const text = JSON.stringify(candidate);
-  if (text === undefined) throw new TypeError('Replay candidate is not JSON-serializable');
-  return text;
-};
 
 const referencedText = (payload: readonly ReferencePart[], referencedContents: readonly Uint8Array[] | undefined, textsByHash: ReadonlyMap<string, string>): string | undefined => {
   if (referencedContents === undefined) throw new TypeError('Thin reference requires referenced contents');
@@ -26,7 +20,7 @@ const referencedText = (payload: readonly ReferencePart[], referencedContents: r
     const index = Array.isArray(part) ? part[0] : part;
     const hash = referencedContents[index];
     if (hash === undefined) throw new RangeError(`Referenced content hash index is out of bounds: ${index}`);
-    const source = textsByHash.get(contentHashKey(hash));
+    const source = textsByHash.get(encodeHex(hash));
     if (source === undefined) return undefined;
     text.push(Array.isArray(part) ? source.slice(part[1], part[2]) : source);
   }
@@ -74,8 +68,9 @@ export const hydrateAssistantTurn = async <Protocol extends keyof AssistantTurnB
   const textsByHash = new Map<string, string>();
   if (referencedContents !== undefined) {
     for (const candidate of candidates) {
-      const text = replayCandidateText(candidate);
-      textsByHash.set(contentHashKey(await hashRoundTripContent(text)), text);
+      const text = typeof candidate === 'string' ? candidate : JSON.stringify(candidate);
+      if (text === undefined) throw new TypeError('Replay candidate is not JSON-serializable');
+      textsByHash.set(encodeHex(await hashRoundTripContent(text)), text);
     }
   }
   const result = hydrateValue(assistantTurn, referencedContents, textsByHash);

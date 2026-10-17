@@ -1,7 +1,7 @@
 import { decode, encode, Tag } from 'cbor-x';
 import { describe, expect, test } from 'vitest';
 
-import { createAssistantTurnSidecarCodec, encodeSidecarValue, type RoundTripSidecarEnvelope, type RoundTripSidecarPayload } from '../../src/round-trip/codec.ts';
+import { createAssistantTurnSidecarCodec, encodeSidecarValue, type AnyRoundTripSidecar, type RoundTripSidecarPayload } from '../../src/round-trip/codec.ts';
 import { decodeForgivingBase64, encodeBase64, encodeBase64url } from '@floway-dev/protocols/common';
 
 const source = 'openaiResponses';
@@ -35,7 +35,7 @@ const requireTag = (value: unknown): Tag => {
   return value;
 };
 
-const chatProviderFields = (sidecar: RoundTripSidecarEnvelope): Record<string, unknown> => {
+const chatProviderFields = (sidecar: AnyRoundTripSidecar): Record<string, unknown> => {
   if (sidecar.target !== 'openaiChatCompletions') throw new TypeError('Expected a Chat Completions sidecar');
   return requireRecord(sidecar.assistantTurn.provider_specific_fields);
 };

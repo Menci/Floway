@@ -41,10 +41,10 @@ interface ResponsesItemStateBase {
 }
 
 type ResponsesItemState = ResponsesItemStateBase & (
-      | { readonly type: 'message'; fieldState?: MessageFieldState }
-      | { readonly type: 'reasoning'; fieldState?: ReasoningFieldState }
-      | { readonly type: 'function_call'; fieldState?: FunctionFieldState; toolText?: ResponsesTextTarget }
-      | { readonly type: 'custom_tool_call'; fieldState?: CustomFieldState; toolText?: ResponsesTextTarget }
+      | { readonly type: 'message'; fieldState: MessageFieldState }
+      | { readonly type: 'reasoning'; fieldState: ReasoningFieldState }
+      | { readonly type: 'function_call'; fieldState: FunctionFieldState; toolText?: ResponsesTextTarget }
+      | { readonly type: 'custom_tool_call'; fieldState: CustomFieldState; toolText?: ResponsesTextTarget }
       | { readonly type: Exclude<OpenAIResponsesOutputItemEx['type'], 'message' | 'reasoning' | 'function_call' | 'custom_tool_call'>; fieldState?: never }
     );
 
@@ -210,11 +210,11 @@ export const irFromOpenAIResponses = async function* (
     if (state.toolText !== undefined) return state.toolText;
     const fieldState = createFieldState('text');
     if (state.type === 'function_call') {
-      const node = state.fieldState ??= {};
+      const node = state.fieldState;
       node.arguments = fieldState;
       state.toolText = { handle: state.item, path: 'arguments', fieldState, fieldStateNode: node };
     } else {
-      const node = state.fieldState ??= {};
+      const node = state.fieldState;
       node.input = fieldState;
       state.toolText = { handle: state.item, path: 'input', fieldState, fieldStateNode: node };
     }
@@ -282,7 +282,7 @@ export const irFromOpenAIResponses = async function* (
       state.item.initialize([field, index], '');
       const fieldState = createFieldState('text');
       const fieldStateNode = { text: fieldState };
-      const nativeState = state.fieldState ??= {};
+      const nativeState = state.fieldState;
       const parts = nativeState[field] ??= [];
       parts[index] = fieldStateNode;
       outputState[state.outputIndex] = nativeState;
@@ -303,7 +303,7 @@ export const irFromOpenAIResponses = async function* (
       if (part.type === 'output_text') {
         const fieldState = createFieldState('text');
         const fieldStateNode = { text: fieldState };
-        const nativeState = state.fieldState ??= { content: [] };
+        const nativeState = state.fieldState;
         const content = nativeState.content ??= [];
         content[contentIndex] = fieldStateNode;
         outputState[state.outputIndex] = nativeState;
@@ -317,7 +317,7 @@ export const irFromOpenAIResponses = async function* (
       } else if (part.type === 'refusal') {
         const fieldState = createFieldState('text');
         const fieldStateNode = { refusal: fieldState };
-        const nativeState = state.fieldState ??= {};
+        const nativeState = state.fieldState;
         const content = nativeState.content ??= [];
         content[contentIndex] = fieldStateNode;
         outputState[state.outputIndex] = nativeState;
@@ -449,8 +449,8 @@ export const irFromOpenAIResponses = async function* (
       const status = 'status' in snapshot ? snapshot.status : undefined;
       state.item.end(status === 'incomplete' ? 'incomplete' : undefined);
     }
-    if (snapshot.type === 'message' && state.type === 'message' && state.fieldState?.content !== undefined) state.fieldState.content.length = snapshot.content.length;
-    if (snapshot.type === 'reasoning' && state.type === 'reasoning' && state.fieldState !== undefined) {
+    if (snapshot.type === 'message' && state.type === 'message' && state.fieldState.content !== undefined) state.fieldState.content.length = snapshot.content.length;
+    if (snapshot.type === 'reasoning' && state.type === 'reasoning') {
       if (state.fieldState.summary !== undefined) state.fieldState.summary.length = snapshot.summary.length;
       if (snapshot.content === undefined) delete state.fieldState.content;
       else if (state.fieldState.content !== undefined) state.fieldState.content.length = snapshot.content.length;

@@ -53,9 +53,7 @@ export const inspectGeminiGenerateContentAssistantTurn = (turn: GeminiGenerateCo
   const assistantTurn = turn.flatMap(content => {
     if (content.parts === undefined) return [content];
     const parts = content.parts.flatMap(part => {
-      if (typeof part.thoughtSignature !== 'string') {
-        return [part];
-      }
+      if (typeof part.thoughtSignature !== 'string') return [part];
       const { thoughtSignature, ...body } = part;
       sidecars.push(thoughtSignature);
       return Object.keys(body).length === 0 ? [] : [body];
