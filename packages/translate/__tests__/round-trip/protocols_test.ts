@@ -308,7 +308,7 @@ describe('assistant-turn sidecar protocols', () => {
       ],
     };
     const mixedContentCheck = await computeOpenAIResponsesReplayCheck([mixedContentMessage]);
-    expect(await verifyResponsesTurn([{ ...mixedContentMessage, content: [mixedContentMessage.content[1], mixedContentMessage.content[0], mixedContentMessage.content[2]] }, turn[2]], mixedContentCheck)).toBe(false);
+    expect(await verifyResponsesTurn([{ ...mixedContentMessage, content: [mixedContentMessage.content[1], mixedContentMessage.content[0], mixedContentMessage.content[2]] }, turn[2]], mixedContentCheck)).toBe(true);
     expect(await verifyResponsesTurn([{ ...mixedContentMessage, content: [mixedContentMessage.content[2], mixedContentMessage.content[1], mixedContentMessage.content[0]] }, turn[2]], mixedContentCheck)).toBe(false);
 
     const inputTextMessage = { type: 'message' as const, role: 'assistant' as const, content: [{ type: 'input_text' as const, text: 'input body' }] };
@@ -457,8 +457,8 @@ describe('assistant-turn sidecar protocols', () => {
       changed([text, thinking, { ...call, input: { q: 'changed' } }, continued]),
       changed([text, thinking, call, { ...continued, text: 'edited continued' }]),
     ]) expect(await verifyMessagesTurn(changedTurn, check)).toBe(false);
-    expect(await verifyMessagesTurn(changed([text, call, thinking, continued]), check)).toBe(true);
-    expect(await verifyMessagesTurn(changed([call, text, thinking, continued]), check)).toBe(true);
+    expect(await verifyMessagesTurn(changed([text, call, thinking, continued]), check)).toBe(false);
+    expect(await verifyMessagesTurn(changed([call, text, thinking, continued]), check)).toBe(false);
     expect(await verifyMessagesTurn(changed([continued, text, thinking, call]), check)).toBe(false);
     const secondTool = { ...call, id: 'tool-b', name: 'other', input: { q: 'b' } };
     const twoTools = changed([text, thinking, call, secondTool, continued]);
@@ -471,9 +471,10 @@ describe('assistant-turn sidecar protocols', () => {
     expect(await verifyMessagesTurn([{ ...settingsTurn[0], clear_at: 'next_user_message' }, second], settingsCheck)).toBe(true);
     const stringContentCheck = await computeAnthropicMessagesReplayCheck([{ role: 'assistant', content: 'plain text' }]);
     expect(await verifyAnthropicMessagesReplayCheck([{ role: 'assistant', content: [{ type: 'text', text: 'plain text', citations: null }] }], stringContentCheck)).toBe(true);
-    expect(await verifyMessagesTurn(changed([
-      { ...text, cache_control: { type: 'ephemeral' } }, { ...thinking, signature: 'different-signature' }, call, continued,
-    ]), check)).toBe(true);
+    expect(await verifyMessagesTurn([
+      { role: 'assistant', content: [{ ...text, cache_control: { type: 'ephemeral' } }, { ...thinking, signature: 'different-signature' }, call] },
+      second,
+    ], check)).toBe(true);
   });
 
   it('checks Messages text, citations, thinking, and JSON tool input', async () => {
@@ -522,7 +523,7 @@ describe('assistant-turn sidecar protocols', () => {
       },
       { role: 'model', parts: [createGeminiGenerateContentSidecarCarrier('opaque-sidecar')] },
     ];
-    expect(await verifyGeminiTurn(moved, check)).toBe(false);
+    expect(await verifyGeminiTurn(moved, check)).toBe(true);
     expect(await verifyGeminiTurn([
       { ...moved[0], parts: [{ text: 'edited answer' }, ...moved[0].parts.slice(1)] },
       moved[1],

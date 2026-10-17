@@ -73,7 +73,7 @@ test('keeps the whole field literal when a done snapshot supplies a suffix witho
   const itemState = captured.fieldState[0];
   if (itemState === undefined || !('content' in itemState)) throw new Error('Responses message state was not collected');
   if (!Array.isArray(itemState.content)) throw new Error('Responses message content state was not collected');
-  expect(itemState.content[0]).toEqual({});
+  expect(itemState.content[0]).toMatchObject({ text: { valid: false } });
 
   const finalized = await finalizeAssistantTurnReferences<'openaiResponses'>(
     captured.turn,
@@ -134,7 +134,7 @@ test('invalidates streamed refusal provenance when its done snapshot supplies a 
   if (itemState === undefined || !('content' in itemState) || !Array.isArray(itemState.content)) {
     throw new Error('Responses message content state was not collected');
   }
-  expect(itemState.content[0]).toEqual({});
+  expect(itemState.content[0]).toMatchObject({ refusal: { valid: false } });
   const finalized = await finalizeAssistantTurnReferences<'openaiResponses'>(captured.turn, captured.fieldState, captured.builder, collectContentViews('refused', captured.content));
   expect(finalized).not.toHaveProperty('referencedContents');
   expect(await hydrateAssistantTurn('openaiResponses', ['refused'], finalized.assistantTurn, finalized.referencedContents)).toEqual({ ok: true, turn: captured.turn });
@@ -221,7 +221,7 @@ test.each(toolCases)('invalidates native $type provenance when its done snapshot
     { type: 'response.completed', response: response([done], 'completed') },
   ], field);
   expect(captured.appends).toEqual([{ text: prefix, partIds: [0] }, { text: suffix }]);
-  expect(captured.fieldState[0]).toEqual({});
+  expect(captured.fieldState[0]).toMatchObject({ [field]: { valid: false } });
   const finalized = await finalizeAssistantTurnReferences<'openaiResponses'>(captured.turn, captured.fieldState, captured.builder, collectContentViews(text, captured.content));
   expect(finalized.assistantTurn).toEqual(captured.turn);
   expect(finalized).not.toHaveProperty('referencedContents');

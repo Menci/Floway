@@ -2,7 +2,7 @@ import type { AssistantTurnByProtocol, AssistantTurnFor } from './assistant-turn
 import type { TranslateSidecarCodec } from '../types.ts';
 import type { RoundTripReplayCheck } from './replay-check.ts';
 import type { RoundTripSidecar } from './sidecar.ts';
-import type { CanonicalTextView } from './text-parts.ts';
+import type { TextChannelViews } from './text-channels.ts';
 import type { AssistantTurnStateFor } from './thin/assistant-turn.ts';
 import { collectContentViews, createReferenceBuilder, finalizeAssistantTurnReferences, type ContentStates, type FieldStates, type ReferenceBuilder } from './thin/reference-builder.ts';
 
@@ -22,7 +22,7 @@ export interface RoundTripWriter<Protocol extends keyof AssistantTurnByProtocol>
     replayCheck: RoundTripReplayCheck,
     turn: AssistantTurnFor<Protocol>,
     contentState: AssistantTurnStateFor<Protocol, ContentStates>,
-    textViews: ReadonlyMap<object, CanonicalTextView>,
+    textViews: TextChannelViews,
   ) => Promise<string>;
 }
 

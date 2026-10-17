@@ -4,7 +4,7 @@ import { parseJSONObject, requireJSONObject } from '../../shared/json/object.ts'
 import { rawJSON } from '../../shared/json/raw-json.ts';
 import type { AssistantTurnByProtocol, AssistantTurnFor } from '../assistant-turn.ts';
 import { hashRoundTripContent } from '../replay-check.ts';
-import type { CanonicalTextView } from '../text-parts.ts';
+import type { TextChannelView, TextChannelViews } from '../text-channels.ts';
 import { encodeHex } from '@floway-dev/protocols/common';
 
 const stateKind: unique symbol = Symbol('ReferenceState');
@@ -24,6 +24,7 @@ type OriginalFor<Kind extends Restoration> = Kind extends 'text' ? string : IRJS
 export interface FieldState<Kind extends Restoration = Restoration> {
   readonly [stateKind]: 'field';
   readonly restoration: Kind;
+  valid: boolean;
   text: string;
   readonly partIds: PartId[];
 }
@@ -54,16 +55,19 @@ interface Resolution {
 export const createReferenceBuilder = (): ReferenceBuilder => ({ pieces: [], resolutions: new Map(), nextContentId: 0 });
 
 export const createFieldState = <Kind extends Restoration>(restoration: Kind): FieldState<Kind> => ({
-  [stateKind]: 'field', restoration, text: '', partIds: [],
+  [stateKind]: 'field', restoration, valid: true, text: '', partIds: [],
 });
 
 export const appendField = (builder: ReferenceBuilder, field: FieldState, text: string): PartId => {
+  if (!field.valid) throw new Error('Cannot append provenance to an invalid field');
   const partId = builder.pieces.length;
   builder.pieces.push(text);
   field.text += text;
   field.partIds.push(partId);
   return partId;
 };
+
+export const invalidateField = (field: FieldState): void => { field.valid = false; };
 
 export const createContentState = <Kind extends Restoration>(builder: ReferenceBuilder, restoration: Kind): ContentState<Kind> => ({
   [stateKind]: 'content', restoration, contentId: builder.nextContentId++, text: '',
@@ -95,37 +99,37 @@ const textView = (kind: Restoration, value: unknown): string | undefined => {
   return JSON.stringify(value);
 };
 
-const pairedChildren = function* (value: unknown, state: unknown): Generator<readonly [unknown, unknown]> {
+const pairedChildren = function* (value: unknown, state: unknown): Generator<readonly [string | number, unknown, unknown]> {
   if (Array.isArray(state)) {
     if (!Array.isArray(value)) throw new TypeError('ReferenceBuilder state array does not match its assistant turn');
     for (let index = 0; index < state.length; index++) {
       if (!Object.hasOwn(state, index)) continue;
-      yield [value[index], state[index]];
+      yield [index, value[index], state[index]];
     }
     return;
   }
   if (typeof state !== 'object' || state === null) return;
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new TypeError('ReferenceBuilder state object does not match its assistant turn');
-  for (const [key, childState] of Object.entries(state)) yield [Reflect.get(value, key), childState];
+  for (const [key, childState] of Object.entries(state)) yield [key, Reflect.get(value, key), childState];
 };
 
-export function collectContentViews(value: unknown, contentState: ContentState): Map<ContentId, CanonicalTextView>;
+export function collectContentViews(value: unknown, contentState: ContentState): Map<ContentId, TextChannelView>;
 export function collectContentViews<Protocol extends keyof AssistantTurnByProtocol>(
   turn: AssistantTurnFor<Protocol>,
   contentState: AssistantTurnStateFor<Protocol, ContentStates>,
-  textViews?: ReadonlyMap<object, CanonicalTextView>,
-): Map<ContentId, CanonicalTextView>;
-export function collectContentViews(turn: unknown, contentState: unknown, textViews?: ReadonlyMap<object, CanonicalTextView>): Map<ContentId, CanonicalTextView> {
-  const views = new Map<ContentId, CanonicalTextView>();
-  const visit = (value: unknown, state: unknown, canonical?: CanonicalTextView): void => {
+  textViews?: TextChannelViews,
+): Map<ContentId, TextChannelView>;
+export function collectContentViews(turn: unknown, contentState: unknown, textViews?: TextChannelViews): Map<ContentId, TextChannelView> {
+  const views = new Map<ContentId, TextChannelView>();
+  const visit = (value: unknown, state: unknown, channel?: TextChannelView): void => {
     if (isContentState(state)) {
       const view = textView(state.restoration, value);
-      if (view === state.text) views.set(state.contentId, canonical ?? { text: view, offset: 0 });
+      if (view === state.text) views.set(state.contentId, channel ?? { text: view, offset: 0 });
       return;
     }
-    const view = typeof value === 'object' && value !== null ? textViews?.get(value) : undefined;
-    for (const [childValue, childState] of pairedChildren(value, state)) {
-      visit(childValue, childState, view !== undefined && isContentState(childState) && childState.restoration === 'text' ? view : undefined);
+    for (const [key, childValue, childState] of pairedChildren(value, state)) {
+      const channel = typeof value === 'object' && value !== null ? textViews?.get(value)?.get(String(key)) : undefined;
+      visit(childValue, childState, channel !== undefined && isContentState(childState) && childState.restoration === 'text' ? channel : undefined);
     }
   };
   visit(turn, contentState);
@@ -133,6 +137,7 @@ export function collectContentViews(turn: unknown, contentState: unknown, textVi
 }
 
 const restoresOriginal = <Kind extends Restoration>(field: FieldState<Kind>, original: OriginalFor<Kind>): boolean => {
+  if (!field.valid) return false;
   if (field.restoration === 'text') return typeof original === 'string' && field.text === original;
   if (typeof original !== 'object' || original === null || Array.isArray(original)) return false;
   try {
@@ -165,7 +170,7 @@ interface ReferenceFinalizer {
   ) => Promise<OriginalFor<Kind> | ThinReference<Kind>>;
 }
 
-export const createReferenceFinalizer = (builder: ReferenceBuilder, contentViews: ReadonlyMap<ContentId, CanonicalTextView>): ReferenceFinalizer => {
+export const createReferenceFinalizer = (builder: ReferenceBuilder, contentViews: ReadonlyMap<ContentId, TextChannelView>): ReferenceFinalizer => {
   const referencedContents: Uint8Array[] = [];
   const hashIndexByContentId = new Map<ContentId, number>();
   const hashIndexByContent = new Map<string, number>();
@@ -264,7 +269,7 @@ export const finalizeAssistantTurnReferences = async <Protocol extends keyof Ass
   turn: AssistantTurnFor<Protocol>,
   fieldState: AssistantTurnStateFor<Protocol, FieldStates>,
   builder: ReferenceBuilder,
-  contentViews: ReadonlyMap<ContentId, CanonicalTextView>,
+  contentViews: ReadonlyMap<ContentId, TextChannelView>,
 ): Promise<FinalizedAssistantTurn<ThinAssistantTurnFor<Protocol, ThinReference>>> => {
   const finalizer = createReferenceFinalizer(builder, contentViews);
   const minimumReferenceBudget = REFERENCE_OVERHEAD + 4;
@@ -285,7 +290,7 @@ export const finalizeAssistantTurnReferences = async <Protocol extends keyof Ass
       }
       return;
     }
-    for (const [childValue, childState] of pairedChildren(value, state)) await collect(childValue, childState);
+    for (const [, childValue, childState] of pairedChildren(value, state)) await collect(childValue, childState);
   };
   await collect(turn, fieldState);
   if (choices.length === 0) return { assistantTurn: turn };

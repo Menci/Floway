@@ -6,6 +6,7 @@ import { consumeIRRecords, type IRRecord } from '../../../ir/stream.ts';
 import { IRNone, type IRErrorPayload, type IRItem, type IRMessageItem, type IRTokenLogprob } from '../../../ir/types.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
 import { appendContent, createContentState, type ContentStates, type ContentState } from '../../../round-trip/thin/reference-builder.ts';
+import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/thin/text-provenance.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantState } from '../as-target/assistant-turn.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -77,7 +78,6 @@ const isIRTokenLogprob = (value: unknown): value is IRTokenLogprob =>
 type ChatChoiceChunk = Omit<OpenAIChatCompletionsStreamEvent['choices'][number], 'delta'> & { delta: OpenAIChatCompletionsAssistantDeltaEx };
 type ChatChunkFields = Partial<Pick<OpenAIChatCompletionsStreamEvent, 'service_tier' | 'usage'>>;
 type ChatTextField = 'content' | 'refusal' | 'reasoning_text';
-interface PendingTranscriptPart { length: number; partIds?: readonly number[] }
 
 export const openaiChatCompletionsFromIR = async function* (
   records: AsyncIterable<IRRecord>,
@@ -101,7 +101,7 @@ export const openaiChatCompletionsFromIR = async function* (
     return accumulator;
   };
   const outputStates = new Map<number, OpenAIChatCompletionsOutputAssistantState<ContentStates>>();
-  const pendingTranscripts = new Map<string, PendingTranscriptPart[]>();
+  const pendingTranscripts = new Map<string, TextProvenanceSpan[]>();
   let usage: OpenAIChatCompletionsUsageEx | undefined;
 
   const outputState = (choice: number): OpenAIChatCompletionsOutputAssistantState<ContentStates> => {
@@ -264,8 +264,10 @@ export const openaiChatCompletionsFromIR = async function* (
           if (partTypes.get(irPathKey(partPath)) !== 'audio') throw new TypeError('ChatCompletions audio delta requires an audio part');
           const audioPath = irPathKey(partPath);
           if (path[7] === 'transcript' && !startedAudio.has(audioPath)) {
+            const transcript = collector.value<string>(path);
+            if (transcript === undefined) throw new Error('Missing ChatCompletions pending transcript');
             const parts = pendingTranscripts.get(audioPath) ?? [];
-            parts.push({ length: record.value.length, ...(record.partIds === undefined ? {} : { partIds: record.partIds }) });
+            parts.push(provenanceSpanForAppend(transcript, record.value, record.partIds));
             pendingTranscripts.set(audioPath, parts);
           }
           if (path[7] === 'data') {
@@ -347,12 +349,10 @@ export const openaiChatCompletionsFromIR = async function* (
       const item = state.choices[record.choice].items[record.item];
       const part = item.type === 'message' ? item.content[record.part] : undefined;
       if (part?.type === 'audio' && !startedAudio.has(irPathKey(path)) && part.audio.transcript !== undefined) {
-        let offset = 0;
         const content = textState(record.choice, 'content');
-        for (const pending of pendingTranscripts.get(irPathKey(path)) ?? []) {
-          appendContent(options.roundTrip.builder, content, part.audio.transcript.slice(offset, offset + pending.length), pending.partIds);
-          offset += pending.length;
-        }
+        replayTextProvenance(part.audio.transcript, pendingTranscripts.get(irPathKey(path)) ?? [], (value, partIds) => {
+          appendContent(options.roundTrip.builder, content, value, partIds);
+        });
         pendingTranscripts.delete(irPathKey(path));
         yield deltaFrame(record.choice, { content: part.audio.transcript }, tier);
       }

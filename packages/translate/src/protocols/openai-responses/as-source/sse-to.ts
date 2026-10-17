@@ -10,6 +10,7 @@ import { IRNone, type IR, type IRItem, type IRMessageItem, type IRSourceCitation
 import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/unit-queue.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
 import { appendContent, createContentState, type ContentState, type ContentStates } from '../../../round-trip/thin/reference-builder.ts';
+import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/thin/text-provenance.ts';
 import { isCompleteJSONObject, parseJSONObjectAtCompletion } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantState } from '../as-target/assistant-turn.ts';
@@ -31,7 +32,7 @@ interface ResponsesOutputUnitBase {
   readonly contentOrdinals: ReturnType<typeof createIROrdinalMapper>;
   readonly annotationProgress: Map<string, { seen: number; emitted: number }>;
   readonly coordinateIndexes: Map<string, TextCoordinateIndex>;
-  pendingText?: Map<string, { start: number; endExclusive: number; partIds?: readonly number[] }[]>;
+  pendingText?: Map<string, TextProvenanceSpan[]>;
   opened: boolean;
   outputIndex?: number;
   id?: string;
@@ -232,14 +233,8 @@ export const openaiResponsesFromIR = async function* (
   };
 
   const appendPendingText = (unit: ResponsesOutputUnit, path: IRPath, text: string): void => {
-    let offset = 0;
     const key = irPathKey(path);
-    for (const atom of unit.pendingText?.get(key) ?? []) {
-      if (atom.start > offset) appendUnitText(unit, path, text.slice(offset, atom.start));
-      appendUnitText(unit, path, text.slice(atom.start, atom.endExclusive), atom.partIds);
-      offset = atom.endExclusive;
-    }
-    if (offset < text.length) appendUnitText(unit, path, text.slice(offset));
+    replayTextProvenance(text, unit.pendingText?.get(key) ?? [], (value, partIds) => appendUnitText(unit, path, value, partIds));
     unit.pendingText?.delete(key);
   };
 
@@ -676,7 +671,7 @@ export const openaiResponsesFromIR = async function* (
         const fields = unit.pendingText ??= new Map();
         const key = irPathKey(record.path);
         const atoms = fields.get(key) ?? [];
-        atoms.push({ start: text.length - record.value.length, endExclusive: text.length, ...(record.partIds === undefined ? {} : { partIds: record.partIds }) });
+        atoms.push(provenanceSpanForAppend(text, record.value, record.partIds));
         fields.set(key, atoms);
       }
     }

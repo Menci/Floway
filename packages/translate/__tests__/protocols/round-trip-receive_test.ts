@@ -1,6 +1,10 @@
 import { expect, test } from 'vitest';
 
-import type { IRJSONObject, IRJSONValue } from '../../src/ir/types.ts';
+import type { IRJSONObject } from '../../src/ir/types.ts';
+import { computeAnthropicMessagesReplayCheck } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
+import { computeGeminiGenerateContentReplayCheck } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
+import { computeOpenAIChatCompletionsReplayCheck } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
+import { computeOpenAIResponsesReplayCheck } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
 import type { AssistantTurnFor } from '../../src/round-trip/assistant-turn.ts';
 import { hashRoundTripContent, replayMaterialsByType } from '../../src/round-trip/replay-check.ts';
 import type { RoundTripProtocol } from '../../src/round-trip/sidecar.ts';
@@ -25,20 +29,13 @@ const messages = (carrier: string): AnthropicMessagesPayload => ({ model: 'sourc
 const responses = (carrier: string): OpenAIResponsesRequestPayloadEx => ({ model: 'source', input: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'answer' }] }, { type: 'reasoning', id: 'carrier', summary: [], encrypted_content: carrier }] });
 const gemini = (carrier: string): GeminiGenerateContentPayload => ({ contents: [{ role: 'model', parts: [{ text: 'answer', thoughtSignature: carrier }] }] });
 
-const material = (source: RoundTripProtocol): IRJSONValue => {
-  if (source === 'openaiChatCompletions') return { content: 'answer', reasoningText: [], reasoningDetails: [] };
-  if (source === 'anthropicMessages') return replayMaterialsByType<IRJSONObject & { type: string }>([{ type: 'text', text: 'answer', citations: [] }]);
-  if (source === 'openaiResponses') return replayMaterialsByType<IRJSONObject & { type: string }>([
-    { type: 'message', content: replayMaterialsByType<IRJSONObject & { type: string }>([{ type: 'output_text', text: 'answer' }]) },
-  ]);
-  return { text: ['answer'], inlineData: [], functionCall: [] };
-};
-
-const replayCheck = async (source: RoundTripProtocol) => {
-  const text = JSON.stringify(material(source));
-  if (text === undefined) throw new Error('Fixture replay material is not JSON');
-  return { version: 1, digest: await hashRoundTripContent(text) };
-};
+const replayCheck = async (source: RoundTripProtocol) => source === 'openaiChatCompletions'
+  ? await computeOpenAIChatCompletionsReplayCheck({ role: 'assistant', content: 'answer' })
+  : source === 'anthropicMessages'
+    ? await computeAnthropicMessagesReplayCheck([{ role: 'assistant', content: [{ type: 'text', text: 'answer' }] }])
+    : source === 'openaiResponses'
+      ? await computeOpenAIResponsesReplayCheck([{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'answer' }] }])
+      : await computeGeminiGenerateContentReplayCheck([{ role: 'model', parts: [{ text: 'answer' }] }]);
 
 type NativeProtocol = 'anthropicMessages' | 'openaiChatCompletions' | 'openaiResponses';
 const nativeTurn = (target: NativeProtocol, text = 'restored'): AssistantTurnFor<NativeProtocol> => target === 'openaiChatCompletions'
@@ -85,7 +82,7 @@ test('hydrates a native JSON field from a replayed GenerateContent argument cand
   const args = { x: 1 };
   const reference = new ThinReference('json', [0]);
   const assistantTurn: ThinAssistantTurnFor<'anthropicMessages', ThinReference> = { role: 'assistant', content: [{ type: 'tool_use', id: 'native-call', name: 'native-tool', input: reference }] };
-  const checkMaterial = { text: [], inlineData: [], functionCall: [{ name: 'lookup', args }] };
+  const checkMaterial = { contents: [{ inlineData: [], functionCall: [{ name: 'lookup', args }] }] };
   const carrier = await createTestSidecarCodec().encode({
     source: 'geminiGenerateContent',
     target: 'anthropicMessages', assistantTurn,

@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { IRJSONObject } from '../../../src/ir/types.ts';
 import { collectAnthropicMessagesTextViews } from '../../../src/protocols/anthropic-messages/as-source/round-trip.ts';
 import type { AnthropicMessagesThinAssistantTurn } from '../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
+import { collectGeminiGenerateContentTextViews } from '../../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
+import type { GeminiGenerateContentAssistantState, GeminiGenerateContentInputAssistantTurn } from '../../../src/protocols/gemini-generate-content/as-target/assistant-turn.ts';
 import type { OpenAIChatCompletionsAssistantState, OpenAIChatCompletionsInputAssistantTurn } from '../../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
 import { hashRoundTripContent } from '../../../src/round-trip/replay-check.ts';
 import { hydrateAssistantTurn } from '../../../src/round-trip/thin/hydrate.ts';
@@ -15,6 +17,7 @@ import {
   createFieldState,
   createReferenceFinalizer,
   finalizeAssistantTurnReferences,
+  invalidateField,
   type ContentStates,
   type FieldStates,
 } from '../../../src/round-trip/thin/reference-builder.ts';
@@ -22,6 +25,26 @@ import { ThinReference } from '../../../src/round-trip/thin/reference.ts';
 import { parseJSONObject } from '../../../src/shared/json/object.ts';
 
 describe('ReferenceBuilder', () => {
+  it('applies channel views only to their owning field on a multi-field part', () => {
+    const builder = createReferenceBuilder();
+    const visible = createContentState(builder, 'text');
+    const transcript = createContentState(builder, 'text');
+    appendContent(builder, visible, 'visible');
+    appendContent(builder, transcript, 'transcript');
+    const turn: GeminiGenerateContentInputAssistantTurn = [{
+      role: 'model',
+      parts: [{ text: 'visible', audioTranscription: { text: 'transcript' } }],
+    }];
+    const state: GeminiGenerateContentAssistantState<ContentStates> = [{
+      parts: [{ text: visible, audioTranscription: { text: transcript } }],
+    }];
+
+    expect(collectContentViews(turn, state, collectGeminiGenerateContentTextViews(turn))).toEqual(new Map([
+      [visible.contentId, { text: 'visible', offset: 0 }],
+      [transcript.contentId, { text: 'transcript', offset: 0 }],
+    ]));
+  });
+
   it('keeps provenance directly in sparse state leaves across shallow copies', async () => {
     const builder = createReferenceBuilder();
     const field = createFieldState('text');
@@ -172,6 +195,23 @@ describe('ReferenceBuilder', () => {
     const finalizer = createReferenceFinalizer(builder, collectContentViews('hel', content));
     expect(await finalizer.finalizeField('hello', field)).toBe('hello');
     expect(finalizer.referencedContents).toEqual([]);
+  });
+
+  it('keeps an invalidated field literal and rejects later provenance capture', async () => {
+    const builder = createReferenceBuilder();
+    const field = createFieldState('text');
+    const partId = appendField(builder, field, 'hello');
+    const content = createContentState(builder, 'text');
+    appendContent(builder, content, 'hello', [partId]);
+    const copiedParent = { text: field };
+    invalidateField(field);
+
+    expect(copiedParent.text).toBe(field);
+    expect(copiedParent.text.valid).toBe(false);
+    const finalizer = createReferenceFinalizer(builder, collectContentViews('hello', content));
+    expect(await finalizer.finalizeField('hello', field)).toBe('hello');
+    expect(finalizer.referencedContents).toEqual([]);
+    expect(() => appendField(builder, field, '!')).toThrowError('Cannot append provenance to an invalid field');
   });
 
   it('discards resolutions when the final input text view changed', async () => {

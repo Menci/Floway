@@ -2,15 +2,21 @@ import type { IRJSONObject, IRJSONValue } from '../../../ir/types.ts';
 import { computeRoundTripReplayCheck, replayMaterialsByType, verifyRoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripSidecarCandidate } from '../../../round-trip/replay.ts';
-import { canonicalTextParts, collectCanonicalTextViews, isPureTextPart, type CanonicalTextView, type PureTextPart } from '../../../round-trip/text-parts.ts';
+import { collectTextChannels, collectTextChannelViews, type TextChannelProjection, type TextChannelViews } from '../../../round-trip/text-channels.ts';
 import type { ReplayCandidate } from '../../../round-trip/thin/assistant-turn.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputContent, OpenAIResponsesOutputContentBlock, OpenAIResponsesOutputItemEx, OpenAIResponsesOutputReasoning } from '@floway-dev/protocols/openai-responses';
 
-type OpenAIResponsesReplayPart = OpenAIResponsesInputContent | OpenAIResponsesOutputContentBlock
-  | OpenAIResponsesOutputReasoning['summary'][number] | NonNullable<OpenAIResponsesOutputReasoning['content']>[number];
+type OpenAIResponsesMessagePart = OpenAIResponsesInputContent | OpenAIResponsesOutputContentBlock;
+type OpenAIResponsesMessageTextChannel = 'input_text' | 'output_text' | 'refusal';
 
-const isOpenAIResponsesPureTextPart = <Part extends OpenAIResponsesReplayPart>(part: Part): part is Part & PureTextPart =>
-  isPureTextPart(part, ['input_text', 'output_text', 'summary_text', 'reasoning_text'], ['annotations', 'logprobs']);
+const responsesMessageTextChannel = (part: OpenAIResponsesMessagePart): TextChannelProjection<OpenAIResponsesMessageTextChannel> | undefined => {
+  if (part.type === 'input_text' || part.type === 'output_text') return { channel: part.type, field: 'text', text: part.text };
+  if (part.type === 'refusal') return { channel: part.type, field: 'refusal', text: part.refusal };
+  return undefined;
+};
+
+const responsesReasoningTextChannel = <Part extends { readonly text: string }>(part: Part): TextChannelProjection<'text'> =>
+  ({ channel: 'text', field: 'text', text: part.text });
 
 export const OPENAI_RESPONSES_REPLAY_CHECK_VERSION = 1;
 
@@ -24,11 +30,19 @@ type TypedReplayMaterial = IRJSONObject & { type: string };
 export const isOpenAIResponsesEncryptedReasoning = (item: OpenAIResponsesAssistantTurnItem): item is Extract<OpenAIResponsesAssistantTurnItem, { type: 'reasoning' }> & { encrypted_content: string } =>
   item.type === 'reasoning' && typeof item.encrypted_content === 'string';
 
-const responseMessagePartMaterial = (part: OpenAIResponsesInputContent | OpenAIResponsesOutputContentBlock): TypedReplayMaterial => {
-  if (part.type === 'input_text' || part.type === 'output_text') return { type: part.type, text: part.text };
-  if (part.type === 'refusal') return { type: part.type, refusal: part.refusal };
-  return { type: part.type };
+const responseMessageMaterials = (content: string | OpenAIResponsesMessagePart[]): [string, TypedReplayMaterial[]][] => {
+  if (typeof content === 'string') return [['output_text', [{ type: 'output_text', text: content }]]];
+  const channels = collectTextChannels(content, responsesMessageTextChannel);
+  const other: TypedReplayMaterial[] = [];
+  for (const part of content) if (responsesMessageTextChannel(part) === undefined) other.push({ type: part.type });
+  return replayMaterialsByType([
+    ...[...channels].map(([type, channel]): TypedReplayMaterial => type === 'refusal' ? { type, refusal: channel.text } : { type, text: channel.text }),
+    ...other,
+  ]);
 };
+
+const concatenateResponseText = <Part extends object & { readonly text: string }>(parts: readonly Part[]): string =>
+  collectTextChannels(parts, responsesReasoningTextChannel).get('text')?.text ?? '';
 
 const replayItemStatus = (item: OpenAIResponsesAssistantTurnItem): { status?: string | null } =>
   'status' in item && item.status !== undefined ? { status: item.status } : {};
@@ -37,15 +51,13 @@ const replayItemMaterial = (item: OpenAIResponsesAssistantTurnItem): TypedReplay
   if (item.type === 'reasoning') return {
     type: item.type,
     ...replayItemStatus(item),
-    summary: canonicalTextParts(item.summary, isOpenAIResponsesPureTextPart).map(part => ({ type: part.type, text: part.text })),
-    content: canonicalTextParts(item.content ?? [], isOpenAIResponsesPureTextPart).map(part => ({ type: part.type, text: part.text })),
+    summary: concatenateResponseText(item.summary),
+    content: concatenateResponseText(item.content ?? []),
   };
   if (item.type === 'message') return {
     type: item.type,
     ...replayItemStatus(item),
-    content: replayMaterialsByType(typeof item.content === 'string'
-      ? [{ type: 'output_text', text: item.content }]
-      : canonicalTextParts(item.content, isOpenAIResponsesPureTextPart).map(responseMessagePartMaterial)),
+    content: responseMessageMaterials(item.content),
   };
   if (item.type === 'function_call') return {
     type: item.type,
@@ -89,13 +101,12 @@ export const collectOpenAIResponsesReplayCandidates = (turn: OpenAIResponsesAssi
   for (const item of turn) {
     if (item.type === 'message') {
       if (typeof item.content === 'string') candidates.push(item.content);
-      else for (const part of canonicalTextParts(item.content, isOpenAIResponsesPureTextPart)) {
-        if (part.type === 'input_text' || part.type === 'output_text') candidates.push(part.text);
-        else if (part.type === 'refusal') candidates.push(part.refusal);
-      }
+      else for (const channel of collectTextChannels(item.content, responsesMessageTextChannel).values()) candidates.push(channel.text);
     } else if (item.type === 'reasoning') {
-      for (const part of canonicalTextParts(item.summary, isOpenAIResponsesPureTextPart)) candidates.push(part.text);
-      for (const part of canonicalTextParts(item.content ?? [], isOpenAIResponsesPureTextPart)) candidates.push(part.text);
+      const summary = collectTextChannels(item.summary, responsesReasoningTextChannel).get('text');
+      const content = collectTextChannels(item.content ?? [], responsesReasoningTextChannel).get('text');
+      if (summary !== undefined) candidates.push(summary.text);
+      if (content !== undefined) candidates.push(content.text);
     } else if (item.type === 'function_call') candidates.push(item.arguments);
     else if (item.type === 'custom_tool_call') candidates.push(item.input);
     else if (item.type === 'image_generation_call' && typeof item.result === 'string') candidates.push(item.result);
@@ -120,13 +131,14 @@ export const createOpenAIResponsesSidecarCarrier = (id: string, data: string): O
   encrypted_content: data,
 });
 
-export const collectOpenAIResponsesTextViews = (turn: OpenAIResponsesAssistantTurn): Map<object, CanonicalTextView> => {
-  const views = new Map<object, CanonicalTextView>();
+export const collectOpenAIResponsesTextViews = (turn: OpenAIResponsesAssistantTurn): TextChannelViews => {
+  const views: TextChannelViews = new Map();
   for (const item of turn) {
-    if (item.type === 'message' && Array.isArray(item.content)) collectCanonicalTextViews(item.content, isOpenAIResponsesPureTextPart, views);
-    else if (item.type === 'reasoning') {
-      collectCanonicalTextViews(item.summary, isOpenAIResponsesPureTextPart, views);
-      if (item.content !== undefined) collectCanonicalTextViews(item.content, isOpenAIResponsesPureTextPart, views);
+    if (item.type === 'message' && Array.isArray(item.content)) {
+      collectTextChannelViews(collectTextChannels(item.content, responsesMessageTextChannel), views);
+    } else if (item.type === 'reasoning') {
+      collectTextChannelViews(collectTextChannels(item.summary, responsesReasoningTextChannel), views);
+      if (item.content !== undefined) collectTextChannelViews(collectTextChannels(item.content, responsesReasoningTextChannel), views);
     }
   }
   return views;

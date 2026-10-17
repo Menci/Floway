@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { AnthropicMessagesAssistantState, AnthropicMessagesInputAssistantTurn } from '../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
 import { hashRoundTripContent } from '../../../src/round-trip/replay-check.ts';
-import type { CanonicalTextView } from '../../../src/round-trip/text-parts.ts';
+import type { TextChannelView } from '../../../src/round-trip/text-channels.ts';
 import { hydrateAssistantTurn } from '../../../src/round-trip/thin/hydrate.ts';
 import { appendContent, appendField, collectContentViews, createContentState, createFieldState, createReferenceBuilder, finalizeAssistantTurnReferences, type FieldStates } from '../../../src/round-trip/thin/reference-builder.ts';
 import { ThinReference } from '../../../src/round-trip/thin/reference.ts';
@@ -10,7 +10,7 @@ import { ThinReference } from '../../../src/round-trip/thin/reference.ts';
 const finalizeTexts = async (texts: readonly string[]) => {
   const builder = createReferenceBuilder();
   const contentState: NonNullable<AnthropicMessagesAssistantState<FieldStates>['content']> = [];
-  const views = new Map<number, CanonicalTextView>();
+  const views = new Map<number, TextChannelView>();
   for (const text of texts) {
     const field = createFieldState('text');
     const content = createContentState(builder, 'text');

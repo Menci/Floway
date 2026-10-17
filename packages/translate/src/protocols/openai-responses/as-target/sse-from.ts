@@ -10,7 +10,7 @@ import {
 } from '../../../ir/stream.ts';
 import type { IRSourceCitation } from '../../../ir/types.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
-import { appendField, createFieldState, type FieldStates } from '../../../round-trip/thin/reference-builder.ts';
+import { appendField, createFieldState, invalidateField, type FieldStates } from '../../../round-trip/thin/reference-builder.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
@@ -35,8 +35,7 @@ interface WriteTarget {
 }
 
 interface ResponsesTextTarget extends WriteTarget {
-  fieldState?: FieldStates['text'] | null;
-  fieldStateNode?: TextFieldStateNode | FunctionFieldState | CustomFieldState;
+  fieldState?: FieldStates['text'];
 }
 
 interface ResponsesOutputTextPartState extends ResponsesTextTarget {
@@ -222,18 +221,18 @@ export const irFromOpenAIResponses = async function* (
     if (state.type === 'function_call') {
       const node = state.fieldState;
       node.arguments = fieldState;
-      state.toolText = { handle: state.item, path: 'arguments', fieldState, fieldStateNode: node };
+      state.toolText = { handle: state.item, path: 'arguments', fieldState };
     } else {
       const node = state.fieldState;
       node.input = fieldState;
-      state.toolText = { handle: state.item, path: 'input', fieldState, fieldStateNode: node };
+      state.toolText = { handle: state.item, path: 'input', fieldState };
     }
     outputState[state.outputIndex] = state.fieldState;
     return state.toolText;
   };
 
   const appendTextAtom = (target: ResponsesTextTarget, text: string): void => {
-    if (target.fieldState === undefined || target.fieldState === null) target.handle.append(target.path, text);
+    if (target.fieldState === undefined) target.handle.append(target.path, text);
     else target.handle.append(target.path, text, [appendField(options.roundTrip.builder, target.fieldState, text)]);
   };
   const reconcileAppend = (target: ResponsesTextTarget, snapshot: unknown): string => {
@@ -263,8 +262,8 @@ export const irFromOpenAIResponses = async function* (
       if (current === '') appendTextAtom(target, suffix);
       else {
         if (target.fieldState !== undefined) {
-          target.fieldState = null;
-          if (target.fieldStateNode !== undefined) for (const key of Object.keys(target.fieldStateNode)) Reflect.deleteProperty(target.fieldStateNode, key);
+          invalidateField(target.fieldState);
+          target.fieldState = undefined;
         }
         handle.append(path, suffix);
       }
@@ -296,7 +295,7 @@ export const irFromOpenAIResponses = async function* (
       const parts = nativeState[field] ??= [];
       parts[index] = fieldStateNode;
       outputState[state.outputIndex] = nativeState;
-      targets.push({ handle: state.item, path: [field, index], fieldState, fieldStateNode });
+      targets.push({ handle: state.item, path: [field, index], fieldState });
     }
     return targets[index];
   };
@@ -324,7 +323,7 @@ export const irFromOpenAIResponses = async function* (
     const content = owner.fieldState.content ??= [];
     content[contentIndex] = fieldStateNode;
     outputState[owner.outputIndex] = owner.fieldState;
-    return { fieldState, fieldStateNode };
+    return { fieldState };
   };
 
   const ensureOutputTextPart = (

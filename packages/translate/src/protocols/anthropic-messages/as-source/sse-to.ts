@@ -8,6 +8,7 @@ import { IRNone, type IR, type IRErrorPayload, type IRJSONObject } from '../../.
 import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/unit-queue.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
 import { appendContent, createContentState, type ContentState, type ContentStates } from '../../../round-trip/thin/reference-builder.ts';
+import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/thin/text-provenance.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import { parseJSONObject, parseJSONObjectAtCompletion, requireJSONObject } from '../../../shared/json/object.ts';
 import type { AnthropicMessagesAssistantState, AnthropicMessagesInputAssistantTurn } from '../as-target/assistant-turn.ts';
@@ -44,7 +45,7 @@ interface MessagesUnit {
   opened: boolean;
   textContentState?: ContentState<'text'>;
   // Keep source intervals until their native field is emitted, including terminal JSON normalization.
-  pendingText?: Map<string, { start: number; endExclusive: number; partIds?: readonly number[] }[]>;
+  pendingText?: Map<string, TextProvenanceSpan[]>;
   nextPending?: MessagesUnit;
 }
 
@@ -143,14 +144,10 @@ export const anthropicMessagesFromIR = async function* (
   };
 
   const appendPendingText = (unit: MessagesUnit, path: IRPath, text: string, content: ContentState): void => {
-    let offset = 0;
     const key = irPathKey(path);
-    for (const atom of unit.pendingText?.get(key) ?? []) {
-      if (atom.start > offset) appendContent(options.roundTrip.builder, content, text.slice(offset, atom.start));
-      appendContent(options.roundTrip.builder, content, text.slice(atom.start, atom.endExclusive), atom.partIds);
-      offset = atom.endExclusive;
-    }
-    if (offset < text.length) appendContent(options.roundTrip.builder, content, text.slice(offset));
+    replayTextProvenance(text, unit.pendingText?.get(key) ?? [], (value, partIds) => {
+      appendContent(options.roundTrip.builder, content, value, partIds);
+    });
     unit.pendingText?.delete(key);
   };
 
@@ -268,7 +265,7 @@ export const anthropicMessagesFromIR = async function* (
         const fields = pendingUnit.pendingText ??= new Map();
         const key = irPathKey(record.path);
         const atoms = fields.get(key) ?? [];
-        atoms.push({ start: text.length - record.value.length, endExclusive: text.length, ...(record.partIds === undefined ? {} : { partIds: record.partIds }) });
+        atoms.push(provenanceSpanForAppend(text, record.value, record.partIds));
         fields.set(key, atoms);
       } else if (kind !== undefined) {
         if (pendingUnit.textContentState === undefined) throw new Error('Missing Messages text content state');
