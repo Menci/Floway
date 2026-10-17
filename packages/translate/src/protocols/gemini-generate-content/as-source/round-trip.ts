@@ -2,7 +2,7 @@
 import type { IRJSONObject } from '../../../ir/types.ts';
 import { computeRoundTripReplayCheck, verifyRoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
-import type { RoundTripAssistantTurnInspection } from '../../../round-trip/replay.ts';
+import type { RoundTripSidecarCandidate } from '../../../round-trip/replay.ts';
 import { canonicalTextParts, isPureTextPart, type PureTextPart } from '../../../round-trip/text-parts.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
@@ -40,19 +40,18 @@ const geminiReplayCheckMaterialV1 = (turn: GeminiGenerateContentAssistantTurn): 
   return { text, inlineData, functionCall };
 };
 
-export const inspectGeminiGenerateContentAssistantTurn = (turn: GeminiGenerateContentAssistantTurn): RoundTripAssistantTurnInspection<GeminiGenerateContentAssistantTurn> => {
-  const content = turn.at(-1);
-  if (content?.parts === undefined) return { turn };
-  const part = content.parts.at(-1);
-  if (part === undefined || typeof part.thoughtSignature !== 'string') return { turn };
-  const { thoughtSignature, ...body } = part;
-  const parts = content.parts.slice(0, -1);
-  if (Object.keys(body).length > 0) parts.push(body);
-  return {
-    sidecar: thoughtSignature,
-    turn: parts.length === 0 ? turn.slice(0, -1) : [...turn.slice(0, -1), { ...content, parts }],
-  };
-};
+export const inspectGeminiGenerateContentAssistantTurn = (turn: GeminiGenerateContentAssistantTurn): RoundTripSidecarCandidate<GeminiGenerateContentAssistantTurn>[] =>
+  turn.flatMap((content, contentIndex) => {
+    const nativeParts = content.parts;
+    return nativeParts?.flatMap((part, partIndex) => typeof part.thoughtSignature !== 'string' ? [] : [{
+      data: part.thoughtSignature,
+      withoutSidecar: () => {
+        const { thoughtSignature: _signature, ...body } = part;
+        const parts = nativeParts.flatMap((item, index) => index !== partIndex ? [item] : Object.keys(body).length === 0 ? [] : [body]);
+        return turn.flatMap((item, index) => index !== contentIndex ? [item] : parts.length === 0 ? [] : [{ ...content, parts }]);
+      },
+    }]) ?? [];
+  });
 
 export const computeGeminiGenerateContentReplayCheck = (turn: GeminiGenerateContentAssistantTurn): Promise<RoundTripReplayCheck> =>
   computeRoundTripReplayCheck(GEMINI_GENERATE_CONTENT_REPLAY_CHECK_VERSION, geminiReplayCheckMaterialV1(turn));

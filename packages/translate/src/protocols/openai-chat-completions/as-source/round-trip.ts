@@ -2,7 +2,7 @@
 import type { IRJSONObject, IRJSONValue } from '../../../ir/types.ts';
 import { computeRoundTripReplayCheck, verifyRoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
-import type { RoundTripAssistantTurnInspection } from '../../../round-trip/replay.ts';
+import type { RoundTripSidecarCandidate } from '../../../round-trip/replay.ts';
 import { canonicalTextParts, isPureTextPart, type PureTextPart } from '../../../round-trip/text-parts.ts';
 import type { OpenAIChatCompletionsAssistantExtensions, OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsAssistantOutputMessage, OpenAIChatCompletionsToolCallEx } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -72,14 +72,12 @@ const chatReplayCheckMaterialV1 = (turn: OpenAIChatCompletionsAssistantTurn): IR
   reasoningDetails: reasoningDetailsMaterial(turn),
 });
 
-export const inspectOpenAIChatCompletionsAssistantTurn = (turn: OpenAIChatCompletionsAssistantTurn): RoundTripAssistantTurnInspection<OpenAIChatCompletionsAssistantTurn> => {
+export const inspectOpenAIChatCompletionsAssistantTurn = (turn: OpenAIChatCompletionsAssistantTurn): RoundTripSidecarCandidate<OpenAIChatCompletionsAssistantTurn>[] => {
   const details = reasoningDetails(turn);
-  const last = details.at(-1);
-  if (!isRecord(last) || last.type !== 'reasoning.encrypted' || typeof last.data !== 'string') return { turn };
-  return {
-    sidecar: last.data,
-    turn: { ...turn, reasoning_details: details.slice(0, -1) },
-  };
+  return details.flatMap((detail, detailIndex) => !isRecord(detail) || detail.type !== 'reasoning.encrypted' || typeof detail.data !== 'string' ? [] : [{
+    data: detail.data,
+    withoutSidecar: () => ({ ...turn, reasoning_details: details.filter((_, index) => index !== detailIndex) }),
+  }]);
 };
 
 export const computeOpenAIChatCompletionsReplayCheck = (turn: OpenAIChatCompletionsAssistantTurn): Promise<RoundTripReplayCheck> =>

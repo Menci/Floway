@@ -2,7 +2,7 @@
 import type { IRJSONObject, IRJSONValue } from '../../../ir/types.ts';
 import { computeRoundTripReplayCheck, replayMaterialsByType, verifyRoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
-import type { RoundTripAssistantTurnInspection } from '../../../round-trip/replay.ts';
+import type { RoundTripSidecarCandidate } from '../../../round-trip/replay.ts';
 import { canonicalTextParts, isPureTextPart, type PureTextPart } from '../../../round-trip/text-parts.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesAssistantMessage, AnthropicMessagesRedactedThinkingBlock } from '@floway-dev/protocols/anthropic-messages';
@@ -39,16 +39,16 @@ const messagesReplayCheckMaterialV1 = (turn: AnthropicMessagesAssistantTurn): IR
   return replayMaterialsByType(blocks);
 };
 
-export const inspectAnthropicMessagesAssistantTurn = (turn: AnthropicMessagesAssistantTurn): RoundTripAssistantTurnInspection<AnthropicMessagesAssistantTurn> => {
-  const message = turn.at(-1);
-  if (message === undefined || typeof message.content === 'string') return { turn };
-  const block = message.content.at(-1);
-  if (block?.type !== 'redacted_thinking') return { turn };
-  return {
-    sidecar: block.data,
-    turn: [...turn.slice(0, -1), { ...message, content: message.content.slice(0, -1) }],
-  };
-};
+export const inspectAnthropicMessagesAssistantTurn = (turn: AnthropicMessagesAssistantTurn): RoundTripSidecarCandidate<AnthropicMessagesAssistantTurn>[] =>
+  turn.flatMap((message, messageIndex) => {
+    const content = message.content;
+    return typeof content === 'string' ? [] : content.flatMap((block, blockIndex) => block.type !== 'redacted_thinking' ? [] : [{
+      data: block.data,
+      withoutSidecar: () => turn.map((item, index) => index === messageIndex
+        ? { ...message, content: content.filter((_, index) => index !== blockIndex) }
+        : item),
+    }]);
+  });
 
 export const computeAnthropicMessagesReplayCheck = (turn: AnthropicMessagesAssistantTurn): Promise<RoundTripReplayCheck> =>
   computeRoundTripReplayCheck(ANTHROPIC_MESSAGES_REPLAY_CHECK_VERSION, messagesReplayCheckMaterialV1(turn));

@@ -1,11 +1,11 @@
 import type { AssistantTurnByProtocol, AssistantTurnFor } from './assistant-turn.ts';
-import { decodeRoundTripSidecar, hasRoundTripTarget } from './sidecar.ts';
-import type { TranslateSidecarCodec } from '../types.ts';
 import type { RoundTripReplayCheck } from './replay-check.ts';
+import { decodeRoundTripSidecar, hasRoundTripTarget, type AnyRoundTripSidecar } from './sidecar.ts';
+import type { TranslateSidecarCodec } from '../types.ts';
 
-export interface RoundTripAssistantTurnInspection<Turn> {
-  sidecar?: string;
-  turn: Turn;
+export interface RoundTripSidecarCandidate<Turn> {
+  readonly data: string;
+  readonly withoutSidecar: () => Turn;
 }
 
 export interface RoundTripAssistantTurn<Target extends keyof AssistantTurnByProtocol> {
@@ -22,16 +22,18 @@ export const roundTripAssistantTurn = async <Source extends keyof AssistantTurnB
   target: Target,
   turn: SourceTurn,
   codec: TranslateSidecarCodec,
-  inspect: (turn: SourceTurn) => RoundTripAssistantTurnInspection<SourceTurn>,
+  inspect: (turn: SourceTurn) => RoundTripSidecarCandidate<SourceTurn>[],
   verify: (turn: SourceTurn, replayCheck: RoundTripReplayCheck) => Promise<boolean>,
 ): Promise<RoundTripAssistantTurn<Target> | undefined> => {
-  const inspection = inspect(turn);
-  if (inspection.sidecar === undefined) return undefined;
+  let selected: { candidate: RoundTripSidecarCandidate<SourceTurn>; sidecar: AnyRoundTripSidecar } | undefined;
+  for (const candidate of inspect(turn)) {
+    const sidecar = await decodeRoundTripSidecar(codec, source, candidate.data);
+    if (sidecar === undefined) continue;
+    if (selected !== undefined) throw new Error('Assistant turn has multiple recognized round-trip sidecars');
+    selected = { candidate, sidecar };
+  }
+  if (selected === undefined || !hasRoundTripTarget(selected.sidecar, target)
+    || !(await verify(selected.candidate.withoutSidecar(), selected.sidecar.replayCheck))) return undefined;
 
-  const decoded = await decodeRoundTripSidecar(codec, source, inspection.sidecar);
-  if (decoded === undefined) return undefined;
-
-  if (!hasRoundTripTarget(decoded, target) || !(await verify(inspection.turn, decoded.replayCheck))) return undefined;
-
-  return { turn: decoded.assistantTurn };
+  return { turn: selected.sidecar.assistantTurn };
 };

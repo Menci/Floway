@@ -2,7 +2,7 @@
 import type { IRJSONObject, IRJSONValue } from '../../../ir/types.ts';
 import { computeRoundTripReplayCheck, replayMaterialsByType, verifyRoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
-import type { RoundTripAssistantTurnInspection } from '../../../round-trip/replay.ts';
+import type { RoundTripSidecarCandidate } from '../../../round-trip/replay.ts';
 import { canonicalTextParts, isPureTextPart, type PureTextPart } from '../../../round-trip/text-parts.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputContent, OpenAIResponsesOutputContentBlock, OpenAIResponsesOutputItemEx, OpenAIResponsesOutputReasoning } from '@floway-dev/protocols/openai-responses';
 
@@ -71,17 +71,15 @@ const replayItemMaterial = (item: OpenAIResponsesAssistantTurnItem): TypedReplay
 
 const responsesReplayCheckMaterialV1 = (turn: OpenAIResponsesAssistantTurn): IRJSONValue => replayMaterialsByType(turn.map(replayItemMaterial));
 
-export const inspectOpenAIResponsesAssistantTurn = (turn: OpenAIResponsesAssistantTurn): RoundTripAssistantTurnInspection<OpenAIResponsesAssistantTurn> => {
-  const item = turn.at(-1);
-  if (item === undefined || !isOpenAIResponsesEncryptedReasoning(item)) return { turn };
-  const { encrypted_content, ...body } = item;
-  const assistantTurn = turn.slice(0, -1);
-  if (item.summary.length > 0 || (item.content !== undefined && item.content.length > 0)) assistantTurn.push(body);
-  return {
-    sidecar: encrypted_content,
-    turn: assistantTurn,
-  };
-};
+export const inspectOpenAIResponsesAssistantTurn = (turn: OpenAIResponsesAssistantTurn): RoundTripSidecarCandidate<OpenAIResponsesAssistantTurn>[] =>
+  turn.flatMap((item, itemIndex) => !isOpenAIResponsesEncryptedReasoning(item) ? [] : [{
+    data: item.encrypted_content,
+    withoutSidecar: () => {
+      const { encrypted_content: _encryptedContent, ...body } = item;
+      return turn.flatMap((value, index) => index !== itemIndex ? [value]
+        : item.summary.length === 0 && (item.content === undefined || item.content.length === 0) ? [] : [body]);
+    },
+  }]);
 
 export const computeOpenAIResponsesReplayCheck = (turn: OpenAIResponsesAssistantTurn): Promise<RoundTripReplayCheck> =>
   computeRoundTripReplayCheck(OPENAI_RESPONSES_REPLAY_CHECK_VERSION, responsesReplayCheckMaterialV1(turn));

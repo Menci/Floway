@@ -176,10 +176,44 @@ const assistantText = (assistant: AssistantTurn): string => {
 };
 
 const sidecarPayload = (assistant: AssistantTurn): string | undefined => {
-  if (assistant.protocol === 'openai-responses') return inspectOpenAIResponsesAssistantTurn(assistant.turn).sidecar;
-  if (assistant.protocol === 'openai-chat-completions') return inspectOpenAIChatCompletionsAssistantTurn(assistant.turn).sidecar;
-  if (assistant.protocol === 'anthropic-messages') return inspectAnthropicMessagesAssistantTurn([assistant.turn]).sidecar;
-  return inspectGeminiGenerateContentAssistantTurn(assistant.turn).sidecar;
+  const candidates = assistant.protocol === 'openai-responses' ? inspectOpenAIResponsesAssistantTurn(assistant.turn)
+    : assistant.protocol === 'openai-chat-completions' ? inspectOpenAIChatCompletionsAssistantTurn(assistant.turn)
+      : assistant.protocol === 'anthropic-messages' ? inspectAnthropicMessagesAssistantTurn([assistant.turn])
+        : inspectGeminiGenerateContentAssistantTurn(assistant.turn);
+  assertEquals(candidates.length, 1);
+  return candidates[0].data;
+};
+
+const moveCarrierBeforeBody = (assistant: AssistantTurn, carrier: string): AssistantTurn => {
+  if (assistant.protocol === 'openai-responses') {
+    const index = assistant.turn.findIndex(item => item.type === 'reasoning' && item.encrypted_content === carrier);
+    assert(index > 0);
+    return { ...assistant, turn: [assistant.turn[index], ...assistant.turn.filter((_, itemIndex) => itemIndex !== index)] };
+  }
+  if (assistant.protocol === 'openai-chat-completions') {
+    const details = assistant.turn.reasoning_details;
+    assert(Array.isArray(details));
+    const index = details.findIndex(detail => typeof detail === 'object' && detail !== null && 'data' in detail && detail.data === carrier);
+    assert(index > 0);
+    return { ...assistant, turn: { ...assistant.turn, reasoning_details: [details[index], ...details.filter((_, detailIndex) => detailIndex !== index)] } };
+  }
+  if (assistant.protocol === 'anthropic-messages') {
+    const content = assistant.turn.content;
+    assert(Array.isArray(content));
+    const index = content.findIndex(block => block.type === 'redacted_thinking' && block.data === carrier);
+    assert(index > 0);
+    return { ...assistant, turn: { ...assistant.turn, content: [content[index], ...content.filter((_, blockIndex) => blockIndex !== index)] } };
+  }
+  return {
+    ...assistant, turn: assistant.turn.map(content => {
+      const parts = content.parts;
+      if (parts === undefined) return content;
+      const index = parts.findIndex(part => part.thoughtSignature === carrier);
+      if (index < 0) return content;
+      assert(index > 0);
+      return { ...content, parts: [parts[index], ...parts.filter((_, partIndex) => partIndex !== index)] };
+    }),
+  };
 };
 
 type TargetPayload =
@@ -223,7 +257,7 @@ test.each(returnedTrips)('$a via $b returns generated content and a decodable si
   const translation = await trip(codecScope);
   const fixture = {
     text: ['return ', 'path'],
-    ...(b === 'openai-responses' ? { thinking: ['upstream thought'], signature: 'native B encrypted content' } : {}),
+    thinking: ['upstream thought'], signature: 'native B encrypted content',
   };
   const frames = await collect(translation.events(iterate(fixtureFrames(b, fixture))));
   const assistant = await collectAssistantTurn(a, frames);
@@ -241,4 +275,9 @@ test.each(returnedTrips)('$a via $b returns generated content and a decodable si
 
   const replayed = await replayAssistantTurn(assistant, b);
   assertEquals(targetAssistantTurn(replayed), sidecar.assistantTurn);
+
+  const before = structuredClone(assistant);
+  const moved = moveCarrierBeforeBody(assistant, carrier);
+  assertEquals(assistant, before);
+  assertEquals(targetAssistantTurn(await replayAssistantTurn(moved, b)), sidecar.assistantTurn);
 });

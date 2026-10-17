@@ -47,7 +47,7 @@ describe('assistant-turn replay boundary', () => {
     expect(verify).toHaveBeenCalledExactlyOnceWith({ role: 'assistant', content: 'answer', reasoning_details: [] }, expect.any(Object));
   });
 
-  it('restores the terminal owned sidecar while preserving an earlier foreign carrier', async () => {
+  it('restores an owned sidecar while preserving an earlier foreign carrier', async () => {
     const codec = createTestSidecarCodec();
     const foreign = 'native opaque state';
     const earlier = createOpenAIChatCompletionsSidecarCarrier(foreign);
@@ -65,18 +65,18 @@ describe('assistant-turn replay boundary', () => {
     expect(turn.reasoning_details[0].data).toBe(foreign);
   });
 
-  it('does not search backward past a terminal foreign candidate', async () => {
+  it('restores an owned sidecar before a foreign candidate without stripping foreign state', async () => {
     const codec = createTestSidecarCodec();
-    const source: OpenAIChatCompletionsAssistantMessageEx = { role: 'assistant', content: 'answer' };
+    const foreign = 'unrecognized sidecar';
+    const source: OpenAIChatCompletionsAssistantMessageEx = { role: 'assistant', content: 'answer', reasoning_details: createOpenAIChatCompletionsSidecarCarrier(foreign) };
     const data = await codec.encode({
       source: 'openaiChatCompletions',
       target: 'openaiChatCompletions', assistantTurn: source,
       replayCheck: await computeOpenAIChatCompletionsReplayCheck(source),
     });
-    const foreign = 'unrecognized terminal sidecar';
     const turn = { ...source, reasoning_details: [...createOpenAIChatCompletionsSidecarCarrier(data), ...createOpenAIChatCompletionsSidecarCarrier(foreign)] };
     const verify = vi.fn(verifyOpenAIChatCompletionsReplayCheck);
-    await expect(roundTripAssistantTurn('openaiChatCompletions', 'openaiChatCompletions', turn, codec, inspectOpenAIChatCompletionsAssistantTurn, verify)).resolves.toBeUndefined();
-    expect(verify).not.toHaveBeenCalled();
+    await expect(roundTripAssistantTurn('openaiChatCompletions', 'openaiChatCompletions', turn, codec, inspectOpenAIChatCompletionsAssistantTurn, verify)).resolves.toEqual({ turn: source });
+    expect(verify).toHaveBeenCalledExactlyOnceWith(source, expect.any(Object));
   });
 });
