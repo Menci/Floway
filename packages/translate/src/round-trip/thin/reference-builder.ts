@@ -6,24 +6,32 @@ import { hashRoundTripContent } from '../replay-check.ts';
 import type { CanonicalTextView } from '../text-parts.ts';
 import { encodeHex } from '@floway-dev/protocols/common';
 
-const builderBrand: unique symbol = Symbol('ReferenceBuilder');
-const fieldStateBrand: unique symbol = Symbol('FieldState');
-const contentStateBrand: unique symbol = Symbol('ContentState');
+const stateKind: unique symbol = Symbol('ReferenceState');
 
 export type PartId = number;
 type ContentId = number;
 type Restoration = 'text' | 'json';
 
-export interface ReferenceBuilder { readonly [builderBrand]: true }
+export interface ReferenceBuilder {
+  readonly pieces: string[];
+  readonly resolutions: Map<PartId, Resolution>;
+  nextContentId: number;
+}
 
 type OriginalFor<Kind extends Restoration> = Kind extends 'text' ? string : IRJSONObject;
 
 export interface FieldState<Kind extends Restoration = Restoration> {
-  readonly [fieldStateBrand]: Kind;
+  readonly [stateKind]: 'field';
+  readonly restoration: Kind;
+  text: string;
+  readonly partIds: PartId[];
 }
 
 export interface ContentState<Kind extends Restoration = Restoration> {
-  readonly [contentStateBrand]: Kind;
+  readonly [stateKind]: 'content';
+  readonly restoration: Kind;
+  readonly contentId: ContentId;
+  text: string;
 }
 
 export interface FieldStates {
@@ -42,96 +50,43 @@ interface Resolution {
   readonly endExclusive: number;
 }
 
-interface FieldData {
-  readonly restoration: Restoration;
-  text: string;
-  readonly partIds: PartId[];
-}
+export const createReferenceBuilder = (): ReferenceBuilder => ({ pieces: [], resolutions: new Map(), nextContentId: 0 });
 
-interface ContentData {
-  readonly restoration: Restoration;
-  readonly contentId: ContentId;
-  text: string;
-}
-
-interface BuilderState {
-  readonly pieces: string[];
-  readonly resolutions: Map<PartId, Resolution>;
-  nextContentId: number;
-}
-
-const builderStates = new WeakMap<ReferenceBuilder, BuilderState>();
-const fieldStates = new WeakMap<object, FieldData>();
-const contentStates = new WeakMap<object, ContentData>();
-
-const stateOf = (builder: ReferenceBuilder): BuilderState => {
-  const state = builderStates.get(builder);
-  if (state === undefined) throw new Error('Unknown ReferenceBuilder handle');
-  return state;
-};
-
-export const createReferenceBuilder = (): ReferenceBuilder => {
-  const builder: ReferenceBuilder = { [builderBrand]: true };
-  builderStates.set(builder, { pieces: [], resolutions: new Map(), nextContentId: 0 });
-  return builder;
-};
-
-const fieldData = (field: FieldState): FieldData => {
-  const data = fieldStates.get(field);
-  if (data === undefined) throw new Error('Unknown field state');
-  return data;
-};
-
-const contentData = (content: ContentState): ContentData => {
-  const data = contentStates.get(content);
-  if (data === undefined) throw new Error('Unknown content state');
-  return data;
-};
-
-export const createFieldState = <Kind extends Restoration>(restoration: Kind): FieldState<Kind> => {
-  const field: FieldState<Kind> = { [fieldStateBrand]: restoration };
-  fieldStates.set(field, { restoration, text: '', partIds: [] });
-  return field;
-};
+export const createFieldState = <Kind extends Restoration>(restoration: Kind): FieldState<Kind> => ({
+  [stateKind]: 'field', restoration, text: '', partIds: [],
+});
 
 export const appendField = (builder: ReferenceBuilder, field: FieldState, text: string): PartId => {
-  const state = stateOf(builder);
-  const data = fieldData(field);
-  const partId = state.pieces.length;
-  state.pieces.push(text);
-  data.text += text;
-  data.partIds.push(partId);
+  const partId = builder.pieces.length;
+  builder.pieces.push(text);
+  field.text += text;
+  field.partIds.push(partId);
   return partId;
 };
 
-export const createContentState = <Kind extends Restoration>(builder: ReferenceBuilder, restoration: Kind): ContentState<Kind> => {
-  const state = stateOf(builder);
-  const content: ContentState<Kind> = { [contentStateBrand]: restoration };
-  contentStates.set(content, { restoration, contentId: state.nextContentId++, text: '' });
-  return content;
-};
+export const createContentState = <Kind extends Restoration>(builder: ReferenceBuilder, restoration: Kind): ContentState<Kind> => ({
+  [stateKind]: 'content', restoration, contentId: builder.nextContentId++, text: '',
+});
 
 export const appendContent = (builder: ReferenceBuilder, content: ContentState, text: string, partIds?: readonly PartId[]): void => {
-  const data = contentData(content);
-  let offset = data.text.length;
-  data.text += text;
+  let offset = content.text.length;
+  content.text += text;
   if (partIds === undefined || partIds.length === 0) return;
-  const state = stateOf(builder);
   for (const partId of partIds) {
-    const piece = state.pieces[partId];
+    const piece = builder.pieces[partId];
     if (piece === undefined) throw new Error(`Unknown ReferenceBuilder part ${partId}`);
-    if (state.resolutions.has(partId)) throw new Error(`ReferenceBuilder part ${partId} has multiple output occurrences`);
-    state.resolutions.set(partId, { contentId: data.contentId, start: offset, endExclusive: offset + piece.length });
+    if (builder.resolutions.has(partId)) throw new Error(`ReferenceBuilder part ${partId} has multiple output occurrences`);
+    builder.resolutions.set(partId, { contentId: content.contentId, start: offset, endExclusive: offset + piece.length });
     offset += piece.length;
   }
-  if (offset !== data.text.length) throw new Error('IR text and its original parts have different lengths');
+  if (offset !== content.text.length) throw new Error('IR text and its original parts have different lengths');
 };
 
 const isFieldState = (value: unknown): value is FieldState =>
-  typeof value === 'object' && value !== null && fieldStates.has(value);
+  typeof value === 'object' && value !== null && stateKind in value && value[stateKind] === 'field';
 
 const isContentState = (value: unknown): value is ContentState =>
-  typeof value === 'object' && value !== null && contentStates.has(value);
+  typeof value === 'object' && value !== null && stateKind in value && value[stateKind] === 'content';
 
 const textView = (kind: Restoration, value: unknown): string | undefined => {
   if (kind === 'text') return typeof value === 'string' ? value : undefined;
@@ -163,14 +118,13 @@ export function collectContentViews(turn: unknown, contentState: unknown, textVi
   const views = new Map<ContentId, CanonicalTextView>();
   const visit = (value: unknown, state: unknown, canonical?: CanonicalTextView): void => {
     if (isContentState(state)) {
-      const data = contentData(state);
-      const view = textView(data.restoration, value);
-      if (view === data.text) views.set(data.contentId, canonical ?? { text: view, offset: 0 });
+      const view = textView(state.restoration, value);
+      if (view === state.text) views.set(state.contentId, canonical ?? { text: view, offset: 0 });
       return;
     }
     const view = typeof value === 'object' && value !== null ? textViews?.get(value) : undefined;
     for (const [childValue, childState] of pairedChildren(value, state)) {
-      visit(childValue, childState, view !== undefined && isContentState(childState) && contentData(childState).restoration === 'text' ? view : undefined);
+      visit(childValue, childState, view !== undefined && isContentState(childState) && childState.restoration === 'text' ? view : undefined);
     }
   };
   visit(turn, contentState);
@@ -178,11 +132,10 @@ export function collectContentViews(turn: unknown, contentState: unknown, textVi
 }
 
 const restoresOriginal = <Kind extends Restoration>(field: FieldState<Kind>, original: OriginalFor<Kind>): boolean => {
-  const data = fieldData(field);
-  if (data.restoration === 'text') return typeof original === 'string' && data.text === original;
+  if (field.restoration === 'text') return typeof original === 'string' && field.text === original;
   if (typeof original !== 'object' || original === null || Array.isArray(original)) return false;
   try {
-    return JSON.stringify(parseJSONObject(data.text)) === JSON.stringify(original);
+    return JSON.stringify(parseJSONObject(field.text)) === JSON.stringify(original);
   } catch (error) {
     if (error instanceof SyntaxError) return false;
     throw error;
@@ -211,7 +164,6 @@ interface ReferenceFinalizer {
 }
 
 export const createReferenceFinalizer = (builder: ReferenceBuilder, contentViews: ReadonlyMap<ContentId, CanonicalTextView>): ReferenceFinalizer => {
-  const builderState = stateOf(builder);
   const referencedContents: Uint8Array[] = [];
   const hashIndexByContent = new Map<string, number>();
   const hashIndexByDigest = new Map<string, number>();
@@ -235,12 +187,11 @@ export const createReferenceFinalizer = (builder: ReferenceBuilder, contentViews
     original: OriginalFor<Kind>,
     field: FieldState<Kind>,
   ): Promise<OriginalFor<Kind> | ThinReference<Kind>> => {
-    const fieldState = fieldData(field);
-    if (fieldState.partIds.length === 0 || !restoresOriginal(field, original)) return original;
+    if (field.partIds.length === 0 || !restoresOriginal(field, original)) return original;
     const resolved: ResolvedSegment[] = [];
-    for (const partId of fieldState.partIds) {
-      const piece = builderState.pieces[partId];
-      const resolution = builderState.resolutions.get(partId);
+    for (const partId of field.partIds) {
+      const piece = builder.pieces[partId];
+      const resolution = builder.resolutions.get(partId);
       if (piece === undefined || resolution === undefined) return original;
       const view = contentViews.get(resolution.contentId);
       if (view === undefined) return original;
@@ -259,7 +210,7 @@ export const createReferenceFinalizer = (builder: ReferenceBuilder, contentViews
     const payload: ReferencePart[] = segments.map(segment => segment.start === 0 && segment.endExclusive === segment.contentLength
       ? segment.hashIndex
       : [segment.hashIndex, segment.start, segment.endExclusive]);
-    return new ThinReference(field[fieldStateBrand], payload);
+    return new ThinReference(field.restoration, payload);
   };
 
   return { referencedContents, finalizeField };
@@ -298,7 +249,7 @@ export const finalizeAssistantTurnReferences = async <Protocol extends keyof Ass
   const collect = async (value: unknown, state: unknown): Promise<void> => {
     if (isFieldState(state)) {
       let original: string | IRJSONObject;
-      if (fieldData(state).restoration === 'text') {
+      if (state.restoration === 'text') {
         if (typeof value !== 'string') throw new TypeError('Text field state does not match its assistant turn');
         original = value;
       } else original = requireJSONObject(value);

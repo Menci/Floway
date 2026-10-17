@@ -22,6 +22,26 @@ import { ThinReference } from '../../../src/round-trip/thin/reference.ts';
 import { parseJSONObject } from '../../../src/shared/json/object.ts';
 
 describe('ReferenceBuilder', () => {
+  it('keeps provenance directly in sparse state leaves across shallow copies', async () => {
+    const builder = createReferenceBuilder();
+    const field = createFieldState('text');
+    const first = appendField(builder, field, 'hel');
+    const second = appendField(builder, field, 'lo');
+    const content = createContentState(builder, 'text');
+    appendContent(builder, content, '[');
+    appendContent(builder, content, 'hello', [first, second]);
+    appendContent(builder, content, ']');
+
+    const fieldState = { content: [{ text: { ...field } }] };
+    const contentState = { content: [{ text: { ...content } }] };
+    expect(fieldState.content[0].text).toMatchObject({ restoration: 'text', text: 'hello', partIds: [first, second] });
+    expect(contentState.content[0].text).toMatchObject({ restoration: 'text', contentId: 0, text: '[hello]' });
+
+    const turn = { role: 'assistant' as const, content: [{ type: 'text' as const, text: '[hello]', citations: null }] };
+    const finalizer = createReferenceFinalizer(builder, collectContentViews(turn, contentState));
+    expect(await finalizer.finalizeField('hello', fieldState.content[0].text)).toEqual(new ThinReference('text', [[0, 1, 6]]));
+  });
+
   it('hashes one canonical text run only once across multiple content IDs and shifts their ranges', async () => {
     const builder = createReferenceBuilder();
     const left = 'left segment '.repeat(30);
