@@ -24,7 +24,7 @@ const sourceCase = <Turn>(
     const restored = { role: 'assistant' as const, content: 'native target answer' };
     const owned = await codec.encode({ source, target: 'openaiChatCompletions', assistantTurn: restored, replayCheck: check });
     const checked = vi.fn(verify);
-    const run = (turn: Turn) => roundTripAssistantTurn(source, 'openaiChatCompletions', turn, codec, inspect, checked);
+    const run = (turn: Turn) => roundTripAssistantTurn(source, 'openaiChatCompletions', turn, codec, inspect, checked, () => []);
     if (scenario === 'foreign') {
       const before = structuredClone(ordinary);
       await expect(run(ordinary)).resolves.toBeUndefined();

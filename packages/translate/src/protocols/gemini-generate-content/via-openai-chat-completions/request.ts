@@ -6,7 +6,7 @@ import type { TranslateSidecarCodec } from '../../../types.ts';
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
 import { geminiGenerateContentReasoningEffort } from '../as-source/reasoning.ts';
-import { hasGeminiGenerateContentThoughtSignature, inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck } from '../as-source/round-trip.ts';
+import { collectGeminiGenerateContentReplayCandidates, hasGeminiGenerateContentThoughtSignature, inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck } from '../as-source/round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../as-source/schema.ts';
 import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionDeclarations, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
@@ -239,7 +239,7 @@ export const buildTargetRequest = async (
 
   let contentIndex = 0;
   for (const turn of partitionGeminiGenerateContentTurns(payload.contents ?? [])) {
-    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('geminiGenerateContent', 'openaiChatCompletions', turn.items, codec, inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck);
+    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('geminiGenerateContent', 'openaiChatCompletions', turn.items, codec, inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck, collectGeminiGenerateContentReplayCandidates);
     if (!roundTrip) {
       if (turn.role === 'assistant') {
         for (const [index, content] of turn.items.entries()) {

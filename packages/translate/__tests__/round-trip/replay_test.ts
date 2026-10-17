@@ -14,6 +14,7 @@ describe('assistant-turn replay boundary', () => {
       createTestSidecarCodec(),
       inspectOpenAIChatCompletionsAssistantTurn,
       verifyOpenAIChatCompletionsReplayCheck,
+      () => [],
     )).resolves.toBeUndefined();
   });
 
@@ -43,6 +44,7 @@ describe('assistant-turn replay boundary', () => {
       codec,
       inspectOpenAIChatCompletionsAssistantTurn,
       verify,
+      () => [],
     )).resolves.toEqual({ turn: assistantTurn });
     expect(verify).toHaveBeenCalledExactlyOnceWith({ role: 'assistant', content: 'answer', reasoning_details: [] }, expect.any(Object));
   });
@@ -60,7 +62,7 @@ describe('assistant-turn replay boundary', () => {
     });
     const turn = { ...source, reasoning_details: [...earlier, ...createOpenAIChatCompletionsSidecarCarrier(data)] };
     const verify = vi.fn(verifyOpenAIChatCompletionsReplayCheck);
-    await expect(roundTripAssistantTurn('openaiChatCompletions', 'openaiChatCompletions', turn, codec, inspectOpenAIChatCompletionsAssistantTurn, verify)).resolves.toEqual({ turn: assistantTurn });
+    await expect(roundTripAssistantTurn('openaiChatCompletions', 'openaiChatCompletions', turn, codec, inspectOpenAIChatCompletionsAssistantTurn, verify, () => [])).resolves.toEqual({ turn: assistantTurn });
     expect(verify).toHaveBeenCalledExactlyOnceWith(source, expect.any(Object));
     expect(turn.reasoning_details[0].data).toBe(foreign);
   });
@@ -76,7 +78,7 @@ describe('assistant-turn replay boundary', () => {
     });
     const turn = { ...source, reasoning_details: [...createOpenAIChatCompletionsSidecarCarrier(data), ...createOpenAIChatCompletionsSidecarCarrier(foreign)] };
     const verify = vi.fn(verifyOpenAIChatCompletionsReplayCheck);
-    await expect(roundTripAssistantTurn('openaiChatCompletions', 'openaiChatCompletions', turn, codec, inspectOpenAIChatCompletionsAssistantTurn, verify)).resolves.toEqual({ turn: source });
+    await expect(roundTripAssistantTurn('openaiChatCompletions', 'openaiChatCompletions', turn, codec, inspectOpenAIChatCompletionsAssistantTurn, verify, () => [])).resolves.toEqual({ turn: source });
     expect(verify).toHaveBeenCalledExactlyOnceWith(source, expect.any(Object));
   });
 });

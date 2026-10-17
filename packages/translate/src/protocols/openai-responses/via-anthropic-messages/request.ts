@@ -13,7 +13,7 @@ import { restrictAllowedTools } from '../as-source/allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
-import { inspectOpenAIResponsesAssistantTurn, isOpenAIResponsesEncryptedReasoning, verifyOpenAIResponsesReplayCheck } from '../as-source/round-trip.ts';
+import { collectOpenAIResponsesReplayCandidates, inspectOpenAIResponsesAssistantTurn, isOpenAIResponsesEncryptedReasoning, verifyOpenAIResponsesReplayCheck } from '../as-source/round-trip.ts';
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import { buildCustomToolInputSchema } from '../common/custom-tool-wrap.ts';
 import {
@@ -434,7 +434,7 @@ export const buildTargetRequest = async (
 
   for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
     if (turn.role !== 'assistant') { target.messages.push(...await translateNonAssistantInput(turn.items, options.loadRemoteImage)); continue; }
-    const roundTrip = await roundTripAssistantTurn('openaiResponses', 'anthropicMessages', turn.items, codec, inspectOpenAIResponsesAssistantTurn, verifyOpenAIResponsesReplayCheck);
+    const roundTrip = await roundTripAssistantTurn('openaiResponses', 'anthropicMessages', turn.items, codec, inspectOpenAIResponsesAssistantTurn, verifyOpenAIResponsesReplayCheck, collectOpenAIResponsesReplayCandidates);
     target.messages.push(...(roundTrip ? [roundTrip.turn] : translateAssistantTurn(turn.items)));
   }
   applyLastMessageCacheBreakpoint(target.messages.filter(message => bareMessages.has(message)));

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createSidecarCodecFactory, encodeCBORValue, SidecarKind } from '../../../../src/data-plane/chat/shared/sidecar-codec.ts';
 import { decodeForgivingBase64, decodeHex, encodeBase64, encodeBase64url } from '@floway-dev/protocols/common';
+import { ThinReference, type ReferencePart } from '@floway-dev/translate';
 
 vi.mock('cbor-x', async importOriginal => {
   const actual = await importOriginal<typeof import('cbor-x')>();
@@ -215,8 +216,41 @@ describe('signed CBOR sidecars', () => {
     await expect(factory.getForKind(SidecarKind.TranslateRoundTrip).decode(await sign(encode({ kind, payload: 'value' })))).rejects.toThrow('sidecar kind is invalid');
   });
   it('preserves unknown CBOR tags for their owner', async () => {
-    const payload = { reference: new Tag([[0, 1, 4]], 65536) };
+    const payload = { reference: new Tag([[0, 1, 4]], 65540) };
     expect(await factory.getForKind(SidecarKind.TranslateRoundTrip).decode(await factory.getForKind(SidecarKind.TranslateRoundTrip).encode(payload))).toEqual(payload);
+  });
+  it.each([SidecarKind.TranslateRoundTrip, Number(1)])('restores thin reference instances for kind %s after a foreign decode', async kind => {
+    const codecs = createSidecarCodecFactory(secret);
+    const owner = codecs.getForKind(kind);
+    const other = codecs.getForKind(kind === SidecarKind.TranslateRoundTrip ? Number(1) : SidecarKind.TranslateRoundTrip);
+    const parts: ReferencePart[] = [0, [1, 2, 5]];
+    const payload = {
+      text: new ThinReference('text', parts),
+      nested: [new ThinReference('json', [2])],
+      ordinary: { restoration: 'text', parts },
+    };
+    const encoded = await owner.encode(payload);
+    const envelope = record(decode(decodeForgivingBase64(encoded).subarray(32)));
+    const wire = record(envelope.payload);
+    expect(wire.text).toEqual(new Tag(parts, 65536));
+    expect(wire.nested).toEqual([new Tag([2], 65537)]);
+    expect(await other.decode(encoded)).toBeUndefined();
+    const restored = record(await owner.decode(encoded));
+    expect(restored).toEqual(payload);
+    expect(restored.text).toBeInstanceOf(ThinReference);
+    if (!Array.isArray(restored.nested)) throw new TypeError('Expected nested references');
+    expect(restored.nested[0]).toBeInstanceOf(ThinReference);
+    expect(restored.ordinary).not.toBeInstanceOf(ThinReference);
+    if (!(restored.text instanceof ThinReference)) throw new TypeError('Expected a thin reference');
+    restored.text.parts.push(9);
+    expect(await owner.decode(encoded)).toEqual(payload);
+  });
+  it.each([65536, 65537])('rejects malformed authenticated thin reference tag %s', async tag => {
+    const codec = factory.getForKind(SidecarKind.TranslateRoundTrip);
+    for (const parts of [null, 'reference', [-1], [0.5], [[0, 1]], [[0, 4, 2]], [[0, -1, 2]], [[0, 1, Infinity]]]) {
+      const encoded = await sign(encode({ kind: 0, payload: new Tag(parts, tag) }));
+      await expect(codec.decode(encoded)).rejects.toThrow('Thin reference sidecar tag requires reference parts');
+    }
   });
   it('preserves raw numeric tokens and similarly shaped ordinary objects', async () => {
     const tokens = ['9007199254740993', '1e400', '1.2300e+400'];

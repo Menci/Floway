@@ -1,10 +1,14 @@
-
 import type { IRJSONObject } from '../../../ir/types.ts';
 import { computeRoundTripReplayCheck, verifyRoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripSidecarCandidate } from '../../../round-trip/replay.ts';
-import { requireJSONObject } from '../../../shared/json/object.ts';
+import { collectTextChannels, collectTextChannelViews, type TextChannelProjection, type TextChannelViews } from '../../../round-trip/text-channels.ts';
+import type { ReplayCandidate } from '../../../round-trip/thin/assistant-turn.ts';
+import { isPlainJSONObject, requireJSONObject } from '../../../shared/json/object.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
+
+const geminiVisibleTextChannel = (part: GeminiGenerateContentPart): TextChannelProjection<'visible'> | undefined =>
+  part.thought !== true && part.text !== undefined ? { channel: 'visible', field: 'text', text: part.text } : undefined;
 
 export const GEMINI_GENERATE_CONTENT_REPLAY_CHECK_VERSION = 1;
 
@@ -16,15 +20,10 @@ export const hasGeminiGenerateContentThoughtSignature = (content: GeminiGenerate
 
 const geminiReplayCheckMaterialV1 = (turn: GeminiGenerateContentAssistantTurn): IRJSONObject => {
   const contents = turn.map(content => {
-    let contentText = '';
-    let hasText = false;
+    const visible = collectTextChannels(content.parts ?? [], geminiVisibleTextChannel).get('visible');
     const inlineData: { mimeType: string; data: string; audioTranscription?: string }[] = [];
     const functionCall: { id?: string; name: string; args?: IRJSONObject }[] = [];
     for (const part of content.parts ?? []) {
-      if (part.thought !== true && part.text !== undefined) {
-        hasText = true;
-        contentText += part.text;
-      }
       if (part.inlineData !== undefined) inlineData.push({
         mimeType: part.inlineData.mimeType,
         data: part.inlineData.data,
@@ -36,7 +35,7 @@ const geminiReplayCheckMaterialV1 = (turn: GeminiGenerateContentAssistantTurn): 
         ...(part.functionCall.args === undefined ? {} : { args: requireJSONObject(part.functionCall.args) }),
       });
     }
-    return { ...(hasText ? { text: contentText } : {}), inlineData, functionCall };
+    return { ...(visible === undefined ? {} : { text: visible.text }), inlineData, functionCall };
   });
 
   return { contents };
@@ -58,6 +57,21 @@ export const inspectGeminiGenerateContentAssistantTurn = (turn: GeminiGenerateCo
 export const computeGeminiGenerateContentReplayCheck = (turn: GeminiGenerateContentAssistantTurn): Promise<RoundTripReplayCheck> =>
   computeRoundTripReplayCheck(GEMINI_GENERATE_CONTENT_REPLAY_CHECK_VERSION, geminiReplayCheckMaterialV1(turn));
 
+export const collectGeminiGenerateContentReplayCandidates = (turn: GeminiGenerateContentAssistantTurn): ReplayCandidate[] => {
+  const candidates: ReplayCandidate[] = [];
+  for (const content of turn) {
+    const visible = collectTextChannels(content.parts ?? [], geminiVisibleTextChannel).get('visible');
+    if (visible !== undefined) candidates.push(visible.text);
+    for (const part of content.parts ?? []) {
+      if (part.inlineData !== undefined) candidates.push(part.inlineData.data);
+      if (part.audioTranscription !== undefined) candidates.push(part.audioTranscription.text);
+      const args = part.functionCall?.args;
+      if (isPlainJSONObject(args)) candidates.push(args);
+    }
+  }
+  return candidates;
+};
+
 export const verifyGeminiGenerateContentReplayCheck = (
   turn: GeminiGenerateContentAssistantTurn,
   replayCheck: RoundTripReplayCheck,
@@ -71,3 +85,11 @@ export const verifyGeminiGenerateContentReplayCheck = (
 // Gemini returns model-side thought signatures as Part metadata.
 // https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures
 export const createGeminiGenerateContentSidecarCarrier = (data: string): GeminiGenerateContentSidecarCarrier => ({ thoughtSignature: data });
+
+export const collectGeminiGenerateContentTextViews = (turn: GeminiGenerateContentAssistantTurn): TextChannelViews => {
+  const views: TextChannelViews = new Map();
+  for (const content of turn) {
+    if (content.parts !== undefined) collectTextChannelViews(collectTextChannels(content.parts, geminiVisibleTextChannel), views);
+  }
+  return views;
+};

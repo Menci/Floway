@@ -1,6 +1,7 @@
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 export interface TranslateSidecarCodec {
+  /** Encode and decode must preserve ThinReference instances, byte arrays, and raw JSON values. */
   encode: (payload: NonNullable<unknown> | null) => Promise<string>;
   decode: (encoded: string) => Promise<unknown>;
 }

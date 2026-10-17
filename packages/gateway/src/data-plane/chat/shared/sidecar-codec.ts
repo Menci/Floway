@@ -1,6 +1,7 @@
 import { decode as decodeCBOR, Encoder, Tag } from 'cbor-x';
 
 import { decodeCanonicalBase64, decodeCanonicalBase64url, decodeForgivingBase64, encodeBase64, encodeBase64url } from '@floway-dev/protocols/common';
+import { ThinReference, type ReferencePart } from '@floway-dev/translate';
 
 export interface SidecarCodec {
   encode: (payload: NonNullable<unknown> | null) => Promise<string>;
@@ -16,6 +17,8 @@ export interface SidecarCodecFactory {
 }
 
 const SIGNATURE_LENGTH = 32;
+const THIN_TEXT_TAG = 65_536;
+const THIN_JSON_TAG = 65_537;
 const RAW_JSON_TAG = 65_539;
 const encoder = new Encoder({ useRecords: false, tagUint8Array: false });
 const rawJSON = JSON as typeof JSON & {
@@ -25,7 +28,7 @@ const rawJSON = JSON as typeof JSON & {
 
 const mapCBORValue = (value: unknown, transform: (value: unknown) => unknown): unknown => {
   const mapped = transform(value);
-  if (mapped instanceof Tag || mapped instanceof Uint8Array || rawJSON.isRawJSON(mapped)) return mapped;
+  if (mapped instanceof Tag || mapped instanceof ThinReference || mapped instanceof Uint8Array || rawJSON.isRawJSON(mapped)) return mapped;
   if (Array.isArray(mapped)) return mapped.map(child => mapCBORValue(child, transform));
   if (typeof mapped === 'object' && mapped !== null) {
     return Object.fromEntries(Object.entries(mapped).map(([key, child]) => [key, mapCBORValue(child, transform)]));
@@ -34,6 +37,7 @@ const mapCBORValue = (value: unknown, transform: (value: unknown) => unknown): u
 };
 
 export const encodeCBORValue = (value: unknown): Uint8Array => encoder.encode(mapCBORValue(value, value => {
+  if (value instanceof ThinReference) return new Tag(value.parts, value.restoration === 'text' ? THIN_TEXT_TAG : THIN_JSON_TAG);
   if (rawJSON.isRawJSON(value)) return new Tag(value.rawJSON, RAW_JSON_TAG);
   if (typeof value === 'string' && value.length >= 22) {
     const decodedBase64 = decodeCanonicalBase64(value);
@@ -44,7 +48,17 @@ export const encodeCBORValue = (value: unknown): Uint8Array => encoder.encode(ma
   return value;
 }));
 
+const isReferenceIndex = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+const isReferencePart = (value: unknown): value is ReferencePart => isReferenceIndex(value)
+  || (Array.isArray(value) && value.length === 3 && value.every(isReferenceIndex) && value[1] <= value[2]);
+
 const restoreCBORValue = (value: unknown): unknown => {
+  if (value instanceof Tag && (value.tag === THIN_TEXT_TAG || value.tag === THIN_JSON_TAG)) {
+    const parts: unknown = value.value;
+    if (!Array.isArray(parts) || !parts.every(isReferencePart)) throw new TypeError('Thin reference sidecar tag requires reference parts');
+    return new ThinReference(value.tag === THIN_TEXT_TAG ? 'text' : 'json', parts);
+  }
   if (value instanceof Tag && value.tag === RAW_JSON_TAG) {
     if (typeof value.value !== 'string') throw new TypeError('Raw JSON sidecar tag requires a string');
     return rawJSON.rawJSON(value.value);

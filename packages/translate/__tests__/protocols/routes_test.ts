@@ -1,15 +1,18 @@
 import { test } from 'vitest';
 
 import { partitionAnthropicMessagesTurns } from '../../src/protocols/anthropic-messages/as-source/conversation-turns.ts';
-import { inspectAnthropicMessagesAssistantTurn } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
-import { inspectGeminiGenerateContentAssistantTurn } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
+import { collectAnthropicMessagesReplayCandidates, inspectAnthropicMessagesAssistantTurn } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
+import { collectGeminiGenerateContentReplayCandidates, inspectGeminiGenerateContentAssistantTurn } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../../src/protocols/openai-chat-completions/as-source/conversation-turns.ts';
-import { inspectOpenAIChatCompletionsAssistantTurn } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
+import { collectOpenAIChatCompletionsReplayCandidates, inspectOpenAIChatCompletionsAssistantTurn } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
 import { toOpenAIChatCompletionsInputAssistantTurn } from '../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
 import { partitionOpenAIResponsesTurns } from '../../src/protocols/openai-responses/as-source/conversation-turns.ts';
-import { inspectOpenAIResponsesAssistantTurn } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
+import { collectOpenAIResponsesReplayCandidates, inspectOpenAIResponsesAssistantTurn, verifyOpenAIResponsesReplayCheck } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
 import { toOpenAIResponsesInputAssistantTurn } from '../../src/protocols/openai-responses/as-target/assistant-turn.ts';
+import { hashRoundTripContent } from '../../src/round-trip/replay-check.ts';
 import { decodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
+import { hydrateAssistantTurn } from '../../src/round-trip/thin/hydrate.ts';
+import { ThinReference } from '../../src/round-trip/thin/reference.ts';
 import { requireJSONObject } from '../../src/shared/json/object.ts';
 import { collect, iterate } from '../ir/helpers.ts';
 import { fixtureFrames, type nativeResult } from '../ir/translation-cases.ts';
@@ -216,6 +219,27 @@ const moveCarrierBeforeBody = (assistant: AssistantTurn, carrier: string): Assis
   };
 };
 
+const replayCandidates = (assistant: AssistantTurn) => {
+  if (assistant.protocol === 'openai-responses') {
+    const candidates = inspectOpenAIResponsesAssistantTurn(assistant.turn);
+    assertEquals(candidates.length, 1);
+    return collectOpenAIResponsesReplayCandidates(candidates[0].withoutSidecar());
+  }
+  if (assistant.protocol === 'openai-chat-completions') {
+    const candidates = inspectOpenAIChatCompletionsAssistantTurn(assistant.turn);
+    assertEquals(candidates.length, 1);
+    return collectOpenAIChatCompletionsReplayCandidates(candidates[0].withoutSidecar());
+  }
+  if (assistant.protocol === 'anthropic-messages') {
+    const candidates = inspectAnthropicMessagesAssistantTurn([assistant.turn]);
+    assertEquals(candidates.length, 1);
+    return collectAnthropicMessagesReplayCandidates(candidates[0].withoutSidecar());
+  }
+  const candidates = inspectGeminiGenerateContentAssistantTurn(assistant.turn);
+  assertEquals(candidates.length, 1);
+  return collectGeminiGenerateContentReplayCandidates(candidates[0].withoutSidecar());
+};
+
 type TargetPayload =
   | { protocol: 'openai-responses'; payload: CanonicalOpenAIResponsesPayload }
   | { protocol: 'openai-chat-completions'; payload: OpenAIChatCompletionsPayload }
@@ -252,12 +276,21 @@ const targetAssistantTurn = (target: TargetPayload) => {
   return partitionAnthropicMessagesTurns(target.payload.messages).find(turn => turn.role === 'assistant')?.items[0];
 };
 
+const referencesIn = (value: unknown): ThinReference[] => {
+  if (value instanceof ThinReference) return [value];
+  if (Array.isArray(value)) return value.flatMap(referencesIn);
+  if (typeof value !== 'object' || value === null) return [];
+  return Object.values(value).flatMap(referencesIn);
+};
+
 test.each(returnedTrips)('$a via $b returns generated content and a decodable sidecar through its public TranslateTrip', async ({ a, b, trip }) => {
   const codec = createTestSidecarCodec(codecScope);
   const translation = await trip(codecScope);
   const fixture = {
     text: ['return ', 'path'],
-    thinking: ['upstream thought'], signature: 'native B encrypted content',
+    thinking: ['upstream thought'],
+    signature: 'native B encrypted content',
+    tools: [{ name: 'lookup', id: 'native-call', args: { q: 'value' } }],
   };
   const frames = await collect(translation.events(iterate(fixtureFrames(b, fixture))));
   const assistant = await collectAssistantTurn(a, frames);
@@ -269,15 +302,137 @@ test.each(returnedTrips)('$a via $b returns generated content and a decodable si
   assert(sidecar !== undefined);
   assertEquals(sidecar.source, protocolKeys[a]);
   assertEquals(sidecar.target, protocolKeys[b]);
-  assertEquals(sidecar.assistantTurn, (await collectAssistantTurn(b, fixtureFrames(b, fixture))).turn);
+  const expected = (await collectAssistantTurn(b, fixtureFrames(b, fixture))).turn;
+  const hydrated = await hydrateAssistantTurn(protocolKeys[b], replayCandidates(assistant), sidecar.assistantTurn, sidecar.referencedContents);
+  assert(hydrated.ok);
+  assertEquals(hydrated.turn, expected);
+  assertEquals(sidecar.assistantTurn, expected);
+  assertEquals(sidecar.referencedContents, undefined);
   assert(sidecar.replayCheck.version > 0);
   assert(sidecar.replayCheck.digest instanceof Uint8Array && sidecar.replayCheck.digest.byteLength > 0);
 
   const replayed = await replayAssistantTurn(assistant, b);
-  assertEquals(targetAssistantTurn(replayed), sidecar.assistantTurn);
+  assertEquals(targetAssistantTurn(replayed), hydrated.turn);
 
   const before = structuredClone(assistant);
   const moved = moveCarrierBeforeBody(assistant, carrier);
   assertEquals(assistant, before);
-  assertEquals(targetAssistantTurn(await replayAssistantTurn(moved, b)), sidecar.assistantTurn);
+  assertEquals(targetAssistantTurn(await replayAssistantTurn(moved, b)), hydrated.turn);
+});
+
+test.each(returnedTrips)('$a via $b references a profitable native body through its public TranslateTrip', async ({ a, b, trip }) => {
+  const translation = await trip(codecScope);
+  const fixture = { text: ['A long native assistant body. '.repeat(20)] };
+  const assistant = await collectAssistantTurn(a, await collect(translation.events(iterate(fixtureFrames(b, fixture)))));
+  const carrier = sidecarPayload(assistant);
+  assert(typeof carrier === 'string');
+  const sidecar = await decodeRoundTripSidecar(createTestSidecarCodec(codecScope), protocolKeys[a], carrier);
+  assert(sidecar !== undefined);
+  assertEquals(sidecar.referencedContents?.length, 1);
+  const references = referencesIn(sidecar.assistantTurn);
+  assert(references.length > 0);
+  assert(references.every(reference => Array.isArray(reference.parts) && reference.parts.every(part => part === 0)));
+  const expected = (await collectAssistantTurn(b, fixtureFrames(b, fixture))).turn;
+  const hydrated = await hydrateAssistantTurn(protocolKeys[b], replayCandidates(assistant), sidecar.assistantTurn, sidecar.referencedContents);
+  assert(hydrated.ok);
+  assertEquals(hydrated.turn, expected);
+  assertEquals(targetAssistantTurn(await replayAssistantTurn(assistant, b)), expected);
+});
+
+const repartitionAssistantText = (assistant: AssistantTurn, pieces: string[]): AssistantTurn => {
+  if (assistant.protocol === 'openai-responses') return {
+    ...assistant,
+    turn: assistant.turn.map(item => item.type !== 'message' ? item : { ...item, content: pieces.map(text => ({ type: 'output_text' as const, text })) }),
+  };
+  if (assistant.protocol === 'anthropic-messages') {
+    assert(Array.isArray(assistant.turn.content));
+    return { ...assistant, turn: { ...assistant.turn, content: [...pieces.map(text => ({ type: 'text' as const, text, citations: null })), ...assistant.turn.content.filter(block => block.type !== 'text')] } };
+  }
+  if (assistant.protocol === 'gemini-generate-content') return {
+    ...assistant,
+    turn: assistant.turn.map(content => ({ ...content, parts: [...pieces.map(text => ({ text })), ...(content.parts?.filter(part => part.text === undefined) ?? [])] })),
+  };
+  throw new Error('Chat scalar content has no part boundaries');
+};
+
+const boundaryTrips = returnedTrips.filter(({ a }) => a !== 'openai-chat-completions').flatMap(route => [
+  { ...route, operation: 'split' as const },
+  ...(route.a === 'anthropic-messages' && route.b === 'openai-responses' ? [{ ...route, operation: 'merge' as const }] : []),
+  ...(route.a === 'gemini-generate-content' && route.b !== 'openai-chat-completions' ? [{ ...route, operation: 'IR merge' as const }] : []),
+]);
+
+test.each(boundaryTrips)('$a via $b restores actual canonical references across $operation text parts', async ({ a, b, trip, operation }) => {
+  const left = `${'A distinct first native segment. '.repeat(12)}\ud83d`;
+  const right = `\ude00${' A distinct second native segment. '.repeat(13)}`;
+  const text = left + right;
+  const fixture = { text: operation === 'split' ? [text] : [left, right] };
+  const translation = await trip(codecScope);
+  const assistant = await collectAssistantTurn(a, await collect(translation.events(iterate(fixtureFrames(b, fixture)))));
+  const carrier = sidecarPayload(assistant);
+  assert(typeof carrier === 'string');
+  const sidecar = await decodeRoundTripSidecar(createTestSidecarCodec(codecScope), protocolKeys[a], carrier);
+  assert(sidecar !== undefined);
+  assertEquals(sidecar.referencedContents, [await hashRoundTripContent(text)]);
+  const references = referencesIn(sidecar.assistantTurn);
+  assert(references.length > 0);
+  assertEquals(references.map(reference => reference.parts), operation !== 'split'
+    ? [[[0, 0, left.length]], [[0, left.length, text.length]]]
+    : [[0]]);
+  if (operation !== 'split') assertEquals(replayCandidates(assistant), [text]);
+  const replayedAssistant = repartitionAssistantText(assistant, operation === 'split' ? [left, right] : [text]);
+  assertEquals(replayCandidates(replayedAssistant), [text]);
+  const expected = (await collectAssistantTurn(b, fixtureFrames(b, fixture))).turn;
+  const hydrated = await hydrateAssistantTurn(protocolKeys[b], replayCandidates(replayedAssistant), sidecar.assistantTurn, sidecar.referencedContents);
+  assert(hydrated.ok);
+  assertEquals(hydrated.turn, expected);
+  assertEquals(targetAssistantTurn(await replayAssistantTurn(replayedAssistant, b)), expected);
+});
+
+test('Responses keeps separate message hashes when Messages blocks open separate IR message items', async () => {
+  const left = 'First separate message. '.repeat(20);
+  const right = 'Second separate message. '.repeat(20);
+  const translation = await responsesRoute.viaAnthropicMessages({ sidecarCodec: createTestSidecarCodec(codecScope), model: 'm', loadRemoteImage: async () => null });
+  const assistant = await collectAssistantTurn('openai-responses', await collect(translation.events(iterate(fixtureFrames('anthropic-messages', { text: [left, right] })))));
+  assert(assistant.protocol === 'openai-responses');
+  const inspection = inspectOpenAIResponsesAssistantTurn(assistant.turn);
+  assertEquals(inspection.length, 1);
+  const carrier = inspection[0].data;
+  assert(typeof carrier === 'string');
+  const sidecar = await decodeRoundTripSidecar(createTestSidecarCodec(codecScope), 'openaiResponses', carrier);
+  assert(sidecar !== undefined);
+  assertEquals(sidecar.referencedContents, [await hashRoundTripContent(left), await hashRoundTripContent(right)]);
+  assertEquals(referencesIn(sidecar.assistantTurn).map(reference => reference.parts), [[0], [1]]);
+  const messages = inspection[0].withoutSidecar().filter(item => item.type === 'message');
+  assertEquals(messages.length, 2);
+  assertEquals(await verifyOpenAIResponsesReplayCheck([{ ...messages[0], content: [{ type: 'output_text', text: left + right }] }], sidecar.replayCheck), false);
+});
+
+test('Gemini via Responses restores literal reasoning when optional thought text is not replayed', async () => {
+  const fixture = {
+    text: ['visible ', 'answer'],
+    thinking: ['optional thought'],
+    signature: 'native B encrypted content',
+  };
+  const firstTrip = await routeGeminiGenerateContent(gemini).viaOpenAIResponses({ sidecarCodec: createTestSidecarCodec(codecScope), model: 'm' });
+  const frames = await collect(firstTrip.events(iterate(fixtureFrames('openai-responses', fixture))));
+  const assistant = await collectAssistantTurn('gemini-generate-content', frames);
+  if (assistant.protocol !== 'gemini-generate-content') throw new Error('Expected a Gemini assistant turn');
+  const content = assistant.turn[0];
+  if (content === undefined) throw new Error('Expected a Gemini model turn');
+  const carrier = sidecarPayload(assistant);
+  assert(typeof carrier === 'string');
+  const sidecar = await decodeRoundTripSidecar(createTestSidecarCodec(codecScope), 'geminiGenerateContent', carrier);
+  assert(sidecar?.target === 'openaiResponses');
+  const reasoning = sidecar.assistantTurn.find(item => item.type === 'reasoning');
+  const message = sidecar.assistantTurn.find(item => item.type === 'message');
+  assert(reasoning?.type === 'reasoning' && message?.type === 'message' && Array.isArray(message.content));
+  assertEquals(reasoning.summary[0]?.text, 'optional thought');
+  assertEquals(message.content.flatMap(part => part.type === 'output_text' ? [part.text] : []).join(''), 'visible answer');
+
+  const replayed = await replayAssistantTurn({
+    protocol: 'gemini-generate-content',
+    turn: [{ ...content, parts: content.parts?.filter(part => !(part.thought === true && typeof part.text === 'string')) }],
+  }, 'openai-responses');
+  const expected = await collectAssistantTurn('openai-responses', fixtureFrames('openai-responses', fixture));
+  assertEquals(targetAssistantTurn(replayed), expected.turn);
 });

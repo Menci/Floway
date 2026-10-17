@@ -2,7 +2,7 @@ import { rawJSON } from './raw-json.ts';
 import type { IRJSONObject } from '../../ir/types.ts';
 import { isJsonObject, parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
-const isPlainJSONObject = (value: unknown): value is IRJSONObject => isJsonObject(value) && !rawJSON.isRawJSON(value);
+export const isPlainJSONObject = (value: unknown): value is IRJSONObject => isJsonObject(value) && !rawJSON.isRawJSON(value);
 
 export const requireJSONObject = (value: unknown): IRJSONObject => {
   if (!isPlainJSONObject(value)) throw new TypeError('Expected a JSON object');

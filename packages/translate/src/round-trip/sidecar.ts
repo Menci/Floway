@@ -1,13 +1,15 @@
-import type { AssistantTurnByProtocol, AssistantTurnFor } from './assistant-turn.ts';
+import type { AssistantTurnByProtocol } from './assistant-turn.ts';
 import type { RoundTripReplayCheck } from './replay-check.ts';
 import type { TranslateSidecarCodec } from '../types.ts';
+import type { ThinAssistantTurnFor, ThinReference } from './thin/assistant-turn.ts';
 
 export type RoundTripProtocol = keyof AssistantTurnByProtocol;
 
 export type RoundTripSidecar<Target extends RoundTripProtocol> = {
   source: RoundTripProtocol;
   target: Target;
-  assistantTurn: AssistantTurnFor<Target>;
+  assistantTurn: ThinAssistantTurnFor<Target, ThinReference>;
+  referencedContents?: Uint8Array[];
   replayCheck: RoundTripReplayCheck;
 };
 
@@ -35,6 +37,10 @@ function assertRoundTripSidecar(value: Record<string, unknown>): asserts value i
   if (!isRoundTripProtocol(value.source)) throw new TypeError('Assistant-turn sidecar source is invalid');
   if (!isRoundTripProtocol(value.target)) throw new TypeError('Assistant-turn sidecar target is invalid');
   assertAssistantTurn(value.target, value.assistantTurn);
+  if (value.referencedContents !== undefined
+    && (!Array.isArray(value.referencedContents) || value.referencedContents.some(hash => !(hash instanceof Uint8Array)))) {
+    throw new TypeError('Assistant-turn sidecar referenced contents are invalid');
+  }
   if (!isRecord(value.replayCheck) || !Number.isInteger(value.replayCheck.version) || !(value.replayCheck.digest instanceof Uint8Array)) throw new TypeError('Assistant-turn sidecar replay check is invalid');
 }
 
