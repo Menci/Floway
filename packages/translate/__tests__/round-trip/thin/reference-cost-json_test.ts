@@ -9,10 +9,13 @@ import { rawJSON } from '../../../src/shared/json/raw-json.ts';
 
 it.each<{ input: IRJSONObject; referenced: boolean }>([
   { input: { x: 1 }, referenced: false },
+  { input: { values: Array.from({ length: 10 }, () => null) }, referenced: false },
+  { input: { values: Array.from({ length: 9 }, () => false) }, referenced: false },
+  { input: { values: Array.from({ length: 20 }, () => 0) }, referenced: false },
   { input: { text: 'Native tool arguments. '.repeat(8) }, referenced: true },
   { input: { amount: rawJSON.rawJSON('1.2300e+400') }, referenced: false },
   { input: { amount: rawJSON.rawJSON(`1e${'9'.repeat(80)}`) }, referenced: true },
-])('selects JSON references by serialized text length while preserving raw numeric tokens: %j', async ({ input, referenced }) => {
+])('selects JSON references with a codec-independent semantic budget: %j', async ({ input, referenced }) => {
   const builder = createReferenceBuilder();
   const field = createFieldState('json');
   const content = createContentState(builder, 'json');

@@ -1,6 +1,7 @@
 import { ThinReference, type AssistantTurnStateFor, type ReferencePart, type ThinAssistantTurnFor } from './assistant-turn.ts';
 import type { IRJSONObject } from '../../ir/types.ts';
 import { parseJSONObject, requireJSONObject } from '../../shared/json/object.ts';
+import { rawJSON } from '../../shared/json/raw-json.ts';
 import type { AssistantTurnByProtocol, AssistantTurnFor } from '../assistant-turn.ts';
 import { hashRoundTripContent } from '../replay-check.ts';
 import type { CanonicalTextView } from '../text-parts.ts';
@@ -245,6 +246,20 @@ const HASH_TABLE_BUDGET = 32;
 const referenceBudget = (reference: ThinReference): number => REFERENCE_OVERHEAD
   + reference.parts.reduce<number>((cost, part) => cost + (typeof part === 'number' ? 4 : 16), 0);
 
+const jsonLiteralBudget = (value: unknown, ancestors = new Set<object>()): number => {
+  if (rawJSON.isRawJSON(value)) return value.rawJSON.length;
+  if (value === null || typeof value === 'boolean' || typeof value === 'number') return 1;
+  if (typeof value === 'string') return value.length;
+  if (typeof value !== 'object') throw new TypeError('JSON reference budget requires a JSON value');
+  if (ancestors.has(value)) throw new TypeError('JSON reference budget requires an acyclic value');
+  ancestors.add(value);
+  const budget = Array.isArray(value)
+    ? value.reduce((sum, child) => sum + jsonLiteralBudget(child, ancestors), 0)
+    : Object.entries(value).reduce((sum, [key, child]) => sum + key.length + jsonLiteralBudget(child, ancestors), 0);
+  ancestors.delete(value);
+  return budget;
+};
+
 export const finalizeAssistantTurnReferences = async <Protocol extends keyof AssistantTurnByProtocol>(
   turn: AssistantTurnFor<Protocol>,
   fieldState: AssistantTurnStateFor<Protocol, FieldStates>,
@@ -261,7 +276,7 @@ export const finalizeAssistantTurnReferences = async <Protocol extends keyof Ass
         if (typeof value !== 'string') throw new TypeError('Text field state does not match its assistant turn');
         original = value;
       } else original = requireJSONObject(value);
-      const literalBudget = typeof original === 'string' ? original.length : JSON.stringify(original).length;
+      const literalBudget = typeof original === 'string' ? original.length : jsonLiteralBudget(original);
       if (literalBudget <= minimumReferenceBudget) return;
       const reference = await finalizer.finalizeField(original, state);
       if (reference instanceof ThinReference) {
