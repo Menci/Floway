@@ -279,3 +279,13 @@ test('output-text annotations require an output-text owner', async () => {
     { type: 'response.output_text.annotation.added', output_index: 0, content_index: 0, annotation_index: 0, annotation: { type: 'file_citation', file_id: 'file_1', filename: 'file' } },
   ])).rejects.toThrow('requires an output-text part');
 });
+
+test('Responses content part type cannot change at an existing index', async () => {
+  const added = { type: 'message', id: 'msg', role: 'assistant', status: 'in_progress', content: [] };
+  await expect(read([
+    { type: 'response.created', response: response([]) },
+    { type: 'response.output_item.added', output_index: 0, item: added },
+    { type: 'response.content_part.added', output_index: 0, content_index: 0, part: { type: 'output_text', text: '', annotations: [] } },
+    { type: 'response.refusal.delta', output_index: 0, content_index: 0, delta: 'refused' },
+  ])).rejects.toThrow('content part type changed from output_text to refusal');
+});
