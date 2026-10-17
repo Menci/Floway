@@ -29,7 +29,15 @@ const message = (text: string, status: OutputMessage['status']): OutputMessage =
   content: text === '' ? [] : [{ type: 'output_text', text, annotations: [], logprobs: [] }],
 });
 
-const collectProvenance = async (events: readonly OpenAIResponsesStreamEventEx[], field: 'text' | 'arguments' | 'input' = 'text') => {
+const refusalMessage = (refusal: string, status: OutputMessage['status']): OutputMessage => ({
+  type: 'message',
+  id: 'msg',
+  role: 'assistant',
+  status,
+  content: refusal === '' ? [] : [{ type: 'refusal', refusal }],
+});
+
+const collectProvenance = async (events: readonly OpenAIResponsesStreamEventEx[], field: 'text' | 'refusal' | 'arguments' | 'input' = 'text') => {
   const capture = createRoundTripReaderCapture<'openaiResponses'>();
   const content = createContentState(capture.builder, 'text');
   const appends: { text: string; partIds?: readonly number[] }[] = [];
@@ -106,6 +114,46 @@ test('keeps a tiny complete snapshot-only atom literal and hydrates the native R
     finalized.assistantTurn,
     finalized.referencedContents,
   )).toEqual({ ok: true, turn: captured.turn });
+});
+
+test('invalidates streamed refusal provenance when its done snapshot supplies a suffix', async () => {
+  const added = refusalMessage('', 'in_progress');
+  const done = refusalMessage('refused', 'completed');
+  const captured = await collectProvenance([
+    { type: 'response.created', response: response([], 'in_progress') },
+    { type: 'response.output_item.added', output_index: 0, item: added },
+    { type: 'response.content_part.added', item_id: 'msg', output_index: 0, content_index: 0, part: { type: 'refusal', refusal: '' } },
+    { type: 'response.refusal.delta', item_id: 'msg', output_index: 0, content_index: 0, delta: 'refu' },
+    { type: 'response.refusal.done', item_id: 'msg', output_index: 0, content_index: 0, refusal: 'refused' },
+    { type: 'response.output_item.done', output_index: 0, item: done },
+    { type: 'response.completed', response: response([done], 'completed') },
+  ], 'refusal');
+
+  expect(captured.appends).toEqual([{ text: 'refu', partIds: [0] }, { text: 'sed' }]);
+  const itemState = captured.fieldState[0];
+  if (itemState === undefined || !('content' in itemState) || !Array.isArray(itemState.content)) {
+    throw new Error('Responses message content state was not collected');
+  }
+  expect(itemState.content[0]).toEqual({});
+  const finalized = await finalizeAssistantTurnReferences<'openaiResponses'>(captured.turn, captured.fieldState, captured.builder, collectContentViews('refused', captured.content));
+  expect(finalized).not.toHaveProperty('referencedContents');
+  expect(await hydrateAssistantTurn('openaiResponses', ['refused'], finalized.assistantTurn, finalized.referencedContents)).toEqual({ ok: true, turn: captured.turn });
+});
+
+test('collects a snapshot-only refusal through its refusal field state', async () => {
+  const added = refusalMessage('', 'in_progress');
+  const done = refusalMessage('refused', 'completed');
+  const captured = await collectProvenance([
+    { type: 'response.created', response: response([], 'in_progress') },
+    { type: 'response.output_item.added', output_index: 0, item: added },
+    { type: 'response.output_item.done', output_index: 0, item: done },
+    { type: 'response.completed', response: response([done], 'completed') },
+  ], 'refusal');
+
+  expect(captured.appends).toEqual([{ text: 'refused', partIds: [0] }]);
+  const finalized = await finalizeAssistantTurnReferences<'openaiResponses'>(captured.turn, captured.fieldState, captured.builder, collectContentViews('refused', captured.content));
+  expect(finalized).not.toHaveProperty('referencedContents');
+  expect(await hydrateAssistantTurn('openaiResponses', ['refused'], finalized.assistantTurn, finalized.referencedContents)).toEqual({ ok: true, turn: captured.turn });
 });
 
 type ToolItem = Extract<OpenAIResponsesOutputItemEx, { type: 'function_call' | 'custom_tool_call' }>;
