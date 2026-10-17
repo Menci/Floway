@@ -1,4 +1,4 @@
-import { beforeEach, test, vi } from 'vitest';
+import { beforeEach, expectTypeOf, test, vi } from 'vitest';
 
 import { withOpenAIResponsesServerToolShim } from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tool-shim.ts';
 import {
@@ -10,6 +10,7 @@ import {
   sumUsage,
   type InterceptedFunctionCall,
   type ServerToolResultSlot,
+  type ServerToolHistoryExpansion,
   type ServerToolRegistration,
   type TurnSummary,
   type UpstreamTerminal,
@@ -357,16 +358,11 @@ test.each(['web_search_call', 'image_generation_call'] as const)('shim restores 
   assert(expanded);
 });
 
-test('shim exposes missing fallback call data before requesting an upstream', async () => {
-  const registration: ServerToolRegistration = () => ({
-    type: 'active', baseToolName: 'hosted',
-    expandHistoryItem: item => item.type === 'web_search_call' ? { replayMatches: false, output: 'result' } : undefined,
-  });
-  const inv = makeInvocation({ payload: { input: [{ type: 'web_search_call', id: 'foreign' }] } });
-  await assertRejects(
-    () => runShimAndDrain(withOpenAIResponsesServerToolShim([registration]), inv, makeGatewayCtx(), async () => { throw new Error('Must fail before upstream'); }),
-    TypeError, 'Hosted-tool history expansion requires fallback call data without a replay',
-  );
+test('history expansion requires fallback data exactly when replay does not match', () => {
+  expectTypeOf<{ replayMatches: false; output: string }>().not.toExtend<ServerToolHistoryExpansion>();
+  expectTypeOf<{ replayMatches: true; fallbackCall: { callId: string; arguments: string }; output: string }>().not.toExtend<ServerToolHistoryExpansion>();
+  expectTypeOf<{ replayMatches: true; output: string }>().toExtend<ServerToolHistoryExpansion>();
+  expectTypeOf<{ replayMatches: false; fallbackCall: { callId: string; arguments: string }; output: string }>().toExtend<ServerToolHistoryExpansion>();
 });
 
 test('history expansion receives individual items and keeps generated feedback behind parallel calls', async () => {
@@ -5467,7 +5463,8 @@ test('consumeTurn forwards a namespaced client call sharing the hosted shim name
   ), createMergeState(), true);
 
   assertEquals(result.records, []);
-  assertEquals(result.summary.dispatched, []);
+  assertEquals(result.summary.dispatchedSlots, []);
+  assertFalse(result.summary.sawServerToolCall);
   assertEquals(result.summary.sawClientToolCall, true);
   assertEquals(outputItemDoneEvents(result.downstreamFrames).map(event => event.item), [call]);
 });
@@ -5491,7 +5488,8 @@ test('consumeTurn uses the completed call namespace before executing a hosted to
   ), createMergeState(), true);
 
   assertEquals(result.records, []);
-  assertEquals(result.summary.dispatched, []);
+  assertEquals(result.summary.dispatchedSlots, []);
+  assertFalse(result.summary.sawServerToolCall);
   assertEquals(result.summary.sawClientToolCall, true);
   assertEquals(outputItemDoneEvents(result.downstreamFrames).map(event => event.item), [completed]);
   assertEquals(eventTypesOf(result.downstreamFrames).filter(type => type.startsWith('response.function_call_arguments.')), [
@@ -5739,7 +5737,8 @@ test('consumeTurn intercepts the shim tool and does NOT forward its 4 events', a
     functionCall: { type: 'function_call', call_id: 'cc_1', name: SHIM_TOOL_NAME, arguments: '{"search_query":[{"q":"hello"}]}', status: 'completed' },
     parsedArguments: { search_query: [{ q: 'hello' }] },
   });
-  assertEquals(result.summary.dispatched.length, 1);
+  assertEquals(result.summary.dispatchedSlots, []);
+  assert(result.summary.sawServerToolCall);
   const downstreamTypes = eventTypesOf(result.downstreamFrames);
   for (const t of [
     'response.output_item.added',
@@ -5771,12 +5770,46 @@ test('consumeTurn intercepts two shim calls within one turn', async () => {
   assertEquals(result.records[1].intercepted.parsedArguments, { find: [{ ref_id: 'https://x', pattern: 'p' }] });
 });
 
+test('consumeTurn preserves call and slot order in a flat dispatch list', async () => {
+  const dispatcher = ({ intercepted }: { intercepted: InterceptedFunctionCall }): ServerToolResultSlot[] =>
+    [0, 1].map(index => ({
+      id: `${intercepted.functionCall.call_id}_${index}`,
+      startItem: { type: 'web_search_call', status: 'in_progress' },
+      startEvents: [],
+      async *run() {
+        return { item: { type: 'web_search_call', status: 'completed' }, endEvents: [] };
+      },
+    }));
+  const result = await drain(consumeTurnStreaming(
+    framesOf(
+      mkResponseCreated(),
+      mkFunctionCallAdded(0, 'call_a', SHIM_TOOL_NAME),
+      mkFunctionCallAdded(1, 'call_b', SHIM_TOOL_NAME),
+      mkFunctionCallDone(1, 'call_b', SHIM_TOOL_NAME, '{ "q": "b" }'),
+      mkFunctionCallDone(0, 'call_a', SHIM_TOOL_NAME, '{ "q": "a" }'),
+      mkResponseCompleted(),
+    ),
+    createMergeState(), true, new Map([[SHIM_TOOL_NAME, dispatcher]]), loopState(), [],
+  ), []);
+
+  assert(result.summary.sawServerToolCall);
+  assertEquals(result.summary.dispatchedSlots.map(({ intercepted, slot, replayIndex, outputIndex }) => ({
+    callId: intercepted.functionCall.call_id, arguments: intercepted.functionCall.arguments,
+    slotId: slot.id, replayIndex, outputIndex,
+  })), [
+    { callId: 'call_a', arguments: '{ "q": "a" }', slotId: 'call_a_0', replayIndex: 0, outputIndex: 1 },
+    { callId: 'call_a', arguments: '{ "q": "a" }', slotId: 'call_a_1', replayIndex: 2, outputIndex: 3 },
+    { callId: 'call_b', arguments: '{ "q": "b" }', slotId: 'call_b_0', replayIndex: 4, outputIndex: 5 },
+    { callId: 'call_b', arguments: '{ "q": "b" }', slotId: 'call_b_1', replayIndex: 6, outputIndex: 7 },
+  ]);
+});
+
 test('consumeTurn synthesizes response.failed when upstream terminates without closing a shim call', async () => {
   // A shim call reservation that never receives `output_item.done` is
   // an upstream protocol violation: the model intended a tool call,
   // the gateway accepted the reservation, but the close frame never
   // arrived. Without explicit detection here the reservation is
-  // silently swallowed — the loop sees an empty `dispatched`, treats
+  // silently swallowed — the loop sees no dispatched server-tool call, treats
   // the turn as "no tool call this turn", and emits success on a turn
   // that actually had unfinished tool intent. Promote to a synthesized
   // `response.failed` so the gateway surfaces the violation.
@@ -5800,7 +5833,8 @@ test('consumeTurn synthesizes response.failed when upstream terminates without c
     ),
     records,
   );
-  assertEquals(result.summary.dispatched.length, 0);
+  assertEquals(result.summary.dispatchedSlots, []);
+  assertFalse(result.summary.sawServerToolCall);
   assertEquals(result.summary.terminalStatus.kind, 'failed');
   const ts = result.summary.terminalStatus as Extract<UpstreamTerminal, { kind: 'failed' }>;
   assert(ts.response.error!.message.includes('without closing shim call items'));

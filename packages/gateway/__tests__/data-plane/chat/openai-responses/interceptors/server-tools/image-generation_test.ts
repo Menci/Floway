@@ -409,6 +409,7 @@ test('expandImageGenerationCall provides fallback arguments, result and image fe
   const out = expandImageGenerationCall(
     { type: 'image_generation_call', id: 'ig_1', status: 'completed', result: PNG_B64, revised_prompt: 'a red dot', output_format: 'jpeg' },
   );
+  assertFalse(out.replayMatches);
   assertEquals(out.fallbackCall, { callId: 'cc_from_ig_1', arguments: '{"prompt":"a red dot"}' });
   assert(typeof out.output === 'string');
   assertStringIncludes(out.output, '"ok":true');
@@ -453,7 +454,9 @@ test.each([false, true])('image replay records input fields independently of suc
     output_format: failed ? undefined : echo.output_format, background: failed ? undefined : echo.background,
   });
   const item = { ...terminal.item, id: 'ig_echo' } as OpenAIResponsesInputImageGenerationCall;
-  assertEquals(expandImageGenerationCall(item, { data: terminal.replayData }).replayMatches, true);
+  const matched = expandImageGenerationCall(item, { data: terminal.replayData });
+  assert(matched.replayMatches);
+  assertFalse(Object.hasOwn(matched, 'fallbackCall'));
   assertEquals(expandImageGenerationCall({ ...item, result: 'b3RoZXI=' }, { data: terminal.replayData }).replayMatches, true);
   assertEquals(expandImageGenerationCall({ ...item, revised_prompt: 'different' }, { data: terminal.replayData }).replayMatches, false);
 });

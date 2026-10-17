@@ -66,12 +66,13 @@ interface ServerToolReplayData {
   data?: unknown;
 }
 
-export interface ServerToolHistoryExpansion {
-  replayMatches: boolean;
-  fallbackCall?: { callId: string; arguments: string };
+export type ServerToolHistoryExpansion = (
+  | { replayMatches: true; fallbackCall?: never }
+  | { replayMatches: false; fallbackCall: { callId: string; arguments: string } }
+) & {
   output: OpenAIResponsesFunctionCallOutputItem['output'];
   feedback?: Array<Extract<CanonicalOpenAIResponsesInputItem, { type: 'message' }> & { role: 'user' }>;
-}
+};
 
 export interface ServerToolResultSlot {
   id: string;
@@ -158,7 +159,8 @@ export type UpstreamTerminal =
   | { kind: 'bare-error-pre-shell'; error: OpenAIResponsesErrorEx };
 
 export interface TurnSummary {
-  dispatched: Array<{ intercepted: InterceptedFunctionCall; slots: DispatchedServerToolSlot[] }>;
+  dispatchedSlots: DispatchedServerToolSlot[];
+  sawServerToolCall: boolean;
   sawClientToolCall: boolean;
   turnUsage: MergeUsage;
   terminalStatus: UpstreamTerminal;
@@ -610,10 +612,11 @@ const expandServerToolHistory = async (
       if (ownedExpansion !== undefined) {
         const { toolName, expansion } = ownedExpansion;
         replayIndex++;
-        if (expansion.replayMatches && replay === undefined) throw new TypeError('Hosted-tool history expansion matched an absent replay');
-        let functionCall = expansion.replayMatches ? replay!.functionCall : undefined;
-        if (functionCall === undefined) {
-          if (expansion.fallbackCall === undefined) throw new TypeError('Hosted-tool history expansion requires fallback call data without a replay');
+        let functionCall: OpenAIResponsesOutputFunctionCallEx;
+        if (expansion.replayMatches) {
+          if (replay === undefined) throw new TypeError('Hosted-tool history expansion matched an absent replay');
+          functionCall = replay.functionCall;
+        } else {
           functionCall = {
             type: 'function_call', call_id: expansion.fallbackCall.callId, name: toolName,
             arguments: expansion.fallbackCall.arguments, status: 'completed',
@@ -678,7 +681,8 @@ export const consumeTurnStreaming = async function* (
   loopState: ServerToolLoopState,
   active: readonly ActiveServerTool[],
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>, TurnSummary> {
-  const dispatched: Array<{ intercepted: InterceptedFunctionCall; slots: DispatchedServerToolSlot[] }> = [];
+  const dispatchedSlots: DispatchedServerToolSlot[] = [];
+  let sawServerToolCall = false;
   let sawClientToolCall = false;
   let turnUsage: MergeUsage = {};
   let terminalStatus: UpstreamTerminal | undefined = undefined;
@@ -835,9 +839,9 @@ export const consumeTurnStreaming = async function* (
         }
         const call: InterceptedFunctionCall = { functionCall: event.item, parsedArguments: parseServerToolArguments(event.item.arguments) };
         const slots = finalDispatcher({ intercepted: call, loopState });
+        sawServerToolCall = true;
         interceptedByUpstreamIndex.delete(upstreamIndex);
         if (loopState.remainingToolCalls !== undefined) loopState.remainingToolCalls -= 1;
-        const dispatchedSlots: DispatchedServerToolSlot[] = [];
         for (const [slotIndex, slot] of slots.entries()) {
           const replayIndex = slotIndex === 0 ? intercepted.reservedOutputIndex : merge.outputIndex++;
           const outputIndex = merge.outputIndex++;
@@ -846,7 +850,6 @@ export const consumeTurnStreaming = async function* (
           yield stamp({ type: 'response.output_item.added', output_index: replayIndex, item: { type: 'reasoning', id: replayId, summary: [] } });
           yield* serverToolStartFrames(merge, outputIndex, slot);
         }
-        dispatched.push({ intercepted: call, slots: dispatchedSlots });
         continue;
       }
 
@@ -956,7 +959,7 @@ export const consumeTurnStreaming = async function* (
     };
   }
 
-  return { dispatched, sawClientToolCall, turnUsage, terminalStatus };
+  return { dispatchedSlots, sawServerToolCall, sawClientToolCall, turnUsage, terminalStatus };
 };
 
 const MAX_BODY_EXCERPT_CHARS = 512;
@@ -1067,30 +1070,28 @@ const synthesizeTerminalEnvelope = (
 };
 
 async function* materializeServerToolItems(
-  dispatched: ReadonlyArray<{ slots: DispatchedServerToolSlot[] }>,
+  dispatchedSlots: readonly DispatchedServerToolSlot[],
   merge: MergeState,
   codec: SidecarCodec,
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>, void> {
-  for (const d of dispatched) {
-    for (const { intercepted, slot, outputIndex, replayIndex, replayId } of d.slots) {
-      const lifecycle = slot.run();
-      let step = await lifecycle.next();
-      while (!step.done) {
-        yield stampServerToolEvent(merge, outputIndex, slot.id, step.value);
-        step = await lifecycle.next();
-      }
-      const replayItem: OpenAIResponsesOutputItemEx = {
-        type: 'reasoning', id: replayId, summary: [],
-        encrypted_content: await codec.encode({
-          type: step.value.item.type,
-          functionCall: intercepted.functionCall,
-          ...(step.value.replayData === undefined ? {} : { data: step.value.replayData }),
-        }),
-      };
-      merge.accumulatedOutput.set(replayIndex, replayItem);
-      yield eventFrame({ type: 'response.output_item.done', output_index: replayIndex, item: replayItem, sequence_number: merge.sequenceNumber++ });
-      yield* serverToolEndFrames(merge, outputIndex, slot, step.value);
+  for (const { intercepted, slot, outputIndex, replayIndex, replayId } of dispatchedSlots) {
+    const lifecycle = slot.run();
+    let step = await lifecycle.next();
+    while (!step.done) {
+      yield stampServerToolEvent(merge, outputIndex, slot.id, step.value);
+      step = await lifecycle.next();
     }
+    const replayItem: OpenAIResponsesOutputItemEx = {
+      type: 'reasoning', id: replayId, summary: [],
+      encrypted_content: await codec.encode({
+        type: step.value.item.type,
+        functionCall: intercepted.functionCall,
+        ...(step.value.replayData === undefined ? {} : { data: step.value.replayData }),
+      }),
+    };
+    merge.accumulatedOutput.set(replayIndex, replayItem);
+    yield eventFrame({ type: 'response.output_item.done', output_index: replayIndex, item: replayItem, sequence_number: merge.sequenceNumber++ });
+    yield* serverToolEndFrames(merge, outputIndex, slot, step.value);
   }
 }
 
@@ -1139,15 +1140,14 @@ async function* runMultiTurnLoop(args: {
     merge.accumulatedUsage = sumUsage(merge.accumulatedUsage, currentTurn.turnUsage);
     while (true) {
       const turn = currentTurn;
-      const executedShim = turn.dispatched.length > 0;
 
       if (turn.terminalStatus.kind === 'failed') {
-        if (executedShim) yield* materializeServerToolItems(turn.dispatched, merge, replayCodec);
+        if (turn.sawServerToolCall) yield* materializeServerToolItems(turn.dispatchedSlots, merge, replayCodec);
         yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: turn.terminalStatus.response.error }, active);
         return;
       }
       if (turn.terminalStatus.kind === 'incomplete') {
-        if (executedShim) yield* materializeServerToolItems(turn.dispatched, merge, replayCodec);
+        if (turn.sawServerToolCall) yield* materializeServerToolItems(turn.dispatchedSlots, merge, replayCodec);
         yield synthesizeTerminalEnvelope(merge, { kind: 'incomplete', incompleteDetails: turn.terminalStatus.response.incomplete_details }, active);
         return;
       }
@@ -1158,12 +1158,12 @@ async function* runMultiTurnLoop(args: {
         }, active);
         return;
       }
-      if (!executedShim && !turn.sawClientToolCall) {
+      if (!turn.sawServerToolCall && !turn.sawClientToolCall) {
         yield synthesizeTerminalEnvelope(merge, { kind: 'completed' }, active);
         return;
       }
 
-      yield* materializeServerToolItems(turn.dispatched, merge, replayCodec);
+      yield* materializeServerToolItems(turn.dispatchedSlots, merge, replayCodec);
       if (turn.sawClientToolCall) {
         yield synthesizeTerminalEnvelope(merge, { kind: 'completed' }, active);
         return;

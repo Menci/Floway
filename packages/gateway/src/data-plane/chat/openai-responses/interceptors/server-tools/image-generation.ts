@@ -1365,7 +1365,15 @@ export const expandImageGenerationCall = (
       ],
     });
   }
-  return { replayMatches: replay !== undefined && isEqual(replay.data, imageReplayInputs(item)), fallbackCall: { callId: `cc_from_${id}`, arguments: JSON.stringify({ prompt: item.revised_prompt ?? '' }) }, output, feedback };
+  if (replay !== undefined && isEqual(replay.data, imageReplayInputs(item))) {
+    return { replayMatches: true, output, feedback };
+  }
+  return {
+    replayMatches: false,
+    fallbackCall: { callId: `cc_from_${id}`, arguments: JSON.stringify({ prompt: item.revised_prompt ?? '' }) },
+    output,
+    feedback,
+  };
 };
 
 export const imageGenerationServerTool: ServerToolRegistration = async (invocation, gatewayCtx) => {
