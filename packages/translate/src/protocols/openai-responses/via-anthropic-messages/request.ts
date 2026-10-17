@@ -1,11 +1,10 @@
 import { klona } from 'klona/json';
 
 import { openaiResponsesReasoningToAnthropicMessagesUpstreamBlock } from './reasoning.ts';
-import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { parseJSONObject } from '../../../shared/json/object.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
-import type { RemoteImageLoader } from '../../../types.ts';
+import type { TranslateSidecarCodec, RemoteImageLoader } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-messages/as-target/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
@@ -14,7 +13,7 @@ import { restrictAllowedTools } from '../as-source/allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
-import { inspectOpenAIResponsesAssistantTurn, isOpenAIResponsesEncryptedReasoning, verifyOpenAIResponsesReplayCheck } from '../as-source/round-trip.ts';
+import { collectOpenAIResponsesReplayCandidates, inspectOpenAIResponsesAssistantTurn, isOpenAIResponsesEncryptedReasoning, verifyOpenAIResponsesReplayCheck } from '../as-source/round-trip.ts';
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import { buildCustomToolInputSchema } from '../common/custom-tool-wrap.ts';
 import {
@@ -286,7 +285,7 @@ const translateToolChoice = (
 
 export const buildTargetRequest = async (
   source: OpenAIResponsesRequestPayloadEx,
-  codec: AssistantTurnSidecarCodec,
+  codec: TranslateSidecarCodec,
   options: BuildTargetRequestOptions,
 ): Promise<TargetRequestResult> => {
   const canonical = canonicalizeOpenAIResponsesPayload(source);
@@ -435,7 +434,7 @@ export const buildTargetRequest = async (
 
   for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
     if (turn.role !== 'assistant') { target.messages.push(...await translateNonAssistantInput(turn.items, options.loadRemoteImage)); continue; }
-    const roundTrip = await roundTripAssistantTurn('openaiResponses', 'anthropicMessages', turn.items, codec, inspectOpenAIResponsesAssistantTurn, verifyOpenAIResponsesReplayCheck);
+    const roundTrip = await roundTripAssistantTurn('openaiResponses', 'anthropicMessages', turn.items, codec, inspectOpenAIResponsesAssistantTurn, verifyOpenAIResponsesReplayCheck, collectOpenAIResponsesReplayCandidates);
     target.messages.push(...(roundTrip ? [roundTrip.turn] : translateAssistantTurn(turn.items)));
   }
   applyLastMessageCacheBreakpoint(target.messages.filter(message => bareMessages.has(message)));

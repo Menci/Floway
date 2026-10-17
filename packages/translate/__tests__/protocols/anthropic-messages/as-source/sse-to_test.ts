@@ -35,7 +35,7 @@ test.each(['text', 'refusal', 'audio'] as const)('resolves blocked %s against th
       const views = collectContentViews(turn, state, textViews);
       expect([...views.values()]).toContainEqual({ text: 'Hi', offset: 0 });
       const finalizer = createReferenceFinalizer(references, views);
-      expect(await finalizer.finalizeField('Hi', field)).toMatchObject({ value: [0] });
+      expect(await finalizer.finalizeField('Hi', field)).toMatchObject({ parts: [0] });
       expect(finalizer.referencedContents).toEqual([await hashRoundTripContent('Hi')]);
       prepared = true;
       return 'sidecar';
@@ -84,8 +84,8 @@ test('resolves blocked reasoning in emitted summary/content order before live ap
   const [, , turn, state] = prepared;
   expect(turn.content).toContainEqual(expect.objectContaining({ type: 'thinking', thinking: 'ABXC' }));
   const finalizer = createReferenceFinalizer(references, collectContentViews(turn, state));
-  expect(await finalizer.finalizeField('ABC', summary)).toMatchObject({ value: [[0, 0, 2], [0, 3, 4]] });
-  expect(await finalizer.finalizeField('X', content)).toMatchObject({ value: [[0, 2, 3]] });
+  expect(await finalizer.finalizeField('ABC', summary)).toMatchObject({ parts: [[0, 0, 2], [0, 3, 4]] });
+  expect(await finalizer.finalizeField('X', content)).toMatchObject({ parts: [[0, 2, 3]] });
   expect(finalizer.referencedContents).toEqual([await hashRoundTripContent('ABXC')]);
 });
 

@@ -1,6 +1,4 @@
-import { Tag } from 'cbor-x';
-
-import { THIN_TAGS, type ReplayCandidate, type ReferencePart, type ThinAssistantTurnFor, type ThinReference } from './assistant-turn.ts';
+import { ThinReference, type ReplayCandidate, type ReferencePart, type ThinAssistantTurnFor } from './assistant-turn.ts';
 import { parseJSONObject } from '../../shared/json/object.ts';
 import { rawJSON } from '../../shared/json/raw-json.ts';
 import type { AssistantTurnByProtocol, AssistantTurnFor } from '../assistant-turn.ts';
@@ -27,17 +25,13 @@ const referencedText = (payload: readonly ReferencePart[], referencedContents: r
   return text.join('');
 };
 
-const isThinReference = (value: unknown): value is ThinReference =>
-  value instanceof Tag && (value.tag === THIN_TAGS.text || value.tag === THIN_TAGS.json);
-
 const hydrateValue = (value: unknown, referencedContents: readonly Uint8Array[] | undefined, textsByHash: ReadonlyMap<string, string>): HydrationValue => {
   if (rawJSON.isRawJSON(value) || value instanceof Uint8Array) return { ok: true, value };
-  if (isThinReference(value)) {
-    const text = referencedText(value.value, referencedContents, textsByHash);
+  if (value instanceof ThinReference) {
+    const text = referencedText(value.parts, referencedContents, textsByHash);
     if (text === undefined) return { ok: false, reason: 'missing-reference' };
-    return { ok: true, value: value.tag === THIN_TAGS.text ? text : parseJSONObject(text) };
+    return { ok: true, value: value.restoration === 'text' ? text : parseJSONObject(text) };
   }
-  if (value instanceof Tag) return { ok: true, value };
   if (Array.isArray(value)) {
     const result: unknown[] = [];
     for (const child of value) {

@@ -1,6 +1,7 @@
 import type { IRJSONObject } from '../../../ir/types.ts';
-import { computeRoundTripReplayCheck, verifyRoundTripReplayCheck, type RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
-import type { RoundTripAssistantTurnInspection } from '../../../round-trip/replay.ts';
+import { computeRoundTripReplayCheck, verifyRoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
+import type { RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
+import type { RoundTripSidecarCandidate } from '../../../round-trip/replay.ts';
 import { canonicalTextParts, collectCanonicalTextViews, isPureTextPart, type CanonicalTextView, type PureTextPart } from '../../../round-trip/text-parts.ts';
 import type { ReplayCandidate } from '../../../round-trip/thin/assistant-turn.ts';
 import { isPlainJSONObject, requireJSONObject } from '../../../shared/json/object.ts';
@@ -39,37 +40,33 @@ const geminiReplayCheckMaterialV1 = (turn: GeminiGenerateContentAssistantTurn): 
   return { text, inlineData, functionCall };
 };
 
-const collectPartCandidates = (candidates: ReplayCandidate[], part: GeminiGenerateContentPart): void => {
-  if (part.thought !== true && typeof part.text === 'string') candidates.push(part.text);
-  if (part.inlineData !== undefined) candidates.push(part.inlineData.data);
-  if (part.audioTranscription !== undefined) candidates.push(part.audioTranscription.text);
-  const args = part.functionCall?.args;
-  if (isPlainJSONObject(args)) candidates.push(args);
-};
-
-export const inspectGeminiGenerateContentAssistantTurn = (turn: GeminiGenerateContentAssistantTurn): RoundTripAssistantTurnInspection<GeminiGenerateContentAssistantTurn> => {
-  const sidecars: string[] = [];
-  const candidates: ReplayCandidate[] = [];
-  const assistantTurn = turn.flatMap(content => {
-    if (content.parts === undefined) return [content];
-    const parts = content.parts.flatMap(part => {
-      if (typeof part.thoughtSignature !== 'string') return [part];
-      const { thoughtSignature, ...body } = part;
-      sidecars.push(thoughtSignature);
-      return Object.keys(body).length === 0 ? [] : [body];
-    });
-    return parts.length === 0 && content.parts.length > 0 ? [] : [{ ...content, parts }];
+export const inspectGeminiGenerateContentAssistantTurn = (turn: GeminiGenerateContentAssistantTurn): RoundTripSidecarCandidate<GeminiGenerateContentAssistantTurn>[] =>
+  turn.flatMap((content, contentIndex) => {
+    const nativeParts = content.parts;
+    return nativeParts?.flatMap((part, partIndex) => typeof part.thoughtSignature !== 'string' ? [] : [{
+      data: part.thoughtSignature,
+      withoutSidecar: () => {
+        const { thoughtSignature: _signature, ...body } = part;
+        const parts = nativeParts.flatMap((item, index) => index !== partIndex ? [item] : Object.keys(body).length === 0 ? [] : [body]);
+        return turn.flatMap((item, index) => index !== contentIndex ? [item] : parts.length === 0 ? [] : [{ ...content, parts }]);
+      },
+    }]) ?? [];
   });
-  for (const content of assistantTurn) for (const part of canonicalTextParts(content.parts ?? [], isGeminiGenerateContentPureTextPart)) collectPartCandidates(candidates, part);
-  return {
-    sidecars,
-    turn: assistantTurn,
-    candidates,
-  };
-};
 
 export const computeGeminiGenerateContentReplayCheck = (turn: GeminiGenerateContentAssistantTurn): Promise<RoundTripReplayCheck> =>
   computeRoundTripReplayCheck(GEMINI_GENERATE_CONTENT_REPLAY_CHECK_VERSION, geminiReplayCheckMaterialV1(turn));
+
+export const collectGeminiGenerateContentReplayCandidates = (turn: GeminiGenerateContentAssistantTurn): ReplayCandidate[] => {
+  const candidates: ReplayCandidate[] = [];
+  for (const content of turn) for (const part of canonicalTextParts(content.parts ?? [], isGeminiGenerateContentPureTextPart)) {
+    if (part.thought !== true && typeof part.text === 'string') candidates.push(part.text);
+    if (part.inlineData !== undefined) candidates.push(part.inlineData.data);
+    if (part.audioTranscription !== undefined) candidates.push(part.audioTranscription.text);
+    const args = part.functionCall?.args;
+    if (isPlainJSONObject(args)) candidates.push(args);
+  }
+  return candidates;
+};
 
 export const verifyGeminiGenerateContentReplayCheck = (
   turn: GeminiGenerateContentAssistantTurn,

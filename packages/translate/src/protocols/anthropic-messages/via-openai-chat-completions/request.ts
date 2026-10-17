@@ -1,11 +1,11 @@
 import { klona } from 'klona/json';
 
-import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
+import type { TranslateSidecarCodec } from '../../../types.ts';
 import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
-import { inspectAnthropicMessagesAssistantTurn, verifyAnthropicMessagesReplayCheck } from '../as-source/round-trip.ts';
+import { collectAnthropicMessagesReplayCandidates, inspectAnthropicMessagesAssistantTurn, verifyAnthropicMessagesReplayCheck } from '../as-source/round-trip.ts';
 import type {
   AnthropicMessagesAssistantContentBlock,
   AnthropicMessagesAssistantMessage,
@@ -110,7 +110,7 @@ const flushPendingAssistantMessage = (messages: OpenAIChatCompletionsMessage[], 
   pending.reasoningText.length = 0;
 };
 
-const translateAnthropicMessagesUser = (message: AnthropicMessagesUserMessage, messageIdx: number): OpenAIChatCompletionsMessage[] => {
+const translateAnthropicMessagesUser = (message: AnthropicMessagesUserMessage, messageIdx: number, legacyFunctionNames: Map<string, string>): OpenAIChatCompletionsMessage[] => {
   if (!Array.isArray(message.content)) {
     return [
       {
@@ -138,11 +138,12 @@ const translateAnthropicMessagesUser = (message: AnthropicMessagesUserMessage, m
       // Preserving source chronology matters more than keeping one OpenAI Chat Completions message,
       // so interleaved user content and tool results become alternating messages.
       flushPendingUserBlocks();
-      messages.push({
-        role: 'tool',
-        tool_call_id: block.tool_use_id,
-        content: flattenToolResultContent(block.content),
-      });
+      const content = flattenToolResultContent(block.content);
+      const legacyName = legacyFunctionNames.get(block.tool_use_id);
+      legacyFunctionNames.delete(block.tool_use_id);
+      messages.push(legacyName === undefined
+        ? { role: 'tool', tool_call_id: block.tool_use_id, content }
+        : { role: 'function', name: legacyName, content });
       continue;
     }
 
@@ -262,9 +263,10 @@ const translateAnthropicMessagesToolChoice = (toolChoice?: AnthropicMessagesPayl
 
 export const buildTargetRequest = async (
   payload: AnthropicMessagesPayload,
-  codec: AssistantTurnSidecarCodec,
+  codec: TranslateSidecarCodec,
 ): Promise<OpenAIChatCompletionsPayload> => {
   const clientTools = filterAnthropicMessagesClientTools(payload.tools);
+  const legacyFunctionNames = new Map<string, string>();
   // Pass effort through verbatim; per-upstream enum acceptance (e.g. some
   // backends rejecting `xhigh`/`max`) is the target interceptor's concern.
   const reasoningEffort = resolveReasoningEffort(payload);
@@ -288,11 +290,17 @@ export const buildTargetRequest = async (
   let messageIndex = 0;
   for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
     if (turn.role === 'assistant') {
-      const roundTrip = await roundTripAssistantTurn('anthropicMessages', 'openaiChatCompletions', turn.items, codec, inspectAnthropicMessagesAssistantTurn, verifyAnthropicMessagesReplayCheck);
+      const roundTrip = await roundTripAssistantTurn('anthropicMessages', 'openaiChatCompletions', turn.items, codec, inspectAnthropicMessagesAssistantTurn, verifyAnthropicMessagesReplayCheck, collectAnthropicMessagesReplayCandidates);
+      if (roundTrip?.turn.function_call != null) {
+        const modernIds = new Set(roundTrip.turn.tool_calls?.map(call => call.id));
+        for (const message of turn.items) if (Array.isArray(message.content)) for (const block of message.content) {
+          if ((block.type === 'tool_use' || block.type === 'server_tool_use') && !modernIds.has(block.id)) legacyFunctionNames.set(block.id, roundTrip.turn.function_call.name);
+        }
+      }
       messages.push(...(roundTrip ? [roundTrip.turn] : turn.items.flatMap((message, index) => translateAnthropicMessagesAssistant(message, messageIndex + index))));
     } else for (const [index, message] of turn.items.entries()) {
       switch (message.role) {
-      case 'user': messages.push(...translateAnthropicMessagesUser(message, messageIndex + index)); break;
+      case 'user': messages.push(...translateAnthropicMessagesUser(message, messageIndex + index, legacyFunctionNames)); break;
       case 'system': messages.push(...translateAnthropicMessagesSystem(message)); break;
       default: throw new TranslatorInputError(`messages.${messageIndex + index}.role: role '${(message as { role: string }).role}' is not supported on this model`);
       }

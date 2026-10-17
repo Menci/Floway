@@ -1,6 +1,7 @@
 import type { IRJSONObject, IRJSONValue } from '../../../ir/types.ts';
-import { computeRoundTripReplayCheck, verifyRoundTripReplayCheck, type RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
-import type { RoundTripAssistantTurnInspection } from '../../../round-trip/replay.ts';
+import { computeRoundTripReplayCheck, verifyRoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
+import type { RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
+import type { RoundTripSidecarCandidate } from '../../../round-trip/replay.ts';
 import { canonicalTextParts, collectCanonicalTextViews, isPureTextPart, type CanonicalTextView, type PureTextPart } from '../../../round-trip/text-parts.ts';
 import type { ReplayCandidate } from '../../../round-trip/thin/assistant-turn.ts';
 import type { OpenAIChatCompletionsAssistantExtensions, OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsAssistantOutputMessage, OpenAIChatCompletionsToolCallEx } from '@floway-dev/protocols/openai-chat-completions';
@@ -71,40 +72,33 @@ const chatReplayCheckMaterialV1 = (turn: OpenAIChatCompletionsAssistantTurn): IR
   reasoningDetails: reasoningDetailsMaterial(turn),
 });
 
-const readReasoningDetailsSummary = (turn: OpenAIChatCompletionsAssistantTurn): string[] => reasoningDetails(turn).flatMap(value => {
-  const item = isRecord(value) ? value : undefined;
-  return item?.type === 'reasoning.summary' && typeof item.summary === 'string' ? [item.summary] : [];
-});
-
-const collectString = (candidates: ReplayCandidate[], value: string | null | undefined): void => {
-  if (typeof value === 'string') candidates.push(value);
-};
-
-export const inspectOpenAIChatCompletionsAssistantTurn = (turn: OpenAIChatCompletionsAssistantTurn): RoundTripAssistantTurnInspection<OpenAIChatCompletionsAssistantTurn> => {
-  const sidecars: string[] = [];
-  const details = reasoningDetails(turn).filter(value => {
-    if (!isRecord(value) || value.type !== 'reasoning.encrypted' || typeof value.data !== 'string') return true;
-    sidecars.push(value.data);
-    return false;
-  });
-  const assistantTurn = Array.isArray(turn.reasoning_details) ? { ...turn, reasoning_details: details } : turn;
-  const candidates: ReplayCandidate[] = [];
-  if (typeof assistantTurn.content === 'string') collectString(candidates, assistantTurn.content);
-  else if (Array.isArray(assistantTurn.content)) for (const part of canonicalTextParts(assistantTurn.content, isOpenAIChatCompletionsPureTextPart)) collectString(candidates, part.type === 'text' ? part.text : part.refusal);
-  collectString(candidates, assistantTurn.refusal);
-  for (const field of reasoningFields) collectString(candidates, assistantTurn[field]);
-  candidates.push(...readReasoningDetailsSummary(assistantTurn));
-  if (assistantTurn.function_call !== undefined && assistantTurn.function_call !== null) collectString(candidates, assistantTurn.function_call.arguments);
-  for (const call of assistantTurn.tool_calls ?? []) collectString(candidates, call.type === 'function' ? call.function.arguments : call.custom.input);
-  return {
-    sidecars,
-    turn: assistantTurn,
-    candidates,
-  };
+export const inspectOpenAIChatCompletionsAssistantTurn = (turn: OpenAIChatCompletionsAssistantTurn): RoundTripSidecarCandidate<OpenAIChatCompletionsAssistantTurn>[] => {
+  const details = reasoningDetails(turn);
+  return details.flatMap((detail, detailIndex) => !isRecord(detail) || detail.type !== 'reasoning.encrypted' || typeof detail.data !== 'string' ? [] : [{
+    data: detail.data,
+    withoutSidecar: () => ({ ...turn, reasoning_details: details.filter((_, index) => index !== detailIndex) }),
+  }]);
 };
 
 export const computeOpenAIChatCompletionsReplayCheck = (turn: OpenAIChatCompletionsAssistantTurn): Promise<RoundTripReplayCheck> =>
   computeRoundTripReplayCheck(OPENAI_CHAT_COMPLETIONS_REPLAY_CHECK_VERSION, chatReplayCheckMaterialV1(turn));
+
+export const collectOpenAIChatCompletionsReplayCandidates = (turn: OpenAIChatCompletionsAssistantTurn): ReplayCandidate[] => {
+  const candidates: ReplayCandidate[] = [];
+  const collectString = (value: string | null | undefined): void => {
+    if (typeof value === 'string') candidates.push(value);
+  };
+  if (typeof turn.content === 'string') collectString(turn.content);
+  else if (Array.isArray(turn.content)) for (const part of canonicalTextParts(turn.content, isOpenAIChatCompletionsPureTextPart)) collectString(part.type === 'text' ? part.text : part.refusal);
+  collectString(turn.refusal);
+  for (const field of reasoningFields) collectString(turn[field]);
+  for (const value of reasoningDetails(turn)) {
+    if (isRecord(value) && value.type === 'reasoning.summary' && typeof value.summary === 'string') candidates.push(value.summary);
+  }
+  if (turn.function_call != null) collectString(turn.function_call.arguments);
+  for (const call of turn.tool_calls ?? []) collectString(call.type === 'function' ? call.function.arguments : call.custom.input);
+  return candidates;
+};
 
 export const verifyOpenAIChatCompletionsReplayCheck = (
   turn: OpenAIChatCompletionsAssistantTurn,

@@ -28,7 +28,7 @@ test('resolves delayed Gemini audio atoms within the complete emitted data field
       const views = collectContentViews(turn, state, textViews);
       expect([...views.values()]).toEqual([{ text: 'YQ==', offset: 0 }]);
       const finalizer = createReferenceFinalizer(references, views);
-      expect(await finalizer.finalizeField('Q==', field)).toMatchObject({ value: [[0, 1, 4]] });
+      expect(await finalizer.finalizeField('Q==', field)).toMatchObject({ parts: [[0, 1, 4]] });
       prepared = true;
       return 'sidecar';
     },

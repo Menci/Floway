@@ -1,13 +1,13 @@
 import { klona } from 'klona/json';
 
-import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
+import type { TranslateSidecarCodec } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
-import { hasGeminiGenerateContentThoughtSignature, inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck } from '../as-source/round-trip.ts';
+import { collectGeminiGenerateContentReplayCandidates, hasGeminiGenerateContentThoughtSignature, inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck } from '../as-source/round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../as-source/schema.ts';
 import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionDeclarations, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
 import {
@@ -188,7 +188,7 @@ const buildTools = (payload: GeminiGenerateContentPayload): AnthropicMessagesToo
 export const buildTargetRequest = async (
   payload: GeminiGenerateContentPayload,
   model: string,
-  codec: AssistantTurnSidecarCodec,
+  codec: TranslateSidecarCodec,
   options: { fallbackMaxOutputTokens: number | undefined },
 ): Promise<AnthropicMessagesPayload> => {
   // Gemini generateContent can omit maxOutputTokens, but AnthropicMessagesPayload requires max_tokens.
@@ -214,7 +214,7 @@ export const buildTargetRequest = async (
   const restoredMessages = new Set<AnthropicMessagesPayload['messages'][number]>();
   let contentIndex = 0;
   for (const turn of partitionGeminiGenerateContentTurns(payload.contents ?? [])) {
-    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('geminiGenerateContent', 'anthropicMessages', turn.items, codec, inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck);
+    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('geminiGenerateContent', 'anthropicMessages', turn.items, codec, inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck, collectGeminiGenerateContentReplayCandidates);
     if (!roundTrip) {
       if (turn.role === 'assistant') {
         for (const [index, content] of turn.items.entries()) {

@@ -86,6 +86,6 @@ test.each([false, true])('resolves delayed transcript provenance at actual proje
   const [, , turn, state] = prepared;
   const finalizer = createReferenceFinalizer(references, collectContentViews(turn, state));
   expect(turn.content).toBe(hasAudioData ? 'early ' : 'early late text');
-  expect(await finalizer.finalizeField('late text', transcript)).toEqual(hasAudioData ? 'late text' : expect.objectContaining({ value: [[0, 6, 15]] }));
+  expect(await finalizer.finalizeField('late text', transcript)).toEqual(hasAudioData ? 'late text' : expect.objectContaining({ parts: [[0, 6, 15]] }));
   if (hasAudioData) expect(turn.audio).toEqual({ id: 'audio' });
 });

@@ -1,15 +1,14 @@
 import { klona } from 'klona/json';
 
-import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
-import type { RemoteImageLoader } from '../../../types.ts';
+import type { TranslateSidecarCodec, RemoteImageLoader } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-messages/as-target/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
-import { hasOpenAIChatCompletionsReasoning, inspectOpenAIChatCompletionsAssistantTurn, verifyOpenAIChatCompletionsReplayCheck } from '../as-source/round-trip.ts';
+import { collectOpenAIChatCompletionsReplayCandidates, hasOpenAIChatCompletionsReasoning, inspectOpenAIChatCompletionsAssistantTurn, verifyOpenAIChatCompletionsReplayCheck } from '../as-source/round-trip.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesAssistantInputContentBlock, type AnthropicMessagesMessage, type AnthropicMessagesPayload, type AnthropicMessagesTextBlockParam, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import { isFastServiceTier } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
@@ -208,7 +207,7 @@ const CHAT_TOOL_CHOICES = {
 
 export const buildTargetRequest = async (
   payload: OpenAIChatCompletionsPayload,
-  codec: AssistantTurnSidecarCodec,
+  codec: TranslateSidecarCodec,
   options: BuildTargetRequestOptions,
 ): Promise<AnthropicMessagesPayload> => {
   // Hoist the leading contiguous run of system/developer messages to
@@ -227,7 +226,7 @@ export const buildTargetRequest = async (
   const messages: AnthropicMessagesMessage[] = [];
   const restoredMessages = new Set<AnthropicMessagesMessage>();
   for (const turn of partitionOpenAIChatCompletionsTurns(payload.messages.slice(prefixEnd))) {
-    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('openaiChatCompletions', 'anthropicMessages', turn.items[0], codec, inspectOpenAIChatCompletionsAssistantTurn, verifyOpenAIChatCompletionsReplayCheck);
+    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('openaiChatCompletions', 'anthropicMessages', turn.items[0], codec, inspectOpenAIChatCompletionsAssistantTurn, verifyOpenAIChatCompletionsReplayCheck, collectOpenAIChatCompletionsReplayCandidates);
     if (!roundTrip) {
       if (turn.role === 'assistant') {
         const message = turn.items[0];

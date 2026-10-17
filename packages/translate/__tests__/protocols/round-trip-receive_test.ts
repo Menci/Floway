@@ -1,11 +1,11 @@
-import { Tag } from 'cbor-x';
 import { expect, test } from 'vitest';
 
 import type { IRJSONObject, IRJSONValue } from '../../src/ir/types.ts';
 import type { AssistantTurnFor } from '../../src/round-trip/assistant-turn.ts';
-import type { RoundTripProtocol } from '../../src/round-trip/codec.ts';
 import { hashRoundTripContent, replayMaterialsByType } from '../../src/round-trip/replay-check.ts';
-import { THIN_TAGS, type JSONReference, type TextReference, type ThinAssistantTurnFor, type ThinReference } from '../../src/round-trip/thin/assistant-turn.ts';
+import type { RoundTripProtocol } from '../../src/round-trip/sidecar.ts';
+import type { ThinAssistantTurnFor } from '../../src/round-trip/thin/assistant-turn.ts';
+import { ThinReference } from '../../src/round-trip/thin/reference.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
@@ -16,7 +16,7 @@ import { routeGeminiGenerateContent } from '@floway-dev/translate/gemini-generat
 import { routeOpenAIChatCompletions } from '@floway-dev/translate/openai-chat-completions';
 import { routeOpenAIResponses } from '@floway-dev/translate/openai-responses';
 
-const context = { model: 'target', serverSecret: 'test-server-secret', loadRemoteImage: async () => null, fallbackMaxOutputTokens: undefined };
+const context = { model: 'target', sidecarCodec: createTestSidecarCodec('test-codec-scope'), loadRemoteImage: async () => null, fallbackMaxOutputTokens: undefined };
 const chat = (carrier: string, text = 'answer'): OpenAIChatCompletionsPayloadEx => {
   const message: OpenAIChatCompletionsAssistantMessageEx = { role: 'assistant', content: text, reasoning_details: [{ type: 'reasoning.encrypted', data: carrier }] };
   return { model: 'source', messages: [message] };
@@ -59,22 +59,22 @@ const cases = [
   { source: 'geminiGenerateContent', target: 'openaiResponses', run: (carrier: string) => routeGeminiGenerateContent(gemini(carrier)).viaOpenAIResponses(context) },
 ] as const;
 
-test.each(cases)('receives authenticated $source history via $target', async ({ source, target, run }) => {
+test.each(cases)('receives recognized $source history via $target', async ({ source, target, run }) => {
   const native = nativeTurn(target);
-  const carrier = await createTestSidecarCodec().encode(source, { target, assistantTurn: native, replayCheck: await replayCheck(source) });
+  const carrier = await createTestSidecarCodec().encode({ source, target, assistantTurn: native, replayCheck: await replayCheck(source) });
   const trip = await run(carrier);
   expect('input' in trip.target ? trip.target.input : trip.target.messages).toEqual(target === 'openaiResponses' ? native : [native]);
 });
 
 test.each(cases)('hydrates $source text references before restoring $target history', async ({ source, target, run }) => {
-  const reference = new Tag([[0, 0, 3]], THIN_TAGS.text) as TextReference;
+  const reference = new ThinReference('text', [[0, 0, 3]]);
   const assistantTurn: ThinAssistantTurnFor<NativeProtocol, ThinReference> = target === 'openaiChatCompletions'
     ? { role: 'assistant', content: reference }
     : target === 'anthropicMessages'
       ? { role: 'assistant', content: [{ type: 'text', text: reference, citations: [] }] }
       : [{ type: 'message', role: 'assistant', content: reference }];
-  const carrier = await createTestSidecarCodec().encode(source, {
-    target, assistantTurn, referencedContents: [await hashRoundTripContent('answer')], replayCheck: await replayCheck(source),
+  const carrier = await createTestSidecarCodec().encode({
+    source, target, assistantTurn, referencedContents: [await hashRoundTripContent('answer')], replayCheck: await replayCheck(source),
   });
   const trip = await run(carrier);
   const native = nativeTurn(target, 'ans');
@@ -83,10 +83,11 @@ test.each(cases)('hydrates $source text references before restoring $target hist
 
 test('hydrates a native JSON field from a replayed GenerateContent argument candidate', async () => {
   const args = { x: 1 };
-  const reference = new Tag([0], THIN_TAGS.json) as JSONReference;
+  const reference = new ThinReference('json', [0]);
   const assistantTurn: ThinAssistantTurnFor<'anthropicMessages', ThinReference> = { role: 'assistant', content: [{ type: 'tool_use', id: 'native-call', name: 'native-tool', input: reference }] };
   const checkMaterial = { text: [], inlineData: [], functionCall: [{ name: 'lookup', args }] };
-  const carrier = await createTestSidecarCodec().encode('geminiGenerateContent', {
+  const carrier = await createTestSidecarCodec().encode({
+    source: 'geminiGenerateContent',
     target: 'anthropicMessages', assistantTurn,
     referencedContents: [await hashRoundTripContent(JSON.stringify(args))],
     replayCheck: { version: 1, digest: await hashRoundTripContent(JSON.stringify(checkMaterial)) },
@@ -96,20 +97,27 @@ test('hydrates a native JSON field from a replayed GenerateContent argument cand
 });
 
 test('exposes an authenticated missing reference as an internal error after replay verification', async () => {
-  const carrier = await createTestSidecarCodec().encode('openaiChatCompletions', {
+  const carrier = await createTestSidecarCodec().encode({
+    source: 'openaiChatCompletions',
     target: 'anthropicMessages',
-    assistantTurn: { role: 'assistant', content: [{ type: 'text', text: new Tag([0], THIN_TAGS.text) as TextReference, citations: [] }] },
+    assistantTurn: { role: 'assistant', content: [{ type: 'text', text: new ThinReference('text', [0]), citations: [] }] },
     referencedContents: [await hashRoundTripContent('missing')],
     replayCheck: await replayCheck('openaiChatCompletions'),
   });
   await expect(cases[0].run(carrier)).rejects.toThrow('Authenticated assistant-turn sidecar hydration failed: missing-reference');
 });
 
-test.each(['wrong secret', 'tampered signature', 'changed replay'] as const)('uses ordinary translation for %s', async failure => {
-  const codec = createTestSidecarCodec(failure === 'wrong secret' ? 'other-secret' : context.serverSecret);
+test.each(cases)('leaves a terminal sidecar unrecognized by the injected decoder ordinary on $source via $target', async ({ run }) => {
+  const carrier = 'unrecognized sidecar handle';
+  const trip = await run(carrier);
+  expect(JSON.stringify('input' in trip.target ? trip.target.input : trip.target.messages)).toContain('answer');
+});
+
+test.each(['different codec scope', 'changed sidecar handle', 'changed replay'] as const)('uses ordinary translation for %s', async failure => {
+  const codec = createTestSidecarCodec(failure === 'different codec scope' ? 'other-scope' : 'test-codec-scope');
   const native: AssistantTurnFor<'anthropicMessages'> = { role: 'assistant', content: [{ type: 'text', text: 'restored', citations: [] }] };
-  const signed = await codec.encode('openaiChatCompletions', { target: 'anthropicMessages', assistantTurn: native, replayCheck: await replayCheck('openaiChatCompletions') });
-  const carrier = failure === 'tampered signature' ? `${signed.startsWith('A') ? 'B' : 'A'}${signed.slice(1)}` : signed;
+  const encoded = await codec.encode({ source: 'openaiChatCompletions', target: 'anthropicMessages', assistantTurn: native, replayCheck: await replayCheck('openaiChatCompletions') });
+  const carrier = failure === 'changed sidecar handle' ? `${encoded.startsWith('A') ? 'B' : 'A'}${encoded.slice(1)}` : encoded;
   const text = failure === 'changed replay' ? 'edited' : 'answer';
   const trip = await routeOpenAIChatCompletions(chat(carrier, text)).viaAnthropicMessages(context);
   expect(trip.target.messages).toEqual([{ role: 'assistant', content: [{ type: 'text', text, cache_control: { type: 'ephemeral' } }] }]);
@@ -146,10 +154,10 @@ test('preserves ordinary GenerateContent null-argument handling', async () => {
   ]);
 });
 
-test('exposes an authenticated malformed assistant envelope as an internal error', async () => {
-  const carrier = await createTestSidecarCodec().encode('openaiChatCompletions', {
+test('exposes a recognized malformed assistant envelope as an internal error', async () => {
+  const carrier = await createTestSidecarCodec().encode({
+    source: 'openaiChatCompletions',
     target: 'anthropicMessages',
-    // @ts-expect-error A signed non-assistant envelope is an internal bug.
     assistantTurn: { role: 'user', content: [] },
     replayCheck: await replayCheck('openaiChatCompletions'),
   });
@@ -162,7 +170,8 @@ test('accepts incomplete Responses call history and requires its replayed status
     { type: call.type, status: call.status, call_id: call.call_id, name: call.name, arguments: call.arguments },
   ]);
   const native: AssistantTurnFor<'anthropicMessages'> = { role: 'assistant', content: [{ type: 'text', text: 'restored', citations: [] }] };
-  const carrier = await createTestSidecarCodec().encode('openaiResponses', {
+  const carrier = await createTestSidecarCodec().encode({
+    source: 'openaiResponses',
     target: 'anthropicMessages', assistantTurn: native,
     replayCheck: { version: 1, digest: await hashRoundTripContent(JSON.stringify(expected)) },
   });

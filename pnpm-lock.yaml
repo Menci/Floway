@@ -389,6 +389,9 @@ importers:
       '@hono/zod-validator':
         specifier: ^0.8.0
         version: 0.8.0(hono@4.12.22)(zod@4.4.3)
+      cbor-x:
+        specifier: ^1.6.6
+        version: 1.6.6(patch_hash=fe60080adce8d75e0431840c40fc8086df2ac5625589179e5ddab432216c33a7)
       es-toolkit:
         specifier: ^1.49.0
         version: 1.49.0
@@ -645,9 +648,6 @@ importers:
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
-      cbor-x:
-        specifier: ^1.6.6
-        version: 1.6.6(patch_hash=fe60080adce8d75e0431840c40fc8086df2ac5625589179e5ddab432216c33a7)
       klona:
         specifier: 2.0.6
         version: 2.0.6(patch_hash=86c99277c7bbba3650a877ecb839518955a3fdb068579ba6ec957d107e310dd2)

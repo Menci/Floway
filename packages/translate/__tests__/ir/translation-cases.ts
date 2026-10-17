@@ -1,7 +1,8 @@
 import { expect, test } from 'vitest';
 
 import { collect, iterate } from './helpers.ts';
-import type { RoundTripProtocol } from '../../src/round-trip/codec.ts';
+import { decodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
+import type { RoundTripProtocol } from '../../src/round-trip/sidecar.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { collectAnthropicMessagesProtocolEventsToResult } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, doneFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -120,7 +121,7 @@ export const testOutputTranslation = (target: IRTestProtocol, source: IRTestProt
       : target === 'openai-responses' ? result.output.at(-1).encrypted_content
         : target === 'anthropic-messages' ? result.content.at(-1).data
           : result.candidates[0].content.parts.at(-1).thoughtSignature;
-    const sidecar = await codec.decode(sourceName, carrier);
+    const sidecar = await decodeRoundTripSidecar(codec, sourceName, carrier);
     expect(JSON.stringify(sidecar)).toContain('opaque');
     if (target === 'anthropic-messages') expect(result.content.find((part: Wire) => part.type === 'thinking').signature).toBe('AA==');
   });

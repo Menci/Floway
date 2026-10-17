@@ -1,5 +1,11 @@
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
+export interface TranslateSidecarCodec {
+  /** Encode and decode must preserve ThinReference instances, byte arrays, and raw JSON values. */
+  encode: (payload: NonNullable<unknown> | null) => Promise<string>;
+  decode: (encoded: string) => Promise<unknown>;
+}
+
 export interface RemoteImageData {
   mediaType: string | null;
   data: Uint8Array;
@@ -8,8 +14,7 @@ export interface RemoteImageData {
 export type RemoteImageLoader = (url: string) => Promise<RemoteImageData | null>;
 
 /**
- * Per-trip context. Carries the model name, the server secret used by private
- * translation state,
+ * Per-trip context. Carries the model name, the codec used by private sidecars,
  * and a per-pair-declared `TExtras`
  * shape that lists exactly the capability fields and runtime adapters the trip
  * reads. Pairs that need no extra fields use the default `unknown`. Callers
@@ -24,7 +29,7 @@ export type RemoteImageLoader = (url: string) => Promise<RemoteImageData | null>
  */
 export type TranslationContext<TExtras = unknown> = {
   readonly model: string;
-  readonly serverSecret: string;
+  readonly sidecarCodec: TranslateSidecarCodec;
 } & TExtras;
 
 /**

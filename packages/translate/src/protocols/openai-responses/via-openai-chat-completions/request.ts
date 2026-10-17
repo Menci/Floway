@@ -1,14 +1,14 @@
 import { klona } from 'klona/json';
 
 import { openaiResponsesContentToOpenAIChatCompletionsContent, openaiResponsesContentToText } from './content.ts';
-import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
+import type { TranslateSidecarCodec } from '../../../types.ts';
 import { restrictAllowedTools } from '../as-source/allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
-import { inspectOpenAIResponsesAssistantTurn, isOpenAIResponsesEncryptedReasoning, verifyOpenAIResponsesReplayCheck } from '../as-source/round-trip.ts';
+import { collectOpenAIResponsesReplayCandidates, inspectOpenAIResponsesAssistantTurn, isOpenAIResponsesEncryptedReasoning, verifyOpenAIResponsesReplayCheck } from '../as-source/round-trip.ts';
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import { buildCustomToolInputSchema } from '../common/custom-tool-wrap.ts';
 import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsResponseFormat, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
@@ -178,11 +178,12 @@ export interface TargetRequestResult {
   customToolNames: Set<string>;
 }
 
-export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx, codec: AssistantTurnSidecarCodec): Promise<TargetRequestResult> => {
+export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx, codec: TranslateSidecarCodec): Promise<TargetRequestResult> => {
   const canonical = canonicalizeOpenAIResponsesPayload(source);
   const { payload, names: namespaceToolNames, flattenInput } = flattenNamespaceTools(canonical);
   rejectProgrammaticOpenAIResponsesPayload(payload, 'OpenAI Chat Completions');
   const customToolNames = new Set<string>();
+  const legacyFunctionNames = new Map<string, string>();
   const responseFormat = buildOpenAIChatCompletionsResponseFormat(payload.text);
 
   const translateAssistantTurn = (items: CanonicalOpenAIResponsesInputItem[]): OpenAIChatCompletionsMessage[] => {
@@ -220,7 +221,11 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
       rejectProgramCaller(item);
       if (item.type === 'function_call_output' || item.type === 'custom_tool_call_output') {
         const projected = projectToolCallOutput(item);
-        messages.push({ role: 'tool', tool_call_id: item.call_id, content: projected.toolContent });
+        const legacyName = legacyFunctionNames.get(item.call_id);
+        legacyFunctionNames.delete(item.call_id);
+        messages.push(legacyName === undefined
+          ? { role: 'tool', tool_call_id: item.call_id, content: projected.toolContent }
+          : { role: 'function', name: legacyName, content: projected.toolContent });
         pendingToolOutputImages.push(...projected.liftedImageContent);
       } else if (item.type === 'message' && item.role !== 'assistant') {
         if (item.role === 'user') messages.push({ role: 'user', content: openaiResponsesContentToOpenAIChatCompletionsContent(item.content) as OpenAIChatCompletionsUserContentPart[] | string });
@@ -263,7 +268,13 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
 
   for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
     if (turn.role !== 'assistant') { target.messages.push(...translateNonAssistantInput(turn.items)); continue; }
-    const roundTrip = await roundTripAssistantTurn('openaiResponses', 'openaiChatCompletions', turn.items, codec, inspectOpenAIResponsesAssistantTurn, verifyOpenAIResponsesReplayCheck);
+    const roundTrip = await roundTripAssistantTurn('openaiResponses', 'openaiChatCompletions', turn.items, codec, inspectOpenAIResponsesAssistantTurn, verifyOpenAIResponsesReplayCheck, collectOpenAIResponsesReplayCandidates);
+    if (roundTrip?.turn.function_call != null) {
+      const modernIds = new Set(roundTrip.turn.tool_calls?.map(call => call.id));
+      for (const item of turn.items) {
+        if ((item.type === 'function_call' || item.type === 'custom_tool_call') && !modernIds.has(item.call_id)) legacyFunctionNames.set(item.call_id, roundTrip.turn.function_call.name);
+      }
+    }
     target.messages.push(...(roundTrip ? [roundTrip.turn] : translateAssistantTurn(turn.items)));
   }
   return { target, customToolNames, namespaceToolNames };

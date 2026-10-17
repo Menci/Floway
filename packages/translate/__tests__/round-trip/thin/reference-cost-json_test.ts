@@ -1,11 +1,10 @@
-import { Tag } from 'cbor-x';
 import { expect, it } from 'vitest';
 
 import type { IRJSONObject } from '../../../src/ir/types.ts';
 import type { AnthropicMessagesInputAssistantTurn } from '../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
-import { THIN_TAGS } from '../../../src/round-trip/thin/assistant-turn.ts';
 import { hydrateAssistantTurn } from '../../../src/round-trip/thin/hydrate.ts';
 import { appendContent, appendField, collectContentViews, createContentState, createFieldState, createReferenceBuilder, finalizeAssistantTurnReferences } from '../../../src/round-trip/thin/reference-builder.ts';
+import { ThinReference } from '../../../src/round-trip/thin/reference.ts';
 import { rawJSON } from '../../../src/shared/json/raw-json.ts';
 
 it.each<{ input: IRJSONObject; referenced: boolean }>([
@@ -13,7 +12,7 @@ it.each<{ input: IRJSONObject; referenced: boolean }>([
   { input: { text: 'Native tool arguments. '.repeat(8) }, referenced: true },
   { input: { amount: rawJSON.rawJSON('1.2300e+400') }, referenced: false },
   { input: { amount: rawJSON.rawJSON(`1e${'9'.repeat(80)}`) }, referenced: true },
-])('costs JSON and raw numeric token tags rather than their stringified text: %j', async ({ input, referenced }) => {
+])('selects JSON references by serialized text length while preserving raw numeric tokens: %j', async ({ input, referenced }) => {
   const builder = createReferenceBuilder();
   const field = createFieldState('json');
   const content = createContentState(builder, 'json');
@@ -25,7 +24,7 @@ it.each<{ input: IRJSONObject; referenced: boolean }>([
     expect(result.assistantTurn).toEqual(turn);
     expect(result).not.toHaveProperty('referencedContents');
   } else {
-    expect(result.assistantTurn.content).toMatchObject([{ input: new Tag([0], THIN_TAGS.json) }]);
+    expect(result.assistantTurn.content).toMatchObject([{ input: new ThinReference('json', [0]) }]);
     expect(result.referencedContents).toHaveLength(1);
   }
   expect(await hydrateAssistantTurn('anthropicMessages', [input], result.assistantTurn, result.referencedContents)).toEqual({ ok: true, turn });

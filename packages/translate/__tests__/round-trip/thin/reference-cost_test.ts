@@ -1,13 +1,11 @@
-import { Tag } from 'cbor-x';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AnthropicMessagesAssistantState, AnthropicMessagesInputAssistantTurn } from '../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
-import { encodeSidecarValue } from '../../../src/round-trip/codec.ts';
 import { hashRoundTripContent } from '../../../src/round-trip/replay-check.ts';
 import type { CanonicalTextView } from '../../../src/round-trip/text-parts.ts';
-import { THIN_TAGS } from '../../../src/round-trip/thin/assistant-turn.ts';
 import { hydrateAssistantTurn } from '../../../src/round-trip/thin/hydrate.ts';
 import { appendContent, appendField, collectContentViews, createContentState, createFieldState, createReferenceBuilder, finalizeAssistantTurnReferences, type FieldStates } from '../../../src/round-trip/thin/reference-builder.ts';
+import { ThinReference } from '../../../src/round-trip/thin/reference.ts';
 
 const finalizeTexts = async (texts: readonly string[]) => {
   const builder = createReferenceBuilder();
@@ -25,7 +23,7 @@ const finalizeTexts = async (texts: readonly string[]) => {
   return { turn, ...await finalizeAssistantTurnReferences<'anthropicMessages'>(turn, { content: contentState }, builder, views) };
 };
 
-describe('thin reference byte costs', () => {
+describe('thin reference selection', () => {
   it.each(['hello', ' '.repeat(24)])('keeps %j literal when references cannot pay for the shared table', async text => {
     const result = await finalizeTexts([text]);
     expect(result.assistantTurn).toEqual(result.turn);
@@ -51,49 +49,35 @@ describe('thin reference byte costs', () => {
     }
   });
 
-  it('keeps an equal-cost choice literal', async () => {
-    const referenceCost = encodeSidecarValue(new Tag([0], THIN_TAGS.text)).byteLength
-      + encodeSidecarValue({ referencedContents: [new Uint8Array(8)] }).byteLength - encodeSidecarValue({}).byteLength;
-    const text = Array.from({ length: 128 }, (_, index) => ' '.repeat(index)).find(value => encodeSidecarValue(value).byteLength === referenceCost);
-    if (text === undefined) throw new Error('Expected an equal-cost text fixture');
-    const result = await finalizeTexts([text]);
+  it('keeps an equal-budget choice literal', async () => {
+    const result = await finalizeTexts([' '.repeat(60)]);
     expect(result.assistantTurn).toEqual(result.turn);
     expect(result).not.toHaveProperty('referencedContents');
   });
 
   it('aggregates every use of one hash before paying its digest cost once', async () => {
-    const texts = Array.from({ length: 12 }, () => 'hello there');
+    const texts = Array.from({ length: 12 }, () => 'hello there again');
     const result = await finalizeTexts(texts);
     expect(result.referencedContents).toEqual([await hashRoundTripContent(texts[0])]);
-    expect(result.assistantTurn.content).toEqual(texts.map(() => ({ type: 'text', text: new Tag([0], THIN_TAGS.text), citations: null })));
+    expect(result.assistantTurn.content).toEqual(texts.map(() => ({ type: 'text', text: new ThinReference('text', [0]), citations: null })));
     expect(await hydrateAssistantTurn('anthropicMessages', texts, result.assistantTurn, result.referencedContents)).toEqual({ ok: true, turn: result.turn });
   });
 
-  it.each(['汉字汉字', '\ud800'.repeat(4)])('uses encoded Unicode bytes instead of JavaScript string length for %j', async text => {
-    const unicode = await finalizeTexts(Array.from({ length: 12 }, () => text));
-    const ascii = await finalizeTexts(Array.from({ length: 12 }, () => 'abcd'));
-    expect(unicode.referencedContents).toHaveLength(1);
-    expect(unicode.assistantTurn.content).toEqual(Array.from({ length: 12 }, () => ({ type: 'text', text: new Tag([0], THIN_TAGS.text), citations: null })));
-    expect(ascii.assistantTurn).toEqual(ascii.turn);
-    expect(ascii).not.toHaveProperty('referencedContents');
-  });
-
-  it('costs canonical Base64 using the same binary tag as the sidecar codec', async () => {
-    const text = btoa('binary payload with bytes 1234');
-    expect(text).toHaveLength(40);
+  it.each(['汉'.repeat(80), 'a'.repeat(80)])('selects equally long Unicode and ASCII text using format-independent lengths: %j', async text => {
     const result = await finalizeTexts([text]);
-    expect(result.assistantTurn).toEqual(result.turn);
-    expect(result).not.toHaveProperty('referencedContents');
+    expect(result.assistantTurn.content).toEqual([{ type: 'text', text: new ThinReference('text', [0]), citations: null }]);
+    expect(result.referencedContents).toEqual([await hashRoundTripContent(text)]);
+    expect(await hydrateAssistantTurn('anthropicMessages', [text], result.assistantTurn, result.referencedContents)).toEqual({ ok: true, turn: result.turn });
   });
 
-  it('drops unprofitable hashes and compacts a surviving two-byte provisional index', async () => {
+  it('drops unprofitable hashes and compacts the surviving index', async () => {
     const large = 'Large reference content. '.repeat(5);
-    const small = Array.from({ length: 24 }, (_, index) => `entry ${index}`);
+    const small = Array.from({ length: 24 }, (_, index) => `entry ${index}`.padEnd(24, '.'));
     const result = await finalizeTexts([...small, large]);
     expect(result.referencedContents).toEqual([await hashRoundTripContent(large)]);
     expect(result.assistantTurn.content).toEqual([
       ...small.map(text => ({ type: 'text', text, citations: null })),
-      { type: 'text', text: new Tag([0], THIN_TAGS.text), citations: null },
+      { type: 'text', text: new ThinReference('text', [0]), citations: null },
     ]);
     expect(await hydrateAssistantTurn('anthropicMessages', [...small, large], result.assistantTurn, result.referencedContents)).toEqual({ ok: true, turn: result.turn });
   });
@@ -115,7 +99,33 @@ describe('thin reference byte costs', () => {
     const views = new Map([...collectContentViews(text, first), ...collectContentViews('!', second)]);
     const result = await finalizeAssistantTurnReferences<'anthropicMessages'>(turn, { content: [{ text: field }] }, builder, views);
     expect(result.referencedContents).toEqual([await hashRoundTripContent(text), await hashRoundTripContent('!')]);
-    expect(result.assistantTurn.content).toEqual([{ type: 'text', text: new Tag([0, 1], THIN_TAGS.text), citations: null }]);
+    expect(result.assistantTurn.content).toEqual([{ type: 'text', text: new ThinReference('text', [0, 1]), citations: null }]);
     expect(await hydrateAssistantTurn('anthropicMessages', [text, '!'], result.assistantTurn, result.referencedContents)).toEqual({ ok: true, turn });
+  });
+
+  it.each([{ length: 50, referenced: false }, { length: 80, referenced: true }])('does not fund the selected table with rejected atomic fields: %j', async ({ length, referenced }) => {
+    const builder = createReferenceBuilder();
+    const shared = 'a'.repeat(length);
+    const suffix = 'b'.repeat(30);
+    const mixed = shared.slice(0, 30) + suffix;
+    const wholeField = createFieldState('text');
+    const mixedField = createFieldState('text');
+    const wholeContent = createContentState(builder, 'text');
+    const sharedContent = createContentState(builder, 'text');
+    const suffixContent = createContentState(builder, 'text');
+    appendContent(builder, wholeContent, shared, [appendField(builder, wholeField, shared)]);
+    appendContent(builder, sharedContent, shared.slice(0, 30), [appendField(builder, mixedField, shared.slice(0, 30))]);
+    appendContent(builder, sharedContent, shared.slice(30));
+    appendContent(builder, suffixContent, suffix, [appendField(builder, mixedField, suffix)]);
+    const turn: AnthropicMessagesInputAssistantTurn = { role: 'assistant', content: [{ type: 'text', text: shared, citations: null }, { type: 'text', text: mixed, citations: null }] };
+    const views = new Map([...collectContentViews(shared, wholeContent), ...collectContentViews(shared, sharedContent), ...collectContentViews(suffix, suffixContent)]);
+    const result = await finalizeAssistantTurnReferences<'anthropicMessages'>(turn, { content: [{ text: wholeField }, { text: mixedField }] }, builder, views);
+    expect(result.assistantTurn.content).toEqual([
+      { type: 'text', text: referenced ? new ThinReference('text', [0]) : shared, citations: null },
+      { type: 'text', text: mixed, citations: null },
+    ]);
+    if (referenced) expect(result.referencedContents).toEqual([await hashRoundTripContent(shared)]);
+    else expect(result).not.toHaveProperty('referencedContents');
+    expect(await hydrateAssistantTurn('anthropicMessages', [shared, suffix], result.assistantTurn, result.referencedContents)).toEqual({ ok: true, turn });
   });
 });

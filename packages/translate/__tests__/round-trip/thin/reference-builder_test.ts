@@ -1,4 +1,3 @@
-import { Tag } from 'cbor-x';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { IRJSONObject } from '../../../src/ir/types.ts';
@@ -6,8 +5,6 @@ import { collectAnthropicMessagesTextViews } from '../../../src/protocols/anthro
 import type { AnthropicMessagesThinAssistantTurn } from '../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
 import type { OpenAIChatCompletionsAssistantState, OpenAIChatCompletionsInputAssistantTurn } from '../../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
 import { hashRoundTripContent } from '../../../src/round-trip/replay-check.ts';
-import type { ThinReference } from '../../../src/round-trip/thin/assistant-turn.ts';
-import { THIN_TAGS } from '../../../src/round-trip/thin/assistant-turn.ts';
 import { hydrateAssistantTurn } from '../../../src/round-trip/thin/hydrate.ts';
 import {
   appendContent,
@@ -21,6 +18,7 @@ import {
   type ContentStates,
   type FieldStates,
 } from '../../../src/round-trip/thin/reference-builder.ts';
+import { ThinReference } from '../../../src/round-trip/thin/reference.ts';
 import { parseJSONObject } from '../../../src/shared/json/object.ts';
 
 describe('ReferenceBuilder', () => {
@@ -37,8 +35,8 @@ describe('ReferenceBuilder', () => {
     const finalizer = createReferenceFinalizer(builder, views);
     const digest = vi.spyOn(crypto.subtle, 'digest');
     try {
-      expect(await finalizer.finalizeField(left, fields[0])).toMatchObject({ value: [[0, 0, left.length]] });
-      expect(await finalizer.finalizeField(right, fields[1])).toMatchObject({ value: [[0, left.length, left.length + right.length]] });
+      expect(await finalizer.finalizeField(left, fields[0])).toMatchObject({ parts: [[0, 0, left.length]] });
+      expect(await finalizer.finalizeField(right, fields[1])).toMatchObject({ parts: [[0, left.length, left.length + right.length]] });
       expect(digest).toHaveBeenCalledTimes(1);
     } finally {
       digest.mockRestore();
@@ -57,7 +55,7 @@ describe('ReferenceBuilder', () => {
     const turn = { role: 'assistant' as const, content: [{ type: 'text' as const, text: left, citations: null }, { type: 'text' as const, text: right, citations: null }] };
     const state = { content: contents.map(text => ({ text })) };
     const finalizer = createReferenceFinalizer(builder, collectContentViews(turn, state, collectAnthropicMessagesTextViews([turn])));
-    expect(await finalizer.finalizeField(left + right, field)).toMatchObject({ value: [0] });
+    expect(await finalizer.finalizeField(left + right, field)).toMatchObject({ parts: [0] });
     const changed = { ...turn, content: [{ ...turn.content[0], text: 'changed' }, turn.content[1]] };
     const changedFinalizer = createReferenceFinalizer(builder, collectContentViews(changed, state, collectAnthropicMessagesTextViews([changed])));
     expect(await changedFinalizer.finalizeField(left + right, field)).toBe(left + right);
@@ -74,7 +72,7 @@ describe('ReferenceBuilder', () => {
     appendContent(builder, content, 'hello', [first, second]);
     appendContent(builder, content, ']');
     const finalizer = createReferenceFinalizer(builder, collectContentViews('[hello]', content));
-    expect(await finalizer.finalizeField('hello', field)).toMatchObject({ value: [[0, 1, 6]] });
+    expect(await finalizer.finalizeField('hello', field)).toMatchObject({ parts: [[0, 1, 6]] });
   });
   it('resolves B SSE atoms directly into one A content occurrence', async () => {
     const builder = createReferenceBuilder();
@@ -91,9 +89,9 @@ describe('ReferenceBuilder', () => {
     const finalizer = createReferenceFinalizer(builder, collectContentViews('[hello]', content));
     const reference = await finalizer.finalizeField('hello', field);
 
-    if (!(reference instanceof Tag)) throw new Error('Expected a thin reference');
-    expect(reference.tag).toBe(THIN_TAGS.text);
-    expect(reference.value).toEqual([[0, 1, 6]]);
+    if (!(reference instanceof ThinReference)) throw new Error('Expected a thin reference');
+    expect(reference.restoration).toBe('text');
+    expect(reference.parts).toEqual([[0, 1, 6]]);
     expect(finalizer.referencedContents).toEqual([new Uint8Array([150, 39, 93, 50, 178, 83, 23, 204])]);
   });
 
@@ -109,8 +107,8 @@ describe('ReferenceBuilder', () => {
     const finalizer = createReferenceFinalizer(builder, collectContentViews('hello', content));
     const reference = await finalizer.finalizeField('hello', field);
 
-    if (!(reference instanceof Tag)) throw new Error('Expected a thin reference');
-    expect(reference.value).toEqual([0]);
+    if (!(reference instanceof ThinReference)) throw new Error('Expected a thin reference');
+    expect(reference.parts).toEqual([0]);
   });
 
   it('keeps the whole original field when any SSE atom is unresolved', async () => {
@@ -168,9 +166,9 @@ describe('ReferenceBuilder', () => {
     const firstReference = await finalizer.finalizeField('same', firstField);
     const secondReference = await finalizer.finalizeField('same', secondField);
 
-    if (!(firstReference instanceof Tag) || !(secondReference instanceof Tag)) throw new Error('Expected thin references');
-    expect(firstReference.value).toEqual([0]);
-    expect(secondReference.value).toEqual([0]);
+    if (!(firstReference instanceof ThinReference) || !(secondReference instanceof ThinReference)) throw new Error('Expected thin references');
+    expect(firstReference.parts).toEqual([0]);
+    expect(secondReference.parts).toEqual([0]);
     expect(finalizer.referencedContents).toHaveLength(1);
   });
 
@@ -251,7 +249,7 @@ describe('ReferenceBuilder', () => {
 
     const finalizer = createReferenceFinalizer(builder, views);
 
-    expect(await finalizer.finalizeField('referenced', referenced)).toBeInstanceOf(Tag);
+    expect(await finalizer.finalizeField('referenced', referenced)).toBeInstanceOf(ThinReference);
     expect(await finalizer.finalizeField('literal B text', literal)).toBe('literal B text');
     expect(finalizer.referencedContents).toEqual([await hashRoundTripContent('referenced')]);
   });
@@ -289,8 +287,8 @@ describe('ReferenceBuilder', () => {
     ]);
     const finalizer = createReferenceFinalizer(builder, views);
     const reference = await finalizer.finalizeField(text, field);
-    if (!(reference instanceof Tag)) throw new Error('Expected a thin reference');
-    expect(reference.value).toEqual([[0, 1, 3], [1, 1, 3]]);
+    if (!(reference instanceof ThinReference)) throw new Error('Expected a thin reference');
+    expect(reference.parts).toEqual([[0, 1, 3], [1, 1, 3]]);
   });
 
 });
@@ -306,8 +304,8 @@ it('uses the final JSON text view to reference and restore a B object', async ()
   const finalizer = createReferenceFinalizer(builder, collectContentViews(original, content));
   const reference = await finalizer.finalizeField(original, field);
 
-  expect(reference).toBeInstanceOf(Tag);
-  if (!(reference instanceof Tag) || reference.tag !== THIN_TAGS.json) throw new Error('Expected a JSON reference');
+  expect(reference).toBeInstanceOf(ThinReference);
+  if (!(reference instanceof ThinReference) || reference.restoration !== 'json') throw new Error('Expected a JSON reference');
   const turn: AnthropicMessagesThinAssistantTurn<ThinReference> = {
     role: 'assistant',
     content: [{ type: 'tool_use', id: 'call', name: 'lookup', input: reference }],
@@ -328,7 +326,7 @@ it('round-trips raw JSON numbers and keeps changed key order literal', async () 
   const original = parseJSONObject(json);
   const finalizer = createReferenceFinalizer(builder, collectContentViews(original, content));
   const reference = await finalizer.finalizeField(original, field);
-  if (!(reference instanceof Tag) || reference.tag !== THIN_TAGS.json) throw new Error('Expected a JSON reference');
+  if (!(reference instanceof ThinReference) || reference.restoration !== 'json') throw new Error('Expected a JSON reference');
   const turn: AnthropicMessagesThinAssistantTurn<ThinReference> = { role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'lookup', input: reference }] };
   const hydrated = await hydrateAssistantTurn('anthropicMessages', [original], turn, finalizer.referencedContents);
   expect(hydrated.ok).toBe(true);

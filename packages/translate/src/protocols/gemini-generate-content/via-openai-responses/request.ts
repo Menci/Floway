@@ -1,11 +1,11 @@
 
-import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
+import type { TranslateSidecarCodec } from '../../../types.ts';
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
 import { geminiGenerateContentReasoningEffort } from '../as-source/reasoning.ts';
-import { hasGeminiGenerateContentThoughtSignature, inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck } from '../as-source/round-trip.ts';
+import { collectGeminiGenerateContentReplayCandidates, hasGeminiGenerateContentThoughtSignature, inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck } from '../as-source/round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../as-source/schema.ts';
 import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionDeclarations, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
@@ -179,7 +179,7 @@ const buildTools = (payload: GeminiGenerateContentPayload): OpenAIResponsesTool[
 export const buildTargetRequest = async (
   payload: GeminiGenerateContentPayload,
   model: string,
-  codec: AssistantTurnSidecarCodec,
+  codec: TranslateSidecarCodec,
 ): Promise<CanonicalOpenAIResponsesPayload> => {
   const input: CanonicalOpenAIResponsesInputItem[] = [];
   const request: CanonicalOpenAIResponsesPayload = {
@@ -194,7 +194,7 @@ export const buildTargetRequest = async (
 
   let contentIndex = 0;
   for (const turn of partitionGeminiGenerateContentTurns(payload.contents ?? [])) {
-    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('geminiGenerateContent', 'openaiResponses', turn.items, codec, inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck);
+    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('geminiGenerateContent', 'openaiResponses', turn.items, codec, inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck, collectGeminiGenerateContentReplayCandidates);
     if (!roundTrip) {
       if (turn.role === 'assistant') {
         for (const [index, content] of turn.items.entries()) {

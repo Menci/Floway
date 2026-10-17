@@ -1,10 +1,7 @@
-import { Tag } from 'cbor-x';
-
-import { THIN_TAGS, type AssistantTurnStateFor, type JSONReference, type ReferencePart, type TextReference, type ThinAssistantTurnFor, type ThinReference } from './assistant-turn.ts';
+import { ThinReference, type AssistantTurnStateFor, type ReferencePart, type ThinAssistantTurnFor } from './assistant-turn.ts';
 import type { IRJSONObject } from '../../ir/types.ts';
 import { parseJSONObject, requireJSONObject } from '../../shared/json/object.ts';
 import type { AssistantTurnByProtocol, AssistantTurnFor } from '../assistant-turn.ts';
-import { encodeSidecarValue } from '../codec.ts';
 import { hashRoundTripContent } from '../replay-check.ts';
 import type { CanonicalTextView } from '../text-parts.ts';
 import { encodeHex } from '@floway-dev/protocols/common';
@@ -20,7 +17,6 @@ type Restoration = 'text' | 'json';
 export interface ReferenceBuilder { readonly [builderBrand]: true }
 
 type OriginalFor<Kind extends Restoration> = Kind extends 'text' ? string : IRJSONObject;
-type ThinReferenceFor<Kind extends Restoration> = Kind extends 'text' ? TextReference : JSONReference;
 
 export interface FieldState<Kind extends Restoration = Restoration> {
   readonly [fieldStateBrand]: Kind;
@@ -211,7 +207,7 @@ interface ReferenceFinalizer {
   finalizeField: <Kind extends Restoration>(
     original: OriginalFor<Kind>,
     field: FieldState<Kind>,
-  ) => Promise<OriginalFor<Kind> | ThinReferenceFor<Kind>>;
+  ) => Promise<OriginalFor<Kind> | ThinReference<Kind>>;
 }
 
 export const createReferenceFinalizer = (builder: ReferenceBuilder, contentViews: ReadonlyMap<ContentId, CanonicalTextView>): ReferenceFinalizer => {
@@ -238,7 +234,7 @@ export const createReferenceFinalizer = (builder: ReferenceBuilder, contentViews
   const finalizeField = async <Kind extends Restoration>(
     original: OriginalFor<Kind>,
     field: FieldState<Kind>,
-  ): Promise<OriginalFor<Kind> | ThinReferenceFor<Kind>> => {
+  ): Promise<OriginalFor<Kind> | ThinReference<Kind>> => {
     const fieldState = fieldData(field);
     if (fieldState.partIds.length === 0 || !restoresOriginal(field, original)) return original;
     const resolved: ResolvedSegment[] = [];
@@ -263,7 +259,7 @@ export const createReferenceFinalizer = (builder: ReferenceBuilder, contentViews
     const payload: ReferencePart[] = segments.map(segment => segment.start === 0 && segment.endExclusive === segment.contentLength
       ? segment.hashIndex
       : [segment.hashIndex, segment.start, segment.endExclusive]);
-    return new Tag(payload, fieldState.restoration === 'text' ? THIN_TAGS.text : THIN_TAGS.json) as ThinReferenceFor<Kind>;
+    return new ThinReference(field[fieldStateBrand], payload);
   };
 
   return { referencedContents, finalizeField };
@@ -281,8 +277,14 @@ interface ReferenceChoice {
   readonly savings: number;
 }
 
-const isReference = (value: string | IRJSONObject | ThinReference): value is ThinReference =>
-  value instanceof Tag && (value.tag === THIN_TAGS.text || value.tag === THIN_TAGS.json);
+// Deliberately coarse budgets keep selection independent of the injected codec.
+// Shared hashes are charged once; indices and ranges use fixed generous costs.
+const REFERENCE_OVERHEAD = 8;
+const HASH_BUDGET = 16;
+const HASH_TABLE_BUDGET = 32;
+
+const referenceBudget = (reference: ThinReference): number => REFERENCE_OVERHEAD
+  + reference.parts.reduce<number>((cost, part) => cost + (typeof part === 'number' ? 4 : 16), 0);
 
 export const finalizeAssistantTurnReferences = async <Protocol extends keyof AssistantTurnByProtocol>(
   turn: AssistantTurnFor<Protocol>,
@@ -291,7 +293,7 @@ export const finalizeAssistantTurnReferences = async <Protocol extends keyof Ass
   contentViews: ReadonlyMap<ContentId, CanonicalTextView>,
 ): Promise<FinalizedAssistantTurn<ThinAssistantTurnFor<Protocol, ThinReference>>> => {
   const finalizer = createReferenceFinalizer(builder, contentViews);
-  const minimumReferenceCost = encodeSidecarValue(new Tag([0], THIN_TAGS.text)).byteLength;
+  const minimumReferenceBudget = REFERENCE_OVERHEAD + 4;
   const choices: ReferenceChoice[] = [];
   const collect = async (value: unknown, state: unknown): Promise<void> => {
     if (isFieldState(state)) {
@@ -300,12 +302,12 @@ export const finalizeAssistantTurnReferences = async <Protocol extends keyof Ass
         if (typeof value !== 'string') throw new TypeError('Text field state does not match its assistant turn');
         original = value;
       } else original = requireJSONObject(value);
-      const literalCost = encodeSidecarValue(original).byteLength;
-      if (literalCost <= minimumReferenceCost) return;
+      const literalBudget = typeof original === 'string' ? original.length : JSON.stringify(original).length;
+      if (literalBudget <= minimumReferenceBudget) return;
       const reference = await finalizer.finalizeField(original, state);
-      if (isReference(reference)) {
-        const savings = literalCost - encodeSidecarValue(reference).byteLength;
-        if (savings > 0) choices.push({ field: state, reference, hashes: [...new Set(reference.value.map(part => Array.isArray(part) ? part[0] : part))], savings });
+      if (reference instanceof ThinReference) {
+        const savings = literalBudget - referenceBudget(reference);
+        if (savings > 0) choices.push({ field: state, reference, hashes: [...new Set(reference.parts.map(part => Array.isArray(part) ? part[0] : part))], savings });
       }
       return;
     }
@@ -314,53 +316,30 @@ export const finalizeAssistantTurnReferences = async <Protocol extends keyof Ass
   await collect(turn, fieldState);
   if (choices.length === 0) return { assistantTurn: turn };
 
-  const usesByHash: ReferenceChoice[][] = finalizer.referencedContents.map(() => []);
-  const hashCosts = finalizer.referencedContents.map(hash => encodeSidecarValue(hash).byteLength);
-  for (const choice of choices) for (const hash of choice.hashes) usesByHash[hash].push(choice);
+  const savingsByHash = finalizer.referencedContents.map(() => 0);
+  for (const choice of choices) for (const hash of choice.hashes) savingsByHash[hash] += choice.savings / choice.hashes.length;
   const selected = new Map<FieldState, ThinReference>();
   const selectedHashes = new Set<number>();
-  const visited = new Set<ReferenceChoice>();
   let savings = 0;
-  // A field is atomic, so a field using several hashes couples their digest costs.
-  for (const first of choices) {
-    if (visited.has(first)) continue;
-    const group: ReferenceChoice[] = [];
-    const hashes = new Set<number>();
-    const pending = [first];
-    let groupSavings = 0;
-    for (const choice of pending) {
-      if (visited.has(choice)) continue;
-      visited.add(choice);
-      group.push(choice);
-      groupSavings += choice.savings;
-      for (const hash of choice.hashes) {
-        if (hashes.has(hash)) continue;
-        hashes.add(hash);
-        groupSavings -= hashCosts[hash];
-        for (const use of usesByHash[hash]) pending.push(use);
-      }
-    }
-    if (groupSavings <= 0) continue;
-    savings += groupSavings;
-    for (const choice of group) selected.set(choice.field, choice.reference);
-    for (const hash of hashes) selectedHashes.add(hash);
+  for (const choice of choices) {
+    if (choice.hashes.some(hash => savingsByHash[hash] <= HASH_BUDGET)) continue;
+    selected.set(choice.field, choice.reference);
+    savings += choice.savings;
+    for (const hash of choice.hashes) selectedHashes.add(hash);
   }
+  // Rejected atomic fields may have contributed to a surviving hash's estimate.
+  // Check the selected set again so those contributions cannot fund its table.
+  if (savings <= HASH_TABLE_BUDGET + selectedHashes.size * HASH_BUDGET) return { assistantTurn: turn };
 
   const referencedContents: Uint8Array[] = [];
   const compactIndices: number[] = [];
-  let digestCost = 0;
   for (const [index, hash] of finalizer.referencedContents.entries()) {
     if (!selectedHashes.has(index)) continue;
     compactIndices[index] = referencedContents.length;
     referencedContents.push(hash);
-    digestCost += hashCosts[index];
   }
-  const tableOverhead = encodeSidecarValue({ referencedContents }).byteLength - encodeSidecarValue({}).byteLength - digestCost;
-  if (savings <= tableOverhead) return { assistantTurn: turn };
 
-  // Standalone CBOR leaf costs are a size model, not a global encoding optimum.
-  // Provisional indices conservatively account for integer widths before compaction.
-  for (const reference of selected.values()) reference.value = reference.value.map((part): ReferencePart => Array.isArray(part)
+  for (const reference of selected.values()) reference.parts = reference.parts.map((part): ReferencePart => Array.isArray(part)
     ? [compactIndices[part[0]], part[1], part[2]]
     : compactIndices[part]);
   const visit = (value: unknown, state: unknown): unknown => {

@@ -1,6 +1,7 @@
 import type { AssistantTurnByProtocol, AssistantTurnFor } from './assistant-turn.ts';
-import type { AssistantTurnSidecarCodec } from './codec.ts';
+import type { TranslateSidecarCodec } from '../types.ts';
 import type { RoundTripReplayCheck } from './replay-check.ts';
+import type { RoundTripSidecar } from './sidecar.ts';
 import type { CanonicalTextView } from './text-parts.ts';
 import type { AssistantTurnStateFor } from './thin/assistant-turn.ts';
 import { collectContentViews, createReferenceBuilder, finalizeAssistantTurnReferences, type ContentStates, type FieldStates, type ReferenceBuilder } from './thin/reference-builder.ts';
@@ -28,7 +29,7 @@ export interface RoundTripWriter<Protocol extends keyof AssistantTurnByProtocol>
 export const createRoundTripStream = <
   Source extends keyof AssistantTurnByProtocol,
   Target extends keyof AssistantTurnByProtocol,
->(source: Source, target: Target, codec: AssistantTurnSidecarCodec) => {
+>(source: Source, target: Target, codec: TranslateSidecarCodec) => {
   const builder = createReferenceBuilder();
   const turns = new Map<number, {
     turn: AssistantTurnFor<Target>;
@@ -49,7 +50,7 @@ export const createRoundTripStream = <
         builder,
         collectContentViews(turn, contentState, textViews),
       );
-      return await codec.encode(source, { target, ...finalized, replayCheck });
+      return await codec.encode({ source, target, ...finalized, replayCheck } satisfies RoundTripSidecar<Target>);
     },
   };
   return { reader, writer };
