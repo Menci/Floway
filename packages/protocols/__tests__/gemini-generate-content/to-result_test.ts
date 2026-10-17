@@ -53,6 +53,13 @@ test('collectGeminiGenerateContentProtocolEventsToResult rejects EOF without any
   })()), Error, 'ended without a terminal event');
 });
 
+test('collectGeminiGenerateContentProtocolEventsToResult rejects EOF with an unfinished observed candidate', async () => {
+  await assertRejects(async () => await collectGeminiGenerateContentProtocolEventsToResult((async function* () {
+    yield eventFrame({ candidates: [{ index: 0, content: { parts: [{ text: 'done' }] }, finishReason: 'STOP' }] });
+    yield eventFrame({ candidates: [{ index: 1, content: { parts: [{ text: 'unfinished' }] } }] });
+  })()), Error, 'ended without a terminal event');
+});
+
 test('collectGeminiGenerateContentProtocolEventsToResult stops at prompt blocking', async () => {
   const blocked = { promptFeedback: { blockReason: 'SAFETY' } };
   const result = await collectGeminiGenerateContentProtocolEventsToResult((async function* () {
