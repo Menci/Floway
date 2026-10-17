@@ -6,8 +6,6 @@ export const GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE = 'Gemini generate
 
 export const isGeminiGenerateContentErrorEvent = (event: GeminiGenerateContentStreamEvent): event is GeminiGenerateContentErrorResponse => 'error' in event;
 
-export const isGeminiGenerateContentCandidateFinishedEvent = (event: GeminiGenerateContentStreamEvent): boolean => 'candidates' in event && event.candidates?.some(candidate => candidate.finishReason !== undefined) === true;
-
 export const isGeminiGenerateContentTerminalEvent = (event: GeminiGenerateContentStreamEvent): boolean => isGeminiGenerateContentErrorEvent(event) || ('promptFeedback' in event && event.promptFeedback?.blockReason !== undefined);
 
 export const createGeminiGenerateContentCandidateCompletion = () => {
