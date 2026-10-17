@@ -57,7 +57,7 @@ const walkValue = (path: IRPath, node: IRSchemaNode, value: IRValue, visitor: IR
   }
 };
 
-// Fails if a unit that has ended lacks a field the schema requires among a group of fields.
+// Fails if a unit that has ended lacks any field required by its schema.
 const assertComplete = (path: IRPath, node: IRSchemaNode, value: unknown): void => {
   const actual = unionVariantNode(node, value);
   if (actual === undefined || typeof value !== 'object' || value === null) return;
@@ -67,7 +67,13 @@ const assertComplete = (path: IRPath, node: IRSchemaNode, value: unknown): void 
     if (actual.requiresAnyOf !== undefined && !actual.requiresAnyOf.some(key => present[key] !== undefined)) {
       throw new TypeError(`IR value requires one of ${actual.requiresAnyOf.join(', ')}: ${irPathKey(path)}`);
     }
-    for (const [key, field] of Object.entries(actual.fields)) if (present[key] !== undefined) assertComplete([...path, key], field, present[key]);
+    for (const [key, field] of Object.entries(actual.fields)) {
+      if (!Object.hasOwn(present, key)) {
+        if (!actual.optional.includes(key)) throw new TypeError(`IR value requires field ${key}: ${irPathKey(path)}`);
+        continue;
+      }
+      assertComplete([...path, key], field, present[key]);
+    }
   }
 };
 

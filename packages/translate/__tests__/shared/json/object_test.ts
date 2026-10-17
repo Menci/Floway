@@ -1,6 +1,12 @@
 import { expect, test, vi } from 'vitest';
 
-import { parseJSONObjectAtCompletion } from '../../../src/shared/json/object.ts';
+import { parseJSONObject, parseJSONObjectAtCompletion } from '../../../src/shared/json/object.ts';
+
+test('default object parsing preserves number tokens that would serialize differently', () => {
+  const source = '{"rounded":0.10000000000000001,"negativeZero":-0,"canonical":1.25}';
+
+  expect(JSON.stringify(parseJSONObject(source))).toBe(source);
+});
 
 test('truncated JSON completion does not invoke the parser', () => {
   const parser = vi.fn(() => ({ repaired: true }));
