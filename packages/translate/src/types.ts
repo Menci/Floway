@@ -1,8 +1,8 @@
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 export interface TranslateSidecarCodec {
-  encode: (payload: unknown) => Promise<string>;
-  decode: (encoded: string) => Promise<{ payload: unknown } | undefined>;
+  encode: (payload: NonNullable<unknown> | null) => Promise<string>;
+  decode: (encoded: string) => Promise<unknown>;
 }
 
 export interface RemoteImageData {

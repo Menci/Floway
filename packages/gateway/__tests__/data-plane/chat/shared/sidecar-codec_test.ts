@@ -34,7 +34,7 @@ describe('signed CBOR sidecars', () => {
     const encoded = await factory.getForKind(SidecarKind.TranslateRoundTrip).encode(payload);
     expect(encoded).toBe(expected);
     expect(decodeForgivingBase64(encoded).subarray(0, 32)).toEqual(signature);
-    expect(await factory.getForKind(SidecarKind.TranslateRoundTrip).decode(expected)).toEqual({ payload });
+    expect(await factory.getForKind(SidecarKind.TranslateRoundTrip).decode(expected)).toEqual(payload);
   });
   it('encodes native byte strings and plain maps without typed-array or record tags', () => {
     const bytes = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7]);
@@ -50,14 +50,19 @@ describe('signed CBOR sidecars', () => {
     const encoded = await Promise.all(payloads.map((payload, index) => codecs[index % 2].getForKind(SidecarKind.TranslateRoundTrip).encode(payload)));
     await Promise.all(encoded.map(async (value, index) => {
       expect(decodeForgivingBase64(value).byteLength).toBeGreaterThan(8192);
-      expect(await codecs[index % 2].getForKind(SidecarKind.TranslateRoundTrip).decode(value)).toEqual({ payload: payloads[index] });
+      expect(await codecs[index % 2].getForKind(SidecarKind.TranslateRoundTrip).decode(value)).toEqual(payloads[index]);
       expect(await codecs[(index + 1) % 2].getForKind(SidecarKind.TranslateRoundTrip).decode(value)).toBeUndefined();
     }));
   });
-  it('distinguishes an authenticated undefined payload from a foreign sidecar', async () => {
-    const encoded = await factory.getForKind(SidecarKind.TranslateRoundTrip).encode(undefined);
-    expect(await factory.getForKind(SidecarKind.TranslateRoundTrip).decode(encoded)).toEqual({ payload: undefined });
+  it('rejects undefined payloads at encode and after matching authentication', async () => {
+    // @ts-expect-error The public encoder excludes undefined payloads.
+    await expect(factory.getForKind(SidecarKind.TranslateRoundTrip).encode(undefined)).rejects.toThrow('Sidecar payload must not be undefined');
+    await expect(factory.getForKind(SidecarKind.TranslateRoundTrip).decode(await sign(encode({ kind: 0, payload: undefined })))).rejects.toThrow('Authenticated sidecar payload must not be undefined');
     expect(await factory.getForKind(SidecarKind.TranslateRoundTrip).decode(await sign(encode({ kind: 1, payload: undefined })))).toBeUndefined();
+  });
+  it.each([null, false, 0, ''])('returns the decoded payload directly for %j', async payload => {
+    const codec = factory.getForKind(SidecarKind.TranslateRoundTrip);
+    expect(await codec.decode(await codec.encode(payload))).toBe(payload);
   });
   it('authenticates the expected kind before restoring payload tags', async () => {
     const payload = new Tag(42, 65539);
@@ -74,13 +79,13 @@ describe('signed CBOR sidecars', () => {
     try {
       expect(await Promise.all([other.decode(encoded), other.decode(encoded)])).toEqual([undefined, undefined]);
       const first = await owner.decode(encoded);
-      expect(first).toEqual({ payload });
+      expect(first).toEqual(payload);
       expect(verify).toHaveBeenCalledTimes(1);
-      const value = record(first?.payload);
+      const value = record(first);
       record(value.nested).value = 'changed';
       if (!(value.bytes instanceof Uint8Array)) throw new TypeError('Expected bytes');
       value.bytes[0] = 9;
-      expect(await owner.decode(encoded)).toEqual({ payload });
+      expect(await owner.decode(encoded)).toEqual(payload);
       expect(verify).toHaveBeenCalledTimes(2);
     } finally {
       verify.mockRestore();
@@ -96,12 +101,12 @@ describe('signed CBOR sidecars', () => {
     try {
       const [foreign, ...results] = await Promise.all([other.decode(encoded), owner.decode(encoded), owner.decode(encoded), owner.decode(encoded)]);
       expect(foreign).toBeUndefined();
-      expect(results).toEqual([{ payload }, { payload }, { payload }]);
+      expect(results).toEqual([payload, payload, payload]);
       expect(verify).toHaveBeenCalledTimes(3);
       const first = results[0];
       if (first === undefined) throw new Error('Expected decoded sidecar');
-      record(record(first.payload).nested).value = 'changed';
-      expect(results.slice(1)).toEqual([{ payload }, { payload }]);
+      record(record(first).nested).value = 'changed';
+      expect(results.slice(1)).toEqual([payload, payload]);
     } finally {
       verify.mockRestore();
     }
@@ -132,7 +137,7 @@ describe('signed CBOR sidecars', () => {
   });
   it('preserves forgiving outer Base64 decoding', async () => {
     const encoded = await factory.getForKind(SidecarKind.TranslateRoundTrip).encode('value');
-    expect(await factory.getForKind(SidecarKind.TranslateRoundTrip).decode(` \t${encoded.replaceAll('=', '')}\n`)).toEqual({ payload: 'value' });
+    expect(await factory.getForKind(SidecarKind.TranslateRoundTrip).decode(` \t${encoded.replaceAll('=', '')}\n`)).toEqual('value');
   });
   it.each(['%', 'A', 'é', 'not!base64'])('rejects unauthenticated invalid Base64 %j', async encoded => {
     expect(await factory.getForKind(SidecarKind.TranslateRoundTrip).decode(encoded)).toBeUndefined();
@@ -150,7 +155,7 @@ describe('signed CBOR sidecars', () => {
   });
   it('preserves unknown CBOR tags for their owner', async () => {
     const payload = { reference: new Tag([[0, 1, 4]], 65536) };
-    expect(await factory.getForKind(SidecarKind.TranslateRoundTrip).decode(await factory.getForKind(SidecarKind.TranslateRoundTrip).encode(payload))).toEqual({ payload });
+    expect(await factory.getForKind(SidecarKind.TranslateRoundTrip).decode(await factory.getForKind(SidecarKind.TranslateRoundTrip).encode(payload))).toEqual(payload);
   });
   it('preserves raw numeric tokens and similarly shaped ordinary objects', async () => {
     const tokens = ['9007199254740993', '1e400', '1.2300e+400'];
@@ -158,7 +163,7 @@ describe('signed CBOR sidecars', () => {
     const decoded = await factory.getForKind(SidecarKind.TranslateRoundTrip).decode(await factory.getForKind(SidecarKind.TranslateRoundTrip).encode(payload));
     if (decoded === undefined)
       throw new Error('Expected an authenticated sidecar');
-    const restored = record(decoded.payload);
+    const restored = record(decoded);
     expect(JSON.stringify(restored.values)).toBe(`[${tokens.join(',')}]`);
     expect(rawJSON.isRawJSON(record(restored.ordinary))).toBe(false);
     expect(restored.ordinary).toEqual(payload.ordinary);
@@ -169,9 +174,9 @@ describe('signed CBOR sidecars', () => {
     const decoded = await factory.getForKind(SidecarKind.TranslateRoundTrip).decode(await factory.getForKind(SidecarKind.TranslateRoundTrip).encode(payload));
     if (decoded === undefined)
       throw new Error('Expected an authenticated sidecar');
-    expect(decoded.payload).toEqual(payload);
-    expect(Object.hasOwn(record(decoded.payload), '__proto__')).toBe(true);
-    expect(Object.getPrototypeOf(decoded.payload)).toBe(Object.prototype);
+    expect(decoded).toEqual(payload);
+    expect(Object.hasOwn(record(decoded), '__proto__')).toBe(true);
+    expect(Object.getPrototypeOf(decoded)).toBe(Object.prototype);
   });
   it('preserves lone-surrogate strings and keys using WTF-8 Tag 273', async () => {
     const mixed = String.fromCodePoint(0x1f600) + String.fromCharCode(0xd800);
@@ -180,13 +185,13 @@ describe('signed CBOR sidecars', () => {
     expect([...encodeCBORValue('\ud800')]).toEqual([0xd9, 1, 0x11, 0x43, 0xed, 0xa0, 0x80]);
     expect([...encodeCBORValue(large).subarray(0, 6)]).toEqual([0xd9, 1, 0x11, 0x59, 0x23, 0x2b]);
     const payload = { [mixed]: mixed, large };
-    expect(await factory.getForKind(SidecarKind.TranslateRoundTrip).decode(await factory.getForKind(SidecarKind.TranslateRoundTrip).encode(payload))).toEqual({ payload });
+    expect(await factory.getForKind(SidecarKind.TranslateRoundTrip).decode(await factory.getForKind(SidecarKind.TranslateRoundTrip).encode(payload))).toEqual(payload);
   });
   it('restores canonical Base64 and Base64URL values from their CBOR tags', async () => {
     const bytes = Uint8Array.from({ length: 16 }, (_, index) => index);
     const payload = { base64: encodeBase64(bytes), base64url: encodeBase64url(bytes), nested: [[encodeBase64(bytes), encodeBase64url(bytes)]], short: 'AQID' };
     expect([...encodeCBORValue(payload.base64)]).toEqual([0xd6, 0x50, ...bytes]);
     expect([...encodeCBORValue(payload.base64url)]).toEqual([0xd5, 0x50, ...bytes]);
-    expect(await factory.getForKind(SidecarKind.TranslateRoundTrip).decode(await factory.getForKind(SidecarKind.TranslateRoundTrip).encode(payload))).toEqual({ payload });
+    expect(await factory.getForKind(SidecarKind.TranslateRoundTrip).decode(await factory.getForKind(SidecarKind.TranslateRoundTrip).encode(payload))).toEqual(payload);
   });
 });

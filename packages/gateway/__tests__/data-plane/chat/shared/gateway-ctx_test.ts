@@ -24,8 +24,8 @@ test('creates one reusable sidecar codec factory from the authenticated key with
     expect(Object.hasOwn(ctx, 'serverSecret')).toBe(false);
     const encoded = await factory.getForKind(SidecarKind.TranslateRoundTrip).encode({ value: 1 });
     expect(ctx.sidecarCodecFactory).toBe(factory);
-    expect(await ctx.sidecarCodecFactory.getForKind(SidecarKind.TranslateRoundTrip).decode(encoded)).toEqual({ payload: { value: 1 } });
-    expect(await createSidecarCodecFactory(apiKey.serverSecret).getForKind(SidecarKind.TranslateRoundTrip).decode(encoded)).toEqual({ payload: { value: 1 } });
+    expect(await ctx.sidecarCodecFactory.getForKind(SidecarKind.TranslateRoundTrip).decode(encoded)).toEqual({ value: 1 });
+    expect(await createSidecarCodecFactory(apiKey.serverSecret).getForKind(SidecarKind.TranslateRoundTrip).decode(encoded)).toEqual({ value: 1 });
     expect(await createSidecarCodecFactory('22'.repeat(32)).getForKind(SidecarKind.TranslateRoundTrip).decode(encoded)).toBeUndefined();
     return c.text('ok');
   });

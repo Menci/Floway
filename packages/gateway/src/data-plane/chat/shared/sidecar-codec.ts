@@ -3,8 +3,8 @@ import { decode as decodeCBOR, Encoder, Tag } from 'cbor-x';
 import { decodeCanonicalBase64, decodeCanonicalBase64url, decodeForgivingBase64, encodeBase64, encodeBase64url } from '@floway-dev/protocols/common';
 
 export interface SidecarCodec {
-  encode: (payload: unknown) => Promise<string>;
-  decode: (encoded: string) => Promise<{ payload: unknown } | undefined>;
+  encode: (payload: NonNullable<unknown> | null) => Promise<string>;
+  decode: (encoded: string) => Promise<unknown>;
 }
 
 export enum SidecarKind {
@@ -88,6 +88,7 @@ export const createSidecarCodecFactory = (secret: string): SidecarCodecFactory =
   return {
     getForKind: kind => ({
       encode: async payload => {
+        if (payload === undefined) throw new TypeError('Sidecar payload must not be undefined');
         const data = encodeCBORValue({ kind, payload });
         const signature = new Uint8Array(await crypto.subtle.sign('HMAC', await cryptoKey, Uint8Array.from(data)));
         const combined = new Uint8Array(signature.length + data.length);
@@ -109,7 +110,8 @@ export const createSidecarCodecFactory = (secret: string): SidecarCodecFactory =
           if (decodeCache.get(encoded) !== pending) continue;
           decodeCache.delete(encoded);
           if (!Object.hasOwn(envelope, 'payload')) throw new TypeError('Authenticated sidecar payload is missing');
-          return { payload: restoreCBORValue(envelope.payload) };
+          if (envelope.payload === undefined) throw new TypeError('Authenticated sidecar payload must not be undefined');
+          return restoreCBORValue(envelope.payload);
         }
       },
     }),

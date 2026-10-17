@@ -21,10 +21,11 @@ export const createTestSidecarCodec = (scope = 'test-codec-scope'): TranslateSid
   const store = values;
   return {
     encode: async payload => {
+      if (payload === undefined) throw new TypeError('Sidecar payload must not be undefined');
       const handle = `sidecar-${nextHandle++}`;
       store.set(handle, snapshot(payload));
       return handle;
     },
-    decode: async handle => store.has(handle) ? { payload: snapshot(store.get(handle)) } : undefined,
+    decode: async handle => snapshot(store.get(handle)),
   };
 };

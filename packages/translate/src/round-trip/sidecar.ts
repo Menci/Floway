@@ -40,9 +40,8 @@ function assertSidecarEnvelope(value: Record<string, unknown>): asserts value is
 }
 
 export const decodeRoundTripSidecar = async (codec: TranslateSidecarCodec, source: RoundTripProtocol, data: string): Promise<RoundTripSidecarEnvelope | undefined> => {
-  const decoded = await codec.decode(data);
-  if (decoded === undefined) return undefined;
-  const sidecar = decoded.payload;
+  const sidecar = await codec.decode(data);
+  if (sidecar === undefined) return undefined;
   if (!isRecord(sidecar) || typeof sidecar.source !== 'string') throw new TypeError('Authenticated assistant-turn sidecar envelope is invalid');
   if (sidecar.source !== source) return undefined;
   assertSidecarEnvelope(sidecar);
