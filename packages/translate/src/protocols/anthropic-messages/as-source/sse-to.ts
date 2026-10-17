@@ -314,8 +314,8 @@ export const anthropicMessagesFromIR = async function* (
         const stop = emit({ type: 'content_block_stop', index });
         if (unit.kind === 'function_call') {
           if (serializedInput === undefined) {
-            const block = nativeAccumulator.result().content[index];
-            if (block.type !== 'tool_use') throw new Error('Messages function unit did not produce a native tool block');
+            const block = nativeAccumulator.contentBlock(index);
+            if (block?.type !== 'tool_use') throw new Error('Messages function unit did not produce a native tool block');
             serializedInput = JSON.stringify(requireJSONObject(block.input));
           }
           const content = createContentState(options.roundTrip.builder, 'json');
