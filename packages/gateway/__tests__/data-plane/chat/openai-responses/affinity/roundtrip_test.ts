@@ -36,7 +36,6 @@ test('affinity selects the route while item storage preserves the exact emitted 
   const candidateB = modelCandidate('upstream-b');
   const codec = new AffinityCodec('22'.repeat(32));
   const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), true);
-  store.beginAttempt(new Map());
 
   const programOutput = {
     type: 'program_output' as const,
@@ -84,7 +83,7 @@ test('affinity selects the route while item storage preserves the exact emitted 
   const input = clientResponse.output as unknown as CanonicalOpenAIResponsesInputItem[];
   await store.loadInputItems(input, input);
   const hydrated = hydrateOpenAIResponsesPayload({ model: 'model-a', input }, store);
-  const affinity = await analyzeOpenAIResponsesAffinity(hydrated.payload, codec);
+  const affinity = await analyzeOpenAIResponsesAffinity(hydrated, codec);
   expect(affinity.requiredTargets).toEqual([{
     upstreamId: candidateA.provider.upstreamId,
     modelId: candidateA.model.id,

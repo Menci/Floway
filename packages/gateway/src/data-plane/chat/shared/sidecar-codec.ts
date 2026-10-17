@@ -9,6 +9,7 @@ export interface SidecarCodec {
 
 export enum SidecarKind {
   TranslateRoundTrip = 0,
+  ServerToolReplay = 1,
 }
 
 export interface SidecarCodecFactory {
