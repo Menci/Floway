@@ -8,6 +8,8 @@ import type { InterceptorRun } from '@floway-dev/interceptor';
 import { eventFrame, sumBillableUsage, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   createRandomOpenAIResponsesItemId,
+  isOpenAIResponsesAssistantInputItem,
+  isOpenAIResponsesTerminalEvent,
   type CanonicalOpenAIResponsesPayload,
   type OpenAIResponsesFunctionTool,
   type OpenAIResponsesHostedTool,
@@ -41,17 +43,14 @@ export interface MergeState {
 }
 
 export interface InterceptedFunctionCall {
-  callId: string;
-  name: string;
+  functionCall: OpenAIResponsesOutputFunctionCallEx;
   /**
    * Parsed and jsonrepair-cleaned `arguments` object. `null` when the
    * raw upstream string is not a JSON object even after jsonrepair —
-   * dispatchers handle that case via their own error path. Dispatchers
-   * that persist function-call inputs across turns should serialize
-   * this rather than the raw upstream string; replaying the raw form
-   * would re-break the next turn the same way it broke this one.
+   * dispatchers handle that case via their own error path. Execution uses
+   * this repaired value; history replays the original functionCall.
    */
-  arguments: Record<string, unknown> | null;
+  parsedArguments: Record<string, unknown> | null;
 }
 
 export interface ServerToolTerminal {
@@ -60,8 +59,8 @@ export interface ServerToolTerminal {
   /**
    * Optional server-only blob registered on the request's item store under
    * `slot.id` before the slot's wire item leaves materialize. The persistence
-   * layer stores it in `payload.private`; the replay-side `transformItems`
-   * reads it back to reconstruct the full IR.
+   * layer stores it in `payload.private`; `expandHistoryItem` reads it back
+   * to reconstruct the original call and feedback.
    */
   privatePayload?: unknown;
 }
@@ -118,11 +117,9 @@ export type ServerToolPrepareResult =
   | {
     type: 'active';
     baseToolName: string;
-    // History rewrite, applied whether or not the tool is hosted this
-    // turn so items echoed from a previous turn's output become
-    // upstream-readable even on a request that no longer declares the
-    // hosted tool.
-    transformItems?: (items: CanonicalOpenAIResponsesInputItem[], toolName: string) => CanonicalOpenAIResponsesInputItem[];
+    // Return undefined for items this tool does not own. Expanded assistant
+    // items stay in the call batch; feedback follows the complete batch.
+    expandHistoryItem?: (item: CanonicalOpenAIResponsesInputItem, toolName: string) => CanonicalOpenAIResponsesInputItem[] | undefined;
     // Present only when the request declares this hosted tool; absent for
     // replay-only activation.
     hosted?: ServerToolHostedDispatch;
@@ -555,15 +552,67 @@ const serverToolEndFrames = (
   return frames;
 };
 
-const transformServerToolItems = (
+const isCallBatchItem = (item: CanonicalOpenAIResponsesInputItem): boolean =>
+  item.type === 'function_call' || item.type === 'custom_tool_call';
+
+const expandServerToolHistory = (
   items: CanonicalOpenAIResponsesInputItem[],
   active: readonly ActiveServerTool[],
 ): CanonicalOpenAIResponsesInputItem[] => {
-  let next = items;
-  for (const entry of active) {
-    if (entry.transformItems !== undefined) next = entry.transformItems(next, entry.toolName);
+  const result: CanonicalOpenAIResponsesInputItem[] = [];
+  const feedback: CanonicalOpenAIResponsesInputItem[] = [];
+  for (const item of items) {
+    let expansion: CanonicalOpenAIResponsesInputItem[] | undefined;
+    for (const entry of active) {
+      expansion = entry.expandHistoryItem?.(item, entry.toolName);
+      if (expansion !== undefined) break;
+    }
+    if (expansion !== undefined) {
+      for (const expanded of expansion) {
+        if (isOpenAIResponsesAssistantInputItem(expanded)) result.push(expanded);
+        else feedback.push(expanded);
+      }
+      continue;
+    }
+    if (!isCallBatchItem(item)) {
+      result.push(...feedback);
+      feedback.length = 0;
+    }
+    result.push(item);
   }
-  return next;
+  return [...result, ...feedback];
+};
+
+const deferHostedCallBatch = async function* (
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+  dispatchers: ReadonlyMap<string, ServerToolDispatcher>,
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+  let deferring = false;
+  const deferredIndexes = new Set<number>();
+  const pending: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
+  // A hosted item combines a call and its result. Keep subsequent assistant
+  // content ahead of that result, while preserving order inside the call batch.
+  // Otherwise echoing the public output loses the assistant/tool boundaries.
+  try {
+    for await (const frame of frames) {
+      if (frame.type === 'done' || isOpenAIResponsesTerminalEvent(frame.event) || frame.event.type === 'error') {
+        yield* pending.splice(0);
+        yield frame;
+        continue;
+      }
+      const event = frame.event;
+      if (event.type === 'response.output_item.added') {
+        if (event.item.type === 'function_call' && event.item.namespace === undefined && dispatchers.has(event.item.name)) deferring = true;
+        if (deferring && (event.item.type === 'function_call' || event.item.type === 'custom_tool_call')) deferredIndexes.add(event.output_index);
+      }
+      if ('output_index' in event && typeof event.output_index === 'number' && deferredIndexes.has(event.output_index)) pending.push(frame);
+      else yield frame;
+    }
+  } catch (error) {
+    yield* pending.splice(0);
+    throw error;
+  }
+  yield* pending;
 };
 
 export const consumeTurnStreaming = async function* (
@@ -581,15 +630,9 @@ export const consumeTurnStreaming = async function* (
 
   const openItems = new Map<number, number>();
   const openItemIds = new Map<number, string>();
-  // `argumentsJson` accumulates `function_call_arguments.delta` chunks
-  // until the closing `.done` parses them into `intercepted.arguments`.
-  // Kept on the entry (not on `InterceptedFunctionCall`) because it's
-  // streaming state, not part of the dispatcher's input.
   const interceptedByUpstreamIndex = new Map<number, {
-    intercepted: InterceptedFunctionCall;
     addedItem: OpenAIResponsesOutputFunctionCallEx;
     reservedOutputIndex: number;
-    argumentsJson: string;
     bufferedEvents: OpenAIResponsesStreamEventEx[];
   }>();
 
@@ -606,7 +649,7 @@ export const consumeTurnStreaming = async function* (
       sequence_number: merge.sequenceNumber++,
     } as OpenAIResponsesStreamEventEx);
 
-  for await (const frame of frames) {
+  for await (const frame of deferHostedCallBatch(frames, dispatchers)) {
     if (frame.type !== 'event') {
       yield frame;
       continue;
@@ -674,25 +717,13 @@ export const consumeTurnStreaming = async function* (
       const item = event.item;
       if (item.type === 'function_call') {
         if (dispatchers.has(item.name)) {
-          // Reserve the downstream index the shim call occupies now, at
-          // `.added`; the actual slot count is only known at `.done`,
-          // where slot 0 takes this reserved index and any further slots
-          // take fresh ones. Those stay contiguous because OpenAI Responses
-          // output items stream sequentially — one item's `.added`…`.done`
-          // completes before the next item's `.added`, so nothing
-          // allocates a downstream index between this reservation and the
-          // dispatch below. Buffer a colliding namespaced client call too:
-          // the completed item owns the final dispatch identity.
+          // Reserve the first slot in call order before dispatch completes.
+          // A final namespace can still identify a colliding client call,
+          // so its buffered events must remain available for pass-through.
           interceptedByUpstreamIndex.set(upstreamIndex, {
             addedItem: item,
             reservedOutputIndex: merge.outputIndex++,
-            argumentsJson: '',
             bufferedEvents: [],
-            intercepted: {
-              callId: item.call_id,
-              name: item.name,
-              arguments: {},
-            },
           });
           continue;
         }
@@ -721,8 +752,8 @@ export const consumeTurnStreaming = async function* (
       const upstreamIndex = event.output_index;
       const intercepted = interceptedByUpstreamIndex.get(upstreamIndex);
       if (intercepted !== undefined) {
-        if (event.item.type !== 'function_call' || event.item.name !== intercepted.intercepted.name
-          || event.item.call_id !== intercepted.intercepted.callId || event.item.id !== intercepted.addedItem.id) {
+        if (event.item.type !== 'function_call' || event.item.name !== intercepted.addedItem.name
+          || event.item.call_id !== intercepted.addedItem.call_id || event.item.id !== intercepted.addedItem.id) {
           throw new Error('Upstream changed a server-tool function identity before closing its call.');
         }
         const finalDispatcher = event.item.namespace === undefined ? dispatchers.get(event.item.name) : undefined;
@@ -746,18 +777,17 @@ export const consumeTurnStreaming = async function* (
           interceptedByUpstreamIndex.delete(upstreamIndex);
           continue;
         }
-        intercepted.intercepted.name = event.item.name;
-        intercepted.argumentsJson = event.item.arguments;
-        intercepted.intercepted.arguments = parseServerToolArguments(intercepted.argumentsJson);
-        const slots = finalDispatcher({ intercepted: intercepted.intercepted, loopState });
+        const call: InterceptedFunctionCall = { functionCall: event.item, parsedArguments: parseServerToolArguments(event.item.arguments) };
+        const slots = finalDispatcher({ intercepted: call, loopState });
+        interceptedByUpstreamIndex.delete(upstreamIndex);
         if (loopState.remainingToolCalls !== undefined) loopState.remainingToolCalls -= 1;
         const dispatchedSlots: DispatchedServerToolSlot[] = [];
         for (const [slotIndex, slot] of slots.entries()) {
           const outputIndex = slotIndex === 0 ? intercepted.reservedOutputIndex : merge.outputIndex++;
-          dispatchedSlots.push({ intercepted: intercepted.intercepted, slot, outputIndex });
+          dispatchedSlots.push({ intercepted: call, slot, outputIndex });
           yield* serverToolStartFrames(merge, outputIndex, slot);
         }
-        dispatched.push({ intercepted: intercepted.intercepted, slots: dispatchedSlots });
+        dispatched.push({ intercepted: call, slots: dispatchedSlots });
         continue;
       }
 
@@ -776,7 +806,6 @@ export const consumeTurnStreaming = async function* (
     if (event.type === 'response.function_call_arguments.delta') {
       const intercepted = interceptedByUpstreamIndex.get(event.output_index);
       if (intercepted !== undefined) {
-        intercepted.argumentsJson += event.delta;
         intercepted.bufferedEvents.push(event);
         continue;
       }
@@ -788,7 +817,6 @@ export const consumeTurnStreaming = async function* (
     if (event.type === 'response.function_call_arguments.done') {
       const intercepted = interceptedByUpstreamIndex.get(event.output_index);
       if (intercepted !== undefined) {
-        intercepted.argumentsJson = event.arguments;
         intercepted.bufferedEvents.push(event);
         continue;
       }
@@ -848,11 +876,8 @@ export const consumeTurnStreaming = async function* (
     }
   }
 
-  if (interceptedByUpstreamIndex.size > dispatched.length) {
-    const dispatchedSet = new Set(dispatched.map(d => d.intercepted));
-    const unmatched = [...interceptedByUpstreamIndex.entries()]
-      .filter(([, intercepted]) => !dispatchedSet.has(intercepted.intercepted))
-      .map(([idx]) => idx);
+  if (interceptedByUpstreamIndex.size > 0) {
+    const unmatched = [...interceptedByUpstreamIndex.keys()];
     const priorKind = terminalStatus.kind;
     const priorLabel = priorKind === 'bare-error-pre-shell' ? 'a pre-shell bare error' : `response.${priorKind}`;
     terminalStatus = {
@@ -996,7 +1021,7 @@ async function* materializeServerToolItems(
         step = await lifecycle.next();
       }
       // Register private dispatcher state under the emitted item id so output
-      // persistence captures it and replay-side `transformItems` can restore
+      // persistence captures it and replay-side `expandHistoryItem` can restore
       // it on the next loop turn.
       store.registerPrivatePayload(slot.id, step.value.privatePayload);
       yield* serverToolEndFrames(merge, outputIndex, slot, step.value);
@@ -1089,7 +1114,7 @@ async function* runMultiTurnLoop(args: {
         ...baseInput,
         ...materializeAccumulatedOutput(merge).map(item => item as CanonicalOpenAIResponsesInputItem),
       ];
-      const nextPayload: CanonicalOpenAIResponsesPayload = { ...ctx.payload, input: transformServerToolItems(nextCanonicalInput, active) };
+      const nextPayload: CanonicalOpenAIResponsesPayload = { ...ctx.payload, input: expandServerToolHistory(nextCanonicalInput, active) };
       if (loopState.remainingToolCalls !== undefined) {
         nextPayload.max_tool_calls = Math.max(0, loopState.remainingToolCalls);
       } else {
@@ -1210,8 +1235,8 @@ export const withOpenAIResponsesServerToolShim = (
   }
 
   const canonicalInput = ctx.payload.input;
-  const nextInput = transformServerToolItems(canonicalInput, active);
-  if (nextInput !== canonicalInput) ctx.payload = { ...ctx.payload, input: nextInput };
+  const nextInput = expandServerToolHistory(canonicalInput, active);
+  ctx.payload = { ...ctx.payload, input: nextInput };
 
   const hostedActive = active.filter(
     (entry): entry is ActiveServerTool & { hosted: ServerToolHostedDispatch } =>

@@ -1396,6 +1396,7 @@ type OpenAIResponsesStreamEventVariant =
 export type OpenAIResponsesReasoningItem = OpenAIResponsesInputReasoning | OpenAIResponsesOutputReasoning;
 
 export { isOpenAIResponsesTerminalEvent, openaiResponsesResultFromStreamEvent } from './terminal-event.ts';
+export { isOpenAIResponsesAssistantInputItem } from './assistant-items.ts';
 export { WEB_SEARCH_HOSTED_TYPE_NAMES, collectOpenAIResponsesToolEntries, collectOpenAIResponsesTools, mapOpenAIResponsesTools } from './tools.ts';
 
 export { type CanonicalOpenAIResponsesCompactPayload, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesStoredItem, type OpenAIResponsesCompactPayloadEx, toCompactPayloadShape, isOpenAIResponsesCompactionItem } from './compact.ts';
