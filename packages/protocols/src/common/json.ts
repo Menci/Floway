@@ -1,13 +1,13 @@
 export type JsonObject = Record<string, unknown>;
 
-// Preserve JSON number tokens that JavaScript cannot represent as finite or safe integers.
+// Preserve every number token that the parsed JavaScript value would not serialize identically.
 // https://tc39.es/proposal-json-parse-with-source/#sec-json.rawjson
 const jsonWithRawNumbers = JSON as typeof JSON & {
   rawJSON: (text: string) => { readonly rawJSON: string };
 };
 
 export const parseJSONWithRawNumbers = (text: string): unknown => JSON.parse(text, (_key: string, value: unknown, context?: { source: string }) => {
-  if (typeof value === 'number' && (!Number.isFinite(value) || Number.isInteger(value) && !Number.isSafeInteger(value))) return jsonWithRawNumbers.rawJSON(context!.source);
+  if (typeof value === 'number' && JSON.stringify(value) !== context!.source) return jsonWithRawNumbers.rawJSON(context!.source);
   return value;
 });
 

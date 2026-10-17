@@ -85,6 +85,21 @@ test.each([false, true])('Gemini response exposes EOF without any candidate comp
   assertEquals(errors[0].error.message, 'Gemini generateContent stream ended without a terminal event.');
 });
 
+test.each([false, true])('Gemini response exposes EOF with an unfinished observed candidate (stream=%s)', async stream => {
+  const app = new Hono().get('/', c => respondGeminiGenerateContent(c, {
+    type: 'events', events: (async function* () {
+      yield eventFrame({ candidates: [{ index: 0, content: { parts: [{ text: 'done' }] }, finishReason: 'STOP' }] });
+      yield eventFrame({ candidates: [{ index: 1, content: { parts: [{ text: 'unfinished' }] } }] });
+    })(), modelIdentity: testTelemetryModelIdentity,
+  }, stream, ctx()));
+  const response = await app.request('/');
+  const text = await response.text();
+  assertEquals(response.status, stream ? 200 : 502);
+  const errors = stream ? text.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line)) : [JSON.parse(text)];
+  assertEquals(errors.length, 1);
+  assertEquals(errors[0].error.message, 'Gemini generateContent stream ended without a terminal event.');
+});
+
 test('respondGeminiGenerateContent preserves non-stream Gemini generateContent error event HTTP code', async () => {
   const errorEvent: GeminiGenerateContentErrorResponse = {
     error: {
