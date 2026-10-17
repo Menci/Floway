@@ -5,7 +5,7 @@ import type { OpenAIChatCompletionsReasoningItem } from '@floway-dev/protocols/o
 // aliases of the gateway's canonical `reasoning_text`, preferring the canonical
 // name when an upstream emits more than one.
 
-export interface OpenAIChatCompletionsReasoningDeltaAliases {
+interface OpenAIChatCompletionsReasoningDeltaAliases {
   reasoning_text?: string | null;
   reasoning_content?: string | null;
   reasoning?: string | null;

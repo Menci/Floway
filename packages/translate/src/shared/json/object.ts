@@ -6,27 +6,26 @@ const parseJSON = (text: string): unknown => JSON.parse(text, (_key: string, val
   return value;
 });
 
-export const parseJSONObject = (text: string): Record<string, unknown> => {
-  const value = parseJSON(text);
-  if (!isJsonObject(value) || rawJSON.isRawJSON(value)) throw new TypeError('Tool arguments require a JSON object');
+const isPlainJSONObject = (value: unknown): value is Record<string, any> => isJsonObject(value) && !rawJSON.isRawJSON(value);
+
+export const parseJSONObject = (text: string, parser: (text: string) => unknown = parseJSON): Record<string, any> => {
+  const value = parser(text);
+  if (!isPlainJSONObject(value)) throw new TypeError('Tool arguments require a JSON object');
   return value;
 };
 
-export const parseStrictJsonObject = (json: string, subject: string): Record<string, unknown> => {
-  if (!json) return {};
-
-  let parsed: unknown;
+export const isCompleteJSONObject = (text: string): boolean => {
   try {
-    parsed = JSON.parse(json) as unknown;
+    return isPlainJSONObject(parseJSON(text));
   } catch (error) {
-    throw new Error(`Upstream ${subject} was not valid JSON.`, {
-      cause: error,
-    });
+    if (error instanceof SyntaxError) return false;
+    throw error;
   }
-
-  if (!isJsonObject(parsed)) {
-    throw new Error(`Upstream ${subject} must be a JSON object.`);
-  }
-
-  return parsed;
 };
+
+export const parseJSONObjectAtCompletion = (
+  text: string,
+  completion: 'complete' | 'truncated',
+  parser?: (text: string) => unknown,
+): { readonly completion: 'truncated' } | { readonly completion: 'complete'; readonly value: ReturnType<typeof parseJSONObject> } =>
+  completion === 'truncated' ? { completion } : { completion, value: parseJSONObject(text, parser) };

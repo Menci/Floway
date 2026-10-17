@@ -1,5 +1,7 @@
 import { test } from 'vitest';
 
+import { collect, iterate } from '../ir/helpers.ts';
+import { fixtureFrames, nativeResult } from '../ir/translation-cases.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
@@ -94,4 +96,24 @@ test.each(translations)('$name owns its target payload without retaining source 
     assertEquals(sourceObjects.has(object), false);
     assertEquals(firstObjects.has(object), false);
   }
+});
+
+const returnedTrips = [
+  { a: 'openai-responses', b: 'openai-chat-completions', trip: () => responsesRoute.viaOpenAIChatCompletions({ model: 'm' }) },
+  { a: 'openai-responses', b: 'anthropic-messages', trip: () => responsesRoute.viaAnthropicMessages({ model: 'm', loadRemoteImage: async () => null }) },
+  { a: 'openai-chat-completions', b: 'openai-responses', trip: () => chatRoute.viaOpenAIResponses({ model: 'm' }) },
+  { a: 'openai-chat-completions', b: 'anthropic-messages', trip: () => chatRoute.viaAnthropicMessages({ model: 'm', loadRemoteImage: async () => null }) },
+  { a: 'anthropic-messages', b: 'openai-responses', trip: () => anthropicRoute.viaOpenAIResponses({ model: 'm' }) },
+  { a: 'anthropic-messages', b: 'openai-chat-completions', trip: () => anthropicRoute.viaOpenAIChatCompletions({ model: 'm' }) },
+  { a: 'gemini-generate-content', b: 'openai-responses', trip: () => geminiRoute.viaOpenAIResponses({ model: 'm' }) },
+  { a: 'gemini-generate-content', b: 'openai-chat-completions', trip: () => geminiRoute.viaOpenAIChatCompletions({ model: 'm' }) },
+  { a: 'gemini-generate-content', b: 'anthropic-messages', trip: () => geminiRoute.viaAnthropicMessages({ model: 'm', fallbackMaxOutputTokens: 16 }) },
+] as const;
+
+test.each(returnedTrips)('$a via $b returns generated content through its public TranslateTrip', async ({ a, b, trip }) => {
+  const translation = await trip();
+  const frames = await collect<any>(translation.events(iterate(fixtureFrames(b, { text: ['return path'] }))));
+  const result = await nativeResult(a, frames);
+  const text = a === 'openai-responses' ? result.output[0].content[0].text : a === 'openai-chat-completions' ? result.choices[0].message.content : a === 'anthropic-messages' ? result.content[0].text : result.candidates[0].content.parts[0].text;
+  assertEquals(text, 'return path');
 });

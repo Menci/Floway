@@ -4,10 +4,10 @@ import { openaiResponsesContentToOpenAIChatCompletionsContent, openaiResponsesCo
 import { addOpenAIResponsesReasoningToOpenAIChatCompletionsProjection, type OpenAIChatCompletionsReasoningProjection, openaiChatCompletionsReasoningProjectionFields, createOpenAIChatCompletionsReasoningProjection } from './reasoning.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import { restrictAllowedTools } from '../as-source/allowed-tools.ts';
-import { buildCustomToolInputSchema } from '../as-source/custom-tool-wrap.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
+import { buildCustomToolInputSchema } from '../common/custom-tool-wrap.ts';
 import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsResponseFormat, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesCustomToolCallOutputItem, OpenAIResponsesFunctionCallOutputItem, OpenAIResponsesInputImage, CanonicalOpenAIResponsesText, OpenAIResponsesPayloadEx, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 

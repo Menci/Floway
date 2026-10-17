@@ -1,6 +1,6 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
-import { buildCustomToolInputSchema, unwrapCustomToolInput } from '../../../../src/protocols/openai-responses/as-source/custom-tool-wrap.ts';
+import { buildCustomToolInputSchema, unwrapCustomToolInput } from '../../../../src/protocols/openai-responses/common/custom-tool-wrap.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 // ── buildCustomToolInputSchema ──
@@ -41,6 +41,33 @@ test('buildCustomToolInputSchema injects Lark grammar description when format.de
   });
 });
 
+test('buildCustomToolInputSchema preserves regex syntax in the description', () => {
+  assertEquals(buildCustomToolInputSchema({ type: 'grammar', syntax: 'regex', definition: '[a-z]+' }), {
+    type: 'object',
+    additionalProperties: false,
+    required: ['input'],
+    properties: { input: { type: 'string', description: 'Regex: [a-z]+' } },
+  });
+});
+
+test('buildCustomToolInputSchema uses a generic label for an unknown syntax', () => {
+  assertEquals(buildCustomToolInputSchema({ definition: 'constraint' }), {
+    type: 'object',
+    additionalProperties: false,
+    required: ['input'],
+    properties: { input: { type: 'string', description: 'Grammar: constraint' } },
+  });
+});
+
+test('buildCustomToolInputSchema preserves an open-string syntax label', () => {
+  assertEquals(buildCustomToolInputSchema({ syntax: 'peg', definition: 'start <- value' }), {
+    type: 'object',
+    additionalProperties: false,
+    required: ['input'],
+    properties: { input: { type: 'string', description: 'Grammar (peg): start <- value' } },
+  });
+});
+
 test('buildCustomToolInputSchema ignores non-string definition values', () => {
   assertEquals(buildCustomToolInputSchema({ definition: 42 as unknown as string }), {
     type: 'object',
@@ -71,11 +98,21 @@ test('unwrapCustomToolInput falls back to the raw blob when JSON parse fails', (
 });
 
 test('unwrapCustomToolInput falls back to the raw blob when input field is missing', () => {
-  assertEquals(unwrapCustomToolInput('{"other":"value"}'), '{"other":"value"}');
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    assertEquals(unwrapCustomToolInput('{"other":"value"}'), '{"other":"value"}');
+    assertEquals(warning.mock.calls, [['Custom tool wrapper has no string input; returning the entire JSON value as freeform input.']]);
+  } finally {
+    warning.mockRestore();
+  }
 });
 
 test('unwrapCustomToolInput falls back to the raw blob when input field is not a string', () => {
   assertEquals(unwrapCustomToolInput('{"input":42}'), '{"input":42}');
   assertEquals(unwrapCustomToolInput('{"input":null}'), '{"input":null}');
   assertEquals(unwrapCustomToolInput('{"input":{"nested":"obj"}}'), '{"input":{"nested":"obj"}}');
+});
+
+test('unwrapCustomToolInput ignores extra wrapper properties', () => {
+  assertEquals(unwrapCustomToolInput('{"input":"value","extra":1}'), 'value');
 });

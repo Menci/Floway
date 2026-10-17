@@ -12,7 +12,7 @@ import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../sha
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
 import { eventFrame, type ProtocolFrame, sseCommentFrame } from '@floway-dev/protocols/common';
-import { geminiGenerateContentProtocolFrameToSSEFrame, GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, isGeminiGenerateContentErrorEvent, isGeminiGenerateContentTerminalEvent, collectGeminiGenerateContentProtocolEventsToResult } from '@floway-dev/protocols/gemini-generate-content';
+import { geminiGenerateContentProtocolFrameToSSEFrame, GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, createGeminiGenerateContentCandidateCompletion, isGeminiGenerateContentErrorEvent, isGeminiGenerateContentTerminalEvent, collectGeminiGenerateContentProtocolEventsToResult } from '@floway-dev/protocols/gemini-generate-content';
 import type { GeminiGenerateContentErrorResponse, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { type ExecuteResult, type PlainResult, type ApiErrorResult, type InternalDebugError, toInternalDebugError, decodeApiErrorBody } from '@floway-dev/provider';
 
@@ -174,15 +174,17 @@ const geminiGenerateContentStreamErrorEvent = (error: unknown): GeminiGenerateCo
 const isGeminiGenerateContentTerminalFrame = (frame: ProtocolFrame<GeminiGenerateContentStreamEvent>): boolean => frame.type === 'done' || (frame.type === 'event' && isGeminiGenerateContentTerminalEvent(frame.event));
 
 const observeGeminiGenerateContentFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
+  const completion = createGeminiGenerateContentCandidateCompletion();
   for await (const frame of frames) {
     ctx.dump?.frame(frame);
     const failed = frame.type === 'event' && isGeminiGenerateContentErrorEvent(frame.event);
     if (failed) state.failed = true;
-    if (isGeminiGenerateContentTerminalFrame(frame) && !failed) state.completed = true;
+    if (frame.type === 'event') completion.observe(frame.event);
+    if (!failed) state.completed = isGeminiGenerateContentTerminalFrame(frame) || completion.isComplete();
     yield frame;
     if (isGeminiGenerateContentTerminalFrame(frame)) return;
   }
-  throw new Error(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE);
+  if (!state.completed) throw new Error(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE);
 };
 
 const geminiGenerateContentSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {

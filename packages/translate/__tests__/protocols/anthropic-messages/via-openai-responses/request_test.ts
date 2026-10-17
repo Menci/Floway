@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { packReasoningSignature } from '../../../../src/protocols/anthropic-messages/via-openai-responses/reasoning.ts';
+import { packReasoningSignature } from '../../../../src/protocols/anthropic-messages/as-source/reasoning.ts';
 import { buildTargetRequest } from '../../../../src/protocols/anthropic-messages/via-openai-responses/request.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesAssistantContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIResponsesFunctionTool, OpenAIResponsesInputReasoning } from '@floway-dev/protocols/openai-responses';

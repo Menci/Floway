@@ -3,23 +3,6 @@ import { createRandomOpenAIResponsesItemId, type OpenAIResponsesInputReasoning }
 
 type AnthropicMessagesReasoningBlock = AnthropicMessagesThinkingBlock | AnthropicMessagesRedactedThinkingBlock;
 
-/**
- * Pack an OpenAI Responses reasoning item's `id` and `encrypted_content` into an
- * Anthropic Messages client carrier using `${encrypted_content}@${id}`. This preserves
- * the item id that the Responses upstream binds to its opaque reasoning blob.
- *
- * `encryptedContent` may be empty when a reasoning item has an id but no opaque
- * content, so `@rs_abc` is a valid carrier.
- *
- * References:
- * - https://github.com/caozhiyuan/copilot-api/blob/79b9f491aad13259cb27e8a82faf690474b159a4/src/routes/messages/responses-translation.ts#L427-L440
- * - https://github.com/caozhiyuan/copilot-api/blob/79b9f491aad13259cb27e8a82faf690474b159a4/src/routes/messages/responses-translation.ts#L565
- * - https://github.com/caozhiyuan/copilot-api/blob/79b9f491aad13259cb27e8a82faf690474b159a4/src/routes/messages/responses-stream-translation.ts#L237
- * - https://github.com/caozhiyuan/copilot-api/issues/63
- * - https://github.com/caozhiyuan/copilot-api/issues/73
- */
-export const packReasoningSignature = (id: string, encryptedContent: string): string => `${encryptedContent}@${id}`;
-
 const unpackReasoningSignature = (signature: string): { id: string | null; encryptedContent: string } => {
   const splitIndex = signature.lastIndexOf('@');
   if (splitIndex === -1 || splitIndex === signature.length - 1) {
