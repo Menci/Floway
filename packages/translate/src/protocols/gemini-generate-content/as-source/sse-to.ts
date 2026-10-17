@@ -357,7 +357,7 @@ export const geminiGenerateContentFromIR = async function* (
     }
 
     if (record.type === 'choice_end') {
-      const nativeCandidate = nativeAccumulator.result().candidates?.find(candidate => candidate.index === record.choice);
+      const nativeCandidate = nativeAccumulator.candidate(record.choice);
       const assistantTurn: GeminiGenerateContentAssistantTurn = [{ role: 'model', parts: nativeCandidate?.content?.parts ?? [] }];
       const replayCheck = await computeGeminiGenerateContentReplayCheck(assistantTurn);
       const data = await options.roundTrip.prepareSidecar(record.choice, replayCheck);
