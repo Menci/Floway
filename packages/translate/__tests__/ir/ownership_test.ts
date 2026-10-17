@@ -1,12 +1,7 @@
 import { expect, test, vi } from 'vitest';
 
-import { collect, collectIR, iterate } from './helpers.ts';
+import { collect, collectIR, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
 import { nativeResult } from './translation-cases.ts';
-import { irFromAnthropicMessages } from '../../src/protocols/anthropic-messages/as-target/sse-from.ts';
-import { geminiGenerateContentFromIR } from '../../src/protocols/gemini-generate-content/as-source/sse-to.ts';
-import { openaiChatCompletionsFromIR } from '../../src/protocols/openai-chat-completions/as-source/sse-to.ts';
-import { irFromOpenAIChatCompletions } from '../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
-import { openaiResponsesFromIR } from '../../src/protocols/openai-responses/as-source/sse-to.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 
 const chunk = (delta: any, extra: any = {}) => eventFrame({ id: 'chat_owner', model: 'served', created: 1, choices: [{ index: 0, delta, finish_reason: null, ...extra }] } as any);
@@ -35,7 +30,7 @@ test('ChatCompletions logprobs retain their text owner when a tool appears in th
   expect(annotation).toBeGreaterThanOrEqual(0);
   expect(annotation).toBeLessThan(end);
   const result = await nativeResult('openai-responses', frames);
-  expect(result.output).toHaveLength(2);
+  expect(result.output.filter((item: any) => item.type !== 'reasoning' || typeof item.encrypted_content !== 'string')).toHaveLength(2);
   expect(result.output[0].content[0]).toMatchObject({ text: 'hello', logprobs: [token] });
 });
 
@@ -107,7 +102,7 @@ test('Messages URL citations without cited text do not expand to the entire Resp
 
 test('range-less Messages citations do not expand to whole-part ChatCompletions or GenerateContent citations', async () => {
   const chatFrames = await collect(openaiChatCompletionsFromIR(irFromAnthropicMessages(iterate(messagesCitationFrames('source quote'))), { id: 'chat_target', created: 1 }));
-  expect(chatFrames.some(frame => frame.type === 'event' && frame.event.choices.some(choice => 'annotations' in choice.delta))).toBe(false);
+  expect(chatFrames.some(frame => frame.type === 'event' && !('error' in frame.event) && frame.event.choices.some(choice => 'annotations' in choice.delta))).toBe(false);
 
   const generateContentFrames = await collect(geminiGenerateContentFromIR(irFromAnthropicMessages(iterate(messagesCitationFrames('source quote')))));
   expect(generateContentFrames.some(frame => frame.type === 'event' && 'candidates' in frame.event && frame.event.candidates?.some(candidate => candidate.groundingMetadata !== undefined))).toBe(false);

@@ -1,3 +1,4 @@
+import { isEncryptedReasoningDetail } from './reasoning-details.ts';
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { openaiChatCompletionsErrorPayloadMessage, type OpenAIChatCompletionsAssistantDeltaEx, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
@@ -28,6 +29,14 @@ const eventWithChoices = (
 
 const hasOptionalChunkFields = (event: OpenAIChatCompletionsStreamEvent): boolean =>
   Object.keys(event).some(key => !REQUIRED_CHUNK_KEYS.has(key));
+
+const wrapReasoningDetails = async (value: unknown, options: AffinityEgressOptions): Promise<unknown> => {
+  if (!Array.isArray(value)) return value;
+  return await Promise.all(value.map(async detail => {
+    if (!isEncryptedReasoningDetail(detail)) return detail;
+    return { ...detail, data: await options.codec.wrap(detail.data, options.affinity, 'openai-chat-completions.reasoning_details.reasoning.encrypted.data') };
+  }));
+};
 
 export const wrapOpenAIChatCompletionsAffinityEgress = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
@@ -80,8 +89,11 @@ export const wrapOpenAIChatCompletionsAffinityEgress = async function* (
       const state = previous === undefined || previous.finished ? { finished: false } : previous;
       choices.set(index, state);
 
-      const { reasoning_opaque: opaque, ...delta } = sourceDelta as OpenAIChatCompletionsAssistantDeltaEx;
+      const { reasoning_opaque: opaque, ...sourceVisibleDelta } = sourceDelta as OpenAIChatCompletionsAssistantDeltaEx;
       if (typeof opaque === 'string') state.opaque = opaque;
+      const delta = Object.hasOwn(sourceVisibleDelta, 'reasoning_details')
+        ? { ...sourceVisibleDelta, reasoning_details: await wrapReasoningDetails(sourceVisibleDelta.reasoning_details, options) }
+        : sourceVisibleDelta;
       const hasVisibleProjection = Object.keys(delta).length > 0 || Object.keys(choiceExtras).length > 0;
 
       if (finishReason == null) {

@@ -1,9 +1,8 @@
 import { expect, test } from 'vitest';
 
-import { collect, iterate } from './helpers.ts';
+import { collect, iterate, openaiResponsesFromIR } from './helpers.ts';
 import { createIRCollector } from '../../src/ir/collector.ts';
 import { createIRBuilder, type IRRecord } from '../../src/ir/stream.ts';
-import { openaiResponsesFromIR } from '../../src/protocols/openai-responses/as-source/sse-to.ts';
 
 test('initialize carries real required fields while append targets start empty', async () => {
   const records: IRRecord[] = [

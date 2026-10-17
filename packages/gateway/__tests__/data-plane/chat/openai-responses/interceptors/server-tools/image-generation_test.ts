@@ -428,7 +428,7 @@ test('transformInputItemsForImageGeneration rewrites a completed call into a fun
 
 test('transformInputItemsForImageGeneration does not feed back an image for a failed call', () => {
   const out = transformInputItemsForImageGeneration(
-    [{ type: 'image_generation_call', id: 'ig_f', status: 'failed', error: { message: 'x', code: 'server_error' } }],
+    [{ type: 'image_generation_call', id: 'ig_f', status: 'failed', result: null, error: { message: 'x', code: 'server_error' } }],
     'image_generation',
   );
   assertEquals(out.length, 2);
@@ -437,7 +437,7 @@ test('transformInputItemsForImageGeneration does not feed back an image for a fa
 
 test('transformInputItemsForImageGeneration encodes a failed call as ok:false with error detail', () => {
   const out = transformInputItemsForImageGeneration(
-    [{ type: 'image_generation_call', id: 'ig_2', status: 'failed', revised_prompt: 'x', error: { message: 'overloaded', code: 'EngineOverloaded' } }],
+    [{ type: 'image_generation_call', id: 'ig_2', status: 'failed', result: null, revised_prompt: 'x', error: { message: 'overloaded', code: 'EngineOverloaded' } }],
     'image_generation',
   );
   assert(out[1].type === 'function_call_output');
@@ -548,7 +548,7 @@ test('prepareImageGenerationConfig preserves a remote mask for materialization',
 
 test('transformInputItemsForImageGeneration preserves error type and retryability on replay', () => {
   const out = transformInputItemsForImageGeneration(
-    [{ type: 'image_generation_call', id: 'ig_3', status: 'failed', error: { message: 'blocked', code: 'content_filter', type: 'image_generation_user_error' } }],
+    [{ type: 'image_generation_call', id: 'ig_3', status: 'failed', result: null, error: { message: 'blocked', code: 'content_filter', type: 'image_generation_user_error' } }],
     'image_generation',
   );
   assert(out[1].type === 'function_call_output');

@@ -18,6 +18,7 @@ import { SHIM_TOOL_NAME, webSearchServerTool } from '../../../../../src/data-pla
 import type { OpenAIResponsesInterceptor, OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { createNonOpenAIResponsesSourceStore } from '../../../../../src/data-plane/chat/openai-responses/items/store.ts';
 import type { ChatGatewayCtx } from '../../../../../src/data-plane/chat/shared/gateway-ctx.ts';
+import { SidecarKind } from '../../../../../src/data-plane/chat/shared/sidecar-codec.ts';
 import { resolveAlphaSearchDispatcher } from '../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts';
 import type { AlphaSearchDispatcher } from '../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../../../src/data-plane/tools/web-search/provider.ts';
@@ -6720,7 +6721,7 @@ for (const targetApi of ['openaiChatCompletions', 'anthropicMessages', 'openaiRe
         ]]).run();
       }
       if (targetApi === 'openaiChatCompletions') {
-        const trip = await routeOpenAIResponses(inv.payload).viaOpenAIChatCompletions({ model: 'm' });
+        const trip = await routeOpenAIResponses(inv.payload).viaOpenAIChatCompletions({ model: 'm', sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.getForKind(SidecarKind.TranslateRoundTrip) });
         const client = trip.target.tools?.[1];
         assert(client?.type === 'function');
         const events = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
@@ -6729,7 +6730,7 @@ for (const targetApi of ['openaiChatCompletions', 'anthropicMessages', 'openaiRe
         })();
         return eventResult(trip.events(events), testTelemetryModelIdentity);
       }
-      const trip = await routeOpenAIResponses(inv.payload).viaAnthropicMessages({ model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected image'); } });
+      const trip = await routeOpenAIResponses(inv.payload).viaAnthropicMessages({ model: 'm', sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.getForKind(SidecarKind.TranslateRoundTrip), loadRemoteImage: async () => { throw new Error('Unexpected image'); } });
       const tool = trip.target.tools?.[1];
       const name = tool !== undefined && 'name' in tool ? tool.name : undefined;
       assert(typeof name === 'string');
@@ -6745,7 +6746,7 @@ for (const targetApi of ['openaiChatCompletions', 'anthropicMessages', 'openaiRe
     });
     assertEquals(turns, 1);
     assertEquals(backend.calls, []);
-    assertEquals(findResponseCompleted(frames).response.output.map(item => item.type === 'function_call' ? [item.type, item.name, item.namespace] : [item.type]), [['function_call', SHIM_TOOL_NAME, 'functions']]);
+    assertEquals(findResponseCompleted(frames).response.output.map(item => item.type === 'function_call' ? [item.type, item.name, item.namespace] : [item.type]), [['function_call', SHIM_TOOL_NAME, 'functions'], ...(targetApi === 'openaiResponses' ? [] : [['reasoning']])]);
   });
 }
 
@@ -6786,8 +6787,8 @@ for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
         choices.push(structuredClone(inv.payload.tool_choice));
         const before = structuredClone(inv.payload);
         const trip = target === 'openaiChatCompletions'
-          ? await routeOpenAIResponses(inv.payload).viaOpenAIChatCompletions({ model: 'm' })
-          : await routeOpenAIResponses(inv.payload).viaAnthropicMessages({ model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected image'); } });
+          ? await routeOpenAIResponses(inv.payload).viaOpenAIChatCompletions({ model: 'm', sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.getForKind(SidecarKind.TranslateRoundTrip) })
+          : await routeOpenAIResponses(inv.payload).viaAnthropicMessages({ model: 'm', sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.getForKind(SidecarKind.TranslateRoundTrip), loadRemoteImage: async () => { throw new Error('Unexpected image'); } });
         const wire = JSON.parse(JSON.stringify(trip.target)) as { tools: Array<{ name?: string; function?: { name: string } }> };
         assert(wire.tools.some(tool => (tool.function?.name ?? tool.name) === alias), 'the translated subset must declare the helper alias');
         assertEquals(inv.payload, before, 'repeated translation must preserve the outer loop payload');

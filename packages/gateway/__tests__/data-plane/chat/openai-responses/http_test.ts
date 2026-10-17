@@ -828,7 +828,7 @@ for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
       assertEquals(bodies[1]!.messages, [
         { role: 'user', content: 'inspect the request' },
         {
-          role: 'assistant', content: null,
+          role: 'assistant', content: null, refusal: null,
           tool_calls: [{ id: call.call_id, type: 'function', function: { name: 'exec', arguments: '{"input":"patch"}' } }],
         },
         { role: 'tool', tool_call_id: call.call_id, content: 'first\nsecond' },

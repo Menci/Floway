@@ -6,10 +6,10 @@ import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx } fr
 
 export const translate: TranslateTrip<
   OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent, CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx
-> = async src => {
+> = async (src, ctx) => {
   const streamOptions = { ...src.stream_options };
   return {
-    target: buildTargetRequest(src),
-    events: frames => translateToSourceEvents(frames, streamOptions),
+    target: await buildTargetRequest(src, ctx.sidecarCodec),
+    events: frames => translateToSourceEvents(frames, streamOptions, ctx.sidecarCodec),
   };
 };

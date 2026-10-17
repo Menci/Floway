@@ -1,17 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { collectIR, collect, completeIR, events, iterate } from './helpers.ts';
+import { anthropicMessagesFromIR, collectIR, collect, completeIR, events, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
 import { createIRBuilder } from '../../src/ir/stream.ts';
-import { anthropicMessagesFromIR } from '../../src/protocols/anthropic-messages/as-source/sse-to.ts';
+import type { IRItem, IRJSONObject } from '../../src/ir/types.ts';
 import { usageFromIR as messagesUsageFromIR } from '../../src/protocols/anthropic-messages/as-source/usage.ts';
-import { irFromAnthropicMessages } from '../../src/protocols/anthropic-messages/as-target/sse-from.ts';
 import { usageToIR as messagesUsageToIR } from '../../src/protocols/anthropic-messages/as-target/usage.ts';
-import { geminiGenerateContentFromIR } from '../../src/protocols/gemini-generate-content/as-source/sse-to.ts';
-import { openaiChatCompletionsFromIR } from '../../src/protocols/openai-chat-completions/as-source/sse-to.ts';
-import { irFromOpenAIChatCompletions } from '../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
-import { openaiResponsesFromIR } from '../../src/protocols/openai-responses/as-source/sse-to.ts';
 import { usageFromIR as responsesUsageFromIR } from '../../src/protocols/openai-responses/as-source/usage.ts';
-import { irFromOpenAIResponses } from '../../src/protocols/openai-responses/as-target/sse-from.ts';
 import { usageToIR as responsesUsageToIR } from '../../src/protocols/openai-responses/as-target/usage.ts';
 import { TextCoordinateIndex } from '../../src/shared/text-coordinate-index.ts';
 import { reassembleAnthropicMessagesEvents, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
@@ -30,14 +24,15 @@ const chat = () => irFromOpenAIChatCompletions(iterate([
   chatFrame([{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '1}' } }] }, finish_reason: 'tool_calls' }]),
   chatFrame([], { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18, prompt_tokens_details: { cached_tokens: 3 }, completion_tokens_details: { reasoning_tokens: 2 } }), doneFrame(),
 ]));
-const responses = () => irFromOpenAIResponses(iterate([...openaiResponsesResultToEvents({
+const responseFrames = () => iterate([...openaiResponsesResultToEvents({
   id: 'source', object: 'response', model: 'model', status: 'completed', error: null, incomplete_details: null,
   output: [
     { type: 'reasoning', id: 'r', summary: [{ type: 'summary_text', text: 'th' }, { type: 'summary_text', text: 'ink' }], content: [{ type: 'reasoning_text', text: 'detail' }], encrypted_content: 'sealed' },
     { type: 'message', id: 'm', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'A😀', annotations: [] }, { type: 'output_text', text: '中B', annotations: [] }] },
     { type: 'function_call', id: 'f', call_id: 'call', name: 'tool', arguments: '{"a":1}', status: 'completed' },
   ], usage: { input_tokens: 11, output_tokens: 7, total_tokens: 18, input_tokens_details: { cached_tokens: 3 }, output_tokens_details: { reasoning_tokens: 2 } },
-} as OpenAIResponsesResultEx), doneFrame()]));
+} as OpenAIResponsesResultEx), doneFrame()]);
+const responses = () => irFromOpenAIResponses(responseFrames());
 const messages = () => irFromAnthropicMessages(iterate([
   { type: 'message_start', message: { id: 'source', type: 'message', role: 'assistant', model: 'model', content: [], usage: { input_tokens: 6, output_tokens: 0, cache_read_input_tokens: 3, cache_creation_input_tokens: 2 } } },
   { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '', signature: '' } },
@@ -82,8 +77,12 @@ describe('fit IR streaming', () => {
     expect(value.usage?.output_tokens_inclusive).toBe(7);
     const reasoning = value.choices[0].items.find(item => item.type === 'reasoning');
     expect(reasoning?.type).toBe('reasoning');
-    if (_name === 'Responses' && reasoning?.type === 'reasoning') expect(reasoning.summary).toEqual(['th', 'ink']);
-    if (_name === 'Messages' && reasoning?.type === 'reasoning') expect(reasoning.encrypted_content).toBe('sealed');
+    if (_name === 'Responses') {
+      if (reasoning?.type === 'reasoning') expect(reasoning.summary).toEqual(['th', 'ink']);
+      expect(value.choices[0].items.find(item => item.type === 'message')).toMatchObject({
+        type: 'message', content: [{ type: 'text', text: 'A😀' }, { type: 'text', text: '中B' }],
+      });
+    }
   });
 
   for (const [name, source] of [['ChatCompletions', chat], ['Responses', responses], ['Messages', messages]] as const) {
@@ -97,6 +96,13 @@ describe('fit IR streaming', () => {
       const frames = await collect(openaiResponsesFromIR(source(), options));
       const result = await reassembleOpenAIResponsesEvents(events(iterate(frames)));
       expect(result.output.filter(item => item.type === 'message').flatMap(item => item.type === 'message' ? item.content.map(p => p.type === 'output_text' ? p.text : '') : []).join('')).toBe('A😀中B');
+      if (name === 'Responses') {
+        const message = result.output.find(item => item.type === 'message');
+        expect(message?.type === 'message' && message.content).toEqual([
+          { type: 'output_text', text: 'A😀', annotations: [], logprobs: [] },
+          { type: 'output_text', text: '中B', annotations: [], logprobs: [] },
+        ]);
+      }
       expect(result.output.find(item => item.type === 'function_call')).toMatchObject({ name: 'tool', arguments: '{"a":1}' });
       const sequence = frames.flatMap(frame => frame.type === 'event' ? [frame.event.sequence_number!] : []);
       expect(sequence).toEqual(sequence.map((_, index) => index));
@@ -141,7 +147,7 @@ describe('fit IR streaming', () => {
     expect(translated.generateContent.candidates?.[0]?.content?.parts?.filter(part => part.text !== undefined && !part.thought).map(part => part.text).join('')).toBe('AB');
 
     const chatStart = translated.chatFrames.find(frame => frame.type === 'event');
-    expect(chatStart?.type === 'event' && chatStart.event.id).toBe('chatcmpl-azure');
+    expect(chatStart?.type === 'event' && !('error' in chatStart.event) && chatStart.event.id).toBe('chatcmpl-azure');
     const responseStart = translated.responsesFrames.find(frame => frame.type === 'event' && frame.event.type === 'response.created');
     if (responseStart?.type !== 'event' || responseStart.event.type !== 'response.created') throw new Error('Expected a Responses opening event');
     expect(responseStart.event.response.id).toMatch(/^resp_/);
@@ -167,10 +173,10 @@ describe('fit IR streaming', () => {
     expect(translated.generateContent.candidates?.[0]?.content?.parts?.filter(part => part.text !== undefined && !part.thought).map(part => part.text).join('')).toBe('AB');
 
     const chatStart = translated.chatFrames.find(frame => frame.type === 'event');
-    expect(chatStart?.type === 'event' && chatStart.event.id).toMatch(/^chatcmpl-/);
-    const chatEvents = translated.chatFrames.filter(frame => frame.type === 'event');
+    expect(chatStart?.type === 'event' && !('error' in chatStart.event) && chatStart.event.id).toMatch(/^chatcmpl-/);
+    const chatEvents = translated.chatFrames.filter(frame => frame.type === 'event' && !('error' in frame.event));
     expect(chatEvents.length).toBeGreaterThan(0);
-    expect(chatEvents.every(frame => frame.type === 'event' && frame.event.created === 20)).toBe(true);
+    expect(chatEvents.every(frame => frame.type === 'event' && !('error' in frame.event) && frame.event.created === 20)).toBe(true);
     const responseStart = translated.responsesFrames.find(frame => frame.type === 'event' && frame.event.type === 'response.created');
     if (responseStart?.type !== 'event' || responseStart.event.type !== 'response.created') throw new Error('Expected a Responses opening event');
     expect(responseStart.event.response.id).toMatch(/^resp_/);
@@ -199,7 +205,7 @@ describe('fit IR streaming', () => {
     };
     const stream = openaiChatCompletionsFromIR(irFromOpenAIChatCompletions(upstream()), options);
     let found = false;
-    for await (const frame of stream) if (frame.type === 'event' && frame.event.choices[0]?.delta.content === 'first') {
+    for await (const frame of stream) if (frame.type === 'event' && !('error' in frame.event) && frame.event.choices[0]?.delta.content === 'first') {
       expect(exhausted).toBe(false); found = true; break;
     }
     expect(found).toBe(true);
@@ -257,6 +263,11 @@ describe('fit IR streaming', () => {
       const body = await output.next();
       expect(body).toMatchObject({ done: false, value: { candidates: [{ index: choice, content: { parts: [{ text }] } }] } });
       result.push(body.value);
+      const sidecar = await output.next();
+      expect(sidecar).toEqual({ done: false, value: { responseId: 'target', modelVersion: 'm', candidates: [{ index: choice, content: { role: 'model', parts: [{ thoughtSignature: 'test-sidecar' }] } }] } });
+      result.push(sidecar.value);
+      expect(nextChoicePulled).toBe(choice === 1);
+      expect(usagePulled).toBe(false);
       const terminal = await output.next();
       expect(terminal).toEqual({ done: false, value: { responseId: 'target', modelVersion: 'm', candidates: [{ index: choice, finishReason: choice === 0 ? 'STOP' : 'MAX_TOKENS' }] } });
       result.push(terminal.value);
@@ -271,8 +282,8 @@ describe('fit IR streaming', () => {
     expect(await reassembleGeminiGenerateContentEvents(iterate(result))).toEqual({
       responseId: 'target', modelVersion: 'm', usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 0, totalTokenCount: 3 },
       candidates: [
-        { index: 0, content: { role: 'model', parts: [{ text: 'a' }] }, finishReason: 'STOP' },
-        { index: 1, content: { role: 'model', parts: [{ text: 'b' }] }, finishReason: 'MAX_TOKENS' },
+        { index: 0, content: { role: 'model', parts: [{ text: 'a' }, { thoughtSignature: 'test-sidecar' }] }, finishReason: 'STOP' },
+        { index: 1, content: { role: 'model', parts: [{ text: 'b' }, { thoughtSignature: 'test-sidecar' }] }, finishReason: 'MAX_TOKENS' },
       ],
     });
   });
@@ -281,6 +292,7 @@ describe('fit IR streaming', () => {
     const frames = await collect(events(geminiGenerateContentFromIR(iterate(completeIR([{ type: 'message', content: [{ type: 'text', text: 'answer' }] }])), options)));
     expect(frames).toEqual([
       { responseId: 'target', modelVersion: 'model', candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'answer' }] } }] },
+      { responseId: 'target', modelVersion: 'model', candidates: [{ index: 0, content: { role: 'model', parts: [{ thoughtSignature: 'test-sidecar' }] } }] },
       { responseId: 'target', modelVersion: 'model', candidates: [{ index: 0, finishReason: 'STOP' }] },
     ]);
   });
@@ -326,6 +338,7 @@ describe('fit IR streaming', () => {
       { functionCall: { id: 'call', name: 'tool', args: {} } },
       { text: 'after tool' },
       { inlineData: { mimeType: 'audio/wav', data: 'YQ==' } },
+      { thoughtSignature: 'test-sidecar' },
     ]);
   });
 
@@ -343,7 +356,7 @@ describe('fit IR streaming', () => {
   it('retains text-image-text order in Responses output', async () => {
     const frames = openaiResponsesFromIR(iterate(completeIR([{ type: 'message', content: [{ type: 'text', text: 'before' }, { type: 'image', image: { data: 'YQ==', mime_type: 'image/png' } }, { type: 'text', text: 'after' }] }])), options);
     const result = await reassembleOpenAIResponsesEvents(events(frames));
-    expect(result.output.map(item => item.type)).toEqual(['message', 'image_generation_call', 'message']);
+    expect(result.output.map(item => item.type)).toEqual(['message', 'image_generation_call', 'message', 'reasoning']);
   });
 
   it('marks ChatCompletions length termination incomplete and exposes IR errors', async () => {
@@ -365,20 +378,16 @@ describe('fit IR streaming', () => {
     expect(frames.filter(record => record.type === 'part_end')).toHaveLength(success ? 2 : 1);
   });
 
-  it('closes a Responses text part before its item finishes', async () => {
-    const input: any[] = [{ type: 'response.created', response: { id: 's', model: 'm', output: [] } }, { type: 'response.output_item.added', output_index: 0, item: { type: 'message', id: 'msg', role: 'assistant', content: [] } }, { type: 'response.content_part.added', output_index: 0, content_index: 0, part: { type: 'output_text', text: 'text', annotations: [] } }, { type: 'response.content_part.done', output_index: 0, content_index: 0, part: { type: 'output_text', text: 'text', annotations: [] } }];
-    const iterator = irFromOpenAIResponses(iterate(input.map(eventFrame)));
-    const records = [];
-    for await (const record of iterator) {
-      records.push(record);
-      if (record.type === 'part_end') break;
-    }
-    expect(records.at(-1)).toEqual({ type: 'part_end', choice: 0, item: 0, part: 0 });
-    expect(records.some(record => record.type === 'item_end')).toBe(false);
-    await iterator.return(undefined);
+  it('closes a Responses text run with its item', async () => {
+    const item: any = { type: 'message', id: 'msg', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'text', annotations: [] }] };
+    const response: any = { id: 's', model: 'm', status: 'completed', output: [item], usage: null };
+    const input: any[] = [{ type: 'response.created', response: { ...response, output: [] } }, { type: 'response.output_item.added', output_index: 0, item: { ...item, status: 'in_progress', content: [] } }, { type: 'response.content_part.added', output_index: 0, content_index: 0, part: { type: 'output_text', text: '', annotations: [] } }, { type: 'response.output_text.delta', output_index: 0, content_index: 0, delta: 'text' }, { type: 'response.content_part.done', output_index: 0, content_index: 0, part: item.content[0] }, { type: 'response.output_item.done', output_index: 0, item }, { type: 'response.completed', response }];
+    const records = await collect(irFromOpenAIResponses(iterate(input.map(eventFrame))));
+    expect(records.filter(record => record.type === 'part_end')).toEqual([{ type: 'part_end', choice: 0, item: 0, part: 0 }]);
+    expect(records.findIndex(record => record.type === 'part_end')).toBeLessThan(records.findIndex(record => record.type === 'item_end'));
   });
 
-  it.each([['Messages', anthropicMessagesFromIR, reassembleAnthropicMessagesEvents], ['GenerateContent', geminiGenerateContentFromIR, reassembleGeminiGenerateContentEvents]] as const)('allows configured JSON repair in %s while exposing default parse failures', async (_name, adapter, reassemble) => {
+  it.each([['Messages', anthropicMessagesFromIR, reassembleAnthropicMessagesEvents], ['GenerateContent', geminiGenerateContentFromIR, reassembleGeminiGenerateContentEvents]] as const)('allows configured JSON repair in %s', async (_name, adapter, reassemble) => {
     const frames = completeIR([{ type: 'function_call', name: 'tool', call_id: 'c', arguments: '{"a":1' }]);
     const output = adapter(iterate(frames), { ...options, parseToolArguments: text => JSON.parse(`${text}}`) });
     const result: any = await (reassemble as any)(events<unknown>(output));
@@ -393,7 +402,24 @@ describe('fit IR streaming', () => {
     expect(added[0]).toMatchObject({ name: 'tool', call_id: 'call' });
   });
 
-  it.each([{ items: [] }, { items: [{ type: 'reasoning', content: ['thought'] }] }])('exposes invalid logprob item ownership %j', async ({ items }) => {
+  it('preserves null and omitted logprob bytes in Responses deltas and results', async () => {
+    const tokens: IRJSONObject[] = [
+      { token: 'a', logprob: -1, bytes: null, top_logprobs: [{ token: 'b', logprob: -2, bytes: null }] },
+      { token: 'c', logprob: -3 },
+    ];
+    const records = completeIR([{ type: 'message', content: [{ type: 'text', text: 'ac' }] }]);
+    records.splice(records.findIndex(record => record.type === 'part_end'), 0,
+      { type: 'operation', operation: 'initialize', path: ['choices', 0, 'logprobs'], value: [] },
+      { type: 'operation', operation: 'initialize', path: ['choices', 0, 'logprobs', 0], value: { scope: 'text_part', item_index: 0, content_index: 0, tokens: [] } },
+      ...tokens.map((value, index) => ({ type: 'operation' as const, operation: 'assign' as const, path: ['choices', 0, 'logprobs', 0, 'tokens', index], value })));
+    const frames = await collect(openaiResponsesFromIR(iterate(records), options));
+    const emitted = frames.flatMap(frame => frame.type === 'event' && frame.event.type === 'response.output_text.delta' ? frame.event.logprobs ?? [] : []);
+    expect(emitted).toEqual(tokens);
+    const result = await reassembleOpenAIResponsesEvents(events(iterate(frames)));
+    expect(result.output[0]).toMatchObject({ content: [{ logprobs: tokens }] });
+  });
+
+  it.each<{ items: readonly IRItem[] }>([{ items: [] }, { items: [{ type: 'reasoning', content: ['thought'] }] }])('exposes invalid logprob item ownership %j', async ({ items }) => {
     const frames = completeIR(items);
     const end = frames.findIndex(record => record.type === 'choice_end');
     const logprobs = [
@@ -423,7 +449,7 @@ describe('fit IR streaming', () => {
     const input: any[] = [{ type: 'response.created', response }, ...(transcriptFirst ? [transcript, data] : [data, transcript]), { type: 'response.audio.done' }, { type: 'response.audio.transcript.done' }, { type: 'response.completed', response }];
     const source = () => irFromOpenAIResponses(iterate(input.map(eventFrame)));
     const messages = await reassembleAnthropicMessagesEvents(events(anthropicMessagesFromIR(source(), options)));
-    expect(messages.content).toMatchObject([{ type: 'text', text: 'hello' }]);
+    expect(messages.content.filter(block => block.type !== 'redacted_thinking')).toMatchObject([{ type: 'text', text: 'hello' }]);
     const chat = await reassembleOpenAIChatCompletionsEvents(events(openaiChatCompletionsFromIR(source(), { ...options, audioMetadata: () => ({ id: 'a', expires_at: 123 }) })));
     expect(chat.choices[0].message.audio).toEqual({ id: 'a', expires_at: 123, data: 'YQ==', transcript: 'hello' });
     expect(chat.choices[0].message.content).toBeNull();
@@ -433,12 +459,12 @@ describe('fit IR streaming', () => {
 
   it('emits a transcript-only audio part once in GenerateContent', async () => {
     const result = await reassembleGeminiGenerateContentEvents(events(geminiGenerateContentFromIR(iterate(completeIR([{ type: 'message', content: [{ type: 'audio', audio: { transcript: 'hello' } }] }])), options)));
-    expect(result.candidates?.[0].content?.parts).toEqual([{ text: 'hello' }]);
+    expect(result.candidates?.[0].content?.parts).toEqual([{ text: 'hello' }, { thoughtSignature: 'test-sidecar' }]);
   });
 
   it('emits transcript-only audio before ChatCompletions finish_reason', async () => {
     const frames = await collect(openaiChatCompletionsFromIR(iterate(completeIR([{ type: 'message', content: [{ type: 'audio', audio: { transcript: 'hello' } }] }])), options));
-    const chunks = frames.flatMap(frame => frame.type === 'event' ? frame.event.choices : []);
+    const chunks = frames.flatMap(frame => frame.type === 'event' && !('error' in frame.event) ? frame.event.choices : []);
     expect(chunks.findIndex(choice => choice.delta.content === 'hello')).toBeLessThan(chunks.findIndex(choice => choice.finish_reason === 'stop'));
   });
 

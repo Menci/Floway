@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import { buildTargetRequest as buildMessages } from '../../../../src/protocols/openai-responses/via-anthropic-messages/request.ts';
 import { buildTargetRequest as buildChat } from '../../../../src/protocols/openai-responses/via-openai-chat-completions/request.ts';
 import { TranslatorInputError } from '../../../../src/translator-input-error.ts';
+import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
@@ -17,7 +18,12 @@ const source = (tool_choice: OpenAIResponsesToolChoice): OpenAIResponsesRequestP
 });
 
 for (const target of ['chat', 'messages'] as const) {
-  const build = async (payload: OpenAIResponsesRequestPayloadEx) => target === 'chat' ? buildChat(payload) : await buildMessages(payload);
+  const build = async (payload: OpenAIResponsesRequestPayloadEx) => target === 'chat'
+    ? await buildChat(payload, createTestSidecarCodec())
+    : await buildMessages(payload, createTestSidecarCodec(), {
+        fallbackMaxOutputTokens: undefined,
+        loadRemoteImage: async () => null,
+      });
   for (const mode of ['auto', 'required'] as const) {
     test(`${target} request serializes only the allowed function/custom subset and ${mode} mode`, async () => {
       const payload = source({ type: 'allowed_tools', mode, tools: [{ type: 'custom', name: 'edit' }, { type: 'function', name: 'read' }] });
