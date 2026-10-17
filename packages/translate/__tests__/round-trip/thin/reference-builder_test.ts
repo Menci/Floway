@@ -64,6 +64,36 @@ describe('ReferenceBuilder', () => {
     expect(finalizer.referencedContents).toEqual([await hashRoundTripContent(left + right)]);
   });
 
+  it('looks up equal complete texts once per content ID rather than once per SSE atom', async () => {
+    const builder = createReferenceBuilder();
+    const fields = [createFieldState('text'), createFieldState('text')];
+    const contents = fields.map(() => createContentState(builder, 'text'));
+    const texts = contents.map(() => Array.from({ length: 128 }, () => 'abcdefgh').join(''));
+    for (const [index, field] of fields.entries()) {
+      for (let offset = 0; offset < texts[index].length; offset += 8) {
+        const piece = texts[index].slice(offset, offset + 8);
+        appendContent(builder, contents[index], piece, [appendField(builder, field, piece)]);
+      }
+    }
+    const views = new Map(contents.flatMap((content, index) => [...collectContentViews(texts[index], content)]));
+    const finalizer = createReferenceFinalizer(builder, views);
+    const digest = vi.spyOn(crypto.subtle, 'digest');
+    const lookups = vi.spyOn(Map.prototype, 'get');
+    let completeTextLookups: number;
+    let hashCalls: number;
+    try {
+      for (const [index, field] of fields.entries()) await finalizer.finalizeField(texts[index], field);
+      completeTextLookups = lookups.mock.calls.filter(([key]) => key === texts[0]).length;
+      hashCalls = digest.mock.calls.length;
+    } finally {
+      lookups.mockRestore();
+      digest.mockRestore();
+    }
+    expect(completeTextLookups).toBe(contents.length);
+    expect(hashCalls).toBe(1);
+    expect(finalizer.referencedContents).toEqual([await hashRoundTripContent(texts[0])]);
+  });
+
   it('coalesces shifted ranges across canonical parts and preserves original-leaf validation', async () => {
     const builder = createReferenceBuilder();
     const field = createFieldState('text');

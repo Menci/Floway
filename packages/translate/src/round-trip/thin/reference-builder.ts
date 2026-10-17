@@ -150,6 +150,7 @@ interface ReferenceSegment {
 }
 
 interface ResolvedSegment {
+  readonly contentId: ContentId;
   readonly content: string;
   readonly start: number;
   readonly endExclusive: number;
@@ -165,12 +166,18 @@ interface ReferenceFinalizer {
 
 export const createReferenceFinalizer = (builder: ReferenceBuilder, contentViews: ReadonlyMap<ContentId, CanonicalTextView>): ReferenceFinalizer => {
   const referencedContents: Uint8Array[] = [];
+  const hashIndexByContentId = new Map<ContentId, number>();
   const hashIndexByContent = new Map<string, number>();
   const hashIndexByDigest = new Map<string, number>();
 
-  const hashIndex = async (content: string): Promise<number> => {
+  const hashIndex = async (contentId: ContentId, content: string): Promise<number> => {
+    const resolved = hashIndexByContentId.get(contentId);
+    if (resolved !== undefined) return resolved;
     const existing = hashIndexByContent.get(content);
-    if (existing !== undefined) return existing;
+    if (existing !== undefined) {
+      hashIndexByContentId.set(contentId, existing);
+      return existing;
+    }
     const digest = await hashRoundTripContent(content);
     const key = encodeHex(digest);
     let index = hashIndexByDigest.get(key);
@@ -180,6 +187,7 @@ export const createReferenceFinalizer = (builder: ReferenceBuilder, contentViews
       hashIndexByDigest.set(key, index);
     }
     hashIndexByContent.set(content, index);
+    hashIndexByContentId.set(contentId, index);
     return index;
   };
 
@@ -198,11 +206,11 @@ export const createReferenceFinalizer = (builder: ReferenceBuilder, contentViews
       const start = view.offset + resolution.start;
       const endExclusive = view.offset + resolution.endExclusive;
       if (view.text.slice(start, endExclusive) !== piece) return original;
-      resolved.push({ content: view.text, start, endExclusive });
+      resolved.push({ contentId: resolution.contentId, content: view.text, start, endExclusive });
     }
     const segments: ReferenceSegment[] = [];
     for (const resolution of resolved) {
-      const index = await hashIndex(resolution.content);
+      const index = await hashIndex(resolution.contentId, resolution.content);
       const previous = segments.at(-1);
       if (previous?.hashIndex === index && previous.endExclusive === resolution.start) previous.endExclusive = resolution.endExclusive;
       else segments.push({ hashIndex: index, start: resolution.start, endExclusive: resolution.endExclusive, contentLength: resolution.content.length });
