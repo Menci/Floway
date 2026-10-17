@@ -1,5 +1,5 @@
 import { AddRegular, ChevronLeftRegular, ChevronRightRegular, SearchRegular } from '@fluentui/react-icons';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigation, useSearchParams } from 'react-router';
 
 import { loadPermissionsData, type PermissionsData } from './data';
@@ -105,10 +105,18 @@ export function PermissionsWorkspace({ initial }: { initial: PermissionsData }) 
     const result = await callApi(() => api.api['access-records'].reorder.$post({
       json: { expectedIds: originalSegment.records.map(record => record.id), ids: segment.records.map(record => record.id) },
     }));
-    setReordering(false);
-    if (result.error) { await refresh(); setError(result.error.message); return; }
-    const updated = new Map(result.data.records.map(record => [record.id, record]));
+    if (result.error) throw new Error(result.error.message, { cause: result.error });
+    return result.data.records;
+  };
+  const commitReorder = useCallback((records: AccessRecord[]) => {
+    const updated = new Map(records.map(record => [record.id, record]));
     setData(current => ({ ...current, records: current.records!.map(record => updated.get(record.id) ?? record) }));
+    setReordering(false);
+  }, []);
+  const rejectReorder = async (error: unknown) => {
+    await refresh();
+    setError(error instanceof Error ? error.message : String(error));
+    setReordering(false);
   };
   const remove = async (record: AccessRecord): Promise<string | null> => {
     const handle = toasts.start(t('dashboard.accessControl.toast.delete.pending'));
@@ -121,7 +129,7 @@ export function PermissionsWorkspace({ initial }: { initial: PermissionsData }) 
 
   return <section className="dashboard-page">
     <DashboardPageHeader
-      actions={<ResourceListActions onRefresh={() => void refresh()} refreshLabel={t('dashboard.accessControl.actions.refresh')} refreshing={refreshing} />}
+      actions={<ResourceListActions disabled={reordering} onRefresh={() => void refresh()} refreshLabel={t('dashboard.accessControl.actions.refresh')} refreshing={refreshing} />}
       description={t('dashboard.accessControl.description')}
       title={t('dashboard.nav.permissions')}
     />
@@ -151,7 +159,7 @@ export function PermissionsWorkspace({ initial }: { initial: PermissionsData }) 
       </div>
       <div className="flex items-center gap-2 max-w-full ml-auto">
         <Input aria-label={t('dashboard.accessControl.search')} autoComplete="off" className="w-[220px]" contentBefore={<SearchRegular />} onChange={(_, event) => setFilter('q', event.value || null, true)} placeholder={t('dashboard.accessControl.search')} spellCheck={false} value={query} />
-        <Button appearance="primary" className="flex-none whitespace-nowrap" disabled={!loaded || refreshing} icon={<AddRegular />} onClick={create}>{t('dashboard.accessControl.actions.add')}</Button>
+        <Button appearance="primary" className="flex-none whitespace-nowrap" disabled={!loaded || refreshing || reordering} icon={<AddRegular />} onClick={create}>{t('dashboard.accessControl.actions.add')}</Button>
       </div>
     </div>
     {administrator && <OutcomeMessageBar intent="info">{t('dashboard.accessControl.administratorBypass')}</OutcomeMessageBar>}
@@ -160,7 +168,7 @@ export function PermissionsWorkspace({ initial }: { initial: PermissionsData }) 
         {resolution.pending ? <div className="p-8"><Spinner label={t('common.loading')} /></div> : resolution.error ? <EmptyState title={t('dashboard.pages.unavailable')} /> : shown.length === 0 ? <EmptyState
           action={data.records!.length === 0 ? <Button appearance="primary" icon={<AddRegular />} onClick={create}>{t('dashboard.accessControl.actions.add')}</Button> : <Button onClick={() => updateParams(next => { for (const key of ['q', 'principal', 'scope', 'scopeKind', 'effective', 'page']) next.delete(key); })}>{t('dashboard.accessControl.actions.clearFilters')}</Button>}
           title={t(data.records!.length === 0 ? 'dashboard.accessControl.empty' : 'dashboard.accessControl.noMatches')}
-        /> : <RulesTable busy={refreshing || reordering} data={scopeData} decisions={selection.decisions} onEdit={record => editor.open({ record })} onRemove={remove} onReorder={(ids, from, to) => void reorder(ids, from, to)} onScopeSelect={navigateScope} params={params} records={shown} />}
+        /> : <RulesTable busy={refreshing || reordering} data={scopeData} decisions={selection.decisions} onEdit={record => editor.open({ record })} onRemove={remove} onReorder={reorder} onReordered={commitReorder} onReorderError={rejectReorder} onScopeSelect={navigateScope} params={params} records={shown} />}
       </ResourceListPanel>
       {totalPages > 1 && <div className="flex items-center justify-end gap-3">
         <Text className="text-fui-fg2" size={200}>{t('dashboard.accessControl.pagination.range', { from: (page - 1) * PAGE_SIZE + 1, to: Math.min(page * PAGE_SIZE, filtered.length), total: filtered.length })}</Text>

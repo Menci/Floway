@@ -189,7 +189,8 @@ test('new rule starts with the selected principal and scope', async () => {
   renderPage(`?principal=group:1&scope=${encodeURIComponent(JSON.stringify(scope))}`);
   await screen.findByRole('table');
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'New rule' })); });
-  const dialog = await screen.findByRole('dialog');
+  // DialogShell mounts after the cold persistent editor module resolves.
+  const dialog = await screen.findByRole('dialog', {}, { timeout: 5000 });
   expect(dialog.querySelector<HTMLInputElement>('input[role="combobox"]')!.value).toBe('Platform');
   expect(dialog.querySelector('.floway-scope-expression')!.textContent).toContain('Copilot');
 });

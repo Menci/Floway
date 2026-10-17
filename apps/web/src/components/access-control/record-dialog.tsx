@@ -106,7 +106,10 @@ export function AccessRecordDialog({ data, initialPrincipal, initialScope, onOpe
     if (finalPrincipal === null) return;
     setSaving(true);
     setError(null);
-    const payload = { principal: finalPrincipal, scope: finalScope, sortOrder: record?.sortOrder ?? suggestedSortOrder, values: finalValues };
+    const sameModelBoundary = record?.scope.kind === 'upstreamModel' && finalScope.kind === 'upstreamModel'
+      && record.scope.upstreamId === finalScope.upstreamId && principalKey(record.principal) === principalKey(finalPrincipal);
+    const sortOrder = record && (finalScope.kind !== 'upstreamModel' || sameModelBoundary) ? record.sortOrder : suggestedSortOrder;
+    const payload = { principal: finalPrincipal, scope: finalScope, sortOrder, values: finalValues };
     const handle = toasts.start(t(`dashboard.accessControl.toast.${record ? 'edit' : 'create'}.pending`));
     const result = record
       ? await callApi(() => api.api['access-records'][':id'].$put({ param: { id: String(record.id) }, json: payload }))

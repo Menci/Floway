@@ -1,4 +1,5 @@
 import { DeleteRegular, EditRegular } from '@fluentui/react-icons';
+import { useEffect, useRef } from 'react';
 import { Link } from 'react-router';
 
 import type { PermissionDecisions } from './effective';
@@ -36,7 +37,9 @@ interface RulesTableProps {
   decisions: ReadonlyMap<number, PermissionDecisions> | null;
   onEdit: (record: AccessRecord) => void;
   onRemove: (record: AccessRecord) => Promise<string | null>;
-  onReorder: (ids: number[], from: number, to: number) => void;
+  onReorder: (ids: number[], from: number, to: number) => Promise<AccessRecord[]>;
+  onReordered: (records: AccessRecord[]) => void;
+  onReorderError: (error: unknown) => void | Promise<void>;
   onScopeSelect: (scope: AccessScope | null, kindHint?: 'group') => void;
   params: URLSearchParams;
   records: AccessRecord[];
@@ -58,9 +61,36 @@ export function RulesTable(props: RulesTableProps) {
   </Table></ScrollArea>;
 }
 
-function RulesSegment({ busy, data, decisions, onEdit, onRemove, onReorder, onScopeSelect, params, segment }: RulesTableProps & { segment: RecordSegment }) {
+function RulesSegment({ busy, data, decisions, onEdit, onRemove, onReorder, onReordered, onReorderError, onScopeSelect, params, segment }: RulesTableProps & { segment: RecordSegment }) {
   const { t } = useTranslation();
-  const reorder = useReorderList({ busy, disabled: !segment.movable, length: segment.records.length, onReorder: (from, to) => onReorder(segment.records.map(record => record.id), from, to) });
+  const mounted = useRef(false);
+  const pendingDrop = useRef<AccessRecord[] | null>(null);
+  // Filtering can remove a segment while its real write or settle is pending.
+  // The write still commits once, even when its visual controller is gone.
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (pendingDrop.current !== null) { onReordered(pendingDrop.current); pendingDrop.current = null; }
+    };
+  }, [onReordered]);
+  const reorder = useReorderList({
+    busy, disabled: !segment.movable, length: segment.records.length,
+    onDrop: async (from, to) => {
+      try {
+        const records = await onReorder(segment.records.map(record => record.id), from, to);
+        if (mounted.current) pendingDrop.current = records; else onReordered(records);
+      } catch (error) {
+        if (!mounted.current) await onReorderError(error);
+        throw error;
+      }
+    },
+    onDropError: onReorderError,
+    onReorder: (from, to) => {
+      const records = pendingDrop.current;
+      if (records !== null) { pendingDrop.current = null; onReordered(records); } else void onReorder(segment.records.map(record => record.id), from, to).then(onReordered).catch(onReorderError);
+    },
+  });
   return <TableBody {...reorder.listProps()} data-scope-segment={segment.key}>
     {segment.records.map((record, index) => {
       const bypass = record.principal.kind === 'user' && data.users.some(user => user.id === record.principal.id && user.isAdmin);

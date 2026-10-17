@@ -112,7 +112,7 @@ test('shows the exact inherited upstream edit level for a concrete user target',
 
   const edit = await screen.findByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.Upstream.Edit') });
   const inherited = await within(edit).findByRole<HTMLInputElement>('radio', { name: i18n.t('dashboard.accessControl.states.models') });
-  expect(inherited.checked).toBe(true);
+  await vi.waitFor(() => expect(inherited.checked).toBe(true));
   expect(screen.queryByRole('spinbutton')).toBeNull();
 });
 
@@ -127,4 +127,15 @@ test('resolves group inheritance through the same API as personal inheritance', 
   expect(fetch).toHaveBeenCalledOnce();
   const body = JSON.parse(fetch.mock.calls[0]![1]!.body as string);
   expect(body).toEqual({ principal: { kind: 'group', id: 3 }, scope: record.scope, excludeRecordId: record.id });
+});
+
+test('moving a fixed rule into a model boundary uses the available append order', async () => {
+  const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => Response.json(init?.method === 'PUT' ? { ...record, ...JSON.parse(init.body as string) } : { values: { 'Model.Use': true }, records: [], decisions: [] }));
+  vi.stubGlobal('fetch', fetch);
+  await renderDialog({ record, suggestedSortOrder: 99 });
+  fireEvent.click(screen.getByRole('tab', { name: 'JSON' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'JSON' }), { target: { value: JSON.stringify({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } }) } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save rule' })); });
+  const write = fetch.mock.calls.find(([, init]) => init?.method === 'PUT')!;
+  expect(JSON.parse(write[1]!.body as string).sortOrder).toBe(99);
 });
