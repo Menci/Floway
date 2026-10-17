@@ -114,17 +114,17 @@ const buildAssistantMessage = (content: GeminiGenerateContentContent, turnIndex:
   return message.content !== null || message.tool_calls?.length || message.reasoning_text !== undefined ? message : null;
 };
 
-const buildToolMessage = (part: GeminiGenerateContentPart, turnIndex: number, partIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds): OpenAIChatCompletionsMessage => {
+const buildToolMessage = (part: GeminiGenerateContentPart, turnIndex: number, partIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds, legacyFunctionNames: Map<string, string>): OpenAIChatCompletionsMessage => {
   const { response, id } = geminiGenerateContentFunctionResponsePart(part, unmatchedToolCallIds, turnIndex, partIndex)!;
-
-  return {
-    role: 'tool',
-    tool_call_id: id,
-    content: JSON.stringify(response.response),
-  };
+  const content = JSON.stringify(response.response);
+  const legacyName = legacyFunctionNames.get(id);
+  legacyFunctionNames.delete(id);
+  return legacyName === undefined
+    ? { role: 'tool', tool_call_id: id, content }
+    : { role: 'function', name: legacyName, content };
 };
 
-const buildUserMessages = (content: GeminiGenerateContentContent, turnIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds): OpenAIChatCompletionsMessage[] => {
+const buildUserMessages = (content: GeminiGenerateContentContent, turnIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds, legacyFunctionNames: Map<string, string>): OpenAIChatCompletionsMessage[] => {
   const messages: OpenAIChatCompletionsMessage[] = [];
   let pendingParts: GeminiGenerateContentPart[] = [];
 
@@ -143,7 +143,7 @@ const buildUserMessages = (content: GeminiGenerateContentContent, turnIndex: num
       return;
     case 'function_response':
       flushUserParts();
-      messages.push(buildToolMessage(part, turnIndex, partIndex, unmatchedToolCallIds));
+      messages.push(buildToolMessage(part, turnIndex, partIndex, unmatchedToolCallIds, legacyFunctionNames));
       return;
     case 'text':
     case 'inline_data':
@@ -230,6 +230,7 @@ export const buildTargetRequest = async (
     messages: [],
   };
   const unmatchedToolCallIds: GeminiGenerateContentToolCallIds = Object.create(null);
+  const legacyFunctionNames = new Map<string, string>();
 
   const systemText = geminiGenerateContentText(payload.systemInstruction);
   if (systemText !== null) {
@@ -249,14 +250,22 @@ export const buildTargetRequest = async (
       } else for (const [index, content] of turn.items.entries()) {
         if (content.role !== 'user' && content.role !== undefined) throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
         if ((content.parts?.length ?? 0) === 0) { request.messages.push({ role: 'user', content: '' }); continue; }
-        request.messages.push(...buildUserMessages(content, contentIndex + index, unmatchedToolCallIds));
+        request.messages.push(...buildUserMessages(content, contentIndex + index, unmatchedToolCallIds, legacyFunctionNames));
       }
     } else {
       request.messages.push(roundTrip.turn);
-      for (const call of roundTrip.turn.tool_calls ?? []) {
-        const name = call.type === 'function' ? call.function.name : call.custom.name;
-        unmatchedToolCallIds[name] ??= [];
-        unmatchedToolCallIds[name].push(call.id);
+      if (roundTrip.turn.function_call == null) {
+        for (const call of roundTrip.turn.tool_calls ?? []) {
+          const name = call.type === 'function' ? call.function.name : call.custom.name;
+          unmatchedToolCallIds[name] ??= [];
+          unmatchedToolCallIds[name].push(call.id);
+        }
+      } else {
+        const modernIds = new Set(roundTrip.turn.tool_calls?.map(call => call.id));
+        for (const [index, content] of turn.items.entries()) for (const [partIndex, part] of (content.parts ?? []).entries()) {
+          const invocation = geminiGenerateContentFunctionCallPart(part, unmatchedToolCallIds, contentIndex + index, partIndex);
+          if (invocation !== null && !modernIds.has(invocation.id)) legacyFunctionNames.set(invocation.id, roundTrip.turn.function_call.name);
+        }
       }
     }
     contentIndex += turn.items.length;

@@ -183,6 +183,7 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
   const { payload, names: namespaceToolNames, flattenInput } = flattenNamespaceTools(canonical);
   rejectProgrammaticOpenAIResponsesPayload(payload, 'OpenAI Chat Completions');
   const customToolNames = new Set<string>();
+  const legacyFunctionNames = new Map<string, string>();
   const responseFormat = buildOpenAIChatCompletionsResponseFormat(payload.text);
 
   const translateAssistantTurn = (items: CanonicalOpenAIResponsesInputItem[]): OpenAIChatCompletionsMessage[] => {
@@ -220,7 +221,11 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
       rejectProgramCaller(item);
       if (item.type === 'function_call_output' || item.type === 'custom_tool_call_output') {
         const projected = projectToolCallOutput(item);
-        messages.push({ role: 'tool', tool_call_id: item.call_id, content: projected.toolContent });
+        const legacyName = legacyFunctionNames.get(item.call_id);
+        legacyFunctionNames.delete(item.call_id);
+        messages.push(legacyName === undefined
+          ? { role: 'tool', tool_call_id: item.call_id, content: projected.toolContent }
+          : { role: 'function', name: legacyName, content: projected.toolContent });
         pendingToolOutputImages.push(...projected.liftedImageContent);
       } else if (item.type === 'message' && item.role !== 'assistant') {
         if (item.role === 'user') messages.push({ role: 'user', content: openaiResponsesContentToOpenAIChatCompletionsContent(item.content) as OpenAIChatCompletionsUserContentPart[] | string });
@@ -264,6 +269,12 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
   for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
     if (turn.role !== 'assistant') { target.messages.push(...translateNonAssistantInput(turn.items)); continue; }
     const roundTrip = await roundTripAssistantTurn('openaiResponses', 'openaiChatCompletions', turn.items, codec, inspectOpenAIResponsesAssistantTurn, verifyOpenAIResponsesReplayCheck);
+    if (roundTrip?.turn.function_call != null) {
+      const modernIds = new Set(roundTrip.turn.tool_calls?.map(call => call.id));
+      for (const item of turn.items) {
+        if ((item.type === 'function_call' || item.type === 'custom_tool_call') && !modernIds.has(item.call_id)) legacyFunctionNames.set(item.call_id, roundTrip.turn.function_call.name);
+      }
+    }
     target.messages.push(...(roundTrip ? [roundTrip.turn] : translateAssistantTurn(turn.items)));
   }
   return { target, customToolNames, namespaceToolNames };
