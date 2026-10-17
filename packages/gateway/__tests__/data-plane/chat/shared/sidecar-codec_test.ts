@@ -4,6 +4,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { createSidecarCodecFactory, encodeCBORValue, SidecarKind } from '../../../../src/data-plane/chat/shared/sidecar-codec.ts';
 import { decodeForgivingBase64, decodeHex, encodeBase64, encodeBase64url } from '@floway-dev/protocols/common';
 import { ThinReference, type ReferencePart } from '@floway-dev/translate';
+
+vi.mock('cbor-x', async importOriginal => {
+  const actual = await importOriginal<typeof import('cbor-x')>();
+  return { ...actual, decode: vi.fn(actual.decode) };
+});
+
 const secret = 'key';
 const factory = createSidecarCodecFactory(secret);
 const rawJSON = JSON as typeof JSON & {
@@ -111,6 +117,61 @@ describe('signed CBOR sidecars', () => {
     } finally {
       verify.mockRestore();
     }
+  });
+  it('restores the owned decoder payload in place without rebuilding its containers or atomic values', async () => {
+    const codec = createSidecarCodecFactory(secret).getForKind(SidecarKind.TranslateRoundTrip);
+    const bytes = Uint8Array.from({ length: 16 }, (_, index) => index);
+    const payload = {
+      nested: { values: [encodeBase64(bytes), rawJSON.rawJSON('1e400')] },
+      bytes,
+      unknown: new Tag({ value: new Tag(bytes, 22) }, 65540),
+      ...JSON.parse('{"__proto__":{"value":"own property"}}'),
+    };
+    const encoded = await codec.encode(payload);
+    const originalDecode = (await vi.importActual<typeof import('cbor-x')>('cbor-x')).decode;
+    let ownedPayload: unknown;
+    let ownedNested: unknown;
+    let ownedValues: unknown;
+    let ownedBytes: unknown;
+    let ownedTag: unknown;
+    const decoder = vi.mocked(decode).mockImplementation(data => {
+      const envelope: unknown = originalDecode(data);
+      ownedPayload = record(envelope).payload;
+      const body = record(ownedPayload);
+      ownedNested = body.nested;
+      ownedValues = record(body.nested).values;
+      ownedBytes = body.bytes;
+      ownedTag = body.unknown;
+      return envelope;
+    });
+    try {
+      const restored = await codec.decode(encoded);
+      expect(restored).toBe(ownedPayload);
+      const body = record(restored);
+      expect(body.nested).toBe(ownedNested);
+      expect(record(body.nested).values).toBe(ownedValues);
+      expect(body.bytes).toBe(ownedBytes);
+      expect(body.unknown).toBe(ownedTag);
+      expect(restored).toEqual(payload);
+      expect(Object.hasOwn(body, '__proto__')).toBe(true);
+      expect(Object.getPrototypeOf(body)).toBe(Object.prototype);
+    } finally {
+      decoder.mockImplementation(originalDecode);
+      decoder.mockClear();
+    }
+  });
+  it('borrows encode input without replacing its containers or transformed leaves', async () => {
+    const bytes = Uint8Array.from({ length: 16 }, (_, index) => index);
+    const base64 = encodeBase64(bytes);
+    const number = rawJSON.rawJSON('1e400');
+    const values = [base64, number];
+    const nested = { values };
+    const payload = { nested };
+    await factory.getForKind(SidecarKind.TranslateRoundTrip).encode(payload);
+    expect(payload.nested).toBe(nested);
+    expect(nested.values).toBe(values);
+    expect(values[0]).toBe(base64);
+    expect(values[1]).toBe(number);
   });
   it('caches failed authentication within one factory only', async () => {
     const encoded = await factory.getForKind(SidecarKind.TranslateRoundTrip).encode('value');
