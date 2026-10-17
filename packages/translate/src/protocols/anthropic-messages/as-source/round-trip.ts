@@ -12,37 +12,32 @@ export type AnthropicMessagesAssistantTurn = (AnthropicMessagesAssistantMessage 
 
 type TypedReplayMaterial = IRJSONObject & { type: string };
 
-const messagesReplayCheckMaterialV1 = (turn: AnthropicMessagesAssistantTurn): IRJSONValue => {
+const messageReplayCheckMaterialV1 = (message: AnthropicMessagesAssistantTurn[number]): IRJSONValue => {
   const blocks: TypedReplayMaterial[] = [];
-  for (const message of turn) {
-    if (typeof message.content === 'string') {
-      blocks.push({ type: 'text', text: message.content, citations: [] });
-      continue;
-    }
-    let text = '';
-    let hasText = false;
-    const citations: string[] = [];
-    let thinking = '';
-    let hasThinking = false;
-    const otherBlocks: TypedReplayMaterial[] = [];
-    for (const block of message.content) {
-      if (block.type === 'text') {
-        hasText = true;
-        text += block.text;
-        citations.push(...(block.citations?.map(citation => citation.cited_text) ?? []));
-      } else if (block.type === 'thinking') {
-        hasThinking = true;
-        thinking += block.thinking;
-      } else if (block.type === 'tool_use') {
-        otherBlocks.push({ type: block.type, id: block.id, name: block.name, input: requireJSONObject(block.input) });
-      } else otherBlocks.push({ type: block.type });
-    }
-    if (hasText) blocks.push({ type: 'text', text, citations });
-    if (hasThinking) blocks.push({ type: 'thinking', thinking });
-    blocks.push(...otherBlocks);
+  if (typeof message.content === 'string') return replayMaterialsByType([{ type: 'text', text: message.content, citations: [] }]);
+  let text = '';
+  let hasText = false;
+  const citations: string[] = [];
+  let thinking = '';
+  let hasThinking = false;
+  for (const block of message.content) {
+    if (block.type === 'text') {
+      hasText = true;
+      text += block.text;
+      citations.push(...(block.citations?.map(citation => citation.cited_text) ?? []));
+    } else if (block.type === 'thinking') {
+      hasThinking = true;
+      thinking += block.thinking;
+    } else if (block.type === 'tool_use') {
+      blocks.push({ type: block.type, id: block.id, name: block.name, input: requireJSONObject(block.input) });
+    } else blocks.push({ type: block.type });
   }
+  if (hasText) blocks.push({ type: 'text', text, citations });
+  if (hasThinking) blocks.push({ type: 'thinking', thinking });
   return replayMaterialsByType(blocks);
 };
+
+const messagesReplayCheckMaterialV1 = (turn: AnthropicMessagesAssistantTurn): IRJSONValue => turn.map(messageReplayCheckMaterialV1);
 
 export const inspectAnthropicMessagesAssistantTurn = (turn: AnthropicMessagesAssistantTurn): RoundTripSidecarCandidate<AnthropicMessagesAssistantTurn>[] =>
   turn.flatMap((message, messageIndex) => {

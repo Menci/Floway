@@ -39,6 +39,20 @@ describe('semantic replay text channels', () => {
     expect(await verifyAnthropicMessagesReplayCheck([{ role: 'assistant', content: [{ type: 'text', text: 'hello' }, tool] }], await computeAnthropicMessagesReplayCheck(interrupted))).toBe(true);
   });
 
+  it('keeps Messages nontext channels inside their owning message', async () => {
+    const thinking = { type: 'thinking' as const, thinking: 'thought', signature: 'signature' };
+    const tool = { type: 'tool_use' as const, id: 'call', name: 'lookup', input: {} };
+    const original: AnthropicMessagesAssistantTurn = [
+      { role: 'assistant', content: [{ type: 'text', text: 'A' }, thinking, tool] },
+      { role: 'assistant', content: [{ type: 'text', text: 'B' }] },
+    ];
+    const check = await computeAnthropicMessagesReplayCheck(original);
+    expect(await verifyAnthropicMessagesReplayCheck([
+      { role: 'assistant', content: [{ type: 'text', text: 'A' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'B' }, thinking, tool] },
+    ], check)).toBe(false);
+  });
+
   it('merges Responses text by channel while retaining item boundaries', async () => {
     const split: OpenAIResponsesAssistantTurn = [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'hel', annotations: [], logprobs: [] }, { type: 'output_text', text: 'lo', annotations: [] }] }];
     const merged: OpenAIResponsesAssistantTurn = [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'hello' }] }];
@@ -80,6 +94,20 @@ describe('semantic replay text channels', () => {
     expect(await verifyGeminiGenerateContentReplayCheck(merged, await computeGeminiGenerateContentReplayCheck([{ role: 'model', parts: [{ text: 'hel' }] }, { role: 'model', parts: [{ text: 'lo' }] }]))).toBe(false);
     const image = { inlineData: { mimeType: 'image/png', data: 'AQID' } };
     expect(await verifyGeminiGenerateContentReplayCheck([{ role: 'model', parts: [{ text: 'hello' }, image] }], await computeGeminiGenerateContentReplayCheck([{ role: 'model', parts: [{ text: 'hel' }, image, { text: 'lo' }] }]))).toBe(true);
+  });
+
+  it('keeps Gemini nontext channels inside their owning Content', async () => {
+    const call = { functionCall: { name: 'lookup', args: { q: 'x' } } };
+    const image = { inlineData: { mimeType: 'image/png', data: 'AQID' } };
+    const original: GeminiGenerateContentAssistantTurn = [
+      { role: 'model', parts: [{ text: 'A' }, call, image] },
+      { role: 'model', parts: [{ text: 'B' }] },
+    ];
+    const check = await computeGeminiGenerateContentReplayCheck(original);
+    expect(await verifyGeminiGenerateContentReplayCheck([
+      { role: 'model', parts: [{ text: 'A' }] },
+      { role: 'model', parts: [{ text: 'B' }, call, image] },
+    ], check)).toBe(false);
   });
 
   it('uses UTF-16 concatenation even when a part boundary splits a surrogate pair', async () => {

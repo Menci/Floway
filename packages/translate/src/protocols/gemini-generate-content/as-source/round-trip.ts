@@ -15,13 +15,11 @@ export const hasGeminiGenerateContentThoughtSignature = (content: GeminiGenerate
   content.parts?.some(part => part.thoughtSignature !== undefined) ?? false;
 
 const geminiReplayCheckMaterialV1 = (turn: GeminiGenerateContentAssistantTurn): IRJSONObject => {
-  const text: string[] = [];
-  const inlineData: { mimeType: string; data: string; audioTranscription?: string }[] = [];
-  const functionCall: { id?: string; name: string; args?: IRJSONObject }[] = [];
-
-  for (const content of turn) {
+  const contents = turn.map(content => {
     let contentText = '';
     let hasText = false;
+    const inlineData: { mimeType: string; data: string; audioTranscription?: string }[] = [];
+    const functionCall: { id?: string; name: string; args?: IRJSONObject }[] = [];
     for (const part of content.parts ?? []) {
       if (part.thought !== true && part.text !== undefined) {
         hasText = true;
@@ -38,10 +36,10 @@ const geminiReplayCheckMaterialV1 = (turn: GeminiGenerateContentAssistantTurn): 
         ...(part.functionCall.args === undefined ? {} : { args: requireJSONObject(part.functionCall.args) }),
       });
     }
-    if (hasText) text.push(contentText);
-  }
+    return { ...(hasText ? { text: contentText } : {}), inlineData, functionCall };
+  });
 
-  return { text, inlineData, functionCall };
+  return { contents };
 };
 
 export const inspectGeminiGenerateContentAssistantTurn = (turn: GeminiGenerateContentAssistantTurn): RoundTripSidecarCandidate<GeminiGenerateContentAssistantTurn>[] =>
