@@ -79,6 +79,7 @@ import {
   accessScopeDepth,
   accessScopeOrderGroup,
   AccessRecordConflictError,
+  sameModelOrderBoundary,
   type AccessPrincipal,
   type AccessRecord,
   type AccessRecordInput,
@@ -646,18 +647,31 @@ class SqlAccessRecordsRepo implements AccessRecordsRepo {
 
   async replace(id: number, input: AccessRecordInput): Promise<AccessRecord | null> {
     validateAccessRecordInput(input);
-    if (await this.getById(id) === null) return null;
-    await this.assertOrderAvailable(input, id);
+    const current = await this.getById(id);
+    if (current === null) return null;
+    const sortOrder = sameModelOrderBoundary(current, input) ? current.sortOrder : input.sortOrder;
+    await this.assertOrderAvailable({ ...input, sortOrder }, id);
+    // An edit must not undo a drag committed while its dialog was open. Read
+    // the surviving rank from the row again at the atomic write boundary.
     const row = await this.db.prepare(
       `UPDATE access_records SET
-         principal_type = ?, principal_id = ?, scope_json = ?, sort_order = ?, values_json = ?, updated_at = ?
+         principal_type = ?, principal_id = ?, scope_json = ?,
+         sort_order = CASE
+           WHEN principal_type = ? AND principal_id = ?
+             AND json_extract(scope_json, '$.kind') = 'upstreamModel'
+             AND json_extract(scope_json, '$.upstreamId') = ?
+           THEN sort_order ELSE ? END,
+         values_json = ?, updated_at = ?
        WHERE id = ?
        RETURNING ${ACCESS_RECORD_COLUMNS}`,
     ).bind(
       input.principal.kind,
       input.principal.id,
       JSON.stringify(input.scope),
-      input.sortOrder,
+      input.principal.kind,
+      input.principal.id,
+      input.scope.kind === 'upstreamModel' ? input.scope.upstreamId : null,
+      sortOrder,
       JSON.stringify(input.values),
       new Date().toISOString(),
       id,

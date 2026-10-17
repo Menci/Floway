@@ -4,6 +4,7 @@ import {
   accessScopeDepth,
   accessScopeOrderGroup,
   AccessRecordConflictError,
+  sameModelOrderBoundary,
   type AccessPrincipal,
   type AccessRecord,
   type AccessRecordInput,
@@ -343,6 +344,7 @@ class MemoryAccessRecordsRepo implements AccessRecordsRepo {
     validateAccessRecordInput(input);
     const index = this.records.findIndex(record => record.id === id);
     if (index < 0) return null;
+    const sortOrder = sameModelOrderBoundary(this.records[index]!, input) ? this.records[index]!.sortOrder : input.sortOrder;
     const duplicateScope = this.records.find((record, recordIndex) =>
       recordIndex !== index
       && principalKey(record.principal) === principalKey(input.principal)
@@ -353,9 +355,9 @@ class MemoryAccessRecordsRepo implements AccessRecordsRepo {
       && principalKey(record.principal) === principalKey(input.principal)
       && accessScopeDepth(record.scope) === accessScopeDepth(input.scope)
       && accessScopeOrderGroup(record.scope) === accessScopeOrderGroup(input.scope)
-      && record.sortOrder === input.sortOrder);
-    if (duplicateOrder) throw new AccessRecordConflictError(`Access record sortOrder ${input.sortOrder} is already used at this scope level`);
-    const next = { ...this.records[index], ...structuredClone(input), updatedAt: new Date().toISOString() };
+      && record.sortOrder === sortOrder);
+    if (duplicateOrder) throw new AccessRecordConflictError(`Access record sortOrder ${sortOrder} is already used at this scope level`);
+    const next = { ...this.records[index], ...structuredClone(input), sortOrder, updatedAt: new Date().toISOString() };
     this.records[index] = next;
     return structuredClone(next);
   }

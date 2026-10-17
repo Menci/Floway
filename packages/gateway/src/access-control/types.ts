@@ -59,6 +59,11 @@ export class AccessRecordConflictError extends Error {
   override name = 'AccessRecordConflictError';
 }
 
+export const sameModelOrderBoundary = (left: AccessRecordInput, right: AccessRecordInput): boolean =>
+  left.scope.kind === 'upstreamModel' && right.scope.kind === 'upstreamModel'
+  && left.scope.upstreamId === right.scope.upstreamId
+  && left.principal.kind === right.principal.kind && left.principal.id === right.principal.id;
+
 export type AccessRequirement =
   | { permission: 'Model.Use' | 'Upstream.Audit' | 'User.Audit' }
   | { permission: 'Upstream.Edit'; level: Exclude<UpstreamEditLevel, 'off'> };
