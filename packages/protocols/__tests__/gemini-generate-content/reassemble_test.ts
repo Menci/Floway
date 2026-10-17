@@ -75,3 +75,26 @@ test('result reflects all events accepted before each read', () => {
     { role: 'model', parts: [{ text: 'one continued' }] },
   ]);
 });
+
+test('candidate reads use wire indices and the same projection as the complete result', () => {
+  const accumulator = createGeminiGenerateContentEventAccumulator();
+  assertEquals(accumulator.candidate(8), undefined);
+  const event = {
+    candidates: [
+      { index: 8, content: { role: 'model', parts: [{ text: 'eight' }] }, vendorText: 'first' },
+      { index: 2, finishReason: 'SAFETY' },
+    ],
+  };
+  accumulator.accept(event);
+  assertEquals(accumulator.candidate(0), undefined);
+  assertEquals(accumulator.candidate(2), { index: 2, finishReason: 'SAFETY' });
+  assertEquals(accumulator.candidate(8), {
+    index: 8, content: { role: 'model', parts: [{ text: 'eight' }] }, vendorText: 'first',
+  });
+  const update = { candidates: [{ index: 8, content: { parts: [{ text: ' continued' }] }, vendorText: ' second' }] };
+  accumulator.accept(update);
+  assertEquals(accumulator.candidate(8), {
+    index: 8, content: { role: 'model', parts: [{ text: 'eight continued' }] }, vendorText: 'first second',
+  });
+  assertEquals(accumulator.result().candidates, [accumulator.candidate(2), accumulator.candidate(8)]);
+});
