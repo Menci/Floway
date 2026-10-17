@@ -63,4 +63,20 @@ describe('IR accumulator', () => {
     collector.applyEvent({ type: 'item_end', choice: 0, item: 0 });
     expect(() => collector.apply({ type: 'operation', operation: 'assign', path: ['choices', 0, 'items', 0, 'type'], value: 'message' })).toThrow('closed item');
   });
+
+  test('rejects ended units that omit required schema fields', () => {
+    const incompleteItem = createIRCollector();
+    incompleteItem.apply({ type: 'operation', operation: 'initialize', path: ['choices', 0], value: { items: [] } });
+    incompleteItem.apply({ type: 'operation', operation: 'initialize', path: ['choices', 0, 'items', 0], value: { type: 'function_call' } });
+    expect(() => incompleteItem.applyEvent({ type: 'item_end', choice: 0, item: 0 })).toThrow('requires field name');
+
+    const incompleteMessage = createIRCollector();
+    incompleteMessage.apply({ type: 'operation', operation: 'initialize', path: ['choices', 0], value: { items: [] } });
+    incompleteMessage.apply({ type: 'operation', operation: 'initialize', path: ['choices', 0, 'items', 0], value: { type: 'message' } });
+    expect(() => incompleteMessage.applyEvent({ type: 'item_end', choice: 0, item: 0 })).toThrow('requires field content');
+
+    const incompleteChoice = createIRCollector();
+    incompleteChoice.apply({ type: 'operation', operation: 'initialize', path: ['choices', 0], value: {} });
+    expect(() => incompleteChoice.applyEvent({ type: 'choice_end', choice: 0, finish_reason: 'stop' })).toThrow('requires field items');
+  });
 });

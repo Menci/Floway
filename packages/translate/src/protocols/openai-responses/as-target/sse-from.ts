@@ -27,18 +27,23 @@ interface ResponsesItemState {
   readonly item?: IRItemHandle;
   readonly parts: Map<number, ResponsesPartState>;
   readonly reasoningLengths: Record<'summary' | 'content', number>;
-  readonly logprobs: Map<number, { readonly index: number }>;
+  readonly logprobs: Map<number, { readonly index: number; length: number }>;
   closed: boolean;
   finalSnapshot?: OpenAIResponsesOutputItemEx;
 }
 
-interface ResponsesPartState {
-  readonly type: string;
+interface ResponsesTextPartState {
+  readonly type: 'output_text' | 'refusal';
   readonly handle: IRPartHandle;
   coordinateIndex?: TextCoordinateIndex;
   text?: string;
   annotationsInitialized: boolean;
+  readonly annotationOrdinals: Map<number, number | undefined>;
+  nextAnnotationOrdinal: number;
 }
+
+interface ResponsesImagePartState { readonly type: 'image'; readonly handle: IRPartHandle }
+type ResponsesPartState = ResponsesTextPartState | ResponsesImagePartState;
 
 interface WriteTarget {
   readonly handle: IRWriteHandle;
@@ -227,35 +232,43 @@ export const irFromOpenAIResponses = async function* (
     state: ResponsesItemState,
     contentIndex: number,
     part: { readonly type: string; readonly annotations?: readonly unknown[] },
-  ): ResponsesPartState => {
+  ): ResponsesTextPartState => {
     if (state.item === undefined || state.type !== 'message') throw new TypeError('Responses content part requires a message item');
     if (contentIndex > state.parts.size) throw new TypeError('Responses content indexes must be contiguous');
     if (contentIndex === state.parts.size) {
-      let partState: ResponsesPartState;
+      let partState: ResponsesTextPartState;
       if (part.type === 'output_text') {
         partState = {
           type: part.type,
           handle: state.item.part({ type: 'text', text: '', ...(part.annotations === undefined ? {} : { annotations: [] }) }),
           text: '',
           annotationsInitialized: part.annotations !== undefined,
+          annotationOrdinals: new Map(),
+          nextAnnotationOrdinal: 0,
         };
       } else if (part.type === 'refusal') {
-        partState = { type: part.type, handle: state.item.part({ type: 'refusal', refusal: '' }), annotationsInitialized: false };
+        partState = {
+          type: part.type,
+          handle: state.item.part({ type: 'refusal', refusal: '' }),
+          annotationsInitialized: false,
+          annotationOrdinals: new Map(),
+          nextAnnotationOrdinal: 0,
+        };
       } else throw new TypeError(`Responses message cannot contain ${part.type}`);
       state.parts.set(contentIndex, partState);
     }
     const partState = state.parts.get(contentIndex);
-    if (partState === undefined) throw new TypeError('Responses content indexes must be contiguous');
+    if (partState === undefined || partState.type === 'image') throw new TypeError('Responses content indexes must be contiguous');
     return partState;
   };
 
-  const ensureLogprobGroup = (state: ResponsesItemState, contentIndex: number, part: IRPartHandle): number => {
+  const ensureLogprobGroup = (state: ResponsesItemState, contentIndex: number, part: IRPartHandle): { readonly index: number; length: number } => {
     let group = state.logprobs.get(contentIndex);
-    if (group !== undefined) return group.index;
+    if (group !== undefined) return group;
     const choice = ir.choice(0);
     choice.ensure('logprobs', []);
     if (state.item === undefined) throw new TypeError('Responses content part requires a message item');
-    group = { index: nextLogprobGroup++ };
+    group = { index: nextLogprobGroup++, length: 0 };
     choice.initialize(['logprobs', group.index], {
       scope: 'text_part',
       item_index: state.item.index,
@@ -263,23 +276,65 @@ export const irFromOpenAIResponses = async function* (
       tokens: [],
     });
     state.logprobs.set(contentIndex, group);
-    return group.index;
+    return group;
   };
 
-  const reconcileLogprobs = (
+  const appendLogprobs = (
     state: ResponsesItemState,
     contentIndex: number,
-    part: ResponsesPartState,
+    part: ResponsesTextPartState,
     tokens: readonly OpenAIResponsesLogprob[] | undefined,
   ): void => {
     if (tokens === undefined || tokens.length === 0) return;
     const group = ensureLogprobGroup(state, contentIndex, part.handle);
     const choice = ir.choice(0);
-    tokens.forEach((token, index) => reconcileAssign({ handle: choice, path: ['logprobs', group, 'tokens', index] }, token));
+    for (const token of tokens) choice.assign(['logprobs', group.index, 'tokens', group.length++], token);
+  };
+
+  const reconcileLogprobs = (
+    state: ResponsesItemState,
+    contentIndex: number,
+    part: ResponsesTextPartState,
+    tokens: readonly OpenAIResponsesLogprob[] | undefined,
+  ): void => {
+    if (tokens === undefined || tokens.length === 0) return;
+    const group = ensureLogprobGroup(state, contentIndex, part.handle);
+    const choice = ir.choice(0);
+    tokens.forEach((token, index) => reconcileAssign({ handle: choice, path: ['logprobs', group.index, 'tokens', index] }, token));
+    group.length = Math.max(group.length, tokens.length);
+  };
+
+  const reconcileAnnotation = (
+    part: ResponsesTextPartState,
+    text: string,
+    nativeIndex: number,
+    annotation: OpenAIResponsesAnnotation | null,
+  ): void => {
+    if (!Number.isSafeInteger(nativeIndex) || nativeIndex < 0) throw new RangeError(`Responses annotation_index must be a nonnegative safe integer: ${nativeIndex}`);
+    const converted = annotation === null ? undefined : annotationToIR(() => {
+      part.coordinateIndex ??= TextCoordinateIndex.codePointsToUTF16(text);
+      part.coordinateIndex.assertUTF16Length(text.length);
+      return part.coordinateIndex;
+    }, annotation);
+    let ordinal: number | undefined;
+    if (part.annotationOrdinals.has(nativeIndex)) {
+      ordinal = part.annotationOrdinals.get(nativeIndex);
+      if ((ordinal === undefined) !== (converted === undefined)) throw new TypeError(`Responses annotation changed projection at index ${nativeIndex}`);
+    } else {
+      if (nativeIndex !== part.annotationOrdinals.size) throw new TypeError('Responses annotation indexes must be contiguous');
+      ordinal = converted === undefined ? undefined : part.nextAnnotationOrdinal++;
+      part.annotationOrdinals.set(nativeIndex, ordinal);
+    }
+    if (converted === undefined || ordinal === undefined) return;
+    if (!part.annotationsInitialized) {
+      part.handle.assign('annotations', []);
+      part.annotationsInitialized = true;
+    }
+    reconcileAssign({ handle: part.handle, path: ['annotations', ordinal] }, converted);
   };
 
   const reconcileAnnotations = (
-    part: ResponsesPartState,
+    part: ResponsesTextPartState,
     text: string,
     annotations: readonly (OpenAIResponsesAnnotation | null)[] | undefined,
   ): void => {
@@ -298,9 +353,17 @@ export const irFromOpenAIResponses = async function* (
       return value === undefined ? [] : [value];
     });
     converted.forEach((annotation, index) => reconcileAssign({ handle: part.handle, path: ['annotations', index] }, annotation));
+    if (part.annotationOrdinals.size === 0) {
+      let ordinal = 0;
+      for (const [index, annotation] of annotations.entries()) {
+        const projected = annotation === null ? undefined : ordinal++;
+        part.annotationOrdinals.set(index, projected);
+      }
+      part.nextAnnotationOrdinal = ordinal;
+    }
   };
 
-  const reconcilePartText = (part: ResponsesPartState, snapshot: string): string => {
+  const reconcilePartText = (part: ResponsesTextPartState, snapshot: string): string => {
     const previous = part.text;
     if (previous === undefined) throw new TypeError('Responses output text state is invalid');
     const text = reconcileAppend({ handle: part.handle, path: 'text' }, snapshot);
@@ -349,7 +412,7 @@ export const irFromOpenAIResponses = async function* (
           type: 'image',
           image: { data: item.result, ...(item.output_format == null ? {} : { mime_type: `image/${item.output_format}` }) },
         });
-        state.parts.set(0, { type: 'image', handle, annotationsInitialized: false });
+        state.parts.set(0, { type: 'image', handle });
       } else {
         const part = state.parts.get(0);
         if (part === undefined) throw new TypeError('Responses image state is invalid');
@@ -465,30 +528,16 @@ export const irFromOpenAIResponses = async function* (
             if (field === 'text') reconcilePartText(part, `${part.text ?? ''}${e.delta}`);
             else part.handle.append(field, e.delta);
           }
-          if (e.type === 'response.output_text.delta' && e.logprobs !== undefined) reconcileLogprobs(state, e.content_index, part, e.logprobs);
+          if (e.type === 'response.output_text.delta' && e.logprobs !== undefined) appendLogprobs(state, e.content_index, part, e.logprobs);
         } else if (e.type === 'response.output_text.done' || e.type === 'response.refusal.done') {
           const part = ensureMessagePart(state, e.content_index, { type: e.type === 'response.refusal.done' ? 'refusal' : 'output_text', annotations: [] });
           if (e.type === 'response.output_text.done') reconcilePartText(part, e.text);
           else reconcileAppend({ handle: part.handle, path: 'refusal' }, e.refusal);
           if (e.type === 'response.output_text.done' && e.logprobs !== undefined) reconcileLogprobs(state, e.content_index, part, e.logprobs);
         } else if (e.type === 'response.output_text.annotation.added') {
-          if (e.annotation !== null) {
-            const part = state.parts.get(e.content_index);
-            if (part?.type !== 'output_text') throw new TypeError('Responses output-text annotation requires an output-text part');
-            if (part.text === undefined) throw new TypeError('Responses output-text annotation requires an output-text part');
-            const annotation = annotationToIR(() => {
-              part.coordinateIndex ??= TextCoordinateIndex.codePointsToUTF16(part.text!);
-              part.coordinateIndex.assertUTF16Length(part.text!.length);
-              return part.coordinateIndex;
-            }, e.annotation);
-            if (annotation !== undefined) {
-              if (!part.annotationsInitialized) {
-                part.handle.assign('annotations', []);
-                part.annotationsInitialized = true;
-              }
-              reconcileAssign({ handle: part.handle, path: ['annotations', e.annotation_index] }, annotation);
-            }
-          }
+          const part = state.parts.get(e.content_index);
+          if (part?.type !== 'output_text' || part.text === undefined) throw new TypeError('Responses output-text annotation requires an output-text part');
+          reconcileAnnotation(part, part.text, e.annotation_index, e.annotation);
         } else if (e.type === 'response.function_call_arguments.delta' || e.type === 'response.custom_tool_call_input.delta') {
           if (e.delta !== '') state.item.append(e.type === 'response.function_call_arguments.delta' ? 'arguments' : 'input', e.delta);
         } else if (e.type === 'response.function_call_arguments.done' || e.type === 'response.custom_tool_call_input.done') {

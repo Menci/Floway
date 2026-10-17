@@ -122,6 +122,46 @@ test('output_item.done initializes snapshot-only content and logprobs', async ()
   expect(result.choices[0].logprobs?.[0].tokens).toEqual([token]);
 });
 
+test('logprob deltas append tokens before reconciling the complete snapshot', async () => {
+  const added = { type: 'message', id: 'msg', role: 'assistant', status: 'in_progress', content: [] };
+  const first = { token: 'a', logprob: -1, bytes: [97], top_logprobs: [] };
+  const second = { token: 'b', logprob: -2, bytes: [98], top_logprobs: [] };
+  const part = { type: 'output_text', text: 'ab', annotations: [], logprobs: [first, second] };
+  const done = { ...added, status: 'completed', content: [part] };
+  const result = await read([
+    { type: 'response.created', response: response([]) },
+    { type: 'response.output_item.added', output_index: 0, item: added },
+    { type: 'response.content_part.added', output_index: 0, content_index: 0, part: { ...part, text: '', logprobs: [] } },
+    { type: 'response.output_text.delta', output_index: 0, content_index: 0, delta: 'a', logprobs: [first] },
+    { type: 'response.output_text.delta', output_index: 0, content_index: 0, delta: 'b', logprobs: [second] },
+    { type: 'response.output_text.done', output_index: 0, content_index: 0, text: 'ab', logprobs: [first, second] },
+    { type: 'response.output_item.done', output_index: 0, item: done },
+    { type: 'response.completed', response: response([done]) },
+  ]);
+  expect(result.choices[0].logprobs?.[0].tokens).toEqual([first, second]);
+});
+
+test('nullable annotation indexes map into a compact IR annotation array', async () => {
+  const citation = { type: 'url_citation', url: 'https://example.test', title: 'source', start_index: 0, end_index: 6 };
+  const part = { type: 'output_text', text: 'answer', annotations: [citation], logprobs: [] };
+  const added = { type: 'message', id: 'msg', role: 'assistant', status: 'in_progress', content: [] };
+  const done = { ...added, status: 'completed', content: [part] };
+  const result = await read([
+    { type: 'response.created', response: response([]) },
+    { type: 'response.output_item.added', output_index: 0, item: added },
+    { type: 'response.content_part.added', output_index: 0, content_index: 0, part: { ...part, text: '', annotations: [] } },
+    { type: 'response.output_text.delta', output_index: 0, content_index: 0, delta: 'answer' },
+    { type: 'response.output_text.annotation.added', output_index: 0, content_index: 0, annotation_index: 0, annotation: null },
+    { type: 'response.output_text.annotation.added', output_index: 0, content_index: 0, annotation_index: 1, annotation: citation },
+    { type: 'response.output_item.done', output_index: 0, item: done },
+    { type: 'response.completed', response: response([done]) },
+  ]);
+  expect(result.choices[0].items[0]).toMatchObject({
+    type: 'message',
+    content: [{ annotations: [{ type: 'source_citation', source: citation.url }] }],
+  });
+});
+
 test('empty final reasoning summary preserves streamed content', async () => {
   const added = { type: 'reasoning', id: 'rs', summary: [], status: 'in_progress' };
   const done = { ...added, status: 'completed' };
