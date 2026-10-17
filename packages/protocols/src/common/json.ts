@@ -4,7 +4,6 @@ export type JsonObject = Record<string, unknown>;
 // https://tc39.es/proposal-json-parse-with-source/#sec-json.rawjson
 const jsonWithRawNumbers = JSON as typeof JSON & {
   rawJSON: (text: string) => { readonly rawJSON: string };
-  isRawJSON: (value: unknown) => value is { readonly rawJSON: string };
 };
 
 export const parseJSONWithRawNumbers = (text: string): unknown => JSON.parse(text, (_key: string, value: unknown, context?: { source: string }) => {
@@ -200,7 +199,5 @@ export const jsonInteger = (value: bigint): number | { readonly rawJSON: string 
   return Number.isSafeInteger(number) ? number : jsonWithRawNumbers.rawJSON(value.toString());
 };
 
-// Strict object guard: rejects arrays. Used by the Anthropic Messages reassembler in
-// this package when keying into a value as a JSON dictionary.
 export const isJsonObject = (value: unknown): value is JsonObject =>
   typeof value === 'object' && value !== null && !Array.isArray(value);

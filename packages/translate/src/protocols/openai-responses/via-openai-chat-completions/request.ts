@@ -225,8 +225,11 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
       } else if (item.type === 'message' && item.role !== 'assistant') {
         if (item.role === 'user') messages.push({ role: 'user', content: openaiResponsesContentToOpenAIChatCompletionsContent(item.content) as OpenAIChatCompletionsUserContentPart[] | string });
         else {
-          if (Array.isArray(item.content) && item.content.some(part => part.type !== 'input_text' && part.type !== 'output_text')) throw new TranslatorInputError('Only text content is supported in Chat system/developer messages.');
-          messages.push({ role: item.role, content: typeof item.content === 'string' ? item.content : item.content.map(part => ({ type: 'text', text: (part as CanonicalOpenAIResponsesText).text })) });
+          const content = typeof item.content === 'string' ? item.content : item.content.map(part => {
+            if (part.type !== 'input_text' && part.type !== 'output_text') throw new TranslatorInputError('Only text content is supported in Chat system/developer messages.');
+            return { type: 'text' as const, text: part.text };
+          });
+          messages.push({ role: item.role, content });
         }
       } else throw new TranslatorInputError(`Invalid input item type '${item.type}'.`);
     }

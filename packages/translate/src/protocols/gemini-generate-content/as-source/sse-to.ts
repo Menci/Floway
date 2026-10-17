@@ -99,10 +99,9 @@ export const geminiGenerateContentFromIR = async function* (
     const lastPartSegment = partSegments.at(-1);
     const targetStart = lastPartSegment === undefined ? 0 : lastPartSegment.targetStart + lastPartSegment.sourceEnd - lastPartSegment.sourceStart;
     const segments = mappings.get(irPathKey(source)) ?? [];
-    const lastSourceSegment = segments.at(-1);
-    const sourceEnd = lastSourceSegment === undefined ? text.length : lastSourceSegment.sourceEnd + text.length;
-    const sourceStart = sourceEnd - text.length;
     const previous = segments.at(-1);
+    const sourceEnd = previous === undefined ? text.length : previous.sourceEnd + text.length;
+    const sourceStart = sourceEnd - text.length;
     const continuesPrevious = previous?.partIndex === partIndex
       && previous.sourceEnd === sourceStart
       && previous.targetStart + previous.sourceEnd - previous.sourceStart === targetStart;

@@ -1,3 +1,4 @@
+import { isEncryptedReasoningDetail } from './reasoning-details.ts';
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { openaiChatCompletionsErrorPayloadMessage, type OpenAIChatCompletionsAssistantDeltaEx, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
@@ -28,13 +29,6 @@ const eventWithChoices = (
 
 const hasOptionalChunkFields = (event: OpenAIChatCompletionsStreamEvent): boolean =>
   Object.keys(event).some(key => !REQUIRED_CHUNK_KEYS.has(key));
-
-interface EncryptedReasoningDetail extends Record<string, unknown> { type: 'reasoning.encrypted'; data: string }
-
-const isEncryptedReasoningDetail = (value: unknown): value is EncryptedReasoningDetail => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-  return 'type' in value && value.type === 'reasoning.encrypted' && 'data' in value && typeof value.data === 'string';
-};
 
 const wrapReasoningDetails = async (value: unknown, options: AffinityEgressOptions): Promise<unknown> => {
   if (!Array.isArray(value)) return value;

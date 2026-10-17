@@ -7,9 +7,9 @@ import { canonicalTextParts, isPureTextPart, type PureTextPart } from '../../../
 import { requireJSONObject } from '../../../shared/json/object.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesAssistantMessage, AnthropicMessagesRedactedThinkingBlock } from '@floway-dev/protocols/anthropic-messages';
 
-type AnthropicMessagesTextPart = NonNullable<Exclude<AnthropicMessagesAssistantTurn[number]['content'], string>>[number];
+type AnthropicMessagesReplayPart = NonNullable<Exclude<AnthropicMessagesAssistantTurn[number]['content'], string>>[number];
 
-const isAnthropicMessagesPureTextPart = <Part extends AnthropicMessagesTextPart>(part: Part): part is Part & PureTextPart =>
+const isAnthropicMessagesPureTextPart = <Part extends AnthropicMessagesReplayPart>(part: Part): part is Part & PureTextPart =>
   isPureTextPart(part, ['text'], ['citations']);
 
 export const ANTHROPIC_MESSAGES_REPLAY_CHECK_VERSION = 1;
@@ -25,7 +25,7 @@ const messagesReplayCheckMaterialV1 = (turn: AnthropicMessagesAssistantTurn): IR
       blocks.push({ type: 'text', text: message.content, citations: [] });
       continue;
     }
-    for (const block of canonicalTextParts<AnthropicMessagesTextPart>(message.content, isAnthropicMessagesPureTextPart)) {
+    for (const block of canonicalTextParts<AnthropicMessagesReplayPart>(message.content, isAnthropicMessagesPureTextPart)) {
       if (block.type === 'text') blocks.push({
         type: block.type,
         text: block.text,

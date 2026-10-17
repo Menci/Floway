@@ -9,7 +9,7 @@ import { computeOpenAIChatCompletionsReplayCheck, createOpenAIChatCompletionsSid
 import { partitionOpenAIResponsesTurns } from '../../src/protocols/openai-responses/as-source/conversation-turns.ts';
 import { computeOpenAIResponsesReplayCheck, createOpenAIResponsesSidecarCarrier, inspectOpenAIResponsesAssistantTurn, verifyOpenAIResponsesReplayCheck } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
 import { toOpenAIResponsesInputAssistantTurn } from '../../src/protocols/openai-responses/as-target/assistant-turn.ts';
-import type { RoundTripSidecarEnvelope } from '../../src/round-trip/sidecar.ts';
+import type { AnyRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesAssistantMessage, AnthropicMessagesMessage } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentContent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
@@ -169,7 +169,7 @@ describe('assistant-turn sidecar protocols', () => {
   });
 
   it('types the unified envelope by source protocol, target protocol, assistant turn, and replay check', () => {
-    const sidecar: RoundTripSidecarEnvelope = {
+    const sidecar: AnyRoundTripSidecar = {
       source: 'openaiChatCompletions',
       target: 'anthropicMessages',
       assistantTurn: { role: 'assistant', content: [{ type: 'redacted_thinking', data: 'original-target-value' }] },

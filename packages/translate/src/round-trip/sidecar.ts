@@ -11,9 +11,8 @@ export type RoundTripSidecar<Target extends RoundTripProtocol> = {
   replayCheck: RoundTripReplayCheck;
 };
 
-export type RoundTripSidecarByTarget = { [Target in RoundTripProtocol]: RoundTripSidecar<Target> };
-export type RoundTripSidecarEnvelope = RoundTripSidecarByTarget[RoundTripProtocol];
-export type RoundTripSidecarForTarget<Target extends RoundTripProtocol> = RoundTripSidecarByTarget[Target];
+type RoundTripSidecarByTarget = { [Target in RoundTripProtocol]: RoundTripSidecar<Target> };
+export type AnyRoundTripSidecar = RoundTripSidecarByTarget[RoundTripProtocol];
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -32,20 +31,20 @@ const assertAssistantTurn = (target: RoundTripProtocol, value: unknown): void =>
   if (!Array.isArray(value)) throw new TypeError(`${target} assistant turn is invalid`);
 };
 
-function assertSidecarEnvelope(value: Record<string, unknown>): asserts value is RoundTripSidecarEnvelope {
+function assertRoundTripSidecar(value: Record<string, unknown>): asserts value is AnyRoundTripSidecar {
   if (!isRoundTripProtocol(value.source)) throw new TypeError('Assistant-turn sidecar source is invalid');
   if (!isRoundTripProtocol(value.target)) throw new TypeError('Assistant-turn sidecar target is invalid');
   assertAssistantTurn(value.target, value.assistantTurn);
   if (!isRecord(value.replayCheck) || !Number.isInteger(value.replayCheck.version) || !(value.replayCheck.digest instanceof Uint8Array)) throw new TypeError('Assistant-turn sidecar replay check is invalid');
 }
 
-export const decodeRoundTripSidecar = async (codec: TranslateSidecarCodec, source: RoundTripProtocol, data: string): Promise<RoundTripSidecarEnvelope | undefined> => {
+export const decodeRoundTripSidecar = async (codec: TranslateSidecarCodec, source: RoundTripProtocol, data: string): Promise<AnyRoundTripSidecar | undefined> => {
   const sidecar = await codec.decode(data);
   if (sidecar === undefined) return undefined;
   if (!isRecord(sidecar) || typeof sidecar.source !== 'string') throw new TypeError('Authenticated assistant-turn sidecar envelope is invalid');
   if (sidecar.source !== source) return undefined;
-  assertSidecarEnvelope(sidecar);
+  assertRoundTripSidecar(sidecar);
   return sidecar;
 };
 
-export const hasRoundTripTarget = <Target extends RoundTripProtocol>(sidecar: RoundTripSidecarEnvelope, target: Target): sidecar is RoundTripSidecarForTarget<Target> => sidecar.target === target;
+export const hasRoundTripTarget = <Target extends RoundTripProtocol>(sidecar: AnyRoundTripSidecar, target: Target): sidecar is RoundTripSidecarByTarget[Target] => sidecar.target === target;
