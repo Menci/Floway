@@ -579,9 +579,8 @@ const buildNativeWebSearchResultBlockFromProviderResult = (result: WebSearchProv
   };
 };
 
-// Per-block sub-state captured while walking upstream content blocks. Anthropic Messages
-// SSE serializes blocks (no interleaving), so a single ActiveBlock at a time is
-// sufficient; an interleaving upstream is treated as a protocol violation.
+// Per-block sub-state captured while walking upstream content blocks. Translated
+// Messages streams may keep an earlier block open across later block lifecycles.
 type ActiveBlock =
   | { kind: 'passthrough'; downstreamIndex: number }
   | { kind: 'text'; downstreamIndex: number }
@@ -727,7 +726,8 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
     hasRemainingClientToolUse: false,
   };
 
-  let activeBlock: ActiveBlock | undefined;
+  const activeBlocks = new Map<number, ActiveBlock>();
+  let activeWebSearchIndex: number | undefined;
 
   for await (const frame of frames) {
     if (frame.type === 'done') {
@@ -738,25 +738,25 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
     const event = frame.event;
 
     if (event.type === 'content_block_start') {
-      if (activeBlock !== undefined) {
-        throw new Error('upstream Anthropic Messages SSE interleaved content blocks; web-search shim cannot renumber.');
-      }
+      if (activeBlocks.has(event.index)) throw new Error(`upstream Anthropic Messages SSE opened content block ${event.index} twice.`);
+      if (activeWebSearchIndex !== undefined) throw new Error('upstream Anthropic Messages SSE started a block before an intercepted web search closed; web-search shim cannot renumber.');
 
       const downstreamBase = event.index + shimState.downstreamIndexOffset;
 
       if (state.mode === 'active' && event.content_block.type === 'tool_use' && event.content_block.name === WEB_SEARCH_TOOL_NAME) {
-        activeBlock = {
+        activeBlocks.set(event.index, {
           kind: 'web-search-tool-use',
           upstreamToolUseId: event.content_block.id,
           serverToolUseIndex: downstreamBase,
           resultIndex: downstreamBase + 1,
           inputJson: '',
-        };
+        });
+        activeWebSearchIndex = event.index;
         continue;
       }
 
       if (event.content_block.type === 'text') {
-        activeBlock = { kind: 'text', downstreamIndex: downstreamBase };
+        activeBlocks.set(event.index, { kind: 'text', downstreamIndex: downstreamBase });
         yield eventFrame({ ...rewriteContentBlockStartCitations(event, state), index: downstreamBase });
         continue;
       }
@@ -765,19 +765,18 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
         shimState.hasRemainingClientToolUse = true;
       }
 
-      activeBlock = { kind: 'passthrough', downstreamIndex: downstreamBase };
+      activeBlocks.set(event.index, { kind: 'passthrough', downstreamIndex: downstreamBase });
       yield eventFrame({ ...event, index: downstreamBase });
       continue;
     }
 
     if (event.type === 'content_block_delta') {
-      if (activeBlock === undefined) {
-        throw new Error('upstream Anthropic Messages SSE emitted content_block_delta without an open block.');
-      }
+      const activeBlock = activeBlocks.get(event.index);
+      if (activeBlock === undefined) throw new Error(`upstream Anthropic Messages SSE emitted content_block_delta for unopened block ${event.index}.`);
 
       if (activeBlock.kind === 'web-search-tool-use') {
         if (event.delta.type === 'input_json_delta') {
-          activeBlock = { ...activeBlock, inputJson: activeBlock.inputJson + event.delta.partial_json };
+          activeBlocks.set(event.index, { ...activeBlock, inputJson: activeBlock.inputJson + event.delta.partial_json });
         }
         continue;
       }
@@ -792,9 +791,8 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
     }
 
     if (event.type === 'content_block_stop') {
-      if (activeBlock === undefined) {
-        throw new Error('upstream Anthropic Messages SSE emitted content_block_stop without an open block.');
-      }
+      const activeBlock = activeBlocks.get(event.index);
+      if (activeBlock === undefined) throw new Error(`upstream Anthropic Messages SSE emitted content_block_stop for unopened block ${event.index}.`);
 
       if (activeBlock.kind === 'web-search-tool-use') {
         if (state.mode !== 'active') {
@@ -802,12 +800,13 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
         }
 
         yield* runWebSearchStopHandler(activeBlock, shimState, state, provider!);
-        activeBlock = undefined;
+        activeBlocks.delete(event.index);
+        activeWebSearchIndex = undefined;
         continue;
       }
 
       yield eventFrame({ type: 'content_block_stop', index: activeBlock.downstreamIndex });
-      activeBlock = undefined;
+      activeBlocks.delete(event.index);
       continue;
     }
 

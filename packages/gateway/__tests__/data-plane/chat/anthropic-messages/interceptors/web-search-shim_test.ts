@@ -1285,31 +1285,43 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative yields message_stop even w
   assertEquals(events[events.length - 1].type, 'message_stop');
 });
 
-test('rewriteAnthropicMessagesWebSearchEventsToNative throws when upstream interleaves content blocks', async () => {
+test('rewriteAnthropicMessagesWebSearchEventsToNative preserves interleaved passthrough blocks', async () => {
+  const events = await runStreamingShim(
+    [
+      upstreamMessageStart(),
+      { type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'answer' } },
+      { type: 'content_block_start', index: 1, content_block: { type: 'redacted_thinking', data: 'sidecar' } },
+      { type: 'content_block_stop', index: 1 },
+      { type: 'content_block_stop', index: 0 },
+      ...upstreamMessageEnd('end_turn'),
+    ],
+    { mode: 'replay_only', priorSearchUseCount: 0, requestSearchResultOwnership: [] },
+  );
+  const blocks = events.filter(event => event.type === 'content_block_start' || event.type === 'content_block_delta' || event.type === 'content_block_stop');
+  assertEquals(blocks.map(event => [event.type, event.index]), [
+    ['content_block_start', 0],
+    ['content_block_delta', 0],
+    ['content_block_start', 1],
+    ['content_block_stop', 1],
+    ['content_block_stop', 0],
+  ]);
+});
+
+test('rewriteAnthropicMessagesWebSearchEventsToNative rejects a later block before an intercepted search closes', async () => {
   await assertRejects(
     () =>
       runStreamingShim(
         [
           upstreamMessageStart(),
-          {
-            type: 'content_block_start',
-            index: 0,
-            content_block: { citations: null, type: 'text', text: '' },
-          },
-          {
-            type: 'content_block_start',
-            index: 1,
-            content_block: { citations: null, type: 'text', text: '' },
-          },
+          { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_1', name: 'web_search', input: {} } },
+          { type: 'content_block_start', index: 1, content_block: { citations: null, type: 'text', text: '' } },
         ],
-        {
-          mode: 'replay_only',
-          priorSearchUseCount: 0,
-          requestSearchResultOwnership: [],
-        },
+        activeAnthropicMessagesWebSearchShimState(),
+        activeProvider(fakeProviderOk),
       ),
     Error,
-    'interleaved content blocks',
+    'before an intercepted web search closed',
   );
 });
 
