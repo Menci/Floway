@@ -1,6 +1,7 @@
 import { AddRegular, SearchRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
+import type { ShouldRevalidateFunctionArgs } from 'react-router';
 
 import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-admin-users';
@@ -63,6 +64,9 @@ export async function clientLoader(): Promise<LoaderData> {
   return await loadPageData(unloadedPageData);
 }
 
+export const shouldRevalidate = ({ currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) =>
+  currentUrl.pathname !== nextUrl.pathname && defaultShouldRevalidate;
+
 export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const { user: actor } = useDashboardOutletContext();
@@ -111,6 +115,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
     setPageError(next.error);
   }, [data]);
   const { refresh, refreshing } = useRefresh(reload);
+  const busy = refreshing || deleting || deletingGroup || changingMember;
 
   const afterSaved = async (savedId?: number) => {
     await refresh();
@@ -194,7 +199,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   };
 
   return (
-    <section className="dashboard-page">
+    <section aria-busy={busy} className="dashboard-page">
       <DashboardPageHeader
         actions={<ResourceListActions
           disabled={deleting || deletingGroup || changingMember}
@@ -212,11 +217,11 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           <Tab value="groups"><span className="inline-flex items-baseline gap-1.5"><span className="floway-control-label">{t('dashboard.users.tabs.groups')}</span>{groups && <Text className="floway-control-label text-fui-fg3 proportional-nums">{groups.length}</Text>}</span></Tab>
         </TabList>
         <div className="flex items-center gap-2 max-w-full">
-          <Input aria-label={t(tab === 'users' ? 'dashboard.users.search' : 'dashboard.groupsManagement.search')} className="w-[260px]" contentBefore={<SearchRegular />} onChange={(_, value) => setQuery(value.value)} placeholder={t(tab === 'users' ? 'dashboard.users.search' : 'dashboard.groupsManagement.search')} value={query} />
+          <Input aria-label={t(tab === 'users' ? 'dashboard.users.search' : 'dashboard.groupsManagement.search')} autoComplete="off" className="w-[260px]" contentBefore={<SearchRegular />} onChange={(_, value) => setQuery(value.value)} placeholder={t(tab === 'users' ? 'dashboard.users.search' : 'dashboard.groupsManagement.search')} spellCheck={false} value={query} />
           <Button
             appearance="primary"
             className="flex-none whitespace-nowrap"
-            disabled={!loaded || refreshing || deleting || deletingGroup || changingMember}
+            disabled={!loaded || busy}
             icon={<AddRegular />}
             onClick={() => tab === 'users' ? editorDialog.open({ kind: 'create', groups: groups! }) : groupDialog.open({})}
           >{t(tab === 'users' ? 'dashboard.users.actions.create' : 'dashboard.groupsManagement.actions.create')}</Button>
@@ -232,14 +237,14 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
       {!loaded ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
         {tab === 'users' ? <ResourceListPanel><UsersTable
           actorId={actor.id}
-          disabled={refreshing || deleting}
+          disabled={busy}
           onDelete={openDeleteDialog}
           onEdit={user => editorDialog.open({ kind: 'edit', user, groups })}
           onResetPassword={passwordDialog.open}
           users={visibleUsers!}
           groups={groups}
         /></ResourceListPanel> : needle && visibleGroups!.length === 0 ? <Panel><EmptyStateLine>{t('dashboard.groupsManagement.noMatches')}</EmptyStateLine></Panel> : <GroupsMasterDetail
-          disabled={refreshing || deletingGroup || changingMember}
+          disabled={busy}
           groups={visibleGroups!}
           users={users}
           selectedId={activeGroupId ?? null}

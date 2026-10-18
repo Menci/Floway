@@ -4,7 +4,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 
 import type { ControlPlaneGroup, ControlPlaneUser } from '../../src/api/types';
 import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
-import DashboardAdminUsers from '../../src/routes/dashboard-admin-users';
+import DashboardAdminUsers, { shouldRevalidate } from '../../src/routes/dashboard-admin-users';
 import { renderInApp } from '../render';
 
 const groups: ControlPlaneGroup[] = [
@@ -26,23 +26,28 @@ const renderPage = (entry = '/dashboard/admin/users', data = loaderData) => {
     if (element.hasAttribute('data-group-memberships')) Object.defineProperty(style, 'columnGap', { value: '8px' });
     return style;
   });
+  const loader = vi.fn(() => data);
   const router = createMemoryRouter([{
     path: '/dashboard', element: <OutcomeToastProvider><Outlet context={{ user }} /></OutcomeToastProvider>, children: [{
-      path: 'admin/users', loader: () => data,
+      path: 'admin/users', loader, shouldRevalidate,
       Component: () => <DashboardAdminUsers loaderData={useLoaderData() as never} params={{}} matches={[] as never} />,
     }],
   }], { initialEntries: [entry] });
   const view = renderInApp(<RouterProvider router={router} />);
-  return { ...view, router };
+  return { ...view, loader, router };
 };
 
 test('opens a group deep link and keeps group selection in browser history', async () => {
-  const { router } = renderPage('/dashboard/admin/users?tab=groups&group=2');
-  expect((await screen.findByRole('option', { name: 'Research' })).getAttribute('aria-selected')).toBe('true');
+  const { loader, router } = renderPage('/dashboard/admin/users?tab=groups&group=2');
+  const selected = await screen.findByRole('option', { name: 'Research' });
+  expect(selected.getAttribute('aria-selected')).toBe('true');
+  expect(selected.querySelector('.floway-identity .floway-group-avatar')).not.toBeNull();
+  expect(screen.getByRole('table').querySelector('.floway-identity .floway-avatar-initials')?.textContent).toBe('F');
   await act(async () => { fireEvent.click(screen.getByRole('option', { name: 'Platform' })); });
   await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('group')).toBe('1'));
   await act(async () => { await router.navigate(-1); });
   expect(screen.getByRole('option', { name: 'Research' }).getAttribute('aria-selected')).toBe('true');
+  expect(loader).toHaveBeenCalledOnce();
 });
 
 test('navigates from a group identity to its roster without carrying the user search', async () => {
@@ -50,6 +55,8 @@ test('navigates from a group identity to its roster without carrying the user se
   const search = await screen.findByRole('textbox', { name: 'Search users' });
   fireEvent.change(search, { target: { value: 'frank' } });
   const link = screen.getByRole('link', { name: 'Research' });
+  expect(link.querySelector('.floway-identity .floway-group-avatar')).not.toBeNull();
+  expect(link.querySelector('.fui-Tag')).toBeNull();
   expect(link.getAttribute('href')).toBe('/dashboard/admin/users?tab=groups&group=2');
   await act(async () => { fireEvent.click(link); });
   await waitFor(() => expect(router.state.location.search).toBe('?tab=groups&group=2'));
@@ -82,7 +89,7 @@ test('clears the unavailable group address when no groups remain', async () => {
 test('does not repeat an untruncated username on hover', async () => {
   renderPage();
   const name = await screen.findByRole('button', { name: 'frank' });
-  fireEvent.pointerEnter(name, { pointerType: 'mouse' });
+  fireEvent.pointerEnter(name.querySelector('.floway-identity-name')!, { pointerType: 'mouse' });
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 500)); });
   expect(screen.queryByRole('tooltip')).toBeNull();
 });
@@ -92,7 +99,11 @@ test('opens hidden group links from the overflow control', async () => {
   await screen.findByRole('button', { name: 'frank' });
   vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 20, 24));
   fireEvent.change(screen.getByRole('textbox', { name: 'Search users' }), { target: { value: 'frank' } });
-  await act(async () => { fireEvent.click(await screen.findByRole('button', { name: 'Show 2 more groups' })); });
+  const overflow = await screen.findByRole('button', { name: 'Show 2 more groups' });
+  expect(overflow.querySelector('.floway-group-avatar[data-overflow-count="2"]')?.textContent).toBe('+2');
+  expect(overflow.querySelector('.fui-Avatar')?.getAttribute('data-winui-avatar-color')).toBe('neutral');
+  expect(overflow.querySelector('.fui-Tag')).toBeNull();
+  await act(async () => { fireEvent.click(overflow); });
   expect(screen.getByRole('group', { name: 'Groups' })).toBeTruthy();
   expect(screen.getByRole('link', { name: 'Research' }).getAttribute('href')).toBe('/dashboard/admin/users?tab=groups&group=2');
   await act(async () => { fireEvent.click(screen.getByRole('link', { name: 'Research' })); });
@@ -121,6 +132,39 @@ test('retains the complete directory and edit membership when refreshing it fail
   const dialog = screen.getByRole('dialog');
   expect(dialog.textContent).toContain('Platform');
   expect(dialog.textContent).toContain('Research');
+});
+
+test('keeps the user table without creation metadata and locks every editor during refresh', async () => {
+  let finish!: (response: Response) => void;
+  vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
+    const path = new URL(String(input), 'http://localhost').pathname;
+    if (path === '/api/upstream-options') return Promise.resolve(Response.json([]));
+    if (path === '/api/models') return Promise.resolve(Response.json({ data: [] }));
+    if (path === '/api/user-directory') return new Promise(resolve => { finish = resolve; });
+    throw new Error(`Unexpected request: ${path}`);
+  });
+  renderPage();
+  const name = await screen.findByRole<HTMLButtonElement>('button', { name: 'frank' });
+  expect(screen.queryByRole('columnheader', { name: 'Created' })).toBeNull();
+  const table = screen.getByRole('table');
+  expect(screen.getByRole('columnheader', { name: 'Actions' }).querySelector('.sr-only')).toBeTruthy();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Refresh users and groups' })); });
+  expect(name.disabled).toBe(true);
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Edit user frank' }).disabled).toBe(true);
+  fireEvent.click(name);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.getByRole('table')).toBe(table);
+  await act(async () => { finish(Response.json(loaderData.directory)); });
+  await waitFor(() => expect(name.disabled).toBe(false));
+});
+
+test('changing groups discards an open member removal confirmation', async () => {
+  const { router } = renderPage('/dashboard/admin/users?tab=groups&group=1');
+  await screen.findByRole('option', { name: 'Platform' });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Remove frank from group' })); });
+  await screen.findByRole('dialog', { name: 'Remove member' });
+  await act(async () => { await router.navigate('/dashboard/admin/users?tab=groups&group=2'); });
+  expect(screen.queryByRole('dialog', { name: 'Remove member' })).toBeNull();
 });
 
 test('refreshes both membership directions from the same directory response', async () => {
