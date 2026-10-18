@@ -3,7 +3,8 @@
 // stay local. This example defines the Worker topology used by guarded dev,
 // deploy, and migration commands. The real config must mirror it in both
 // directions, replace every <YOUR_*> placeholder, and may additionally carry
-// account_id. Any other topology change belongs here first.
+// account_id. The deployment-local observability section may differ or be
+// absent. Any other topology change belongs here first.
 //
 // 1. Optionally set CLOUDFLARE_ACCOUNT_ID in the environment, or run
 //    `pnpm wrangler login`. If neither is in place, add an `account_id`
@@ -30,21 +31,16 @@
   // `ctx.exports` needs an explicit flag at this compatibility date:
   // https://developers.cloudflare.com/workers/configuration/compatibility-flags/#enable-ctxexports
   "compatibility_flags": ["nodejs_compat", "enable_ctx_exports"],
-  // One-percent head sampling keeps request, binding, and subrequest evidence
-  // available without turning every high-volume gateway invocation into a log
-  // or trace event.
+  // Observability is deployment-specific and disabled by default. Deployments
+  // that need production diagnostics can replace this whole section or omit it.
+  // A high-volume deployment can start by changing this section to:
+  //   "enabled": true,
+  //   "logs": { "enabled": true, "head_sampling_rate": 0.01 },
+  //   "traces": { "enabled": true, "head_sampling_rate": 0.01 }
   // https://developers.cloudflare.com/workers/observability/logs/workers-logs/#sampling
   // https://developers.cloudflare.com/workers/observability/traces/#sampling
   "observability": {
-    "enabled": true,
-    "logs": {
-      "enabled": true,
-      "head_sampling_rate": 0.01
-    },
-    "traces": {
-      "enabled": true,
-      "head_sampling_rate": 0.01
-    }
+    "enabled": false
   },
   "triggers": {
     // Minute scheduling provides catch-up throughput while bounded deletion
