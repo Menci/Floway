@@ -1308,21 +1308,51 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative preserves interleaved pass
   ]);
 });
 
-test('rewriteAnthropicMessagesWebSearchEventsToNative rejects a later block before an intercepted search closes', async () => {
-  await assertRejects(
-    () =>
-      runStreamingShim(
-        [
-          upstreamMessageStart(),
-          { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_1', name: 'web_search', input: {} } },
-          { type: 'content_block_start', index: 1, content_block: { citations: null, type: 'text', text: '' } },
-        ],
-        activeAnthropicMessagesWebSearchShimState(),
-        activeProvider(fakeProviderOk),
-      ),
-    Error,
-    'before an intercepted web search closed',
+test('rewriteAnthropicMessagesWebSearchEventsToNative places a deferred sidecar after intercepted search results', async () => {
+  const events = await runStreamingShim(
+    [
+      upstreamMessageStart(),
+      ...upstreamWebSearchBlockRawJson(0, 'toolu_1', '{"query":"react 19"}').slice(0, -1),
+      { type: 'content_block_start', index: 1, content_block: { type: 'redacted_thinking', data: 'sidecar' } },
+      { type: 'content_block_stop', index: 1 },
+      { type: 'content_block_stop', index: 0 },
+      ...upstreamMessageEnd('tool_use'),
+    ],
+    activeAnthropicMessagesWebSearchShimState(),
+    activeProvider(fakeProviderOk),
   );
+  const starts = events.filter(event => event.type === 'content_block_start');
+  assertEquals(starts.map(event => [event.index, event.content_block.type]), [
+    [0, 'server_tool_use'],
+    [1, 'web_search_tool_result'],
+    [2, 'redacted_thinking'],
+  ]);
+});
+
+test('rewriteAnthropicMessagesWebSearchEventsToNative delays later content until an intercepted search result is complete', async () => {
+  const events = await runStreamingShim(
+    [
+      upstreamMessageStart(),
+      ...upstreamWebSearchBlockRawJson(0, 'toolu_1', '{"query":"react 19"}').slice(0, -1),
+      { type: 'content_block_start', index: 1, content_block: { citations: null, type: 'text', text: '' } },
+      { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'answer' } },
+      { type: 'content_block_stop', index: 1 },
+      { type: 'content_block_stop', index: 0 },
+      ...upstreamMessageEnd('tool_use'),
+    ],
+    activeAnthropicMessagesWebSearchShimState(),
+    activeProvider(fakeProviderOk),
+  );
+  const blocks = events.filter(event => event.type === 'content_block_start' || event.type === 'content_block_delta' || event.type === 'content_block_stop');
+  assertEquals(blocks.map(event => [event.type, event.index]), [
+    ['content_block_start', 0],
+    ['content_block_stop', 0],
+    ['content_block_start', 1],
+    ['content_block_stop', 1],
+    ['content_block_start', 2],
+    ['content_block_delta', 2],
+    ['content_block_stop', 2],
+  ]);
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative requires a provider when mode is active', async () => {

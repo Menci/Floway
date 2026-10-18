@@ -728,18 +728,34 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
 
   const activeBlocks = new Map<number, ActiveBlock>();
   let activeWebSearchIndex: number | undefined;
+  let deferredFrames: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [];
+  let terminated = false;
 
-  for await (const frame of frames) {
+  const processFrame = async function* (
+    frame: ProtocolFrame<AnthropicMessagesStreamEventEx>,
+  ): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
+    if (activeWebSearchIndex !== undefined && frame.type === 'event') {
+      const event = frame.event;
+      const belongsToSearch = (event.type === 'content_block_delta' || event.type === 'content_block_stop')
+        && event.index === activeWebSearchIndex;
+      if (!belongsToSearch && event.type !== 'error' && event.type !== 'ping') {
+        deferredFrames.push(frame);
+        return;
+      }
+    } else if (activeWebSearchIndex !== undefined) {
+      deferredFrames.push(frame);
+      return;
+    }
+
     if (frame.type === 'done') {
       yield frame;
-      continue;
+      return;
     }
 
     const event = frame.event;
 
     if (event.type === 'content_block_start') {
       if (activeBlocks.has(event.index)) throw new Error(`upstream Anthropic Messages SSE opened content block ${event.index} twice.`);
-      if (activeWebSearchIndex !== undefined) throw new Error('upstream Anthropic Messages SSE started a block before an intercepted web search closed; web-search shim cannot renumber.');
 
       const downstreamBase = event.index + shimState.downstreamIndexOffset;
 
@@ -752,13 +768,13 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
           inputJson: '',
         });
         activeWebSearchIndex = event.index;
-        continue;
+        return;
       }
 
       if (event.content_block.type === 'text') {
         activeBlocks.set(event.index, { kind: 'text', downstreamIndex: downstreamBase });
         yield eventFrame({ ...rewriteContentBlockStartCitations(event, state), index: downstreamBase });
-        continue;
+        return;
       }
 
       if (event.content_block.type === 'tool_use') {
@@ -767,7 +783,7 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
 
       activeBlocks.set(event.index, { kind: 'passthrough', downstreamIndex: downstreamBase });
       yield eventFrame({ ...event, index: downstreamBase });
-      continue;
+      return;
     }
 
     if (event.type === 'content_block_delta') {
@@ -778,16 +794,16 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
         if (event.delta.type === 'input_json_delta') {
           activeBlocks.set(event.index, { ...activeBlock, inputJson: activeBlock.inputJson + event.delta.partial_json });
         }
-        continue;
+        return;
       }
 
       if (activeBlock.kind === 'text') {
         yield eventFrame({ ...rewriteContentBlockDeltaCitations(event, state), index: activeBlock.downstreamIndex });
-        continue;
+        return;
       }
 
       yield eventFrame({ ...event, index: activeBlock.downstreamIndex });
-      continue;
+      return;
     }
 
     if (event.type === 'content_block_stop') {
@@ -802,12 +818,18 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
         yield* runWebSearchStopHandler(activeBlock, shimState, state, provider!);
         activeBlocks.delete(event.index);
         activeWebSearchIndex = undefined;
-        continue;
+        const resume = deferredFrames;
+        deferredFrames = [];
+        for (const deferred of resume) {
+          yield* processFrame(deferred);
+          if (terminated) return;
+        }
+        return;
       }
 
       yield eventFrame({ type: 'content_block_stop', index: activeBlock.downstreamIndex });
       activeBlocks.delete(event.index);
-      continue;
+      return;
     }
 
     // Inject `usage.server_tool_use.web_search_requests` and flip `stop_reason`
@@ -827,15 +849,25 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
           : event.delta,
         usage: newUsage,
       });
-      continue;
+      return;
     }
 
     if (event.type === 'error') {
+      deferredFrames = [];
+      terminated = true;
       yield frame;
       return;
     }
 
     yield frame;
+  };
+
+  for await (const frame of frames) {
+    yield* processFrame(frame);
+    if (terminated) return;
+  }
+  if (activeWebSearchIndex !== undefined || deferredFrames.length > 0) {
+    throw new Error('intercepted web search ended before its content block closed.');
   }
 };
 
