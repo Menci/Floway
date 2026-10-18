@@ -26,6 +26,25 @@ const TAVILY_CONFIG: WebSearchConfig = {
   passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
 };
 
+const PASSTHROUGH_CONFIG: WebSearchConfig = {
+  ...TAVILY_CONFIG,
+  passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_alpha', model: 'gpt-search' },
+};
+
+const searchUpstream = (modelIds: readonly string[]) => buildCustomUpstreamRecord({
+  id: 'up_alpha',
+  name: 'Alpha Search',
+  config: {
+    baseUrl: 'https://search.example.com',
+    authStyle: 'bearer',
+    ingressHeadersRules: [],
+    apiKey: 'search-secret',
+    endpoints: { openaiResponses: {} },
+    modelsFetch: { enabled: false },
+    models: modelIds.map(upstreamModelId => ({ upstreamModelId, endpoints: { openaiResponses: {} } })),
+  },
+});
+
 interface ProviderOverrides {
   search?: (req: WebSearchProviderRequest) => Promise<WebSearchProviderResult> | WebSearchProviderResult;
   fetchPage?: (req: WebSearchFetchPageRequest) => Promise<WebSearchFetchPageResult> | WebSearchFetchPageResult;
@@ -156,27 +175,53 @@ describe('/alpha/search data plane', () => {
     });
   });
 
+  describe('passthrough model availability', () => {
+    it.each(SEARCH_PATHS.flatMap(path => (['missing-model', 'denied-model', 'excluded-upstream'] as const).map(reason => ({ path, reason }))))('returns the same missing-model response for $reason at $path', async ({ path, reason }) => {
+      const { apiKey, repo } = await setupAppTest({ webSearchConfig: PASSTHROUGH_CONFIG });
+      await repo.upstreams.deleteAll();
+      await saveUpstreamForTest(repo.upstreams, searchUpstream(['gpt-search']));
+      const request = { model: 'caller-context', commands: { search_query: [{ q: 'Floway' }] } };
+      let upstreamCalls = 0;
+      await withMockedFetch(
+        async request => {
+          expect(request.url).toBe('https://search.example.com/v1/alpha/search');
+          upstreamCalls++;
+          return Response.json({ encrypted_output: null, output: 'allowed' });
+        },
+        async () => {
+          await warmModelsForTest();
+          const allowed = await postSearch(buildAlphaSearchApp(), apiKey.key, request, path);
+          expect(allowed.status).toBe(200);
+          expect(await allowed.json()).toEqual({ encrypted_output: null, output: 'allowed' });
+          expect(upstreamCalls).toBe(1);
+          upstreamCalls = 0;
+          if (reason === 'missing-model') {
+            await saveUpstreamForTest(repo.upstreams, searchUpstream(['another-model']));
+            await warmModelsForTest();
+          } else if (reason === 'denied-model') {
+            await repo.accessRecords.save({
+              principal: { kind: 'user', id: apiKey.userId },
+              scope: { kind: 'upstreamModel', upstreamId: 'up_alpha', model: { kind: 'exact', value: 'gpt-search' } },
+              sortOrder: 0,
+              values: { 'Model.Use': false },
+            });
+          } else {
+            await repo.apiKeys.save({ ...apiKey, upstreamIds: [] });
+          }
+          const response = await postSearch(buildAlphaSearchApp(), apiKey.key, request, path);
+          expect(response.status).toBe(404);
+          expect(await response.json()).toEqual({ error: { message: 'Search model not found.', type: 'api_error' } });
+          expect(upstreamCalls).toBe(0);
+        },
+      );
+    });
+  });
+
   describe('command execution', () => {
     it('raw-passthrough mode dispatches to the selected custom upstream and preserves its response', async () => {
-      const webSearchConfig: WebSearchConfig = {
-        ...TAVILY_CONFIG,
-        passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_alpha', model: 'gpt-search' },
-      };
-      const { apiKey, repo } = await setupAppTest({ webSearchConfig });
+      const { apiKey, repo } = await setupAppTest({ webSearchConfig: PASSTHROUGH_CONFIG });
       await repo.upstreams.deleteAll();
-      await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-        id: 'up_alpha',
-        name: 'Alpha Search',
-        config: {
-          baseUrl: 'https://search.example.com',
-          authStyle: 'bearer',
-          ingressHeadersRules: [],
-          apiKey: 'search-secret',
-          endpoints: { openaiResponses: {} },
-          modelsFetch: { enabled: false },
-          models: [{ upstreamModelId: 'gpt-search', endpoints: { openaiResponses: {} } }],
-        },
-      }));
+      await saveUpstreamForTest(repo.upstreams, searchUpstream(['gpt-search']));
       const upstreamPayload = {
         encrypted_output: 'opaque',
         output: 'upstream output',

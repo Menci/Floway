@@ -19,9 +19,9 @@ export const resolveAlphaSearchDispatcher = async ({
   upstreamIds: readonly string[] | null;
   scheduler: BackgroundScheduler;
   runtimeLocation: string;
-}): Promise<AlphaSearchDispatcher> => {
+}): Promise<AlphaSearchDispatcher | null> => {
   if (upstreamIds !== null && !upstreamIds.includes(config.upstreamId)) {
-    throw new Error('Selected OpenAI search upstream is outside this API key scope');
+    return null;
   }
   const { candidates } = await enumerateModelCandidates({
     subject,
@@ -33,7 +33,7 @@ export const resolveAlphaSearchDispatcher = async ({
   });
   const candidate = candidates.find(value => value.provider.upstreamId === config.upstreamId);
   if (candidate === undefined) {
-    throw new Error(`Selected OpenAI search model ${config.model} is unavailable`);
+    return null;
   }
   if (candidate.provider.kind !== 'codex' && candidate.provider.kind !== 'custom') {
     throw new Error('Selected upstream does not support OpenAI search passthrough');

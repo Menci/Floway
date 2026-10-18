@@ -23,6 +23,7 @@ import { type CtxWithJson, zValidator } from '../../middleware/zod-validator.ts'
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { mountPublicRoute } from '../public-route.ts';
+import { passthroughApiError } from '../shared/passthrough-serve.ts';
 import { relayFetchedResponse } from '../tools/web-search/alpha-search/relay-response.ts';
 import { resolveAlphaSearchDispatcher } from '../tools/web-search/alpha-search/upstream.ts';
 import { loadWebSearchConfig } from '../tools/web-search/config.ts';
@@ -101,6 +102,8 @@ const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Pro
       scheduler: backgroundSchedulerFromContext(c),
       runtimeLocation: getRuntimeLocation(c.req.raw),
     });
+    // The configured model is private; missing models and grants share a response.
+    if (dispatcher === null) return passthroughApiError(c, 'Search model not found.', 404);
     const headers = new Headers();
     const turnMetadata = c.req.header('x-codex-turn-metadata');
     if (turnMetadata !== undefined) headers.set('x-codex-turn-metadata', turnMetadata);
