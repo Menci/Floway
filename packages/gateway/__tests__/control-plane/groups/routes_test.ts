@@ -12,7 +12,22 @@ test('group management routes require admin', async () => {
   const { apiKey } = await setupAppTest();
   const response = await requestApp('/api/groups', { headers: { 'x-api-key': apiKey.key } });
   assertEquals(response.status, 403);
-  assertEquals((await requestApp('/api/user-directory', { headers: { 'x-api-key': apiKey.key } })).status, 403);
+});
+
+test('a non-admin directory exposes only the actor and current groups', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const ownGroup = await repo.groups.create('Operators', 120);
+  const otherGroup = await repo.groups.create('Others', 180);
+  await repo.users.save({ id: 3, username: 'bob', passwordHash: null, isAdmin: false, createdAt: '', deletedAt: null });
+  await repo.groups.replaceMembers(ownGroup.id, [apiKey.userId, 3]);
+  await repo.groups.replaceMembers(otherGroup.id, [1, 3]);
+  const response = await requestApp('/api/user-directory', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals(response.status, 200);
+  const body = await response.json() as { users: Array<{ id: number; groupIds: number[] }>; groups: Array<{ id: number; memberIds: number[] }> };
+  expect(body.users.map(user => user.id)).toEqual([apiKey.userId]);
+  expect(body.groups.map(group => group.id)).toEqual([ownGroup.id]);
+  expect(body.users[0]?.groupIds).toEqual([ownGroup.id]);
+  expect(body.groups[0]?.memberIds).toEqual([apiKey.userId]);
 });
 
 test('user directory projects both membership directions from one repository snapshot', async () => {

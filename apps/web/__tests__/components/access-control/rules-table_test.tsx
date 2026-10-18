@@ -26,7 +26,7 @@ const data: Props['data'] = { users: [{ id: 2, username: 'alice', isAdmin: false
 const renderTable = (onReorder: Props['onReorder'] = vi.fn(async () => records)) => {
   const onReordered = vi.fn();
   const onReorderError = vi.fn(async (_error: unknown) => {});
-  return { ...renderInApp(<MemoryRouter><RulesTable busy={false} data={data} decisions={null} onEdit={vi.fn()} onRemove={async () => null} onReorder={onReorder} onReordered={onReordered} onReorderError={onReorderError} onScopeSelect={vi.fn()} params={new URLSearchParams()} records={records} /></MemoryRouter>), onReorder, onReordered, onReorderError };
+  return { ...renderInApp(<MemoryRouter><RulesTable admin busy={false} data={data} decisions={null} onEdit={vi.fn()} onRemove={async () => null} onReorder={onReorder} onReordered={onReordered} onReorderError={onReorderError} onScopeSelect={vi.fn()} params={new URLSearchParams()} records={records} /></MemoryRouter>), onReorder, onReordered, onReorderError };
 };
 beforeEach(() => { controllers.length = 0; });
 

@@ -628,6 +628,9 @@ export interface UpstreamMetricsRepo {
 export interface Repo {
   // Active users, groups and their memberships must share one read snapshot.
   readUserDirectory(): Promise<UserDirectory>;
+  // The directory projection visible to one ordinary operator: the actor and
+  // the groups they currently belong to, from the same read snapshot.
+  readUserDirectoryFor(userId: number): Promise<UserDirectory>;
   upstreamMetrics: UpstreamMetricsRepo;
   apiKeys: ApiKeyRepo;
   users: UsersRepo;

@@ -1792,6 +1792,15 @@ export class InMemoryRepo implements Repo {
     return Promise.resolve({ users, groups });
   }
 
+  readUserDirectoryFor(userId: number): Promise<UserDirectory> {
+    const user = this.users.snapshot().find(candidate => candidate.id === userId);
+    if (user === undefined) return Promise.resolve({ users: [], groups: [] });
+    const groups = this.groups.snapshot()
+      .filter(group => group.memberIds.includes(userId))
+      .map(group => ({ ...group, memberIds: [userId] }));
+    return Promise.resolve({ users: [user], groups });
+  }
+
   constructor() {
     this.groups = new MemoryGroupsRepo();
     this.users = new MemoryUsersRepo(this.groups);

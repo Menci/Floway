@@ -73,7 +73,7 @@ const zhHansCN = {
         providers: '接入',
         services: '服务',
         monitor: '监控',
-        admin: '管理',
+        management: '管理',
       },
       nav: {
         label: 'Dashboard 导航',
@@ -304,7 +304,7 @@ const zhHansCN = {
         tableLabel: '权限规则',
         search: '搜索规则',
         noMatches: '没有匹配的规则',
-        filters: { allPrincipals: '全部用户与用户组', noPrincipals: '没有匹配的用户或用户组', clearPrincipal: '清除用户或用户组筛选' },
+        filters: { allPrincipals: '所有可见用户与用户组', noPrincipals: '没有匹配的用户或用户组', clearPrincipal: '清除用户或用户组筛选' },
         columns: { 'Model.Use': '使用模型', 'Upstream.Audit': '审计上游', 'Upstream.Edit': '编辑上游', 'User.Audit': '审计用户' },
         pagination: { previous: '上一页', next: '下一页', range: '{{from, number}} - {{to, number}} / {{total, number}}' },
         actions: { add: '新建规则', edit: '编辑规则', delete: '删除规则', save: '保存规则', refresh: '刷新权限', clearFilters: '清除筛选', removeScopeSegment: '移除范围最后一段', reorder: '调整规则顺序' },

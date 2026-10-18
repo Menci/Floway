@@ -16,4 +16,6 @@ test('shows Upstreams only when the signed-in operator can see an existing upstr
 
   renderSidebar(true);
   expect(screen.getByRole('link', { name: 'Upstreams' })).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Permissions' })).toBeTruthy();
+  expect(screen.queryByRole('link', { name: 'Users' })).toBeNull();
 });

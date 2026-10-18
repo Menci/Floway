@@ -15,7 +15,7 @@ const modelUseRecord = (principalId: number, upstreamId: string, sortOrder = 0) 
   values: { 'Model.Use': true },
 });
 
-test('access-record list and writes require admin', async () => {
+test('access-record listing is actor-scoped while writes require admin', async () => {
   const { apiKey } = await setupAppTest();
   const list = await requestApp('/api/access-records', { headers: { 'x-api-key': apiKey.key } });
   const create = await requestApp('/api/access-records', {
@@ -23,8 +23,61 @@ test('access-record list and writes require admin', async () => {
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
     body: JSON.stringify(modelUseRecord(2, 'up_a')),
   });
-  assertEquals(list.status, 403);
+  assertEquals(list.status, 200);
+  assertEquals(((await list.json()) as Array<{ principal: { kind: string; id: number } }>).every(record => record.principal.kind === 'user' && record.principal.id === 2), true);
   assertEquals(create.status, 403);
+});
+
+test('non-admin access listing includes only the actor and their groups', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const ownGroup = await repo.groups.create('Operators', 120);
+  const otherGroup = await repo.groups.create('Others', 180);
+  await repo.groups.replaceMembers(ownGroup.id, [apiKey.userId]);
+  await repo.groups.replaceMembers(otherGroup.id, [1]);
+  await repo.accessRecords.save({ principal: { kind: 'user', id: apiKey.userId }, scope: { kind: 'user', userId: apiKey.userId }, sortOrder: 0, values: { 'User.Audit': true } });
+  await repo.accessRecords.save({ principal: { kind: 'group', id: ownGroup.id }, scope: { kind: 'upstreams' }, sortOrder: 0, values: { 'Model.Use': true } });
+  await repo.accessRecords.save({ principal: { kind: 'group', id: otherGroup.id }, scope: { kind: 'upstreams' }, sortOrder: 0, values: { 'Model.Use': true } });
+
+  const response = await requestApp('/api/access-records', { headers: { 'x-api-key': apiKey.key } });
+  const records = await response.json() as Array<{ principal: { kind: string; id: number } }>;
+  assertEquals(records.every(record => record.principal.kind === 'user' ? record.principal.id === apiKey.userId : record.principal.id === ownGroup.id), true);
+  assertEquals(records.some(record => record.principal.kind === 'group' && record.principal.id === otherGroup.id), false);
+});
+
+test('an unfiltered non-admin listing is still restricted to self and joined groups', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const group = await repo.groups.create('Operators', 120);
+  await repo.groups.replaceMembers(group.id, [apiKey.userId]);
+  await repo.accessRecords.save({ principal: { kind: 'user', id: apiKey.userId }, scope: { kind: 'user', userId: apiKey.userId }, sortOrder: 0, values: { 'User.Audit': true } });
+  await repo.accessRecords.save({ principal: { kind: 'group', id: group.id }, scope: { kind: 'upstreams' }, sortOrder: 0, values: { 'Model.Use': true } });
+  await repo.accessRecords.save({ principal: { kind: 'user', id: 1 }, scope: { kind: 'users' }, sortOrder: 0, values: { 'User.Audit': true } });
+  const response = await requestApp('/api/access-records', { headers: { 'x-api-key': apiKey.key } });
+  const records = await response.json() as Array<{ principal: { kind: string; id: number } }>;
+  expect(new Set(records.map(record => `${record.principal.kind}:${record.principal.id}`))).toEqual(new Set([
+    `user:${apiKey.userId}`,
+    `group:${group.id}`,
+  ]));
+});
+
+test('non-admin access resolve rejects another principal and accepts self or a member group', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const group = await repo.groups.create('Operators', 120);
+  await repo.groups.replaceMembers(group.id, [apiKey.userId]);
+  const call = (principal: { kind: 'user' | 'group'; id: number }) => requestApp('/api/access-resolve', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: JSON.stringify({ principal, scope: { kind: 'upstreams' } }),
+  });
+  assertEquals((await call({ kind: 'user', id: apiKey.userId })).status, 200);
+  assertEquals((await call({ kind: 'group', id: group.id })).status, 200);
+  const groupResponse = await requestApp('/api/access-resolve', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: JSON.stringify({ principal: { kind: 'group', id: group.id }, scope: { kind: 'user', userId: apiKey.userId } }),
+  });
+  assertEquals(groupResponse.status, 200);
+  assertEquals((await call({ kind: 'user', id: 1 })).status, 404);
+  assertEquals((await call({ kind: 'group', id: group.id + 1 })).status, 404);
 });
 
 test('access records create, replace their structured scope, list, and delete', async () => {

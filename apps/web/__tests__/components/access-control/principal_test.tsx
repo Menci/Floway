@@ -27,7 +27,7 @@ test('clears a principal filter, restores input focus and keeps the arrow', () =
   expect(input.value).toBe('Platform');
   expect(container.querySelector('.floway-principal-picker-avatar .floway-group-avatar')).toBeTruthy();
   fireEvent.click(clear);
-  expect(input.value).toBe('All users and groups');
+  expect(input.value).toBe('All visible principals');
   expect(document.activeElement).toBe(input);
   expect(screen.queryByRole('button', { name: 'Clear user or group filter' })).toBeNull();
   expect(input.getAttribute('aria-expanded')).toBe('false');

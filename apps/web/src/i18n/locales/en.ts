@@ -75,7 +75,7 @@ const en = {
         providers: 'Providers',
         services: 'Services',
         monitor: 'Monitor',
-        admin: 'Management',
+        management: 'Management',
       },
       nav: {
         label: 'Dashboard navigation',
@@ -317,7 +317,7 @@ const en = {
         tableLabel: 'Permission rules',
         search: 'Search rules',
         noMatches: 'No matching rules',
-        filters: { allPrincipals: 'All users and groups', noPrincipals: 'No matching users or groups', clearPrincipal: 'Clear user or group filter' },
+        filters: { allPrincipals: 'All visible principals', noPrincipals: 'No matching users or groups', clearPrincipal: 'Clear user or group filter' },
         columns: { 'Model.Use': 'Use models', 'Upstream.Audit': 'Audit upstream', 'Upstream.Edit': 'Edit upstream', 'User.Audit': 'Audit users' },
         pagination: { previous: 'Previous page', next: 'Next page', range: '{{from, number}} - {{to, number}} / {{total, number}}' },
         actions: { add: 'New rule', edit: 'Edit rule', delete: 'Delete rule', save: 'Save rule', refresh: 'Refresh permissions', clearFilters: 'Clear filters', removeScopeSegment: 'Remove last scope segment', reorder: 'Reorder rule' },

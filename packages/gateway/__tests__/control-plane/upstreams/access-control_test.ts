@@ -244,3 +244,28 @@ test('upstream options apply key, audit, and all view predicates', async () => {
   const auditAfter = await requestApp('/api/upstream-options?view=audit', { headers: { 'x-api-key': apiKey.key } });
   assertEquals((await auditAfter.json()).map((item: { id: string }) => item.id), [upstream.id]);
 });
+
+test('access upstream options expose only upstream IDs referenced by the actor and their groups', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await saveUpstreamForTest(repo.upstreams, customRecord());
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_other', name: 'Other' }));
+  const group = await repo.groups.create('Operators', 120);
+  await repo.groups.replaceMembers(group.id, [apiKey.userId]);
+  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: apiKey.userId });
+  await repo.accessRecords.save({ principal: { kind: 'group', id: group.id }, scope: { kind: 'upstreamModel', upstreamId: 'up_restricted', model: { kind: 'regex', value: '^gpt-' } }, sortOrder: 0, values: { 'Model.Use': true } });
+
+  const response = await requestApp('/api/upstream-options?view=access', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals(response.status, 200);
+  assertEquals((await response.json()).map((item: { id: string }) => item.id), ['up_restricted']);
+  assertEquals((await requestApp('/api/upstream-options?view=all', { headers: { 'x-api-key': apiKey.key } })).status, 403);
+});
+
+test('a global upstreams ACL makes every existing upstream available to the access picker', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await saveUpstreamForTest(repo.upstreams, customRecord());
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_other', name: 'Other' }));
+  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: apiKey.userId });
+  await repo.accessRecords.save({ principal: { kind: 'user', id: apiKey.userId }, scope: { kind: 'upstreams' }, sortOrder: 0, values: { 'Model.Use': true } });
+  const response = await requestApp('/api/upstream-options?view=access', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals((await response.json()).map((item: { id: string }) => item.id).sort(), ['up_copilot', 'up_other', 'up_restricted']);
+});

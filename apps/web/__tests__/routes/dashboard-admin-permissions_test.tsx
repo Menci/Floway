@@ -1,11 +1,13 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { createMemoryRouter, useLoaderData } from 'react-router';
+import { createMemoryRouter, RouterProvider as MemoryRouterProvider, useLoaderData } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import type { PermissionsData } from '../../src/components/access-control/data';
+import { PermissionsWorkspace } from '../../src/components/access-control/workspace';
 import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
-import DashboardAdminPermissions, { shouldRevalidate } from '../../src/routes/dashboard-admin-permissions';
+import DashboardAdminPermissions, { clientLoader, shouldRevalidate } from '../../src/routes/dashboard-admin-permissions';
+import { useAuthStore } from '../../src/stores/auth-store';
 import { renderInApp } from '../render';
 
 vi.mock('../../src/components/ui/json-editor', () => ({ JsonEditor: () => null }));
@@ -49,14 +51,74 @@ beforeEach(() => {
     throw new Error(`Unexpected request: ${path}`);
   }));
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  useAuthStore.getState().clear();
+  vi.unstubAllGlobals();
+});
 const renderPage = (search = '', data = initial) => {
   const router = createMemoryRouter([{
-    path: '/permissions', loader: () => data, shouldRevalidate,
+    path: '/permissions', loader: () => ({ ...data, admin: true }), shouldRevalidate,
     Component: () => <OutcomeToastProvider><DashboardAdminPermissions loaderData={useLoaderData() as never} params={{}} matches={[] as never} /></OutcomeToastProvider>,
   }], { initialEntries: [`/permissions${search}`] });
   return { ...renderInApp(<RouterProvider router={router} />), router };
 };
+
+const renderOperatorPage = (data: PermissionsData) => renderInApp(
+  <MemoryRouterProvider router={createMemoryRouter([{ path: '/permissions', Component: () => <OutcomeToastProvider><PermissionsWorkspace admin={false} initial={data} /></OutcomeToastProvider> }], { initialEntries: ['/permissions'] })} />,
+);
+
+test('an operator sees a read-only self view with only self and joined groups in the principal picker', async () => {
+  const view = renderOperatorPage(initial);
+  const table = await screen.findByRole('table');
+  expect(within(table).queryByRole('button', { name: 'Edit rule' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'New rule' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Delete rule' })).toBeNull();
+  await waitFor(() => expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Applies to' }).value).toBe('alice'));
+  const picker = screen.getByRole('combobox', { name: 'Applies to' });
+  fireEvent.click(picker);
+  expect(await screen.findByRole('option', { name: /alice/ })).toBeTruthy();
+  expect(await screen.findByRole('option', { name: /Platform/ })).toBeTruthy();
+  expect(screen.queryByRole('option', { name: 'All visible principals' })).toBeNull();
+  expect(view.container.querySelectorAll('[data-rule-id]')).toHaveLength(3);
+});
+
+test('the permissions loader stays on the page for an operator and asks for access-scoped upstream metadata', async () => {
+  useAuthStore.getState().primeFromLogin({
+    token: 'operator-session',
+    user: { id: 2, username: 'alice', isAdmin: false, canViewUpstreams: false },
+  });
+  const data = await clientLoader();
+  expect(data.admin).toBe(false);
+  const upstreamRequest = vi.mocked(fetch).mock.calls
+    .map(([input]) => new URL(String(input), 'http://localhost'))
+    .find(url => url.pathname === '/api/upstream-options');
+  expect(upstreamRequest?.searchParams.get('view')).toBe('access');
+});
+
+test('a non-admin URL naming an invisible principal never requests that principal\'s rules', async () => {
+  const visible: PermissionsData = {
+    ...initial,
+    directory: { ...initial.directory!, users: initial.directory!.users.map(user => ({ ...user, groupIds: [] })), groups: [] },
+    records: initial.records!.filter(record => record.principal.kind === 'user'),
+  };
+  const router = createMemoryRouter([{
+    path: '/permissions',
+    Component: () => <OutcomeToastProvider><PermissionsWorkspace key="mounted" admin={false} initial={visible} /></OutcomeToastProvider>,
+  }], { initialEntries: ['/permissions?principal=user:1'] });
+  renderInApp(<MemoryRouterProvider router={router} />);
+  await waitFor(() => expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Applies to' }).value).toBe('Unknown 1'), { timeout: 6_000 });
+  expect(vi.mocked(fetch).mock.calls.every(([input]) => !String(input).includes('/access-resolve'))).toBe(true);
+});
+
+test('a non-admin URL naming a group the operator does not belong to is normalized instead of treated as active', async () => {
+  const router = createMemoryRouter([{
+    path: '/permissions',
+    Component: () => <OutcomeToastProvider><PermissionsWorkspace key="mounted" admin={false} initial={initial} /></OutcomeToastProvider>,
+  }], { initialEntries: ['/permissions?principal=group:99'] });
+  renderInApp(<MemoryRouterProvider router={router} />);
+  await waitFor(() => expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Applies to' }).value).toBe('Unknown 99'), { timeout: 6_000 });
+  expect(vi.mocked(fetch).mock.calls.every(([input]) => !String(input).includes('/access-resolve'))).toBe(true);
+});
 
 test.each([
   { principal: 'user:2:extra', scope: JSON.stringify(scope), removed: 'principal', retained: 'scope' },

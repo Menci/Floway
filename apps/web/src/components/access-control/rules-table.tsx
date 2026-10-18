@@ -31,6 +31,7 @@ const useStyles = makeStyles({
 });
 
 interface RulesTableProps {
+  admin: boolean;
   busy: boolean;
   data: ScopeExpressionData;
   decisions: ReadonlyMap<number, PermissionDecisions> | null;
@@ -48,19 +49,19 @@ export function RulesTable(props: RulesTableProps) {
   const { t } = useTranslation();
   const styles = useStyles();
   return <ScrollArea axes="horizontal" className="min-w-0"><Table aria-label={t('dashboard.accessControl.tableLabel')} className={`min-w-[860px] ${styles.table}`} style={{ tableLayout: 'fixed' }}>
-    <TableColumns widths={['52px', '38%', '18%', null, '88px']} />
+    <TableColumns widths={props.admin ? ['52px', '38%', '18%', null, '88px'] : ['52px', '42%', '20%', null]} />
     <TableHeader><TableRow>
       <TableHeaderCell><span className="sr-only">{t('dashboard.accessControl.actions.reorder')}</span></TableHeaderCell>
       <TableHeaderCell>{t('dashboard.accessControl.fields.scope')}</TableHeaderCell>
       <TableHeaderCell>{t('dashboard.accessControl.fields.principal')}</TableHeaderCell>
       <TableHeaderCell>{t('dashboard.accessControl.fields.permissions')}</TableHeaderCell>
-      <TableHeaderCell><span className="sr-only">{t('dashboard.users.table.actions')}</span></TableHeaderCell>
+      {props.admin && <TableHeaderCell><span className="sr-only">{t('dashboard.users.table.actions')}</span></TableHeaderCell>}
     </TableRow></TableHeader>
     {recordSegments(props.records).map(segment => <RulesSegment {...props} key={segment.key} segment={segment} />)}
   </Table></ScrollArea>;
 }
 
-function RulesSegment({ busy, data, decisions, onEdit, onRemove, onReorder, onReordered, onReorderError, onScopeSelect, params, segment }: RulesTableProps & { segment: RecordSegment }) {
+function RulesSegment({ admin, busy, data, decisions, onEdit, onRemove, onReorder, onReordered, onReorderError, onScopeSelect, params, segment }: RulesTableProps & { segment: RecordSegment }) {
   const { t } = useTranslation();
   const mounted = useRef(false);
   const pendingDrop = useRef<AccessRecord[] | null>(null);
@@ -74,7 +75,7 @@ function RulesSegment({ busy, data, decisions, onEdit, onRemove, onReorder, onRe
     };
   }, [onReordered]);
   const reorder = useReorderList({
-    busy, disabled: !segment.movable, length: segment.records.length,
+    busy, disabled: !admin || !segment.movable, length: segment.records.length,
     onDrop: async (from, to) => {
       try {
         const records = await onReorder(segment.records.map(record => record.id), from, to);
@@ -97,16 +98,16 @@ function RulesSegment({ busy, data, decisions, onEdit, onRemove, onReorder, onRe
       next.set('principal', principalKey(record.principal));
       next.delete('page');
       return <TableRow {...(segment.movable ? reorder.itemProps(index) : {})} data-rule-id={record.id} key={record.id}>
-        <TableCell><div className="flex h-[30px] items-center"><ReorderHandle {...reorder.handleProps(segment.movable && !bypass ? index : -1)} label={t('dashboard.accessControl.actions.reorder')} /></div></TableCell>
+        <TableCell><div className="flex h-[30px] items-center"><ReorderHandle {...reorder.handleProps(admin && segment.movable && !bypass ? index : -1)} label={t('dashboard.accessControl.actions.reorder')} /></div></TableCell>
         <TableCell><ScopeExpression data={data} onNavigate={onScopeSelect} readOnly value={record.scope} /></TableCell>
         <TableCell><div className="flex min-h-[30px] items-center min-w-0">
           <Link aria-label={t(`dashboard.accessControl.principal.${record.principal.kind}`, { name: principalName(record.principal, data) })} className="winui-focus-rect inline-flex min-w-0 max-w-full w-fit no-underline text-inherit" to={{ search: next.toString() }}><PrincipalIdentity data={data} principal={record.principal} /></Link>
         </div></TableCell>
         <TableCell><RulePermissions context={decisions === null ? undefined : { record, data, decisions: decisions.get(record.id) ?? {} }} values={record.values} /></TableCell>
-        <TableCell><TableActions>
+        {admin && <TableCell><TableActions>
           <TooltipIconButton disabled={busy || bypass} icon={<EditRegular />} label={t('dashboard.accessControl.actions.edit')} onClick={() => onEdit(record)} />
           <ConfirmFlyout actionLabel={t('dashboard.accessControl.actions.delete')} disabled={busy || bypass} icon={<DeleteRegular />} message={t(record.principal.kind === 'group' ? 'dashboard.accessControl.delete.groupMessage' : 'dashboard.accessControl.delete.message', { name: principalName(record.principal, data) })} onConfirm={() => onRemove(record)} title={t(record.principal.kind === 'group' ? 'dashboard.accessControl.delete.groupTitle' : 'dashboard.accessControl.delete.title')} triggerLabel={t('dashboard.accessControl.actions.delete')} />
-        </TableActions></TableCell>
+        </TableActions></TableCell>}
       </TableRow>;
     })}
   </TableBody>;

@@ -194,6 +194,16 @@ export const listUpstreamOptions = async (c: CtxWithQuery<typeof upstreamOptions
   const view = c.req.valid('query').view ?? 'key';
   if (view === 'all' && !subject.isAdmin) return c.json({ error: 'Admin privileges required' }, 403);
   let visibleIds = new Set(items.map(item => item.id));
+  if (view === 'access') {
+    const groupIds = await getRepo().groups.listIdsByUserId(subject.id);
+    const records = await getRepo().accessRecords.listByPrincipals([
+      { kind: 'user', id: subject.id },
+      ...groupIds.map(id => ({ kind: 'group' as const, id })),
+    ]);
+    const allUpstreams = records.some(record => record.scope.kind === 'upstreams');
+    const accessible = new Set(records.flatMap(record => record.scope.kind === 'upstream' || record.scope.kind === 'upstreamModel' ? [record.scope.upstreamId] : []));
+    visibleIds = new Set(items.filter(item => allUpstreams || accessible.has(item.id)).map(item => item.id));
+  }
   if (!subject.isAdmin && view === 'audit') {
     const allowed = await checkMany(subject, items.map(item => ({
       target: { kind: 'upstream' as const, upstreamId: item.id },

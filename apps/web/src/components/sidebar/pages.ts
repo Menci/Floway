@@ -69,12 +69,11 @@ export const navGroups: NavGroup[] = [
     ],
   },
   {
-    labelKey: 'dashboard.groups.admin',
-    adminOnly: true,
+    labelKey: 'dashboard.groups.management',
     items: [
-      { to: '/dashboard/admin/users', labelKey: 'dashboard.nav.users', icon: People20Color },
+      { to: '/dashboard/admin/users', labelKey: 'dashboard.nav.users', icon: People20Color, adminOnly: true },
       { to: '/dashboard/admin/permissions', labelKey: 'dashboard.nav.permissions', icon: PersonKey20Color },
-      { to: '/dashboard/admin/backup-restore', labelKey: 'dashboard.nav.backupRestore', icon: Database20Color },
+      { to: '/dashboard/admin/backup-restore', labelKey: 'dashboard.nav.backupRestore', icon: Database20Color, adminOnly: true },
     ],
   },
 ];

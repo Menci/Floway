@@ -2090,6 +2090,33 @@ export class SqlRepo implements Repo {
     return { users, groups };
   }
 
+  async readUserDirectoryFor(userId: number): Promise<UserDirectory> {
+    const { results } = await this.db.prepare(`
+      SELECT 'user' AS kind, id, json_object(
+        'id', id, 'username', username, 'password_hash', password_hash,
+        'is_admin', is_admin,
+        'created_at', created_at, 'deleted_at', deleted_at
+      ) AS record FROM users WHERE id = ? AND deleted_at IS NULL
+      UNION ALL
+      SELECT 'group' AS kind, id, json_object(
+        'id', id, 'name', name, 'hue', hue, 'created_at', created_at, 'deleted_at', deleted_at,
+        'memberIds', json_array(?)
+      ) AS record FROM groups
+      WHERE deleted_at IS NULL AND id IN (SELECT group_id FROM group_members WHERE user_id = ?)
+      ORDER BY kind, id
+    `).bind(userId, userId, userId).all<{ kind: 'user' | 'group'; record: string }>();
+    const users: User[] = [];
+    const groups: GroupWithMembers[] = [];
+    for (const row of results) {
+      if (row.kind === 'user') users.push(toUser(JSON.parse(row.record) as UserRow));
+      else {
+        const group = JSON.parse(row.record) as GroupRow & { memberIds: number[] };
+        groups.push({ ...toGroup(group), memberIds: group.memberIds });
+      }
+    }
+    return { users, groups };
+  }
+
   constructor(private readonly db: SqlDatabase) {
     this.upstreamMetrics = new SqlUpstreamMetricsRepo(db);
     this.users = new SqlUsersRepo(db);

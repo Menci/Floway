@@ -35,16 +35,26 @@ export const listUsers = async (c: AuthedContext) => {
 
 export const getUserDirectory = async (c: AuthedContext) => {
   const repo = getRepo();
-  const [directory, records] = await Promise.all([repo.readUserDirectory(), repo.accessRecords.list()]);
+  const actor = userFromContext(c);
+  const [directory, actorGroupIds] = await Promise.all([
+    actor.isAdmin ? repo.readUserDirectory() : repo.readUserDirectoryFor(actor.id),
+    repo.groups.listIdsByUserId(actor.id),
+  ]);
+  const principals = actor.isAdmin
+    ? null
+    : [{ kind: 'user' as const, id: actor.id }, ...actorGroupIds.map(id => ({ kind: 'group' as const, id }))];
+  const records = principals === null ? await repo.accessRecords.list() : await repo.accessRecords.listByPrincipals(principals);
   const userRecords = Map.groupBy(records.filter(record => record.principal.kind === 'user'), record => record.principal.id);
   const groupRecords = Map.groupBy(records.filter(record => record.principal.kind === 'group'), record => record.principal.id);
-  const groupIds = new Map(directory.users.map(user => [user.id, [] as number[]]));
+  const groupIdsByUser = new Map(directory.users.map(user => [user.id, [] as number[]]));
   for (const group of directory.groups) {
-    for (const userId of group.memberIds) groupIds.get(userId)!.push(group.id);
+    for (const userId of group.memberIds) groupIdsByUser.get(userId)!.push(group.id);
   }
+  const users = directory.users;
+  const groups = directory.groups;
   return c.json({
-    users: directory.users.map(user => userToAdminWire(user, groupIds.get(user.id)!, userRecords.get(user.id)?.length ?? 0)),
-    groups: directory.groups.map(group => ({ ...group, accessRecordCount: groupRecords.get(group.id)?.length ?? 0 })),
+    users: users.map(user => userToAdminWire(user, groupIdsByUser.get(user.id)!, userRecords.get(user.id)?.length ?? 0)),
+    groups: groups.map(group => ({ ...group, accessRecordCount: groupRecords.get(group.id)?.length ?? 0 })),
   });
 };
 
