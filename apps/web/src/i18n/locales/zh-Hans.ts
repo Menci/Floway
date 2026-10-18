@@ -532,7 +532,6 @@ const zhHansCN = {
         documentTitleCopy: '复制上游',
         optional: '可选',
         unsaved: '有未保存更改',
-        secretKeep: '留空以保持不变。',
         pathOverridesHint: '留空时使用对应的默认 /v1 路径。',
         disabledModelsHint:
             '禁用后的模型不会出现在目录中，也不会参与路由；其元数据仍可编辑。',

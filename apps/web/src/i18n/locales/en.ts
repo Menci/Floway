@@ -560,7 +560,6 @@ const en = {
         documentTitleCopy: 'Copy upstream',
         optional: 'optional',
         unsaved: 'Unsaved changes',
-        secretKeep: 'Leave blank to keep unchanged.',
         pathOverridesHint:
             'Leave an entry blank to use its default /v1 path.',
         disabledModelsHint:

@@ -72,8 +72,8 @@ export function ProviderConfigSection({
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
   onRefreshModels: () => void;
 }) {
-  if (record.kind === 'custom') return <CustomConfig record={record} onRefreshModels={onRefreshModels} />;
-  if (record.kind === 'azure') return <AzureConfig record={record} />;
+  if (record.kind === 'custom') return <CustomConfig onRefreshModels={onRefreshModels} />;
+  if (record.kind === 'azure') return <AzureConfig />;
   if (record.kind === 'ollama') return <OllamaConfig record={record} />;
   if (record.kind === 'copilot') return <CopilotConfig record={record} onPatch={onPatch} />;
   return <OAuthConfig record={record} onPatch={onPatch} />;
@@ -84,7 +84,7 @@ export function ApiPathsSection({ record }: { record: UpstreamRecord }) {
   return <CustomApiPaths />;
 }
 
-function CustomConfig({ onRefreshModels, record }: { onRefreshModels: () => void; record: Extract<UpstreamRecord, { kind: 'custom' }> }) {
+function CustomConfig({ onRefreshModels }: { onRefreshModels: () => void }) {
   const { t } = useTranslation();
   const { control, setValue } = useFormContext<ValuesForKind<'custom'>>();
   const authStyle = useWatch({ control, name: 'config.authStyle' });
@@ -127,7 +127,7 @@ function CustomConfig({ onRefreshModels, record }: { onRefreshModels: () => void
           </Dropdown>
         </Field>
       )} />
-      {authStyle !== 'none' && <SecretField secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} />}
+      {authStyle !== 'none' && <SecretField />}
       <Controller control={control} name="config.modelsFetch.enabled" render={({ field }) => (
         <Switch
           checked={field.value}
@@ -187,14 +187,14 @@ function CustomApiPaths() {
   );
 }
 
-function AzureConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'azure' }> }) {
+function AzureConfig() {
   const { t } = useTranslation();
   const { control } = useFormContext<ValuesForKind<'azure'>>();
   return <div className="grid gap-4">
     <Field label={t('dashboard.upstreamEditor.fields.endpoint')}>
       <Controller control={control} name="config.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://resource.openai.azure.com/openai/v1" ref={field.ref} value={field.value} />} />
     </Field>
-    <SecretField secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} />
+    <SecretField />
   </div>;
 }
 
@@ -220,15 +220,14 @@ function OllamaConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'oll
   }, [config.baseUrl, config.cloudUsage, setValue]);
 
   // The card reads an account, so it needs both halves: the option, and a key
-  // to authenticate with. The stored key answers for a saved upstream — the
-  // form blanks the secret field and keeps it — and the typed one lets a new
-  // key be tried before saving.
-  const keySet = record.config.apiKeySet === true || Boolean(record.config.apiKey) || Boolean(config.apiKey);
+  // to authenticate with. The field carries the stored key, so the edited value
+  // is the only answer.
+  const keySet = Boolean(config.apiKey);
   return <div className="grid gap-4">
     <Field label={t('dashboard.upstreamEditor.fields.baseUrl')}>
       <Controller control={control} name="config.baseUrl" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://ollama.com" ref={field.ref} value={field.value} />} />
     </Field>
-    <SecretField secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} optional />
+    <SecretField optional />
     <Controller control={control} name="config.cloudUsage" render={({ field }) => (
       <SwitchSetting
         checked={field.value === true}
@@ -244,13 +243,12 @@ function OllamaConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'oll
   </div>;
 }
 
-function SecretField({ optional, secretSet }: { optional?: boolean; secretSet: boolean }) {
+function SecretField({ optional }: { optional?: boolean }) {
   const { t } = useTranslation();
   const { control } = useFormContext<ValuesForKind<'custom' | 'azure' | 'ollama'>>();
   const [visible, setVisible] = useState(false);
   return <Field
     label={`${t('dashboard.upstreamEditor.fields.apiKey')}${optional ? ` (${t('dashboard.upstreamEditor.optional')})` : ''}`}
-    hint={secretSet ? t('dashboard.upstreamEditor.secretKeep') : undefined}
   >
     <Controller
       control={control}
@@ -261,7 +259,7 @@ function SecretField({ optional, secretSet }: { optional?: boolean; secretSet: b
           value={field.value ?? ''}
           onBlur={field.onBlur}
           onChange={(_, data) => field.onChange(data.value)}
-          placeholder={secretSet ? '••••••••' : 'sk-...'}
+          placeholder="sk-..."
           contentAfter={
             <TooltipIconButton
               icon={visible ? <EyeOffRegular /> : <EyeRegular />}
