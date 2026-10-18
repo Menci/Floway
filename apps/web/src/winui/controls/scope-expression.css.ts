@@ -120,11 +120,24 @@ export const scopeExpressionCss = String.raw`
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Breadcrumb/BreadcrumbBar.xaml#L280-L303
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Breadcrumb/BreadcrumbBar_themeresources.xaml#L7-L9 */
 .floway-scope-expression {
+  /* Keep syntax hues while following the secondary/primary and tertiary/primary
+     TextFill alpha ratios used by plain parts.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L209-L211 */
+  --floway-scope-expression-hover-opacity: calc(158 / 228);
+  --floway-scope-expression-pressed-opacity: calc(114 / 228);
   align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacingHorizontalXS);
   min-width: 0;
+}
+
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L5-L7 */
+@media (prefers-color-scheme: dark) {
+  .floway-scope-expression {
+    --floway-scope-expression-hover-opacity: calc(197 / 255);
+    --floway-scope-expression-pressed-opacity: calc(135 / 255);
+  }
 }
 
 .floway-scope-expression-segment {
@@ -190,8 +203,16 @@ button.floway-scope-expression-part:hover {
   color: var(--winui-text-fill-secondary);
 }
 
+button.floway-scope-expression-part:hover .floway-scope-expression-regex {
+  opacity: var(--floway-scope-expression-hover-opacity);
+}
+
 button.floway-scope-expression-part:active {
   color: var(--winui-text-fill-tertiary);
+}
+
+button.floway-scope-expression-part:active .floway-scope-expression-regex {
+  opacity: var(--floway-scope-expression-pressed-opacity);
 }
 
 button.floway-scope-expression-part:focus-visible {
