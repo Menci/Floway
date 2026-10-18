@@ -4,7 +4,7 @@ import { useLocation, useNavigation, useSearchParams } from 'react-router';
 
 import { loadPermissionsData, type PermissionsData } from './data';
 import { permissionSearchText, selectPermissionRules } from './effective';
-import { recordSegments, reorderModelRecords } from './order';
+import { orderedRecords, recordSegments, reorderModelRecords } from './order';
 import { PrincipalPicker } from './principal';
 import { parsePrincipal, principalKey } from './principals';
 import { AccessRecordDialog } from './record-dialog';
@@ -28,11 +28,11 @@ import { useDialogInvocation } from '../ui/use-dialog-invocation';
 import { useRefresh } from '../ui/use-refresh';
 import type { AccessPrincipal, AccessScope } from '@floway-dev/gateway/browser';
 
-const { Button, Field, Spinner, Text } = fluentComponents;
+const { Button, Field, Text } = fluentComponents;
 const PAGE_SIZE = 20;
 
 export function PermissionsWorkspace({ initial }: { initial: PermissionsData }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const toasts = useOutcomeToasts();
   const [data, setData] = useState(initial);
   const [error, setError] = useState(initial.error);
@@ -51,8 +51,10 @@ export function PermissionsWorkspace({ initial }: { initial: PermissionsData }) 
   };
   const { refresh, refreshing } = useRefresh(reload);
   const query = params.get('q') ?? '';
-  const principal = parsePrincipal(params.get('principal') ?? '');
-  const scope = parseScope(params.get('scope'));
+  const principalValue = params.get('principal') ?? '';
+  const scopeValue = params.get('scope');
+  const principal = useMemo(() => parsePrincipal(principalValue), [principalValue]);
+  const scope = useMemo(() => parseScope(scopeValue), [scopeValue]);
   const scopeKind = params.get('scopeKind') === 'group' && scope === null ? 'group' : undefined;
   const effectiveUnavailable = principal === null || scope === null;
   const showEffective = !effectiveUnavailable && params.get('effective') === 'true';
@@ -87,15 +89,26 @@ export function PermissionsWorkspace({ initial }: { initial: PermissionsData }) 
     models: data.models ?? [], upstreams: data.upstreams ?? [],
   }), [data]);
   const loaded = data.records !== null && data.directory !== null && data.models !== null && data.upstreams !== null;
-  const resolution = useAccessResolution({ enabled: showEffective && loaded, principal, scope, revision: data.records });
-  const needle = query.trim().toLowerCase();
-  const selection = selectPermissionRules({ records: (data.records ?? []).filter(record => scopeKind !== 'group' || record.scope.kind === 'group'), principal, scope, showEffective, data: scopeData, resolution: resolution.data });
-  const filtered = selection.records.filter(record => permissionSearchText(record, scopeData, t).includes(needle));
+  const resolution = useAccessResolution({ enabled: showEffective && loaded && !refreshing, principal, scope, revision: data.records });
+  const loading = refreshing || resolution.pending;
+  const busy = loading || reordering || resolution.error !== null;
+  const search = params.toString();
+  const view = useMemo(() => {
+    const selection = selectPermissionRules({ records: (data.records ?? []).filter(record => scopeKind !== 'group' || record.scope.kind === 'group'), principal, scope, showEffective, data: scopeData, resolution: resolution.data });
+    const filtered = selection.records.filter(record => permissionSearchText(record, scopeData, t).includes(query.trim().toLowerCase()));
+    const viewParams = new URLSearchParams(search);
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    const requestedPage = Number(viewParams.get('page') ?? 1);
+    const page = Number.isInteger(requestedPage) && requestedPage > 0 ? Math.min(requestedPage, totalPages) : 1;
+    return { records: filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), decisions: selection.decisions, data: scopeData, params: viewParams, page, totalPages, total: filtered.length, empty: data.records?.length === 0 };
+  }, [data.records, principal, query, resolution.data, scope, scopeData, scopeKind, search, showEffective, t]);
+  const snapshot = { view, source: { data, search, resolution: resolution.data, language: i18n.language } };
+  const [displayed, setDisplayed] = useState<typeof snapshot | null>(loaded ? snapshot : null);
+  const keepDisplayed = loading || resolution.error !== null;
+  if (loaded && !keepDisplayed && (displayed?.source.data !== data || displayed?.source.search !== search
+    || displayed?.source.resolution !== resolution.data || displayed?.source.language !== i18n.language)) setDisplayed(snapshot);
+  const results = keepDisplayed && displayed !== null ? displayed.view : view;
   const administrator = showEffective && principal?.kind === 'user' && scopeData.users.some(user => user.id === principal.id && user.isAdmin);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const requestedPage = Number(params.get('page') ?? 1);
-  const page = Number.isInteger(requestedPage) && requestedPage > 0 ? Math.min(requestedPage, totalPages) : 1;
-  const shown = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const create = () => editor.open({ ...(principal === null ? {} : { principal }), ...(scope === null ? {} : { scope }) });
   const reorder = async (ids: number[], from: number, to: number) => {
     const originalSegment = recordSegments(data.records!).find(segment => segment.records.some(record => record.id === ids[0]))!;
@@ -111,6 +124,17 @@ export function PermissionsWorkspace({ initial }: { initial: PermissionsData }) 
   const commitReorder = useCallback((records: AccessRecord[]) => {
     const updated = new Map(records.map(record => [record.id, record]));
     setData(current => ({ ...current, records: current.records!.map(record => updated.get(record.id) ?? record) }));
+    // A settled drop keeps its acknowledged order while effective values reload.
+    setDisplayed(current => current === null ? null : {
+      ...current,
+      view: {
+        ...current.view,
+        records: orderedRecords(current.view.records.map(record => {
+          const acknowledged = updated.get(record.id);
+          return acknowledged ? { ...record, sortOrder: acknowledged.sortOrder } : record;
+        })),
+      },
+    });
     setReordering(false);
   }, []);
   const rejectReorder = async (error: unknown) => {
@@ -127,9 +151,9 @@ export function PermissionsWorkspace({ initial }: { initial: PermissionsData }) 
     return null;
   };
 
-  return <section className="dashboard-page">
+  return <section aria-busy={loading || reordering} className="dashboard-page">
     <DashboardPageHeader
-      actions={<ResourceListActions disabled={reordering} onRefresh={() => void refresh()} refreshLabel={t('dashboard.accessControl.actions.refresh')} refreshing={refreshing} />}
+      actions={<ResourceListActions disabled={reordering} onRefresh={() => void refresh()} refreshLabel={t('dashboard.accessControl.actions.refresh')} refreshing={loading} />}
       description={t('dashboard.accessControl.description')}
       title={t('dashboard.nav.permissions')}
     />
@@ -159,21 +183,21 @@ export function PermissionsWorkspace({ initial }: { initial: PermissionsData }) 
       </div>
       <div className="flex items-center gap-2 max-w-full ml-auto">
         <Input aria-label={t('dashboard.accessControl.search')} autoComplete="off" className="w-[220px]" contentBefore={<SearchRegular />} onChange={(_, event) => setFilter('q', event.value || null, true)} placeholder={t('dashboard.accessControl.search')} spellCheck={false} value={query} />
-        <Button appearance="primary" className="flex-none whitespace-nowrap" disabled={!loaded || refreshing || reordering} icon={<AddRegular />} onClick={create}>{t('dashboard.accessControl.actions.add')}</Button>
+        <Button appearance="primary" className="flex-none whitespace-nowrap" disabled={!loaded || loading || reordering} icon={<AddRegular />} onClick={create}>{t('dashboard.accessControl.actions.add')}</Button>
       </div>
     </div>
     {administrator && <OutcomeMessageBar intent="info">{t('dashboard.accessControl.administratorBypass')}</OutcomeMessageBar>}
     {!loaded ? <EmptyState title={t('dashboard.pages.unavailable')} /> : <>
       <ResourceListPanel>
-        {resolution.pending ? <div className="p-8"><Spinner label={t('common.loading')} /></div> : resolution.error ? <EmptyState title={t('dashboard.pages.unavailable')} /> : shown.length === 0 ? <EmptyState
-          action={data.records!.length === 0 ? <Button appearance="primary" icon={<AddRegular />} onClick={create}>{t('dashboard.accessControl.actions.add')}</Button> : <Button onClick={() => updateParams(next => { for (const key of ['q', 'principal', 'scope', 'scopeKind', 'effective', 'page']) next.delete(key); })}>{t('dashboard.accessControl.actions.clearFilters')}</Button>}
-          title={t(data.records!.length === 0 ? 'dashboard.accessControl.empty' : 'dashboard.accessControl.noMatches')}
-        /> : <RulesTable busy={refreshing || reordering} data={scopeData} decisions={selection.decisions} onEdit={record => editor.open({ record })} onRemove={remove} onReorder={reorder} onReordered={commitReorder} onReorderError={rejectReorder} onScopeSelect={navigateScope} params={params} records={shown} />}
+        {results.records.length === 0 ? <EmptyState
+          action={results.empty ? <Button appearance="primary" disabled={busy} icon={<AddRegular />} onClick={create}>{t('dashboard.accessControl.actions.add')}</Button> : <Button disabled={busy} onClick={() => updateParams(next => { for (const key of ['q', 'principal', 'scope', 'scopeKind', 'effective', 'page']) next.delete(key); })}>{t('dashboard.accessControl.actions.clearFilters')}</Button>}
+          title={t(results.empty ? 'dashboard.accessControl.empty' : 'dashboard.accessControl.noMatches')}
+        /> : <RulesTable busy={busy} data={results.data} decisions={results.decisions} onEdit={record => editor.open({ record })} onRemove={remove} onReorder={reorder} onReordered={commitReorder} onReorderError={rejectReorder} onScopeSelect={navigateScope} params={results.params} records={results.records} />}
       </ResourceListPanel>
-      {totalPages > 1 && <div className="flex items-center justify-end gap-3">
-        <Text className="text-fui-fg2" size={200}>{t('dashboard.accessControl.pagination.range', { from: (page - 1) * PAGE_SIZE + 1, to: Math.min(page * PAGE_SIZE, filtered.length), total: filtered.length })}</Text>
-        <TooltipIconButton disabled={page === 1} icon={<ChevronLeftRegular />} label={t('dashboard.accessControl.pagination.previous')} onClick={() => updateParams(next => next.set('page', String(page - 1)))} />
-        <TooltipIconButton disabled={page === totalPages} icon={<ChevronRightRegular />} label={t('dashboard.accessControl.pagination.next')} onClick={() => updateParams(next => next.set('page', String(page + 1)))} />
+      {results.totalPages > 1 && <div className="flex items-center justify-end gap-3">
+        <Text className="text-fui-fg2" size={200}>{t('dashboard.accessControl.pagination.range', { from: (results.page - 1) * PAGE_SIZE + 1, to: Math.min(results.page * PAGE_SIZE, results.total), total: results.total })}</Text>
+        <TooltipIconButton disabled={busy || results.page === 1} icon={<ChevronLeftRegular />} label={t('dashboard.accessControl.pagination.previous')} onClick={() => updateParams(next => next.set('page', String(results.page - 1)))} />
+        <TooltipIconButton disabled={busy || results.page === results.totalPages} icon={<ChevronRightRegular />} label={t('dashboard.accessControl.pagination.next')} onClick={() => updateParams(next => next.set('page', String(results.page + 1)))} />
       </div>}
     </>}
     {editor.invocation && <AccessRecordDialog data={scopeData} initialPrincipal={editor.invocation.value.principal} initialScope={editor.invocation.value.scope} key={editor.invocation.key} onOpenChange={open => { if (!open) editor.close(); }} onSaved={refresh} open={editor.isOpen} record={editor.invocation.value.record} suggestedSortOrder={Math.max(-1, ...(data.records ?? []).map(record => record.sortOrder)) + 1} />}

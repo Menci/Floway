@@ -17,13 +17,13 @@ export const selectPermissionRules = ({ records, principal, scope, showEffective
   data: ScopeExpressionData;
   resolution?: AccessResolution | null;
 }): { records: AccessRecord[]; decisions: Map<number, PermissionDecisions> | null } => {
-  if (principal !== null && scope !== null && showEffective) return {
-    records: orderedRecords(resolution?.records ?? []),
-    decisions: resolution === undefined || resolution === null ? null : new Map(resolution.decisions.map(row => [row.recordId, row.permissions])),
-  };
   const groups = principal?.kind === 'user' ? data.users.find(user => user.id === principal.id)?.groupIds ?? [] : [];
   const applicable = principal === null ? records : records.filter(record => principalKey(record.principal) === principalKey(principal)
     || (record.principal.kind === 'group' && groups.includes(record.principal.id)));
+  if (principal !== null && scope !== null && showEffective) return {
+    records: orderedRecords(resolution ? resolution.records : applicable.filter(record => scopeContains(record.scope, scope, data))),
+    decisions: resolution === undefined || resolution === null ? null : new Map(resolution.decisions.map(row => [row.recordId, row.permissions])),
+  };
   return { records: orderedRecords(applicable.filter(record => scopeContains(scope, record.scope, data))), decisions: null };
 };
 

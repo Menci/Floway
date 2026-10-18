@@ -1,5 +1,6 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { createMemoryRouter, RouterProvider, useLoaderData } from 'react-router';
+import { createMemoryRouter, useLoaderData } from 'react-router';
+import { RouterProvider } from 'react-router/dom';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import type { PermissionsData } from '../../src/components/access-control/data';
@@ -212,4 +213,99 @@ test('preview query parameters never expose design or example controls', async (
   expect(within(dialog).queryByRole('combobox', { name: 'Design' })).toBeNull();
   expect(within(dialog).queryByRole('combobox', { name: 'Example' })).toBeNull();
   expect(dialog.querySelector('[data-permission-preview-controls]')).toBeNull();
+});
+
+test('effective loading retains the existing table and disables its actions', async () => {
+  const fetch = globalThis.fetch;
+  let complete!: () => Promise<void>;
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>(resolve => {
+    complete = async () => resolve(await fetch(input, init));
+  })));
+  const { container } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}`);
+  const table = await screen.findByRole('table');
+  const rows = [...container.querySelectorAll('[data-rule-id]')];
+  await act(async () => { fireEvent.click(screen.getByRole('switch', { name: 'Show effective' })); });
+  await waitFor(() => expect(complete).toBeTypeOf('function'));
+  expect(screen.getByRole('table')).toBe(table);
+  expect([...container.querySelectorAll('[data-rule-id]')]).toEqual(rows);
+  expect(within(table).getAllByRole<HTMLButtonElement>('button', { name: 'Edit rule' }).every(button => button.disabled)).toBe(true);
+  expect(within(table).queryByRole('progressbar')).toBeNull();
+  await act(async () => { await complete(); });
+  await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(3));
+  expect(screen.getByRole('table')).toBe(table);
+});
+
+test.each([false, true])('refresh preserves the table through base and effective reads (effective=%s)', async effective => {
+  const { container } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}${effective ? '&effective=true' : ''}`);
+  await screen.findByRole('table');
+  await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(effective ? 3 : 2));
+  await waitFor(() => expect(screen.getByRole<HTMLButtonElement>('button', { name: 'New rule' }).disabled).toBe(false));
+  const table = screen.getByRole('table');
+  const rows = [...container.querySelectorAll('[data-rule-id]')];
+  const contents = table.textContent;
+  const fetch = globalThis.fetch;
+  let finishRecords!: () => Promise<void>;
+  let finishResolution!: () => Promise<void>;
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(String(input), 'http://localhost').pathname;
+    if (path === '/api/access-records') return new Promise<Response>(resolve => { finishRecords = async () => resolve(await fetch(input, init)); });
+    if (path === '/api/access-resolve') return new Promise<Response>(resolve => { finishResolution = async () => resolve(await fetch(input, init)); });
+    return fetch(input, init);
+  }));
+  const retained = () => {
+    expect(screen.getByRole('table')).toBe(table);
+    expect([...container.querySelectorAll('[data-rule-id]')]).toEqual(rows);
+    expect(table.textContent).toBe(contents);
+    expect(within(table).getAllByRole<HTMLButtonElement>('button', { name: 'Edit rule' }).every(button => button.disabled)).toBe(true);
+    expect(within(table).queryByRole('progressbar')).toBeNull();
+    expect(table.closest('[aria-busy="true"]')).toBeTruthy();
+  };
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Refresh permissions' })); });
+  await waitFor(() => expect(finishRecords).toBeTypeOf('function'));
+  retained();
+  await act(async () => { await finishRecords(); });
+  if (effective) {
+    await waitFor(() => expect(finishResolution).toBeTypeOf('function'));
+    retained();
+    await act(async () => { await finishResolution(); });
+  }
+  await waitFor(() => expect(within(table).getAllByRole<HTMLButtonElement>('button', { name: 'Edit rule' }).every(button => !button.disabled)).toBe(true));
+  expect(screen.getByRole('table')).toBe(table);
+  expect(table.closest('[aria-busy="true"]')).toBeNull();
+});
+
+test('an effective request preserves the displayed page until its results arrive', async () => {
+  const models: NonNullable<PermissionsData['records']> = Array.from({ length: 42 }, (_, index) => ({
+    ...initial.records![2]!, id: index + 100, sortOrder: index,
+    scope: { kind: 'upstreamModel', upstreamId: 'a', model: { kind: 'exact', value: `model-${index}` } },
+  }));
+  const data = { ...initial, records: [...initial.records!, ...models] };
+  const { container } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}&page=2`, data);
+  const table = await screen.findByRole('table');
+  const rows = [...container.querySelectorAll('[data-rule-id]')];
+  expect(screen.getByText('21 - 40 / 44')).toBeTruthy();
+  const fetch = globalThis.fetch;
+  let complete!: () => Promise<void>;
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>(resolve => { complete = async () => resolve(await fetch(input, init)); })));
+  await act(async () => { fireEvent.click(screen.getByRole('switch', { name: 'Show effective' })); });
+  await waitFor(() => expect(complete).toBeTypeOf('function'));
+  expect(screen.getByRole('table')).toBe(table);
+  expect([...container.querySelectorAll('[data-rule-id]')]).toEqual(rows);
+  expect(screen.getByText('21 - 40 / 44')).toBeTruthy();
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Next page' }).disabled).toBe(true);
+  await act(async () => { await complete(); });
+  await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(3));
+  expect(screen.queryByText('21 - 40 / 44')).toBeNull();
+});
+
+test('an initial effective read never displays descendant rules', async () => {
+  const fetch = globalThis.fetch;
+  let complete!: () => Promise<void>;
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>(resolve => { complete = async () => resolve(await fetch(input, init)); })));
+  const descendant = { ...initial.records![0]!, id: 4, scope: { kind: 'upstreamModel' as const, upstreamId: 'a', model: { kind: 'exact' as const, value: 'gpt-5' } } };
+  const { container } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}&effective=true`, { ...initial, records: [...initial.records!, descendant] });
+  await screen.findByRole('table');
+  await waitFor(() => expect(complete).toBeTypeOf('function'));
+  expect([...container.querySelectorAll<HTMLElement>('[data-rule-id]')].map(row => row.dataset.ruleId)).toEqual(['1', '2', '3']);
+  await act(async () => { await complete(); });
 });
