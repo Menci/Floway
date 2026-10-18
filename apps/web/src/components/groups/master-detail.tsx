@@ -47,7 +47,6 @@ export function GroupsMasterDetail({ disabled, groups, onCreate, onDelete, onEdi
   const styles = useStyles();
   if (groups.length === 0) return <Panel><EmptyState action={<Button disabled={disabled} onClick={onCreate}>{t('dashboard.groupsManagement.actions.create')}</Button>} title={t('dashboard.groupsManagement.empty')} /></Panel>;
   const selected = groups.find(group => group.id === selectedId) ?? groups[0]!;
-  const members = new Set(selected.memberIds);
   return <Panel className={mergeClasses(styles.layout, 'overflow-hidden')} padding="flush">
     <nav aria-label={t('dashboard.users.table.groups')} className={mergeClasses(styles.navigation, 'p-1.5 min-w-0')}>
       <List
@@ -68,43 +67,49 @@ export function GroupsMasterDetail({ disabled, groups, onCreate, onDelete, onEdi
         </ListItem>)}
       </List>
     </nav>
-    <section className="grid content-start min-w-0">
-      <header className="flex items-center justify-between gap-3 flex-wrap px-[var(--floway-panel-inset)] py-3 border-b border-b-solid border-b-[var(--winui-divider-stroke-default)]">
-        <div className="grid gap-0.5 min-w-0">
-          <GroupIdentity group={selected} />
-          <Text className="text-fui-fg2" size={200}>{t('dashboard.groupsManagement.members.count', { count: selected.memberIds.length })}</Text>
-        </div>
-        <div className="flex items-center gap-1 flex-none">
-          <AddMember disabled={disabled} group={selected} key={selected.id} onAdd={user => onMemberChange(selected, user, true)} users={users.filter(user => !members.has(user.id))} />
-          <TooltipIconButton disabled={disabled} icon={<EditRegular />} label={t('dashboard.groupsManagement.actions.edit')} onClick={() => onEdit(selected)} />
-          <TooltipIconButton danger disabled={disabled} icon={<DeleteRegular />} label={t('dashboard.groupsManagement.actions.delete')} onClick={() => onDelete(selected)} />
-        </div>
-      </header>
-      {members.size === 0 ? <EmptyState title={t('dashboard.groupsManagement.members.empty')} /> : <ScrollArea axes="horizontal" className="min-w-0">
-        <Table aria-label={t('dashboard.groupsManagement.fields.members')} className="min-w-[520px]" style={{ tableLayout: 'auto' }}>
-          <TableColumns widths={[null, null, '56px']} />
-          <TableHeader><TableRow>
-            <TableHeaderCell className="!pl-[var(--floway-panel-inset)]">{t('dashboard.users.table.username')}</TableHeaderCell>
-            <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.role')}</TableHeaderCell>
-            <TableHeaderCell><span className="sr-only">{t('dashboard.users.table.actions')}</span></TableHeaderCell>
-          </TableRow></TableHeader>
-          <TableBody>{users.filter(user => members.has(user.id)).map(user => <TableRow className="h-11" key={user.id}>
-            <TableCell className="!pl-[var(--floway-panel-inset)]"><UserIdentity username={user.username} /></TableCell>
-            <TableCell className="whitespace-nowrap"><StatusBadge tone={user.isAdmin ? 'accent' : 'neutral'}>{t(`dashboard.users.role.${user.isAdmin ? 'admin' : 'operator'}`)}</StatusBadge></TableCell>
-            <TableCell><ConfirmFlyout
-              actionLabel={t('dashboard.groupsManagement.remove.confirm')}
-              disabled={disabled}
-              icon={<DismissRegular />}
-              message={t('dashboard.groupsManagement.remove.message', { username: user.username, group: selected.name })}
-              onConfirm={() => onMemberChange(selected, user, false)}
-              title={t('dashboard.groupsManagement.remove.title')}
-              triggerLabel={t('dashboard.groupsManagement.actions.remove', { username: user.username })}
-            /></TableCell>
-          </TableRow>)}</TableBody>
-        </Table>
-      </ScrollArea>}
-    </section>
+    <GroupDetails disabled={disabled} group={selected} key={selected.id} onDelete={onDelete} onEdit={onEdit} onMemberChange={onMemberChange} users={users} />
   </Panel>;
+}
+
+function GroupDetails({ disabled, group: selected, onDelete, onEdit, onMemberChange, users }: Pick<Parameters<typeof GroupsMasterDetail>[0], 'disabled' | 'onDelete' | 'onEdit' | 'onMemberChange' | 'users'> & { group: ControlPlaneGroup }) {
+  const { t } = useTranslation();
+  const members = new Set(selected.memberIds);
+  return <section className="grid content-start min-w-0">
+    <header className="flex items-center justify-between gap-3 flex-wrap px-[var(--floway-panel-inset)] py-3 border-b border-b-solid border-b-[var(--winui-divider-stroke-default)]">
+      <div className="grid gap-0.5 min-w-0">
+        <GroupIdentity group={selected} />
+        <Text className="text-fui-fg2" size={200}>{t('dashboard.groupsManagement.members.count', { count: selected.memberIds.length })}</Text>
+      </div>
+      <div className="flex items-center gap-1 flex-none">
+        <AddMember disabled={disabled} group={selected} onAdd={user => onMemberChange(selected, user, true)} users={users.filter(user => !members.has(user.id))} />
+        <TooltipIconButton disabled={disabled} icon={<EditRegular />} label={t('dashboard.groupsManagement.actions.edit')} onClick={() => onEdit(selected)} />
+        <TooltipIconButton danger disabled={disabled} icon={<DeleteRegular />} label={t('dashboard.groupsManagement.actions.delete')} onClick={() => onDelete(selected)} />
+      </div>
+    </header>
+    {members.size === 0 ? <EmptyState title={t('dashboard.groupsManagement.members.empty')} /> : <ScrollArea axes="horizontal" className="min-w-0">
+      <Table aria-label={t('dashboard.groupsManagement.fields.members')} className="min-w-[520px]" style={{ tableLayout: 'auto' }}>
+        <TableColumns widths={[null, null, '56px']} />
+        <TableHeader><TableRow>
+          <TableHeaderCell className="!pl-[var(--floway-panel-inset)]">{t('dashboard.users.table.username')}</TableHeaderCell>
+          <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.role')}</TableHeaderCell>
+          <TableHeaderCell><span className="sr-only">{t('dashboard.users.table.actions')}</span></TableHeaderCell>
+        </TableRow></TableHeader>
+        <TableBody>{users.filter(user => members.has(user.id)).map(user => <TableRow className="h-11" key={user.id}>
+          <TableCell className="!pl-[var(--floway-panel-inset)]"><UserIdentity username={user.username} /></TableCell>
+          <TableCell className="whitespace-nowrap"><StatusBadge tone={user.isAdmin ? 'accent' : 'neutral'}>{t(`dashboard.users.role.${user.isAdmin ? 'admin' : 'operator'}`)}</StatusBadge></TableCell>
+          <TableCell><ConfirmFlyout
+            actionLabel={t('dashboard.groupsManagement.remove.confirm')}
+            disabled={disabled}
+            icon={<DismissRegular />}
+            message={t('dashboard.groupsManagement.remove.message', { username: user.username, group: selected.name })}
+            onConfirm={() => onMemberChange(selected, user, false)}
+            title={t('dashboard.groupsManagement.remove.title')}
+            triggerLabel={t('dashboard.groupsManagement.actions.remove', { username: user.username })}
+          /></TableCell>
+        </TableRow>)}</TableBody>
+      </Table>
+    </ScrollArea>}
+  </section>;
 }
 
 function AddMember({ disabled, group, onAdd, users }: {
@@ -120,7 +125,7 @@ function AddMember({ disabled, group, onAdd, users }: {
   return <Popover onOpenChange={(_, data) => { setOpen(data.open); setQuery(''); }} open={open} positioning={{ position: 'below', align: 'end' }} trapFocus>
     <PopoverTrigger disableButtonEnhancement><Button disabled={disabled} icon={<PersonAddRegular />}>{t('dashboard.groupsManagement.actions.add')}</Button></PopoverTrigger>
     <PopoverSurface aria-label={group.name} className="w-[min(320px,calc(100vw-32px))] !p-2 grid gap-1">
-      <Input aria-label={t('dashboard.users.search')} autoFocus contentBefore={<SearchRegular />} onChange={(_, data) => setQuery(data.value)} placeholder={t('dashboard.users.search')} value={query} />
+      <Input aria-label={t('dashboard.users.search')} autoComplete="off" autoFocus contentBefore={<SearchRegular />} onChange={(_, data) => setQuery(data.value)} placeholder={t('dashboard.users.search')} spellCheck={false} value={query} />
       <ScrollArea axes="vertical" className="max-h-[260px]">
         {visible.length === 0 && <Text className="text-fui-fg2 px-2 py-2" role="status">{t(users.length === 0 ? 'dashboard.groupsManagement.members.allAdded' : 'dashboard.groupsManagement.members.noMatches')}</Text>}
         <List aria-label={t('dashboard.groupsManagement.fields.members')} navigationMode="items">

@@ -37,6 +37,7 @@ export function PermissionsWorkspace({ initial }: { initial: PermissionsData }) 
   const [data, setData] = useState(initial);
   const [error, setError] = useState(initial.error);
   const [reordering, setReordering] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [scopeEditorRevision, setScopeEditorRevision] = useState(0);
   const [committedParams, setParams] = useSearchParams();
   const location = useLocation();
@@ -91,7 +92,7 @@ export function PermissionsWorkspace({ initial }: { initial: PermissionsData }) 
   const loaded = data.records !== null && data.directory !== null && data.models !== null && data.upstreams !== null;
   const resolution = useAccessResolution({ enabled: showEffective && loaded && !refreshing, principal, scope, revision: data.records });
   const loading = refreshing || resolution.pending;
-  const busy = loading || reordering || resolution.error !== null;
+  const busy = loading || reordering || removing || resolution.error !== null;
   const search = params.toString();
   const view = useMemo(() => {
     const selection = selectPermissionRules({ records: (data.records ?? []).filter(record => scopeKind !== 'group' || record.scope.kind === 'group'), principal, scope, showEffective, data: scopeData, resolution: resolution.data });
@@ -143,17 +144,22 @@ export function PermissionsWorkspace({ initial }: { initial: PermissionsData }) 
     setReordering(false);
   };
   const remove = async (record: AccessRecord): Promise<string | null> => {
-    const handle = toasts.start(t('dashboard.accessControl.toast.delete.pending'));
-    const result = await callApi(() => api.api['access-records'][':id'].$delete({ param: { id: String(record.id) } }));
-    if (result.error) { handle.settle(); return result.error.message; }
-    handle.succeed(t('dashboard.accessControl.toast.delete.success'));
-    await refresh();
-    return null;
+    setRemoving(true);
+    try {
+      const handle = toasts.start(t('dashboard.accessControl.toast.delete.pending'));
+      const result = await callApi(() => api.api['access-records'][':id'].$delete({ param: { id: String(record.id) } }));
+      if (result.error) { handle.settle(); return result.error.message; }
+      handle.succeed(t('dashboard.accessControl.toast.delete.success'));
+      await refresh();
+      return null;
+    } finally {
+      setRemoving(false);
+    }
   };
 
-  return <section aria-busy={loading || reordering} className="dashboard-page">
+  return <section aria-busy={loading || reordering || removing} className="dashboard-page">
     <DashboardPageHeader
-      actions={<ResourceListActions disabled={reordering} onRefresh={() => void refresh()} refreshLabel={t('dashboard.accessControl.actions.refresh')} refreshing={loading} />}
+      actions={<ResourceListActions disabled={reordering || removing} onRefresh={() => void refresh()} refreshLabel={t('dashboard.accessControl.actions.refresh')} refreshing={loading} />}
       description={t('dashboard.accessControl.description')}
       title={t('dashboard.nav.permissions')}
     />
@@ -183,7 +189,7 @@ export function PermissionsWorkspace({ initial }: { initial: PermissionsData }) 
       </div>
       <div className="flex items-center gap-2 max-w-full ml-auto">
         <Input aria-label={t('dashboard.accessControl.search')} autoComplete="off" className="w-[220px]" contentBefore={<SearchRegular />} onChange={(_, event) => setFilter('q', event.value || null, true)} placeholder={t('dashboard.accessControl.search')} spellCheck={false} value={query} />
-        <Button appearance="primary" className="flex-none whitespace-nowrap" disabled={!loaded || loading || reordering} icon={<AddRegular />} onClick={create}>{t('dashboard.accessControl.actions.add')}</Button>
+        <Button appearance="primary" className="flex-none whitespace-nowrap" disabled={!loaded || busy} icon={<AddRegular />} onClick={create}>{t('dashboard.accessControl.actions.add')}</Button>
       </div>
     </div>
     {administrator && <OutcomeMessageBar intent="info">{t('dashboard.accessControl.administratorBypass')}</OutcomeMessageBar>}

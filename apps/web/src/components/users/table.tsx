@@ -4,8 +4,6 @@ import { UserIdentity } from './identity';
 import type { ControlPlaneGroup, ControlPlaneUser } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
-import { dateTime, shortDate } from '../../lib/format-time';
-import { useLocale } from '../../lib/use-locale';
 import { GroupMemberships } from '../groups/memberships';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
@@ -21,7 +19,6 @@ const {
   TableHeader,
   TableHeaderCell,
   TableRow,
-  Tooltip,
 } = fluentComponents;
 
 export function UsersTable({
@@ -42,7 +39,6 @@ export function UsersTable({
   groups: ControlPlaneGroup[];
 }) {
   const { t } = useTranslation();
-  const locale = useLocale();
 
   if (users.length === 0) {
     return <ResourceListEmptyState>{t('dashboard.users.empty')}</ResourceListEmptyState>;
@@ -51,14 +47,13 @@ export function UsersTable({
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
       <Table aria-label={t('dashboard.users.table.label')} className="min-w-[820px]" style={{ tableLayout: 'auto' }}>
-        <TableColumns widths={['22%', null, '40%', null, TABLE_ACTIONS_WIDTH]} />
+        <TableColumns widths={['22%', null, '50%', TABLE_ACTIONS_WIDTH]} />
         <TableHeader>
           <TableRow>
             <TableHeaderCell>{t('dashboard.users.table.username')}</TableHeaderCell>
             <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.role')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.groups')}</TableHeaderCell>
-            <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.created')}</TableHeaderCell>
-            <TableTrailingHeader>{t('dashboard.users.table.actions')}</TableTrailingHeader>
+            <TableTrailingHeader><span className="sr-only">{t('dashboard.users.table.actions')}</span></TableTrailingHeader>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -66,20 +61,13 @@ export function UsersTable({
             const protectedUser = user.id === 1 || user.id === actorId;
             return (
               <TableRow key={user.id}>
-                <TableCell><button className="winui-focus-rect floway-identity-action" onClick={() => onEdit(user)} type="button"><UserIdentity username={user.username} /></button></TableCell>
+                <TableCell><button className="winui-focus-rect floway-identity-action" disabled={disabled} onClick={() => onEdit(user)} type="button"><UserIdentity username={user.username} /></button></TableCell>
                 <TableCell className="whitespace-nowrap">
                   <StatusBadge tone={user.isAdmin ? 'accent' : 'neutral'}>
                     {t(`dashboard.users.role.${user.isAdmin ? 'admin' : 'operator'}`)}
                   </StatusBadge>
                 </TableCell>
                 <TableCell><GroupMemberships groups={user.groupIds.map(id => groups.find(group => group.id === id)!)} /></TableCell>
-                <TableCell>
-                  <Tooltip content={dateTime(user.createdAt, locale)} relationship="description">
-                    <span className="winui-focus-rect whitespace-nowrap" tabIndex={0}>
-                      {shortDate(user.createdAt, locale)}
-                    </span>
-                  </Tooltip>
-                </TableCell>
                 <TableCell>
                   <TableActions>
                     <TooltipIconButton

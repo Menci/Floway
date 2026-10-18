@@ -30,6 +30,11 @@ export const avatarCss = `
   text-decoration: none;
 }
 
+.floway-identity-action:disabled {
+  color: var(--winui-text-fill-disabled);
+  cursor: default;
+}
+
 .floway-identity-token.fui-Tag {
   --floway-chip-stroke: transparent;
   background-color: transparent;

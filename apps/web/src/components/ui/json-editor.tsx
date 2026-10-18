@@ -5,11 +5,12 @@ import { useLayoutEffect, useRef } from 'react';
 import { monospaceStack } from '../../font-stacks';
 import { DARK_SCHEME_QUERY, useMediaQuery } from '../../lib/use-media-query';
 
-export function JsonEditor({ active, invalid, label, onChange, value }: {
+export function JsonEditor({ active, invalid, label, onChange, readOnly = false, value }: {
   active: boolean;
   invalid?: boolean;
   label: string;
   onChange: (value: string) => void;
+  readOnly?: boolean;
   value: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -55,7 +56,7 @@ export function JsonEditor({ active, invalid, label, onChange, value }: {
     const editor = editorRef.current!;
     const model = editor.getModel()!;
     if (model.getValue() !== value) model.setValue(value);
-    editor.updateOptions({ ariaLabel: label, theme: dark ? 'vs-dark' : 'vs' });
+    editor.updateOptions({ ariaLabel: label, readOnly, theme: dark ? 'vs-dark' : 'vs' });
     if (active) {
       // A persistent editor is laid out and painted before the newly visible
       // mode reaches the screen, including its very first activation.
@@ -64,7 +65,7 @@ export function JsonEditor({ active, invalid, label, onChange, value }: {
       editor.render(true);
     }
     editor.getDomNode()!.querySelector('[role="textbox"]')!.setAttribute('aria-invalid', String(invalid === true));
-  }, [active, dark, invalid, label, value]);
+  }, [active, dark, invalid, label, readOnly, value]);
 
   return <div className="h-[240px] min-w-0 overflow-hidden border border-solid border-fui-divider rounded" data-json-editor="" hidden={!active} ref={containerRef} />;
 }

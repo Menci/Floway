@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import type { AccessRecord } from '../../../src/api/types';
@@ -9,8 +9,8 @@ import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 
 vi.mock('../../../src/components/ui/json-editor', () => ({
-  JsonEditor: ({ active, invalid, label, onChange, value }: { active: boolean; invalid: boolean; label: string; onChange: (value: string) => void; value: string }) =>
-    <textarea aria-invalid={invalid} aria-label={label} hidden={!active} onChange={event => onChange(event.target.value)} value={value} />,
+  JsonEditor: ({ active, invalid, label, onChange, readOnly, value }: { active: boolean; invalid: boolean; label: string; onChange: (value: string) => void; readOnly?: boolean; value: string }) =>
+    <textarea aria-invalid={invalid} aria-label={label} hidden={!active} onChange={event => onChange(event.target.value)} readOnly={readOnly} value={value} />,
 }));
 
 const data: ScopeExpressionData = {
@@ -138,4 +138,25 @@ test('moving a fixed rule into a model boundary uses the available append order'
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save rule' })); });
   const write = fetch.mock.calls.find(([, init]) => init?.method === 'PUT')!;
   expect(JSON.parse(write[1]!.body as string).sortOrder).toBe(99);
+});
+
+test.each(['Visual', 'JSON'])('locks the complete %s form through a save and restores it on failure', async mode => {
+  let finish!: (response: Response) => void;
+  vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => init?.method === 'PUT'
+    ? await new Promise<Response>(resolve => { finish = resolve; })
+    : Response.json({ values: { 'Model.Use': false, 'Upstream.Audit': false, 'Upstream.Edit': 'off' }, records: [], decisions: [] })));
+  await renderDialog({ record });
+  if (mode === 'JSON') fireEvent.click(screen.getByRole('tab', { name: mode }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save rule' })); });
+  const principal = screen.getByRole<HTMLInputElement>('combobox', { name: 'Applies to' });
+  expect(principal.disabled).toBe(true);
+  expect(screen.getAllByRole<HTMLInputElement>('radio').every(input => input.disabled)).toBe(true);
+  expect(screen.getAllByRole<HTMLButtonElement>('tab').every(tab => tab.disabled)).toBe(true);
+  if (mode === 'JSON') expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'JSON' }).readOnly).toBe(true);
+  else expect(document.querySelector('.floway-scope-editor')!.getAttribute('aria-disabled')).toBe('true');
+  await act(async () => { finish(Response.json({ error: 'Save failed' }, { status: 503 })); });
+  await screen.findByText('Save failed');
+  await waitFor(() => expect(principal.disabled).toBe(false));
+  expect(screen.getAllByRole<HTMLInputElement>('radio').every(input => !input.disabled)).toBe(true);
+  if (mode === 'JSON') expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'JSON' }).readOnly).toBe(false);
 });

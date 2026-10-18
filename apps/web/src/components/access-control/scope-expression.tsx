@@ -70,13 +70,19 @@ export function ScopeExpression({ className, data, framed = false, kindHint, onC
   value: AccessScope | null;
 }) {
   const { t } = useTranslation();
-  const [active, setActive] = useState<Part | null>(null);
+  const [editingPart, setActive] = useState<Part | null>(null);
+  const active = readOnly ? null : editingPart;
   const [query, setQuery] = useState('');
   const [dirty, setDirty] = useState(false);
   const [pendingKind, setPendingKind] = useState<ScopeKind | null>(null);
   const editRevision = useRef(0);
-  // A deferred blur must not commit a draft after its editor is replaced.
-  useEffect(() => () => { editRevision.current++; }, []);
+  // A deferred blur must not commit after replacement or a read-only transition.
+  useEffect(() => () => { editRevision.current++; }, [readOnly]);
+  if (readOnly && editingPart !== null) {
+    setActive(null);
+    setQuery('');
+    setDirty(false);
+  }
   const kind = (purpose === 'scope' ? pendingKind : null) ?? kindFor(value) ?? kindHint ?? null;
   const interactive = !readOnly || onNavigate !== undefined;
 
@@ -145,7 +151,15 @@ export function ScopeExpression({ className, data, framed = false, kindHint, onC
     if (active === 'model' && trimmed) commitModel(`exact:${trimmed}`);
     else closeInput();
   };
-  const onInputBlur = () => {
+  const onInputBlur: NonNullable<ComponentProps<typeof InlineCombobox>['onBlur']> = event => {
+    const next = event.relatedTarget;
+    // A submit click reads the parent's scope after focus leaves this editor.
+    // Internal focus and option selection must still be able to replace a draft.
+    if (next instanceof HTMLElement && !next.closest('[role="listbox"]')
+      && next.closest('.floway-scope-expression') !== event.currentTarget.closest('.floway-scope-expression')) {
+      commitBlur();
+      return;
+    }
     const revision = editRevision.current;
     window.setTimeout(() => {
       if (editRevision.current === revision) commitBlur();
@@ -230,7 +244,7 @@ function PartInput({ ariaLabel, emptyMessage, freeform, model, name, onBlur, onC
   freeform: boolean;
   model: boolean;
   name: string;
-  onBlur: () => void;
+  onBlur: ComponentProps<typeof InlineCombobox>['onBlur'];
   onCancel: () => void;
   onChange: (value: string) => void;
   onSelect: (value: string) => void;

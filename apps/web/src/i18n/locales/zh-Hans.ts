@@ -247,7 +247,6 @@ const zhHansCN = {
           username: '用户名',
           role: '角色',
           groups: '用户组',
-          created: '创建时间',
           actions: '操作',
         },
         role: { admin: '管理员', operator: '操作员' },

@@ -258,7 +258,6 @@ const en = {
           username: 'Username',
           role: 'Role',
           groups: 'Groups',
-          created: 'Created',
           actions: 'Actions',
         },
         role: { admin: 'Administrator', operator: 'Operator' },

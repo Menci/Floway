@@ -66,6 +66,25 @@ test('uses the field clear icon inside the scope removal button', () => {
   expect(icon.getAttribute('viewBox')).toBe('0 0 12 12');
 });
 
+test('read-only mode closes an active draft and cancels its deferred blur', async () => {
+  const changed = vi.fn();
+  const value = { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } } as const;
+  const { rerender } = renderInApp(<ScopeEditor data={data} onChange={changed} value={value} />);
+  fireEvent.click(screen.getByRole('button', { name: 'gpt-5' }));
+  const input = screen.getByRole('combobox', { name: 'Model' });
+  fireEvent.change(input, { target: { value: 'uncommitted' } });
+  fireEvent.blur(input);
+  rerender(<ScopeEditor data={data} onChange={changed} readOnly value={value} />);
+  expect(screen.queryByRole('combobox')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'gpt-5' })).toBeNull();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(changed).not.toHaveBeenCalled();
+  rerender(<ScopeEditor data={data} onChange={changed} value={value} />);
+  expect(screen.queryByRole('combobox')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'gpt-5' }));
+  expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Model' }).value).toBe('gpt-5');
+});
+
 test.each([
   [{ kind: 'user', userId: 2 }, 'alice'],
   [{ kind: 'group', groupId: 3 }, 'operators'],
@@ -303,6 +322,18 @@ test('commits a freeform model on blur', async () => {
   fireEvent.blur(input);
 
   await waitFor(() => expect(changed).toHaveBeenLastCalledWith({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'future-model' } }));
+});
+
+test('commits a model synchronously before focus reaches a submit action', () => {
+  const { changed } = renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'gpt-5' }));
+  const input = screen.getByRole('combobox', { name: 'Model' });
+  fireEvent.change(input, { target: { value: 'new-model' } });
+  const submit = document.createElement('button');
+  submit.type = 'submit';
+  fireEvent.blur(input, { relatedTarget: submit });
+  expect(changed).toHaveBeenLastCalledWith({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'new-model' } });
+  expect(screen.queryByRole('combobox')).toBeNull();
 });
 
 test('does not commit an upstream draft on blur without selecting a real upstream', async () => {

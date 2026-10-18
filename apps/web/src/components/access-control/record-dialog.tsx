@@ -11,6 +11,7 @@ import { parsePrincipal, principalKey } from './principals';
 import { useAccessResolution } from './resolution';
 import { scopeSchema } from './scope';
 import { ScopeEditor, type ScopeExpressionData } from './scope-expression';
+import { scopePermissions } from './values';
 import { api, callApi } from '../../api/client';
 import type { AccessRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
@@ -65,12 +66,12 @@ export function AccessRecordDialog({ data, initialPrincipal, initialScope, onOpe
     onClose: close,
     values: { formValues, scope, scopeJson, values },
   });
-  const permissions = useMemo(() => permissionsForScope(scope), [scope]);
+  const permissions = useMemo(() => scopePermissions(scope), [scope]);
   const changeScope = (next: AccessScope | null) => {
     setScope(next);
     setScopeJson(JSON.stringify(next, null, 2));
     setScopeError(null);
-    const nextPermissions = permissionsForScope(next);
+    const nextPermissions = scopePermissions(next);
     setValues(current => Object.fromEntries(Object.entries(current).filter(([permission]) => nextPermissions.includes(permission as Permission))) as AccessValues);
   };
 
@@ -97,7 +98,7 @@ export function AccessRecordDialog({ data, initialPrincipal, initialScope, onOpe
     if (parsed === null) return;
     const finalScope = validateVisualScope(parsed.scope, setScopeError, t('dashboard.accessControl.validation.scopeRequired'));
     if (finalScope === null) return;
-    const finalValues = Object.fromEntries(Object.entries(values).filter(([permission]) => permissionsForScope(finalScope).includes(permission as Permission))) as AccessValues;
+    const finalValues = Object.fromEntries(Object.entries(values).filter(([permission]) => scopePermissions(finalScope).includes(permission as Permission))) as AccessValues;
     if (Object.keys(finalValues).length === 0) {
       setError(t('dashboard.accessControl.validation.emptyRecord'));
       return;
@@ -128,8 +129,8 @@ export function AccessRecordDialog({ data, initialPrincipal, initialScope, onOpe
   const renderScopeHeader: SlotRenderFunction<ComponentProps<typeof fluentComponents.Label>> = (Component, labelProps) => <div className="floway-scope-editor-header" data-scope-editor-header="">
     <Component {...labelProps} style={{ ...labelProps.style, paddingBlock: 0, margin: 0 }}>{t('dashboard.accessControl.fields.scope')}</Component>
     <TabList aria-label={t('dashboard.accessControl.fields.scope')} onTabSelect={(_, tab) => selectMode(tab.value === 'json' ? 'json' : 'visual')} selectedValue={scopeMode} size="small">
-      <Tab value="visual">{t('dashboard.accessControl.scope.visual')}</Tab>
-      <Tab value="json">{t('dashboard.accessControl.scope.json')}</Tab>
+      <Tab disabled={saving} value="visual">{t('dashboard.accessControl.scope.visual')}</Tab>
+      <Tab disabled={saving} value="json">{t('dashboard.accessControl.scope.json')}</Tab>
     </TabList>
   </div>;
 
@@ -145,17 +146,17 @@ export function AccessRecordDialog({ data, initialPrincipal, initialScope, onOpe
     width="editor"
   >
     <Controller control={control} name="principal" render={({ field }) => <Field className="min-w-0" label={t('dashboard.accessControl.fields.principal')}>
-      <PrincipalPicker data={data} label={t('dashboard.accessControl.fields.principal')} onChange={principal => { if (principal !== null) field.onChange(principalKey(principal)); }} value={parsePrincipal(field.value)} />
+      <PrincipalPicker data={data} disabled={saving} label={t('dashboard.accessControl.fields.principal')} onChange={principal => { if (principal !== null) field.onChange(principalKey(principal)); }} value={parsePrincipal(field.value)} />
     </Field>} />
     {administratorBypass && <OutcomeMessageBar intent="info">{t('dashboard.accessControl.administratorBypass')}</OutcomeMessageBar>}
 
     <Field className="min-w-0" label={{ children: renderScopeHeader }} validationMessage={scopeError ?? undefined} validationState={scopeError ? 'error' : undefined}>
-      <div className="min-w-0" hidden={scopeMode !== 'visual'}><ScopeEditor className="!w-full" data={data} onChange={changeScope} value={scope} /></div>
-      <JsonEditor active={scopeMode === 'json'} invalid={scopeError !== null} label={t('dashboard.accessControl.scope.json')} onChange={setScopeJson} value={scopeJson} />
+      <div className="min-w-0" hidden={scopeMode !== 'visual'}><ScopeEditor className="!w-full" data={data} onChange={changeScope} readOnly={saving} value={scope} /></div>
+      <JsonEditor active={scopeMode === 'json'} invalid={scopeError !== null} label={t('dashboard.accessControl.scope.json')} onChange={setScopeJson} readOnly={saving} value={scopeJson} />
     </Field>
 
     {permissions.length > 0 && <PermissionFields
-      disabled={administratorBypass}
+      disabled={saving || administratorBypass}
       inherited={resolution?.values}
       onChange={(permission, value) => setValues(current => {
         if (value !== undefined) return { ...current, [permission]: value };
@@ -171,9 +172,6 @@ export function AccessRecordDialog({ data, initialPrincipal, initialScope, onOpe
   </DialogShell></Suspense></>;
 }
 
-const permissionsForScope = (scope: AccessScope | null): Permission[] => scope?.kind === 'upstreams' || scope?.kind === 'upstream'
-  ? ['Model.Use', 'Upstream.Audit', 'Upstream.Edit']
-  : scope?.kind === 'upstreamModel' ? ['Model.Use'] : scope ? ['User.Audit'] : [];
 const validateVisualScope = (scope: AccessScope | null, setError: (message: string) => void, requiredMessage: string): AccessScope | null => {
   if (scope === null) {
     setError(requiredMessage);

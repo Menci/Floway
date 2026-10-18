@@ -10,6 +10,6 @@ export const permissionTone = (value: NonNullable<AccessValues[AccessPermission]
 export const permissionValueLabel = (value: NonNullable<AccessValues[AccessPermission]>, t: TFunction): string => typeof value === 'boolean'
   ? t(value ? 'dashboard.accessControl.states.on' : 'dashboard.accessControl.states.off')
   : t(`dashboard.accessControl.states.${value}`);
-export const scopePermissions = (scope: AccessScope): readonly AccessPermission[] => scope.kind === 'upstreamModel'
+export const scopePermissions = (scope: AccessScope | null): readonly AccessPermission[] => scope === null ? [] : scope.kind === 'upstreamModel'
   ? ['Model.Use'] : scope.kind === 'upstreams' || scope.kind === 'upstream'
       ? ['Model.Use', 'Upstream.Audit', 'Upstream.Edit'] : ['User.Audit'];

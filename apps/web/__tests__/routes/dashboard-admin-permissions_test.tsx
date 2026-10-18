@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, useLoaderData } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
-import { afterEach, beforeAll, beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import type { PermissionsData } from '../../src/components/access-control/data';
 import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
@@ -9,8 +9,6 @@ import DashboardAdminPermissions, { shouldRevalidate } from '../../src/routes/da
 import { renderInApp } from '../render';
 
 vi.mock('../../src/components/ui/json-editor', () => ({ JsonEditor: () => null }));
-
-beforeAll(async () => { await import('../../src/components/ui/json-editor'); });
 
 const scope = { kind: 'upstream', upstreamId: 'a' } as const;
 const initial: PermissionsData = {
@@ -80,6 +78,31 @@ test('has one filter toolbar, subtitle and no tabs or redundant rule count', asy
   expect(checkedParagraph.parentElement!.children).toHaveLength(2);
   expect(checkedParagraph.parentElement!.querySelectorAll('p')).toHaveLength(2);
   expect(toggle.checked).toBe(false);
+});
+
+test('locks all mutations while deleting and restores them after a failed write', async () => {
+  const originalFetch = vi.mocked(fetch).getMockImplementation()!;
+  let finish!: (response: Response) => void;
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => init?.method === 'DELETE'
+    ? new Promise<Response>(resolve => { finish = resolve; })
+    : originalFetch(input, init)));
+  const { container } = renderPage();
+  const table = await screen.findByRole('table');
+  const create = screen.getByRole<HTMLButtonElement>('button', { name: 'New rule' });
+  const refresh = screen.getByRole<HTMLButtonElement>('button', { name: 'Refresh permissions' });
+  const edit = screen.getAllByRole<HTMLButtonElement>('button', { name: 'Edit rule' });
+  const row = container.querySelector('[data-rule-id="2"]') as HTMLElement;
+  await act(async () => { fireEvent.click(within(row).getByRole('button', { name: 'Delete rule' })); });
+  const confirmation = screen.getByRole('dialog');
+  await act(async () => { fireEvent.click(within(confirmation).getByRole('button', { name: 'Delete rule' })); });
+  expect(create.disabled).toBe(true);
+  expect(refresh.disabled).toBe(true);
+  expect(edit.every(button => button.disabled)).toBe(true);
+  expect(table.isConnected).toBe(true);
+  await act(async () => { finish(Response.json({ error: 'Delete failed' }, { status: 503 })); });
+  await screen.findByText('Delete failed');
+  expect(create.disabled).toBe(false);
+  expect(table.isConnected).toBe(true);
 });
 
 test('the root turns effective mode off and choosing a scope does not restore it', async () => {
@@ -191,7 +214,10 @@ test('search matches both displayed permission names and their code identifiers'
 test('new rule starts with the selected principal and scope', async () => {
   renderPage(`?principal=group:1&scope=${encodeURIComponent(JSON.stringify(scope))}`);
   await screen.findByRole('table');
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'New rule' })); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'New rule' }));
+    await vi.dynamicImportSettled();
+  });
   const dialog = await screen.findByRole('dialog');
   expect(dialog.querySelector<HTMLInputElement>('input[role="combobox"]')!.value).toBe('Platform');
   expect(dialog.querySelector('.floway-scope-expression')!.textContent).toContain('Copilot');
