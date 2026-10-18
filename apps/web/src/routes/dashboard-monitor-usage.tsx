@@ -44,7 +44,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   const scoped = scopeTelemetryIdentity(parsed.groupBy, parsed.filters, {
     currentUserId: String(user.id),
     fallbackGroup: 'model',
-    userDimensionAvailable: user.isAdmin,
+    userDimensionAvailable: true,
   });
   const loadedAt = Date.now();
   return {
@@ -79,7 +79,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const identityContext = {
     currentUserId: loaderData.currentUserId,
     fallbackGroup: 'model' as const,
-    userDimensionAvailable: loaderData.isAdmin,
+    userDimensionAvailable: true,
   };
 
   const reload = useCallback(async (signal: AbortSignal, { background, requestedAt }: { background: boolean; requestedAt: number }) => {
@@ -121,9 +121,9 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
 
   const buckets = useMemo(() => dashboardBuckets(loadedQuery.range, loadedAt), [loadedAt, loadedQuery.range]);
   const availableDimensions = useMemo(() => usage === null ? null : usageDimensions({
-    usage, upstreams, filters: loadedQuery.filters,
-    currentUserId: loaderData.currentUserId, isAdmin: loaderData.isAdmin, t,
-  }), [loadedQuery.filters, loaderData.currentUserId, loaderData.isAdmin, t, upstreams, usage]);
+    usage, upstreams,
+    currentUserId: loaderData.currentUserId, t,
+  }), [loaderData.currentUserId, t, upstreams, usage]);
   const searchChart = useMemo(
     () => search && buildSearchChart({ search, range: loadedQuery.range, buckets }),
     [buckets, loadedQuery.range, search],

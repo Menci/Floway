@@ -22,7 +22,6 @@ import {
   type PerformancePercentile,
   type PerformanceRange,
   type PerformanceUrlState,
-  type PerformanceView,
 } from '../components/performance/overview';
 import { buildPerformanceChart, performanceBuckets } from '../components/performance/plot';
 import { PerformanceTable } from '../components/performance/table';
@@ -61,17 +60,15 @@ interface LoaderData {
   // the series hue, so a partial response cannot faithfully render the group.
   upstreams: UpstreamMetadata[] | null;
   regionAvailable: boolean | null;
-  view: PerformanceView;
 }
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
   const user = await requireDashboardUser();
   const state = parsePerformanceUrlState(new URL(request.url).searchParams);
-  const view: PerformanceView = user.isAdmin ? 'all-by-user' : 'self-by-key';
   const scoped = scopeTelemetryIdentity(state.groupBy, state.filters, {
     currentUserId: String(user.id),
     fallbackGroup: 'model',
-    userDimensionAvailable: view === 'all-by-user',
+    userDimensionAvailable: true,
   });
   const loadedAt = Date.now();
   const requestedState = { ...state, ...scoped };
@@ -99,7 +96,6 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     regionAvailable,
     state: normalization.state,
     upstreams: upstreams.data?.map(({ id, name, hue }) => ({ id, name, hue })) ?? null,
-    view,
   };
 }
 
@@ -110,11 +106,10 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [, setSearchParams] = useSearchParams();
   const rewrite = useEntryRewrite();
   const initialState = loaderData.state;
-  const view: PerformanceView = loaderData.view;
   const [regionAvailable, setRegionAvailable] = useState(loaderData.regionAvailable);
   const [query, setQuery] = useState(() => ({
     filters: initialState.filters,
-    groupBy: initialState.groupBy === 'userId' && view !== 'all-by-user' ? 'model' as const : initialState.groupBy,
+    groupBy: initialState.groupBy,
     range: initialState.range,
   }));
   const [metric, setMetric] = useState<PerformanceMetric>(initialState.metric);
@@ -129,7 +124,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const identityContext = {
     currentUserId: loaderData.currentUserId,
     fallbackGroup: 'model' as const,
-    userDimensionAvailable: view === 'all-by-user',
+    userDimensionAvailable: true,
   };
 
   // A background poll must not clear a failure the operator has not read.
@@ -290,7 +285,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
           groupLabel: t('dashboard.performance.groupBy.userId'),
           filterLabel: t('dashboard.performance.filters.userId'),
           allLabel: t('dashboard.performance.filters.all.userId'),
-          options: [...new Set([...overview.dimensionValues.userIds.map(String), ...loadedQuery.filters.userId])]
+          options: [...new Set([...overview.users.map(user => String(user.id)), ...overview.dimensionValues.userIds.map(String), ...loadedQuery.filters.userId])]
             .map(value => ({ value, label: labels.users.get(value) ?? `user ${value}` })),
           selectionLabel: values => values.length === 1 && values[0] === loaderData.currentUserId
             ? t('dashboard.telemetry.currentUserOnly')
@@ -298,10 +293,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
         },
         { key: 'keyId', groupLabel: t('dashboard.performance.groupBy.keyId'), filterLabel: t('dashboard.performance.filters.keyId'), allLabel: t('dashboard.performance.filters.all.keyId'), options: overview.dimensionValues.keyIds.map(value => ({ value, label: labels.keys.get(value) ?? value })) },
       ];
-      const availableDimensions = dimensions.filter(dimension => (
-        (dimension.key !== 'runtimeLocation' || regionAvailable)
-        && (dimension.key !== 'userId' || view === 'all-by-user')
-      ));
+      const availableDimensions = dimensions.filter(dimension => dimension.key !== 'runtimeLocation' || regionAvailable);
       const breakdowns = availableDimensions.map(({ key }) => ({ key, rows: overview.axes[key] }));
       const activeBreakdown = breakdowns.find(item => item.key === breakdownGroup) ?? breakdowns[0];
       if (activeBreakdown === undefined) throw new RangeError('Performance overview has no available breakdown dimension');

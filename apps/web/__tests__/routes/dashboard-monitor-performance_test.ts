@@ -36,6 +36,15 @@ describe('where the performance page reads upstream names from', () => {
     expect(data.error).toBeNull();
   });
 
+  it('keeps User grouping for a non-admin operator', async () => {
+    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewUpstreams: false } });
+    vi.stubGlobal('fetch', vi.fn(gatewayForOperator));
+
+    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance?g=userId') } as never);
+
+    expect(data.state.groupBy).toBe('userId');
+  });
+
   it('makes API key grouping explicitly current-user scoped for an administrator', async () => {
     useAuthStore.getState().primeFromLogin({ token: 'admin-session', user: { id: 1, username: 'admin', isAdmin: true, canViewUpstreams: true } });
     const performanceQueries: URL[] = [];

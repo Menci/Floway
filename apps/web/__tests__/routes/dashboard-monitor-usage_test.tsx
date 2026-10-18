@@ -49,7 +49,7 @@ const loaderData = {
 };
 
 const renderPage = (data: Parameters<typeof DashboardMonitorUsage>[0]['loaderData']) => {
-  const user = { id: 1, username: 'admin', isAdmin: true };
+  const user = { id: Number(data.currentUserId), username: data.isAdmin ? 'admin' : 'operator', isAdmin: data.isAdmin };
   const router = createMemoryRouter([{
     path: '/',
     Component: () => <Outlet context={{ user }} />,
@@ -78,6 +78,25 @@ const stubUsageGateway = (upstreamOptions: () => Response = () => Response.json(
 };
 
 describe('usage dimension controls', () => {
+  it('shows auditable users even when they have no usage in the selected window', () => {
+    renderPage({
+      ...loaderData,
+      currentUserId: '2',
+      isAdmin: false,
+      usage: {
+        ...loaderData.usage,
+        dimensionValues: { ...loaderData.usage.dimensionValues, userIds: [2] },
+        users: [{ id: 2, username: 'Alice' }, { id: 5, username: 'Dana' }],
+      },
+    });
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Group by' }));
+    expect(screen.getByRole('option', { name: 'By User' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('combobox', { name: 'User' }));
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Alice' })).toBeTruthy();
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Dana' })).toBeTruthy();
+  });
+
   it('matches the Performance dimension and range controls', () => {
     renderPage(loaderData);
 

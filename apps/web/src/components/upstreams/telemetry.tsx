@@ -77,8 +77,8 @@ function UpstreamTelemetryPanel({ data, record, busy, currentUserId, onQueryChan
   const [groupWas, setGroupWas] = useState(query.groupBy);
   if (groupWas !== query.groupBy) { setGroupWas(query.groupBy); setHidden(new Set()); }
   const upstreams = useMemo(() => [record], [record]);
-  const dimensions = useMemo(() => usageDimensions({ usage: data.usage, upstreams, filters: query.filters, currentUserId, isAdmin: true, t })
-    .filter(dimension => dimension.key !== 'upstream'), [currentUserId, data.usage, query.filters, t, upstreams]);
+  const dimensions = useMemo(() => usageDimensions({ usage: data.usage, upstreams, currentUserId, t })
+    .filter(dimension => dimension.key !== 'upstream'), [currentUserId, data.usage, t, upstreams]);
   const chart = useMemo(() => {
     return {
       ...buildUpstreamMetricsChart(data.metrics.records, record,
