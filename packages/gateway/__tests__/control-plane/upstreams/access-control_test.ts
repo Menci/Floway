@@ -45,6 +45,69 @@ test('upstreams without Edit permission are absent from list and detail routes',
   assertEquals(detail.status, 404);
 });
 
+test('the list never exposes provider credentials even to a Full editor', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await saveUpstreamForTest(repo.upstreams, customRecord());
+  await grant(repo, apiKey.userId, 'full');
+
+  const response = await requestApp('/api/upstreams', { headers: { 'x-api-key': apiKey.key } });
+  const listed = (await response.json() as Array<Record<string, any>>)[0]!;
+  assertEquals(listed.config.apiKey, undefined);
+  assertEquals(listed.config.apiKeySet, true);
+  assertEquals(listed.config.ingressHeadersRules[0], { key: 'x-secret', value: 'value' });
+  const stored = await repo.upstreams.getById('up_restricted');
+  assertEquals((stored?.config as Record<string, unknown> | undefined)?.apiKey, 'sk-secret');
+});
+
+test('Upstream.Audit exposes a redacted record in the listing, detail, and metrics route', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await saveUpstreamForTest(repo.upstreams, customRecord());
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: apiKey.userId },
+    scope: { kind: 'upstream', upstreamId: 'up_restricted' },
+    sortOrder: 0,
+    values: { 'Upstream.Audit': true },
+  });
+  await repo.upstreamMetrics.record({ upstreamId: 'up_restricted', name: 'quota.remaining', labels: {}, timestamp: 10_000, value: 25 });
+
+  const list = await requestApp('/api/upstreams', { headers: { 'x-api-key': apiKey.key } });
+  const listed = (await list.json() as Array<Record<string, any>>)[0]!;
+  assertEquals(listed.editLevel, 'off');
+  assertEquals(listed.audit, true);
+  assertEquals(listed.config.baseUrl, 'https://secret.example.com');
+  assertEquals(listed.config.apiKey, undefined);
+
+  const detail = await requestApp('/api/upstreams/up_restricted', { headers: { 'x-api-key': apiKey.key } });
+  const body = await detail.json();
+  assertEquals(body.editLevel, 'off');
+  assertEquals(body.audit, true);
+  assertEquals(body.config.baseUrl, 'https://secret.example.com');
+  assertEquals(body.config.apiKey, undefined);
+
+  const metrics = await requestApp('/api/upstream-metrics?upstream_id=up_restricted&start=0&end=60000&step=60000', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals(metrics.status, 200);
+  assertEquals((await metrics.json()).records.length, 1);
+});
+
+test('Upstream.Audit takes serializer precedence over a models-only edit grant', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await saveUpstreamForTest(repo.upstreams, customRecord());
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: apiKey.userId },
+    scope: { kind: 'upstream', upstreamId: 'up_restricted' },
+    sortOrder: 0,
+    values: { 'Upstream.Audit': true, 'Upstream.Edit': 'models' },
+  });
+
+  const detail = await requestApp('/api/upstreams/up_restricted', { headers: { 'x-api-key': apiKey.key } });
+  const body = await detail.json();
+  assertEquals(body.editLevel, 'models');
+  assertEquals(body.audit, true);
+  assertEquals(body.config.baseUrl, 'https://secret.example.com');
+  assertEquals(body.config.apiKey, undefined);
+  assertEquals(body.config.pathOverrides, { '/chat/completions': '/private/chat' });
+});
+
 test('Upstream.Edit.Models returns a redacted record and only accepts model fields', async () => {
   const { repo, apiKey } = await setupAppTest();
   await saveUpstreamForTest(repo.upstreams, customRecord());
@@ -108,6 +171,7 @@ test('Upstream.Edit.Full returns raw configuration, accepts full patches, and li
   assertEquals(detail.status, 200);
   const body = await detail.json();
   assertEquals(body.editLevel, 'full');
+  assertEquals(body.audit, false);
   assertEquals(body.config.baseUrl, 'https://secret.example.com');
   assertEquals(body.config.apiKey, 'sk-secret');
 

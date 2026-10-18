@@ -1,3 +1,4 @@
+import { canViewUpstreams } from '../../access-control/upstream-edit.ts';
 import { type AuthedContext, sessionIdFromContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -45,7 +46,7 @@ export const authLogin = async (c: CtxWithJson<typeof authLoginBody>) => {
   const user = await resolveLoginUser(c);
   if (!user) return c.json({ error: 'Invalid username or password' }, 401);
   const session = await getRepo().sessions.create(user.id);
-  return c.json({ token: session.id, user: userToSessionWire(user) });
+  return c.json({ token: session.id, user: userToSessionWire(user, await canViewUpstreams(user)) });
 };
 
 export const authLogout = async (c: AuthedContext) => {
@@ -59,7 +60,7 @@ export const authMe = async (c: AuthedContext) => {
   const sessionId = sessionIdFromContext(c);
   const apiKey = c.get('apiKey');
   return c.json({
-    user: userToSessionWire(user),
+    user: userToSessionWire(user, await canViewUpstreams(user)),
     viaApiKey: !sessionId,
     apiKey: apiKey ? { id: apiKey.id, name: apiKey.name } : null,
   });

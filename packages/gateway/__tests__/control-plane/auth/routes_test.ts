@@ -1,7 +1,8 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { hashPassword } from '../../../src/shared/passwords.ts';
-import { requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
+import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { initRuntimeKind } from '@floway-dev/platform';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -265,4 +266,23 @@ test('/auth/me reports viaApiKey:true and the API key metadata when authed via x
   assertEquals(body.viaApiKey, true);
   assertEquals(body.apiKey.id, apiKey.id);
   assertEquals(body.apiKey.name, apiKey.name);
+});
+
+test('/auth/me exposes upstream navigation only for an existing upstream the user can audit or edit', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: apiKey.userId });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: apiKey.userId },
+    scope: { kind: 'upstream', upstreamId: 'deleted-upstream' },
+    sortOrder: 0,
+    values: { 'Upstream.Audit': true },
+  });
+
+  const dangling = await requestApp('/auth/me', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals((await dangling.json()).user.canViewUpstreams, false);
+
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'deleted-upstream' }));
+  const visible = await requestApp('/auth/me', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals((await visible.json()).user.canViewUpstreams, true);
 });

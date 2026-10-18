@@ -2,7 +2,7 @@ import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider, useLoaderData } from 'react-router';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
-import type { UpstreamRecord } from '../../src/api/types';
+import type { ListedUpstreamRecord, UpstreamRecord } from '../../src/api/types';
 import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
 import DashboardProvidersUpstreams from '../../src/routes/dashboard-providers-upstreams';
 import { upstreamRecord } from '../api/upstream-fixture';
@@ -13,18 +13,31 @@ stubLocalStorage();
 beforeEach(() => vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1100, 320)));
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
-const user = { id: 1, username: 'admin', isAdmin: true, upstreamIds: null };
-const upstreams: UpstreamRecord[] = ['First', 'Second'].map((name, index) => upstreamRecord(name.toLowerCase(), {
+const user = { id: 1, username: 'admin', isAdmin: true, canViewUpstreams: true };
+const records: UpstreamRecord[] = ['First', 'Second'].map((name, index) => upstreamRecord(name.toLowerCase(), {
   name, kind: 'copilot', enabled: false, sort_order: index, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
   config: { githubHost: 'github.com', githubTokenSet: true, user: { id: index + 1, login: name.toLowerCase(), name, avatar_url: '' } },
   state: null, flag_overrides: {}, disabled_public_model_ids: [], proxy_fallback_list: [], model_prefix: null, hue: 210,
   usage_refresh_interval_minutes: 0, modelsCache: { fetchedAt: null, lastError: null, modelCount: null },
 }));
-const loaderData = { upstreams, models: [], loadError: null, modelsError: null };
-const renderPage = () => renderInApp(<RouterProvider router={createMemoryRouter([
+const toListed = (
+  record: UpstreamRecord,
+  access: { audit: boolean; edit: ListedUpstreamRecord['editLevel'] } = { audit: true, edit: 'full' },
+  overrides: Partial<ListedUpstreamRecord> = {},
+): ListedUpstreamRecord => ({ ...record, ...overrides, audit: access.audit, editLevel: access.edit } as ListedUpstreamRecord);
+const listedRecords = (source: readonly UpstreamRecord[]): ListedUpstreamRecord[] => source.map(record => toListed(record));
+const loaderData = {
+  upstreams: listedRecords(records),
+  models: [], loadError: null, modelsError: null,
+};
+const withAccess = (audit: boolean, edit: 'off' | 'models' | 'full'): typeof loaderData => ({
+  ...loaderData,
+  upstreams: loaderData.upstreams.map((record, index) => index === 0 ? toListed(record, { audit, edit }) : record),
+});
+const renderPage = (displayUser = user, pageData: typeof loaderData = loaderData) => renderInApp(<RouterProvider router={createMemoryRouter([
   {
-    path: '/dashboard', element: <OutcomeToastProvider><Outlet context={{ user }} /></OutcomeToastProvider>, children: [
-      { path: 'providers/upstreams', loader: () => loaderData, Component: () => <DashboardProvidersUpstreams loaderData={useLoaderData() as never} params={{}} matches={[] as never} /> },
+    path: '/dashboard', element: <OutcomeToastProvider><Outlet context={{ user: displayUser }} /></OutcomeToastProvider>, children: [
+      { path: 'providers/upstreams', loader: () => pageData, Component: () => <DashboardProvidersUpstreams loaderData={useLoaderData() as never} params={{}} matches={[] as never} /> },
       { path: 'providers/upstreams/:id', element: <div>Editor</div> },
     ],
   },
@@ -39,9 +52,12 @@ const metrics = (url: URL) => ({
   start: Number(url.searchParams.get('start')), end: Number(url.searchParams.get('end')), step: Number(url.searchParams.get('step')),
   records: [{ upstreamId: url.searchParams.get('upstream_id'), name: 'quota.remaining', labels: { quota: 'premium_interactions' }, timestamp: Date.now() - 1_000, value: 25 }],
 });
-const stubGateway = (handler: (url: URL, signal: AbortSignal | undefined) => Promise<Response>) => vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+const stubGateway = (
+  handler: (url: URL, signal: AbortSignal | undefined) => Promise<Response>,
+  pageData: typeof loaderData = loaderData,
+) => vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
-  if (url.pathname === '/api/upstreams') return Response.json(upstreams);
+  if (url.pathname === '/api/upstreams') return Response.json(pageData.upstreams);
   if (url.pathname === '/api/models') return Response.json({ data: [] });
   return await handler(url, init?.signal as AbortSignal | undefined);
 }));
@@ -151,9 +167,9 @@ it('handles a reorder shortcut once at the item container', async () => {
       const id = url.pathname.split('/').at(-1)!;
       const body = JSON.parse(init.body as string) as { sort_order: number };
       writes.push({ id, ...body });
-      return Response.json({ ...upstreams.find(record => record.id === id)!, ...body });
+      return Response.json({ ...loaderData.upstreams.find(record => record.id === id)!, ...body });
     }
-    if (url.pathname === '/api/upstreams') return Response.json(upstreams);
+    if (url.pathname === '/api/upstreams') return Response.json(loaderData.upstreams);
     if (url.pathname === '/api/models') return Response.json({ data: [] });
     throw new Error(`Unexpected request: ${url.pathname}`);
   }));
@@ -165,4 +181,90 @@ it('handles a reorder shortcut once at the item container', async () => {
   fireEvent.keyDown(handle, { key: 'ArrowDown', altKey: true, shiftKey: true });
   await waitFor(() => expect(writes).toHaveLength(2));
   expect(writes).toEqual([{ id: 'second', sort_order: 0 }, { id: 'first', sort_order: 1 }]);
+});
+
+it('opens telemetry for an audit-only row while keeping edit, switch, copy, delete, and drag unavailable', async () => {
+  stubGateway(async url => {
+    if (url.pathname === '/api/token-usage/overview') return Response.json(overview());
+    if (url.pathname === '/api/upstream-metrics') return Response.json(metrics(url));
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  }, withAccess(true, 'off'));
+  renderPage({ id: 2, username: 'auditor', isAdmin: false, canViewUpstreams: true }, withAccess(true, 'off'));
+
+  const row = await screen.findByRole('row', { name: 'Usage and metrics for First' });
+  expect(screen.queryByRole('link', { name: 'First' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Edit upstream First' }).hasAttribute('disabled')).toBe(true);
+  expect(screen.getByRole('switch', { name: 'Toggle upstream First' }).hasAttribute('disabled')).toBe(true);
+  expect(screen.queryByRole('button', { name: 'Copy upstream First' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Delete upstream First' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Reorder upstream First' }).hasAttribute('disabled')).toBe(true);
+
+  fireEvent.click(metricsButton('First'));
+  await waitFor(() => expect(row.getAttribute('aria-expanded')).toBe('true'));
+});
+
+it('shows a models row with models editing but a disabled switch and drag handle', async () => {
+  stubGateway(async url => {
+    if (url.pathname === '/api/token-usage/overview') return Response.json(overview());
+    if (url.pathname === '/api/upstream-metrics') return Response.json(metrics(url));
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  });
+  renderPage({ id: 2, username: 'model-editor', isAdmin: false, canViewUpstreams: true }, withAccess(false, 'models'));
+  expect(await screen.findByRole('link', { name: 'First' })).toBeTruthy();
+  expect(screen.getByRole('switch', { name: 'Toggle upstream First' }).hasAttribute('disabled')).toBe(true);
+  expect(screen.getByRole('button', { name: 'Reorder upstream First' }).hasAttribute('disabled')).toBe(true);
+  expect(screen.queryAllByRole('button', { name: 'Usage and metrics for First' }).some(node => node.tagName === 'BUTTON')).toBe(false);
+});
+
+it('lets only a contiguous full segment move and leaves its locked neighbours in place', async () => {
+  const segmented = ['Locked', 'Full A', 'Full B', 'Tail'].map((name, index) => toListed(records[index % 2]!, {
+    audit: true,
+    edit: index === 1 || index === 2 ? 'full' : 'off',
+  }, { id: name.toLowerCase().replaceAll(' ', '-'), name, sort_order: index }));
+  const writes: Array<{ id: string; sort_order: number }> = [];
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
+    if (init?.method === 'PATCH') {
+      const id = url.pathname.split('/').at(-1)!;
+      const body = JSON.parse(init.body as string) as { sort_order: number };
+      writes.push({ id, ...body });
+      return Response.json({ ...segmented.find(record => record.id === id)!, ...body });
+    }
+    if (url.pathname === '/api/upstreams') return Response.json(segmented);
+    if (url.pathname === '/api/models') return Response.json({ data: [] });
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  }));
+  renderPage(user, { ...loaderData, upstreams: segmented });
+
+  const handle = await screen.findByRole('button', { name: 'Reorder upstream Full A' });
+  handle.focus();
+  fireEvent.keyDown(handle, { key: 'ArrowDown', altKey: true, shiftKey: true });
+  await waitFor(() => expect(writes).toEqual([{ id: 'full-b', sort_order: 1 }, { id: 'full-a', sort_order: 2 }]));
+  const ranks = [...document.querySelectorAll('[data-reorder-item]')].map(row => row.textContent);
+  expect(ranks[0]).toContain('1');
+  expect(ranks[3]).toContain('4');
+});
+
+it('renders a lone full row as a pressable but immovable handle', async () => {
+  const segmented = ['Locked A', 'Only Full', 'Locked B'].map((name, index) => toListed(records[index % 2]!, {
+    audit: true,
+    edit: index === 1 ? 'full' : 'off',
+  }, { id: name.toLowerCase().replaceAll(' ', '-'), name, sort_order: index }));
+  const writes: unknown[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
+    if (init?.method === 'PATCH') { writes.push(init.body); return Response.json(segmented[1]); }
+    if (url.pathname === '/api/upstreams') return Response.json(segmented);
+    if (url.pathname === '/api/models') return Response.json({ data: [] });
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  }));
+  renderPage(user, { ...loaderData, upstreams: segmented });
+  const handle = await screen.findByRole('button', { name: 'Reorder upstream Only Full' });
+  handle.focus();
+  expect(handle.hasAttribute('disabled')).toBe(false);
+  fireEvent.pointerDown(handle, { button: 0, clientY: 10, isPrimary: true, pointerId: 1 });
+  expect(handle.closest('[data-reorder-item]')?.getAttribute('data-reorder-edge')).toBe('first');
+  fireEvent.pointerUp(window, { clientY: 10, pointerId: 1 });
+  fireEvent.keyDown(handle, { key: 'ArrowDown', altKey: true, shiftKey: true });
+  expect(writes).toEqual([]);
 });

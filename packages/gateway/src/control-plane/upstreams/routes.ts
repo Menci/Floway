@@ -5,7 +5,7 @@ import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
 import type { FullSerializedUpstreamRecord, ModelsCacheStatus, RedactedSerializedUpstreamRecord } from './types.ts';
 import { checkMany } from '../../access-control/check.ts';
-import { resolveUpstreamEditLevel, resolveUpstreamEditLevels } from '../../access-control/upstream-edit.ts';
+import { type UpstreamAccess, resolveUpstreamAccesses, resolveUpstreamEditLevel } from '../../access-control/upstream-edit.ts';
 import { storedCatalogSize } from '../../data-plane/providers/catalog.ts';
 import { type AuthedContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
@@ -83,6 +83,20 @@ const serializeForResponse = async (
     ...codexQuota,
   };
 };
+
+const serializerForAccess = (access: UpstreamAccess): (record: UpstreamRecord) => SerializedUpstreamRecord =>
+  access.edit === 'full' ? upstreamRecordToFullJson : access.audit ? upstreamRecordToJson : upstreamRecordToModelsJson;
+
+const serializeForAccess = async (
+  record: StoredUpstreamRecord,
+  knownProxyIds: ReadonlySet<string>,
+  access: UpstreamAccess,
+): Promise<UpstreamWithCacheResponse> => await serializeForResponse(
+  record,
+  knownProxyIds,
+  serializerForAccess(access),
+  access.audit || access.edit === 'full',
+);
 
 type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -163,13 +177,12 @@ const validateProxyFallbackList = (
 
 export const listUpstreams = async (c: AuthedContext) => {
   const [items, knownProxyIds] = await Promise.all([getRepo().upstreams.list(), loadKnownProxyIds()]);
-  const levels = await resolveUpstreamEditLevels(userFromContext(c), items.map(item => item.id));
+  const accesses = await resolveUpstreamAccesses(userFromContext(c), items.map(item => item.id));
   return c.json(await Promise.all(items.flatMap(record => {
-    const editLevel = levels.get(record.id)!;
-    if (editLevel === 'off') return [];
-    const serializer = editLevel === 'full' ? upstreamRecordToJson : upstreamRecordToModelsJson;
-    return [serializeForResponse(record, knownProxyIds, serializer, editLevel === 'full')
-      .then(serialized => ({ ...serialized, editLevel }))];
+    const access = accesses.get(record.id)!;
+    if (!access.audit && access.edit === 'off') return [];
+    return [serializeForResponse(record, knownProxyIds, access.edit === 'models' && !access.audit ? upstreamRecordToModelsJson : upstreamRecordToJson)
+      .then(serialized => ({ ...serialized, editLevel: access.edit, audit: access.audit }))];
   })));
 };
 
@@ -237,15 +250,16 @@ export const getUpstreamBlueprint = (c: Context) => {
 // model discovery.
 export const getUpstream = async (c: AuthedContext<'/:id'>) => {
   const id = c.req.param('id');
-  const editLevel = await resolveUpstreamEditLevel(userFromContext(c), id);
-  if (editLevel === 'off') return c.json({ error: 'upstream not found' }, 404);
+  const subject = userFromContext(c);
+  const access = (await resolveUpstreamAccesses(subject, [id])).get(id)!;
+  if (!access.audit && access.edit === 'off') return c.json({ error: 'upstream not found' }, 404);
   const [record, knownProxyIds] = await Promise.all([getRepo().upstreams.getById(id), loadKnownProxyIds()]);
   if (!record) return c.json({ error: 'upstream not found' }, 404);
-  const serializer = editLevel === 'full' ? upstreamRecordToFullJson : upstreamRecordToModelsJson;
   return c.json({
-    ...await serializeForResponse(record, knownProxyIds, serializer, editLevel === 'full'),
+    ...await serializeForAccess(record, knownProxyIds, access),
     cachedModels: cachedModelsForDashboard(record),
-    editLevel,
+    editLevel: access.edit,
+    audit: access.audit,
   });
 };
 
@@ -416,10 +430,11 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   next = { ...next, config: config.value };
 
   const saved = await saveUpstream({ previous: existing, next });
-  const serializer = editLevel === 'full' ? upstreamRecordToFullJson : upstreamRecordToModelsJson;
+  const access = (await resolveUpstreamAccesses(userFromContext(c), [id])).get(id)!;
   return c.json({
-    ...await serializeForResponse(saved, knownProxyIds, serializer, editLevel === 'full'),
+    ...await serializeForAccess(saved, knownProxyIds, access),
     editLevel,
+    audit: access.audit,
   });
 };
 

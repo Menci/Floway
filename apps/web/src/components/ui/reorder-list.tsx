@@ -235,7 +235,7 @@ const siblingHandles = (handle: HTMLElement): HTMLElement[] => {
  * `onReorder` then commits the rendered order without another visible move.
  * `position` gives an item's previewed rank, for a list that shows one.
  */
-export function useReorderList({ busy = false, disabled = false, length, onDragStart, onDrop, onDropError, onReorder }: {
+export function useReorderList({ busy = false, disabled = false, grabOnly = false, length, onDragStart, onDrop, onDropError, onReorder }: {
   /**
    * The list's own write is in flight. The grip reads as unavailable but keeps
    * focus, so a keyboard move does not throw the operator back to the document
@@ -243,6 +243,8 @@ export function useReorderList({ busy = false, disabled = false, length, onDragS
    */
   busy?: boolean;
   disabled?: boolean;
+  /** Render a pick-up state that cannot move an item, for a one-item segment. */
+  grabOnly?: boolean;
   length: number;
   onDragStart?: () => void;
   /** Starts an asynchronous write as soon as the pointer is released. */
@@ -258,7 +260,7 @@ export function useReorderList({ busy = false, disabled = false, length, onDragS
   const [preview, setPreview] = useState<Preview | null>(null);
   // A handle is dead while the list is locked, and a list of one has nowhere to
   // move its item to.
-  const locked = busy || disabled || length < 2;
+  const locked = busy || disabled || (length < 2 && !grabOnly);
   // The list can be replaced under a gesture -- these pages poll -- and an index
   // the new list does not have would move the wrong row.
   const live = preview !== null && preview.from < length && preview.to < length ? preview : null;
@@ -442,7 +444,7 @@ export function useReorderList({ busy = false, disabled = false, length, onDragS
 
     const index = Number(handle.closest(`[${ITEM_ATTRIBUTE}]`)?.getAttribute(ITEM_ATTRIBUTE) ?? -1);
     const to = index + step;
-    if (locked || index < 0 || index >= length || to < 0 || to >= length) return;
+    if (locked || grabOnly || index < 0 || index >= length || to < 0 || to >= length) return;
     event.preventDefault();
     onReorder(index, to);
   };

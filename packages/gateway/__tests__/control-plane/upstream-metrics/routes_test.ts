@@ -1,11 +1,23 @@
 import { expect, it } from 'vitest';
 
-import { requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
+import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
 
-it('restricts upstream subscription history to administrators and validates query intervals', async () => {
+it('scopes upstream subscription history to Upstream.Audit and validates query intervals', async () => {
   const { repo, apiKey } = await setupAppTest();
   const headers = { 'x-api-key': apiKey.key };
-  expect((await requestApp('/api/upstream-metrics?upstream_id=historical&start=0&end=60000&step=60000', { headers })).status).toBe(403);
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'historical', sortOrder: 0 }));
+  expect((await requestApp('/api/upstream-metrics?upstream_id=historical&start=0&end=60000&step=60000', { headers })).status).toBe(404);
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: apiKey.userId },
+    scope: { kind: 'upstream', upstreamId: 'historical' },
+    sortOrder: 0,
+    values: { 'Upstream.Audit': true },
+  });
+  expect((await requestApp('/api/upstream-metrics?upstream_id=historical&start=0&end=60000&step=60000', { headers })).status).toBe(200);
+  await repo.upstreams.delete('historical');
+  expect((await requestApp('/api/upstream-metrics?upstream_id=historical&start=0&end=60000&step=60000', { headers })).status).toBe(404);
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'historical', sortOrder: 0 }));
   const user = await repo.users.getById(apiKey.userId);
   await repo.users.save({ ...user!, isAdmin: true });
   expect((await requestApp('/api/upstream-metrics?upstream_id=historical&start=-86400000&end=0&step=60000', { headers })).status).toBe(200);

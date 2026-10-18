@@ -186,7 +186,7 @@ describe('usage dimension controls', () => {
   it('loads the overview contract and derives Search scope from the actor', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'admin-session',
-      user: { id: 1, username: 'admin', isAdmin: true },
+      user: { id: 1, username: 'admin', isAdmin: true, canViewUpstreams: true },
     });
     stubUsageGateway();
 
@@ -200,7 +200,7 @@ describe('usage dimension controls', () => {
   it('keeps token charts available when upstream names fail to load', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'admin-session',
-      user: { id: 1, username: 'admin', isAdmin: true },
+      user: { id: 1, username: 'admin', isAdmin: true, canViewUpstreams: true },
     });
     stubUsageGateway(() => Response.json({ error: 'Unavailable' }, { status: 500 }));
 

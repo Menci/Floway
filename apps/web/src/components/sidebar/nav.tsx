@@ -141,7 +141,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
             <NavSelectionIndicator containerRef={bodyRef} inset={NAV_INDICATOR_INSET} otherListIs="below" selectedValue={selectedValue} />
             {navGroups.map((group, groupIndex) => {
               if (group.adminOnly && !user.isAdmin) return null;
-              const items = group.items.filter(item => !item.adminOnly || user.isAdmin);
+              const items = group.items.filter(item => (!item.adminOnly || user.isAdmin) && (!item.upstreams || user.canViewUpstreams));
               if (items.length === 0) return null;
               return <div key={group.labelKey ?? groupIndex}>
                 {group.labelKey && <NavSectionHeader>{t(group.labelKey)}</NavSectionHeader>}

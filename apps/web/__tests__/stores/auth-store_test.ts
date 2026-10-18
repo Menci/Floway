@@ -21,8 +21,8 @@ import { getSessionToken, setSessionToken } from '../../src/auth/session';
 import { useAuthStore } from '../../src/stores/auth-store';
 import { stubLocalStorage } from '../local-storage-stub';
 
-const oldUser = { id: 1, username: 'old', isAdmin: true, upstreamIds: null };
-const newUser = { id: 2, username: 'new', isAdmin: true, upstreamIds: null };
+const oldUser = { id: 1, username: 'old', isAdmin: true, upstreamIds: null, canViewUpstreams: true };
+const newUser = { id: 2, username: 'new', isAdmin: true, upstreamIds: null, canViewUpstreams: true };
 
 describe('auth store request ownership', () => {
   stubLocalStorage();

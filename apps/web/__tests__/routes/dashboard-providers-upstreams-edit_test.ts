@@ -60,3 +60,20 @@ test('a successful empty cache remains available without a refresh', async () =>
   expect(loaded.discovered).toEqual([]);
   expect(mocks.listModels).not.toHaveBeenCalled();
 });
+
+test('an audit-only record never opens the editor', async () => {
+  mocks.get.mockResolvedValue({
+    data: {
+      id: 'up_saved',
+      editLevel: 'off',
+      audit: true,
+      modelsCache: { fetchedAt: null, lastError: null, modelCount: null },
+      cachedModels: null,
+    }, error: null,
+  });
+  const thrown = await clientLoader({ params: { id: 'up_saved' } } as Parameters<typeof clientLoader>[0]).then(() => null, (caught: unknown) => caught);
+  expect(thrown).toBeInstanceOf(Response);
+  expect((thrown as Response).status).toBe(302);
+  expect((thrown as Response).headers.get('location')).toBe('/dashboard/providers/upstreams');
+  expect(mocks.loadAux).not.toHaveBeenCalled();
+});
