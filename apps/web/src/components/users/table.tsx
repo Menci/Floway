@@ -30,7 +30,7 @@ export function UsersTable({
   onEdit,
   onResetPassword,
   users,
-  groups,
+  groupsByUser,
 }: {
   actorId: number;
   disabled: boolean;
@@ -38,7 +38,7 @@ export function UsersTable({
   onEdit: (user: ControlPlaneUser) => void;
   onResetPassword: (user: ControlPlaneUser) => void;
   users: ControlPlaneUser[];
-  groups: ControlPlaneGroup[];
+  groupsByUser: ReadonlyMap<number, readonly ControlPlaneGroup[]>;
 }) {
   const { t } = useTranslation();
   const locale = useLocale();
@@ -71,7 +71,7 @@ export function UsersTable({
                     <time className="winui-focus-rect floway-control-label whitespace-nowrap" dateTime={user.createdAt} tabIndex={0}>{shortDate(user.createdAt, locale)}</time>
                   </Tooltip>
                 </TableCell>
-                <TableCell><GroupMemberships groups={user.groupIds.map(id => groups.find(group => group.id === id)!)} /></TableCell>
+                <TableCell><GroupMemberships groups={groupsByUser.get(user.id)!} /></TableCell>
                 <TableCell className="whitespace-nowrap">
                   {user.upstreamIds === null
                     ? t('dashboard.users.upstreams.all')

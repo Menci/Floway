@@ -8,7 +8,7 @@ import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 
 const group: ControlPlaneGroup = {
-  id: 3, name: 'Operators', hue: 120, createdAt: '', deletedAt: null, memberIds: [2],
+  id: 3, name: 'Operators', hue: 120, createdAt: '', deletedAt: null,
 };
 
 test('guards a group draft before closing', async () => {

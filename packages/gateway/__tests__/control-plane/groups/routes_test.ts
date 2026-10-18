@@ -15,7 +15,7 @@ test('group management routes require admin', async () => {
   assertEquals((await requestApp('/api/user-directory', { headers: { 'x-api-key': apiKey.key } })).status, 403);
 });
 
-test('user directory projects both membership directions from one repository snapshot', async () => {
+test('user directory sends entities and membership records once in one repository snapshot', async () => {
   const { adminSession, repo } = await setupAppTest();
   const group = await repo.groups.create('Operators', 120);
   await repo.groups.replaceMembers(group.id, [2]);
@@ -23,10 +23,11 @@ test('user directory projects both membership directions from one repository sna
   repo.groups.list = () => { throw new Error('directory must not assemble separate repository reads'); };
   const response = await request('/user-directory', adminSession);
   expect(response.status).toBe(200);
-  const body = await response.json() as { users: Array<{ id: number; groupIds: number[]; passwordHash?: string }>; groups: Array<{ id: number; memberIds: number[] }> };
-  expect(body.groups).toEqual([{ ...group, memberIds: [2] }]);
-  expect(body.users.find(user => user.id === 2)?.groupIds).toEqual([group.id]);
-  expect(body.users.find(user => user.id === 1)?.groupIds).toEqual([]);
+  const body = await response.json() as { users: Array<{ id: number; passwordHash?: string }>; groups: Array<{ id: number }>; memberships: Array<{ groupId: number; userId: number; createdAt: string }> };
+  expect(body.groups).toEqual([group]);
+  expect(body.memberships).toEqual([{ groupId: group.id, userId: 2, createdAt: expect.any(String) }]);
+  expect(body.users.every(user => !Object.hasOwn(user, 'groupIds'))).toBe(true);
+  expect(body.groups.every(group => !Object.hasOwn(group, 'memberIds'))).toBe(true);
   expect(body.users.every(user => !Object.hasOwn(user, 'passwordHash'))).toBe(true);
 });
 

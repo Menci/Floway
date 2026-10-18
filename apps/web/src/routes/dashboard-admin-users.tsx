@@ -1,5 +1,5 @@
 import { AddRegular, SearchRegular } from '@fluentui/react-icons';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import type { ShouldRevalidateFunctionArgs } from 'react-router';
 
@@ -23,6 +23,7 @@ import { ResourceListActions, ResourceListPanel } from '../components/ui/resourc
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { useRefresh } from '../components/ui/use-refresh';
 import { UserDialog } from '../components/users/dialog';
+import { indexUserDirectory, type DirectoryGroupOption } from '../components/users/directory';
 import { PasswordDialog } from '../components/users/password-dialog';
 import { UsersTable } from '../components/users/table';
 import { fluentComponents } from '../fluent';
@@ -92,7 +93,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
     params.set('group', String(id));
     return params;
   });
-  const editorDialog = useDialogInvocation<({ kind: 'create' } | { kind: 'edit'; user: ControlPlaneUser }) & { groups: ControlPlaneGroup[] }>();
+  const editorDialog = useDialogInvocation<({ kind: 'create' } | { kind: 'edit'; user: ControlPlaneUser; groupIds: readonly number[] }) & { groups: readonly DirectoryGroupOption[] }>();
   const passwordDialog = useDialogInvocation<ControlPlaneUser>();
   const deleteDialog = useDialogInvocation<ControlPlaneUser>();
   const groupDialog = useDialogInvocation<{ group?: ControlPlaneGroup }>();
@@ -162,6 +163,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   };
 
   const { directory, models, upstreams } = data;
+  const directoryIndex = useMemo(() => directory === null ? null : indexUserDirectory(directory), [directory]);
   const users = directory?.users ?? null;
   const groups = directory?.groups ?? null;
   const loaded = users !== null && groups !== null && upstreams !== null && models !== null;
@@ -223,7 +225,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
             className="flex-none whitespace-nowrap"
             disabled={!loaded || busy}
             icon={<AddRegular />}
-            onClick={() => tab === 'users' ? editorDialog.open({ kind: 'create', groups: groups! }) : groupDialog.open({})}
+            onClick={() => tab === 'users' ? editorDialog.open({ kind: 'create', groups: directoryIndex!.groupOptions }) : groupDialog.open({})}
           >{t(tab === 'users' ? 'dashboard.users.actions.create' : 'dashboard.groupsManagement.actions.create')}</Button>
         </div>
       </div>
@@ -239,14 +241,14 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           actorId={actor.id}
           disabled={busy}
           onDelete={openDeleteDialog}
-          onEdit={user => editorDialog.open({ kind: 'edit', user, groups })}
+          onEdit={user => editorDialog.open({ kind: 'edit', user, groupIds: directoryIndex!.groupsByUser.get(user.id)!.map(group => group.id), groups: directoryIndex!.groupOptions })}
           onResetPassword={passwordDialog.open}
           users={visibleUsers!}
-          groups={groups}
+          groupsByUser={directoryIndex!.groupsByUser}
         /></ResourceListPanel> : needle && visibleGroups!.length === 0 ? <Panel><EmptyStateLine>{t('dashboard.groupsManagement.noMatches')}</EmptyStateLine></Panel> : <GroupsMasterDetail
           disabled={busy}
           groups={visibleGroups!}
-          memberships={directory!.memberships}
+          membersByGroup={directoryIndex!.membersByGroup}
           users={users}
           selectedId={activeGroupId ?? null}
           onSelect={setSelectedGroupId}
@@ -272,6 +274,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           actorId={actor.id}
           key={editorDialog.invocation.key}
           mode="edit"
+          groupIds={editorDialog.invocation.value.groupIds}
           groups={editorDialog.invocation.value.groups}
           models={models}
           onOpenChange={open => { if (!open) editorDialog.close(); }}

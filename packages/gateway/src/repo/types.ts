@@ -302,7 +302,7 @@ export interface GroupMembership {
 
 export interface UserDirectory {
   users: User[];
-  groups: GroupWithMembers[];
+  groups: Group[];
   memberships: GroupMembership[];
 }
 

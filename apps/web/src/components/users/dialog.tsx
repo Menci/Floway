@@ -4,8 +4,9 @@ import { useCallback, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
+import type { DirectoryGroupOption } from './directory';
 import { api, callApi } from '../../api/client';
-import type { ControlPlaneGroup, ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../../api/types';
+import type { ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { UserGroupsField } from '../groups/field';
@@ -38,7 +39,7 @@ interface UserFormValues {
 interface UserDialogCommonProps {
   actorId: number;
   models: ControlPlaneModel[];
-  groups: ControlPlaneGroup[];
+  groups: readonly DirectoryGroupOption[];
   onOpenChange: (open: boolean) => void;
   open: boolean;
   onSaved: (userId?: number) => Promise<void>;
@@ -47,7 +48,7 @@ interface UserDialogCommonProps {
 
 type UserDialogProps = UserDialogCommonProps & (
   | { mode: 'create'; user?: never }
-  | { mode: 'edit'; user: ControlPlaneUser }
+  | { mode: 'edit'; user: ControlPlaneUser; groupIds: readonly number[] }
 );
 
 export function UserDialog(props: UserDialogProps) {
@@ -75,7 +76,7 @@ export function UserDialog(props: UserDialogProps) {
   const { control, handleSubmit, setValue, formState: { errors } } =
     useForm<UserFormValues>({
       resolver: zodResolver(schema),
-      defaultValues: userFormDefaults(user),
+      defaultValues: userFormDefaults(user, props.mode === 'edit' ? props.groupIds : []),
     });
   const values = useWatch({ control }) as UserFormValues;
   const adminLocked = props.mode === 'edit' && (props.user.id === 1 || props.user.id === actorId);
@@ -202,13 +203,13 @@ export function UserDialog(props: UserDialogProps) {
   );
 }
 
-const userFormDefaults = (user: ControlPlaneUser | null): UserFormValues => {
+const userFormDefaults = (user: ControlPlaneUser | null, groupIds: readonly number[]): UserFormValues => {
   return {
     username: user?.username ?? '',
     password: '',
     isAdmin: user?.isAdmin ?? false,
     upstreamOverride: user?.upstreamIds !== null && user?.upstreamIds !== undefined,
     upstreamIds: user?.upstreamIds ?? [],
-    groupIds: user?.groupIds.map(String) ?? [],
+    groupIds: groupIds.map(String),
   };
 };

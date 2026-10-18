@@ -24,9 +24,9 @@ export type ProxyRecord = SerializedProxyRecord;
 export type BackoffRow = SerializedBackoffRow;
 
 export type ApiKey = InferResponseType<typeof api.api.keys.$get, 200>[number];
-export type ControlPlaneUser = InferResponseType<typeof api.api.users.$get, 200>[number];
-export type ControlPlaneGroup = InferResponseType<typeof api.api.groups.$get, 200>[number];
 export type ControlPlaneUserDirectory = InferResponseType<(typeof api.api)['user-directory']['$get'], 200>;
+export type ControlPlaneUser = ControlPlaneUserDirectory['users'][number];
+export type ControlPlaneGroup = ControlPlaneUserDirectory['groups'][number];
 export type UpstreamOption = InferResponseType<typeof api.api['upstream-options']['$get'], 200>[number];
 
 export type ControlPlaneModel = InferResponseType<typeof api.api.models.$get, 200>['data'][number];

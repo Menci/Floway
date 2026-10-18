@@ -140,7 +140,7 @@ describe.each(backends)('GroupsRepo (%s)', (_label, makeRepo) => {
     await repo.groups.replaceMembers(1, [1, 2, 999]);
     await repo.groups.replaceMembers(2, [1]);
     expect(await repo.readUserDirectory()).toEqual({
-      users: [admin], groups: [{ ...sampleGroup(), memberIds: [1] }],
+      users: [admin], groups: [sampleGroup()],
       memberships: [{ groupId: 1, userId: 1, createdAt: expect.any(String) }],
     });
   });
@@ -224,7 +224,7 @@ test('SQL directory reads users and membership in one statement before a concurr
   const directory = await reader.readUserDirectory();
   expect(completed).toHaveLength(1);
   expect(directory.users.map(user => user.id)).toEqual([1]);
-  expect(directory.groups).toEqual([{ ...sampleGroup(), memberIds: [1] }]);
+  expect(directory.groups).toEqual([sampleGroup()]);
   expect(directory.memberships).toEqual([{ groupId: 1, userId: 1, createdAt: expect.any(String) }]);
   expect((await writer.readUserDirectory()).groups).toEqual([]);
   expect((await writer.readUserDirectory()).memberships).toEqual([]);

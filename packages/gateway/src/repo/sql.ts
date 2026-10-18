@@ -1902,11 +1902,7 @@ export class SqlRepo implements Repo {
       ) AS record FROM users WHERE deleted_at IS NULL
       UNION ALL
       SELECT 'group' AS kind, id, json_object(
-        'id', id, 'name', name, 'hue', hue, 'created_at', created_at, 'deleted_at', deleted_at,
-        'memberIds', (SELECT json_group_array(user_id) FROM (
-          SELECT group_members.user_id FROM group_members JOIN users ON users.id = group_members.user_id
-          WHERE group_members.group_id = groups.id AND users.deleted_at IS NULL ORDER BY group_members.user_id
-        ))
+        'id', id, 'name', name, 'hue', hue, 'created_at', created_at, 'deleted_at', deleted_at
       ) AS record FROM groups WHERE deleted_at IS NULL
       UNION ALL
       SELECT 'memberships' AS kind, 0 AS id, json_group_array(json_object(
@@ -1922,13 +1918,12 @@ export class SqlRepo implements Repo {
       ORDER BY kind, id
     `).all<{ kind: 'user' | 'group' | 'memberships'; record: string }>();
     const users: User[] = [];
-    const groups: GroupWithMembers[] = [];
+    const groups: Group[] = [];
     const memberships: GroupMembership[] = [];
     for (const row of results) {
       if (row.kind === 'user') users.push(toUser(JSON.parse(row.record) as UserRow));
       else if (row.kind === 'group') {
-        const group = JSON.parse(row.record) as GroupRow & { memberIds: number[] };
-        groups.push({ ...toGroup(group), memberIds: group.memberIds });
+        groups.push(toGroup(JSON.parse(row.record) as GroupRow));
       } else memberships.push(...JSON.parse(row.record) as GroupMembership[]);
     }
     return { users, groups, memberships };

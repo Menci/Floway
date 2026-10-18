@@ -11,8 +11,12 @@ export const userToSessionWire = (user: User, knownUpstreamIds: ReadonlySet<stri
   upstreamIds: pruneUnreachableUpstreamIds(user.upstreamIds, knownUpstreamIds),
 });
 
-export const userToAdminWire = (user: User, knownUpstreamIds: ReadonlySet<string>, groupIds: readonly number[]) => ({
+export const userToDirectoryWire = (user: User, knownUpstreamIds: ReadonlySet<string>) => ({
   ...userToSessionWire(user, knownUpstreamIds),
-  groupIds,
   createdAt: user.createdAt,
+});
+
+export const userToAdminWire = (user: User, knownUpstreamIds: ReadonlySet<string>, groupIds: readonly number[]) => ({
+  ...userToDirectoryWire(user, knownUpstreamIds),
+  groupIds,
 });

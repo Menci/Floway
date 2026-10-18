@@ -8,7 +8,7 @@ import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 
 const user: ControlPlaneUser = {
-  id: 2, username: 'restricted', isAdmin: false, upstreamIds: [], groupIds: [],
+  id: 2, username: 'restricted', isAdmin: false, upstreamIds: [],
   createdAt: '2026-01-01T00:00:00.000Z',
 };
 
@@ -20,7 +20,7 @@ describe('user upstream limits', () => {
     vi.stubGlobal('fetch', fetch);
     const onSaved = vi.fn(async () => {});
     renderInApp(<OutcomeToastProvider><UserDialog
-      {...(mode === 'create' ? { mode } : { mode, user })}
+      {...(mode === 'create' ? { mode } : { mode, user, groupIds: [] })}
       actorId={1} groups={[]} models={[]} onOpenChange={vi.fn()} onSaved={onSaved} open upstreams={[]}
     /></OutcomeToastProvider>);
     const toggle = screen.getByRole('switch', { name: i18n.t('dashboard.upstreamAccess.title') });

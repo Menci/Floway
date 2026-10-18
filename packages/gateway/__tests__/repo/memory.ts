@@ -161,10 +161,8 @@ class MemoryGroupsRepo implements GroupsRepo {
   private groups: Group[] = [];
   private members = new Map<number, Map<number, string>>();
 
-  snapshot(): GroupWithMembers[] {
-    return this.groups.filter(group => group.deletedAt === null).map(group => ({
-      ...group, memberIds: [...(this.members.get(group.id)?.keys() ?? [])].toSorted((a, b) => a - b),
-    }));
+  snapshot(): Group[] {
+    return this.groups.filter(group => group.deletedAt === null).map(group => ({ ...group }));
   }
 
   snapshotMemberships(): GroupMembership[] {
@@ -175,7 +173,7 @@ class MemoryGroupsRepo implements GroupsRepo {
   }
 
   list(): Promise<Group[]> {
-    return Promise.resolve(this.groups.filter(group => group.deletedAt === null).map(group => ({ ...group })));
+    return Promise.resolve(this.snapshot());
   }
 
   listIncludingDeleted(): Promise<Group[]> {
@@ -1685,7 +1683,7 @@ export class InMemoryRepo implements Repo {
   readUserDirectory(): Promise<UserDirectory> {
     const users = this.users.snapshot();
     const userIds = new Set(users.map(user => user.id));
-    const groups = this.groups.snapshot().map(group => ({ ...group, memberIds: group.memberIds.filter(id => userIds.has(id)) }));
+    const groups = this.groups.snapshot();
     const memberships = this.groups.snapshotMemberships().filter(member => userIds.has(member.userId));
     return Promise.resolve({ users, groups, memberships });
   }

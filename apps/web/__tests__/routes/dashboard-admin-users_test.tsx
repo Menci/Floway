@@ -9,10 +9,10 @@ import DashboardAdminUsers, { shouldRevalidate } from '../../src/routes/dashboar
 import { renderInApp } from '../render';
 
 const groups: ControlPlaneGroup[] = [
-  { id: 1, name: 'Platform', hue: 210, memberIds: [1], createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
-  { id: 2, name: 'Research', hue: 150, memberIds: [1], createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
+  { id: 1, name: 'Platform', hue: 210, createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
+  { id: 2, name: 'Research', hue: 150, createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
 ];
-const user: ControlPlaneUser = { id: 1, username: 'frank', isAdmin: true, upstreamIds: null, groupIds: [1, 2], createdAt: '2026-10-01T00:00:00Z' };
+const user: ControlPlaneUser = { id: 1, username: 'frank', isAdmin: true, upstreamIds: null, createdAt: '2026-10-01T00:00:00Z' };
 const memberships = [
   { groupId: 1, userId: 1, createdAt: '2026-10-10T09:30:00Z' },
   { groupId: 2, userId: 1, createdAt: '2026-10-12T10:00:00Z' },
@@ -21,9 +21,9 @@ const loaderData = { directory: { users: [user], groups, memberships }, models: 
 
 afterEach(() => vi.restoreAllMocks());
 
-const renderPage = (entry = '/dashboard/admin/users', data = loaderData) => {
+const renderPage = (entry = '/dashboard/admin/users', data = loaderData, availableWidth = 1000) => {
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-    return new DOMRect(0, 0, this.hasAttribute('data-measure-group') ? 100 : this.hasAttribute('data-measure-overflow') ? 24 : 1000, 24);
+    return new DOMRect(0, 0, this.hasAttribute('data-measure-group') ? 100 : this.hasAttribute('data-measure-overflow') ? 24 : availableWidth, 24);
   });
   const readStyle = window.getComputedStyle.bind(window);
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
@@ -86,7 +86,7 @@ test('retains the selected group when switching tabs', async () => {
 });
 
 test('clears the unavailable group address when no groups remain', async () => {
-  const { router } = renderPage('/dashboard/admin/users?tab=groups&group=2', { ...loaderData, directory: { users: [{ ...user, groupIds: [] }], groups: [], memberships: [] } });
+  const { router } = renderPage('/dashboard/admin/users?tab=groups&group=2', { ...loaderData, directory: { users: [user], groups: [], memberships: [] } });
   await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('group')).toBeNull());
   expect(screen.getByText('No groups found')).toBeTruthy();
 });
@@ -100,10 +100,8 @@ test('does not repeat an untruncated username on hover', async () => {
 });
 
 test('opens hidden group links from the overflow control', async () => {
-  const { router } = renderPage();
+  const { router } = renderPage('/dashboard/admin/users', loaderData, 80);
   await screen.findByRole('button', { name: 'frank' });
-  vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 20, 24));
-  fireEvent.change(screen.getByRole('textbox', { name: 'Search users' }), { target: { value: 'frank' } });
   const overflow = await screen.findByRole('button', { name: 'Show 2 more groups' });
   expect(overflow.querySelector('.floway-group-avatar[data-overflow-count="2"]')?.textContent).toBe('+2');
   expect(overflow.querySelector('.fui-Avatar')?.getAttribute('data-winui-avatar-color')).toBe('neutral');
@@ -176,7 +174,7 @@ test('changing groups discards an open member removal confirmation', async () =>
 
 test('refreshes both membership directions from the same directory response', async () => {
   const group = { ...groups[0], id: 3, name: 'New group' };
-  const updated = { users: [{ ...user, groupIds: [3] }], groups: [group], memberships: [{ ...memberships[0], groupId: 3 }] };
+  const updated = { users: [user], groups: [group], memberships: [{ ...memberships[0], groupId: 3 }] };
   vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
     const path = new URL(String(input), 'http://localhost').pathname;
     if (path === '/api/user-directory') return Response.json(updated);
@@ -197,7 +195,7 @@ test('refreshes both membership directions from the same directory response', as
 test('keeps an open user editor paired with the group metadata it was opened with', async () => {
   vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
     const path = new URL(String(input), 'http://localhost').pathname;
-    if (path === '/api/user-directory') return Response.json({ users: [{ ...user, groupIds: [] }], groups: [], memberships: [] });
+    if (path === '/api/user-directory') return Response.json({ users: [user], groups: [], memberships: [] });
     if (path === '/api/upstream-options') return Response.json([]);
     if (path === '/api/models') return Response.json({ data: [] });
     throw new Error(`Unexpected request: ${path}`);
@@ -235,7 +233,7 @@ test('shows membership dates and group creation metadata without a separator gly
 });
 
 test('keeps creation metadata in empty group details', async () => {
-  const empty = { ...groups[0]!, id: 3, name: 'Archive', memberIds: [] };
+  const empty = { ...groups[0]!, id: 3, name: 'Archive' };
   renderPage('/dashboard/admin/users?tab=groups&group=3', { ...loaderData, directory: { ...loaderData.directory, groups: [...groups, empty] } });
   await screen.findByRole('option', { name: 'Archive' });
   expect(screen.getByText('0 members')).toBeTruthy();

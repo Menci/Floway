@@ -2,14 +2,14 @@ import { act, fireEvent, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { expect, test } from 'vitest';
 
-import type { ControlPlaneGroup } from '../../../src/api/types';
 import { UserGroupsField } from '../../../src/components/groups/field';
+import type { DirectoryGroupOption } from '../../../src/components/users/directory';
 import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 
-const groups: ControlPlaneGroup[] = [
-  { id: 1, name: 'Platform', hue: 250, createdAt: '', deletedAt: null, memberIds: [] },
-  { id: 2, name: 'Research', hue: 150, createdAt: '', deletedAt: null, memberIds: [] },
+const groups: DirectoryGroupOption[] = [
+  { id: 1, name: 'Platform', hue: 250, memberCount: 0 },
+  { id: 2, name: 'Research', hue: 150, memberCount: 0 },
 ];
 
 function Form() {

@@ -1,15 +1,15 @@
 import { GroupIdentity } from './identity';
-import type { ControlPlaneGroup } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { FieldClearIcon } from '../ui/field-clear-icon';
 import { TagCombobox } from '../ui/tag-combobox';
+import type { DirectoryGroupOption } from '../users/directory';
 
 const { Field, Tag, Text } = fluentComponents;
 
 export function UserGroupsField({ disabled, groups, onChange, value }: {
   disabled: boolean;
-  groups: ControlPlaneGroup[];
+  groups: readonly DirectoryGroupOption[];
   onChange: (ids: string[]) => void;
   value: string[];
 }) {
@@ -27,7 +27,7 @@ export function UserGroupsField({ disabled, groups, onChange, value }: {
       const group = byId.get(option.value)!;
       return <span className="flex flex-1 items-center justify-between gap-3 min-w-0">
         <GroupIdentity group={group} />
-        <Text className="text-fui-fg2 flex-none" size={200}>{t('dashboard.groupsManagement.members.count', { count: group.memberIds.length })}</Text>
+        <Text className="text-fui-fg2 flex-none" size={200}>{t('dashboard.groupsManagement.members.count', { count: group.memberCount })}</Text>
       </span>;
     }}
     renderTag={option => <Tag
