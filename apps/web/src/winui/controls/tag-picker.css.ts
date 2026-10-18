@@ -7,16 +7,36 @@ export const tagPickerCss = `
    https://github.com/CommunityToolkit/Windows/blob/6d537b47e243a8193e36258a5319d4ec7ea3197c/components/TokenizingTextBox/src/TokenizingTextBox.xaml#L117-L148
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources.xaml#L10-L12 */
 .fui-TagPickerControl.fui-TagPickerControl {
+  --floway-token-presenter-inset-inline: 3px;
   border-radius: var(--winui-control-corner-radius);
+  gap: var(--spacingHorizontalXS);
   min-width: 0;
   padding-block: 2px;
-  padding-inline: 3px calc(3px + var(--fui-TagPickerControl-aside-width, 0px));
+  padding-inline: var(--floway-token-presenter-inset-inline) calc(var(--spacingHorizontalM) + var(--fui-TagPickerControl-aside-width, 0px));
 }
 
-/* The control already owns the TokenizingTextBox presenter padding above. */
-.fui-TagPickerGroup.fui-TagPickerGroup,
+/* Keep Fluent's listbox and navigation DOM while tokens and the final editor
+   share one wrapping flow, as TokenizingTextBox's StretchChild=Last panel does.
+   https://github.com/CommunityToolkit/Windows/blob/6d537b47e243a8193e36258a5319d4ec7ea3197c/components/TokenizingTextBox/src/TokenizingTextBox.xaml
+   https://www.w3.org/TR/css-display-3/#valdef-display-contents */
+.fui-TagPickerGroup.fui-TagPickerGroup {
+  display: contents;
+}
+
+/* The editor's 28px line plus presenter padding and border matches the shared
+   34px field. Split the normal Input text inset between presenter and editor.
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-input/library/src/components/Input/useInputStyles.styles.ts */
 .fui-TagPickerInput.fui-TagPickerInput {
+  min-height: 28px;
   padding-block: 0;
+  padding-inline: calc(var(--spacingHorizontalM) - var(--floway-token-presenter-inset-inline)) 0;
+}
+
+/* Empty controlled queries use remaining row space even when a previous query
+   requested a full-width input. Nonempty queries retain Fluent's sizing.
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-tag-picker/library/src/components/TagPickerInput/useTagPickerInput.tsx */
+.fui-TagPickerInput[data-query-empty='true'] {
+  flex-basis: 0;
 }
 
 .fui-TagPickerInput.fui-TagPickerInput::placeholder {
