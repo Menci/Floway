@@ -27,9 +27,10 @@ const {
   MessageBar, MessageBarBody, Spinner, Text, Tooltip,
 } = fluentComponents;
 
-export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
+export function ClaudeCodeAccountCard({ onRefreshQuota, probing, readOnly = false, record }: {
   onRefreshQuota: () => void;
   probing: boolean;
+  readOnly?: boolean;
   record: ClaudeCodeRecord;
 }) {
   const { t } = useTranslation();
@@ -87,9 +88,9 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
       <Text size={200} className="text-fui-fg2">
         {windows.length ? t('dashboard.upstreamEditor.claudeCode.windows') : t('dashboard.upstreamEditor.claudeCode.noSnapshot')}
       </Text>
-      <Button appearance="subtle" disabledFocusable={probing} icon={probing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefreshQuota} size="small">
+      {!readOnly && <Button appearance="subtle" disabledFocusable={probing} icon={probing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefreshQuota} size="small">
         {t('dashboard.upstreamEditor.claudeCode.refreshQuota')}
-      </Button>
+      </Button>}
     </div>
 
     {windows.length > 0 && <div className="grid gap-3">

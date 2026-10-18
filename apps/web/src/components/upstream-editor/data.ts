@@ -308,7 +308,6 @@ export const updateBody = (record: UpstreamRecord, values: UpstreamEditorValues,
       : undefined;
     return {
       disabled_public_model_ids: values.disabledPublicModelIds,
-      model_prefix: values.modelPrefix,
       ...(config === undefined ? {} : { config }),
     } as UpdateUpstreamBody;
   }

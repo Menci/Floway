@@ -666,8 +666,8 @@ function UpstreamSegment({
             disabled={busy || !canFullEdit} onChange={(_, detail) => onToggle(record, detail.checked)} />
         </TableCentredCell>
         <TableCell>
-          <TableActions leading={canAudit ? <TooltipIconButton aria-controls={`upstream-telemetry-${encodeURIComponent(record.id)}`} aria-expanded={expandedId === record.id}
-            disabled={reorderBusy} icon={<DataTrendingRegular />} label={t('dashboard.upstreams.actions.metricsNamed', { name: record.name })} onClick={() => onTelemetry(record)} /> : undefined}>
+          <TableActions leading={<TooltipIconButton aria-controls={canAudit ? `upstream-telemetry-${encodeURIComponent(record.id)}` : undefined} aria-expanded={canAudit ? expandedId === record.id : undefined}
+            disabled={reorderBusy || !canAudit} icon={<DataTrendingRegular />} label={t('dashboard.upstreams.actions.metricsNamed', { name: record.name })} onClick={() => onTelemetry(record)} />}>
             {canEdit
               ? <TooltipIconButton disabled={busy} icon={<EditRegular />} label={t('dashboard.upstreams.actions.editNamed', { name: record.name })} to={upstreamEditorPath(record)} />
               : <TooltipIconButton disabled icon={<EditRegular />} label={t('dashboard.upstreams.actions.editNamed', { name: record.name })} onClick={() => {}} />}

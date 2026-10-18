@@ -148,61 +148,6 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
   }
 };
 
-export const upstreamRecordToModelsJson = (upstream: UpstreamRecord): RedactedSerializedUpstreamRecord => {
-  switch (upstream.kind) {
-  case 'custom': {
-    const redacted = upstreamRecordToJson(upstream) as Extract<RedactedSerializedUpstreamRecord, { kind: 'custom' }>;
-    return {
-      ...redacted,
-      proxy_fallback_list: [],
-      config: {
-        ...redacted.config,
-        baseUrl: '',
-        pathOverrides: {},
-        ingressHeadersRules: [],
-        modelsFetch: { enabled: redacted.config.modelsFetch.enabled },
-      },
-      state: null,
-    };
-  }
-  case 'azure': {
-    const redacted = upstreamRecordToJson(upstream) as Extract<RedactedSerializedUpstreamRecord, { kind: 'azure' }>;
-    return { ...redacted, proxy_fallback_list: [], config: { ...redacted.config, endpoint: '' }, state: null };
-  }
-  case 'ollama': {
-    const redacted = upstreamRecordToJson(upstream) as Extract<RedactedSerializedUpstreamRecord, { kind: 'ollama' }>;
-    return { ...redacted, proxy_fallback_list: [], config: { ...redacted.config, baseUrl: '' }, state: null };
-  }
-  case 'copilot': {
-    const redacted = upstreamRecordToJson(upstream) as Extract<RedactedSerializedUpstreamRecord, { kind: 'copilot' }>;
-    return {
-      ...redacted,
-      proxy_fallback_list: [],
-      config: { githubHost: '', user: { login: '', avatar_url: '', name: null, id: 0 }, githubTokenSet: false },
-      state: null,
-    };
-  }
-  case 'codex': {
-    const redacted = upstreamRecordToJson(upstream) as Extract<RedactedSerializedUpstreamRecord, { kind: 'codex' }>;
-    return {
-      ...redacted,
-      proxy_fallback_list: [],
-      config: { accounts: [{ email: null, chatgptAccountId: null, chatgptUserId: null, planType: null }] },
-      state: { accounts: [] },
-    };
-  }
-  case 'claude-code': {
-    const redacted = upstreamRecordToJson(upstream) as Extract<RedactedSerializedUpstreamRecord, { kind: 'claude-code' }>;
-    return {
-      ...redacted,
-      proxy_fallback_list: [],
-      config: { accounts: [{ email: null, accountUuid: '', organizationUuid: null, subscriptionType: null, rateLimitTier: null }] },
-      state: { accounts: [] },
-    };
-  }
-  }
-};
-
 export const upstreamRecordToFullJson = (upstream: UpstreamRecord): FullSerializedUpstreamRecord => {
   const base = serializeBase(upstream);
   switch (upstream.kind) {

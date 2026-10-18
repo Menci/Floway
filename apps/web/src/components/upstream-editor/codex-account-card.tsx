@@ -16,7 +16,7 @@ import { WALL_CLOCK_REFRESH_MS } from '../upstreams/subscription-quota';
 
 const { Badge, Text } = fluentComponents;
 
-export function CodexAccountCard({ record }: { record: CodexRecord }) {
+export function CodexAccountCard({ readOnly = false, record }: { readOnly?: boolean; record: CodexRecord }) {
   const { t } = useTranslation();
   const now = useNow(WALL_CLOCK_REFRESH_MS);
   const locale = useLocale();
@@ -109,7 +109,7 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
       {t('dashboard.upstreamEditor.codex.stateUpdated', { time: dateTime(credential.state_updated_at, locale) })}
     </Text>}
 
-    {record.id !== '' && <CodexResetCards
+    {!readOnly && record.id !== '' && <CodexResetCards
       key={`${record.id}:${account.chatgptAccountId}`}
       record={record}
       onQuotaReset={() => setReset({ accountId: account.chatgptAccountId, at: Date.now() })}

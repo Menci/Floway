@@ -16,7 +16,7 @@ import { quotaBarColor } from '../upstreams/subscription-quota';
 
 const { ProgressBar, Text } = fluentComponents;
 
-export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
+export function CopilotQuotaCard({ readOnly = false, record }: { readOnly?: boolean; record: CopilotRecord }) {
   const { t } = useTranslation();
   const locale = useLocale();
   // A manual refresh is persisted server-side too; the local copy only avoids
@@ -49,7 +49,7 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
   const resets = quota?.reset_at == null ? null : shortDate(quota.reset_at, locale);
 
   return <section className={SECTION_STACK_CLASS}>
-    <SectionHeader level={3} title={t('dashboard.upstreamEditor.copilot.quota.title')} actions={
+    <SectionHeader level={3} title={t('dashboard.upstreamEditor.copilot.quota.title')} actions={!readOnly &&
       <ResourceListActions
         appearance="subtle"
         onRefresh={() => void load()}

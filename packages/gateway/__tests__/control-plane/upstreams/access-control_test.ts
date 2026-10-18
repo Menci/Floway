@@ -89,7 +89,7 @@ test('Upstream.Audit exposes a redacted record in the listing, detail, and metri
   assertEquals((await metrics.json()).records.length, 1);
 });
 
-test('Upstream.Audit takes serializer precedence over a models-only edit grant', async () => {
+test('Upstream.Audit and Upstream.Edit.Models share the complete redacted serializer', async () => {
   const { repo, apiKey } = await setupAppTest();
   await saveUpstreamForTest(repo.upstreams, customRecord());
   await repo.accessRecords.save({
@@ -110,6 +110,7 @@ test('Upstream.Audit takes serializer precedence over a models-only edit grant',
 
 test('Upstream.Edit.Models returns a redacted record and only accepts model fields', async () => {
   const { repo, apiKey } = await setupAppTest();
+  await repo.proxies.save({ id: 'proxy_a', name: 'Proxy A', url: 'http://127.0.0.1:8080', dialTimeoutSeconds: null });
   await saveUpstreamForTest(repo.upstreams, customRecord());
   await grant(repo, apiKey.userId, 'models');
 
@@ -117,19 +118,21 @@ test('Upstream.Edit.Models returns a redacted record and only accepts model fiel
   assertEquals(detail.status, 200);
   const body = await detail.json();
   assertEquals(body.editLevel, 'models');
-  assertEquals(body.config.baseUrl, '');
+  assertEquals(body.audit, false);
+  assertEquals(body.config.baseUrl, 'https://secret.example.com');
   assertEquals(body.config.apiKey, undefined);
-  assertEquals(body.config.modelsFetch, { enabled: true });
-  assertEquals(body.config.pathOverrides, {});
-  assertEquals(body.config.ingressHeadersRules, []);
-  assertEquals(body.proxy_fallback_list, []);
+  assertEquals(body.config.apiKeySet, true);
+  assertEquals(body.config.modelsFetch, { enabled: true, endpoint: '/private/models' });
+  assertEquals(body.config.pathOverrides, { '/chat/completions': '/private/chat' });
+  assertEquals(body.config.ingressHeadersRules, [{ key: 'x-secret', value: 'value' }]);
+  assertEquals(body.proxy_fallback_list, [{ id: 'proxy_a' }]);
+  assertEquals((await requestApp('/api/upstream-metrics?upstream_id=up_restricted&start=0&end=60000&step=60000', { headers: { 'x-api-key': apiKey.key } })).status, 404);
 
   const allowed = await requestApp('/api/upstreams/up_restricted', {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
     body: JSON.stringify({
       disabled_public_model_ids: ['old-model'],
-      model_prefix: { prefix: 'team/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] },
       config: { models: [], modelsFetch: { enabled: false } },
     }),
   });
@@ -137,7 +140,7 @@ test('Upstream.Edit.Models returns a redacted record and only accepts model fiel
   const stored = await repo.upstreams.getById('up_restricted');
   expect(stored).toMatchObject({
     disabledPublicModelIds: ['old-model'],
-    modelPrefix: { prefix: 'team/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] },
+    modelPrefix: null,
     config: {
       baseUrl: 'https://secret.example.com',
       apiKey: 'sk-secret',
@@ -156,8 +159,14 @@ test('Upstream.Edit.Models returns a redacted record and only accepts model fiel
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
     body: JSON.stringify({ config: { modelsFetch: { enabled: true, endpoint: '/stolen' } } }),
   });
+  const blockedPrefix = await requestApp('/api/upstreams/up_restricted', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: JSON.stringify({ model_prefix: { prefix: 'team/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] } }),
+  });
   assertEquals(blockedName.status, 403);
   assertEquals(blockedEndpoint.status, 403);
+  assertEquals(blockedPrefix.status, 403);
   assertEquals((await requestApp('/api/proxy-options?upstream_id=up_restricted', { headers: { 'x-api-key': apiKey.key } })).status, 404);
 });
 

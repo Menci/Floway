@@ -65,3 +65,10 @@ test('background usage refresh remains explicit through editor create, preview a
     expect(hasUnsavedDiscoveryInputs({ usageRefreshIntervalMinutes: 5 })).toBe(false);
   }
 });
+
+test('model prefix is emitted only by Full updates', () => {
+  const values = valuesFromRecord(record);
+  values.modelPrefix = { prefix: 'team/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] };
+  expect(updateBody(record, values, 'full').model_prefix).toEqual(values.modelPrefix);
+  expect(updateBody(record, values, 'models')).not.toHaveProperty('model_prefix');
+});

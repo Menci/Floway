@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 
 import { cachedModelsForDashboard, modelsCacheStatus } from './models-cache-projection.ts';
-import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson, upstreamRecordToModelsJson } from './serialize.ts';
+import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson } from './serialize.ts';
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
 import type { FullSerializedUpstreamRecord, ModelsCacheStatus, RedactedSerializedUpstreamRecord } from './types.ts';
 import { checkMany } from '../../access-control/check.ts';
@@ -85,7 +85,7 @@ const serializeForResponse = async (
 };
 
 const serializerForAccess = (access: UpstreamAccess): (record: UpstreamRecord) => SerializedUpstreamRecord =>
-  access.edit === 'full' ? upstreamRecordToFullJson : access.audit ? upstreamRecordToJson : upstreamRecordToModelsJson;
+  access.edit === 'full' ? upstreamRecordToFullJson : upstreamRecordToJson;
 
 const serializeForAccess = async (
   record: StoredUpstreamRecord,
@@ -181,7 +181,7 @@ export const listUpstreams = async (c: AuthedContext) => {
   return c.json(await Promise.all(items.flatMap(record => {
     const access = accesses.get(record.id)!;
     if (!access.audit && access.edit === 'off') return [];
-    return [serializeForResponse(record, knownProxyIds, access.edit === 'models' && !access.audit ? upstreamRecordToModelsJson : upstreamRecordToJson)
+    return [serializeForResponse(record, knownProxyIds, upstreamRecordToJson)
       .then(serialized => ({ ...serialized, editLevel: access.edit, audit: access.audit }))];
   })));
 };
@@ -255,9 +255,9 @@ export const getUpstreamBlueprint = (c: Context) => {
   });
 };
 
-// Full editors receive credentials for provider actions; models-only editors
-// receive the model projection. The stored catalog is attached without triggering
-// model discovery.
+// Full editors receive credentials for provider actions. Audit and models-only
+// access receive the same complete redacted configuration. The stored catalog is
+// attached without triggering model discovery.
 export const getUpstream = async (c: AuthedContext<'/:id'>) => {
   const id = c.req.param('id');
   const subject = userFromContext(c);
@@ -349,7 +349,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
 
   const body = c.req.valid('json');
   if (editLevel === 'models') {
-    const allowedTopLevel = new Set(['disabled_public_model_ids', 'model_prefix', 'config']);
+    const allowedTopLevel = new Set(['disabled_public_model_ids', 'config']);
     const blockedTopLevel = Object.keys(body).filter(key => !allowedTopLevel.has(key));
     if (blockedTopLevel.length > 0) {
       return c.json({ error: `Upstream.Edit.Models cannot change: ${blockedTopLevel.join(', ')}` }, 403);

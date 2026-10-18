@@ -213,7 +213,7 @@ it('shows a models row with models editing but a disabled switch and drag handle
   expect(await screen.findByRole('link', { name: 'First' })).toBeTruthy();
   expect(screen.getByRole('switch', { name: 'Toggle upstream First' }).hasAttribute('disabled')).toBe(true);
   expect(screen.getByRole('button', { name: 'Reorder upstream First' }).hasAttribute('disabled')).toBe(true);
-  expect(screen.queryAllByRole('button', { name: 'Usage and metrics for First' }).some(node => node.tagName === 'BUTTON')).toBe(false);
+  expect(metricsButton('First').hasAttribute('disabled')).toBe(true);
 });
 
 it('lets only a contiguous full segment move and leaves its locked neighbours in place', async () => {

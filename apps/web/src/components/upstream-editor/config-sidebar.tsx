@@ -59,7 +59,7 @@ export function UpstreamConfigSidebar({
   return <ScrollArea axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" noTabIndex viewportClassName="scroll-py-1">
     <div className={PANEL_INSET_CLASS}>
       <aside className="grid gap-7">
-        <div aria-disabled={modelsOnly || undefined} className="contents" inert={modelsOnly || undefined}>
+        <div className="contents">
           <EditorSection title={t('dashboard.upstreamEditor.fields.name')}>
             <Controller
               control={control}
@@ -75,6 +75,7 @@ export function UpstreamConfigSidebar({
                     onBlur={field.onBlur}
                     onChange={(_, data) => field.onChange(data.value)}
                     ref={field.ref}
+                    readOnly={modelsOnly}
                     required
                     value={field.value}
                   />
@@ -87,16 +88,16 @@ export function UpstreamConfigSidebar({
             title={t('dashboard.upstreamEditor.sections.hue')}
             description={t('dashboard.upstreamEditor.hue.description')}
           >
-            <UpstreamHueEditor kind={record.kind} />
+            <UpstreamHueEditor kind={record.kind} readOnly={modelsOnly} />
           </EditorSection>
           <EditorSection title={t('dashboard.upstreamEditor.sections.proxy')} description={t('dashboard.upstreamEditor.proxy.description')}>
-            <ProxyFallbackEditor proxies={proxies} runtime={runtime} />
+            <ProxyFallbackEditor proxies={proxies} readOnly={modelsOnly} runtime={runtime} />
           </EditorSection>
           <EditorSection
             error={errors.config?.message ? t(errors.config.message) : undefined}
             title={t('dashboard.upstreamEditor.sections.connection')}
           >
-            <ProviderConfigSection record={record} onPatch={onPatch} onRefreshModels={onRefreshModels} />
+            <ProviderConfigSection readOnly={modelsOnly} record={record} onPatch={onPatch} onRefreshModels={onRefreshModels} />
           </EditorSection>
           {(record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code' || record.kind === 'ollama') && <EditorSection
             title={t('dashboard.upstreamEditor.usageRefresh.title')}
@@ -116,6 +117,7 @@ export function UpstreamConfigSidebar({
                   name={field.name}
                   onBlur={field.onBlur}
                   ref={field.ref}
+                  readOnly={modelsOnly}
                   value={field.value === 0 ? '' : String(field.value)}
                   onChange={(_, data) => field.onChange(Number(data.value))}
                 />
@@ -124,7 +126,7 @@ export function UpstreamConfigSidebar({
           </EditorSection>}
           {record.kind === 'custom' && (
             <EditorSection title={t('dashboard.upstreamEditor.sections.apiPaths')}>
-              <ApiPathsSection record={record} />
+              <ApiPathsSection readOnly={modelsOnly} record={record} />
             </EditorSection>
           )}
         </div>
@@ -132,7 +134,7 @@ export function UpstreamConfigSidebar({
           title={t('dashboard.upstreamEditor.sections.prefix')}
           description={t('dashboard.upstreamEditor.prefixDescription')}
         >
-          <ModelPrefixEditor />
+          <ModelPrefixEditor readOnly={modelsOnly} />
         </EditorSection>
         <EditorSection title={t('dashboard.upstreamEditor.sections.disabledModels')} description={t('dashboard.upstreamEditor.disabledModelsHint')}>
           <DisabledModelsCombobox catalogAvailable={catalogAvailable} discovered={discovered} />
@@ -142,10 +144,10 @@ export function UpstreamConfigSidebar({
   </ScrollArea>;
 }
 
-function UpstreamHueEditor({ kind }: { kind: UpstreamRecord['kind'] }) {
+function UpstreamHueEditor({ kind, readOnly }: { kind: UpstreamRecord['kind']; readOnly: boolean }) {
   const { control } = useFormContext<UpstreamEditorValues>();
   return <Controller control={control} name="hue" render={({ field }) => (
-    <HuePicker kind={kind} hue={field.value} onChange={field.onChange} />
+    <HuePicker kind={kind} hue={field.value} onChange={field.onChange} readOnly={readOnly} />
   )} />;
 }
 
@@ -195,7 +197,7 @@ function DisabledModelsCombobox({ catalogAvailable, discovered }: { catalogAvail
   </div>;
 }
 
-function ProxyFallbackEditor({ proxies, runtime }: { proxies: EditorAuxData['proxies']; runtime: RuntimeInfo }) {
+function ProxyFallbackEditor({ proxies, readOnly, runtime }: { proxies: EditorAuxData['proxies']; readOnly: boolean; runtime: RuntimeInfo }) {
   const { t } = useTranslation();
   const idPrefix = useId();
   const { control } = useFormContext<UpstreamEditorValues>();
@@ -216,18 +218,18 @@ function ProxyFallbackEditor({ proxies, runtime }: { proxies: EditorAuxData['pro
   >
     {fields.map((field, index) => <div {...reorder.itemProps(index, `grid gap-2 ${hasLocationHint ? `border-0 border-solid border-fui-divider py-2 ${reorder.position(index) === 0 ? 'pt-0' : 'border-t'}` : ''}`)} key={field.id}>
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-        <Controller control={control} name={`proxyFallbackList.${index}.id`} render={({ field: item }) => <Dropdown aria-label={t('dashboard.upstreamEditor.sections.proxy')} selectedOptions={[item.value]} value={available.find(proxy => proxy.id === item.value)?.name ?? item.value} onOptionSelect={(_, data) => data.optionValue !== undefined && item.onChange(data.optionValue)}>{available.map(proxy => <Option key={proxy.id} value={proxy.id}>{proxy.name}</Option>)}</Dropdown>} />
+        <Controller control={control} name={`proxyFallbackList.${index}.id`} render={({ field: item }) => <Dropdown aria-label={t('dashboard.upstreamEditor.sections.proxy')} readOnly={readOnly} selectedOptions={[item.value]} value={available.find(proxy => proxy.id === item.value)?.name ?? item.value} onOptionSelect={(_, data) => data.optionValue !== undefined && item.onChange(data.optionValue)}>{available.map(proxy => <Option key={proxy.id} value={proxy.id}>{proxy.name}</Option>)}</Dropdown>} />
         <div className="inline-flex">
-          <ReorderHandle {...reorder.handleProps(index)} label={t('dashboard.upstreamEditor.actions.reorder')} />
-          <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.actions.remove')} onClick={() => remove(index)} />
+          {!readOnly && <ReorderHandle {...reorder.handleProps(index)} label={t('dashboard.upstreamEditor.actions.reorder')} />}
+          {!readOnly && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.actions.remove')} onClick={() => remove(index)} />}
         </div>
       </div>
-      {runtime.kind === 'cloudflare' && <Controller control={control} name={`proxyFallbackList.${index}.colos`} render={({ field: item }) => <ColoCombobox current={runtime.runtimeLocation} onChange={item.onChange} value={item.value ?? []} />} />}
+      {runtime.kind === 'cloudflare' && <Controller control={control} name={`proxyFallbackList.${index}.colos`} render={({ field: item }) => <ColoCombobox current={runtime.runtimeLocation} onChange={item.onChange} readOnly={readOnly} value={item.value ?? []} />} />}
     </div>)}
     <Text size={200} className="text-fui-fg2">{t(entries.length === 0
       ? 'dashboard.upstreamEditor.proxy.empty'
       : hasLocationHint ? 'dashboard.upstreamEditor.proxy.orderColo' : 'dashboard.upstreamEditor.proxy.order')}</Text>
-    <Button onClick={() => append({ id: 'direct_connect' })}>{t('dashboard.upstreamEditor.proxy.add')}</Button>
+    {!readOnly && <Button onClick={() => append({ id: 'direct_connect' })}>{t('dashboard.upstreamEditor.proxy.add')}</Button>}
     {(hasLocationHint || hasUnmatchedColos) && <div className="grid">
       {hasUnmatchedColos && <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.proxy.unmatched')}</Text>}
       {hint && <Text id={`${idPrefix}-hint`} size={200} className="text-fui-fg2">{hint}</Text>}
@@ -235,7 +237,7 @@ function ProxyFallbackEditor({ proxies, runtime }: { proxies: EditorAuxData['pro
   </div>;
 }
 
-function ColoCombobox({ current, onChange, value }: { current: string; onChange: (value: string[] | undefined) => void; value: string[] }) {
+function ColoCombobox({ current, onChange, readOnly, value }: { current: string; onChange: (value: string[] | undefined) => void; readOnly: boolean; value: string[] }) {
   const { t } = useTranslation();
   return <MultiselectCombobox
     ariaLabel={t('dashboard.upstreamEditor.proxy.colos')}
@@ -247,12 +249,13 @@ function ColoCombobox({ current, onChange, value }: { current: string; onChange:
     placeholder={value.length === 0
       ? t('dashboard.upstreamEditor.proxy.allColos')
       : t('dashboard.upstreamEditor.proxy.colosSelected', { count: value.length })}
+    readOnly={readOnly}
     renderOption={({ value: location }) => <span className="flex items-center justify-between gap-2 w-full"><span className="font-mono">{location}</span>{location === current && <StatusBadge tone="neutral">{t('dashboard.upstreamEditor.proxy.currentColo')}</StatusBadge>}</span>}
     value={value}
   />;
 }
 
-function ModelPrefixEditor() {
+function ModelPrefixEditor({ readOnly }: { readOnly: boolean }) {
   const { t } = useTranslation();
   const idPrefix = useId();
   const { control, formState: { errors }, setValue } = useFormContext<UpstreamEditorValues>();
@@ -268,17 +271,17 @@ function ModelPrefixEditor() {
         validationState={errors.modelPrefix ? 'error' : undefined}
         validationMessage={errors.modelPrefix?.message ? t(errors.modelPrefix.message, { max: MODEL_PREFIX_MAX_LENGTH }) : undefined}
       >
-        <Input aria-label={t('dashboard.upstreamEditor.sections.prefix')} value={prefix} onChange={(_, data) => update(data.value)} className="font-mono" placeholder="openrouter/" />
+        <Input aria-label={t('dashboard.upstreamEditor.sections.prefix')} value={prefix} onChange={(_, data) => update(data.value)} className="font-mono" placeholder="openrouter/" readOnly={readOnly} />
       </Field>
       {value && !invalid && <div className="grid gap-2">
         {(['unprefixed', 'prefixed'] as const).map(form => <div aria-labelledby={`${idPrefix}-${form}`} className="flex items-center justify-between gap-3" key={form} role="group">
           <Text id={`${idPrefix}-${form}`} size={200}>{t(`dashboard.upstreamEditor.prefix.${form}`)}</Text>
           <div className="flex gap-2">
-            <Checkbox label={t('dashboard.upstreamEditor.prefix.addressable')} checked={value.addressable.includes(form)} onChange={(_, data) => {
+            <Checkbox label={t('dashboard.upstreamEditor.prefix.addressable')} checked={value.addressable.includes(form)} readOnly={readOnly} onChange={(_, data) => {
               const set = new Set(value.addressable); if (data.checked) set.add(form); else if (set.size > 1) set.delete(form);
               commit({ ...value, addressable: [...set], listed: value.listed.filter(item => set.has(item)) });
             }} />
-            <Checkbox label={t('dashboard.upstreamEditor.prefix.listed')} disabled={!value.addressable.includes(form)} checked={value.listed.includes(form)} onChange={(_, data) => {
+            <Checkbox label={t('dashboard.upstreamEditor.prefix.listed')} disabled={!value.addressable.includes(form)} checked={value.listed.includes(form)} readOnly={readOnly} onChange={(_, data) => {
               const set = new Set(value.listed); if (data.checked) set.add(form); else set.delete(form);
               commit({ ...value, listed: [...set] });
             }} />
