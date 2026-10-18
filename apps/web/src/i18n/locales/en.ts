@@ -258,7 +258,6 @@ const en = {
           role: 'Role',
           groups: 'Groups',
           upstreams: 'Upstream access',
-          created: 'Created',
           actions: 'Actions',
         },
         role: { admin: 'Administrator', operator: 'Operator' },
