@@ -55,7 +55,7 @@ const renderPage = (record: UpstreamRecord, mode: 'create' | 'edit') => {
     {
       path: '/editor',
       element: <OutcomeToastProvider><UpstreamEditorPage data={{
-        mode, record, discovered: null, proxies: [], runtime: { kind: 'node', runtimeLocation: 'TEST' },
+        mode, editLevel: 'full', record, discovered: null, proxies: [], runtime: { kind: 'node', runtimeLocation: 'TEST' },
       }} /></OutcomeToastProvider>,
     },
     { path: '/dashboard/providers/upstreams/:id', element: <div>Saved upstream</div> },

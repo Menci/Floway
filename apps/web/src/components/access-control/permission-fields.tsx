@@ -12,9 +12,7 @@ type Value = boolean | UpstreamEditLevel | undefined;
 type Choice = 'on' | 'off' | 'models' | 'full';
 
 const useStyles = makeStyles({
-  // Shared tracks align boolean and level-valued permissions without changing
-  // native RadioButton geometry or RadioGroup keyboard navigation.
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/RadioButtons/RadioButtons.xaml#L21-L25
+  // Shared column tracks align boolean and edit-level permission choices.
   grid: {
     display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 380px)',
     columnGap: tokens.spacingHorizontalL, rowGap: tokens.spacingVerticalL, minWidth: 0,
@@ -87,8 +85,7 @@ function PermissionField({ disabled, inherited, levelColumns, onChange, permissi
           input={{
             'aria-label': t(`dashboard.accessControl.states.${choice}`),
             'aria-describedby': choice === inheritedChoice ? `${sourceId} ${inheritedId}` : sourceId,
-            // Re-activating the selected option toggles its source. Native radio
-            // inputs do not emit a click for Space when they are already checked.
+            // Handle Space before native activation so the source toggles once.
             onClick: () => { if (selected === choice) { if (inheriting) choose(choice); else onChange(undefined); } },
             onKeyDown: event => {
               if (event.key === ' ' && selected === choice) {
@@ -102,8 +99,10 @@ function PermissionField({ disabled, inherited, levelColumns, onChange, permissi
             {choice === inheritedChoice && <span aria-hidden className="inline-flex flex-none" data-inherited-value-icon="branch" data-inheritance-active={inheriting} data-inheritance-glyph={inheriting ? 'filled' : 'regular'} style={{ color: inheriting ? tokens.colorBrandForeground1 : tokens.colorNeutralForeground2 }}><Marker style={{ width: 16, height: 16 }} /></span>}
           </span>}
         />;
-        // Radio routes top-level trigger props to its input; the root slot also
-        // includes its label and padding in Tooltip's hover and focus boundary.
+        // Radio routes top-level trigger props to its input. Use the root slot
+        // so Tooltip also covers the label and the full option surface.
+        // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-radio/library/src/components/Radio/useRadio.tsx#L56-L83
+        // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-radio/library/src/components/Radio/renderRadio.tsx#L14-L20
         return choice === inheritedChoice && description !== null ? <Tooltip content={t('dashboard.accessControl.inheritance.tooltip', { description, source })} key={choice} relationship="description">{triggerProps => radio({ ...triggerProps, ref: triggerProps.ref as Ref<HTMLSpanElement> })}</Tooltip> : radio();
       })}
       {inheriting && inheritedChoice === undefined && <span className="col-span-full text-[12px] leading-4 text-fui-fg2" data-inheritance-unknown="">{t('dashboard.accessControl.inheritance.unknown')}</span>}

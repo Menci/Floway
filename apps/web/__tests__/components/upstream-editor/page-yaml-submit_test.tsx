@@ -72,6 +72,7 @@ const renderPage = () => {
     element: <OutcomeToastProvider><UpstreamEditorPage data={{
       discovered: null,
       mode: 'edit',
+      editLevel: 'full',
       proxies: [],
       record,
       runtime: { kind: 'node', runtimeLocation: 'test' },

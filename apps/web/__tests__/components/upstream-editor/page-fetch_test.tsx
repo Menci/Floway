@@ -81,7 +81,7 @@ const renderPage = (currentRecord = record, initialDiscovered: UpstreamModelConf
   const router = createMemoryRouter([{
     path: '/editor',
     element: <OutcomeToastProvider><UpstreamEditorPage data={{
-      mode: 'edit', record: currentRecord, discovered: initialDiscovered,
+      mode: 'edit', editLevel: 'full', record: currentRecord, discovered: initialDiscovered,
       proxies: [], runtime: { kind: 'node', runtimeLocation: 'TEST' },
     }} /></OutcomeToastProvider>,
   }], { initialEntries: ['/editor'] });

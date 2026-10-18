@@ -60,8 +60,6 @@ export function KeyDialog(props: KeyDialogProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const visibleUpstreams = upstreams;
-
   const schema = useMemo(
     () =>
       z
@@ -190,7 +188,7 @@ export function KeyDialog(props: KeyDialogProps) {
       />
 
       <UpstreamAccessControl
-        available={visibleUpstreams}
+        available={upstreams}
         disabled={saving}
         ids={values.upstreamIds}
         models={models}

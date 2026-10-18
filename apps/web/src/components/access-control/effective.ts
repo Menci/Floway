@@ -7,8 +7,6 @@ import type { AccessRecord } from '../../api/types';
 import type { TFunction } from '../../i18n/translation';
 import type { AccessPermission, AccessPrincipal, AccessResolution, AccessScope, PermissionDecisions } from '@floway-dev/gateway/browser';
 
-export type { PermissionDecision, PermissionDecisions } from '@floway-dev/gateway/browser';
-
 export const selectPermissionRules = ({ records, principal, scope, showEffective, data, resolution }: {
   records: readonly AccessRecord[];
   principal: AccessPrincipal | null;

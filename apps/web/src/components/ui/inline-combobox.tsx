@@ -8,9 +8,9 @@ import { fluentComponents } from '../../fluent';
 const { Combobox, makeStyles, mergeClasses } = fluentComponents;
 
 const useStyles = makeStyles({
-  // Inline editing retains Fluent's listbox behavior but deliberately omits
-  // WinUI ComboBox's faceplate, expander and detached field focus rectangle.
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L331-L382
+  // The path field owns faceplate and focus chrome; this control reuses
+  // Fluent's input/listbox wiring with no expander.
+  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Combobox/useCombobox.tsx#L43-L74
   root: {
     '--floway-select-fill': 'transparent',
     '--floway-select-fill-hover': 'transparent',
@@ -38,9 +38,7 @@ const useStyles = makeStyles({
     },
   },
   mirror: { gridArea: '1 / 1', minWidth: 0, overflow: 'hidden', visibility: 'hidden', whiteSpace: 'pre' },
-  // Keep the native input in inline formatting inside the same trimmed text
-  // box as the mirror. Absolute-positioning the input itself centers its font
-  // box independently and rounds its baseline differently at fractional offsets.
+  // Match the mirror's trimmed inline formatting so layout owns the input's baseline.
   // https://drafts.csswg.org/css-inline-3/#text-box-trim
   editor: { position: 'absolute', top: 0, left: 0, width: '100%', whiteSpace: 'nowrap' },
   input: {

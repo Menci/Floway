@@ -264,6 +264,8 @@ function PartInput({ ariaLabel, emptyMessage, freeform, model, name, onBlur, onC
       emptyMessage={emptyMessage}
       // Unmatched resources remain visible, but must not become an automatic
       // Tab completion just because they are first in the open list.
+      // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Listbox/useListbox.ts#L169-L183
+      // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/utils/useTriggerSlot.ts#L216-L218
       disableAutoFocus={!freeform}
       freeform={freeform}
       onBlur={onBlur}

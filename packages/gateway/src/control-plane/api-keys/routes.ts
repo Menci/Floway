@@ -7,7 +7,7 @@ import { CUSTOM_API_KEY_MAX_LENGTH, generateApiKeyToken, type KeySource } from '
 import { generateServerSecret } from '../../shared/server-secret.ts';
 import type { createKeyBody, rotateKeyBody, updateKeyBody } from '../schemas.ts';
 import { ownedKeyForUser } from '../shared/owned-key.ts';
-import { loadKnownUpstreamIds, pruneUnreachableUpstreamIds, unknownUpstreamIdsError } from '../shared/upstream-ids.ts';
+import { loadKnownUpstreamIds, pruneUnknownUpstreamIds, unknownUpstreamIdsError } from '../shared/upstream-ids.ts';
 
 const GENERATED_KEY_RETRIES = 5;
 
@@ -21,13 +21,13 @@ type KeyWriteResult = { ok: true; key: ApiKey } | KeyWriteError;
 
 const keyWriteError = (status: KeyWriteError['status'], error: string): KeyWriteError => ({ ok: false, status, error });
 
-const apiKeyToJson = (key: ApiKey, reachable: ReadonlySet<string>) => ({
+const apiKeyToJson = (key: ApiKey, knownUpstreamIds: ReadonlySet<string>) => ({
   id: key.id,
   name: key.name,
   key: key.key,
   created_at: key.createdAt,
   last_used_at: key.lastUsedAt ?? null,
-  upstream_ids: pruneUnreachableUpstreamIds(key.upstreamIds, reachable),
+  upstream_ids: pruneUnknownUpstreamIds(key.upstreamIds, knownUpstreamIds),
   dump_retention_seconds: key.dumpRetentionSeconds,
   responses_retention_seconds: key.openaiResponsesRetentionSeconds,
 });

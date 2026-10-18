@@ -1,4 +1,4 @@
-import { accessScopeDepth, permissionsForScope } from './types.ts';
+import { accessScopeDepth, permissionsForScope, upstreamEditLevelRank } from './types.ts';
 import type { AccessPermission, AccessRecord, AccessResolution, AccessScope, AccessTarget, AccessValues, PermissionDecisions } from './types.ts';
 
 const scopeKey = (scope: AccessScope): string => {
@@ -25,7 +25,7 @@ const matches = (outer: AccessScope, inner: AccessScope, targetGroups: ReadonlyS
   }
 };
 
-const valueRank = (value: NonNullable<AccessValues[AccessPermission]>) => value === 'full' ? 2 : value === true || value === 'models' ? 1 : 0;
+const valueRank = (value: NonNullable<AccessValues[AccessPermission]>) => typeof value === 'boolean' ? Number(value) : upstreamEditLevelRank[value];
 // A concrete user outranks membership scopes; exact model ids and regexes share
 // one ordered level. Only model-pattern precedence is operator-controlled.
 const precedenceDepth = (scope: AccessScope) => scope.kind === 'user' ? 3 : accessScopeDepth(scope);

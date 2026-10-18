@@ -8,7 +8,7 @@
 //
 // `limits`, `chat`, `endpoints`, and `pricing` are computed against the
 // GATEWAY-WIDE addressable surface — every caller sees the same numbers
-// for the same alias, independent of their data-plane cap. The operator's
+// for the same alias, independent of caller visibility. The operator's
 // stored `announced_metadata` override still wins at sub-block
 // granularity (a present `limits` / `chat` replaces the computed
 // counterpart wholesale, not per-leaf). The intersection is the safe
@@ -24,7 +24,7 @@
 //
 // Caller-scope (the addressable surface this specific request can
 // reach) controls only two things: whether the alias appears in this
-// caller's response (at least one target reachable under the cap), and
+// caller's response (at least one target in that caller-scoped set), and
 // the `aliasedFrom.targets` projection when `narrowTargets` is true.
 //
 // Collision: when an alias's `name` exactly equals a real model id, the

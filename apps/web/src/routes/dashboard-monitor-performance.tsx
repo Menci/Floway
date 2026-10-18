@@ -76,9 +76,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   const loadedAt = Date.now();
   const requestedState = { ...state, ...scoped };
   const query = buildPerformanceQuery(requestedState.range, requestedState.groupBy, requestedState.filters, loadedAt);
-  // The page opens for every signed-in account, so the names come from the
-  // non-admin upstream picker; /api/upstreams answers 403 to an operator and
-  // would leave the whole page unavailable to them.
+  // Use the audit-scoped picker for names independently of upstream-edit access.
   const [initialOverview, upstreams, runtime] = await Promise.all([
     callApi(() => api.api.performance.overview.$get({ query })),
     callApi(() => api.api['upstream-options'].$get({ query: { view: 'audit' } })),

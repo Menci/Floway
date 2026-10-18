@@ -1,22 +1,17 @@
 import { resolveAssignments, targetScope } from './resolution.ts';
+import { permissionsForScope, upstreamEditLevelRank } from './types.ts';
 import type { AccessCheck, AccessRequirement, AccessTarget, UpstreamEditLevel } from './types.ts';
 import { getRepo } from '../repo/index.ts';
 import type { User } from '../repo/types.ts';
 
-const editRank: Record<UpstreamEditLevel, number> = { off: 0, models: 1, full: 2 };
-
 const assertCompatible = (target: AccessTarget, requirement: AccessRequirement): void => {
-  const compatible = target.kind === 'upstreamModel'
-    ? requirement.permission === 'Model.Use'
-    : target.kind === 'upstream'
-      ? requirement.permission === 'Model.Use' || requirement.permission === 'Upstream.Audit' || requirement.permission === 'Upstream.Edit'
-      : requirement.permission === 'User.Audit';
+  const compatible = permissionsForScope(targetScope(target)).includes(requirement.permission);
   if (!compatible) throw new Error(`${requirement.permission} is not valid for ${target.kind}`);
 };
 
 const satisfies = (value: boolean | UpstreamEditLevel, requirement: AccessRequirement): boolean =>
   requirement.permission === 'Upstream.Edit'
-    ? editRank[value as UpstreamEditLevel] >= editRank[requirement.level]
+    ? upstreamEditLevelRank[value as UpstreamEditLevel] >= upstreamEditLevelRank[requirement.level]
     : value === true;
 
 export const checkMany = async (

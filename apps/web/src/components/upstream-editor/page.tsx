@@ -50,7 +50,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const rewrite = useEntryRewrite();
   const toasts = useOutcomeToasts();
   const [record, setRecord] = useState(data.record);
-  const editLevel = data.editLevel ?? 'full';
+  const editLevel = data.editLevel;
   // Two provider patches can be in flight at once -- refreshing a credential
   // and probing a quota are separate buttons, neither disabling the other -- so
   // the second one's continuation holds the render the first was dispatched

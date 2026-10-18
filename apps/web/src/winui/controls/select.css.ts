@@ -231,11 +231,8 @@ export const selectCss = `
   width: 12px;
 }
 
-/* The clear affordance is Fluent's own -- WinUI's ComboBox has none -- but it sits in
-   the glyph's place, so it takes the colour WinUI gives the buttons inside a text
-   control.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L45
-   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-combobox/library/src/components/Dropdown/useDropdown.tsx#L98-L113 */
+/* Clear glyphs use the text control's button foreground ramp.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L43-L47 */
 .fui-Dropdown__clearButton.fui-Dropdown__clearButton,
 .fui-Combobox__clearIcon.fui-Combobox__clearIcon {
   color: var(--winui-text-fill-secondary);

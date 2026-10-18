@@ -63,15 +63,13 @@ const enumerateOneUpstreamCandidates = (
   return { candidates, sawModel, modelsError: snapshot.lastError !== null };
 };
 
-// Walk every visible upstream in configured order. Snapshot reads never wait
+// Walk configured upstreams permitted by Model.Use for this ID. Snapshot reads never wait
 // for upstream model-list I/O; cold and stale rows submit background refresh.
 // Scheduling failures propagate as internal errors rather than being reported
 // as persisted model-list failures for an upstream.
 //
-// `sawModel` aggregates the per-upstream signal: true when at least one
-// upstream's catalog carried the inbound id under any kind, so the caller can
-// distinguish "id is unknown everywhere" (404) from "id exists but wrong kind"
-// (400).
+// `sawModel` aggregates only permitted catalogs, regardless of kind. Denied
+// entries do not disclose model existence through this signal.
 export const enumerateRealModelCandidates = async (
   subject: User,
   modelId: string,
@@ -138,10 +136,10 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
 //   2. Otherwise (no alias match at all) run the real-catalog resolver
 //      directly on the inbound id.
 //
-// The real-catalog resolver walks every visible upstream and filters by kind
-// inside the walk, so wrong-kind entries never become candidates. `sawModel`
-// reports whether the id was known to any upstream regardless of kind, so the
-// caller can distinguish "model missing" (404) from "model wrong kind" (400).
+// The real-catalog resolver applies Model.Use before reading each catalog,
+// then filters by kind. `sawModel` tracks non-disabled addressable matches in
+// permitted catalogs. With no candidates, false keeps hidden/missing IDs at 404;
+// true identifies wrong-kind matches (400).
 //
 // Endpoint-level narrowing — picking the chat target protocol from
 // `model.endpoints`, or checking the specific `openaiImagesEdits` /

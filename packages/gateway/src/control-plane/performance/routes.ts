@@ -3,9 +3,8 @@
 // database overview aggregate.
 //
 // Resource and user breakdowns follow the same Audit visibility as token usage.
-// The `none` axis is the one explicit latency exception: it remains a global
-// aggregate for every user. API-key axes and key metadata stay scoped to the
-// actor's own keys.
+// Unfiltered non-key queries retain a global `none` axis as an explicit latency
+// exception. API-key axes and key metadata stay scoped to the actor's own keys.
 
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';

@@ -1,17 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { indexCatalog } from '../../../src/components/models/catalog-index';
-import { effectiveUpstreamCap, isModelReachable, reachableModels } from '../../../src/components/models/reachability';
+import { isModelReachable, reachableModels } from '../../../src/components/models/reachability';
 import { aliasModel, catalogModel } from '../../api/model-fixture';
 
 describe('model reachability', () => {
-  it('intersects API-key and owner upstream caps', () => {
-    expect(effectiveUpstreamCap(['u1', 'u2'], ['u2', 'u3'])).toEqual(['u2']);
-    expect(effectiveUpstreamCap(null, ['u1'])).toEqual(['u1']);
-    expect(effectiveUpstreamCap(null, null)).toBeNull();
-  });
-
-  it('resolves alias targets through the effective cap', () => {
+  it('resolves alias targets through the API-key upstream restriction', () => {
     const real = catalogModel('real', { upstreams: ['u1'] });
     const alias = aliasModel('alias', [real.id]);
     const catalog = indexCatalog([real, alias]);
@@ -22,16 +16,16 @@ describe('model reachability', () => {
   it('keeps only the catalog entries an alias or an upstream binding can reach', () => {
     const catalog = [
       catalogModel('allowed', { upstreams: ['u1'] }),
-      catalogModel('key-denied', { upstreams: ['u2'] }),
-      catalogModel('user-denied', { upstreams: ['u3'] }),
-      aliasModel('alias-allowed', ['allowed', 'user-denied']),
-      aliasModel('alias-denied', ['user-denied']),
+      catalogModel('also-allowed', { upstreams: ['u2'] }),
+      catalogModel('denied', { upstreams: ['u3'] }),
+      aliasModel('alias-allowed', ['allowed', 'denied']),
+      aliasModel('alias-denied', ['denied']),
       aliasModel('alias-missing', ['missing']),
     ];
 
-    expect(reachableModels(catalog, effectiveUpstreamCap(['u1', 'u2', 'u3'], ['u1', 'u2']))
+    expect(reachableModels(catalog, ['u1', 'u2'])
       .map(entry => entry.id))
-      .toEqual(['allowed', 'key-denied', 'alias-allowed']);
+      .toEqual(['allowed', 'also-allowed', 'alias-allowed']);
     expect(reachableModels(catalog, [])).toEqual([]);
   });
 

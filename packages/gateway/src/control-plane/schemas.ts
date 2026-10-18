@@ -322,9 +322,12 @@ const keySourceShape = {
   custom_key: z.string().max(CUSTOM_API_KEY_MAX_LENGTH).optional(),
 };
 
+const apiKeyUpstreamIdsSchema = z.array(z.string().min(1))
+  .refine(ids => new Set(ids).size === ids.length, { message: 'upstream_ids contains duplicates' }).nullable().optional();
+
 export const createKeyBody = z.object({
   name: z.string().min(1),
-  upstream_ids: z.array(z.string().min(1)).refine(arr => new Set(arr).size === arr.length, { message: 'upstream_ids contains duplicates' }).nullable().optional(),
+  upstream_ids: apiKeyUpstreamIdsSchema,
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
   responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
   ...keySourceShape,
@@ -334,7 +337,7 @@ export const rotateKeyBody = z.object(keySourceShape);
 
 export const updateKeyBody = z.object({
   name: z.string().min(1).optional(),
-  upstream_ids: z.array(z.string().min(1)).refine(arr => new Set(arr).size === arr.length, { message: 'upstream_ids contains duplicates' }).nullable().optional(),
+  upstream_ids: apiKeyUpstreamIdsSchema,
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
   responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
 });

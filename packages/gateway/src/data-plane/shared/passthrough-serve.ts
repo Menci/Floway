@@ -117,10 +117,9 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     });
     if (candidates.length === 0) {
       ctx.dump?.error('gateway');
-      // `sawModel === false` means no upstream catalog knew the inbound id
-      // at all (404); `sawModel === true` with zero candidates means the
-      // id is known but every match was the wrong kind for this endpoint
-      // (400), which mirrors the empty-viable case below.
+      // `sawModel` includes only Model.Use-permitted catalogs. With no candidates,
+      // false keeps hidden/missing ids at 404; true identifies wrong-kind matches
+      // (400), like the empty-viable case below.
       return sawModel
         ? passthroughApiError(c, appendFailedUpstreams(`Model ${model} does not support the ${sourceApi} endpoint.`, failedUpstreams), 400)
         : passthroughApiError(c, appendFailedUpstreams(`Model ${model} is not available on any configured upstream.`, failedUpstreams), 404);

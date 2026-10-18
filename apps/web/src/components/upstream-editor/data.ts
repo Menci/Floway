@@ -28,7 +28,7 @@ export interface EditorAuxData {
 }
 
 interface UpstreamEditorLoaderDataBase extends EditorAuxData {
-  editLevel?: 'models' | 'full';
+  editLevel: 'models' | 'full';
   record: UpstreamRecord;
   discovered: UpstreamModelConfig[] | null;
   // For providers whose credential is an API key, the editor can keep that
@@ -89,7 +89,7 @@ export const providerDefaultName: Record<UpstreamProviderKind, string> = {
 
 export const loadEditorAux = async (upstreamId?: string, includeProxies = true): Promise<EditorAuxData> => {
   const runtimePromise = callApi(() => api.api['runtime-info'].$get());
-  let proxies: Array<{ id: string; name: string }> = [];
+  let proxies: EditorAuxData['proxies'] = [];
   if (includeProxies) {
     const result = upstreamId === undefined
       ? await callApi(() => api.api.proxies.$get())
@@ -299,7 +299,7 @@ export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues,
   } as CreateUpstreamBody;
 };
 
-export const updateBody = (record: UpstreamRecord, values: UpstreamEditorValues, editLevel: 'models' | 'full' = 'full'): UpdateUpstreamBody => {
+export const updateBody = (record: UpstreamRecord, values: UpstreamEditorValues, editLevel: 'models' | 'full'): UpdateUpstreamBody => {
   if (editLevel === 'models') {
     const config = manualModelsSupported(record)
       ? record.kind === 'custom'

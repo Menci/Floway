@@ -21,6 +21,7 @@ export type AccessTarget =
 
 export type AccessPermission = 'Model.Use' | 'Upstream.Audit' | 'Upstream.Edit' | 'User.Audit';
 export type UpstreamEditLevel = 'off' | 'models' | 'full';
+export const upstreamEditLevelRank: Record<UpstreamEditLevel, number> = { off: 0, models: 1, full: 2 };
 
 export interface AccessValues {
   'Model.Use'?: boolean;

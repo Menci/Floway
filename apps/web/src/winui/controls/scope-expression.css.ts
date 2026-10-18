@@ -2,7 +2,8 @@ export const scopeExpressionCss = String.raw`
 /* Compound path editors use the existing TextBox brush and corner tokens.
    Height remains content-driven so wrapped paths keep the same field surface.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L23-L30
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L48-L65 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L48-L65
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L194-L199 */
 .floway-scope-editor {
   align-items: center;
   background: var(--winui-control-fill-default);
@@ -105,19 +106,12 @@ export const scopeExpressionCss = String.raw`
   grid-column: 4;
 }
 
-/* ScopeExpression follows WinUI BreadcrumbBar's inline item geometry: each
-   item uses 1px horizontal / 3px vertical padding on a 20px line box, while
-   each separator keeps 4px after it, with the same 4px between segments.
-   Grouping each separator with its following item preserves that geometry
-   in both standalone scopes and wrapping rich-text explanations.
-   Its -3 FocusVisualMargin grows
-   the two-stroke focus rectangle three pixels beyond the item. Type labels
-   deliberately use medium rather than BreadcrumbBarItemFontWeight Normal;
-   resource values retain their own identity and typography.
-   The editor uses the existing WinUI-derived Combobox and popup rules when a
-   part becomes active.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Breadcrumb/BreadcrumbBar.xaml#L208-L213
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Breadcrumb/BreadcrumbBar.xaml#L280-L303
+/* Path buttons use BreadcrumbBar item padding, line boxes and focus margin.
+   Each separator wraps with its following item. The 4px separator padding and
+   inter-segment gap are application choices, as is medium weight for type labels;
+   resource identities retain their own typography.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Breadcrumb/BreadcrumbBar.xaml#L158-L168
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Breadcrumb/BreadcrumbBar.xaml#L262-L272
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Breadcrumb/BreadcrumbBar_themeresources.xaml#L7-L9 */
 .floway-scope-expression {
   /* Keep syntax hues while following the secondary/primary and tertiary/primary

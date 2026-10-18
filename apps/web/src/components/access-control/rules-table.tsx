@@ -2,7 +2,6 @@ import { DeleteRegular, EditRegular } from '@fluentui/react-icons';
 import { useEffect, useRef } from 'react';
 import { Link } from 'react-router';
 
-import type { PermissionDecisions } from './effective';
 import { recordSegments } from './order';
 import type { RecordSegment } from './order';
 import { RulePermissions } from './permission-list';
@@ -18,7 +17,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { TableActions } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
-import type { AccessScope } from '@floway-dev/gateway/browser';
+import type { AccessScope, PermissionDecisions } from '@floway-dev/gateway/browser';
 
 const { Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, makeStyles } = fluentComponents;
 

@@ -7,8 +7,7 @@ registerMode(modeOklch);
 const toOklch = converter('oklch');
 const { webLightTheme } = fluentComponents;
 
-// Choose a native Avatar color by OKLCH hue; Avatar owns its light/dark tokens,
-// transparent stroke and typography. Hue selection uses its chromatic variants.
+// Choose a chromatic Avatar color by OKLCH hue, retaining Fluent's theme palette.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-avatar/library/src/components/Avatar/useAvatarStyles.styles.ts#L265-L363
 const palette = [
   ['dark-red', webLightTheme.colorPaletteDarkRedBackground2],

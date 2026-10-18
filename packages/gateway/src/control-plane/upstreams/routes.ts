@@ -173,11 +173,8 @@ export const listUpstreams = async (c: AuthedContext) => {
   })));
 };
 
-// Picker dataset for the per-key upstream whitelist editor. Non-admin users
-// need to know which upstreams exist to scope their keys, but they must not
-// see operator-tuned config (model lists, flag overrides, copilot user info,
-// etc.). This minimal projection is the only upstream surface mounted outside
-// the admin zone.
+// Picker identities and model counts for key restrictions, Audit filters and
+// admin selectors. Provider configuration, secrets and flag overrides are omitted.
 export const listUpstreamOptions = async (c: CtxWithQuery<typeof upstreamOptionsQuery>) => {
   const items = await getRepo().upstreams.list();
   const subject = userFromContext(c);
@@ -235,12 +232,9 @@ export const getUpstreamBlueprint = (c: Context) => {
   });
 };
 
-// Single-record read for the edit page. Returns the FULL record — no
-// secret redaction — because every editor-scoped action posts the record
-// back to a helper endpoint that needs the same credentials the data plane
-// uses (refresh tokens, api keys, etc.). The cache status and editor model
-// snapshot are read from this same row, so opening the editor displays the
-// stored catalog without starting or waiting for a refresh.
+// Full editors receive credentials for provider actions; models-only editors
+// receive the model projection. The stored catalog is attached without triggering
+// model discovery.
 export const getUpstream = async (c: AuthedContext<'/:id'>) => {
   const id = c.req.param('id');
   const editLevel = await resolveUpstreamEditLevel(userFromContext(c), id);
@@ -360,13 +354,12 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
 
   // OAuth-managed config slices (Copilot githubToken/user, Claude Code
   // accounts[]) are owned by the per-provider action endpoints, not by generic
-  // PATCH. Metadata (name, enabled, sort_order, flag overrides, disabled model
-  // ids) still flows through here.
+  // PATCH. Full edits can change metadata here; models-only writes have passed
+  // the narrower allowlist above.
   //
-  // Codex is narrower rather than closed: an import may leave display metadata
-  // unknown, and correcting an email or a plan should not require re-importing
-  // a working credential. The account id stays bound to re-import because it
-  // is the join key the stored credential hangs off.
+  // Codex full edits can correct an email or plan without replacing a working
+  // credential. The account id stays bound to re-import because it is the
+  // stored credential's join key.
   let patchedCodexConfig: CodexUpstreamConfig | undefined;
   if (body.config !== undefined && existing.kind === 'codex') {
     try {

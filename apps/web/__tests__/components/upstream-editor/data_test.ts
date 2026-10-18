@@ -41,7 +41,7 @@ test('Custom editor values add one blank ingress row and never serialize it', ()
     { key: 'x-route', value: 'fast' },
   ];
   expect((createBody(record, values).config as CustomRecord['config']).ingressHeadersRules).toEqual(expected);
-  expect((updateBody(record, values).config as CustomRecord['config']).ingressHeadersRules).toEqual(expected);
+  expect((updateBody(record, values, 'full').config as CustomRecord['config']).ingressHeadersRules).toEqual(expected);
   expect((previewRecord(record, values).config as CustomRecord['config']).ingressHeadersRules).toEqual(expected);
 });
 
@@ -61,7 +61,7 @@ test('background usage refresh remains explicit through editor create, preview a
     values.usageRefreshIntervalMinutes = interval;
     expect(createBody(record, values).usage_refresh_interval_minutes).toBe(interval);
     expect(previewRecord(record, values).usage_refresh_interval_minutes).toBe(interval);
-    expect(updateBody(record, values).usage_refresh_interval_minutes).toBe(interval);
+    expect(updateBody(record, values, 'full').usage_refresh_interval_minutes).toBe(interval);
     expect(hasUnsavedDiscoveryInputs({ usageRefreshIntervalMinutes: 5 })).toBe(false);
   }
 });

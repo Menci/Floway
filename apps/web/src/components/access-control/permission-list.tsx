@@ -2,7 +2,6 @@ import { Checkmark24Regular, Dismiss12Regular } from '@fluentui/react-icons';
 import { Children } from 'react';
 import type { ReactNode } from 'react';
 
-import type { PermissionDecisions } from './effective';
 import { PrincipalIdentity } from './principal';
 import { scopeKey } from './scope';
 import { ScopeExpression, type ScopeExpressionData } from './scope-expression';
@@ -11,14 +10,13 @@ import type { AccessRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { Trans, useTranslation } from '../../i18n/translation';
 import { useStatusHue } from '../ui/status-badge';
-import type { AccessPermission, AccessValues } from '@floway-dev/gateway/browser';
+import type { AccessPermission, AccessValues, PermissionDecisions } from '@floway-dev/gateway/browser';
 
 const { Tag, Tooltip, makeStyles, mergeClasses, tokens, webLightTheme } = fluentComponents;
 
-// Dismiss12Regular's path bounds, measured with SVG getBBox(). Offset its native
-// 12px canvas inside a tight layout slot to preserve the visible glyph size.
-// Both states share this slot so their labels start at the same position.
-// https://www.npmjs.com/package/@fluentui/react-icons/v/2.0.334
+// SVG path.getBBox() in Dismiss12Regular's native 12-unit viewBox supplies these
+// bounds. At 12px, offset the canvas into this shared slot so labels align.
+// https://unpkg.com/@fluentui/react-icons@2.0.334/lib/sizedIcons/chunk-28.js
 const dismissBounds = { x: 2.005393, y: 1.95, width: 8.044606, height: 8.044607 };
 
 const useStyles = makeStyles({
@@ -127,6 +125,8 @@ function PermissionToken({ emphasis = 'normal', permission, value }: { emphasis?
       borderWidth: 0,
       borderColor: 'transparent',
       // Keep Fluent's 6px Large radius; our WinUI theme maps Large to 8px.
+      // https://github.com/microsoft/fluentui/blob/3e77c7d37f628ab997da534ff1cdd8a71d583eda/packages/tokens/src/global/borderRadius.ts#L3-L9
+      // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L4-L6
       borderRadius: webLightTheme.borderRadiusLarge,
       position: 'relative',
       ...(emphasis === 'overridden' ? { opacity: 0.5 } : {}),

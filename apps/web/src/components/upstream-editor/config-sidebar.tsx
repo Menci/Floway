@@ -2,7 +2,7 @@ import { DeleteRegular } from '@fluentui/react-icons';
 import { useId, useMemo } from 'react';
 import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 
-import type { RuntimeInfo, UpstreamEditorValues } from './data';
+import type { EditorAuxData, RuntimeInfo, UpstreamEditorValues } from './data';
 import { modelPrefixIsValid, publicModelId } from './data';
 import { ApiPathsSection, ProviderConfigSection } from './provider-config';
 import { EditorSection } from './section';
@@ -44,7 +44,7 @@ export function UpstreamConfigSidebar({
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
   onRefreshModels: () => void;
   modelsOnly?: boolean;
-  proxies: Array<{ id: string; name: string }>;
+  proxies: EditorAuxData['proxies'];
   record: UpstreamRecord;
   runtime: RuntimeInfo;
 }) {
@@ -195,7 +195,7 @@ function DisabledModelsCombobox({ catalogAvailable, discovered }: { catalogAvail
   </div>;
 }
 
-function ProxyFallbackEditor({ proxies, runtime }: { proxies: Array<{ id: string; name: string }>; runtime: RuntimeInfo }) {
+function ProxyFallbackEditor({ proxies, runtime }: { proxies: EditorAuxData['proxies']; runtime: RuntimeInfo }) {
   const { t } = useTranslation();
   const idPrefix = useId();
   const { control } = useFormContext<UpstreamEditorValues>();
