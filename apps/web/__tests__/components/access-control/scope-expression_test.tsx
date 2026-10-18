@@ -394,13 +394,25 @@ test('read-only collections show their real path without a fabricated All segmen
   expect(screen.queryByRole('button')).toBeNull();
 });
 
-test('renders stored regex patterns with delimiters, a regex icon, and Prism markup', () => {
-  const { container } = renderInApp(<ScopeExpression data={data} readOnly value={{ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: '^gpt-[56]' } }} />);
+test('renders stored regex patterns with delimiters, an icon, and internal syntax highlighting', () => {
+  const { container } = renderInApp(<ScopeExpression data={data} readOnly value={{ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: '^gpt-[56]+' } }} />);
 
   const regex = container.querySelector('.floway-scope-expression-regex');
-  expect(regex?.textContent).toBe('/^gpt-[56]/');
+  expect(regex?.textContent).toBe('/^gpt-[56]+/');
   expect(regex?.querySelector('.token.regex')).not.toBeNull();
+  expect(regex?.querySelector('.token.anchor')?.textContent).toBe('^');
+  expect(regex?.querySelector('.token.char-class')?.textContent).toBe('[56]');
+  expect(regex?.querySelector('.token.quantifier')?.textContent).toBe('+');
   expect(regex?.previousElementSibling?.tagName).toBe('svg');
+});
+
+test.each(['^org/model$', String.raw`^org\/model$`])('highlights the regex body independently of display delimiters: %j', pattern => {
+  const { container } = renderInApp(<ScopeExpression data={data} readOnly value={{ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: pattern } }} />);
+  const regex = container.querySelector('.floway-scope-expression-regex')!;
+  expect(regex.textContent).toBe(`/${pattern}/`);
+  expect(regex.querySelector('.token.regex')).not.toBeNull();
+  expect(regex.querySelector('.token.comment')).toBeNull();
+  expect(regex.querySelector('.token.anchor')?.textContent).toBe('^');
 });
 
 test('resource type autocomplete matches localized labels', async () => {

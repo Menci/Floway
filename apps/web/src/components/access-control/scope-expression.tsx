@@ -398,7 +398,9 @@ function ModelPart({ onActivate, readOnly, scope }: {
 
 function RegexPattern({ pattern }: { pattern: string }) {
   const styles = useStyles();
-  return <span className={mergeClasses('floway-control-label font-mono floway-scope-expression-regex', styles.regex)} dangerouslySetInnerHTML={{ __html: highlight(`/${pattern}/`, 'javascript') }} translate="no" />;
+  return <span className={mergeClasses('floway-control-label font-mono floway-scope-expression-regex', styles.regex)} translate="no">
+    <span className="token regex">/<span dangerouslySetInnerHTML={{ __html: highlight(pattern, 'regex') }} />/</span>
+  </span>;
 }
 
 function UnknownPart({ description, icon, onActivate, readOnly }: {

@@ -105,9 +105,9 @@ const prismComponentsEsm = (): Plugin => ({
   enforce: 'pre',
   transform(code, id) {
     const path = id.split('?', 1)[0]!.replaceAll('\\', '/');
-    if (!/\/prismjs\/components\/prism-[^/]+\.js$/.test(path)) return;
+    if (!/\/prismjs\/components\/prism-(?!core\.js$)[^/]+\.js$/.test(path)) return;
     const transformed = new MagicString(code);
-    transformed.prepend('import Prism from "prismjs";\n');
+    transformed.prepend('import Prism from "prismjs/components/prism-core";\n');
     return {
       code: transformed.toString(),
       map: transformed.generateMap({ hires: true, includeContent: true, source: id }),
@@ -260,7 +260,7 @@ export default defineConfig({
       'monaco-editor',
       'monaco-yaml',
       'overlayscrollbars',
-      'prismjs',
+      'prismjs/components/prism-core',
       'react',
       'react-dom/client',
       'react-hook-form',
@@ -282,6 +282,11 @@ export default defineConfig({
     // window. Excluding them keeps them on the plugin pipeline in dev, as they
     // already are in the build. The list mirrors that module's imports.
     exclude: [
+      'prismjs/components/prism-markup',
+      'prismjs/components/prism-css',
+      'prismjs/components/prism-clike',
+      'prismjs/components/prism-regex',
+      'prismjs/components/prism-javascript',
       'prismjs/components/prism-bash',
       'prismjs/components/prism-json',
       'prismjs/components/prism-markdown',
