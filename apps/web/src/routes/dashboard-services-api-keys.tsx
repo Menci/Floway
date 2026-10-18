@@ -32,6 +32,7 @@ interface ApiKeysPageData {
   keys: ApiKey[] | null;
   upstreams: UpstreamOption[] | null;
   models: ControlPlaneModel[] | null;
+  targetModels: ControlPlaneModel[] | null;
   error: string | null;
 }
 
@@ -42,23 +43,25 @@ interface LoaderData extends ApiKeysPageData {
 }
 
 const loadPageData = async (
-  current: Pick<ApiKeysPageData, 'keys' | 'upstreams' | 'models'>,
+  current: Pick<ApiKeysPageData, 'keys' | 'upstreams' | 'models' | 'targetModels'>,
   signal?: AbortSignal,
 ): Promise<ApiKeysPageData> => {
-  const [keysRes, upstreamsRes, modelsRes] = await Promise.all([
+  const [keysRes, upstreamsRes, modelsRes, targetModelsRes] = await Promise.all([
     callApi(() => api.api.keys.$get(undefined, { init: { signal } })),
     callApi(() => api.api['upstream-options'].$get(undefined, { init: { signal } })),
     callApi(() => api.api.models.$get({ query: { include_unlisted: 'true' } }, { init: { signal } })),
+    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } }, { init: { signal } })),
   ]);
   const { values, error } = mergeResults(current, {
     keys: keysRes,
     upstreams: upstreamsRes,
     models: mapResult(modelsRes, body => body.data),
+    targetModels: mapResult(targetModelsRes, body => body.data),
   });
   return { ...values, error };
 };
 
-const unloadedPageData: Pick<ApiKeysPageData, 'keys' | 'upstreams' | 'models'> = { keys: null, upstreams: null, models: null };
+const unloadedPageData: Pick<ApiKeysPageData, 'keys' | 'upstreams' | 'models' | 'targetModels'> = { keys: null, upstreams: null, models: null, targetModels: null };
 
 export async function clientLoader(): Promise<LoaderData> {
   requireDashboardSession();
@@ -90,8 +93,8 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const clipboard = useCopyToClipboard();
 
   const selectedKey = data.keys?.find(key => key.id === selectedKeyId) ?? null;
-  const agentSetupModels = selectedKey && data.models
-    ? reachableModels(data.models, effectiveUpstreamCap(selectedKey.upstream_ids, user.upstreamIds))
+  const agentSetupModels = selectedKey && data.models && data.targetModels
+    ? reachableModels(data.models, effectiveUpstreamCap(selectedKey.upstream_ids, user.upstreamIds), undefined, data.targetModels)
     : [];
 
   // Written where the picking happens rather than mirrored off rendered state:

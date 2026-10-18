@@ -42,7 +42,8 @@ export const reachableModels = (
   catalog: readonly ControlPlaneModel[],
   cap: readonly string[] | null,
   accept: (model: ControlPlaneModel) => boolean = () => true,
+  targetCatalog: readonly ControlPlaneModel[] = catalog,
 ): ControlPlaneModel[] => {
-  const index = indexCatalog(catalog);
+  const index = indexCatalog(targetCatalog);
   return catalog.filter(model => accept(model) && isModelReachable(model, index, cap));
 };
