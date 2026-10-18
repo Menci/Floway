@@ -48,6 +48,12 @@ test.each(['exact', 'regex'] as const)('anchors long %s text to its first line a
     </>);
     const segments = container.querySelectorAll('.floway-scope-expression-segment:has(.floway-scope-expression-model-icon)');
     expect(segments).toHaveLength(2);
+    for (const segment of container.querySelectorAll('.floway-scope-expression-segment:not(:has(.floway-scope-expression-model-icon))')) {
+      expect(getComputedStyle(segment.querySelector('.floway-scope-expression-part')!).alignItems).toBe('center');
+    }
+    for (const slash of container.querySelectorAll('.floway-scope-expression-slash')) {
+      expect(slash.firstElementChild!.classList.contains('floway-control-label')).toBe(true);
+    }
     for (const segment of segments) {
       const part = segment.querySelector('.floway-scope-expression-part')!;
       expect(getComputedStyle(segment).alignItems).toBe('flex-start');
@@ -188,9 +194,9 @@ test.each([
   expect(document.activeElement).toBe(input);
 });
 
-test.each([0, 1, 2])('clicking slash %i edits its following segment', index => {
+test.each([0, 1, 2])('clicking slash text %i edits its following segment', index => {
   const { container } = renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } });
-  fireEvent.click(container.querySelectorAll('.floway-scope-expression-slash')[index]!);
+  fireEvent.click(container.querySelectorAll('.floway-scope-expression-slash')[index]!.firstElementChild!);
   expect(screen.getByRole<HTMLInputElement>('combobox', { name: ['Resource type', 'Resource', 'Model'][index] }).value).toBe(['Upstream', 'Copilot', 'gpt-5'][index]);
 });
 

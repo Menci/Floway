@@ -201,11 +201,12 @@ export function ScopeExpression({ className, data, framed = false, kindHint, onC
 
   const expression = <div aria-label={interactive ? t('dashboard.accessControl.fields.scope') : undefined} className={mergeClasses('floway-scope-expression', !framed && className)} role={interactive ? 'group' : undefined}
     onMouseDown={event => {
-      if (onNavigate || (interactive && (event.target as HTMLElement).classList.contains('floway-scope-expression-slash'))) event.preventDefault();
+      if (onNavigate || (interactive && (event.target as HTMLElement).closest('.floway-scope-expression-slash'))) event.preventDefault();
     }}
     onClick={event => {
-      if (interactive && (event.target as HTMLElement).classList.contains('floway-scope-expression-slash')) {
-        activateSegment((event.target as HTMLElement).parentElement!);
+      const slash = (event.target as HTMLElement).closest('.floway-scope-expression-slash');
+      if (interactive && slash) {
+        activateSegment(slash.parentElement!);
       }
     }}
   >
@@ -300,7 +301,7 @@ function AppendTrigger({ label, onActivate, readOnly = false }: { label: string;
 }
 
 function Slash() {
-  return <span aria-hidden="true" className="floway-scope-expression-slash">/</span>;
+  return <span aria-hidden="true" className="floway-scope-expression-slash"><span className="floway-control-label">/</span></span>;
 }
 
 function PartToken({ children, className, onActivate, readOnly }: {

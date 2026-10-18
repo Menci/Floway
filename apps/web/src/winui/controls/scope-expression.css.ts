@@ -154,6 +154,7 @@ export const scopeExpressionCss = String.raw`
 }
 
 .floway-scope-expression-segment:has(.floway-scope-expression-model-icon),
+.floway-scope-expression-segment:has(.floway-scope-expression-model-icon) .floway-scope-expression-part,
 .floway-scope-expression-segment:has(.floway-scope-expression-model-icon) .floway-scope-expression-part-control {
   align-items: flex-start;
 }
@@ -190,7 +191,7 @@ export const scopeExpressionCss = String.raw`
 }
 
 .floway-scope-expression-part {
-  align-items: flex-start;
+  align-items: center;
   border-radius: var(--borderRadiusMedium);
   display: inline-flex;
   font-weight: var(--fontWeightRegular);
@@ -239,6 +240,7 @@ button.floway-scope-expression-part:focus-visible {
 
 .floway-scope-expression-slash {
   color: var(--winui-text-fill-secondary);
+  display: flex;
   flex: none;
   line-height: 20px;
   padding: 0 4px;
