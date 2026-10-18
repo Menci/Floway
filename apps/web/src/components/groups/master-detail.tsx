@@ -105,19 +105,19 @@ function GroupDetails({ disabled, group: selected, members, onDelete, onEdit, on
           <TableHeaderCell><span className="sr-only">{t('dashboard.users.table.actions')}</span></TableHeaderCell>
         </TableRow></TableHeader>
         <TableBody>{members.map(({ user, createdAt: joinedAt }) => <TableRow className="h-11" key={user.id}>
-            <TableCell className="!pl-[var(--floway-panel-inset)]"><UserIdentity isAdmin={user.isAdmin} username={user.username} /></TableCell>
-            <TableCell className="whitespace-nowrap"><Tooltip content={dateTime(joinedAt, locale)} relationship="description"><time className="winui-focus-rect floway-control-label whitespace-nowrap" dateTime={joinedAt} tabIndex={0}>{shortDate(joinedAt, locale)}</time></Tooltip></TableCell>
-            <TableCell className="whitespace-nowrap">{user.upstreamIds === null ? t('dashboard.users.upstreams.all') : t('dashboard.users.upstreams.count', { count: user.upstreamIds.length })}</TableCell>
-            <TableCell><ConfirmFlyout
-              actionLabel={t('dashboard.groupsManagement.remove.confirm')}
-              disabled={disabled}
-              icon={<DismissRegular />}
-              message={t('dashboard.groupsManagement.remove.message', { username: user.username, group: selected.name })}
-              onConfirm={() => onMemberChange(selected, user, false)}
-              title={t('dashboard.groupsManagement.remove.title')}
-              triggerLabel={t('dashboard.groupsManagement.actions.remove', { username: user.username })}
-            /></TableCell>
-          </TableRow>)}</TableBody>
+          <TableCell className="!pl-[var(--floway-panel-inset)]"><UserIdentity isAdmin={user.isAdmin} username={user.username} /></TableCell>
+          <TableCell className="whitespace-nowrap"><Tooltip content={dateTime(joinedAt, locale)} relationship="description"><time className="winui-focus-rect floway-control-label whitespace-nowrap" dateTime={joinedAt} tabIndex={0}>{shortDate(joinedAt, locale)}</time></Tooltip></TableCell>
+          <TableCell className="whitespace-nowrap">{user.upstreamIds === null ? t('dashboard.users.upstreams.all') : t('dashboard.users.upstreams.count', { count: user.upstreamIds.length })}</TableCell>
+          <TableCell><ConfirmFlyout
+            actionLabel={t('dashboard.groupsManagement.remove.confirm')}
+            disabled={disabled}
+            icon={<DismissRegular />}
+            message={t('dashboard.groupsManagement.remove.message', { username: user.username, group: selected.name })}
+            onConfirm={() => onMemberChange(selected, user, false)}
+            title={t('dashboard.groupsManagement.remove.title')}
+            triggerLabel={t('dashboard.groupsManagement.actions.remove', { username: user.username })}
+          /></TableCell>
+        </TableRow>)}</TableBody>
       </Table>
     </ScrollArea>}
   </section>;
