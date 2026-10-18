@@ -5,7 +5,47 @@ export const avatarCss = `
   gap: 4px;
   min-width: 0;
   max-width: 100%;
+  font-size: var(--fontSizeBase300);
   font-weight: var(--fontWeightRegular);
+  line-height: var(--lineHeightBase300);
+}
+
+.floway-identity-action {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--borderRadiusMedium);
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0;
+  text-align: start;
+  text-decoration: none;
+}
+
+.floway-identity-action:hover {
+  text-decoration: none;
+}
+
+.floway-identity-token.fui-Tag {
+  --floway-chip-stroke: transparent;
+  background-color: transparent;
+  border-color: transparent;
+  column-gap: var(--spacingHorizontalXS);
+  height: auto;
+  padding: 0;
+}
+
+.floway-identity-token .fui-Tag__primaryText.fui-Tag__primaryText {
+  display: flex;
+  padding: 0;
+}
+
+.floway-identity-token .fui-Tag__dismissIcon {
+  margin: 0;
 }
 
 /* Group pictures use Fluent's Medium square-Avatar radius, one step above

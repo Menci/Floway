@@ -13,6 +13,12 @@ export const tagPickerCss = `
   padding-inline: 3px calc(3px + var(--fui-TagPickerControl-aside-width, 0px));
 }
 
+/* The control already owns the TokenizingTextBox presenter padding above. */
+.fui-TagPickerGroup.fui-TagPickerGroup,
+.fui-TagPickerInput.fui-TagPickerInput {
+  padding-block: 0;
+}
+
 .fui-TagPickerInput.fui-TagPickerInput::placeholder {
   color: var(--winui-text-fill-secondary);
 }

@@ -1,13 +1,15 @@
 import type { AvatarProps, SlotRenderFunction } from '@fluentui/react-components';
-import type { ComponentProps } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 
 import { fluentComponents } from '../../fluent';
 
 const { Avatar } = fluentComponents;
 
-const renderInitials: SlotRenderFunction<ComponentProps<'span'>> = (Component, slotProps) =>
-  <Component {...slotProps}><span className="floway-avatar-initials">{slotProps.children}</span></Component>;
+const Initials = ({ children }: { children: ReactNode }) => <span className="floway-avatar-initials">{children}</span>;
 
-export function IdentityAvatar(props: Omit<AvatarProps, 'initials'>) {
-  return <Avatar {...props} initials={{ children: renderInitials }} />;
+const renderInitials: SlotRenderFunction<ComponentProps<'span'>> = (Component, slotProps) =>
+  <Component {...slotProps}><Initials>{slotProps.children}</Initials></Component>;
+
+export function IdentityAvatar({ initials, ...props }: Omit<AvatarProps, 'initials'> & { initials?: string }) {
+  return <Avatar {...props} initials={{ children: initials === undefined ? renderInitials : <Initials>{initials}</Initials> }} />;
 }

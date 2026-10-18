@@ -28,3 +28,8 @@ test.each(['', '研究组'])('keeps the native person icon when initials cannot 
   expect(icons[0]!.className).toBe(icons[1]!.className);
   expect(container.querySelector('.floway-avatar-initials')).toBeNull();
 });
+
+test.each(['+2', '+12', '+123'])('preserves explicit counter text %s inside the trimmed initials slot', initials => {
+  const { container } = renderInApp(<IdentityAvatar color="neutral" initials={initials} name={initials} shape="square" size={24} />);
+  expect(container.querySelector('.floway-avatar-initials')?.textContent).toBe(initials);
+});

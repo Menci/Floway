@@ -1,20 +1,18 @@
 import { DeleteRegular, EditRegular, KeyRegular } from '@fluentui/react-icons';
 
-import { UserAvatar } from './avatar';
+import { UserIdentity } from './identity';
 import type { ControlPlaneGroup, ControlPlaneUser } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { dateTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
-import { GroupBadges } from '../groups/badges';
+import { GroupMemberships } from '../groups/memberships';
 import { ResourceListEmptyState } from '../ui/resource-list';
-import { RowTitleButton } from '../ui/row-title';
 import { ScrollArea } from '../ui/scroll-area';
 import { StatusBadge } from '../ui/status-badge';
 import { TABLE_ACTIONS_WIDTH, TableActions, TableTrailingHeader } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
-import { TruncationTooltip } from '../ui/truncation-tooltip';
 
 const {
   Table,
@@ -68,16 +66,13 @@ export function UsersTable({
             const protectedUser = user.id === 1 || user.id === actorId;
             return (
               <TableRow key={user.id}>
-                <TableCell><div className="flex items-center gap-2 min-w-0">
-                  <UserAvatar username={user.username} />
-                  <TruncationTooltip content={user.username} relationship="label">{measureRef => <RowTitleButton onClick={() => onEdit(user)} ref={measureRef}>{user.username}</RowTitleButton>}</TruncationTooltip>
-                </div></TableCell>
+                <TableCell><button className="winui-focus-rect floway-identity-action" onClick={() => onEdit(user)} type="button"><UserIdentity username={user.username} /></button></TableCell>
                 <TableCell className="whitespace-nowrap">
                   <StatusBadge tone={user.isAdmin ? 'accent' : 'neutral'}>
                     {t(`dashboard.users.role.${user.isAdmin ? 'admin' : 'operator'}`)}
                   </StatusBadge>
                 </TableCell>
-                <TableCell><GroupBadges groups={user.groupIds.map(id => groups.find(group => group.id === id)!)} /></TableCell>
+                <TableCell><GroupMemberships groups={user.groupIds.map(id => groups.find(group => group.id === id)!)} /></TableCell>
                 <TableCell>
                   <Tooltip content={dateTime(user.createdAt, locale)} relationship="description">
                     <span className="winui-focus-rect whitespace-nowrap" tabIndex={0}>
