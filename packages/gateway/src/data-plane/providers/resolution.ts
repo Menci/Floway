@@ -164,8 +164,11 @@ export const enumerateModelCandidates = async ({
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const createFetcherForUpstream = await createPerRequestFetcher(runtimeLocation);
-  const providers = await listModelProviders(upstreamIds);
+  const upstreams = await getRepo().upstreams.list();
+  const [createFetcherForUpstream, providers] = await Promise.all([
+    createPerRequestFetcher(runtimeLocation, upstreams),
+    listModelProviders(upstreamIds, upstreams),
+  ]);
   const resolutionContext = {
     fetcherForUpstream: createFetcherForUpstream,
     scheduleRefresh: createModelsRefreshScheduler(runtimeLocation, scheduler),
