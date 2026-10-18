@@ -72,6 +72,7 @@ export const resolveAccess = async (c: CtxWithJson<typeof resolveAccessBody>) =>
     scope,
     new Set(targetGroups),
     'isAdmin' in subject && subject.isAdmin,
+    principal.kind === 'user' ? principal.id : undefined,
   );
   return c.json(resolution);
 };

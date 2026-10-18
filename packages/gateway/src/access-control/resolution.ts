@@ -182,7 +182,19 @@ export const resolveEffectiveAssignments = (
   scope: AccessScope,
   targetGroups: ReadonlySet<number>,
   isAdmin: boolean,
+  selfUserId?: number,
 ): AccessResolution => {
   const resolution = resolveAssignments(records, scope, targetGroups);
-  return isAdmin ? { ...resolution, values: administratorAccessValues(scope), decisions: [] } : resolution;
+  if (isAdmin) return { ...resolution, values: administratorAccessValues(scope), decisions: [] };
+  if (scope.kind === 'user' && scope.userId === selfUserId) {
+    return {
+      ...resolution,
+      values: { ...resolution.values, 'User.Audit': true },
+      decisions: resolution.decisions.map(({ recordId, permissions }) => {
+        const { 'User.Audit': _selfAudit, ...rest } = permissions;
+        return { recordId, permissions: rest };
+      }),
+    };
+  }
+  return resolution;
 };

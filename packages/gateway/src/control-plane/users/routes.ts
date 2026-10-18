@@ -85,12 +85,6 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
       sortOrder: 0,
       values: { 'Model.Use': true },
     }),
-    repo.accessRecords.save({
-      principal: { kind: 'user', id: user.id },
-      scope: { kind: 'user', userId: user.id },
-      sortOrder: 0,
-      values: { 'User.Audit': true },
-    }),
   ]);
   if (body.groupIds !== undefined) await repo.groups.replaceUserGroups(user.id, body.groupIds);
 

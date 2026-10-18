@@ -94,6 +94,11 @@ test('a Group scope expands to its current members for User.Audit', async () => 
   expect(await check(subject, { kind: 'user', userId: 8 }, { permission: 'User.Audit' })).toBe(false);
 });
 
+test('a user may always audit themselves without an ACL record', async () => {
+  expect(await check(subject, { kind: 'user', userId: subject.id }, { permission: 'User.Audit' })).toBe(true);
+  expect(await check(subject, { kind: 'user', userId: subject.id + 1 }, { permission: 'User.Audit' })).toBe(false);
+});
+
 test('Upstream.Edit levels compare against the requested minimum', async () => {
   await repo.accessRecords.save({
     principal: { kind: 'user', id: subject.id },

@@ -218,12 +218,6 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
     sortOrder: 0,
     values: { 'Model.Use': true },
   });
-  await repo.accessRecords.save({
-    principal: { kind: 'user', id: 2 },
-    scope: { kind: 'user', userId: 2 },
-    sortOrder: 0,
-    values: { 'User.Audit': true },
-  });
 
   const apiKey = options.apiKey ?? {
     id: `key_${crypto.randomUUID()}`,

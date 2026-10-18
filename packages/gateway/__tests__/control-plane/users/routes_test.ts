@@ -43,7 +43,6 @@ test('POST /api/users creates the user and provisions a Default key', async () =
   const records = await repo.accessRecords.listByPrincipal({ kind: 'user', id: body.user.id });
   expect(records.map(record => ({ scope: record.scope, values: record.values }))).toEqual([
     { scope: { kind: 'upstreams' }, values: { 'Model.Use': true } },
-    { scope: { kind: 'user', userId: body.user.id }, values: { 'User.Audit': true } },
   ]);
 });
 

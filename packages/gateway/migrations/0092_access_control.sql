@@ -52,16 +52,6 @@ WHERE upstream_ids IS NULL
       AND users.upstream_ids IS NOT NULL
   );
 
--- Self telemetry remains available without an implicit resolver exception.
-INSERT INTO access_records (
-  principal_type, principal_id, scope_json, scope_key, sort_order, values_json, created_at, updated_at
-)
-SELECT
-  'user', id, json_object('kind', 'user', 'userId', id), json_array('user', id), 0,
-  json_object('User.Audit', json('true')), created_at, created_at
-FROM users
-WHERE deleted_at IS NULL;
-
 CREATE TABLE users_new (
   id INTEGER PRIMARY KEY,
   username TEXT NOT NULL COLLATE NOCASE,

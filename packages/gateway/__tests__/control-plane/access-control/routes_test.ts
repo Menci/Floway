@@ -128,6 +128,24 @@ test('access resolve can exclude the edited record to expose inherited state', a
   assertEquals((await inherited.json()).values['Model.Use'], true);
 });
 
+test('effective access reports intrinsic self audit without marking an ACL assignment active', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  const record = await repo.accessRecords.save({
+    principal: { kind: 'user', id: 2 },
+    scope: { kind: 'user', userId: 2 },
+    sortOrder: 0,
+    values: { 'User.Audit': false },
+  });
+  const response = await request('/access-resolve', adminSession, {
+    method: 'POST',
+    body: JSON.stringify({ principal: { kind: 'user', id: 2 }, scope: { kind: 'user', userId: 2 } }),
+  });
+  assertEquals(response.status, 200);
+  const resolution = await response.json();
+  expect(resolution.values['User.Audit']).toBe(true);
+  expect(resolution.decisions.find((row: { recordId: number }) => row.recordId === record.id).permissions['User.Audit']).toBeUndefined();
+});
+
 test('group inheritance resolves ancestor scopes and excludes the edited cell', async () => {
   const { adminSession, repo } = await setupAppTest();
   const group = await repo.groups.create('Operators', 120);

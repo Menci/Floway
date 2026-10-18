@@ -14,7 +14,9 @@ export const checkMany = async (
   checks: readonly AccessCheck[],
 ): Promise<boolean[]> => {
   for (const check of checks) assertCompatible(check.target, check.requirement);
-  if (subject.isAdmin) return checks.map(() => true);
+  const bypass = checks.map(({ target, requirement }) => subject.isAdmin
+    || (requirement.permission === 'User.Audit' && target.kind === 'user' && target.userId === subject.id));
+  if (bypass.every(Boolean)) return bypass;
   if (checks.length === 0) return [];
 
   const repo = getRepo();
@@ -26,7 +28,8 @@ export const checkMany = async (
     repo.groups.listIdsByUserIds(targetUserIds),
   ]);
   const resolver = createAccessResolver(records);
-  return checks.map(({ target, requirement }) => {
+  return checks.map(({ target, requirement }, index) => {
+    if (bypass[index]) return true;
     const targetGroups = target.kind === 'user'
       ? new Set(targetMemberships.get(target.userId)!)
       : new Set<number>();

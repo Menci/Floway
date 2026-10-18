@@ -50,11 +50,8 @@ test('the access-control migration translates user upstream caps and grants self
     values: JSON.parse(record.valuesJson),
   })), [
     { principalId: 2, scope: { kind: 'upstreams' }, sortOrder: 0, values: { 'Model.Use': true } },
-    { principalId: 2, scope: { kind: 'user', userId: 2 }, sortOrder: 0, values: { 'User.Audit': true } },
     { principalId: 3, scope: { kind: 'upstream', upstreamId: 'up_a' }, sortOrder: 0, values: { 'Model.Use': true } },
     { principalId: 3, scope: { kind: 'upstream', upstreamId: 'up_b' }, sortOrder: 0, values: { 'Model.Use': true } },
-    { principalId: 3, scope: { kind: 'user', userId: 3 }, sortOrder: 0, values: { 'User.Audit': true } },
-    { principalId: 4, scope: { kind: 'user', userId: 4 }, sortOrder: 0, values: { 'User.Audit': true } },
   ]);
   const columns = db.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>;
   assertEquals(columns.some(column => column.name === 'upstream_ids'), false);
