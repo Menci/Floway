@@ -22,7 +22,7 @@ export function ConfirmFlyout({ actionLabel, disabled = false, icon, message, on
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const confirm = async () => {
-    if (busy) return;
+    if (busy || disabled) return;
     setBusy(true);
     setError(null);
     try {
@@ -53,7 +53,7 @@ export function ConfirmFlyout({ actionLabel, disabled = false, icon, message, on
       {error && <OutcomeMessageBar>{error}</OutcomeMessageBar>}
       <div className="flex justify-end gap-2">
         <Button autoFocus disabled={busy} onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
-        <Button appearance="primary" disabledFocusable={busy} onClick={() => void confirm()}>{actionLabel}</Button>
+        <Button appearance="primary" disabledFocusable={busy || disabled} onClick={() => void confirm()}>{actionLabel}</Button>
       </div>
     </PopoverSurface>
   </Popover>;

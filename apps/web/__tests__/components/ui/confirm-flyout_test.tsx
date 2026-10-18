@@ -37,3 +37,15 @@ test('keeps a failed confirmation open and allows retry', async () => {
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Remove' })); });
   await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2));
 });
+
+test('disabling an open confirmation also locks its submit action', async () => {
+  const confirm = vi.fn(async () => null);
+  const props = { actionLabel: 'Remove', icon: <DismissRegular />, message: 'Remove Alice from Platform?', onConfirm: confirm, title: 'Remove member', triggerLabel: 'Remove Alice' };
+  const { rerender } = renderInApp(<ConfirmFlyout {...props} />);
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Remove Alice' })); });
+  rerender(<ConfirmFlyout {...props} disabled />);
+  const submit = screen.getByRole('button', { name: 'Remove' });
+  expect(submit.getAttribute('aria-disabled')).toBe('true');
+  await act(async () => { fireEvent.click(submit); });
+  expect(confirm).not.toHaveBeenCalled();
+});
