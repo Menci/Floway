@@ -1,5 +1,5 @@
 import { fireEvent, screen } from '@testing-library/react';
-import { useState } from 'react';
+import { createRef, useState } from 'react';
 import { expect, test, vi } from 'vitest';
 
 import { InlineCombobox } from '../../../src/components/ui/inline-combobox';
@@ -26,6 +26,20 @@ test('updates its text mirror as the controlled input changes', () => {
   const { container } = renderInApp(<Editor />);
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'Upstream' } });
   expect(container.querySelector('[data-inline-combobox-mirror]')!.textContent).toBe('Upstream');
+});
+
+test('lays out the native input inside the shared trimmed text box', () => {
+  const ref = createRef<HTMLInputElement>();
+  const { container } = renderInApp(<InlineCombobox aria-label="Resource" emptyMessage="No resources" ref={ref} value="Upstream" />);
+  const input = screen.getByRole<HTMLInputElement>('combobox');
+  const mirror = container.querySelector('[data-inline-combobox-mirror]')!;
+  expect(ref.current).toBe(input);
+  expect(input.parentElement!.classList.contains('floway-control-label')).toBe(true);
+  expect(mirror.classList.contains('floway-control-label')).toBe(true);
+  expect(input.parentElement!.parentElement).toBe(mirror.parentElement);
+  expect(getComputedStyle(input).display).toBe('inline-block');
+  expect(getComputedStyle(input).lineHeight).toBe('normal');
+  expect(input.style.transform).toBe('');
 });
 
 test('retains Fluent option selection and the shared scrollable dropdown', () => {

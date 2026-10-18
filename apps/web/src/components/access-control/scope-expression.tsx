@@ -195,25 +195,33 @@ export function ScopeExpression({ className, data, framed = false, kindHint, onC
       }
     }}
   >
-    <span className="floway-scope-expression-segment">{active === 'kind'
-      ? <><Slash />{input}</>
-      : kind === null
-        ? <><Slash />{!readOnly && <AppendTrigger label={t('dashboard.accessControl.scope.kind')} onActivate={() => activate('kind')} />}</>
-        : <><Slash /><PartToken className="floway-scope-expression-kind" onActivate={() => activate('kind')} readOnly={!interactive}>{kindLabel(kind, t)}</PartToken></>}</span>
+    <Segment active={active === 'kind'} dirty={dirty} input={input}>{editing => kind === null
+      ? !readOnly && <AppendTrigger label={t('dashboard.accessControl.scope.kind')} onActivate={() => activate('kind')} readOnly={editing} />
+      : <PartToken className="floway-scope-expression-kind" onActivate={() => activate('kind')} readOnly={editing || !interactive}>{kindLabel(kind, t)}</PartToken>}
+    </Segment>
 
-    {kind !== null && (active === 'instance' || hasInstance || !readOnly) && <span className="floway-scope-expression-segment">{active === 'instance'
-      ? <><Slash />{input}</>
-      : hasInstance
-        ? <><Slash /><InstancePart data={data} kind={kind} onActivate={() => activate('instance')} readOnly={!interactive} t={t} value={value} /></>
-        : <><Slash /><AppendTrigger label={t('dashboard.accessControl.scope.instance')} onActivate={() => activate('instance')} /></>}</span>}
+    {kind !== null && (active === 'instance' || hasInstance || !readOnly) && <Segment active={active === 'instance'} dirty={dirty} input={input}>{editing => hasInstance
+      ? <InstancePart data={data} kind={kind} onActivate={() => activate('instance')} readOnly={editing || !interactive} t={t} value={value} />
+      : <AppendTrigger label={t('dashboard.accessControl.scope.instance')} onActivate={() => activate('instance')} readOnly={editing} />}
+    </Segment>}
 
-    {kind === 'upstream' && hasUpstreamInstance(value) && (active === 'model' || value.kind === 'upstreamModel' || !readOnly) && <span className="floway-scope-expression-segment">{active === 'model'
-      ? <><Slash />{input}</>
-      : value.kind === 'upstreamModel'
-        ? <><Slash /><ModelPart onActivate={() => activate('model')} readOnly={!interactive} scope={value} /></>
-        : <><Slash /><AppendTrigger label={t('dashboard.accessControl.scope.model')} onActivate={() => activate('model')} /></>}</span>}
+    {kind === 'upstream' && hasUpstreamInstance(value) && (active === 'model' || value.kind === 'upstreamModel' || !readOnly) && <Segment active={active === 'model'} dirty={dirty} input={input}>{editing => value.kind === 'upstreamModel'
+      ? <ModelPart onActivate={() => activate('model')} readOnly={editing || !interactive} scope={value} />
+      : <AppendTrigger label={t('dashboard.accessControl.scope.model')} onActivate={() => activate('model')} readOnly={editing} />}
+    </Segment>}
   </div>;
   return framed ? <ScopeEditorSurface className={className} onRemove={kind === null ? undefined : removeLast} readOnly={readOnly}>{expression}</ScopeEditorSurface> : expression;
+}
+
+function Segment({ active, children, dirty, input }: { active: boolean; children: (editing: boolean) => ReactNode; dirty: boolean; input: ReactNode }) {
+  const content = children(active);
+  return <span className="floway-scope-expression-segment"><Slash />{active
+    ? <span className="floway-scope-expression-part-editor" data-pristine={!dirty ? true : undefined}>
+        {!dirty && <span aria-hidden className="floway-scope-expression-part-preview" inert>{content}</span>}
+        <span className="floway-scope-expression-part-control">{input}</span>
+      </span>
+    : content}
+  </span>;
 }
 
 function PartInput({ ariaLabel, emptyMessage, freeform, model, name, onBlur, onCancel, onChange, onSelect, options, query, regex, resourceType }: {
@@ -268,8 +276,11 @@ function PartInput({ ariaLabel, emptyMessage, freeform, model, name, onBlur, onC
   </span>;
 }
 
-function AppendTrigger({ label, onActivate }: { label: string; onActivate: () => void }) {
-  return <button aria-label={label} className="floway-scope-expression-part floway-scope-expression-append" onClick={onActivate} type="button"><MoreHorizontal16Regular /></button>;
+function AppendTrigger({ label, onActivate, readOnly = false }: { label: string; onActivate: () => void; readOnly?: boolean }) {
+  const className = 'floway-scope-expression-part floway-scope-expression-append';
+  return readOnly
+    ? <span className={className}><MoreHorizontal16Regular /></span>
+    : <button aria-label={label} className={className} onClick={onActivate} type="button"><MoreHorizontal16Regular /></button>;
 }
 
 function Slash() {

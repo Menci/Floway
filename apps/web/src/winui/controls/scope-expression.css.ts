@@ -16,7 +16,7 @@ export const scopeExpressionCss = String.raw`
   min-width: 240px;
   padding: 0 11px;
   position: relative;
-  width: max-content;
+  width: fit-content;
 }
 
 .floway-scope-editor > .floway-scope-expression {
@@ -132,6 +132,33 @@ export const scopeExpressionCss = String.raw`
   display: inline-flex;
   max-width: 100%;
   min-width: 0;
+}
+
+/* Preserve the rendered token's footprint on activation. Typing releases that
+   sizing reference so the draft can grow and shrink with its contents. */
+.floway-scope-expression-part-editor {
+  display: inline-grid;
+  max-width: 100%;
+  min-width: 0;
+  position: relative;
+}
+
+.floway-scope-expression-part-preview {
+  display: flex;
+  min-width: 0;
+  visibility: hidden;
+}
+
+.floway-scope-expression-part-control {
+  align-items: center;
+  display: flex;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.floway-scope-expression-part-editor[data-pristine] > .floway-scope-expression-part-control {
+  inset: 0;
+  position: absolute;
 }
 
 .floway-scope-expression-part {

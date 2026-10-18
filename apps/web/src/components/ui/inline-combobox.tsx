@@ -1,11 +1,11 @@
 import type { SlotRenderFunction } from '@fluentui/react-components';
-import { forwardRef, useLayoutEffect, useRef } from 'react';
+import { forwardRef } from 'react';
 import type { ComponentProps } from 'react';
 
 import { listboxRenderer, LISTBOX_POSITIONING } from './fluent-form-controls';
 import { fluentComponents } from '../../fluent';
 
-const { Combobox, makeStyles, mergeClasses, useMergedRefs } = fluentComponents;
+const { Combobox, makeStyles, mergeClasses } = fluentComponents;
 
 const useStyles = makeStyles({
   // Inline editing retains Fluent's listbox behavior but deliberately omits
@@ -38,14 +38,18 @@ const useStyles = makeStyles({
     },
   },
   mirror: { gridArea: '1 / 1', minWidth: 0, overflow: 'hidden', visibility: 'hidden', whiteSpace: 'pre' },
+  // Keep the native input in inline formatting inside the same trimmed text
+  // box as the mirror. Absolute-positioning the input itself centers its font
+  // box independently and rounds its baseline differently at fractional offsets.
+  // https://drafts.csswg.org/css-inline-3/#text-box-trim
+  editor: { position: 'absolute', top: 0, left: 0, width: '100%', whiteSpace: 'nowrap' },
   input: {
     '&.fui-Combobox__input': {
-      position: 'absolute',
-      inset: 0,
+      display: 'inline-block',
       // Leave room for the caret without widening the surrounding text run.
       width: 'calc(100% + 1px)',
       minWidth: 0,
-      height: '100%',
+      height: 'auto',
       padding: 0,
       margin: 0,
       border: 0,
@@ -54,7 +58,8 @@ const useStyles = makeStyles({
       fontFamily: 'inherit',
       fontSize: 'inherit',
       fontWeight: 'inherit',
-      lineHeight: 'inherit',
+      lineHeight: 'normal',
+      verticalAlign: 'baseline',
       outlineStyle: 'none',
       boxShadow: 'none',
       textOverflow: 'clip',
@@ -65,38 +70,9 @@ const useStyles = makeStyles({
 export const InlineCombobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof Combobox>, 'appearance' | 'clearable' | 'clearIcon' | 'expandIcon' | 'input' | 'listbox' | 'root' | 'value'> & { emptyMessage: string; value: string }>(
   ({ className, emptyMessage, positioning, value, ...props }, ref) => {
     const styles = useStyles();
-    const inputRef = useRef<HTMLInputElement>(null);
-    const mirrorRef = useRef<HTMLSpanElement>(null);
-    const mergedRef = useMergedRefs(ref, inputRef);
-    useLayoutEffect(() => {
-      const input = inputRef.current!;
-      const mirror = mirrorRef.current!;
-      if (mirror.getBoundingClientRect().height === 0) return;
-      const context = document.createElement('canvas').getContext('2d')!;
-      let mounted = true;
-      // Native inputs center their untrimmed font box. Match the mirror's
-      // trimmed baseline without changing the path's layout or input behavior.
-      // https://html.spec.whatwg.org/multipage/canvas.html#textmetrics
-      const align = () => {
-        if (!mounted) return;
-        context.font = getComputedStyle(mirror).font;
-        const { fontBoundingBoxAscent: ascent, fontBoundingBoxDescent: descent } = context.measureText('H');
-        const range = document.createRange();
-        range.selectNodeContents(mirror);
-        const textBaseline = range.getBoundingClientRect().top - mirror.getBoundingClientRect().top + ascent;
-        const inputBaseline = Math.floor((input.getBoundingClientRect().height - ascent - descent) / 2) + ascent;
-        input.style.transform = `translateY(${Math.round(textBaseline - inputBaseline)}px)`;
-      };
-      align();
-      const observer = new ResizeObserver(align);
-      observer.observe(mirror);
-      void document.fonts.ready.then(align);
-      document.fonts.addEventListener('loadingdone', align);
-      return () => { mounted = false; observer.disconnect(); document.fonts.removeEventListener('loadingdone', align); };
-    }, [className]);
     const renderRoot: SlotRenderFunction<ComponentProps<'div'>> = (Component, rootProps) => <Component {...rootProps}>
-      <span aria-hidden className={mergeClasses('floway-control-label', styles.mirror)} data-inline-combobox-mirror="" ref={mirrorRef}>{value || '\u200b'}</span>
-      {rootProps.children}
+      <span aria-hidden className={mergeClasses('floway-control-label', styles.mirror)} data-inline-combobox-mirror="">{value || '\u200b'}</span>
+      <span className={mergeClasses('floway-control-label', styles.editor)}>{rootProps.children}</span>
     </Component>;
     return <Combobox
       {...props}
@@ -110,7 +86,7 @@ export const InlineCombobox = forwardRef<HTMLInputElement, Omit<ComponentProps<t
         children: listboxRenderer(props.freeform === true, emptyMessage),
       }}
       positioning={positioning ?? LISTBOX_POSITIONING}
-      ref={mergedRef}
+      ref={ref}
       value={value}
     />;
   },

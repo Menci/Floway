@@ -66,6 +66,28 @@ test('uses the field clear icon inside the scope removal button', () => {
   expect(icon.getAttribute('viewBox')).toBe('0 0 12 12');
 });
 
+test.each([
+  [{ kind: 'user', userId: 2 }, 'alice'],
+  [{ kind: 'group', groupId: 3 }, 'operators'],
+  [{ kind: 'upstream', upstreamId: 'up_a' }, 'Copilot'],
+  [{ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } }, 'gpt-5'],
+] as const)('preserves the %s token footprint until its draft changes', (scope, label) => {
+  const { container } = renderEditor(scope);
+  fireEvent.click(screen.getByRole('button', { name: label }));
+  const part = container.querySelector('.floway-scope-expression-part-editor')!;
+  const preview = part.querySelector('.floway-scope-expression-part-preview')!;
+  expect(part.getAttribute('data-pristine')).toBe('true');
+  expect(preview.textContent).toContain(label);
+  expect(preview.getAttribute('aria-hidden')).toBe('true');
+  expect(preview.hasAttribute('inert')).toBe(true);
+  expect(preview.querySelector('input, button')).toBeNull();
+  expect(screen.getAllByRole('combobox')).toHaveLength(1);
+
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'draft' } });
+  expect(part.hasAttribute('data-pristine')).toBe(false);
+  expect(part.querySelector('.floway-scope-expression-part-preview')).toBeNull();
+});
+
 test('removing a group keeps the Group prefix', () => {
   const { changed } = renderEditor({ kind: 'group', groupId: 3 });
   fireEvent.click(screen.getByRole('button', { name: 'Remove last scope segment' }));
