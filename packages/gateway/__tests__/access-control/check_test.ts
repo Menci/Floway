@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { check, checkMany } from '../../src/access-control/check.ts';
+import { checkMany } from '../../src/access-control/check.ts';
+import type { AccessRequirement, AccessTarget } from '../../src/access-control/types.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import type { User } from '../../src/repo/types.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
@@ -15,6 +16,9 @@ const subject: User = {
 };
 
 let repo: InMemoryRepo;
+
+const check = async (subject: User, target: AccessTarget, requirement: AccessRequirement): Promise<boolean> =>
+  (await checkMany(subject, [{ target, requirement }]))[0]!;
 
 beforeEach(() => {
   repo = new InMemoryRepo();
@@ -144,4 +148,80 @@ describe('read lifetime', () => {
     expect(await check({ ...subject, isAdmin: true }, { kind: 'upstream', upstreamId: 'up_a' }, { permission: 'Model.Use' })).toBe(true);
     expect(records).not.toHaveBeenCalled();
   });
+});
+
+test('checkMany resolves many targets from one indexed resolver without rebuilding records', async () => {
+  for (const upstreamId of ['a', 'b']) {
+    await repo.accessRecords.save({
+      principal: { kind: 'user', id: subject.id },
+      scope: { kind: 'upstream', upstreamId },
+      sortOrder: 0,
+      values: { 'Model.Use': true },
+    });
+  }
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: subject.id },
+    scope: { kind: 'upstreamModel', upstreamId: 'a', model: { kind: 'regex', value: '^gpt-' } },
+    sortOrder: 0,
+    values: { 'Model.Use': false },
+  });
+  const allowed = await checkMany(subject, [
+    { target: { kind: 'upstreamModel', upstreamId: 'a', modelId: 'gpt-5' }, requirement: { permission: 'Model.Use' } },
+    { target: { kind: 'upstreamModel', upstreamId: 'b', modelId: 'gpt-5' }, requirement: { permission: 'Model.Use' } },
+  ]);
+  expect(allowed).toEqual([false, true]);
+});
+
+test('a nonmatching exact model rule does not override an ancestor grant', async () => {
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: subject.id },
+    scope: { kind: 'upstreams' },
+    sortOrder: 0,
+    values: { 'Model.Use': true },
+  });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: subject.id },
+    scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-4' } },
+    sortOrder: 0,
+    values: { 'Model.Use': false },
+  });
+  expect(await checkMany(subject, [
+    { target: { kind: 'upstreamModel', upstreamId: 'up_a', modelId: 'gpt-5' }, requirement: { permission: 'Model.Use' } },
+  ])).toEqual([true]);
+});
+
+test('a matching exact model rule overrides an ancestor grant', async () => {
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: subject.id },
+    scope: { kind: 'upstreams' },
+    sortOrder: 0,
+    values: { 'Model.Use': true },
+  });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: subject.id },
+    scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-4' } },
+    sortOrder: 0,
+    values: { 'Model.Use': false },
+  });
+  expect(await checkMany(subject, [
+    { target: { kind: 'upstreamModel', upstreamId: 'up_a', modelId: 'gpt-4' }, requirement: { permission: 'Model.Use' } },
+  ])).toEqual([false]);
+});
+
+test('a matching regex model rule follows its configured order', async () => {
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: subject.id },
+    scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: '^gpt-' } },
+    sortOrder: 1,
+    values: { 'Model.Use': false },
+  });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: subject.id },
+    scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } },
+    sortOrder: 0,
+    values: { 'Model.Use': true },
+  });
+  expect(await checkMany(subject, [
+    { target: { kind: 'upstreamModel', upstreamId: 'up_a', modelId: 'gpt-5' }, requirement: { permission: 'Model.Use' } },
+  ])).toEqual([true]);
 });

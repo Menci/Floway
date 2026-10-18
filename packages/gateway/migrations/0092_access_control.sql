@@ -3,42 +3,61 @@ CREATE TABLE access_records (
   principal_type TEXT NOT NULL CHECK (principal_type IN ('user', 'group')),
   principal_id INTEGER NOT NULL,
   scope_json TEXT NOT NULL,
+  scope_key TEXT NOT NULL,
   sort_order INTEGER NOT NULL CHECK (sort_order >= 0),
   values_json TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  UNIQUE (principal_type, principal_id, scope_json)
+  UNIQUE (principal_type, principal_id, scope_key)
 );
-CREATE INDEX idx_access_records_principal ON access_records(principal_type, principal_id);
 
 -- Preserve the user-level upstream whitelist exactly: NULL meant every
 -- upstream, an array meant those upstreams, and an empty array meant none.
 INSERT INTO access_records (
-  principal_type, principal_id, scope_json, sort_order, values_json, created_at, updated_at
+  principal_type, principal_id, scope_json, scope_key, sort_order, values_json, created_at, updated_at
 )
 SELECT
-  'user', id, json_object('kind', 'upstreams'), 0,
+  'user', id, json_object('kind', 'upstreams'), 'upstreams', 0,
   json_object('Model.Use', json('true')), created_at, created_at
 FROM users
 WHERE upstream_ids IS NULL AND deleted_at IS NULL;
 
 INSERT INTO access_records (
-  principal_type, principal_id, scope_json, sort_order, values_json, created_at, updated_at
+  principal_type, principal_id, scope_json, scope_key, sort_order, values_json, created_at, updated_at
 )
 SELECT
   'user', users.id,
   json_object('kind', 'upstream', 'upstreamId', CAST(entry.value AS TEXT)),
-  CAST(entry.key AS INTEGER), json_object('Model.Use', json('true')),
+  json_array('upstream', CAST(entry.value AS TEXT)),
+  0, json_object('Model.Use', json('true')),
   users.created_at, users.created_at
 FROM users, json_each(users.upstream_ids) AS entry
 WHERE users.upstream_ids IS NOT NULL AND users.deleted_at IS NULL;
 
+-- User-level upstream order only applied when a key inherited its list. Move
+-- that fallback order to every inheriting key before dropping the user column;
+-- explicit key lists already own their order.
+UPDATE api_keys
+SET upstream_ids = (
+  SELECT json_group_array(CAST(value AS TEXT))
+  FROM users
+  JOIN json_each(users.upstream_ids)
+  WHERE users.id = api_keys.user_id
+)
+WHERE upstream_ids IS NULL
+  AND EXISTS (
+    SELECT 1
+    FROM users
+    WHERE users.id = api_keys.user_id
+      AND users.upstream_ids IS NOT NULL
+  );
+
 -- Self telemetry remains available without an implicit resolver exception.
 INSERT INTO access_records (
-  principal_type, principal_id, scope_json, sort_order, values_json, created_at, updated_at
+  principal_type, principal_id, scope_json, scope_key, sort_order, values_json, created_at, updated_at
 )
 SELECT
-  'user', id, json_object('kind', 'user', 'userId', id), 0,
+  'user', id, json_object('kind', 'user', 'userId', id), json_array('user', id), 0,
   json_object('User.Audit', json('true')), created_at, created_at
 FROM users
 WHERE deleted_at IS NULL;

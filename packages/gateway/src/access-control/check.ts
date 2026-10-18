@@ -1,6 +1,6 @@
-import { resolveAssignments, targetScope } from './resolution.ts';
-import { permissionsForScope, upstreamEditLevelRank } from './types.ts';
-import type { AccessCheck, AccessRequirement, AccessTarget, UpstreamEditLevel } from './types.ts';
+import { createAccessResolver, targetScope } from './resolution.ts';
+import { permissionsForScope } from './types.ts';
+import type { AccessCheck, AccessRequirement, AccessTarget } from './types.ts';
 import { getRepo } from '../repo/index.ts';
 import type { User } from '../repo/types.ts';
 
@@ -8,11 +8,6 @@ const assertCompatible = (target: AccessTarget, requirement: AccessRequirement):
   const compatible = permissionsForScope(targetScope(target)).includes(requirement.permission);
   if (!compatible) throw new Error(`${requirement.permission} is not valid for ${target.kind}`);
 };
-
-const satisfies = (value: boolean | UpstreamEditLevel, requirement: AccessRequirement): boolean =>
-  requirement.permission === 'Upstream.Edit'
-    ? upstreamEditLevelRank[value as UpstreamEditLevel] >= upstreamEditLevelRank[requirement.level]
-    : value === true;
 
 export const checkMany = async (
   subject: User,
@@ -30,15 +25,11 @@ export const checkMany = async (
     repo.accessRecords.listByPrincipals(principals),
     repo.groups.listIdsByUserIds(targetUserIds),
   ]);
+  const resolver = createAccessResolver(records);
   return checks.map(({ target, requirement }) => {
-    const permission = requirement.permission;
     const targetGroups = target.kind === 'user'
       ? new Set(targetMemberships.get(target.userId)!)
       : new Set<number>();
-    const { values } = resolveAssignments(records, targetScope(target), targetGroups);
-    return satisfies(values[permission]!, requirement);
+    return resolver.satisfies(targetScope(target), targetGroups, requirement);
   });
 };
-
-export const check = async (subject: User, target: AccessTarget, requirement: AccessRequirement): Promise<boolean> =>
-  (await checkMany(subject, [{ target, requirement }]))[0]!;

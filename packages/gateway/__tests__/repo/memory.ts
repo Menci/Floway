@@ -2,6 +2,7 @@ import { aggregatePerformanceForDisplay } from './performance-overview-oracle.ts
 import { partitionTelemetryOverviewRecords } from './telemetry-overview-oracle.ts';
 import {
   accessScopeDepth,
+  accessScopeKey,
   accessScopeOrderGroup,
   AccessRecordConflictError,
   sameModelOrderBoundary,
@@ -323,8 +324,8 @@ class MemoryAccessRecordsRepo implements AccessRecordsRepo {
   async save(input: AccessRecordInput): Promise<AccessRecord> {
     validateAccessRecordInput(input);
     const now = new Date().toISOString();
-    const scope = JSON.stringify(input.scope);
-    const index = this.records.findIndex(record => principalKey(record.principal) === principalKey(input.principal) && JSON.stringify(record.scope) === scope);
+    const scopeKey = accessScopeKey(input.scope);
+    const index = this.records.findIndex(record => principalKey(record.principal) === principalKey(input.principal) && accessScopeKey(record.scope) === scopeKey);
     const duplicateOrder = this.records.find((record, recordIndex) =>
       input.scope.kind === 'upstreamModel' && recordIndex !== index
       && principalKey(record.principal) === principalKey(input.principal)
@@ -348,7 +349,7 @@ class MemoryAccessRecordsRepo implements AccessRecordsRepo {
     const duplicateScope = this.records.find((record, recordIndex) =>
       recordIndex !== index
       && principalKey(record.principal) === principalKey(input.principal)
-      && JSON.stringify(record.scope) === JSON.stringify(input.scope));
+      && accessScopeKey(record.scope) === accessScopeKey(input.scope));
     if (duplicateScope) throw new AccessRecordConflictError('Access record already exists for this principal and scope');
     const duplicateOrder = this.records.find((record, recordIndex) =>
       input.scope.kind === 'upstreamModel' && recordIndex !== index

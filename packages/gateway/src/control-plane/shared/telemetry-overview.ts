@@ -106,6 +106,15 @@ export const telemetryIdentityError = (
   return unknownKeyId === undefined ? null : { status: 404, error: 'Unknown filter_key_id' };
 };
 
+export const telemetryRecordVisible = (
+  identity: TelemetryOverviewIdentity,
+  keyId: string,
+  upstream: string | null,
+  keyToUser: ReadonlyMap<string, number>,
+): boolean => identity.actor.isAdmin
+  || identity.visibleUserIds.has(keyToUser.get(keyId) ?? 0)
+  || (upstream !== null && identity.visibleUpstreams.has(upstream));
+
 export const telemetryIdentityMetadata = (
   identity: TelemetryOverviewIdentity,
   revealedUserIds: readonly number[],

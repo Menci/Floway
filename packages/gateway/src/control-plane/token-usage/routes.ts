@@ -9,7 +9,7 @@ import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { tokenUsageQuery } from '../schemas.ts';
 import { buildKeyToUserMap } from '../shared/key-to-user.ts';
-import { loadTelemetryOverviewIdentity, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
+import { loadTelemetryOverviewIdentity, telemetryIdentityMetadata, telemetryRecordVisible } from '../shared/telemetry-overview.ts';
 import { resolveUsageView } from '../shared/usage-view.ts';
 import type { TokenUsageByKeyResponse, TokenUsageByUserResponse } from '../usage-types.ts';
 
@@ -34,9 +34,7 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
       loadTelemetryOverviewIdentity(c),
     ]);
     const keyToUser = buildKeyToUserMap(keys);
-    const visibleRecords = rawRecords.filter(record => identity.actor.isAdmin
-      || identity.visibleUserIds.has(keyToUser.get(record.keyId) ?? 0)
-      || (record.upstream !== null && identity.visibleUpstreams.has(record.upstream)));
+    const visibleRecords = rawRecords.filter(record => telemetryRecordVisible(identity, record.keyId, record.upstream, keyToUser));
     const records = aggregateUsageByUserForDisplay(visibleRecords, keyToUser);
 
     if (query.include_user_metadata !== '1') return c.json(records);

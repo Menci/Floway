@@ -10,7 +10,7 @@ import { getRepo } from '../../repo/index.ts';
 import { WEB_SEARCH_PROVIDER_NAMES, isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import type { webSearchUsageQuery } from '../schemas.ts';
 import { buildKeyToUserMap } from '../shared/key-to-user.ts';
-import { loadTelemetryOverviewIdentity, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
+import { loadTelemetryOverviewIdentity, telemetryIdentityMetadata, telemetryRecordVisible } from '../shared/telemetry-overview.ts';
 import { resolveUsageView } from '../shared/usage-view.ts';
 import type { SearchUsageByKeyResponse, SearchUsageByUserResponse } from '../usage-types.ts';
 
@@ -40,7 +40,7 @@ export const webSearchUsage = async (c: CtxWithQuery<typeof webSearchUsageQuery>
       loadTelemetryOverviewIdentity(c),
     ]);
     const keyToUser = buildKeyToUserMap(keys);
-    const visibleRecords = rawRecords.filter(record => identity.actor.isAdmin || identity.visibleUserIds.has(keyToUser.get(record.keyId) ?? 0));
+    const visibleRecords = rawRecords.filter(record => telemetryRecordVisible(identity, record.keyId, null, keyToUser));
     const records = aggregateWebSearchUsageByUser(visibleRecords, keyToUser);
 
     if (query.include_user_metadata !== '1') return c.json(records);

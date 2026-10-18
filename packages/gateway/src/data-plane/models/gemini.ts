@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
 
+import { loadModelListingCatalog } from './load.ts';
 import { createModelsRefreshScheduler, type ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -7,7 +8,6 @@ import type { ModelAliasesRepo, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { geminiGenerateContentStatusForHttpStatus } from '../chat/gemini-generate-content/errors.ts';
-import { enumerateAddressableModelIds, listedRealModels } from '../shared/listing/addressable.ts';
 import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import type { InternalModel } from '@floway-dev/provider';
@@ -67,22 +67,13 @@ const loadGeminiModels = async (
   scheduleRefresh: ModelsRefreshScheduler,
   aliasRepo: ModelAliasesRepo,
 ): Promise<GeminiModel[]> => {
-  const gatewayMetadataSubject = subject.isAdmin ? subject : { ...subject, isAdmin: true };
-  const [callerAddressable, gatewayAddressable, aliases] = await Promise.all([
-    enumerateAddressableModelIds(subject, upstreamFilter, scheduleRefresh),
-    upstreamFilter === null
-      ? Promise.resolve(null)
-      : enumerateAddressableModelIds(gatewayMetadataSubject, null, scheduleRefresh),
-    aliasRepo.list(),
-  ]);
-  const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;
-  const realModels = listedRealModels(callerAddressable);
+  const { callerAddressable, gatewayAddressable, realModels, aliases } = await loadModelListingCatalog(subject, upstreamFilter, scheduleRefresh, aliasRepo);
   // Gemini surfaces chat-kind models only; filter both the real catalog and
   // the synthesized alias entries before the merge so the alias collision
   // step only ever weighs chat-on-chat.
   const merged = mergeAliasesIntoModels({
     realModels: realModels.filter(model => model.kind === 'chat'),
-    gatewayAddressableModelIds: gatewayAddressableModelIds.filter(entry => entry.model.kind === 'chat'),
+    gatewayAddressableModelIds: gatewayAddressable.filter(entry => entry.model.kind === 'chat'),
     callerAddressableModelIds: callerAddressable.filter(entry => entry.model.kind === 'chat'),
     aliases: aliases.filter(alias => alias.kind === 'chat'),
     narrowTargets: true,

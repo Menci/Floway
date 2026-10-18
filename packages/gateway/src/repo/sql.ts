@@ -77,7 +77,9 @@ import { usageMetricRows } from './usage-metrics.ts';
 import { querySqlUsageOverview } from './usage-overview-sql.ts';
 import {
   accessScopeDepth,
+  accessScopeKey,
   accessScopeOrderGroup,
+  canonicalAccessScope,
   AccessRecordConflictError,
   sameModelOrderBoundary,
   type AccessPrincipal,
@@ -583,9 +585,8 @@ const parseAccessRecord = (row: AccessRecordRow): AccessRecord => {
 class SqlAccessRecordsRepo implements AccessRecordsRepo {
   constructor(private db: SqlDatabase) {}
 
-  private async assertOrderAvailable(input: AccessRecordInput, excludingId?: number): Promise<void> {
-    const existing = await this.listByPrincipal(input.principal);
-    if (existing.some(record => record.id !== excludingId && JSON.stringify(record.scope) === JSON.stringify(input.scope))) {
+  private assertOrderAvailable(input: AccessRecordInput, existing: readonly AccessRecord[], excludingId?: number): void {
+    if (existing.some(record => record.id !== excludingId && accessScopeKey(record.scope) === accessScopeKey(input.scope))) {
       throw new AccessRecordConflictError('Access record already exists for this principal and scope');
     }
     if (input.scope.kind !== 'upstreamModel') return;
@@ -614,12 +615,12 @@ class SqlAccessRecordsRepo implements AccessRecordsRepo {
   async listByPrincipals(principals: readonly AccessPrincipal[]): Promise<AccessRecord[]> {
     if (principals.length === 0) return [];
     const { results } = await this.db.prepare(
-      `SELECT ${ACCESS_RECORD_COLUMNS} FROM access_records
-       WHERE EXISTS (
-         SELECT 1 FROM json_each(?) AS principal
-         WHERE json_extract(principal.value, '$.kind') = principal_type
-           AND CAST(json_extract(principal.value, '$.id') AS INTEGER) = principal_id
+      `WITH wanted(principal_type, principal_id) AS MATERIALIZED (
+         SELECT json_extract(value, '$.kind'), CAST(json_extract(value, '$.id') AS INTEGER)
+         FROM json_each(?)
        )
+       SELECT ${ACCESS_RECORD_COLUMNS} FROM access_records
+       JOIN wanted USING (principal_type, principal_id)
        ORDER BY principal_type, principal_id, sort_order, id`,
     ).bind(JSON.stringify(principals)).all<AccessRecordRow>();
     return results.map(parseAccessRecord);
@@ -627,19 +628,22 @@ class SqlAccessRecordsRepo implements AccessRecordsRepo {
 
   async save(input: AccessRecordInput): Promise<AccessRecord> {
     validateAccessRecordInput(input);
-    const current = (await this.listByPrincipal(input.principal)).find(record => JSON.stringify(record.scope) === JSON.stringify(input.scope));
-    await this.assertOrderAvailable(input, current?.id);
+    const scope = canonicalAccessScope(input.scope);
+    const existing = await this.listByPrincipal(input.principal);
+    const current = existing.find(record => accessScopeKey(record.scope) === accessScopeKey(scope));
+    this.assertOrderAvailable({ ...input, scope }, existing, current?.id);
     const now = new Date().toISOString();
-    const scopeJson = JSON.stringify(input.scope);
+    const scopeJson = JSON.stringify(scope);
     const row = await this.db.prepare(
-      `INSERT INTO access_records (principal_type, principal_id, scope_json, sort_order, values_json, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (principal_type, principal_id, scope_json) DO UPDATE SET
+      `INSERT INTO access_records (principal_type, principal_id, scope_json, scope_key, sort_order, values_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (principal_type, principal_id, scope_key) DO UPDATE SET
+         scope_json = excluded.scope_json,
          sort_order = excluded.sort_order,
          values_json = excluded.values_json,
          updated_at = excluded.updated_at
        RETURNING ${ACCESS_RECORD_COLUMNS}`,
-    ).bind(input.principal.kind, input.principal.id, scopeJson, input.sortOrder, JSON.stringify(input.values), now, now)
+    ).bind(input.principal.kind, input.principal.id, scopeJson, accessScopeKey(scope), input.sortOrder, JSON.stringify(input.values), now, now)
       .first<AccessRecordRow>();
     if (!row) throw new Error('accessRecords.save: write returned no rows');
     return parseAccessRecord(row);
@@ -650,12 +654,13 @@ class SqlAccessRecordsRepo implements AccessRecordsRepo {
     const current = await this.getById(id);
     if (current === null) return null;
     const sortOrder = sameModelOrderBoundary(current, input) ? current.sortOrder : input.sortOrder;
-    await this.assertOrderAvailable({ ...input, sortOrder }, id);
+    const next = { ...input, scope: canonicalAccessScope(input.scope) };
+    this.assertOrderAvailable({ ...next, sortOrder }, await this.listByPrincipal(input.principal), id);
     // An edit must not undo a drag committed while its dialog was open. Read
     // the surviving rank from the row again at the atomic write boundary.
     const row = await this.db.prepare(
       `UPDATE access_records SET
-         principal_type = ?, principal_id = ?, scope_json = ?,
+         principal_type = ?, principal_id = ?, scope_json = ?, scope_key = ?,
          sort_order = CASE
            WHEN principal_type = ? AND principal_id = ?
              AND json_extract(scope_json, '$.kind') = 'upstreamModel'
@@ -667,7 +672,8 @@ class SqlAccessRecordsRepo implements AccessRecordsRepo {
     ).bind(
       input.principal.kind,
       input.principal.id,
-      JSON.stringify(input.scope),
+      JSON.stringify(next.scope),
+      accessScopeKey(next.scope),
       input.principal.kind,
       input.principal.id,
       input.scope.kind === 'upstreamModel' ? input.scope.upstreamId : null,

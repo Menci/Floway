@@ -1,5 +1,5 @@
-import { resolveAssignments } from '../../access-control/resolution.ts';
-import { AccessRecordConflictError, permissionsForScope } from '../../access-control/types.ts';
+import { resolveEffectiveAssignments } from '../../access-control/resolution.ts';
+import { AccessRecordConflictError } from '../../access-control/types.ts';
 import type { AccessPrincipal, AccessRecordInput } from '../../access-control/types.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
@@ -67,11 +67,12 @@ export const resolveAccess = async (c: CtxWithJson<typeof resolveAccessBody>) =>
     repo.accessRecords.listByPrincipals(principals),
     scope.kind === 'user' ? repo.groups.listIdsByUserId(scope.userId) : Promise.resolve([]),
   ]);
-  const resolution = resolveAssignments(records.filter(record => record.id !== excludeRecordId), scope, new Set(targetGroups));
-  if ('isAdmin' in subject && subject.isAdmin) {
-    resolution.values = Object.fromEntries(permissionsForScope(scope).map(permission => [permission, permission === 'Upstream.Edit' ? 'full' : true]));
-    resolution.decisions = [];
-  }
+  const resolution = resolveEffectiveAssignments(
+    records.filter(record => record.id !== excludeRecordId),
+    scope,
+    new Set(targetGroups),
+    'isAdmin' in subject && subject.isAdmin,
+  );
   return c.json(resolution);
 };
 

@@ -74,6 +74,28 @@ export interface AccessCheck {
   requirement: AccessRequirement;
 }
 
+export const accessScopeKey = (scope: AccessScope): string => {
+  switch (scope.kind) {
+  case 'upstream': return JSON.stringify([scope.kind, scope.upstreamId]);
+  case 'upstreamModel': return JSON.stringify([scope.kind, scope.upstreamId, scope.model.kind, scope.model.value]);
+  case 'user': return JSON.stringify([scope.kind, scope.userId]);
+  case 'group': return JSON.stringify([scope.kind, scope.groupId]);
+  case 'upstreams':
+  case 'users': return scope.kind;
+  }
+};
+
+export const canonicalAccessScope = (scope: AccessScope): AccessScope => {
+  switch (scope.kind) {
+  case 'upstream': return { kind: scope.kind, upstreamId: scope.upstreamId };
+  case 'upstreamModel': return { kind: scope.kind, upstreamId: scope.upstreamId, model: { kind: scope.model.kind, value: scope.model.value } };
+  case 'user': return { kind: scope.kind, userId: scope.userId };
+  case 'group': return { kind: scope.kind, groupId: scope.groupId };
+  case 'upstreams':
+  case 'users': return { kind: scope.kind };
+  }
+};
+
 export const accessScopeDepth = (scope: AccessScope): number => {
   switch (scope.kind) {
   case 'upstreams':
@@ -106,6 +128,22 @@ export const permissionsForScope = (scope: AccessScope): readonly AccessPermissi
   case 'group': return ['User.Audit'];
   }
 };
+
+export const administratorAccessValues = (scope: AccessScope): AccessValues =>
+  Object.fromEntries(permissionsForScope(scope).map(permission => [permission, permission === 'Upstream.Edit' ? 'full' : true]));
+
+export const accessValueSatisfied = (
+  value: AccessValues[AccessPermission] | undefined,
+  requirement: AccessRequirement,
+): boolean => {
+  if (value === undefined) return false;
+  return requirement.permission === 'Upstream.Edit'
+    ? upstreamEditLevelRank[value as UpstreamEditLevel] >= upstreamEditLevelRank[requirement.level]
+    : value === true;
+};
+
+export const accessRequirementSatisfied = (values: AccessValues, requirement: AccessRequirement): boolean =>
+  accessValueSatisfied(values[requirement.permission], requirement);
 
 export const validateAccessRecordInput = (input: AccessRecordInput): void => {
   if (!Number.isInteger(input.sortOrder) || input.sortOrder < 0) {

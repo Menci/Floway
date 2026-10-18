@@ -64,6 +64,19 @@ describe.each(backends)('access-control repos (%s)', (_label, makeRepo) => {
     });
   });
 
+  test('replacing a scope updates its semantic uniqueness key', async () => {
+    const repo = await makeRepo();
+    const principal = { kind: 'user' as const, id: 2 };
+    const first = await repo.accessRecords.save({ principal, scope: { kind: 'upstream', upstreamId: 'up_a' }, sortOrder: 0, values: { 'Model.Use': true } });
+    const replaced = await repo.accessRecords.replace(first.id, { principal, scope: { kind: 'upstream', upstreamId: 'up_b' }, sortOrder: 0, values: { 'Model.Use': true } });
+    expect(replaced).toMatchObject({ id: first.id, scope: { kind: 'upstream', upstreamId: 'up_b' } });
+    const duplicate = await repo.accessRecords.save({ principal, scope: { kind: 'upstream', upstreamId: 'up_b' }, sortOrder: 0, values: { 'Model.Use': false } });
+    expect(duplicate.id).toBe(first.id);
+    expect((await repo.accessRecords.listByPrincipal(principal)).map(record => [record.id, record.scope, record.values])).toEqual([
+      [first.id, { kind: 'upstream', upstreamId: 'up_b' }, { 'Model.Use': false }],
+    ]);
+  });
+
   test('duplicate sort orders at the same hierarchy level are rejected', async () => {
     const repo = await makeRepo();
     const principal = { kind: 'user' as const, id: 2 };
@@ -86,6 +99,21 @@ describe.each(backends)('access-control repos (%s)', (_label, makeRepo) => {
     const principal = { kind: 'user' as const, id: 2 };
     for (const upstreamId of ['up_a', 'up_b']) await repo.accessRecords.save({ principal, scope: { kind: 'upstream', upstreamId }, sortOrder: 0, values: { 'Model.Use': true } });
     expect(await repo.accessRecords.listByPrincipal(principal)).toHaveLength(2);
+  });
+
+  test.each([
+    ['upstream', { kind: 'upstream' as const, upstreamId: 'up_a' }],
+    ['model', { kind: 'upstreamModel' as const, upstreamId: 'up_a', model: { kind: 'exact' as const, value: 'gpt-5' } }],
+  ])('a semantic %s duplicate replaces the existing cell regardless of JSON key order', async (_label, scope) => {
+    const repo = await makeRepo();
+    const principal = { kind: 'user' as const, id: 2 };
+    const first = await repo.accessRecords.save({ principal, scope, sortOrder: 0, values: { 'Model.Use': true } });
+    const reorderedScope = scope.kind === 'upstream'
+      ? { upstreamId: scope.upstreamId, kind: scope.kind }
+      : { model: { value: scope.model.value, kind: scope.model.kind }, upstreamId: scope.upstreamId, kind: scope.kind };
+    const second = await repo.accessRecords.save({ principal, scope: reorderedScope, sortOrder: 0, values: { 'Model.Use': false } });
+    expect(second.id).toBe(first.id);
+    expect(await repo.accessRecords.listByPrincipal(principal)).toMatchObject([{ id: first.id, values: { 'Model.Use': false } }]);
   });
 
   test.each(['same', 'different'] as const)('stale edits preserve a concurrent model reorder across %s principals', async ownership => {
