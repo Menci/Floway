@@ -56,8 +56,7 @@ test.each(['exact', 'regex'] as const)('anchors long %s paths and their controls
     expect(getComputedStyle(screen.getByRole('button', { name: 'Remove last scope segment' })).alignSelf).toBe('flex-start');
     fireEvent.click(segments[0]!.querySelector('button')!);
     expect(getComputedStyle(container.querySelector('.floway-scope-expression-part-control')!).alignItems).toBe('flex-start');
-    const options = [...container.querySelectorAll('.floway-scope-expression-option')];
-    expect(options.length).toBeGreaterThan(0);
+    const options = screen.getAllByRole('option').map(option => option.querySelector('.floway-scope-expression-option')!);
     expect(options.every(option => getComputedStyle(option).alignItems === 'flex-start')).toBe(true);
   } finally {
     stylesheet.remove();
