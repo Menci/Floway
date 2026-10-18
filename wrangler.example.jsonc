@@ -30,6 +30,22 @@
   // `ctx.exports` needs an explicit flag at this compatibility date:
   // https://developers.cloudflare.com/workers/configuration/compatibility-flags/#enable-ctxexports
   "compatibility_flags": ["nodejs_compat", "enable_ctx_exports"],
+  // One-percent head sampling keeps request, binding, and subrequest evidence
+  // available without turning every high-volume gateway invocation into a log
+  // or trace event.
+  // https://developers.cloudflare.com/workers/observability/logs/workers-logs/#sampling
+  // https://developers.cloudflare.com/workers/observability/traces/#sampling
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 0.01
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.01
+    }
+  },
   "triggers": {
     // Minute scheduling provides catch-up throughput while bounded deletion
     // and collection batches keep each tick's D1 write load predictable.
