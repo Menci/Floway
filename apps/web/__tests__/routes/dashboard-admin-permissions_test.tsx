@@ -58,6 +58,72 @@ const renderPage = (search = '', data = initial) => {
   return { ...renderInApp(<RouterProvider router={router} />), router };
 };
 
+test.each([
+  { principal: 'user:2:extra', scope: JSON.stringify(scope), removed: 'principal', retained: 'scope' },
+  { principal: 'group:1', scope: 'not-json', removed: 'scope', retained: 'principal' },
+])('replaces a malformed $removed URL filter while retaining $retained and search', async ({ principal, scope, removed, retained }) => {
+  const search = new URLSearchParams({ principal, scope, q: 'Model.Use', effective: 'true', page: '4' });
+  const { router } = renderPage(`?${search}`);
+  await screen.findByRole('table');
+  await waitFor(() => expect(new URLSearchParams(router.state.location.search).has(removed)).toBe(false));
+  const params = new URLSearchParams(router.state.location.search);
+  expect(params.get(retained)).toBe(search.get(retained));
+  expect(params.get('q')).toBe('Model.Use');
+  expect(params.has('page')).toBe(false);
+  expect(params.has('effective')).toBe(false);
+  expect(router.state.historyAction).toBe('REPLACE');
+  expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).includes('/access-resolve'))).toBe(false);
+});
+
+test('invalid filters are replaced rather than retained in back navigation', async () => {
+  const { router } = renderPage('?q=Audit');
+  await screen.findByRole('table');
+  await act(async () => { await router.navigate('/permissions?principal=bad&scope=bad&q=Model.Use&page=2'); });
+  await waitFor(() => expect(router.state.location.search).toBe('?q=Model.Use'));
+  expect(router.state.historyAction).toBe('REPLACE');
+  await act(async () => { await router.navigate(-1); });
+  expect(router.state.location.search).toBe('?q=Audit');
+});
+
+test('removing an invalid scope cancels its old draft and allows a fresh valid selection', async () => {
+  const modelScope = { kind: 'upstreamModel', upstreamId: 'a', model: { kind: 'exact', value: 'gpt-5' } };
+  const { container, router } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(modelScope))}`);
+  await screen.findByText('No matching rules');
+  const filters = container.querySelector('[data-permission-filters]') as HTMLElement;
+  fireEvent.click(within(filters).getByRole('button', { name: 'gpt-5' }));
+  const input = within(filters).getByRole('combobox', { name: 'Model' });
+  fireEvent.change(input, { target: { value: 'uncommitted-model' } });
+  await act(async () => {
+    fireEvent.blur(input);
+    await router.navigate('/permissions?principal=user:2&scope=bad&effective=true');
+  });
+  await waitFor(() => expect(new URLSearchParams(router.state.location.search).has('scope')).toBe(false));
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  expect(within(filters).queryByRole('combobox', { name: 'Model' })).toBeNull();
+  expect(new URLSearchParams(router.state.location.search).has('scope')).toBe(false);
+  await act(async () => { fireEvent.click(within(filters).getByRole('button', { name: 'Resource type' })); });
+  await act(async () => { fireEvent.click(await screen.findByRole('option', { name: /^Upstream$/ })); });
+  await act(async () => { fireEvent.click(await screen.findByRole('option', { name: 'Copilot' })); });
+  await waitFor(() => expect(JSON.parse(new URLSearchParams(router.state.location.search).get('scope')!)).toEqual(scope));
+  const toggle = screen.getByRole<HTMLInputElement>('switch', { name: 'Show effective' });
+  expect(toggle.disabled).toBe(false);
+  expect(toggle.checked).toBe(false);
+});
+
+test('removing an invalid principal preserves an unrelated in-progress scope draft', async () => {
+  const modelScope = { kind: 'upstreamModel', upstreamId: 'a', model: { kind: 'exact', value: 'gpt-5' } };
+  const { container, router } = renderPage(`?scope=${encodeURIComponent(JSON.stringify(modelScope))}`);
+  await screen.findByText('No matching rules');
+  const filters = container.querySelector('[data-permission-filters]') as HTMLElement;
+  fireEvent.click(within(filters).getByRole('button', { name: 'gpt-5' }));
+  const input = within(filters).getByRole<HTMLInputElement>('combobox', { name: 'Model' });
+  fireEvent.change(input, { target: { value: 'draft-model' } });
+  await act(async () => { await router.navigate(`/permissions?principal=bad&scope=${encodeURIComponent(JSON.stringify(modelScope))}`); });
+  await waitFor(() => expect(new URLSearchParams(router.state.location.search).has('principal')).toBe(false));
+  expect(within(filters).getByRole('combobox', { name: 'Model' })).toBe(input);
+  expect(input.value).toBe('draft-model');
+});
+
 test('has one filter toolbar, subtitle and no tabs or redundant rule count', async () => {
   const { container } = renderPage('?effective=true');
   await screen.findByRole('table', { name: 'Permission rules' });

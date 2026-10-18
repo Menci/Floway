@@ -4,9 +4,11 @@ import type { AccessPrincipal } from '@floway-dev/gateway/browser';
 export const principalKey = (principal: AccessPrincipal) => `${principal.kind}:${principal.id}`;
 
 export const parsePrincipal = (value: string): AccessPrincipal | null => {
-  const [kind, rawId] = value.split(':');
-  const id = Number(rawId);
-  return (kind === 'user' || kind === 'group') && Number.isInteger(id) && id > 0 ? { kind, id } : null;
+  const match = /^(user|group):([1-9]\d*)$/.exec(value);
+  if (match === null) return null;
+  const kind = match[1] as AccessPrincipal['kind'];
+  const id = Number(match[2]);
+  return Number.isSafeInteger(id) ? { kind, id } : null;
 };
 
 export const principalName = (principal: AccessPrincipal, data: ScopeExpressionData): string => principal.kind === 'user'

@@ -4,13 +4,13 @@ import { useLocation, useNavigation, useSearchParams } from 'react-router';
 
 import { loadPermissionsData, type PermissionsData } from './data';
 import { permissionSearchText, selectPermissionRules } from './effective';
+import { normalizeFilters } from './filters';
 import { orderedRecords, recordSegments, reorderModelRecords } from './order';
 import { PrincipalPicker } from './principal';
-import { parsePrincipal, principalKey } from './principals';
+import { principalKey } from './principals';
 import { AccessRecordDialog } from './record-dialog';
 import { useAccessResolution } from './resolution';
 import { RulesTable } from './rules-table';
-import { parseScope } from './scope';
 import { ScopeEditor, type ScopeExpressionData } from './scope-expression';
 import { api, callApi } from '../../api/client';
 import type { AccessRecord } from '../../api/types';
@@ -38,13 +38,20 @@ export function PermissionsWorkspace({ initial }: { initial: PermissionsData }) 
   const [error, setError] = useState(initial.error);
   const [reordering, setReordering] = useState(false);
   const [removing, setRemoving] = useState(false);
-  const [scopeEditorRevision, setScopeEditorRevision] = useState(0);
+  const [scopeEditorState, setScopeEditorState] = useState({ revision: 0, invalidScope: false });
   const [committedParams, setParams] = useSearchParams();
   const location = useLocation();
   const navigation = useNavigation();
   // The loading destination keeps native controls current before URL commit.
   // https://reactrouter.com/api/hooks/useNavigation#navigationlocation
-  const params = navigation.location?.pathname === location.pathname ? new URLSearchParams(navigation.location.search) : committedParams;
+  const pendingSearch = navigation.location?.pathname === location.pathname ? navigation.location.search : null;
+  const { params, principal, scope, invalidScope } = useMemo(
+    () => normalizeFilters(pendingSearch === null ? committedParams : new URLSearchParams(pendingSearch)),
+    [committedParams, pendingSearch],
+  );
+  if (scopeEditorState.invalidScope !== invalidScope) {
+    setScopeEditorState({ invalidScope, revision: scopeEditorState.revision + (invalidScope ? 1 : 0) });
+  }
   const editor = useDialogInvocation<{ record?: AccessRecord; principal?: AccessPrincipal; scope?: AccessScope }>();
   const reload = async (signal: AbortSignal) => {
     const next = await loadPermissionsData(data, signal);
@@ -52,25 +59,20 @@ export function PermissionsWorkspace({ initial }: { initial: PermissionsData }) 
   };
   const { refresh, refreshing } = useRefresh(reload);
   const query = params.get('q') ?? '';
-  const principalValue = params.get('principal') ?? '';
-  const scopeValue = params.get('scope');
-  const principal = useMemo(() => parsePrincipal(principalValue), [principalValue]);
-  const scope = useMemo(() => parseScope(scopeValue), [scopeValue]);
   const scopeKind = params.get('scopeKind') === 'group' && scope === null ? 'group' : undefined;
   const effectiveUnavailable = principal === null || scope === null;
   const showEffective = !effectiveUnavailable && params.get('effective') === 'true';
   useEffect(() => {
-    if (!committedParams.has('effective') || (parsePrincipal(committedParams.get('principal') ?? '') !== null && parseScope(committedParams.get('scope')) !== null)) return;
-    const next = new URLSearchParams(committedParams);
-    next.delete('effective');
-    setParams(next, { replace: true, state: location.state });
-  }, [committedParams, location.state, setParams]);
+    if (navigation.location !== undefined) return;
+    const normalized = normalizeFilters(committedParams);
+    if (normalized.params.toString() === committedParams.toString()) return;
+    setParams(normalized.params, { replace: true, state: location.state });
+  }, [committedParams, location.state, navigation.location, setParams]);
   const updateParams = (change: (next: URLSearchParams) => void, replace = false) => {
     const next = new URLSearchParams(params);
     if (effectiveUnavailable) next.delete('effective');
     change(next);
-    if (parsePrincipal(next.get('principal') ?? '') === null || parseScope(next.get('scope')) === null) next.delete('effective');
-    setParams(next, { replace, flushSync: true, ...(replace ? { state: location.state } : {}) });
+    setParams(normalizeFilters(next).params, { replace, flushSync: true, ...(replace ? { state: location.state } : {}) });
   };
   const setFilter = (name: 'q' | 'effective', value: string | null, replace = false) => updateParams(next => {
     if (value === null) next.delete(name); else next.set(name, value);
@@ -82,7 +84,7 @@ export function PermissionsWorkspace({ initial }: { initial: PermissionsData }) 
     next.delete('page');
   });
   const navigateScope = (scope: AccessScope | null, kindHint?: 'group') => {
-    setScopeEditorRevision(revision => revision + 1);
+    setScopeEditorState(current => ({ ...current, revision: current.revision + 1 }));
     selectScope(scope, kindHint);
   };
   const scopeData = useMemo<ScopeExpressionData>(() => ({
@@ -174,7 +176,7 @@ export function PermissionsWorkspace({ initial }: { initial: PermissionsData }) 
       /></Field>
       <div className="flex flex-wrap items-end gap-3 flex-[1_1_auto] min-w-0 max-w-full">
         <Field className="w-max min-w-0 max-w-full" label={t('dashboard.accessControl.fields.scope')}>
-          <ScopeEditor data={scopeData} key={scopeEditorRevision} kindHint={scopeKind} onChange={selectScope} purpose="filter" readOnly={!loaded} value={scope} />
+          <ScopeEditor data={scopeData} key={scopeEditorState.revision} kindHint={scopeKind} onChange={selectScope} purpose="filter" readOnly={!loaded} value={scope} />
         </Field>
         <div className="min-h-[34px] flex items-center flex-none"><SwitchSetting
           checked={showEffective}
