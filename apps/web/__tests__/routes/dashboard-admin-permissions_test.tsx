@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, useLoaderData } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
-import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, expect, test, vi } from 'vitest';
 
 import type { PermissionsData } from '../../src/components/access-control/data';
 import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
@@ -9,6 +9,8 @@ import DashboardAdminPermissions, { shouldRevalidate } from '../../src/routes/da
 import { renderInApp } from '../render';
 
 vi.mock('../../src/components/ui/json-editor', () => ({ JsonEditor: () => null }));
+
+beforeAll(async () => { await import('../../src/components/ui/json-editor'); });
 
 const scope = { kind: 'upstream', upstreamId: 'a' } as const;
 const initial: PermissionsData = {
@@ -190,8 +192,7 @@ test('new rule starts with the selected principal and scope', async () => {
   renderPage(`?principal=group:1&scope=${encodeURIComponent(JSON.stringify(scope))}`);
   await screen.findByRole('table');
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'New rule' })); });
-  // DialogShell mounts after the cold persistent editor module resolves.
-  const dialog = await screen.findByRole('dialog', {}, { timeout: 5000 });
+  const dialog = await screen.findByRole('dialog');
   expect(dialog.querySelector<HTMLInputElement>('input[role="combobox"]')!.value).toBe('Platform');
   expect(dialog.querySelector('.floway-scope-expression')!.textContent).toContain('Copilot');
 });
