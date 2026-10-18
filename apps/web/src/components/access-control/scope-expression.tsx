@@ -458,13 +458,28 @@ function UnknownPart({ description, icon }: {
   </Tooltip>;
 }
 
-const kindFor = (scope: AccessScope | null): ScopeKind | null => scope?.kind === 'upstreams' || scope?.kind === 'upstream' || scope?.kind === 'upstreamModel'
-  ? 'upstream'
-  : scope?.kind === 'users' || scope?.kind === 'user'
-    ? 'user'
-    : scope?.kind === 'groups' || scope?.kind === 'group' ? 'group' : scope?.kind === 'self' ? 'self' : null;
-const collectionScope = (kind: ScopeKind | null): AccessScope | null => kind === 'upstream' ? { kind: 'upstreams' }
-  : kind === 'user' ? { kind: 'users' } : kind === 'group' ? { kind: 'groups' } : kind === 'self' ? { kind: 'self' } : null;
+const kindFor = (scope: AccessScope | null): ScopeKind | null => {
+  if (scope === null) return null;
+  switch (scope.kind) {
+  case 'upstreams':
+  case 'upstream':
+  case 'upstreamModel': return 'upstream';
+  case 'users':
+  case 'user': return 'user';
+  case 'groups':
+  case 'group': return 'group';
+  case 'self': return 'self';
+  }
+};
+const collectionScope = (kind: ScopeKind | null): AccessScope | null => {
+  switch (kind) {
+  case 'upstream': return { kind: 'upstreams' };
+  case 'user': return { kind: 'users' };
+  case 'group': return { kind: 'groups' };
+  case 'self': return { kind: 'self' };
+  case null: return null;
+  }
+};
 const kindLabel = (kind: ScopeKind, t: TFunction) => t(`dashboard.accessControl.scope.kinds.${kind}`);
 const hasUpstreamInstance = (scope: AccessScope | null): scope is Extract<AccessScope, { kind: 'upstream' | 'upstreamModel' }> => scope?.kind === 'upstream' || scope?.kind === 'upstreamModel';
 const instanceMatchesKind = (kind: ScopeKind | null, scope: AccessScope | null) => kind === 'upstream'

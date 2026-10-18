@@ -68,8 +68,7 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
     users: scopeData.users.filter(user => data.directory?.principalUserIds.includes(user.id)),
     groups: scopeData.groups.filter(group => data.directory?.principalGroupIds.includes(group.id)),
   }), [data.directory, scopeData]);
-  const scopedPrincipal = principal;
-  const effectiveUnavailable = scopedPrincipal === null || scope === null;
+  const effectiveUnavailable = principal === null || scope === null;
   const showEffective = !effectiveUnavailable && params.get('effective') === 'true';
   useEffect(() => {
     if (navigation.location !== undefined) return;
@@ -106,27 +105,27 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
     selectScope(scope);
   };
   const loaded = data.records !== null && data.directory !== null && data.models !== null && data.upstreams !== null;
-  const resolution = useAccessResolution({ enabled: showEffective && loaded && !refreshing, principal: scopedPrincipal, scope, revision: data.records });
+  const resolution = useAccessResolution({ enabled: showEffective && loaded && !refreshing, principal, scope, revision: data.records });
   const loading = refreshing || resolution.pending;
   const busy = loading || reordering || removing || resolution.error !== null;
   const search = params.toString();
   const view = useMemo(() => {
-    const selection = selectPermissionRules({ records: data.records ?? [], principal: scopedPrincipal, scope, showEffective, data: scopeData, resolution: resolution.data });
+    const selection = selectPermissionRules({ records: data.records ?? [], principal, scope, showEffective, data: scopeData, resolution: resolution.data });
     const filtered = selection.records.filter(record => permissionSearchText(record, scopeData, t).includes(query.trim().toLowerCase()));
     const viewParams = new URLSearchParams(search);
     const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
     const requestedPage = Number(viewParams.get('page') ?? 1);
     const page = Number.isInteger(requestedPage) && requestedPage > 0 ? Math.min(requestedPage, totalPages) : 1;
     return { records: filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), decisions: selection.decisions, data: scopeData, params: viewParams, page, totalPages, total: filtered.length, empty: data.records?.length === 0 };
-  }, [data.records, scopedPrincipal, query, resolution.data, scope, scopeData, search, showEffective, t]);
+  }, [data.records, principal, query, resolution.data, scope, scopeData, search, showEffective, t]);
   const snapshot = { view, source: { data, search, resolution: resolution.data, language: i18n.language } };
   const [displayed, setDisplayed] = useState<typeof snapshot | null>(loaded ? snapshot : null);
   const keepDisplayed = loading || resolution.error !== null;
   if (loaded && !keepDisplayed && (displayed?.source.data !== data || displayed?.source.search !== search
     || displayed?.source.resolution !== resolution.data || displayed?.source.language !== i18n.language)) setDisplayed(snapshot);
   const results = keepDisplayed && displayed !== null ? displayed.view : view;
-  const administrator = showEffective && scopedPrincipal?.kind === 'user' && scopeData.users.some(user => user.id === scopedPrincipal.id && user.isAdmin);
-  const create = () => editor.open({ ...(scopedPrincipal === null ? {} : { principal: scopedPrincipal }), ...(scope === null ? {} : { scope }) });
+  const administrator = showEffective && principal?.kind === 'user' && scopeData.users.some(user => user.id === principal.id && user.isAdmin);
+  const create = () => editor.open({ ...(principal === null ? {} : { principal }), ...(scope === null ? {} : { scope }) });
   const reorder = async (ids: number[], from: number, to: number) => {
     const originalSegment = recordSegments(data.records!).find(segment => segment.records.some(record => record.id === ids[0]))!;
     const records = reorderModelRecords(data.records!, ids, from, to);

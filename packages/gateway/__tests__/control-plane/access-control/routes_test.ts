@@ -85,6 +85,97 @@ test('auditing a group exposes that group without its members or their personal 
   expect(body.directory.principalGroupIds).toEqual([group.id]);
 });
 
+test('an audited user resolves their own effective user scope with membership-group sources', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.users.save({ id: 3, username: 'audited', passwordHash: null, isAdmin: false, createdAt: '', deletedAt: null });
+  const group = await repo.groups.create('Shared', 120);
+  await repo.groups.replaceMembers(group.id, [3]);
+  await repo.accessRecords.save({ principal: { kind: 'user', id: apiKey.userId }, scope: { kind: 'user', userId: 3 }, sortOrder: 0, values: { 'Permission.Audit': true } });
+  await repo.accessRecords.save({ principal: { kind: 'group', id: group.id }, scope: { kind: 'user', userId: 3 }, sortOrder: 0, values: { 'User.Audit': true } });
+
+  const response = await requestApp('/api/access-resolve', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: JSON.stringify({ principal: { kind: 'user', id: 3 }, scope: { kind: 'user', userId: 3 } }),
+  });
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  expect(body.values['User.Audit']).toBe(true);
+  expect(body.records.map((record: { principal: { kind: string } }) => record.principal.kind)).toEqual(['group']);
+});
+
+test('an audited user can see membership-group source identities without gaining unrelated principals', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.users.save({ id: 3, username: 'audited', passwordHash: null, isAdmin: false, createdAt: '', deletedAt: null });
+  await repo.users.save({ id: 4, username: 'source-target', passwordHash: null, isAdmin: false, createdAt: '', deletedAt: null });
+  const group = await repo.groups.create('Shared', 120);
+  await repo.groups.replaceMembers(group.id, [3, 4]);
+  await repo.accessRecords.save({ principal: { kind: 'user', id: apiKey.userId }, scope: { kind: 'user', userId: 3 }, sortOrder: 0, values: { 'Permission.Audit': true } });
+  await repo.accessRecords.save({ principal: { kind: 'group', id: group.id }, scope: { kind: 'user', userId: 4 }, sortOrder: 0, values: { 'User.Audit': true } });
+
+  const body = await (await requestApp('/api/permissions', { headers: { 'x-api-key': apiKey.key } })).json();
+  expect(body.records).toEqual([]);
+  expect(body.directory.users.map((user: { id: number }) => user.id)).toEqual([3, 4]);
+  expect(body.directory.principalUserIds).toEqual([3]);
+  expect(body.directory.principalGroupIds).toEqual([]);
+  expect(body.directory.groups).toEqual([expect.objectContaining({ id: group.id, memberIds: [3] })]);
+});
+
+test('an audited user cannot resolve another user\'s effective scope', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.users.save({ id: 3, username: 'audited', passwordHash: null, isAdmin: false, createdAt: '', deletedAt: null });
+  await repo.users.save({ id: 4, username: 'other', passwordHash: null, isAdmin: false, createdAt: '', deletedAt: null });
+  const group = await repo.groups.create('Shared', 120);
+  await repo.groups.replaceMembers(group.id, [3, 4]);
+  await repo.accessRecords.save({ principal: { kind: 'user', id: apiKey.userId }, scope: { kind: 'user', userId: 3 }, sortOrder: 0, values: { 'Permission.Audit': true } });
+  await repo.accessRecords.save({ principal: { kind: 'group', id: group.id }, scope: { kind: 'user', userId: 4 }, sortOrder: 0, values: { 'User.Audit': true } });
+
+  const response = await requestApp('/api/access-resolve', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: JSON.stringify({ principal: { kind: 'user', id: 3 }, scope: { kind: 'user', userId: 4 } }),
+  });
+  assertEquals(response.status, 404);
+});
+
+test('a group auditor cannot resolve another group\'s effective scope', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const audited = await repo.groups.create('Audited', 120);
+  const other = await repo.groups.create('Other', 180);
+  await repo.accessRecords.save({ principal: { kind: 'user', id: apiKey.userId }, scope: { kind: 'group', groupId: audited.id }, sortOrder: 0, values: { 'Permission.Audit': true } });
+
+  const response = await requestApp('/api/access-resolve', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: JSON.stringify({ principal: { kind: 'group', id: audited.id }, scope: { kind: 'group', groupId: other.id } }),
+  });
+  assertEquals(response.status, 404);
+});
+
+test('a group auditor cannot resolve a user scope through membership', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.users.save({ id: 3, username: 'member', passwordHash: null, isAdmin: false, createdAt: '', deletedAt: null });
+  const group = await repo.groups.create('Reviewed', 120);
+  await repo.groups.replaceMembers(group.id, [3]);
+  await repo.accessRecords.save({ principal: { kind: 'user', id: apiKey.userId }, scope: { kind: 'group', groupId: group.id }, sortOrder: 0, values: { 'Permission.Audit': true } });
+  await repo.accessRecords.save({ principal: { kind: 'group', id: group.id }, scope: { kind: 'user', userId: 3 }, sortOrder: 0, values: { 'User.Audit': true } });
+
+  const response = await requestApp('/api/access-resolve', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: JSON.stringify({ principal: { kind: 'group', id: group.id }, scope: { kind: 'user', userId: 3 } }),
+  });
+  assertEquals(response.status, 404);
+});
+
+test('admin permission data includes every upstream even without ACL references', async () => {
+  const { adminSession, copilotUpstream, repo } = await setupAppTest();
+  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: 2 });
+  const body = await (await requestApp('/api/permissions', { headers: { 'x-floway-session': adminSession } })).json();
+  expect(body.records).toEqual([]);
+  expect(body.upstreams.map((upstream: { id: string }) => upstream.id)).toEqual([copilotUpstream.id]);
+});
+
 test('non-admin access resolve accepts only projected user and group principals', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.users.save({ id: 3, username: 'bob', passwordHash: null, isAdmin: false, createdAt: '', deletedAt: null });
@@ -161,6 +252,12 @@ test('access-record writes reject unknown principals, invalid scope permissions,
     body: JSON.stringify({ principal: { kind: 'user', id: 2 }, scope: { kind: 'self' }, sortOrder: 0, values: { 'User.Audit': true } }),
   });
   assertEquals(invalidSelf.status, 400);
+  const group = await (await request('/groups', adminSession, { method: 'POST', body: JSON.stringify({ name: 'Self Group', hue: 100, memberIds: [] }) })).json();
+  const groupSelf = await request('/access-records', adminSession, {
+    method: 'POST',
+    body: JSON.stringify({ principal: { kind: 'group', id: group.id }, scope: { kind: 'self' }, sortOrder: 0, values: { 'Permission.Audit': true } }),
+  });
+  assertEquals(groupSelf.status, 400);
 
   assertEquals((await request('/access-records', adminSession, {
     method: 'POST',

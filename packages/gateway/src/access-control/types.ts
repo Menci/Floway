@@ -163,6 +163,9 @@ export const validateAccessRecordInput = (input: AccessRecordInput): void => {
   if (!Number.isInteger(input.sortOrder) || input.sortOrder < 0) {
     throw new Error('Access record sortOrder must be a nonnegative integer');
   }
+  if (input.scope.kind === 'self' && input.principal.kind !== 'user') {
+    throw new Error('/Self is only valid for user principals');
+  }
   const allowed = new Set<AccessPermission>(permissionsForScope(input.scope));
   const entries = Object.entries(input.values) as Array<[AccessPermission, unknown]>;
   if (entries.length === 0) throw new Error('Access record must set at least one permission');

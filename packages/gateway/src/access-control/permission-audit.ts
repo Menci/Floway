@@ -1,11 +1,10 @@
 import { createAccessResolver } from './resolution.ts';
-import type { AccessPrincipal, AccessRecord } from './types.ts';
+import type { AccessPrincipal } from './types.ts';
 import { getRepo } from '../repo/index.ts';
 import type { User, UserDirectory } from '../repo/types.ts';
 
 export interface PermissionAuditContext {
   directory: UserDirectory;
-  authorizationRecords: AccessRecord[];
   userIds: ReadonlySet<number>;
   directGroupIds: ReadonlySet<number>;
   membershipGroupIds: ReadonlySet<number>;
@@ -26,7 +25,6 @@ export const loadPermissionAuditContext = async (subject: User): Promise<Permiss
     const groupIds = new Set(directory.groups.map(group => group.id));
     return {
       directory,
-      authorizationRecords: [],
       userIds: new Set(directory.users.map(user => user.id)),
       directGroupIds: groupIds,
       membershipGroupIds: groupIds,
@@ -53,15 +51,17 @@ export const loadPermissionAuditContext = async (subject: User): Promise<Permiss
     { permission: 'Permission.Audit' },
   ) ? [group.id] : []));
   const membershipGroupIds = new Set(directory.groups
-    .filter(group => group.memberIds.some(userId => userIds.has(userId)))
+    .filter(group => !directGroupIds.has(group.id) && group.memberIds.some(userId => userIds.has(userId)))
     .map(group => group.id));
-  return { directory, authorizationRecords, userIds, directGroupIds, membershipGroupIds };
+  return { directory, userIds, directGroupIds, membershipGroupIds };
 };
+
+export const hasPermissionAuditTarget = (context: PermissionAuditContext): boolean =>
+  context.userIds.size > 0 || context.directGroupIds.size > 0;
 
 export const canViewPermissions = async (subject: User): Promise<boolean> => {
   if (subject.isAdmin) return true;
-  const context = await loadPermissionAuditContext(subject);
-  return context.userIds.size > 0 || context.directGroupIds.size > 0;
+  return hasPermissionAuditTarget(await loadPermissionAuditContext(subject));
 };
 
 export const permissionAuditPrincipals = (context: PermissionAuditContext): AccessPrincipal[] => [
@@ -71,7 +71,5 @@ export const permissionAuditPrincipals = (context: PermissionAuditContext): Acce
 
 export const permissionAuditSupportPrincipals = (context: PermissionAuditContext): AccessPrincipal[] => [
   ...permissionAuditPrincipals(context),
-  ...[...context.membershipGroupIds]
-    .filter(id => !context.directGroupIds.has(id))
-    .map(id => ({ kind: 'group' as const, id })),
+  ...[...context.membershipGroupIds].map(id => ({ kind: 'group' as const, id })),
 ];

@@ -32,6 +32,7 @@ const matches = (outer: AccessScope, outerKey: string, regex: RegExp | null, inn
 };
 
 const valueRank = (value: NonNullable<AccessValues[AccessPermission]>) => typeof value === 'boolean' ? Number(value) : upstreamEditLevelRank[value];
+const groupScopeParticipates = (permission: AccessPermission): boolean => permission === 'User.Audit';
 // A concrete user outranks membership scopes; exact model ids and regexes share
 // one ordered level. Only model-pattern precedence is operator-controlled.
 const precedenceDepth = (scope: AccessScope) => scope.kind === 'user' ? 3 : accessScopeDepth(scope);
@@ -51,7 +52,7 @@ const resolvePreparedAssignments = (
   const values: AccessValues = {};
   for (const permission of permissionsForScope(scope)) {
     const assignments = applicable.filter(record => record.record.values[permission] !== undefined
-      && !(permission === 'Permission.Audit' && scope.kind === 'user' && record.record.scope.kind === 'group'));
+      && !(scope.kind === 'user' && record.record.scope.kind === 'group' && !groupScopeParticipates(permission)));
     const buckets = [...Map.groupBy(assignments, record => record.scopeKey).values()]
       .map(rows => ({ scope: rows[0]!.record.scope, rows, order: Math.min(...rows.map(row => row.record.sortOrder)), id: Math.min(...rows.map(row => row.record.id)) }))
       .toSorted((left, right) => precedenceDepth(right.scope) - precedenceDepth(left.scope)
@@ -147,7 +148,7 @@ export const createAccessResolver = (records: readonly AccessRecord[]): AccessRe
     case 'user': result.push(
       self ? selfBucket : undefined,
       userBuckets.get(scope.userId),
-      ...(requirement.permission === 'User.Audit' ? [...targetGroups].map(id => groupBuckets.get(id)) : []),
+      ...(groupScopeParticipates(requirement.permission) ? [...targetGroups].map(id => groupBuckets.get(id)) : []),
       usersBucket,
     ); break;
     case 'group': result.push(groupBuckets.get(scope.groupId), groupsBucket); break;
@@ -191,6 +192,7 @@ export const createAccessResolver = (records: readonly AccessRecord[]): AccessRe
 // Callers supply only the selected principal's personal and membership rules.
 // Scope wins first, personal assignment wins within that scope, then group
 // assignments combine by maximum while all contributing group rules stay active.
+// A /Group rule never contributes Permission.Audit to a user resolution.
 export const resolveAssignments = (records: readonly AccessRecord[], scope: AccessScope, targetGroups: ReadonlySet<number>, self = false): AccessResolution =>
   createAccessResolver(records).resolve(scope, targetGroups, self);
 
