@@ -59,6 +59,29 @@ test('a cold candidate read schedules refresh without waiting for upstream I/O',
   });
 });
 
+test('enumerateModelCandidates shares one upstream snapshot across providers and dialers', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord());
+
+  await withMockedFetch(
+    () => jsonResponse({ object: 'list', data: [{ id: 'shared-model' }] }),
+    async () => {
+      const list = vi.spyOn(repo.upstreams, 'list');
+      const resolved = await enumerateModelCandidates({
+        upstreamIds: null,
+        model: 'shared-model',
+        kind: 'chat',
+        scheduler: testScheduler,
+        runtimeLocation: 'TEST',
+      });
+
+      expect(list).toHaveBeenCalledOnce();
+      assertEquals(resolved.candidates.map(candidate => candidate.model.id), ['shared-model']);
+    },
+  );
+});
+
 test('scheduler registration failures propagate rather than looking like an upstream model-list failure', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
