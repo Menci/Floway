@@ -1,10 +1,11 @@
-import { GroupBadge, GroupTag } from './badge';
+import { GroupIdentity } from './identity';
 import type { ControlPlaneGroup } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
+import { FieldClearIcon } from '../ui/field-clear-icon';
 import { TagCombobox } from '../ui/tag-combobox';
 
-const { Field, Text } = fluentComponents;
+const { Field, Tag, Text } = fluentComponents;
 
 export function UserGroupsField({ disabled, groups, onChange, value }: {
   disabled: boolean;
@@ -25,11 +26,19 @@ export function UserGroupsField({ disabled, groups, onChange, value }: {
     renderOption={option => {
       const group = byId.get(option.value)!;
       return <span className="flex flex-1 items-center justify-between gap-3 min-w-0">
-        <span className="inline-flex min-w-0"><GroupBadge group={group} /></span>
+        <GroupIdentity group={group} />
         <Text className="text-fui-fg2 flex-none" size={200}>{t('dashboard.groupsManagement.members.count', { count: group.memberIds.length })}</Text>
       </span>;
     }}
-    renderTag={option => <GroupTag disabled={disabled} group={byId.get(option.value)!} key={option.value} />}
+    renderTag={option => <Tag
+      appearance="outline"
+      className="floway-identity-token max-w-full"
+      disabled={disabled}
+      dismissIcon={{ 'aria-label': t('dashboard.groupsManagement.actions.leave', { name: option.label }), children: <FieldClearIcon /> }}
+      key={option.value}
+      size="small"
+      value={option.value}
+    ><GroupIdentity group={byId.get(option.value)!} /></Tag>}
     value={value}
   /></Field>;
 }

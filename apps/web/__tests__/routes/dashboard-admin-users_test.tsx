@@ -18,12 +18,12 @@ afterEach(() => vi.restoreAllMocks());
 
 const renderPage = (entry = '/dashboard/admin/users', data = loaderData) => {
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-    return new DOMRect(0, 0, this.hasAttribute('data-measure-badge') ? 100 : this.hasAttribute('data-measure-overflow') ? 30 : 1000, 24);
+    return new DOMRect(0, 0, this.hasAttribute('data-measure-group') ? 100 : this.hasAttribute('data-measure-overflow') ? 24 : 1000, 24);
   });
   const readStyle = window.getComputedStyle.bind(window);
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
     const style = readStyle(element, pseudo);
-    if (element.hasAttribute('data-group-badges')) Object.defineProperty(style, 'columnGap', { value: '4px' });
+    if (element.hasAttribute('data-group-memberships')) Object.defineProperty(style, 'columnGap', { value: '8px' });
     return style;
   });
   const router = createMemoryRouter([{
@@ -45,7 +45,7 @@ test('opens a group deep link and keeps group selection in browser history', asy
   expect(screen.getByRole('option', { name: 'Research' }).getAttribute('aria-selected')).toBe('true');
 });
 
-test('navigates from a user group badge to its roster without carrying the user search', async () => {
+test('navigates from a group identity to its roster without carrying the user search', async () => {
   const { router } = renderPage();
   const search = await screen.findByRole('textbox', { name: 'Search users' });
   fireEvent.change(search, { target: { value: 'frank' } });

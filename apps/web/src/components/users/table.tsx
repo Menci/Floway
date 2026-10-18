@@ -1,20 +1,16 @@
 import { DeleteRegular, EditRegular, KeyRegular } from '@fluentui/react-icons';
 
-import { UserAvatar } from './avatar';
+import { UserIdentity } from './identity';
 import type { ControlPlaneGroup, ControlPlaneUser } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
-import { dateTime, shortDate } from '../../lib/format-time';
-import { useLocale } from '../../lib/use-locale';
-import { GroupBadges } from '../groups/badges';
+import { GroupMemberships } from '../groups/memberships';
 import { ResourceListEmptyState } from '../ui/resource-list';
-import { RowTitleButton } from '../ui/row-title';
 import { ScrollArea } from '../ui/scroll-area';
 import { StatusBadge } from '../ui/status-badge';
 import { TABLE_ACTIONS_WIDTH, TableActions, TableTrailingHeader } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
-import { TruncationTooltip } from '../ui/truncation-tooltip';
 
 const {
   Table,
@@ -23,7 +19,6 @@ const {
   TableHeader,
   TableHeaderCell,
   TableRow,
-  Tooltip,
 } = fluentComponents;
 
 export function UsersTable({
@@ -44,7 +39,6 @@ export function UsersTable({
   groups: ControlPlaneGroup[];
 }) {
   const { t } = useTranslation();
-  const locale = useLocale();
 
   if (users.length === 0) {
     return <ResourceListEmptyState>{t('dashboard.users.empty')}</ResourceListEmptyState>;
@@ -53,15 +47,14 @@ export function UsersTable({
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
       <Table aria-label={t('dashboard.users.table.label')} className="min-w-[820px]" style={{ tableLayout: 'auto' }}>
-        <TableColumns widths={['22%', null, '40%', null, null, TABLE_ACTIONS_WIDTH]} />
+        <TableColumns widths={['22%', null, '40%', null, TABLE_ACTIONS_WIDTH]} />
         <TableHeader>
           <TableRow>
             <TableHeaderCell>{t('dashboard.users.table.username')}</TableHeaderCell>
             <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.role')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.groups')}</TableHeaderCell>
             <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.upstreams')}</TableHeaderCell>
-            <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.created')}</TableHeaderCell>
-            <TableTrailingHeader>{t('dashboard.users.table.actions')}</TableTrailingHeader>
+            <TableTrailingHeader><span className="sr-only">{t('dashboard.users.table.actions')}</span></TableTrailingHeader>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -69,27 +62,17 @@ export function UsersTable({
             const protectedUser = user.id === 1 || user.id === actorId;
             return (
               <TableRow key={user.id}>
-                <TableCell><div className="flex items-center gap-2 min-w-0">
-                  <UserAvatar username={user.username} />
-                  <TruncationTooltip content={user.username} relationship="label">{measureRef => <RowTitleButton onClick={() => onEdit(user)} ref={measureRef}>{user.username}</RowTitleButton>}</TruncationTooltip>
-                </div></TableCell>
+                <TableCell><button className="winui-focus-rect floway-identity-action" disabled={disabled} onClick={() => onEdit(user)} type="button"><UserIdentity username={user.username} /></button></TableCell>
                 <TableCell className="whitespace-nowrap">
                   <StatusBadge tone={user.isAdmin ? 'accent' : 'neutral'}>
                     {t(`dashboard.users.role.${user.isAdmin ? 'admin' : 'operator'}`)}
                   </StatusBadge>
                 </TableCell>
-                <TableCell><GroupBadges groups={user.groupIds.map(id => groups.find(group => group.id === id)!)} /></TableCell>
+                <TableCell><GroupMemberships groups={user.groupIds.map(id => groups.find(group => group.id === id)!)} /></TableCell>
                 <TableCell className="whitespace-nowrap">
                   {user.upstreamIds === null
                     ? t('dashboard.users.upstreams.all')
                     : t('dashboard.users.upstreams.count', { count: user.upstreamIds.length })}
-                </TableCell>
-                <TableCell>
-                  <Tooltip content={dateTime(user.createdAt, locale)} relationship="description">
-                    <span className="winui-focus-rect whitespace-nowrap" tabIndex={0}>
-                      {shortDate(user.createdAt, locale)}
-                    </span>
-                  </Tooltip>
                 </TableCell>
                 <TableCell>
                   <TableActions>

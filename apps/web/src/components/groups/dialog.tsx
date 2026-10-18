@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
-import { GroupBadge } from './badge';
+import { GroupIdentity } from './identity';
 import { api, callApi } from '../../api/client';
 import type { ControlPlaneGroup } from '../../api/types';
 import { fluentComponents } from '../../fluent';
@@ -79,7 +79,7 @@ export function GroupDialog({ group, groups, onOpenChange, onSaved, open }: {
         onChange={(_, data) => field.onChange(Math.round(data.color.h) % 360)}
         rail={{ style: { backgroundImage: HUE_RAIL_GRADIENT } }}
       />
-      <div className="inline-flex min-w-0 mt-2"><GroupBadge group={{ name: values.name.trim() || t('dashboard.groupsManagement.dialog.createTitle'), hue: values.hue }} /></div>
+      <div className="inline-flex min-w-0 mt-2"><GroupIdentity group={{ name: values.name.trim() || t('dashboard.groupsManagement.dialog.createTitle'), hue: values.hue }} /></div>
     </Field>} />
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
   </DialogShell></>;

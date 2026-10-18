@@ -1,7 +1,7 @@
 import { DeleteRegular, DismissRegular, EditRegular, PersonAddRegular, SearchRegular } from '@fluentui/react-icons';
 import { useState } from 'react';
 
-import { GroupBadge } from './badge';
+import { GroupIdentity } from './identity';
 import type { ControlPlaneGroup, ControlPlaneUser } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
@@ -13,7 +13,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { StatusBadge } from '../ui/status-badge';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
-import { UserAvatar } from '../users/avatar';
+import { UserIdentity } from '../users/identity';
 
 const { Button, List, ListItem, Popover, PopoverSurface, PopoverTrigger, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, makeStyles, mergeClasses } = fluentComponents;
 
@@ -63,7 +63,7 @@ export function GroupsMasterDetail({ disabled, groups, onCreate, onDelete, onEdi
           key={group.id}
           value={group.id}
         >
-          <span className="min-w-0 inline-flex"><GroupBadge group={group} /></span>
+          <GroupIdentity group={group} />
           <Text className="text-fui-fg2 flex-none proportional-nums" size={200}>{group.memberIds.length}</Text>
         </ListItem>)}
       </List>
@@ -71,7 +71,7 @@ export function GroupsMasterDetail({ disabled, groups, onCreate, onDelete, onEdi
     <section className="grid content-start min-w-0">
       <header className="flex items-center justify-between gap-3 flex-wrap px-[var(--floway-panel-inset)] py-3 border-b border-b-solid border-b-[var(--winui-divider-stroke-default)]">
         <div className="grid gap-0.5 min-w-0">
-          <Text className="break-words" size={400} weight="semibold">{selected.name}</Text>
+          <GroupIdentity group={selected} />
           <Text className="text-fui-fg2" size={200}>{t('dashboard.groupsManagement.members.count', { count: selected.memberIds.length })}</Text>
         </div>
         <div className="flex items-center gap-1 flex-none">
@@ -90,7 +90,7 @@ export function GroupsMasterDetail({ disabled, groups, onCreate, onDelete, onEdi
             <TableHeaderCell><span className="sr-only">{t('dashboard.users.table.actions')}</span></TableHeaderCell>
           </TableRow></TableHeader>
           <TableBody>{users.filter(user => members.has(user.id)).map(user => <TableRow className="h-11" key={user.id}>
-            <TableCell className="!pl-[var(--floway-panel-inset)]"><UserIdentity user={user} /></TableCell>
+            <TableCell className="!pl-[var(--floway-panel-inset)]"><UserIdentity username={user.username} /></TableCell>
             <TableCell className="whitespace-nowrap"><StatusBadge tone={user.isAdmin ? 'accent' : 'neutral'}>{t(`dashboard.users.role.${user.isAdmin ? 'admin' : 'operator'}`)}</StatusBadge></TableCell>
             <TableCell className="whitespace-nowrap">{user.upstreamIds === null ? t('dashboard.users.upstreams.all') : t('dashboard.users.upstreams.count', { count: user.upstreamIds.length })}</TableCell>
             <TableCell><ConfirmFlyout
@@ -107,13 +107,6 @@ export function GroupsMasterDetail({ disabled, groups, onCreate, onDelete, onEdi
       </ScrollArea>}
     </section>
   </Panel>;
-}
-
-function UserIdentity({ user }: { user: ControlPlaneUser }) {
-  return <div className="flex items-center gap-2 min-w-0">
-    <UserAvatar username={user.username} />
-    <span className="truncate">{user.username}</span>
-  </div>;
 }
 
 function AddMember({ disabled, group, onAdd, users }: {
@@ -133,7 +126,7 @@ function AddMember({ disabled, group, onAdd, users }: {
       <ScrollArea axes="vertical" className="max-h-[260px]">
         {visible.length === 0 && <Text className="text-fui-fg2 px-2 py-2" role="status">{t(users.length === 0 ? 'dashboard.groupsManagement.members.allAdded' : 'dashboard.groupsManagement.members.noMatches')}</Text>}
         <List aria-label={t('dashboard.groupsManagement.fields.members')} navigationMode="items">
-          {visible.map(user => <ListItem aria-label={user.username} aria-disabled={disabled} key={user.id} onAction={() => { if (!disabled) { setOpen(false); void onAdd(user); } }} value={user.id}><UserIdentity user={user} /></ListItem>)}
+          {visible.map(user => <ListItem aria-label={user.username} aria-disabled={disabled} key={user.id} onAction={() => { if (!disabled) { setOpen(false); void onAdd(user); } }} value={user.id}><UserIdentity username={user.username} /></ListItem>)}
         </List>
       </ScrollArea>
     </PopoverSurface>

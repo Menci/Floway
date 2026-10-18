@@ -22,17 +22,23 @@ test('searches unselected groups, joins one, and removes a selected tag', async 
   const input = screen.getByRole('combobox', { name: i18n.t('dashboard.users.table.groups') });
   await act(async () => { fireEvent.click(input); fireEvent.change(input, { target: { value: 'Res' } }); });
   const option = await screen.findByRole('option', { name: /Research/ });
+  expect(option.querySelector('.floway-identity .floway-group-avatar')).not.toBeNull();
   await act(async () => { option.click(); });
   expect(screen.getByRole('status').textContent).toBe('["1","2"]');
+  const tokens = document.querySelectorAll('.floway-identity-token');
+  expect(tokens).toHaveLength(2);
+  for (const token of tokens) {
+    expect(token.querySelector('.floway-identity .floway-group-avatar')).not.toBeNull();
+    expect(token.querySelector('.fui-Tag__icon')).toBeNull();
+  }
   await act(async () => { fireEvent.click(screen.getByLabelText(i18n.t('dashboard.groupsManagement.actions.leave', { name: 'Platform' }))); });
   expect(screen.getByRole('status').textContent).toBe('["2"]');
 });
 
-test('a saving form disables tag removal and releases the identity paint', () => {
+test('a saving form disables identity removal', () => {
   renderInApp(<UserGroupsField disabled groups={groups} onChange={() => { throw new Error('Disabled tags cannot change membership'); }} value={['1']} />);
   const input = screen.getByRole('combobox');
   expect((input as HTMLInputElement).disabled).toBe(true);
   const tag = screen.getByRole('option', { name: /Platform/ }) as HTMLButtonElement;
   expect(tag.disabled).toBe(true);
-  expect(tag.style.color).toBe('');
 });
