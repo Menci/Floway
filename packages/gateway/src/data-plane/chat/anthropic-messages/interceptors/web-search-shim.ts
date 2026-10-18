@@ -17,6 +17,7 @@ import type {
   AnthropicMessagesTextCitation, AnthropicMessagesTextCitationParam,
   AnthropicMessagesTool,
   AnthropicMessagesToolResultBlock,
+  AnthropicMessagesUsageDelta,
   AnthropicMessagesUserContentBlock,
   AnthropicMessagesWebSearchErrorCode,
   AnthropicMessagesWebSearchResultBlock,
@@ -28,6 +29,20 @@ import { providerModelOf, internalErrorResult, toInternalDebugError } from '@flo
 
 const MAX_QUERY_LENGTH = 1000;
 const WEB_SEARCH_TOOL_NAME = 'web_search';
+
+// vLLM v0.29.1rc0 models stream-event usage as optional and synthesizes zero
+// counters when its underlying usage is absent. Preserve that wire compatibility
+// before adding the shim-owned server-tool counters.
+// https://github.com/vllm-project/vllm/blob/v0.29.1rc0/vllm/entrypoints/anthropic/protocol.py#L213-L231
+// https://github.com/vllm-project/vllm/blob/v0.29.1rc0/vllm/entrypoints/anthropic/serving.py#L55-L91
+const EMPTY_MESSAGES_USAGE_DELTA: AnthropicMessagesUsageDelta = {
+  input_tokens: null,
+  output_tokens: 0,
+  cache_creation_input_tokens: null,
+  cache_read_input_tokens: null,
+  output_tokens_details: null,
+  server_tool_use: null,
+};
 
 type SearchResultOwnership = 'owned' | 'foreign';
 
@@ -801,9 +816,9 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
     // (Anthropic's own) would have produced.
     if (event.type === 'message_delta') {
       const interceptedAny = shimState.interceptedSearches > 0;
-      const baseUsage = event.usage;
+      const baseUsage = event.usage ?? EMPTY_MESSAGES_USAGE_DELTA;
       const newUsage = shimState.executedSearchCount > 0
-        ? { ...baseUsage, server_tool_use: { web_search_requests: shimState.executedSearchCount, web_fetch_requests: baseUsage.server_tool_use === null ? 0 : baseUsage.server_tool_use.web_fetch_requests } }
+        ? { ...baseUsage, server_tool_use: { web_search_requests: shimState.executedSearchCount, web_fetch_requests: baseUsage.server_tool_use?.web_fetch_requests ?? 0 } }
         : baseUsage;
 
       yield eventFrame({

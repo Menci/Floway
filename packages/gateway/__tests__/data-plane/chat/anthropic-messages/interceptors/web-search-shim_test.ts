@@ -892,6 +892,27 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative single web search emits se
   assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 1, web_fetch_requests: 0 });
 });
 
+test('rewriteAnthropicMessagesWebSearchEventsToNative synthesizes usage omitted by vLLM streams', async () => {
+  const messageEndWithoutUsage = {
+    type: 'message_delta',
+    delta: { container: null, stop_details: null, stop_reason: 'tool_use', stop_sequence: null },
+  } as unknown as AnthropicMessagesStreamEventEx;
+  const events = await runStreamingShim(
+    [upstreamMessageStart(), ...upstreamWebSearchBlock(0, 'toolu_1', 'react 19'), messageEndWithoutUsage, { type: 'message_stop' }],
+    activeAnthropicMessagesWebSearchShimState(),
+    activeProvider(fakeProviderOk),
+  );
+  const messageDelta = events.find(event => event.type === 'message_delta');
+  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage : undefined, {
+    input_tokens: null,
+    output_tokens: 0,
+    cache_creation_input_tokens: null,
+    cache_read_input_tokens: null,
+    output_tokens_details: null,
+    server_tool_use: { web_search_requests: 1, web_fetch_requests: 0 },
+  });
+});
+
 test('rewriteAnthropicMessagesWebSearchEventsToNative renumbers indices across two intercepted searches', async () => {
   let providerCalls = 0;
   const events = await runStreamingShim(
