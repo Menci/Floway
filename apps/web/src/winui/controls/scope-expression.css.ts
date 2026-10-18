@@ -5,14 +5,16 @@ export const scopeExpressionCss = String.raw`
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L48-L65
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L194-L199 */
 .floway-scope-editor {
+  --floway-scope-editor-border-width: 1px;
+  --floway-scope-editor-min-height: 34px;
   align-items: center;
   background: var(--winui-control-fill-default);
-  border: 1px solid var(--winui-control-stroke-default);
+  border: var(--floway-scope-editor-border-width) solid var(--winui-control-stroke-default);
   border-bottom-color: var(--winui-control-strong-stroke-default);
   border-radius: var(--winui-control-corner-radius);
   display: inline-flex;
   gap: 4px;
-  min-height: 34px;
+  min-height: var(--floway-scope-editor-min-height);
   max-width: 100%;
   min-width: 240px;
   padding: 0 11px;
@@ -22,6 +24,14 @@ export const scopeExpressionCss = String.raw`
 
 .floway-scope-editor > .floway-scope-expression {
   flex: 1;
+}
+
+/* Keep the action in the first standard-height line when the path wraps. */
+.floway-scope-editor > .fui-Button {
+  --floway-scope-editor-action-size: 24px;
+  align-self: flex-start;
+  height: var(--floway-scope-editor-action-size);
+  margin-block-start: calc((var(--floway-scope-editor-min-height) - 2 * var(--floway-scope-editor-border-width) - var(--floway-scope-editor-action-size)) / 2);
 }
 
 .floway-scope-editor:not([aria-disabled='true']),
@@ -114,6 +124,7 @@ export const scopeExpressionCss = String.raw`
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Breadcrumb/BreadcrumbBar.xaml#L262-L272
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Breadcrumb/BreadcrumbBar_themeresources.xaml#L7-L9 */
 .floway-scope-expression {
+  --floway-scope-part-padding-block: 3px;
   /* Keep syntax hues while following the secondary/primary and tertiary/primary
      TextFill alpha ratios used by plain parts.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L209-L211 */
@@ -141,6 +152,14 @@ export const scopeExpressionCss = String.raw`
   min-width: 0;
 }
 
+.floway-scope-expression-segment:has(.floway-scope-expression-model-icon) {
+  align-items: flex-start;
+}
+
+.floway-scope-expression-segment:has(.floway-scope-expression-model-icon) > .floway-scope-expression-slash {
+  padding-block: var(--floway-scope-part-padding-block);
+}
+
 /* Preserve the rendered token's footprint on activation. Typing releases that
    sizing reference so the draft can grow and shrink with its contents. */
 .floway-scope-expression-part-editor {
@@ -157,7 +176,7 @@ export const scopeExpressionCss = String.raw`
 }
 
 .floway-scope-expression-part-control {
-  align-items: center;
+  align-items: flex-start;
   display: flex;
   max-width: 100%;
   min-width: 0;
@@ -169,16 +188,17 @@ export const scopeExpressionCss = String.raw`
 }
 
 .floway-scope-expression-part {
-  align-items: center;
+  align-items: flex-start;
   border-radius: var(--borderRadiusMedium);
   display: inline-flex;
   font-weight: var(--fontWeightRegular);
   gap: var(--spacingHorizontalXS);
-  line-height: 20px;
+  line-height: var(--lineHeightBase300);
   max-width: 100%;
   min-width: 0;
   overflow-wrap: anywhere;
-  padding: 3px 1px;
+  padding: var(--floway-scope-part-padding-block) 1px;
+  text-align: start;
 }
 
 button.floway-scope-expression-part {
@@ -240,7 +260,7 @@ button.floway-scope-expression-part:focus-visible {
 }
 
 .floway-scope-expression-option {
-  align-items: center;
+  align-items: flex-start;
   display: inline-flex;
   gap: var(--spacingHorizontalXS);
   min-width: 0;
@@ -251,9 +271,11 @@ button.floway-scope-expression-part:focus-visible {
 }
 
 .floway-scope-expression-model-icon {
+  --floway-scope-model-icon-size: 18px;
   flex: none;
-  font-size: 18px;
-  height: 18px;
-  width: 18px;
+  font-size: var(--floway-scope-model-icon-size);
+  height: var(--floway-scope-model-icon-size);
+  margin-block-start: calc((var(--lineHeightBase300) - var(--floway-scope-model-icon-size)) / 2);
+  width: var(--floway-scope-model-icon-size);
 }
 `;

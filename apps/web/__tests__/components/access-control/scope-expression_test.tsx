@@ -4,6 +4,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 
 import { ScopeEditor, ScopeExpression, type ScopeExpressionData } from '../../../src/components/access-control/scope-expression';
 import { setLanguage } from '../../../src/i18n';
+import { scopeExpressionCss } from '../../../src/winui/controls/scope-expression.css';
 import { renderInApp } from '../../render';
 import type { AccessScope } from '@floway-dev/gateway/browser';
 
@@ -32,6 +33,35 @@ test.each(['exact', 'regex'] as const)('uses standard resource badges and the sh
   expect(segments).toHaveLength(3);
   expect(segments.every(segment => segment.firstElementChild!.classList.contains('floway-scope-expression-slash'))).toBe(true);
   expect(segments.every(segment => segment.childElementCount === 2)).toBe(true);
+});
+
+test.each(['exact', 'regex'] as const)('anchors long %s paths and their controls to the first line', kind => {
+  const stylesheet = document.createElement('style');
+  stylesheet.textContent = scopeExpressionCss;
+  document.head.append(stylesheet);
+  try {
+    const value: AccessScope = { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind, value: `^claude-(sonnet|opus)-${'1'.repeat(240)}` } };
+    const { container } = renderInApp(<>
+      <ScopeEditor data={data} value={value} />
+      <ScopeExpression data={data} readOnly value={value} />
+    </>);
+    const segments = container.querySelectorAll('.floway-scope-expression-segment:has(.floway-scope-expression-model-icon)');
+    expect(segments).toHaveLength(2);
+    for (const segment of segments) {
+      const part = segment.querySelector('.floway-scope-expression-part')!;
+      expect(getComputedStyle(segment).alignItems).toBe('flex-start');
+      expect(getComputedStyle(part).alignItems).toBe('flex-start');
+      expect(getComputedStyle(part).textAlign).toBe('start');
+    }
+    expect(getComputedStyle(screen.getByRole('button', { name: 'Remove last scope segment' })).alignSelf).toBe('flex-start');
+    fireEvent.click(segments[0]!.querySelector('button')!);
+    expect(getComputedStyle(container.querySelector('.floway-scope-expression-part-control')!).alignItems).toBe('flex-start');
+    const options = [...container.querySelectorAll('.floway-scope-expression-option')];
+    expect(options.length).toBeGreaterThan(0);
+    expect(options.every(option => getComputedStyle(option).alignItems === 'flex-start')).toBe(true);
+  } finally {
+    stylesheet.remove();
+  }
 });
 
 const renderEditor = (initial: AccessScope | null = null, purpose: 'scope' | 'filter' = 'scope') => {
