@@ -1,4 +1,4 @@
-import { PersonKey24Regular } from '@fluentui/react-icons';
+import { PersonRibbon24Regular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -181,7 +181,7 @@ export function UserDialog(props: UserDialogProps) {
           ? t(props.mode === 'edit' && props.user.id === 1 ? 'dashboard.users.form.userOneLocked' : 'dashboard.users.form.selfLocked')
           : t('dashboard.users.form.administratorDescription')}
         header={t('dashboard.users.form.administrator')}
-        icon={<PersonKey24Regular />}
+        icon={<PersonRibbon24Regular />}
       />
       <UpstreamAccessControl
         available={upstreams}
