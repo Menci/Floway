@@ -16,7 +16,7 @@ vi.mock('../../../../../src/data-plane/providers/resolution.ts', async importOri
   };
 });
 
-const { resolveAlphaSearchDispatcher } = await import('../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts');
+const { AlphaSearchModelNotFoundError, resolveAlphaSearchDispatcher } = await import('../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts');
 const { enumerateModelCandidates } = await import('../../../../../src/data-plane/providers/resolution.ts');
 
 const context: Parameters<typeof resolveAlphaSearchDispatcher>[0] = {
@@ -44,18 +44,17 @@ const dispatcherFor = async (kind: 'codex' | 'custom', inboundHeaderAllowlist: r
   };
   resolvedCandidate = stubModelCandidate({ provider });
   const dispatcher = await resolveAlphaSearchDispatcher(context);
-  assertExists(dispatcher);
   return { dispatcher, observedHeaders: () => observedHeaders };
 };
 
-test('Alpha Search has no dispatcher when the selected model has no permitted candidate', async () => {
+test('Alpha Search reports a missing model when the selection has no permitted candidate', async () => {
   resolvedCandidate = undefined;
-  expect(await resolveAlphaSearchDispatcher(context)).toBeNull();
+  await expect(resolveAlphaSearchDispatcher(context)).rejects.toBeInstanceOf(AlphaSearchModelNotFoundError);
 });
 
 test('Alpha Search does not resolve a model outside the API key upstream scope', async () => {
   vi.mocked(enumerateModelCandidates).mockClear();
-  expect(await resolveAlphaSearchDispatcher({ ...context, upstreamIds: [] })).toBeNull();
+  await expect(resolveAlphaSearchDispatcher({ ...context, upstreamIds: [] })).rejects.toBeInstanceOf(AlphaSearchModelNotFoundError);
   expect(enumerateModelCandidates).not.toHaveBeenCalled();
 });
 

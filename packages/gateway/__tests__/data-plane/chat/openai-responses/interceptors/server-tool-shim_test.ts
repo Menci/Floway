@@ -4147,7 +4147,7 @@ test('responses target with an unavailable OpenAI passthrough model resolves not
     passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_codex', model: 'gpt-missing' },
   } satisfies WebSearchConfig);
   mockResolveAlpha.mockClear();
-  mockResolveAlpha.mockRejectedValue(new Error('Selected OpenAI search model gpt-missing is unavailable'));
+  mockResolveAlpha.mockRejectedValue(new Error('Search model not found.'));
   const inv = makeInvocation({
     targetApi: 'openaiResponses',
     enabledFlags: new Set<FlagId>(['openai-responses-web-search-shim']),
@@ -4158,6 +4158,38 @@ test('responses target with an unavailable OpenAI passthrough model resolves not
   await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), scriptedRun([messageTurn('done', 0)]).run);
 
   assertEquals(mockResolveAlpha.mock.calls.length, 0);
+});
+
+test('responses target preserves a missing-model failure once a search runs', async () => {
+  makeStubDeps();
+  await getRepo().webSearchConfig.save({
+    provider: 'tavily',
+    tavily: { apiKey: 'test-key' },
+    microsoftWebIq: { apiKey: '' },
+    jina: { apiKey: '' },
+    passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_codex', model: 'gpt-missing' },
+  } satisfies WebSearchConfig);
+  const { AlphaSearchModelNotFoundError } = await vi.importActual<typeof import('../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts')>('../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts');
+  const failure = new AlphaSearchModelNotFoundError();
+  mockResolveAlpha.mockClear();
+  mockResolveAlpha.mockRejectedValue(failure);
+  const inv = makeInvocation({
+    targetApi: 'openaiResponses',
+    enabledFlags: new Set<FlagId>(['openai-responses-web-search-shim']),
+  });
+  const script = scriptedRun([
+    fcTurn(0, 'call_missing_search_model', SHIM_TOOL_NAME, JSON.stringify({ search_query: [{ q: 'Floway' }] })),
+    messageTurn('done', 0),
+  ]);
+  const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), script.run);
+  const failed = eventPayloads(frames).find(event => event.type === 'response.failed');
+  assert(failed !== undefined);
+  assertEquals(failed.response.status, 'failed');
+  assert(failed.response.error?.message.includes('Search model not found.'));
+  assertEquals(failed.response.error?.provider_specific_fields?.name, 'AlphaSearchModelNotFoundError');
+  assertEquals(failed.response.error?.provider_specific_fields?.stack, failure.stack);
+  assertEquals(script.callCount(), 1);
+  assertEquals(mockResolveAlpha.mock.calls.length, 1);
 });
 
 test('local and cascaded Floway unsupported commands produce the same agent-visible error', async () => {

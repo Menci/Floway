@@ -7,6 +7,13 @@ import { identityWrapUpstreamCall, providerModelOf } from '@floway-dev/provider'
 
 export type AlphaSearchDispatcher = (body: Record<string, unknown>, signal: AbortSignal | undefined, headers: Headers) => Promise<Response>;
 
+export class AlphaSearchModelNotFoundError extends Error {
+  constructor() {
+    super('Search model not found.');
+    this.name = 'AlphaSearchModelNotFoundError';
+  }
+}
+
 export const resolveAlphaSearchDispatcher = async ({
   config,
   subject,
@@ -19,9 +26,9 @@ export const resolveAlphaSearchDispatcher = async ({
   upstreamIds: readonly string[] | null;
   scheduler: BackgroundScheduler;
   runtimeLocation: string;
-}): Promise<AlphaSearchDispatcher | null> => {
+}): Promise<AlphaSearchDispatcher> => {
   if (upstreamIds !== null && !upstreamIds.includes(config.upstreamId)) {
-    return null;
+    throw new AlphaSearchModelNotFoundError();
   }
   const { candidates } = await enumerateModelCandidates({
     subject,
@@ -33,7 +40,7 @@ export const resolveAlphaSearchDispatcher = async ({
   });
   const candidate = candidates.find(value => value.provider.upstreamId === config.upstreamId);
   if (candidate === undefined) {
-    return null;
+    throw new AlphaSearchModelNotFoundError();
   }
   if (candidate.provider.kind !== 'codex' && candidate.provider.kind !== 'custom') {
     throw new Error('Selected upstream does not support OpenAI search passthrough');
