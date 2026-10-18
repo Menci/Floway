@@ -198,6 +198,7 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
     {resolution.error && <OutcomeMessageBar>{resolution.error}</OutcomeMessageBar>}
     <div className="flex items-end gap-3 flex-wrap" data-permission-filters="">
       <Field className="w-[240px] max-w-full" label={t('dashboard.accessControl.fields.principal')}><PrincipalPicker
+        clearable={admin || principal?.kind === 'group'}
         data={scopeData} disabled={!loaded} includeAll={admin} label={t('dashboard.accessControl.fields.principal')} onChange={next => updateParams(nextParams => {
           if (next === null) nextParams.delete('principal'); else nextParams.set('principal', principalKey(next));
           nextParams.delete('page');

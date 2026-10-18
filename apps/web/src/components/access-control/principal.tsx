@@ -25,7 +25,8 @@ export function PrincipalIdentity({ data, principal }: { data: ScopeExpressionDa
   return user ? <UserIdentity username={user.username} /> : <span className="floway-identity text-fui-fg2"><PersonRegular />{t('dashboard.accessControl.scope.unknown', { id: String(principal.id) })}</span>;
 }
 
-export function PrincipalPicker({ data, disabled = false, includeAll = false, label, onChange, value }: {
+export function PrincipalPicker({ clearable = false, data, disabled = false, includeAll = false, label, onChange, value }: {
+  clearable?: boolean;
   data: ScopeExpressionData;
   disabled?: boolean;
   includeAll?: boolean;
@@ -55,7 +56,7 @@ export function PrincipalPicker({ data, disabled = false, includeAll = false, la
     aria-label={label}
     autoComplete="off"
     className="w-full floway-principal-picker"
-    clearAction={includeAll && value !== null ? {
+    clearAction={clearable && value !== null ? {
       label: t('dashboard.accessControl.filters.clearPrincipal'),
       onClear: () => { onChange(null); setQuery(null); setOpen(false); inputRef.current?.focus(); },
     } : undefined}

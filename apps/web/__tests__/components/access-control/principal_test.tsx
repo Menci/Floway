@@ -13,9 +13,9 @@ const data: ScopeExpressionData = {
   upstreams: [], models: [],
 };
 
-function Picker({ includeAll = true }: { includeAll?: boolean }) {
+function Picker({ clearable = true, includeAll = true }: { clearable?: boolean; includeAll?: boolean }) {
   const [value, setValue] = useState<AccessPrincipal | null>({ kind: 'group', id: 1 });
-  return <PrincipalPicker data={data} includeAll={includeAll} label="Applies to" onChange={setValue} value={value} />;
+  return <PrincipalPicker clearable={clearable} data={data} includeAll={includeAll} label="Applies to" onChange={setValue} value={value} />;
 }
 
 test('clears a principal filter, restores input focus and keeps the arrow', () => {
@@ -46,6 +46,13 @@ test('uses the same user avatar as principal identities and retains it while sea
 });
 
 test('keeps required principal selectors without a clear action', () => {
+  renderInApp(<Picker clearable={false} includeAll={false} />);
+  expect(screen.queryByRole('button', { name: 'Clear user or group filter' })).toBeNull();
+});
+
+test('allows clearing a filter independently of offering all principals', () => {
   renderInApp(<Picker includeAll={false} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Clear user or group filter' }));
+  expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Applies to' }).value).toBe('');
   expect(screen.queryByRole('button', { name: 'Clear user or group filter' })).toBeNull();
 });

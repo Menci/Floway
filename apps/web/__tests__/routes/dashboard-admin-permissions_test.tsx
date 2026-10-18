@@ -82,6 +82,19 @@ test('an operator sees a read-only self view with only self and joined groups in
   expect(view.container.querySelectorAll('[data-rule-id]')).toHaveLength(3);
 });
 
+test('an operator clears a selected group back to the default self filter', async () => {
+  renderOperatorPage(initial);
+  const picker = screen.getByRole<HTMLInputElement>('combobox', { name: 'Applies to' });
+  await waitFor(() => expect(picker.value).toBe('alice'));
+  expect(screen.queryByRole('button', { name: 'Clear user or group filter' })).toBeNull();
+  fireEvent.click(picker);
+  fireEvent.click(await screen.findByRole('option', { name: /Platform/ }));
+  await waitFor(() => expect(picker.value).toBe('Platform'));
+  fireEvent.click(screen.getByRole('button', { name: 'Clear user or group filter' }));
+  await waitFor(() => expect(picker.value).toBe('alice'));
+  expect(screen.queryByRole('button', { name: 'Clear user or group filter' })).toBeNull();
+});
+
 test('the permissions loader stays on the page for an operator and asks for access-scoped upstream metadata', async () => {
   useAuthStore.getState().primeFromLogin({
     token: 'operator-session',
