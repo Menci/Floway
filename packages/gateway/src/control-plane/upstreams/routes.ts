@@ -13,10 +13,9 @@ import { getRepo } from '../../repo/index.ts';
 import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import type { StoredUpstreamRecord } from '../../repo/types.ts';
 import { shortId } from '../../shared/short-id.ts';
-import type { createUpstreamBody, updateUpstreamBody, upstreamOptionsQuery } from '../schemas.ts';
+import type { createUpstreamBody, reorderUpstreamsBody, updateUpstreamBody, upstreamOptionsQuery } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
-import { saveUpstream } from '../shared/save-upstreams.ts';
-import { nextSortOrder } from '../shared/sort-order.ts';
+import { appendUpstream, saveUpstream } from '../shared/save-upstreams.ts';
 import {
   normalizeModelPrefix,
   ALL_PROVIDER_KINDS,
@@ -178,12 +177,49 @@ const validateProxyFallbackList = (
 export const listUpstreams = async (c: AuthedContext) => {
   const [items, knownProxyIds] = await Promise.all([getRepo().upstreams.list(), loadKnownProxyIds()]);
   const accesses = await resolveUpstreamAccesses(userFromContext(c), items.map(item => item.id));
+  const reorderGroups = new Map<string, string | null>();
+  let reorderGroup: string | null = null;
+  for (const item of items) {
+    const full = accesses.get(item.id)!.edit === 'full';
+    if (full && reorderGroup === null) reorderGroup = item.id;
+    if (!full) reorderGroup = null;
+    reorderGroups.set(item.id, reorderGroup);
+  }
   return c.json(await Promise.all(items.flatMap(record => {
     const access = accesses.get(record.id)!;
     if (!access.audit && access.edit === 'off') return [];
     return [serializeForResponse(record, knownProxyIds, upstreamRecordToJson)
-      .then(serialized => ({ ...serialized, editLevel: access.edit, audit: access.audit }))];
+      .then(serialized => ({ ...serialized, editLevel: access.edit, audit: access.audit, reorderGroup: reorderGroups.get(record.id)! }))];
   })));
+};
+
+const sameIds = (left: readonly string[], right: readonly string[]): boolean =>
+  left.length === right.length && left.every((id, index) => id === right[index]);
+
+export const reorderUpstreams = async (c: CtxWithJson<typeof reorderUpstreamsBody>) => {
+  const { expectedIds, ids } = c.req.valid('json');
+  const repo = getRepo();
+  const items = await repo.upstreams.list();
+  const accesses = await resolveUpstreamAccesses(userFromContext(c), items.map(item => item.id));
+  const anchor = items.findIndex(item => item.id === expectedIds[0]);
+  if (anchor < 0 || accesses.get(items[anchor]!.id)?.edit !== 'full') {
+    return c.json({ error: 'Upstreams changed or cross a Full-access boundary. Refresh before reordering.' }, 409);
+  }
+
+  let start = anchor;
+  while (start > 0 && accesses.get(items[start - 1]!.id)?.edit === 'full') start -= 1;
+  let end = anchor + 1;
+  while (end < items.length && accesses.get(items[end]!.id)?.edit === 'full') end += 1;
+  const segment = items.slice(start, end);
+  if (!sameIds(segment.map(item => item.id), expectedIds)) {
+    return c.json({ error: 'Upstreams changed or cross a Full-access boundary. Refresh before reordering.' }, 409);
+  }
+
+  const assignments = ids.map((id, index) => ({ id, sortOrder: segment[index]!.sortOrder }));
+  const reordered = await repo.upstreams.reorder(items.map(item => item.id), assignments);
+  return reordered === null
+    ? c.json({ error: 'Upstreams changed or cross a Full-access boundary. Refresh before reordering.' }, 409)
+    : c.json({ ok: true });
 };
 
 // Picker identities and model counts for key restrictions, Audit filters and
@@ -285,7 +321,6 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   if (!modelPrefixResult.ok) return c.json({ error: modelPrefixResult.error }, 400);
   const modelPrefix = modelPrefixResult.value;
 
-  const existing = await getRepo().upstreams.list();
   const now = new Date().toISOString();
   // Copilot / Codex / Claude Code carry OAuth-derived server-owned fields
   // (config.githubToken + config.user for Copilot; config.accounts +
@@ -301,7 +336,8 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     name: body.name,
     enabled: body.enabled ?? true,
     usageRefreshIntervalMinutes: body.usage_refresh_interval_minutes ?? 0,
-    sortOrder: body.sort_order ?? nextSortOrder(existing),
+    // The repo assigns the append rank atomically with the insert.
+    sortOrder: 0,
     createdAt: now,
     updatedAt: now,
     flagOverrides: body.flag_overrides ?? {},
@@ -336,7 +372,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   }
 
   const record = { ...upstream, config: config.value };
-  const saved = await saveUpstream({ previous: null, next: record });
+  const saved = await appendUpstream(record);
   return c.json(await serializeForResponse(saved, knownProxyIds), 201);
 };
 
@@ -405,7 +441,6 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   if (body.name !== undefined) next = { ...next, name: body.name };
   if (body.enabled !== undefined) next = { ...next, enabled: body.enabled };
   if (body.usage_refresh_interval_minutes !== undefined) next = { ...next, usageRefreshIntervalMinutes: body.usage_refresh_interval_minutes };
-  if (body.sort_order !== undefined) next = { ...next, sortOrder: body.sort_order };
   if (body.flag_overrides !== undefined) next = { ...next, flagOverrides: body.flag_overrides };
   if (body.disabled_public_model_ids !== undefined) next = { ...next, disabledPublicModelIds: body.disabled_public_model_ids };
   if (body.proxy_fallback_list !== undefined) {

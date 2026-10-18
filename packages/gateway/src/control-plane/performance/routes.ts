@@ -10,7 +10,7 @@ import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { PerformanceOverviewGroupBy } from '../../repo/types.ts';
 import type { performanceQuery } from '../schemas.ts';
-import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
+import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata, telemetryUpstreamMetadata } from '../shared/telemetry-overview.ts';
 import { createTelemetryBucket, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
 
 type Ctx = CtxWithQuery<typeof performanceQuery>;
@@ -112,5 +112,6 @@ export const performanceOverview = async (c: Ctx) => {
   return c.json({
     ...overview,
     ...metadata,
+    upstreams: telemetryUpstreamMetadata(identity, overview.dimensionValues.upstreams),
   });
 };

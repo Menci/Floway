@@ -27,9 +27,10 @@ const grant = async (
   repo: import('../../repo/memory.ts').InMemoryRepo,
   userId: number,
   level: 'models' | 'full',
+  upstreamId = 'up_restricted',
 ) => await repo.accessRecords.save({
   principal: { kind: 'user', id: userId },
-  scope: { kind: 'upstream', upstreamId: 'up_restricted' },
+  scope: { kind: 'upstream', upstreamId },
   sortOrder: 0,
   values: { 'Upstream.Edit': level },
 });
@@ -57,6 +58,81 @@ test('the list never exposes provider credentials even to a Full editor', async 
   assertEquals(listed.config.ingressHeadersRules[0], { key: 'x-secret', value: 'value' });
   const stored = await repo.upstreams.getById('up_restricted');
   assertEquals((stored?.config as Record<string, unknown> | undefined)?.apiKey, 'sk-secret');
+});
+
+test('reorder preserves sparse slots inside the actor\'s complete contiguous Full segment', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  for (const [id, sortOrder] of [['hidden-before', 0], ['full-a', 10], ['full-b', 30], ['hidden-after', 40]] as const) {
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id, name: id, sortOrder }));
+  }
+  await grant(repo, apiKey.userId, 'full', 'full-a');
+  await grant(repo, apiKey.userId, 'full', 'full-b');
+
+  const response = await requestApp('/api/upstreams/reorder', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: JSON.stringify({ expectedIds: ['full-a', 'full-b'], ids: ['full-b', 'full-a'] }),
+  });
+
+  assertEquals(response.status, 200);
+  const testIds = new Set(['hidden-before', 'full-a', 'full-b', 'hidden-after']);
+  assertEquals((await repo.upstreams.list()).filter(record => testIds.has(record.id)).map(({ id, sortOrder }) => [id, sortOrder]), [
+    ['hidden-before', 0],
+    ['full-b', 10],
+    ['full-a', 30],
+    ['hidden-after', 40],
+  ]);
+});
+
+test('reorder rejects a selection that crosses a non-Full upstream', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  for (const [id, sortOrder] of [['full-a', 0], ['locked', 10], ['full-b', 20]] as const) {
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id, name: id, sortOrder }));
+  }
+  await grant(repo, apiKey.userId, 'full', 'full-a');
+  await grant(repo, apiKey.userId, 'full', 'full-b');
+
+  const response = await requestApp('/api/upstreams/reorder', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: JSON.stringify({ expectedIds: ['full-a', 'full-b'], ids: ['full-b', 'full-a'] }),
+  });
+
+  assertEquals(response.status, 409);
+  const testIds = new Set(['full-a', 'locked', 'full-b']);
+  assertEquals((await repo.upstreams.list()).filter(record => testIds.has(record.id)).map(record => record.id), ['full-a', 'locked', 'full-b']);
+});
+
+test('the list exposes distinct reorder groups across an invisible non-Full boundary', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  for (const [id, sortOrder] of [['full-a', 0], ['hidden', 10], ['full-b', 20]] as const) {
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id, name: id, sortOrder }));
+  }
+  await grant(repo, apiKey.userId, 'full', 'full-a');
+  await grant(repo, apiKey.userId, 'full', 'full-b');
+
+  const response = await requestApp('/api/upstreams', { headers: { 'x-api-key': apiKey.key } });
+  const body = await response.json() as Array<{ id: string; reorderGroup: string | null }>;
+  assertEquals(body.filter(record => record.id === 'full-a' || record.id === 'full-b').map(record => [record.id, record.reorderGroup]), [
+    ['full-a', 'full-a'],
+    ['full-b', 'full-b'],
+  ]);
+});
+
+test('the general update endpoint rejects sort_order changes', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await saveUpstreamForTest(repo.upstreams, customRecord());
+  await grant(repo, apiKey.userId, 'full');
+  const initialSortOrder = (await repo.upstreams.getById('up_restricted'))!.sortOrder;
+
+  const response = await requestApp('/api/upstreams/up_restricted', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: JSON.stringify({ sort_order: 999 }),
+  });
+
+  assertEquals(response.status, 400);
+  assertEquals((await repo.upstreams.getById('up_restricted'))?.sortOrder, initialSortOrder);
 });
 
 test('Upstream.Audit exposes a redacted record in the listing, detail, and metrics route', async () => {

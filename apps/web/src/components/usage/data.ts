@@ -6,7 +6,6 @@ import type {
   UsageGroupBy,
   UsageOverviewResponse,
   UsageRange,
-  UsageUpstream,
 } from './types';
 import { api, callApi, type ApiResult } from '../../api/client';
 import { dashboardRangeQuery } from '../charts/dashboard-time';
@@ -66,23 +65,41 @@ export const loadUsageOverview = async (range: UsageRange, groupBy: UsageGroupBy
 };
 
 export const loadUsagePageData = async (
-  isAdmin: boolean,
+  currentUserId: string,
   range: UsageRange,
   groupBy: UsageGroupBy,
   filters: UsageFilters,
   loadedAt: number,
   signal?: AbortSignal,
+  knownAuditableUserIds?: readonly number[],
 ) => {
   const { start, end } = dashboardRangeQuery(range, loadedAt);
-  const searchView: SearchUsageView = isAdmin ? 'all-by-user' : 'self-by-key';
-  const searchQuery = searchView === 'all-by-user'
-    ? { start, end, include_user_metadata: '1', view: searchView }
-    : { start, end, include_key_metadata: '1', view: searchView };
-  const [usageResult, searchResult, upstreamsResult] = await Promise.all([
-    loadUsageOverview(range, groupBy, filters, loadedAt, signal),
-    callApi(() => api.api['search-usage'].$get({ query: searchQuery }, { init: { signal } })),
-    callApi(() => api.api['upstream-options'].$get({ query: { view: 'audit' } }, { init: { signal } })),
-  ]);
+  const searchViewFor = (ids: readonly number[] | undefined): SearchUsageView => ids?.some(id => String(id) !== currentUserId)
+    ? 'all-by-user'
+    : 'self-by-key';
+  const loadSearch = (view: SearchUsageView) => callApi(() => api.api['search-usage'].$get({
+    query: view === 'all-by-user'
+      ? { start, end, include_user_metadata: '1', view }
+      : { start, end, include_key_metadata: '1', view },
+  }, { init: { signal } }));
+  let searchView = searchViewFor(knownAuditableUserIds);
+  let usageResult;
+  let searchResult;
+  if (knownAuditableUserIds === undefined) {
+    usageResult = await loadUsageOverview(range, groupBy, filters, loadedAt, signal);
+    searchView = searchViewFor(usageResult.data?.auditableUserIds);
+    searchResult = await loadSearch(searchView);
+  } else {
+    [usageResult, searchResult] = await Promise.all([
+      loadUsageOverview(range, groupBy, filters, loadedAt, signal),
+      loadSearch(searchView),
+    ]);
+    const currentSearchView = usageResult.data === undefined ? searchView : searchViewFor(usageResult.data.auditableUserIds);
+    if (!signal?.aborted && currentSearchView !== searchView) {
+      searchView = currentSearchView;
+      searchResult = await loadSearch(searchView);
+    }
+  }
   const searchData = searchResult.error ? null : searchResult.data;
   if (searchData !== null && (Array.isArray(searchData) || searchData.view !== searchView)) {
     throw new TypeError(`Search usage response does not match the requested ${searchView} view`);
@@ -90,7 +107,7 @@ export const loadUsagePageData = async (
   return {
     usage: usageResult.data ?? null,
     search: searchData ? searchUsageForDisplay(searchData) : null,
-    upstreams: upstreamsResult.data?.map(({ id, name, hue }) => ({ id, name, hue } satisfies UsageUpstream)) ?? [],
-    error: usageResult.error ?? searchResult.error ?? upstreamsResult.error ?? null,
+    upstreams: usageResult.data?.upstreams ?? [],
+    error: usageResult.error ?? searchResult.error ?? null,
   };
 };

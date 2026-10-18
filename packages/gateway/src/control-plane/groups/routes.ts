@@ -16,16 +16,14 @@ const unknownMembersError = async (memberIds: readonly number[]): Promise<string
 };
 
 const groupWire = async (group: Group) => {
-  const repo = getRepo();
-  const [memberIds, records] = await Promise.all([repo.groups.listMemberIds(group.id), repo.accessRecords.listByPrincipal({ kind: 'group', id: group.id })]);
-  return { ...group, memberIds, accessRecordCount: records.length };
+  const memberIds = await getRepo().groups.listMemberIds(group.id);
+  return { ...group, memberIds };
 };
 
 export const listGroups = async (c: AuthedContext) => {
   const repo = getRepo();
-  const [groups, memberships, records] = await Promise.all([repo.groups.list(), repo.groups.listMemberships(), repo.accessRecords.list()]);
-  const counts = Map.groupBy(records.filter(record => record.principal.kind === 'group'), record => record.principal.id);
-  return c.json(groups.map(group => ({ ...group, memberIds: memberships.get(group.id) ?? [], accessRecordCount: counts.get(group.id)?.length ?? 0 })));
+  const [groups, memberships] = await Promise.all([repo.groups.list(), repo.groups.listMemberships()]);
+  return c.json(groups.map(group => ({ ...group, memberIds: memberships.get(group.id) ?? [] })));
 };
 
 export const createGroup = async (c: CtxWithJson<typeof createGroupBody>) => {

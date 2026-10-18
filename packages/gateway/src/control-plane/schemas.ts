@@ -379,7 +379,7 @@ const upstreamBaseFields = {
   name: z.string().min(1),
   enabled: z.boolean().optional(),
   usage_refresh_interval_minutes: z.number().int().nonnegative().optional(),
-  sort_order: z.number().int().optional(),
+  sort_order: z.never({ error: 'New upstreams always append after the current order.' }).optional(),
   flag_overrides: flagOverridesSchema.optional(),
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
   proxy_fallback_list: proxyFallbackListSchema.optional(),
@@ -388,9 +388,7 @@ const upstreamBaseFields = {
 };
 
 // Create accepts a discriminated union on `kind` for per-provider config
-// validation. `enabled` and `sort_order` are optional — the handler
-// defaults them to `true` and to one past the current max sort order
-// when omitted.
+// validation. New upstreams always append after the current order.
 export const createUpstreamBody = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('custom'), ...upstreamBaseFields, config: customConfigSchema }),
   z.object({ kind: z.literal('azure'), ...upstreamBaseFields, config: azureConfigSchema }),
@@ -419,7 +417,7 @@ export const updateUpstreamBody = z.object({
   name: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   usage_refresh_interval_minutes: z.number().int().nonnegative().optional(),
-  sort_order: z.number().int().optional(),
+  sort_order: z.never({ error: 'Use the upstream reorder endpoint to change sort_order.' }).optional(),
   flag_overrides: flagOverridesSchema.optional(),
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
   proxy_fallback_list: proxyFallbackListSchema.optional(),
@@ -433,6 +431,14 @@ export const updateUpstreamBody = z.object({
   // primitives / arrays / null from reaching the handler as `config`.
   config: z.record(z.string(), z.unknown()).optional(),
 });
+
+export const reorderUpstreamsBody = z.object({
+  expectedIds: z.array(z.string().min(1)).min(2),
+  ids: z.array(z.string().min(1)).min(2),
+}).strict().refine(({ expectedIds, ids }) => new Set(expectedIds).size === expectedIds.length
+  && new Set(ids).size === ids.length && expectedIds.length === ids.length && ids.every(id => expectedIds.includes(id))
+  && ids.some((id, index) => id !== expectedIds[index]),
+{ message: 'Reordering must change the order while preserving exactly the same upstream IDs.' });
 
 // Shared envelope for the record-body action contract used by every
 // action endpoint (OAuth exchange/refresh, quota, probe, draft preview,

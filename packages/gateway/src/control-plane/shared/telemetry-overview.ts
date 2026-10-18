@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 import { checkMany } from '../../access-control/check.ts';
 import { userFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { ApiKey, User } from '../../repo/types.ts';
+import type { ApiKey, StoredUpstreamRecord, User } from '../../repo/types.ts';
 import { parseTelemetryHour, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
 
 interface TelemetryOverviewQuery {
@@ -64,6 +64,7 @@ export interface TelemetryOverviewIdentity {
   actor: ReturnType<typeof userFromContext>;
   ownedKeys: ApiKey[];
   ownedKeyIds: ReadonlySet<string>;
+  upstreams: StoredUpstreamRecord[];
   users: User[];
   visibleUserIds: ReadonlySet<number>;
   visibleUpstreams: ReadonlySet<string>;
@@ -92,10 +93,22 @@ export const loadTelemetryOverviewIdentity = async (c: Context): Promise<Telemet
     actor,
     ownedKeys,
     ownedKeyIds: new Set(ownedKeys.map(key => key.id)),
+    upstreams,
     users,
     visibleUserIds: new Set(users.filter((_user, index) => allowed[index]).map(user => user.id)),
     visibleUpstreams: new Set(upstreams.filter((_upstream, index) => allowed[users.length + index]).map(upstream => upstream.id)),
   };
+};
+
+export const telemetryUpstreamMetadata = (
+  identity: TelemetryOverviewIdentity,
+  revealedUpstreamIds: readonly string[],
+) => {
+  const visibleUpstreamIds = new Set([...identity.visibleUpstreams, ...revealedUpstreamIds]);
+  return identity.upstreams
+    .filter(upstream => visibleUpstreamIds.has(upstream.id))
+    .map(upstream => ({ id: upstream.id, name: upstream.name, hue: upstream.hue }))
+    .sort((left, right) => left.id.localeCompare(right.id));
 };
 
 export const telemetryIdentityError = (

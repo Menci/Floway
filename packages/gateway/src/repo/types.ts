@@ -395,6 +395,11 @@ export interface WebSearchConfigRepo {
 export interface UpstreamRepo {
   list(): Promise<StoredUpstreamRecord[]>;
   getById(id: string): Promise<StoredUpstreamRecord | null>;
+  reorder(
+    expectedIds: readonly string[],
+    assignments: readonly { id: string; sortOrder: number }[],
+  ): Promise<StoredUpstreamRecord[] | null>;
+  insertAtEndForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null>;
   insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null>;
   replaceForModels(input: {
     previous: StoredUpstreamRecord;
@@ -628,9 +633,6 @@ export interface UpstreamMetricsRepo {
 export interface Repo {
   // Active users, groups and their memberships must share one read snapshot.
   readUserDirectory(): Promise<UserDirectory>;
-  // The directory projection visible to one ordinary operator: the actor and
-  // the groups they currently belong to, from the same read snapshot.
-  readUserDirectoryFor(userId: number): Promise<UserDirectory>;
   upstreamMetrics: UpstreamMetricsRepo;
   apiKeys: ApiKeyRepo;
   users: UsersRepo;

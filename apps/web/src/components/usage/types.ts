@@ -30,6 +30,8 @@ export interface UsageOverviewResponse {
     upstreams: string[];
   };
   users: Array<{ id: number; username: string }>;
+  auditableUserIds: number[];
+  upstreams: UsageUpstream[];
   keys: Array<{ id: string; name: string; createdAt: string }>;
 }
 

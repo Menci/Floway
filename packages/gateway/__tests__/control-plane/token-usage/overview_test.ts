@@ -115,6 +115,7 @@ test('/api/token-usage/overview gives a non-admin their User.Audit row and only 
 test('/api/token-usage/overview shows the union of visible user rows and upstream columns', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save(adminKey);
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up-a', name: 'A' }));
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up-b', name: 'B' }));
   await repo.accessRecords.save({
     principal: { kind: 'user', id: apiKey.userId },
@@ -132,6 +133,7 @@ test('/api/token-usage/overview shows the union of visible user rows and upstrea
   assertEquals(body.axes.none[0].requests, 7);
   assertEquals(body.axes.userId.map((row: { group: string; requests: number }) => [row.group, row.requests]), [['1', 5], ['2', 2]]);
   assertEquals(body.dimensionValues.upstreams, ['upstream:up-a', 'upstream:up-b']);
+  assertEquals(body.upstreams.map((upstream: { id: string; name: string }) => [upstream.id, upstream.name]), [['up-a', 'A'], ['up-b', 'B']]);
   assertEquals(body.users.map((user: { id: number }) => user.id), [1, 2]);
 });
 

@@ -994,12 +994,34 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   private store = new Map<string, StoredUpstreamRecord>();
 
   list(): Promise<StoredUpstreamRecord[]> {
-    return Promise.resolve([...this.store.values()].map(cloneUpstreamRecord).sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt)));
+    return Promise.resolve([...this.store.values()].map(cloneUpstreamRecord).sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)));
   }
 
   getById(id: string): Promise<StoredUpstreamRecord | null> {
     const found = this.store.get(id);
     return Promise.resolve(found ? cloneUpstreamRecord(found) : null);
+  }
+
+  async reorder(
+    expectedIds: readonly string[],
+    assignments: readonly { id: string; sortOrder: number }[],
+  ): Promise<StoredUpstreamRecord[] | null> {
+    const current = await this.list();
+    if (JSON.stringify(current.map(record => record.id)) !== JSON.stringify(expectedIds)) return null;
+    const assignmentIds = assignments.map(assignment => assignment.id);
+    if (new Set(assignmentIds).size !== assignmentIds.length || assignmentIds.some(id => !this.store.has(id))) return null;
+    const now = new Date().toISOString();
+    const updated = assignments.map(({ id, sortOrder }) => {
+      const record = this.store.get(id)!;
+      return cloneUpstreamRecord({ ...record, sortOrder, updatedAt: now });
+    });
+    for (const record of updated) this.store.set(record.id, record);
+    return updated.map(cloneUpstreamRecord);
+  }
+
+  insertAtEndForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
+    const sortOrder = Math.max(-1, ...[...this.store.values()].map(record => record.sortOrder)) + 1;
+    return this.insertForModels({ ...upstream, sortOrder });
   }
 
   insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
@@ -1790,15 +1812,6 @@ export class InMemoryRepo implements Repo {
     const userIds = new Set(users.map(user => user.id));
     const groups = this.groups.snapshot().map(group => ({ ...group, memberIds: group.memberIds.filter(id => userIds.has(id)) }));
     return Promise.resolve({ users, groups });
-  }
-
-  readUserDirectoryFor(userId: number): Promise<UserDirectory> {
-    const user = this.users.snapshot().find(candidate => candidate.id === userId);
-    if (user === undefined) return Promise.resolve({ users: [], groups: [] });
-    const groups = this.groups.snapshot()
-      .filter(group => group.memberIds.includes(userId))
-      .map(group => ({ ...group, memberIds: [userId] }));
-    return Promise.resolve({ users: [user], groups });
   }
 
   constructor() {

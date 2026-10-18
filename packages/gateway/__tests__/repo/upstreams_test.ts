@@ -159,6 +159,51 @@ test('memory upstream repo sorts flag overrides by key when inserting rows', asy
   assertEquals((await repo.getById('up_copilot_fixes'))?.flagOverrides, { 'rewrite-developer-to-system': false, 'anthropic-messages-web-search-shim': true, 'vendor-deepseek': true });
 });
 
+const exerciseUpstreamReorder = async (repo: UpstreamRepo) => {
+  for (const [id, sortOrder] of [['a', 10], ['b', 20], ['c', 40]] as const) {
+    await saveUpstreamForTest(repo, upstream({ id, kind: 'custom', sortOrder, createdAt: `2026-05-21T10:00:${sortOrder}.000Z` }));
+  }
+
+  const reordered = await repo.reorder(
+    ['a', 'b', 'c'],
+    [{ id: 'c', sortOrder: 20 }, { id: 'b', sortOrder: 40 }],
+  );
+  assertEquals(reordered?.map(record => [record.id, record.sortOrder]), [['c', 20], ['b', 40]]);
+  assertEquals((await repo.list()).map(record => [record.id, record.sortOrder]), [['a', 10], ['c', 20], ['b', 40]]);
+
+  assertEquals(await repo.reorder(
+    ['a', 'b', 'c'],
+    [{ id: 'b', sortOrder: 20 }, { id: 'c', sortOrder: 40 }],
+  ), null);
+  assertEquals((await repo.list()).map(record => [record.id, record.sortOrder]), [['a', 10], ['c', 20], ['b', 40]]);
+};
+
+const exerciseAtomicAppend = async (repo: UpstreamRepo) => {
+  await saveUpstreamForTest(repo, upstream({ id: 'first', kind: 'custom', sortOrder: 10, createdAt: '2026-05-21T10:00:00.000Z' }));
+  const append = (id: string) => repo.insertAtEndForModels(upstream({ id, kind: 'custom', sortOrder: -100, createdAt: `2026-05-21T10:00:0${id}.000Z` }));
+  const [a, b] = await Promise.all([append('1'), append('2')]);
+  assert(a !== null);
+  assert(b !== null);
+  assertEquals(new Set([a.sortOrder, b.sortOrder]), new Set([11, 12]));
+  assertEquals((await repo.list()).map(record => record.sortOrder), [10, 11, 12]);
+};
+
+test('memory upstream repo atomically reorders a current snapshot', async () => {
+  await exerciseUpstreamReorder(new InMemoryRepo().upstreams);
+});
+
+test('SQL upstream repo atomically reorders a current snapshot', async () => {
+  await exerciseUpstreamReorder(new SqlRepo(await createSqliteTestDb()).upstreams);
+});
+
+test('memory upstream repo atomically assigns append ranks', async () => {
+  await exerciseAtomicAppend(new InMemoryRepo().upstreams);
+});
+
+test('SQL upstream repo atomically assigns append ranks', async () => {
+  await exerciseAtomicAppend(new SqlRepo(await createSqliteTestDb()).upstreams);
+});
+
 const exerciseSqlUpstreamRepo = async (repo: UpstreamRepo) => {
   const custom = upstream({
     id: 'up_custom_sql',

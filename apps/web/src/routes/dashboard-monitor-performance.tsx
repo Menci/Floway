@@ -46,8 +46,6 @@ import { useLocale } from '../lib/use-locale';
 
 const { Button, Tab, TabList, Text, Tooltip } = fluentComponents;
 
-interface UpstreamMetadata { id: string; name: string; hue: number }
-
 interface LoaderData {
   currentUserId: string;
   error: GlobalError | null;
@@ -56,9 +54,6 @@ interface LoaderData {
   // render zeroes the page does not know to be true.
   overview: PerformanceOverviewResponse | null;
   state: PerformanceUrlState;
-  // Null on the same terms: upstream metadata owns both the visible name and
-  // the series hue, so a partial response cannot faithfully render the group.
-  upstreams: UpstreamMetadata[] | null;
   regionAvailable: boolean | null;
 }
 
@@ -73,10 +68,8 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   const loadedAt = Date.now();
   const requestedState = { ...state, ...scoped };
   const query = buildPerformanceQuery(requestedState.range, requestedState.groupBy, requestedState.filters, loadedAt);
-  // Use the audit-scoped picker for names independently of upstream-edit access.
-  const [initialOverview, upstreams, runtime] = await Promise.all([
+  const [initialOverview, runtime] = await Promise.all([
     callApi(() => api.api.performance.overview.$get({ query })),
-    callApi(() => api.api['upstream-options'].$get({ query: { view: 'audit' } })),
     callApi(() => api.api['runtime-info'].$get()),
   ]);
   const regionAvailable = runtime.error ? null : runtime.data.kind === 'cloudflare';
@@ -90,12 +83,11 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
       }));
   return {
     currentUserId: String(user.id),
-    error: overview.error ?? upstreams.error ?? runtime.error ?? null,
+    error: overview.error ?? runtime.error ?? null,
     loadedAt,
     overview: overview.data ?? null,
     regionAvailable,
     state: normalization.state,
-    upstreams: upstreams.data?.map(({ id, name, hue }) => ({ id, name, hue })) ?? null,
   };
 }
 
@@ -117,7 +109,6 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [breakdownGroup, setBreakdownGroup] = useState<PerformanceGroupBy>('model');
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
   const [overview, setOverview] = useState<PerformanceOverviewResponse | null>(loaderData.overview);
-  const [upstreams] = useState(loaderData.upstreams);
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const pendingRegionAvailableRef = useRef<boolean | null>(null);
   const locale = useLocale();
@@ -253,7 +244,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     ...changeTelemetryFilter(current, key, value, identityContext),
   }));
   const buckets = useMemo(() => performanceBuckets(loadedQuery.range, loadedAt), [loadedAt, loadedQuery.range]);
-  const labels = useMemo(() => overview && upstreams && performanceLabels(overview, upstreams), [overview, upstreams]);
+  const labels = useMemo(() => overview && performanceLabels(overview, overview.upstreams), [overview]);
   const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentile, loadedQuery.groupBy, labels, buckets, loadedQuery.range), [buckets, labels, loadedQuery.groupBy, loadedQuery.range, metric, overview, percentile]);
   const summary = overview?.axes.none[0];
   const summaryCards = [

@@ -15,8 +15,10 @@ vi.mock('../../src/components/ui/json-editor', () => ({ JsonEditor: () => null }
 const scope = { kind: 'upstream', upstreamId: 'a' } as const;
 const initial: PermissionsData = {
   directory: {
-    users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', groupIds: [1], accessRecordCount: 1 }],
-    groups: [{ id: 1, name: 'Platform', hue: 210, memberIds: [2], accessRecordCount: 2, createdAt: '', deletedAt: null }],
+    users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', groupIds: [1] }],
+    groups: [{ id: 1, name: 'Platform', hue: 210, memberIds: [2], createdAt: '', deletedAt: null }],
+    principalUserIds: [2],
+    principalGroupIds: [1],
   },
   records: [
     { id: 1, principal: { kind: 'group', id: 1 }, scope: { kind: 'upstreams' }, sortOrder: 0, values: { 'Model.Use': true }, createdAt: '', updatedAt: '' },
@@ -93,6 +95,33 @@ test('an operator clears a selected group back to the default self filter', asyn
   fireEvent.click(screen.getByRole('button', { name: 'Clear user or group filter' }));
   await waitFor(() => expect(picker.value).toBe('alice'));
   expect(screen.queryByRole('button', { name: 'Clear user or group filter' })).toBeNull();
+});
+
+test('target-only identities render in rules without entering the principal picker', async () => {
+  const data: PermissionsData = {
+    ...initial,
+    directory: {
+      users: [...initial.directory!.users, { id: 3, username: 'bob', isAdmin: false, createdAt: '', groupIds: [] }],
+      groups: [...initial.directory!.groups, { id: 2, name: 'Review Subjects', hue: 180, memberIds: [3], createdAt: '', deletedAt: null }],
+      principalUserIds: [2],
+      principalGroupIds: [1],
+    },
+    records: [
+      ...initial.records!,
+      { id: 4, principal: { kind: 'user', id: 2 }, scope: { kind: 'user', userId: 3 }, sortOrder: 1, values: { 'User.Audit': true }, createdAt: '', updatedAt: '' },
+      { id: 5, principal: { kind: 'group', id: 1 }, scope: { kind: 'group', groupId: 2 }, sortOrder: 1, values: { 'User.Audit': true }, createdAt: '', updatedAt: '' },
+    ],
+  };
+  renderOperatorPage(data);
+  const table = await screen.findByRole('table');
+  expect(within(table).getByText('bob')).toBeTruthy();
+  expect(within(table).getByText('Review Subjects')).toBeTruthy();
+  const picker = screen.getByRole('combobox', { name: 'Applies to' });
+  fireEvent.click(picker);
+  expect(await screen.findByRole('option', { name: /alice/ })).toBeTruthy();
+  expect(await screen.findByRole('option', { name: /Platform/ })).toBeTruthy();
+  expect(screen.queryByRole('option', { name: /bob/ })).toBeNull();
+  expect(screen.queryByRole('option', { name: /Review Subjects/ })).toBeNull();
 });
 
 test('the permissions loader stays on the page for an operator and asks for access-scoped upstream metadata', async () => {

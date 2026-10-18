@@ -64,9 +64,14 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
     users: data.directory?.users ?? [], groups: data.directory?.groups ?? [],
     models: data.models ?? [], upstreams: data.upstreams ?? [],
   }), [data]);
+  const principalData = useMemo<ScopeExpressionData>(() => ({
+    ...scopeData,
+    users: scopeData.users.filter(user => data.directory?.principalUserIds.includes(user.id)),
+    groups: scopeData.groups.filter(group => data.directory?.principalGroupIds.includes(group.id)),
+  }), [data.directory, scopeData]);
   const scopedPrincipal = useMemo(
-    () => principal ?? (!admin && scopeData.users[0] !== undefined ? { kind: 'user' as const, id: scopeData.users[0].id } : null),
-    [admin, principal, scopeData.users],
+    () => principal ?? (!admin && principalData.users[0] !== undefined ? { kind: 'user' as const, id: principalData.users[0].id } : null),
+    [admin, principal, principalData.users],
   );
   const effectiveUnavailable = scopedPrincipal === null || scope === null;
   const showEffective = !effectiveUnavailable && params.get('effective') === 'true';
@@ -75,7 +80,7 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
     const normalized = normalizeFilters(committedParams);
     if (normalized.params.toString() === committedParams.toString()) {
       if (!admin && principal === null) {
-        const self = scopeData.users[0];
+        const self = principalData.users[0];
         if (self !== undefined) {
           const next = new URLSearchParams(normalized.params);
           next.set('principal', principalKey({ kind: 'user', id: self.id }));
@@ -86,23 +91,23 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
     }
     if (!admin && principal !== null && normalized.params.has('principal')
       && (principal.kind === 'user'
-        ? !scopeData.users.some(user => user.id === principal.id)
-        : !scopeData.groups.some(group => group.id === principal.id))) {
+        ? !principalData.users.some(user => user.id === principal.id)
+        : !principalData.groups.some(group => group.id === principal.id))) {
       const next = new URLSearchParams(normalized.params);
-      const self = scopeData.users[0];
+      const self = principalData.users[0];
       if (self === undefined) next.delete('principal');
       else next.set('principal', principalKey({ kind: 'user', id: self.id }));
       setParams(next, { replace: true, state: location.state });
       return;
     }
     setParams(normalized.params, { replace: true, state: location.state });
-  }, [admin, committedParams, location.state, navigation.location, principal, scopeData.groups, scopeData.users, setParams]);
+  }, [admin, committedParams, location.state, navigation.location, principal, principalData.groups, principalData.users, setParams]);
   const updateParams = (change: (next: URLSearchParams) => void, replace = false) => {
     const next = new URLSearchParams(params);
     if (effectiveUnavailable) next.delete('effective');
     change(next);
     if (!admin && next.get('principal') === null) {
-      const only = scopeData.users[0];
+      const only = principalData.users[0];
       if (only !== undefined) next.set('principal', principalKey({ kind: 'user', id: only.id }));
     }
     setParams(normalizeFilters(next).params, { replace, flushSync: true, ...(replace ? { state: location.state } : {}) });
@@ -199,7 +204,7 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
     <div className="flex items-end gap-3 flex-wrap" data-permission-filters="">
       <Field className="w-[240px] max-w-full" label={t('dashboard.accessControl.fields.principal')}><PrincipalPicker
         clearable={admin || principal?.kind === 'group'}
-        data={scopeData} disabled={!loaded} includeAll={admin} label={t('dashboard.accessControl.fields.principal')} onChange={next => updateParams(nextParams => {
+        data={principalData} disabled={!loaded} includeAll={admin} label={t('dashboard.accessControl.fields.principal')} onChange={next => updateParams(nextParams => {
           if (next === null) nextParams.delete('principal'); else nextParams.set('principal', principalKey(next));
           nextParams.delete('page');
         })} value={principal}

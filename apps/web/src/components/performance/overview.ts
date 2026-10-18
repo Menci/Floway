@@ -54,6 +54,7 @@ export interface PerformanceOverviewResponse {
     userIds: number[];
   };
   users: Array<{ id: number; username: string }>;
+  upstreams: Array<{ id: string; name: string; hue: number }>;
   keys: Array<{ id: string; name: string; createdAt: string }>;
 }
 

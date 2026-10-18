@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
-import { requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
+import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('/api/performance/overview modelRows carry backend-aggregated base-model percentiles', async () => {
@@ -229,6 +230,7 @@ test('/api/performance/overview aggregates over every user\'s keys', async () =>
 
 test('/api/performance/overview keeps only the none axis global for a non-admin', async () => {
   const { repo, apiKey } = await setupAppTest();
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'copilot:1', name: 'Self visible' }));
   await repo.apiKeys.save({
     id: 'key_admin_owned',
     userId: 1,
@@ -266,6 +268,7 @@ test('/api/performance/overview keeps only the none axis global for a non-admin'
   assertEquals(body.axes.userId.map((row: { group: string; requests: number }) => [row.group, row.requests]), [['2', 1]]);
   assertEquals(body.users.map((user: { id: number }) => user.id), [2]);
   assertEquals(body.dimensionValues.userIds, [2]);
+  assertEquals(body.upstreams, [{ id: 'copilot:1', name: 'Self visible', hue: 210 }]);
 });
 
 test('/api/performance/overview permits group_by=userId for visible users', async () => {

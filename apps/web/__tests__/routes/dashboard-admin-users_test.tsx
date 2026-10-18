@@ -8,10 +8,10 @@ import DashboardAdminUsers, { shouldRevalidate } from '../../src/routes/dashboar
 import { renderInApp } from '../render';
 
 const groups: ControlPlaneGroup[] = [
-  { accessRecordCount: 0, id: 1, name: 'Platform', hue: 210, memberIds: [1], createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
-  { accessRecordCount: 0, id: 2, name: 'Research', hue: 150, memberIds: [1], createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
+  { id: 1, name: 'Platform', hue: 210, memberIds: [1], createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
+  { id: 2, name: 'Research', hue: 150, memberIds: [1], createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
 ];
-const user: ControlPlaneUser = { accessRecordCount: 0, id: 1, username: 'frank', isAdmin: true,  groupIds: [1, 2], createdAt: '2026-10-01T00:00:00Z' };
+const user: ControlPlaneUser = { id: 1, username: 'frank', isAdmin: true,  groupIds: [1, 2], createdAt: '2026-10-01T00:00:00Z' };
 const loaderData = { directory: { users: [user], groups }, error: null };
 
 afterEach(() => vi.restoreAllMocks());

@@ -592,7 +592,7 @@ test('import replace writes upstreams and clears replaced collections', async ()
   const restoredKey = await repo.apiKeys.findByRawKey(KEY_B.key);
   if (restoredKey === null) throw new Error('restored key missing');
   assertEquals(restoredKey, KEY_B);
-  assertEquals(await repo.upstreams.list(), [AZURE_UPSTREAM]);
+  assertEquals(await repo.upstreams.list(), [{ ...AZURE_UPSTREAM, sortOrder: 0 }]);
   assertEquals(await repo.usage.listAll(), [USAGE_2]);
   assertEquals(await repo.webSearchUsage.listAll(), [WEB_SEARCH_USAGE_2]);
   assertEquals(await repo.openaiResponsesItems.lookupMany('key-a', [STORED_OPENAI_RESPONSES_ITEM.id], 0), []);
@@ -630,6 +630,7 @@ test('import merge upserts by repository key without clearing unrelated rows', a
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
   await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, AZURE_UPSTREAM);
   await repo.usage.set({ ...USAGE_1, requests: 10 });
   await repo.webSearchUsage.set({ ...WEB_SEARCH_USAGE_1, requests: 10 });
 
@@ -643,9 +644,10 @@ test('import merge upserts by repository key without clearing unrelated rows', a
 
   assertEquals(result.status, 200);
   assertEquals((await repo.apiKeys.list()).map(key => key.name), ['Alice Updated', 'Bob']);
-  assertEquals((await repo.upstreams.list()).map(upstream => [upstream.id, upstream.name]), [
-    ['up_copilot_a', 'GitHub Copilot (alice)'],
-    ['up_custom_a', 'Custom Updated'],
+  assertEquals((await repo.upstreams.list()).map(upstream => [upstream.id, upstream.name, upstream.sortOrder]), [
+    ['up_copilot_a', 'GitHub Copilot (alice)', 0],
+    ['up_custom_a', 'Custom Updated', 1],
+    ['up_azure_a', 'Azure A', 2],
   ]);
   assertEquals(await repo.usage.listAll(), [USAGE_1]);
   assertEquals(await repo.webSearchUsage.listAll(), [WEB_SEARCH_USAGE_1]);
@@ -834,7 +836,7 @@ test('ollama upstreams export and import round-trip', async () => {
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   });
   assertEquals(replaceResult.status, 200);
-  assertEquals(await repo.upstreams.list(), [OLLAMA_UPSTREAM]);
+  assertEquals(await repo.upstreams.list(), [{ ...OLLAMA_UPSTREAM, sortOrder: 0 }]);
 });
 
 test('codex upstreams export and import round-trip with state intact', async () => {
@@ -859,7 +861,7 @@ test('codex upstreams export and import round-trip with state intact', async () 
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   });
   assertEquals(replaceResult.status, 200);
-  assertEquals(await repo.upstreams.list(), [CODEX_UPSTREAM]);
+  assertEquals(await repo.upstreams.list(), [{ ...CODEX_UPSTREAM, sortOrder: 0 }]);
 });
 
 test('codex import rejects when state is missing', async () => {

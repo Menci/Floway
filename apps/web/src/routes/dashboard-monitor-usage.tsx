@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 
 import { useTranslation } from '../i18n/translation';
@@ -33,7 +33,6 @@ import { useLocale } from '../lib/use-locale';
 
 type LoaderData = Awaited<ReturnType<typeof loadUsagePageData>> & {
   currentUserId: string;
-  isAdmin: boolean;
   loadedAt: number;
   state: UsageUrlState;
 };
@@ -48,9 +47,8 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   });
   const loadedAt = Date.now();
   return {
-    ...await loadUsagePageData(user.isAdmin, parsed.range, scoped.groupBy, scoped.filters, loadedAt),
+    ...await loadUsagePageData(String(user.id), parsed.range, scoped.groupBy, scoped.filters, loadedAt),
     currentUserId: String(user.id),
-    isAdmin: user.isAdmin,
     loadedAt,
     state: { ...parsed, ...scoped },
   };
@@ -75,6 +73,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
   const [hiddenSearch, setHiddenSearch] = useState<Set<string>>(() => new Set(initialState.hiddenSearch));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
+  const auditableUserIdsRef = useRef(loaderData.usage?.auditableUserIds ?? [Number(loaderData.currentUserId)]);
   const locale = useLocale();
   const identityContext = {
     currentUserId: loaderData.currentUserId,
@@ -84,18 +83,19 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
 
   const reload = useCallback(async (signal: AbortSignal, { background, requestedAt }: { background: boolean; requestedAt: number }) => {
     if (!background) setError(null);
-    const next = await loadUsagePageData(loaderData.isAdmin, query.range, query.groupBy, query.filters, requestedAt, signal);
+    const next = await loadUsagePageData(loaderData.currentUserId, query.range, query.groupBy, query.filters, requestedAt, signal, auditableUserIdsRef.current);
     if (signal.aborted) return false;
     if (next.usage === null) {
       setError(next.error);
       return false;
     }
     setUsage(next.usage);
+    auditableUserIdsRef.current = next.usage.auditableUserIds;
     setSearch(next.search);
     setUpstreams(next.upstreams);
     setError(next.error);
     return true;
-  }, [loaderData.isAdmin, query]);
+  }, [loaderData.currentUserId, query]);
 
   const onQueryCommit = useCallback((previous: typeof query, next: typeof query) => {
     if (previous.groupBy !== next.groupBy) setHiddenSeries(new Set());

@@ -7,11 +7,10 @@ export const userToSessionWire = (user: User, canViewUpstreams: boolean) => ({
   canViewUpstreams,
 });
 
-export const userToAdminWire = (user: User, groupIds: readonly number[], accessRecordCount: number) => ({
+export const userToAdminWire = (user: User, groupIds: readonly number[]) => ({
   id: user.id,
   username: user.username,
   isAdmin: user.isAdmin,
   groupIds,
-  accessRecordCount,
   createdAt: user.createdAt,
 });

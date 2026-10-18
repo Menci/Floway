@@ -83,8 +83,9 @@ interface ReorderPlan {
   from: number;
   to: number;
   movedId: string;
+  expectedIds: string[];
+  ids: string[];
   next: ListedUpstreamRecord[];
-  writes: ListedUpstreamRecord[];
 }
 
 const PROVIDER_MENU_ORDER: readonly UpstreamProviderKind[] = [
@@ -277,13 +278,8 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     setMutation(null);
   };
 
-  // A drag lands on any position, so the two records a step used to swap are
-  // now a span, and a span cannot be reordered by trading the values it already
-  // holds: `compareUpstreams` breaks a tie on creation time, and two records
-  // sharing a sort_order would land wherever that says rather than where the
-  // operator dropped them. The whole list is renumbered to its positions
-  // instead, which leaves no tie for the next drag to inherit, and only the
-  // records whose number actually changed are written.
+  // The server validates the complete Full-access segment and atomically maps
+  // its reordered IDs back onto the segment's existing sort-order slots.
   const move = async (from: number, to: number) => {
     const snapshot = data.upstreams;
     const plan = snapshot === null ? null : planReorder(snapshot, from, to);
@@ -294,13 +290,12 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     setPageError(null);
     setData(current => ({ ...current, upstreams: plan.next }));
 
-    const results = await Promise.all(plan.writes.map(record => patchUpstream(record.id, { sort_order: record.sort_order })));
-    const error = results.find(result => result.error)?.error;
-    if (error) {
+    const result = await reorderUpstreams(plan);
+    if (result.error) {
       setData(current => ({ ...current, upstreams: snapshot }));
       await reload();
       setPageError(t('dashboard.upstreams.errors.reorder', {
-        message: error.message,
+        message: result.error.message,
         sync: lastLoadError.current !== null ? t('dashboard.upstreams.errors.syncFailed') : '',
       }));
       setMutation(null);
@@ -320,9 +315,8 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     pendingReorder.current = plan;
     setMutation({ kind: 'reorder', id: plan.movedId });
     setPageError(null);
-    const results = await Promise.all(plan.writes.map(record => patchUpstream(record.id, { sort_order: record.sort_order })));
-    const error = results.find(result => result.error)?.error;
-    if (error) throw new Error(error.message, { cause: error });
+    const result = await reorderUpstreams(plan);
+    if (result.error) throw new Error(result.error.message, { cause: result.error });
   };
 
   const commitDroppedMove = (from: number, to: number) => {
@@ -586,10 +580,13 @@ interface UpstreamSegment { key: string; records: ListedUpstreamRecord[]; movabl
 const upstreamSegments = (upstreams: readonly ListedUpstreamRecord[]): UpstreamSegment[] => {
   const segments: UpstreamSegment[] = [];
   for (const [index, record] of upstreams.entries()) {
-    const movable = record.editLevel === 'full';
+    const movable = record.editLevel === 'full' && record.reorderGroup !== null;
     const previous = segments.at(-1);
-    if (previous?.movable === movable) previous.records.push(record);
-    else segments.push({ key: `${movable ? 'full' : 'locked'}:${record.id}`, movable, records: [record], rankBase: index });
+    if ((movable && previous?.key === `full:${record.reorderGroup}`) || (!movable && previous?.movable === false)) {
+      previous.records.push(record);
+    } else {
+      segments.push({ key: movable ? `full:${record.reorderGroup}` : `locked:${record.id}`, movable, records: [record], rankBase: index });
+    }
   }
   return segments;
 };
@@ -727,22 +724,26 @@ function ModelStatus({
   );
 }
 
-const patchUpstream = (id: string, body: { enabled?: boolean; sort_order?: number }) =>
+const patchUpstream = (id: string, body: { enabled: boolean }) =>
   callApi(() => api.api.upstreams[':id'].$patch({ param: { id }, json: body }));
+
+const reorderUpstreams = (plan: ReorderPlan) => callApi(() => api.api.upstreams.reorder.$post({
+  json: { expectedIds: plan.expectedIds, ids: plan.ids },
+}));
 
 const compareUpstreams = (a: ListedUpstreamRecord, b: ListedUpstreamRecord) =>
   a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id);
 
 export const planReorder = (snapshot: readonly ListedUpstreamRecord[], from: number, to: number): ReorderPlan | null => {
   if (from === to || from < 0 || from >= snapshot.length || to < 0 || to >= snapshot.length) return null;
-  if (snapshot[from]!.editLevel !== 'full' || snapshot[to]!.editLevel !== 'full') return null;
-  const segmentStart = snapshot.slice(0, from).findLastIndex(record => record.editLevel !== 'full') + 1;
-  const segmentEnd = snapshot.findIndex((record, index) => index > from && record.editLevel !== 'full');
+  const reorderGroup = snapshot[from]!.reorderGroup;
+  if (reorderGroup === null || snapshot[from]!.editLevel !== 'full' || snapshot[to]!.reorderGroup !== reorderGroup) return null;
+  const segmentStart = snapshot.slice(0, from).findLastIndex(record => record.reorderGroup !== reorderGroup) + 1;
+  const segmentEnd = snapshot.findIndex((record, index) => index > from && record.reorderGroup !== reorderGroup);
   const end = segmentEnd < 0 ? snapshot.length : segmentEnd;
   if (to < segmentStart || to >= end) return null;
   const segment = snapshot.slice(segmentStart, end);
   const slots = segment.map(record => record.sort_order).toSorted((left, right) => left - right);
-  const stored = new Map(snapshot.map(record => [record.id, record.sort_order]));
   const reordered = moveItem(segment, from - segmentStart, to - segmentStart);
   const next = snapshot.map((record, index) => index >= segmentStart && index < end
     ? { ...reordered[index - segmentStart]!, sort_order: slots[index - segmentStart]! }
@@ -751,8 +752,9 @@ export const planReorder = (snapshot: readonly ListedUpstreamRecord[], from: num
     from,
     to,
     movedId: snapshot[from].id,
+    expectedIds: segment.map(record => record.id),
+    ids: reordered.map(record => record.id),
     next,
-    writes: next.filter(record => stored.get(record.id) !== record.sort_order),
   };
 };
 

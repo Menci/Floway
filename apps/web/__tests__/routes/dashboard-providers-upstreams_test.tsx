@@ -24,7 +24,13 @@ const toListed = (
   record: UpstreamRecord,
   access: { audit: boolean; edit: ListedUpstreamRecord['editLevel'] } = { audit: true, edit: 'full' },
   overrides: Partial<ListedUpstreamRecord> = {},
-): ListedUpstreamRecord => ({ ...record, ...overrides, audit: access.audit, editLevel: access.edit } as ListedUpstreamRecord);
+): ListedUpstreamRecord => ({
+  ...record,
+  audit: access.audit,
+  editLevel: access.edit,
+  reorderGroup: access.edit === 'full' ? 'default-full-segment' : null,
+  ...overrides,
+} as ListedUpstreamRecord);
 const listedRecords = (source: readonly UpstreamRecord[]): ListedUpstreamRecord[] => source.map(record => toListed(record));
 const loaderData = {
   upstreams: listedRecords(records),
@@ -46,7 +52,7 @@ const metricsButton = (name: string) => screen.getAllByRole('button', { name: `U
 const overview = (groupBy = 'model') => ({
   series: [{ bucket: new Date(Date.now() - 3_600_000).toISOString().slice(0, 13), group: groupBy === 'model' ? 'gpt-5' : '1', requests: 1, metrics: [{ metric: 'input_tokens', quantity: '10' }], cost: null }],
   axes: { none: [], model: [], upstream: [], userId: [], keyId: [] },
-  dimensionValues: { models: ['gpt-5'], upstreams: ['upstream:first'], userIds: [1], keyIds: [] }, users: [{ id: 1, username: 'admin' }], keys: [],
+  dimensionValues: { models: ['gpt-5'], upstreams: ['upstream:first'], userIds: [1], keyIds: [] }, users: [{ id: 1, username: 'admin' }], auditableUserIds: [1], upstreams: [{ id: 'first', name: 'First', hue: 210 }], keys: [],
 });
 const metrics = (url: URL) => ({
   start: Number(url.searchParams.get('start')), end: Number(url.searchParams.get('end')), step: Number(url.searchParams.get('step')),
@@ -160,14 +166,12 @@ it('expands the whole row while preserving switch, icon and navigation actions',
 }, 15_000);
 
 it('handles a reorder shortcut once at the item container', async () => {
-  const writes: { id: string; sort_order: number }[] = [];
+  const reorders: Array<{ expectedIds: string[]; ids: string[] }> = [];
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
-    if (init?.method === 'PATCH') {
-      const id = url.pathname.split('/').at(-1)!;
-      const body = JSON.parse(init.body as string) as { sort_order: number };
-      writes.push({ id, ...body });
-      return Response.json({ ...loaderData.upstreams.find(record => record.id === id)!, ...body });
+    if (url.pathname === '/api/upstreams/reorder' && init?.method === 'POST') {
+      reorders.push(JSON.parse(init.body as string));
+      return Response.json({ ok: true });
     }
     if (url.pathname === '/api/upstreams') return Response.json(loaderData.upstreams);
     if (url.pathname === '/api/models') return Response.json({ data: [] });
@@ -179,8 +183,7 @@ it('handles a reorder shortcut once at the item container', async () => {
   fireEvent.keyDown(handle, { key: 'ArrowDown' });
   expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reorder upstream Second' }));
   fireEvent.keyDown(handle, { key: 'ArrowDown', altKey: true, shiftKey: true });
-  await waitFor(() => expect(writes).toHaveLength(2));
-  expect(writes).toEqual([{ id: 'second', sort_order: 0 }, { id: 'first', sort_order: 1 }]);
+  await waitFor(() => expect(reorders).toEqual([{ expectedIds: ['first', 'second'], ids: ['second', 'first'] }]));
 });
 
 it('opens telemetry for an audit-only row while keeping edit, switch, copy, delete, and drag unavailable', async () => {
@@ -221,14 +224,12 @@ it('lets only a contiguous full segment move and leaves its locked neighbours in
     audit: true,
     edit: index === 1 || index === 2 ? 'full' : 'off',
   }, { id: name.toLowerCase().replaceAll(' ', '-'), name, sort_order: index }));
-  const writes: Array<{ id: string; sort_order: number }> = [];
+  const reorders: Array<{ expectedIds: string[]; ids: string[] }> = [];
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
-    if (init?.method === 'PATCH') {
-      const id = url.pathname.split('/').at(-1)!;
-      const body = JSON.parse(init.body as string) as { sort_order: number };
-      writes.push({ id, ...body });
-      return Response.json({ ...segmented.find(record => record.id === id)!, ...body });
+    if (url.pathname === '/api/upstreams/reorder' && init?.method === 'POST') {
+      reorders.push(JSON.parse(init.body as string));
+      return Response.json({ ok: true });
     }
     if (url.pathname === '/api/upstreams') return Response.json(segmented);
     if (url.pathname === '/api/models') return Response.json({ data: [] });
@@ -239,10 +240,32 @@ it('lets only a contiguous full segment move and leaves its locked neighbours in
   const handle = await screen.findByRole('button', { name: 'Reorder upstream Full A' });
   handle.focus();
   fireEvent.keyDown(handle, { key: 'ArrowDown', altKey: true, shiftKey: true });
-  await waitFor(() => expect(writes).toEqual([{ id: 'full-b', sort_order: 1 }, { id: 'full-a', sort_order: 2 }]));
+  await waitFor(() => expect(reorders).toEqual([{ expectedIds: ['full-a', 'full-b'], ids: ['full-b', 'full-a'] }]));
   const ranks = [...document.querySelectorAll('[data-reorder-item]')].map(row => row.textContent);
   expect(ranks[0]).toContain('1');
   expect(ranks[3]).toContain('4');
+});
+
+it('does not move visible Full rows separated by a hidden server-side boundary', async () => {
+  const separated = ['Full A', 'Full B'].map((name, index) => toListed(records[index]!, {
+    audit: true,
+    edit: 'full',
+  }, { id: name.toLowerCase().replaceAll(' ', '-'), name, reorderGroup: `segment-${index}` }));
+  const reorders: unknown[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
+    if (url.pathname === '/api/upstreams/reorder' && init?.method === 'POST') { reorders.push(init.body); return Response.json({ ok: true }); }
+    if (url.pathname === '/api/upstreams') return Response.json(separated);
+    if (url.pathname === '/api/models') return Response.json({ data: [] });
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  }));
+  renderPage(user, { ...loaderData, upstreams: separated });
+
+  const handle = await screen.findByRole('button', { name: 'Reorder upstream Full A' });
+  handle.focus();
+  expect(handle.hasAttribute('disabled')).toBe(false);
+  fireEvent.keyDown(handle, { key: 'ArrowDown', altKey: true, shiftKey: true });
+  expect(reorders).toEqual([]);
 });
 
 it('renders a lone full row as a pressable but immovable handle', async () => {
@@ -250,10 +273,10 @@ it('renders a lone full row as a pressable but immovable handle', async () => {
     audit: true,
     edit: index === 1 ? 'full' : 'off',
   }, { id: name.toLowerCase().replaceAll(' ', '-'), name, sort_order: index }));
-  const writes: unknown[] = [];
+  const reorders: unknown[] = [];
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
-    if (init?.method === 'PATCH') { writes.push(init.body); return Response.json(segmented[1]); }
+    if (url.pathname === '/api/upstreams/reorder' && init?.method === 'POST') { reorders.push(init.body); return Response.json({ ok: true }); }
     if (url.pathname === '/api/upstreams') return Response.json(segmented);
     if (url.pathname === '/api/models') return Response.json({ data: [] });
     throw new Error(`Unexpected request: ${url.pathname}`);
@@ -266,5 +289,5 @@ it('renders a lone full row as a pressable but immovable handle', async () => {
   expect(handle.closest('[data-reorder-item]')?.getAttribute('data-reorder-edge')).toBe('first');
   fireEvent.pointerUp(window, { clientY: 10, pointerId: 1 });
   fireEvent.keyDown(handle, { key: 'ArrowDown', altKey: true, shiftKey: true });
-  expect(writes).toEqual([]);
+  expect(reorders).toEqual([]);
 });

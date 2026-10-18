@@ -8,7 +8,7 @@ import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 
 const user: ControlPlaneUser = {
-  id: 2, username: 'operator', isAdmin: false, groupIds: [], accessRecordCount: 0,
+  id: 2, username: 'operator', isAdmin: false, groupIds: [],
   createdAt: '2026-01-01T00:00:00.000Z',
 };
 

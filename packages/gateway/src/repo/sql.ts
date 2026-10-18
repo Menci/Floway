@@ -1236,7 +1236,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
 
   async list(): Promise<StoredUpstreamRecord[]> {
     const { results } = await this.db
-      .prepare(`SELECT ${UPSTREAM_COLUMNS} FROM upstreams ORDER BY sort_order, created_at`)
+      .prepare(`SELECT ${UPSTREAM_COLUMNS} FROM upstreams ORDER BY sort_order, created_at, id`)
       .all<UpstreamRow>();
     return results.map(toUpstreamRecord);
   }
@@ -1247,6 +1247,59 @@ class SqlUpstreamRepo implements UpstreamRepo {
       .bind(id)
       .first<UpstreamRow>();
     return row ? toUpstreamRecord(row) : null;
+  }
+
+  async reorder(
+    expectedIds: readonly string[],
+    assignments: readonly { id: string; sortOrder: number }[],
+  ): Promise<StoredUpstreamRecord[] | null> {
+    const assignmentIds = assignments.map(assignment => assignment.id);
+    if (new Set(assignmentIds).size !== assignmentIds.length || assignmentIds.some(id => !expectedIds.includes(id))) return null;
+    const { results } = await this.db.prepare(
+      `WITH current_ids AS MATERIALIZED (
+         SELECT id FROM upstreams ORDER BY sort_order, created_at, id
+       ), valid_order AS MATERIALIZED (
+         SELECT json_group_array(id) = ? AS valid FROM current_ids
+       ), assignments AS MATERIALIZED (
+         SELECT
+           CAST(json_extract(value, '$.id') AS TEXT) AS id,
+           CAST(json_extract(value, '$.sortOrder') AS INTEGER) AS sort_order
+         FROM json_each(?)
+       )
+       UPDATE upstreams SET
+         sort_order = (SELECT sort_order FROM assignments WHERE assignments.id = upstreams.id),
+         updated_at = ?
+       WHERE id IN (SELECT id FROM assignments) AND (SELECT valid FROM valid_order)
+       RETURNING ${UPSTREAM_COLUMNS}`,
+    ).bind(JSON.stringify(expectedIds), JSON.stringify(assignments), new Date().toISOString()).all<UpstreamRow>();
+    if (results.length !== assignments.length) return null;
+    const byId = new Map(results.map(row => [row.id, toUpstreamRecord(row)]));
+    return assignments.map(({ id }) => byId.get(id)!);
+  }
+
+  async insertAtEndForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
+    const row = await this.db
+      .prepare(`INSERT INTO upstreams (id, provider, name, enabled, usage_refresh_interval_minutes, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue)
+        VALUES (?, ?, ?, ?, ?, (SELECT coalesce(max(sort_order), -1) + 1 FROM upstreams), ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (id) DO NOTHING RETURNING ${UPSTREAM_COLUMNS}`)
+      .bind(
+        upstream.id,
+        upstream.kind,
+        upstream.name,
+        upstream.enabled ? 1 : 0,
+        upstream.usageRefreshIntervalMinutes,
+        upstream.createdAt,
+        upstream.updatedAt,
+        serializeStoredConfig(upstream.config),
+        serializeStoredState(upstream.state),
+        JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
+        JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
+        JSON.stringify(normalizeProxyFallbackList(upstream.proxyFallbackList)),
+        upstream.modelPrefix === null ? null : JSON.stringify(upstream.modelPrefix),
+        upstream.hue,
+      )
+      .first<UpstreamRow>();
+    return row === null ? null : toUpstreamRecord(row);
   }
 
   async insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
@@ -2078,33 +2131,6 @@ export class SqlRepo implements Repo {
       ) AS record FROM groups WHERE deleted_at IS NULL
       ORDER BY kind, id
     `).all<{ kind: 'user' | 'group'; record: string }>();
-    const users: User[] = [];
-    const groups: GroupWithMembers[] = [];
-    for (const row of results) {
-      if (row.kind === 'user') users.push(toUser(JSON.parse(row.record) as UserRow));
-      else {
-        const group = JSON.parse(row.record) as GroupRow & { memberIds: number[] };
-        groups.push({ ...toGroup(group), memberIds: group.memberIds });
-      }
-    }
-    return { users, groups };
-  }
-
-  async readUserDirectoryFor(userId: number): Promise<UserDirectory> {
-    const { results } = await this.db.prepare(`
-      SELECT 'user' AS kind, id, json_object(
-        'id', id, 'username', username, 'password_hash', password_hash,
-        'is_admin', is_admin,
-        'created_at', created_at, 'deleted_at', deleted_at
-      ) AS record FROM users WHERE id = ? AND deleted_at IS NULL
-      UNION ALL
-      SELECT 'group' AS kind, id, json_object(
-        'id', id, 'name', name, 'hue', hue, 'created_at', created_at, 'deleted_at', deleted_at,
-        'memberIds', json_array(?)
-      ) AS record FROM groups
-      WHERE deleted_at IS NULL AND id IN (SELECT group_id FROM group_members WHERE user_id = ?)
-      ORDER BY kind, id
-    `).bind(userId, userId, userId).all<{ kind: 'user' | 'group'; record: string }>();
     const users: User[] = [];
     const groups: GroupWithMembers[] = [];
     for (const row of results) {

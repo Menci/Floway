@@ -8,8 +8,8 @@ import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 
 const groups: ControlPlaneGroup[] = [
-  { accessRecordCount: 0, id: 1, name: 'Platform', hue: 250, createdAt: '', deletedAt: null, memberIds: [] },
-  { accessRecordCount: 0, id: 2, name: 'Research', hue: 150, createdAt: '', deletedAt: null, memberIds: [] },
+  { id: 1, name: 'Platform', hue: 250, createdAt: '', deletedAt: null, memberIds: [] },
+  { id: 2, name: 'Research', hue: 150, createdAt: '', deletedAt: null, memberIds: [] },
 ];
 
 function Form() {

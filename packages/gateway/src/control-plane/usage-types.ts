@@ -38,6 +38,8 @@ export interface TokenUsageOverviewResponse {
     upstreams: string[];
   };
   users: UsageUserMetadata[];
+  auditableUserIds: number[];
+  upstreams: Array<{ id: string; name: string; hue: number }>;
   keys: UsageKeyMetadata[];
 }
 

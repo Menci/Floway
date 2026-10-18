@@ -2,9 +2,9 @@ import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { UsageOverviewGroupBy } from '../../repo/types.ts';
 import type { tokenUsageOverviewQuery } from '../schemas.ts';
-import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
+import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata, telemetryUpstreamMetadata } from '../shared/telemetry-overview.ts';
 import type { TokenUsageOverviewResponse } from '../usage-types.ts';
-import { createTelemetryBucket, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
+import { createTelemetryBucket, type TelemetryBucketGranularity, usageUpstreamFromDimensionValue } from '@floway-dev/protocols/common';
 
 type Ctx = CtxWithQuery<typeof tokenUsageOverviewQuery>;
 
@@ -77,9 +77,15 @@ export const tokenUsageOverview = async (c: Ctx) => {
     }),
   });
   const metadata = telemetryIdentityMetadata(identity, overview.dimensionValues.userIds);
+  const revealedUpstreamIds = overview.dimensionValues.upstreams.flatMap(value => {
+    const upstreamId = usageUpstreamFromDimensionValue(value);
+    return upstreamId === null ? [] : [upstreamId];
+  });
 
   return c.json({
     ...overview,
     ...metadata,
+    auditableUserIds: [...identity.visibleUserIds].sort((left, right) => left - right),
+    upstreams: telemetryUpstreamMetadata(identity, revealedUpstreamIds),
   } satisfies TokenUsageOverviewResponse);
 };

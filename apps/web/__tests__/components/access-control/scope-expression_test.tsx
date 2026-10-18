@@ -9,8 +9,8 @@ import { renderInApp } from '../../render';
 import type { AccessScope } from '@floway-dev/gateway/browser';
 
 const data: ScopeExpressionData = {
-  users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', groupIds: [], accessRecordCount: 0 }],
-  groups: [{ hue: 120, id: 3, name: 'operators', createdAt: '', deletedAt: null, memberIds: [2], accessRecordCount: 0 }],
+  users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', groupIds: [] }],
+  groups: [{ hue: 120, id: 3, name: 'operators', createdAt: '', deletedAt: null, memberIds: [2] }],
   upstreams: [
     { id: 'up_a', name: 'Copilot', kind: 'copilot', enabled: true, hue: 210, cachedModelCount: 2 },
     { id: 'up_b', name: 'vLLM', kind: 'custom', enabled: true, hue: 30, cachedModelCount: 0 },

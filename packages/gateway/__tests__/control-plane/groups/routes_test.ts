@@ -23,11 +23,42 @@ test('a non-admin directory exposes only the actor and current groups', async ()
   await repo.groups.replaceMembers(otherGroup.id, [1, 3]);
   const response = await requestApp('/api/user-directory', { headers: { 'x-api-key': apiKey.key } });
   assertEquals(response.status, 200);
-  const body = await response.json() as { users: Array<{ id: number; groupIds: number[] }>; groups: Array<{ id: number; memberIds: number[] }> };
+  const body = await response.json() as { users: Array<{ id: number; groupIds: number[] }>; groups: Array<{ id: number; memberIds: number[] }>; principalUserIds: number[]; principalGroupIds: number[] };
   expect(body.users.map(user => user.id)).toEqual([apiKey.userId]);
   expect(body.groups.map(group => group.id)).toEqual([ownGroup.id]);
   expect(body.users[0]?.groupIds).toEqual([ownGroup.id]);
   expect(body.groups[0]?.memberIds).toEqual([apiKey.userId]);
+  expect(body.principalUserIds).toEqual([apiKey.userId]);
+  expect(body.principalGroupIds).toEqual([ownGroup.id]);
+});
+
+test('a non-admin directory projects ACL target identities without widening principal filters', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const ownGroup = await repo.groups.create('Operators', 120);
+  const targetGroup = await repo.groups.create('Review Subjects', 180);
+  await repo.users.save({ id: 3, username: 'bob', passwordHash: null, isAdmin: false, createdAt: '', deletedAt: null });
+  await repo.users.save({ id: 4, username: 'carol', passwordHash: null, isAdmin: false, createdAt: '', deletedAt: null });
+  await repo.users.save({ id: 5, username: 'dave', passwordHash: null, isAdmin: false, createdAt: '', deletedAt: null });
+  await repo.groups.replaceMembers(ownGroup.id, [apiKey.userId, 3]);
+  await repo.groups.replaceMembers(targetGroup.id, [4]);
+  await repo.accessRecords.save({ principal: { kind: 'user', id: apiKey.userId }, scope: { kind: 'user', userId: 3 }, sortOrder: 0, values: { 'User.Audit': true } });
+  await repo.accessRecords.save({ principal: { kind: 'group', id: ownGroup.id }, scope: { kind: 'group', groupId: targetGroup.id }, sortOrder: 0, values: { 'User.Audit': true } });
+  await repo.accessRecords.save({ principal: { kind: 'user', id: apiKey.userId }, scope: { kind: 'users' }, sortOrder: 0, values: { 'User.Audit': false } });
+
+  const response = await requestApp('/api/user-directory', { headers: { 'x-api-key': apiKey.key } });
+  const body = await response.json() as {
+    users: Array<{ id: number; groupIds: number[] }>;
+    groups: Array<{ id: number; memberIds: number[] }>;
+    principalUserIds: number[];
+    principalGroupIds: number[];
+  };
+  expect(body.users.map(user => user.id)).toEqual([apiKey.userId, 3, 4]);
+  expect(body.groups).toEqual([
+    expect.objectContaining({ id: ownGroup.id, memberIds: [apiKey.userId] }),
+    expect.objectContaining({ id: targetGroup.id, memberIds: [4] }),
+  ]);
+  expect(body.principalUserIds).toEqual([apiKey.userId]);
+  expect(body.principalGroupIds).toEqual([ownGroup.id]);
 });
 
 test('user directory projects both membership directions from one repository snapshot', async () => {
@@ -38,11 +69,13 @@ test('user directory projects both membership directions from one repository sna
   repo.groups.list = () => { throw new Error('directory must not assemble separate repository reads'); };
   const response = await request('/user-directory', adminSession);
   expect(response.status).toBe(200);
-  const body = await response.json() as { users: Array<{ id: number; groupIds: number[]; passwordHash?: string }>; groups: Array<{ id: number; memberIds: number[] }> };
-  expect(body.groups).toEqual([{ ...group, memberIds: [2], accessRecordCount: 0 }]);
+  const body = await response.json() as { users: Array<{ id: number; groupIds: number[]; passwordHash?: string }>; groups: Array<{ id: number; memberIds: number[] }>; principalUserIds: number[]; principalGroupIds: number[] };
+  expect(body.groups).toEqual([{ ...group, memberIds: [2] }]);
   expect(body.users.find(user => user.id === 2)?.groupIds).toEqual([group.id]);
   expect(body.users.find(user => user.id === 1)?.groupIds).toEqual([]);
   expect(body.users.every(user => !Object.hasOwn(user, 'passwordHash'))).toBe(true);
+  expect(body.principalUserIds).toEqual([1, 2]);
+  expect(body.principalGroupIds).toEqual([group.id]);
 });
 
 test('groups create, update, and project membership onto the user list', async () => {

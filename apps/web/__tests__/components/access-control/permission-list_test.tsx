@@ -64,8 +64,8 @@ test('reserves blue for partial access and uses green for maximum access', () =>
 });
 
 const data: ScopeExpressionData = {
-  users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', groupIds: [1], accessRecordCount: 0 }],
-  groups: [{ id: 1, name: 'Platform', hue: 210, memberIds: [2], createdAt: '', deletedAt: null, accessRecordCount: 0 }],
+  users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', groupIds: [1] }],
+  groups: [{ id: 1, name: 'Platform', hue: 210, memberIds: [2], createdAt: '', deletedAt: null }],
   upstreams: [], models: [],
 };
 const source: AccessRecord = { id: 1, principal: { kind: 'group', id: 1 }, scope: { kind: 'upstreams' }, sortOrder: 0, values: { 'Upstream.Edit': 'models' }, createdAt: '', updatedAt: '' };

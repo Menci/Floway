@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import { parseScope, scopeContains, scopeKey } from '../../../src/components/access-control/scope';
 
-const data = { groups: [{ id: 1, name: 'Platform', hue: 210, memberIds: [2], accessRecordCount: 0, createdAt: '', deletedAt: null }] };
+const data = { groups: [{ id: 1, name: 'Platform', hue: 210, memberIds: [2], createdAt: '', deletedAt: null }] };
 test('recognizes ancestor and model-pattern containment without crossing resources', () => {
   expect(scopeContains(null, { kind: 'upstreams' }, data)).toBe(true);
   expect(scopeContains({ kind: 'upstreams' }, { kind: 'upstream', upstreamId: 'a' }, data)).toBe(true);

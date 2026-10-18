@@ -22,7 +22,7 @@ const records: Props['records'] = ['gpt-5', 'gpt-6'].map((value, index) => ({
   id: index + 1, principal: { kind: 'user', id: 2 }, scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value } }, sortOrder: index,
   values: { 'Model.Use': true }, createdAt: '', updatedAt: '',
 }));
-const data: Props['data'] = { users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', groupIds: [], accessRecordCount: 2 }], groups: [], models: [], upstreams: [{ id: 'up_a', name: 'Copilot', kind: 'copilot', hue: 210, enabled: true, cachedModelCount: 0 }] };
+const data: Props['data'] = { users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', groupIds: [] }], groups: [], models: [], upstreams: [{ id: 'up_a', name: 'Copilot', kind: 'copilot', hue: 210, enabled: true, cachedModelCount: 0 }] };
 const renderTable = (onReorder: Props['onReorder'] = vi.fn(async () => records)) => {
   const onReordered = vi.fn();
   const onReorderError = vi.fn(async (_error: unknown) => {});

@@ -101,6 +101,10 @@ const validateProxyFallbackReferences = (
   return null;
 };
 
+const normalizeUpstreamOrder = (upstreams: readonly UpstreamRecord[]): UpstreamRecord[] => upstreams
+  .toSorted((left, right) => left.sortOrder - right.sortOrder || left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
+  .map((upstream, sortOrder) => ({ ...upstream, sortOrder }));
+
 export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
   const repo = getRepo();
   const includePerformance = c.req.valid('query').include_performance === '1';
@@ -169,6 +173,11 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const existingProxyIdsForRefs = mode === 'merge' ? (await repo.proxies.list()).map(proxy => proxy.id) : [];
   const fallbackRefError = validateProxyFallbackReferences(upstreams, proxies, existingProxyIdsForRefs);
   if (fallbackRefError) return c.json({ error: `invalid upstreams: ${fallbackRefError}` }, 400);
+  const importedUpstreamIds = new Set(upstreams.map(upstream => upstream.id));
+  const retainedUpstreams = mode === 'merge'
+    ? (await repo.upstreams.list()).filter(upstream => !importedUpstreamIds.has(upstream.id))
+    : [];
+  const normalizedUpstreams = normalizeUpstreamOrder([...retainedUpstreams, ...upstreams]);
 
   if (mode === 'replace') {
     for (const key of preImportKeys) await notifyDisabledBestEffort(key.id, 'replace-mode import');
@@ -217,7 +226,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   for (const record of usage) await repo.usage.set(record);
   for (const record of searchUsage) await repo.webSearchUsage.set(record);
   for (const record of upstreamMetrics) await repo.upstreamMetrics.set(record);
-  await saveUpstreams(await Promise.all(upstreams.map(async next => ({
+  await saveUpstreams(await Promise.all(normalizedUpstreams.map(async next => ({
     previous: await repo.upstreams.getById(next.id),
     next,
   }))));

@@ -16,6 +16,7 @@ const overview: PerformanceOverviewResponse = {
   axes: { none: [], keyId: [], userId: [], model: [], upstream: [], operation: [], runtimeLocation: [] },
   dimensionValues: { models: [], upstreams: [], operations: [], runtimeLocations: ['LOCAL'], keyIds: [], userIds: [] },
   users: [],
+  upstreams: [],
   keys: [],
 };
 
@@ -37,7 +38,6 @@ const renderPage = (regionAvailable: boolean | null, groupBy: 'model' | 'runtime
           filters: { model: [], upstream: [], operation: [], runtimeLocation: [], userId: [], keyId: [] },
           hidden: [],
         },
-        upstreams: [],
       }}
       matches={[] as never}
       params={{}}
