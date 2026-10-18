@@ -43,9 +43,10 @@ test('group restores and directory snapshots use native SQLite transactions and 
   const before = await repo.readUserDirectory();
   expect(before.users.map(user => user.id)).toEqual([1]);
   expect(before.groups).toEqual([
-    { ...first, name: second.name, memberIds: [1] },
-    { ...second, name: first.name, memberIds: [] },
+    { ...first, name: second.name },
+    { ...second, name: first.name },
   ]);
+  expect(before.memberships).toEqual([{ groupId: first.id, userId: 1, createdAt: expect.any(String) }]);
   await expect(repo.groups.restore([
     { ...first, name: 'Duplicate', memberIds: [] },
     { ...second, name: 'duplicate', memberIds: [1] },
