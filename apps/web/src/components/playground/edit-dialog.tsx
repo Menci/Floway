@@ -31,7 +31,8 @@ export function PlaygroundEditDialog({ imageEnabled, message, onOpenChange, onSa
   const { discardConfirmation, requestClose } = useDiscardGuard({ onClose: close, values: { imageUrl, text } });
 
   return (
-    <>{discardConfirmation}<DialogShell
+    <DialogShell
+      nestedDialogs={discardConfirmation}
       open={open}
       actions={<DialogActions>
         <Button onClick={requestClose}>{t('common.cancel')}</Button>
@@ -51,6 +52,6 @@ export function PlaygroundEditDialog({ imageEnabled, message, onOpenChange, onSa
           <Input type="url" value={imageUrl} placeholder={t('dashboard.playground.imagePlaceholder')} onChange={(_, data) => setImageUrl(data.value)} />
         </Field>
       )}
-    </DialogShell></>
+    </DialogShell>
   );
 }
