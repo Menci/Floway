@@ -153,13 +153,13 @@ export const scopeExpressionCss = String.raw`
   min-width: 0;
 }
 
-.floway-scope-expression-segment:has(.floway-scope-expression-model-icon),
-.floway-scope-expression-segment:has(.floway-scope-expression-model-icon) .floway-scope-expression-part,
-.floway-scope-expression-segment:has(.floway-scope-expression-model-icon) .floway-scope-expression-part-control {
+.floway-scope-expression-segment[data-scope-part='model'],
+.floway-scope-expression-segment[data-scope-part='model'] .floway-scope-expression-part,
+.floway-scope-expression-segment[data-scope-part='model'] .floway-scope-expression-part-control {
   align-items: flex-start;
 }
 
-.floway-scope-expression-segment:has(.floway-scope-expression-model-icon) > .floway-scope-expression-slash {
+.floway-scope-expression-segment[data-scope-part='model'] > .floway-scope-expression-slash {
   padding-block: var(--floway-scope-part-padding-block);
 }
 
@@ -242,7 +242,7 @@ button.floway-scope-expression-part:focus-visible {
   color: var(--winui-text-fill-secondary);
   display: flex;
   flex: none;
-  line-height: 20px;
+  line-height: var(--lineHeightBase300);
   padding: 0 4px;
 }
 
@@ -250,12 +250,8 @@ button.floway-scope-expression-part:focus-visible {
   padding-inline-start: 0;
 }
 
-.floway-scope-expression-input {
-  max-width: 100%;
-}
-
 .floway-scope-expression-append > svg {
-  height: 20px;
+  height: var(--lineHeightBase300);
   width: 16px;
 }
 

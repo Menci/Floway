@@ -1,6 +1,6 @@
 import { CubeRegular, MoreHorizontal16Regular, PeopleRegular, PersonRegular, TextAsteriskRegular } from '@fluentui/react-icons';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ComponentProps, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { ComponentProps, ReactNode, Ref, RefObject } from 'react';
 
 import type { ControlPlaneGroup, ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
@@ -19,6 +19,14 @@ const { Option, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 type Part = 'kind' | 'instance' | 'model';
 type ScopeKind = 'upstream' | 'user' | 'group';
 
+interface SegmentContextValue {
+  onActivate: () => void;
+  readOnly: boolean;
+  triggerRef: Ref<HTMLButtonElement>;
+}
+
+const SegmentContext = createContext<SegmentContextValue | null>(null);
+
 const useStyles = makeStyles({
   regex: prismTokenStyles,
 });
@@ -34,16 +42,23 @@ export function ScopeEditor(props: Omit<ComponentProps<typeof ScopeExpression>, 
   return <ScopeExpression {...props} framed />;
 }
 
-function ScopeEditorSurface({ children, className, onRemove, readOnly }: { children: ReactNode; className?: string; onRemove?: () => void; readOnly: boolean }) {
+function ScopeEditorSurface({ children, className, expressionRef, onActivate, onRemove, readOnly }: {
+  children: ReactNode;
+  className?: string;
+  expressionRef: RefObject<HTMLDivElement | null>;
+  onActivate: () => void;
+  onRemove?: () => void;
+  readOnly: boolean;
+}) {
   const { t } = useTranslation();
-  const isWhitespace = (target: EventTarget, root: HTMLElement) => target === root || target === root.querySelector('.floway-scope-expression');
+  const isWhitespace = (target: EventTarget, root: HTMLElement) => target === root || target === expressionRef.current;
   return <div aria-disabled={readOnly ? true : undefined} className={mergeClasses('floway-scope-editor', className)}
     onMouseDown={event => {
       if (!readOnly && isWhitespace(event.target, event.currentTarget)) event.preventDefault();
     }}
     onClick={event => {
       if (!readOnly && isWhitespace(event.target, event.currentTarget)) {
-        activateSegment(event.currentTarget.querySelector('.floway-scope-expression')!.lastElementChild!);
+        onActivate();
       }
     }}
   >
@@ -51,12 +66,6 @@ function ScopeEditorSurface({ children, className, onRemove, readOnly }: { child
     {onRemove && <TooltipIconButton disabled={readOnly} icon={<FieldClearIcon />} label={t('dashboard.accessControl.actions.removeScopeSegment')} onClick={onRemove} />}
   </div>;
 }
-
-const activateSegment = (segment: Element) => {
-  const control = segment.querySelector<HTMLInputElement | HTMLButtonElement>('input, button')!;
-  control.focus();
-  control.click();
-};
 
 export function ScopeExpression({ className, data, framed = false, kindHint, onChange, onNavigate, purpose = 'scope', readOnly = false, value }: {
   className?: string;
@@ -70,6 +79,8 @@ export function ScopeExpression({ className, data, framed = false, kindHint, onC
   value: AccessScope | null;
 }) {
   const { t } = useTranslation();
+  const expressionRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [editingPart, setActive] = useState<Part | null>(null);
   const active = readOnly ? null : editingPart;
   const [query, setQuery] = useState('');
@@ -104,6 +115,10 @@ export function ScopeExpression({ className, data, framed = false, kindHint, onC
       return;
     }
     if (readOnly) return;
+    if (active === part) {
+      inputRef.current?.focus();
+      return;
+    }
     resetInput(part, partValue(part, kind, value, data, t));
   };
   const commitKind = (nextKind: ScopeKind) => {
@@ -156,7 +171,7 @@ export function ScopeExpression({ className, data, framed = false, kindHint, onC
     // A submit click reads the parent's scope after focus leaves this editor.
     // Internal focus and option selection must still be able to replace a draft.
     if (next instanceof HTMLElement && !next.closest('[role="listbox"]')
-      && next.closest('.floway-scope-expression') !== event.currentTarget.closest('.floway-scope-expression')) {
+      && !expressionRef.current!.contains(next)) {
       commitBlur();
       return;
     }
@@ -173,8 +188,7 @@ export function ScopeExpression({ className, data, framed = false, kindHint, onC
   const input = active === null ? null : <PartInput
     ariaLabel={t(`dashboard.accessControl.scope.${active === 'kind' ? 'kind' : active === 'instance' ? 'instance' : 'model'}`)}
     emptyMessage={t('dashboard.accessControl.scope.noMatches')}
-    freeform={active === 'model'}
-    model={active === 'model'}
+    inputRef={inputRef}
     name={`scope-${active}`}
     onBlur={onInputBlur}
     onChange={next => {
@@ -182,13 +196,15 @@ export function ScopeExpression({ className, data, framed = false, kindHint, onC
       setQuery(active === 'model' && purpose === 'scope' ? next.replace(/^\//, '').replace(/\/$/, '') : next);
     }}
     onSelect={option => commitOption(active, option)}
-    onCancel={closeInput}
     options={options}
+    part={active}
     query={query}
-    resourceType={active === 'kind'}
     regex={active === 'model' && value?.kind === 'upstreamModel' && value.model.kind === 'regex'}
   />;
   const hasInstance = instanceMatchesKind(kind, value);
+  const showInstance = kind !== null && (active === 'instance' || hasInstance || !readOnly);
+  const showModel = kind === 'upstream' && hasUpstreamInstance(value) && (active === 'model' || value.kind === 'upstreamModel' || !readOnly);
+  const lastPart = showModel ? 'model' : showInstance ? 'instance' : 'kind';
   const removeLast = () => {
     resetInput(null);
     if (value?.kind === 'upstreamModel') onChange?.({ kind: 'upstream', upstreamId: value.upstreamId });
@@ -199,91 +215,99 @@ export function ScopeExpression({ className, data, framed = false, kindHint, onC
     setPendingKind(value?.kind === 'group' ? 'group' : null);
   };
 
-  const expression = <div aria-label={interactive ? t('dashboard.accessControl.fields.scope') : undefined} className={mergeClasses('floway-scope-expression', !framed && className)} role={interactive ? 'group' : undefined}
+  const expression = <div aria-label={interactive ? t('dashboard.accessControl.fields.scope') : undefined} className={mergeClasses('floway-scope-expression', !framed && className)} ref={expressionRef} role={interactive ? 'group' : undefined}
     onMouseDown={event => {
-      if (onNavigate || (interactive && (event.target as HTMLElement).closest('.floway-scope-expression-slash'))) event.preventDefault();
-    }}
-    onClick={event => {
-      const slash = (event.target as HTMLElement).closest('.floway-scope-expression-slash');
-      if (interactive && slash) {
-        activateSegment(slash.parentElement!);
-      }
+      if (onNavigate) event.preventDefault();
     }}
   >
-    <Segment active={active === 'kind'} dirty={dirty} input={input}>{editing => kind === null
-      ? !readOnly && <AppendTrigger label={t('dashboard.accessControl.scope.kind')} onActivate={() => activate('kind')} readOnly={editing} />
-      : <PartToken className="floway-scope-expression-kind" onActivate={() => activate('kind')} readOnly={editing || !interactive}>{kindLabel(kind, t)}</PartToken>}
+    <Segment active={active === 'kind'} dirty={dirty} input={input} interactive={interactive} onActivate={() => activate('kind')} onCancel={closeInput} part="kind">{kind === null
+      ? !readOnly && <AppendTrigger label={t('dashboard.accessControl.scope.kind')} />
+      : <PartToken className="floway-scope-expression-kind">{kindLabel(kind, t)}</PartToken>}
     </Segment>
 
-    {kind !== null && (active === 'instance' || hasInstance || !readOnly) && <Segment active={active === 'instance'} dirty={dirty} input={input}>{editing => hasInstance
-      ? <InstancePart data={data} kind={kind} onActivate={() => activate('instance')} readOnly={editing || !interactive} t={t} value={value} />
-      : <AppendTrigger label={t('dashboard.accessControl.scope.instance')} onActivate={() => activate('instance')} readOnly={editing} />}
+    {showInstance && <Segment active={active === 'instance'} dirty={dirty} input={input} interactive={interactive} onActivate={() => activate('instance')} onCancel={closeInput} part="instance">{hasInstance
+      ? <InstancePart data={data} kind={kind} t={t} value={value} />
+      : <AppendTrigger label={t('dashboard.accessControl.scope.instance')} />}
     </Segment>}
 
-    {kind === 'upstream' && hasUpstreamInstance(value) && (active === 'model' || value.kind === 'upstreamModel' || !readOnly) && <Segment active={active === 'model'} dirty={dirty} input={input}>{editing => value.kind === 'upstreamModel'
-      ? <ModelPart onActivate={() => activate('model')} readOnly={editing || !interactive} scope={value} />
-      : <AppendTrigger label={t('dashboard.accessControl.scope.model')} onActivate={() => activate('model')} readOnly={editing} />}
+    {showModel && <Segment active={active === 'model'} dirty={dirty} input={input} interactive={interactive} onActivate={() => activate('model')} onCancel={closeInput} part="model">{value.kind === 'upstreamModel'
+      ? <ModelPart scope={value} />
+      : <AppendTrigger label={t('dashboard.accessControl.scope.model')} />}
     </Segment>}
   </div>;
-  return framed ? <ScopeEditorSurface className={className} onRemove={kind === null ? undefined : removeLast} readOnly={readOnly}>{expression}</ScopeEditorSurface> : expression;
+  return framed ? <ScopeEditorSurface className={className} expressionRef={expressionRef} onActivate={() => activate(lastPart)} onRemove={kind === null ? undefined : removeLast} readOnly={readOnly}>{expression}</ScopeEditorSurface> : expression;
 }
 
-function Segment({ active, children, dirty, input }: { active: boolean; children: (editing: boolean) => ReactNode; dirty: boolean; input: ReactNode }) {
-  const content = children(active);
-  return <span className="floway-scope-expression-segment"><Slash />{active
-    ? <span className="floway-scope-expression-part-editor" data-pristine={!dirty ? true : undefined}>
-        {!dirty && <span aria-hidden className="floway-scope-expression-part-preview" inert>{content}</span>}
-        <span className="floway-scope-expression-part-control">{input}</span>
-      </span>
-    : content}
-  </span>;
+function Segment({ active, children, dirty, input, interactive, onActivate, onCancel, part }: {
+  active: boolean;
+  children: ReactNode;
+  dirty: boolean;
+  input: ReactNode;
+  interactive: boolean;
+  onActivate: () => void;
+  onCancel: () => void;
+  part: Part;
+}) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const restoreFocus = useRef(false);
+  useLayoutEffect(() => {
+    if (!active && restoreFocus.current) {
+      restoreFocus.current = false;
+      triggerRef.current?.focus();
+    }
+  }, [active]);
+  return <SegmentContext value={{ onActivate, readOnly: active || !interactive, triggerRef }}><span className="floway-scope-expression-segment" data-scope-part={part} onKeyDownCapture={event => {
+    if (active && event.key === 'Escape' && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      event.stopPropagation();
+      restoreFocus.current = true;
+      onCancel();
+    }
+  }}><Slash onActivate={interactive ? onActivate : undefined} />{active
+      ? <span className="floway-scope-expression-part-editor" data-pristine={!dirty ? true : undefined}>
+          {!dirty && <span aria-hidden className="floway-scope-expression-part-preview" inert>{children}</span>}
+          <span className="floway-scope-expression-part-control">{input}</span>
+        </span>
+      : children}
+  </span></SegmentContext>;
 }
 
-function PartInput({ ariaLabel, emptyMessage, freeform, model, name, onBlur, onCancel, onChange, onSelect, options, query, regex, resourceType }: {
+function PartInput({ ariaLabel, emptyMessage, inputRef, name, onBlur, onChange, onSelect, options, part, query, regex }: {
   ariaLabel: string;
   emptyMessage: string;
-  freeform: boolean;
-  model: boolean;
+  inputRef: Ref<HTMLInputElement>;
   name: string;
   onBlur: ComponentProps<typeof InlineCombobox>['onBlur'];
-  onCancel: () => void;
   onChange: (value: string) => void;
   onSelect: (value: string) => void;
   options: ScopeOption[];
+  part: Part;
   query: string;
   regex: boolean;
-  resourceType: boolean;
 }) {
+  const model = part === 'model';
   const Icon = regex ? TextAsteriskRegular : CubeRegular;
-  return <span className={mergeClasses('floway-scope-expression-part', resourceType && 'floway-scope-expression-kind')}>
+  return <span className={mergeClasses('floway-scope-expression-part', part === 'kind' && 'floway-scope-expression-kind')}>
     {model && <Icon className="floway-scope-expression-model-icon" />}
     <InlineCombobox
       aria-label={ariaLabel}
       autoComplete="off"
       autoFocus
-      className={mergeClasses('floway-scope-expression-input', model && 'font-mono')}
+      className={model ? 'font-mono' : undefined}
       emptyMessage={emptyMessage}
       // Unmatched resources remain visible, but must not become an automatic
       // Tab completion just because they are first in the open list.
       // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Listbox/useListbox.ts#L169-L183
       // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/utils/useTriggerSlot.ts#L216-L218
-      disableAutoFocus={!freeform}
-      freeform={freeform}
+      disableAutoFocus={!model}
+      freeform={model}
       onBlur={onBlur}
-      onKeyDown={event => {
-        if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
-          event.preventDefault();
-          event.stopPropagation();
-          const segment = event.currentTarget.closest('.floway-scope-expression-segment')!;
-          onCancel();
-          requestAnimationFrame(() => segment.querySelector('button')?.focus());
-        }
-      }}
       name={name}
       onChange={event => onChange(event.target.value)}
       defaultOpen
       onOptionSelect={(_, option) => option.optionValue && onSelect(option.optionValue)}
       spellCheck={false}
+      ref={inputRef}
       value={query}
     >
       {options.map(option => <Option key={option.key} text={option.text} value={option.value}>
@@ -293,28 +317,28 @@ function PartInput({ ariaLabel, emptyMessage, freeform, model, name, onBlur, onC
   </span>;
 }
 
-function AppendTrigger({ label, onActivate, readOnly = false }: { label: string; onActivate: () => void; readOnly?: boolean }) {
+function AppendTrigger({ label }: { label: string }) {
+  const { onActivate, readOnly, triggerRef } = useContext(SegmentContext)!;
   const className = 'floway-scope-expression-part floway-scope-expression-append';
   return readOnly
     ? <span className={className}><MoreHorizontal16Regular /></span>
-    : <button aria-label={label} className={className} onClick={onActivate} type="button"><MoreHorizontal16Regular /></button>;
+    : <button aria-label={label} className={className} onClick={onActivate} ref={triggerRef} type="button"><MoreHorizontal16Regular /></button>;
 }
 
-function Slash() {
-  return <span aria-hidden="true" className="floway-scope-expression-slash"><span className="floway-control-label">/</span></span>;
+function Slash({ onActivate }: { onActivate?: () => void }) {
+  return <span aria-hidden="true" className="floway-scope-expression-slash" onClick={onActivate} onMouseDown={onActivate ? event => event.preventDefault() : undefined}><span className="floway-control-label">/</span></span>;
 }
 
-function PartToken({ children, className, onActivate, readOnly }: {
+function PartToken({ children, className }: {
   children: ReactNode;
   className?: string;
-  onActivate: () => void;
-  readOnly: boolean;
 }) {
+  const { onActivate, readOnly, triggerRef } = useContext(SegmentContext)!;
   const classes = mergeClasses('floway-scope-expression-part', className);
   const content = typeof children === 'string' ? <span className="floway-control-label">{children}</span> : children;
   return readOnly
     ? <span className={classes}>{content}</span>
-    : <button className={classes} onClick={onActivate} type="button">{content}</button>;
+    : <button className={classes} onClick={onActivate} ref={triggerRef} type="button">{content}</button>;
 }
 
 interface ScopeOption { key: string; value: string; text: string; content: ReactNode; dimmed?: boolean }
@@ -374,41 +398,37 @@ const draftPattern = (query: string): RegExp | null => {
   }
 };
 
-function InstancePart({ data, kind, onActivate, readOnly, t, value }: {
+function InstancePart({ data, kind, t, value }: {
   data: ScopeExpressionData;
   kind: ScopeKind;
-  onActivate: () => void;
-  readOnly: boolean;
   t: TFunction;
   value: AccessScope | null;
 }) {
   if (kind === 'upstream' && hasUpstreamInstance(value)) {
     const upstream = data.upstreams.find(candidate => candidate.id === value.upstreamId);
     return upstream
-      ? <PartToken onActivate={onActivate} readOnly={readOnly}><ProviderBadge label={upstream.name} upstream={upstream} /></PartToken>
-      : <UnknownPart description={t('dashboard.accessControl.scope.unknownUpstreamId', { id: value.upstreamId })} onActivate={onActivate} readOnly={readOnly} />;
+      ? <PartToken><ProviderBadge label={upstream.name} upstream={upstream} /></PartToken>
+      : <UnknownPart description={t('dashboard.accessControl.scope.unknownUpstreamId', { id: value.upstreamId })} />;
   }
   if (kind === 'user' && value?.kind === 'user') {
     const user = data.users.find(candidate => candidate.id === value.userId);
     return user
-      ? <PartToken onActivate={onActivate} readOnly={readOnly}><UserIdentity username={user.username} /></PartToken>
-      : <UnknownPart description={t('dashboard.accessControl.scope.unknownUserId', { id: String(value.userId) })} icon={<PersonRegular />} onActivate={onActivate} readOnly={readOnly} />;
+      ? <PartToken><UserIdentity username={user.username} /></PartToken>
+      : <UnknownPart description={t('dashboard.accessControl.scope.unknownUserId', { id: String(value.userId) })} icon={<PersonRegular />} />;
   }
   if (kind === 'group' && value?.kind === 'group') {
     const group = data.groups.find(candidate => candidate.id === value.groupId);
     return group
-      ? <PartToken onActivate={onActivate} readOnly={readOnly}><GroupIdentity group={group} /></PartToken>
-      : <UnknownPart description={t('dashboard.accessControl.scope.unknownGroupId', { id: String(value.groupId) })} icon={<PeopleRegular />} onActivate={onActivate} readOnly={readOnly} />;
+      ? <PartToken><GroupIdentity group={group} /></PartToken>
+      : <UnknownPart description={t('dashboard.accessControl.scope.unknownGroupId', { id: String(value.groupId) })} icon={<PeopleRegular />} />;
   }
   return null;
 }
 
-function ModelPart({ onActivate, readOnly, scope }: {
-  onActivate: () => void;
-  readOnly: boolean;
+function ModelPart({ scope }: {
   scope: Extract<AccessScope, { kind: 'upstreamModel' }>;
 }) {
-  return <PartToken onActivate={onActivate} readOnly={readOnly}>
+  return <PartToken>
     {scope.model.kind === 'regex' ? <><TextAsteriskRegular className="floway-scope-expression-model-icon" /><RegexPattern pattern={scope.model.value} /></> : <><CubeRegular className="floway-scope-expression-model-icon" /><span className="floway-control-label font-mono" translate="no">{scope.model.value}</span></>}
   </PartToken>;
 }
@@ -420,16 +440,15 @@ function RegexPattern({ pattern }: { pattern: string }) {
   </span>;
 }
 
-function UnknownPart({ description, icon, onActivate, readOnly }: {
+function UnknownPart({ description, icon }: {
   description: string;
   icon?: ReactNode;
-  onActivate: () => void;
-  readOnly: boolean;
 }) {
   const { t } = useTranslation();
+  const { readOnly } = useContext(SegmentContext)!;
   return <Tooltip content={description} relationship="description">
     <span className="winui-focus-rect inline-flex max-w-full" tabIndex={readOnly ? 0 : undefined}>
-      <PartToken className="floway-scope-expression-dimmed" onActivate={onActivate} readOnly={readOnly}>{icon}
+      <PartToken className="floway-scope-expression-dimmed">{icon}
         <span className="floway-control-label">{t('dashboard.accessControl.scope.unknownLabel')}</span>
       </PartToken>
     </span>

@@ -31,6 +31,7 @@ test.each(['exact', 'regex'] as const)('uses standard resource badges and the sh
   expect(container.querySelector('.floway-scope-expression-model-icon')).toBeTruthy();
   const segments = [...container.querySelectorAll('.floway-scope-expression-segment')];
   expect(segments).toHaveLength(3);
+  expect(segments.map(segment => segment.getAttribute('data-scope-part'))).toEqual(['kind', 'instance', 'model']);
   expect(segments.every(segment => segment.firstElementChild!.classList.contains('floway-scope-expression-slash'))).toBe(true);
   expect(segments.every(segment => segment.childElementCount === 2)).toBe(true);
 });
@@ -48,7 +49,7 @@ test.each(['exact', 'regex'] as const)('anchors long %s text to its first line a
     </>);
     const segments = container.querySelectorAll('.floway-scope-expression-segment:has(.floway-scope-expression-model-icon)');
     expect(segments).toHaveLength(2);
-    for (const segment of container.querySelectorAll('.floway-scope-expression-segment:not(:has(.floway-scope-expression-model-icon))')) {
+    for (const segment of container.querySelectorAll('.floway-scope-expression-segment:not([data-scope-part="model"])')) {
       expect(getComputedStyle(segment.querySelector('.floway-scope-expression-part')!).alignItems).toBe('center');
     }
     for (const slash of container.querySelectorAll('.floway-scope-expression-slash')) {
@@ -210,6 +211,46 @@ test('clicking the slash of an active segment preserves and focuses its draft', 
   expect(input.value).toBe('draft-model');
   expect(document.activeElement).toBe(input);
   expect(changed).not.toHaveBeenCalled();
+});
+
+test('clicking trailing editor whitespace preserves and focuses the current final draft', () => {
+  const { container, changed } = renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'gpt-5' }));
+  const input = screen.getByRole<HTMLInputElement>('combobox', { name: 'Model' });
+  fireEvent.change(input, { target: { value: 'draft-model' } });
+  fireEvent.click(container.querySelector('.floway-scope-editor')!);
+  expect(screen.getByRole('combobox')).toBe(input);
+  expect(input.value).toBe('draft-model');
+  expect(document.activeElement).toBe(input);
+  expect(changed).not.toHaveBeenCalled();
+});
+
+test.each(['Upstream', 'Copilot', 'gpt-5'])('Escape immediately returns focus to the %s trigger', label => {
+  renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } });
+  fireEvent.click(screen.getByRole('button', { name: label }));
+  fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+  expect(screen.queryByRole('combobox')).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: label }));
+});
+
+test.each([
+  [null, 'Resource type'],
+  [{ kind: 'upstreams' }, 'Resource'],
+  [{ kind: 'upstream', upstreamId: 'up_removed' }, 'Unknown'],
+] as const)('Escape restores focus to append or unknown triggers for %j', (scope, label) => {
+  renderEditor(scope);
+  fireEvent.click(screen.getByRole('button', { name: label }));
+  fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+  expect(screen.queryByRole('combobox')).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: label }));
+});
+
+test('Escape during IME composition keeps the active draft open', () => {
+  renderEditor({ kind: 'upstreams' });
+  fireEvent.click(screen.getByRole('button', { name: 'Upstream' }));
+  const input = screen.getByRole('combobox');
+  fireEvent.keyDown(input, { key: 'Escape', isComposing: true });
+  expect(screen.getByRole('combobox')).toBe(input);
 });
 
 test('a disabled scope surface and its slash never activate editing', () => {
