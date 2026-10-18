@@ -14,10 +14,10 @@ afterEach(() => {
 test('dashboard navigation refreshes capability fields from auth/me', async () => {
   useAuthStore.getState().primeFromLogin({
     token: 'session',
-    user: { id: 2, username: 'alice', isAdmin: false, canViewUpstreams: false },
+    user: { id: 2, username: 'alice', isAdmin: false, canViewPermissions: false, canViewUpstreams: false },
   });
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({
-    user: { id: 2, username: 'alice', isAdmin: false, canViewUpstreams: true },
+    user: { id: 2, username: 'alice', isAdmin: false, canViewPermissions: true, canViewUpstreams: true },
     viaApiKey: false,
     apiKey: null,
   })));

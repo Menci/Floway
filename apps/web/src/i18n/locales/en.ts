@@ -318,7 +318,7 @@ const en = {
         search: 'Search rules',
         noMatches: 'No matching rules',
         filters: { allPrincipals: 'All visible principals', noPrincipals: 'No matching users or groups', clearPrincipal: 'Clear user or group filter' },
-        columns: { 'Model.Use': 'Use models', 'Upstream.Audit': 'Audit upstream', 'Upstream.Edit': 'Edit upstream', 'User.Audit': 'Audit users' },
+        columns: { 'Model.Use': 'Use models', 'Upstream.Audit': 'Audit upstream', 'Upstream.Edit': 'Edit upstream', 'User.Audit': 'Audit users', 'Permission.Audit': 'Audit permissions' },
         pagination: { previous: 'Previous page', next: 'Next page', range: '{{from, number}} - {{to, number}} / {{total, number}}' },
         actions: { add: 'New rule', edit: 'Edit rule', delete: 'Delete rule', save: 'Save rule', refresh: 'Refresh permissions', clearFilters: 'Clear filters', removeScopeSegment: 'Remove last scope segment', reorder: 'Reorder rule' },
         effective: {
@@ -340,7 +340,7 @@ const en = {
           visual: 'Visual', json: 'JSON', kind: 'Resource type', instance: 'Resource', model: 'Model', unknown: 'Unknown {{id}}',
           unknownLabel: 'Unknown', unknownUpstreamId: 'Unknown upstream ID "{{id}}"', unknownUserId: 'Unknown user ID "{{id}}"', unknownGroupId: 'Unknown group ID "{{id}}"',
           noMatches: 'No matching resources',
-          kinds: { upstream: 'Upstream', user: 'User', group: 'Group' },
+          kinds: { self: 'Self', upstream: 'Upstream', user: 'User', group: 'Group' },
         },
         principal: { user: 'User: {{name}}', group: 'Group: {{name}}' },
         permissions: {
@@ -348,6 +348,7 @@ const en = {
           'Upstream.Audit': 'Attribute upstream telemetry',
           'Upstream.Edit': 'Edit upstream',
           'User.Audit': 'Attribute user telemetry',
+          'Permission.Audit': 'Audit granted and effective permissions',
         },
         states: { inherit: 'Inherit', inheritOn: 'Inherit (on)', inheritOff: 'Inherit (off)', inheritModels: 'Inherit (models)', inheritFull: 'Inherit (full)', on: 'On', off: 'Off', models: 'Models only', full: 'Full' },
         inheritance: {

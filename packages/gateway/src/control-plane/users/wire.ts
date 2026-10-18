@@ -1,10 +1,10 @@
 import type { User } from '../../repo/types.ts';
 
-export const userToSessionWire = (user: User, canViewUpstreams: boolean) => ({
+export const userToSessionWire = (user: User, capabilities: { canViewPermissions: boolean; canViewUpstreams: boolean }) => ({
   id: user.id,
   username: user.username,
   isAdmin: user.isAdmin,
-  canViewUpstreams,
+  ...capabilities,
 });
 
 export const userToAdminWire = (user: User, groupIds: readonly number[]) => ({

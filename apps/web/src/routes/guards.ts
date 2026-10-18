@@ -29,3 +29,9 @@ export const requireDashboardAdmin = async (): Promise<void> => {
   requireDashboardSession();
   if (!(await requireAdmin())) throw redirect(OPERATOR_LANDING);
 };
+
+export const requireDashboardPermissions = async (): Promise<AuthUser> => {
+  const user = await requireDashboardUser();
+  if (!user.canViewPermissions) throw redirect(OPERATOR_LANDING);
+  return user;
+};

@@ -286,3 +286,24 @@ test('/auth/me exposes upstream navigation only for an existing upstream the use
   const visible = await requestApp('/auth/me', { headers: { 'x-api-key': apiKey.key } });
   assertEquals((await visible.json()).user.canViewUpstreams, true);
 });
+
+test('/auth/me exposes permission navigation only for an effective Permission.Audit target', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: apiKey.userId },
+    scope: { kind: 'user', userId: 999 },
+    sortOrder: 0,
+    values: { 'Permission.Audit': true },
+  });
+  const dangling = await requestApp('/auth/me', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals((await dangling.json()).user.canViewPermissions, false);
+
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: apiKey.userId },
+    scope: { kind: 'self' },
+    sortOrder: 0,
+    values: { 'Permission.Audit': true },
+  });
+  const visible = await requestApp('/auth/me', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals((await visible.json()).user.canViewPermissions, true);
+});

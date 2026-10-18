@@ -1,13 +1,13 @@
 import type { ShouldRevalidateFunctionArgs } from 'react-router';
 
 import type { Route } from './+types/dashboard-admin-permissions';
-import { requireDashboardUser } from './guards';
+import { requireDashboardPermissions } from './guards';
 import { loadPermissionsData, unloadedPermissionsData } from '../components/access-control/data';
 import { PermissionsWorkspace } from '../components/access-control/workspace';
 
 export async function clientLoader() {
-  const user = await requireDashboardUser();
-  return { ...await loadPermissionsData(unloadedPermissionsData, { admin: user.isAdmin }), admin: user.isAdmin };
+  const user = await requireDashboardPermissions();
+  return { ...await loadPermissionsData(unloadedPermissionsData), admin: user.isAdmin };
 }
 
 export const shouldRevalidate = ({ currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) =>

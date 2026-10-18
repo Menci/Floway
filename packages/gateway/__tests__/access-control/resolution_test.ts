@@ -71,5 +71,5 @@ test('group membership scopes do not apply to unrelated target users', () => {
 test('unassigned values resolve to off at every scope category', () => {
   expect(resolve([], upstream).values).toEqual({ 'Model.Use': false, 'Upstream.Audit': false, 'Upstream.Edit': 'off' });
   expect(resolve([], model).values).toEqual({ 'Model.Use': false });
-  expect(resolve([], { kind: 'group', groupId: 3 }).values).toEqual({ 'User.Audit': false });
+  expect(resolve([], { kind: 'group', groupId: 3 }).values).toEqual({ 'User.Audit': false, 'Permission.Audit': false });
 });

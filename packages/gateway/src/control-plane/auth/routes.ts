@@ -1,3 +1,4 @@
+import { canViewPermissions } from '../../access-control/permission-audit.ts';
 import { canViewUpstreams } from '../../access-control/upstream-edit.ts';
 import { type AuthedContext, sessionIdFromContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
@@ -9,6 +10,17 @@ import { dummyPasswordHash, verifyPassword } from '../../shared/passwords.ts';
 import type { authLoginBody } from '../schemas.ts';
 import { userToSessionWire } from '../users/wire.ts';
 import { getEnvOptional, timingSafeEqual } from '@floway-dev/platform';
+
+const sessionUser = async (user: User) => {
+  const [canViewPermissionsValue, canViewUpstreamsValue] = await Promise.all([
+    canViewPermissions(user),
+    canViewUpstreams(user),
+  ]);
+  return userToSessionWire(user, {
+    canViewPermissions: canViewPermissionsValue,
+    canViewUpstreams: canViewUpstreamsValue,
+  });
+};
 
 const resolveLoginUser = async (c: CtxWithJson<typeof authLoginBody>): Promise<User | null> => {
   const { username, password } = c.req.valid('json');
@@ -46,7 +58,7 @@ export const authLogin = async (c: CtxWithJson<typeof authLoginBody>) => {
   const user = await resolveLoginUser(c);
   if (!user) return c.json({ error: 'Invalid username or password' }, 401);
   const session = await getRepo().sessions.create(user.id);
-  return c.json({ token: session.id, user: userToSessionWire(user, await canViewUpstreams(user)) });
+  return c.json({ token: session.id, user: await sessionUser(user) });
 };
 
 export const authLogout = async (c: AuthedContext) => {
@@ -60,7 +72,7 @@ export const authMe = async (c: AuthedContext) => {
   const sessionId = sessionIdFromContext(c);
   const apiKey = c.get('apiKey');
   return c.json({
-    user: userToSessionWire(user, await canViewUpstreams(user)),
+    user: await sessionUser(user),
     viaApiKey: !sessionId,
     apiKey: apiKey ? { id: apiKey.id, name: apiKey.name } : null,
   });

@@ -1,0 +1,77 @@
+import { createAccessResolver } from './resolution.ts';
+import type { AccessPrincipal, AccessRecord } from './types.ts';
+import { getRepo } from '../repo/index.ts';
+import type { User, UserDirectory } from '../repo/types.ts';
+
+export interface PermissionAuditContext {
+  directory: UserDirectory;
+  authorizationRecords: AccessRecord[];
+  userIds: ReadonlySet<number>;
+  directGroupIds: ReadonlySet<number>;
+  membershipGroupIds: ReadonlySet<number>;
+}
+
+const membershipsByUser = (directory: UserDirectory): Map<number, Set<number>> => {
+  const memberships = new Map(directory.users.map(user => [user.id, new Set<number>()]));
+  for (const group of directory.groups) {
+    for (const userId of group.memberIds) memberships.get(userId)?.add(group.id);
+  }
+  return memberships;
+};
+
+export const loadPermissionAuditContext = async (subject: User): Promise<PermissionAuditContext> => {
+  const repo = getRepo();
+  const directory = await repo.readUserDirectory();
+  if (subject.isAdmin) {
+    const groupIds = new Set(directory.groups.map(group => group.id));
+    return {
+      directory,
+      authorizationRecords: [],
+      userIds: new Set(directory.users.map(user => user.id)),
+      directGroupIds: groupIds,
+      membershipGroupIds: groupIds,
+    };
+  }
+
+  const memberships = membershipsByUser(directory);
+  const subjectGroupIds = memberships.get(subject.id) ?? new Set<number>();
+  const principals: AccessPrincipal[] = [
+    { kind: 'user', id: subject.id },
+    ...[...subjectGroupIds].map(id => ({ kind: 'group' as const, id })),
+  ];
+  const authorizationRecords = await repo.accessRecords.listByPrincipals(principals);
+  const resolver = createAccessResolver(authorizationRecords);
+  const userIds = new Set(directory.users.flatMap(user => resolver.satisfies(
+    { kind: 'user', userId: user.id },
+    memberships.get(user.id)!,
+    { permission: 'Permission.Audit' },
+    user.id === subject.id,
+  ) ? [user.id] : []));
+  const directGroupIds = new Set(directory.groups.flatMap(group => resolver.satisfies(
+    { kind: 'group', groupId: group.id },
+    new Set(),
+    { permission: 'Permission.Audit' },
+  ) ? [group.id] : []));
+  const membershipGroupIds = new Set(directory.groups
+    .filter(group => group.memberIds.some(userId => userIds.has(userId)))
+    .map(group => group.id));
+  return { directory, authorizationRecords, userIds, directGroupIds, membershipGroupIds };
+};
+
+export const canViewPermissions = async (subject: User): Promise<boolean> => {
+  if (subject.isAdmin) return true;
+  const context = await loadPermissionAuditContext(subject);
+  return context.userIds.size > 0 || context.directGroupIds.size > 0;
+};
+
+export const permissionAuditPrincipals = (context: PermissionAuditContext): AccessPrincipal[] => [
+  ...[...context.userIds].map(id => ({ kind: 'user' as const, id })),
+  ...[...context.directGroupIds].map(id => ({ kind: 'group' as const, id })),
+];
+
+export const permissionAuditSupportPrincipals = (context: PermissionAuditContext): AccessPrincipal[] => [
+  ...permissionAuditPrincipals(context),
+  ...[...context.membershipGroupIds]
+    .filter(id => !context.directGroupIds.has(id))
+    .map(id => ({ kind: 'group' as const, id })),
+];

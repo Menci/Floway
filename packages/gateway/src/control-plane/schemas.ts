@@ -633,7 +633,7 @@ export const resetBackoffBody = z.object({
 });
 
 export const proxyOptionsQuery = z.object({ upstream_id: z.string().min(1) });
-export const upstreamOptionsQuery = z.object({ view: z.enum(['key', 'audit', 'access', 'all']).optional() });
+export const upstreamOptionsQuery = z.object({ view: z.enum(['key', 'audit', 'all']).optional() });
 
 // --- search config ---
 

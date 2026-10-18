@@ -1,6 +1,6 @@
 import { Hono, type Next } from 'hono';
 
-import { createAccessRecord, deleteAccessRecord, listAccessRecords, reorderAccessRecords, resolveAccess, updateAccessRecord } from './access-control/routes.ts';
+import { createAccessRecord, deleteAccessRecord, getPermissionsData, listAccessRecords, reorderAccessRecords, resolveAccess, updateAccessRecord } from './access-control/routes.ts';
 import { AGENT_SETUP_ROUTE_PATH, agentSetupControlRoutes } from './agent-setup.ts';
 import { createKey, deleteKey, listKeys, rotateKey, updateKey } from './api-keys/routes.ts';
 import { authLogin, authLogout, authMe } from './auth/routes.ts';
@@ -96,12 +96,13 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
   // pairs with a logged-in dashboard session); admins reset other users'
   // passwords through PATCH /api/users/:id below, which is admin-gated.
   .patch('/api/users/me/password', zValidator('json', changeOwnPasswordBody), changeOwnPassword)
-  .get('/api/user-directory', getUserDirectory)
+  .get('/api/permissions', getPermissionsData)
   .get('/api/access-records', listAccessRecords)
   .post('/api/access-resolve', zValidator('json', resolveAccessBody), resolveAccess)
   .route('/api', new Hono<{ Variables: AuthVars }>()
     .use('*', adminOnlyMiddleware)
     .get('/users', listUsers)
+    .get('/user-directory', getUserDirectory)
     .post('/users', zValidator('json', createUserBody), createUser)
     .patch('/users/:id', zValidator('json', updateUserBody), updateUser)
     .delete('/users/:id', deleteUser)

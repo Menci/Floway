@@ -23,7 +23,7 @@ const gatewayForOperator = (input: RequestInfo | URL) => {
 
 describe('performance overview metadata', () => {
   it('reads upstream names from the ACL-scoped overview response', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewUpstreams: false } });
+    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false } });
     vi.stubGlobal('fetch', vi.fn(gatewayForOperator));
 
     const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance') } as never);
@@ -33,7 +33,7 @@ describe('performance overview metadata', () => {
   });
 
   it('keeps User grouping for a non-admin operator', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewUpstreams: false } });
+    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false } });
     vi.stubGlobal('fetch', vi.fn(gatewayForOperator));
 
     const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance?g=userId') } as never);
@@ -42,7 +42,7 @@ describe('performance overview metadata', () => {
   });
 
   it('makes API key grouping explicitly current-user scoped for an administrator', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'admin-session', user: { id: 1, username: 'admin', isAdmin: true, canViewUpstreams: true } });
+    useAuthStore.getState().primeFromLogin({ token: 'admin-session', user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true } });
     const performanceQueries: URL[] = [];
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
       const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
@@ -58,7 +58,7 @@ describe('performance overview metadata', () => {
   });
 
   it('re-reads a Node overview after removing stale Region URL state', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewUpstreams: false } });
+    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false } });
     const fetch = vi.fn(gatewayForOperator);
     vi.stubGlobal('fetch', fetch);
 
@@ -71,7 +71,7 @@ describe('performance overview metadata', () => {
   });
 
   it('keeps Region state on Cloudflare', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewUpstreams: false } });
+    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false } });
     const fetch = vi.fn((input: RequestInfo | URL) => {
       const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
       return path === '/api/runtime-info'
@@ -89,7 +89,7 @@ describe('performance overview metadata', () => {
   });
 
   it('preserves Region state when runtime capability cannot be determined', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewUpstreams: false } });
+    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false } });
     const fetch = vi.fn((input: RequestInfo | URL) => {
       const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
       return path === '/api/runtime-info'

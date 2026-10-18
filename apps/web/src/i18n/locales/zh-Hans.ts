@@ -305,7 +305,7 @@ const zhHansCN = {
         search: '搜索规则',
         noMatches: '没有匹配的规则',
         filters: { allPrincipals: '所有可见用户与用户组', noPrincipals: '没有匹配的用户或用户组', clearPrincipal: '清除用户或用户组筛选' },
-        columns: { 'Model.Use': '使用模型', 'Upstream.Audit': '审计上游', 'Upstream.Edit': '编辑上游', 'User.Audit': '审计用户' },
+        columns: { 'Model.Use': '使用模型', 'Upstream.Audit': '审计上游', 'Upstream.Edit': '编辑上游', 'User.Audit': '审计用户', 'Permission.Audit': '审计权限' },
         pagination: { previous: '上一页', next: '下一页', range: '{{from, number}} - {{to, number}} / {{total, number}}' },
         actions: { add: '新建规则', edit: '编辑规则', delete: '删除规则', save: '保存规则', refresh: '刷新权限', clearFilters: '清除筛选', removeScopeSegment: '移除范围最后一段', reorder: '调整规则顺序' },
         effective: {
@@ -327,7 +327,7 @@ const zhHansCN = {
           visual: '可视化', json: 'JSON', kind: '资源类型', instance: '资源', model: '模型', unknown: '未知 {{id}}',
           unknownLabel: '未知', unknownUpstreamId: '未知上游 ID "{{id}}"', unknownUserId: '未知用户 ID "{{id}}"', unknownGroupId: '未知用户组 ID "{{id}}"',
           noMatches: '没有匹配的资源',
-          kinds: { upstream: '上游', user: '用户', group: '用户组' },
+          kinds: { self: '自己', upstream: '上游', user: '用户', group: '用户组' },
         },
         principal: { user: '用户：{{name}}', group: '用户组：{{name}}' },
         permissions: {
@@ -335,6 +335,7 @@ const zhHansCN = {
           'Upstream.Audit': '归因上游遥测',
           'Upstream.Edit': '编辑上游',
           'User.Audit': '归因用户遥测',
+          'Permission.Audit': '审计被授予的权限与生效权限',
         },
         states: { inherit: '继承', inheritOn: '继承（开）', inheritOff: '继承（关）', inheritModels: '继承（仅模型）', inheritFull: '继承（完整）', on: '开', off: '关', models: '仅模型', full: '完整' },
         inheritance: {

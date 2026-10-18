@@ -13,7 +13,7 @@ stubLocalStorage();
 beforeEach(() => vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1100, 320)));
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
-const user = { id: 1, username: 'admin', isAdmin: true, canViewUpstreams: true };
+const user = { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true };
 const records: UpstreamRecord[] = ['First', 'Second'].map((name, index) => upstreamRecord(name.toLowerCase(), {
   name, kind: 'copilot', enabled: false, sort_order: index, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
   config: { githubHost: 'github.com', githubTokenSet: true, user: { id: index + 1, login: name.toLowerCase(), name, avatar_url: '' } },
@@ -192,7 +192,7 @@ it('opens telemetry for an audit-only row while keeping edit, switch, copy, dele
     if (url.pathname === '/api/upstream-metrics') return Response.json(metrics(url));
     throw new Error(`Unexpected request: ${url.pathname}`);
   }, withAccess(true, 'off'));
-  renderPage({ id: 2, username: 'auditor', isAdmin: false, canViewUpstreams: true }, withAccess(true, 'off'));
+  renderPage({ id: 2, username: 'auditor', isAdmin: false, canViewPermissions: false, canViewUpstreams: true }, withAccess(true, 'off'));
 
   const row = await screen.findByRole('row', { name: 'Usage and metrics for First' });
   expect(screen.queryByRole('link', { name: 'First' })).toBeNull();
@@ -212,7 +212,7 @@ it('shows a models row with models editing but a disabled switch and drag handle
     if (url.pathname === '/api/upstream-metrics') return Response.json(metrics(url));
     throw new Error(`Unexpected request: ${url.pathname}`);
   });
-  renderPage({ id: 2, username: 'model-editor', isAdmin: false, canViewUpstreams: true }, withAccess(false, 'models'));
+  renderPage({ id: 2, username: 'model-editor', isAdmin: false, canViewPermissions: false, canViewUpstreams: true }, withAccess(false, 'models'));
   expect(await screen.findByRole('link', { name: 'First' })).toBeTruthy();
   expect(screen.getByRole('switch', { name: 'Toggle upstream First' }).hasAttribute('disabled')).toBe(true);
   expect(screen.getByRole('button', { name: 'Reorder upstream First' }).hasAttribute('disabled')).toBe(true);

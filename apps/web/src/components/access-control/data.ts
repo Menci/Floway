@@ -10,19 +10,18 @@ export interface PermissionsData {
   error: string | null;
 }
 
-export interface PermissionsDataOptions {
-  admin: boolean;
-}
-
 export const unloadedPermissionsData: Omit<PermissionsData, 'error'> = { records: null, directory: null, models: null, upstreams: null };
 
-export const loadPermissionsData = async (current: Omit<PermissionsData, 'error'>, options: PermissionsDataOptions, signal?: AbortSignal): Promise<PermissionsData> => {
-  const [records, directory, models, upstreams] = await Promise.all([
-    callApi(() => api.api['access-records'].$get(undefined, { init: { signal } })),
-    callApi(() => api.api['user-directory'].$get(undefined, { init: { signal } })),
+export const loadPermissionsData = async (current: Omit<PermissionsData, 'error'>, signal?: AbortSignal): Promise<PermissionsData> => {
+  const [permissions, models] = await Promise.all([
+    callApi(() => api.api.permissions.$get(undefined, { init: { signal } })),
     callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } }, { init: { signal } })),
-    callApi(() => api.api['upstream-options'].$get({ query: { view: options.admin ? 'all' : 'access' } }, { init: { signal } })),
   ]);
-  const merged = mergeResults(current, { records, directory, models: mapResult(models, body => body.data), upstreams });
+  const merged = mergeResults(current, {
+    records: mapResult(permissions, body => body.records),
+    directory: mapResult(permissions, body => body.directory),
+    upstreams: mapResult(permissions, body => body.upstreams),
+    models: mapResult(models, body => body.data),
+  });
   return { ...merged.values, error: merged.error };
 };

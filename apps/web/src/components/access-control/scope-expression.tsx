@@ -17,7 +17,7 @@ import type { AccessScope } from '@floway-dev/gateway/browser';
 const { Option, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 
 type Part = 'kind' | 'instance' | 'model';
-type ScopeKind = 'upstream' | 'user' | 'group';
+type ScopeKind = 'self' | 'upstream' | 'user' | 'group';
 
 interface SegmentContextValue {
   onActivate: () => void;
@@ -67,13 +67,12 @@ function ScopeEditorSurface({ children, className, expressionRef, onActivate, on
   </div>;
 }
 
-export function ScopeExpression({ className, data, framed = false, kindHint, onChange, onNavigate, purpose = 'scope', readOnly = false, value }: {
+export function ScopeExpression({ className, data, framed = false, onChange, onNavigate, purpose = 'scope', readOnly = false, value }: {
   className?: string;
   data: ScopeExpressionData;
   framed?: boolean;
-  kindHint?: 'group';
-  onChange?: (value: AccessScope | null, kindHint?: 'group') => void;
-  onNavigate?: (value: AccessScope | null, kindHint?: 'group') => void;
+  onChange?: (value: AccessScope | null) => void;
+  onNavigate?: (value: AccessScope | null) => void;
   purpose?: 'scope' | 'filter';
   readOnly?: boolean;
   value: AccessScope | null;
@@ -94,7 +93,7 @@ export function ScopeExpression({ className, data, framed = false, kindHint, onC
     setQuery('');
     setDirty(false);
   }
-  const kind = (purpose === 'scope' ? pendingKind : null) ?? kindFor(value) ?? kindHint ?? null;
+  const kind = (purpose === 'scope' ? pendingKind : null) ?? kindFor(value);
   const interactive = !readOnly || onNavigate !== undefined;
 
   const resetInput = (nextActive: Part | null, nextQuery = '') => {
@@ -109,7 +108,7 @@ export function ScopeExpression({ className, data, framed = false, kindHint, onC
   };
   const activate = (part: Part) => {
     if (onNavigate) {
-      if (part === 'kind') onNavigate(kind === 'upstream' ? { kind: 'upstreams' } : kind === 'user' ? { kind: 'users' } : null, kind === 'group' ? 'group' : undefined);
+      if (part === 'kind') onNavigate(collectionScope(kind));
       else if (part === 'instance' && hasUpstreamInstance(value)) onNavigate({ kind: 'upstream', upstreamId: value.upstreamId });
       else onNavigate(value);
       return;
@@ -123,8 +122,12 @@ export function ScopeExpression({ className, data, framed = false, kindHint, onC
   };
   const commitKind = (nextKind: ScopeKind) => {
     if (nextKind !== kindFor(value) || purpose === 'filter') {
-      if (nextKind === 'group') onChange?.(null, 'group');
-      else onChange?.(nextKind === 'upstream' ? { kind: 'upstreams' } : { kind: 'users' });
+      onChange?.(collectionScope(nextKind));
+    }
+    if (nextKind === 'self') {
+      setPendingKind(null);
+      resetInput(null);
+      return;
     }
     setPendingKind(nextKind);
     resetInput('instance');
@@ -202,7 +205,7 @@ export function ScopeExpression({ className, data, framed = false, kindHint, onC
     regex={active === 'model' && value?.kind === 'upstreamModel' && value.model.kind === 'regex'}
   />;
   const hasInstance = instanceMatchesKind(kind, value);
-  const showInstance = kind !== null && (active === 'instance' || hasInstance || !readOnly);
+  const showInstance = kind !== null && kind !== 'self' && (active === 'instance' || hasInstance || !readOnly);
   const showModel = kind === 'upstream' && hasUpstreamInstance(value) && (active === 'model' || value.kind === 'upstreamModel' || !readOnly);
   const lastPart = showModel ? 'model' : showInstance ? 'instance' : 'kind';
   const removeLast = () => {
@@ -210,9 +213,9 @@ export function ScopeExpression({ className, data, framed = false, kindHint, onC
     if (value?.kind === 'upstreamModel') onChange?.({ kind: 'upstream', upstreamId: value.upstreamId });
     else if (value?.kind === 'upstream') onChange?.({ kind: 'upstreams' });
     else if (value?.kind === 'user') onChange?.({ kind: 'users' });
-    else if (value?.kind === 'group') onChange?.(null, 'group');
+    else if (value?.kind === 'group') onChange?.({ kind: 'groups' });
     else onChange?.(null);
-    setPendingKind(value?.kind === 'group' ? 'group' : null);
+    setPendingKind(null);
   };
 
   const expression = <div aria-label={interactive ? t('dashboard.accessControl.fields.scope') : undefined} className={mergeClasses('floway-scope-expression', !framed && className)} ref={expressionRef} role={interactive ? 'group' : undefined}
@@ -357,7 +360,7 @@ const optionsFor = (
   const custom: ScopeOption[] = [];
   const add = (option: ScopeOption, matches: boolean) => (matches ? matching : unmatched).push(option);
   if (active === 'kind') {
-    for (const candidate of ['user', 'upstream', 'group'] as const) {
+    for (const candidate of ['self', 'user', 'upstream', 'group'] as const) {
       const label = kindLabel(candidate, t);
       add({ key: candidate, value: candidate, text: label, content: label }, candidate.startsWith(needle) || label.toLowerCase().startsWith(needle));
     }
@@ -459,7 +462,9 @@ const kindFor = (scope: AccessScope | null): ScopeKind | null => scope?.kind ===
   ? 'upstream'
   : scope?.kind === 'users' || scope?.kind === 'user'
     ? 'user'
-    : scope?.kind === 'group' ? 'group' : null;
+    : scope?.kind === 'groups' || scope?.kind === 'group' ? 'group' : scope?.kind === 'self' ? 'self' : null;
+const collectionScope = (kind: ScopeKind | null): AccessScope | null => kind === 'upstream' ? { kind: 'upstreams' }
+  : kind === 'user' ? { kind: 'users' } : kind === 'group' ? { kind: 'groups' } : kind === 'self' ? { kind: 'self' } : null;
 const kindLabel = (kind: ScopeKind, t: TFunction) => t(`dashboard.accessControl.scope.kinds.${kind}`);
 const hasUpstreamInstance = (scope: AccessScope | null): scope is Extract<AccessScope, { kind: 'upstream' | 'upstreamModel' }> => scope?.kind === 'upstream' || scope?.kind === 'upstreamModel';
 const instanceMatchesKind = (kind: ScopeKind | null, scope: AccessScope | null) => kind === 'upstream'

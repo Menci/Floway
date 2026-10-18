@@ -79,9 +79,8 @@ const renderEditor = (initial: AccessScope | null = null, purpose: 'scope' | 'fi
   const changed = vi.fn();
   function Editor() {
     const [value, setValue] = useState(initial);
-    const [kindHint, setKindHint] = useState<'group'>();
     return <>
-      <ScopeEditor data={data} kindHint={kindHint} onChange={(next, hint) => { changed(next); setValue(next); setKindHint(hint); }} purpose={purpose} value={value} />
+      <ScopeEditor data={data} onChange={next => { changed(next); setValue(next); }} purpose={purpose} value={value} />
       <output data-testid="scope">{JSON.stringify(value)}</output>
     </>;
   }
@@ -151,7 +150,7 @@ test.each([
 test('removing a group keeps the Group prefix', () => {
   const { changed } = renderEditor({ kind: 'group', groupId: 3 });
   fireEvent.click(screen.getByRole('button', { name: 'Remove last scope segment' }));
-  expect(changed).toHaveBeenLastCalledWith(null);
+  expect(changed).toHaveBeenLastCalledWith({ kind: 'groups' });
   expect(screen.getByRole('button', { name: 'Group' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Resource' })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Remove last scope segment' }));
@@ -173,7 +172,7 @@ test.each(['exact', 'regex'] as const)('navigable %s scopes select prefixes with
   const scope = { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind, value: 'gpt-5' } } as const;
   const { container } = renderInApp(<ScopeExpression data={data} onNavigate={navigate} readOnly value={scope} />);
   fireEvent.click(screen.getByRole('button', { name: 'Upstream' }));
-  expect(navigate).toHaveBeenLastCalledWith({ kind: 'upstreams' }, undefined);
+  expect(navigate).toHaveBeenLastCalledWith({ kind: 'upstreams' });
   fireEvent.click(screen.getByRole('button', { name: 'Copilot' }));
   expect(navigate).toHaveBeenLastCalledWith({ kind: 'upstream', upstreamId: 'up_a' });
   fireEvent.click(container.querySelectorAll('.floway-scope-expression-slash')[2]!);
@@ -272,11 +271,20 @@ test('starts with a slash and an ellipsis button and puts matching resource type
 
   fireEvent.click(root);
   const input = screen.getByRole('combobox', { name: 'Resource type' });
-  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['User', 'Upstream', 'Group']);
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Self', 'User', 'Upstream', 'Group']);
   fireEvent.change(input, { target: { value: 'u' } });
-  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['User', 'Upstream', 'Group']);
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['User', 'Upstream', 'Self', 'Group']);
   fireEvent.change(input, { target: { value: 'Upstream' } });
-  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Upstream', 'User', 'Group']);
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Upstream', 'Self', 'User', 'Group']);
+});
+
+test('selecting Self commits a one-segment scope', () => {
+  renderEditor();
+  fireEvent.click(screen.getByRole('button', { name: 'Resource type' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Self' }));
+  expect(screen.getByTestId('scope').textContent).toBe('{"kind":"self"}');
+  expect(screen.getByRole('button', { name: 'Self' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Resource' })).toBeNull();
 });
 
 test('the read-only root has only a slash and no append button', () => {

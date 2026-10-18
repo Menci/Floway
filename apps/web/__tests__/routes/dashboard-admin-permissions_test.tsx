@@ -46,10 +46,8 @@ beforeEach(() => {
         })),
       });
     }
-    if (path === '/api/access-records') return Response.json(initial.records);
-    if (path === '/api/user-directory') return Response.json(initial.directory);
+    if (path === '/api/permissions') return Response.json({ records: initial.records, directory: initial.directory, upstreams: initial.upstreams });
     if (path === '/api/models') return Response.json({ data: initial.models });
-    if (path === '/api/upstream-options') return Response.json(initial.upstreams);
     throw new Error(`Unexpected request: ${path}`);
   }));
 });
@@ -65,35 +63,35 @@ const renderPage = (search = '', data = initial) => {
   return { ...renderInApp(<RouterProvider router={router} />), router };
 };
 
-const renderOperatorPage = (data: PermissionsData) => renderInApp(
-  <MemoryRouterProvider router={createMemoryRouter([{ path: '/permissions', Component: () => <OutcomeToastProvider><PermissionsWorkspace admin={false} initial={data} /></OutcomeToastProvider> }], { initialEntries: ['/permissions'] })} />,
+const renderOperatorPage = (data: PermissionsData, search = '') => renderInApp(
+  <MemoryRouterProvider router={createMemoryRouter([{ path: '/permissions', Component: () => <OutcomeToastProvider><PermissionsWorkspace admin={false} initial={data} /></OutcomeToastProvider> }], { initialEntries: [`/permissions${search}`] })} />,
 );
 
-test('an operator sees a read-only self view with only self and joined groups in the principal picker', async () => {
+test('an operator sees every authorized principal in a read-only view', async () => {
   const view = renderOperatorPage(initial);
   const table = await screen.findByRole('table');
   expect(within(table).queryByRole('button', { name: 'Edit rule' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'New rule' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Delete rule' })).toBeNull();
-  await waitFor(() => expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Applies to' }).value).toBe('alice'));
+  await waitFor(() => expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Applies to' }).value).toBe('All visible principals'));
   const picker = screen.getByRole('combobox', { name: 'Applies to' });
   fireEvent.click(picker);
   expect(await screen.findByRole('option', { name: /alice/ })).toBeTruthy();
   expect(await screen.findByRole('option', { name: /Platform/ })).toBeTruthy();
-  expect(screen.queryByRole('option', { name: 'All visible principals' })).toBeNull();
+  expect(screen.getByRole('option', { name: 'All visible principals' })).toBeTruthy();
   expect(view.container.querySelectorAll('[data-rule-id]')).toHaveLength(3);
 });
 
-test('an operator clears a selected group back to the default self filter', async () => {
+test('an operator clears a selected principal back to all visible principals', async () => {
   renderOperatorPage(initial);
   const picker = screen.getByRole<HTMLInputElement>('combobox', { name: 'Applies to' });
-  await waitFor(() => expect(picker.value).toBe('alice'));
+  await waitFor(() => expect(picker.value).toBe('All visible principals'));
   expect(screen.queryByRole('button', { name: 'Clear user or group filter' })).toBeNull();
   fireEvent.click(picker);
   fireEvent.click(await screen.findByRole('option', { name: /Platform/ }));
   await waitFor(() => expect(picker.value).toBe('Platform'));
   fireEvent.click(screen.getByRole('button', { name: 'Clear user or group filter' }));
-  await waitFor(() => expect(picker.value).toBe('alice'));
+  await waitFor(() => expect(picker.value).toBe('All visible principals'));
   expect(screen.queryByRole('button', { name: 'Clear user or group filter' })).toBeNull();
 });
 
@@ -124,17 +122,65 @@ test('target-only identities render in rules without entering the principal pick
   expect(screen.queryByRole('option', { name: /Review Subjects/ })).toBeNull();
 });
 
-test('the permissions loader stays on the page for an operator and asks for access-scoped upstream metadata', async () => {
+test('an audited user sees membership-group rules only as effective sources, never as an Applies-to choice', async () => {
+  const data: PermissionsData = {
+    ...initial,
+    directory: {
+      users: [{ id: 3, username: 'bob', isAdmin: false, createdAt: '', groupIds: [2] }],
+      groups: [{ id: 2, name: 'Review Subjects', hue: 180, memberIds: [3], createdAt: '', deletedAt: null }],
+      principalUserIds: [3],
+      principalGroupIds: [],
+    },
+    records: [
+      { id: 5, principal: { kind: 'user', id: 3 }, scope, sortOrder: 0, values: { 'Model.Use': true }, createdAt: '', updatedAt: '' },
+    ],
+  };
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const path = new URL(String(input), 'http://localhost').pathname;
+    if (path === '/api/permissions') return Response.json({ records: data.records, directory: data.directory, upstreams: data.upstreams });
+    if (path === '/api/models') return Response.json({ data: [] });
+    if (path === '/api/access-resolve') return Response.json({
+      records: [
+        data.records![0],
+        { id: 6, principal: { kind: 'group', id: 2 }, scope, sortOrder: 0, values: { 'Model.Use': true }, createdAt: '', updatedAt: '' },
+      ],
+      values: { 'Model.Use': true, 'Upstream.Audit': false, 'Upstream.Edit': 'off' },
+      decisions: [
+        { recordId: 5, permissions: { 'Model.Use': { kind: 'effective' } } },
+        { recordId: 6, permissions: { 'Model.Use': { kind: 'effective' } } },
+      ],
+    });
+    throw new Error(`Unexpected request: ${path}`);
+  }));
+  const { container } = renderOperatorPage(data, `?principal=user:3&scope=${encodeURIComponent(JSON.stringify(scope))}&effective=true`);
+  await screen.findByRole('table');
+  await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(2));
+  expect(within(container.querySelector('[data-rule-id="6"]') as HTMLElement).getByText('Review Subjects')).toBeTruthy();
+  const picker = screen.getByRole('combobox', { name: 'Applies to' });
+  fireEvent.click(picker);
+  expect(await screen.findByRole('option', { name: /bob/ })).toBeTruthy();
+  expect(screen.queryByRole('option', { name: /Review Subjects/ })).toBeNull();
+});
+
+test('the permissions loader stays on the page for an authorized operator and requests one permission snapshot', async () => {
   useAuthStore.getState().primeFromLogin({
     token: 'operator-session',
-    user: { id: 2, username: 'alice', isAdmin: false, canViewUpstreams: false },
+    user: { id: 2, username: 'alice', isAdmin: false, canViewPermissions: true, canViewUpstreams: false },
   });
   const data = await clientLoader();
   expect(data.admin).toBe(false);
-  const upstreamRequest = vi.mocked(fetch).mock.calls
+  const requests = vi.mocked(fetch).mock.calls
     .map(([input]) => new URL(String(input), 'http://localhost'))
-    .find(url => url.pathname === '/api/upstream-options');
-  expect(upstreamRequest?.searchParams.get('view')).toBe('access');
+    .map(url => url.pathname);
+  expect(requests).toEqual(['/api/permissions', '/api/models']);
+});
+
+test('the permissions loader redirects an operator without Permission.Audit', async () => {
+  useAuthStore.getState().primeFromLogin({
+    token: 'operator-session',
+    user: { id: 2, username: 'alice', isAdmin: false, canViewPermissions: false, canViewUpstreams: false },
+  });
+  await expect(clientLoader()).rejects.toMatchObject({ status: 302 });
 });
 
 test('a non-admin URL naming an invisible principal never requests that principal\'s rules', async () => {
@@ -148,7 +194,7 @@ test('a non-admin URL naming an invisible principal never requests that principa
     Component: () => <OutcomeToastProvider><PermissionsWorkspace key="mounted" admin={false} initial={visible} /></OutcomeToastProvider>,
   }], { initialEntries: ['/permissions?principal=user:1'] });
   renderInApp(<MemoryRouterProvider router={router} />);
-  await waitFor(() => expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Applies to' }).value).toBe('Unknown 1'), { timeout: 6_000 });
+  await waitFor(() => expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Applies to' }).value).toBe('All visible principals'), { timeout: 6_000 });
   expect(vi.mocked(fetch).mock.calls.every(([input]) => !String(input).includes('/access-resolve'))).toBe(true);
 });
 
@@ -158,7 +204,7 @@ test('a non-admin URL naming a group the operator does not belong to is normaliz
     Component: () => <OutcomeToastProvider><PermissionsWorkspace key="mounted" admin={false} initial={initial} /></OutcomeToastProvider>,
   }], { initialEntries: ['/permissions?principal=group:99'] });
   renderInApp(<MemoryRouterProvider router={router} />);
-  await waitFor(() => expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Applies to' }).value).toBe('Unknown 99'), { timeout: 6_000 });
+  await waitFor(() => expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Applies to' }).value).toBe('All visible principals'), { timeout: 6_000 });
   expect(vi.mocked(fetch).mock.calls.every(([input]) => !String(input).includes('/access-resolve'))).toBe(true);
 });
 
@@ -339,18 +385,18 @@ test('table scope navigation discards an active draft and cancels its deferred b
   expect(within(filters).queryByRole('combobox', { name: 'Model' })).toBeNull();
 });
 
-test('the Group scope prefix filters group scopes through URL state', async () => {
+test('the Group scope prefix filters group scopes through a real /Groups URL scope', async () => {
   const data: PermissionsData = { ...initial, records: [...initial.records!, { ...initial.records![0]!, id: 4, scope: { kind: 'group', groupId: 1 }, values: { 'User.Audit': true } }] };
   const { container, router } = renderPage('', data);
   await screen.findByRole('table');
   const row = container.querySelector('[data-rule-id="4"]') as HTMLElement;
   await act(async () => { fireEvent.click(within(row).getByRole('button', { name: 'Group' })); });
-  await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('scopeKind')).toBe('group'));
+  await waitFor(() => expect(JSON.parse(new URLSearchParams(router.state.location.search).get('scope')!)).toEqual({ kind: 'groups' }));
   expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(1);
   expect(container.querySelector('[data-rule-id="4"]')).toBeTruthy();
   expect(within(container.querySelector('[data-permission-filters]') as HTMLElement).getByRole('button', { name: 'Group' })).toBeTruthy();
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Remove last scope segment' })); });
-  await waitFor(() => expect(new URLSearchParams(router.state.location.search).has('scopeKind')).toBe(false));
+  await waitFor(() => expect(new URLSearchParams(router.state.location.search).has('scope')).toBe(false));
   expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(4);
 });
 
@@ -445,7 +491,7 @@ test.each([false, true])('refresh preserves the table through base and effective
   let finishResolution!: () => Promise<void>;
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const path = new URL(String(input), 'http://localhost').pathname;
-    if (path === '/api/access-records') return new Promise<Response>(resolve => { finishRecords = async () => resolve(await fetch(input, init)); });
+    if (path === '/api/permissions') return new Promise<Response>(resolve => { finishRecords = async () => resolve(await fetch(input, init)); });
     if (path === '/api/access-resolve') return new Promise<Response>(resolve => { finishResolution = async () => resolve(await fetch(input, init)); });
     return fetch(input, init);
   }));

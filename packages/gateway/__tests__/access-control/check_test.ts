@@ -99,6 +99,56 @@ test('a user may always audit themselves without an ACL record', async () => {
   expect(await check(subject, { kind: 'user', userId: subject.id + 1 }, { permission: 'User.Audit' })).toBe(false);
 });
 
+test('/Self Permission.Audit overrides a concrete self-user denial', async () => {
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: subject.id },
+    scope: { kind: 'user', userId: subject.id },
+    sortOrder: 0,
+    values: { 'Permission.Audit': false },
+  });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: subject.id },
+    scope: { kind: 'self' },
+    sortOrder: 0,
+    values: { 'Permission.Audit': true },
+  });
+
+  expect(await check(subject, { kind: 'user', userId: subject.id }, { permission: 'Permission.Audit' })).toBe(true);
+});
+
+test('Permission.Audit on a group does not expose its members', async () => {
+  const targetGroup = await repo.groups.create('reviewed', 120);
+  await repo.groups.replaceMembers(targetGroup.id, [7]);
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: subject.id },
+    scope: { kind: 'group', groupId: targetGroup.id },
+    sortOrder: 0,
+    values: { 'Permission.Audit': true },
+  });
+
+  expect(await check(subject, { kind: 'group', groupId: targetGroup.id }, { permission: 'Permission.Audit' })).toBe(true);
+  expect(await check(subject, { kind: 'user', userId: 7 }, { permission: 'Permission.Audit' })).toBe(false);
+});
+
+test('/Users and /Groups Permission.Audit target separate identity families', async () => {
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: subject.id },
+    scope: { kind: 'users' },
+    sortOrder: 0,
+    values: { 'Permission.Audit': true },
+  });
+  expect(await check(subject, { kind: 'user', userId: 7 }, { permission: 'Permission.Audit' })).toBe(true);
+  expect(await check(subject, { kind: 'group', groupId: 7 }, { permission: 'Permission.Audit' })).toBe(false);
+
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: subject.id },
+    scope: { kind: 'groups' },
+    sortOrder: 0,
+    values: { 'Permission.Audit': true },
+  });
+  expect(await check(subject, { kind: 'group', groupId: 7 }, { permission: 'Permission.Audit' })).toBe(true);
+});
+
 test('Upstream.Edit levels compare against the requested minimum', async () => {
   await repo.accessRecords.save({
     principal: { kind: 'user', id: subject.id },

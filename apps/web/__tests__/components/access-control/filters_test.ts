@@ -30,7 +30,7 @@ test('removes each malformed filter in one normalization and preserves unrelated
 const validFilters: Record<string, string>[] = [
   { principal: 'group:999', scope: JSON.stringify({ kind: 'upstream', upstreamId: 'deleted' }), effective: 'true' },
   { principal: 'user:2', scope: JSON.stringify({ kind: 'upstreamModel', upstreamId: 'a', model: { kind: 'exact', value: 'unlisted-model' } }) },
-  { principal: 'user:2', scopeKind: 'group' },
+  { principal: 'user:2', scope: JSON.stringify({ kind: 'groups' }) },
   { principal: 'user:2' },
   {},
 ];

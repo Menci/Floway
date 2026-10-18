@@ -32,7 +32,8 @@ export const permissionSearchText = (record: AccessRecord, data: ScopeExpression
       : scope.kind === 'upstream' || scope.kind === 'upstreamModel' ? data.upstreams.find(upstream => upstream.id === scope.upstreamId)?.name : '';
   return [
     principalName(record.principal, data), scope.kind, scopeKey(scope), target,
-    t(`dashboard.accessControl.scope.kinds.${scope.kind.startsWith('upstream') ? 'upstream' : scope.kind === 'group' ? 'group' : 'user'}`),
+    t(`dashboard.accessControl.scope.kinds.${scope.kind.startsWith('upstream') ? 'upstream'
+      : scope.kind === 'self' ? 'self' : scope.kind === 'groups' || scope.kind === 'group' ? 'group' : 'user'}`),
     scope.kind === 'upstreamModel' ? scope.model.value : '',
     ...Object.keys(record.values).flatMap(key => {
       const permission = key as AccessPermission;

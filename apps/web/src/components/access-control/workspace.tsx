@@ -54,12 +54,11 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
   }
   const editor = useDialogInvocation<{ record?: AccessRecord; principal?: AccessPrincipal; scope?: AccessScope }>();
   const reload = async (signal: AbortSignal) => {
-    const next = await loadPermissionsData(data, { admin }, signal);
+    const next = await loadPermissionsData(data, signal);
     if (!signal.aborted) { setData(next); setError(next.error); }
   };
   const { refresh, refreshing } = useRefresh(reload);
   const query = params.get('q') ?? '';
-  const scopeKind = params.get('scopeKind') === 'group' && scope === null ? 'group' : undefined;
   const scopeData = useMemo<ScopeExpressionData>(() => ({
     users: data.directory?.users ?? [], groups: data.directory?.groups ?? [],
     models: data.models ?? [], upstreams: data.upstreams ?? [],
@@ -69,61 +68,42 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
     users: scopeData.users.filter(user => data.directory?.principalUserIds.includes(user.id)),
     groups: scopeData.groups.filter(group => data.directory?.principalGroupIds.includes(group.id)),
   }), [data.directory, scopeData]);
-  const scopedPrincipal = useMemo(
-    () => principal ?? (!admin && principalData.users[0] !== undefined ? { kind: 'user' as const, id: principalData.users[0].id } : null),
-    [admin, principal, principalData.users],
-  );
+  const scopedPrincipal = principal;
   const effectiveUnavailable = scopedPrincipal === null || scope === null;
   const showEffective = !effectiveUnavailable && params.get('effective') === 'true';
   useEffect(() => {
     if (navigation.location !== undefined) return;
     const normalized = normalizeFilters(committedParams);
-    if (normalized.params.toString() === committedParams.toString()) {
-      if (!admin && principal === null) {
-        const self = principalData.users[0];
-        if (self !== undefined) {
-          const next = new URLSearchParams(normalized.params);
-          next.set('principal', principalKey({ kind: 'user', id: self.id }));
-          setParams(next, { replace: true, state: location.state });
-        }
-      }
-      return;
-    }
     if (!admin && principal !== null && normalized.params.has('principal')
       && (principal.kind === 'user'
         ? !principalData.users.some(user => user.id === principal.id)
         : !principalData.groups.some(group => group.id === principal.id))) {
       const next = new URLSearchParams(normalized.params);
-      const self = principalData.users[0];
-      if (self === undefined) next.delete('principal');
-      else next.set('principal', principalKey({ kind: 'user', id: self.id }));
+      next.delete('principal');
+      next.delete('effective');
       setParams(next, { replace: true, state: location.state });
       return;
     }
+    if (normalized.params.toString() === committedParams.toString()) return;
     setParams(normalized.params, { replace: true, state: location.state });
   }, [admin, committedParams, location.state, navigation.location, principal, principalData.groups, principalData.users, setParams]);
   const updateParams = (change: (next: URLSearchParams) => void, replace = false) => {
     const next = new URLSearchParams(params);
     if (effectiveUnavailable) next.delete('effective');
     change(next);
-    if (!admin && next.get('principal') === null) {
-      const only = principalData.users[0];
-      if (only !== undefined) next.set('principal', principalKey({ kind: 'user', id: only.id }));
-    }
     setParams(normalizeFilters(next).params, { replace, flushSync: true, ...(replace ? { state: location.state } : {}) });
   };
   const setFilter = (name: 'q' | 'effective', value: string | null, replace = false) => updateParams(next => {
     if (value === null) next.delete(name); else next.set(name, value);
     next.delete('page');
   }, replace);
-  const selectScope = (scope: AccessScope | null, kindHint?: 'group') => updateParams(next => {
+  const selectScope = (scope: AccessScope | null) => updateParams(next => {
     if (scope === null) next.delete('scope'); else next.set('scope', JSON.stringify(scope));
-    if (kindHint === undefined) next.delete('scopeKind'); else next.set('scopeKind', kindHint);
     next.delete('page');
   });
-  const navigateScope = (scope: AccessScope | null, kindHint?: 'group') => {
+  const navigateScope = (scope: AccessScope | null) => {
     setScopeEditorState(current => ({ ...current, revision: current.revision + 1 }));
-    selectScope(scope, kindHint);
+    selectScope(scope);
   };
   const loaded = data.records !== null && data.directory !== null && data.models !== null && data.upstreams !== null;
   const resolution = useAccessResolution({ enabled: showEffective && loaded && !refreshing, principal: scopedPrincipal, scope, revision: data.records });
@@ -131,14 +111,14 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
   const busy = loading || reordering || removing || resolution.error !== null;
   const search = params.toString();
   const view = useMemo(() => {
-    const selection = selectPermissionRules({ records: (data.records ?? []).filter(record => scopeKind !== 'group' || record.scope.kind === 'group'), principal: scopedPrincipal, scope, showEffective, data: scopeData, resolution: resolution.data });
+    const selection = selectPermissionRules({ records: data.records ?? [], principal: scopedPrincipal, scope, showEffective, data: scopeData, resolution: resolution.data });
     const filtered = selection.records.filter(record => permissionSearchText(record, scopeData, t).includes(query.trim().toLowerCase()));
     const viewParams = new URLSearchParams(search);
     const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
     const requestedPage = Number(viewParams.get('page') ?? 1);
     const page = Number.isInteger(requestedPage) && requestedPage > 0 ? Math.min(requestedPage, totalPages) : 1;
     return { records: filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), decisions: selection.decisions, data: scopeData, params: viewParams, page, totalPages, total: filtered.length, empty: data.records?.length === 0 };
-  }, [data.records, scopedPrincipal, query, resolution.data, scope, scopeData, scopeKind, search, showEffective, t]);
+  }, [data.records, scopedPrincipal, query, resolution.data, scope, scopeData, search, showEffective, t]);
   const snapshot = { view, source: { data, search, resolution: resolution.data, language: i18n.language } };
   const [displayed, setDisplayed] = useState<typeof snapshot | null>(loaded ? snapshot : null);
   const keepDisplayed = loading || resolution.error !== null;
@@ -203,15 +183,15 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
     {resolution.error && <OutcomeMessageBar>{resolution.error}</OutcomeMessageBar>}
     <div className="flex items-end gap-3 flex-wrap" data-permission-filters="">
       <Field className="w-[240px] max-w-full" label={t('dashboard.accessControl.fields.principal')}><PrincipalPicker
-        clearable={admin || principal?.kind === 'group'}
-        data={principalData} disabled={!loaded} includeAll={admin} label={t('dashboard.accessControl.fields.principal')} onChange={next => updateParams(nextParams => {
+        clearable={principal !== null}
+        data={principalData} disabled={!loaded} includeAll label={t('dashboard.accessControl.fields.principal')} onChange={next => updateParams(nextParams => {
           if (next === null) nextParams.delete('principal'); else nextParams.set('principal', principalKey(next));
           nextParams.delete('page');
         })} value={principal}
       /></Field>
       <div className="flex flex-wrap items-end gap-3 flex-[1_1_auto] min-w-0 max-w-full">
         <Field className="w-max min-w-0 max-w-full" label={t('dashboard.accessControl.fields.scope')}>
-          <ScopeEditor data={scopeData} key={scopeEditorState.revision} kindHint={scopeKind} onChange={selectScope} purpose="filter" readOnly={!loaded} value={scope} />
+          <ScopeEditor data={scopeData} key={scopeEditorState.revision} onChange={selectScope} purpose="filter" readOnly={!loaded} value={scope} />
         </Field>
         <div className="min-h-[34px] flex items-center flex-none"><SwitchSetting
           checked={showEffective}
@@ -233,7 +213,7 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
     {!loaded ? <EmptyState title={t('dashboard.pages.unavailable')} /> : <>
       <ResourceListPanel>
         {results.records.length === 0 ? <EmptyState
-          action={results.empty ? admin ? <Button appearance="primary" disabled={busy} icon={<AddRegular />} onClick={create}>{t('dashboard.accessControl.actions.add')}</Button> : null : <Button disabled={busy} onClick={() => updateParams(next => { for (const key of ['q', 'principal', 'scope', 'scopeKind', 'effective', 'page']) next.delete(key); })}>{t('dashboard.accessControl.actions.clearFilters')}</Button>}
+          action={results.empty ? admin ? <Button appearance="primary" disabled={busy} icon={<AddRegular />} onClick={create}>{t('dashboard.accessControl.actions.add')}</Button> : null : <Button disabled={busy} onClick={() => updateParams(next => { for (const key of ['q', 'principal', 'scope', 'effective', 'page']) next.delete(key); })}>{t('dashboard.accessControl.actions.clearFilters')}</Button>}
           title={t(results.empty ? 'dashboard.accessControl.empty' : 'dashboard.accessControl.noMatches')}
         /> : <RulesTable admin={admin} busy={busy} data={results.data} decisions={results.decisions} onEdit={record => editor.open({ record })} onRemove={remove} onReorder={reorder} onReordered={commitReorder} onReorderError={rejectReorder} onScopeSelect={navigateScope} params={results.params} records={results.records} />}
       </ResourceListPanel>

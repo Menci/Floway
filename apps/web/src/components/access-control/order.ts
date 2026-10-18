@@ -2,15 +2,18 @@ import { scopeDepth } from './scope';
 import type { AccessRecord } from '../../api/types';
 import type { AccessScope } from '@floway-dev/gateway/browser';
 
-const family = (scope: AccessScope) => scope.kind.startsWith('upstream') ? 0 : scope.kind === 'group' ? 2 : 1;
+const family = (scope: AccessScope) => scope.kind.startsWith('upstream') ? 0
+  : scope.kind === 'self' ? 1 : scope.kind === 'users' || scope.kind === 'user' ? 2 : 3;
 const resource = (scope: AccessScope): string => {
   switch (scope.kind) {
   case 'upstreamModel':
   case 'upstream': return scope.upstreamId;
   case 'user': return String(scope.userId);
   case 'group': return String(scope.groupId);
+  case 'self':
   case 'upstreams':
-  case 'users': return '';
+  case 'users':
+  case 'groups': return '';
   }
 };
 

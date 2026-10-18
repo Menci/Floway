@@ -7,19 +7,22 @@ export type ModelPattern =
   | { kind: 'regex'; value: string };
 
 export type AccessScope =
+  | { kind: 'self' }
   | { kind: 'upstreams' }
   | { kind: 'upstream'; upstreamId: string }
   | { kind: 'upstreamModel'; upstreamId: string; model: ModelPattern }
   | { kind: 'users' }
   | { kind: 'user'; userId: number }
+  | { kind: 'groups' }
   | { kind: 'group'; groupId: number };
 
 export type AccessTarget =
   | { kind: 'upstream'; upstreamId: string }
   | { kind: 'upstreamModel'; upstreamId: string; modelId: string }
-  | { kind: 'user'; userId: number };
+  | { kind: 'user'; userId: number }
+  | { kind: 'group'; groupId: number };
 
-export type AccessPermission = 'Model.Use' | 'Upstream.Audit' | 'Upstream.Edit' | 'User.Audit';
+export type AccessPermission = 'Model.Use' | 'Upstream.Audit' | 'Upstream.Edit' | 'User.Audit' | 'Permission.Audit';
 export type UpstreamEditLevel = 'off' | 'models' | 'full';
 export const upstreamEditLevelRank: Record<UpstreamEditLevel, number> = { off: 0, models: 1, full: 2 };
 
@@ -28,6 +31,7 @@ export interface AccessValues {
   'Upstream.Audit'?: boolean;
   'Upstream.Edit'?: UpstreamEditLevel;
   'User.Audit'?: boolean;
+  'Permission.Audit'?: boolean;
 }
 
 export interface AccessRecord {
@@ -66,7 +70,7 @@ export const sameModelOrderBoundary = (left: AccessRecordInput, right: AccessRec
   && left.principal.kind === right.principal.kind && left.principal.id === right.principal.id;
 
 export type AccessRequirement =
-  | { permission: 'Model.Use' | 'Upstream.Audit' | 'User.Audit' }
+  | { permission: 'Model.Use' | 'Upstream.Audit' | 'User.Audit' | 'Permission.Audit' }
   | { permission: 'Upstream.Edit'; level: Exclude<UpstreamEditLevel, 'off'> };
 
 export interface AccessCheck {
@@ -80,8 +84,10 @@ export const accessScopeKey = (scope: AccessScope): string => {
   case 'upstreamModel': return JSON.stringify([scope.kind, scope.upstreamId, scope.model.kind, scope.model.value]);
   case 'user': return JSON.stringify([scope.kind, scope.userId]);
   case 'group': return JSON.stringify([scope.kind, scope.groupId]);
+  case 'self':
   case 'upstreams':
-  case 'users': return scope.kind;
+  case 'users':
+  case 'groups': return scope.kind;
   }
 };
 
@@ -91,15 +97,19 @@ export const canonicalAccessScope = (scope: AccessScope): AccessScope => {
   case 'upstreamModel': return { kind: scope.kind, upstreamId: scope.upstreamId, model: { kind: scope.model.kind, value: scope.model.value } };
   case 'user': return { kind: scope.kind, userId: scope.userId };
   case 'group': return { kind: scope.kind, groupId: scope.groupId };
+  case 'self':
   case 'upstreams':
-  case 'users': return { kind: scope.kind };
+  case 'users':
+  case 'groups': return { kind: scope.kind };
   }
 };
 
 export const accessScopeDepth = (scope: AccessScope): number => {
   switch (scope.kind) {
+  case 'self': return 4;
   case 'upstreams':
-  case 'users': return 1;
+  case 'users':
+  case 'groups': return 1;
   case 'upstream':
   case 'user':
   case 'group': return 2;
@@ -109,23 +119,27 @@ export const accessScopeDepth = (scope: AccessScope): number => {
 
 export const accessScopeOrderGroup = (scope: AccessScope): string => {
   switch (scope.kind) {
+  case 'self': return 'self';
   case 'upstreams':
   case 'upstream': return 'upstream';
   case 'upstreamModel': return `upstream:${scope.upstreamId}`;
   case 'users':
-  case 'user':
-  case 'group': return 'user';
+  case 'user': return 'user';
+  case 'groups':
+  case 'group': return 'group';
   }
 };
 
 export const permissionsForScope = (scope: AccessScope): readonly AccessPermission[] => {
   switch (scope.kind) {
+  case 'self': return ['Permission.Audit'];
   case 'upstreams':
   case 'upstream': return ['Model.Use', 'Upstream.Audit', 'Upstream.Edit'];
   case 'upstreamModel': return ['Model.Use'];
   case 'users':
   case 'user':
-  case 'group': return ['User.Audit'];
+  case 'groups':
+  case 'group': return ['User.Audit', 'Permission.Audit'];
   }
 };
 

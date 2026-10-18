@@ -1,12 +1,10 @@
 import { userToAdminWire } from './wire.ts';
-import { createAccessResolver } from '../../access-control/resolution.ts';
-import type { AccessRecord } from '../../access-control/types.ts';
 import { notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type AuthedContext, sessionIdFromContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { SEED_ADMIN_USER_ID } from '../../repo/seed-admin.ts';
-import type { ApiKey, User, UserDirectory } from '../../repo/types.ts';
+import type { ApiKey, User } from '../../repo/types.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import { generateServerSecret } from '../../shared/server-secret.ts';
@@ -31,64 +29,18 @@ export const listUsers = async (c: AuthedContext) => {
   return c.json(users.map(user => userToAdminWire(user, groupIdsByUser.get(user.id)!)));
 };
 
-const projectUserDirectory = (
-  directory: UserDirectory,
-  actor: User,
-  actorGroupIds: readonly number[],
-  records: readonly AccessRecord[],
-) => {
-  if (actor.isAdmin) {
-    return {
-      users: directory.users,
-      groups: directory.groups,
-      principalUserIds: directory.users.map(user => user.id),
-      principalGroupIds: directory.groups.map(group => group.id),
-    };
-  }
-
-  const targetUserIds = new Set(records.flatMap(record => record.scope.kind === 'user' ? [record.scope.userId] : []));
-  const targetGroupIds = new Set(records.flatMap(record => record.scope.kind === 'group' ? [record.scope.groupId] : []));
-  const visibleGroupIds = new Set([...actorGroupIds, ...targetGroupIds]);
-  const groups = directory.groups
-    .filter(group => visibleGroupIds.has(group.id))
-    .map(group => targetGroupIds.has(group.id) ? group : { ...group, memberIds: group.memberIds.filter(id => id === actor.id) });
-  const targetGroupMemberIds = groups.flatMap(group => targetGroupIds.has(group.id) ? group.memberIds : []);
-  const memberships = new Map(directory.users.map(user => [user.id, new Set<number>()]));
-  for (const group of directory.groups) for (const userId of group.memberIds) memberships.get(userId)?.add(group.id);
-  const resolver = createAccessResolver(records);
-  const auditableUserIds = directory.users.flatMap(user => resolver.satisfies(
-    { kind: 'user', userId: user.id },
-    memberships.get(user.id)!,
-    { permission: 'User.Audit' },
-  ) ? [user.id] : []);
-  const visibleUserIds = new Set([actor.id, ...auditableUserIds, ...targetUserIds, ...targetGroupMemberIds]);
-  const users = directory.users.filter(user => visibleUserIds.has(user.id));
-  return {
-    users,
-    groups,
-    principalUserIds: [actor.id],
-    principalGroupIds: [...actorGroupIds],
-  };
-};
-
 export const getUserDirectory = async (c: AuthedContext) => {
   const repo = getRepo();
-  const actor = userFromContext(c);
-  const [directory, actorGroupIds] = await Promise.all([repo.readUserDirectory(), repo.groups.listIdsByUserId(actor.id)]);
-  const principals = actor.isAdmin
-    ? null
-    : [{ kind: 'user' as const, id: actor.id }, ...actorGroupIds.map(id => ({ kind: 'group' as const, id }))];
-  const records = principals === null ? await repo.accessRecords.list() : await repo.accessRecords.listByPrincipals(principals);
-  const projected = projectUserDirectory(directory, actor, actorGroupIds, records);
-  const groupIdsByUser = new Map(projected.users.map(user => [user.id, [] as number[]]));
-  for (const group of projected.groups) {
+  const directory = await repo.readUserDirectory();
+  const groupIdsByUser = new Map(directory.users.map(user => [user.id, [] as number[]]));
+  for (const group of directory.groups) {
     for (const userId of group.memberIds) groupIdsByUser.get(userId)!.push(group.id);
   }
   return c.json({
-    users: projected.users.map(user => userToAdminWire(user, groupIdsByUser.get(user.id)!)),
-    groups: projected.groups,
-    principalUserIds: projected.principalUserIds,
-    principalGroupIds: projected.principalGroupIds,
+    users: directory.users.map(user => userToAdminWire(user, groupIdsByUser.get(user.id)!)),
+    groups: directory.groups,
+    principalUserIds: directory.users.map(user => user.id),
+    principalGroupIds: directory.groups.map(group => group.id),
   });
 };
 

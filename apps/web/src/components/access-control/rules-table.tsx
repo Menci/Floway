@@ -40,7 +40,7 @@ interface RulesTableProps {
   onReorder: (ids: number[], from: number, to: number) => Promise<AccessRecord[]>;
   onReordered: (records: AccessRecord[]) => void;
   onReorderError: (error: unknown) => void | Promise<void>;
-  onScopeSelect: (scope: AccessScope | null, kindHint?: 'group') => void;
+  onScopeSelect: (scope: AccessScope | null) => void;
   params: URLSearchParams;
   records: AccessRecord[];
 }

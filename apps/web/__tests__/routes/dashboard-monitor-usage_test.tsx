@@ -207,7 +207,7 @@ describe('usage dimension controls', () => {
   it('loads the overview contract and derives Search scope from the actor', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'admin-session',
-      user: { id: 1, username: 'admin', isAdmin: true, canViewUpstreams: true },
+      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true },
     });
     stubUsageGateway();
 
@@ -221,7 +221,7 @@ describe('usage dimension controls', () => {
   it('reads upstream labels from the overview response', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'admin-session',
-      user: { id: 1, username: 'admin', isAdmin: true, canViewUpstreams: true },
+      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true },
     });
     stubUsageGateway();
 
@@ -235,7 +235,7 @@ describe('usage dimension controls', () => {
   it('keeps self-only Search usage grouped by API key', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'operator-session',
-      user: { id: 2, username: 'operator', isAdmin: false, canViewUpstreams: false },
+      user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false },
     });
     let requestedView: string | null = null;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
