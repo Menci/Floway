@@ -11,7 +11,9 @@ import {
   DEFAULT_SEARCH_CONTEXT_SIZE,
   executeOperationToIr,
   isSearchContextSize,
+  isSearchResponseLength,
   maxResultsForContextSize,
+  type SearchResponseLength,
   parseWebSearchOperations,
   renderWebSearchCallOutput,
   runBackendSearchMulti,
@@ -609,7 +611,14 @@ const planShimSlots = (
   toolName: string,
   state: ShimState,
   loopState: ServerToolLoopState,
+  responseLength: SearchResponseLength | undefined,
 ): { id: string; resolve: () => Promise<WebSearchCallIR> } => {
+  // Bind the call's response-length budget into this dispatch. The slot's
+  // `resolve` runs after `planShimSlots` returns, so reading a mutable
+  // session field here would let a later call change an earlier slot.
+  const callState: ShimState = responseLength === undefined
+    ? state
+    : { ...state, responseLength };
   if (loopState.iterationCount > ITERATION_CAP) {
     return {
       id: synthesizeWebSearchCallId(),
@@ -678,7 +687,7 @@ const planShimSlots = (
     const searchOps = parsed.ops as Array<Extract<WebSearchOperation, { kind: 'search' }>>;
     return {
       id: synthesizeWebSearchCallId(),
-      resolve: eagerResolver(runBackendSearchMulti(searchOps, state)),
+      resolve: eagerResolver(runBackendSearchMulti(searchOps, callState)),
     };
   }
 
@@ -701,7 +710,7 @@ const planShimSlots = (
 
   return {
     id: synthesizeWebSearchCallId(),
-    resolve: eagerResolver(startBatchFetch(parsed, state).then(async batch => await executeOperationToIr(parsed.ops[0], state, batch))),
+    resolve: eagerResolver(startBatchFetch(parsed, callState).then(async batch => await executeOperationToIr(parsed.ops[0], callState, batch))),
   };
 };
 
@@ -778,7 +787,17 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
             buildFunctionTool: buildShimFunctionTool,
             dispatcher: ({ intercepted, loopState }) => {
               const commands = intercepted.arguments ?? {};
-              const slot = planShimSlots(parseWebSearchOperations(intercepted.arguments), commands, intercepted.name, state, loopState);
+              const responseLength = isSearchResponseLength(commands.response_length)
+                ? commands.response_length
+                : undefined;
+              const slot = planShimSlots(
+                parseWebSearchOperations(intercepted.arguments),
+                commands,
+                intercepted.name,
+                state,
+                loopState,
+                responseLength,
+              );
               const functionCallItem: OpenAIResponsesFunctionToolCallItemEx = {
                 type: 'function_call',
                 call_id: intercepted.callId,

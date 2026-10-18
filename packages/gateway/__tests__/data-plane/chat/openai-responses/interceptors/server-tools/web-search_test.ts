@@ -95,11 +95,20 @@ test('alpha-search settings preserve every OpenAI setting supported by passthrou
   });
 });
 
-test('local provider support rejects unsupported commands and nested parameters', () => {
+test('local provider support accepts query filters and response length, rejects unsupported commands', () => {
   assertLocalWebSearchSupport({ search_query: [{ q: 'supported' }], open: [], find: [] });
+  assertLocalWebSearchSupport({
+    search_query: [{ q: 'news', recency: 2, domains: ['example.com'] }],
+    response_length: 'short',
+  });
+  // Optional fields serialized as null mean "not provided".
+  assertLocalWebSearchSupport({
+    search_query: [{ q: 'news', recency: null, domains: null }],
+    response_length: null,
+  });
   for (const [commands, path] of [
     [{ image_query: [{ q: 'cat' }] }, 'commands.image_query'],
-    [{ search_query: [{ q: 'news', recency: 2 }] }, 'commands.search_query[0].recency'],
+    [{ response_length: 'huge' }, 'commands.response_length'],
     [{ open: [{ ref_id: 'https://example.com', lineno: 10 }] }, 'commands.open[0].lineno'],
   ] as const) {
     assertThrows(
@@ -129,6 +138,20 @@ test('parseWebSearchOperations parses multiple search_query entries with stable 
       { kind: 'search', arrayIndex: 1, query: 'b' },
       { kind: 'search', arrayIndex: 2, query: 'c' },
     ],
+  );
+});
+
+test('parseWebSearchOperations preserves query-level domains and recency', () => {
+  assertEquals(
+    opsOf({ search_query: [{ q: 'news', domains: ['example.com'], recency: 7 }] }),
+    [{ kind: 'search', arrayIndex: 0, query: 'news', domains: ['example.com'], recencyDays: 7 }],
+  );
+});
+
+test('parseWebSearchOperations ignores null optional fields', () => {
+  assertEquals(
+    opsOf({ search_query: [{ q: 'news', domains: null, recency: null }] }),
+    [{ kind: 'search', arrayIndex: 0, query: 'news' }],
   );
 });
 
@@ -187,13 +210,12 @@ test('parseWebSearchOperations: unsupported sub-properties surface one unsupport
     response_length: 'short',
     search_query: [{ q: 'real' }],
   });
-  assertEquals(ops.length, 6);
+  assertEquals(ops.length, 5);
   assertEquals(ops[0], { kind: 'search', arrayIndex: 0, query: 'real' });
   assertEquals(ops[1], { kind: 'unsupported', subProperty: 'click', arrayIndex: 0 });
   assertEquals(ops[2], { kind: 'unsupported', subProperty: 'screenshot', arrayIndex: 0 });
   assertEquals(ops[3], { kind: 'unsupported', subProperty: 'screenshot', arrayIndex: 1 });
   assertEquals(ops[4], { kind: 'unsupported', subProperty: 'weather', arrayIndex: 0 });
-  assertEquals(ops[5], { kind: 'unsupported', subProperty: 'response_length', arrayIndex: 0 });
 });
 
 test('parseWebSearchOperations: missing q on search_query entry surfaces a missing-argument error sentinel', () => {

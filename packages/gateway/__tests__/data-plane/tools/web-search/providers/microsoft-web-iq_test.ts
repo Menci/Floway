@@ -65,6 +65,23 @@ test('createMicrosoftWebIqWebSearchProvider forwards maxResults to upstream coun
   );
 });
 
+test('createMicrosoftWebIqWebSearchProvider silently ignores recencyDays', async () => {
+  let request: Request | undefined;
+  await withMockedFetch(
+    incoming => {
+      request = incoming;
+      return jsonResponse({ webResults: [] });
+    },
+    async () => {
+      const provider = createMicrosoftWebIqWebSearchProvider('ms-test');
+      const result = await provider.search({ query: 'React', recencyDays: 1 });
+      assertEquals(result.type, 'ok');
+      const body = JSON.parse(await request!.text());
+      assertEquals(body.query, 'React');
+    },
+  );
+});
+
 test('createMicrosoftWebIqWebSearchProvider rejects blank and overlong queries before fetch', async () => {
   let called = false;
 

@@ -76,6 +76,18 @@ export const createTavilyWebSearchProvider = (apiKey: string, deps?: { fetch?: t
     if (excludeDomains) {
       body.exclude_domains = excludeDomains;
     }
+    if (request.recencyDays !== undefined) {
+      // Tavily exposes only fixed publish-date windows. Round up to the
+      // smallest window that contains the requested day count.
+      // https://docs.tavily.com/documentation/api-reference/endpoint/search
+      body.time_range = request.recencyDays <= 1
+        ? 'day'
+        : request.recencyDays <= 7
+          ? 'week'
+          : request.recencyDays <= 30
+            ? 'month'
+            : 'year';
+    }
 
     try {
       const response = await httpFetch(TAVILY_SEARCH_URL, {
