@@ -1,4 +1,11 @@
-import Prism from 'prismjs';
+import Prism from 'prismjs/components/prism-core';
+import 'prismjs/components/prism-markup';
+import 'prismjs/components/prism-css';
+import 'prismjs/components/prism-clike';
+// JavaScript captures its embedded regex grammar when registered.
+// https://github.com/PrismJS/prism/blob/76dde18a575831c91491895193f56081ac08b0c5/components/prism-javascript.js#L77-L81
+import 'prismjs/components/prism-regex';
+import 'prismjs/components/prism-javascript';
 import 'prismjs/components/prism-bash';
 import 'prismjs/components/prism-json';
 import 'prismjs/components/prism-markdown';
