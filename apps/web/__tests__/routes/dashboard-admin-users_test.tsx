@@ -4,6 +4,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 
 import type { ControlPlaneGroup, ControlPlaneUser } from '../../src/api/types';
 import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
+import { shortDate } from '../../src/lib/format-time';
 import DashboardAdminUsers, { shouldRevalidate } from '../../src/routes/dashboard-admin-users';
 import { renderInApp } from '../render';
 
@@ -12,7 +13,11 @@ const groups: ControlPlaneGroup[] = [
   { id: 2, name: 'Research', hue: 150, memberIds: [1], createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
 ];
 const user: ControlPlaneUser = { id: 1, username: 'frank', isAdmin: true, upstreamIds: null, groupIds: [1, 2], createdAt: '2026-10-01T00:00:00Z' };
-const loaderData = { directory: { users: [user], groups }, models: [], upstreams: [], error: null };
+const memberships = [
+  { groupId: 1, userId: 1, createdAt: '2026-10-10T09:30:00Z' },
+  { groupId: 2, userId: 1, createdAt: '2026-10-12T10:00:00Z' },
+];
+const loaderData = { directory: { users: [user], groups, memberships }, models: [], upstreams: [], error: null };
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -81,7 +86,7 @@ test('retains the selected group when switching tabs', async () => {
 });
 
 test('clears the unavailable group address when no groups remain', async () => {
-  const { router } = renderPage('/dashboard/admin/users?tab=groups&group=2', { ...loaderData, directory: { users: [{ ...user, groupIds: [] }], groups: [] } });
+  const { router } = renderPage('/dashboard/admin/users?tab=groups&group=2', { ...loaderData, directory: { users: [{ ...user, groupIds: [] }], groups: [], memberships: [] } });
   await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('group')).toBeNull());
   expect(screen.getByText('No groups found')).toBeTruthy();
 });
@@ -134,7 +139,7 @@ test('retains the complete directory and edit membership when refreshing it fail
   expect(dialog.textContent).toContain('Research');
 });
 
-test('keeps the user table without creation metadata and locks every editor during refresh', async () => {
+test('keeps account dates visible and locks every editor during refresh', async () => {
   let finish!: (response: Response) => void;
   vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
     const path = new URL(String(input), 'http://localhost').pathname;
@@ -145,7 +150,9 @@ test('keeps the user table without creation metadata and locks every editor duri
   });
   renderPage();
   const name = await screen.findByRole<HTMLButtonElement>('button', { name: 'frank' });
-  expect(screen.queryByRole('columnheader', { name: 'Created' })).toBeNull();
+  expect(screen.getByRole('columnheader', { name: 'Created' })).toBeTruthy();
+  expect(screen.queryByRole('columnheader', { name: 'Role' })).toBeNull();
+  expect(name.getAttribute('aria-description')).toBe('Administrator');
   const table = screen.getByRole('table');
   expect(screen.getByRole('columnheader', { name: 'Actions' }).querySelector('.sr-only')).toBeTruthy();
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Refresh users and groups' })); });
@@ -169,7 +176,7 @@ test('changing groups discards an open member removal confirmation', async () =>
 
 test('refreshes both membership directions from the same directory response', async () => {
   const group = { ...groups[0], id: 3, name: 'New group' };
-  const updated = { users: [{ ...user, groupIds: [3] }], groups: [group] };
+  const updated = { users: [{ ...user, groupIds: [3] }], groups: [group], memberships: [{ ...memberships[0], groupId: 3 }] };
   vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
     const path = new URL(String(input), 'http://localhost').pathname;
     if (path === '/api/user-directory') return Response.json(updated);
@@ -190,7 +197,7 @@ test('refreshes both membership directions from the same directory response', as
 test('keeps an open user editor paired with the group metadata it was opened with', async () => {
   vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
     const path = new URL(String(input), 'http://localhost').pathname;
-    if (path === '/api/user-directory') return Response.json({ users: [{ ...user, groupIds: [] }], groups: [] });
+    if (path === '/api/user-directory') return Response.json({ users: [{ ...user, groupIds: [] }], groups: [], memberships: [] });
     if (path === '/api/upstream-options') return Response.json([]);
     if (path === '/api/models') return Response.json({ data: [] });
     throw new Error(`Unexpected request: ${path}`);
@@ -205,4 +212,34 @@ test('keeps an open user editor paired with the group metadata it was opened wit
   await waitFor(() => expect(groupTab.querySelector('.proportional-nums')?.textContent).toBe('0'));
   expect(screen.getByRole('dialog').textContent).toContain('Platform');
   expect(screen.getByRole('dialog').textContent).toContain('Research');
+});
+
+test('shows account creation dates and an administrator icon beside the username', async () => {
+  const { container } = renderPage();
+  const name = await screen.findByRole('button', { name: 'frank' });
+  expect(screen.queryByRole('columnheader', { name: 'Role' })).toBeNull();
+  expect(screen.getByRole('columnheader', { name: 'Created' })).toBeTruthy();
+  expect(container.querySelector('time')?.getAttribute('datetime')).toBe(user.createdAt);
+  expect(name.querySelector('.floway-admin-indicator')?.getAttribute('aria-label')).toBe('Administrator');
+});
+
+test('shows membership dates and group creation metadata without a separator glyph', async () => {
+  const { container } = renderPage('/dashboard/admin/users?tab=groups&group=1');
+  await screen.findByRole('option', { name: 'Platform' });
+  const table = screen.getByRole('table');
+  expect(screen.queryByRole('columnheader', { name: 'Role' })).toBeNull();
+  expect(screen.getByRole('columnheader', { name: 'Joined' })).toBeTruthy();
+  expect(table.querySelector('time')?.getAttribute('datetime')).toBe(memberships[0]!.createdAt);
+  expect(screen.getByText(`Created ${shortDate(groups[0]!.createdAt, 'en')}`)).toBeTruthy();
+  expect(container.querySelector('section.grid > header')!.textContent).not.toContain('\u00b7');
+});
+
+test('keeps creation metadata in empty group details', async () => {
+  const empty = { ...groups[0]!, id: 3, name: 'Archive', memberIds: [] };
+  renderPage('/dashboard/admin/users?tab=groups&group=3', { ...loaderData, directory: { ...loaderData.directory, groups: [...groups, empty] } });
+  await screen.findByRole('option', { name: 'Archive' });
+  expect(screen.getByText('0 members')).toBeTruthy();
+  expect(screen.getByText(`Created ${shortDate(empty.createdAt, 'en')}`)).toBeTruthy();
+  expect(screen.getByText('This group has no members')).toBeTruthy();
+  expect(screen.queryByRole('table')).toBeNull();
 });

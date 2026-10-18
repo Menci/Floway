@@ -294,9 +294,16 @@ export interface UsersRepo {
 
 export type GroupWithMembers = Group & { memberIds: number[] };
 
+export interface GroupMembership {
+  groupId: number;
+  userId: number;
+  createdAt: string;
+}
+
 export interface UserDirectory {
   users: User[];
   groups: GroupWithMembers[];
+  memberships: GroupMembership[];
 }
 
 export interface GroupsRepo {

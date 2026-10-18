@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
 import { recordCompletedStatements } from './recording-sql.ts';
@@ -141,7 +141,60 @@ describe.each(backends)('GroupsRepo (%s)', (_label, makeRepo) => {
     await repo.groups.replaceMembers(2, [1]);
     expect(await repo.readUserDirectory()).toEqual({
       users: [admin], groups: [{ ...sampleGroup(), memberIds: [1] }],
+      memberships: [{ groupId: 1, userId: 1, createdAt: expect.any(String) }],
     });
+  });
+
+  test('preserves joined timestamps through identity edits and membership replacement', async () => {
+    const repo = await makeRepo();
+    const admin = (await repo.users.getById(1))!;
+    await repo.groups.save(sampleGroup());
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const joined = '2026-10-17T08:00:00.000Z';
+      vi.setSystemTime(joined);
+      await repo.groups.setMember(1, 1, true);
+      vi.setSystemTime('2026-10-18T08:00:00.000Z');
+      await repo.groups.setMember(1, 1, true);
+      await repo.groups.replaceUserGroups(1, [1]);
+      await repo.users.save({ ...admin, username: 'renamed' }, [1]);
+      await repo.groups.save(sampleGroup({ name: 'Renamed group' }));
+      await repo.groups.replaceMembers(1, [1, 1]);
+      expect((await repo.readUserDirectory()).memberships).toEqual([{ groupId: 1, userId: 1, createdAt: joined }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('records a new joined timestamp only after leaving and rejoining', async () => {
+    const repo = await makeRepo();
+    const admin = (await repo.users.getById(1))!;
+    await repo.users.save({ ...admin, id: 2, username: 'alice' });
+    await repo.groups.save(sampleGroup());
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const first = '2026-10-17T08:00:00.000Z';
+      const second = '2026-10-18T08:00:00.000Z';
+      const third = '2026-10-19T08:00:00.000Z';
+      vi.setSystemTime(first);
+      await repo.groups.replaceMembers(1, [1]);
+      vi.setSystemTime(second);
+      await repo.groups.replaceMembers(1, [1, 2]);
+      expect((await repo.readUserDirectory()).memberships).toEqual([
+        { groupId: 1, userId: 1, createdAt: first },
+        { groupId: 1, userId: 2, createdAt: second },
+      ]);
+      await repo.groups.replaceUserGroups(1, []);
+      expect((await repo.readUserDirectory()).memberships).toEqual([{ groupId: 1, userId: 2, createdAt: second }]);
+      vi.setSystemTime(third);
+      await repo.users.save(admin, [1]);
+      expect((await repo.readUserDirectory()).memberships).toEqual([
+        { groupId: 1, userId: 1, createdAt: third },
+        { groupId: 1, userId: 2, createdAt: second },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -172,7 +225,9 @@ test('SQL directory reads users and membership in one statement before a concurr
   expect(completed).toHaveLength(1);
   expect(directory.users.map(user => user.id)).toEqual([1]);
   expect(directory.groups).toEqual([{ ...sampleGroup(), memberIds: [1] }]);
+  expect(directory.memberships).toEqual([{ groupId: 1, userId: 1, createdAt: expect.any(String) }]);
   expect((await writer.readUserDirectory()).groups).toEqual([]);
+  expect((await writer.readUserDirectory()).memberships).toEqual([]);
 });
 
 test('group restore requires atomic batches before changing any records', async () => {

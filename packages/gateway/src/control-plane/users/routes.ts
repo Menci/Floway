@@ -39,6 +39,7 @@ export const getUserDirectory = async (c: AuthedContext) => {
   return c.json({
     users: directory.users.map(user => userToAdminWire(user, knownUpstreamIds, groupIds.get(user.id)!)),
     groups: directory.groups,
+    memberships: directory.memberships,
   });
 };
 

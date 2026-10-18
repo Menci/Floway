@@ -255,12 +255,12 @@ const en = {
         table: {
           label: 'Floway users',
           username: 'Username',
-          role: 'Role',
+          created: 'Created',
           groups: 'Groups',
           upstreams: 'Upstream access',
           actions: 'Actions',
         },
-        role: { admin: 'Administrator', operator: 'Operator' },
+        role: { admin: 'Administrator' },
         upstreams: {
           all: 'All upstreams',
           count_one: '{{count, number}} upstream',
@@ -297,6 +297,7 @@ const en = {
         createdDefaultKey: 'A Default API key is created with each new user.',
       },
       groupsManagement: {
+        createdAt: 'Created {{date}}',
         more_one: 'Show {{count, number}} more group',
         more_other: 'Show {{count, number}} more groups',
         remove: { title: 'Remove member', message: 'Remove {{username}} from {{group}}?', confirm: 'Remove' },
@@ -307,7 +308,7 @@ const en = {
         allJoined: 'Already in every group',
         invalidName: 'Enter a name between 1 and 64 characters',
         actions: { create: 'New group', save: 'Save changes', edit: 'Edit group', delete: 'Delete group', add: 'Add member', remove: 'Remove {{username}} from group', leave: 'Leave {{name}}' },
-        members: { count_one: '{{count, number}} member', count_other: '{{count, number}} members', empty: 'This group has no members', allAdded: 'All users are already members', noMatches: 'No matching users' },
+        members: { joined: 'Joined', count_one: '{{count, number}} member', count_other: '{{count, number}} members', empty: 'This group has no members', allAdded: 'All users are already members', noMatches: 'No matching users' },
         dialog: { createTitle: 'New group', editTitle: 'Edit {{name}}' },
         fields: { name: 'Name', members: 'Members', hue: 'Color' },
         delete: { title: 'Delete group', message: 'Delete {{name}}? Its membership will be removed.' },

@@ -17,6 +17,7 @@ import type {
   ApiKeyUpdate,
   ExpirationSweepsRepo,
   Group,
+  GroupMembership,
   GroupWithMembers,
   GroupsRepo,
   AgentSetupMutation,
@@ -398,24 +399,32 @@ const toGroup = (row: GroupRow): Group => ({
   deletedAt: row.deleted_at,
 });
 
-const userGroupStatements = (db: SqlDatabase, userId: number, groupIds: readonly number[]) => [
-  db.prepare('DELETE FROM group_members WHERE user_id = ?').bind(userId),
-  db.prepare(`INSERT INTO group_members (group_id, user_id, created_at)
-    SELECT DISTINCT CAST(value AS INTEGER), ?, ? FROM json_each(?)`)
-    .bind(userId, new Date().toISOString(), JSON.stringify(groupIds)),
-];
+const userGroupStatements = (db: SqlDatabase, userId: number, groupIds: readonly number[]) => {
+  const ids = JSON.stringify(groupIds);
+  return [
+    db.prepare(`DELETE FROM group_members WHERE user_id = ?
+      AND group_id NOT IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`).bind(userId, ids),
+    db.prepare(`INSERT OR IGNORE INTO group_members (group_id, user_id, created_at)
+      SELECT DISTINCT CAST(value AS INTEGER), ?, ? FROM json_each(?)`)
+      .bind(userId, new Date().toISOString(), ids),
+  ];
+};
 
 const saveGroupStatement = (db: SqlDatabase, group: Group) => db.prepare(
   `INSERT INTO groups (${GROUP_COLUMNS}) VALUES (?, ?, ?, ?, ?)
    ON CONFLICT (id) DO UPDATE SET name = excluded.name, hue = excluded.hue, deleted_at = excluded.deleted_at`,
 ).bind(group.id, group.name, group.hue, group.createdAt, group.deletedAt);
 
-const groupMemberStatements = (db: SqlDatabase, groupId: number, userIds: readonly number[]) => [
-  db.prepare('DELETE FROM group_members WHERE group_id = ?').bind(groupId),
-  db.prepare(`INSERT INTO group_members (group_id, user_id, created_at)
-    SELECT ?, CAST(value AS INTEGER), ? FROM json_each(?) GROUP BY value`)
-    .bind(groupId, new Date().toISOString(), JSON.stringify(userIds)),
-];
+const groupMemberStatements = (db: SqlDatabase, groupId: number, userIds: readonly number[]) => {
+  const ids = JSON.stringify(userIds);
+  return [
+    db.prepare(`DELETE FROM group_members WHERE group_id = ?
+      AND user_id NOT IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`).bind(groupId, ids),
+    db.prepare(`INSERT OR IGNORE INTO group_members (group_id, user_id, created_at)
+      SELECT ?, CAST(value AS INTEGER), ? FROM json_each(?) GROUP BY value`)
+      .bind(groupId, new Date().toISOString(), ids),
+  ];
+};
 
 class SqlGroupsRepo implements GroupsRepo {
   constructor(private db: SqlDatabase) {}
@@ -1899,18 +1908,30 @@ export class SqlRepo implements Repo {
           WHERE group_members.group_id = groups.id AND users.deleted_at IS NULL ORDER BY group_members.user_id
         ))
       ) AS record FROM groups WHERE deleted_at IS NULL
+      UNION ALL
+      SELECT 'memberships' AS kind, 0 AS id, json_group_array(json_object(
+        'groupId', group_id, 'userId', user_id, 'createdAt', created_at
+      )) AS record FROM (
+        SELECT group_members.group_id, group_members.user_id, group_members.created_at
+        FROM group_members
+        JOIN groups ON groups.id = group_members.group_id
+        JOIN users ON users.id = group_members.user_id
+        WHERE groups.deleted_at IS NULL AND users.deleted_at IS NULL
+        ORDER BY group_members.group_id, group_members.user_id
+      )
       ORDER BY kind, id
-    `).all<{ kind: 'user' | 'group'; record: string }>();
+    `).all<{ kind: 'user' | 'group' | 'memberships'; record: string }>();
     const users: User[] = [];
     const groups: GroupWithMembers[] = [];
+    const memberships: GroupMembership[] = [];
     for (const row of results) {
       if (row.kind === 'user') users.push(toUser(JSON.parse(row.record) as UserRow));
-      else {
+      else if (row.kind === 'group') {
         const group = JSON.parse(row.record) as GroupRow & { memberIds: number[] };
         groups.push({ ...toGroup(group), memberIds: group.memberIds });
-      }
+      } else memberships.push(...JSON.parse(row.record) as GroupMembership[]);
     }
-    return { users, groups };
+    return { users, groups, memberships };
   }
 
   constructor(private readonly db: SqlDatabase) {

@@ -246,6 +246,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
         /></ResourceListPanel> : needle && visibleGroups!.length === 0 ? <Panel><EmptyStateLine>{t('dashboard.groupsManagement.noMatches')}</EmptyStateLine></Panel> : <GroupsMasterDetail
           disabled={busy}
           groups={visibleGroups!}
+          memberships={directory!.memberships}
           users={users}
           selectedId={activeGroupId ?? null}
           onSelect={setSelectedGroupId}

@@ -70,6 +70,7 @@ import type {
   UsageRepo,
   User,
   UserDirectory,
+  GroupMembership,
   UsersRepo,
 } from '../../src/repo/types.ts';
 import { serializeStoredConfig, serializeStoredState } from '../../src/repo/upstream-json.ts';
@@ -158,12 +159,19 @@ class MemoryUsersRepo implements UsersRepo {
 
 class MemoryGroupsRepo implements GroupsRepo {
   private groups: Group[] = [];
-  private members = new Map<number, Set<number>>();
+  private members = new Map<number, Map<number, string>>();
 
   snapshot(): GroupWithMembers[] {
     return this.groups.filter(group => group.deletedAt === null).map(group => ({
-      ...group, memberIds: [...(this.members.get(group.id) ?? [])].toSorted((a, b) => a - b),
+      ...group, memberIds: [...(this.members.get(group.id)?.keys() ?? [])].toSorted((a, b) => a - b),
     }));
+  }
+
+  snapshotMemberships(): GroupMembership[] {
+    const active = new Set(this.groups.filter(group => group.deletedAt === null).map(group => group.id));
+    return [...this.members].filter(([groupId]) => active.has(groupId))
+      .flatMap(([groupId, members]) => [...members].map(([userId, createdAt]) => ({ groupId, userId, createdAt })))
+      .toSorted((a, b) => a.groupId - b.groupId || a.userId - b.userId);
   }
 
   list(): Promise<Group[]> {
@@ -218,7 +226,7 @@ class MemoryGroupsRepo implements GroupsRepo {
       names.add(key);
     }
     this.groups = [...records.values()];
-    for (const group of groups) this.members.set(group.id, new Set(group.memberIds));
+    for (const group of groups) this.replaceMemberSnapshot(group.id, group.memberIds);
   }
 
   softDelete(id: number): Promise<boolean> {
@@ -230,17 +238,18 @@ class MemoryGroupsRepo implements GroupsRepo {
   }
 
   listMemberIds(groupId: number): Promise<number[]> {
-    return Promise.resolve([...(this.members.get(groupId) ?? [])].toSorted((a, b) => a - b));
+    return Promise.resolve([...(this.members.get(groupId)?.keys() ?? [])].toSorted((a, b) => a - b));
   }
 
   async listMemberships(): Promise<Map<number, number[]>> {
-    return new Map([...this.members].map(([id, members]) => [id, [...members].toSorted((a, b) => a - b)]));
+    return new Map([...this.members].map(([id, members]) => [id, [...members.keys()].toSorted((a, b) => a - b)]));
   }
 
   async setMember(groupId: number, userId: number, included: boolean): Promise<void> {
-    const members = new Set(this.members.get(groupId));
-    if (included) members.add(userId);
-    else members.delete(userId);
+    const members = new Map(this.members.get(groupId));
+    if (included) {
+      if (!members.has(userId)) members.set(userId, new Date().toISOString());
+    } else members.delete(userId);
     this.members.set(groupId, members);
   }
 
@@ -265,8 +274,14 @@ class MemoryGroupsRepo implements GroupsRepo {
   }
 
   replaceMembers(groupId: number, userIds: readonly number[]): Promise<void> {
-    this.members.set(groupId, new Set(userIds));
+    this.replaceMemberSnapshot(groupId, userIds);
     return Promise.resolve();
+  }
+
+  private replaceMemberSnapshot(groupId: number, userIds: readonly number[]): void {
+    const previous = new Map(this.members.get(groupId));
+    const now = new Date().toISOString();
+    this.members.set(groupId, new Map(userIds.map(userId => [userId, previous.get(userId) ?? now])));
   }
 
   deleteMembershipsByUserId(userId: number): Promise<number> {
@@ -1671,7 +1686,8 @@ export class InMemoryRepo implements Repo {
     const users = this.users.snapshot();
     const userIds = new Set(users.map(user => user.id));
     const groups = this.groups.snapshot().map(group => ({ ...group, memberIds: group.memberIds.filter(id => userIds.has(id)) }));
-    return Promise.resolve({ users, groups });
+    const memberships = this.groups.snapshotMemberships().filter(member => userIds.has(member.userId));
+    return Promise.resolve({ users, groups, memberships });
   }
 
   constructor() {

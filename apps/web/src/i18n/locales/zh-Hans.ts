@@ -244,12 +244,12 @@ const zhHansCN = {
         table: {
           label: 'Floway 用户',
           username: '用户名',
-          role: '角色',
+          created: '创建时间',
           groups: '用户组',
           upstreams: '上游权限',
           actions: '操作',
         },
-        role: { admin: '管理员', operator: '操作员' },
+        role: { admin: '管理员' },
         upstreams: {
           all: '全部上游',
           count_other: '{{count, number}} 个上游',
@@ -284,6 +284,7 @@ const zhHansCN = {
         createdDefaultKey: '每个新用户都会自动创建一个 Default API 密钥。',
       },
       groupsManagement: {
+        createdAt: '创建于 {{date}}',
         more_other: '显示其余 {{count, number}} 个用户组',
         remove: { title: '移除成员', message: '从 {{group}} 移除 {{username}}？', confirm: '移除' },
         empty: '没有用户组',
@@ -293,7 +294,7 @@ const zhHansCN = {
         allJoined: '已加入全部用户组',
         invalidName: '请输入 1 至 64 个字符的名称',
         actions: { create: '新建用户组', save: '保存更改', edit: '编辑用户组', delete: '删除用户组', add: '添加成员', remove: '从组中移除 {{username}}', leave: '退出 {{name}}' },
-        members: { count_other: '{{count, number}} 名成员', empty: '这个用户组还没有成员', allAdded: '所有用户都已加入该组', noMatches: '没有匹配的用户' },
+        members: { joined: '加入时间', count_other: '{{count, number}} 名成员', empty: '这个用户组还没有成员', allAdded: '所有用户都已加入该组', noMatches: '没有匹配的用户' },
         dialog: { createTitle: '新建用户组', editTitle: '编辑 {{name}}' },
         fields: { name: '名称', members: '成员', hue: '颜色' },
         delete: { title: '删除用户组', message: '删除 {{name}}？该组的成员关系将被移除。' },
