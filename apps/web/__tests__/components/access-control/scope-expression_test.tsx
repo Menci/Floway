@@ -35,7 +35,7 @@ test.each(['exact', 'regex'] as const)('uses standard resource badges and the sh
   expect(segments.every(segment => segment.childElementCount === 2)).toBe(true);
 });
 
-test.each(['exact', 'regex'] as const)('anchors long %s paths and their controls to the first line', kind => {
+test.each(['exact', 'regex'] as const)('anchors long %s text to its first line and removal to the last', kind => {
   const stylesheet = document.createElement('style');
   stylesheet.textContent = scopeExpressionCss;
   document.head.append(stylesheet);
@@ -54,7 +54,7 @@ test.each(['exact', 'regex'] as const)('anchors long %s paths and their controls
       expect(getComputedStyle(part).alignItems).toBe('flex-start');
       expect(getComputedStyle(part).textAlign).toBe('start');
     }
-    expect(screen.getAllByRole('button', { name: 'Remove last scope segment' }).every(button => getComputedStyle(button).alignSelf === 'flex-start')).toBe(true);
+    expect(screen.getAllByRole('button', { name: 'Remove last scope segment' }).every(button => getComputedStyle(button).alignSelf === 'flex-end')).toBe(true);
     fireEvent.click(segments[0]!.querySelector('button')!);
     expect(getComputedStyle(container.querySelector('.floway-scope-expression-part-control')!).alignItems).toBe('flex-start');
     const options = screen.getAllByRole('option').map(option => option.querySelector('.floway-scope-expression-option')!);

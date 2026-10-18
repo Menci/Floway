@@ -26,13 +26,13 @@ export const scopeExpressionCss = String.raw`
   flex: 1;
 }
 
-/* Keep the small action in the first standard-height line when the path wraps.
+/* Keep the small action in the last standard-height line when the path wraps.
    https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-button/library/src/components/Button/useButtonStyles.styles.ts */
 .floway-scope-editor > .fui-Button {
   --floway-scope-editor-action-size: 24px;
-  align-self: flex-start;
+  align-self: flex-end;
   height: var(--floway-scope-editor-action-size);
-  margin-block-start: calc((var(--floway-scope-editor-min-height) - 2 * var(--floway-scope-editor-border-width) - var(--floway-scope-editor-action-size)) / 2);
+  margin-block-end: calc((var(--floway-scope-editor-min-height) - 2 * var(--floway-scope-editor-border-width) - var(--floway-scope-editor-action-size)) / 2);
 }
 
 .floway-scope-editor:not([aria-disabled='true']),
