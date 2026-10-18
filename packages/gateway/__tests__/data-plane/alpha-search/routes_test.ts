@@ -303,7 +303,7 @@ describe('/alpha/search data plane', () => {
       });
       expect(response.status).toBe(200);
       const body = await response.json() as SearchResponseBody;
-      expect(body.output).toContain('No domain satisfies both');
+      expect(body.output).toContain('(no results)');
       expect(stub.calls).toHaveLength(0);
     });
 

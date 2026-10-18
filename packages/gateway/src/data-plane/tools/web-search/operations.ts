@@ -627,8 +627,10 @@ const runOneSearchQuery = async (
     // Every provider treats an empty allow-list as "no filter". An empty
     // intersection therefore has to short-circuit: letting it through would
     // discard both the caller's query-level domains and the operator policy.
+    // The upstream answers an unsatisfiable domain filter with a normal empty
+    // result set, so mirror that rather than inventing an error string.
     if (allowedDomains?.length === 0) {
-      return { results: [errorSnippet('Search error', 'No domain satisfies both the request filters and the query domains.')] };
+      return { results: [] };
     }
     const searchRequest = {
       query: op.query,
