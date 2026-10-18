@@ -8,6 +8,7 @@ import * as fluentNamespace from '@fluentui/react-components';
 import { withWinuiAppearance } from './winui/appearance';
 import { withWinuiMotion } from './winui/presence';
 import { withWinuiDrag } from './winui/switch-drag';
+import { withTextTrim } from './winui/text-trim';
 import { withWinuiToaster } from './winui/toaster';
 import type { FluentComponents } from './winui/wrap';
 
@@ -22,5 +23,5 @@ if (!(fluentNamespace as Partial<FluentComponents>).FluentProvider) {
 // rebuilt from are imported from `@fluentui/react-toast` in ./winui/toaster,
 // which is the app's only value import of that package.
 export const fluentComponents = withWinuiToaster(withWinuiDrag(
-  withWinuiMotion(withWinuiAppearance(fluentNamespace)),
+  withWinuiMotion(withWinuiAppearance(withTextTrim(fluentNamespace))),
 ));

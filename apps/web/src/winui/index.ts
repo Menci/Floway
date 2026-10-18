@@ -23,6 +23,7 @@ import { tabsCss } from './controls/tabs.css';
 import { tagPickerCss } from './controls/tag-picker.css';
 import { telemetryRangeCss } from './controls/telemetry-range.css';
 import { textInputCss } from './controls/text-input.css';
+import { textTrimCss } from './controls/text-trim.css';
 import { textCss } from './controls/text.css';
 import { toastCss } from './controls/toast.css';
 import { toolbarCss } from './controls/toolbar.css';
@@ -61,6 +62,7 @@ export const winuiCss = [
   tabsCss,
   tagPickerCss,
   textInputCss,
+  textTrimCss,
   textCss,
   toastCss,
   telemetryRangeCss,

@@ -34,7 +34,7 @@ export function RowTitleButton({ children, onClick, ...trigger }: {
   children: ReactNode;
   onClick: () => void;
 } & RowTitleTriggerProps) {
-  return <button className={mergeClasses(rowTitleClass, 'block bg-transparent border-0 cursor-pointer leading-[var(--lineHeightBase300)] min-w-0 max-w-full truncate p-0 text-fui-base300 text-left')} onClick={onClick} type="button" {...trigger}>
+  return <button className={mergeClasses(rowTitleClass, 'floway-control-label block bg-transparent border-0 cursor-pointer leading-[var(--lineHeightBase300)] min-w-0 max-w-full truncate p-0 text-fui-base300 text-left')} onClick={onClick} type="button" {...trigger}>
     {children}
   </button>;
 }
