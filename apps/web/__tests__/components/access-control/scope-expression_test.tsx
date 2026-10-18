@@ -44,6 +44,7 @@ test.each(['exact', 'regex'] as const)('anchors long %s paths and their controls
     const { container } = renderInApp(<>
       <ScopeEditor data={data} value={value} />
       <ScopeExpression data={data} readOnly value={value} />
+      <ScopeEditor data={data} value={{ kind: 'upstream', upstreamId: 'up_a' }} />
     </>);
     const segments = container.querySelectorAll('.floway-scope-expression-segment:has(.floway-scope-expression-model-icon)');
     expect(segments).toHaveLength(2);
@@ -53,11 +54,15 @@ test.each(['exact', 'regex'] as const)('anchors long %s paths and their controls
       expect(getComputedStyle(part).alignItems).toBe('flex-start');
       expect(getComputedStyle(part).textAlign).toBe('start');
     }
-    expect(getComputedStyle(screen.getByRole('button', { name: 'Remove last scope segment' })).alignSelf).toBe('flex-start');
+    expect(screen.getAllByRole('button', { name: 'Remove last scope segment' }).every(button => getComputedStyle(button).alignSelf === 'flex-start')).toBe(true);
     fireEvent.click(segments[0]!.querySelector('button')!);
     expect(getComputedStyle(container.querySelector('.floway-scope-expression-part-control')!).alignItems).toBe('flex-start');
     const options = screen.getAllByRole('option').map(option => option.querySelector('.floway-scope-expression-option')!);
     expect(options.every(option => getComputedStyle(option).alignItems === 'flex-start')).toBe(true);
+    expect(options.every(option => getComputedStyle(option).overflowWrap === 'anywhere')).toBe(true);
+    const resourceEditor = container.querySelectorAll('.floway-scope-editor')[1]!;
+    fireEvent.click(resourceEditor.querySelector('.floway-scope-expression-segment:nth-child(2) button')!);
+    expect(getComputedStyle(resourceEditor.querySelector('.floway-scope-expression-part-control')!).alignItems).toBe('center');
   } finally {
     stylesheet.remove();
   }

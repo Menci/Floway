@@ -26,7 +26,8 @@ export const scopeExpressionCss = String.raw`
   flex: 1;
 }
 
-/* Keep the action in the first standard-height line when the path wraps. */
+/* Keep the small action in the first standard-height line when the path wraps.
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-button/library/src/components/Button/useButtonStyles.styles.ts */
 .floway-scope-editor > .fui-Button {
   --floway-scope-editor-action-size: 24px;
   align-self: flex-start;
@@ -152,7 +153,8 @@ export const scopeExpressionCss = String.raw`
   min-width: 0;
 }
 
-.floway-scope-expression-segment:has(.floway-scope-expression-model-icon) {
+.floway-scope-expression-segment:has(.floway-scope-expression-model-icon),
+.floway-scope-expression-segment:has(.floway-scope-expression-model-icon) .floway-scope-expression-part-control {
   align-items: flex-start;
 }
 
@@ -176,7 +178,7 @@ export const scopeExpressionCss = String.raw`
 }
 
 .floway-scope-expression-part-control {
-  align-items: flex-start;
+  align-items: center;
   display: flex;
   max-width: 100%;
   min-width: 0;
@@ -263,7 +265,9 @@ button.floway-scope-expression-part:focus-visible {
   align-items: flex-start;
   display: inline-flex;
   gap: var(--spacingHorizontalXS);
+  max-width: 100%;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .floway-scope-expression-regex {
