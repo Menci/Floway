@@ -554,7 +554,7 @@ test('Anthropic Messages biology refusal becomes a non-retryable Codex OpenAI Re
   assertEquals(failed?.response.status, 'failed');
   assertEquals(failed?.response.error, {
     code: 'bio_policy',
-    message: 'This content was flagged for possible biological risk. This request could enable biological harm.',
+    message: 'This request could enable biological harm.',
   });
   assertEquals(callAnthropicMessages.mock.calls.length, 1);
 });
