@@ -1,3 +1,5 @@
+import { isEqual } from 'es-toolkit';
+
 import { sleep } from '../../../../../shared/sleep.ts';
 import { enumerateModelCandidates } from '../../../../providers/resolution.ts';
 import { stampUpstreamCallStart } from '../../../../shared/attempt-timing.ts';
@@ -6,15 +8,13 @@ import type { AttemptState } from '../../../../shared/gateway-ctx.ts';
 import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromOpenAIImagesBody } from '../../../../shared/telemetry/usage.ts';
 import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-loader.ts';
-import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
+import type { ServerToolHistoryExpansion, ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
 import { decodeForgivingBase64, encodeHex, isImageMediaType, isJsonObject, mediaTypeEssence, parseSSEStream } from '@floway-dev/protocols/common';
 import {
   collectOpenAIResponsesToolEntries,
   createRandomOpenAIResponsesItemId,
-  type OpenAIResponsesFunctionCallOutputItem,
   type OpenAIResponsesFunctionTool,
-  type OpenAIResponsesFunctionToolCallItemEx,
   type OpenAIResponsesHostedTool,
   type OpenAIResponsesInputImage,
   type OpenAIResponsesInputImageGenerationCall,
@@ -1149,6 +1149,15 @@ const consumeImageResponse = async (
   return { ok: true, b64, echo: extractEcho(parsed) };
 };
 
+const imageReplayInputs = (item: Pick<OpenAIResponsesInputImageGenerationCall, 'action' | 'revised_prompt' | 'size' | 'quality' | 'output_format' | 'background'>) => ({
+  action: item.action,
+  revised_prompt: item.revised_prompt,
+  size: item.size,
+  quality: item.quality,
+  output_format: item.output_format,
+  background: item.background,
+});
+
 // Build the completed/failed `image_generation_call` output item plus its
 // closing events. On success the final bytes ride `output_item.done.item.result`
 // and a `response.image_generation_call.completed` closes the item; on failure
@@ -1173,7 +1182,7 @@ export const imageTerminal = (
       revised_prompt: prompt,
       error: { message: outcome.error.message, code: outcome.error.code, type: outcome.error.type },
     };
-    return { item, endEvents: [] };
+    return { item, endEvents: [], replayData: imageReplayInputs(item) };
   }
 
   const item: ServerToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCallEx, 'id'> = {
@@ -1184,7 +1193,7 @@ export const imageTerminal = (
     revised_prompt: prompt,
     ...outcome.echo,
   };
-  return { item, endEvents: [{ type: 'response.image_generation_call.completed' }] };
+  return { item, endEvents: [{ type: 'response.image_generation_call.completed' }], replayData: imageReplayInputs(item) };
 };
 
 // One standalone-images SSE data line, folded into a backend-agnostic signal.
@@ -1323,23 +1332,11 @@ const streamImageGeneration = (
   return finish({ ok: true, b64: finalB64, echo: finalEcho });
 };
 
-interface ImageGenerationCallPrivatePayload {
-  functionCallItem: OpenAIResponsesFunctionToolCallItemEx;
-}
-
-const isImageGenerationCallPrivatePayload = (value: unknown): value is ImageGenerationCallPrivatePayload => {
-  if (!isJsonObject(value)) return false;
-  const call = value.functionCallItem;
-  return isJsonObject(call) && call.type === 'function_call'
-    && typeof call.call_id === 'string' && typeof call.name === 'string' && typeof call.arguments === 'string';
-};
-
 export const expandImageGenerationCall = (
   item: OpenAIResponsesInputImageGenerationCall,
-  toolName: string,
-  getPrivatePayload?: (id: string) => unknown,
-): CanonicalOpenAIResponsesInputItem[] => {
-  const out: CanonicalOpenAIResponsesInputItem[] = [];
+  replay?: { data: unknown },
+): ServerToolHistoryExpansion => {
+  if (replay !== undefined && !isJsonObject(replay.data)) throw new TypeError('Invalid image generation replay data');
   const id = item.id !== undefined && item.id.length > 0 ? item.id : synthesizeImageGenerationCallId();
   // Replay the full failure detail (code/message/retryable) the orchestrator
   // needs to decide between retry, re-parameterize, and apology — a bare
@@ -1356,28 +1353,12 @@ export const expandImageGenerationCall = (
         },
       })
     : JSON.stringify({ ok: true, status: 'completed', id });
-  const privatePayload = getPrivatePayload?.(id);
-  let functionCall: OpenAIResponsesFunctionToolCallItemEx;
-  if (privatePayload === undefined) {
-    functionCall = {
-      type: 'function_call', call_id: `cc_from_${id}`, name: toolName,
-      arguments: JSON.stringify({ prompt: item.revised_prompt ?? '' }), status: 'completed',
-    };
-  } else {
-    if (!isImageGenerationCallPrivatePayload(privatePayload)) throw new TypeError('Invalid image generation replay payload');
-    functionCall = privatePayload.functionCallItem;
-  }
-  const functionCallOutput: OpenAIResponsesFunctionCallOutputItem = {
-    type: 'function_call_output',
-    call_id: functionCall.call_id,
-    output,
-  };
-  out.push(functionCall, functionCallOutput);
+  const feedback: ServerToolHistoryExpansion['feedback'] = [];
 
   // Also provide vision input so subsequent turns can inspect or edit the image.
   if (item.status !== 'failed' && typeof item.result === 'string' && item.result.length > 0) {
     const mime = item.output_format === 'jpeg' ? 'image/jpeg' : 'image/png';
-    out.push({
+    feedback.push({
       type: 'message',
       role: 'user',
       content: [
@@ -1386,7 +1367,15 @@ export const expandImageGenerationCall = (
       ],
     });
   }
-  return out;
+  if (replay !== undefined && isEqual(replay.data, imageReplayInputs(item))) {
+    return { callSource: 'replay', output, feedback };
+  }
+  return {
+    callSource: 'synthesized',
+    synthesizedCall: { callId: `cc_from_${id}`, arguments: JSON.stringify({ prompt: item.revised_prompt ?? '' }) },
+    output,
+    feedback,
+  };
 };
 
 export const imageGenerationServerTool: ServerToolRegistration = async (invocation, gatewayCtx) => {
@@ -1399,8 +1388,8 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
   const hasHostedTool = tools.some(isHostedImageGenerationTool);
   const hasReplayInput = invocation.payload.input.some(i => i.type === 'image_generation_call');
   if (!hasHostedTool && !hasReplayInput) return { type: 'inactive' };
-  const expandHistoryItem = (item: CanonicalOpenAIResponsesInputItem, toolName: string) => item.type === 'image_generation_call'
-    ? expandImageGenerationCall(item, toolName, id => gatewayCtx.store.getPrivatePayload(id))
+  const expandHistoryItem = (item: CanonicalOpenAIResponsesInputItem, replay?: { data: unknown }) => item.type === 'image_generation_call'
+    ? expandImageGenerationCall(item, replay)
     : undefined;
 
   if (!hasHostedTool) {
@@ -1530,13 +1519,12 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
             { type: 'response.image_generation_call.generating' },
           ],
           async *run() {
-            const result = budgetExhausted
+            return budgetExhausted
               ? imageTerminal(promptArg, 'generate', {
                   ok: false,
                   error: { type: 'image_generation_error', code: 'tool_call_budget_exhausted', message: `Image generation budget (${IMAGE_ITERATION_CAP} attempts) reached for this response. Summarize and finish without another image.`, retryable: false },
                 })
               : yield* streamImageGeneration(promptArg, operation.action, operation.action === 'edit', sources, state)();
-            return { ...result, privatePayload: { functionCallItem: intercepted.functionCall } };
           },
         }];
       },
