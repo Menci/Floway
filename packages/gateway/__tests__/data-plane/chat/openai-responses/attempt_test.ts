@@ -6,12 +6,11 @@ import { openaiResponsesAttempt } from '../../../../src/data-plane/chat/openai-r
 import { withOpenAIResponsesCompactShim } from '../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
 import { openaiResponsesInterceptors } from '../../../../src/data-plane/chat/openai-responses/interceptors/index.ts';
 import type { OpenAIResponsesInterceptor } from '../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
-import { hydrateOpenAIResponsesPayload } from '../../../../src/data-plane/chat/openai-responses/items/hydrate.ts';
 import * as outputModule from '../../../../src/data-plane/chat/openai-responses/items/output.ts';
 import { createOpenAIResponsesHttpStore } from '../../../../src/data-plane/chat/openai-responses/items/store.ts';
 import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gateway-ctx.ts';
+import { SidecarDomain } from '../../../../src/data-plane/chat/shared/sidecar-codec.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
-import type { StoredOpenAIResponsesItem } from '../../../../src/repo/types.ts';
 import { encodeBase64UrlJson } from '../../../../src/shared/base64url-json.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
@@ -98,19 +97,6 @@ const installRepo = () => {
     openaiResponsesRetentionSeconds: TEST_OPENAI_RESPONSES_RETENTION_SECONDS,
   });
   return repo;
-};
-
-const insertStoredItem = async (repo: InMemoryRepo, overrides: Partial<StoredOpenAIResponsesItem> & Pick<StoredOpenAIResponsesItem, 'id'> & { type: string }): Promise<StoredOpenAIResponsesItem> => {
-  const { type, ...itemOverrides } = overrides;
-  const row: StoredOpenAIResponsesItem = {
-    apiKeyId: API_KEY_ID,
-    itemHash: `hash-${overrides.id}`,
-    payload: { item: { type, id: overrides.id } },
-    refreshedAt: Date.now(),
-    ...itemOverrides,
-  };
-  await repo.openaiResponsesItems.insertMany([row], 0);
-  return row;
 };
 
 test('generate native success leaves source-edge state ownership to the caller', async () => {
@@ -577,24 +563,8 @@ test('generate preserves order and downgrades a disallowed system turn across tr
   ]);
 });
 
-test('generate seeds privatePayload before interceptors so the web-search shim replays the prior wsc results on echo', async () => {
-  // End-to-end contract: when a stateless client (e.g. Codex CLI) echoes a
-  // prior gateway-created web_search_call by its emitted id, the web-search shim's
-  // `expandHistoryItem` (which runs as part of the interceptor chain) must
-  // find the persisted `payload.private` and emit the cached function_call
-  // + function_call_output pair to upstream — NOT the not-preserved
-  // placeholder.
-  //
-  // The wire shape we model here:
-  //   - row.id = the public item id echoed as `wsc.id`.
-  //   - payload.item.id = that same public id.
-  //   - payload.private = WebSearchCallPrivatePayload (v:1, functionCallItem, ir).
-  //
-  // This regression caught a prior ordering bug where hydration + beginAttempt
-  // ran inside the interceptor closure, after the shim's input transform —
-  // so privatePayload was always empty when the shim looked it up, and
-  // every echoed wsc collapsed to the placeholder.
-  const repo = installRepo();
+test('generate restores signed hosted-tool replay data without stored state', async () => {
+  installRepo();
   const storedId = `ws_${'a'.repeat(32)}`;
   const storedItem = {
     type: 'web_search_call' as const,
@@ -602,30 +572,22 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
     status: 'completed' as const,
     action: { type: 'search' as const, query: 'deepseek v4', queries: ['deepseek v4'] },
   };
-  await insertStoredItem(repo, {
-    id: storedId,
-    type: 'web_search_call',
-    payload: {
-      item: storedItem,
-      private: {
-        v: 1,
-        functionCallItem: {
-          type: 'function_call',
-          call_id: 'call_orig_xyz',
-          name: 'web_search',
-          arguments: '{"search_query":[{"q":"deepseek v4"}]}',
-          status: 'completed',
-        },
-        ir: {
-          action: { type: 'search', query: 'deepseek v4', queries: ['deepseek v4'] },
-          results: [{ type: 'text_result', url: 'https://example.com', title: 'Example', snippet: 'CACHED_SNIPPET_BODY' }],
-        },
-      },
+  const replay = {
+    functionCall: {
+      type: 'function_call' as const,
+      call_id: 'call_orig_xyz',
+      name: 'web_search',
+      arguments: '{"search_query":[{"q":"deepseek v4"}]}',
+      status: 'completed',
     },
-  });
+    data: {
+      action: { type: 'search', query: 'deepseek v4', queries: ['deepseek v4'] },
+      results: [{ type: 'text_result', url: 'https://example.com', title: 'Example', snippet: 'CACHED_SNIPPET_BODY' }],
+    },
+  };
 
   // Capture the upstream-bound body so we can verify what the shim produced
-  // after the echoed wsc passed through expandHistoryItem.
+  // after the echoed wsc passed through transformItems.
   let capturedBody: { input?: unknown[] } | undefined;
   const upstreamResponse = makeOpenAIResponsesResult();
   // The shim's multi-turn loop requires `response.created` (carrying a model
@@ -642,41 +604,28 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   });
   const candidate = makeCandidate(callOpenAIResponses, new Set(['openai-responses-web-search-shim']));
 
-  const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), true);
-  await store.loadInputItems([{ type: 'web_search_call', id: storedId }], []);
-  const ctx = makeGatewayCtx(store);
+  const ctx = makeGatewayCtx();
   const carrier = await ctx.affinity.codec.wrap(
-    undefined,
+    await ctx.sidecarCodecFactory.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall).encode({ v: 1, type: storedItem.type, ...replay }),
     {
       upstreamId: candidate.provider.upstreamId,
       modelId: candidate.model.id,
       opaqueBlobCompatibilityIdentity: { upstreamId: candidate.provider.upstreamId, key: candidate.model.id },
     },
     'openai-responses.reasoning.encrypted_content',
-    { syntheticItem: true },
   );
 
   const sourcePayload = makePayload({
     input: [
       { type: 'message', role: 'user', content: 'follow-up' },
       { type: 'reasoning', id: 'rs_affinity', summary: [], encrypted_content: carrier },
-      {
-        type: 'web_search_call',
-        id: storedId,
-        status: 'completed',
-        action: { type: 'search', queries: ['deepseek v4'] },
-      } as unknown as never,
+      storedItem,
     ],
     tools: [{ type: 'web_search' }],
   });
-  await store.loadInputItems(sourcePayload.input, sourcePayload.input);
-  const hydrated = hydrateOpenAIResponsesPayload(sourcePayload, store);
-  const affinity = await analyzeOpenAIResponsesAffinity(hydrated.payload, ctx.affinity.codec);
+  const affinity = await analyzeOpenAIResponsesAffinity(JSON.parse(JSON.stringify(sourcePayload)), ctx.affinity.codec);
   const result = await openaiResponsesAttempt.generate({
     payload: acceptedAffinityEvaluation(affinity, candidate).materialize(),
-    sourceState: {
-      privatePayloads: hydrated.privatePayloads,
-    },
     ctx,
     candidate,
     headers: new Headers(),
@@ -687,8 +636,6 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
 
   assert(capturedBody !== undefined, 'callOpenAIResponses was not invoked');
   const input = (capturedBody!.input ?? []) as Array<{ type: string; call_id?: string; output?: string; name?: string; arguments?: string }>;
-  // The wsc echo MUST be replaced by the recovered function_call + output pair,
-  // carrying the persisted call_id and the cached snippet body verbatim.
   const fc = input.find(i => i.type === 'function_call' && i.call_id === 'call_orig_xyz');
   assert(fc !== undefined, 'expected replayed function_call with the persisted call_id');
   assertEquals(fc!.name, 'web_search');
@@ -696,10 +643,9 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   const fco = input.find(i => i.type === 'function_call_output' && i.call_id === 'call_orig_xyz');
   assert(fco !== undefined, 'expected replayed function_call_output');
   assert(fco!.output?.includes('CACHED_SNIPPET_BODY'), `expected cached body in function_call_output, got: ${fco!.output}`);
-  // And the not-preserved placeholder MUST NOT appear.
   assert(
     !input.some(i => i.type === 'function_call_output' && typeof i.output === 'string' && i.output.includes('Prior search results were not preserved')),
-    'shim emitted the not-preserved placeholder despite a stored private payload',
+    'shim emitted the not-preserved placeholder despite authenticated replay data',
   );
 });
 

@@ -23,7 +23,7 @@ import { initRepo } from '../../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../../test-utils/gateway-ctx.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputImage, CanonicalOpenAIResponsesInputItem, OpenAIResponsesPayloadEx, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputImage, OpenAIResponsesInputImageGenerationCall, CanonicalOpenAIResponsesInputItem, OpenAIResponsesPayloadEx, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals, assertFalse, assertStringIncludes, assertThrows, stubModelCandidate } from '@floway-dev/test-utils';
 
 const PNG_B64 = 'aGVsbG8='; // "hello" — any decodable base64 works for source tests.
@@ -383,7 +383,7 @@ test('a request inspector reuses decoded bytes after generated results become re
     output_format: 'jpeg',
   };
   const initial = inspect([generated]);
-  const replay = inspect(expandImageGenerationCall(generated, SHIM_TOOL_NAME));
+  const replay = inspect(expandImageGenerationCall(generated).feedback!);
   assert(initial.sources[0] === replay.sources[0]);
 });
 
@@ -396,9 +396,8 @@ test('auto generation pivots to edit when a generated image is fed back', () => 
 
   const replayInput = expandImageGenerationCall(
     { type: 'image_generation_call', id: 'ig_replay', status: 'completed', result: PNG_B64 },
-    SHIM_TOOL_NAME,
   );
-  const replay = resolveImageOperation(config, inspect(replayInput));
+  const replay = resolveImageOperation(config, inspect(replayInput.feedback!));
   assert(replay.ok);
   assertEquals(replay.action, 'edit');
   assertEquals(replay.sources.length, 1);
@@ -406,65 +405,37 @@ test('auto generation pivots to edit when a generated image is fed back', () => 
 
 // ── expandImageGenerationCall ──
 
-test('expandImageGenerationCall rewrites a completed call into a function_call + output pair and feeds the image back', () => {
+test('expandImageGenerationCall provides fallback arguments, result and image feedback', () => {
   const out = expandImageGenerationCall(
     { type: 'image_generation_call', id: 'ig_1', status: 'completed', result: PNG_B64, revised_prompt: 'a red dot', output_format: 'jpeg' },
-    'image_generation',
   );
-  assertEquals(out.length, 3);
-  assert(out[0].type === 'function_call');
-  assertEquals(out[0].name, 'image_generation');
-  assertEquals(out[0].call_id, 'cc_from_ig_1');
-  assertStringIncludes(out[0].arguments, 'a red dot');
-  assert(out[1].type === 'function_call_output');
-  assertEquals(out[1].call_id, 'cc_from_ig_1');
-  assert(typeof out[1].output === 'string');
-  assertStringIncludes(out[1].output, '"ok":true');
-  assert(out[2].type === 'message');
-  assert(Array.isArray(out[2].content));
-  const imageBlock = out[2].content.find(b => b.type === 'input_image');
+  assertEquals(out.callSource, 'synthesized');
+  if (out.callSource !== 'synthesized') throw new Error('Expected a synthesized call');
+  assertEquals(out.synthesizedCall, { callId: 'cc_from_ig_1', arguments: '{"prompt":"a red dot"}' });
+  assert(typeof out.output === 'string');
+  assertStringIncludes(out.output, '"ok":true');
+  assertEquals(out.feedback?.length, 1);
+  const message = out.feedback![0];
+  assertEquals(message.role, 'user');
+  assert(Array.isArray(message.content));
+  const imageBlock = message.content.find(b => b.type === 'input_image');
   assert(imageBlock !== undefined);
   assertEquals((imageBlock as { image_url: string }).image_url, `data:image/jpeg;base64,${PNG_B64}`);
-});
-
-test('image replay uses the original helper call rather than revised prompt or synthesized identity', () => {
-  const functionCallItem = {
-    type: 'function_call' as const, id: 'fc_original', call_id: 'call_original', name: 'original_alias',
-    arguments: ' { "prompt" : "\\u732b", "options" : [true, null, 9007199254740993] }\n', status: 'completed',
-  };
-  const output = expandImageGenerationCall(
-    { type: 'image_generation_call', id: 'ig_1', status: 'completed', result: PNG_B64, revised_prompt: 'different prompt' },
-    'new_alias', () => ({ functionCallItem }),
-  );
-  assertEquals(output[0], functionCallItem);
-  assert(output[1].type === 'function_call_output');
-  assertEquals(output[1].call_id, 'call_original');
-});
-
-test('image replay exposes malformed tool-private state', () => {
-  assertThrows(() => expandImageGenerationCall(
-    { type: 'image_generation_call', id: 'ig_1', status: 'completed', result: PNG_B64 },
-    'image_generation', () => ({ functionCallItem: { type: 'function_call', arguments: 1 } }),
-  ), TypeError, 'Invalid image generation replay payload');
 });
 
 test('expandImageGenerationCall does not feed back an image for a failed call', () => {
   const out = expandImageGenerationCall(
     { type: 'image_generation_call', id: 'ig_f', status: 'failed', result: null, error: { message: 'x', code: 'server_error' } },
-    'image_generation',
   );
-  assertEquals(out.length, 2);
-  assertFalse(out.some(i => i.type === 'message'));
+  assertEquals(out.feedback, []);
 });
 
 test('expandImageGenerationCall encodes a failed call as ok:false with error detail', () => {
   const out = expandImageGenerationCall(
     { type: 'image_generation_call', id: 'ig_2', status: 'failed', result: null, revised_prompt: 'x', error: { message: 'overloaded', code: 'EngineOverloaded' } },
-    'image_generation',
   );
-  assert(out[1].type === 'function_call_output');
-  assert(typeof out[1].output === 'string');
-  const parsed = JSON.parse(out[1].output) as { ok: boolean; error: { code: string; message: string; retryable: boolean } };
+  assert(typeof out.output === 'string');
+  const parsed = JSON.parse(out.output) as { ok: boolean; error: { code: string; message: string; retryable: boolean } };
   assertEquals(parsed.ok, false);
   assertEquals(parsed.error.code, 'EngineOverloaded');
   assertEquals(parsed.error.message, 'overloaded');
@@ -472,6 +443,24 @@ test('expandImageGenerationCall encodes a failed call as ok:false with error det
 });
 
 // ── imageTerminal ──
+
+test.each([false, true])('image replay records input fields independently of success or failure: %s', failed => {
+  const echo = { size: '1024x1024', quality: 'high', output_format: 'png', background: 'opaque' } as const;
+  const terminal = imageTerminal('a cat', 'generate', failed
+    ? { ok: false, error: { type: 'image_generation_error', message: 'failed', code: 'server_error', retryable: true } }
+    : { ok: true, b64: PNG_B64, echo });
+  assertEquals(terminal.replayData, {
+    action: failed ? undefined : 'generate', revised_prompt: 'a cat',
+    size: failed ? undefined : echo.size, quality: failed ? undefined : echo.quality,
+    output_format: failed ? undefined : echo.output_format, background: failed ? undefined : echo.background,
+  });
+  const item = { ...terminal.item, id: 'ig_echo' } as OpenAIResponsesInputImageGenerationCall;
+  const matched = expandImageGenerationCall(item, { data: terminal.replayData });
+  assertEquals(matched.callSource, 'replay');
+  assertFalse(Object.hasOwn(matched, 'synthesizedCall'));
+  assertEquals(expandImageGenerationCall({ ...item, result: 'b3RoZXI=' }, { data: terminal.replayData }).callSource, 'replay');
+  assertEquals(expandImageGenerationCall({ ...item, revised_prompt: 'different' }, { data: terminal.replayData }).callSource, 'synthesized');
+});
 
 test('imageTerminal on success echoes the backend-resolved fields and closes with a single completed event', () => {
   const outcome: ImageOutcome = { ok: true, b64: PNG_B64, echo: { size: '1024x1024', quality: 'high', output_format: 'png', background: 'opaque' } };
@@ -564,11 +553,9 @@ test('prepareImageGenerationConfig preserves a remote mask for materialization',
 test('expandImageGenerationCall preserves error type and retryability on replay', () => {
   const out = expandImageGenerationCall(
     { type: 'image_generation_call', id: 'ig_3', status: 'failed', result: null, error: { message: 'blocked', code: 'content_filter', type: 'image_generation_user_error' } },
-    'image_generation',
   );
-  assert(out[1].type === 'function_call_output');
-  assert(typeof out[1].output === 'string');
-  const parsed = JSON.parse(out[1].output) as { error: { type: string; code: string; retryable: boolean } };
+  assert(typeof out.output === 'string');
+  const parsed = JSON.parse(out.output) as { error: { type: string; code: string; retryable: boolean } };
   assertEquals(parsed.error.type, 'image_generation_user_error');
   assertEquals(parsed.error.code, 'content_filter');
   assertEquals(parsed.error.retryable, false);
@@ -669,7 +656,7 @@ test('imageGenerationServerTool fetches repeated remote edit sources once', asyn
 
   assert(result.type === 'active');
   assertEquals(urls, ['https://example.com/source.png']);
-  assertEquals(result.expandHistoryItem?.(input[0], SHIM_TOOL_NAME), undefined);
+  assertEquals(result.expandHistoryItem?.(input[0]), undefined);
   assert(input[0].type === 'message' && Array.isArray(input[0].content));
   const first = input[0].content[0];
   assert(first.type === 'input_image');
