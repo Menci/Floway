@@ -290,7 +290,7 @@ test('an empty terminal Responses output captures closed snapshots for round tri
     eventFrame({ type: 'response.output_item.done', output_index: 0, item: done } as any),
     eventFrame({ type: 'response.completed', response: response([]) } as any),
   ]), capture.roundTrip));
-  expect(capture.turns.get(0)).toEqual([{ type: 'message', id: 'msg', role: 'assistant', status: 'completed', content: done.content }]);
+  expect(capture.turns.get(0)?.turn).toEqual([{ type: 'message', id: 'msg', role: 'assistant', status: 'completed', content: done.content }]);
 });
 
 test('a non-empty terminal Responses output cannot change a closed item', async () => {

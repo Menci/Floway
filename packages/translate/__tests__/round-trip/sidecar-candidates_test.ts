@@ -6,7 +6,7 @@ import { computeGeminiGenerateContentTurnDigest, findGeminiGenerateContentSideca
 import { computeOpenAIChatCompletionsTurnDigest, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest, type OpenAIChatCompletionsAssistantTurn } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
 import { computeOpenAIResponsesTurnDigest, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest, type OpenAIResponsesAssistantTurn } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
 import { roundTripAssistantTurn, type EncodedRoundTripSidecar } from '../../src/round-trip/resolve.ts';
-import type { RoundTripProtocol } from '../../src/round-trip/sidecar.ts';
+import { encodeRoundTripSidecar, type RoundTripProtocol } from '../../src/round-trip/sidecar.ts';
 import type { RoundTripTurnDigest } from '../../src/round-trip/turn-digest.ts';
 
 const sourceCase = <Turn>(
@@ -22,9 +22,9 @@ const sourceCase = <Turn>(
     const ordinary = makeTurn(['foreign-before', 'foreign-after']);
     const check = await compute(ordinary);
     const restored = { role: 'assistant' as const, content: 'native target answer' };
-    const owned = await codec.encode({ v: 1, source, target: 'openaiChatCompletions', targetTurn: restored, sourceTurnDigest: check });
+    const owned = await encodeRoundTripSidecar(codec, { v: 1, source, target: 'openaiChatCompletions', targetTurn: restored, sourceTurnDigest: check });
     const checked = vi.fn(verify);
-    const run = (turn: Turn) => roundTripAssistantTurn(source, 'openaiChatCompletions', turn, codec, inspect, checked);
+    const run = (turn: Turn) => roundTripAssistantTurn(source, 'openaiChatCompletions', turn, codec, inspect, checked, () => []);
     if (scenario === 'foreign') {
       const before = structuredClone(ordinary);
       await expect(run(ordinary)).resolves.toBeUndefined();
@@ -38,17 +38,18 @@ const sourceCase = <Turn>(
       expect(turn).toEqual(before);
     } else if (scenario === 'wrong-direction') {
       const wrongSource = source === 'anthropicMessages' ? 'openaiResponses' : 'anthropicMessages';
-      const foreign = await codec.encode({ v: 1, source: wrongSource, target: 'openaiChatCompletions', targetTurn: restored, sourceTurnDigest: check });
+      const foreign = await encodeRoundTripSidecar(codec, { v: 1, source: wrongSource, target: 'openaiChatCompletions', targetTurn: restored, sourceTurnDigest: check });
       const history = makeTurn([foreign]);
-      const own = await codec.encode({ v: 1, source, target: 'openaiChatCompletions', targetTurn: restored, sourceTurnDigest: await compute(history) });
+      const own = await encodeRoundTripSidecar(codec, { v: 1, source, target: 'openaiChatCompletions', targetTurn: restored, sourceTurnDigest: await compute(history) });
       await expect(run(makeTurn([own, foreign]))).resolves.toEqual({ turn: restored });
       expect(checked).toHaveBeenCalledExactlyOnceWith(history, expect.any(Object), 1);
     } else if (scenario === 'malformed') {
+      // Deliberately bypass the typed encoder to exercise authenticated envelope validation.
       const broken = await codec.encode({ v: 1, source, target: 'anthropicMessages', targetTurn: { role: 'user' }, sourceTurnDigest: check });
       await expect(run(makeTurn([owned, broken]))).rejects.toThrow('Messages assistant turn is invalid');
       expect(checked).not.toHaveBeenCalled();
     } else {
-      const second = scenario === 'duplicate' ? owned : await codec.encode({
+      const second = scenario === 'duplicate' ? owned : await encodeRoundTripSidecar(codec, {
         v: 1, source, target: 'anthropicMessages', targetTurn: { role: 'assistant', content: [] }, sourceTurnDigest: check,
       });
       await expect(run(makeTurn([second, owned]))).rejects.toThrow('multiple recognized round-trip sidecars');

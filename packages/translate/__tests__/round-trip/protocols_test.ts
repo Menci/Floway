@@ -447,11 +447,11 @@ describe('assistant-turn sidecar protocols', () => {
     const turns = partitionAnthropicMessagesTurns([first, second, user]);
     expect(turns.map(({ role, items }) => [role, items.length])).toEqual([['assistant', 2], ['user', 1]]);
     expect(turns.map(({ items }) => items).flat()).toEqual([first, second, user]);
-    const assistantTurn = [first, second];
-    const inspection = fixtureSidecar(findAnthropicMessagesSidecarCarriers(assistantTurn));
+    const targetTurn = [first, second];
+    const inspection = fixtureSidecar(findAnthropicMessagesSidecarCarriers(targetTurn));
     expect(inspection.sidecar).toBe('opaque-sidecar');
     const check = await computeAnthropicMessagesTurnDigest(inspection.turn);
-    expect(await verifyMessagesTurn(assistantTurn, check)).toBe(true);
+    expect(await verifyMessagesTurn(targetTurn, check)).toBe(true);
     const changed = (blocks: Block[]): AnthropicMessagesAssistantMessage[] =>
       [{ role: 'assistant', content: [...blocks, carrier] }];
     for (const changedTurn of [

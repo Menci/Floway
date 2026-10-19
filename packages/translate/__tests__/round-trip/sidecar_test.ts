@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { createTestSidecarCodec } from './sidecar-codec.ts';
-import { decodeRoundTripSidecar, type RoundTripSidecar } from '../../src/round-trip/sidecar.ts';
+import { decodeRoundTripSidecar, encodeRoundTripSidecar, type RoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import { rawJSON } from '../../src/shared/json/raw-json.ts';
 
 const envelope: RoundTripSidecar<'openaiChatCompletions'> = {
@@ -13,7 +13,7 @@ const envelope: RoundTripSidecar<'openaiChatCompletions'> = {
 
 test('restores a round-trip payload recognized by the injected decoder', async () => {
   const codec = createTestSidecarCodec();
-  const encoded = await codec.encode(envelope);
+  const encoded = await encodeRoundTripSidecar(codec, envelope);
   expect(await decodeRoundTripSidecar(codec, 'openaiResponses', encoded)).toEqual(envelope);
   expect(await decodeRoundTripSidecar(codec, 'anthropicMessages', encoded)).toBeUndefined();
 });
@@ -66,7 +66,7 @@ test('the opaque fixture codec independently snapshots JSON values, raw numbers,
     targetTurn: { role: 'assistant', content: 'original', provider_specific_fields: { amount: rawJSON.rawJSON('1e400') } },
     sourceTurnDigest: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
   };
-  const encoded = await codec.encode(payload);
+  const encoded = await encodeRoundTripSidecar(codec, payload);
   payload.targetTurn.content = 'edited input';
   payload.sourceTurnDigest[0] = 9;
   const decoded = await decodeRoundTripSidecar(codec, 'openaiResponses', encoded);

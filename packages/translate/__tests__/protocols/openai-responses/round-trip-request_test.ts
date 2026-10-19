@@ -4,6 +4,7 @@ import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier }
 import type { OpenAIResponsesAssistantTurn } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
 import { buildTargetRequest as buildMessagesRequest } from '../../../src/protocols/openai-responses/via-anthropic-messages/request.ts';
 import { buildTargetRequest as buildChatRequest } from '../../../src/protocols/openai-responses/via-openai-chat-completions/request.ts';
+import { encodeRoundTripSidecar } from '../../../src/round-trip/sidecar.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
@@ -28,22 +29,22 @@ const request = (sidecar: string): CanonicalOpenAIResponsesPayload => ({
 
 it('keeps restored Chat history native while translating bare namespace calls', async () => {
   const codec = createTestSidecarCodec();
-  const assistantTurn = {
+  const targetTurn = {
     role: 'assistant' as const,
     content: null,
     tool_calls: [{ type: 'function' as const, id: 'native', function: { name: 'native_tool', arguments: '{}' } }],
   };
-  const sidecar = await codec.encode({
+  const sidecar = await encodeRoundTripSidecar(codec, {
     v: 1,
     source: 'openaiResponses',
-    target: 'openaiChatCompletions', targetTurn: assistantTurn,
+    target: 'openaiChatCompletions', targetTurn,
     sourceTurnDigest: await computeOpenAIResponsesTurnDigest(replayedTurn),
   });
   const result = await buildChatRequest(request(sidecar), codec);
 
   expect(result.target.messages).toEqual([
     { role: 'system', content: 'instructions' },
-    assistantTurn,
+    targetTurn,
     { role: 'tool', tool_call_id: 'native', content: 'native result' },
     { role: 'assistant', content: null, tool_calls: [{ type: 'function', id: 'bare', function: { name: 'web_run_2', arguments: '{}' } }] },
   ]);
@@ -51,14 +52,14 @@ it('keeps restored Chat history native while translating bare namespace calls', 
 
 it('keeps restored Messages history native while hoisting system and translating bare namespace calls', async () => {
   const codec = createTestSidecarCodec();
-  const assistantTurn = {
+  const targetTurn = {
     role: 'assistant' as const,
     content: [{ type: 'tool_use' as const, id: 'native', name: 'native_tool', input: {} }],
   };
-  const sidecar = await codec.encode({
+  const sidecar = await encodeRoundTripSidecar(codec, {
     v: 1,
     source: 'openaiResponses',
-    target: 'anthropicMessages', targetTurn: assistantTurn,
+    target: 'anthropicMessages', targetTurn,
     sourceTurnDigest: await computeOpenAIResponsesTurnDigest(replayedTurn),
   });
   const result = await buildMessagesRequest(request(sidecar), codec, {
@@ -67,7 +68,7 @@ it('keeps restored Messages history native while hoisting system and translating
 
   expect(result.target.system).toEqual([{ type: 'text', text: 'instructions', cache_control: { type: 'ephemeral' } }]);
   expect(result.target.messages).toEqual([
-    assistantTurn,
+    targetTurn,
     { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'native', content: 'native result', is_error: undefined }] },
     { role: 'assistant', content: [{ type: 'tool_use', id: 'bare', name: 'web_run_2', input: {}, cache_control: { type: 'ephemeral' } }] },
   ]);
@@ -82,7 +83,7 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('bypasses ordin
     { type: 'function_call', namespace: 'x.y', name: 'f', call_id: 'first', arguments: '{}', status: 'completed' },
     { type: 'function_call', namespace: 'x', name: 'y.f', call_id: 'second', arguments: '{}', status: 'completed' },
   ];
-  const sidecar = await codec.encode({
+  const sidecar = await encodeRoundTripSidecar(codec, {
     v: 1,
     source: 'openaiResponses',
     target, targetTurn: native,
@@ -109,7 +110,7 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('bypasses ordin
 
 it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('allocates bare namespace collisions in source order after asynchronous %s replay checks', async target => {
   const codec = createTestSidecarCodec();
-  const sidecar = await codec.encode({
+  const sidecar = await encodeRoundTripSidecar(codec, {
     v: 1,
     source: 'openaiResponses',
     target: 'geminiGenerateContent', targetTurn: [],
@@ -141,7 +142,7 @@ it.each(['additional_tools', 'tool_search_output'] as const)('restores assistant
     const turns: CanonicalOpenAIResponsesPayload['input'][] = ['first', 'second'].map(text => [
       { type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] },
     ]);
-    const carriers = await Promise.all(turns.map(async (turn, index) => createOpenAIResponsesSidecarCarrier(`carrier_${index}`, await codec.encode({
+    const carriers = await Promise.all(turns.map(async (turn, index) => createOpenAIResponsesSidecarCarrier(`carrier_${index}`, await encodeRoundTripSidecar(codec, {
       v: 1,
       source: 'openaiResponses',
       target, targetTurn: nativeTurns[index], sourceTurnDigest: await computeOpenAIResponsesTurnDigest(turn),

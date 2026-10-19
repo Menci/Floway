@@ -257,7 +257,9 @@ test.each(returnedTrips)('$a via $b returns generated content and a decodable si
   const translation = await trip(codecScope);
   const fixture = {
     text: ['return ', 'path'],
-    thinking: ['upstream thought'], signature: 'native B encrypted content',
+    thinking: ['upstream thought'],
+    signature: 'native B encrypted content',
+    tools: [{ name: 'lookup', id: 'native-call', args: { q: 'value' } }],
   };
   const frames = await collect(translation.events(iterate(fixtureFrames(b, fixture))));
   const assistant = await collectAssistantTurn(a, frames);
