@@ -85,7 +85,10 @@ export const tokenUsageOverview = async (c: Ctx) => {
   return c.json({
     ...overview,
     ...metadata,
-    auditableUserIds: [...identity.visibleUserIds].sort((left, right) => left - right),
+    // The same user set the response already names: User.Audit targets plus
+    // users revealed by visible upstream rows. The dashboard uses this to
+    // choose the search-usage view, so it must not disagree with `users`.
+    auditableUserIds: metadata.users.map(user => user.id),
     upstreams: telemetryUpstreamMetadata(identity, revealedUpstreamIds),
   } satisfies TokenUsageOverviewResponse);
 };
