@@ -1,7 +1,12 @@
 import { decode as decodeCBOR, Encoder, Tag } from 'cbor-x';
 
 import { decodeCanonicalBase64, decodeCanonicalBase64url, decodeForgivingBase64, encodeBase64, encodeBase64url } from '@floway-dev/protocols/common';
-import type { SidecarCodec } from '@floway-dev/translate';
+import { SidecarTaggedValue } from '@floway-dev/translate';
+
+export interface SidecarCodec {
+  encode: (payload: NonNullable<unknown> | null) => Promise<string>;
+  decode: (encoded: string) => Promise<unknown>;
+}
 
 export enum SidecarDomain {
   TranslatedAssistantTurn = 0,
@@ -12,6 +17,7 @@ export interface SidecarCodecFactory {
 }
 
 const SIGNATURE_LENGTH = 32;
+const APPLICATION_TAG_MIN = 65_536;
 const RAW_JSON_TAG = 65_539;
 const encoder = new Encoder({ useRecords: false, tagUint8Array: false });
 const rawJSON = JSON as typeof JSON & {
@@ -21,7 +27,7 @@ const rawJSON = JSON as typeof JSON & {
 
 const mapCBORValue = (value: unknown, transform: (value: unknown) => unknown): unknown => {
   const mapped = transform(value);
-  if (mapped instanceof Tag || mapped instanceof Uint8Array || rawJSON.isRawJSON(mapped)) return mapped;
+  if (mapped instanceof Tag || mapped instanceof SidecarTaggedValue || mapped instanceof Uint8Array || rawJSON.isRawJSON(mapped)) return mapped;
   if (Array.isArray(mapped)) return mapped.map(child => mapCBORValue(child, transform));
   if (typeof mapped === 'object' && mapped !== null) {
     return Object.fromEntries(Object.entries(mapped).map(([key, child]) => [key, mapCBORValue(child, transform)]));
@@ -30,6 +36,7 @@ const mapCBORValue = (value: unknown, transform: (value: unknown) => unknown): u
 };
 
 export const encodeCBORValue = (value: unknown): Uint8Array => encoder.encode(mapCBORValue(value, value => {
+  if (value instanceof SidecarTaggedValue) return new Tag(value.value, value.tag);
   if (rawJSON.isRawJSON(value)) return new Tag(value.rawJSON, RAW_JSON_TAG);
   if (typeof value === 'string' && value.length >= 22) {
     const decodedBase64 = decodeCanonicalBase64(value);
@@ -53,6 +60,7 @@ const restoreCBORValue = (value: unknown): unknown => {
     if (!(value.value instanceof Uint8Array)) throw new TypeError('Base64URL sidecar tag requires bytes');
     return encodeBase64url(value.value);
   }
+  if (value instanceof Tag && value.tag >= APPLICATION_TAG_MIN) return new SidecarTaggedValue(value.tag, value.value);
   if (value instanceof Tag || value instanceof Uint8Array || rawJSON.isRawJSON(value)) return value;
   if (Array.isArray(value)) {
     for (let index = 0; index < value.length; index++) value[index] = restoreCBORValue(value[index]);

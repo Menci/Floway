@@ -2,6 +2,8 @@ import type { AssistantTurnByProtocol, AssistantTurnFor } from './assistant-turn
 import { decodeRoundTripSidecar, hasRoundTripTarget, type AnyRoundTripSidecar } from './sidecar.ts';
 import type { RoundTripTurnDigest } from './turn-digest.ts';
 import type { SidecarCodec } from '../types.ts';
+import type { ReplayContent } from './reference/assistant-turn.ts';
+import { restoreAssistantTurn } from './reference/restore.ts';
 
 export interface EncodedRoundTripSidecar<Turn> {
   readonly data: string;
@@ -24,6 +26,7 @@ export const roundTripAssistantTurn = async <Source extends keyof AssistantTurnB
   codec: SidecarCodec,
   inspect: (turn: SourceTurn) => EncodedRoundTripSidecar<SourceTurn>[],
   verify: (turn: SourceTurn, sourceTurnDigest: RoundTripTurnDigest, version: number) => Promise<boolean>,
+  collectCandidates: (turn: SourceTurn) => ReplayContent[],
 ): Promise<RoundTripAssistantTurn<Target> | undefined> => {
   let selected: { candidate: EncodedRoundTripSidecar<SourceTurn>; sidecar: AnyRoundTripSidecar } | undefined;
   for (const candidate of inspect(turn)) {
@@ -32,8 +35,10 @@ export const roundTripAssistantTurn = async <Source extends keyof AssistantTurnB
     if (selected !== undefined) throw new Error('Assistant turn has multiple recognized round-trip sidecars');
     selected = { candidate, sidecar };
   }
-  if (selected === undefined || !hasRoundTripTarget(selected.sidecar, target)
-    || !(await verify(selected.candidate.withoutSidecar(), selected.sidecar.sourceTurnDigest, selected.sidecar.v))) return undefined;
-
-  return { turn: selected.sidecar.targetTurn };
+  if (selected === undefined || !hasRoundTripTarget(selected.sidecar, target)) return undefined;
+  const sourceTurn = selected.candidate.withoutSidecar();
+  if (!(await verify(sourceTurn, selected.sidecar.sourceTurnDigest, selected.sidecar.v))) return undefined;
+  const hydrated = await restoreAssistantTurn(target, collectCandidates(sourceTurn), selected.sidecar.targetTurn, selected.sidecar.referencedContentHashes);
+  if (!hydrated.ok) throw new Error(`Authenticated assistant-turn sidecar restoration failed: ${hydrated.reason}`);
+  return { turn: hydrated.turn };
 };

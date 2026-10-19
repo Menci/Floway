@@ -1,6 +1,7 @@
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 export interface SidecarCodec {
+  /** Encode and decode must preserve sidecar tagged values, byte arrays, and raw JSON values. */
   encode: (payload: NonNullable<unknown> | null) => Promise<string>;
   decode: (encoded: string) => Promise<unknown>;
 }
