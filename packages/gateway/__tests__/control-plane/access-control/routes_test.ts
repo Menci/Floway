@@ -138,18 +138,21 @@ test('an audited user cannot resolve another user\'s effective scope', async () 
   assertEquals(response.status, 404);
 });
 
-test('a group auditor cannot resolve another group\'s effective scope', async () => {
+test('a group auditor can evaluate its own rules against another group scope', async () => {
   const { apiKey, repo } = await setupAppTest();
   const audited = await repo.groups.create('Audited', 120);
   const other = await repo.groups.create('Other', 180);
   await repo.accessRecords.save({ principal: { kind: 'user', id: apiKey.userId }, scope: { kind: 'group', groupId: audited.id }, sortOrder: 0, values: { 'Permission.Audit': true } });
+  await repo.accessRecords.save({ principal: { kind: 'group', id: audited.id }, scope: { kind: 'group', groupId: other.id }, sortOrder: 0, values: { 'User.Audit': true } });
 
   const response = await requestApp('/api/access-resolve', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
     body: JSON.stringify({ principal: { kind: 'group', id: audited.id }, scope: { kind: 'group', groupId: other.id } }),
   });
-  assertEquals(response.status, 404);
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  expect(body.records.map((record: { scope: { kind: string; groupId: number } }) => `${record.scope.kind}:${record.scope.groupId}`)).toEqual([`group:${other.id}`]);
 });
 
 test('a group auditor cannot resolve a user scope through membership', async () => {
@@ -166,6 +169,20 @@ test('a group auditor cannot resolve a user scope through membership', async () 
     body: JSON.stringify({ principal: { kind: 'group', id: group.id }, scope: { kind: 'user', userId: 3 } }),
   });
   assertEquals(response.status, 404);
+});
+
+test('admin permission data returns each group rule once', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  const group = await repo.groups.create('Admins Only', 120);
+  const record = await repo.accessRecords.save({
+    principal: { kind: 'group', id: group.id },
+    scope: { kind: 'upstreams' },
+    sortOrder: 0,
+    values: { 'Model.Use': true },
+  });
+
+  const body = await (await requestApp('/api/permissions', { headers: { 'x-floway-session': adminSession } })).json();
+  expect(body.records.filter((candidate: { id: number }) => candidate.id === record.id)).toHaveLength(1);
 });
 
 test('admin permission data includes every upstream even without ACL references', async () => {
@@ -257,7 +274,7 @@ test('access-record writes reject unknown principals, invalid scope permissions,
     method: 'POST',
     body: JSON.stringify({ principal: { kind: 'group', id: group.id }, scope: { kind: 'self' }, sortOrder: 0, values: { 'Permission.Audit': true } }),
   });
-  assertEquals(groupSelf.status, 400);
+  assertEquals(groupSelf.status, 201);
 
   assertEquals((await request('/access-records', adminSession, {
     method: 'POST',

@@ -27,7 +27,7 @@ export const loadPermissionAuditContext = async (subject: User): Promise<Permiss
       directory,
       userIds: new Set(directory.users.map(user => user.id)),
       directGroupIds: groupIds,
-      membershipGroupIds: groupIds,
+      membershipGroupIds: new Set(),
     };
   }
 

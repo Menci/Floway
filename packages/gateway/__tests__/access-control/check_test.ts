@@ -116,6 +116,20 @@ test('/Self Permission.Audit overrides a concrete self-user denial', async () =>
   expect(await check(subject, { kind: 'user', userId: subject.id }, { permission: 'Permission.Audit' })).toBe(true);
 });
 
+test('a group /Self rule grants each member self audit but not the group target', async () => {
+  const targetGroup = await repo.groups.create('self-auditors', 120);
+  await repo.groups.replaceMembers(targetGroup.id, [subject.id]);
+  await repo.accessRecords.save({
+    principal: { kind: 'group', id: targetGroup.id },
+    scope: { kind: 'self' },
+    sortOrder: 0,
+    values: { 'Permission.Audit': true },
+  });
+
+  expect(await check(subject, { kind: 'user', userId: subject.id }, { permission: 'Permission.Audit' })).toBe(true);
+  expect(await check(subject, { kind: 'group', groupId: targetGroup.id }, { permission: 'Permission.Audit' })).toBe(false);
+});
+
 test('Permission.Audit on a group does not expose its members', async () => {
   const targetGroup = await repo.groups.create('reviewed', 120);
   await repo.groups.replaceMembers(targetGroup.id, [7]);

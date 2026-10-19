@@ -17,9 +17,9 @@ interface AccessBucket {
 }
 
 const matches = (outer: AccessScope, outerKey: string, regex: RegExp | null, inner: AccessScope, targetGroups: ReadonlySet<number>, self: boolean): boolean => {
+  if (outer.kind === 'self') return self && (inner.kind === 'user' || inner.kind === 'self');
   if (outerKey === accessScopeKey(inner)) return true;
   switch (outer.kind) {
-  case 'self': return self && inner.kind === 'user';
   case 'upstreams': return inner.kind === 'upstream' || inner.kind === 'upstreamModel';
   case 'upstream': return inner.kind === 'upstreamModel' && inner.upstreamId === outer.upstreamId;
   case 'upstreamModel': return inner.kind === 'upstreamModel' && inner.upstreamId === outer.upstreamId
@@ -155,7 +155,7 @@ export const createAccessResolver = (records: readonly AccessRecord[]): AccessRe
     case 'upstreams': result.push(upstreamsBucket); break;
     case 'users': result.push(usersBucket); break;
     case 'groups': result.push(groupsBucket); break;
-    case 'self': result.push(selfBucket); break;
+    case 'self': result.push(self ? selfBucket : undefined); break;
     }
     return result.filter((value): value is AccessBucket => value !== undefined)
       .toSorted((left, right) => precedenceDepth(right.scope) - precedenceDepth(left.scope)
@@ -192,7 +192,7 @@ export const createAccessResolver = (records: readonly AccessRecord[]): AccessRe
 // Callers supply only the selected principal's personal and membership rules.
 // Scope wins first, personal assignment wins within that scope, then group
 // assignments combine by maximum while all contributing group rules stay active.
-// A /Group rule never contributes Permission.Audit to a user resolution.
+// A rule scoped to /Groups/:id never contributes Permission.Audit to a user resolution.
 export const resolveAssignments = (records: readonly AccessRecord[], scope: AccessScope, targetGroups: ReadonlySet<number>, self = false): AccessResolution =>
   createAccessResolver(records).resolve(scope, targetGroups, self);
 
@@ -203,10 +203,11 @@ export const resolveEffectiveAssignments = (
   isAdmin: boolean,
   selfUserId?: number,
 ): AccessResolution => {
-  const self = scope.kind === 'user' && scope.userId === selfUserId;
+  const self = selfUserId !== undefined && (scope.kind === 'self' || (scope.kind === 'user' && scope.userId === selfUserId));
+  const ownUser = scope.kind === 'user' && scope.userId === selfUserId;
   const resolution = resolveAssignments(records, scope, targetGroups, self);
   if (isAdmin) return { ...resolution, values: administratorAccessValues(scope), decisions: [] };
-  if (self) {
+  if (ownUser) {
     return {
       ...resolution,
       values: { ...resolution.values, 'User.Audit': true },

@@ -127,9 +127,6 @@ export const resolveAccess = async (c: CtxWithJson<typeof resolveAccessBody>) =>
   const { principal, scope, excludeRecordId } = c.req.valid('json');
   const repo = getRepo();
   const actor = userFromContext(c);
-  if (scope.kind === 'self' && principal.kind !== 'user') {
-    return c.json({ error: 'Scope not found' }, 404);
-  }
   if (!actor.isAdmin) {
     const context = await loadPermissionAuditContext(actor);
     const allowed = principal.kind === 'user' ? context.userIds.has(principal.id) : context.directGroupIds.has(principal.id);
@@ -137,9 +134,6 @@ export const resolveAccess = async (c: CtxWithJson<typeof resolveAccessBody>) =>
       return c.json({ error: 'Principal not found' }, 404);
     }
     if (scope.kind === 'user' && (principal.kind !== 'user' || scope.userId !== principal.id)) {
-      return c.json({ error: 'Scope not found' }, 404);
-    }
-    if (scope.kind === 'group' && (principal.kind !== 'group' || scope.groupId !== principal.id)) {
       return c.json({ error: 'Scope not found' }, 404);
     }
   }

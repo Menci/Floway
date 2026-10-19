@@ -287,6 +287,21 @@ test('/auth/me exposes upstream navigation only for an existing upstream the use
   assertEquals((await visible.json()).user.canViewUpstreams, true);
 });
 
+test('/auth/me exposes permission navigation to a member granted group /Self audit', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const group = await repo.groups.create('Self Auditors', 120);
+  await repo.groups.replaceMembers(group.id, [apiKey.userId]);
+  await repo.accessRecords.save({
+    principal: { kind: 'group', id: group.id },
+    scope: { kind: 'self' },
+    sortOrder: 0,
+    values: { 'Permission.Audit': true },
+  });
+
+  const response = await requestApp('/auth/me', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals((await response.json()).user.canViewPermissions, true);
+});
+
 test('/auth/me exposes permission navigation only for an effective Permission.Audit target', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.accessRecords.save({

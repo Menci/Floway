@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { resolveAssignments } from '../../src/access-control/resolution.ts';
+import { resolveAssignments, resolveEffectiveAssignments } from '../../src/access-control/resolution.ts';
 import type { AccessPrincipal, AccessRecord, AccessScope, AccessValues } from '../../src/access-control/types.ts';
 
 const user: AccessPrincipal = { kind: 'user', id: 2 };
@@ -66,6 +66,28 @@ test('a concrete user scope outranks membership scopes independent of sort order
 test('group membership scopes do not apply to unrelated target users', () => {
   const records = [row(1, user, { kind: 'group', groupId: 7 }, { 'User.Audit': true })];
   expect(resolveAssignments(records, { kind: 'user', userId: 9 }, new Set()).values['User.Audit']).toBe(false);
+});
+
+test('/Self effective values contain only Permission.Audit', () => {
+  const records = [row(1, group, { kind: 'self' }, { 'Permission.Audit': true })];
+  const result = resolveEffectiveAssignments(records, { kind: 'self' }, new Set(), false, 2);
+  expect(result.values).toEqual({ 'Permission.Audit': true });
+});
+
+test('a group /Self rule applies to each member user\'s own self, not to the group itself', () => {
+  const records = [row(1, group, { kind: 'self' }, { 'Permission.Audit': true })];
+  expect(resolveAssignments(records, { kind: 'user', userId: 2 }, new Set([3]), true).values['Permission.Audit']).toBe(true);
+  expect(resolveAssignments(records, { kind: 'group', groupId: 3 }, new Set(), false).values['Permission.Audit']).toBe(false);
+});
+
+test('a personal /Self rule keeps priority over a group /Self rule', () => {
+  const records = [
+    row(1, group, { kind: 'self' }, { 'Permission.Audit': true }),
+    row(2, user, { kind: 'self' }, { 'Permission.Audit': false }),
+  ];
+  const result = resolveAssignments(records, { kind: 'user', userId: 2 }, new Set([3]), true);
+  expect(result.values['Permission.Audit']).toBe(false);
+  expect(result.decisions.find(row => row.recordId === 1)!.permissions['Permission.Audit']).toEqual({ kind: 'overridden', by: records[1] });
 });
 
 test('unassigned values resolve to off at every scope category', () => {
