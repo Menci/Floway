@@ -133,17 +133,16 @@ export const resolveAccess = async (c: CtxWithJson<typeof resolveAccessBody>) =>
     if (!allowed) {
       return c.json({ error: 'Principal not found' }, 404);
     }
-    if (scope.kind === 'user' && (principal.kind !== 'user' || scope.userId !== principal.id)) {
-      return c.json({ error: 'Scope not found' }, 404);
-    }
   }
   const subject = principal.kind === 'user' ? await repo.users.getById(principal.id) : await repo.groups.getById(principal.id);
   if (!subject) return c.json({ error: `${principal.kind} not found` }, 404);
   const groupIds = principal.kind === 'user' ? await repo.groups.listIdsByUserId(principal.id) : [];
   const principals: AccessPrincipal[] = [principal, ...groupIds.map(id => ({ kind: 'group' as const, id }))];
-  const targetGroups = scope.kind !== 'user' || principal.kind !== 'user'
+  const targetGroups = scope.kind !== 'user'
     ? Promise.resolve([])
-    : scope.userId === principal.id ? Promise.resolve(groupIds) : repo.groups.listIdsByUserId(scope.userId);
+    : principal.kind === 'user' && scope.userId === principal.id
+      ? Promise.resolve(groupIds)
+      : repo.groups.listIdsByUserId(scope.userId);
   const [records, targetGroupIds] = await Promise.all([
     repo.accessRecords.listByPrincipals(principals),
     targetGroups,
