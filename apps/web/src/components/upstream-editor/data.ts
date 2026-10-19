@@ -28,7 +28,7 @@ export interface EditorAuxData {
 }
 
 interface UpstreamEditorLoaderDataBase extends EditorAuxData {
-  editLevel: 'models' | 'full';
+  editLevel: 'off' | 'models' | 'full';
   record: UpstreamRecord;
   discovered: UpstreamModelConfig[] | null;
   // For providers whose credential is an API key, the editor can keep that

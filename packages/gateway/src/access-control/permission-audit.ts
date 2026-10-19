@@ -1,3 +1,4 @@
+import { checkMany } from './check.ts';
 import { createAccessResolver } from './resolution.ts';
 import type { AccessPrincipal } from './types.ts';
 import { getRepo } from '../repo/index.ts';
@@ -47,19 +48,10 @@ export const loadPermissionAuditContext = async (subject: User): Promise<Permiss
 };
 
 export const canAuditPrincipal = async (subject: User, principal: AccessPrincipal): Promise<boolean> => {
-  if (subject.isAdmin) return true;
-  const repo = getRepo();
-  const subjectGroupIds = await repo.groups.listIdsByUserId(subject.id);
-  const principals: AccessPrincipal[] = [
-    { kind: 'user', id: subject.id },
-    ...subjectGroupIds.map(id => ({ kind: 'group' as const, id })),
-  ];
-  const records = await repo.accessRecords.listByPrincipals(principals);
-  const resolver = createAccessResolver(records);
-  if (principal.kind === 'user') {
-    return resolver.satisfies({ kind: 'user', userId: principal.id }, { permission: 'Permission.Audit' }, { targetGroups: new Set(), subjectUserId: subject.id });
-  }
-  return resolver.satisfies({ kind: 'group', groupId: principal.id }, { permission: 'Permission.Audit' }, { targetGroups: new Set() });
+  const target = principal.kind === 'user'
+    ? { kind: 'user' as const, userId: principal.id }
+    : { kind: 'group' as const, groupId: principal.id };
+  return (await checkMany(subject, [{ target, requirement: { permission: 'Permission.Audit' } }]))[0]!;
 };
 
 export const hasPermissionAuditTarget = (context: PermissionAuditContext): boolean =>

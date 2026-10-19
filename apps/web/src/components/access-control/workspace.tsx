@@ -222,6 +222,6 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
         <TooltipIconButton disabled={busy || results.page === results.totalPages} icon={<ChevronRightRegular />} label={t('dashboard.accessControl.pagination.next')} onClick={() => updateParams(next => next.set('page', String(results.page + 1)))} />
       </div>}
     </>}
-    {admin && editor.invocation && <AccessRecordDialog data={scopeData} initialPrincipal={editor.invocation.value.principal} initialScope={editor.invocation.value.scope} key={editor.invocation.key} onOpenChange={open => { if (!open) editor.close(); }} onSaved={refresh} open={editor.isOpen} record={editor.invocation.value.record} suggestedSortOrder={Math.max(-1, ...(data.records ?? []).map(record => record.sortOrder)) + 1} />}
+    {admin && editor.invocation && <AccessRecordDialog data={scopeData} principalData={principalData} initialPrincipal={editor.invocation.value.principal} initialScope={editor.invocation.value.scope} key={editor.invocation.key} onOpenChange={open => { if (!open) editor.close(); }} onSaved={refresh} open={editor.isOpen} record={editor.invocation.value.record} suggestedSortOrder={Math.max(-1, ...(data.records ?? []).map(record => record.sortOrder)) + 1} />}
   </section>;
 }

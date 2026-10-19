@@ -133,6 +133,7 @@ function CustomConfig({ onRefreshModels, readOnly, record }: { onRefreshModels: 
         <Switch
           checked={field.value}
           label={t('dashboard.upstreamEditor.fields.fetchModels')}
+          readOnly={readOnly}
           onChange={(_, data) => {
             field.onChange(data.checked);
             if (data.checked) onRefreshModels();
@@ -443,6 +444,7 @@ function OAuthConfig({ readOnly, record, onPatch }: {
     onPatch(result.data.patch, isPersisted(record));
   };
   const [open, setOpen] = useState(!hasAccount && !readOnly);
+  const canImport = !readOnly;
   const [probing, setProbing] = useState(false);
 
   const probeQuota = async () => {
@@ -500,7 +502,7 @@ function OAuthConfig({ readOnly, record, onPatch }: {
       <Button onClick={() => setOpen(value => !value)}>{open ? t('common.cancel') : t('dashboard.upstreamEditor.oauth.reimport')}</Button>
     </div>}
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
-    {open && (record.kind === 'codex'
+    {open && canImport && (record.kind === 'codex'
       ? <CodexImportForm
           hasAccount={hasAccount}
           onImported={patch => { onPatch(patch, isPersisted(record)); setOpen(false); }}

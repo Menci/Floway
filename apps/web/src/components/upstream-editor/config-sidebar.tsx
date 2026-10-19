@@ -34,7 +34,7 @@ export function UpstreamConfigSidebar({
   discovered,
   onPatch,
   onRefreshModels,
-  modelsOnly = false,
+  editLevel,
   proxies,
   record,
   runtime,
@@ -43,13 +43,17 @@ export function UpstreamConfigSidebar({
   discovered: UpstreamModelConfig[];
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
   onRefreshModels: () => void;
-  modelsOnly?: boolean;
+  editLevel: 'off' | 'models' | 'full';
   proxies: EditorAuxData['proxies'];
   record: UpstreamRecord;
   runtime: RuntimeInfo;
 }) {
   const { t } = useTranslation();
   const { control, formState: { errors } } = useFormContext<UpstreamEditorValues>();
+  // Only a Full editor may change connection, metadata, proxies and flags.
+  // Models-level and audit-only editors both read them; the difference between
+  // the two lives in the model workspace, not in this sidebar.
+  const immutable = editLevel !== 'full';
   const [config, state] = useWatch({ control, name: ['config', 'state'] });
   const usageRefreshDisabled = record.kind === 'claude-code'
     ? !(state as Extract<UpstreamRecord, { kind: 'claude-code' }>['state']).accounts.some(account => account.tokenKind === 'oauth')
@@ -75,7 +79,7 @@ export function UpstreamConfigSidebar({
                     onBlur={field.onBlur}
                     onChange={(_, data) => field.onChange(data.value)}
                     ref={field.ref}
-                    readOnly={modelsOnly}
+                    readOnly={immutable}
                     required
                     value={field.value}
                   />
@@ -88,16 +92,16 @@ export function UpstreamConfigSidebar({
             title={t('dashboard.upstreamEditor.sections.hue')}
             description={t('dashboard.upstreamEditor.hue.description')}
           >
-            <UpstreamHueEditor kind={record.kind} readOnly={modelsOnly} />
+            <UpstreamHueEditor kind={record.kind} readOnly={immutable} />
           </EditorSection>
           <EditorSection title={t('dashboard.upstreamEditor.sections.proxy')} description={t('dashboard.upstreamEditor.proxy.description')}>
-            <ProxyFallbackEditor proxies={proxies} readOnly={modelsOnly} runtime={runtime} />
+            <ProxyFallbackEditor proxies={proxies} readOnly={immutable} runtime={runtime} />
           </EditorSection>
           <EditorSection
             error={errors.config?.message ? t(errors.config.message) : undefined}
             title={t('dashboard.upstreamEditor.sections.connection')}
           >
-            <ProviderConfigSection readOnly={modelsOnly} record={record} onPatch={onPatch} onRefreshModels={onRefreshModels} />
+            <ProviderConfigSection readOnly={immutable} record={record} onPatch={onPatch} onRefreshModels={onRefreshModels} />
           </EditorSection>
           {(record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code' || record.kind === 'ollama') && <EditorSection
             title={t('dashboard.upstreamEditor.usageRefresh.title')}
@@ -117,7 +121,7 @@ export function UpstreamConfigSidebar({
                   name={field.name}
                   onBlur={field.onBlur}
                   ref={field.ref}
-                  readOnly={modelsOnly}
+                  readOnly={immutable}
                   value={field.value === 0 ? '' : String(field.value)}
                   onChange={(_, data) => field.onChange(Number(data.value))}
                 />
@@ -126,7 +130,7 @@ export function UpstreamConfigSidebar({
           </EditorSection>}
           {record.kind === 'custom' && (
             <EditorSection title={t('dashboard.upstreamEditor.sections.apiPaths')}>
-              <ApiPathsSection readOnly={modelsOnly} record={record} />
+              <ApiPathsSection readOnly={immutable} record={record} />
             </EditorSection>
           )}
         </div>
@@ -134,7 +138,7 @@ export function UpstreamConfigSidebar({
           title={t('dashboard.upstreamEditor.sections.prefix')}
           description={t('dashboard.upstreamEditor.prefixDescription')}
         >
-          <ModelPrefixEditor readOnly={modelsOnly} />
+          <ModelPrefixEditor readOnly={immutable} />
         </EditorSection>
         <EditorSection title={t('dashboard.upstreamEditor.sections.disabledModels')} description={t('dashboard.upstreamEditor.disabledModelsHint')}>
           <DisabledModelsCombobox catalogAvailable={catalogAvailable} discovered={discovered} />

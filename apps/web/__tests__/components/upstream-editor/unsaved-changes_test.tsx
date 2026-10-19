@@ -43,7 +43,7 @@ const ConfigProbe = ({ record }: { record: UpstreamRecord }) => {
 
 // The colo whitelist only renders on the Cloudflare runtime, so the proxy case
 // needs the sidebar the editor mounts it from.
-const SidebarProbe = ({ modelsOnly = false, record }: { modelsOnly?: boolean; record: UpstreamRecord }) => {
+const SidebarProbe = ({ editLevel = 'full', record }: { editLevel?: 'off' | 'models' | 'full'; record: UpstreamRecord }) => {
   const form = useForm<UpstreamEditorValues>({ defaultValues: valuesFromRecord(record) });
   return (
     <FormProvider {...form}>
@@ -53,7 +53,7 @@ const SidebarProbe = ({ modelsOnly = false, record }: { modelsOnly?: boolean; re
         discovered={[]}
         onPatch={vi.fn()}
         onRefreshModels={vi.fn()}
-        modelsOnly={modelsOnly}
+        editLevel={editLevel}
         proxies={[]}
         record={record}
         runtime={{ kind: 'cloudflare', runtimeLocation: 'HKG' }}
@@ -63,7 +63,7 @@ const SidebarProbe = ({ modelsOnly = false, record }: { modelsOnly?: boolean; re
 };
 
 it('keeps Full-only values focusable and selectable in a models-only editor', () => {
-  renderInApp(<SidebarProbe modelsOnly record={customRecord({ enabled: true })} />);
+  renderInApp(<SidebarProbe editLevel="models" record={customRecord({ enabled: true })} />);
   const baseUrl = screen.getByDisplayValue('https://api.example.com') as HTMLInputElement;
   const name = screen.getByRole('textbox', { name: i18n.t('dashboard.upstreamEditor.fields.name') }) as HTMLInputElement;
   const prefix = screen.getByRole('textbox', { name: i18n.t('dashboard.upstreamEditor.sections.prefix') }) as HTMLInputElement;

@@ -28,8 +28,9 @@ const JsonEditor = lazy(() => import('../ui/json-editor').then(module => ({ defa
 type Permission = keyof AccessValues;
 interface FormValues { principal: string }
 
-export function AccessRecordDialog({ data, initialPrincipal, initialScope, onOpenChange, onSaved, open, record, suggestedSortOrder = 0 }: {
+export function AccessRecordDialog({ data, principalData, initialPrincipal, initialScope, onOpenChange, onSaved, open, record, suggestedSortOrder = 0 }: {
   data: ScopeExpressionData;
+  principalData: ScopeExpressionData;
   initialPrincipal?: AccessPrincipal;
   initialScope?: AccessScope;
   onOpenChange: (open: boolean) => void;
@@ -47,8 +48,8 @@ export function AccessRecordDialog({ data, initialPrincipal, initialScope, onOpe
   const [values, setValues] = useState<AccessValues>(record?.values ?? {});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const defaultUser = data.users.find(user => !user.isAdmin) ?? data.users[0];
-  const defaultPrincipal = record?.principal ?? initialPrincipal ?? (defaultUser ? { kind: 'user' as const, id: defaultUser.id } : data.groups[0] ? { kind: 'group' as const, id: data.groups[0].id } : null);
+  const defaultUser = principalData.users.find(user => !user.isAdmin) ?? principalData.users[0];
+  const defaultPrincipal = record?.principal ?? initialPrincipal ?? (defaultUser ? { kind: 'user' as const, id: defaultUser.id } : principalData.groups[0] ? { kind: 'group' as const, id: principalData.groups[0].id } : null);
   const { control, handleSubmit } = useForm<FormValues>({
     resolver: zodResolver(z.object({ principal: z.string().min(1) })),
     defaultValues: {
@@ -146,7 +147,7 @@ export function AccessRecordDialog({ data, initialPrincipal, initialScope, onOpe
     width="editor"
   >
     <Controller control={control} name="principal" render={({ field }) => <Field className="min-w-0" label={t('dashboard.accessControl.fields.principal')}>
-      <PrincipalPicker data={data} disabled={saving} label={t('dashboard.accessControl.fields.principal')} onChange={principal => { if (principal !== null) field.onChange(principalKey(principal)); }} value={parsePrincipal(field.value)} />
+      <PrincipalPicker data={principalData} disabled={saving} label={t('dashboard.accessControl.fields.principal')} onChange={principal => { if (principal !== null) field.onChange(principalKey(principal)); }} value={parsePrincipal(field.value)} />
     </Field>} />
     {administratorBypass && <OutcomeMessageBar intent="info">{t('dashboard.accessControl.administratorBypass')}</OutcomeMessageBar>}
 

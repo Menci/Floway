@@ -1,6 +1,6 @@
 import { modelsCacheStatus, reshapeModelForDashboard } from './models-cache-projection.ts';
 import { upstreamErrorMessage as errorMessage } from './shared.ts';
-import { resolveUpstreamEditLevel } from '../../access-control/upstream-edit.ts';
+import { fullUpstreamActionError, resolveUpstreamEditLevel } from '../../access-control/upstream-edit.ts';
 import { discoverDraftModels, isModelsRefreshConfigurationError, modelsRefreshErrorMessage, modelsRefreshTarget, refreshModelsExplicit } from '../../execution/models-refresh.ts';
 import { type AuthedContext, userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
@@ -19,6 +19,8 @@ const malformedConfigResponse = (error: unknown): boolean =>
 // the draft's model catalog.
 export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) => {
   const { record } = c.req.valid('json');
+  const accessError = await fullUpstreamActionError(userFromContext(c), record.id);
+  if (accessError) return c.json({ error: accessError.error }, accessError.status);
   const kind = record.kind;
   if (kind !== 'custom' && kind !== 'ollama') {
     return c.json({ error: { message: `Draft model discovery requires custom or ollama: ${kind}`, type: 'invalid_request_error' } }, 400);

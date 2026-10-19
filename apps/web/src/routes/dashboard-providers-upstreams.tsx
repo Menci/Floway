@@ -654,7 +654,7 @@ function UpstreamSegment({
           </div>
         </TableCell>
         <TableCell className="overflow-hidden">
-          <ProviderBadge label={record.name} to={canEdit ? upstreamEditorPath(record) : undefined} upstream={record} />
+          <ProviderBadge label={record.name} to={canAudit || canEdit ? upstreamEditorPath(record) : undefined} upstream={record} />
         </TableCell>
         <TableCell className="overflow-hidden"><UpstreamDetailsCell record={record} /></TableCell>
         <TableCell><ModelStatus count={modelCounts.get(record.id)!} record={record} /></TableCell>
@@ -779,6 +779,9 @@ const buildModelCounts = (
     // catalog it stored while it was on is the count instead, and null when it
     // never cached one.
     if (!record.enabled) return record.modelsCache.modelCount;
+    // The catalog is filtered by Model.Use: an upstream visible through Audit
+    // alone has no row to count, which is not the same as having none.
+    if (!record.modelUse) return record.modelsCache.modelCount;
     // Null is a count nobody knows — here, because the listing failed.
     return models === null ? null : listed.get(record.id)!;
   };

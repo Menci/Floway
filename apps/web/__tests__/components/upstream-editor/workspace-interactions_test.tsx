@@ -62,6 +62,7 @@ function Harness({ discovered = [], modelsError = null, source = record }: { dis
     <MemoryRouter>
       <FormProvider {...form}>
         <UpstreamWorkspace
+          editLevel="full"
           discovered={discovered}
           modelsYamlDraft={modelsYamlDraft}
           modelsLoading={false}

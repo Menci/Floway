@@ -189,7 +189,7 @@ export const listUpstreams = async (c: AuthedContext) => {
     const access = accesses.get(record.id)!;
     if (!access.audit && access.edit === 'off') return [];
     return [serializeForResponse(record, knownProxyIds, upstreamRecordToJson)
-      .then(serialized => ({ ...serialized, editLevel: access.edit, audit: access.audit, reorderGroup: reorderGroups.get(record.id)! }))];
+      .then(serialized => ({ ...serialized, editLevel: access.edit, audit: access.audit, modelUse: access.modelUse, reorderGroup: reorderGroups.get(record.id)! }))];
   })));
 };
 

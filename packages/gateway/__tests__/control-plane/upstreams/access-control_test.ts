@@ -55,6 +55,7 @@ test('the list never exposes provider credentials even to a Full editor', async 
   const listed = (await response.json() as Array<Record<string, any>>)[0]!;
   assertEquals(listed.config.apiKey, undefined);
   assertEquals(listed.config.apiKeySet, true);
+  assertEquals(listed.modelUse, true);
   assertEquals(listed.config.ingressHeadersRules[0], { key: 'x-secret', value: 'value' });
   const stored = await repo.upstreams.getById('up_restricted');
   assertEquals((stored?.config as Record<string, unknown> | undefined)?.apiKey, 'sk-secret');
@@ -138,6 +139,7 @@ test('the general update endpoint rejects sort_order changes', async () => {
 test('Upstream.Audit exposes a redacted record in the listing, detail, and metrics route', async () => {
   const { repo, apiKey } = await setupAppTest();
   await saveUpstreamForTest(repo.upstreams, customRecord());
+  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: apiKey.userId });
   await repo.accessRecords.save({
     principal: { kind: 'user', id: apiKey.userId },
     scope: { kind: 'upstream', upstreamId: 'up_restricted' },
@@ -150,6 +152,7 @@ test('Upstream.Audit exposes a redacted record in the listing, detail, and metri
   const listed = (await list.json() as Array<Record<string, any>>)[0]!;
   assertEquals(listed.editLevel, 'off');
   assertEquals(listed.audit, true);
+  assertEquals(listed.modelUse, false);
   assertEquals(listed.config.baseUrl, 'https://secret.example.com');
   assertEquals(listed.config.apiKey, undefined);
 
@@ -271,6 +274,28 @@ test('Upstream.Edit.Full returns raw configuration, accepts full patches, and li
   const proxies = await requestApp('/api/proxy-options?upstream_id=up_restricted', { headers: { 'x-api-key': apiKey.key } });
   assertEquals(proxies.status, 200);
   assertEquals(await proxies.json(), [{ id: 'proxy_a', name: 'Proxy A' }]);
+});
+
+test('Codex JSON import preview is available to a signed-in non-admin', async () => {
+  const { apiKey } = await setupAppTest();
+  const response = await requestApp('/api/upstreams/codex/import/preview', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: JSON.stringify({ raw_json: JSON.stringify({ accounts: [] }) }),
+  });
+  assertEquals(response.status, 200);
+  assertEquals(await response.json(), { candidates: [] });
+});
+
+test('model discovery previews a persisted record only for Full and keeps create drafts admin-only', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await saveUpstreamForTest(repo.upstreams, customRecord());
+  const response = await requestApp('/api/upstreams/preview-models', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: JSON.stringify({ record: { ...customRecord(), id: 'up_restricted', proxy_fallback_list: [] } }),
+  });
+  assertEquals(response.status, 404);
 });
 
 test('provider credential actions require Full and keep create drafts admin-only', async () => {

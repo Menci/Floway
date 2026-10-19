@@ -6,21 +6,27 @@ import type { User } from '../repo/types.ts';
 export interface UpstreamAccess {
   audit: boolean;
   edit: UpstreamEditLevel;
+  // The upstream listing states a model count sourced from the caller's own
+  // Model.Use-filtered catalog, so it also needs to know whether that catalog
+  // covers this upstream at all.
+  modelUse: boolean;
 }
 
 export const resolveUpstreamAccesses = async (
   subject: User,
   upstreamIds: readonly string[],
 ): Promise<Map<string, UpstreamAccess>> => {
-  if (subject.isAdmin) return new Map(upstreamIds.map(upstreamId => [upstreamId, { audit: true, edit: 'full' }]));
+  if (subject.isAdmin) return new Map(upstreamIds.map(upstreamId => [upstreamId, { audit: true, edit: 'full', modelUse: true }]));
   const allowed = await checkMany(subject, upstreamIds.flatMap(upstreamId => [
     { target: { kind: 'upstream' as const, upstreamId }, requirement: { permission: 'Upstream.Audit' as const } },
     { target: { kind: 'upstream' as const, upstreamId }, requirement: { permission: 'Upstream.Edit' as const, level: 'models' as const } },
     { target: { kind: 'upstream' as const, upstreamId }, requirement: { permission: 'Upstream.Edit' as const, level: 'full' as const } },
+    { target: { kind: 'upstream' as const, upstreamId }, requirement: { permission: 'Model.Use' as const } },
   ]));
   return new Map(upstreamIds.map((upstreamId, index) => [upstreamId, {
-    audit: allowed[index * 3]!,
-    edit: allowed[index * 3 + 2] ? 'full' : allowed[index * 3 + 1] ? 'models' : 'off',
+    audit: allowed[index * 4]!,
+    edit: allowed[index * 4 + 2] ? 'full' : allowed[index * 4 + 1] ? 'models' : 'off',
+    modelUse: allowed[index * 4 + 3]!,
   }]));
 };
 

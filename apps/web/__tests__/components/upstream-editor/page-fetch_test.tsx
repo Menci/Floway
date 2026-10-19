@@ -77,11 +77,11 @@ const customRecord = upstreamRecord('up_custom', {
 });
 const discovered = [{ upstreamModelId: 'new-model', publicModelId: 'new-model', kind: 'chat' as const, endpoints: { openaiChatCompletions: {} } }];
 
-const renderPage = (currentRecord = record, initialDiscovered: UpstreamModelConfig[] | null = null) => {
+const renderPage = (currentRecord = record, initialDiscovered: UpstreamModelConfig[] | null = null, editLevel: 'off' | 'models' | 'full' = 'full') => {
   const router = createMemoryRouter([{
     path: '/editor',
     element: <OutcomeToastProvider><UpstreamEditorPage data={{
-      mode: 'edit', editLevel: 'full', record: currentRecord, discovered: initialDiscovered,
+      mode: 'edit', editLevel, record: currentRecord, discovered: initialDiscovered,
       proxies: [], runtime: { kind: 'node', runtimeLocation: 'TEST' },
     }} /></OutcomeToastProvider>,
   }], { initialEntries: ['/editor'] });
@@ -93,6 +93,11 @@ beforeEach(() => {
   apiMocks.patch.mockResolvedValue({ data: record, error: null });
   apiMocks.listModels.mockResolvedValue({ data: { kind: 'copilot', data: discovered, modelsCache: record.modelsCache }, error: null });
   apiMocks.previewModels.mockResolvedValue({ data: { kind: 'ollama', data: [] }, error: null });
+});
+
+test('an audit-only editor opens the saved record with no Save action', () => {
+  renderPage(record, discovered, 'off');
+  expect(screen.queryByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') })).toBeNull();
 });
 
 test('opening an editor shows the stored model snapshot without fetching', () => {
@@ -169,6 +174,14 @@ test('editing Ollama manual models fetches the draft instead of the saved catalo
   await waitFor(() => expect(apiMocks.previewModels).toHaveBeenCalledTimes(1));
   expect(apiMocks.listModels).not.toHaveBeenCalled();
   expect(apiMocks.previewModels.mock.calls[0]?.[0].json.record.config.models).toEqual([]);
+});
+
+test('a models-level editor fetches the saved record after changing the catalog switch', async () => {
+  renderPage(customRecord, null, 'models');
+  fireEvent.click(screen.getByRole('button', { name: 'Edit discovery' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
+  await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
+  expect(apiMocks.previewModels).not.toHaveBeenCalled();
 });
 
 test('saving Custom manual models keeps an already fetched remote catalog', async () => {

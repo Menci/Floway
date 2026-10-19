@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider, useLoaderData } from 'react-router';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
@@ -28,6 +28,7 @@ const toListed = (
   ...record,
   audit: access.audit,
   editLevel: access.edit,
+  modelUse: true,
   reorderGroup: access.edit === 'full' ? 'default-full-segment' : null,
   ...overrides,
 } as ListedUpstreamRecord);
@@ -191,11 +192,12 @@ it('opens telemetry for an audit-only row while keeping edit, switch, copy, dele
     if (url.pathname === '/api/token-usage/overview') return Response.json(overview());
     if (url.pathname === '/api/upstream-metrics') return Response.json(metrics(url));
     throw new Error(`Unexpected request: ${url.pathname}`);
-  }, withAccess(true, 'off'));
+  }, { ...withAccess(true, 'off'), upstreams: withAccess(true, 'off').upstreams.map((record, index) => index === 0 ? { ...record, modelUse: false } : record) });
   renderPage({ id: 2, username: 'auditor', isAdmin: false, canViewPermissions: false, canViewUpstreams: true }, withAccess(true, 'off'));
 
   const row = await screen.findByRole('row', { name: 'Usage and metrics for First' });
-  expect(screen.queryByRole('link', { name: 'First' })).toBeNull();
+  expect(screen.getByRole('link', { name: 'First' })).toBeTruthy();
+  expect(within(row).getByText('Count unavailable')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Edit upstream First' }).hasAttribute('disabled')).toBe(true);
   expect(screen.getByRole('switch', { name: 'Toggle upstream First' }).hasAttribute('disabled')).toBe(true);
   expect(screen.queryByRole('button', { name: 'Copy upstream First' })).toBeNull();

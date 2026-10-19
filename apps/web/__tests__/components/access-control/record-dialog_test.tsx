@@ -38,6 +38,7 @@ const renderDialog = async (props: Partial<Parameters<typeof AccessRecordDialog>
   const result = renderInApp(
     <OutcomeToastProvider><AccessRecordDialog
       data={data}
+      principalData={data}
       onOpenChange={vi.fn()}
       onSaved={async () => {}}
       open
