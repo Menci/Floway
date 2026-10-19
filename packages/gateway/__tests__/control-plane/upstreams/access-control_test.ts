@@ -167,6 +167,22 @@ test('Upstream.Audit exposes a redacted record in the listing, detail, and metri
   assertEquals((await metrics.json()).records.length, 1);
 });
 
+test('a disabled upstream keeps Model.Use coverage so the listing can use its cached count', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await saveUpstreamForTest(repo.upstreams, { ...customRecord(), enabled: false });
+  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: apiKey.userId });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: apiKey.userId },
+    scope: { kind: 'upstream', upstreamId: 'up_restricted' },
+    sortOrder: 0,
+    values: { 'Upstream.Audit': true, 'Model.Use': true },
+  });
+
+  const response = await requestApp('/api/upstreams', { headers: { 'x-api-key': apiKey.key } });
+  const listed = (await response.json() as Array<Record<string, any>>)[0]!;
+  assertEquals(listed.modelUse, true);
+});
+
 test('Upstream.Audit and Upstream.Edit.Models share the complete redacted serializer', async () => {
   const { repo, apiKey } = await setupAppTest();
   await saveUpstreamForTest(repo.upstreams, customRecord());

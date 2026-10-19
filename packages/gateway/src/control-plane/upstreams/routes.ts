@@ -182,18 +182,27 @@ export const listUpstreams = async (c: AuthedContext) => {
   const subject = userFromContext(c);
   const [items, knownProxyIds] = await Promise.all([getRepo().upstreams.list(), loadKnownProxyIds()]);
   const accesses = await resolveUpstreamAccesses(subject, items.map(item => item.id));
-  // The row states a model count taken from the caller's own model catalog.
-  // That catalog is filtered by Model.Use at the model level, so the only
-  // faithful test for "do we know this upstream's count" is whether the
-  // catalog contains a binding for it.
-  const catalogCoverage = subject.isAdmin
+  // A caller may hold Model.Use for the whole upstream or for individual
+  // models on it. The catalog enumeration finds the latter and skips disabled
+  // upstreams, so combine it with the upstream-level grant to cover both.
+  const modelUse = subject.isAdmin
     ? null
-    : new Set((await enumerateAddressableModelIds(
-        subject,
-        effectiveUpstreamIdsFromContext(c),
-        createModelsRefreshScheduler(getRuntimeLocation(c.req.raw), backgroundSchedulerFromContext(c)),
-        items,
-      )).flatMap(entry => entry.upstreams.map(upstream => upstream.upstreamId)));
+    : await (async () => {
+        const [grants, coverage] = await Promise.all([
+          checkMany(subject, items.map(item => ({
+            target: { kind: 'upstream' as const, upstreamId: item.id },
+            requirement: { permission: 'Model.Use' as const },
+          }))),
+          enumerateAddressableModelIds(
+            subject,
+            effectiveUpstreamIdsFromContext(c),
+            createModelsRefreshScheduler(getRuntimeLocation(c.req.raw), backgroundSchedulerFromContext(c)),
+            items,
+          ),
+        ]);
+        const covered = new Set(coverage.flatMap(entry => entry.upstreams.map(upstream => upstream.upstreamId)));
+        return items.map((item, index) => grants[index]! || covered.has(item.id));
+      })();
   const reorderGroups = new Map<string, string | null>();
   let reorderGroup: string | null = null;
   for (const item of items) {
@@ -202,11 +211,11 @@ export const listUpstreams = async (c: AuthedContext) => {
     if (!full) reorderGroup = null;
     reorderGroups.set(item.id, reorderGroup);
   }
-  return c.json(await Promise.all(items.flatMap(record => {
+  return c.json(await Promise.all(items.flatMap((record, index) => {
     const access = accesses.get(record.id)!;
     if (!access.audit && access.edit === 'off') return [];
     return [serializeForResponse(record, knownProxyIds, upstreamRecordToJson)
-      .then(serialized => ({ ...serialized, editLevel: access.edit, audit: access.audit, modelUse: catalogCoverage === null || catalogCoverage.has(record.id), reorderGroup: reorderGroups.get(record.id)! }))];
+      .then(serialized => ({ ...serialized, editLevel: access.edit, audit: access.audit, modelUse: modelUse === null || modelUse[index]!, reorderGroup: reorderGroups.get(record.id)! }))];
   })));
 };
 

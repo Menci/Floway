@@ -490,6 +490,7 @@ function OAuthConfig({ onPatch, readOnly, record }: {
       : <ClaudeCodeAccountCard
           onRefreshQuota={() => void probeQuota()}
           probing={probing}
+          readOnly={readOnly}
           record={{ ...record, kind: 'claude-code', config: config as Extract<UpstreamRecord, { kind: 'claude-code' }>['config'], state: values.state as Extract<UpstreamRecord, { kind: 'claude-code' }>['state'] }}
         />)}
     {hasAccount && !readOnly && !isPersisted(record) && <ReadyToSaveHint kind={record.kind} />}
