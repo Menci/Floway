@@ -1221,8 +1221,8 @@ const zhHansCN = {
         tables: {
           requests: '请求数',
           errors: '错误',
-          ttftP95: 'TTFT p95',
-          speedP95: '最慢 5% 速度',
+          ttft: 'TTFT {{percentile}}',
+          speed: '最慢 {{tail, number}}% 速度',
         },
       },
       backupRestore: {
