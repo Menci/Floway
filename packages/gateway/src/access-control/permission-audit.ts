@@ -10,14 +10,6 @@ export interface PermissionAuditContext {
   membershipGroupIds: ReadonlySet<number>;
 }
 
-const membershipsByUser = (directory: UserDirectory): Map<number, Set<number>> => {
-  const memberships = new Map(directory.users.map(user => [user.id, new Set<number>()]));
-  for (const group of directory.groups) {
-    for (const userId of group.memberIds) memberships.get(userId)?.add(group.id);
-  }
-  return memberships;
-};
-
 export const loadPermissionAuditContext = async (subject: User): Promise<PermissionAuditContext> => {
   const repo = getRepo();
   const directory = await repo.readUserDirectory();
@@ -31,29 +23,43 @@ export const loadPermissionAuditContext = async (subject: User): Promise<Permiss
     };
   }
 
-  const memberships = membershipsByUser(directory);
-  const subjectGroupIds = memberships.get(subject.id) ?? new Set<number>();
+  const subjectGroupIds = directory.groups.filter(group => group.memberIds.includes(subject.id)).map(group => group.id);
   const principals: AccessPrincipal[] = [
     { kind: 'user', id: subject.id },
-    ...[...subjectGroupIds].map(id => ({ kind: 'group' as const, id })),
+    ...subjectGroupIds.map(id => ({ kind: 'group' as const, id })),
   ];
   const authorizationRecords = await repo.accessRecords.listByPrincipals(principals);
   const resolver = createAccessResolver(authorizationRecords);
   const userIds = new Set(directory.users.flatMap(user => resolver.satisfies(
     { kind: 'user', userId: user.id },
-    memberships.get(user.id)!,
     { permission: 'Permission.Audit' },
-    user.id === subject.id,
+    { targetGroups: new Set(), subjectUserId: subject.id },
   ) ? [user.id] : []));
   const directGroupIds = new Set(directory.groups.flatMap(group => resolver.satisfies(
     { kind: 'group', groupId: group.id },
-    new Set(),
     { permission: 'Permission.Audit' },
+    { targetGroups: new Set() },
   ) ? [group.id] : []));
   const membershipGroupIds = new Set(directory.groups
     .filter(group => !directGroupIds.has(group.id) && group.memberIds.some(userId => userIds.has(userId)))
     .map(group => group.id));
   return { directory, userIds, directGroupIds, membershipGroupIds };
+};
+
+export const canAuditPrincipal = async (subject: User, principal: AccessPrincipal): Promise<boolean> => {
+  if (subject.isAdmin) return true;
+  const repo = getRepo();
+  const subjectGroupIds = await repo.groups.listIdsByUserId(subject.id);
+  const principals: AccessPrincipal[] = [
+    { kind: 'user', id: subject.id },
+    ...subjectGroupIds.map(id => ({ kind: 'group' as const, id })),
+  ];
+  const records = await repo.accessRecords.listByPrincipals(principals);
+  const resolver = createAccessResolver(records);
+  if (principal.kind === 'user') {
+    return resolver.satisfies({ kind: 'user', userId: principal.id }, { permission: 'Permission.Audit' }, { targetGroups: new Set(), subjectUserId: subject.id });
+  }
+  return resolver.satisfies({ kind: 'group', groupId: principal.id }, { permission: 'Permission.Audit' }, { targetGroups: new Set() });
 };
 
 export const hasPermissionAuditTarget = (context: PermissionAuditContext): boolean =>
@@ -64,12 +70,12 @@ export const canViewPermissions = async (subject: User): Promise<boolean> => {
   return hasPermissionAuditTarget(await loadPermissionAuditContext(subject));
 };
 
-export const permissionAuditPrincipals = (context: PermissionAuditContext): AccessPrincipal[] => [
+export const permissionAuditVisiblePrincipals = (context: PermissionAuditContext): AccessPrincipal[] => [
   ...[...context.userIds].map(id => ({ kind: 'user' as const, id })),
   ...[...context.directGroupIds].map(id => ({ kind: 'group' as const, id })),
 ];
 
-export const permissionAuditSupportPrincipals = (context: PermissionAuditContext): AccessPrincipal[] => [
-  ...permissionAuditPrincipals(context),
+export const permissionAuditSourcePrincipals = (context: PermissionAuditContext): AccessPrincipal[] => [
+  ...permissionAuditVisiblePrincipals(context),
   ...[...context.membershipGroupIds].map(id => ({ kind: 'group' as const, id })),
 ];

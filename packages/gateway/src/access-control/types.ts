@@ -16,15 +16,28 @@ export type AccessScope =
   | { kind: 'groups' }
   | { kind: 'group'; groupId: number };
 
-export type AccessTarget =
-  | { kind: 'upstream'; upstreamId: string }
-  | { kind: 'upstreamModel'; upstreamId: string; modelId: string }
-  | { kind: 'user'; userId: number }
-  | { kind: 'group'; groupId: number };
+export type ResolveScope = Exclude<AccessScope, { kind: 'self' }>;
+
+export type AccessTarget = Extract<ResolveScope, { kind: 'upstream' | 'upstreamModel' | 'user' | 'group' }>;
+
+export interface AccessEvaluation {
+  targetGroups: ReadonlySet<number>;
+  subjectUserId?: number;
+}
 
 export type AccessPermission = 'Model.Use' | 'Upstream.Audit' | 'Upstream.Edit' | 'User.Audit' | 'Permission.Audit';
 export type UpstreamEditLevel = 'off' | 'models' | 'full';
 export const upstreamEditLevelRank: Record<UpstreamEditLevel, number> = { off: 0, models: 1, full: 2 };
+
+// Membership scopes describe their members as users; only user-audit follows
+// that relation. Permission-audit on a group audits the group itself.
+export const groupRuleAppliesToMembers: Record<AccessPermission, boolean> = {
+  'Model.Use': false,
+  'Upstream.Audit': false,
+  'Upstream.Edit': false,
+  'User.Audit': true,
+  'Permission.Audit': false,
+};
 
 export interface AccessValues {
   'Model.Use'?: boolean;
@@ -70,7 +83,7 @@ export const sameModelOrderBoundary = (left: AccessRecordInput, right: AccessRec
   && left.principal.kind === right.principal.kind && left.principal.id === right.principal.id;
 
 export type AccessRequirement =
-  | { permission: 'Model.Use' | 'Upstream.Audit' | 'User.Audit' | 'Permission.Audit' }
+  | { permission: Exclude<AccessPermission, 'Upstream.Edit'> }
   | { permission: 'Upstream.Edit'; level: Exclude<UpstreamEditLevel, 'off'> };
 
 export interface AccessCheck {

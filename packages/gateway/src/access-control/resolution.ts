@@ -1,5 +1,5 @@
-import { accessScopeDepth, accessScopeKey, accessValueSatisfied, administratorAccessValues, permissionsForScope, upstreamEditLevelRank } from './types.ts';
-import type { AccessPermission, AccessRecord, AccessRequirement, AccessResolution, AccessScope, AccessTarget, AccessValues, PermissionDecisions } from './types.ts';
+import { accessScopeDepth, accessScopeKey, accessValueSatisfied, administratorAccessValues, groupRuleAppliesToMembers, permissionsForScope, upstreamEditLevelRank } from './types.ts';
+import type { AccessEvaluation, AccessPermission, AccessRecord, AccessRequirement, AccessResolution, AccessScope, AccessValues, PermissionDecisions, ResolveScope } from './types.ts';
 
 interface PreparedAccessRecord {
   record: AccessRecord;
@@ -16,69 +16,59 @@ interface AccessBucket {
   id: number;
 }
 
-const matches = (outer: AccessScope, outerKey: string, regex: RegExp | null, inner: AccessScope, targetGroups: ReadonlySet<number>, self: boolean): boolean => {
-  if (outer.kind === 'self') return self && inner.kind === 'user';
-  if (outerKey === accessScopeKey(inner)) return true;
-  switch (outer.kind) {
-  case 'upstreams': return inner.kind === 'upstream' || inner.kind === 'upstreamModel';
-  case 'upstream': return inner.kind === 'upstreamModel' && inner.upstreamId === outer.upstreamId;
-  case 'upstreamModel': return inner.kind === 'upstreamModel' && inner.upstreamId === outer.upstreamId
-    && inner.model.kind === 'exact' && outer.model.kind === 'regex' && regex!.test(inner.model.value);
-  case 'users': return inner.kind === 'user';
-  case 'groups': return inner.kind === 'group';
-  case 'group': return inner.kind === 'user' && targetGroups.has(outer.groupId);
-  case 'user': return false;
-  }
-};
-
 const valueRank = (value: NonNullable<AccessValues[AccessPermission]>) => typeof value === 'boolean' ? Number(value) : upstreamEditLevelRank[value];
-const groupScopeParticipates = (permission: AccessPermission): boolean => permission === 'User.Audit';
 // A concrete user outranks membership scopes; exact model ids and regexes share
 // one ordered level. Only model-pattern precedence is operator-controlled.
 const precedenceDepth = (scope: AccessScope) => scope.kind === 'user' ? 3 : accessScopeDepth(scope);
+const isSelfUserScope = (scope: ResolveScope, subjectUserId?: number): boolean =>
+  scope.kind === 'user' && scope.userId === subjectUserId;
 
-export const targetScope = (target: AccessTarget): AccessScope => target.kind === 'upstreamModel'
-  ? { kind: 'upstreamModel', upstreamId: target.upstreamId, model: { kind: 'exact', value: target.modelId } }
-  : target;
+const eligibleRows = (bucket: AccessBucket, target: ResolveScope, permission: AccessPermission): PreparedAccessRecord[] =>
+  bucket.rows.filter(row => row.record.values[permission] !== undefined
+    && !(target.kind === 'user' && row.record.scope.kind === 'group' && !groupRuleAppliesToMembers[permission]));
 
-const resolvePreparedAssignments = (
-  prepared: readonly PreparedAccessRecord[],
-  scope: AccessScope,
-  targetGroups: ReadonlySet<number>,
-  self = false,
-): AccessResolution => {
-  const applicable = prepared.filter(record => matches(record.record.scope, record.scopeKey, record.regex, scope, targetGroups, self));
+const selectRepresentative = (rows: readonly PreparedAccessRecord[], permission: AccessPermission) => {
+  const personal = rows.filter(row => row.record.principal.kind === 'user');
+  const winners = personal.length > 0 ? personal : rows;
+  const representative = winners.reduce((best, row) =>
+    valueRank(row.record.values[permission]!) > valueRank(best.record.values[permission]!) ? row : best);
+  return { winners, representative };
+};
+
+const winningSelection = (buckets: readonly AccessBucket[], target: ResolveScope, permission: AccessPermission) => {
+  for (const bucket of buckets) {
+    const rows = eligibleRows(bucket, target, permission);
+    if (rows.length > 0) return selectRepresentative(rows, permission);
+  }
+  return null;
+};
+
+const resolveBuckets = (prepared: readonly PreparedAccessRecord[], buckets: readonly AccessBucket[], scope: ResolveScope): AccessResolution => {
+  const applicableIds = new Set(buckets.flatMap(bucket => bucket.rows.map(row => row.record.id)));
+  const applicable = prepared.filter(row => applicableIds.has(row.record.id));
   const decisions = new Map<number, PermissionDecisions>(applicable.map(({ record }) => [record.id, {}]));
   const values: AccessValues = {};
   for (const permission of permissionsForScope(scope)) {
-    const assignments = applicable.filter(record => record.record.values[permission] !== undefined
-      && !(scope.kind === 'user' && record.record.scope.kind === 'group' && !groupScopeParticipates(permission)));
-    const buckets = [...Map.groupBy(assignments, record => record.scopeKey).values()]
-      .map(rows => ({ scope: rows[0]!.record.scope, rows, order: Math.min(...rows.map(row => row.record.sortOrder)), id: Math.min(...rows.map(row => row.record.id)) }))
-      .toSorted((left, right) => precedenceDepth(right.scope) - precedenceDepth(left.scope)
-        || (left.scope.kind === 'upstreamModel' && right.scope.kind === 'upstreamModel'
-          ? left.order - right.order || left.id - right.id
-          : accessScopeKey(left.scope).localeCompare(accessScopeKey(right.scope), 'en', { numeric: true })));
-    const bucket = buckets[0];
-    const personal = bucket?.rows.filter(row => row.record.principal.kind === 'user');
-    const winners = personal && personal.length > 0 ? personal : bucket?.rows ?? [];
-    const representative = winners.reduce<PreparedAccessRecord | null>((highest, row) =>
-      highest === null || valueRank(row.record.values[permission]!) > valueRank(highest.record.values[permission]!) ? row : highest, null);
+    const selection = winningSelection(buckets, scope, permission);
+    const representative = selection?.representative ?? null;
     if (permission === 'Upstream.Edit') values[permission] = representative === null ? 'off' : representative.record.values[permission];
     else values[permission] = representative === null ? false : representative.record.values[permission];
-    if (representative === null) continue;
-    const active = new Set(winners.map(row => row.record.id));
-    const assigned = new Set(assignments.map(row => row.record.id));
+    if (selection === null) continue;
+    const active = new Set(selection.winners.map(row => row.record.id));
     for (const { record } of applicable) {
-      if (assigned.has(record.id)) decisions.get(record.id)![permission] = active.has(record.id) ? { kind: 'effective' } : { kind: 'overridden', by: representative.record };
+      if (record.values[permission] === undefined) continue;
+      if (scope.kind === 'user' && record.scope.kind === 'group' && !groupRuleAppliesToMembers[permission]) continue;
+      decisions.get(record.id)![permission] = active.has(record.id)
+        ? { kind: 'effective' }
+        : { kind: 'overridden', by: selection.representative.record };
     }
   }
   return { values, records: applicable.map(({ record }) => record), decisions: [...decisions].map(([recordId, permissions]) => ({ recordId, permissions })) };
 };
 
 export interface AccessResolver {
-  resolve(scope: AccessScope, targetGroups: ReadonlySet<number>, self?: boolean): AccessResolution;
-  satisfies(scope: AccessScope, targetGroups: ReadonlySet<number>, requirement: AccessRequirement, self?: boolean): boolean;
+  resolve(scope: ResolveScope, evaluation: AccessEvaluation): AccessResolution;
+  satisfies(scope: ResolveScope, requirement: AccessRequirement, evaluation: AccessEvaluation): boolean;
 }
 
 export const createAccessResolver = (records: readonly AccessRecord[]): AccessResolver => {
@@ -87,8 +77,6 @@ export const createAccessResolver = (records: readonly AccessRecord[]): AccessRe
     scopeKey: accessScopeKey(record.scope),
     regex: record.scope.kind === 'upstreamModel' && record.scope.model.kind === 'regex' ? new RegExp(record.scope.model.value) : null,
   }));
-  const upstream = prepared.filter(({ record }) => record.scope.kind.startsWith('upstream'));
-  const user = prepared.filter(({ record }) => !record.scope.kind.startsWith('upstream'));
   const bucketsByKey = new Map<string, AccessBucket>();
   for (const row of prepared) {
     const current = bucketsByKey.get(row.scopeKey);
@@ -131,24 +119,28 @@ export const createAccessResolver = (records: readonly AccessRecord[]): AccessRe
     }
   }
   for (const rows of modelBuckets.values()) rows.sort((left, right) => left.order - right.order || left.id - right.id);
-  const candidates = (scope: AccessScope, targetGroups: ReadonlySet<number>, requirement: AccessRequirement, self: boolean): AccessBucket[] => {
+  const candidates = (scope: ResolveScope, targetGroups: ReadonlySet<number>, self: boolean): AccessBucket[] => {
     const result: Array<AccessBucket | undefined> = [];
     switch (scope.kind) {
     case 'upstream': result.push(upstreamBuckets.get(scope.upstreamId), upstreamsBucket); break;
-    case 'upstreamModel':
+    case 'upstreamModel': {
+      const targetKey = accessScopeKey(scope);
       result.push(
         ...(modelBuckets.get(scope.upstreamId) ?? []).filter(bucket => bucket.scope.kind === 'upstreamModel'
-          && (bucket.scope.model.kind === 'exact'
-            ? bucket.scope.model.value === scope.model.value
-            : bucket.regex!.test(scope.model.value))),
+          && (scope.model.kind === 'regex'
+            ? bucket.scopeKey === targetKey
+            : bucket.scope.model.kind === 'exact'
+              ? bucket.scope.model.value === scope.model.value
+              : bucket.regex!.test(scope.model.value))),
         upstreamBuckets.get(scope.upstreamId),
         upstreamsBucket,
       );
       break;
+    }
     case 'user': result.push(
       self ? selfBucket : undefined,
       userBuckets.get(scope.userId),
-      ...(groupScopeParticipates(requirement.permission) ? [...targetGroups].map(id => groupBuckets.get(id)) : []),
+      ...[...targetGroups].map(id => groupBuckets.get(id)),
       usersBucket,
     ); break;
     case 'group': result.push(groupBuckets.get(scope.groupId), groupsBucket); break;
@@ -162,28 +154,15 @@ export const createAccessResolver = (records: readonly AccessRecord[]): AccessRe
           ? left.order - right.order || left.id - right.id
           : left.scopeKey.localeCompare(right.scopeKey, 'en', { numeric: true })));
   };
-  const cache = new Map<string, AccessResolution>();
+  const candidatesFor = (scope: ResolveScope, evaluation: AccessEvaluation): AccessBucket[] =>
+    candidates(scope, evaluation.targetGroups, isSelfUserScope(scope, evaluation.subjectUserId));
   return {
-    resolve(scope, targetGroups, self = false) {
-      const targetGroupsKey = [...targetGroups].toSorted((left, right) => left - right).join(',');
-      const key = `${accessScopeKey(scope)}\0${targetGroupsKey}\0${Number(self)}`;
-      const cached = cache.get(key);
-      if (cached !== undefined) return cached;
-      const resolution = resolvePreparedAssignments(scope.kind.startsWith('upstream') ? upstream : user, scope, targetGroups, self);
-      cache.set(key, resolution);
-      return resolution;
+    resolve(scope, evaluation) {
+      return resolveBuckets(prepared, candidatesFor(scope, evaluation), scope);
     },
-    satisfies(scope, targetGroups, requirement, self = false) {
-      for (const bucket of candidates(scope, targetGroups, requirement, self)) {
-        const rows = bucket.rows.filter(row => row.record.values[requirement.permission] !== undefined);
-        if (rows.length === 0) continue;
-        const personal = rows.filter(row => row.record.principal.kind === 'user');
-        const winners = personal.length > 0 ? personal : rows;
-        const representative = winners.reduce((highest, row) =>
-          valueRank(row.record.values[requirement.permission]!) > valueRank(highest.record.values[requirement.permission]!) ? row : highest);
-        return accessValueSatisfied(representative.record.values[requirement.permission], requirement);
-      }
-      return false;
+    satisfies(scope, requirement, evaluation) {
+      const selection = winningSelection(candidatesFor(scope, evaluation), scope, requirement.permission);
+      return selection !== null && accessValueSatisfied(selection.representative.record.values[requirement.permission], requirement);
     },
   };
 };
@@ -192,28 +171,25 @@ export const createAccessResolver = (records: readonly AccessRecord[]): AccessRe
 // Scope wins first, personal assignment wins within that scope, then group
 // assignments combine by maximum while all contributing group rules stay active.
 // A rule scoped to /Groups/:id never contributes Permission.Audit to a user resolution.
-export const resolveAssignments = (records: readonly AccessRecord[], scope: AccessScope, targetGroups: ReadonlySet<number>, self = false): AccessResolution =>
-  createAccessResolver(records).resolve(scope, targetGroups, self);
+export const resolveAssignments = (records: readonly AccessRecord[], scope: ResolveScope, evaluation: AccessEvaluation): AccessResolution =>
+  createAccessResolver(records).resolve(scope, evaluation);
 
-export const resolveEffectiveAssignments = (
-  records: readonly AccessRecord[],
-  scope: AccessScope,
-  targetGroups: ReadonlySet<number>,
-  isAdmin: boolean,
-  ownUserId?: number,
-): AccessResolution => {
-  const self = scope.kind === 'user' && scope.userId === ownUserId;
-  const resolution = resolveAssignments(records, scope, targetGroups, self);
+export const resolveEffectiveAssignments = ({ records, scope, targetGroups, isAdmin, subjectUserId }: {
+  records: readonly AccessRecord[];
+  scope: ResolveScope;
+  targetGroups: ReadonlySet<number>;
+  isAdmin: boolean;
+  subjectUserId?: number;
+}): AccessResolution => {
+  const resolution = resolveAssignments(records, scope, { targetGroups, subjectUserId });
   if (isAdmin) return { ...resolution, values: administratorAccessValues(scope), decisions: [] };
-  if (self) {
-    return {
-      ...resolution,
-      values: { ...resolution.values, 'User.Audit': true },
-      decisions: resolution.decisions.map(({ recordId, permissions }) => {
-        const { 'User.Audit': _selfAudit, ...rest } = permissions;
-        return { recordId, permissions: rest };
-      }),
-    };
-  }
-  return resolution;
+  if (!isSelfUserScope(scope, subjectUserId)) return resolution;
+  return {
+    ...resolution,
+    values: { ...resolution.values, 'User.Audit': true },
+    decisions: resolution.decisions.map(({ recordId, permissions }) => {
+      const { 'User.Audit': _selfAudit, ...rest } = permissions;
+      return { recordId, permissions: rest };
+    }),
+  };
 };

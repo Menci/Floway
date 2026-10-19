@@ -1,4 +1,4 @@
-import { hasPermissionAuditTarget, loadPermissionAuditContext, permissionAuditSupportPrincipals, type PermissionAuditContext } from '../../access-control/permission-audit.ts';
+import { canAuditPrincipal, hasPermissionAuditTarget, loadPermissionAuditContext, permissionAuditSourcePrincipals, type PermissionAuditContext } from '../../access-control/permission-audit.ts';
 import { resolveEffectiveAssignments } from '../../access-control/resolution.ts';
 import { AccessRecordConflictError } from '../../access-control/types.ts';
 import type { AccessPrincipal, AccessRecord, AccessRecordInput } from '../../access-control/types.ts';
@@ -22,48 +22,48 @@ const principalError = async (input: AccessRecordInput): Promise<string | null> 
   return exists ? null : `Unknown ${input.principal.kind} principal ${input.principal.id}`;
 };
 
-const loadVisiblePermissionRecords = async (c: AuthedContext): Promise<{
+const loadPermissionSnapshot = async (c: AuthedContext): Promise<{
   context: PermissionAuditContext;
-  records: AccessRecord[];
-  supportRecords: AccessRecord[];
+  visibleRecords: AccessRecord[];
+  sourceRecords: AccessRecord[];
 } | null> => {
   const context = await loadPermissionAuditContext(userFromContext(c));
   if (!hasPermissionAuditTarget(context)) return null;
-  const supportRecords = await getRepo().accessRecords.listByPrincipals(permissionAuditSupportPrincipals(context));
-  const records = supportRecords.filter(record => record.principal.kind === 'user'
+  const sourceRecords = await getRepo().accessRecords.listByPrincipals(permissionAuditSourcePrincipals(context));
+  const visibleRecords = sourceRecords.filter(record => record.principal.kind === 'user'
     ? context.userIds.has(record.principal.id)
     : context.directGroupIds.has(record.principal.id));
-  return { context, records, supportRecords };
+  return { context, visibleRecords, sourceRecords };
 };
 
 const projectPermissionDirectory = (context: PermissionAuditContext, records: readonly AccessRecord[], admin: boolean) => {
-  const visibleUserIds = new Set(admin ? context.directory.users.map(user => user.id) : context.userIds);
-  const visibleGroupIds = new Set(admin
+  const renderUserIds = new Set(admin ? context.directory.users.map(user => user.id) : context.userIds);
+  const renderGroupIds = new Set(admin
     ? context.directory.groups.map(group => group.id)
     : [...context.directGroupIds, ...context.membershipGroupIds]);
   if (!admin) {
     for (const record of records) {
-      if (record.scope.kind === 'user') visibleUserIds.add(record.scope.userId);
-      else if (record.scope.kind === 'group') visibleGroupIds.add(record.scope.groupId);
+      if (record.scope.kind === 'user') renderUserIds.add(record.scope.userId);
+      else if (record.scope.kind === 'group') renderGroupIds.add(record.scope.groupId);
     }
   }
   const groups = context.directory.groups
-    .filter(group => visibleGroupIds.has(group.id))
+    .filter(group => renderGroupIds.has(group.id))
     .map(group => ({ ...group, memberIds: admin ? group.memberIds : group.memberIds.filter(userId => context.userIds.has(userId)) }));
-  const groupIdsByUser = new Map(context.directory.users.filter(user => visibleUserIds.has(user.id)).map(user => [user.id, [] as number[]]));
+  const groupIdsByUser = new Map(context.directory.users.filter(user => renderUserIds.has(user.id)).map(user => [user.id, [] as number[]]));
   for (const group of groups) for (const userId of group.memberIds) groupIdsByUser.get(userId)!.push(group.id);
   return {
-    users: context.directory.users.filter(user => visibleUserIds.has(user.id)).map(user => userToAdminWire(user, groupIdsByUser.get(user.id)!)),
+    users: context.directory.users.filter(user => renderUserIds.has(user.id)).map(user => userToAdminWire(user, groupIdsByUser.get(user.id)!)),
     groups,
     principalUserIds: context.directory.users.filter(user => context.userIds.has(user.id)).map(user => user.id),
     principalGroupIds: context.directory.groups.filter(group => context.directGroupIds.has(group.id)).map(group => group.id),
   };
 };
 
-const permissionUpstreamOptions = async (baseRecords: readonly AccessRecord[], supportRecords: readonly AccessRecord[], admin: boolean) => {
+const permissionUpstreamOptions = async (visibleRecords: readonly AccessRecord[], sourceRecords: readonly AccessRecord[], admin: boolean) => {
   const items = await getRepo().upstreams.list();
-  const all = admin || baseRecords.some(record => record.scope.kind === 'upstreams');
-  const ids = new Set(supportRecords.flatMap(record => record.scope.kind === 'upstream' || record.scope.kind === 'upstreamModel' ? [record.scope.upstreamId] : []));
+  const all = admin || visibleRecords.some(record => record.scope.kind === 'upstreams');
+  const ids = new Set(sourceRecords.flatMap(record => record.scope.kind === 'upstream' || record.scope.kind === 'upstreamModel' ? [record.scope.upstreamId] : []));
   return items.filter(item => all || ids.has(item.id)).map(item => ({
     id: item.id,
     name: item.name,
@@ -75,17 +75,17 @@ const permissionUpstreamOptions = async (baseRecords: readonly AccessRecord[], s
 };
 
 export const listAccessRecords = async (c: AuthedContext) => {
-  const view = await loadVisiblePermissionRecords(c);
-  return view === null ? c.json({ error: 'Permission audit access required' }, 403) : c.json(view.records);
+  const snapshot = await loadPermissionSnapshot(c);
+  return snapshot === null ? c.json({ error: 'Permission audit access required' }, 403) : c.json(snapshot.visibleRecords);
 };
 
 export const getPermissionsData = async (c: AuthedContext) => {
-  const view = await loadVisiblePermissionRecords(c);
-  if (view === null) return c.json({ error: 'Permission audit access required' }, 403);
+  const snapshot = await loadPermissionSnapshot(c);
+  if (snapshot === null) return c.json({ error: 'Permission audit access required' }, 403);
   const admin = userFromContext(c).isAdmin;
-  const directory = projectPermissionDirectory(view.context, view.supportRecords, admin);
-  const upstreams = await permissionUpstreamOptions(view.records, view.supportRecords, admin);
-  return c.json({ records: view.records, directory, upstreams });
+  const directory = projectPermissionDirectory(snapshot.context, snapshot.sourceRecords, admin);
+  const upstreams = await permissionUpstreamOptions(snapshot.visibleRecords, snapshot.sourceRecords, admin);
+  return c.json({ records: snapshot.visibleRecords, directory, upstreams });
 };
 
 export const createAccessRecord = async (c: CtxWithJson<typeof accessRecordBody>) => {
@@ -127,31 +127,24 @@ export const resolveAccess = async (c: CtxWithJson<typeof resolveAccessBody>) =>
   const { principal, scope, excludeRecordId } = c.req.valid('json');
   const repo = getRepo();
   const actor = userFromContext(c);
-  if (!actor.isAdmin) {
-    const context = await loadPermissionAuditContext(actor);
-    const allowed = principal.kind === 'user' ? context.userIds.has(principal.id) : context.directGroupIds.has(principal.id);
-    if (!allowed) {
-      return c.json({ error: 'Principal not found' }, 404);
-    }
+  if (!await canAuditPrincipal(actor, principal)) {
+    return c.json({ error: 'Principal not found' }, 404);
   }
   const subject = principal.kind === 'user' ? await repo.users.getById(principal.id) : await repo.groups.getById(principal.id);
   if (!subject) return c.json({ error: `${principal.kind} not found` }, 404);
   const groupIds = principal.kind === 'user' ? await repo.groups.listIdsByUserId(principal.id) : [];
   const principals: AccessPrincipal[] = [principal, ...groupIds.map(id => ({ kind: 'group' as const, id }))];
+  const records = await repo.accessRecords.listByPrincipals(principals);
   const targetGroups = scope.kind === 'user' && principal.kind === 'user' && scope.userId === principal.id
-    ? Promise.resolve(groupIds)
-    : Promise.resolve([]);
-  const [records, targetGroupIds] = await Promise.all([
-    repo.accessRecords.listByPrincipals(principals),
-    targetGroups,
-  ]);
-  const resolution = resolveEffectiveAssignments(
-    records.filter(record => record.id !== excludeRecordId),
+    ? new Set(groupIds)
+    : new Set<number>();
+  const resolution = resolveEffectiveAssignments({
+    records: records.filter(record => record.id !== excludeRecordId),
     scope,
-    new Set(targetGroupIds),
-    'isAdmin' in subject && subject.isAdmin,
-    principal.kind === 'user' ? principal.id : undefined,
-  );
+    targetGroups,
+    isAdmin: principal.kind === 'user' && (subject as { isAdmin: boolean }).isAdmin,
+    subjectUserId: principal.kind === 'user' ? principal.id : undefined,
+  });
   return c.json(resolution);
 };
 

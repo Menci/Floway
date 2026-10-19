@@ -86,7 +86,7 @@ export const enumerateRealModelCandidates = async (
 }> => {
   const { fetcherForUpstream, scheduleRefresh } = context;
   const allowed = await checkMany(subject, providers.map(provider => ({
-    target: { kind: 'upstreamModel' as const, upstreamId: provider.upstreamId, modelId },
+    target: { kind: 'upstreamModel' as const, upstreamId: provider.upstreamId, model: { kind: 'exact' as const, value: modelId } },
     requirement: { permission: 'Model.Use' as const },
   })));
   const failedUpstreams: string[] = [];

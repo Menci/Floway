@@ -1,11 +1,11 @@
-import { createAccessResolver, targetScope } from './resolution.ts';
+import { createAccessResolver } from './resolution.ts';
 import { permissionsForScope } from './types.ts';
 import type { AccessCheck, AccessRequirement, AccessTarget } from './types.ts';
 import { getRepo } from '../repo/index.ts';
 import type { User } from '../repo/types.ts';
 
 const assertCompatible = (target: AccessTarget, requirement: AccessRequirement): void => {
-  const compatible = permissionsForScope(targetScope(target)).includes(requirement.permission);
+  const compatible = permissionsForScope(target).includes(requirement.permission);
   if (!compatible) throw new Error(`${requirement.permission} is not valid for ${target.kind}`);
 };
 
@@ -17,7 +17,6 @@ export const checkMany = async (
   const bypass = checks.map(({ target, requirement }) => subject.isAdmin
     || (requirement.permission === 'User.Audit' && target.kind === 'user' && target.userId === subject.id));
   if (bypass.every(Boolean)) return bypass;
-  if (checks.length === 0) return [];
 
   const repo = getRepo();
   const targetUserIds = [...new Set(checks.flatMap(check => check.target.kind === 'user' ? [check.target.userId] : []))];
@@ -33,6 +32,6 @@ export const checkMany = async (
     const targetGroups = target.kind === 'user'
       ? new Set(targetMemberships.get(target.userId)!)
       : new Set<number>();
-    return resolver.satisfies(targetScope(target), targetGroups, requirement, target.kind === 'user' && target.userId === subject.id);
+    return resolver.satisfies(target, requirement, { targetGroups, subjectUserId: subject.id });
   });
 };

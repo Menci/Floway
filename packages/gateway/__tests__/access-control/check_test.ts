@@ -39,9 +39,9 @@ test('deeper explicit values replace shallower values per permission', async () 
     values: { 'Model.Use': false },
   });
 
-  expect(await check(subject, { kind: 'upstreamModel', upstreamId: 'up_a', modelId: 'gpt-5' }, { permission: 'Model.Use' })).toBe(false);
+  expect(await check(subject, { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } }, { permission: 'Model.Use' })).toBe(false);
   expect(await check(subject, { kind: 'upstream', upstreamId: 'up_a' }, { permission: 'Upstream.Audit' })).toBe(true);
-  expect(await check(subject, { kind: 'upstreamModel', upstreamId: 'up_b', modelId: 'gpt-5' }, { permission: 'Model.Use' })).toBe(true);
+  expect(await check(subject, { kind: 'upstreamModel', upstreamId: 'up_b', model: { kind: 'exact', value: 'gpt-5' } }, { permission: 'Model.Use' })).toBe(true);
 });
 
 test('same-depth model patterns use sortOrder without an implicit exact priority', async () => {
@@ -58,7 +58,7 @@ test('same-depth model patterns use sortOrder without an implicit exact priority
     values: { 'Model.Use': true },
   });
 
-  expect(await check(subject, { kind: 'upstreamModel', upstreamId: 'up_a', modelId: 'gpt-5' }, { permission: 'Model.Use' })).toBe(false);
+  expect(await check(subject, { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } }, { permission: 'Model.Use' })).toBe(false);
 });
 
 test('a personal value overrides a group grant at the same scope', async () => {
@@ -253,8 +253,8 @@ test('checkMany resolves many targets from one indexed resolver without rebuildi
     values: { 'Model.Use': false },
   });
   const allowed = await checkMany(subject, [
-    { target: { kind: 'upstreamModel', upstreamId: 'a', modelId: 'gpt-5' }, requirement: { permission: 'Model.Use' } },
-    { target: { kind: 'upstreamModel', upstreamId: 'b', modelId: 'gpt-5' }, requirement: { permission: 'Model.Use' } },
+    { target: { kind: 'upstreamModel', upstreamId: 'a', model: { kind: 'exact', value: 'gpt-5' } }, requirement: { permission: 'Model.Use' } },
+    { target: { kind: 'upstreamModel', upstreamId: 'b', model: { kind: 'exact', value: 'gpt-5' } }, requirement: { permission: 'Model.Use' } },
   ]);
   expect(allowed).toEqual([false, true]);
 });
@@ -273,7 +273,7 @@ test('a nonmatching exact model rule does not override an ancestor grant', async
     values: { 'Model.Use': false },
   });
   expect(await checkMany(subject, [
-    { target: { kind: 'upstreamModel', upstreamId: 'up_a', modelId: 'gpt-5' }, requirement: { permission: 'Model.Use' } },
+    { target: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } }, requirement: { permission: 'Model.Use' } },
   ])).toEqual([true]);
 });
 
@@ -291,7 +291,7 @@ test('a matching exact model rule overrides an ancestor grant', async () => {
     values: { 'Model.Use': false },
   });
   expect(await checkMany(subject, [
-    { target: { kind: 'upstreamModel', upstreamId: 'up_a', modelId: 'gpt-4' }, requirement: { permission: 'Model.Use' } },
+    { target: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-4' } }, requirement: { permission: 'Model.Use' } },
   ])).toEqual([false]);
 });
 
@@ -309,6 +309,6 @@ test('a matching regex model rule follows its configured order', async () => {
     values: { 'Model.Use': true },
   });
   expect(await checkMany(subject, [
-    { target: { kind: 'upstreamModel', upstreamId: 'up_a', modelId: 'gpt-5' }, requirement: { permission: 'Model.Use' } },
+    { target: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } }, requirement: { permission: 'Model.Use' } },
   ])).toEqual([true]);
 });

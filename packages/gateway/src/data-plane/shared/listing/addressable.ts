@@ -131,7 +131,7 @@ export const enumerateAddressableModelIds = async (
     entry,
     upstream,
     check: {
-      target: { kind: 'upstreamModel' as const, upstreamId: upstream.upstreamId, modelId: entry.id },
+      target: { kind: 'upstreamModel' as const, upstreamId: upstream.upstreamId, model: { kind: 'exact' as const, value: entry.id } },
       requirement: { permission: 'Model.Use' as const },
     },
   })));

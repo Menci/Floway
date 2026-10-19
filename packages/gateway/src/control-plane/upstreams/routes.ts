@@ -244,7 +244,7 @@ export const listUpstreamOptions = async (c: CtxWithQuery<typeof upstreamOptions
         : item.modelPrefix.addressable.map(form => form === 'prefixed' ? `${item.modelPrefix!.prefix}${id}` : id)));
       return [
         { item, check: { target: { kind: 'upstream' as const, upstreamId: item.id }, requirement: { permission: 'Model.Use' as const } } },
-        ...[...ids].map(modelId => ({ item, check: { target: { kind: 'upstreamModel' as const, upstreamId: item.id, modelId }, requirement: { permission: 'Model.Use' as const } } })),
+        ...[...ids].map(modelId => ({ item, check: { target: { kind: 'upstreamModel' as const, upstreamId: item.id, model: { kind: 'exact' as const, value: modelId } }, requirement: { permission: 'Model.Use' as const } } })),
       ];
     });
     const allowed = await checkMany(subject, checks.map(entry => entry.check));
