@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
-import { collect, collectIR, iterate } from './helpers.ts';
-import { irFromOpenAIResponses } from '../../src/protocols/openai-responses/as-target/sse-from.ts';
+import { collect, collectIR, irFromOpenAIResponses, iterate } from './helpers.ts';
+import { createRoundTripReaderCapture } from '../round-trip/test-helpers.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 
 const response = (output: any[] = []) => ({ id: 'resp', model: 'served', created_at: 1, status: 'completed', output, usage: null, error: null, incomplete_details: null });
@@ -280,6 +280,19 @@ test('an empty terminal Responses output preserves closed items', async () => {
   expect(absent.choices[0].items[0]).toMatchObject({ type: 'message', content: [{ text: 'answer' }] });
 });
 
+test('an empty terminal Responses output captures closed snapshots for round trip', async () => {
+  const added = { type: 'message', id: 'msg', role: 'assistant', status: 'in_progress', content: [] };
+  const done = { ...added, status: 'completed', content: [{ type: 'output_text', text: 'answer', annotations: [], logprobs: [] }] };
+  const capture = createRoundTripReaderCapture<'openaiResponses'>();
+  await collectIR(irFromOpenAIResponses(iterate([
+    eventFrame({ type: 'response.created', response: response([]) } as any),
+    eventFrame({ type: 'response.output_item.added', output_index: 0, item: added } as any),
+    eventFrame({ type: 'response.output_item.done', output_index: 0, item: done } as any),
+    eventFrame({ type: 'response.completed', response: response([]) } as any),
+  ]), capture.roundTrip));
+  expect(capture.turns.get(0)).toEqual([{ type: 'message', id: 'msg', role: 'assistant', status: 'completed', content: done.content }]);
+});
+
 test('a non-empty terminal Responses output cannot change a closed item', async () => {
   const added = { type: 'message', id: 'msg', role: 'assistant', status: 'in_progress', content: [] };
   const done = { ...added, status: 'completed', content: [{ type: 'output_text', text: 'answer', annotations: [], logprobs: [] }] };
@@ -300,7 +313,7 @@ test('terminal Responses reasoning may rotate encrypted content after output_ite
     { type: 'response.output_item.done', output_index: 0, item: done },
     { type: 'response.completed', response: response([{ ...done, encrypted_content: 'terminal-carrier' }]) },
   ]);
-  expect(result.choices[0].items[0]).toMatchObject({ type: 'reasoning', encrypted_content: 'completed-carrier' });
+  expect(result.choices[0].items).toEqual([]);
   await expect(read([
     { type: 'response.created', response: response([]) },
     { type: 'response.output_item.added', output_index: 0, item: added },
@@ -319,12 +332,15 @@ test('output-text annotations require an output-text owner', async () => {
   ])).rejects.toThrow('requires an output-text part');
 });
 
-test('Responses content part type cannot change at an existing index', async () => {
+test.each([
+  ['output_text', { type: 'output_text', text: '', annotations: [] }, { type: 'response.refusal.delta', output_index: 0, content_index: 0, delta: 'refused' }, 'refusal'],
+  ['refusal', { type: 'refusal', refusal: '' }, { type: 'response.output_text.delta', output_index: 0, content_index: 0, delta: 'answer' }, 'output_text'],
+] as const)('Responses content part type cannot change from %s at an existing index', async (initialType, part, event, nextType) => {
   const added = { type: 'message', id: 'msg', role: 'assistant', status: 'in_progress', content: [] };
   await expect(read([
     { type: 'response.created', response: response([]) },
     { type: 'response.output_item.added', output_index: 0, item: added },
-    { type: 'response.content_part.added', output_index: 0, content_index: 0, part: { type: 'output_text', text: '', annotations: [] } },
-    { type: 'response.refusal.delta', output_index: 0, content_index: 0, delta: 'refused' },
-  ])).rejects.toThrow('content part type changed from output_text to refusal');
+    { type: 'response.content_part.added', output_index: 0, content_index: 0, part },
+    event,
+  ])).rejects.toThrow(`content part type changed from ${initialType} to ${nextType}`);
 });

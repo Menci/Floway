@@ -35,7 +35,7 @@ describe('IR accumulator', () => {
     expect(() => collector.apply({ type: 'write', kind: 'assign', path: ['choices', 0, 'items', 0, 'call_id'], value: IRAbsent })).toThrow('absent target');
     expect(() => collector.apply({ type: 'write', kind: 'assign', path: ['choices', 0, 'refusal'], value: { category: IRAbsent, explanation: null } as any })).toThrow('assigned directly');
     expect(() => collector.apply({ type: 'write', kind: 'assign', path: ['choices', 0, 'refusal'], value: { category: undefined, explanation: null } as any })).toThrow('cannot contain undefined');
-    expect(() => collector.apply({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 1], value: { type: 'reasoning', id: IRAbsent } as any })).toThrow('IRAbsent is not allowed');
+    expect(() => collector.apply({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 1], value: { type: 'reasoning', summary: [IRAbsent] } })).toThrow('append target must initialize to an empty string');
   });
 
   test('enforces append ownership by item type', () => {

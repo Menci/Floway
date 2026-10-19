@@ -1,21 +1,14 @@
 import { expect, test } from 'vitest';
 
-import { collectIR, iterate } from './helpers.ts';
+import { collectIR, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
 import { fixtureFrames } from './translation-cases.ts';
 import { usageFromIR as messagesUsageFromIR } from '../../src/protocols/anthropic-messages/as-source/usage.ts';
-import { irFromAnthropicMessages } from '../../src/protocols/anthropic-messages/as-target/sse-from.ts';
 import { usageToIR as messagesUsageToIR } from '../../src/protocols/anthropic-messages/as-target/usage.ts';
-import { geminiGenerateContentFromIR } from '../../src/protocols/gemini-generate-content/as-source/sse-to.ts';
 import { usageFromIR } from '../../src/protocols/gemini-generate-content/as-source/usage.ts';
-import { openaiChatCompletionsFromIR } from '../../src/protocols/openai-chat-completions/as-source/sse-to.ts';
 import { usageFromIR as chatUsageFromIR } from '../../src/protocols/openai-chat-completions/as-source/usage.ts';
-import { irFromOpenAIChatCompletions } from '../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
 import { usageToIR as chatUsageToIR } from '../../src/protocols/openai-chat-completions/as-target/usage.ts';
-import { openaiResponsesFromIR } from '../../src/protocols/openai-responses/as-source/sse-to.ts';
 import { usageFromIR as responsesUsageFromIR } from '../../src/protocols/openai-responses/as-source/usage.ts';
-import { irFromOpenAIResponses } from '../../src/protocols/openai-responses/as-target/sse-from.ts';
-import { usageToIR as responsesUsageToIR } from '../../src/protocols/openai-responses/as-target/usage.ts';
-import { eventFrame } from '@floway-dev/protocols/common';
+import { usageToIR as responsesUsageToIR } from '../../src/protocols/openai-responses/as-target/usage.ts';import { eventFrame } from '@floway-dev/protocols/common';
 
 const initialUsage = { input_tokens: 17, output_tokens: 2, total_tokens: 19, input_tokens_details: { cached_tokens: 3, cache_write_tokens: 4 } };
 const sources = [

@@ -4,6 +4,7 @@ import { translateToSourceEvents } from '../../../../src/protocols/openai-chat-c
 import { buildTargetRequest } from '../../../../src/protocols/openai-chat-completions/via-openai-responses/request.ts';
 import { structuredResponsesFixture } from '../../../ir/responses-fixture.ts';
 import { testOutputTranslation } from '../../../ir/translation-cases.ts';
+import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import { eventFrame, type ProtocolFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIChatCompletionsProtocolEventsToResult, parseOpenAIChatCompletionsStream, openaiChatCompletionsProtocolFrameToSSEFrame as writeChatFrame, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { openaiResponsesResultToEvents, parseOpenAIResponsesStream, collectOpenAIResponsesProtocolEventsToResult, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
@@ -13,7 +14,7 @@ import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 // under test is the translate output's terminal-frame discipline, not the SSE
 // projection itself.
 const isUsageOnlyChunk = (frame: ProtocolFrame<OpenAIChatCompletionsStreamEvent>): boolean =>
-  frame.type === 'event' && Array.isArray(frame.event.choices) && frame.event.choices.length === 0 && frame.event.usage !== undefined;
+  frame.type === 'event' && !('error' in frame.event) && Array.isArray(frame.event.choices) && frame.event.choices.length === 0 && frame.event.usage !== undefined;
 
 const openaiChatCompletionsProtocolFrameToSSEFrame = (frame: ProtocolFrame<OpenAIChatCompletionsStreamEvent>, options: { includeUsageChunk: boolean }): SseFrame | null => {
   if (frame.type === 'done') return sseFrame('[DONE]');
@@ -48,8 +49,12 @@ const toProtocolFrame = (event: OpenAIResponsesStreamEventEx): ProtocolFrame<Ope
 
 const includeUsageChunk = { includeUsageChunk: true };
 
+const translate = (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>) => translateToSourceEvents(
+  structuredResponsesFixture(frames), {}, createTestSidecarCodec(),
+);
+
 const chatSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>) {
-  for await (const frame of translateToSourceEvents(structuredResponsesFixture(frames))) {
+  for await (const frame of translate(frames)) {
     const sse = openaiChatCompletionsProtocolFrameToSSEFrame(frame, includeUsageChunk);
     if (sse) yield sse;
   }
@@ -138,8 +143,8 @@ test('response.created service_tier survives when the terminal response omits it
     });
   }
 
-  const frames = await collect(translateToSourceEvents(structuredResponsesFixture(stream())));
-  const events = frames.flatMap(frame => frame.type === 'event' ? [frame.event] : []);
+  const frames = await collect(translate(stream()));
+  const events = frames.flatMap(frame => frame.type === 'event' && !('error' in frame.event) ? [frame.event] : []);
   assertEquals(events[0].service_tier, 'priority');
   assertEquals(events.at(-1)?.service_tier, 'priority');
 });
@@ -161,7 +166,7 @@ test('OpenAI Responses to OpenAI Chat Completions translation rejects malformed 
   }
 
   await assertRejects(
-    async () => await drain(translateToSourceEvents(structuredResponsesFixture(stream()))),
+    async () => await drain(translate(stream())),
     RangeError,
     'cache token counts exceed inclusive input tokens',
   );
@@ -230,8 +235,8 @@ test('translateToSourceEvents preserves refusal text from JSON fallback', async 
 
   const refusal: string[] = [];
 
-  for await (const frame of translateToSourceEvents(structuredResponsesFixture(stream()))) {
-    if (frame.type !== 'event') continue;
+  for await (const frame of translate(stream())) {
+    if (frame.type !== 'event' || 'error' in frame.event) continue;
     refusal.push(frame.event.choices[0]?.delta.refusal ?? '');
   }
 
@@ -291,10 +296,10 @@ test('translateToSourceEvents streams independent text before deferred reasoning
     ];
   }
 
-  const frames = await collect(translateToSourceEvents(structuredResponsesFixture(stream())));
+  const frames = await collect(translate(stream()));
   const events = [];
   for (const frame of frames) {
-    if (frame.type === 'event') events.push(frame.event);
+    if (frame.type === 'event' && !('error' in frame.event)) events.push(frame.event);
   }
 
   assertEquals(
@@ -304,11 +309,22 @@ test('translateToSourceEvents streams independent text before deferred reasoning
       { content: 'answer' },
       { reasoning_text: 'trace' },
       {
-        reasoning_items: [
+        reasoning_details: [
           {
-            type: 'reasoning',
-            id: 'rs_0',
-            summary: [{ type: 'summary_text', text: 'trace' }],
+            type: 'reasoning.summary',
+            summary: 'trace',
+            format: 'unknown',
+            index: 0,
+          },
+        ],
+      },
+      {
+        reasoning_details: [
+          {
+            type: 'reasoning.encrypted',
+            data: expect.any(String),
+            format: 'unknown',
+            index: 1,
           },
         ],
       },
@@ -353,7 +369,7 @@ test('translateToSourceEvents translates OpenAI Responses error events to OpenAI
     });
   }
 
-  const frames = await collect(translateToSourceEvents(structuredResponsesFixture(stream())));
+  const frames = await collect(translate(stream()));
 
   assertEquals(frames.length, 1);
   assertEquals(frames[0].type, 'event');
@@ -381,7 +397,7 @@ test('translateToSourceEvents translates OpenAI Responses failed terminal events
     });
   }
 
-  const frames = await collect(translateToSourceEvents(structuredResponsesFixture(stream())));
+  const frames = await collect(translate(stream()));
 
   assertEquals(frames.length, 1);
   assertEquals(frames[0].type, 'event');
@@ -410,7 +426,7 @@ test.each(['flat error', 'nested error', 'failed response'])('translateToSourceE
   async function* stream() {
     yield toProtocolFrame(event);
   }
-  const frames = await collect(translateToSourceEvents(structuredResponsesFixture(stream())));
+  const frames = await collect(translate(stream()));
   expect(frames).toHaveLength(1);
   if (frames[0].type !== 'event') throw new Error('expected error event frame');
   const translated = (frames[0].event as unknown as { error: Record<string, unknown> }).error;
@@ -437,7 +453,7 @@ test('translateToSourceEvents rejects truncated OpenAI Responses streams without
     });
   }
 
-  await assertRejects(async () => await drain(translateToSourceEvents(structuredResponsesFixture(stream()))), Error, 'before the initial response envelope');
+  await assertRejects(async () => await drain(translate(stream())), Error, 'before the initial response envelope');
 });
 
 test.each([false, true].flatMap(mixed => [
@@ -466,15 +482,15 @@ test.each([false, true].flatMap(mixed => [
   const upstreamSSE = events.map((event, sequence_number) => `event: ${event.type}\ndata: ${JSON.stringify({ ...event, sequence_number })}\n\n`).join('');
   const upstream = await collectOpenAIResponsesProtocolEventsToResult(parseOpenAIResponsesStream(new Response(upstreamSSE).body!));
   let clientSSE = '';
-  for await (const frame of translateToSourceEvents(parseOpenAIResponsesStream(new Response(upstreamSSE).body!))) {
+  for await (const frame of translate(parseOpenAIResponsesStream(new Response(upstreamSSE).body!))) {
     const sse = writeChatFrame(frame, includeUsageChunk);
     if (sse) clientSSE += `data: ${sse.data}\n\n`;
   }
   const client = await collectOpenAIChatCompletionsProtocolEventsToResult(parseOpenAIChatCompletionsStream(new Response(clientSSE).body!));
   expect(client.choices[0].finish_reason).toBe('tool_calls');
-  const replay = buildTargetRequest({ model: response.model, messages: [client.choices[0].message, { role: 'tool', tool_call_id: custom.call_id, content: 'edited' }] });
-  expect(replay.input.slice(0, -1)).toEqual(upstream.output.map(({ id: _id, ...item }) => item));
+  const replay = await buildTargetRequest({ model: response.model, messages: [client.choices[0].message, { role: 'tool', tool_call_id: custom.call_id, content: 'edited' }] }, createTestSidecarCodec());
+  expect(replay.input.slice(0, -1)).toEqual(upstream.output);
   expect(replay.input.at(-1)).toEqual({ type: 'custom_tool_call_output', call_id: custom.call_id, output: 'edited' });
 });
 
-testOutputTranslation('openai-chat-completions', 'openai-responses', frames => translateToSourceEvents(structuredResponsesFixture(frames)));
+testOutputTranslation('openai-chat-completions', 'openai-responses', (frames, codec) => translateToSourceEvents(structuredResponsesFixture(frames), {}, codec));

@@ -1,50 +1,47 @@
 import { expect, test, vi } from 'vitest';
 
-import { collectIR, collect, completeIR, iterate } from './helpers.ts';
+import { anthropicMessagesFromIR, collectIR, collect, completeIR, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
 import { fixtureFrames, nativeResult } from './translation-cases.ts';
 import { createIRBuilder } from '../../src/ir/stream.ts';
-import { anthropicMessagesFromIR } from '../../src/protocols/anthropic-messages/as-source/sse-to.ts';
-import { irFromAnthropicMessages } from '../../src/protocols/anthropic-messages/as-target/sse-from.ts';
 import { translateToSourceEvents as messagesViaChat } from '../../src/protocols/anthropic-messages/via-openai-chat-completions/events.ts';
+import { buildTargetRequest as messagesRequestViaChat } from '../../src/protocols/anthropic-messages/via-openai-chat-completions/request.ts';
 import { translateToSourceEvents as messagesViaResponses } from '../../src/protocols/anthropic-messages/via-openai-responses/events.ts';
-import { geminiGenerateContentFromIR } from '../../src/protocols/gemini-generate-content/as-source/sse-to.ts';
 import { translateToSourceEvents as generateContentViaChat } from '../../src/protocols/gemini-generate-content/via-openai-chat-completions/events.ts';
 import { translateToSourceEvents as generateContentViaResponses } from '../../src/protocols/gemini-generate-content/via-openai-responses/events.ts';
-import { openaiChatCompletionsFromIR } from '../../src/protocols/openai-chat-completions/as-source/sse-to.ts';
-import { irFromOpenAIChatCompletions } from '../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
-import { openaiResponsesFromIR } from '../../src/protocols/openai-responses/as-source/sse-to.ts';
-import { irFromOpenAIResponses } from '../../src/protocols/openai-responses/as-target/sse-from.ts';
+import { irFromOpenAIChatCompletions as irFromOpenAIChatCompletionsProduction } from '../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
 import { translateToSourceEvents as responsesViaMessages } from '../../src/protocols/openai-responses/via-anthropic-messages/events.ts';
 import { translateToSourceEvents as responsesViaChat } from '../../src/protocols/openai-responses/via-openai-chat-completions/events.ts';
+import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
+import { createRoundTripReaderCapture, emptyNamespaceToolNames } from '../round-trip/test-helpers.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 
 for (const [code, category] of [['bio_policy', 'bio'], ['cyber_policy', 'cyber']] as const) {
   test(`${code} becomes a structured Messages classifier refusal without invented body text`, async () => {
     const source = [eventFrame({ type: 'response.failed', response: { id: 'resp_policy', model: 'served', output: [], status: 'failed', error: { code, message: 'Classifier declined.' } } })];
-    const frames = await collect(messagesViaResponses(iterate(source as any)));
+    const frames = await collect(messagesViaResponses(iterate(source as any), createTestSidecarCodec()));
     const result = await nativeResult('anthropic-messages', frames);
-    expect(result.content).toEqual([]);
+    expect(result.content).toEqual([{ type: 'redacted_thinking', data: expect.any(String) }]);
     expect(result.stop_reason).toBe('refusal');
     expect(result.stop_details).toEqual({ type: 'refusal', category, explanation: 'Classifier declined.' });
   });
   test(`${code} becomes a GenerateContent safety termination`, async () => {
-    const frames = await collect(generateContentViaResponses(iterate([eventFrame({ type: 'response.failed', response: { id: 'resp_policy', model: 'served', output: [], status: 'failed', error: { code, message: 'Classifier declined.' } } })] as any)));
+    const frames = await collect(generateContentViaResponses(iterate([eventFrame({ type: 'response.failed', response: { id: 'resp_policy', model: 'served', output: [], status: 'failed', error: { code, message: 'Classifier declined.' } } })] as any), createTestSidecarCodec()));
     expect(frames.at(-1)).toMatchObject({ event: { candidates: [{ finishReason: 'SAFETY', finishMessage: 'Classifier declined.' }] } });
   });
 }
 
 test.each(['The model failed.', 'The safety policy service is unavailable.'])('a server error stays an error regardless of message keywords: %s', async message => {
-  const frames = await collect(generateContentViaResponses(iterate([eventFrame({ type: 'response.failed', response: { id: 'resp_failed', model: 'served', output: [], status: 'failed', error: { code: 'server_error', message } } })] as any)));
+  const frames = await collect(generateContentViaResponses(iterate([eventFrame({ type: 'response.failed', response: { id: 'resp_failed', model: 'served', output: [], status: 'failed', error: { code: 'server_error', message } } })] as any), createTestSidecarCodec()));
   expect(frames).toEqual([eventFrame({ error: { code: 500, status: 'INTERNAL', message } })]);
 });
 
 test('a failed Responses stream without an error description still fails with a message', async () => {
-  const frames = await collect(generateContentViaResponses(iterate([eventFrame({ type: 'response.failed', response: { id: 'resp_failed', model: 'served', output: [], status: 'failed', error: null } })] as any)));
+  const frames = await collect(generateContentViaResponses(iterate([eventFrame({ type: 'response.failed', response: { id: 'resp_failed', model: 'served', output: [], status: 'failed', error: null } })] as any), createTestSidecarCodec()));
   expect(frames).toEqual([eventFrame({ error: { code: 500, status: 'INTERNAL', message: 'Response failed due to unknown error.' } })]);
 });
 
 test('rate limiting becomes a native GenerateContent error', async () => {
-  const frames = await collect(generateContentViaResponses(iterate([eventFrame({ type: 'error', code: 'rate_limit_exceeded', message: 'Try later.' })] as any)));
+  const frames = await collect(generateContentViaResponses(iterate([eventFrame({ type: 'error', code: 'rate_limit_exceeded', message: 'Try later.' })] as any), createTestSidecarCodec()));
   expect(frames).toEqual([eventFrame({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'Try later.' } })]);
 });
 
@@ -171,8 +168,8 @@ test('Responses initial envelope requires a model', async () => {
   ])))).rejects.toThrow('requires a model');
 });
 
-test('an upstream context failure retains the Messages client compaction signal', async () => {
-  const frames = await collect(messagesViaResponses(iterate([eventFrame({ type: 'response.failed', response: { error: { code: 'context_length_exceeded', message: 'Context exceeded.' } } })] as any)));
+test('an upstream context failure retains the Messages prompt-too-long response', async () => {
+  const frames = await collect(messagesViaResponses(iterate([eventFrame({ type: 'response.failed', response: { error: { code: 'context_length_exceeded', message: 'Context exceeded.' } } })] as any), createTestSidecarCodec()));
   expect(frames).toMatchObject([{ event: { type: 'error', error: { type: 'invalid_request_error', message: expect.stringContaining('prompt is too long') } } }]);
 });
 
@@ -182,9 +179,9 @@ for (const source of ['openai-chat-completions', 'anthropic-messages'] as const)
       const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
       try {
         const frames = fixtureFrames(source, { tools: [{ name: 'run_code', id: 'call_custom', args: wrapped }] });
-        const output = source === 'openai-chat-completions' ? responsesViaChat(iterate(frames), new Set(['run_code'])) : responsesViaMessages(iterate(frames), 'resp_custom', new Set(['run_code']));
+        const output = source === 'openai-chat-completions' ? responsesViaChat(iterate(frames), new Set(['run_code']), createTestSidecarCodec(), emptyNamespaceToolNames()) : responsesViaMessages(iterate(frames), 'resp_custom', new Set(['run_code']), createTestSidecarCodec(), emptyNamespaceToolNames());
         const result = await nativeResult('openai-responses', await collect(output));
-        expect(result.output).toEqual([expect.objectContaining({ type: 'custom_tool_call', call_id: 'call_custom', name: 'run_code', input: 'input' in wrapped ? wrapped.input : JSON.stringify(wrapped) })]);
+        expect(result.output.slice(0, -1)).toEqual([expect.objectContaining({ type: 'custom_tool_call', call_id: 'call_custom', name: 'run_code', input: 'input' in wrapped ? wrapped.input : JSON.stringify(wrapped) })]);
         expect(warning).toHaveBeenCalledTimes('input' in wrapped ? 0 : 1);
       } finally { warning.mockRestore(); }
     });
@@ -193,39 +190,52 @@ for (const source of ['openai-chat-completions', 'anthropic-messages'] as const)
 
 test('ChatCompletions EOF succeeds after explicit choice completion and fails before it', async () => {
   const frames = fixtureFrames('openai-chat-completions', { text: ['answer'] });
-  expect((await collectIR(irFromOpenAIChatCompletions(iterate(frames.slice(0, -1))))).choices[0].items).toMatchObject([{ content: [{ text: 'answer' }] }]);
-  await expect(collectIR(irFromOpenAIChatCompletions(iterate(frames.slice(0, -2))))).rejects.toThrow('finish_reason');
+  expect((await collectIR(irFromOpenAIChatCompletionsProduction(iterate(frames.slice(0, -1)), { roundTrip: createRoundTripReaderCapture().roundTrip }))).choices[0].items).toMatchObject([{ content: [{ text: 'answer' }] }]);
+  await expect(collectIR(irFromOpenAIChatCompletionsProduction(iterate(frames.slice(0, -2)), { roundTrip: createRoundTripReaderCapture().roundTrip }))).rejects.toThrow('finish_reason');
 });
 
 test.each([messagesViaChat, generateContentViaChat])('completed empty function JSON is rejected by object-requiring destinations', async translate => {
   const frames = fixtureFrames('openai-chat-completions', { tools: [{ name: 'lookup', id: 'call_empty', args: {} }] });
   for (const frame of frames) if (frame.type === 'event') for (const choice of frame.event.choices) for (const call of choice.delta.tool_calls ?? []) if (call.function.arguments !== undefined) call.function.arguments = '';
-  await expect(collect<any>(translate(iterate(frames)))).rejects.toThrow();
+  await expect(collect<any>(translate(iterate(frames), createTestSidecarCodec()))).rejects.toThrow();
 });
 
-test('a late readable reasoning carrier does not duplicate the scalar text', async () => {
+test.each([
+  ['{"x":42,', { x: 42 }, 'length'],
+] as const)('Messages collects %j as %j and replays original Chat arguments on %s', async (arguments_, input, stop) => {
+  const codec = createTestSidecarCodec();
+  const frames = fixtureFrames('openai-chat-completions', { tools: [{ name: 'lookup', id: 'call_partial', args: {} }], stop });
+  for (const frame of frames) if (frame.type === 'event') for (const choice of frame.event.choices) for (const call of choice.delta.tool_calls ?? []) if (call.function.arguments !== undefined) call.function.arguments = call.function.name === undefined ? arguments_.slice(2) : arguments_.slice(0, 2);
+  const result = await nativeResult('anthropic-messages', await collect(messagesViaChat(iterate(frames), codec)));
+  expect(result.content[0]).toMatchObject({ type: 'tool_use', input });
+  expect(result.stop_reason).toBe(stop === 'length' ? 'max_tokens' : 'tool_use');
+  const request = await messagesRequestViaChat({ model: 'model', max_tokens: 100, messages: [{ role: 'assistant', content: result.content }] }, codec);
+  expect(request.messages).toMatchObject([{ role: 'assistant', tool_calls: [{ id: 'call_partial', function: { name: 'lookup', arguments: arguments_ } }] }]);
+});
+
+test('late vendor extensions leave scalar reasoning unchanged', async () => {
   const frames = fixtureFrames('openai-chat-completions', { thinking: ['firstsecond'], text: ['answer'] });
-  frames.splice(-1, 0, eventFrame({ id: 'chatcmpl_test', model: 'served-model', created: 100, choices: [{ index: 0, delta: { reasoning_items: [{ type: 'reasoning', id: 'rs_original', summary: [{ type: 'summary_text', text: 'first' }, { type: 'summary_text', text: 'second' }] }] }, finish_reason: null }] }));
-  const result = await nativeResult('anthropic-messages', await collect(messagesViaChat(iterate(frames))));
+  frames.splice(-1, 0, eventFrame({ id: 'chatcmpl_test', model: 'served-model', created: 100, choices: [{ index: 0, delta: { vendor_records: [{ type: 'vendor_record', id: 'record_original', segments: ['first', 'second'] }] }, finish_reason: null }] }));
+  const result = await nativeResult('anthropic-messages', await collect(messagesViaChat(iterate(frames), createTestSidecarCodec())));
   expect(result.content.filter((part: any) => part.type === 'thinking').map((part: any) => part.thinking).join('')).toBe('firstsecond');
 });
 
-test('ignores ChatCompletions readable carriers and retains scalar interruption items', async () => {
+test('ignores vendor object arrays and retains scalar reasoning items', async () => {
   const frames = fixtureFrames('openai-chat-completions', { thinking: ['ab'], text: ['answer'] });
-  const carrier = [{ type: 'reasoning', id: 'rs_a', summary: [{ type: 'summary_text', text: 'a' }] }, { type: 'reasoning', id: 'rs_b', summary: [{ type: 'summary_text', text: 'b' }] }];
-  frames.splice(-1, 0, eventFrame({ id: 'chatcmpl_test', model: 'served-model', created: 100, choices: [{ index: 0, delta: { reasoning_items: carrier }, finish_reason: null }] }));
-  const ir = await collectIR(irFromOpenAIChatCompletions(iterate(frames)));
+  const records = [{ type: 'vendor_record', id: 'record_a', segments: ['a'] }, { type: 'vendor_record', id: 'record_b', segments: ['b'] }];
+  frames.splice(-1, 0, eventFrame({ id: 'chatcmpl_test', model: 'served-model', created: 100, choices: [{ index: 0, delta: { vendor_records: records }, finish_reason: null }] }));
+  const ir = await collectIR(irFromOpenAIChatCompletionsProduction(iterate(frames), { roundTrip: createRoundTripReaderCapture().roundTrip }));
   expect(ir.choices[0].items.filter(item => item.type === 'reasoning')).toEqual([{ type: 'reasoning', summary: ['ab'] }]);
-  const result = await nativeResult('openai-responses', await collect(responsesViaChat(iterate(frames))));
-  expect(result.output.filter((item: any) => item.type === 'reasoning')).toMatchObject([{ summary: [{ text: 'ab' }] }]);
-  expect(result.output.some((item: any) => ['rs_a', 'rs_b'].includes(item.id))).toBe(false);
+  const result = await nativeResult('openai-responses', await collect(responsesViaChat(iterate(frames), new Set(), createTestSidecarCodec(), emptyNamespaceToolNames())));
+  expect(result.output.filter((item: any) => item.type === 'reasoning' && item.encrypted_content === undefined)).toMatchObject([{ summary: [{ text: 'ab' }] }]);
+  expect(result.output.some((item: any) => ['record_a', 'record_b'].includes(item.id))).toBe(false);
   expect(result.output.filter((item: any) => item.type === 'message')[0].content[0].text).toBe('answer');
 });
 
-test('late reasoning carriers preserve messages on either side of reasoning', async () => {
+test('late vendor extensions preserve messages on either side of reasoning', async () => {
   const chunk = (delta: any, finish_reason: string | null = null) => eventFrame({ id: 'chatcmpl_order', model: 'served-model', created: 100, choices: [{ index: 0, delta, finish_reason }] });
-  const frames = [chunk({ content: 'before' }), chunk({ reasoning_text: 'think' }), chunk({ content: 'after' }), chunk({}, 'stop'), chunk({ reasoning_items: [{ type: 'reasoning', id: 'rs_order', summary: [{ type: 'summary_text', text: 'think' }] }] }), { type: 'done' as const }];
-  const ir = await collectIR(irFromOpenAIChatCompletions(iterate(frames as any)));
+  const frames = [chunk({ content: 'before' }), chunk({ reasoning_text: 'think' }), chunk({ content: 'after' }), chunk({}, 'stop'), chunk({ vendor_records: [{ type: 'vendor_record', id: 'record_order', segments: ['think'] }] }), { type: 'done' as const }];
+  const ir = await collectIR(irFromOpenAIChatCompletionsProduction(iterate(frames as any), { roundTrip: createRoundTripReaderCapture().roundTrip }));
   expect(ir.choices[0].items).toEqual([{ type: 'message', content: [{ type: 'text', text: 'before' }] }, { type: 'reasoning', summary: ['think'] }, { type: 'message', content: [{ type: 'text', text: 'after' }] }]);
 });
 
@@ -233,7 +243,7 @@ for (const category of ['bio', 'cyber']) {
   test.each([null, '', ' \t\n', 'Upstream explanation.', '  Original spacing.  '])(`Responses via Messages preserves nonblank ${category} explanations and supplies a native error message when absent: %j`, async explanation => {
     const frames = fixtureFrames('anthropic-messages', { stop: 'content_filter' });
     for (const frame of frames) if (frame.type === 'event' && frame.event.type === 'message_delta') frame.event.delta.stop_details = { type: 'refusal', category, explanation };
-    const output = await collect(responsesViaMessages(iterate(frames), 'resp_policy'));
+    const output = await collect(responsesViaMessages(iterate(frames), 'resp_policy', new Set(), createTestSidecarCodec(), emptyNamespaceToolNames()));
     expect(output.at(-1)).toMatchObject({
       event: {
         type: 'response.failed',

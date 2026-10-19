@@ -22,7 +22,6 @@ describe('IR schema queries', () => {
     [item(0, 'content', 1, 'audio', 'mime_type'), false],
     [item(1, 'summary', 0), true],
     [item(1, 'content', 0), true],
-    [item(1, 'encrypted_content'), false],
     [item(2, 'arguments'), true],
     [item(2, 'name'), false],
     [item(3, 'input'), true],

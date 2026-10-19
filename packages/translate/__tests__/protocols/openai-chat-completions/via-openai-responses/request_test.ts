@@ -1,13 +1,16 @@
-import { expect, test } from 'vitest';
+import { test } from 'vitest';
 
-import { buildTargetRequest } from '../../../../src/protocols/openai-chat-completions/via-openai-responses/request.ts';
+import { buildTargetRequest as buildTargetRequestWithSidecar } from '../../../../src/protocols/openai-chat-completions/via-openai-responses/request.ts';
 import { TranslatorInputError } from '../../../../src/translator-input-error.ts';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesInputReasoning } from '@floway-dev/protocols/openai-responses';
-import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
+import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
+import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
+import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
-test('buildTargetRequest preserves scalar and content-part assistant refusals', () => {
-  const result = buildTargetRequest({
+const buildWithTestSidecar = (payload: Parameters<typeof buildTargetRequestWithSidecar>[0]) =>
+  buildTargetRequestWithSidecar(payload, createTestSidecarCodec());
+
+test('buildTargetRequest preserves scalar and content-part assistant refusals', async () => {
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     messages: [
       { role: 'assistant', content: null, refusal: 'Scalar refusal.' },
@@ -21,83 +24,10 @@ test('buildTargetRequest preserves scalar and content-part assistant refusals', 
   ]);
 });
 
-test('buildTargetRequest uses rs-prefixed ids for reasoning input items', () => {
-  const result = buildTargetRequest({
-    model: 'gpt-test',
-    messages: [
-      {
-        role: 'assistant',
-        content: 'answer',
-        reasoning_text: 'trace',
-        reasoning_opaque: 'enc',
-      } as OpenAIChatCompletionsAssistantMessageEx,
-    ],
-  });
-
-  if (!Array.isArray(result.input)) throw new Error('expected input array');
-  const reasoning = result.input[0] as OpenAIResponsesInputReasoning;
-  assertEquals(reasoning.type, 'reasoning');
-  expect(reasoning.id).toMatch(/^rs_[0-9a-f]{32}$/);
-});
-
-test('buildTargetRequest preserves text-only scalar reasoning', () => {
-  const result = buildTargetRequest({
-    model: 'gpt-test',
-    messages: [
-      {
-        role: 'assistant',
-        content: 'answer',
-        reasoning_text: 'visible trace',
-      } as OpenAIChatCompletionsAssistantMessageEx,
-    ],
-  });
-
-  if (!Array.isArray(result.input)) throw new Error('expected input array');
-  assertEquals(result.input[0], {
-    type: 'reasoning',
-    id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
-    summary: [{ type: 'summary_text', text: 'visible trace' }],
-  });
-});
-
-test('buildTargetRequest prefers reasoning_items over scalar reasoning', () => {
-  const result = buildTargetRequest({
-    model: 'gpt-test',
-    messages: [
-      {
-        role: 'assistant',
-        content: 'answer',
-        reasoning_text: 'legacy trace',
-        reasoning_opaque: 'legacy_enc',
-        reasoning_items: [
-          {
-            type: 'reasoning',
-            id: 'rs_existing',
-            summary: [{ type: 'summary_text', text: 'first' }],
-          },
-          {
-            type: 'reasoning',
-            summary: [],
-          },
-        ],
-      } as OpenAIChatCompletionsAssistantMessageEx,
-    ],
-  });
-
-  if (!Array.isArray(result.input)) throw new Error('expected input array');
-  assertEquals(result.input.filter(item => item.type === 'reasoning'), [
-    {
-      type: 'reasoning',
-      id: 'rs_existing',
-      summary: [{ type: 'summary_text', text: 'first' }],
-    },
-  ]);
-});
-
-test('buildTargetRequest rejects tool messages without tool_call_id', () => {
-  assertThrows(
+test('buildTargetRequest rejects tool messages without tool_call_id', async () => {
+  await assertRejects(
     () =>
-      buildTargetRequest({
+      buildWithTestSidecar({
         model: 'gpt-test',
         messages: [{ role: 'tool', content: 'result' } as unknown as OpenAIChatCompletionsMessage],
       }),
@@ -106,8 +36,8 @@ test('buildTargetRequest rejects tool messages without tool_call_id', () => {
   );
 });
 
-test('buildTargetRequest maps native custom tool declarations and choices', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest maps native custom tool declarations and choices', async () => {
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hello' }],
     tools: [{ type: 'custom', custom: { name: 'apply_patch', format: { type: 'text' } } }],
@@ -117,8 +47,8 @@ test('buildTargetRequest maps native custom tool declarations and choices', () =
   assertEquals(result.tool_choice, { type: 'custom', name: 'apply_patch' });
 });
 
-test('buildTargetRequest maps custom tool history and its output', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest maps custom tool history and its output', async () => {
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     messages: [
       { role: 'assistant', tool_calls: [{ id: 'call_patch', type: 'custom', custom: { name: 'apply_patch', input: 'patch text' } }] },
@@ -131,8 +61,8 @@ test('buildTargetRequest maps custom tool history and its output', () => {
   ]);
 });
 
-test('buildTargetRequest preserves translated OpenAI request fields', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest preserves translated OpenAI request fields', async () => {
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hello' }],
     response_format: { type: 'json_schema', json_schema: { name: 'shape', schema: {} } },
@@ -156,8 +86,8 @@ test('buildTargetRequest preserves translated OpenAI request fields', () => {
   assertFalse('include' in result);
 });
 
-test('buildTargetRequest forwards empty reasoning_effort verbatim', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest forwards empty reasoning_effort verbatim', async () => {
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hello' }],
     reasoning_effort: '',
@@ -166,8 +96,8 @@ test('buildTargetRequest forwards empty reasoning_effort verbatim', () => {
   assertEquals(result.reasoning, { effort: '' });
 });
 
-test('buildTargetRequest never invents reasoning.context from reasoning_effort', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest never invents reasoning.context from reasoning_effort', async () => {
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hello' }],
     reasoning_effort: 'high',
@@ -178,8 +108,8 @@ test('buildTargetRequest never invents reasoning.context from reasoning_effort',
   assertFalse('context' in (result.reasoning ?? {}));
 });
 
-test('buildTargetRequest omits store when OpenAI Chat Completions omits store', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest omits store when OpenAI Chat Completions omits store', async () => {
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hello' }],
   });
@@ -187,8 +117,8 @@ test('buildTargetRequest omits store when OpenAI Chat Completions omits store', 
   assertFalse('store' in result);
 });
 
-test('buildTargetRequest omits tool_choice when OpenAI Chat Completions omits it', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest omits tool_choice when OpenAI Chat Completions omits it', async () => {
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hello' }],
     tools: [{ type: 'function', function: { name: 'lookup' } }],
@@ -197,9 +127,9 @@ test('buildTargetRequest omits tool_choice when OpenAI Chat Completions omits it
   assertFalse('tool_choice' in result);
 });
 
-test('buildTargetRequest omits tool_choice when OpenAI Chat Completions carries no tools to apply it to', () => {
+test('buildTargetRequest omits tool_choice when OpenAI Chat Completions carries no tools to apply it to', async () => {
   for (const tools of [undefined, null, []]) {
-    const result = buildTargetRequest({
+    const result = await buildWithTestSidecar({
       model: 'gpt-test',
       messages: [{ role: 'user', content: 'hello' }],
       tool_choice: 'required',
@@ -210,8 +140,8 @@ test('buildTargetRequest omits tool_choice when OpenAI Chat Completions carries 
   }
 });
 
-test('buildTargetRequest preserves explicit null prompt cache and safety fields', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest preserves explicit null prompt cache and safety fields', async () => {
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hello' }],
     prompt_cache_key: null,
@@ -224,8 +154,8 @@ test('buildTargetRequest preserves explicit null prompt cache and safety fields'
   assertEquals(result.safety_identifier, null);
 });
 
-test('buildTargetRequest hoists only the initial contiguous system prefix', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest hoists only the initial contiguous system prefix', async () => {
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     messages: [
       { role: 'system', content: 'sys-1' },
@@ -250,8 +180,8 @@ test('buildTargetRequest hoists only the initial contiguous system prefix', () =
   ]);
 });
 
-test('buildTargetRequest preserves explicit tool strict and defaults omission to false', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest preserves explicit tool strict and defaults omission to false', async () => {
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hello' }],
     tools: [
@@ -289,10 +219,10 @@ test('buildTargetRequest preserves explicit tool strict and defaults omission to
   ]);
 });
 
-test('buildTargetRequest rejects an unknown message role', () => {
-  assertThrows(
+test('buildTargetRequest rejects an unknown message role', async () => {
+  await assertRejects(
     () =>
-      buildTargetRequest({
+      buildWithTestSidecar({
         model: 'gpt-test',
         messages: [{ role: 'function', content: 'hi' } as unknown as OpenAIChatCompletionsMessage],
       }),
@@ -301,8 +231,8 @@ test('buildTargetRequest rejects an unknown message role', () => {
   );
 });
 
-test('buildTargetRequest forwards reasoning_effort and service_tier onto the native slots', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest forwards reasoning_effort and service_tier onto the native slots', async () => {
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hi' }],
     reasoning_effort: 'medium',
@@ -313,8 +243,8 @@ test('buildTargetRequest forwards reasoning_effort and service_tier onto the nat
   assertEquals(result.service_tier, 'priority');
 });
 
-test.each(['none', '', 'future_effort'])('buildTargetRequest forwards reasoning_effort=%j verbatim', reasoning_effort => {
-  const result = buildTargetRequest({
+test.each(['none', '', 'future_effort'])('buildTargetRequest forwards reasoning_effort=%j verbatim', async reasoning_effort => {
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hi' }],
     reasoning_effort,
@@ -323,17 +253,17 @@ test.each(['none', '', 'future_effort'])('buildTargetRequest forwards reasoning_
   assertEquals(result.reasoning, { effort: reasoning_effort });
 });
 
-test.each([null, undefined])('buildTargetRequest omits unset reasoning_effort=%j', reasoning_effort => {
-  const result = buildTargetRequest({ model: 'gpt-test', messages: [{ role: 'user', content: 'hi' }], reasoning_effort });
+test.each([null, undefined])('buildTargetRequest omits unset reasoning_effort=%j', async reasoning_effort => {
+  const result = await buildWithTestSidecar({ model: 'gpt-test', messages: [{ role: 'user', content: 'hi' }], reasoning_effort });
   assertEquals(Object.hasOwn(result, 'reasoning'), false);
 });
 
-test('rejects a json_schema request with no schema instead of removing constraints', () => {
-  assertThrows(() => buildTargetRequest({ model: 'gpt-test', messages: [], response_format: { type: 'json_schema', json_schema: { name: 'shape' } } }), TranslatorInputError, 'without a schema');
+test('rejects a json_schema request with no schema instead of removing constraints', async () => {
+  await assertRejects(() => buildWithTestSidecar({ model: 'gpt-test', messages: [], response_format: { type: 'json_schema', json_schema: { name: 'shape' } } }), TranslatorInputError, 'without a schema');
 });
 
-test('allowed_tools retains both native callable kinds', () => {
-  const result = buildTargetRequest({
+test('allowed_tools retains both native callable kinds', async () => {
+  const result = await buildWithTestSidecar({
     model: 'gpt-test', messages: [], tools: [
       { type: 'function', function: { name: 'lookup' } }, { type: 'custom', custom: { name: 'edit' } },
     ], tool_choice: {

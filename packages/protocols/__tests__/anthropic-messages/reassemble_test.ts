@@ -13,8 +13,8 @@ import type {
   AnthropicMessagesWebSearchResultBlock,
   AnthropicMessagesWebSearchToolResultBlock,
 } from '../../src/anthropic-messages/index.ts';
-import { reassembleAnthropicMessagesEvents } from '../../src/anthropic-messages/reassemble.ts';
-import { assertEquals, assertRejects } from '@floway-dev/test-utils';
+import { createAnthropicMessagesEventAccumulator, reassembleAnthropicMessagesEvents } from '../../src/anthropic-messages/reassemble.ts';
+import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 function makeEvents<T = AnthropicMessagesStreamEventEx>(chunks: Array<{ event?: string; data: unknown }>): AsyncIterable<T> {
   return (async function* () {
@@ -294,7 +294,129 @@ test('reassembleAnthropicMessagesEvents reassembles tool_use response', async ()
   assertEquals(tu.input, { x: 42 });
 });
 
-test('reassembleAnthropicMessagesEvents propagates malformed tool JSON', async () => {
+test('reassembleAnthropicMessagesEvents preserves unsafe and overflowing tool argument numbers', async () => {
+  const inputJson = '{"large":900719925474099312345,"overflow":1e999}';
+  const body = makeEvents([
+    {
+      event: 'message_start',
+      data: {
+        type: 'message_start',
+        message: {
+          container: null, diagnostics: null, stop_details: null,
+          id: 'msg_tool_numeric_tokens',
+          type: 'message',
+          role: 'assistant',
+          content: [],
+          model: 'claude-test',
+          stop_reason: null,
+          stop_sequence: null,
+          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 20, output_tokens: 0 },
+        },
+      },
+    },
+    {
+      event: 'content_block_start',
+      data: {
+        type: 'content_block_start',
+        index: 0,
+        content_block: { type: 'tool_use', id: 'tu_numeric_tokens', name: 'lookup' },
+      },
+    },
+    {
+      event: 'content_block_delta',
+      data: {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'input_json_delta', partial_json: inputJson },
+      },
+    },
+    { event: 'content_block_stop', data: { type: 'content_block_stop', index: 0 } },
+    {
+      event: 'message_delta',
+      data: {
+        type: 'message_delta',
+        delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'tool_use' },
+        usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 10 },
+      },
+    },
+    { event: 'message_stop', data: { type: 'message_stop' } },
+  ]);
+
+  const result = await reassembleAnthropicMessagesEvents(body);
+  const input = (result.content[0] as { type: 'tool_use'; input: Record<string, unknown> }).input;
+  const json = JSON as typeof JSON & { isRawJSON: (value: unknown) => boolean };
+
+  assert(json.isRawJSON(input.large));
+  assert(json.isRawJSON(input.overflow));
+  assertEquals(JSON.stringify(input), inputJson);
+});
+
+test('reassembleAnthropicMessagesEvents preserves completed tool fields after a max_tokens cutoff', async () => {
+  const body = makeEvents([
+    {
+      event: 'message_start',
+      data: {
+        type: 'message_start',
+        message: {
+          container: null, diagnostics: null, stop_details: null,
+          id: 'msg_invalid_tool_json',
+          type: 'message',
+          role: 'assistant',
+          content: [],
+          model: 'claude-test',
+          stop_reason: null,
+          stop_sequence: null,
+          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 20, output_tokens: 0 },
+        },
+      },
+    },
+    {
+      event: 'content_block_start',
+      data: {
+        type: 'content_block_start',
+        index: 0,
+        content_block: { type: 'tool_use', id: 'tu_bad', name: 'calc' },
+      },
+    },
+    {
+      event: 'content_block_delta',
+      data: {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'input_json_delta', partial_json: '{"x":42,' },
+      },
+    },
+    {
+      event: 'content_block_delta',
+      data: {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'input_json_delta', partial_json: '"unfinished":' },
+      },
+    },
+    {
+      event: 'content_block_stop',
+      data: { type: 'content_block_stop', index: 0 },
+    },
+    {
+      event: 'message_delta',
+      data: {
+        type: 'message_delta',
+        delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'max_tokens' },
+        usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 10 },
+      },
+    },
+    { event: 'message_stop', data: { type: 'message_stop' } },
+  ]);
+
+  const result = await reassembleAnthropicMessagesEvents(body);
+  const toolUse = result.content[0] as { type: 'tool_use'; input: Record<string, unknown> };
+
+  assertEquals(result.stop_reason, 'max_tokens');
+  assertEquals(toolUse.input, { x: 42 });
+});
+
+test('reassembleAnthropicMessagesEvents collects partial tool input on ordinary tool_use completion', async () => {
   const body = makeEvents([
     {
       event: 'message_start',
@@ -344,7 +466,9 @@ test('reassembleAnthropicMessagesEvents propagates malformed tool JSON', async (
     { event: 'message_stop', data: { type: 'message_stop' } },
   ]);
 
-  await assertRejects(() => reassembleAnthropicMessagesEvents(body), SyntaxError);
+  const result = await reassembleAnthropicMessagesEvents(body);
+  assertEquals(result.stop_reason, 'tool_use');
+  assertEquals((result.content[0] as { input: unknown }).input, {});
 });
 
 test('reassembleAnthropicMessagesEvents reassembles thinking blocks', async () => {
@@ -993,4 +1117,32 @@ test('collects gateway TTL usage deltas with omitted zero buckets', async () => 
   assertEquals(result.usage.cache_creation, { ephemeral_5m_input_tokens: 100, ephemeral_1h_input_tokens: 0 });
   assertEquals(result.usage.service_tier, 'priority');
   assertEquals(result.usage.speed, 'fast');
+});
+
+test('result reflects all events accepted before each read', () => {
+  const accumulator = createAnthropicMessagesEventAccumulator();
+  accumulator.accept({
+    type: 'message_start',
+    message: {
+      id: 'incremental', type: 'message', role: 'assistant', model: 'claude', content: [], stop_reason: null, stop_sequence: null, stop_details: null,
+      container: null, diagnostics: null,
+      usage: {
+        input_tokens: 1,
+        output_tokens: 0,
+        cache_creation: null,
+        cache_creation_input_tokens: null,
+        cache_read_input_tokens: null,
+        output_tokens_details: null,
+        server_tool_use: null,
+        inference_geo: null,
+        service_tier: null,
+      },
+    },
+  });
+  accumulator.accept({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: 'hello', citations: null } });
+
+  assertEquals(accumulator.result().content, [{ type: 'text', text: 'hello', citations: null }]);
+  accumulator.accept({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: ' world' } });
+
+  assertEquals(accumulator.result().content, [{ type: 'text', text: 'hello world', citations: null }]);
 });

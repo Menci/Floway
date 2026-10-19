@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 
 import { translateToSourceEvents } from '../../../../src/protocols/anthropic-messages/via-openai-responses/events.ts';
 import { testOutputTranslation } from '../../../ir/translation-cases.ts';
+import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import { parseAnthropicMessagesStream, collectAnthropicMessagesProtocolEventsToResult, anthropicMessagesProtocolFrameToSSEFrame } from '@floway-dev/protocols/anthropic-messages';
 import { parseOpenAIResponsesStream } from '@floway-dev/protocols/openai-responses';
 
@@ -13,7 +14,7 @@ test('Responses late fixed usage reaches the Messages client through full usage 
   ];
   const sourceSSE = events.map((event, sequence_number) => `event: ${event.type}\ndata: ${JSON.stringify({ ...event, sequence_number })}\n\n`).join('');
   let clientSSE = '';
-  for await (const frame of translateToSourceEvents(parseOpenAIResponsesStream(new Response(sourceSSE).body!))) {
+  for await (const frame of translateToSourceEvents(parseOpenAIResponsesStream(new Response(sourceSSE).body!), createTestSidecarCodec())) {
     const sse = anthropicMessagesProtocolFrameToSSEFrame(frame);
     if (sse) clientSSE += `event: ${sse.event}\ndata: ${sse.data}\n\n`;
   }
@@ -23,4 +24,4 @@ test('Responses late fixed usage reaches the Messages client through full usage 
   expect(result.usage.output_tokens).toBe(4);
 });
 
-testOutputTranslation('anthropic-messages', 'openai-responses', frames => translateToSourceEvents(frames));
+testOutputTranslation('anthropic-messages', 'openai-responses', (frames, codec) => translateToSourceEvents(frames, codec));

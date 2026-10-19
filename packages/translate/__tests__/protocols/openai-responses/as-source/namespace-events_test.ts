@@ -112,8 +112,9 @@ test('callable projection projects Standard carriers before namespace allocation
   ]), call.names);
   assertEquals(call.payload.tools?.map(tool => 'name' in tool ? tool.name : undefined), ['files_edit', 'files_edit_2', 'read', 'delayed']);
   assertEquals(call.payload.tools?.[1], { type: 'custom', name: 'files_edit_2', description: 'Edit a file.' });
-  assertEquals(call.payload.input, [developer, { type: 'custom_tool_call', name: 'files_edit_2', call_id: 'past', input: 'patch' }]);
-  assert(call.payload.input[0] === developer);
+  const input = call.flattenInput(request.input);
+  assertEquals(input, [developer, { type: 'custom_tool_call', name: 'files_edit_2', call_id: 'past', input: 'patch' }]);
+  assert(input[0] === developer);
   assertEquals(call.payload.tool_choice, { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', name: 'files_edit_2' }] });
   assertEquals(request, original);
   const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
@@ -133,7 +134,7 @@ for (const tools of [undefined, [], [functionTool('existing')]]) {
       const response = restoreNamespaceEvents(framesOf([
         { type: 'response.completed', response: { ...emptyResult(), ...(echo ? { tools: call.payload.tools ?? undefined } : {}) } },
       ]), call.names);
-      assertEquals(call.payload.input, []);
+      assertEquals(call.flattenInput(request.input), []);
       assertEquals(call.payload.tools, [...(tools ?? []), functionTool('read')]);
       let completed = 0;
       for await (const frame of response) {

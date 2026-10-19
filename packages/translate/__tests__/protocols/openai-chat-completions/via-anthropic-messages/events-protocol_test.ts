@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../../../src/protocols/openai-chat-completions/via-anthropic-messages/events.ts';
+import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
@@ -23,7 +24,7 @@ test('translateToSourceEvents emits native ChatCompletions errors for Messages f
   }
 
   const frames = [];
-  for await (const frame of translateToSourceEvents(stream())) frames.push(frame);
+  for await (const frame of translateToSourceEvents(stream(), {}, createTestSidecarCodec())) frames.push(frame);
   assertEquals(frames, [eventFrame({ error: { type: 'overloaded_error', message: 'upstream overloaded' } })]);
 });
 
@@ -45,5 +46,5 @@ test('translateToSourceEvents rejects truncated Anthropic Messages streams witho
     });
   }
 
-  await assertRejects(async () => await drain(translateToSourceEvents(stream())), Error, 'Messages stream ended without message_stop');
+  await assertRejects(async () => await drain(translateToSourceEvents(stream(), {}, createTestSidecarCodec())), Error, 'Messages stream ended without message_stop');
 });

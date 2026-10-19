@@ -1,12 +1,18 @@
 import { test } from 'vitest';
 
-import { buildTargetRequest } from '../../../../src/protocols/gemini-generate-content/via-openai-chat-completions/request.ts';
+import { buildTargetRequest as buildTargetRequestWithSidecar } from '../../../../src/protocols/gemini-generate-content/via-openai-chat-completions/request.ts';
+import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import type { GeminiGenerateContentPart, GeminiGenerateContentContent, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsAssistantMessageEx } from '@floway-dev/protocols/openai-chat-completions';
-import { assertEquals, assertThrows } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
-test('buildTargetRequest forwards an empty thinkingLevel verbatim', () => {
-  const request = buildTargetRequest({
+const buildWithTestSidecar = (
+  payload: Parameters<typeof buildTargetRequestWithSidecar>[0],
+  model: Parameters<typeof buildTargetRequestWithSidecar>[1],
+) => buildTargetRequestWithSidecar(payload, model, createTestSidecarCodec());
+
+test('buildTargetRequest forwards an empty thinkingLevel verbatim', async () => {
+  const request = await buildWithTestSidecar({
     contents: [],
     generationConfig: { thinkingConfig: { thinkingLevel: '' } },
   }, 'gpt-test');
@@ -14,8 +20,8 @@ test('buildTargetRequest forwards an empty thinkingLevel verbatim', () => {
   assertEquals(request.reasoning_effort, '');
 });
 
-test('buildTargetRequest gives thinkingBudget precedence over an empty thinkingLevel', () => {
-  const request = buildTargetRequest({
+test('buildTargetRequest gives thinkingBudget precedence over an empty thinkingLevel', async () => {
+  const request = await buildWithTestSidecar({
     contents: [],
     generationConfig: { thinkingConfig: { thinkingBudget: 2048, thinkingLevel: '' } },
   }, 'gpt-test');
@@ -23,7 +29,7 @@ test('buildTargetRequest gives thinkingBudget precedence over an empty thinkingL
   assertEquals(request.reasoning_effort, 'low');
 });
 
-test('buildTargetRequest maps system instruction and multimodal user content', () => {
+test('buildTargetRequest maps system instruction and multimodal user content', async () => {
   const payload: GeminiGenerateContentPayload = {
     systemInstruction: {
       parts: [{ text: 'Be precise.' }, { text: 'Use markdown.' }],
@@ -36,7 +42,7 @@ test('buildTargetRequest maps system instruction and multimodal user content', (
     ],
   };
 
-  assertEquals(buildTargetRequest(payload, 'gpt-test'), {
+  assertEquals(await buildWithTestSidecar(payload, 'gpt-test'), {
     model: 'gpt-test',
     stream: true,
     messages: [
@@ -59,8 +65,8 @@ test('buildTargetRequest maps system instruction and multimodal user content', (
   });
 });
 
-test('buildTargetRequest maps Gemini inline audio to Chat Completions input audio', () => {
-  const request = buildTargetRequest({
+test('buildTargetRequest maps Gemini inline audio to Chat Completions input audio', async () => {
+  const request = await buildWithTestSidecar({
     contents: [
       {
         role: 'user',
@@ -83,15 +89,15 @@ test('buildTargetRequest maps Gemini inline audio to Chat Completions input audi
   }]);
 });
 
-test('buildTargetRequest rejects unsupported Gemini inline data MIME types for Chat Completions', () => {
-  assertThrows(
-    () => buildTargetRequest({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'text/plain', data: 'dGV4dA==' } }] }] }, 'gpt-test'),
+test('buildTargetRequest rejects unsupported Gemini inline data MIME types for Chat Completions', async () => {
+  await assertRejects(
+    () => buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'text/plain', data: 'dGV4dA==' } }] }] }, 'gpt-test'),
     Error,
     "Cannot translate Gemini generateContent inlineData MIME type 'text/plain' to OpenAI Chat Completions.",
   );
 });
 
-test('buildTargetRequest maps function calls, tool responses, and reasoning history', () => {
+test('buildTargetRequest maps function calls, tool responses, and readable reasoning history', async () => {
   const payload: GeminiGenerateContentPayload = {
     contents: [
       {
@@ -112,12 +118,11 @@ test('buildTargetRequest maps function calls, tool responses, and reasoning hist
     ],
   };
 
-  assertEquals(buildTargetRequest(payload, 'gpt-test').messages, [
+  assertEquals((await buildWithTestSidecar(payload, 'gpt-test')).messages, [
     {
       role: 'assistant',
       content: 'I will call a tool.',
       reasoning_text: 'private trace',
-      reasoning_opaque: 'sig_1',
       tool_calls: [
         {
           id: 'gemini_call_0_2',
@@ -134,7 +139,7 @@ test('buildTargetRequest maps function calls, tool responses, and reasoning hist
   ]);
 });
 
-test('buildTargetRequest matches omitted functionResponse ids to same-name calls in call order', () => {
+test('buildTargetRequest matches omitted functionResponse ids to same-name calls in call order', async () => {
   const payload: GeminiGenerateContentPayload = {
     contents: [
       {
@@ -160,7 +165,7 @@ test('buildTargetRequest matches omitted functionResponse ids to same-name calls
     ],
   };
 
-  assertEquals(buildTargetRequest(payload, 'gpt-test').messages, [
+  assertEquals((await buildWithTestSidecar(payload, 'gpt-test')).messages, [
     {
       role: 'assistant',
       content: null,
@@ -190,7 +195,7 @@ test('buildTargetRequest matches omitted functionResponse ids to same-name calls
   ]);
 });
 
-test('buildTargetRequest does not rematch a prior call already answered by explicit id', () => {
+test('buildTargetRequest does not rematch a prior call already answered by explicit id', async () => {
   const payload: GeminiGenerateContentPayload = {
     contents: [
       {
@@ -220,7 +225,7 @@ test('buildTargetRequest does not rematch a prior call already answered by expli
     ],
   };
 
-  assertEquals(buildTargetRequest(payload, 'gpt-test').messages, [
+  assertEquals((await buildWithTestSidecar(payload, 'gpt-test')).messages, [
     {
       role: 'assistant',
       content: null,
@@ -250,7 +255,7 @@ test('buildTargetRequest does not rematch a prior call already answered by expli
   ]);
 });
 
-test('buildTargetRequest maps generation config and reasoning effort', () => {
+test('buildTargetRequest maps generation config and reasoning effort', async () => {
   const payload: GeminiGenerateContentPayload = {
     contents: [],
     generationConfig: {
@@ -267,7 +272,7 @@ test('buildTargetRequest maps generation config and reasoning effort', () => {
     },
   };
 
-  assertEquals(buildTargetRequest(payload, 'gpt-test'), {
+  assertEquals(await buildWithTestSidecar(payload, 'gpt-test'), {
     model: 'gpt-test',
     stream: true,
     messages: [],
@@ -284,7 +289,7 @@ test('buildTargetRequest maps generation config and reasoning effort', () => {
   });
 });
 
-test('buildTargetRequest maps structured output schema and zero thinking budget', () => {
+test('buildTargetRequest maps structured output schema and zero thinking budget', async () => {
   const schema = {
     type: 'object',
     properties: { answer: { type: 'string' } },
@@ -292,7 +297,7 @@ test('buildTargetRequest maps structured output schema and zero thinking budget'
   };
 
   assertEquals(
-    buildTargetRequest(
+    await buildWithTestSidecar(
       {
         contents: [],
         generationConfig: {
@@ -316,7 +321,7 @@ test('buildTargetRequest maps structured output schema and zero thinking budget'
   );
 });
 
-test('buildTargetRequest maps tool declarations and tool choice modes', () => {
+test('buildTargetRequest maps tool declarations and tool choice modes', async () => {
   const payload: GeminiGenerateContentPayload = {
     contents: [],
     tools: [
@@ -344,7 +349,7 @@ test('buildTargetRequest maps tool declarations and tool choice modes', () => {
     },
   };
 
-  assertEquals(buildTargetRequest(payload, 'gpt-test'), {
+  assertEquals(await buildWithTestSidecar(payload, 'gpt-test'), {
     model: 'gpt-test',
     stream: true,
     messages: [],
@@ -365,54 +370,54 @@ test('buildTargetRequest maps tool declarations and tool choice modes', () => {
   });
 
   assertEquals(
-    buildTargetRequest(
+    (await buildWithTestSidecar(
       {
         contents: [],
         tools: [{ functionDeclarations: [{ name: 'lookup' }] }],
         toolConfig: { functionCallingConfig: { mode: 'NONE' } },
       },
       'gpt-test',
-    ).tool_choice,
+    )).tool_choice,
     'none',
   );
   assertEquals(
-    buildTargetRequest(
+    (await buildWithTestSidecar(
       {
         contents: [],
         tools: [{ functionDeclarations: [{ name: 'lookup' }] }],
         toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
       },
       'gpt-test',
-    ).tool_choice,
+    )).tool_choice,
     'auto',
   );
   assertEquals(
-    buildTargetRequest(
+    (await buildWithTestSidecar(
       {
         contents: [],
         tools: [{ functionDeclarations: [{ name: 'lookup' }] }],
         toolConfig: { functionCallingConfig: { mode: 'VALIDATED' } },
       },
       'gpt-test',
-    ).tool_choice,
+    )).tool_choice,
     'auto',
   );
   assertEquals(
-    buildTargetRequest(
+    (await buildWithTestSidecar(
       {
         contents: [],
         tools: [{ functionDeclarations: [{ name: 'lookup' }] }],
         toolConfig: { functionCallingConfig: { mode: 'ANY' } },
       },
       'gpt-test',
-    ).tool_choice,
+    )).tool_choice,
     'required',
   );
-  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'gpt-test').tool_choice, undefined);
+  assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'gpt-test')).tool_choice, undefined);
 });
 
-test('buildTargetRequest filters tools to allowed function names for ANY mode', () => {
-  const result = buildTargetRequest(
+test('buildTargetRequest filters tools to allowed function names for ANY mode', async () => {
+  const result = await buildWithTestSidecar(
     {
       contents: [],
       tools: [
@@ -449,18 +454,18 @@ test('buildTargetRequest filters tools to allowed function names for ANY mode', 
   assertEquals(result.tool_choice, 'required');
 });
 
-test('buildTargetRequest maps thinking budget thresholds', () => {
-  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 0 } } }, 'gpt-test').reasoning_effort, 'none');
-  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: -1 } } }, 'gpt-test').reasoning_effort, undefined);
-  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 2048 } } }, 'gpt-test').reasoning_effort, 'low');
-  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 8192 } } }, 'gpt-test').reasoning_effort, 'medium');
-  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 8193 } } }, 'gpt-test').reasoning_effort, 'high');
+test('buildTargetRequest maps thinking budget thresholds', async () => {
+  assertEquals((await buildWithTestSidecar({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 0 } } }, 'gpt-test')).reasoning_effort, 'none');
+  assertEquals((await buildWithTestSidecar({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: -1 } } }, 'gpt-test')).reasoning_effort, undefined);
+  assertEquals((await buildWithTestSidecar({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 2048 } } }, 'gpt-test')).reasoning_effort, 'low');
+  assertEquals((await buildWithTestSidecar({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 8192 } } }, 'gpt-test')).reasoning_effort, 'medium');
+  assertEquals((await buildWithTestSidecar({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 8193 } } }, 'gpt-test')).reasoning_effort, 'high');
 });
 
-test('buildTargetRequest rejects an unknown content role', () => {
-  assertThrows(
+test('buildTargetRequest rejects an unknown content role', async () => {
+  await assertRejects(
     () =>
-      buildTargetRequest(
+      buildWithTestSidecar(
         {
           contents: [{ role: 'system', parts: [{ text: 'Hi' }] } as unknown as GeminiGenerateContentContent],
         },
@@ -471,10 +476,10 @@ test('buildTargetRequest rejects an unknown content role', () => {
   );
 });
 
-test('buildTargetRequest rejects a part with an unsupported kind in user content', () => {
-  assertThrows(
+test('buildTargetRequest rejects a part with an unsupported kind in user content', async () => {
+  await assertRejects(
     () =>
-      buildTargetRequest(
+      buildWithTestSidecar(
         {
           contents: [{ role: 'user', parts: [{ executableCode: { language: 'PYTHON', code: 'print(1)' } }] }],
         },
@@ -485,10 +490,10 @@ test('buildTargetRequest rejects a part with an unsupported kind in user content
   );
 });
 
-test('buildTargetRequest rejects a function_call part in user content', () => {
-  assertThrows(
+test('buildTargetRequest rejects a function_call part in user content', async () => {
+  await assertRejects(
     () =>
-      buildTargetRequest(
+      buildWithTestSidecar(
         {
           contents: [{ role: 'user', parts: [{ functionCall: { name: 'x', args: {} } }] }],
         },
@@ -499,10 +504,10 @@ test('buildTargetRequest rejects a function_call part in user content', () => {
   );
 });
 
-test('buildTargetRequest rejects a function_response part in model content', () => {
-  assertThrows(
+test('buildTargetRequest rejects a function_response part in model content', async () => {
+  await assertRejects(
     () =>
-      buildTargetRequest(
+      buildWithTestSidecar(
         {
           contents: [{ role: 'model', parts: [{ functionResponse: { name: 'x', response: {} } }] }],
         },
@@ -513,10 +518,10 @@ test('buildTargetRequest rejects a function_response part in model content', () 
   );
 });
 
-test('buildTargetRequest rejects a part that sets conflicting content fields', () => {
-  assertThrows(
+test('buildTargetRequest rejects a part that sets conflicting content fields', async () => {
+  await assertRejects(
     () =>
-      buildTargetRequest(
+      buildWithTestSidecar(
         {
           contents: [{ role: 'model', parts: [{ text: 'foo', functionCall: { name: 'x', args: {} } } as unknown as GeminiGenerateContentPart] }],
         },
@@ -527,10 +532,10 @@ test('buildTargetRequest rejects a part that sets conflicting content fields', (
   );
 });
 
-test('buildTargetRequest rejects a part with no recognized content field', () => {
-  assertThrows(
+test('buildTargetRequest rejects a part with no recognized content field', async () => {
+  await assertRejects(
     () =>
-      buildTargetRequest(
+      buildWithTestSidecar(
         {
           contents: [{ role: 'user', parts: [{}] }],
         },
@@ -541,16 +546,16 @@ test('buildTargetRequest rejects a part with no recognized content field', () =>
   );
 });
 
-test('buildTargetRequest extends reasoning_effort enum to recognize xhigh and max', () => {
-  const xhigh = buildTargetRequest(
+test('buildTargetRequest extends reasoning_effort enum to recognize xhigh and max', async () => {
+  const xhigh = await buildWithTestSidecar(
     { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { thinkingLevel: 'xhigh' } } },
     'gpt-test',
   );
-  const max = buildTargetRequest(
+  const max = await buildWithTestSidecar(
     { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { thinkingLevel: 'max' } } },
     'gpt-test',
   );
-  const minimal = buildTargetRequest(
+  const minimal = await buildWithTestSidecar(
     { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { thinkingLevel: 'minimal' } } },
     'gpt-test',
   );
@@ -560,22 +565,22 @@ test('buildTargetRequest extends reasoning_effort enum to recognize xhigh and ma
   assertEquals(minimal.reasoning_effort, 'minimal');
 });
 
-test('buildTargetRequest forwards a vendor-specific thinkingLevel verbatim (no enum gate)', () => {
-  const turbo = buildTargetRequest(
+test('buildTargetRequest forwards a vendor-specific thinkingLevel verbatim (no enum gate)', async () => {
+  const turbo = await buildWithTestSidecar(
     { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { thinkingLevel: 'turbo' } } },
     'gpt-test',
   );
   assertEquals(turbo.reasoning_effort, 'turbo');
 });
 
-test('buildTargetRequest preserves an explicitly empty model text turn', () => {
-  assertEquals(buildTargetRequest({
+test('buildTargetRequest preserves an explicitly empty model text turn', async () => {
+  assertEquals((await buildWithTestSidecar({
     contents: [
       { role: 'user', parts: [{ text: 'first' }] },
       { role: 'model', parts: [{ text: '' }] },
       { role: 'user', parts: [{ text: 'second' }] },
     ],
-  }, 'm').messages, [
+  }, 'm')).messages, [
     { role: 'user', content: 'first' },
     { role: 'assistant', content: '' },
     { role: 'user', content: 'second' },
@@ -584,6 +589,6 @@ test('buildTargetRequest preserves an explicitly empty model text turn', () => {
 
 test.each([undefined, []])('preserves an empty model turn with parts %j', async parts => {
   const payload = { contents: [{ role: 'user', parts: [{ text: 'before' }] }, { role: 'model', ...(parts === undefined ? {} : { parts }) }, { role: 'user', parts: [{ text: 'after' }] }] };
-  const result = buildTargetRequest(payload, 'target-model');
+  const result = await buildWithTestSidecar(payload, 'target-model');
   assertEquals((result.messages as Array<{ role?: string; content?: unknown }>).filter(item => item.role === 'assistant'), [{ role: 'assistant', content: '' }]);
 });

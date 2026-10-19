@@ -2,6 +2,8 @@ import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../../../src/protocols/openai-responses/via-anthropic-messages/events.ts';
 import { fixtureFrames } from '../../../ir/translation-cases.ts';
+import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
+import { emptyNamespaceToolNames } from '../../../round-trip/test-helpers.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
@@ -30,11 +32,11 @@ test('translateToSourceEvents stops after Anthropic Messages message_stop', asyn
     });
   }
 
-  const frames = await collect(translateToSourceEvents(stream(), 'resp_123'));
+  const frames = await collect(translateToSourceEvents(stream(), 'resp_123', new Set(), createTestSidecarCodec(), emptyNamespaceToolNames()));
 
   assertEquals(
     frames.map(frame => (frame.type === 'event' ? frame.event.type : frame.type)),
-    ['response.created', 'response.in_progress', 'response.completed'],
+    ['response.created', 'response.in_progress', 'response.output_item.added', 'response.output_item.done', 'response.completed'],
   );
 });
 
@@ -50,7 +52,7 @@ test('translateToSourceEvents translates Anthropic Messages error terminal and s
     yield eventFrame({ type: 'message_stop' });
   }
 
-  const frames = await collect(translateToSourceEvents(stream(), 'resp_123'));
+  const frames = await collect(translateToSourceEvents(stream(), 'resp_123', new Set(), createTestSidecarCodec(), emptyNamespaceToolNames()));
 
   assertEquals(frames.length, 1);
   assertEquals(
@@ -82,5 +84,5 @@ test('translateToSourceEvents rejects truncated Anthropic Messages streams witho
     });
   }
 
-  await assertRejects(async () => await drain(translateToSourceEvents(stream(), 'resp_123')), Error, 'Messages stream ended without message_stop');
+  await assertRejects(async () => await drain(translateToSourceEvents(stream(), 'resp_123', new Set(), createTestSidecarCodec(), emptyNamespaceToolNames())), Error, 'Messages stream ended without message_stop');
 });
