@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import type { ScopeExpressionData } from './scope-expression';
-import type { AccessScope } from '@floway-dev/gateway/browser';
+import type { AccessPrincipal, AccessScope } from '@floway-dev/gateway/browser';
 
 const modelPatternSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('exact'), value: z.string().min(1) }),
@@ -36,8 +36,13 @@ export const scopeKey = (scope: AccessScope): string => {
   }
 };
 
-export const scopeContains = (outer: AccessScope | null, inner: AccessScope, data: Pick<ScopeExpressionData, 'groups'>): boolean => {
+export const scopeContains = (outer: AccessScope | null, inner: AccessScope, data: Pick<ScopeExpressionData, 'groups'>, principal?: AccessPrincipal | null): boolean => {
   if (outer === null || scopeKey(outer) === scopeKey(inner)) return true;
+  if (outer.kind === 'self') {
+    if (principal?.kind !== 'user') return false;
+    if (inner.kind === 'users') return true;
+    return inner.kind === 'user' && inner.userId === principal.id;
+  }
   if (outer.kind === 'upstreams') return inner.kind === 'upstream' || inner.kind === 'upstreamModel';
   if (outer.kind === 'upstream') return inner.kind === 'upstreamModel' && outer.upstreamId === inner.upstreamId;
   if (outer.kind === 'upstreamModel') return outer.model.kind === 'regex' && inner.kind === 'upstreamModel'

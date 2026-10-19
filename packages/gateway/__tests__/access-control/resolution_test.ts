@@ -90,6 +90,48 @@ test('a personal /Self rule keeps priority over a group /Self rule', () => {
   expect(result.decisions.find(row => row.recordId === 1)!.permissions['Permission.Audit']).toEqual({ kind: 'overridden', by: records[1] });
 });
 
+test('Self effective expands to the user identity and its ancestor scopes', () => {
+  const records = [
+    row(1, group, { kind: 'self' }, { 'Permission.Audit': true }),
+    row(2, user, { kind: 'users' }, { 'Permission.Audit': true }),
+  ];
+  const result = resolveEffectiveAssignments(records, { kind: 'self' }, new Set(), false, 2);
+  expect(result.values['Permission.Audit']).toBe(true);
+  expect(result.records.map(record => record.id)).toEqual([1, 2]);
+});
+
+test('a concrete self-user rule overrides /Users but stays under /Self', () => {
+  const records = [
+    row(1, user, { kind: 'users' }, { 'Permission.Audit': true }),
+    row(2, user, { kind: 'user', userId: 2 }, { 'Permission.Audit': false }),
+  ];
+  expect(resolveEffectiveAssignments(records, { kind: 'self' }, new Set(), false, 2).values['Permission.Audit']).toBe(false);
+  records.push(row(3, user, { kind: 'self' }, { 'Permission.Audit': true }));
+  expect(resolveEffectiveAssignments(records, { kind: 'self' }, new Set(), false, 2).values['Permission.Audit']).toBe(true);
+});
+
+test('a group Permission.Audit rule never contributes to Self effective values', () => {
+  const records = [row(1, group, { kind: 'group', groupId: 3 }, { 'Permission.Audit': true })];
+  expect(resolveEffectiveAssignments(records, { kind: 'self' }, new Set([3]), false, 2).values['Permission.Audit']).toBe(false);
+});
+
+test('principal kind never gates scope evaluation, only precedence', () => {
+  const scopes: AccessScope[] = [
+    { kind: 'self' },
+    { kind: 'user', userId: 9 },
+    { kind: 'users' },
+    { kind: 'group', groupId: 3 },
+    { kind: 'groups' },
+    { kind: 'upstreams' },
+  ];
+  for (const scope of scopes) {
+    for (const owner of [user, group]) {
+      const record = row(1, owner, scope, scope.kind.startsWith('upstream') ? { 'Model.Use': true } : { 'Permission.Audit': true });
+      expect(() => resolveAssignments([record], scope, new Set([3]), owner.kind === 'user' && scope.kind === 'self', owner.kind === 'user' ? owner.id : undefined)).not.toThrow();
+    }
+  }
+});
+
 test('unassigned values resolve to off at every scope category', () => {
   expect(resolve([], upstream).values).toEqual({ 'Model.Use': false, 'Upstream.Audit': false, 'Upstream.Edit': 'off' });
   expect(resolve([], model).values).toEqual({ 'Model.Use': false });

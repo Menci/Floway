@@ -19,10 +19,10 @@ export const selectPermissionRules = ({ records, principal, scope, showEffective
   const applicable = principal === null ? records : records.filter(record => principalKey(record.principal) === principalKey(principal)
     || (record.principal.kind === 'group' && groups.includes(record.principal.id)));
   if (principal !== null && scope !== null && showEffective) return {
-    records: orderedRecords(resolution ? resolution.records : applicable.filter(record => scopeContains(record.scope, scope, data))),
+    records: orderedRecords(resolution ? resolution.records : applicable.filter(record => scopeContains(record.scope, scope, data, principal))),
     decisions: resolution === undefined || resolution === null ? null : new Map(resolution.decisions.map(row => [row.recordId, row.permissions])),
   };
-  return { records: orderedRecords(applicable.filter(record => scopeContains(scope, record.scope, data))), decisions: null };
+  return { records: orderedRecords(applicable.filter(record => scopeContains(scope, record.scope, data, principal))), decisions: null };
 };
 
 export const permissionSearchText = (record: AccessRecord, data: ScopeExpressionData, t: TFunction): string => {

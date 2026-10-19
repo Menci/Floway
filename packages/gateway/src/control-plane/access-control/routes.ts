@@ -60,10 +60,10 @@ const projectPermissionDirectory = (context: PermissionAuditContext, records: re
   };
 };
 
-const permissionUpstreamOptions = async (records: readonly AccessRecord[], admin: boolean) => {
+const permissionUpstreamOptions = async (baseRecords: readonly AccessRecord[], supportRecords: readonly AccessRecord[], admin: boolean) => {
   const items = await getRepo().upstreams.list();
-  const all = admin || records.some(record => record.scope.kind === 'upstreams');
-  const ids = new Set(records.flatMap(record => record.scope.kind === 'upstream' || record.scope.kind === 'upstreamModel' ? [record.scope.upstreamId] : []));
+  const all = admin || baseRecords.some(record => record.scope.kind === 'upstreams');
+  const ids = new Set(supportRecords.flatMap(record => record.scope.kind === 'upstream' || record.scope.kind === 'upstreamModel' ? [record.scope.upstreamId] : []));
   return items.filter(item => all || ids.has(item.id)).map(item => ({
     id: item.id,
     name: item.name,
@@ -84,7 +84,7 @@ export const getPermissionsData = async (c: AuthedContext) => {
   if (view === null) return c.json({ error: 'Permission audit access required' }, 403);
   const admin = userFromContext(c).isAdmin;
   const directory = projectPermissionDirectory(view.context, view.supportRecords, admin);
-  const upstreams = await permissionUpstreamOptions(view.supportRecords, admin);
+  const upstreams = await permissionUpstreamOptions(view.records, view.supportRecords, admin);
   return c.json({ records: view.records, directory, upstreams });
 };
 
@@ -138,11 +138,9 @@ export const resolveAccess = async (c: CtxWithJson<typeof resolveAccessBody>) =>
   if (!subject) return c.json({ error: `${principal.kind} not found` }, 404);
   const groupIds = principal.kind === 'user' ? await repo.groups.listIdsByUserId(principal.id) : [];
   const principals: AccessPrincipal[] = [principal, ...groupIds.map(id => ({ kind: 'group' as const, id }))];
-  const targetGroups = scope.kind !== 'user'
-    ? Promise.resolve([])
-    : principal.kind === 'user' && scope.userId === principal.id
-      ? Promise.resolve(groupIds)
-      : repo.groups.listIdsByUserId(scope.userId);
+  const targetGroups = scope.kind === 'user' && principal.kind === 'user' && scope.userId === principal.id
+    ? Promise.resolve(groupIds)
+    : Promise.resolve([]);
   const [records, targetGroupIds] = await Promise.all([
     repo.accessRecords.listByPrincipals(principals),
     targetGroups,

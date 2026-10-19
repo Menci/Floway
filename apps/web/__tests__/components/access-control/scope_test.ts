@@ -18,6 +18,16 @@ test('recognizes user membership scopes and keeps regex queries symbolic', () =>
   expect(scopeContains({ kind: 'group', groupId: 1 }, { kind: 'user', userId: 3 }, data)).toBe(false);
   expect(scopeContains({ kind: 'upstreamModel', upstreamId: 'a', model: { kind: 'regex', value: '.*' } }, { kind: 'upstreamModel', upstreamId: 'a', model: { kind: 'regex', value: '^claude-' } }, data)).toBe(false);
 });
+test('Self contains the evaluating user\'s identity, /Users and membership-group rules', () => {
+  const principal = { kind: 'user' as const, id: 2 };
+  expect(scopeContains({ kind: 'self' }, { kind: 'users' }, data, principal)).toBe(true);
+  expect(scopeContains({ kind: 'self' }, { kind: 'user', userId: 2 }, data, principal)).toBe(true);
+  expect(scopeContains({ kind: 'self' }, { kind: 'user', userId: 3 }, data, principal)).toBe(false);
+  expect(scopeContains({ kind: 'self' }, { kind: 'group', groupId: 1 }, data, principal)).toBe(false);
+  expect(scopeContains({ kind: 'self' }, { kind: 'self' }, data, principal)).toBe(true);
+  expect(scopeContains({ kind: 'self' }, { kind: 'users' }, data, null)).toBe(false);
+});
+
 test('uses structural scope keys and validates URL scope values', () => {
   expect(scopeKey({ upstreamId: 'a', kind: 'upstream' })).toBe(scopeKey({ kind: 'upstream', upstreamId: 'a' }));
   expect(parseScope(null)).toBeNull();
