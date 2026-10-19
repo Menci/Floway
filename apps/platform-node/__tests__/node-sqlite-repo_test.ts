@@ -28,6 +28,7 @@ const seedKey = (repo: SqlRepo): Promise<void> => repo.apiKeys.save({
   serverSecret: '00'.repeat(32),
   createdAt: '2026-07-26T00:00:00.000Z',
   upstreamIds: null,
+  randomizeUpstreams: false,
   deletedAt: null,
   dumpRetentionSeconds: null,
   openaiResponsesRetentionSeconds: 0,
