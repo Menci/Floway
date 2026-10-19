@@ -41,7 +41,7 @@ it('renders the stored name and saves a trimmed replacement into the shared stor
   expect(input.placeholder).toBe('Floway');
 
   fireEvent.change(input, { target: { value: '  Team Gateway  ' } });
-  await act(async () => { screen.getByRole('button', { name: 'Save site name' }).click(); });
+  await act(async () => { screen.getByRole('button', { name: 'Save' }).click(); });
 
   await waitFor(() => expect(useSiteSettingsStore.getState().siteName).toBe('Team Gateway'));
   expect(new URL(requests[0]!.url, 'http://localhost').pathname).toBe('/api/site-settings');
@@ -57,7 +57,7 @@ it('clears the override when the field is emptied', async () => {
   const view = renderPage('Old Name');
 
   fireEvent.change(view.container.querySelector('input')!, { target: { value: '   ' } });
-  await act(async () => { screen.getByRole('button', { name: 'Save site name' }).click(); });
+  await act(async () => { screen.getByRole('button', { name: 'Save' }).click(); });
 
   await waitFor(() => expect(useSiteSettingsStore.getState().siteName).toBeNull());
   expect(bodies).toEqual([{ site_name: null }]);
@@ -67,7 +67,7 @@ it('reports a failed save instead of clearing the field', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Unavailable' }, { status: 500 })));
   const view = renderPage('Old Name');
 
-  await act(async () => { screen.getByRole('button', { name: 'Save site name' }).click(); });
+  await act(async () => { screen.getByRole('button', { name: 'Save' }).click(); });
 
   expect(await screen.findByText('Unavailable')).toBeTruthy();
   expect(view.container.querySelector('input')!.value).toBe('Old Name');

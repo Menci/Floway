@@ -174,13 +174,12 @@ const zhHansCN = {
         },
       },
       siteSettings: {
-        branding: '品牌',
         description: '管理本站的全局偏好设置',
         name: '站点名称',
         nameHint: '显示在图标旁和浏览器标题中。留空则使用内置名称。',
         namePlaceholder: 'Floway',
-        save: '保存站点名称',
-        updated: '站点名称已更新。',
+        save: '保存',
+        updated: '站点名称已更新',
         validation: {
           tooLong: '最多输入 {{max}} 个字符。',
         },

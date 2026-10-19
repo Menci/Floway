@@ -1,3 +1,4 @@
+import { TextEditStyle24Regular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -9,11 +10,10 @@ import { requireDashboardAdmin } from './guards';
 import { getSiteSettings, putSiteSettings } from '../api/site-settings';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Input } from '../components/ui/fluent-form-controls';
-import { PANEL_STACK_CLASS } from '../components/ui/layout';
+import { SETTINGS_PAGE_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
-import { Panel } from '../components/ui/panel';
-import { SectionHeader } from '../components/ui/section-header';
+import { SettingsCard } from '../components/ui/settings-card';
 import { fluentComponents } from '../fluent';
 import { useSiteSettingsStore } from '../stores/site-settings-store';
 
@@ -96,41 +96,41 @@ export default function DashboardAdminSiteSettings({ loaderData }: Route.Compone
           save overwrite a name this page never saw. */}
       {loaderData.error
         ? <OutcomeMessageBar>{loaderData.error}</OutcomeMessageBar>
-        : <Panel className={`${PANEL_STACK_CLASS} w-full max-w-[480px]`}>
-            <SectionHeader level={2} title={t('dashboard.siteSettings.branding')} />
+        : <form className={SETTINGS_PAGE_CLASS} onSubmit={event => void handleSubmit(submit)(event)}>
+            <SettingsCard
+              action={<div className="w-[240px] max-w-full">
+                <Controller
+                  control={control}
+                  name="siteName"
+                  render={({ field }) => (
+                    <Field
+                      validationMessage={errors.siteName?.message ? t(errors.siteName.message, { max: SITE_NAME_MAX_LENGTH }) : undefined}
+                      validationState={errors.siteName ? 'error' : undefined}
+                    >
+                      <Input
+                        {...field}
+                        aria-label={t('dashboard.siteSettings.name')}
+                        disabled={saving}
+                        maxLength={SITE_NAME_MAX_LENGTH}
+                        placeholder={t('dashboard.siteSettings.namePlaceholder')}
+                      />
+                    </Field>
+                  )}
+                />
+              </div>}
+              description={t('dashboard.siteSettings.nameHint')}
+              header={t('dashboard.siteSettings.name')}
+              icon={<TextEditStyle24Regular />}
+            />
 
-            <form className="grid gap-4" onSubmit={event => void handleSubmit(submit)(event)}>
-              <Controller
-                control={control}
-                name="siteName"
-                render={({ field }) => (
-                  <Field
-                    hint={t('dashboard.siteSettings.nameHint')}
-                    label={t('dashboard.siteSettings.name')}
-                    validationMessage={errors.siteName?.message ? t(errors.siteName.message, { max: SITE_NAME_MAX_LENGTH }) : undefined}
-                    validationState={errors.siteName ? 'error' : undefined}
-                  >
-                    <Input
-                      {...field}
-                      disabled={saving}
-                      maxLength={SITE_NAME_MAX_LENGTH}
-                      placeholder={t('dashboard.siteSettings.namePlaceholder')}
-                    />
-                  </Field>
-                )}
-              />
+            {saveError && <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>}
 
-              {saveError && (
-                <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>
-              )}
-
-              <div className="flex justify-end pt-1">
-                <Button appearance="primary" disabledFocusable={saving} type="submit">
-                  {t('dashboard.siteSettings.save')}
-                </Button>
-              </div>
-            </form>
-          </Panel>}
+            <div className="flex justify-start mt-2">
+              <Button appearance="primary" disabledFocusable={saving} type="submit">
+                {t('dashboard.siteSettings.save')}
+              </Button>
+            </div>
+          </form>}
     </section>
   );
 }

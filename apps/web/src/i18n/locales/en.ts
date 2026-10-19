@@ -185,13 +185,12 @@ const en = {
         },
       },
       siteSettings: {
-        branding: 'Branding',
         description: 'Manage global preferences for this site',
         name: 'Site name',
         nameHint: 'Shown beside the mark and in the browser title. Leave blank to use the built-in name.',
         namePlaceholder: 'Floway',
-        save: 'Save site name',
-        updated: 'Site name updated.',
+        save: 'Save',
+        updated: 'Site name updated',
         validation: {
           tooLong: 'Enter at most {{max}} characters.',
         },
