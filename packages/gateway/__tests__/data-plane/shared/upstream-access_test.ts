@@ -70,22 +70,15 @@ test.each(cases)('$name controls model visibility and upstream dispatch', async 
       choices: [{ message: { refusal: null, role: 'assistant', content: 'Available' }, finish_reason: 'stop' }],
     });
   }, async () => {
-    const listingStatus = models.length > 0 ? 200 : 502;
     const listed = await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } });
-    assertEquals(listed.status, listingStatus);
+    assertEquals(listed.status, 200);
     const catalog = await listed.json();
 
     const geminiListed = await requestApp('/v1beta/models', { headers: { 'x-api-key': apiKey.key } });
-    assertEquals(geminiListed.status, listingStatus);
+    assertEquals(geminiListed.status, 200);
     const geminiCatalog = await geminiListed.json();
-    if (models.length > 0) {
-      assertEquals(catalog.data.map((model: { id: string }) => model.id).sort(), models);
-      assertEquals(geminiCatalog.models.map((model: { baseModelId: string }) => model.baseModelId).sort(), models);
-    } else {
-      const message = 'No upstream provider configured — add and enable an upstream in the dashboard';
-      assertEquals(catalog, { error: { message, type: 'api_error' } });
-      assertEquals(geminiCatalog, { error: { code: 502, message, status: 'UNAVAILABLE' } });
-    }
+    assertEquals(catalog.data.map((model: { id: string }) => model.id).sort(), models);
+    assertEquals(geminiCatalog.models.map((model: { baseModelId: string }) => model.baseModelId).sort(), models);
 
     for (const model of ['model_a', 'model_b']) {
       const response = await requestApp('/v1/chat/completions', {
