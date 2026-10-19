@@ -1,5 +1,10 @@
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
+export interface SidecarCodec {
+  encode: (payload: NonNullable<unknown> | null) => Promise<string>;
+  decode: (encoded: string) => Promise<unknown>;
+}
+
 export interface RemoteImageData {
   mediaType: string | null;
   data: Uint8Array;
@@ -8,9 +13,10 @@ export interface RemoteImageData {
 export type RemoteImageLoader = (url: string) => Promise<RemoteImageData | null>;
 
 /**
- * Per-trip context. Carries the model name plus a per-pair-declared `TExtras`
+ * Per-trip context. Carries the model name, the codec used by private sidecars,
+ * and a per-pair-declared `TExtras`
  * shape that lists exactly the capability fields and runtime adapters the trip
- * reads. Pairs that need no extra fields pass an empty object type. Callers
+ * reads. Pairs that need no extra fields use the default `unknown`. Callers
  * construct the context at the protocol boundary and inject runtime-owned
  * dependencies without making this package import their implementation.
  *
@@ -22,6 +28,7 @@ export type RemoteImageLoader = (url: string) => Promise<RemoteImageData | null>
  */
 export type TranslationContext<TExtras = unknown> = {
   readonly model: string;
+  readonly sidecarCodec: SidecarCodec;
 } & TExtras;
 
 /**
@@ -65,9 +72,6 @@ export interface TranslateTripResult<TgtPayload, SrcEvent, TgtEvent> {
  * target-protocol events back into source-protocol events. Trip-scoped state
  * (synthetic ids, custom-tool name sets, etc.) lives as locals captured by
  * the returned closure — the source route never exposes them.
- *
- * Stateless pairs simply return a function reference for `events`. Stateful
- * pairs let the closure capture whatever locals the trip needs.
  *
  * `TExtras` is the pair-declared context surface: each pair lists exactly the
  * capabilities and injected runtime adapters it reads. Pairs that need no

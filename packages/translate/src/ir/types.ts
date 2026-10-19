@@ -2,7 +2,7 @@
 type IRValueOf<Extra> = Extra | null | boolean | number | string | readonly IRValueOf<Extra>[] | { readonly [key: string]: IRValueOf<Extra> };
 
 // All
-type IRJSONValue = IRValueOf<never>;
+export type IRJSONValue = IRValueOf<never>;
 
 // All
 export type IRJSONObject = { readonly [key: string]: IRJSONValue };
@@ -74,10 +74,8 @@ interface IRRefusalPart {
 // All
 export interface IRReasoningItem {
   readonly type: 'reasoning'; // All
-  readonly id?: string; // ChatCompletions, Responses, Messages
   readonly summary?: readonly string[]; // All
   readonly content?: readonly string[]; // All
-  readonly encrypted_content?: string | null; // All
 }
 
 // All
