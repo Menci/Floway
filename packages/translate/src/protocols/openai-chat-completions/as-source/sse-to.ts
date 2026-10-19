@@ -1,20 +1,23 @@
-import { computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarCarrier } from './round-trip.ts';
+import { collectOpenAIChatCompletionsTextViews, computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import { irItemPath, irPartPath, irPathKey } from '../../../ir/operation-paths.ts';
 import { createIROrdinalMapper } from '../../../ir/ordinal-mapper.ts';
 import { consumeIRRecords, type IRRecord } from '../../../ir/stream.ts';
 import { IRAbsent, type IRErrorPayload, type IRItem, type IRMessageItem, type IRTokenLogprob } from '../../../ir/types.ts';
+import { appendContent, createContentState, type ContentStates, type ContentState } from '../../../round-trip/reference/reference-builder.ts';
+import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
+import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantState } from '../as-target/assistant-turn.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type {
-  OpenAIChatCompletionsAnnotation,
-  OpenAIChatCompletionsAssistantDeltaEx,
-  OpenAIChatCompletionsStreamEvent,
-  OpenAIChatCompletionsTokenLogprob,
-  OpenAIChatCompletionsUsageEx,
+import {
+  type OpenAIChatCompletionsAnnotation,
+  type OpenAIChatCompletionsAssistantDeltaEx,
+  type OpenAIChatCompletionsStreamEvent,
+  type OpenAIChatCompletionsTokenLogprob,
+  type OpenAIChatCompletionsUsageEx,
+  createOpenAIChatCompletionsEventAccumulator,
 } from '@floway-dev/protocols/openai-chat-completions';
-import { createOpenAIChatCompletionsEventAccumulator } from '@floway-dev/protocols/openai-chat-completions';
 
 const irChatError = (error: IRErrorPayload): IRErrorPayload => ({
   message: error.message,
@@ -24,7 +27,7 @@ const irChatError = (error: IRErrorPayload): IRErrorPayload => ({
   ...(error.provider_specific_fields === undefined ? {} : { provider_specific_fields: error.provider_specific_fields }),
 });
 
-interface OpenAIChatCompletionsSSEOutputOptions extends RoundTripOutputOptions {
+interface OpenAIChatCompletionsSSEOutputOptions extends RoundTripOutputOptions<'openaiChatCompletions'> {
   // Replay identity belongs to the newly emitted target audio, not the source IR content.
   audioMetadata?: (choice: number) => { id: string; expires_at: number };
   continuousUsageStats?: boolean;
@@ -74,6 +77,7 @@ const isIRTokenLogprob = (value: unknown): value is IRTokenLogprob =>
 // Emitted deltas carry the assistant extension fields (reasoning, annotations) beside the standard ones.
 type ChatChoiceChunk = Omit<OpenAIChatCompletionsStreamEvent['choices'][number], 'delta'> & { delta: OpenAIChatCompletionsAssistantDeltaEx };
 type ChatChunkFields = Partial<Pick<OpenAIChatCompletionsStreamEvent, 'service_tier' | 'usage'>>;
+type ChatTextField = 'content' | 'refusal' | 'reasoning_text';
 
 export const openaiChatCompletionsFromIR = async function* (
   records: AsyncIterable<IRRecord>,
@@ -96,7 +100,35 @@ export const openaiChatCompletionsFromIR = async function* (
     }
     return accumulator;
   };
+  const outputStates = new Map<number, OpenAIChatCompletionsOutputAssistantState<ContentStates>>();
+  const pendingTranscripts = new Map<string, TextProvenanceSpan[]>();
   let usage: OpenAIChatCompletionsUsageEx | undefined;
+
+  const outputState = (choice: number): OpenAIChatCompletionsOutputAssistantState<ContentStates> => {
+    let state = outputStates.get(choice);
+    if (state === undefined) {
+      state = {};
+      outputStates.set(choice, state);
+    }
+    return state;
+  };
+  const textState = (choice: number, field: ChatTextField): ContentState<'text'> => {
+    const state = outputState(choice);
+    return state[field] ??= createContentState(options.roundTrip.builder, 'text');
+  };
+  const toolState = (choice: number, ordinal: number, custom: boolean): ContentState<'text'> => {
+    const choiceState = outputState(choice);
+    const toolCalls = choiceState.tool_calls ??= [];
+    const current = toolCalls[ordinal];
+    if (current !== undefined) {
+      if (custom && 'custom' in current && current.custom?.input !== undefined) return current.custom.input;
+      if (!custom && 'function' in current && current.function?.arguments !== undefined) return current.function.arguments;
+      throw new TypeError(`ChatCompletions tool state kind changed at ordinal ${ordinal}`);
+    }
+    const state = createContentState(options.roundTrip.builder, 'text');
+    toolCalls[ordinal] = custom ? { custom: { input: state } } : { function: { arguments: state } };
+    return state;
+  };
 
   // Continuous usage is cumulative metadata on emitted choice chunks.
   // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/openai/chat_completion/serving.py#L798-L871
@@ -223,6 +255,7 @@ export const openaiChatCompletionsFromIR = async function* (
 
       if (record.kind === 'append') {
         if (path.length === 7 && path[2] === 'items' && path[4] === 'content' && (path[6] === 'text' || path[6] === 'refusal')) {
+          appendContent(options.roundTrip.builder, textState(choice, path[6] === 'text' ? 'content' : 'refusal'), record.value, record.referencePieceIds);
           yield deltaFrame(choice, path[6] === 'text' ? { content: record.value } : { refusal: record.value }, tier);
           continue;
         }
@@ -230,6 +263,13 @@ export const openaiChatCompletionsFromIR = async function* (
           const partPath = path.slice(0, 6);
           if (partTypes.get(irPathKey(partPath)) !== 'audio') throw new TypeError('ChatCompletions audio delta requires an audio part');
           const audioPath = irPathKey(partPath);
+          if (path[7] === 'transcript' && !startedAudio.has(audioPath)) {
+            const transcript = collector.value<string>(path);
+            if (transcript === undefined) throw new Error('Missing ChatCompletions pending transcript');
+            const parts = pendingTranscripts.get(audioPath) ?? [];
+            parts.push(provenanceSpanForAppend(transcript, record.value, record.referencePieceIds));
+            pendingTranscripts.set(audioPath, parts);
+          }
           if (path[7] === 'data') {
             const audioMetadata = options.audioMetadata?.(choice);
             if (audioMetadata === undefined) throw new Error('ChatCompletions audio requires replay ID and expiry metadata');
@@ -239,12 +279,14 @@ export const openaiChatCompletionsFromIR = async function* (
             if (part?.type !== 'audio') throw new TypeError('ChatCompletions audio delta requires an audio part');
             const first = !startedAudio.has(audioPath);
             startedAudio.add(audioPath);
+            pendingTranscripts.delete(audioPath);
             const audio = { ...(first ? audioMetadata : {}), data: record.value, ...(first ? { transcript: part.audio.transcript ?? '' } : {}) };
             yield deltaFrame(choice, { audio }, tier);
           } else if (startedAudio.has(audioPath)) yield deltaFrame(choice, { audio: { transcript: record.value } }, tier);
           continue;
         }
         if (path.length === 6 && path[2] === 'items' && (path[4] === 'summary' || path[4] === 'content')) {
+          appendContent(options.roundTrip.builder, textState(choice, 'reasoning_text'), record.value, record.referencePieceIds);
           yield deltaFrame(choice, { reasoning_text: record.value }, tier);
           continue;
         }
@@ -253,6 +295,7 @@ export const openaiChatCompletionsFromIR = async function* (
           if (itemType !== 'function_call' && itemType !== 'custom_tool_call') throw new TypeError('ChatCompletions tool delta requires a tool item');
           const ordinal = tools.get(choice)!.get(path.slice(0, 4));
           const custom = itemType === 'custom_tool_call';
+          appendContent(options.roundTrip.builder, toolState(choice, ordinal, custom), record.value, record.referencePieceIds);
           const call = custom
             ? { index: ordinal, custom: { input: record.value } }
             : { index: ordinal, function: { arguments: record.value } };
@@ -306,6 +349,11 @@ export const openaiChatCompletionsFromIR = async function* (
       const item = state.choices[record.choice].items[record.item];
       const part = item.type === 'message' ? item.content[record.part] : undefined;
       if (part?.type === 'audio' && !startedAudio.has(irPathKey(path)) && part.audio.transcript !== undefined) {
+        const content = textState(record.choice, 'content');
+        replayTextProvenance(part.audio.transcript, pendingTranscripts.get(irPathKey(path)) ?? [], (value, referencePieceIds) => {
+          appendContent(options.roundTrip.builder, content, value, referencePieceIds);
+        });
+        pendingTranscripts.delete(irPathKey(path));
         yield deltaFrame(record.choice, { content: part.audio.transcript }, tier);
       }
       continue;
@@ -339,6 +387,7 @@ export const openaiChatCompletionsFromIR = async function* (
       });
       if (annotations.length > 0) yield deltaFrame(record.choice, { annotations }, tier);
       if (choice.refusal?.explanation != null) {
+        appendContent(options.roundTrip.builder, textState(record.choice, 'refusal'), choice.refusal.explanation);
         yield deltaFrame(record.choice, { refusal: choice.refusal.explanation }, tier);
       }
       const summary = nativeAccumulator(record.choice).result().choices.find(choice => choice.index === record.choice)?.message.reasoning_text;
@@ -347,8 +396,9 @@ export const openaiChatCompletionsFromIR = async function* (
       }
       const nativeChoice = nativeAccumulator(record.choice).result().choices.find(choice => choice.index === record.choice);
       if (nativeChoice === undefined) throw new Error(`Missing Chat Completions choice ${record.choice} at choice_end`);
-      const turnDigest = await computeOpenAIChatCompletionsTurnDigest(nativeChoice.message);
-      const data = await options.roundTrip.prepareSidecar(record.choice, turnDigest);
+      const sourceTurnDigest = await computeOpenAIChatCompletionsTurnDigest(nativeChoice.message);
+      const input = toOpenAIChatCompletionsInputAssistantTurn<ContentStates>(nativeChoice.message, outputState(record.choice));
+      const data = await options.roundTrip.prepareSidecar(record.choice, sourceTurnDigest, input.turn, input.state, collectOpenAIChatCompletionsTextViews(input.turn));
       yield deltaFrame(record.choice, { reasoning_details: createOpenAIChatCompletionsSidecarCarrier(data) }, tier);
       yield chunk([{ index: record.choice, delta: {}, finish_reason: record.finish_reason }], tierFields(tier));
       continue;

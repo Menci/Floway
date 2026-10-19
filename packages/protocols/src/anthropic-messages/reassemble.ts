@@ -131,6 +131,7 @@ const finalizeContentBlock = (block: AnthropicMessagesBlockAccumulator): Anthrop
 
 export interface AnthropicMessagesEventAccumulator {
   accept: (event: AnthropicMessagesStreamEventEx) => void;
+  contentBlock: (index: number) => AnthropicMessagesAssistantContentBlock | undefined;
   result: () => AnthropicMessagesResult;
 }
 
@@ -200,6 +201,11 @@ export const createAnthropicMessagesEventAccumulator = (): AnthropicMessagesEven
     }
   };
 
+  const contentBlock = (index: number): AnthropicMessagesAssistantContentBlock | undefined => {
+    const block = blocks[index];
+    return block === undefined ? undefined : finalizeContentBlock(block);
+  };
+
   const result = (): AnthropicMessagesResult => {
     if (usage === undefined) throw new Error('Messages stream ended without message_start');
     const content = blocks.flatMap((block): AnthropicMessagesAssistantContentBlock[] => (block ? [finalizeContentBlock(block)] : []));
@@ -220,7 +226,7 @@ export const createAnthropicMessagesEventAccumulator = (): AnthropicMessagesEven
     } as AnthropicMessagesResult;
   };
 
-  return { accept, result };
+  return { accept, contentBlock, result };
 };
 
 export async function reassembleAnthropicMessagesEvents(events: AsyncIterable<AnthropicMessagesStreamEventEx>): Promise<AnthropicMessagesResult> {

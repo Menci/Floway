@@ -1,4 +1,4 @@
-import { toOpenAIResponsesInputAssistantTurn } from './assistant-turn.ts';
+import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantState } from './assistant-turn.ts';
 import { usageToIR } from './usage.ts';
 import {
   createIRBuilder,
@@ -9,6 +9,7 @@ import {
   type IRWriteHandle,
 } from '../../../ir/stream.ts';
 import type { IRSourceCitation } from '../../../ir/types.ts';
+import { appendField, createFieldState, invalidateField, type FieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -22,24 +23,25 @@ import type {
   OpenAIResponsesStreamEventEx,
 } from '@floway-dev/protocols/openai-responses';
 
-interface ResponsesItemState {
-  readonly outputIndex: number;
-  readonly type: string;
-  readonly id: string;
-  item?: IRItemHandle;
-  readonly parts: Map<number, ResponsesPartState>;
-  readonly reasoningLengths: Record<'summary' | 'content', number>;
-  readonly logprobs: Map<number, { readonly index: number; length: number }>;
-  closed: boolean;
-  finalSnapshot?: OpenAIResponsesOutputItemEx;
+type ReasoningFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'reasoning' }>, FieldStates>;
+type MessageFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>, FieldStates>;
+type FunctionFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'function_call' }>, FieldStates>;
+type CustomFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'custom_tool_call' }>, FieldStates>;
+type TextFieldStateNode = NonNullable<NonNullable<MessageFieldState['content']>[number]>;
+
+interface WriteTarget {
+  readonly handle: IRWriteHandle;
+  readonly path: IRRelativePath;
 }
 
-interface ResponsesTextTarget {
-  readonly handle: IRPartHandle;
+interface ResponsesTextTarget extends WriteTarget {
+  fieldState?: FieldStates['text'];
 }
 
 interface ResponsesOutputTextPartState extends ResponsesTextTarget {
   readonly type: 'output_text';
+  readonly handle: IRPartHandle;
+  readonly path: 'text';
   coordinateIndex?: TextCoordinateIndex;
   text: string;
   annotationsInitialized: boolean;
@@ -47,15 +49,33 @@ interface ResponsesOutputTextPartState extends ResponsesTextTarget {
   nextAnnotationOrdinal: number;
 }
 
-interface ResponsesRefusalPartState extends ResponsesTextTarget { readonly type: 'refusal' }
+interface ResponsesRefusalPartState extends ResponsesTextTarget {
+  readonly type: 'refusal';
+  readonly handle: IRPartHandle;
+  readonly path: 'refusal';
+}
 interface ResponsesImagePartState { readonly type: 'image'; readonly handle: IRPartHandle }
 type ResponsesTextPartState = ResponsesOutputTextPartState | ResponsesRefusalPartState;
 type ResponsesPartState = ResponsesTextPartState | ResponsesImagePartState;
 
-interface WriteTarget {
-  readonly handle: IRWriteHandle;
-  readonly path: IRRelativePath;
+interface ResponsesItemStateBase {
+  readonly outputIndex: number;
+  readonly id: string;
+  item?: IRItemHandle;
+  readonly parts: Map<number, ResponsesPartState>;
+  readonly reasoning: Record<'summary' | 'content', ResponsesTextTarget[]>;
+  readonly logprobs: Map<number, { readonly index: number; length: number }>;
+  closed: boolean;
+  finalSnapshot?: OpenAIResponsesOutputItemEx;
 }
+
+type ResponsesItemState = ResponsesItemStateBase & (
+      | { readonly type: 'message'; fieldState: MessageFieldState }
+      | { readonly type: 'reasoning'; fieldState: ReasoningFieldState }
+      | { readonly type: 'function_call'; fieldState: FunctionFieldState; toolText?: ResponsesTextTarget }
+      | { readonly type: 'custom_tool_call'; fieldState: CustomFieldState; toolText?: ResponsesTextTarget }
+      | { readonly type: Exclude<OpenAIResponsesOutputItemEx['type'], 'message' | 'reasoning' | 'function_call' | 'custom_tool_call'>; fieldState?: never }
+    );
 
 const deepEqual = (left: unknown, right: unknown): boolean => {
   if (Object.is(left, right)) return true;
@@ -129,6 +149,7 @@ export const irFromOpenAIResponses = async function* (
 ): AsyncGenerator<IRRecord> {
   const ir = createIRBuilder();
   const items = new Map<number, ResponsesItemState>();
+  const outputState: OpenAIResponsesOutputAssistantState<FieldStates> = [];
   let started = false;
   let finished = false;
   let responseIdentity: { id: string; model: string } | undefined;
@@ -168,16 +189,21 @@ export const irFromOpenAIResponses = async function* (
     if (typeof id !== 'string') throw new TypeError('Responses output items require an id');
     const seed = irItemSeed(item);
     const handle = seed === undefined ? undefined : ir.item(0, seed);
-    const state: ResponsesItemState = {
+    const base: ResponsesItemStateBase = {
       outputIndex,
-      type: item.type,
       id,
       item: handle,
       parts: new Map(),
-      reasoningLengths: { summary: 0, content: 0 },
+      reasoning: { summary: [], content: [] },
       logprobs: new Map(),
       closed: false,
     };
+    const state: ResponsesItemState = item.type === 'message' ? { ...base, type: item.type, fieldState: { content: [] } }
+      : item.type === 'reasoning' ? { ...base, type: item.type, fieldState: { summary: [] } }
+        : item.type === 'function_call' ? { ...base, type: item.type, fieldState: {} }
+          : item.type === 'custom_tool_call' ? { ...base, type: item.type, fieldState: {} }
+            : { ...base, type: item.type };
+    if (state.type === 'message' || state.type === 'reasoning' || state.type === 'function_call' || state.type === 'custom_tool_call') outputState[outputIndex] = state.fieldState;
     if (item.type === 'function_call' || item.type === 'custom_tool_call') hasTools = true;
     items.set(outputIndex, state);
     return state;
@@ -197,7 +223,29 @@ export const irFromOpenAIResponses = async function* (
     if (id !== state.id) throw new TypeError(`Responses output item id changed from ${state.id} to ${String(id)}`);
   };
 
-  const reconcileAppend = ({ handle, path }: WriteTarget, snapshot: unknown): string => {
+  const ensureToolText = (state: ResponsesItemState): ResponsesTextTarget => {
+    if (state.item === undefined || (state.type !== 'function_call' && state.type !== 'custom_tool_call')) throw new TypeError('Responses tool text requires a tool item');
+    if (state.toolText !== undefined) return state.toolText;
+    const fieldState = createFieldState('text');
+    if (state.type === 'function_call') {
+      const node = state.fieldState;
+      node.arguments = fieldState;
+      state.toolText = { handle: state.item, path: 'arguments', fieldState };
+    } else {
+      const node = state.fieldState;
+      node.input = fieldState;
+      state.toolText = { handle: state.item, path: 'input', fieldState };
+    }
+    outputState[state.outputIndex] = state.fieldState;
+    return state.toolText;
+  };
+
+  const appendTextAtom = (target: ResponsesTextTarget, text: string): void => {
+    if (target.fieldState === undefined) target.handle.append(target.path, text);
+    else target.handle.append(target.path, text, [appendField(options.roundTrip.builder, target.fieldState, text)]);
+  };
+  const reconcileAppend = (target: ResponsesTextTarget, snapshot: unknown): string => {
+    const { handle, path } = target;
     const absolutePath = handle.resolve(path);
     if (typeof snapshot !== 'string') throw new TypeError(`Responses text snapshot must be a string at ${JSON.stringify(absolutePath)}`);
     const current = handle.current<string>(path);
@@ -212,14 +260,23 @@ export const irFromOpenAIResponses = async function* (
     if (current === snapshot) return snapshot;
     if (current === undefined) {
       handle.initialize(path, '');
-      if (snapshot !== '') handle.append(path, snapshot);
+      if (snapshot !== '') appendTextAtom(target, snapshot);
       return snapshot;
     }
     if (!snapshot.startsWith(current)) {
       throw new TypeError(`Responses snapshot cannot replace streamed text at ${JSON.stringify(absolutePath)}`);
     }
     const suffix = snapshot.slice(current.length);
-    if (suffix !== '') handle.append(path, suffix);
+    if (suffix !== '') {
+      if (current === '') appendTextAtom(target, suffix);
+      else {
+        if (target.fieldState !== undefined) {
+          invalidateField(target.fieldState);
+          target.fieldState = undefined;
+        }
+        handle.append(path, suffix);
+      }
+    }
     return snapshot;
   };
 
@@ -232,30 +289,50 @@ export const irFromOpenAIResponses = async function* (
     }
   };
 
-  const ensureReasoningText = (state: ResponsesItemState, field: 'summary' | 'content', index: number): WriteTarget => {
+  const ensureReasoningText = (state: ResponsesItemState, field: 'summary' | 'content', index: number): ResponsesTextTarget => {
     if (state.type !== 'reasoning') throw new TypeError('Responses reasoning text requires a reasoning item');
     state.item ??= ir.item(0, { type: 'reasoning' });
     state.item.ensure(field, []);
-    const length = state.reasoningLengths[field];
+    const targets = state.reasoning[field];
+    const length = targets.length;
     if (index > length) throw new TypeError(`Responses ${field} index is not contiguous`);
     if (index === length) {
       state.item.initialize([field, index], '');
-      state.reasoningLengths[field]++;
+      const fieldState = createFieldState('text');
+      const fieldStateNode = { text: fieldState };
+      const nativeState = state.fieldState;
+      const parts = nativeState[field] ??= [];
+      parts[index] = fieldStateNode;
+      outputState[state.outputIndex] = nativeState;
+      targets.push({ handle: state.item, path: [field, index], fieldState });
     }
-    return { handle: state.item, path: [field, index] };
+    return targets[index];
   };
 
   const ensureMessagePartSlot = (
     state: ResponsesItemState,
     contentIndex: number,
-    create: (item: IRItemHandle) => ResponsesTextPartState,
+    create: (item: IRItemHandle, owner: { readonly outputIndex: number; readonly fieldState: MessageFieldState }) => ResponsesTextPartState,
   ): ResponsesTextPartState => {
     if (state.item === undefined || state.type !== 'message') throw new TypeError('Responses content part requires a message item');
     if (contentIndex > state.parts.size) throw new TypeError('Responses content indexes must be contiguous');
-    if (contentIndex === state.parts.size) state.parts.set(contentIndex, create(state.item));
+    if (contentIndex === state.parts.size) state.parts.set(contentIndex, create(state.item, state));
     const partState = state.parts.get(contentIndex);
     if (partState === undefined || partState.type === 'image') throw new TypeError('Responses content indexes must be contiguous');
     return partState;
+  };
+
+  const createMessageTextProvenance = (
+    owner: { readonly outputIndex: number; readonly fieldState: MessageFieldState },
+    contentIndex: number,
+    path: 'text' | 'refusal',
+  ) => {
+    const fieldState = createFieldState('text');
+    const fieldStateNode: TextFieldStateNode = path === 'text' ? { text: fieldState } : { refusal: fieldState };
+    const content = owner.fieldState.content ??= [];
+    content[contentIndex] = fieldStateNode;
+    outputState[owner.outputIndex] = owner.fieldState;
+    return { fieldState };
   };
 
   const ensureOutputTextPart = (
@@ -263,9 +340,11 @@ export const irFromOpenAIResponses = async function* (
     contentIndex: number,
     annotations: readonly unknown[] | undefined,
   ): ResponsesOutputTextPartState => {
-    const part = ensureMessagePartSlot(state, contentIndex, item => ({
+    const part = ensureMessagePartSlot(state, contentIndex, (item, owner) => ({
+      ...createMessageTextProvenance(owner, contentIndex, 'text'),
       type: 'output_text',
       handle: item.part({ type: 'text', text: '', ...(annotations === undefined ? {} : { annotations: [] }) }),
+      path: 'text',
       text: '',
       annotationsInitialized: annotations !== undefined,
       annotationOrdinals: new Map(),
@@ -276,9 +355,11 @@ export const irFromOpenAIResponses = async function* (
   };
 
   const ensureRefusalPart = (state: ResponsesItemState, contentIndex: number): ResponsesRefusalPartState => {
-    const part = ensureMessagePartSlot(state, contentIndex, item => ({
+    const part = ensureMessagePartSlot(state, contentIndex, (item, owner) => ({
+      ...createMessageTextProvenance(owner, contentIndex, 'refusal'),
       type: 'refusal',
       handle: item.part({ type: 'refusal', refusal: '' }),
+      path: 'refusal',
     }));
     if (part.type !== 'refusal') throw new TypeError(`Responses content part type changed from ${part.type} to refusal`);
     return part;
@@ -387,7 +468,7 @@ export const irFromOpenAIResponses = async function* (
 
   const reconcilePartText = (part: ResponsesOutputTextPartState, snapshot: string): string => {
     const previous = part.text;
-    const text = reconcileAppend({ handle: part.handle, path: 'text' }, snapshot);
+    const text = reconcileAppend(part, snapshot);
     if (!text.startsWith(previous)) throw new TypeError('Responses output text state cannot move backwards');
     part.coordinateIndex?.append(text.slice(previous.length));
     part.text = text;
@@ -402,7 +483,7 @@ export const irFromOpenAIResponses = async function* (
         reconcileAnnotations(partState, part.text, part.annotations);
         reconcileLogprobs(state, contentIndex, partState, part.logprobs);
       } else if (part.type === 'refusal') {
-        reconcileAppend({ handle: ensureRefusalPart(state, contentIndex).handle, path: 'refusal' }, part.refusal);
+        reconcileAppend(ensureRefusalPart(state, contentIndex), part.refusal);
       } else throw new TypeError(`Responses message cannot contain ${part.type}`);
     } else if (state.type === 'reasoning') {
       if (part.type !== 'reasoning_text') throw new TypeError(`Responses reasoning cannot contain ${part.type}`);
@@ -425,11 +506,11 @@ export const irFromOpenAIResponses = async function* (
     } else if (item.type === 'function_call') {
       reconcileAssign({ handle: state.item, path: 'call_id' }, item.call_id);
       reconcileAssign({ handle: state.item, path: 'name' }, item.name);
-      reconcileAppend({ handle: state.item, path: 'arguments' }, item.arguments);
+      reconcileAppend(ensureToolText(state), item.arguments);
     } else if (item.type === 'custom_tool_call') {
       reconcileAssign({ handle: state.item, path: 'call_id' }, item.call_id);
       reconcileAssign({ handle: state.item, path: 'name' }, item.name);
-      reconcileAppend({ handle: state.item, path: 'input' }, item.input);
+      reconcileAppend(ensureToolText(state), item.input);
     } else if (item.type === 'image_generation_call' && item.result != null) {
       if (state.parts.size === 0) {
         const handle = state.item.part({
@@ -453,6 +534,12 @@ export const irFromOpenAIResponses = async function* (
     if (state.item !== undefined) {
       const status = 'status' in snapshot ? snapshot.status : undefined;
       state.item.end(status === 'incomplete' ? 'incomplete' : undefined);
+    }
+    if (snapshot.type === 'message' && state.type === 'message' && state.fieldState.content !== undefined) state.fieldState.content.length = snapshot.content.length;
+    if (snapshot.type === 'reasoning' && state.type === 'reasoning') {
+      if (state.fieldState.summary !== undefined) state.fieldState.summary.length = snapshot.summary.length;
+      if (snapshot.content === undefined) delete state.fieldState.content;
+      else if (state.fieldState.content !== undefined) state.fieldState.content.length = snapshot.content.length;
     }
     state.closed = true;
     state.finalSnapshot = snapshot;
@@ -515,7 +602,9 @@ export const irFromOpenAIResponses = async function* (
         }
         const policy = response.error?.code === 'cyber_policy' ? 'cyber' : response.error?.code === 'bio_policy' ? 'bio' : undefined;
         if (policy !== undefined) ir.choice(0).assign('refusal', { category: policy, explanation: response.error?.message });
-        options.roundTrip.onAssistantTurn(0, toOpenAIResponsesInputAssistantTurn(terminalOutput));
+        outputState.length = terminalOutput.length;
+        const input = toOpenAIResponsesInputAssistantTurn<FieldStates>(terminalOutput, outputState);
+        options.roundTrip.onAssistantTurn(0, input.turn, input.state);
         const incompleteReason = response.incomplete_details?.reason === 'content_filter' ? 'content_filter' : 'length';
         const finishReason = policy !== undefined ? 'content_filter'
           : e.type === 'response.incomplete' ? incompleteReason
@@ -558,33 +647,40 @@ export const irFromOpenAIResponses = async function* (
           reconcileAppend(ensureReasoningText(state, 'summary', e.summary_index), e.part.text);
         } else if (e.type === 'response.output_text.delta') {
           const part = ensureOutputTextPart(state, e.content_index, []);
-          if (e.delta !== '') reconcilePartText(part, `${part.text}${e.delta}`);
+          if (e.delta !== '') {
+            appendTextAtom(part, e.delta);
+            part.coordinateIndex?.append(e.delta);
+            part.text += e.delta;
+          }
           if (e.logprobs !== undefined) appendLogprobs(state, e.content_index, part, e.logprobs);
         } else if (e.type === 'response.refusal.delta') {
           const part = ensureRefusalPart(state, e.content_index);
-          if (e.delta !== '') part.handle.append('refusal', e.delta);
+          if (e.delta !== '') appendTextAtom(part, e.delta);
         } else if (e.type === 'response.output_text.done') {
           const part = ensureOutputTextPart(state, e.content_index, []);
           reconcilePartText(part, e.text);
           if (e.logprobs !== undefined) reconcileLogprobs(state, e.content_index, part, e.logprobs);
         } else if (e.type === 'response.refusal.done') {
-          reconcileAppend({ handle: ensureRefusalPart(state, e.content_index).handle, path: 'refusal' }, e.refusal);
+          reconcileAppend(ensureRefusalPart(state, e.content_index), e.refusal);
         } else if (e.type === 'response.output_text.annotation.added') {
           const part = state.parts.get(e.content_index);
           if (part?.type !== 'output_text') throw new TypeError('Responses output-text annotation requires an output-text part');
           reconcileAnnotation(part, part.text, e.annotation_index, e.annotation);
         } else if (e.type === 'response.function_call_arguments.delta' || e.type === 'response.custom_tool_call_input.delta') {
-          if (state.item === undefined) throw new TypeError('Responses tool delta requires a tool item');
-          if (e.delta !== '') state.item.append(e.type === 'response.function_call_arguments.delta' ? 'arguments' : 'input', e.delta);
+          const target = ensureToolText(state);
+          const field = e.type === 'response.function_call_arguments.delta' ? 'arguments' : 'input';
+          if (target.path !== field) throw new TypeError('Responses tool delta does not match its native item');
+          if (e.delta !== '') appendTextAtom(target, e.delta);
         } else if (e.type === 'response.function_call_arguments.done' || e.type === 'response.custom_tool_call_input.done') {
-          if (state.item === undefined) throw new TypeError('Responses tool completion requires a tool item');
+          const target = ensureToolText(state);
           const field = e.type === 'response.function_call_arguments.done' ? 'arguments' : 'input';
-          reconcileAppend({ handle: state.item, path: field }, e.type === 'response.function_call_arguments.done' ? e.arguments : e.input);
+          if (target.path !== field) throw new TypeError('Responses tool completion does not match its native item');
+          reconcileAppend(target, e.type === 'response.function_call_arguments.done' ? e.arguments : e.input);
         } else if (e.type === 'response.reasoning_summary_text.delta' || e.type === 'response.reasoning_text.delta' || e.type === 'response.reasoning.delta') {
           const summary = e.type === 'response.reasoning_summary_text.delta';
           const index = e.type === 'response.reasoning_summary_text.delta' ? e.summary_index : e.content_index;
           const target = ensureReasoningText(state, summary ? 'summary' : 'content', index);
-          if (e.delta !== '') target.handle.append(target.path, e.delta);
+          if (e.delta !== '') appendTextAtom(target, e.delta);
         } else if (e.type === 'response.reasoning_summary_text.done' || e.type === 'response.reasoning_text.done' || e.type === 'response.reasoning.done') {
           const summary = e.type === 'response.reasoning_summary_text.done';
           const index = e.type === 'response.reasoning_summary_text.done' ? e.summary_index : e.content_index;

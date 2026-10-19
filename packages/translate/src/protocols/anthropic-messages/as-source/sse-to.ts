@@ -1,14 +1,17 @@
-import { computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarCarrier, type AnthropicMessagesAssistantTurn } from './round-trip.ts';
+import { collectAnthropicMessagesTextViews, computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import type { IRCollector } from '../../../ir/collector.ts';
-import { isIRItemPath, isIRPartPath } from '../../../ir/operation-paths.ts';
+import { isIRItemPath, isIRPartPath, irPathKey } from '../../../ir/operation-paths.ts';
 import { createIROrdinalMapper } from '../../../ir/ordinal-mapper.ts';
 import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/stream.ts';
 import { IRAbsent, type IR, type IRErrorPayload, type IRJSONObject } from '../../../ir/types.ts';
 import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/unit-queue.ts';
+import { appendContent, createContentState, type ContentState, type ContentStates } from '../../../round-trip/reference/reference-builder.ts';
+import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
-import { parseJSONObject, parseJSONObjectAtCompletion } from '../../../shared/json/object.ts';
+import { parseJSONObject, parseJSONObjectAtCompletion, requireJSONObject } from '../../../shared/json/object.ts';
+import type { AnthropicMessagesAssistantState, AnthropicMessagesInputAssistantTurn } from '../as-target/assistant-turn.ts';
 import {
   generateAnthropicId,
   createAnthropicMessagesEventAccumulator,
@@ -40,6 +43,9 @@ interface MessagesUnit {
   readonly path: IRPath;
   readonly kind: 'text' | 'refusal' | 'audio' | 'image' | 'reasoning' | 'function_call';
   opened: boolean;
+  textContentState?: ContentState<'text'>;
+  // Keep source intervals until their native field is emitted, including terminal JSON normalization.
+  pendingText?: Map<string, TextProvenanceSpan[]>;
   nextPending?: MessagesUnit;
 }
 
@@ -66,7 +72,18 @@ const isPartKind = (kind: MessagesUnit['kind']): boolean =>
 // expect a non-empty base64 value, so we emit the shortest canonical one.
 const TRANSLATED_THINKING_SIGNATURE = 'AA==';
 
-interface AnthropicMessagesSSEOutputOptions extends RoundTripOutputOptions {
+type IRAppendRecord = Extract<IRRecord, { type: 'write'; kind: 'append' }>;
+
+const outputTextKind = (unit: MessagesUnit, record: IRAppendRecord): 'text' | 'thinking' | 'input' | undefined => {
+  const field = record.path.at(-1);
+  if ((unit.kind === 'text' || unit.kind === 'refusal' || unit.kind === 'audio')
+    && (field === 'text' || field === 'refusal' || field === 'transcript')) return 'text';
+  if (unit.kind === 'reasoning' && (record.path[4] === 'summary' || record.path[4] === 'content')) return 'thinking';
+  if (unit.kind === 'function_call' && record.path[4] === 'arguments') return 'input';
+  return undefined;
+};
+
+interface AnthropicMessagesSSEOutputOptions extends RoundTripOutputOptions<'anthropicMessages'> {
   parseToolArguments?: (text: string) => IRJSONObject;
 }
 
@@ -81,6 +98,7 @@ export const anthropicMessagesFromIR = async function* (
   const pending = createIRUnitQueue<MessagesUnit>();
   const ordinals = createIROrdinalMapper();
   const nativeAccumulator = createAnthropicMessagesEventAccumulator();
+  const contentState: NonNullable<AnthropicMessagesAssistantState<ContentStates>['content']> = [];
   let nextBlockIndex = 0;
   // Keep only the frontier block wire-open so the finish-time sidecar can close
   // before it. Clients that require serial blocks reorder this in the gateway.
@@ -128,6 +146,14 @@ export const anthropicMessagesFromIR = async function* (
     }
   };
 
+  const appendPendingText = (unit: MessagesUnit, path: IRPath, text: string, content: ContentState): void => {
+    const key = irPathKey(path);
+    replayTextProvenance(text, unit.pendingText?.get(key) ?? [], (value, referencePieceIds) => {
+      appendContent(options.roundTrip.builder, content, value, referencePieceIds);
+    });
+    unit.pendingText?.delete(key);
+  };
+
   // Opens the waiting units in IR order, until one still lacks what its start event needs.
   const openPendingUnits = (state: IR, collector: IRCollector): AnthropicMessagesStreamEventEx[] => {
     const pendingEvents: AnthropicMessagesStreamEventEx[] = [];
@@ -162,6 +188,10 @@ export const anthropicMessagesFromIR = async function* (
       if (block === undefined) { units.delete(unit.path); continue; }
       unit.opened = true;
       const index = ordinals.open(unit.path);
+      if (block.type === 'thinking' || block.type === 'text') {
+        unit.textContentState ??= createContentState(options.roundTrip.builder, 'text');
+        contentState[index] = block.type === 'thinking' ? { thinking: unit.textContentState } : { text: unit.textContentState };
+      }
       nextBlockIndex = Math.max(nextBlockIndex, index + 1);
       pendingEvents.push({ type: 'content_block_start', index, content_block: block });
       const delta = (value: AnthropicMessagesContentBlockDeltaEvent['delta']): void => {
@@ -169,8 +199,16 @@ export const anthropicMessagesFromIR = async function* (
       };
       if (item.type === 'message' && part !== undefined) {
         const text = part.type === 'text' ? part.text : part.type === 'refusal' ? part.refusal : part.type === 'audio' ? part.audio.transcript ?? '' : '';
+        if (unit.textContentState === undefined) throw new Error('Missing Messages text content state');
+        const path = [...unit.path, ...(part.type === 'audio' ? ['audio', 'transcript'] : [part.type === 'refusal' ? 'refusal' : 'text'])];
+        appendPendingText(unit, path, text, unit.textContentState);
         if (text !== '') delta({ type: 'text_delta', text });
       } else if (item.type === 'reasoning' && block.type === 'thinking') {
+        const thinkingState = unit.textContentState;
+        if (thinkingState === undefined) throw new Error('Missing Messages thinking content state');
+        for (const field of ['summary', 'content'] as const) (item[field] ?? []).forEach((text, index) => {
+          appendPendingText(unit, [...unit.path, field, index], text, thinkingState);
+        });
         const text = [...item.summary ?? [], ...item.content ?? []].join('');
         if (text !== '') delta({ type: 'thinking_delta', thinking: text });
       } else if (item.type === 'function_call' && options.parseToolArguments === undefined && item.arguments !== '') {
@@ -221,6 +259,22 @@ export const anthropicMessagesFromIR = async function* (
     }
 
     registerUnits(record, state);
+    const pendingUnit = units.forRecord(record, state);
+    if (pendingUnit !== undefined && record.type === 'write' && record.kind === 'append') {
+      const kind = outputTextKind(pendingUnit, record);
+      if (kind !== undefined && (!pendingUnit.opened || kind === 'input')) {
+        const text = collector.value<string>(record.path);
+        if (text === undefined) throw new Error('Missing pending Messages text');
+        const fields = pendingUnit.pendingText ??= new Map();
+        const key = irPathKey(record.path);
+        const atoms = fields.get(key) ?? [];
+        atoms.push(provenanceSpanForAppend(text, record.value, record.referencePieceIds));
+        fields.set(key, atoms);
+      } else if (kind !== undefined) {
+        if (pendingUnit.textContentState === undefined) throw new Error('Missing Messages text content state');
+        appendContent(options.roundTrip.builder, pendingUnit.textContentState, record.value, record.referencePieceIds);
+      }
+    }
     for (const event of openPendingUnits(state, collector)) {
       if (event.type === 'content_block_start' && pendingBlockStop !== undefined) {
         yield pendingBlockStop;
@@ -233,13 +287,12 @@ export const anthropicMessagesFromIR = async function* (
     if (unit?.opened && record.type === 'write') {
       const index = ordinals.get(unit.path);
       if (record.kind === 'append') {
-        const field = record.path.at(-1);
-        if ((unit.kind === 'text' || unit.kind === 'refusal' || unit.kind === 'audio')
-          && (field === 'text' || field === 'refusal' || field === 'transcript')) {
+        const kind = outputTextKind(unit, record);
+        if (kind === 'text') {
           yield blockDelta(index, { type: 'text_delta', text: record.value });
-        } else if (unit.kind === 'reasoning' && (record.path[4] === 'summary' || record.path[4] === 'content')) {
+        } else if (kind === 'thinking') {
           yield blockDelta(index, { type: 'thinking_delta', thinking: record.value });
-        } else if (unit.kind === 'function_call' && record.path[4] === 'arguments' && options.parseToolArguments === undefined) {
+        } else if (kind === 'input' && options.parseToolArguments === undefined) {
           yield blockDelta(index, { type: 'input_json_delta', partial_json: record.value });
         }
       }
@@ -248,6 +301,7 @@ export const anthropicMessagesFromIR = async function* (
     if ((record.type === 'item_end' || record.type === 'part_end') && unit !== undefined) {
       if (unit.opened) {
         const index = ordinals.get(unit.path);
+        let serializedInput: string | undefined;
         if (unit.kind === 'function_call') {
           // Tool validation and optional repair run on the complete terminal arguments.
           const item = state.choices[0].items[unit.path[3] as number];
@@ -255,11 +309,28 @@ export const anthropicMessagesFromIR = async function* (
           if (options.parseToolArguments !== undefined) {
             const parsed = parseJSONObject(item.arguments, options.parseToolArguments);
             const serialized = JSON.stringify(parsed);
+            serializedInput = serialized;
             if (serialized !== '') yield blockDelta(index, { type: 'input_json_delta', partial_json: serialized });
-          } else parseJSONObjectAtCompletion(item.arguments, record.type === 'item_end' && record.status === 'incomplete' ? 'truncated' : 'complete');
+          } else {
+            const parsed = parseJSONObjectAtCompletion(item.arguments, record.type === 'item_end' && record.status === 'incomplete' ? 'truncated' : 'complete');
+            if (parsed.completion === 'complete') serializedInput = JSON.stringify(parsed.value);
+          }
         }
         if (unit.kind === 'reasoning') yield blockDelta(index, { type: 'signature_delta', signature: TRANSLATED_THINKING_SIGNATURE });
         const stop = emit({ type: 'content_block_stop', index });
+        if (unit.kind === 'function_call') {
+          if (serializedInput === undefined) {
+            const block = nativeAccumulator.contentBlock(index);
+            if (block?.type !== 'tool_use') throw new Error('Messages function unit did not produce a native tool block');
+            serializedInput = JSON.stringify(requireJSONObject(block.input));
+          }
+          const content = createContentState(options.roundTrip.builder, 'json');
+          contentState[index] = { input: content };
+          const item = state.choices[0].items[unit.path[3] as number];
+          if (item.type !== 'function_call') throw new Error('Messages function unit requires a function item');
+          if (serializedInput === item.arguments) appendPendingText(unit, [...unit.path, 'arguments'], serializedInput, content);
+          else appendContent(options.roundTrip.builder, content, serializedInput);
+        }
         ordinals.close(unit.path);
         if (nextBlockIndex > index + 1) yield stop;
         else {
@@ -275,9 +346,14 @@ export const anthropicMessagesFromIR = async function* (
     }
     if (record.type === 'finish') {
       const nativeResult = nativeAccumulator.result();
-      const targetTurn: AnthropicMessagesAssistantTurn = [{ role: 'assistant', content: nativeResult.content }];
-      const turnDigest = await computeAnthropicMessagesTurnDigest(targetTurn);
-      const data = await options.roundTrip.prepareSidecar(0, turnDigest);
+      contentState.length = nativeResult.content.length;
+      const targetTurn: AnthropicMessagesInputAssistantTurn = {
+        role: 'assistant',
+        content: nativeResult.content.map(block => block.type === 'tool_use' ? { ...block, input: requireJSONObject(block.input) } : block),
+      };
+      const assistantState: AnthropicMessagesAssistantState<ContentStates> = { content: contentState };
+      const sourceTurnDigest = await computeAnthropicMessagesTurnDigest([targetTurn]);
+      const data = await options.roundTrip.prepareSidecar(0, sourceTurnDigest, targetTurn, assistantState, collectAnthropicMessagesTextViews([targetTurn]));
       const carrier = createAnthropicMessagesSidecarCarrier(data);
       yield emit({ type: 'content_block_start', index: nextBlockIndex, content_block: carrier });
       yield emit({ type: 'content_block_stop', index: nextBlockIndex });

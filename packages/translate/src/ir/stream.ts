@@ -6,7 +6,7 @@ export type IRPath = readonly (string | number)[];
 export type IRWrite = Readonly<
   | { type: 'write'; kind: 'initialize'; path: IRPath; value: IRValue }
   | { type: 'write'; kind: 'assign'; path: IRPath; value: IRValue }
-  | { type: 'write'; kind: 'append'; path: IRPath; value: string }>;
+  | { type: 'write'; kind: 'append'; path: IRPath; value: string; referencePieceIds?: readonly number[] }>;
 export type IREvent = Readonly<
   | { type: 'start'; id?: string; created?: number }
   | { type: 'item_end'; choice: number; item: number; status?: 'completed' | 'incomplete' }
@@ -22,7 +22,7 @@ export type IRRelativePath = string | number | IRPath;
 export interface IRWriteHandle {
   readonly path: IRPath;
   readonly index: number;
-  append: (path: IRRelativePath, value: string) => void;
+  append: (path: IRRelativePath, value: string, referencePieceIds?: readonly number[]) => void;
   assign: (path: IRRelativePath, value: unknown) => void;
   initialize: (path: IRRelativePath, value: unknown) => void;
   ensure: (path: IRRelativePath, initialValue: unknown) => void;
@@ -75,14 +75,20 @@ export const createIRBuilder = (maxChoices = 1) => {
     write({ type: 'write', kind: 'initialize', path, value: value as IRValue });
     remember(path, value);
   };
-  const append = (path: IRPath, value: string): void => write({ type: 'write', kind: 'append', path, value });
+  const append = (path: IRPath, value: string, referencePieceIds?: readonly number[]): void => write({
+    type: 'write',
+    kind: 'append',
+    path,
+    value,
+    ...(referencePieceIds === undefined ? {} : { referencePieceIds: [...referencePieceIds] }),
+  });
   const event = (value: IREvent): void => { collector.applyEvent(value); records.push(value); };
   const drain = (): readonly IRRecord[] => { const drained = records; records = []; return drained; };
   const relativePath = (base: IRPath, path: IRRelativePath): IRPath => [...base, ...Array.isArray(path) ? path : [path]];
   const writeHandle = (path: IRPath, index: number): IRWriteHandle => ({
     path,
     index,
-    append: (subpath, value) => append(relativePath(path, subpath), value),
+    append: (subpath, value, referencePieceIds) => append(relativePath(path, subpath), value, referencePieceIds),
     assign: (subpath, value) => assign(relativePath(path, subpath), value),
     initialize: (subpath, value) => initialize(relativePath(path, subpath), value),
     ensure: (subpath, initialValue) => {
