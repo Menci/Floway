@@ -260,7 +260,7 @@ export const isHostedWebSearchTool = (tool: OpenAIResponsesTool): tool is OpenAI
 //   `return_token_budget` default `'default'` and
 //   `search_content_types` default `['text']` — observed verbatim in
 //   Copilot's `/responses` echo for `tools: [{type: 'web_search'}]`.
-export const canonicalizeWebSearchTool = (raw: OpenAIResponsesTool): OpenAIResponsesHostedTool | undefined => {
+export const recognizeWebSearchTool = (raw: OpenAIResponsesTool): OpenAIResponsesHostedTool | undefined => {
   if (!isHostedWebSearchTool(raw)) return undefined;
   const canonical: OpenAIResponsesHostedTool = {
     ...raw,
@@ -684,7 +684,7 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
       ? {
           hosted: {
             hostedTypes: WEB_SEARCH_HOSTED_TYPE_NAMES,
-            canonicalize: canonicalizeWebSearchTool,
+            recognizeHostedTool: recognizeWebSearchTool,
             buildFunctionTool: buildShimFunctionTool,
             dispatcher: ({ intercepted, loopState }) => {
               const commands = intercepted.parsedArguments ?? {};

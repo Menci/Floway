@@ -55,7 +55,7 @@ export interface InterceptedFunctionCall {
   parsedArguments: Record<string, unknown> | null;
 }
 
-export interface ServerToolTerminal {
+export interface ServerToolSlotResult {
   item: ServerToolOutputItem;
   endEvents: ServerToolLifecycleEvent[];
   replayData?: unknown;
@@ -88,7 +88,7 @@ export interface ServerToolResultSlot {
   // streamed backend delivers over the course of the call — and returns the
   // terminal item plus its closing events and replay data. A tool with no
   // progressive output simply yields nothing and returns immediately.
-  run: () => AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal>;
+  run: () => AsyncGenerator<ServerToolLifecycleEvent, ServerToolSlotResult>;
 }
 
 export type ServerToolOutputItem = { type: string; id?: string; [key: string]: unknown };
@@ -117,7 +117,7 @@ export type ServerToolDispatcher = (args: {
 // registration cannot silently omit part of a server-tool family.
 export interface ServerToolHostedDispatch {
   hostedTypes: readonly string[];
-  canonicalize: (raw: OpenAIResponsesTool) => OpenAIResponsesHostedTool | undefined;
+  recognizeHostedTool: (raw: OpenAIResponsesTool) => OpenAIResponsesHostedTool | undefined;
   buildFunctionTool: (canonical: OpenAIResponsesHostedTool, toolName: string) => OpenAIResponsesFunctionTool;
   dispatcher: ServerToolDispatcher;
 }
@@ -390,7 +390,7 @@ const rewriteToolsForHostedShim = (
   let canonicalHostedTool: OpenAIResponsesHostedTool | undefined = undefined;
   let replacementIndex = -1;
   for (const raw of tools) {
-    const canonical = hosted.canonicalize(raw);
+    const canonical = hosted.recognizeHostedTool(raw);
     if (canonical === undefined) {
       rewritten.push(raw);
       continue;
@@ -415,7 +415,7 @@ const rewriteHostedDeclarations = (
 ): { payload: CanonicalOpenAIResponsesPayload; canonicalTopLevelHostedTool: OpenAIResponsesHostedTool | undefined } => {
   let canonicalHostedTool: OpenAIResponsesHostedTool | undefined;
   const rewrite = (tools: OpenAIResponsesTool[]): OpenAIResponsesTool[] => {
-    if (!tools.some(tool => hosted.canonicalize(tool) !== undefined)) return tools;
+    if (!tools.some(tool => hosted.recognizeHostedTool(tool) !== undefined)) return tools;
     const result = rewriteToolsForHostedShim(tools, hosted, toolName);
     canonicalHostedTool = result.canonicalHostedTool;
     return result.rewritten;
@@ -552,7 +552,7 @@ const serverToolEndFrames = (
   merge: MergeState,
   outputIndex: number,
   slot: ServerToolResultSlot,
-  result: ServerToolTerminal,
+  result: ServerToolSlotResult,
 ): ProtocolFrame<OpenAIResponsesStreamEventEx>[] => {
   const frames = [
     ...result.endEvents.map(event => stampServerToolEvent(merge, outputIndex, slot.id, event)),

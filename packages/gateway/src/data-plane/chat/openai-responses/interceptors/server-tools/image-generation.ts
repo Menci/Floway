@@ -8,7 +8,7 @@ import type { AttemptState } from '../../../../shared/gateway-ctx.ts';
 import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromOpenAIImagesBody } from '../../../../shared/telemetry/usage.ts';
 import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-loader.ts';
-import type { ServerToolHistoryExpansion, ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
+import type { ServerToolHistoryExpansion, ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolSlotResult } from '../server-tool-shim.ts';
 import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
 import { decodeForgivingBase64, encodeHex, isImageMediaType, isJsonObject, mediaTypeEssence, parseSSEStream } from '@floway-dev/protocols/common';
 import {
@@ -95,7 +95,7 @@ export const isHostedImageGenerationTool = (tool: OpenAIResponsesTool): tool is 
 // (all `'auto'`) signal "backend decides" rather than concrete values
 // the model needs. Preserving the client's raw shape keeps the echo
 // round-trip minimal — anything the client didn't send stays absent.
-export const canonicalizeImageGenerationTool = (raw: OpenAIResponsesTool): OpenAIResponsesHostedTool | undefined =>
+export const recognizeImageGenerationTool = (raw: OpenAIResponsesTool): OpenAIResponsesHostedTool | undefined =>
   isHostedImageGenerationTool(raw) ? raw : undefined;
 
 // A base64-data-URL or bare-base64 image source bound for an edit call.
@@ -1173,7 +1173,7 @@ export const imageTerminal = (
   prompt: string,
   action: 'generate' | 'edit',
   outcome: ImageOutcome,
-): ServerToolTerminal => {
+): ServerToolSlotResult => {
   if (!outcome.ok) {
     const item: ServerToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCallEx, 'id'> = {
       type: 'image_generation_call',
@@ -1254,7 +1254,7 @@ const streamImageGeneration = (
   isEdit: boolean,
   sources: readonly ImageSource[],
   state: ShimState,
-) => async function* (): AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal> {
+) => async function* (): AsyncGenerator<ServerToolLifecycleEvent, ServerToolSlotResult> {
   const resolved = await resolveImageCandidate(isEdit, state);
   if (!resolved.ok) return imageTerminal(prompt, action, { ok: false, error: resolved.error });
   const { provider, fetcher } = resolved.candidate;
@@ -1269,7 +1269,7 @@ const streamImageGeneration = (
     operation: isEdit ? 'image_edit' : 'image_generation',
     runtimeLocation: state.runtimeLocation,
   };
-  const finish = (outcome: ImageOutcome): ServerToolTerminal => {
+  const finish = (outcome: ImageOutcome): ServerToolSlotResult => {
     recordPerformance({ attempt, backgroundScheduler: state.backgroundScheduler }, perfContext, !outcome.ok, 0, performance.now());
     return imageTerminal(prompt, action, outcome);
   };
@@ -1482,7 +1482,7 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
     expandHistoryItem,
     hosted: {
       hostedTypes: ['image_generation'],
-      canonicalize: canonicalizeImageGenerationTool,
+      recognizeHostedTool: recognizeImageGenerationTool,
       buildFunctionTool: buildImageGenerationFunctionTool,
       dispatcher: ({ intercepted }) => {
         const promptArg = intercepted.parsedArguments !== null && typeof intercepted.parsedArguments.prompt === 'string'
