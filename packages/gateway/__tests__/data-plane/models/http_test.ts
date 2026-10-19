@@ -595,6 +595,7 @@ test('model discovery returns empty catalogs when no provider is configured', as
     { path: '/v1beta/models', body: { models: [] } },
     { path: '/models', userAgent: 'codex_cli_rs/987.654.321', body: { models: [] } },
     { path: '/models', userAgent: 'claude-code/2.1.206', body: { data: [], first_id: null, has_more: false, last_id: null } },
+    { path: '/models', userAgent: 'pi/0.68.0', body: { models: [] } },
     { path: '/v1/models', userAgent: 'omp/18.8.4', body: { api: 'floway:floway', models: [], wireApis: {}, streamOptions: {}, payloadRemovals: {} } },
   ];
   await withMockedFetch(request => {
