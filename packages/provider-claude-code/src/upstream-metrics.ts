@@ -1,7 +1,7 @@
 import type { ClaudeCodeQuotaSnapshot } from './quota.ts';
 import { decimalStringToNumber, multiplyDecimalStrings } from '@floway-dev/protocols/common';
 import type { UpstreamMetrics } from '@floway-dev/provider';
-import { upstreamMetricAxisPriority, type UpstreamMetricDisplay, type UpstreamMetricIdentity } from '@floway-dev/provider/browser';
+import { quotaPercentDisplay, resolveUpstreamMetricDisplaySeries as resolveDisplaySeries, upstreamMetricAxisPriority, type UpstreamMetricDisplay, type UpstreamMetricDisplayOptions, type UpstreamMetricDisplaySeries, type UpstreamMetricIdentity, type UpstreamMetricSample } from '@floway-dev/provider/browser';
 
 // Headers report fractions while OAuth usage reports percentages; both are stored as percentages.
 // https://registry.npmjs.org/@anthropic-ai/claude-code-darwin-arm64/-/claude-code-darwin-arm64-2.1.288.tgz
@@ -34,11 +34,35 @@ export const claudeCodeProbeMetrics = (body: Record<string, unknown>): UpstreamM
   return metrics;
 };
 
-export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIdentity): UpstreamMetricDisplay | null => {
+export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIdentity, options: UpstreamMetricDisplayOptions): UpstreamMetricDisplay | null => {
   const quota = labels.quota;
   if (name !== 'quota.utilization' || typeof quota !== 'string' || Object.keys(labels).length !== 1) return null;
-  return {
-    name: quota, unit: 'percent', axisPriority: quota === 'extra_usage' ? upstreamMetricAxisPriority.extraUsage : upstreamMetricAxisPriority.subscriptionQuota, windowSeconds: null,
-    emptyValue: quota === 'extra_usage' ? 0 : null, form: 'area', toDisplayValue: quota === 'extra_usage' ? value => value : value => 100 - value,
-  };
+  const extra = quota === 'extra_usage';
+  if (extra) {
+    return {
+      name: quota,
+      labelKey: 'dashboard.upstreamMetrics.metrics.extraUsage',
+      unit: 'percent',
+      axisPriority: upstreamMetricAxisPriority.extraUsage,
+      windowSeconds: null,
+      emptyValue: 0,
+      form: 'area',
+      toDisplayValue: value => value,
+    };
+  }
+  const named = quota === 'seven_day_sonnet' ? 'Sonnet' : quota === 'seven_day_opus' ? 'Opus' : null;
+  return quotaPercentDisplay(options, 'used', {
+    name: quota,
+    labelKey: named === null
+      ? options.quotaDisplay === 'used' ? 'dashboard.upstreamMetrics.metrics.usage' : 'dashboard.upstreamMetrics.metrics.remaining'
+      : `dashboard.upstreamMetrics.metrics.named${options.quotaDisplay === 'used' ? 'Usage' : 'Remaining'}`,
+    labelValues: named === null ? undefined : { name: named },
+    axisPriority: upstreamMetricAxisPriority.subscriptionQuota,
+    windowSeconds: quota === 'five_hour' ? 18_000 : 604_800,
+    emptyValue: null,
+    form: 'area',
+  });
 };
+
+export const resolveUpstreamMetricDisplays = (samples: readonly UpstreamMetricSample[], options: UpstreamMetricDisplayOptions): UpstreamMetricDisplaySeries[] =>
+  resolveDisplaySeries(samples, options, resolveUpstreamMetricDisplay);

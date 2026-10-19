@@ -6,8 +6,8 @@ import { LinkedChartHoverProvider, useLinkedChartHover } from '../../../src/comp
 import { UpstreamMetricsChartSection } from '../../../src/components/upstream-metrics/chart';
 import { buildUpstreamMetricsChart, type UpstreamMetricsChart } from '../../../src/components/upstream-metrics/plot';
 import { renderInApp } from '../../render';
-import { upstreamMetricAxisPriority } from '@floway-dev/provider/browser';
-import { resolveUpstreamMetricDisplay } from '@floway-dev/provider-codex/browser';
+import { upstreamMetricAxisPriority, type UpstreamMetricSample } from '@floway-dev/provider/browser';
+import { resolveUpstreamMetricDisplays } from '@floway-dev/provider-codex/browser';
 
 afterEach(() => vi.restoreAllMocks());
 beforeEach(() => vi.spyOn(HTMLSpanElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 40, 12)));
@@ -263,12 +263,14 @@ it.each([Number.MIN_VALUE, -Number.MIN_VALUE, 1e308, -1e308])('renders finite ax
 
 it('renders provider-converted observations consistently in curves, axes, and tooltips', async () => {
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 720, 320));
-  const converted = buildUpstreamMetricsChart([
-    { upstreamId: 'seat', name: 'quota.window.used_percent', labels: { limit: 'codex', window_seconds: 18_000 }, timestamp: 1_000, value: 25 },
-    { upstreamId: 'seat', name: 'quota.window.used_percent', labels: { limit: 'codex', window_seconds: 18_000 }, timestamp: 60_000, value: 25 },
-    { upstreamId: 'seat', name: 'credits.balance', labels: {}, timestamp: 1_000, value: 200 },
-    { upstreamId: 'seat', name: 'credits.balance', labels: {}, timestamp: 60_000, value: 200 },
-  ], { id: 'seat', kind: 'codex', name: 'Seat', hue: 210 }, identity => resolveUpstreamMetricDisplay(identity)!);
+  const source: UpstreamMetricSample[] = [
+    { name: 'quota.window.used_percent', labels: { limit: 'codex', window_seconds: 18_000 }, timestamp: 1_000, value: 25 },
+    { name: 'quota.window.used_percent', labels: { limit: 'codex', window_seconds: 18_000 }, timestamp: 60_000, value: 25 },
+    { name: 'credits.balance', labels: {}, timestamp: 1_000, value: 200 },
+    { name: 'credits.balance', labels: {}, timestamp: 60_000, value: 200 },
+  ];
+  const series = resolveUpstreamMetricDisplays(source, { quotaDisplay: 'remaining' });
+  const converted = buildUpstreamMetricsChart(series, { id: 'seat', kind: 'codex', name: 'Seat', hue: 210 });
   const view = renderInApp(<UpstreamMetricsChartSection chart={converted} start={0} end={60_000} />);
   const application = await screen.findByRole('application', { name: 'Seat' });
   await waitFor(() => expect(view.container.querySelector('.recharts-area-curve')).not.toBeNull());

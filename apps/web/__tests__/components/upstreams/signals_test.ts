@@ -26,7 +26,7 @@ const t = ((key: string, values?: Record<string, unknown>) => {
 const normalizeSpaces = (value: string): string => value.replace(/\u202f/g, ' ');
 
 const NOW = Date.parse('2026-07-28T12:00:00.000Z');
-const readoutOf = (record: unknown) => upstreamReadout(record as UpstreamRecord, t, 'en', NOW);
+const readoutOf = (record: unknown, quotaDisplay: 'remaining' | 'used' = 'remaining') => upstreamReadout(record as UpstreamRecord, t, 'en', NOW, quotaDisplay);
 const rowOf = (record: unknown) => {
   const { plan, signals } = readoutOf(record);
   return [plan, ...signals.map(signal => [signal.value, signal.label].filter(Boolean).join(' '))].join(' | ');
@@ -301,7 +301,8 @@ describe('upstream readout by provider', () => {
 
   it('shows remaining plan credits against their period allowance', () => {
     const record = ollamaRecord({ balance: creditBalance, usage: usageTotals });
-    expect(rowOf(record)).toBe('Ollama Pro | 30% $42.00 / $60.00');
+    expect(rowOf(record)).toBe('Ollama Pro | 30% $18.00 / $60.00');
+    expect(upstreamReadout(record as never, t, 'en', NOW, 'used').signals[0]?.label).toBe('$42.00 / $60.00');
     expect(readoutOf(record).signals[0]?.percent).toBe(70);
     expect(readoutOf(record).signals[0]?.detail).toContain('Oct 1, 2026 to Nov 1, 2026: plan credits used this period.');
   });
@@ -313,7 +314,7 @@ describe('upstream readout by provider', () => {
     })).signals;
     expect(signals).toHaveLength(1);
     expect(signals[0]?.value).toBe('95%');
-    expect(signals[0]?.label).toBe('$3.00 / $60.00');
+    expect(signals[0]?.label).toBe('$57.00 / $60.00');
     expect(signals[0]?.percent).toBe(5);
     expect(signals[0]?.detail).toContain('Nov 1, 2026 to Dec 1, 2026: plan credits used this period.');
   });
@@ -329,5 +330,38 @@ describe('upstream readout by provider', () => {
 
   it('reports nothing for a self-hosted Ollama, which serves no usage endpoint', () => {
     expect(readoutOf({ kind: 'ollama', state: null })).toEqual({ plan: 'Ollama', signals: [] });
+  });
+});
+
+describe('quota direction preference', () => {
+  const copilot = {
+    kind: 'copilot',
+    state: {
+      quotaSnapshot: {
+        data: {
+          observed_at: OBSERVED,
+          reset_at: null,
+          quotas: {
+            premium_interactions: { entitlement: 300, quota_remaining: 213, percent_remaining: 71, overage_count: 0, overage_permitted: true, unlimited: false },
+          },
+        },
+      },
+    },
+  };
+
+  it('reads the same reading as remaining by default and as used on request', () => {
+    expect(rowOf(copilot)).toBe('Copilot | 71%');
+    const used = upstreamReadout(copilot as never, t, 'en', NOW, 'used').signals[0]!;
+    const remaining = upstreamReadout(copilot as never, t, 'en', NOW, 'remaining').signals[0]!;
+    expect(used.value).toBe('29%');
+    expect(remaining.value).toBe('71%');
+    // The severity is a property of the reading, not of the direction shown.
+    expect(used.percent).toBe(29);
+    expect(remaining.percent).toBe(29);
+  });
+
+  it('words the tooltip in the direction the row shows', () => {
+    expect(upstreamReadout(copilot as never, t, 'en', NOW, 'used').signals[0]!.detail.split('\n')[0]).toBe('Allowance: 29% used');
+    expect(upstreamReadout(copilot as never, t, 'en', NOW, 'remaining').signals[0]!.detail.split('\n')[0]).toBe('Allowance: 71% remaining');
   });
 });

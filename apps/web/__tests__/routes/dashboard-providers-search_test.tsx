@@ -17,7 +17,7 @@ afterEach(() => {
 
 describe('who search settings open for', () => {
   it('redirects an operator away before calling an admin endpoint', async () => {
-    const user = { id: 2, username: 'operator', isAdmin: false, upstreamIds: null };
+    const user = { id: 2, username: 'operator', isAdmin: false, upstreamIds: null, preferences: { quotaDisplay: 'remaining' as const, language: null } };
     useAuthStore.getState().primeFromLogin({ token: 'operator-session', user });
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);

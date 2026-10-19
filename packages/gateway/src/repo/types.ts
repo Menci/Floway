@@ -1,6 +1,6 @@
 import type { WebSearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
-import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector } from '@floway-dev/protocols/common';
+import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector, UserPreferences } from '@floway-dev/protocols/common';
 import type { PerformanceTelemetryContext, UpstreamMetricIdentity, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
 
 // Provider config, flag overrides, and catalog transport advance this version;
@@ -275,6 +275,14 @@ export type ApiKeyUpdate = Partial<Pick<
   ApiKey,
   'name' | 'key' | 'lastUsedAt' | 'upstreamIds' | 'dumpRetentionSeconds' | 'openaiResponsesRetentionSeconds'
 >>;
+
+export interface UserPreferencesRepo {
+  /** The stored preferences for a user, or the defaults when the account has never written any. */
+  get(userId: number): Promise<UserPreferences>;
+  save(userId: number, preferences: UserPreferences): Promise<void>;
+  listAll(): Promise<Array<{ userId: number; preferences: UserPreferences }>>;
+  deleteAll(): Promise<void>;
+}
 
 export interface UsersRepo {
   list(): Promise<User[]>;
@@ -619,6 +627,7 @@ export interface Repo {
   upstreamMetrics: UpstreamMetricsRepo;
   apiKeys: ApiKeyRepo;
   users: UsersRepo;
+  userPreferences: UserPreferencesRepo;
   groups: GroupsRepo;
   sessions: SessionsRepo;
   usage: UsageRepo;

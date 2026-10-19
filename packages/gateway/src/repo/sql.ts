@@ -57,6 +57,7 @@ import type {
   UsageRepo,
   User,
   UserDirectory,
+  UserPreferencesRepo,
   UsersRepo,
 } from './types.ts';
 import {
@@ -79,7 +80,7 @@ import { parseServerSecret } from '../shared/server-secret.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
-import { addDecimalStrings, canonicalPricingSelectorKey, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, type AliasSelection, type AnnouncedMetadata } from '@floway-dev/protocols/common';
+import { addDecimalStrings, canonicalPricingSelectorKey, defaultUserPreferences, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, parseStoredUserPreferences, serializeUserPreferences, type AliasSelection, type AnnouncedMetadata, type UserPreferences } from '@floway-dev/protocols/common';
 import type { ProxyFallbackEntry, ModelPrefixConfig, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
 import { normalizeModelPrefix, parsePerformanceOperation, UpstreamGoneError } from '@floway-dev/provider';
 
@@ -998,6 +999,45 @@ const toWebSearchUsageRecord = (row: { provider: string; key_id: string; action:
   };
 };
 
+class SqlUserPreferencesRepo implements UserPreferencesRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async get(userId: number): Promise<UserPreferences> {
+    const row = await this.db
+      .prepare('SELECT preferences_json FROM user_preferences WHERE user_id = ?')
+      .bind(userId)
+      .first<{ preferences_json: string }>();
+    return row === null ? { ...defaultUserPreferences } : parseStoredUserPreferences(row.preferences_json, `user_preferences.user_id=${userId}`);
+  }
+
+  async save(userId: number, preferences: UserPreferences): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO user_preferences (user_id, preferences_json, updated_at)
+         VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+         ON CONFLICT (user_id) DO UPDATE SET
+           preferences_json = excluded.preferences_json,
+           updated_at = excluded.updated_at`,
+      )
+      .bind(userId, serializeUserPreferences(preferences))
+      .run();
+  }
+
+  async listAll(): Promise<Array<{ userId: number; preferences: UserPreferences }>> {
+    const { results } = await this.db
+      .prepare('SELECT user_id, preferences_json FROM user_preferences ORDER BY user_id')
+      .all<{ user_id: number; preferences_json: string }>();
+    return results.map(row => ({
+      userId: row.user_id,
+      preferences: parseStoredUserPreferences(row.preferences_json, `user_preferences.user_id=${row.user_id}`),
+    }));
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.db.prepare('DELETE FROM user_preferences').run();
+  }
+}
+
 class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
   constructor(private db: SqlDatabase) {}
 
@@ -1864,6 +1904,7 @@ class SqlAgentSetupRepo implements AgentSetupRepository {
 export class SqlRepo implements Repo {
   upstreamMetrics: SqlUpstreamMetricsRepo;
   users: UsersRepo;
+  userPreferences: UserPreferencesRepo;
   groups: GroupsRepo;
   sessions: SessionsRepo;
   apiKeys: ApiKeyRepo;
@@ -1916,6 +1957,7 @@ export class SqlRepo implements Repo {
   constructor(private readonly db: SqlDatabase) {
     this.upstreamMetrics = new SqlUpstreamMetricsRepo(db);
     this.users = new SqlUsersRepo(db);
+    this.userPreferences = new SqlUserPreferencesRepo(db);
     this.groups = new SqlGroupsRepo(db);
     this.sessions = new SqlSessionsRepo(db);
     this.apiKeys = new SqlApiKeyRepo(db);

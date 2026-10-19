@@ -1,1 +1,1 @@
-export { resolveUpstreamMetricDisplay } from './upstream-metrics.ts';
+export { resolveUpstreamMetricDisplay, resolveUpstreamMetricDisplays } from './upstream-metrics.ts';

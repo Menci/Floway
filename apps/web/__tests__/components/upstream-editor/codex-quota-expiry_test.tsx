@@ -1,5 +1,5 @@
 import { act, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CodexAccountCard } from '../../../src/components/upstream-editor/codex-account-card';
 import type { CodexRecord } from '../../../src/components/upstreams/codex-account';
@@ -7,6 +7,7 @@ import { UpstreamSignals } from '../../../src/components/upstreams/signals';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { stubLocalStorage } from '../../local-storage-stub';
 import { renderInApp } from '../../render';
+import { primeDefaultSession } from '../../test-session';
 
 stubLocalStorage();
 
@@ -30,6 +31,8 @@ const cases = [
 ];
 
 afterEach(() => vi.useRealTimers());
+
+beforeEach(() => { primeDefaultSession(); });
 
 describe('Codex projected quota on list and card', () => {
   it.each(cases)('expires the known timer without new traffic: $name', async ({ primary, secondary, until, ...scenario }) => {

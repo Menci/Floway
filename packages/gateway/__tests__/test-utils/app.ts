@@ -8,6 +8,7 @@ import { initBackgroundSchedulerResolver } from '../../src/runtime/background.ts
 import { InMemoryRepo } from '../repo/memory.ts';
 import { saveUpstreamForTest } from '../repo/upstreams.ts';
 import { createInMemoryImageProcessor, initEnv, initExternalResourceFetcher, initFileStore, initImageProcessor, initSocketDial, MemoryFileStore } from '@floway-dev/platform';
+import type { UserPreferences } from '@floway-dev/protocols/common';
 import type { ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 
@@ -22,6 +23,7 @@ interface SetupOptions {
   githubAccount?: CopilotAccountFixture;
   copilotUpstream?: UpstreamRecord;
   webSearchConfig?: WebSearchConfig;
+  userPreferences?: UserPreferences;
 }
 
 interface AppTestContext {
@@ -195,6 +197,7 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   // The default API key is owned by a non-admin user so tests can assert
   // "non-admin via API key" behavior straight away. Tests that need an
   // admin caller use `adminSession` (sessions belong to user 1).
+  if (options.userPreferences !== undefined) await repo.userPreferences.save(1, options.userPreferences);
   await repo.users.save({
     id: 2,
     username: 'tester',

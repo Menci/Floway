@@ -45,8 +45,9 @@ const resolveLoginUser = async (c: CtxWithJson<typeof authLoginBody>): Promise<U
 export const authLogin = async (c: CtxWithJson<typeof authLoginBody>) => {
   const user = await resolveLoginUser(c);
   if (!user) return c.json({ error: 'Invalid username or password' }, 401);
-  const [session, knownUpstreamIds] = await Promise.all([getRepo().sessions.create(user.id), loadKnownUpstreamIds()]);
-  return c.json({ token: session.id, user: userToSessionWire(user, knownUpstreamIds) });
+  const repo = getRepo();
+  const [session, knownUpstreamIds, preferences] = await Promise.all([repo.sessions.create(user.id), loadKnownUpstreamIds(), repo.userPreferences.get(user.id)]);
+  return c.json({ token: session.id, user: userToSessionWire(user, knownUpstreamIds, preferences) });
 };
 
 export const authLogout = async (c: AuthedContext) => {
@@ -59,8 +60,9 @@ export const authMe = async (c: AuthedContext) => {
   const user = userFromContext(c);
   const sessionId = sessionIdFromContext(c);
   const apiKey = c.get('apiKey');
+  const [knownUpstreamIds, preferences] = await Promise.all([loadKnownUpstreamIds(), getRepo().userPreferences.get(user.id)]);
   return c.json({
-    user: userToSessionWire(user, await loadKnownUpstreamIds()),
+    user: userToSessionWire(user, knownUpstreamIds, preferences),
     viaApiKey: !sessionId,
     apiKey: apiKey ? { id: apiKey.id, name: apiKey.name } : null,
   });

@@ -14,7 +14,7 @@ import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { USERNAME_PATTERN } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
 import { parseUpstreamIdsValue } from '../shared/upstream-ids.ts';
-import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, parseNonNegativeDecimalString, type PricingSelector } from '@floway-dev/protocols/common';
+import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, parseNonNegativeDecimalString, parseUserPreferences, type PricingSelector, type UserPreferences } from '@floway-dev/protocols/common';
 import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamHue, normalizeUpstreamMetricIdentity, parseFlagOverridesWire, parsePerformanceOperation, type ProxyFallbackEntry, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
@@ -33,6 +33,7 @@ export interface SerializedProxy {
 
 export interface ParsedImportData {
   users: User[];
+  userPreferences: Array<{ userId: number; preferences: UserPreferences }>;
   groups: Array<Group & { memberIds: number[] }>;
   apiKeys: ApiKey[];
   upstreams: UpstreamRecord[];
@@ -255,6 +256,11 @@ const userSchema = z.object({
   }),
   deletedAt: nullableStringSchema('deletedAt'),
   createdAt: nonEmptyStringSchema('createdAt'),
+});
+
+const userPreferencesSchema = z.object({
+  userId: positiveIntegerSchema('userId'),
+  preferences: parsedBy(parseUserPreferences),
 });
 
 const groupTransferSchema = z.object({
@@ -501,6 +507,21 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
     return { type: 'invalid', error: 'invalid users: payload must include user 1 (the seed admin)' };
   }
   const userIds = new Set(users.records.map(user => user.id));
+  const userPreferences = parseCollection('userPreferences', userPreferencesSchema, value.userPreferences, {
+    arrayError: 'userPreferences must be an array',
+    optional: true,
+    validateInput: (input, _index, prior) => {
+      try {
+        const wire = parseRecord(input, 'record must be an object');
+        const userId = parseValue(positiveIntegerSchema('userId'), wire.userId);
+        if (!userIds.has(userId)) return `user ${userId} does not match any user in the payload`;
+        return prior.some(candidate => candidate.userId === userId) ? `duplicate preferences for user ${userId}` : null;
+      } catch (cause) {
+        return messageFor(cause);
+      }
+    },
+  });
+  if (userPreferences.type === 'invalid') return userPreferences;
   const groups = parseCollection('groups', groupTransferSchema, value.groups, {
     arrayError: 'groups must be an array',
     validateInput: (input, _index, prior) => {
@@ -581,6 +602,7 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
     type: 'ok',
     data: {
       users: users.records,
+      userPreferences: userPreferences.records,
       groups: groups.records,
       apiKeys: apiKeys.records,
       upstreams: upstreams.records,

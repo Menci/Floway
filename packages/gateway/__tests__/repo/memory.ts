@@ -70,6 +70,7 @@ import type {
   UsageRepo,
   User,
   UserDirectory,
+  UserPreferencesRepo,
   UsersRepo,
 } from '../../src/repo/types.ts';
 import { serializeStoredConfig, serializeStoredState } from '../../src/repo/upstream-json.ts';
@@ -77,7 +78,7 @@ import { usageMetricRows } from '../../src/repo/usage-metrics.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-histogram.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../../src/shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
-import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, multiplyDecimalStrings, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, type BillingMetric, type DecimalString, type PricingSelector } from '@floway-dev/protocols/common';
+import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, defaultUserPreferences, multiplyDecimalStrings, parseUserPreferences, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, type BillingMetric, type DecimalString, type PricingSelector, type UserPreferences } from '@floway-dev/protocols/common';
 import { normalizeUpstreamMetricIdentity, upstreamMetricIdentityKey, UpstreamGoneError, type UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
@@ -152,6 +153,29 @@ class MemoryUsersRepo implements UsersRepo {
 
   deleteAll(): Promise<void> {
     this.users = [];
+    return Promise.resolve();
+  }
+}
+
+class MemoryUserPreferencesRepo implements UserPreferencesRepo {
+  private readonly preferences = new Map<number, UserPreferences>();
+
+  get(userId: number): Promise<UserPreferences> {
+    const stored = this.preferences.get(userId);
+    return Promise.resolve(stored === undefined ? { ...defaultUserPreferences } : parseUserPreferences(stored));
+  }
+
+  save(userId: number, preferences: UserPreferences): Promise<void> {
+    this.preferences.set(userId, parseUserPreferences(preferences));
+    return Promise.resolve();
+  }
+
+  listAll(): Promise<Array<{ userId: number; preferences: UserPreferences }>> {
+    return Promise.resolve([...this.preferences].map(([userId, preferences]) => ({ userId, preferences: parseUserPreferences(preferences) })));
+  }
+
+  deleteAll(): Promise<void> {
+    this.preferences.clear();
     return Promise.resolve();
   }
 }
@@ -1650,6 +1674,7 @@ export class InMemoryRepo implements Repo {
   };
   apiKeys: ApiKeyRepo;
   users: MemoryUsersRepo;
+  userPreferences: UserPreferencesRepo;
   groups: MemoryGroupsRepo;
   sessions: SessionsRepo;
   usage: UsageRepo;
@@ -1677,6 +1702,7 @@ export class InMemoryRepo implements Repo {
   constructor() {
     this.groups = new MemoryGroupsRepo();
     this.users = new MemoryUsersRepo(this.groups);
+    this.userPreferences = new MemoryUserPreferencesRepo();
     this.sessions = new MemorySessionsRepo();
     this.expirationSweeps = new MemoryExpirationSweepsRepo();
     this.scheduledMaintenance = new MemoryScheduledMaintenanceRepo();

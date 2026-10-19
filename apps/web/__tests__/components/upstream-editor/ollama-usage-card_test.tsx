@@ -1,11 +1,12 @@
 import { fireEvent, screen } from '@testing-library/react';
-import { expect, test, vi } from 'vitest';
+import { beforeEach, expect, test, vi } from 'vitest';
 
 import type { UpstreamRecord } from '../../../src/api/types';
 import { OllamaUsageCard } from '../../../src/components/upstream-editor/ollama-usage-card';
 import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
+import { primeDefaultSession } from '../../test-session';
 import { creditBalance, legacyBalance, usageTotals, pairedUsage } from '../upstreams/ollama-usage-fixture';
 
 const mocks = vi.hoisted(() => ({ refresh: vi.fn() }));
@@ -13,6 +14,8 @@ vi.mock('../../../src/api/client', () => ({
   api: { api: { upstreams: { ollama: { usage: { $post: mocks.refresh } } } } },
   callApi: (operation: () => unknown) => operation(),
 }));
+
+beforeEach(() => { primeDefaultSession(); });
 
 test('successful manual balance refresh clears a persisted failure while displaying the new balance', async () => {
   const record = upstreamRecord('ollama', {

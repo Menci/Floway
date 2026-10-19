@@ -11,7 +11,7 @@ const groups: ControlPlaneGroup[] = [
   { id: 1, name: 'Platform', hue: 210, memberIds: [1], createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
   { id: 2, name: 'Research', hue: 150, memberIds: [1], createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
 ];
-const user: ControlPlaneUser = { id: 1, username: 'frank', isAdmin: true, upstreamIds: null, groupIds: [1, 2], createdAt: '2026-10-01T00:00:00Z' };
+const user: ControlPlaneUser = { id: 1, username: 'frank', isAdmin: true, upstreamIds: null, groupIds: [1, 2], createdAt: '2026-10-01T00:00:00Z', preferences: { quotaDisplay: 'remaining', language: null } };
 const loaderData = { directory: { users: [user], groups }, models: [], upstreams: [], error: null };
 
 afterEach(() => vi.restoreAllMocks());

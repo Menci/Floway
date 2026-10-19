@@ -6,6 +6,7 @@ import { useTranslation } from '../../i18n/translation';
 import { dateTime } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
+import { useUserPreferences } from '../../lib/use-preferences';
 import { StatusBadge } from '../ui/status-badge';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { shortAccountId } from '../upstreams/account-id';
@@ -18,6 +19,7 @@ const { Badge, Text } = fluentComponents;
 
 export function CodexAccountCard({ record }: { record: CodexRecord }) {
   const { t } = useTranslation();
+  const preferences = useUserPreferences();
   const now = useNow(WALL_CLOCK_REFRESH_MS);
   const locale = useLocale();
   const account = record.config.accounts[0];
@@ -89,6 +91,7 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
               key={item.key}
               label={t(`dashboard.upstreamEditor.codex.window.${item.key}`)}
               percent={item.percent}
+              quotaDisplay={preferences.quotaDisplay}
               right={item.windowMinutes !== null && <Text size={200} className="text-fui-fg3">
                 {t('dashboard.upstreamEditor.codex.windowMinutes', { minutes: item.windowMinutes })}
               </Text>}

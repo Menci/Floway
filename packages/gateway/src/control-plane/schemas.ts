@@ -20,7 +20,7 @@ import { z } from 'zod';
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
-import { isTelemetryBucketGranularity, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, tokenUsageUnattributedUserId, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
+import { isTelemetryBucketGranularity, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, QUOTA_DISPLAYS, RERANK_PROTOCOLS, SUPPORTED_LANGUAGES, tokenUsageUnattributedUserId, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire, UPSTREAM_HUE_DEGREES } from '@floway-dev/provider';
 
 // --- shared atoms ---
@@ -283,6 +283,13 @@ export const updateGroupBody = z.object({
 export const changeOwnPasswordBody = z.object({
   currentPassword: passwordSchema,
   newPassword: passwordSchema,
+});
+
+export const updateOwnPreferencesBody = z.object({
+  quotaDisplay: z.enum(QUOTA_DISPLAYS).optional(),
+  language: z.enum(SUPPORTED_LANGUAGES).nullable().optional(),
+}).refine(body => body.quotaDisplay !== undefined || body.language !== undefined, {
+  error: 'Provide quotaDisplay or language',
 });
 
 // --- api keys ---
@@ -755,7 +762,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(22, { error: 'version must be 22 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(23, { error: 'version must be 23 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });

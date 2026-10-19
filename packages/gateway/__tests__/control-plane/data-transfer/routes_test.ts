@@ -330,7 +330,7 @@ const doExport = async (app: Hono, includePerformance = false) => {
   return (await resp.json()) as Record<string, any>;
 };
 
-const doImport = async (app: Hono, mode: string, data: unknown, version: unknown = 22) => {
+const doImport = async (app: Hono, mode: string, data: unknown, version: unknown = 23) => {
   const resp = await app.request('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -341,6 +341,7 @@ const doImport = async (app: Hono, mode: string, data: unknown, version: unknown
 
 const latestImportData = (overrides: Record<string, unknown> = {}) => ({
   users: [SEED_ADMIN],
+  userPreferences: [],
   groups: [],
   apiKeys: [],
   upstreams: [],
@@ -445,13 +446,13 @@ test('import validates generic pricing selectors', async () => {
   assertEquals(String(fractional.body.error).includes('positive safe integer'), true);
 });
 
-test('export emits the v22 envelope with users and upstreams', async () => {
+test('export emits the v23 envelope with users and upstreams', async () => {
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
 
   const result = await doExport(app);
 
-  assertEquals(result.version, 22);
+  assertEquals(result.version, 23);
   assertEquals(typeof result.exportedAt, 'string');
   assertEquals(result.data.users, [SEED_ADMIN]);
   assertEquals(result.data.apiKeys, []);
@@ -520,7 +521,7 @@ test('import rejects any version other than the current one before deleting data
   await repo.apiKeys.save(KEY_A);
   await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
 
-  const VERSION_ERROR = 'version must be 22 — older export formats are not supported; re-export from the current deployment';
+  const VERSION_ERROR = 'version must be 23 — older export formats are not supported; re-export from the current deployment';
   const previousV20 = await doImport(app, 'replace', latestImportData(), 20);
   const previousV11 = await doImport(app, 'replace', latestImportData(), 11);
   const ancientVersion = await doImport(app, 'replace', { apiKeys: [] }, 1);
@@ -577,7 +578,7 @@ test('import replace writes upstreams and clears replaced collections', async ()
   });
 
   assertEquals(result.status, 200);
-  assertEquals(result.body.imported, { users: 1, groups: 0, apiKeys: 1, upstreams: 1, proxies: 0, usage: 1, searchUsage: 1, upstreamMetrics: 0, performance: 0 });
+  assertEquals(result.body.imported, { users: 1, userPreferences: 0, groups: 0, apiKeys: 1, upstreams: 1, proxies: 0, usage: 1, searchUsage: 1, upstreamMetrics: 0, performance: 0 });
   const restoredKey = await repo.apiKeys.findByRawKey(KEY_B.key);
   if (restoredKey === null) throw new Error('restored key missing');
   assertEquals(restoredKey, KEY_B);
@@ -1368,7 +1369,7 @@ test('import rejects legacy enabled_fixes payloads before mutating', async () =>
   assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
 });
 
-test('import rejects missing latest-v22 arrays before clearing existing data', async () => {
+test('import rejects missing latest-v23 arrays before clearing existing data', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
   await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
@@ -1397,14 +1398,14 @@ test('import rejects missing latest-v22 arrays before clearing existing data', a
 test('import validates mode and data before mutating', async () => {
   const { app } = setup();
 
-  const invalidMode = await doImport(app, 'invalid', { groups: [] }, 22);
+  const invalidMode = await doImport(app, 'invalid', { groups: [] }, 23);
   const missingData = await app.request('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode: 'replace', version: 22 }),
+    body: JSON.stringify({ mode: 'replace', version: 23 }),
   });
-  const missingUpstreams = await doImport(app, 'merge', { groups: [] }, 22);
-  const emptyMerge = await doImport(app, 'merge', latestImportData(), 22);
+  const missingUpstreams = await doImport(app, 'merge', { groups: [] }, 23);
+  const emptyMerge = await doImport(app, 'merge', latestImportData(), 23);
 
   assertEquals(invalidMode.status, 400);
   assertEquals(invalidMode.body.error, "mode must be 'merge' or 'replace'");
@@ -1413,7 +1414,7 @@ test('import validates mode and data before mutating', async () => {
   assertEquals(missingUpstreams.status, 400);
   assertEquals(missingUpstreams.body.error, 'invalid apiKeys: apiKeys must be an array');
   assertEquals(emptyMerge.status, 200);
-  assertEquals(emptyMerge.body.imported, { users: 1, groups: 0, apiKeys: 0, upstreams: 0, proxies: 0, usage: 0, searchUsage: 0, upstreamMetrics: 0, performance: 0 });
+  assertEquals(emptyMerge.body.imported, { users: 1, userPreferences: 0, groups: 0, apiKeys: 0, upstreams: 0, proxies: 0, usage: 0, searchUsage: 0, upstreamMetrics: 0, performance: 0 });
 });
 
 const HTTP_PROXY_URL = 'http://198.51.100.20:3128';
@@ -1564,10 +1565,10 @@ test('v22 export/import round-trips users and per-key user_id', async () => {
   await repo.apiKeys.save({ ...KEY_B, userId: USER_BOB.id });
 
   const exportResult = await doExport(app);
-  assertEquals(exportResult.version, 22);
+  assertEquals(exportResult.version, 23);
   assertEquals(exportResult.data.users.map((u: any) => u.id).sort(), [SEED_ADMIN.id, USER_BOB.id]);
 
-  const result = await doImport(app, 'replace', exportResult.data, 22);
+  const result = await doImport(app, 'replace', exportResult.data, 23);
   assertEquals(result.status, 200);
   assertEquals(result.body.imported.users, 2);
   assertEquals(result.body.imported.apiKeys, 2);
@@ -1592,7 +1593,7 @@ test('v22 import rejects api_keys whose user_id does not appear in the payload',
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
-  }, 22);
+  }, 23);
 
   assertEquals(result.status, 400);
   assertEquals(result.body.error, 'invalid apiKeys at index 0: user_id 99 does not match any user in the payload');
@@ -1611,7 +1612,7 @@ test('v22 import rejects malformed users (bad username, bad password_hash)', asy
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
-  }, 22);
+  }, 23);
   assertEquals(badUsername.status, 400);
   assertEquals(String(badUsername.body.error).startsWith('invalid users at index 0:'), true);
 
@@ -1625,7 +1626,7 @@ test('v22 import rejects malformed users (bad username, bad password_hash)', asy
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
-  }, 22);
+  }, 23);
   assertEquals(badHash.status, 400);
   assertEquals(String(badHash.body.error).includes('passwordHash'), true);
 });
@@ -1648,7 +1649,7 @@ test('import rejects a pre-accounts v3 export instead of coercing its legacy api
   }, 3);
 
   assertEquals(result.status, 400);
-  assertEquals(String(result.body.error).includes('version must be 22'), true);
+  assertEquals(String(result.body.error).includes('version must be 23'), true);
   // Rejected at the version gate, before touching any data.
   assertEquals(await repo.apiKeys.list(), [KEY_A]);
   assertEquals((await repo.users.list()).map(u => u.id), [SEED_ADMIN.id]);
@@ -1671,7 +1672,7 @@ test('replace-mode import clears sessions before writing users', async () => {
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
-  }, 22);
+  }, 23);
 
   assertEquals(result.status, 200);
   // No public listAll on sessions; create a fresh session and check the
@@ -1692,7 +1693,7 @@ test('v22 import rejects users[i].upstreamIds === undefined', async () => {
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
-  }, 22);
+  }, 23);
   assertEquals(result.status, 400);
   expect(result.body.error).toMatch(/upstreamIds/);
 });
@@ -1709,7 +1710,7 @@ test('v22 import rejects users[i].deletedAt of non-string non-null type', async 
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
-  }, 22);
+  }, 23);
   assertEquals(result.status, 400);
   expect(result.body.error).toMatch(/deletedAt/);
 });
@@ -1726,7 +1727,7 @@ test('v22 replace import refuses payload missing user 1', async () => {
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
-  }, 22);
+  }, 23);
   assertEquals(result.status, 400);
   expect(result.body.error).toMatch(/user 1/);
 });
@@ -1757,14 +1758,14 @@ test('a full v22 export re-imports verbatim — the export→import round trip i
   await repo.webSearchConfig.save(config);
 
   const exported = await doExport(app, true);
-  assertEquals(exported.version, 22);
+  assertEquals(exported.version, 23);
 
   // Replace-import the export's own `data`, verbatim. If the export emits any
   // shape the import parser rejects, this 400s — the round trip is the
   // invariant, so this test fails the moment the two sides drift.
-  const result = await doImport(app, 'replace', exported.data, 22);
+  const result = await doImport(app, 'replace', exported.data, 23);
   assertEquals(result.status, 200);
-  assertEquals(result.body.imported, { users: 2, groups: 0, apiKeys: 2, upstreams: 4, proxies: 0, usage: 2, searchUsage: 2, upstreamMetrics: 0, performance: 2 });
+  assertEquals(result.body.imported, { users: 2, userPreferences: 0, groups: 0, apiKeys: 2, upstreams: 4, proxies: 0, usage: 2, searchUsage: 2, upstreamMetrics: 0, performance: 2 });
 
   // Spot-check fidelity across collection types (order-independent).
   assertEquals((await repo.upstreams.list()).find(u => u.id === 'up_codex_a')?.state, CODEX_UPSTREAM.state);
@@ -1788,6 +1789,7 @@ test('any data bearing a historical version is rejected on the version gate, bef
   const wellFormed = {
     groups: [],
     users: [SEED_ADMIN],
+    userPreferences: [],
     apiKeys: [KEY_A],
     upstreams: [upstreamRecordToFullJson(CUSTOM_UPSTREAM)],
     usage: [],
@@ -1797,10 +1799,10 @@ test('any data bearing a historical version is rejected on the version gate, bef
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   };
 
-  for (let version = 1; version < 22; version++) {
+  for (let version = 1; version < 23; version++) {
     const result = await doImport(app, 'replace', wellFormed, version);
     assertEquals(result.status, 400);
-    assertEquals(String(result.body.error).includes('version must be 22'), true);
+    assertEquals(String(result.body.error).includes('version must be 23'), true);
   }
 
   // Nothing was touched — the version gate runs before any delete or write.

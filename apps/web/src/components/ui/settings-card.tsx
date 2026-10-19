@@ -213,6 +213,11 @@ const useStyles = makeStyles({
   // Opening changes nothing else: the header's Checked states repaint it in the
   // same brushes its unchecked ones do.
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L420-L501
+  // The row's click target is a stretched overlay (see expanderDisclosure), so a
+  // clickable row must be the containing block for it. Without this the overlay
+  // resolves against the nearest positioned ancestor above the card -- the page
+  // itself -- and swallows every click on the page.
+  clickable: { position: 'relative' },
   expanderHeader: {
     position: 'relative',
     backgroundColor: 'var(--winui-card-background-fill-default)',
@@ -394,17 +399,39 @@ export function SettingsSwitch({ checked, disabled, label, onChange }: {
   </span>;
 }
 
-export function SettingsCard({ action, description, header, icon }: {
+// SettingsCard's IsClickEnabled: the whole row becomes the button and an
+// ActionIcon names where it goes. A row with an `action` keeps that control as
+// its own click target, so the two are mutually exclusive -- a switch inside a
+// clickable card would otherwise fire both.
+// https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.Properties.cs#L55-L62
+// https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L459-L474
+export function SettingsCard({ action, description, header, icon, onClick }: {
   action?: ReactNode;
   description?: string;
   header: ReactNode;
   icon?: ReactNode;
+  /** Makes the row itself the control that runs this action. */
+  onClick?: () => void;
 }) {
   const styles = useStyles();
+  if (onClick !== undefined && action !== undefined) {
+    throw new Error('A SettingsCard row carries either an action or its own click, not both');
+  }
   return <div className={styles.row}>
-    <div className={styles.card}>
+    <div className={mergeClasses(styles.card, onClick !== undefined && styles.interactive, onClick !== undefined && styles.clickable)}>
+      {onClick !== undefined && <button
+        aria-label={typeof header === 'string' ? header : undefined}
+        className={styles.expanderDisclosure}
+        onClick={onClick}
+        type="button"
+      />}
       <CardText description={description} header={header} icon={icon} />
       {action !== undefined && <span className={styles.action}>{action}</span>}
+      {onClick !== undefined && <span aria-hidden className={styles.chevron}>
+        <svg className={styles.chevronGlyph} fill="currentColor" height="16" viewBox="0 0 16 16" width="16">
+          <path d="M6 3.5a.5.5 0 0 1 .85-.35l4.5 4.5a.5.5 0 0 1 0 .7l-4.5 4.5a.5.5 0 1 1-.7-.7L10.29 8 6.15 3.85A.5.5 0 0 1 6 3.5Z" />
+        </svg>
+      </span>}
     </div>
   </div>;
 }

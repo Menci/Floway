@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import type { ApiResult } from '../../api/client';
 import type { UpstreamRecord } from '../../api/types';
 import { useTranslation } from '../../i18n/translation';
+import { useUserPreferences } from '../../lib/use-preferences';
 import { LinkedChartHoverProvider } from '../charts/linked-hover';
 import { TelemetryFilterFields } from '../telemetry/dimension-controls';
 import { changeTelemetryFilter, changeTelemetryGroupBy } from '../telemetry/filter-state';
@@ -12,7 +13,7 @@ import { PANEL_INSET_CLASS } from '../ui/panel';
 import { TableExpansionRow } from '../ui/table-expansion-row';
 import { UpstreamMetricsChartSection } from '../upstream-metrics/chart';
 import { loadUpstreamMetrics } from '../upstream-metrics/data';
-import { resolveUpstreamMetricDisplay } from '../upstream-metrics/display-name';
+import { resolveUpstreamMetricDisplays } from '../upstream-metrics/display-name';
 import { buildUpstreamMetricsChart } from '../upstream-metrics/plot';
 import { loadUsageOverview } from '../usage/data';
 import { usageDimensions } from '../usage/dimensions';
@@ -72,6 +73,7 @@ function UpstreamTelemetryPanel({ data, record, busy, currentUserId, onQueryChan
   const { t } = useTranslation();
   const { query, loadedAt } = data;
   const identityContext = { currentUserId, fallbackGroup: 'model' as const, userDimensionAvailable: true };
+  const preferences = useUserPreferences();
   const [metric, setMetric] = useState<UsageMetric>('total');
   const [hidden, setHidden] = useState(new Set<string>());
   const [groupWas, setGroupWas] = useState(query.groupBy);
@@ -81,10 +83,12 @@ function UpstreamTelemetryPanel({ data, record, busy, currentUserId, onQueryChan
     .filter(dimension => dimension.key !== 'upstream'), [currentUserId, data.usage, query.filters, t, upstreams]);
   const chart = useMemo(() => {
     return {
-      ...buildUpstreamMetricsChart(data.metrics.records, record,
-        identity => resolveUpstreamMetricDisplay(record, identity, t)), title: t('dashboard.upstreamTelemetry.metrics'),
+      ...buildUpstreamMetricsChart(
+        resolveUpstreamMetricDisplays(record, data.metrics.records, t, { quotaDisplay: preferences.quotaDisplay }),
+        record,
+      ), title: t('dashboard.upstreamTelemetry.metrics'),
     };
-  }, [data.metrics, record, t]);
+  }, [data.metrics, preferences.quotaDisplay, record, t]);
   return <LinkedChartHoverProvider><div className={`${PANEL_INSET_CLASS} ${PANEL_STACK_CLASS} min-w-0`} id={`upstream-telemetry-${encodeURIComponent(record.id)}`}>
     <div className="flex items-end gap-3 min-w-0 flex-wrap">
       <UsageGrouping disabled={busy} dimensions={dimensions} groupBy={query.groupBy} onChange={groupBy => onQueryChange({ ...query, ...changeTelemetryGroupBy(query, groupBy, identityContext) })} />
