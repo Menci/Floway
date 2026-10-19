@@ -1223,12 +1223,16 @@ type OpenAIResponsesStreamEventVariant =
     content_index: number;
     text: string;
   }
+  // Both text events carry the token log probabilities of their span.
+  // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L6966-L6995
+  // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L7044-L7075
   | {
     type: 'response.output_text.delta';
     item_id: string;
     output_index: number;
     content_index: number;
     delta: string;
+    logprobs?: OpenAIResponsesLogprob[];
   }
   | {
     type: 'response.output_text.done';
@@ -1236,6 +1240,7 @@ type OpenAIResponsesStreamEventVariant =
     output_index: number;
     content_index: number;
     text: string;
+    logprobs?: OpenAIResponsesLogprob[];
   }
   | {
     type: 'response.refusal.delta';
@@ -1309,11 +1314,14 @@ type OpenAIResponsesStreamEventVariant =
     output_index: number;
     delta: string;
   }
+  // The done event names the function that was called.
+  // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L3062-L3089
   | {
     type: 'response.function_call_arguments.done';
     item_id: string;
     output_index: number;
     arguments: string;
+    name?: string;
   }
   | {
     type: 'response.custom_tool_call_input.delta';
