@@ -141,6 +141,10 @@ export interface OpenAIChatCompletionsLogprobs { content: OpenAIChatCompletionsT
 export interface OpenAIChatCompletionsTokenLogprob { token: string; logprob: number; bytes: number[] | null; top_logprobs: { token: string; logprob: number; bytes: number[] | null }[] }
 export type OpenAIChatCompletionsFinishReason = 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call';
 export interface OpenAIChatCompletionsChoiceNonStreaming { index: number; message: OpenAIChatCompletionsAssistantOutputMessage; finish_reason: OpenAIChatCompletionsFinishReason; logprobs: OpenAIChatCompletionsLogprobs | null }
+export interface OpenAIChatCompletionsChoiceNonStreamingEx extends Omit<OpenAIChatCompletionsChoiceNonStreaming, 'message'> {
+  [field: string]: unknown;
+  message: OpenAIChatCompletionsAssistantOutputMessageEx;
+}
 export interface OpenAIChatCompletionsResult {
   id: string; object: 'chat.completion'; created: number; model: string;
   metadata?: Official.ChatCompletion['metadata'];
@@ -149,6 +153,10 @@ export interface OpenAIChatCompletionsResult {
   service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
   system_fingerprint?: string | null;
   usage?: OpenAIChatCompletionsUsage;
+}
+export interface OpenAIChatCompletionsResultEx extends Omit<OpenAIChatCompletionsResult, 'choices'> {
+  [field: string]: unknown;
+  choices: OpenAIChatCompletionsChoiceNonStreamingEx[];
 }
 export interface OpenAIChatCompletionsToolCallDelta { index: number; id?: string; type?: 'function' | 'custom'; function?: { name?: string; arguments?: string }; custom?: { name?: string; input?: string } }
 export interface OpenAIChatCompletionsToolCallDeltaEx extends OpenAIChatCompletionsToolCallDelta { [field: string]: unknown; extra_content?: unknown; provider_specific_fields?: unknown }
@@ -171,5 +179,5 @@ export interface OpenAIChatCompletionsStreamEvent {
 export * from './errors.ts';
 export { parseOpenAIChatCompletionsStream, type ParseOpenAIChatCompletionsStreamOptions } from './stream.ts';
 export { collectOpenAIChatCompletionsProtocolEventsToResult } from './to-result.ts';
-export { reassembleOpenAIChatCompletionsEvents } from './reassemble.ts';
+export { createOpenAIChatCompletionsEventAccumulator, reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsEventAccumulator } from './reassemble.ts';
 export { openaiChatCompletionsProtocolFrameToSSEFrame } from './to-sse.ts';

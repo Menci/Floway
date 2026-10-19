@@ -8,6 +8,7 @@ import type {
   AnthropicMessagesUsageDelta,
 } from './index.ts';
 import { cloneAnthropicMessagesUsageIterations, splitAnthropicMessagesCacheCreationTokens, usageDeltaKeys } from './usage.ts';
+import { parsePartialJSONWithRawNumbers } from '../common/json.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
 const normalizeAnthropicMessagesTextCitations = (value: AnthropicMessagesTextCitation[] | null | undefined): AnthropicMessagesTextCitation[] => value == null ? [] : [...value];
@@ -18,7 +19,7 @@ type AnthropicMessagesTextBlockAccumulator = {
   citations: AnthropicMessagesTextCitation[];
 };
 
-type AnthropicMessagesToolUseBlockAccumulator = Extract<AnthropicMessagesAssistantContentBlock, { type: 'tool_use' | 'server_tool_use' }> & { inputJson: string };
+type AnthropicMessagesToolUseBlockAccumulator = Extract<AnthropicMessagesAssistantContentBlock, { type: 'tool_use' | 'server_tool_use' }> & { inputJson: string; parsedInputJson: string };
 type AnthropicMessagesBlockAccumulator = (AnthropicMessagesTextBlockAccumulator | AnthropicMessagesToolUseBlockAccumulator | Exclude<AnthropicMessagesAssistantContentBlock, { type: 'text' | 'tool_use' | 'server_tool_use' }>) & { extras?: Record<string, unknown> };
 
 // Field-fidelity contract — see {@link captureExtras}. Anything an upstream
@@ -54,13 +55,13 @@ const createBlockAccumulator = (event: Extract<AnthropicMessagesStreamEventEx, {
   const block = event.content_block;
   const rawBlock = block as unknown as Record<string, unknown>;
   const knownKeys = KNOWN_BLOCK_KEYS_BY_TYPE[block.type] ?? FALLBACK_BLOCK_KNOWN;
-  const extras: Record<string, unknown> = {};
+  const extras: Record<string, unknown> = Object.create(null);
   captureExtras(rawBlock, knownKeys, extras);
   const withExtras = <T extends AnthropicMessagesBlockAccumulator>(acc: T): T =>
     Object.keys(extras).length > 0 ? Object.assign(acc, { extras }) : acc;
 
   if (block.type === 'text') return withExtras({ type: 'text', text: block.text, citations: normalizeAnthropicMessagesTextCitations(block.citations) });
-  if (block.type === 'tool_use' || block.type === 'server_tool_use') return withExtras({ ...block, inputJson: '' });
+  if (block.type === 'tool_use' || block.type === 'server_tool_use') return withExtras({ ...block, inputJson: '', parsedInputJson: '' });
   return withExtras({ ...block });
 };
 
@@ -97,10 +98,13 @@ const applyBlockDelta = (block: AnthropicMessagesBlockAccumulator | undefined, e
   }
 };
 
+// The native SDK memoizes partial input by its raw buffer, regardless of stop reason.
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/2979ed5cef4b2f059b95af23e08728c01e588f86/src/internal/message-stream-utils.ts#L6-L28
 const finalizeToolUseInput = (block: AnthropicMessagesBlockAccumulator | undefined): void => {
-  if ((block?.type !== 'tool_use' && block?.type !== 'server_tool_use') || !block.inputJson) return;
+  if ((block?.type !== 'tool_use' && block?.type !== 'server_tool_use') || block.inputJson === block.parsedInputJson) return;
 
-  block.input = JSON.parse(block.inputJson);
+  block.input = parsePartialJSONWithRawNumbers(block.inputJson);
+  block.parsedInputJson = block.inputJson;
 };
 
 const finalizeContentBlock = (block: AnthropicMessagesBlockAccumulator): AnthropicMessagesAssistantContentBlock => {
@@ -115,7 +119,7 @@ const finalizeContentBlock = (block: AnthropicMessagesBlockAccumulator): Anthrop
   }
   case 'tool_use':
   case 'server_tool_use': {
-    const { inputJson: _inputJson, extras: _extras, ...toolUseBlock } = block;
+    const { inputJson: _inputJson, parsedInputJson: _parsedInputJson, extras: _extras, ...toolUseBlock } = block;
     return withExtras(toolUseBlock as AnthropicMessagesAssistantContentBlock);
   }
   default: {
@@ -125,7 +129,12 @@ const finalizeContentBlock = (block: AnthropicMessagesBlockAccumulator): Anthrop
   }
 };
 
-export async function reassembleAnthropicMessagesEvents(events: AsyncIterable<AnthropicMessagesStreamEventEx>): Promise<AnthropicMessagesResult> {
+export interface AnthropicMessagesEventAccumulator {
+  accept: (event: AnthropicMessagesStreamEventEx) => void;
+  result: () => AnthropicMessagesResult;
+}
+
+export const createAnthropicMessagesEventAccumulator = (): AnthropicMessagesEventAccumulator => {
   let id = '';
   let model = '';
   let usage: AnthropicMessagesUsage | undefined;
@@ -135,9 +144,9 @@ export async function reassembleAnthropicMessagesEvents(events: AsyncIterable<An
   let stopSequence: string | null = null;
 
   const blocks: Array<AnthropicMessagesBlockAccumulator | undefined> = [];
-  const resultExtras: Record<string, unknown> = {};
+  const resultExtras: Record<string, unknown> = Object.create(null);
 
-  for await (const event of events) {
+  const accept = (event: AnthropicMessagesStreamEventEx): void => {
     switch (event.type) {
     case 'message_start':
       id = event.message.id;
@@ -166,41 +175,56 @@ export async function reassembleAnthropicMessagesEvents(events: AsyncIterable<An
         stopSequence = event.delta.stop_sequence as string | null;
       }
       if (usage === undefined) throw new Error('Messages message_delta arrived before message_start');
-      applyAnthropicMessagesUsageDelta(usage, event.usage);
-      if (event.usage.cache_creation !== undefined) {
-        if (event.usage.cache_creation === null) usage.cache_creation = null;
+      const deltaUsage = event.usage;
+      applyAnthropicMessagesUsageDelta(usage, deltaUsage);
+      if (deltaUsage?.cache_creation !== undefined) {
+        if (deltaUsage.cache_creation === null) usage.cache_creation = null;
         else {
-          const tokens = splitAnthropicMessagesCacheCreationTokens({ cache_creation: event.usage.cache_creation, ...(usage.cache_creation_input_tokens === null ? {} : { cache_creation_input_tokens: usage.cache_creation_input_tokens }) });
+          const tokens = splitAnthropicMessagesCacheCreationTokens({ cache_creation: deltaUsage.cache_creation, ...(usage.cache_creation_input_tokens === null ? {} : { cache_creation_input_tokens: usage.cache_creation_input_tokens }) });
           usage.cache_creation = { ephemeral_5m_input_tokens: tokens.cacheWrite, ephemeral_1h_input_tokens: tokens.cacheWrite1h };
         }
       }
-      if (event.usage.service_tier != null) usage.service_tier = event.usage.service_tier;
-      if (event.usage.speed != null) usage.speed = event.usage.speed;
-      if (event.usage.inference_geo != null) usage.inference_geo = event.usage.inference_geo;
+      if (deltaUsage?.service_tier != null) usage.service_tier = deltaUsage.service_tier;
+      if (deltaUsage?.speed != null) usage.speed = deltaUsage.speed;
+      if (deltaUsage?.inference_geo != null) usage.inference_geo = deltaUsage.inference_geo;
       break;
     case 'error':
       throw new Error(`Upstream SSE error: ${event.error?.type ?? 'unknown'}: ${event.error?.message ?? JSON.stringify(event)}`);
     case 'message_stop':
+      for (const block of blocks) {
+        finalizeToolUseInput(block);
+      }
+      break;
     case 'ping':
       break;
     }
-  }
+  };
 
-  if (usage === undefined) throw new Error('Messages stream ended without message_start');
-  const content = blocks.flatMap((block): AnthropicMessagesAssistantContentBlock[] => (block ? [finalizeContentBlock(block)] : []));
+  const result = (): AnthropicMessagesResult => {
+    if (usage === undefined) throw new Error('Messages stream ended without message_start');
+    const content = blocks.flatMap((block): AnthropicMessagesAssistantContentBlock[] => (block ? [finalizeContentBlock(block)] : []));
 
-  return {
-    id,
-    type: 'message',
-    role: 'assistant',
-    content,
-    model,
-    stop_reason: stopReason,
-    stop_details: stopDetails,
-    container: null,
-    diagnostics: null,
-    stop_sequence: stopSequence,
-    usage,
-    ...resultExtras,
-  } as AnthropicMessagesResult;
+    return {
+      id,
+      type: 'message',
+      role: 'assistant',
+      content,
+      model,
+      stop_reason: stopReason,
+      stop_details: stopDetails,
+      container: null,
+      diagnostics: null,
+      stop_sequence: stopSequence,
+      usage,
+      ...resultExtras,
+    } as AnthropicMessagesResult;
+  };
+
+  return { accept, result };
+};
+
+export async function reassembleAnthropicMessagesEvents(events: AsyncIterable<AnthropicMessagesStreamEventEx>): Promise<AnthropicMessagesResult> {
+  const accumulator = createAnthropicMessagesEventAccumulator();
+  for await (const event of events) accumulator.accept(event);
+  return accumulator.result();
 }
