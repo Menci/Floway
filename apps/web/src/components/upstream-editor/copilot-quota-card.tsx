@@ -63,13 +63,13 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
         <Text size={300}>{copilotQuotaName(t, bucket.id, 'allowance')}</Text>
         {bucket.kind === 'metered'
           ? <div className="flex items-baseline gap-2">
-              <Text size={200} className="text-fui-fg2">
+              <Text size={200} className="text-fui-fg2 tabular-nums">
                 {t('dashboard.upstreamEditor.copilot.quota.used', {
                   used: formatBucketAmount(bucket, bucket.used, locale),
                   entitlement: formatBucketAmount(bucket, bucket.entitlement, locale),
                 })}
               </Text>
-              <Text size={200} className="text-fui-fg3">
+              <Text size={200} className="text-fui-fg3 tabular-nums">
                 {t('dashboard.upstreamEditor.copilot.quota.remainingPercent', { percent: 100 - bucket.usedPercent })}
               </Text>
             </div>

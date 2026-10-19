@@ -20,7 +20,7 @@ export function QuotaProgressRow({ footer, label, percent, right }: {
     <div className="flex items-baseline justify-between gap-3">
       <Text size={200}>{label}</Text>
       <div className="flex items-baseline gap-2">
-        <Text size={200} className="text-fui-fg2">
+        <Text size={200} className="text-fui-fg2 tabular-nums">
           {clamped === null ? percentText(clamped) : t('dashboard.upstreamEditor.quotaRemainingPercent', { percent: 100 - clamped })}
         </Text>
         {right}

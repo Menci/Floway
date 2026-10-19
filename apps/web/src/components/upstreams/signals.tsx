@@ -291,8 +291,8 @@ export function UpstreamSignals({ record }: { record: UpstreamRecord }) {
       {signals.map(signal => <Tooltip content={signal.detail} key={signal.key} relationship="description">
         <span className={mergeClasses('winui-focus-rect inline-flex items-baseline gap-1 min-w-0', styles.signal)} tabIndex={0}>
           {signal.percent !== null && <ProgressRing percent={100 - signal.percent} tone={quotaRingTone(signal.percent)} />}
-          <Text size={200} className={signal.blocked === true ? styles.blocked : styles.value} weight="medium" wrap={false}>{signal.value}</Text>
-          {signal.label !== null && <Text size={200} className={styles.label} truncate wrap={false}>{signal.label}</Text>}
+          <Text size={200} className={mergeClasses('tabular-nums', signal.blocked === true ? styles.blocked : styles.value)} weight="medium" wrap={false}>{signal.value}</Text>
+          {signal.label !== null && <Text size={200} className={mergeClasses('tabular-nums', styles.label)} truncate wrap={false}>{signal.label}</Text>}
         </span>
       </Tooltip>)}
     </div>

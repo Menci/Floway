@@ -69,7 +69,7 @@ export function UsersTable({
                   </StatusBadge>
                 </TableCell>
                 <TableCell><GroupMemberships groups={user.groupIds.map(id => groups.find(group => group.id === id)!)} /></TableCell>
-                <TableCell className="whitespace-nowrap">
+                <TableCell className="whitespace-nowrap tabular-nums">
                   {user.upstreamIds === null
                     ? t('dashboard.users.upstreams.all')
                     : t('dashboard.users.upstreams.count', { count: user.upstreamIds.length })}

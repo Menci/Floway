@@ -133,13 +133,13 @@ function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRe
       <HttpStatusBadge severity={requestSeverity(status, record.meta.error)}>{status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>
       <Tooltip content={t('dashboard.requests.duration', { value: record.meta.durationMs })} relationship="description">
         <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
-          <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatDuration(record.meta.durationMs)}</Text>
+          <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.meta.durationMs)}</Text>
         </span>
       </Tooltip>
       {record.meta.ttftMs != null && (
         <Tooltip content={t('dashboard.requests.ttft', { value: record.meta.ttftMs })} relationship="description">
           <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
-            <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatDuration(record.meta.ttftMs)}</Text>
+            <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.meta.ttftMs)}</Text>
           </span>
         </Tooltip>
       )}
