@@ -38,7 +38,7 @@ export const roundTripAssistantTurn = async <Source extends keyof AssistantTurnB
   if (selected === undefined || !hasRoundTripTarget(selected.sidecar, target)) return undefined;
   const sourceTurn = selected.candidate.withoutSidecar();
   if (!(await verify(sourceTurn, selected.sidecar.sourceTurnDigest, selected.sidecar.v))) return undefined;
-  const hydrated = await restoreAssistantTurn(target, collectCandidates(sourceTurn), selected.sidecar.targetTurn, selected.sidecar.referencedContentHashes);
-  if (!hydrated.ok) throw new Error(`Authenticated assistant-turn sidecar restoration failed: ${hydrated.reason}`);
-  return { turn: hydrated.turn };
+  const resolved = await restoreAssistantTurn(target, collectCandidates(sourceTurn), selected.sidecar.targetTurn, selected.sidecar.referencedContentHashes);
+  if (!resolved.ok) throw new Error(`Authenticated assistant-turn sidecar restoration failed: ${resolved.reason}`);
+  return { turn: resolved.turn };
 };
