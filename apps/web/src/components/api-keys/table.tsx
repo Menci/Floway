@@ -11,7 +11,7 @@ import { useNow } from '../../lib/use-now';
 import { useDangerActionClasses, useDangerTextClass } from '../ui/danger';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
-import { TABLE_ACTIONS_WIDTH, TableActions, TableTrailingHeader, stopRowSelection } from '../ui/table-actions';
+import { TABLE_ACTIONS_WITH_LEADING_WIDTH, TableActions, TableTrailingHeader, stopRowSelection } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
@@ -149,10 +149,10 @@ export function KeysTable({
       <Table
         {...gridNavigation}
         aria-label={t('dashboard.apiKeys.table.title')}
-        className="min-w-[1080px]"
+        className="min-w-[920px]"
         role="grid"
       >
-        <TableColumns widths={[null, null, '200px', '120px', '120px', '132px', '148px', TABLE_ACTIONS_WIDTH]} />
+        <TableColumns widths={[null, null, '120px', '120px', '132px', '148px', TABLE_ACTIONS_WITH_LEADING_WIDTH]} />
         <TableHeader>
           <TableRow>
             <TableSelectionCell
@@ -165,7 +165,6 @@ export function KeysTable({
             <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'name')} sortDirection={sort.getSortDirection('name')} sortable>
               {t('dashboard.apiKeys.table.name')}
             </TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.apiKeys.table.key')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.apiKeys.table.upstreams')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.apiKeys.table.upstreamOrder')}</TableHeaderCell>
             <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'created')} sortDirection={sort.getSortDirection('created')} sortable>
@@ -201,19 +200,6 @@ export function KeysTable({
               />
               <TableCell className="overflow-hidden"><TableCellLayout truncate>{key.name}</TableCellLayout></TableCell>
               <TableCell className="overflow-hidden">
-                <span className="flex items-center gap-1 min-w-0">
-                  <TruncationTooltip content={key.key} relationship="label">
-                    {measureRef => <code className="winui-focus-rect w-[144px] flex-none truncate" ref={measureRef} tabIndex={0}>{key.key}</code>}
-                  </TruncationTooltip>
-                  <span className="flex-none" {...stopRowSelection}><TooltipIconButton
-                    disabled={disabled}
-                    icon={copyOutcomeIcon(clipboard.outcomeFor(copyTag))}
-                    label={copyLabel(clipboard.outcomeFor(copyTag), t('dashboard.apiKeys.actions.copy'))}
-                    onClick={() => clipboard.copy(key.key, copyTag)}
-                  /></span>
-                </span>
-              </TableCell>
-              <TableCell className="overflow-hidden">
                 <Tooltip content={upstreamsTitle(key, upstreamById, t)} relationship="description">
                   <TableCellLayout
                     truncate
@@ -243,7 +229,12 @@ export function KeysTable({
                   : <span>{t('dashboard.apiKeys.table.never')}</span>}
               </TableCell>
               <TableCell>
-                <TableActions>
+                <TableActions leading={<TooltipIconButton
+                  disabled={disabled}
+                  icon={copyOutcomeIcon(clipboard.outcomeFor(copyTag))}
+                  label={copyLabel(clipboard.outcomeFor(copyTag), t('dashboard.apiKeys.actions.copy'))}
+                  onClick={() => clipboard.copy(key.key, copyTag)}
+                />}>
                   <TooltipIconButton disabled={disabled} icon={<EditRegular />} label={t('dashboard.apiKeys.actions.editNamed', { name: key.name })} onClick={() => onEdit(key)} />
                   <TooltipIconButton disabled={disabled} icon={<ArrowClockwiseRegular />} label={t('dashboard.apiKeys.actions.rotateNamed', { name: key.name })} onClick={() => onRotate(key)} />
                   <TooltipIconButton danger disabled={disabled} icon={<DeleteRegular />} label={t('dashboard.apiKeys.actions.deleteNamed', { name: key.name })} onClick={() => onDelete(key)} />

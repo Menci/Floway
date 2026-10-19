@@ -353,7 +353,6 @@ const zhHansCN = {
         table: {
           title: 'API 密钥',
           name: '名称',
-          key: 'API 密钥',
           upstreams: '上游',
           upstreamOrder: '上游顺序',
           created: '创建时间',

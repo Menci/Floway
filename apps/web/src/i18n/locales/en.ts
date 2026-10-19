@@ -368,7 +368,6 @@ const en = {
         table: {
           title: 'API Keys',
           name: 'Name',
-          key: 'Key',
           upstreams: 'Upstreams',
           upstreamOrder: 'Upstream order',
           created: 'Created',
