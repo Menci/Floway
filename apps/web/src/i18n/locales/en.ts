@@ -186,7 +186,7 @@ const en = {
       },
       siteSettings: {
         branding: 'Branding',
-        description: 'Branding shown to everyone who opens this gateway',
+        description: 'Manage global preferences for this site',
         name: 'Site name',
         nameHint: 'Shown beside the mark and in the browser title. Leave blank to use the built-in name.',
         namePlaceholder: 'Floway',

@@ -13,6 +13,7 @@ const data = {
   upstreamMetrics: [],
   performanceIncluded: false,
   searchConfig: null,
+  siteSettings: { siteName: null },
 };
 
 const backup = (overrides: Record<string, unknown> = {}) => JSON.stringify({
