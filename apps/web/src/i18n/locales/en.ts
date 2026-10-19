@@ -398,7 +398,7 @@ const en = {
           retentionHint:
               'When enabled, model-invoking requests through this key are captured for the configured window',
           randomizeUpstreams: 'Randomize upstream order',
-          randomizeUpstreamsHint: 'Shuffle the effective upstream order for each model resolution',
+          randomizeUpstreamsHint: 'Shuffle the upstream order for each new request, while preserving upstream affinity for existing sessions',
         },
         validation: {
           nameRequired: 'Name is required.',

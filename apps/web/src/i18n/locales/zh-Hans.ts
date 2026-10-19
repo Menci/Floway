@@ -383,7 +383,7 @@ const zhHansCN = {
           retentionHint:
               '启用后，通过该 API 密钥发起的模型请求会在配置窗口内被记录',
           randomizeUpstreams: '随机排列上游顺序',
-          randomizeUpstreamsHint: '每次解析模型时随机排列当前可用的上游',
+          randomizeUpstreamsHint: '为每个新请求随机排列上游顺序，同时为已有会话保留上游亲和性',
         },
         validation: {
           nameRequired: '名称不能为空。',

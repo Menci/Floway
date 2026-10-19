@@ -353,9 +353,11 @@ const useStyles = makeStyles({
     alignItems: 'center',
     columnGap: '12px',
     display: 'flex',
+    flexShrink: 0,
     height: '36px',
     justifyContent: 'flex-end',
     minWidth: 0,
+    whiteSpace: 'nowrap',
     // Wrapped, this row is the one control that was packing itself against the
     // trailing edge; a stretched box would have kept it there.
     [WRAPPED]: { justifyContent: 'flex-start' },
@@ -366,6 +368,7 @@ const useStyles = makeStyles({
   // itself.
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L715-L724
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L7-L8
+  readout: { flexShrink: 0, whiteSpace: 'nowrap' },
   readoutDisabled: { color: 'var(--winui-text-fill-disabled)' },
 });
 
@@ -389,7 +392,7 @@ export function SettingsSwitch({ checked, disabled, label, onChange }: {
   const styles = useStyles();
   const { t } = useTranslation();
   return <span className={styles.switchRow}>
-    <Text className={disabled === true ? styles.readoutDisabled : undefined}>{t(checked ? 'common.on' : 'common.off')}</Text>
+    <Text className={mergeClasses(styles.readout, disabled === true && styles.readoutDisabled)}>{t(checked ? 'common.on' : 'common.off')}</Text>
     <Switch aria-label={label} checked={checked} disabled={disabled} onChange={(_, data) => onChange(data.checked)} />
   </span>;
 }
