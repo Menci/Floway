@@ -11,6 +11,7 @@ import { Input } from '../ui/fluent-form-controls';
 import { Panel } from '../ui/panel';
 import { ScrollArea } from '../ui/scroll-area';
 import { StatusBadge } from '../ui/status-badge';
+import { TableActionsHeader } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { UserIdentity } from '../users/identity';
@@ -93,7 +94,7 @@ function GroupDetails({ disabled, group: selected, onDelete, onEdit, onMemberCha
           <TableHeaderCell className="!pl-[var(--floway-panel-inset)]">{t('dashboard.users.table.username')}</TableHeaderCell>
           <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.role')}</TableHeaderCell>
           <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.upstreams')}</TableHeaderCell>
-          <TableHeaderCell><span className="sr-only">{t('dashboard.users.table.actions')}</span></TableHeaderCell>
+          <TableActionsHeader />
         </TableRow></TableHeader>
         <TableBody>{users.filter(user => members.has(user.id)).map(user => <TableRow className="h-11" key={user.id}>
           <TableCell className="!pl-[var(--floway-panel-inset)]"><UserIdentity username={user.username} /></TableCell>

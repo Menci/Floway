@@ -8,7 +8,7 @@ import { GroupMemberships } from '../groups/memberships';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
 import { StatusBadge } from '../ui/status-badge';
-import { TABLE_ACTIONS_WIDTH, TableActions, TableTrailingHeader } from '../ui/table-actions';
+import { TABLE_ACTIONS_WIDTH, TableActions, TableActionsHeader } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
@@ -54,7 +54,7 @@ export function UsersTable({
             <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.role')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.groups')}</TableHeaderCell>
             <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.upstreams')}</TableHeaderCell>
-            <TableTrailingHeader><span className="sr-only">{t('dashboard.users.table.actions')}</span></TableTrailingHeader>
+            <TableActionsHeader />
           </TableRow>
         </TableHeader>
         <TableBody>
