@@ -64,7 +64,6 @@ export type OpenAIResponsesServePlan =
   | {
     readonly kind: 'ready';
     readonly affinitySelection: AffinityCandidateSelection<CanonicalOpenAIResponsesPayload>;
-    readonly privatePayloads: ReadonlyMap<string, unknown>;
     readonly candidates: readonly ModelCandidate[];
   };
 
@@ -101,7 +100,7 @@ export const prepareOpenAIResponsesServePlan = async (args: {
     if (failure === null) throw error;
     return { kind: 'failure', result: renderOpenAIResponsesFailure(failure) };
   }
-  const affinity = await analyzeOpenAIResponsesAffinity(hydrated.payload, ctx.affinity.codec);
+  const affinity = await analyzeOpenAIResponsesAffinity(hydrated, ctx.affinity.codec);
   const selection = selectAffinityCandidates(viable, affinity);
   if ('kind' in selection) return { kind: 'failure', result: renderOpenAIResponsesFailure(selection) };
   // Stage the user-supplied input from the original payload — not the
@@ -117,5 +116,5 @@ export const prepareOpenAIResponsesServePlan = async (args: {
       result: renderOpenAIResponsesFailure(noViableCandidateFailure(sawModel, prepared.model, failedUpstreams)),
     };
   }
-  return { kind: 'ready', affinitySelection: selection, privatePayloads: hydrated.privatePayloads, candidates: selection.candidates };
+  return { kind: 'ready', affinitySelection: selection, candidates: selection.candidates };
 };

@@ -7,8 +7,7 @@ import type { OpenAIResponsesStatefulStore } from '../openai-responses/items/sto
 
 // Chat-protocol ctx adds affinity, signed sidecars, and the OpenAI Responses item store.
 // The store is present on every chat ctx: native OpenAI Responses entries supply a
-// persisting factory, non-OpenAI-Responses sources a no-backing scratchpad store, so
-// the server-tool shim's request-private state always has a home. Every chat
+// persisting factory, non-OpenAI-Responses sources a no-backing store. Every chat
 // HTTP/WS entry constructs this via `createChatGatewayCtxFromHono` and threads
 // it through serve → narrow → attempt. Passthrough endpoints (OpenAI
 // Embeddings / OpenAI Images / OpenAI Audio Transcriptions / OpenAI

@@ -36,9 +36,6 @@ export const openaiResponsesServe = {
       async candidate => {
         const result = await openaiResponsesAttempt.generate({
           payload: plan.affinitySelection.payloadFor(candidate),
-          sourceState: {
-            privatePayloads: plan.privatePayloads,
-          },
           ctx,
           candidate,
           headers,
@@ -73,9 +70,6 @@ export const openaiResponsesServe = {
       async candidate => {
         const result = await openaiResponsesAttempt.invoke({
           payload: plan.affinitySelection.payloadFor(candidate),
-          sourceState: {
-            privatePayloads: plan.privatePayloads,
-          },
           action: 'compact',
           ctx,
           candidate,

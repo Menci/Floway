@@ -1,15 +1,11 @@
 import { decode as decodeCBOR, Encoder, Tag } from 'cbor-x';
 
 import { decodeCanonicalBase64, decodeCanonicalBase64url, decodeForgivingBase64, encodeBase64, encodeBase64url } from '@floway-dev/protocols/common';
-import { SidecarTaggedValue } from '@floway-dev/translate';
-
-export interface SidecarCodec {
-  encode: (payload: NonNullable<unknown> | null) => Promise<string>;
-  decode: (encoded: string) => Promise<unknown>;
-}
+import { SidecarTaggedValue, type SidecarCodec } from '@floway-dev/translate';
 
 export enum SidecarDomain {
   TranslatedAssistantTurn = 0,
+  OpenAIResponsesHostedToolCall = 1,
 }
 
 export interface SidecarCodecFactory {

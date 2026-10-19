@@ -551,11 +551,6 @@ export interface StoredOpenAIResponsesItem {
 
 export interface StoredOpenAIResponsesItemPayload {
   item: unknown;
-  // Ancillary state stashed alongside the public `item` body but never sent on
-  // the wire: a server-only slot to preserve data a stateless client strips
-  // from the echoed item (e.g. the real `web_search_call` results) so a later
-  // turn can restore it on replay. Persisted and round-tripped verbatim.
-  private?: unknown;
 }
 
 export interface OpenAIResponsesItemsRepo {
