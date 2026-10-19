@@ -62,6 +62,19 @@ const enumerateOneUpstreamCandidates = (
   return { candidates, sawModel, modelsError: snapshot.lastError !== null };
 };
 
+// Fisher-Yates ordering is shared by the two independent routing axes:
+// alias targets and the non-empty upstream candidate groups produced for one
+// concrete model. Keeping the calls independent lets each alias target choose
+// its own upstream order without introducing request-scoped routing state.
+const shuffled = <T>(items: readonly T[]): T[] => {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+};
+
 // Walk every visible upstream in configured order. Snapshot reads never wait
 // for upstream model-list I/O; cold and stale rows submit background refresh.
 // Scheduling failures propagate as internal errors rather than being reported
@@ -77,6 +90,7 @@ export const enumerateRealModelCandidates = (
   providers: readonly GatewayProvider[],
   context: {
     fetcherForUpstream: (upstreamId: string) => Fetcher;
+    randomizeUpstreams: boolean;
     scheduleRefresh: ModelsRefreshScheduler;
   },
 ): {
@@ -84,34 +98,21 @@ export const enumerateRealModelCandidates = (
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
 } => {
-  const { fetcherForUpstream, scheduleRefresh } = context;
+  const { fetcherForUpstream, randomizeUpstreams, scheduleRefresh } = context;
   const failedUpstreams: string[] = [];
-  const candidates: ModelCandidate[] = [];
+  const candidateGroups: ModelCandidate[][] = [];
   let sawModel = false;
   for (const provider of providers) {
     const result = enumerateOneUpstreamCandidates(provider, modelId, kind, {
       fetcher: fetcherForUpstream(provider.upstreamId),
       scheduleRefresh,
     });
-    candidates.push(...result.candidates);
+    if (result.candidates.length > 0) candidateGroups.push(result.candidates);
     sawModel = sawModel || result.sawModel;
     if (result.modelsError) failedUpstreams.push(provider.name);
   }
-  return { candidates, sawModel, failedUpstreams };
-};
-
-// Target order for an alias walk: `first-available` yields declaration
-// order; `random` shuffles so the outer walk distributes uniformly across
-// targets. Within a single target's real-catalog walk the request's upstream
-// order is preserved; alias shuffling applies to the target list, not to a
-// target's candidates.
-const shuffled = <T>(items: readonly T[]): T[] => {
-  const result = [...items];
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
+  const orderedGroups = randomizeUpstreams ? shuffled(candidateGroups) : candidateGroups;
+  return { candidates: orderedGroups.flat(), sawModel, failedUpstreams };
 };
 
 const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['targets'][number][] => {
@@ -174,15 +175,15 @@ export const enumerateModelCandidates = async ({
     createPerRequestFetcher(runtimeLocation, upstreams),
     listModelProviders(upstreamIds, upstreams),
   ]);
-  const providers = randomizeUpstreams ? shuffled(listedProviders) : listedProviders;
   const resolutionContext = {
     fetcherForUpstream: createFetcherForUpstream,
+    randomizeUpstreams,
     scheduleRefresh: createModelsRefreshScheduler(runtimeLocation, scheduler),
   };
 
   const alias = await getRepo().modelAliases.getByName(model);
   if (alias === null) {
-    return enumerateRealModelCandidates(model, kind, providers, resolutionContext);
+    return enumerateRealModelCandidates(model, kind, listedProviders, resolutionContext);
   }
 
   // Walk every target, tag each returned candidate with the target's rule
@@ -194,7 +195,7 @@ export const enumerateModelCandidates = async ({
   let sawModel = false;
   const flat: ModelCandidate[] = [];
   for (const target of orderAliasTargets(alias)) {
-    const result = enumerateRealModelCandidates(target.target_model_id, kind, providers, resolutionContext);
+    const result = enumerateRealModelCandidates(target.target_model_id, kind, listedProviders, resolutionContext);
     for (const name of result.failedUpstreams) aggregatedFailed.add(name);
     if (result.sawModel) sawModel = true;
     for (const candidate of result.candidates) {

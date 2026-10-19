@@ -93,6 +93,7 @@ test('scheduler registration failures propagate rather than looking like an upst
   const providers = await listModelProviders(null);
   expect(() => enumerateRealModelCandidates('model', 'chat', providers, {
     fetcherForUpstream: () => directFetcher,
+    randomizeUpstreams: false,
     scheduleRefresh: () => { throw new Error('scheduler unavailable'); },
   })).toThrow('scheduler unavailable');
 });
@@ -134,7 +135,7 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
       await refreshModelsExplicit(modelsRefreshTarget(first), 'TEST');
       const warmed = (await listModelProviders(null)).find(provider => provider.upstreamId === 'up_first');
       if (!warmed) throw new Error('warmed provider missing');
-      const { candidates } = enumerateRealModelCandidates('target-model', 'chat', [warmed], { fetcherForUpstream: () => directFetcher, scheduleRefresh });
+      const { candidates } = enumerateRealModelCandidates('target-model', 'chat', [warmed], { fetcherForUpstream: () => directFetcher, randomizeUpstreams: false, scheduleRefresh });
 
       assertEquals(candidates[0]?.model.id, 'target-model');
       assertEquals(candidates[0]?.provider.upstreamId, 'up_first');
@@ -179,10 +180,54 @@ test('enumerateRealModelCandidates rejects a model id disabled on that upstream 
 
   await warmModelsForTest();
   const providers = await listModelProviders(null);
-  const enabled = enumerateRealModelCandidates('enabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduleRefresh });
-  const disabled = enumerateRealModelCandidates('disabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduleRefresh });
+  const enabled = enumerateRealModelCandidates('enabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, randomizeUpstreams: false, scheduleRefresh });
+  const disabled = enumerateRealModelCandidates('disabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, randomizeUpstreams: false, scheduleRefresh });
   assertEquals(enabled.candidates[0]?.model.id, 'enabled-model');
   assertEquals(disabled.candidates.length, 0);
+});
+
+test('randomizes upstream candidate groups without splitting or reordering a group', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  for (const [id, name, sortOrder] of [['up_a', 'A', 1], ['up_b', 'B', 2]] as const) {
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
+      id,
+      name,
+      sortOrder,
+      config: { baseUrl: `https://${name.toLowerCase()}.example.com`, authStyle: 'bearer', apiKey: `sk-${name.toLowerCase()}`, endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
+      modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['unprefixed', 'prefixed'] },
+    }));
+  }
+
+  await withMockedFetch(
+    request => {
+      const hostname = new URL(request.url).hostname;
+      if (hostname === 'a.example.com' || hostname === 'b.example.com') {
+        return jsonResponse({ object: 'list', data: [{ id: 'or/gpt-4o' }, { id: 'gpt-4o' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+      try {
+        const resolved = await enumerateModelCandidates({
+          upstreamIds: null,
+          randomizeUpstreams: true,
+          model: 'or/gpt-4o',
+          kind: 'chat',
+          scheduler: testScheduler,
+          runtimeLocation: 'TEST',
+        });
+        assertEquals(
+          resolved.candidates.map(candidate => `${candidate.model.id}@${candidate.provider.upstreamId}`),
+          ['or/gpt-4o@up_b', 'gpt-4o@up_b', 'or/gpt-4o@up_a', 'gpt-4o@up_a'],
+        );
+        expect(random).toHaveBeenCalledOnce();
+      } finally {
+        random.mockRestore();
+      }
+    },
+  );
 });
 
 test('a recorded refresh failure is irrelevant when the prefix policy cannot address the model id', async () => {
@@ -491,7 +536,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
     );
   });
 
-  test('composes random alias targets with one upstream permutation per resolution', async () => {
+  test('randomizes upstream groups independently for each random alias target', async () => {
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -507,18 +552,21 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
     await withMockedFetch(
       buildCatalogFetch({ up_a: ['gpt-5', 'claude'], up_b: ['gpt-5', 'claude'] }),
       async () => {
-        const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+        const random = vi.spyOn(Math, 'random')
+          .mockReturnValueOnce(0)
+          .mockReturnValueOnce(0.999)
+          .mockReturnValueOnce(0);
         try {
           const resolved = await enumerateModelCandidates({
             upstreamIds: null, randomizeUpstreams: true, model: 'random-both', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
           });
           expect(resolved.candidates.map(candidate => `${candidate.model.id}@${candidate.provider.upstreamId}`)).toEqual([
-            'claude@up_b',
             'claude@up_a',
+            'claude@up_b',
             'gpt-5@up_b',
             'gpt-5@up_a',
           ]);
-          expect(random).toHaveBeenCalledTimes(2);
+          expect(random).toHaveBeenCalledTimes(3);
         } finally {
           random.mockRestore();
         }
