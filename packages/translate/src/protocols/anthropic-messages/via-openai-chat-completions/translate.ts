@@ -7,8 +7,11 @@ import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload } f
 
 export const translate: TranslateTrip<
   AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent
-> = async src => ({
-  target: buildTargetRequest(src),
-  events: translateToSourceEvents,
-  apiError: rewriteContextExceededToPromptTooLong,
-});
+> = async src => {
+  const target = buildTargetRequest(src);
+  return {
+    target,
+    events: frames => translateToSourceEvents(frames, target.n ?? 1),
+    apiError: rewriteContextExceededToPromptTooLong,
+  };
+};

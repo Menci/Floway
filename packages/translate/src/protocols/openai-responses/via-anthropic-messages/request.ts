@@ -9,10 +9,10 @@ import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-mess
 import { resolveImageUrlToAnthropicMessagesImage, unavailableRemoteImageLoader } from '../../anthropic-messages/as-target/remote-images.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
 import { restrictAllowedTools } from '../as-source/allowed-tools.ts';
-import { buildCustomToolInputSchema } from '../as-source/custom-tool-wrap.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
+import { buildCustomToolInputSchema } from '../common/custom-tool-wrap.ts';
 import {
   ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
   type AnthropicMessagesAssistantContentBlock,

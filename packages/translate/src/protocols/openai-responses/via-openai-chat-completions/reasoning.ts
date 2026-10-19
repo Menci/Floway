@@ -1,9 +1,9 @@
 import { klona } from 'klona/json';
 
 import type { OpenAIChatCompletionsReasoningItem } from '@floway-dev/protocols/openai-chat-completions';
-import { createRandomOpenAIResponsesItemId, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputReasoning, type OpenAIResponsesReasoningItem } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesOutputReasoning } from '@floway-dev/protocols/openai-responses';
 
-export type OpenAIChatCompletionsReasoningSourceItem = Extract<CanonicalOpenAIResponsesInputItem, { type: 'reasoning' }> | OpenAIResponsesOutputReasoning;
+type OpenAIChatCompletionsReasoningSourceItem = Extract<CanonicalOpenAIResponsesInputItem, { type: 'reasoning' }> | OpenAIResponsesOutputReasoning;
 
 export interface OpenAIChatCompletionsReasoningProjection {
   items: OpenAIChatCompletionsReasoningItem[];
@@ -14,7 +14,7 @@ export const createOpenAIChatCompletionsReasoningProjection = (): OpenAIChatComp
   items: [],
 });
 
-export const toOpenAIChatCompletionsReasoningItem = (item: OpenAIChatCompletionsReasoningSourceItem): OpenAIChatCompletionsReasoningItem => ({
+const toOpenAIChatCompletionsReasoningItem = (item: OpenAIChatCompletionsReasoningSourceItem): OpenAIChatCompletionsReasoningItem => ({
   type: 'reasoning',
   ...(item.id == null ? {} : { id: item.id }),
   summary: item.summary,
@@ -31,10 +31,3 @@ export const openaiChatCompletionsReasoningProjectionFields = (projection: OpenA
   ...(projection.text !== undefined ? { reasoning_text: projection.text } : {}),
   ...(projection.items.length > 0 ? { reasoning_items: projection.items } : {}),
 });
-
-export const toOpenAIResponsesReasoningItem = <T extends OpenAIResponsesReasoningItem>(item: OpenAIChatCompletionsReasoningItem): T =>
-  ({
-    type: 'reasoning',
-    id: item.id ?? createRandomOpenAIResponsesItemId('reasoning'),
-    summary: item.summary ?? [],
-  } as T);
