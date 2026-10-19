@@ -35,8 +35,8 @@ const aliasFixture = (overrides: Partial<ModelAliasRecord> = {}): ModelAliasReco
 });
 
 for (const [backend, makeRepo] of REPO_BACKENDS) {
-  // The 0046 migration seeds `codex-auto-review`; every test starts from a
-  // known-empty state so assertions on row counts and ordering stay stable.
+  // Every test starts from a known-empty state so assertions on row counts and
+  // ordering stay stable.
   const freshRepo = async (): Promise<Repo> => {
     const repo = await makeRepo();
     await repo.modelAliases.deleteAll();
@@ -179,23 +179,12 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
   });
 }
 
-// Fresh-DB coverage for the seed row applied by migration 0046, run outside
-// the freshRepo() cleanup loop so the row survives to be asserted on.
-// Memory-backed repos have no migration seeding, so this only covers the SQL
-// backend.
-test('[sql] migration 0046 seeds the codex-auto-review alias with its two-target list', async () => {
+// A fresh database carries no aliases: operators create every routing alias
+// themselves. Run outside the freshRepo() cleanup loop so the migrated state is
+// asserted as-is.
+test('[sql] a fresh database ships no model aliases', async () => {
   const repo = new SqlRepo(await createSqliteTestDb());
-  const rows = await repo.modelAliases.list();
-  const seed = rows.find(row => row.name === 'codex-auto-review');
-  assertExists(seed);
-  assertEquals(seed.displayName, 'Codex Auto Review');
-  assertEquals(seed.visibleInModelsList, true);
-  assertEquals(seed.selection, 'first-available');
-  assertEquals(seed.kind, 'chat');
-  assertEquals(seed.targets, [
-    { target_model_id: 'codex-auto-review', rules: {} },
-    { target_model_id: 'gpt-5.4', rules: { reasoning: { effort: 'low' } } },
-  ]);
+  assertEquals(await repo.modelAliases.list(), []);
 });
 
 test('[sql] rejects an unknown kind stored under the open database constraint', async () => {
@@ -293,7 +282,6 @@ test('migration 0062 opens model alias kind while preserving existing aliases', 
             VALUES ('rerank-alias', 'rerank', 'first-available', 1, '[]', 1, '2026-07-21T00:00:00.000Z', '2026-07-21T00:00:00.000Z')`);
 
     assertEquals(sqlRows<{ name: string; kind: string }>(db, 'SELECT name, kind FROM model_aliases ORDER BY sort_order, created_at'), [
-      { name: 'codex-auto-review', kind: 'chat' },
       { name: 'rerank-alias', kind: 'rerank' },
     ]);
     assertThrows(
@@ -319,7 +307,7 @@ test('migration 0071 issues an id per existing alias and keeps names unique', as
     applyMigration(db, '0071_model_alias_id.sql');
 
     const rows = sqlRows<{ id: string; name: string }>(db, 'SELECT id, name FROM model_aliases ORDER BY sort_order, created_at');
-    assertEquals(rows.map(row => row.name), ['codex-auto-review', 'vendor/model']);
+    assertEquals(rows.map(row => row.name), ['vendor/model']);
     assertEquals(rows.every(row => /^alias_[0-9a-f]{24}$/.test(row.id)), true);
     assertEquals(new Set(rows.map(row => row.id)).size, rows.length);
 

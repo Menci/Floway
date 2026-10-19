@@ -609,7 +609,7 @@ const queueCodexAutoReviewCandidate = (
   queueResolution([candidate], { aliasRules: { reasoning: { effort: 'low' } } });
 };
 
-test('POST /v1/responses routes a codex-auto-review request through the seeded alias: rewrites the model to gpt-5.4 and stamps reasoning.effort=low', async () => {
+test('POST /v1/responses applies the alias rules to a codex-auto-review request: rewrites the model to gpt-5.4 and stamps reasoning.effort=low', async () => {
   installRepo();
   lastSeenModel.value = null;
   const observedBodies: Omit<CanonicalOpenAIResponsesPayload, 'model'>[] = [];
@@ -641,7 +641,7 @@ test('POST /v1/responses routes a codex-auto-review request through the seeded a
   assertEquals(observed.reasoning?.effort, 'low');
 });
 
-test('POST /v1/responses/compact routes a codex-auto-review request through the seeded alias: rewrites the model to gpt-5.4 and stamps reasoning.effort=low (the alias rule overlays the compact body too)', async () => {
+test('POST /v1/responses/compact applies the alias rules to a codex-auto-review request: rewrites the model to gpt-5.4 and stamps reasoning.effort=low (the alias rule overlays the compact body too)', async () => {
   installRepo();
   lastSeenModel.value = null;
   const observedBodies: Omit<CanonicalOpenAIResponsesPayload, 'model'>[] = [];
