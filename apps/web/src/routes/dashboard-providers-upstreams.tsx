@@ -27,7 +27,7 @@ import { moveItem, ReorderHandle, useReorderList } from '../components/ui/reorde
 import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
 import { RouteMenuItem } from '../components/ui/route-menu-item';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { TABLE_ACTIONS_WITH_LEADING_WIDTH, TableActions, TableCentredCell, TableCentredHeader, TableTrailingHeader } from '../components/ui/table-actions';
+import { TABLE_ACTIONS_WITH_LEADING_WIDTH, TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../components/ui/table-actions';
 import { TableColumns } from '../components/ui/table-columns';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { TruncationTooltip } from '../components/ui/truncation-tooltip';
@@ -543,7 +543,7 @@ function UpstreamsTable({
             <TableHeaderCell>{t('dashboard.upstreams.table.details')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.upstreams.table.models')}</TableHeaderCell>
             <TableCentredHeader>{t('dashboard.upstreams.table.enabled')}</TableCentredHeader>
-            <TableTrailingHeader>{t('dashboard.upstreams.table.actions')}</TableTrailingHeader>
+            <TableActionsHeader />
           </TableRow>
         </TableHeader>
         <TableBody {...reorder.listProps()}>

@@ -258,7 +258,6 @@ const en = {
           role: 'Role',
           groups: 'Groups',
           upstreams: 'Upstream access',
-          actions: 'Actions',
         },
         role: { admin: 'Administrator', operator: 'Operator' },
         upstreams: {
@@ -477,7 +476,6 @@ const en = {
           details: 'Details',
           models: 'Models',
           enabled: 'Enabled',
-          actions: 'Actions',
         },
         // Whatever an upstream publishes about itself beyond its identity. Only
         // the providers whose upstream reports usage contribute any.
@@ -803,7 +801,6 @@ const en = {
           source: 'Config',
           kind: 'Kind',
           kindValue: { chat: 'Chat', embedding: 'Embedding', image: 'Image', transcription: 'Transcription', rerank: 'Rerank' },
-          actions: 'Actions',
           copy: 'Copy model ID',
           editNamed: 'Edit model {{name}}',
           back: 'Back to models',
@@ -1276,8 +1273,8 @@ const en = {
         tables: {
           requests: 'Requests',
           errors: 'Errors',
-          ttftP95: 'TTFT p95',
-          speedP95: 'Worst 5% speed',
+          ttft: 'TTFT {{percentile}}',
+          speed: 'Worst {{tail, number}}% speed',
         },
       },
       backupRestore: {
@@ -1387,7 +1384,7 @@ const en = {
       modelAliases: {
         description: 'Create virtual model IDs that route to one or more target models with optional locked request rules',
         listTitle: 'Aliases', empty: 'No aliases configured. Create one to expose a virtual model ID.',
-        columns: { alias: 'Alias', kind: 'Kind', targets: 'Targets', selection: 'Selection', visibility: 'Models list', actions: 'Actions' },
+        columns: { alias: 'Alias', kind: 'Kind', targets: 'Targets', selection: 'Selection', visibility: 'Models list' },
         actions: { create: 'New alias', refresh: 'Refresh aliases', save: 'Save', delete: 'Delete', addTarget: 'Add target', editNamed: 'Edit alias {{name}}', copyNamed: 'Copy alias {{name}}', deleteNamed: 'Delete alias {{name}}' },
         dialog: { createTitle: 'Create alias', editTitle: 'Edit alias: {{name}}', copyTitle: 'Copy alias: {{name}}' },
         copy: { nameSuffix: '{{name}} copy' },
@@ -1408,7 +1405,6 @@ const en = {
         description:
             'Outbound proxies referenced by per-upstream fallback lists',
         listTitle: 'Proxies',
-        columns: { actions: 'Actions' },
         empty: 'No proxies configured. Add a proxy to route outbound traffic.',
         unknownAddress: 'Unrecognized address',
         addTitle: 'Add proxy',

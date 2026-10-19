@@ -247,7 +247,6 @@ const zhHansCN = {
           role: '角色',
           groups: '用户组',
           upstreams: '上游权限',
-          actions: '操作',
         },
         role: { admin: '管理员', operator: '操作员' },
         upstreams: {
@@ -453,7 +452,6 @@ const zhHansCN = {
           details: '详情',
           models: '模型',
           enabled: '启用',
-          actions: '操作',
         },
         signals: {
           plan: '{{plan}}：',
@@ -770,7 +768,6 @@ const zhHansCN = {
           source: '配置方式',
           kind: '类型',
           kindValue: { chat: '对话', embedding: '嵌入', image: '图像', transcription: '转录', rerank: '重排' },
-          actions: '操作',
           copy: '复制模型 ID',
           editNamed: '编辑模型 {{name}}',
           back: '返回模型列表',
@@ -1224,8 +1221,8 @@ const zhHansCN = {
         tables: {
           requests: '请求数',
           errors: '错误',
-          ttftP95: 'TTFT p95',
-          speedP95: '最慢 5% 速度',
+          ttft: 'TTFT {{percentile}}',
+          speed: '最慢 {{tail, number}}% 速度',
         },
       },
       backupRestore: {
@@ -1314,7 +1311,7 @@ const zhHansCN = {
       },
       modelAliases: {
         description: '创建虚拟模型 ID，将请求路由到一个或多个目标模型，并可锁定请求规则', listTitle: '别名', empty: '尚未配置别名。创建别名以公开虚拟模型 ID。',
-        columns: { alias: '别名', kind: '类型', targets: '目标', selection: '选择策略', visibility: '模型列表', actions: '操作' },
+        columns: { alias: '别名', kind: '类型', targets: '目标', selection: '选择策略', visibility: '模型列表' },
         actions: { create: '新建别名', refresh: '刷新别名', save: '保存', delete: '删除', addTarget: '添加目标', editNamed: '编辑别名 {{name}}', copyNamed: '复制别名 {{name}}', deleteNamed: '删除别名 {{name}}' },
         dialog: { createTitle: '创建别名', editTitle: '编辑别名：{{name}}', copyTitle: '复制别名：{{name}}' },
         copy: { nameSuffix: '{{name}} 副本' },
@@ -1332,7 +1329,6 @@ const zhHansCN = {
       proxy: {
         description: '上游回退列表引用的出口代理',
         listTitle: '代理列表',
-        columns: { actions: '操作' },
         empty: '暂无代理。添加代理后即可路由出口流量。',
         unknownAddress: '无法识别的地址',
         addTitle: '添加代理',
