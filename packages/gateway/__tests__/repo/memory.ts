@@ -363,8 +363,10 @@ class MemoryAccessRecordsRepo implements AccessRecordsRepo {
     return structuredClone(next);
   }
 
-  reorderModel(upstreamId: string, expectedIds: readonly number[], ids: readonly number[]): Promise<AccessRecord[] | null> {
-    const segment = this.records.filter(record => record.scope.kind === 'upstreamModel' && record.scope.upstreamId === upstreamId)
+  reorderModel(principal: AccessPrincipal, upstreamId: string, expectedIds: readonly number[], ids: readonly number[]): Promise<AccessRecord[] | null> {
+    const key = principalKey(principal);
+    const segment = this.records.filter(record => principalKey(record.principal) === key
+      && record.scope.kind === 'upstreamModel' && record.scope.upstreamId === upstreamId)
       .toSorted((left, right) => left.sortOrder - right.sortOrder || left.id - right.id);
     if (JSON.stringify(segment.map(record => record.id)) !== JSON.stringify(expectedIds)) return Promise.resolve(null);
     const now = new Date().toISOString();

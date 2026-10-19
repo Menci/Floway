@@ -27,9 +27,10 @@ const isSelfUserScope = (scope: ResolveScope, subjectUserId?: number): boolean =
 // `/Groups/:id` disagree about the same rule.
 const isGroupScope = (scope: AccessScope): boolean => scope.kind === 'group' || scope.kind === 'groups';
 
-const eligibleRows = (bucket: AccessBucket, target: ResolveScope, permission: AccessPermission): PreparedAccessRecord[] =>
+const eligibleRows = (bucket: AccessBucket, target: ResolveScope, permission: AccessPermission, targetGroups: ReadonlySet<number>): PreparedAccessRecord[] =>
   bucket.rows.filter(row => row.record.values[permission] !== undefined
-    && !(target.kind === 'user' && isGroupScope(row.record.scope) && !groupRuleAppliesToMembers[permission]));
+    && !(target.kind === 'user' && isGroupScope(row.record.scope)
+      && (!groupRuleAppliesToMembers[permission] || targetGroups.size === 0)));
 
 const selectRepresentative = (rows: readonly PreparedAccessRecord[], permission: AccessPermission) => {
   const personal = rows.filter(row => row.record.principal.kind === 'user');
@@ -39,21 +40,31 @@ const selectRepresentative = (rows: readonly PreparedAccessRecord[], permission:
   return { winners, representative };
 };
 
-const winningSelection = (buckets: readonly AccessBucket[], target: ResolveScope, permission: AccessPermission) => {
+const winningSelection = (
+  buckets: readonly AccessBucket[],
+  target: ResolveScope,
+  permission: AccessPermission,
+  targetGroups: ReadonlySet<number>,
+) => {
   for (const bucket of buckets) {
-    const rows = eligibleRows(bucket, target, permission);
+    const rows = eligibleRows(bucket, target, permission, targetGroups);
     if (rows.length > 0) return selectRepresentative(rows, permission);
   }
   return null;
 };
 
-const resolveBuckets = (prepared: readonly PreparedAccessRecord[], buckets: readonly AccessBucket[], scope: ResolveScope): AccessResolution => {
+const resolveBuckets = (
+  prepared: readonly PreparedAccessRecord[],
+  buckets: readonly AccessBucket[],
+  scope: ResolveScope,
+  targetGroups: ReadonlySet<number>,
+): AccessResolution => {
   const applicableIds = new Set(buckets.flatMap(bucket => bucket.rows.map(row => row.record.id)));
   const applicable = prepared.filter(row => applicableIds.has(row.record.id));
   const decisions = new Map<number, PermissionDecisions>(applicable.map(({ record }) => [record.id, {}]));
   const values: AccessValues = {};
   for (const permission of permissionsForScope(scope)) {
-    const selection = winningSelection(buckets, scope, permission);
+    const selection = winningSelection(buckets, scope, permission, targetGroups);
     const representative = selection?.representative ?? null;
     if (permission === 'Upstream.Edit') values[permission] = representative === null ? 'off' : representative.record.values[permission];
     else values[permission] = representative === null ? false : representative.record.values[permission];
@@ -61,7 +72,8 @@ const resolveBuckets = (prepared: readonly PreparedAccessRecord[], buckets: read
     const active = new Set(selection.winners.map(row => row.record.id));
     for (const { record } of applicable) {
       if (record.values[permission] === undefined) continue;
-      if (scope.kind === 'user' && isGroupScope(record.scope) && !groupRuleAppliesToMembers[permission]) continue;
+      if (scope.kind === 'user' && isGroupScope(record.scope)
+        && (!groupRuleAppliesToMembers[permission] || targetGroups.size === 0)) continue;
       decisions.get(record.id)![permission] = active.has(record.id)
         ? { kind: 'effective' }
         : { kind: 'overridden', by: selection.representative.record };
@@ -163,10 +175,10 @@ export const createAccessResolver = (records: readonly AccessRecord[]): AccessRe
     candidates(scope, evaluation.targetGroups, isSelfUserScope(scope, evaluation.subjectUserId));
   return {
     resolve(scope, evaluation) {
-      return resolveBuckets(prepared, candidatesFor(scope, evaluation), scope);
+      return resolveBuckets(prepared, candidatesFor(scope, evaluation), scope, evaluation.targetGroups);
     },
     satisfies(scope, requirement, evaluation) {
-      const selection = winningSelection(candidatesFor(scope, evaluation), scope, requirement.permission);
+      const selection = winningSelection(candidatesFor(scope, evaluation), scope, requirement.permission, evaluation.targetGroups);
       return selection !== null && accessValueSatisfied(selection.representative.record.values[requirement.permission], requirement);
     },
   };

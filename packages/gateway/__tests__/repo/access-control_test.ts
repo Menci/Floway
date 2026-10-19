@@ -116,27 +116,40 @@ describe.each(backends)('access-control repos (%s)', (_label, makeRepo) => {
     expect(await repo.accessRecords.listByPrincipal(principal)).toMatchObject([{ id: first.id, values: { 'Model.Use': false } }]);
   });
 
-  test.each(['same', 'different'] as const)('stale edits preserve a concurrent model reorder across %s principals', async ownership => {
+  test('stale edits preserve a concurrent model reorder for the same principal', async () => {
     const repo = await makeRepo();
     const principal = { kind: 'user' as const, id: 2 };
     const first = await repo.accessRecords.save({ principal, scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } }, sortOrder: 0, values: { 'Model.Use': true } });
-    const second = await repo.accessRecords.save({ principal: ownership === 'same' ? principal : { kind: 'group', id: 3 }, scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: '^gpt' } }, sortOrder: 1, values: { 'Model.Use': true } });
-    await repo.accessRecords.reorderModel('up_a', [first.id, second.id], [second.id, first.id]);
+    const second = await repo.accessRecords.save({ principal, scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: '^gpt' } }, sortOrder: 1, values: { 'Model.Use': true } });
+    await repo.accessRecords.reorderModel(principal, 'up_a', [first.id, second.id], [second.id, first.id]);
     const edited = await repo.accessRecords.replace(first.id, { principal, scope: first.scope, sortOrder: first.sortOrder, values: { 'Model.Use': false } });
     expect(edited).toMatchObject({ sortOrder: 1, values: { 'Model.Use': false } });
     expect((await repo.accessRecords.getById(second.id))!.sortOrder).toBe(0);
   });
 
-  test('model-pattern reorder updates a complete upstream segment atomically', async () => {
+  test('a model reorder never spans two principals', async () => {
     const repo = await makeRepo();
-    const first = await repo.accessRecords.save({ principal: { kind: 'user', id: 2 }, scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: '^gpt' } }, sortOrder: 5, values: { 'Model.Use': false } });
-    const second = await repo.accessRecords.save({ principal: { kind: 'group', id: 3 }, scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } }, sortOrder: 9, values: { 'Model.Use': true } });
-    const unrelated = await repo.accessRecords.save({ principal: { kind: 'user', id: 2 }, scope: { kind: 'upstreamModel', upstreamId: 'up_b', model: { kind: 'exact', value: 'gpt-5' } }, sortOrder: 0, values: { 'Model.Use': true } });
-    const updated = await repo.accessRecords.reorderModel('up_a', [first.id, second.id], [second.id, first.id]);
+    const principal = { kind: 'user' as const, id: 2 };
+    const first = await repo.accessRecords.save({ principal, scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } }, sortOrder: 0, values: { 'Model.Use': true } });
+    const foreign = await repo.accessRecords.save({ principal: { kind: 'group', id: 3 }, scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: '^gpt' } }, sortOrder: 1, values: { 'Model.Use': true } });
+    const before = await repo.accessRecords.list();
+    expect(await repo.accessRecords.reorderModel(principal, 'up_a', [first.id, foreign.id], [foreign.id, first.id])).toBeNull();
+    expect(await repo.accessRecords.list()).toEqual(before);
+  });
+
+  test('model-pattern reorder updates one principal\'s complete upstream segment atomically', async () => {
+    const repo = await makeRepo();
+    const principal = { kind: 'user' as const, id: 2 };
+    const first = await repo.accessRecords.save({ principal, scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: '^gpt' } }, sortOrder: 5, values: { 'Model.Use': false } });
+    const second = await repo.accessRecords.save({ principal, scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } }, sortOrder: 9, values: { 'Model.Use': true } });
+    const foreign = await repo.accessRecords.save({ principal: { kind: 'group', id: 3 }, scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-6' } }, sortOrder: 0, values: { 'Model.Use': true } });
+    const unrelated = await repo.accessRecords.save({ principal, scope: { kind: 'upstreamModel', upstreamId: 'up_b', model: { kind: 'exact', value: 'gpt-5' } }, sortOrder: 0, values: { 'Model.Use': true } });
+    const updated = await repo.accessRecords.reorderModel(principal, 'up_a', [first.id, second.id], [second.id, first.id]);
     expect(updated!.toSorted((a, b) => a.sortOrder - b.sortOrder).map(row => [row.id, row.sortOrder])).toEqual([[second.id, 0], [first.id, 1]]);
     expect(await repo.accessRecords.getById(unrelated.id)).toEqual(unrelated);
+    expect(await repo.accessRecords.getById(foreign.id)).toEqual(foreign);
     const committed = await repo.accessRecords.list();
-    expect(await repo.accessRecords.reorderModel('up_a', [first.id, second.id], [second.id, first.id])).toBeNull();
+    expect(await repo.accessRecords.reorderModel(principal, 'up_a', [first.id, second.id], [second.id, first.id])).toBeNull();
     expect(await repo.accessRecords.list()).toEqual(committed);
   });
 
@@ -149,7 +162,7 @@ describe.each(backends)('access-control repos (%s)', (_label, makeRepo) => {
     const other = await repo.accessRecords.save({ principal, scope: { kind: 'upstreamModel', upstreamId: 'up_b', model: { kind: 'exact', value: 'gpt-5' } }, sortOrder: 0, values: { 'Model.Use': true } });
     const before = await repo.accessRecords.list();
     for (const expected of [[first.id], [first.id, second.id, fixed.id], [first.id, other.id]]) {
-      expect(await repo.accessRecords.reorderModel('up_a', expected, expected.toReversed())).toBeNull();
+      expect(await repo.accessRecords.reorderModel(principal, 'up_a', expected, expected.toReversed())).toBeNull();
       expect(await repo.accessRecords.list()).toEqual(before);
     }
   });

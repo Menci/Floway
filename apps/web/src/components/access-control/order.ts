@@ -31,7 +31,11 @@ export const recordSegments = (records: readonly AccessRecord[]): RecordSegment[
   const segments: RecordSegment[] = [];
   for (const record of orderedRecords(records)) {
     const movable = record.scope.kind === 'upstreamModel';
-    const key = movable ? `upstream:${resource(record.scope)}` : `fixed:${record.scope.kind}:${resource(record.scope)}`;
+    // Model-pattern order is per principal; two principals' rules for the same
+    // upstream are independent lists, so they must not become one segment.
+    const key = movable
+      ? `upstream:${resource(record.scope)}:principal:${record.principal.kind}:${record.principal.id}`
+      : `fixed:${record.scope.kind}:${resource(record.scope)}`;
     const previous = segments.at(-1);
     if (previous?.key === key) previous.records.push(record);
     else segments.push({ key, movable, records: [record] });

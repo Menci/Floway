@@ -70,6 +70,13 @@ test('the /Groups collection applies User.Audit to a member just like a concrete
   expect(collection.values).toEqual(concrete.values);
 });
 
+test('the /Groups collection does not reach a user in no group', () => {
+  const collection = resolveAssignments([row(1, user, { kind: 'groups' }, { 'User.Audit': true })], { kind: 'user', userId: 9 }, { targetGroups: new Set() });
+  const concrete = resolveAssignments([row(1, user, { kind: 'group', groupId: 7 }, { 'User.Audit': true })], { kind: 'user', userId: 9 }, { targetGroups: new Set() });
+  expect(collection.values['User.Audit']).toBe(false);
+  expect(collection.values).toEqual(concrete.values);
+});
+
 test('group membership scopes do not apply to unrelated target users', () => {
   const records = [row(1, user, { kind: 'group', groupId: 7 }, { 'User.Audit': true })];
   expect(resolveAssignments(records, { kind: 'user', userId: 9 }, { targetGroups: new Set() }).values['User.Audit']).toBe(false);
