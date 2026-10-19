@@ -18,7 +18,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   }
   if (recordResult.error) throw new Error(recordResult.error.message);
   if (recordResult.data.editLevel === 'off' && !recordResult.data.audit) throw redirect('/dashboard/providers/upstreams');
-  const aux = await loadEditorAux(params.id, recordResult.data.editLevel === 'full');
+  const aux = await loadEditorAux(params.id);
   return {
     ...aux,
     editLevel: recordResult.data.editLevel,

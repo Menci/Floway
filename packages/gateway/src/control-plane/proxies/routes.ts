@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 
 import { ANCHORS, isIpV4, isIpV6 } from './egress-probe.ts';
 import { backoffRowsToJson, proxyRecordToJson } from './serialize.ts';
-import { resolveUpstreamEditLevel } from '../../access-control/upstream-edit.ts';
+import { resolveUpstreamAccesses } from '../../access-control/upstream-edit.ts';
 import { userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -24,9 +24,13 @@ export const listProxies = async (c: Context) => {
   return c.json(proxies.map(proxyRecordToJson));
 };
 
+// Proxy identities are part of an upstream's readable redacted configuration,
+// so anyone who can read that upstream may resolve the ids it names. Changing
+// the fallback list stays Full-only at the write path.
 export const listProxyOptions = async (c: CtxWithQuery<typeof proxyOptionsQuery>) => {
   const upstreamId = c.req.valid('query').upstream_id;
-  if (await resolveUpstreamEditLevel(userFromContext(c), upstreamId) !== 'full') {
+  const access = (await resolveUpstreamAccesses(userFromContext(c), [upstreamId])).get(upstreamId)!;
+  if (!access.audit && access.edit === 'off') {
     return c.json({ error: 'Upstream not found' }, 404);
   }
   return c.json((await getRepo().proxies.list()).map(proxy => ({ id: proxy.id, name: proxy.name })));

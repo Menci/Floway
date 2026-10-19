@@ -22,10 +22,14 @@ const valueRank = (value: NonNullable<AccessValues[AccessPermission]>) => typeof
 const precedenceDepth = (scope: AccessScope) => scope.kind === 'user' ? 3 : accessScopeDepth(scope);
 const isSelfUserScope = (scope: ResolveScope, subjectUserId?: number): boolean =>
   scope.kind === 'user' && scope.userId === subjectUserId;
+// A membership scope names a set of users; the collection form must behave the
+// same way for permissions that follow membership, otherwise `/Groups` and
+// `/Groups/:id` disagree about the same rule.
+const isGroupScope = (scope: AccessScope): boolean => scope.kind === 'group' || scope.kind === 'groups';
 
 const eligibleRows = (bucket: AccessBucket, target: ResolveScope, permission: AccessPermission): PreparedAccessRecord[] =>
   bucket.rows.filter(row => row.record.values[permission] !== undefined
-    && !(target.kind === 'user' && row.record.scope.kind === 'group' && !groupRuleAppliesToMembers[permission]));
+    && !(target.kind === 'user' && isGroupScope(row.record.scope) && !groupRuleAppliesToMembers[permission]));
 
 const selectRepresentative = (rows: readonly PreparedAccessRecord[], permission: AccessPermission) => {
   const personal = rows.filter(row => row.record.principal.kind === 'user');
@@ -57,7 +61,7 @@ const resolveBuckets = (prepared: readonly PreparedAccessRecord[], buckets: read
     const active = new Set(selection.winners.map(row => row.record.id));
     for (const { record } of applicable) {
       if (record.values[permission] === undefined) continue;
-      if (scope.kind === 'user' && record.scope.kind === 'group' && !groupRuleAppliesToMembers[permission]) continue;
+      if (scope.kind === 'user' && isGroupScope(record.scope) && !groupRuleAppliesToMembers[permission]) continue;
       decisions.get(record.id)![permission] = active.has(record.id)
         ? { kind: 'effective' }
         : { kind: 'overridden', by: selection.representative.record };
@@ -142,6 +146,7 @@ export const createAccessResolver = (records: readonly AccessRecord[]): AccessRe
       userBuckets.get(scope.userId),
       ...[...targetGroups].map(id => groupBuckets.get(id)),
       usersBucket,
+      groupsBucket,
     ); break;
     case 'group': result.push(groupBuckets.get(scope.groupId), groupsBucket); break;
     case 'upstreams': result.push(upstreamsBucket); break;

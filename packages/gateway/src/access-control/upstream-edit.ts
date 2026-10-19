@@ -6,27 +6,21 @@ import type { User } from '../repo/types.ts';
 export interface UpstreamAccess {
   audit: boolean;
   edit: UpstreamEditLevel;
-  // The upstream listing states a model count sourced from the caller's own
-  // Model.Use-filtered catalog, so it also needs to know whether that catalog
-  // covers this upstream at all.
-  modelUse: boolean;
 }
 
 export const resolveUpstreamAccesses = async (
   subject: User,
   upstreamIds: readonly string[],
 ): Promise<Map<string, UpstreamAccess>> => {
-  if (subject.isAdmin) return new Map(upstreamIds.map(upstreamId => [upstreamId, { audit: true, edit: 'full', modelUse: true }]));
+  if (subject.isAdmin) return new Map(upstreamIds.map(upstreamId => [upstreamId, { audit: true, edit: 'full' }]));
   const allowed = await checkMany(subject, upstreamIds.flatMap(upstreamId => [
     { target: { kind: 'upstream' as const, upstreamId }, requirement: { permission: 'Upstream.Audit' as const } },
     { target: { kind: 'upstream' as const, upstreamId }, requirement: { permission: 'Upstream.Edit' as const, level: 'models' as const } },
     { target: { kind: 'upstream' as const, upstreamId }, requirement: { permission: 'Upstream.Edit' as const, level: 'full' as const } },
-    { target: { kind: 'upstream' as const, upstreamId }, requirement: { permission: 'Model.Use' as const } },
   ]));
   return new Map(upstreamIds.map((upstreamId, index) => [upstreamId, {
-    audit: allowed[index * 4]!,
-    edit: allowed[index * 4 + 2] ? 'full' : allowed[index * 4 + 1] ? 'models' : 'off',
-    modelUse: allowed[index * 4 + 3]!,
+    audit: allowed[index * 3]!,
+    edit: allowed[index * 3 + 2] ? 'full' : allowed[index * 3 + 1] ? 'models' : 'off',
   }]));
 };
 
@@ -37,16 +31,8 @@ export const canViewUpstreams = async (subject: User): Promise<boolean> => {
   return [...accesses.values()].some(access => access.audit || access.edit !== 'off');
 };
 
-export const resolveUpstreamEditLevels = async (
-  subject: User,
-  upstreamIds: readonly string[],
-): Promise<Map<string, UpstreamEditLevel>> => {
-  const accesses = await resolveUpstreamAccesses(subject, upstreamIds);
-  return new Map(upstreamIds.map(upstreamId => [upstreamId, accesses.get(upstreamId)!.edit]));
-};
-
 export const resolveUpstreamEditLevel = async (subject: User, upstreamId: string): Promise<UpstreamEditLevel> =>
-  (await resolveUpstreamEditLevels(subject, [upstreamId])).get(upstreamId)!;
+  (await resolveUpstreamAccesses(subject, [upstreamId])).get(upstreamId)!.edit;
 
 export const fullUpstreamActionError = async (
   subject: User,

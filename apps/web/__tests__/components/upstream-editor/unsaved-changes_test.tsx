@@ -91,6 +91,16 @@ const editAndUndo = (value: string, edited: string) => {
 // editor prompted about unsaved changes on a record that was back at its saved
 // state. Each case is paired with the same record carrying the optional value,
 // which is the arrangement that always worked.
+it('keeps path overrides and endpoint checkboxes read-only without Full', () => {
+  renderInApp(<SidebarProbe editLevel="off" record={customRecord({ enabled: true })} />);
+  const endpoint = screen.getAllByRole('checkbox')[0] as HTMLInputElement;
+  expect(endpoint.readOnly).toBe(true);
+  const override = screen.getByPlaceholderText('/v1/chat/completions') as HTMLInputElement;
+  expect(override.readOnly).toBe(true);
+  const disabledModels = screen.getByRole('combobox', { name: i18n.t('dashboard.upstreamEditor.sections.disabledModels') }) as HTMLInputElement;
+  expect(disabledModels.getAttribute('aria-readonly')).toBe('true');
+});
+
 describe('upstream editor dirtiness across an edit and its undo', () => {
   it('settles clean when the catalog path is absent from the stored config', () => {
     renderInApp(<ConfigProbe record={customRecord({ enabled: true })} />);

@@ -50,7 +50,7 @@ const projectPermissionDirectory = (context: PermissionAuditContext, records: re
   const groups = context.directory.groups
     .filter(group => renderGroupIds.has(group.id))
     .map(group => ({ ...group, memberIds: admin ? group.memberIds : group.memberIds.filter(userId => context.userIds.has(userId)) }));
-  const groupIdsByUser = new Map(context.directory.users.filter(user => renderUserIds.has(user.id)).map(user => [user.id, [] as number[]]));
+  const groupIdsByUser = new Map([...renderUserIds].map(userId => [userId, [] as number[]]));
   for (const group of groups) for (const userId of group.memberIds) groupIdsByUser.get(userId)!.push(group.id);
   return {
     users: context.directory.users.filter(user => renderUserIds.has(user.id)).map(user => userToAdminWire(user, groupIdsByUser.get(user.id)!)),

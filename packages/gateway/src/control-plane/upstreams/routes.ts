@@ -7,11 +7,15 @@ import type { FullSerializedUpstreamRecord, ModelsCacheStatus, RedactedSerialize
 import { checkMany } from '../../access-control/check.ts';
 import { type UpstreamAccess, resolveUpstreamAccesses, resolveUpstreamEditLevel } from '../../access-control/upstream-edit.ts';
 import { storedCatalogSize } from '../../data-plane/providers/catalog.ts';
-import { type AuthedContext, userFromContext } from '../../middleware/auth.ts';
+import { enumerateAddressableModelIds } from '../../data-plane/shared/listing/addressable.ts';
+import { createModelsRefreshScheduler } from '../../execution/models-refresh.ts';
+import { type AuthedContext, effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import type { StoredUpstreamRecord } from '../../repo/types.ts';
+import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
+import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { shortId } from '../../shared/short-id.ts';
 import type { createUpstreamBody, reorderUpstreamsBody, updateUpstreamBody, upstreamOptionsQuery } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
@@ -175,8 +179,21 @@ const validateProxyFallbackList = (
 };
 
 export const listUpstreams = async (c: AuthedContext) => {
+  const subject = userFromContext(c);
   const [items, knownProxyIds] = await Promise.all([getRepo().upstreams.list(), loadKnownProxyIds()]);
-  const accesses = await resolveUpstreamAccesses(userFromContext(c), items.map(item => item.id));
+  const accesses = await resolveUpstreamAccesses(subject, items.map(item => item.id));
+  // The row states a model count taken from the caller's own model catalog.
+  // That catalog is filtered by Model.Use at the model level, so the only
+  // faithful test for "do we know this upstream's count" is whether the
+  // catalog contains a binding for it.
+  const catalogCoverage = subject.isAdmin
+    ? null
+    : new Set((await enumerateAddressableModelIds(
+        subject,
+        effectiveUpstreamIdsFromContext(c),
+        createModelsRefreshScheduler(getRuntimeLocation(c.req.raw), backgroundSchedulerFromContext(c)),
+        items,
+      )).flatMap(entry => entry.upstreams.map(upstream => upstream.upstreamId)));
   const reorderGroups = new Map<string, string | null>();
   let reorderGroup: string | null = null;
   for (const item of items) {
@@ -189,7 +206,7 @@ export const listUpstreams = async (c: AuthedContext) => {
     const access = accesses.get(record.id)!;
     if (!access.audit && access.edit === 'off') return [];
     return [serializeForResponse(record, knownProxyIds, upstreamRecordToJson)
-      .then(serialized => ({ ...serialized, editLevel: access.edit, audit: access.audit, modelUse: access.modelUse, reorderGroup: reorderGroups.get(record.id)! }))];
+      .then(serialized => ({ ...serialized, editLevel: access.edit, audit: access.audit, modelUse: catalogCoverage === null || catalogCoverage.has(record.id), reorderGroup: reorderGroups.get(record.id)! }))];
   })));
 };
 

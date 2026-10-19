@@ -194,7 +194,7 @@ export function UpstreamWorkspace({
   useLayoutEffect(() => {
     workspaceScrollRef.current?.scrollTo({ left: 0, top: 0 });
   }, [modelDetailTab, modelView, tab]);
-  const modelsWorkspace = <ModelsWorkspace detailSection={modelDetailTab} modelSelection={modelSelection} onModelLocatorCommit={commitModelLocator} onModelSelectionChange={setModelSelection} onOpenModel={openModel} selectedUpstreamModelId={selectedUpstreamModelId} discovered={discovered} modelsLoading={modelsLoading} modelsError={modelsError} onRefreshModels={onRefreshModels} onViewChange={changeModelView} readOnly={editLevel === 'off' || !editableCatalog} record={record} revealValidation={modelValidationAttempted || submitCount > 0} view={modelView} yamlDraft={modelsYamlDraft} onYamlDraftChange={onModelsYamlDraftChange} />;
+  const modelsWorkspace = <ModelsWorkspace detailSection={modelDetailTab} modelSelection={modelSelection} onModelLocatorCommit={commitModelLocator} onModelSelectionChange={setModelSelection} onOpenModel={openModel} selectedUpstreamModelId={selectedUpstreamModelId} discovered={discovered} modelsLoading={modelsLoading} modelsError={modelsError} onRefreshModels={onRefreshModels} onViewChange={changeModelView} permissionReadOnly={editLevel === 'off'} readOnly={!editableCatalog} record={record} revealValidation={modelValidationAttempted || submitCount > 0} view={modelView} yamlDraft={modelsYamlDraft} onYamlDraftChange={onModelsYamlDraftChange} />;
   return <section className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] h-full min-h-0 min-w-0 max-[1050px]:h-auto">
     <div className="flex items-center gap-2 border-0 border-b border-solid border-fui-divider px-5 pt-2">
       {showModelDetail
@@ -232,7 +232,7 @@ export function UpstreamWorkspace({
   </section>;
 }
 
-function ModelsWorkspace({ detailSection, discovered, modelSelection, modelsError, modelsLoading, onModelLocatorCommit, onModelSelectionChange, onOpenModel, onRefreshModels, onViewChange, onYamlDraftChange, readOnly, record, revealValidation, selectedUpstreamModelId, view, yamlDraft }: {
+function ModelsWorkspace({ detailSection, discovered, modelSelection, modelsError, modelsLoading, onModelLocatorCommit, onModelSelectionChange, onOpenModel, onRefreshModels, onViewChange, onYamlDraftChange, permissionReadOnly, readOnly, record, revealValidation, selectedUpstreamModelId, view, yamlDraft }: {
   detailSection: ModelDetailTab;
   discovered: UpstreamModelConfig[];
   modelSelection: ModelSelection | null;
@@ -244,6 +244,12 @@ function ModelsWorkspace({ detailSection, discovered, modelSelection, modelsErro
   onOpenModel: (selection: ModelSelection | null) => void;
   onViewChange: (view: ModelView) => void;
   onYamlDraftChange: (draft: ModelsYamlDraft | null) => void;
+  // Permission-based read-only: no Upstream.Edit at all.
+  permissionReadOnly: boolean;
+  // Shape-based read-only: this provider's catalog is owned by the upstream,
+  // so rows cannot be added, removed, or edited structurally. Enabling or
+  // disabling a listed model and refreshing the catalog are still edits the
+  // caller may hold, so those follow permissionReadOnly.
   readOnly: boolean;
   record: UpstreamRecord;
   revealValidation: boolean;
@@ -406,7 +412,7 @@ function ModelsWorkspace({ detailSection, discovered, modelSelection, modelsErro
         {!readOnly && <Button className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => onViewChange('yaml')}>{t('dashboard.upstreamEditor.models.editAsYaml')}</Button>}
         {record.kind !== 'azure' && <>
           <ModelsCacheStatus cache={record.modelsCache} />
-          <Button disabled={!canFetch || readOnly} disabledFocusable={modelsLoading} icon={modelsLoading ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefreshModels}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
+          <Button disabled={!canFetch || permissionReadOnly} disabledFocusable={modelsLoading} icon={modelsLoading ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefreshModels}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
         </>}
       </>}
     />
@@ -435,7 +441,7 @@ function ModelsWorkspace({ detailSection, discovered, modelSelection, modelsErro
         <TableHeader><TableRow><TableCentredHeader>{t('dashboard.upstreamEditor.models.enabled')}</TableCentredHeader><TableHeaderCell>{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableCentredHeader>{t('dashboard.upstreamEditor.models.kind')}</TableCentredHeader><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableCentredHeader>{t('dashboard.upstreamEditor.models.source')}</TableCentredHeader><TableActionsHeader /></TableRow></TableHeader>
         <TableBody>{filtered.length === 0 ? <TableRow><TableCell colSpan={6}><EmptyStateLine>{t('dashboard.upstreamEditor.models.noMatches')}</EmptyStateLine></TableCell></TableRow> : filtered.map(row => {
           const id = publicModelId(row.config); return <TableRow className="h-14" key={row.key}>
-            <TableCentredCell><Switch aria-label={t('dashboard.upstreamEditor.models.enabledFor', { name: row.config.display_name ?? id })} checked={!disabled.includes(id)} readOnly={readOnly} onChange={(_, data) => setEnabled(id, data.checked)} /></TableCentredCell>
+            <TableCentredCell><Switch aria-label={t('dashboard.upstreamEditor.models.enabledFor', { name: row.config.display_name ?? id })} checked={!disabled.includes(id)} readOnly={permissionReadOnly} onChange={(_, data) => setEnabled(id, data.checked)} /></TableCentredCell>
             <TableCell className="overflow-hidden">
               <TruncationTooltip content={row.config.display_name ?? id} relationship="label">
                 {measureRef => <RowTitleButton onClick={() => onOpenModel({ locator: row.config.upstreamModelId, manualIndex: row.manualIndex, rowKey: row.key })} ref={measureRef}>

@@ -141,7 +141,7 @@ export function UpstreamConfigSidebar({
           <ModelPrefixEditor readOnly={immutable} />
         </EditorSection>
         <EditorSection title={t('dashboard.upstreamEditor.sections.disabledModels')} description={t('dashboard.upstreamEditor.disabledModelsHint')}>
-          <DisabledModelsCombobox catalogAvailable={catalogAvailable} discovered={discovered} />
+          <DisabledModelsCombobox catalogAvailable={catalogAvailable} discovered={discovered} readOnly={immutable} />
         </EditorSection>
       </aside>
     </div>
@@ -171,7 +171,7 @@ export const buildDisabledModelOptions = (
     .map(id => ({ id, missing: missingIds.has(id) }));
 };
 
-function DisabledModelsCombobox({ catalogAvailable, discovered }: { catalogAvailable: boolean; discovered: UpstreamModelConfig[] }) {
+function DisabledModelsCombobox({ catalogAvailable, discovered, readOnly }: { catalogAvailable: boolean; discovered: UpstreamModelConfig[]; readOnly: boolean }) {
   const { t } = useTranslation();
   const { control, setValue } = useFormContext<UpstreamEditorValues>();
   const disabled = useWatch({ control, name: 'disabledPublicModelIds' });
@@ -186,6 +186,7 @@ function DisabledModelsCombobox({ catalogAvailable, discovered }: { catalogAvail
       ariaLabel={t('dashboard.upstreamEditor.sections.disabledModels')}
       onChange={next => setValue('disabledPublicModelIds', next, { shouldDirty: true })}
       options={valuesAsOptions(options.map(option => option.id))}
+      readOnly={readOnly}
       placeholder={disabled.length === 0
         ? t('dashboard.upstreamEditor.disabledModelsPlaceholder')
         : t('dashboard.upstreamEditor.disabledModelsSelected', { count: disabled.length })}

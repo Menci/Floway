@@ -774,14 +774,16 @@ const buildModelCounts = (
     // Azure's catalog is the operator's own configured list, so it is known
     // without the listing.
     if (record.kind === 'azure') return record.config.models.length;
+    // The catalog is filtered by Model.Use: an upstream visible through Audit
+    // alone has no row to count, which is not the same as having none. The
+    // cached size describes a catalog this caller may not see either, so it is
+    // not a substitute.
+    if (!record.modelUse) return null;
     // The model registry builds providers from enabled upstreams only, so the
     // listing has nothing to say about a disabled upstream: the size of the
     // catalog it stored while it was on is the count instead, and null when it
     // never cached one.
     if (!record.enabled) return record.modelsCache.modelCount;
-    // The catalog is filtered by Model.Use: an upstream visible through Audit
-    // alone has no row to count, which is not the same as having none.
-    if (!record.modelUse) return record.modelsCache.modelCount;
     // Null is a count nobody knows — here, because the listing failed.
     return models === null ? null : listed.get(record.id)!;
   };

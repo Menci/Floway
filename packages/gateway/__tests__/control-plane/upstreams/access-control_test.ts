@@ -55,7 +55,6 @@ test('the list never exposes provider credentials even to a Full editor', async 
   const listed = (await response.json() as Array<Record<string, any>>)[0]!;
   assertEquals(listed.config.apiKey, undefined);
   assertEquals(listed.config.apiKeySet, true);
-  assertEquals(listed.modelUse, true);
   assertEquals(listed.config.ingressHeadersRules[0], { key: 'x-secret', value: 'value' });
   const stored = await repo.upstreams.getById('up_restricted');
   assertEquals((stored?.config as Record<string, unknown> | undefined)?.apiKey, 'sk-secret');
@@ -246,7 +245,9 @@ test('Upstream.Edit.Models returns a redacted record and only accepts model fiel
   assertEquals(blockedName.status, 403);
   assertEquals(blockedEndpoint.status, 403);
   assertEquals(blockedPrefix.status, 403);
-  assertEquals((await requestApp('/api/proxy-options?upstream_id=up_restricted', { headers: { 'x-api-key': apiKey.key } })).status, 404);
+  const readableProxies = await requestApp('/api/proxy-options?upstream_id=up_restricted', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals(readableProxies.status, 200);
+  assertEquals(await readableProxies.json(), [{ id: 'proxy_a', name: 'Proxy A' }]);
 });
 
 test('Upstream.Edit.Full returns raw configuration, accepts full patches, and lists proxy options', async () => {

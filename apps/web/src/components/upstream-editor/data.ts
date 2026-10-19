@@ -82,16 +82,15 @@ export const providerDefaultName: Record<UpstreamProviderKind, string> = {
   ollama: 'Ollama',
 };
 
-export const loadEditorAux = async (upstreamId?: string, includeProxies = true): Promise<EditorAuxData> => {
+// Proxy names are part of an upstream's readable configuration, so every
+// editor loads them; only changing the fallback list needs Full.
+export const loadEditorAux = async (upstreamId?: string): Promise<EditorAuxData> => {
   const runtimePromise = callApi(() => api.api['runtime-info'].$get());
-  let proxies: EditorAuxData['proxies'] = [];
-  if (includeProxies) {
-    const result = upstreamId === undefined
-      ? await callApi(() => api.api.proxies.$get())
-      : await callApi(() => api.api['proxy-options'].$get({ query: { upstream_id: upstreamId } }));
-    if (result.error) throw new Error(result.error.message);
-    proxies = result.data.map(proxy => ({ id: proxy.id, name: proxy.name }));
-  }
+  const result = upstreamId === undefined
+    ? await callApi(() => api.api.proxies.$get())
+    : await callApi(() => api.api['proxy-options'].$get({ query: { upstream_id: upstreamId } }));
+  if (result.error) throw new Error(result.error.message);
+  const proxies = result.data.map(proxy => ({ id: proxy.id, name: proxy.name }));
   const runtime = await runtimePromise;
   if (runtime.error) throw new Error(runtime.error.message);
   return {

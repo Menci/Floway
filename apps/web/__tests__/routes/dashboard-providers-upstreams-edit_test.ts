@@ -74,5 +74,5 @@ test('an audit-only record opens the editor in read-only mode', async () => {
   const loaded = await clientLoader({ params: { id: 'up_saved' } } as Parameters<typeof clientLoader>[0]);
   expect(loaded.editLevel).toBe('off');
   expect(loaded.record.audit).toBe(true);
-  expect(mocks.loadAux).toHaveBeenCalledWith('up_saved', false);
+  expect(mocks.loadAux).toHaveBeenCalledWith('up_saved');
 });

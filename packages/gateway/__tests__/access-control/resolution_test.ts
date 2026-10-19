@@ -63,6 +63,13 @@ test('a concrete user scope outranks membership scopes independent of sort order
   expect(resolveAssignments(records, { kind: 'user', userId: 9 }, { targetGroups: new Set([7]) }).values['User.Audit']).toBe(false);
 });
 
+test('the /Groups collection applies User.Audit to a member just like a concrete group scope', () => {
+  const collection = resolveAssignments([row(1, user, { kind: 'groups' }, { 'User.Audit': true })], { kind: 'user', userId: 9 }, { targetGroups: new Set([7]) });
+  const concrete = resolveAssignments([row(1, user, { kind: 'group', groupId: 7 }, { 'User.Audit': true })], { kind: 'user', userId: 9 }, { targetGroups: new Set([7]) });
+  expect(collection.values['User.Audit']).toBe(true);
+  expect(collection.values).toEqual(concrete.values);
+});
+
 test('group membership scopes do not apply to unrelated target users', () => {
   const records = [row(1, user, { kind: 'group', groupId: 7 }, { 'User.Audit': true })];
   expect(resolveAssignments(records, { kind: 'user', userId: 9 }, { targetGroups: new Set() }).values['User.Audit']).toBe(false);

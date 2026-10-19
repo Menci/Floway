@@ -178,6 +178,7 @@ function CustomApiPaths({ readOnly }: { readOnly: boolean }) {
                     onBlur={field.onBlur}
                     onChange={(_, data) => field.onChange(data.value)}
                     placeholder={`/v1${path}`}
+                    readOnly={readOnly}
                     ref={field.ref}
                     value={field.value ?? ''}
                   />
@@ -296,6 +297,7 @@ function EndpointPicker({ readOnly }: { readOnly: boolean }) {
           key={key}
           checked={selected}
           label={{ children: label, className: monoLabel }}
+          readOnly={readOnly}
           onChange={(_, data) => {
             const latestConfig = getValues('config') as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
             const next = { ...latestConfig.endpoints };
