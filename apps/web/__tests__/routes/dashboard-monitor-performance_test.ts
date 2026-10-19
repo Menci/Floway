@@ -11,34 +11,29 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+// The gateway admin-gates every /api/upstreams route; an operator's session
+// gets 403 there and 200 from the upstream picker.
 const gatewayForOperator = (input: RequestInfo | URL) => {
   const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
+  if (path === '/api/upstreams') return Promise.resolve(Response.json({ error: 'Admin privileges required' }, { status: 403 }));
+  if (path === '/api/upstream-options') return Promise.resolve(Response.json([{ id: 'up-1', name: 'Copilot seat', kind: 'copilot', enabled: true, hue: 210, cachedModelCount: 3 }]));
   if (path === '/api/runtime-info') return Promise.resolve(Response.json({ kind: 'node', runtimeLocation: 'LOCAL' }));
   return Promise.resolve(Response.json({
     series: [], axes: { none: [], model: [], upstream: [], operation: [], runtimeLocation: [], keyId: [], userId: [] },
     dimensionValues: { models: [], upstreams: [], operations: [], runtimeLocations: [], userIds: [], keyIds: [] },
-    users: [], upstreams: [{ id: 'up-1', name: 'Copilot seat', hue: 210 }], keys: [],
+    users: [], keys: [],
   }));
 };
 
-describe('performance overview metadata', () => {
-  it('reads upstream names from the ACL-scoped overview response', async () => {
+describe('where the performance page reads upstream names from', () => {
+  it('names an upstream for an operator, whose session may not read the admin upstream list', async () => {
     useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false } });
     vi.stubGlobal('fetch', vi.fn(gatewayForOperator));
 
     const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance') } as never);
 
-    expect(data.overview?.upstreams).toEqual([{ id: 'up-1', name: 'Copilot seat', hue: 210 }]);
+    expect(data.upstreams).toEqual([{ id: 'up-1', name: 'Copilot seat', hue: 210 }]);
     expect(data.error).toBeNull();
-  });
-
-  it('keeps User grouping for a non-admin operator', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false } });
-    vi.stubGlobal('fetch', vi.fn(gatewayForOperator));
-
-    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance?g=userId') } as never);
-
-    expect(data.state.groupBy).toBe('userId');
   });
 
   it('makes API key grouping explicitly current-user scoped for an administrator', async () => {

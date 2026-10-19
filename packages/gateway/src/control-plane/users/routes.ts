@@ -30,8 +30,7 @@ export const listUsers = async (c: AuthedContext) => {
 };
 
 export const getUserDirectory = async (c: AuthedContext) => {
-  const repo = getRepo();
-  const directory = await repo.readUserDirectory();
+  const directory = await getRepo().readUserDirectory();
   const groupIdsByUser = new Map(directory.users.map(user => [user.id, [] as number[]]));
   for (const group of directory.groups) {
     for (const userId of group.memberIds) groupIdsByUser.get(userId)!.push(group.id);

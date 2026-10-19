@@ -631,6 +631,36 @@ test('shim propagates filters / user_location / search_context_size to backend',
   assertEquals(searchCall.userLocation, { city: 'Tokyo', country: 'JP' });
 });
 
+test('shim applies response_length and query-level filters to the backend search', async () => {
+  const { backend } = makeStubDeps();
+  const shim = withOpenAIResponsesWebSearchShim;
+  const inv = makeInvocation({
+    payload: {
+      tools: [{
+        type: 'web_search',
+        filters: { allowed_domains: ['allowed.com', 'other.com'] },
+        search_context_size: 'high',
+      }],
+    },
+  });
+  const script = scriptedRun([
+    fcTurn(0, 'call_1', SHIM_TOOL_NAME, JSON.stringify({
+      search_query: [{ q: 'q1', domains: ['allowed.com', 'blocked.com'], recency: 7 }],
+      response_length: 'short',
+    })),
+    messageTurn('done', 0),
+  ]);
+
+  await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
+
+  assertEquals(backend.calls.length, 1);
+  const searchCall = backend.calls[0].request as WebSearchProviderRequest;
+  assertEquals(searchCall.query, 'q1');
+  assertEquals(searchCall.maxResults, 10);
+  assertEquals(searchCall.allowedDomains, ['allowed.com']);
+  assertEquals(searchCall.recencyDays, 7);
+});
+
 // ── Single-iteration message (no function calls) ───────────────────────
 
 test('shim forwards a single-turn message without backend calls', async () => {

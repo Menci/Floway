@@ -232,10 +232,10 @@ export const getModelsFromProviders = (
   providers: readonly GatewayProvider[],
   scheduleRefresh: ModelsRefreshScheduler,
 ): { models: InternalModel[]; upstreamsByPublicId: Map<string, Provider[]>; failedUpstreams: readonly string[] } => {
-  if (providers.length === 0) {
-    throw new Error('No upstream provider configured — add and enable an upstream in the dashboard');
-  }
-
+  // An empty provider set is a normal state: a fresh gateway, a principal
+  // whose upstream cap resolved to nothing, or every upstream disabled. The
+  // catalog it yields is empty, and every listing surface reports that as an
+  // empty list rather than a failure.
   const { models, upstreamsByPublicId, failedUpstreams } = collectProviderModels(providers, scheduleRefresh);
 
   // TODO: surface `failedUpstreams` on each listing endpoint's wire response

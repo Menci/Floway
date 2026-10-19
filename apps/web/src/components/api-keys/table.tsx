@@ -11,7 +11,7 @@ import { useNow } from '../../lib/use-now';
 import { useDangerActionClasses, useDangerTextClass } from '../ui/danger';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
-import { TABLE_ACTIONS_WIDTH, TableActions, TableTrailingHeader, stopRowSelection } from '../ui/table-actions';
+import { TABLE_ACTIONS_WIDTH, TableActions, TableActionsHeader, stopRowSelection } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
@@ -172,7 +172,7 @@ export function KeysTable({
             <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'lastUsed')} sortDirection={sort.getSortDirection('lastUsed')} sortable>
               {t('dashboard.apiKeys.table.lastUsed')}
             </TableHeaderCell>
-            <TableTrailingHeader>{t('dashboard.apiKeys.table.actions')}</TableTrailingHeader>
+            <TableActionsHeader />
           </TableRow>
         </TableHeader>
         <TableBody>

@@ -11,6 +11,7 @@ import { sameDashboardRange } from '../components/charts/dashboard-time';
 import { PerformanceChartSection } from '../components/performance/chart';
 import {
   buildPerformanceQuery,
+  normalizePerformanceBreakdownForRuntime,
   normalizePerformanceDimensionsForRuntime,
   parsePerformanceUrlState,
   performanceLabels,
@@ -20,8 +21,11 @@ import {
   type PerformanceMetric,
   type PerformanceOverviewResponse,
   type PerformancePercentile,
+  type PerformancePercentiles,
   type PerformanceRange,
+  type PerformanceTableSort,
   type PerformanceUrlState,
+  type PerformanceView,
 } from '../components/performance/overview';
 import { buildPerformanceChart, performanceBuckets } from '../components/performance/plot';
 import { PerformanceTable } from '../components/performance/table';
@@ -46,6 +50,8 @@ import { useLocale } from '../lib/use-locale';
 
 const { Button, Tab, TabList, Text, Tooltip } = fluentComponents;
 
+interface UpstreamMetadata { id: string; name: string; hue: number }
+
 interface LoaderData {
   currentUserId: string;
   error: GlobalError | null;
@@ -54,28 +60,44 @@ interface LoaderData {
   // render zeroes the page does not know to be true.
   overview: PerformanceOverviewResponse | null;
   state: PerformanceUrlState;
+  // Null on the same terms: upstream metadata owns both the visible name and
+  // the series hue, so a partial response cannot faithfully render the group.
+  upstreams: UpstreamMetadata[] | null;
   regionAvailable: boolean | null;
+  view: PerformanceView;
 }
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
   const user = await requireDashboardUser();
-  const state = parsePerformanceUrlState(new URL(request.url).searchParams);
-  const scoped = scopeTelemetryIdentity(state.groupBy, state.filters, {
+  const parsed = parsePerformanceUrlState(new URL(request.url).searchParams);
+  const view: PerformanceView = user.isAdmin ? 'all-by-user' : 'self-by-key';
+  const scoped = scopeTelemetryIdentity(parsed.groupBy, parsed.filters, {
     currentUserId: String(user.id),
     fallbackGroup: 'model',
-    userDimensionAvailable: true,
+    userDimensionAvailable: view === 'all-by-user',
   });
   const loadedAt = Date.now();
-  const requestedState = { ...state, ...scoped };
+  const requestedState = { ...parsed, ...scoped };
   const query = buildPerformanceQuery(requestedState.range, requestedState.groupBy, requestedState.filters, loadedAt);
-  const [initialOverview, runtime] = await Promise.all([
+  // The page opens for every signed-in account, so the names come from the
+  // non-admin upstream picker; /api/upstreams answers 403 to an operator and
+  // would leave the whole page unavailable to them.
+  const [initialOverview, upstreams, runtime] = await Promise.all([
     callApi(() => api.api.performance.overview.$get({ query })),
+    callApi(() => api.api['upstream-options'].$get({ query: {} })),
     callApi(() => api.api['runtime-info'].$get()),
   ]);
   const regionAvailable = runtime.error ? null : runtime.data.kind === 'cloudflare';
   const normalization = regionAvailable === null
     ? { changed: false, state: requestedState }
     : normalizePerformanceDimensionsForRuntime(requestedState, regionAvailable);
+  const breakdown = view === 'all-by-user'
+    ? normalization.state.breakdown
+    : normalization.state.breakdown === 'userId' ? 'model' : normalization.state.breakdown;
+  const state = {
+    ...normalization.state,
+    breakdown: regionAvailable === null ? breakdown : normalizePerformanceBreakdownForRuntime(breakdown, regionAvailable),
+  };
   const overview = !normalization.changed
     ? initialOverview
     : await callApi(() => api.api.performance.overview.$get({
@@ -83,11 +105,13 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
       }));
   return {
     currentUserId: String(user.id),
-    error: overview.error ?? runtime.error ?? null,
+    error: overview.error ?? upstreams.error ?? runtime.error ?? null,
     loadedAt,
     overview: overview.data ?? null,
     regionAvailable,
-    state: normalization.state,
+    state,
+    upstreams: upstreams.data?.map(({ id, name, hue }) => ({ id, name, hue })) ?? null,
+    view,
   };
 }
 
@@ -98,24 +122,27 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [, setSearchParams] = useSearchParams();
   const rewrite = useEntryRewrite();
   const initialState = loaderData.state;
+  const view: PerformanceView = loaderData.view;
   const [regionAvailable, setRegionAvailable] = useState(loaderData.regionAvailable);
   const [query, setQuery] = useState(() => ({
     filters: initialState.filters,
-    groupBy: initialState.groupBy,
+    groupBy: initialState.groupBy === 'userId' && view !== 'all-by-user' ? 'model' as const : initialState.groupBy,
     range: initialState.range,
   }));
   const [metric, setMetric] = useState<PerformanceMetric>(initialState.metric);
-  const [percentile, setPercentile] = useState<PerformancePercentile>(initialState.percentile);
-  const [breakdownGroup, setBreakdownGroup] = useState<PerformanceGroupBy>('model');
+  const [percentiles, setPercentiles] = useState<PerformancePercentiles>(initialState.percentiles);
+  const [breakdownGroup, setBreakdownGroup] = useState<PerformanceGroupBy>(initialState.breakdown);
+  const [sort, setSort] = useState<PerformanceTableSort>(initialState.sort);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
   const [overview, setOverview] = useState<PerformanceOverviewResponse | null>(loaderData.overview);
+  const [upstreams] = useState(loaderData.upstreams);
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const pendingRegionAvailableRef = useRef<boolean | null>(null);
   const locale = useLocale();
   const identityContext = {
     currentUserId: loaderData.currentUserId,
     fallbackGroup: 'model' as const,
-    userDimensionAvailable: true,
+    userDimensionAvailable: view === 'all-by-user',
   };
 
   // A background poll must not clear a failure the operator has not read.
@@ -190,6 +217,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     }
     pendingRegionAvailableRef.current = null;
     setRegionAvailable(nextRegionAvailable);
+    setBreakdownGroup(current => normalizePerformanceBreakdownForRuntime(current, nextRegionAvailable));
     setOverview(result.data);
     return normalization.changed ? committedQuery : true;
   }, [query, regionAvailable]);
@@ -209,8 +237,8 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   useTelemetryPolling(poll, loadedQuery.range, !editingRange && !refreshing);
 
   const urlState = useMemo<PerformanceUrlState>(
-    () => ({ ...loadedQuery, metric, percentile, hidden: [...hiddenSeries] }),
-    [hiddenSeries, loadedQuery, metric, percentile],
+    () => ({ ...loadedQuery, metric, percentiles, breakdown: breakdownGroup, sort, hidden: [...hiddenSeries] }),
+    [breakdownGroup, hiddenSeries, loadedQuery, metric, percentiles, sort],
   );
 
   useEffect(() => {
@@ -244,8 +272,11 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     ...changeTelemetryFilter(current, key, value, identityContext),
   }));
   const buckets = useMemo(() => performanceBuckets(loadedQuery.range, loadedAt), [loadedAt, loadedQuery.range]);
-  const labels = useMemo(() => overview && performanceLabels(overview, overview.upstreams), [overview]);
-  const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentile, loadedQuery.groupBy, labels, buckets, loadedQuery.range), [buckets, labels, loadedQuery.groupBy, loadedQuery.range, metric, overview, percentile]);
+  const labels = useMemo(() => overview && upstreams && performanceLabels(overview, upstreams), [overview, upstreams]);
+  const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentiles, loadedQuery.groupBy, labels, buckets, loadedQuery.range), [buckets, labels, loadedQuery.groupBy, loadedQuery.range, metric, overview, percentiles]);
+
+  const changePercentile = (value: PerformancePercentile) => setPercentiles(current => ({ ...current, [metric]: value }));
+  const changeBreakdown = (key: PerformanceGroupBy) => setBreakdownGroup(key);
   const summary = overview?.axes.none[0];
   const summaryCards = [
     ['requests', formatCount(summary?.requests ?? 0, locale)],
@@ -276,7 +307,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
           groupLabel: t('dashboard.performance.groupBy.userId'),
           filterLabel: t('dashboard.performance.filters.userId'),
           allLabel: t('dashboard.performance.filters.all.userId'),
-          options: [...new Set([...overview.users.map(user => String(user.id)), ...overview.dimensionValues.userIds.map(String), ...loadedQuery.filters.userId])]
+          options: [...new Set([...overview.dimensionValues.userIds.map(String), ...loadedQuery.filters.userId])]
             .map(value => ({ value, label: labels.users.get(value) ?? `user ${value}` })),
           selectionLabel: values => values.length === 1 && values[0] === loaderData.currentUserId
             ? t('dashboard.telemetry.currentUserOnly')
@@ -284,7 +315,10 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
         },
         { key: 'keyId', groupLabel: t('dashboard.performance.groupBy.keyId'), filterLabel: t('dashboard.performance.filters.keyId'), allLabel: t('dashboard.performance.filters.all.keyId'), options: overview.dimensionValues.keyIds.map(value => ({ value, label: labels.keys.get(value) ?? value })) },
       ];
-      const availableDimensions = dimensions.filter(dimension => dimension.key !== 'runtimeLocation' || regionAvailable);
+      const availableDimensions = dimensions.filter(dimension => (
+        (dimension.key !== 'runtimeLocation' || regionAvailable)
+        && (dimension.key !== 'userId' || view === 'all-by-user')
+      ));
       const breakdowns = availableDimensions.map(({ key }) => ({ key, rows: overview.axes[key] }));
       const activeBreakdown = breakdowns.find(item => item.key === breakdownGroup) ?? breakdowns[0];
       if (activeBreakdown === undefined) throw new RangeError('Performance overview has no available breakdown dimension');
@@ -339,21 +373,21 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
               { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed'), to: addressOf({ metric: 'tokPerSec' }) },
             ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} />
             <div className="ml-auto flex-none">
-              <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value, to: addressOf({ percentile: value }) }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
+              <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value, to: addressOf({ percentiles: { ...percentiles, [metric]: value } }) }))} onChange={value => changePercentile(value as PerformancePercentile)} value={percentiles[metric]} />
             </div>
           </div>
         </Panel>
         <Panel className="min-w-0">
-          <PerformanceChartSection chart={chart} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={t('dashboard.performance.chartTitle', { metric: t(`dashboard.performance.metric.${metric === 'ttft' ? 'ttft' : 'outputSpeed'}`), group: t(`dashboard.performance.groupBy.${loadedQuery.groupBy}`), percentile })} />
+          <PerformanceChartSection chart={chart} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={t('dashboard.performance.chartTitle', { metric: t(`dashboard.performance.metric.${metric === 'ttft' ? 'ttft' : 'outputSpeed'}`), group: t(`dashboard.performance.groupBy.${loadedQuery.groupBy}`), percentile: percentiles[metric] })} />
         </Panel>
         <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
           {/* The scrollport clips the 2px ring a focused tab paints, so it takes
             a gutter and the host removes the same distance again to keep the
             row aligned. An inward ring would land on the tab's selection pipe. */}
-          <ScrollArea axes="horizontal" className="min-w-0 -m-0.5" viewportClassName="p-0.5"><TabList aria-label={t('dashboard.performance.breakdown')} selectedValue={activeBreakdown.key} onTabSelect={(_, data) => setBreakdownGroup(data.value as PerformanceGroupBy)}>
+          <ScrollArea axes="horizontal" className="min-w-0 -m-0.5" viewportClassName="p-0.5"><TabList aria-label={t('dashboard.performance.breakdown')} selectedValue={activeBreakdown.key} onTabSelect={(_, data) => changeBreakdown(data.value as PerformanceGroupBy)}>
             {breakdowns.map(({ key }) => <Tab key={key} value={key}>{t(`dashboard.performance.groupBy.${key}`)}</Tab>)}
           </TabList></ScrollArea>
-          <PerformanceTable groupBy={activeBreakdown.key} labels={labels} rows={activeBreakdown.rows} />
+          <PerformanceTable groupBy={activeBreakdown.key} labels={labels} onSortChange={setSort} percentiles={percentiles} rows={activeBreakdown.rows} sort={sort} />
         </Panel>
       </>;
     })()}

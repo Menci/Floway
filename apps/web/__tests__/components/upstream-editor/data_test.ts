@@ -66,9 +66,39 @@ test('background usage refresh remains explicit through editor create, preview a
   }
 });
 
-test('model prefix is emitted only by Full updates', () => {
-  const values = valuesFromRecord(record);
-  values.modelPrefix = { prefix: 'team/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] };
-  expect(updateBody(record, values, 'full').model_prefix).toEqual(values.modelPrefix);
-  expect(updateBody(record, values, 'models')).not.toHaveProperty('model_prefix');
+// The key input carries the stored value, so what the operator leaves in it is
+// what gets sent -- including an emptied field, which must reach the provider
+// as a cleared credential rather than let the config merge restore the old one.
+const withKey = (apiKey: string) => upstreamRecord('up_custom', {
+  kind: 'custom',
+  config: {
+    baseUrl: 'https://api.example.com',
+    authStyle: 'bearer',
+    apiKey,
+    endpoints: { openaiResponses: {} },
+    ingressHeadersRules: [],
+    modelsFetch: { enabled: false },
+    models: [],
+  },
+  state: null,
+}) as CustomRecord;
+
+test('an API key opens on the stored value', () => {
+  expect((valuesFromRecord(withKey('sk-stored')).config as CustomRecord['config']).apiKey).toBe('sk-stored');
+});
+
+test('a replacement API key is sent', () => {
+  const values = valuesFromRecord(withKey('sk-stored'));
+  (values.config as CustomRecord['config']).apiKey = ' sk-replacement ';
+  expect((updateBody(withKey('sk-stored'), values, 'full').config as CustomRecord['config']).apiKey).toBe('sk-replacement');
+});
+
+test('an emptied API key field is sent as an empty key', () => {
+  const values = valuesFromRecord(withKey('sk-stored'));
+  (values.config as CustomRecord['config']).apiKey = '';
+  expect((updateBody(withKey('sk-stored'), values, 'full').config as CustomRecord['config']).apiKey).toBe('');
+});
+
+test('an absent API key opens as an empty field', () => {
+  expect((valuesFromRecord(withKey('')).config as CustomRecord['config']).apiKey).toBe('');
 });

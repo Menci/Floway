@@ -583,36 +583,32 @@ test('public model list endpoints hide malformed upstream response bodies', asyn
   );
 });
 
-test('/v1/models surfaces the actionable "no upstream configured" hint when no provider is configured', async () => {
+test('model discovery returns empty catalogs when no provider is configured', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
 
-  const response = await requestAppWithWarmModels('/v1/models', {
-    headers: { 'x-api-key': apiKey.key },
+  const cases = [
+    { path: '/v1/models', body: { object: 'list', has_more: false, first_id: null, last_id: null, data: [] } },
+    { path: '/models', body: { object: 'list', has_more: false, first_id: null, last_id: null, data: [] } },
+    { path: '/api/models', body: { object: 'list', has_more: false, first_id: null, last_id: null, data: [] } },
+    { path: '/v1beta/models', body: { models: [] } },
+    { path: '/models', userAgent: 'codex_cli_rs/987.654.321', body: { models: [] } },
+    { path: '/models', userAgent: 'claude-code/2.1.206', body: { data: [], first_id: null, has_more: false, last_id: null } },
+    { path: '/models', userAgent: 'pi/0.68.0', body: { models: [] } },
+    { path: '/v1/models', userAgent: 'omp/18.8.4', body: { api: 'floway:floway', models: [], wireApis: {}, streamOptions: {}, payloadRemovals: {} } },
+  ];
+  await withMockedFetch(request => {
+    if (new URL(request.url).hostname === 'raw.githubusercontent.com') return new Response(null, { status: 404 });
+    throw new Error(`Unexpected fetch ${request.url}`);
+  }, async () => {
+    for (const { path, userAgent, body } of cases) {
+      const headers = { 'x-api-key': apiKey.key, ...(userAgent === undefined ? {} : { 'user-agent': userAgent }) };
+      const response = await requestAppWithWarmModels(path, { headers });
+      assertEquals(response.status, 200);
+      assertEquals(await response.json(), body);
+    }
   });
-
-  assertEquals(response.status, 502);
-  assertEquals(await response.json(), {
-    error: {
-      message: 'No upstream provider configured — add and enable an upstream in the dashboard',
-      type: 'api_error',
-    },
-  });
-});
-
-test('/v1/models exposes actionable discovery failures and stack traces to OMP', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
-  const response = await requestAppWithWarmModels('/v1/models', {
-    headers: { 'x-api-key': apiKey.key, 'user-agent': 'omp/18.8.4' },
-  });
-  assertEquals(response.status, 502);
-  const body = await response.json() as { error: { message: string; type: string; stack: string } };
-  assertEquals(body.error.message, 'No upstream provider configured — add and enable an upstream in the dashboard');
-  assertEquals(body.error.type, 'internal_error');
-  expect(body.error.stack).toContain('getModelsFromProviders');
 });
 
 test('/v1/models returns the id-sorted union of every connected GitHub account', async () => {

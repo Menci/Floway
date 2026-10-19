@@ -83,8 +83,8 @@ export const getPermissionsData = async (c: AuthedContext) => {
   const snapshot = await loadPermissionSnapshot(c);
   if (snapshot === null) return c.json({ error: 'Permission audit access required' }, 403);
   const admin = userFromContext(c).isAdmin;
-  const directory = projectPermissionDirectory(snapshot.context, snapshot.sourceRecords, admin);
   const upstreams = await permissionUpstreamOptions(snapshot.visibleRecords, snapshot.sourceRecords, admin);
+  const directory = projectPermissionDirectory(snapshot.context, snapshot.sourceRecords, admin);
   return c.json({ records: snapshot.visibleRecords, directory, upstreams });
 };
 

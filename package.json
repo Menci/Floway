@@ -8,7 +8,7 @@
     "dev:web": "pnpm --filter @floway-dev/web run dev",
     "dev:node": "pnpm --filter @floway-dev/platform-node run start",
     "build:web": "pnpm --filter @floway-dev/web run build",
-    "deploy": "pnpm install --frozen-lockfile && jiti scripts/require-wrangler-config.ts && pnpm run build:web && wrangler deploy --message \"$(git rev-parse HEAD)\"",
+    "deploy": "pnpm install --frozen-lockfile && jiti scripts/require-wrangler-config.ts && pnpm run build:web && wrangler deploy --minify --message \"$(git rev-parse HEAD)\"",
     "db:migrate": "jiti scripts/require-wrangler-config.ts && wrangler d1 migrations apply DB",
     "db:migrate:remote": "jiti scripts/require-wrangler-config.ts && wrangler d1 migrations apply DB --remote",
     "tools:backfill-usage-pricing": "pnpm --filter @floway-dev/tools run backfill-usage-pricing",

@@ -26,7 +26,7 @@ import type { DeviceFlowStart, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { errorMessage } from '../../lib/error-message';
-import { Checkbox, Dropdown, Input, Switch, Textarea } from '../ui/fluent-form-controls';
+import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
 import { CHECKBOX_LIST_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
@@ -39,10 +39,12 @@ import type { UpstreamProviderKind } from '@floway-dev/provider/browser';
 
 const {
   Button,
+  Checkbox,
   Field,
   Link,
   Option,
   Spinner,
+  Switch,
   Tab,
   TabList,
   Text,
@@ -72,11 +74,11 @@ export function ProviderConfigSection({
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
   onRefreshModels: () => void;
 }) {
-  if (record.kind === 'custom') return <CustomConfig readOnly={readOnly} record={record} onRefreshModels={onRefreshModels} />;
-  if (record.kind === 'azure') return <AzureConfig readOnly={readOnly} record={record} />;
+  if (record.kind === 'custom') return <CustomConfig onRefreshModels={onRefreshModels} readOnly={readOnly} />;
+  if (record.kind === 'azure') return <AzureConfig readOnly={readOnly} />;
   if (record.kind === 'ollama') return <OllamaConfig readOnly={readOnly} record={record} />;
-  if (record.kind === 'copilot') return <CopilotConfig readOnly={readOnly} record={record} onPatch={onPatch} />;
-  return <OAuthConfig readOnly={readOnly} record={record} onPatch={onPatch} />;
+  if (record.kind === 'copilot') return <CopilotConfig onPatch={onPatch} readOnly={readOnly} record={record} />;
+  return <OAuthConfig onPatch={onPatch} readOnly={readOnly} record={record} />;
 }
 
 export function ApiPathsSection({ readOnly, record }: { readOnly: boolean; record: UpstreamRecord }) {
@@ -84,7 +86,7 @@ export function ApiPathsSection({ readOnly, record }: { readOnly: boolean; recor
   return <CustomApiPaths readOnly={readOnly} />;
 }
 
-function CustomConfig({ onRefreshModels, readOnly, record }: { onRefreshModels: () => void; readOnly: boolean; record: Extract<UpstreamRecord, { kind: 'custom' }> }) {
+function CustomConfig({ onRefreshModels, readOnly }: { onRefreshModels: () => void; readOnly: boolean }) {
   const { t } = useTranslation();
   const { control, setValue } = useFormContext<ValuesForKind<'custom'>>();
   const authStyle = useWatch({ control, name: 'config.authStyle' });
@@ -128,7 +130,7 @@ function CustomConfig({ onRefreshModels, readOnly, record }: { onRefreshModels: 
           </Dropdown>
         </Field>
       )} />
-      {authStyle !== 'none' && <SecretField readOnly={readOnly} secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} />}
+      {authStyle !== 'none' && <SecretField readOnly={readOnly} />}
       <Controller control={control} name="config.modelsFetch.enabled" render={({ field }) => (
         <Switch
           checked={field.value}
@@ -176,7 +178,6 @@ function CustomApiPaths({ readOnly }: { readOnly: boolean }) {
                     onBlur={field.onBlur}
                     onChange={(_, data) => field.onChange(data.value)}
                     placeholder={`/v1${path}`}
-                    readOnly={readOnly}
                     ref={field.ref}
                     value={field.value ?? ''}
                   />
@@ -190,14 +191,14 @@ function CustomApiPaths({ readOnly }: { readOnly: boolean }) {
   );
 }
 
-function AzureConfig({ readOnly, record }: { readOnly: boolean; record: Extract<UpstreamRecord, { kind: 'azure' }> }) {
+function AzureConfig({ readOnly }: { readOnly: boolean }) {
   const { t } = useTranslation();
   const { control } = useFormContext<ValuesForKind<'azure'>>();
   return <div className="grid gap-4">
     <Field label={t('dashboard.upstreamEditor.fields.endpoint')}>
       <Controller control={control} name="config.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://resource.openai.azure.com/openai/v1" readOnly={readOnly} ref={field.ref} value={field.value} />} />
     </Field>
-    <SecretField readOnly={readOnly} secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} />
+    <SecretField readOnly={readOnly} />
   </div>;
 }
 
@@ -223,15 +224,14 @@ function OllamaConfig({ readOnly, record }: { readOnly: boolean; record: Extract
   }, [config.baseUrl, config.cloudUsage, setValue]);
 
   // The card reads an account, so it needs both halves: the option, and a key
-  // to authenticate with. The stored key answers for a saved upstream — the
-  // form blanks the secret field and keeps it — and the typed one lets a new
-  // key be tried before saving.
-  const keySet = record.config.apiKeySet === true || Boolean(record.config.apiKey) || Boolean(config.apiKey);
+  // to authenticate with. The field carries the stored key, so the edited value
+  // is the only answer.
+  const keySet = Boolean(config.apiKey);
   return <div className="grid gap-4">
     <Field label={t('dashboard.upstreamEditor.fields.baseUrl')}>
       <Controller control={control} name="config.baseUrl" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://ollama.com" readOnly={readOnly} ref={field.ref} value={field.value} />} />
     </Field>
-    <SecretField readOnly={readOnly} secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} optional />
+    <SecretField optional readOnly={readOnly} />
     <Controller control={control} name="config.cloudUsage" render={({ field }) => (
       <SwitchSetting
         checked={field.value === true}
@@ -248,13 +248,12 @@ function OllamaConfig({ readOnly, record }: { readOnly: boolean; record: Extract
   </div>;
 }
 
-function SecretField({ optional, readOnly, secretSet }: { optional?: boolean; readOnly: boolean; secretSet: boolean }) {
+function SecretField({ optional, readOnly }: { optional?: boolean; readOnly: boolean }) {
   const { t } = useTranslation();
   const { control } = useFormContext<ValuesForKind<'custom' | 'azure' | 'ollama'>>();
   const [visible, setVisible] = useState(false);
   return <Field
     label={`${t('dashboard.upstreamEditor.fields.apiKey')}${optional ? ` (${t('dashboard.upstreamEditor.optional')})` : ''}`}
-    hint={secretSet ? t('dashboard.upstreamEditor.secretKeep') : undefined}
   >
     <Controller
       control={control}
@@ -265,7 +264,7 @@ function SecretField({ optional, readOnly, secretSet }: { optional?: boolean; re
           value={field.value ?? ''}
           onBlur={field.onBlur}
           onChange={(_, data) => field.onChange(data.value)}
-          placeholder={secretSet ? '••••••••' : 'sk-...'}
+          placeholder="sk-..."
           readOnly={readOnly}
           contentAfter={
             <TooltipIconButton
@@ -297,7 +296,6 @@ function EndpointPicker({ readOnly }: { readOnly: boolean }) {
           key={key}
           checked={selected}
           label={{ children: label, className: monoLabel }}
-          readOnly={readOnly}
           onChange={(_, data) => {
             const latestConfig = getValues('config') as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
             const next = { ...latestConfig.endpoints };
@@ -316,7 +314,7 @@ function ReadyToSaveHint({ kind }: { kind: UpstreamProviderKind }) {
   </OutcomeMessageBar>;
 }
 
-function CopilotConfig({ readOnly, record, onPatch }: {
+function CopilotConfig({ onPatch, readOnly, record }: {
   readOnly: boolean;
   record: Extract<UpstreamRecord, { kind: 'copilot' }>;
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
@@ -420,7 +418,7 @@ function CopilotConfig({ readOnly, record, onPatch }: {
 }
 
 type OAuthKind = 'codex' | 'claude-code';
-function OAuthConfig({ readOnly, record, onPatch }: {
+function OAuthConfig({ onPatch, readOnly, record }: {
   readOnly: boolean;
   record: Extract<UpstreamRecord, { kind: OAuthKind }>;
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
@@ -443,8 +441,7 @@ function OAuthConfig({ readOnly, record, onPatch }: {
     if (result.error) { setError(result.error.message); return; }
     onPatch(result.data.patch, isPersisted(record));
   };
-  const [open, setOpen] = useState(!hasAccount && !readOnly);
-  const canImport = !readOnly;
+  const [open, setOpen] = useState(!hasAccount);
   const [probing, setProbing] = useState(false);
 
   const probeQuota = async () => {
@@ -491,7 +488,6 @@ function OAuthConfig({ readOnly, record, onPatch }: {
       : <ClaudeCodeAccountCard
           onRefreshQuota={() => void probeQuota()}
           probing={probing}
-          readOnly={readOnly}
           record={{ ...record, kind: 'claude-code', config: config as Extract<UpstreamRecord, { kind: 'claude-code' }>['config'], state: values.state as Extract<UpstreamRecord, { kind: 'claude-code' }>['state'] }}
         />)}
     {hasAccount && !readOnly && !isPersisted(record) && <ReadyToSaveHint kind={record.kind} />}
@@ -502,7 +498,7 @@ function OAuthConfig({ readOnly, record, onPatch }: {
       <Button onClick={() => setOpen(value => !value)}>{open ? t('common.cancel') : t('dashboard.upstreamEditor.oauth.reimport')}</Button>
     </div>}
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
-    {open && canImport && (record.kind === 'codex'
+    {open && !readOnly && (record.kind === 'codex'
       ? <CodexImportForm
           hasAccount={hasAccount}
           onImported={patch => { onPatch(patch, isPersisted(record)); setOpen(false); }}

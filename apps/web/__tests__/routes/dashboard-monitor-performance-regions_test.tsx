@@ -16,11 +16,10 @@ const overview: PerformanceOverviewResponse = {
   axes: { none: [], keyId: [], userId: [], model: [], upstream: [], operation: [], runtimeLocation: [] },
   dimensionValues: { models: [], upstreams: [], operations: [], runtimeLocations: ['LOCAL'], keyIds: [], userIds: [] },
   users: [],
-  upstreams: [],
   keys: [],
 };
 
-const renderPage = (regionAvailable: boolean | null, groupBy: 'model' | 'runtimeLocation' = 'model', value = overview) => {
+const renderPage = (regionAvailable: boolean | null, groupBy: 'model' | 'runtimeLocation' = 'model') => {
   const router = createMemoryRouter([{
     path: '/',
     Component: () => <DashboardMonitorPerformance
@@ -28,16 +27,20 @@ const renderPage = (regionAvailable: boolean | null, groupBy: 'model' | 'runtime
         currentUserId: '1',
         error: null,
         loadedAt: Date.UTC(2026, 7, 5, 12),
-        overview: value,
+        overview,
         regionAvailable,
         state: {
           metric: 'ttft',
-          percentile: 'p95',
+          percentiles: { ttft: 'p95', tokPerSec: 'p95' },
+          breakdown: 'model',
+          sort: { key: 'requests', direction: 'descending' },
           groupBy,
           range: 'today',
           filters: { model: [], upstream: [], operation: [], runtimeLocation: [], userId: [], keyId: [] },
           hidden: [],
         },
+        upstreams: [],
+        view: 'self-by-key',
       }}
       matches={[] as never}
       params={{}}
@@ -47,18 +50,6 @@ const renderPage = (regionAvailable: boolean | null, groupBy: 'model' | 'runtime
 };
 
 describe('Performance Region dimensions', () => {
-  it('shows every auditable user in the User filter', () => {
-    renderPage(false, 'model', {
-      ...overview,
-      dimensionValues: { ...overview.dimensionValues, userIds: [1] },
-      users: [{ id: 1, username: 'Alice' }, { id: 5, username: 'Dana' }],
-    });
-
-    fireEvent.click(screen.getByRole('combobox', { name: 'User' }));
-    expect(screen.getByRole('menuitemcheckbox', { name: 'Alice' })).toBeTruthy();
-    expect(screen.getByRole('menuitemcheckbox', { name: 'Dana' })).toBeTruthy();
-  });
-
   it('hides Region controls and breakdowns outside Cloudflare', () => {
     renderPage(false);
 

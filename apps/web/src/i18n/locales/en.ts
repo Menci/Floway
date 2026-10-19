@@ -75,7 +75,7 @@ const en = {
         providers: 'Providers',
         services: 'Services',
         monitor: 'Monitor',
-        management: 'Management',
+        admin: 'Management',
       },
       nav: {
         label: 'Dashboard navigation',
@@ -119,7 +119,7 @@ const en = {
         performance:
             'Monitor latency, throughput, and upstream performance signals',
         users:
-            'Manage console users and groups',
+            'Manage console users, groups, and upstream access',
         backupRestore:
             'Download a full copy of everything this gateway holds, or restore it from an earlier export',
         unavailable: 'This view could not be loaded',
@@ -261,6 +261,11 @@ const en = {
           actions: 'Actions',
         },
         role: { admin: 'Administrator', operator: 'Operator' },
+        upstreams: {
+          all: 'All upstreams',
+          count_one: '{{count, number}} upstream',
+          count_other: '{{count, number}} upstreams',
+        },
         dialog: {
           createTitle: 'New user',
           editTitle: 'Edit {{username}}',
@@ -305,66 +310,12 @@ const en = {
         members: { count_one: '{{count, number}} member', count_other: '{{count, number}} members', empty: 'This group has no members', allAdded: 'All users are already members', noMatches: 'No matching users' },
         dialog: { createTitle: 'New group', editTitle: 'Edit {{name}}' },
         fields: { name: 'Name', members: 'Members', hue: 'Color' },
-        delete: { title: 'Delete group', message: 'Delete {{name}}? Its membership and permissions will be removed.' },
+        delete: { title: 'Delete group', message: 'Delete {{name}}? Its membership will be removed.' },
         toast: {
           create: { pending: 'Creating group {{name}}', success: 'Created group {{name}}' },
           edit: { pending: 'Saving group {{name}}', success: 'Saved group {{name}}' },
           delete: { pending: 'Deleting group {{name}}', success: 'Deleted group {{name}}' },
         },
-      },
-      accessControl: {
-        description: 'Resource access for users and groups',
-        tableLabel: 'Permission rules',
-        search: 'Search rules',
-        noMatches: 'No matching rules',
-        filters: { allPrincipals: 'All visible principals', noPrincipals: 'No matching users or groups', clearPrincipal: 'Clear user or group filter' },
-        columns: { 'Model.Use': 'Use models', 'Upstream.Audit': 'Audit upstream', 'Upstream.Edit': 'Edit upstream', 'User.Audit': 'Audit users', 'Permission.Audit': 'Audit permissions' },
-        pagination: { previous: 'Previous page', next: 'Next page', range: '{{from, number}} - {{to, number}} / {{total, number}}' },
-        actions: { add: 'New rule', edit: 'Edit rule', delete: 'Delete rule', save: 'Save rule', refresh: 'Refresh permissions', clearFilters: 'Clear filters', removeScopeSegment: 'Remove last scope segment', reorder: 'Reorder rule' },
-        effective: {
-          label: 'Show effective',
-          activeAssignment: 'Active assignment',
-          checked: 'Checked:',
-          checkedDescription: 'Shows this user or group’s rules at the current scope, inherited from ancestors, or matched by wildcard patterns. Highlights effective permissions.',
-          unchecked: 'Unchecked:',
-          uncheckedDescription: 'Shows this user or group’s rules at the current scope and its descendants.',
-        },
-        overridden: {
-          label: 'Overridden assignment',
-          sameScope: '<sentence>Overridden by <rule/> for <principal/></sentence>',
-          otherScope: '<sentence>Overridden by <rule/> for <principal/> <location>at <scope/></location></sentence>',
-        },
-        fields: { principal: 'Applies to', scope: 'Scope', permissions: 'Permissions' },
-        permissionWithLevel: '{{permission}} ({{level}})',
-        scope: {
-          visual: 'Visual', json: 'JSON', kind: 'Resource type', instance: 'Resource', model: 'Model', unknown: 'Unknown {{id}}',
-          unknownLabel: 'Unknown', unknownUpstreamId: 'Unknown upstream ID "{{id}}"', unknownUserId: 'Unknown user ID "{{id}}"', unknownGroupId: 'Unknown group ID "{{id}}"',
-          noMatches: 'No matching resources',
-          kinds: { self: 'Self', upstream: 'Upstream', user: 'User', group: 'Group' },
-        },
-        principal: { user: 'User: {{name}}', group: 'Group: {{name}}' },
-        permissions: {
-          'Model.Use': 'Use models',
-          'Upstream.Audit': 'Attribute upstream telemetry',
-          'Upstream.Edit': 'Edit upstream',
-          'User.Audit': 'Attribute user telemetry',
-          'Permission.Audit': 'Audit granted and effective permissions',
-        },
-        states: { inherit: 'Inherit', inheritOn: 'Inherit (on)', inheritOff: 'Inherit (off)', inheritModels: 'Inherit (models)', inheritFull: 'Inherit (full)', on: 'On', off: 'Off', models: 'Models only', full: 'Full' },
-        inheritance: {
-          currentlyInherited: 'Currently inherited', explicitAssignment: 'Explicit assignment',
-          inheritedValue: 'Inherited value: {{value}}', tooltip: '{{description}} ({{source}})', unknown: 'Inherit (unknown)',
-        },
-        dialog: { createTitle: 'New rule', editTitle: 'Edit rule' },
-        toast: {
-          create: { pending: 'Creating rule', success: 'Created rule' },
-          edit: { pending: 'Saving rule', success: 'Saved rule' },
-          delete: { pending: 'Deleting rule', success: 'Deleted rule' },
-        },
-        validation: { scopeRequired: 'Select a scope.', emptyRecord: 'Set at least one permission to On, Off, Models, or Full.' },
-        delete: { title: 'Delete rule', groupTitle: 'Delete group rule', message: 'Delete this rule for {{name}}? Inherited permissions will apply.', groupMessage: 'Delete this rule for {{name}}? It applies to the whole group.' },
-        empty: 'No rules',
-        administratorBypass: 'Administrators have full access and are not limited by access rules.',
       },
       upstreamAccess: {
         title: 'Limit available upstreams',
@@ -523,7 +474,6 @@ const en = {
           details: 'Details',
           models: 'Models',
           enabled: 'Enabled',
-          actions: 'Actions',
         },
         // Whatever an upstream publishes about itself beyond its identity. Only
         // the providers whose upstream reports usage contribute any.
@@ -609,7 +559,6 @@ const en = {
         documentTitleCopy: 'Copy upstream',
         optional: 'optional',
         unsaved: 'Unsaved changes',
-        secretKeep: 'Leave blank to keep unchanged.',
         pathOverridesHint:
             'Leave an entry blank to use its default /v1 path.',
         disabledModelsHint:
@@ -850,7 +799,6 @@ const en = {
           source: 'Config',
           kind: 'Kind',
           kindValue: { chat: 'Chat', embedding: 'Embedding', image: 'Image', transcription: 'Transcription', rerank: 'Rerank' },
-          actions: 'Actions',
           copy: 'Copy model ID',
           editNamed: 'Edit model {{name}}',
           back: 'Back to models',
@@ -1323,10 +1271,65 @@ const en = {
         tables: {
           requests: 'Requests',
           errors: 'Errors',
-          ttftP95: 'TTFT p95',
-          speedP95: 'Worst 5% speed',
+          ttft: 'TTFT {{percentile}}',
+          speed: 'Worst {{tail, number}}% speed',
         },
       },
+      accessControl: {
+        description: 'Resource access for users and groups',
+        tableLabel: 'Permission rules',
+        search: 'Search rules',
+        noMatches: 'No matching rules',
+        filters: { allPrincipals: 'All visible principals', noPrincipals: 'No matching users or groups', clearPrincipal: 'Clear user or group filter' },
+        columns: { 'Model.Use': 'Use models', 'Upstream.Audit': 'Audit upstream', 'Upstream.Edit': 'Edit upstream', 'User.Audit': 'Audit users', 'Permission.Audit': 'Audit permissions' },
+        pagination: { previous: 'Previous page', next: 'Next page', range: '{{from, number}} - {{to, number}} / {{total, number}}' },
+        actions: { add: 'New rule', edit: 'Edit rule', delete: 'Delete rule', save: 'Save rule', refresh: 'Refresh permissions', clearFilters: 'Clear filters', removeScopeSegment: 'Remove last scope segment', reorder: 'Reorder rule' },
+        effective: {
+          label: 'Show effective',
+          activeAssignment: 'Active assignment',
+          checked: 'Checked:',
+          checkedDescription: 'Shows this user or group’s rules at the current scope, inherited from ancestors, or matched by wildcard patterns. Highlights effective permissions.',
+          unchecked: 'Unchecked:',
+          uncheckedDescription: 'Shows this user or group’s rules at the current scope and its descendants.',
+        },
+        overridden: {
+          label: 'Overridden assignment',
+          sameScope: '<sentence>Overridden by <rule/> for <principal/></sentence>',
+          otherScope: '<sentence>Overridden by <rule/> for <principal/> <location>at <scope/></location></sentence>',
+        },
+        fields: { principal: 'Applies to', scope: 'Scope', permissions: 'Permissions' },
+        permissionWithLevel: '{{permission}} ({{level}})',
+        scope: {
+          visual: 'Visual', json: 'JSON', kind: 'Resource type', instance: 'Resource', model: 'Model', unknown: 'Unknown {{id}}',
+          unknownLabel: 'Unknown', unknownUpstreamId: 'Unknown upstream ID "{{id}}"', unknownUserId: 'Unknown user ID "{{id}}"', unknownGroupId: 'Unknown group ID "{{id}}"',
+          noMatches: 'No matching resources',
+          kinds: { self: 'Self', upstream: 'Upstream', user: 'User', group: 'Group' },
+        },
+        principal: { user: 'User: {{name}}', group: 'Group: {{name}}' },
+        permissions: {
+          'Model.Use': 'Use models',
+          'Upstream.Audit': 'Attribute upstream telemetry',
+          'Upstream.Edit': 'Edit upstream',
+          'User.Audit': 'Attribute user telemetry',
+          'Permission.Audit': 'Audit granted and effective permissions',
+        },
+        states: { inherit: 'Inherit', inheritOn: 'Inherit (on)', inheritOff: 'Inherit (off)', inheritModels: 'Inherit (models)', inheritFull: 'Inherit (full)', on: 'On', off: 'Off', models: 'Models only', full: 'Full' },
+        inheritance: {
+          currentlyInherited: 'Currently inherited', explicitAssignment: 'Explicit assignment',
+          inheritedValue: 'Inherited value: {{value}}', tooltip: '{{description}} ({{source}})', unknown: 'Inherit (unknown)',
+        },
+        dialog: { createTitle: 'New rule', editTitle: 'Edit rule' },
+        toast: {
+          create: { pending: 'Creating rule', success: 'Created rule' },
+          edit: { pending: 'Saving rule', success: 'Saved rule' },
+          delete: { pending: 'Deleting rule', success: 'Deleted rule' },
+        },
+        validation: { scopeRequired: 'Select a scope.', emptyRecord: 'Set at least one permission to On, Off, Models, or Full.' },
+        delete: { title: 'Delete rule', groupTitle: 'Delete group rule', message: 'Delete this rule for {{name}}? Inherited permissions will apply.', groupMessage: 'Delete this rule for {{name}}? It applies to the whole group.' },
+        empty: 'No rules',
+        administratorBypass: 'Administrators have full access and are not limited by access rules.',
+      },
+
       backupRestore: {
         export: {
           heading: 'Export',
@@ -1434,7 +1437,7 @@ const en = {
       modelAliases: {
         description: 'Create virtual model IDs that route to one or more target models with optional locked request rules',
         listTitle: 'Aliases', empty: 'No aliases configured. Create one to expose a virtual model ID.',
-        columns: { alias: 'Alias', kind: 'Kind', targets: 'Targets', selection: 'Selection', visibility: 'Models list', actions: 'Actions' },
+        columns: { alias: 'Alias', kind: 'Kind', targets: 'Targets', selection: 'Selection', visibility: 'Models list' },
         actions: { create: 'New alias', refresh: 'Refresh aliases', save: 'Save', delete: 'Delete', addTarget: 'Add target', editNamed: 'Edit alias {{name}}', copyNamed: 'Copy alias {{name}}', deleteNamed: 'Delete alias {{name}}' },
         dialog: { createTitle: 'Create alias', editTitle: 'Edit alias: {{name}}', copyTitle: 'Copy alias: {{name}}' },
         copy: { nameSuffix: '{{name}} copy' },
@@ -1455,7 +1458,6 @@ const en = {
         description:
             'Outbound proxies referenced by per-upstream fallback lists',
         listTitle: 'Proxies',
-        columns: { actions: 'Actions' },
         empty: 'No proxies configured. Add a proxy to route outbound traffic.',
         unknownAddress: 'Unrecognized address',
         addTitle: 'Add proxy',

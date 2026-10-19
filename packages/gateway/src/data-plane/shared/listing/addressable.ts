@@ -60,9 +60,9 @@ export const enumerateAddressableModelIds = async (
 ): Promise<readonly AddressableIdEntry[]> => {
   // Resolve providers once and thread them into the catalog assembly so
   // the upstreams.list() round-trip and provider-instantiation cost is
-  // paid once per call. An empty filtered provider list returns no entries; an
-  // empty unfiltered list retains getModelsFromProviders' unconfigured-gateway
-  // error. `preFetchedUpstreams` reuses a list the caller already loaded.
+  // paid once per call. An empty provider selection yields an empty
+  // addressable surface. `preFetchedUpstreams` avoids an additional
+  // round-trip when the caller has the list already.
   const providers = await listModelProviders(upstreamFilter, preFetchedUpstreams);
   if (providers.length === 0 && upstreamFilter !== null) return [];
   const { models: realModels, upstreamsByPublicId } = getModelsFromProviders(providers, scheduleRefresh);
