@@ -7,7 +7,9 @@ import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } f
 export const translate: TranslateTrip<
   GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent, AnthropicMessagesPayload, AnthropicMessagesStreamEventEx,
   { fallbackMaxOutputTokens?: number }
-> = async (src, ctx) => ({
-  target: buildTargetRequest(src, ctx.model, { fallbackMaxOutputTokens: ctx.fallbackMaxOutputTokens }),
-  events: translateToSourceEvents,
-});
+> = async (src, ctx) => {
+  return {
+    target: await buildTargetRequest(src, ctx.model, ctx.sidecarCodec, { fallbackMaxOutputTokens: ctx.fallbackMaxOutputTokens }),
+    events: frames => translateToSourceEvents(frames, ctx.sidecarCodec),
+  };
+};

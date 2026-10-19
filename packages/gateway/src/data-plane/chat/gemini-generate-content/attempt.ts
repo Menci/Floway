@@ -6,6 +6,7 @@ import { anthropicMessagesAttempt } from '../anthropic-messages/attempt.ts';
 import { openaiChatCompletionsAttempt } from '../openai-chat-completions/attempt.ts';
 import { openaiResponsesAttempt } from '../openai-responses/attempt.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
+import { SidecarDomain } from '../shared/sidecar-codec.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { captureFromDump, traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -48,6 +49,7 @@ export const geminiGenerateContentAttempt = {
       // interceptor chain and rewrite.
       const transCtx = {
         model: candidate.model.id,
+        sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       };
       if (targetApi === 'anthropicMessages') {
@@ -101,6 +103,7 @@ export const geminiGenerateContentAttempt = {
       // attempt-owned payload clone keeps the caller's source intact.
       const transCtx = {
         model: candidate.model.id,
+        sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       };
       const cleaned = invocation.payload;

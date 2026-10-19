@@ -8,6 +8,7 @@ import { applyRulesToUpstreamOpenAIChatCompletions } from '../shared/alias-rules
 import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { providerStreamResultToExecuteResult } from '../shared/provider-stream-result.ts';
+import { SidecarDomain } from '../shared/sidecar-codec.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { captureFromDump, traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -56,6 +57,7 @@ export const openaiChatCompletionsAttempt = {
           invocation.payload,
           p => routeOpenAIChatCompletions(p).viaAnthropicMessages({
             model: candidate.model.id,
+            sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
             fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
             loadRemoteImage: createExternalImageLoader(ctx.abortSignal),
           }),
@@ -68,7 +70,7 @@ export const openaiChatCompletionsAttempt = {
       if (targetApi === 'openaiResponses') {
         return await traverseTranslation(
           invocation.payload,
-          p => routeOpenAIChatCompletions(p).viaOpenAIResponses({ model: candidate.model.id }),
+          p => routeOpenAIChatCompletions(p).viaOpenAIResponses({ model: candidate.model.id, sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
           translated => openaiResponsesAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers,
           }),

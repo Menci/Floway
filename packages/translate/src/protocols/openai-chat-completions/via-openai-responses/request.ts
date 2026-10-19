@@ -1,11 +1,13 @@
 import { klona } from 'klona/json';
 
 import { openaiChatCompletionsContentToOpenAIResponsesInputContent, openaiChatCompletionsContentToText } from './content.ts';
-import { scalarToOpenAIResponsesReasoningItem, translateOpenAIChatCompletionsReasoningItems } from './reasoning.ts';
+import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
-import { openAIChatCompletionsScalarReasoningText } from '../common/reasoning.ts';
-import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputReasoning, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import type { SidecarCodec } from '../../../types.ts';
+import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
+import { hasOpenAIChatCompletionsReasoning, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
+import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 const translateChatTools = (tools?: OpenAIChatCompletionsTool[] | null): OpenAIResponsesTool[] =>
   tools?.length
@@ -57,101 +59,112 @@ const translateAssistantContent = (message: OpenAIChatCompletionsAssistantMessag
   return content;
 };
 
-export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): CanonicalOpenAIResponsesPayload => {
+export const buildTargetRequest = async (
+  payload: OpenAIChatCompletionsPayload,
+  codec: SidecarCodec,
+): Promise<CanonicalOpenAIResponsesPayload> => {
   const instructions: string[] = [];
   const input: CanonicalOpenAIResponsesInputItem[] = [];
   const customToolCallIds = new Set<string>();
   let hoistSystemPrefix = true;
 
-  for (const message of payload.messages) {
-    // Only the initial OpenAI Chat Completions `system` prefix maps cleanly to OpenAI Responses
-    // `instructions`; later `system` and `developer` turns are
-    // chronology-bearing input items.
-    if (hoistSystemPrefix && message.role === 'system') {
-      const text = openaiChatCompletionsContentToText(message.content);
-      if (text) instructions.push(text);
-      continue;
-    }
-
+  const translateAssistantMessage = (message: OpenAIChatCompletionsAssistantMessage): void => {
     hoistSystemPrefix = false;
-
-    if (message.role === 'user') {
-      input.push({
-        type: 'message',
-        role: 'user',
-        content: openaiChatCompletionsContentToOpenAIResponsesInputContent(message.content),
-      });
-      continue;
+    if (hasOpenAIChatCompletionsReasoning(message)) {
+      warnDroppedUnrecognizedAssistantReasoning('openaiChatCompletions', 'openaiResponses');
     }
-
-    if (message.role === 'assistant') {
-      const assistantContent = translateAssistantContent(message);
-      const extensions = message as OpenAIChatCompletionsAssistantMessageEx;
-      const reasoningItems = translateOpenAIChatCompletionsReasoningItems<OpenAIResponsesInputReasoning>(extensions.reasoning_items as OpenAIChatCompletionsReasoningItem[] | null | undefined);
-      const scalarReasoning = scalarToOpenAIResponsesReasoningItem<OpenAIResponsesInputReasoning>(openAIChatCompletionsScalarReasoningText(extensions));
-      if (reasoningItems) {
-        input.push(...reasoningItems);
-      } else if (scalarReasoning) {
-        input.push(scalarReasoning);
+    const assistantContent = translateAssistantContent(message);
+    if (message.tool_calls?.length) {
+      if (assistantContent.length > 0) {
+        input.push({
+          type: 'message',
+          role: 'assistant',
+          content: assistantContent,
+        });
       }
 
-      if (message.tool_calls?.length) {
-        if (assistantContent.length > 0) {
-          input.push({
-            type: 'message',
-            role: 'assistant',
-            content: assistantContent,
-          });
+      for (const toolCall of message.tool_calls) {
+        if (toolCall.type === 'custom') {
+          customToolCallIds.add(toolCall.id);
+          input.push({ type: 'custom_tool_call', call_id: toolCall.id, ...toolCall.custom, status: 'completed' });
+          continue;
         }
-
-        for (const toolCall of message.tool_calls) {
-          if (toolCall.type === 'custom') {
-            customToolCallIds.add(toolCall.id);
-            input.push({ type: 'custom_tool_call', call_id: toolCall.id, ...toolCall.custom, status: 'completed' });
-            continue;
-          }
-          input.push({
-            type: 'function_call',
-            call_id: toolCall.id,
-            name: toolCall.function.name,
-            arguments: toolCall.function.arguments,
-            status: 'completed',
-          });
-        }
-
-        continue;
+        input.push({
+          type: 'function_call',
+          call_id: toolCall.id,
+          name: toolCall.function.name,
+          arguments: toolCall.function.arguments,
+          status: 'completed',
+        });
       }
 
-      input.push({
-        type: 'message',
-        role: 'assistant',
-        content: assistantContent.length > 0 ? assistantContent : '',
-      });
-      continue;
-    }
-
-    if (message.role === 'system' || message.role === 'developer') {
-      input.push({
-        type: 'message',
-        role: message.role,
-        content: openaiChatCompletionsContentToOpenAIResponsesInputContent(message.content),
-      });
-      continue;
-    }
-
-    if (message.role !== 'tool') {
-      throw new TranslatorInputError(`Invalid role '${(message as { role: string }).role}'.`);
-    }
-
-    if (!message.tool_call_id) {
-      throw new TranslatorInputError("Missing required field 'tool_call_id' on a 'tool' role message.");
+      return;
     }
 
     input.push({
-      type: customToolCallIds.has(message.tool_call_id) ? 'custom_tool_call_output' : 'function_call_output',
-      call_id: message.tool_call_id,
-      output: typeof message.content === 'string' ? message.content : JSON.stringify(message.content),
+      type: 'message',
+      role: 'assistant',
+      content: assistantContent.length > 0 ? assistantContent : '',
     });
+  };
+
+  const translateNonAssistantMessages = (messages: Exclude<OpenAIChatCompletionsMessage, { role: 'assistant' }>[]): void => {
+    for (const message of messages) {
+      // Only the initial OpenAI Chat Completions `system` prefix maps cleanly to OpenAI Responses
+      // `instructions`; later `system` and `developer` turns are
+      // chronology-bearing input items.
+      if (hoistSystemPrefix && message.role === 'system') {
+        const text = openaiChatCompletionsContentToText(message.content);
+        if (text) instructions.push(text);
+        continue;
+      }
+
+      hoistSystemPrefix = false;
+
+      if (message.role === 'user') {
+        input.push({
+          type: 'message',
+          role: 'user',
+          content: openaiChatCompletionsContentToOpenAIResponsesInputContent(message.content),
+        });
+        continue;
+      }
+
+      if (message.role === 'system' || message.role === 'developer') {
+        input.push({
+          type: 'message',
+          role: message.role,
+          content: openaiChatCompletionsContentToOpenAIResponsesInputContent(message.content),
+        });
+        continue;
+      }
+
+      if (message.role !== 'tool') {
+        throw new TranslatorInputError(`Invalid role '${(message as { role: string }).role}'.`);
+      }
+
+      if (!message.tool_call_id) {
+        throw new TranslatorInputError("Missing required field 'tool_call_id' on a 'tool' role message.");
+      }
+
+      input.push({
+        type: customToolCallIds.has(message.tool_call_id) ? 'custom_tool_call_output' : 'function_call_output',
+        call_id: message.tool_call_id,
+        output: typeof message.content === 'string' ? message.content : JSON.stringify(message.content),
+      });
+    }
+  };
+
+  for (const turn of partitionOpenAIChatCompletionsTurns(payload.messages)) {
+    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('openaiChatCompletions', 'openaiResponses', turn.items[0], codec, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest);
+    if (!roundTrip) {
+      if (turn.role === 'assistant') translateAssistantMessage(turn.items[0]);
+      else translateNonAssistantMessages(turn.items);
+      continue;
+    }
+    hoistSystemPrefix = false;
+    input.push(...roundTrip.turn);
+    for (const item of roundTrip.turn) if (item.type === 'custom_tool_call') customToolCallIds.add(item.call_id);
   }
 
   const format = klona(payload.response_format);

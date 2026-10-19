@@ -10,10 +10,10 @@ export const translate: TranslateTrip<
 > = async (src, ctx) => {
   const streamOptions = { ...src.stream_options };
   return {
-    target: await buildTargetRequest(src, {
+    target: await buildTargetRequest(src, ctx.sidecarCodec, {
       fallbackMaxOutputTokens: ctx.fallbackMaxOutputTokens,
       loadRemoteImage: ctx.loadRemoteImage,
     }),
-    events: frames => translateToSourceEvents(frames, streamOptions),
+    events: frames => translateToSourceEvents(frames, streamOptions, ctx.sidecarCodec),
   };
 };
