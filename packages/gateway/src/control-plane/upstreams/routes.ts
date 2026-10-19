@@ -309,17 +309,25 @@ export const getUpstreamBlueprint = (c: Context) => {
 
 // Full editors receive credentials for provider actions. Audit and models-only
 // access receive the same complete redacted configuration. The stored catalog is
-// attached without triggering model discovery.
+// attached without triggering model discovery, and only for callers whose
+// Model.Use reaches this upstream: the catalog itself is not part of the
+// configuration an auditor may read.
 export const getUpstream = async (c: AuthedContext<'/:id'>) => {
   const id = c.req.param('id');
   const subject = userFromContext(c);
   const access = (await resolveUpstreamAccesses(subject, [id])).get(id)!;
   if (!access.audit && access.edit === 'off') return c.json({ error: 'upstream not found' }, 404);
-  const [record, knownProxyIds] = await Promise.all([getRepo().upstreams.getById(id), loadKnownProxyIds()]);
+  const [record, knownProxyIds, modelUse] = await Promise.all([
+    getRepo().upstreams.getById(id),
+    loadKnownProxyIds(),
+    subject.isAdmin
+      ? true
+      : checkMany(subject, [{ target: { kind: 'upstream' as const, upstreamId: id }, requirement: { permission: 'Model.Use' as const } }]).then(results => results[0]!),
+  ]);
   if (!record) return c.json({ error: 'upstream not found' }, 404);
   return c.json({
     ...await serializeForAccess(record, knownProxyIds, access),
-    cachedModels: cachedModelsForDashboard(record),
+    cachedModels: modelUse ? cachedModelsForDashboard(record) : null,
     editLevel: access.edit,
     audit: access.audit,
   });

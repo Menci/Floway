@@ -161,6 +161,7 @@ test('Upstream.Audit exposes a redacted record in the listing, detail, and metri
   assertEquals(body.audit, true);
   assertEquals(body.config.baseUrl, 'https://secret.example.com');
   assertEquals(body.config.apiKey, undefined);
+  assertEquals(body.cachedModels, null);
 
   const metrics = await requestApp('/api/upstream-metrics?upstream_id=up_restricted&start=0&end=60000&step=60000', { headers: { 'x-api-key': apiKey.key } });
   assertEquals(metrics.status, 200);

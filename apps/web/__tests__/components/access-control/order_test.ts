@@ -20,14 +20,9 @@ describe('access-rule display order', () => {
       { key: 'fixed:upstreams:', movable: false, ids: [1] },
       { key: 'fixed:users:', movable: false, ids: [8] },
       { key: 'fixed:upstream:a', movable: false, ids: [2] },
-      { key: 'upstream:a:principal:user:2', movable: true, ids: [3, 4, 5] },
-      { key: 'upstream:b:principal:user:2', movable: true, ids: [6, 7] },
+      { key: 'upstream:a', movable: true, ids: [3, 4, 5] },
+      { key: 'upstream:b', movable: true, ids: [6, 7] },
     ]);
-  });
-
-  it('keeps different principals on the same upstream in separate segments', () => {
-    const mixed = [model(20, 'a', 'exact'), model(21, 'a', 'regex'), { ...model(22, 'a', 'exact', 2), principal: { kind: 'group' as const, id: 9 } }];
-    expect(recordSegments(mixed).filter(segment => segment.movable).map(segment => segment.records.map(record => record.id))).toEqual([[20, 21], [22]]);
   });
 
   it('allows exact and regex patterns to exchange priority', () => {

@@ -153,7 +153,7 @@ export const reorderAccessRecords = async (c: CtxWithJson<typeof reorderAccessRe
   const repo = getRepo();
   const first = await repo.accessRecords.getById(expectedIds[0]!);
   if (first?.scope.kind !== 'upstreamModel') return c.json({ error: 'Rules do not belong to a model-pattern reorder segment.' }, 409);
-  const records = await repo.accessRecords.reorderModel(first.principal, first.scope.upstreamId, expectedIds, ids);
+  const records = await repo.accessRecords.reorderModel(first.scope.upstreamId, expectedIds, ids);
   return records === null
     ? c.json({ error: 'Rules changed or cross a fixed priority boundary. Refresh before reordering.' }, 409)
     : c.json({ records });

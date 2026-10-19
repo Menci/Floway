@@ -685,14 +685,13 @@ class SqlAccessRecordsRepo implements AccessRecordsRepo {
     return row ? parseAccessRecord(row) : null;
   }
 
-  async reorderModel(principal: AccessPrincipal, upstreamId: string, expectedIds: readonly number[], ids: readonly number[]): Promise<AccessRecord[] | null> {
+  async reorderModel(upstreamId: string, expectedIds: readonly number[], ids: readonly number[]): Promise<AccessRecord[] | null> {
     // Materialize the boundary and its original order before updating any row.
     // A single guarded statement prevents partial ranks and stale drag snapshots.
     const { results } = await this.db.prepare(
       `WITH current_ids AS MATERIALIZED (
          SELECT id FROM access_records
-         WHERE principal_type = ? AND principal_id = ?
-           AND json_extract(scope_json, '$.kind') = 'upstreamModel'
+         WHERE json_extract(scope_json, '$.kind') = 'upstreamModel'
            AND json_extract(scope_json, '$.upstreamId') = ?
          ORDER BY sort_order, id
        ), valid_order AS MATERIALIZED (
@@ -704,7 +703,7 @@ class SqlAccessRecordsRepo implements AccessRecordsRepo {
          sort_order = (SELECT rank FROM ranks WHERE ranks.id = access_records.id), updated_at = ?
        WHERE id IN (SELECT id FROM current_ids) AND (SELECT valid FROM valid_order)
        RETURNING ${ACCESS_RECORD_COLUMNS}`,
-    ).bind(principal.kind, principal.id, upstreamId, JSON.stringify(expectedIds), JSON.stringify(ids), new Date().toISOString()).all<AccessRecordRow>();
+    ).bind(upstreamId, JSON.stringify(expectedIds), JSON.stringify(ids), new Date().toISOString()).all<AccessRecordRow>();
     return results.length === 0 ? null : results.map(parseAccessRecord);
   }
 
