@@ -52,6 +52,8 @@ import type {
   OpenAIResponsesItemsRepo,
   OpenAIResponsesSnapshotsRepo,
   ScheduledMaintenanceRepo,
+  SiteSettings,
+  SiteSettingsRepo,
   SpilledFilesRepo,
   WebSearchConfigRepo,
   WebSearchUsageRecord,
@@ -860,6 +862,19 @@ class MemoryPerformanceRepo implements PerformanceRepo {
   }
 }
 
+class MemorySiteSettingsRepo implements SiteSettingsRepo {
+  private settings: SiteSettings = { siteName: null };
+
+  get(): Promise<SiteSettings> {
+    return Promise.resolve({ ...this.settings });
+  }
+
+  save(settings: SiteSettings): Promise<void> {
+    this.settings = { ...settings };
+    return Promise.resolve();
+  }
+}
+
 class MemoryWebSearchConfigRepo implements WebSearchConfigRepo {
   private config: unknown | null = null;
 
@@ -1655,6 +1670,7 @@ export class InMemoryRepo implements Repo {
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
+  siteSettings: SiteSettingsRepo;
   webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
@@ -1684,6 +1700,7 @@ export class InMemoryRepo implements Repo {
     this.usage = new MemoryUsageRepo(this.apiKeys);
     this.webSearchUsage = new MemoryWebSearchUsageRepo();
     this.performance = new MemoryPerformanceRepo(this.apiKeys);
+    this.siteSettings = new MemorySiteSettingsRepo();
     this.webSearchConfig = new MemoryWebSearchConfigRepo();
     this.upstreams = new MemoryUpstreamRepo();
     this.proxies = new MemoryProxyRepo(this.upstreams);

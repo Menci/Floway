@@ -10,9 +10,10 @@ import { createAlias, deleteAlias, listAliases, updateAlias } from './model-alia
 import { controlPlaneModels } from './models/routes.ts';
 import { performanceOverview } from './performance/routes.ts';
 import { createProxy, deleteProxy, listAllBackoffs, listProxies, listProxyBackoffs, resetProxyBackoffs, testProxy, updateProxy } from './proxies/routes.ts';
-import { upstreamMetricsQuery, authLoginBody, changeOwnPasswordBody, claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexImportExchangeBody, codexImportPreviewBody, codexOAuthAuthorizeUrlBody, codexOAuthRefreshBody, codexRateLimitResetConsumeBody, codexRateLimitResetCreditsBody, copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody, createAliasBody, createGroupBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, importBody, modelsQuery, ollamaUsageBody, performanceQuery, previewModelsBody, resetBackoffBody, rotateKeyBody, testProxyBody, tokenUsageOverviewQuery, tokenUsageQuery, updateAliasBody, updateGroupBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody, webSearchConfigSchema, webSearchUsageQuery } from './schemas.ts';
+import { upstreamMetricsQuery, authLoginBody, changeOwnPasswordBody, claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexImportExchangeBody, codexImportPreviewBody, codexOAuthAuthorizeUrlBody, codexOAuthRefreshBody, codexRateLimitResetConsumeBody, codexRateLimitResetCreditsBody, copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody, createAliasBody, createGroupBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, importBody, modelsQuery, ollamaUsageBody, performanceQuery, previewModelsBody, resetBackoffBody, rotateKeyBody, testProxyBody, tokenUsageOverviewQuery, tokenUsageQuery, updateAliasBody, updateGroupBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody, siteSettingsBody, webSearchConfigSchema, webSearchUsageQuery } from './schemas.ts';
 import { getWebSearchConfigRoute, putWebSearchConfigRoute, testWebSearchConfigRoute } from './search-config/routes.ts';
 import { webSearchUsage } from './search-usage/routes.ts';
+import { getSiteSettings, putSiteSettings } from './site-settings/routes.ts';
 import { tokenUsageOverview } from './token-usage/overview.ts';
 import { tokenUsage } from './token-usage/routes.ts';
 import { upstreamMetrics } from './upstream-metrics/routes.ts';
@@ -48,6 +49,8 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
   .post('/auth/logout', authLogout)
   .get('/auth/me', authMe)
   .get('/api/runtime-info', c => c.json(getRuntimeInfo(c.req.raw)))
+  // Public read: the sign-in page renders the site name before authentication.
+  .get('/api/site-settings', getSiteSettings)
   .get('/api/keys', listKeys)
   .post('/api/keys', zValidator('json', createKeyBody), createKey)
   .post('/api/keys/:id/rotate', zValidator('json', rotateKeyBody), rotateKey)
@@ -127,6 +130,7 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
     .post('/aliases', zValidator('json', createAliasBody), createAlias)
     .put('/aliases/:id', zValidator('json', updateAliasBody), updateAlias)
     .delete('/aliases/:id', deleteAlias)
+    .put('/site-settings', zValidator('json', siteSettingsBody), putSiteSettings)
     .get('/search-config', getWebSearchConfigRoute)
     .put('/search-config', zValidator('json', webSearchConfigSchema), putWebSearchConfigRoute)
     .post('/search-config/test', zValidator('json', webSearchConfigSchema), testWebSearchConfigRoute)

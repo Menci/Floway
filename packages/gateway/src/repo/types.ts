@@ -377,6 +377,17 @@ export interface PerformanceRepo {
   deleteAll(): Promise<void>;
 }
 
+export interface SiteSettings {
+  // null = this deployment has not chosen a name; the dashboard renders its
+  // built-in default and keeps tracking it across releases.
+  siteName: string | null;
+}
+
+export interface SiteSettingsRepo {
+  get(): Promise<SiteSettings>;
+  save(settings: SiteSettings): Promise<void>;
+}
+
 export interface WebSearchConfigRepo {
   get(): Promise<unknown>;
   save(config: WebSearchConfig): Promise<void>;
@@ -626,6 +637,7 @@ export interface Repo {
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
+  siteSettings: SiteSettingsRepo;
   webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;

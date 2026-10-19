@@ -2,7 +2,7 @@ const zhHansCN = {
   translation: {
     app: {
       title: 'Floway',
-      documentTitle: '{{title}} | Floway',
+      documentTitle: '{{title}} | {{siteName}}',
     },
     common: {
       calendar: {
@@ -92,6 +92,7 @@ const zhHansCN = {
         performance: '性能',
         users: '用户与用户组',
         backupRestore: '备份 / 恢复',
+        siteSettings: '站点设置',
         settings: '设置',
       },
       logout: {
@@ -170,6 +171,18 @@ const zhHansCN = {
             verbosity: '输出详细度因目标而异',
             serviceTier: '服务层级因目标而异',
           },
+        },
+      },
+      siteSettings: {
+        branding: '品牌',
+        description: '向所有访问此网关的人展示的品牌信息',
+        name: '站点名称',
+        nameHint: '显示在图标旁和浏览器标题中。留空则使用内置名称。',
+        namePlaceholder: 'Floway',
+        save: '保存站点名称',
+        updated: '站点名称已更新。',
+        validation: {
+          tooLong: '最多输入 {{max}} 个字符。',
         },
       },
       settings: {

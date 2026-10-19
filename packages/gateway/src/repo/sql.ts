@@ -45,6 +45,8 @@ import type {
   ScheduledMaintenanceRepo,
   SpilledFilesRepo,
   StoredUpstreamRecord,
+  SiteSettings,
+  SiteSettingsRepo,
   WebSearchConfigRepo,
   WebSearchUsageRecord,
   WebSearchUsageRepo,
@@ -1005,6 +1007,27 @@ const toWebSearchUsageRecord = (row: { provider: string; key_id: string; action:
   };
 };
 
+class SqlSiteSettingsRepo implements SiteSettingsRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async get(): Promise<SiteSettings> {
+    const row = await this.db
+      .prepare('SELECT site_name FROM site_settings WHERE id = 1')
+      .first<{ site_name: string | null }>();
+    if (!row) throw new Error('site_settings singleton row missing');
+    return { siteName: row.site_name };
+  }
+
+  async save(settings: SiteSettings): Promise<void> {
+    await this.db
+      .prepare(`UPDATE site_settings
+         SET site_name = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+         WHERE id = 1`)
+      .bind(settings.siteName)
+      .run();
+  }
+}
+
 class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
   constructor(private db: SqlDatabase) {}
 
@@ -1877,6 +1900,7 @@ export class SqlRepo implements Repo {
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
+  siteSettings: SiteSettingsRepo;
   webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
@@ -1929,6 +1953,7 @@ export class SqlRepo implements Repo {
     this.usage = new SqlUsageRepo(db);
     this.webSearchUsage = new SqlWebSearchUsageRepo(db);
     this.performance = new SqlPerformanceRepo(db);
+    this.siteSettings = new SqlSiteSettingsRepo(db);
     this.webSearchConfig = new SqlWebSearchConfigRepo(db);
     this.upstreams = new SqlUpstreamRepo(db);
     this.proxies = new SqlProxyRepo(db);

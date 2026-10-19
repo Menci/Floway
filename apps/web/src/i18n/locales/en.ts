@@ -4,7 +4,7 @@ const en = {
   translation: {
     app: {
       title: 'Floway',
-      documentTitle: '{{title}} | Floway',
+      documentTitle: '{{title}} | {{siteName}}',
     },
     common: {
       calendar: {
@@ -94,6 +94,7 @@ const en = {
         performance: 'Performance',
         users: 'Users & Groups',
         backupRestore: 'Backup / Restore',
+        siteSettings: 'Site settings',
         settings: 'Settings',
       },
       logout: {
@@ -181,6 +182,18 @@ const en = {
             verbosity: 'Verbosity varies',
             serviceTier: 'Service tier varies',
           },
+        },
+      },
+      siteSettings: {
+        branding: 'Branding',
+        description: 'Branding shown to everyone who opens this gateway',
+        name: 'Site name',
+        nameHint: 'Shown beside the mark and in the browser title. Leave blank to use the built-in name.',
+        namePlaceholder: 'Floway',
+        save: 'Save site name',
+        updated: 'Site name updated.',
+        validation: {
+          tooLong: 'Enter at most {{max}} characters.',
         },
       },
       settings: {

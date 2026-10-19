@@ -332,7 +332,7 @@ const doExport = async (app: Hono, includePerformance = false) => {
   return (await resp.json()) as Record<string, any>;
 };
 
-const doImport = async (app: Hono, mode: string, data: unknown, version: unknown = 23) => {
+const doImport = async (app: Hono, mode: string, data: unknown, version: unknown = 24) => {
   const resp = await app.request('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -351,6 +351,7 @@ const latestImportData = (overrides: Record<string, unknown> = {}) => ({
   upstreamMetrics: [],
   performanceIncluded: false,
   searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
+  siteSettings: { siteName: null },
   ...overrides,
 });
 
@@ -447,13 +448,13 @@ test('import validates generic pricing selectors', async () => {
   assertEquals(String(fractional.body.error).includes('positive safe integer'), true);
 });
 
-test('export emits the v23 envelope with users and upstreams', async () => {
+test('export emits the v24 envelope with users and upstreams', async () => {
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
 
   const result = await doExport(app);
 
-  assertEquals(result.version, 23);
+  assertEquals(result.version, 24);
   assertEquals(typeof result.exportedAt, 'string');
   assertEquals(result.data.users, [SEED_ADMIN]);
   assertEquals(result.data.apiKeys, []);
@@ -464,6 +465,7 @@ test('export emits the v23 envelope with users and upstreams', async () => {
   assertEquals(result.data.performanceIncluded, false);
   assertEquals(hasOwn(result.data, 'performance'), false);
   assertEquals(result.data.searchConfig, DEFAULT_WEB_SEARCH_CONFIG);
+  assertEquals(result.data.siteSettings, { siteName: null });
   assertEquals(hasOwn(result.data, 'githubAccounts'), false);
   assertEquals(hasOwn(result.data, 'upstreamConfigs'), false);
 });
@@ -535,7 +537,7 @@ test('import rejects any version other than the current one before deleting data
   await repo.apiKeys.save(KEY_A);
   await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
 
-  const VERSION_ERROR = 'version must be 23 — older export formats are not supported; re-export from the current deployment';
+  const VERSION_ERROR = 'version must be 24 — older export formats are not supported; re-export from the current deployment';
   const previousV20 = await doImport(app, 'replace', latestImportData(), 20);
   const previousV11 = await doImport(app, 'replace', latestImportData(), 11);
   const ancientVersion = await doImport(app, 'replace', { apiKeys: [] }, 1);
@@ -589,6 +591,7 @@ test('import replace writes upstreams and clears replaced collections', async ()
       jina: { apiKey: '' },
       passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
     },
+    siteSettings: { siteName: null },
   });
 
   assertEquals(result.status, 200);
@@ -674,6 +677,7 @@ test('import replace handles performance inclusion explicitly', async () => {
     performanceIncluded: true,
     performance: [PERFORMANCE_2],
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
+    siteSettings: { siteName: null },
   });
 
   assertEquals(replace.status, 200);
@@ -808,6 +812,7 @@ test('import rejects missing upstreams before clearing existing data', async () 
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
+    siteSettings: { siteName: null },
   });
 
   assertEquals(result.status, 400);
@@ -836,6 +841,7 @@ test('ollama upstreams export and import round-trip', async () => {
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
+    siteSettings: { siteName: null },
   });
   assertEquals(replaceResult.status, 200);
   assertEquals(await repo.upstreams.list(), [OLLAMA_UPSTREAM]);
@@ -861,6 +867,7 @@ test('codex upstreams export and import round-trip with state intact', async () 
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
+    siteSettings: { siteName: null },
   });
   assertEquals(replaceResult.status, 200);
   assertEquals(await repo.upstreams.list(), [CODEX_UPSTREAM]);
@@ -879,6 +886,7 @@ test('codex import rejects when state is missing', async () => {
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
+    siteSettings: { siteName: null },
   });
   assertEquals(result.status, 400);
   assertEquals(result.body.error.includes('codex upstream is missing state'), true);
@@ -897,6 +905,7 @@ test('codex import rejects unknown keys in state', async () => {
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
+    siteSettings: { siteName: null },
   });
   assertEquals(result.status, 400);
   assertEquals(result.body.error.includes('unexpected key'), true);
@@ -915,7 +924,7 @@ test('import rejects negative historical unit prices with a metric-specific erro
   assertEquals(result.body.error, 'invalid usage at index 0: metric unitPrice must be non-negative: "-0.01"');
 });
 
-test('v23 import validates usage metric rows', async () => {
+test('v24 import validates usage metric rows', async () => {
   const { app } = setup();
   const missingMetrics = await doImport(app, 'replace', latestImportData({
     usage: [{ ...USAGE_2, metrics: undefined }],
@@ -958,6 +967,7 @@ test('import rejects invalid records before clearing existing data', async () =>
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
+    siteSettings: { siteName: null },
   });
   const badUsage = await doImport(app, 'replace', {
     groups: [],
@@ -969,6 +979,7 @@ test('import rejects invalid records before clearing existing data', async () =>
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
+    siteSettings: { siteName: null },
   });
   const badUpstream = await doImport(app, 'replace', {
     groups: [],
@@ -980,6 +991,7 @@ test('import rejects invalid records before clearing existing data', async () =>
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
+    siteSettings: { siteName: null },
   });
   const badFixes = await doImport(app, 'replace', {
     groups: [],
@@ -991,6 +1003,7 @@ test('import rejects invalid records before clearing existing data', async () =>
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
+    siteSettings: { siteName: null },
   });
   const badWebSearchUsage = await doImport(app, 'replace', {
     groups: [],
@@ -1002,6 +1015,7 @@ test('import rejects invalid records before clearing existing data', async () =>
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
+    siteSettings: { siteName: null },
   });
 
   assertEquals(badApiKeys.status, 400);
@@ -1098,7 +1112,7 @@ test('import trims every formerly normalized non-empty string field', async () =
   assertEquals(whitespaceOnly.body.error, 'invalid apiKeys at index 0: key must be a non-empty string');
 });
 
-test('import retains optional defaults from the v23 wire contract', async () => {
+test('import retains optional defaults from the v24 wire contract', async () => {
   const { app, repo } = setup();
   const { disabled_public_model_ids: _disabled, model_prefix: _prefix, ...upstream } = upstreamRecordToFullJson(CUSTOM_UPSTREAM);
   const result = await doImport(app, 'replace', latestImportData({
@@ -1296,7 +1310,7 @@ test('import preserves a positive dumpRetentionSeconds on api keys', async () =>
   assertEquals(restored?.dumpRetentionSeconds, 3600);
 });
 
-test('v23 import preserves and validates OpenAI Responses retention', async () => {
+test('v24 import preserves and validates OpenAI Responses retention', async () => {
   const { app, repo } = setup();
   const retained = await doImport(app, 'replace', latestImportData({
     apiKeys: [{ ...KEY_A, openaiResponsesRetentionSeconds: 7 * 24 * 60 * 60 }],
@@ -1383,7 +1397,7 @@ test('import rejects legacy enabled_fixes payloads before mutating', async () =>
   assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
 });
 
-test('import rejects missing latest-v23 arrays before clearing existing data', async () => {
+test('import rejects missing latest-v24 arrays before clearing existing data', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
   await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
@@ -1412,14 +1426,14 @@ test('import rejects missing latest-v23 arrays before clearing existing data', a
 test('import validates mode and data before mutating', async () => {
   const { app } = setup();
 
-  const invalidMode = await doImport(app, 'invalid', { groups: [] }, 23);
+  const invalidMode = await doImport(app, 'invalid', { groups: [] }, 24);
   const missingData = await app.request('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode: 'replace', version: 23 }),
+    body: JSON.stringify({ mode: 'replace', version: 24 }),
   });
-  const missingUpstreams = await doImport(app, 'merge', { groups: [] }, 23);
-  const emptyMerge = await doImport(app, 'merge', latestImportData(), 23);
+  const missingUpstreams = await doImport(app, 'merge', { groups: [] }, 24);
+  const emptyMerge = await doImport(app, 'merge', latestImportData(), 24);
 
   assertEquals(invalidMode.status, 400);
   assertEquals(invalidMode.body.error, "mode must be 'merge' or 'replace'");
@@ -1571,7 +1585,32 @@ test('import replace wipes proxy_upstream_backoffs alongside the proxies it cool
   assertEquals(await repo.proxyBackoffs.listAll(), []);
 });
 
-test('v23 export/import round-trips users and per-key user_id', async () => {
+test('export/import round-trips the site name', async () => {
+  const { app, repo } = setup();
+  await repo.siteSettings.save({ siteName: 'Team Gateway' });
+
+  const exported = await doExport(app);
+  assertEquals(exported.data.siteSettings, { siteName: 'Team Gateway' });
+
+  await repo.siteSettings.save({ siteName: null });
+  const result = await doImport(app, 'replace', exported.data, 24);
+
+  assertEquals(result.status, 200);
+  assertEquals(await repo.siteSettings.get(), { siteName: 'Team Gateway' });
+});
+
+test('import rejects a site name longer than the column allows', async () => {
+  const { app } = setup();
+
+  const result = await doImport(app, 'replace', latestImportData({
+    siteSettings: { siteName: 'x'.repeat(65) },
+  }));
+
+  assertEquals(result.status, 400);
+  assertEquals(String(result.body.error).includes('siteSettings'), true);
+});
+
+test('v24 export/import round-trips users and per-key user_id', async () => {
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
   await repo.users.save(USER_BOB);
@@ -1579,10 +1618,10 @@ test('v23 export/import round-trips users and per-key user_id', async () => {
   await repo.apiKeys.save({ ...KEY_B, userId: USER_BOB.id });
 
   const exportResult = await doExport(app);
-  assertEquals(exportResult.version, 23);
+  assertEquals(exportResult.version, 24);
   assertEquals(exportResult.data.users.map((u: any) => u.id).sort(), [SEED_ADMIN.id, USER_BOB.id]);
 
-  const result = await doImport(app, 'replace', exportResult.data, 23);
+  const result = await doImport(app, 'replace', exportResult.data, 24);
   assertEquals(result.status, 200);
   assertEquals(result.body.imported.users, 2);
   assertEquals(result.body.imported.apiKeys, 2);
@@ -1593,7 +1632,7 @@ test('v23 export/import round-trips users and per-key user_id', async () => {
   assertEquals(restoredKey?.userId, USER_BOB.id);
 });
 
-test('v23 import rejects api_keys whose user_id does not appear in the payload', async () => {
+test('v24 import rejects api_keys whose user_id does not appear in the payload', async () => {
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
 
@@ -1607,13 +1646,14 @@ test('v23 import rejects api_keys whose user_id does not appear in the payload',
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
-  }, 23);
+    siteSettings: { siteName: null },
+  }, 24);
 
   assertEquals(result.status, 400);
   assertEquals(result.body.error, 'invalid apiKeys at index 0: user_id 99 does not match any user in the payload');
 });
 
-test('v23 import rejects malformed users (bad username, bad password_hash)', async () => {
+test('v24 import rejects malformed users (bad username, bad password_hash)', async () => {
   const { app } = setup();
 
   const badUsername = await doImport(app, 'replace', {
@@ -1626,7 +1666,8 @@ test('v23 import rejects malformed users (bad username, bad password_hash)', asy
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
-  }, 23);
+    siteSettings: { siteName: null },
+  }, 24);
   assertEquals(badUsername.status, 400);
   assertEquals(String(badUsername.body.error).startsWith('invalid users at index 0:'), true);
 
@@ -1640,7 +1681,8 @@ test('v23 import rejects malformed users (bad username, bad password_hash)', asy
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
-  }, 23);
+    siteSettings: { siteName: null },
+  }, 24);
   assertEquals(badHash.status, 400);
   assertEquals(String(badHash.body.error).includes('passwordHash'), true);
 });
@@ -1663,7 +1705,7 @@ test('import rejects a pre-accounts v3 export instead of coercing its legacy api
   }, 3);
 
   assertEquals(result.status, 400);
-  assertEquals(String(result.body.error).includes('version must be 23'), true);
+  assertEquals(String(result.body.error).includes('version must be 24'), true);
   // Rejected at the version gate, before touching any data.
   assertEquals(await repo.apiKeys.list(), [KEY_A]);
   assertEquals((await repo.users.list()).map(u => u.id), [SEED_ADMIN.id]);
@@ -1686,7 +1728,8 @@ test('replace-mode import clears sessions before writing users', async () => {
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
-  }, 23);
+    siteSettings: { siteName: null },
+  }, 24);
 
   assertEquals(result.status, 200);
   // No public listAll on sessions; create a fresh session and check the
@@ -1695,7 +1738,7 @@ test('replace-mode import clears sessions before writing users', async () => {
   assertEquals(await repo.sessions.deleteByUserId(USER_BOB.id), 0);
 });
 
-test('v23 import rejects users[i].upstreamIds === undefined', async () => {
+test('v24 import rejects users[i].upstreamIds === undefined', async () => {
   const { app } = setup();
   const result = await doImport(app, 'replace', {
     groups: [],
@@ -1707,12 +1750,13 @@ test('v23 import rejects users[i].upstreamIds === undefined', async () => {
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
-  }, 23);
+    siteSettings: { siteName: null },
+  }, 24);
   assertEquals(result.status, 400);
   expect(result.body.error).toMatch(/upstreamIds/);
 });
 
-test('v23 import rejects users[i].deletedAt of non-string non-null type', async () => {
+test('v24 import rejects users[i].deletedAt of non-string non-null type', async () => {
   const { app } = setup();
   const result = await doImport(app, 'replace', {
     groups: [],
@@ -1724,12 +1768,13 @@ test('v23 import rejects users[i].deletedAt of non-string non-null type', async 
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
-  }, 23);
+    siteSettings: { siteName: null },
+  }, 24);
   assertEquals(result.status, 400);
   expect(result.body.error).toMatch(/deletedAt/);
 });
 
-test('v23 replace import refuses payload missing user 1', async () => {
+test('v24 replace import refuses payload missing user 1', async () => {
   const { app } = setup();
   const result = await doImport(app, 'replace', {
     groups: [],
@@ -1741,12 +1786,13 @@ test('v23 replace import refuses payload missing user 1', async () => {
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
-  }, 23);
+    siteSettings: { siteName: null },
+  }, 24);
   assertEquals(result.status, 400);
   expect(result.body.error).toMatch(/user 1/);
 });
 
-test('a full v23 export re-imports verbatim — the export→import round trip is closed', async () => {
+test('a full v24 export re-imports verbatim — the export→import round trip is closed', async () => {
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
   await repo.users.save(USER_BOB);
@@ -1772,12 +1818,12 @@ test('a full v23 export re-imports verbatim — the export→import round trip i
   await repo.webSearchConfig.save(config);
 
   const exported = await doExport(app, true);
-  assertEquals(exported.version, 23);
+  assertEquals(exported.version, 24);
 
   // Replace-import the export's own `data`, verbatim. If the export emits any
   // shape the import parser rejects, this 400s — the round trip is the
   // invariant, so this test fails the moment the two sides drift.
-  const result = await doImport(app, 'replace', exported.data, 23);
+  const result = await doImport(app, 'replace', exported.data, 24);
   assertEquals(result.status, 200);
   assertEquals(result.body.imported, { users: 2, groups: 0, apiKeys: 2, upstreams: 4, proxies: 0, usage: 2, searchUsage: 2, upstreamMetrics: 0, performance: 2 });
 
@@ -1812,10 +1858,10 @@ test('any data bearing a historical version is rejected on the version gate, bef
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   };
 
-  for (let version = 1; version < 23; version++) {
+  for (let version = 1; version < 24; version++) {
     const result = await doImport(app, 'replace', wellFormed, version);
     assertEquals(result.status, 400);
-    assertEquals(String(result.body.error).includes('version must be 23'), true);
+    assertEquals(String(result.body.error).includes('version must be 24'), true);
   }
 
   // Nothing was touched — the version gate runs before any delete or write.
