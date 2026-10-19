@@ -42,7 +42,7 @@ const records: PerformanceDisplayRecord[] = buckets.map((bucket, index) => ({
   tpotUsP99: 24_000,
 }));
 
-const chart = buildPerformanceChart(records, 'ttft', 'p95', 'model', performanceLabels(emptyOverview, []), buckets, 'today');
+const chart = buildPerformanceChart(records, 'ttft', { ttft: 'p95', tokPerSec: 'p95' }, 'model', performanceLabels(emptyOverview, []), buckets, 'today');
 
 it('wears the shared chart frame, so its callout takes the dashboard surface', async () => {
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 720, 320));

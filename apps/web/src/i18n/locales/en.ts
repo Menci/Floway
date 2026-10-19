@@ -1273,8 +1273,8 @@ const en = {
         tables: {
           requests: 'Requests',
           errors: 'Errors',
-          ttftP95: 'TTFT p95',
-          speedP95: 'Worst 5% speed',
+          ttft: 'TTFT {{percentile}}',
+          speed: 'Worst {{tail, number}}% speed',
         },
       },
       backupRestore: {
