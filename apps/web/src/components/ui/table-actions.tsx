@@ -23,6 +23,10 @@ export function TableTrailingHeader({ className, ...props }: TableHeaderCellProp
   return <TableHeaderCell {...props} className={mergeClasses(styles.trailing, className)} />;
 }
 
+export function TableActionsHeader() {
+  return <TableTrailingHeader />;
+}
+
 export function TableTrailingCell({ className, ...props }: TableCellProps) {
   const styles = useStyles();
   return <TableCell {...props} className={mergeClasses(styles.trailing, className)} />;

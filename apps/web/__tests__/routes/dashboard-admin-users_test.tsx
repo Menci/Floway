@@ -147,7 +147,7 @@ test('keeps the user table without creation metadata and locks every editor duri
   const name = await screen.findByRole<HTMLButtonElement>('button', { name: 'frank' });
   expect(screen.queryByRole('columnheader', { name: 'Created' })).toBeNull();
   const table = screen.getByRole('table');
-  expect(screen.getByRole('columnheader', { name: 'Actions' }).querySelector('.sr-only')).toBeTruthy();
+  expect(screen.getAllByRole('columnheader').at(-1)?.textContent).toBe('');
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Refresh users and groups' })); });
   expect(name.disabled).toBe(true);
   expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Edit user frank' }).disabled).toBe(true);
