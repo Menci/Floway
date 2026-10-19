@@ -73,10 +73,10 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
     {usage?.included.kind === 'credits' && <div className="grid gap-1">
       <div className="flex items-baseline justify-between gap-3">
         <InfoLabel info={t('dashboard.upstreamEditor.ollama.usage.balanceHint.included')}>{t('dashboard.upstreamEditor.ollama.usage.balance.included')}</InfoLabel>
-        <Text>{activityCostText(usage.included.balanceUsd)}</Text>
+        <Text className="tabular-nums">{activityCostText(usage.included.balanceUsd)}</Text>
       </div>
       <div className="flex flex-wrap justify-between gap-x-3">
-        <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.allowance', { amount: activityCostText(usage.included.allowanceUsd) })}</Text>
+        <Text size={200} className="text-fui-fg3 tabular-nums">{t('dashboard.upstreamEditor.ollama.usage.allowance', { amount: activityCostText(usage.included.allowanceUsd) })}</Text>
         <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.resets', { time: dateTime(usage.included.until, locale) })}</Text>
       </div>
     </div>}
@@ -86,17 +86,17 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
       label={t(`dashboard.upstreamEditor.ollama.usage.window.${usageWindow.key}`)}
       percent={usageWindow.percent}
       quotaDisplay={preferences.quotaDisplay}
-      footer={<Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.resets', { time: dateTime(usageWindow.resetsAt, locale) })}</Text>}
+      footer={<Text size={200} className="text-fui-fg3 tabular-nums">{t('dashboard.upstreamEditor.ollama.usage.resets', { time: dateTime(usageWindow.resetsAt, locale) })}</Text>}
     />)}
 
     {usage !== null && <div className="flex justify-between gap-3">
       <InfoLabel info={t('dashboard.upstreamEditor.ollama.usage.balanceHint.purchased')}>{t('dashboard.upstreamEditor.ollama.usage.balance.purchased')}</InfoLabel>
-      <Text>{activityCostText(usage.purchasedBalanceUsd)}</Text>
+      <Text className="tabular-nums">{activityCostText(usage.purchasedBalanceUsd)}</Text>
     </div>}
 
     {usage?.activity.usageUsd != null && <div className="flex justify-between gap-3">
       <InfoLabel info={activityCostHint(usage.activity, t, locale)}>{t('dashboard.upstreamEditor.ollama.usage.recentUsage', { count: activityRangeDays(usage.activity.range) })}</InfoLabel>
-      <Text>{activityCostText(usage.activity.usageUsd)}</Text>
+      <Text className="tabular-nums">{activityCostText(usage.activity.usageUsd)}</Text>
     </div>}
 
     {observation !== null && <Text size={200} align="end" className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.observed', { time: dateTime(observation.fetchedAt, locale) })}</Text>}

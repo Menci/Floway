@@ -4,7 +4,7 @@ const en = {
   translation: {
     app: {
       title: 'Floway',
-      documentTitle: '{{title}} | Floway',
+      documentTitle: '{{title}} | {{siteName}}',
     },
     common: {
       calendar: {
@@ -94,6 +94,7 @@ const en = {
         performance: 'Performance',
         users: 'Users & Groups',
         backupRestore: 'Backup / Restore',
+        siteSettings: 'Site settings',
         settings: 'Settings',
       },
       logout: {
@@ -181,6 +182,18 @@ const en = {
             verbosity: 'Verbosity varies',
             serviceTier: 'Service tier varies',
           },
+        },
+      },
+      siteSettings: {
+        branding: 'Branding',
+        description: 'Manage global preferences for this site',
+        name: 'Site name',
+        nameHint: 'Shown beside the mark and in the browser title. Leave blank to use the built-in name.',
+        namePlaceholder: 'Floway',
+        save: 'Save site name',
+        updated: 'Site name updated.',
+        validation: {
+          tooLong: 'Enter at most {{max}} characters.',
         },
       },
       settings: {
@@ -386,8 +399,8 @@ const en = {
         table: {
           title: 'API Keys',
           name: 'Name',
-          key: 'Key',
           upstreams: 'Upstreams',
+          upstreamOrder: 'Upstream order',
           created: 'Created',
           lastUsed: 'Last Used',
           actions: 'Actions',
@@ -414,6 +427,8 @@ const en = {
           openaiResponsesRetentionHint: 'How long this key\'s OpenAI Responses items stay available for a follow-up request to reference by id (off persists nothing)',
           retentionHint:
               'When enabled, model-invoking requests through this key are captured for the configured window',
+          randomizeUpstreams: 'Randomize upstream order',
+          randomizeUpstreamsHint: 'Shuffle the upstream order for each new request, while preserving upstream affinity for existing sessions',
         },
         validation: {
           nameRequired: 'Name is required.',
@@ -425,6 +440,7 @@ const en = {
           summary: '{{first}} +{{count, number}}',
           inheritsTitle: 'Inherits the global upstream order',
         },
+        upstreamOrder: { configured: 'Priority order', random: 'Random' },
         retention: {
           offCapture: 'Off (do not capture)',
           offPersist: 'Off (do not persist)',

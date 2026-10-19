@@ -39,6 +39,7 @@ test('a cold candidate read schedules refresh without waiting for upstream I/O',
     async () => {
       const result = await enumerateModelCandidates({
         upstreamIds: null,
+        randomizeUpstreams: false,
         model: 'eventual-model',
         kind: 'chat',
         scheduler: promise => { background.push(promise); },
@@ -70,6 +71,7 @@ test('enumerateModelCandidates shares one upstream snapshot across providers and
       const list = vi.spyOn(repo.upstreams, 'list');
       const resolved = await enumerateModelCandidates({
         upstreamIds: null,
+        randomizeUpstreams: false,
         model: 'shared-model',
         kind: 'chat',
         scheduler: testScheduler,
@@ -91,6 +93,7 @@ test('scheduler registration failures propagate rather than looking like an upst
   const providers = await listModelProviders(null);
   expect(() => enumerateRealModelCandidates('model', 'chat', providers, {
     fetcherForUpstream: () => directFetcher,
+    randomizeUpstreams: false,
     scheduleRefresh: () => { throw new Error('scheduler unavailable'); },
   })).toThrow('scheduler unavailable');
 });
@@ -132,7 +135,7 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
       await refreshModelsExplicit(modelsRefreshTarget(first), 'TEST');
       const warmed = (await listModelProviders(null)).find(provider => provider.upstreamId === 'up_first');
       if (!warmed) throw new Error('warmed provider missing');
-      const { candidates } = enumerateRealModelCandidates('target-model', 'chat', [warmed], { fetcherForUpstream: () => directFetcher, scheduleRefresh });
+      const { candidates } = enumerateRealModelCandidates('target-model', 'chat', [warmed], { fetcherForUpstream: () => directFetcher, randomizeUpstreams: false, scheduleRefresh });
 
       assertEquals(candidates[0]?.model.id, 'target-model');
       assertEquals(candidates[0]?.provider.upstreamId, 'up_first');
@@ -177,10 +180,54 @@ test('enumerateRealModelCandidates rejects a model id disabled on that upstream 
 
   await warmModelsForTest();
   const providers = await listModelProviders(null);
-  const enabled = enumerateRealModelCandidates('enabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduleRefresh });
-  const disabled = enumerateRealModelCandidates('disabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduleRefresh });
+  const enabled = enumerateRealModelCandidates('enabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, randomizeUpstreams: false, scheduleRefresh });
+  const disabled = enumerateRealModelCandidates('disabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, randomizeUpstreams: false, scheduleRefresh });
   assertEquals(enabled.candidates[0]?.model.id, 'enabled-model');
   assertEquals(disabled.candidates.length, 0);
+});
+
+test('randomizes upstream candidate groups without splitting or reordering a group', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  for (const [id, name, sortOrder] of [['up_a', 'A', 1], ['up_b', 'B', 2]] as const) {
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
+      id,
+      name,
+      sortOrder,
+      config: { baseUrl: `https://${name.toLowerCase()}.example.com`, authStyle: 'bearer', apiKey: `sk-${name.toLowerCase()}`, endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
+      modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['unprefixed', 'prefixed'] },
+    }));
+  }
+
+  await withMockedFetch(
+    request => {
+      const hostname = new URL(request.url).hostname;
+      if (hostname === 'a.example.com' || hostname === 'b.example.com') {
+        return jsonResponse({ object: 'list', data: [{ id: 'or/gpt-4o' }, { id: 'gpt-4o' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+      try {
+        const resolved = await enumerateModelCandidates({
+          upstreamIds: null,
+          randomizeUpstreams: true,
+          model: 'or/gpt-4o',
+          kind: 'chat',
+          scheduler: testScheduler,
+          runtimeLocation: 'TEST',
+        });
+        assertEquals(
+          resolved.candidates.map(candidate => `${candidate.model.id}@${candidate.provider.upstreamId}`),
+          ['or/gpt-4o@up_b', 'gpt-4o@up_b', 'or/gpt-4o@up_a', 'gpt-4o@up_a'],
+        );
+        expect(random).toHaveBeenCalledOnce();
+      } finally {
+        random.mockRestore();
+      }
+    },
+  );
 });
 
 test('a recorded refresh failure is irrelevant when the prefix policy cannot address the model id', async () => {
@@ -201,6 +248,7 @@ test('a recorded refresh failure is irrelevant when the prefix policy cannot add
     async () => {
       const resolved = await enumerateModelCandidates({
         upstreamIds: null,
+        randomizeUpstreams: false,
         model: 'unprefixed-model',
         kind: 'chat',
         scheduler: testScheduler,
@@ -243,7 +291,7 @@ test('enumerateModelCandidates: healthy upstream still resolves alongside a reje
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resolvedExisting = await enumerateModelCandidates({ upstreamIds: null, model: 'ok-model', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+      const resolvedExisting = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'ok-model', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
       assertEquals(resolvedExisting.candidates.map(m => m.provider.upstreamId), ['up_ok']);
       assertEquals(resolvedExisting.candidates[0]?.model.id, 'ok-model');
       assertEquals(resolvedExisting.failedUpstreams, ['Broken upstream']);
@@ -252,7 +300,7 @@ test('enumerateModelCandidates: healthy upstream still resolves alongside a reje
       // upstream's catalog error — the caller's failure renderer is the right
       // place to surface that, parenthetically, alongside the model-missing
       // body.
-      const resolvedMissing = await enumerateModelCandidates({ upstreamIds: null, model: 'unknown-model', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+      const resolvedMissing = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'unknown-model', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
       assertEquals(resolvedMissing.candidates.length, 0);
       assertEquals(resolvedMissing.failedUpstreams, ['Broken upstream']);
     },
@@ -283,6 +331,7 @@ test('enumerateModelCandidates does not strip a -YYYYMMDD suffix the catalog doe
     async () => {
       const resolved = await enumerateModelCandidates({
         upstreamIds: null,
+        randomizeUpstreams: false,
         model: 'claude-opus-4-7-20251231',
         kind: 'chat',
         scheduler: testScheduler,
@@ -319,6 +368,7 @@ test('enumerateModelCandidates reports sawModel for a wrong-kind catalog match',
     async () => {
       const resolved = await enumerateModelCandidates({
         upstreamIds: null,
+        randomizeUpstreams: false,
         model: 'claude-opus-4-7-20251231',
         kind: 'image',
         scheduler: testScheduler,
@@ -353,6 +403,7 @@ test('an AbortError from background catalog refresh does not abort model resolut
     async () => {
       const resolved = await enumerateModelCandidates({
         upstreamIds: null,
+        randomizeUpstreams: false,
         model: 'any-model',
         kind: 'chat',
         scheduler: testScheduler,
@@ -377,6 +428,7 @@ test('enumerateModelCandidates returns the empty triple when the visible upstrea
 
   const resolved = await enumerateModelCandidates({
     upstreamIds: [],
+    randomizeUpstreams: false,
     model: 'any-model',
     kind: 'chat',
     scheduler: testScheduler,
@@ -442,7 +494,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
       buildCatalogFetch({ up_a: ['gpt-5'], up_b: ['claude'] }),
       async () => {
         const resolved = await enumerateModelCandidates({
-          upstreamIds: null, model: 'smart', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
+          upstreamIds: null, randomizeUpstreams: false, model: 'smart', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
         });
         assertEquals(
           resolved.candidates.map(c => `${c.model.id}@${c.provider.upstreamId}`),
@@ -469,7 +521,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
       buildCatalogFetch({ up_a: ['gpt-5', 'claude'], up_b: ['gpt-5', 'claude'] }),
       async () => {
         const resolved = await enumerateModelCandidates({
-          upstreamIds: null, model: 'random-alias', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
+          upstreamIds: null, randomizeUpstreams: false, model: 'random-alias', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
         });
         // Each target contributes two candidates (up_a before up_b, the
         // configured sort order). The two two-candidate blocks stay together
@@ -480,6 +532,44 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
         }
         const targetOrder = grouped.map(block => block[0]?.model.id);
         expect(new Set(targetOrder)).toEqual(new Set(['gpt-5', 'claude']));
+      },
+    );
+  });
+
+  test('randomizes upstream groups independently for each random alias target', async () => {
+    const { repo } = await setupAppTest();
+    await seedUpstreams(repo);
+    await repo.modelAliases.insert({
+      id: 'alias_random-both',
+      name: 'random-both', kind: 'chat', selection: 'random',
+      targets: [
+        { target_model_id: 'gpt-5', rules: {} },
+        { target_model_id: 'claude', rules: {} },
+      ],
+      ...aliasCommon,
+    });
+
+    await withMockedFetch(
+      buildCatalogFetch({ up_a: ['gpt-5', 'claude'], up_b: ['gpt-5', 'claude'] }),
+      async () => {
+        const random = vi.spyOn(Math, 'random')
+          .mockReturnValueOnce(0)
+          .mockReturnValueOnce(0.999)
+          .mockReturnValueOnce(0);
+        try {
+          const resolved = await enumerateModelCandidates({
+            upstreamIds: null, randomizeUpstreams: true, model: 'random-both', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
+          });
+          expect(resolved.candidates.map(candidate => `${candidate.model.id}@${candidate.provider.upstreamId}`)).toEqual([
+            'claude@up_a',
+            'claude@up_b',
+            'gpt-5@up_b',
+            'gpt-5@up_a',
+          ]);
+          expect(random).toHaveBeenCalledTimes(3);
+        } finally {
+          random.mockRestore();
+        }
       },
     );
   });
@@ -501,7 +591,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
       buildCatalogFetch({ up_a: ['gpt-5'], up_b: [] }),
       async () => {
         const resolved = await enumerateModelCandidates({
-          upstreamIds: null, model: 'dup-alias', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
+          upstreamIds: null, randomizeUpstreams: false, model: 'dup-alias', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
         });
         assertEquals(resolved.candidates.length, 1);
         assertEquals(resolved.candidates[0]!.model.id, 'gpt-5');
@@ -528,7 +618,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
       buildCatalogFetch({ up_a: ['gpt-5'], up_b: ['claude'] }),
       async () => {
         const resolved = await enumerateModelCandidates({
-          upstreamIds: null, model: 'interleaved-duplicates', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
+          upstreamIds: null, randomizeUpstreams: false, model: 'interleaved-duplicates', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
         });
         expect(resolved.candidates.map(candidate => ({
           binding: `${candidate.model.id}@${candidate.provider.upstreamId}`,
@@ -558,7 +648,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
       buildCatalogFetch({ up_a: ['gpt-5'], up_b: [] }),
       async () => {
         const resolved = await enumerateModelCandidates({
-          upstreamIds: null, model: 'two-rules', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
+          upstreamIds: null, randomizeUpstreams: false, model: 'two-rules', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
         });
         assertEquals(resolved.candidates.length, 2);
         expect(resolved.candidates.map(c => c.rules?.reasoning?.effort)).toEqual(['low', 'high']);
@@ -583,7 +673,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
       buildCatalogFetch({ up_a: ['gpt-5'], up_b: [] }),
       async () => {
         const resolved = await enumerateModelCandidates({
-          upstreamIds: null, model: 'fallback', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
+          upstreamIds: null, randomizeUpstreams: false, model: 'fallback', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
         });
         // The `missing` target contributes nothing; the `gpt-5` target
         // contributes one candidate carrying its own rule overlay.

@@ -2,7 +2,7 @@ const zhHansCN = {
   translation: {
     app: {
       title: 'Floway',
-      documentTitle: '{{title}} | Floway',
+      documentTitle: '{{title}} | {{siteName}}',
     },
     common: {
       calendar: {
@@ -92,6 +92,7 @@ const zhHansCN = {
         performance: '性能',
         users: '用户与用户组',
         backupRestore: '备份 / 恢复',
+        siteSettings: '站点设置',
         settings: '设置',
       },
       logout: {
@@ -170,6 +171,18 @@ const zhHansCN = {
             verbosity: '输出详细度因目标而异',
             serviceTier: '服务层级因目标而异',
           },
+        },
+      },
+      siteSettings: {
+        branding: '品牌',
+        description: '管理本站的全局偏好设置',
+        name: '站点名称',
+        nameHint: '显示在图标旁和浏览器标题中。留空则使用内置名称。',
+        namePlaceholder: 'Floway',
+        save: '保存站点名称',
+        updated: '站点名称已更新。',
+        validation: {
+          tooLong: '最多输入 {{max}} 个字符。',
         },
       },
       settings: {
@@ -371,8 +384,8 @@ const zhHansCN = {
         table: {
           title: 'API 密钥',
           name: '名称',
-          key: 'API 密钥',
           upstreams: '上游',
+          upstreamOrder: '上游顺序',
           created: '创建时间',
           lastUsed: '最近使用',
           actions: '操作',
@@ -399,6 +412,8 @@ const zhHansCN = {
           openaiResponsesRetentionHint: '该 API 密钥的 OpenAI Responses 条目可被后续请求按 id 引用的时长（关闭表示不做持久化）',
           retentionHint:
               '启用后，通过该 API 密钥发起的模型请求会在配置窗口内被记录',
+          randomizeUpstreams: '随机排列上游顺序',
+          randomizeUpstreamsHint: '为每个新请求随机排列上游顺序，同时为已有会话保留上游亲和性',
         },
         validation: {
           nameRequired: '名称不能为空。',
@@ -410,6 +425,7 @@ const zhHansCN = {
           summary: '{{first}} +{{count, number}}',
           inheritsTitle: '继承全局上游顺序',
         },
+        upstreamOrder: { configured: '优先级顺序', random: '随机' },
         retention: {
           offCapture: '关闭（不记录）',
           offPersist: '关闭（不持久化）',

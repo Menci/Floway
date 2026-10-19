@@ -32,6 +32,7 @@ export const geminiGenerateContentServe = {
     const { payload, ctx, model, headers } = args;
     const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
+      randomizeUpstreams: ctx.randomizeUpstreams,
       model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
@@ -62,6 +63,7 @@ export const geminiGenerateContentServe = {
     const { payload, ctx, model, headers } = args;
     const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
+      randomizeUpstreams: ctx.randomizeUpstreams,
       model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,

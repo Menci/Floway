@@ -564,7 +564,7 @@ function UpstreamsTable({
                 <div className="inline-flex items-center gap-1">
                   {/* The rank travels with the row a gesture is moving, so the
                       column reads as the order the drop will commit. */}
-                  <Text className="text-fui-fg3 min-w-[22px] text-center">{reorder.position(index) + 1}</Text>
+                  <Text className="text-fui-fg3 min-w-[22px] text-center tabular-nums">{reorder.position(index) + 1}</Text>
                   <ReorderHandle
                     {...reorder.handleProps(index)}
                     label={t('dashboard.upstreams.actions.reorder', { name: record.name })}
@@ -660,7 +660,7 @@ function ModelStatus({
           : healthy
             ? <CheckmarkCircleRegular className="block flex-none text-[var(--colorPaletteGreenForeground1)]" fontSize={18} aria-label={t('dashboard.upstreams.cache.ready')} />
             : <WarningRegular className="block flex-none text-[var(--colorPaletteDarkOrangeForeground1)]" fontSize={18} aria-label={t(`dashboard.upstreams.cache.${cacheStatus}`)} />}
-        <Text size={300} wrap={false}>
+        <Text size={300} className="tabular-nums" wrap={false}>
           {count === null
             ? t('dashboard.upstreams.models.unavailable')
             : t('dashboard.upstreams.models.count', { count })}

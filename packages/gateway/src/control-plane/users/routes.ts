@@ -81,6 +81,7 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
     serverSecret: generateServerSecret(),
     createdAt: new Date().toISOString(),
     upstreamIds: null,
+    randomizeUpstreams: false,
     deletedAt: null,
     dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: 0,

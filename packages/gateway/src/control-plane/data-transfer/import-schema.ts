@@ -6,7 +6,7 @@ import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-mode
 import { isOpenAIResponsesRetentionSeconds, OPENAI_RESPONSES_RETENTION_MAX_SECONDS, OPENAI_RESPONSES_RETENTION_MIN_SECONDS } from '../../repo/openai-responses-retention.ts';
 import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { SEED_ADMIN_USER_ID } from '../../repo/seed-admin.ts';
-import type { ApiKey, Group, UpstreamMetricRecord, PerformanceMetric, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
+import type { ApiKey, Group, SiteSettings, UpstreamMetricRecord, PerformanceMetric, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { RETENTION_MAX_SECONDS } from '../../shared/retention.ts';
 import { parseServerSecret } from '../../shared/server-secret.ts';
@@ -44,6 +44,7 @@ export interface ParsedImportData {
   performance: PerformanceTelemetryRecord[];
   performanceIncluded: boolean;
   searchConfig: WebSearchConfig;
+  siteSettings: SiteSettings;
 }
 
 export type ImportDataParseResult = { type: 'ok'; data: ParsedImportData } | { type: 'invalid'; error: string };
@@ -210,6 +211,7 @@ const openaiResponsesRetentionSchema = parsedBy((value): number => {
 const apiKeySchema = parsedBy((value): ApiKey => {
   const wire = parseRecord(value, 'record must be an object');
   const upstreamIds = parseValue(upstreamIdsSchema, wire.upstreamIds);
+  const randomizeUpstreams = parseValue(z.boolean({ error: 'randomizeUpstreams must be a boolean' }), wire.randomizeUpstreams);
   const userId = parseValue(positiveIntegerSchema('userId'), wire.userId);
   const deletedAt = parseValue(nullableStringSchema('deletedAt'), wire.deletedAt);
   const id = parseValue(nonEmptyStringSchema('id'), wire.id);
@@ -231,6 +233,7 @@ const apiKeySchema = parsedBy((value): ApiKey => {
     createdAt,
     ...lastUsedAt,
     upstreamIds,
+    randomizeUpstreams,
     deletedAt,
     dumpRetentionSeconds,
     openaiResponsesRetentionSeconds,
@@ -485,6 +488,13 @@ const upstreamMetricsSchema = parsedBy((value): UpstreamMetricRecord => {
   return { ...record, ...normalizeUpstreamMetricIdentity(record.name, record.labels) };
 });
 
+// A NULL name is the deployment accepting the built-in default, so the import
+// must be able to express it. Trimming matches the write route, which keeps a
+// re-import of an export byte-identical.
+const siteSettingsSchema = z.object({
+  siteName: z.string().max(64).nullable().transform(value => value == null || value.trim() === '' ? null : value.trim()),
+}).strict();
+
 export const parseImportData = (value: unknown): ImportDataParseResult => {
   if (!isRecord(value)) return { type: 'invalid', error: 'data is required' };
 
@@ -583,6 +593,13 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
     return { type: 'invalid', error: `invalid searchConfig: ${messageFor(cause)}` };
   }
 
+  let siteSettings: SiteSettings;
+  try {
+    siteSettings = parseValue(siteSettingsSchema, value.siteSettings);
+  } catch (cause) {
+    return { type: 'invalid', error: `invalid siteSettings: ${messageFor(cause)}` };
+  }
+
   if (typeof value.performanceIncluded !== 'boolean') {
     return { type: 'invalid', error: 'performanceIncluded must be a boolean' };
   }
@@ -613,6 +630,7 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
       performance,
       performanceIncluded: value.performanceIncluded,
       searchConfig,
+      siteSettings,
     },
   };
 };

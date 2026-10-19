@@ -33,7 +33,11 @@ export const chartCalloutSurfaceStyle = {
 export const useChartFrame = makeStyles({
   root: {
     overflow: 'visible',
+    // Axis readings are a column of values, and the one an axis ticks into
+    // changes width as the range moves; tabular figures keep the labels on
+    // their gridlines instead of letting a narrower `1` drift them.
     '& .tick text, & .recharts-cartesian-axis-tick text': {
+      fontVariantNumeric: 'tabular-nums',
       fontSize: chartTickStyle.fontSize,
       fontWeight: chartTickStyle.fontWeight,
     },

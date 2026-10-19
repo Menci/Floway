@@ -188,7 +188,7 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
       assertEquals(realProviderModels(model)['up_copilot']?.enabledFlags instanceof Set, true);
       assertEquals(realProviderModels(model)['up_custom']?.enabledFlags instanceof Set, true);
 
-      const resolved = await enumerateModelCandidates({ upstreamIds: null, model: 'shared-model', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+      const resolved = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'shared-model', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
       assertEquals(resolved.candidates.map(m => m.provider.upstreamId), ['up_copilot', 'up_custom']);
       // Each match carries its own per-provider endpoints — no merge.
       assertEquals(resolved.candidates[0]?.model.endpoints, { anthropicMessages: {} });
@@ -315,15 +315,15 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
   assertEquals([...catalog.map(m => m.id)].sort(), ['gpt-keep', 'gpt-shared']);
 
   // The solo and override ids resolve to nothing (hidden + unroutable).
-  assertEquals((await enumerateModelCandidates({ upstreamIds: null, model: 'gpt-solo', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' })).candidates.length, 0);
-  assertEquals((await enumerateModelCandidates({ upstreamIds: null, model: 'gpt-override', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' })).candidates.length, 0);
+  assertEquals((await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'gpt-solo', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' })).candidates.length, 0);
+  assertEquals((await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'gpt-override', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' })).candidates.length, 0);
 
   // The shared id survives because up_b allows it; only up_b binds it.
-  const shared = await enumerateModelCandidates({ upstreamIds: null, model: 'gpt-shared', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+  const shared = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'gpt-shared', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
   assertEquals(shared.candidates.map(m => m.provider.upstreamId), ['up_b']);
 
   // The untouched model still routes from up_a.
-  const keep = await enumerateModelCandidates({ upstreamIds: null, model: 'gpt-keep', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+  const keep = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'gpt-keep', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
   assertEquals(keep.candidates.map(m => m.provider.upstreamId), ['up_a']);
 });
 
@@ -476,13 +476,13 @@ describe('catalog listing under modelPrefix', () => {
         // the prefixed surface, so a byId-based routing lookup against the
         // stripped bare id would miss. Routing must instead consult each
         // scoped upstream's own catalog, where the bare id is always present.
-        const resolved = await enumerateModelCandidates({ upstreamIds: null, model: 'or/gpt-4o', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+        const resolved = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'or/gpt-4o', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
         assertEquals(resolved.candidates.map(m => m.provider.upstreamId), ['up_prefixed']);
         assertEquals(resolved.candidates[0]?.model.id, 'gpt-4o');
 
         // The bare-id request must NOT route to a prefix-only-addressable
         // upstream, regardless of routing path.
-        const bare = await enumerateModelCandidates({ upstreamIds: null, model: 'gpt-4o', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+        const bare = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'gpt-4o', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
         assertEquals(bare.candidates.length, 0);
       },
     );
@@ -515,14 +515,14 @@ describe('catalog listing under modelPrefix', () => {
         const catalog = getModelsFromProviders(await listModelProviders(null), scheduleRefresh).models;
         assertEquals(catalog.map(m => m.id), ['or/gpt-4o']);
 
-        const bare = await enumerateModelCandidates({ upstreamIds: null, model: 'gpt-4o', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+        const bare = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'gpt-4o', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
         assertEquals(bare.candidates.map(m => m.provider.upstreamId), ['up_dual_addressable']);
         assertEquals(bare.candidates[0]?.model.id, 'gpt-4o');
 
         // The prefixed request enumerates both forms against `up_dual_addressable`:
         // the unprefixed lookup (`or/gpt-4o`) misses the upstream catalog, and
         // the prefix-stripped lookup (`gpt-4o`) hits — yielding a single match.
-        const prefixed = await enumerateModelCandidates({ upstreamIds: null, model: 'or/gpt-4o', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+        const prefixed = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'or/gpt-4o', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
         assertEquals(prefixed.candidates.map(m => m.provider.upstreamId), ['up_dual_addressable']);
         assertEquals(prefixed.candidates[0]?.model.id, 'gpt-4o');
       },
@@ -566,13 +566,13 @@ describe('catalog listing under modelPrefix', () => {
         // Both upstreams enumerate against the bare id: up_plain via its only
         // form, up_dual via its unprefixed-addressable branch. Order follows
         // the configured sort_order across providers.
-        const bare = await enumerateModelCandidates({ upstreamIds: null, model: 'gpt-4o', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+        const bare = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'gpt-4o', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
         assertEquals(bare.candidates.map(m => m.provider.upstreamId), ['up_plain', 'up_dual']);
 
         // The prefixed id resolves only against up_dual: up_plain's catalog
         // does not contain `or/gpt-4o`, and up_dual's prefix-stripped lookup
         // hits its catalog's bare `gpt-4o`.
-        const prefixed = await enumerateModelCandidates({ upstreamIds: null, model: 'or/gpt-4o', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+        const prefixed = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'or/gpt-4o', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
         assertEquals(prefixed.candidates.map(m => m.provider.upstreamId), ['up_dual']);
       },
     );
@@ -613,7 +613,7 @@ describe('catalog listing under modelPrefix', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const resolved = await enumerateModelCandidates({ upstreamIds: null, model: 'or/gpt-4o', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+        const resolved = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'or/gpt-4o', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
         assertEquals(resolved.candidates.length, 2);
         assertEquals(resolved.candidates.map(c => c.provider.upstreamId), ['up_dual', 'up_dual']);
         // The unprefixed branch hits the `or/gpt-4o` literal entry first;
@@ -702,7 +702,7 @@ describe('catalog listing under modelPrefix', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const resolved = await enumerateModelCandidates({ upstreamIds: null, model: 'aa/bb/gpt-5', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+        const resolved = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'aa/bb/gpt-5', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
         assertEquals(resolved.candidates.map(m => m.provider.upstreamId), ['up_short_prefix', 'up_long_prefix', 'up_bare']);
         assertEquals(resolved.candidates.map(m => m.model.id), ['bb/gpt-5', 'gpt-5', 'aa/bb/gpt-5']);
       },

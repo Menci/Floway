@@ -320,6 +320,7 @@ const keySourceShape = {
 export const createKeyBody = z.object({
   name: z.string().min(1),
   upstream_ids: upstreamIdsValueSchema.optional(),
+  randomize_upstreams: z.boolean().optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
   responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
   ...keySourceShape,
@@ -330,6 +331,7 @@ export const rotateKeyBody = z.object(keySourceShape);
 export const updateKeyBody = z.object({
   name: z.string().min(1).optional(),
   upstream_ids: upstreamIdsValueSchema.optional(),
+  randomize_upstreams: z.boolean().optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
   responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
 });
@@ -759,10 +761,23 @@ const aliasBodyRulesRefinement = (
 export const createAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinement);
 export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinement);
 
+// --- site settings ---
+
+export const SITE_NAME_MAX_LENGTH = 64;
+
+// An absent or blank name is the operator clearing the override; the built-in
+// default lives in the dashboard, not in the database.
+export const siteSettingsBody = z.object({
+  site_name: z.string()
+    .max(SITE_NAME_MAX_LENGTH, { error: `site_name must be at most ${SITE_NAME_MAX_LENGTH} characters` })
+    .nullish()
+    .transform(value => value == null || value.trim() === '' ? null : value.trim()),
+});
+
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(23, { error: 'version must be 23 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(25, { error: 'version must be 25 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });

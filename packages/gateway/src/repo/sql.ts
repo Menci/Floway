@@ -45,6 +45,8 @@ import type {
   ScheduledMaintenanceRepo,
   SpilledFilesRepo,
   StoredUpstreamRecord,
+  SiteSettings,
+  SiteSettingsRepo,
   WebSearchConfigRepo,
   WebSearchUsageRecord,
   WebSearchUsageRepo,
@@ -93,12 +95,13 @@ interface ApiKeyRow {
   created_at: string;
   last_used_at: string | null;
   upstream_ids: string | null;
+  randomize_upstreams: number;
   deleted_at: string | null;
   dump_retention_seconds: number | null;
   responses_retention_seconds: number;
 }
 
-const API_KEY_COLUMNS = 'id, user_id, name, key, server_secret, created_at, last_used_at, upstream_ids, deleted_at, dump_retention_seconds, responses_retention_seconds';
+const API_KEY_COLUMNS = 'id, user_id, name, key, server_secret, created_at, last_used_at, upstream_ids, randomize_upstreams, deleted_at, dump_retention_seconds, responses_retention_seconds';
 
 const serializeUpstreamIds = (value: readonly string[] | null): string | null => (value === null ? null : JSON.stringify(value));
 
@@ -130,6 +133,7 @@ const toApiKey = (row: ApiKeyRow): ApiKey => ({
   createdAt: row.created_at,
   lastUsedAt: row.last_used_at ?? undefined,
   upstreamIds: parseUpstreamIds(row.upstream_ids, `api_keys.id=${row.id}`),
+  randomizeUpstreams: row.randomize_upstreams === 1,
   deletedAt: row.deleted_at,
   dumpRetentionSeconds: row.dump_retention_seconds,
   openaiResponsesRetentionSeconds: row.responses_retention_seconds,
@@ -187,7 +191,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
   async save(key: ApiKey): Promise<void> {
     await this.db
       .prepare(
-        `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            user_id = excluded.user_id,
            name = excluded.name,
@@ -195,6 +199,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
            server_secret = excluded.server_secret,
            last_used_at = excluded.last_used_at,
            upstream_ids = excluded.upstream_ids,
+           randomize_upstreams = excluded.randomize_upstreams,
            deleted_at = excluded.deleted_at,
            dump_retention_seconds = excluded.dump_retention_seconds,
            responses_retention_seconds = excluded.responses_retention_seconds`,
@@ -208,6 +213,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
         key.createdAt,
         key.lastUsedAt ?? null,
         serializeUpstreamIds(key.upstreamIds),
+        key.randomizeUpstreams ? 1 : 0,
         key.deletedAt,
         key.dumpRetentionSeconds,
         key.openaiResponsesRetentionSeconds,
@@ -220,6 +226,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
     const hasKey = sqliteBoolean(patch.key !== undefined);
     const hasLastUsedAt = sqliteBoolean(patch.lastUsedAt !== undefined);
     const hasUpstreamIds = sqliteBoolean(patch.upstreamIds !== undefined);
+    const hasRandomizeUpstreams = sqliteBoolean(patch.randomizeUpstreams !== undefined);
     const hasDumpRetention = sqliteBoolean(patch.dumpRetentionSeconds !== undefined);
     const hasOpenAIResponsesRetention = sqliteBoolean(patch.openaiResponsesRetentionSeconds !== undefined);
     const row = await this.db
@@ -229,6 +236,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
              key = CASE WHEN ? THEN ? ELSE key END,
              last_used_at = CASE WHEN ? THEN ? ELSE last_used_at END,
              upstream_ids = CASE WHEN ? THEN ? ELSE upstream_ids END,
+             randomize_upstreams = CASE WHEN ? THEN ? ELSE randomize_upstreams END,
              dump_retention_seconds = CASE WHEN ? THEN ? ELSE dump_retention_seconds END,
              responses_retention_seconds = CASE WHEN ? THEN ? ELSE responses_retention_seconds END
          WHERE id = ? AND deleted_at IS NULL
@@ -239,6 +247,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
         hasKey ? 1 : 0, patch.key ?? null,
         hasLastUsedAt ? 1 : 0, patch.lastUsedAt ?? null,
         hasUpstreamIds ? 1 : 0, hasUpstreamIds ? serializeUpstreamIds(patch.upstreamIds!) : null,
+        hasRandomizeUpstreams ? 1 : 0, patch.randomizeUpstreams ? 1 : 0,
         hasDumpRetention ? 1 : 0, patch.dumpRetentionSeconds ?? null,
         hasOpenAIResponsesRetention ? 1 : 0, patch.openaiResponsesRetentionSeconds ?? null,
         id,
@@ -1035,6 +1044,27 @@ class SqlUserPreferencesRepo implements UserPreferencesRepo {
 
   async deleteAll(): Promise<void> {
     await this.db.prepare('DELETE FROM user_preferences').run();
+  }
+}
+
+class SqlSiteSettingsRepo implements SiteSettingsRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async get(): Promise<SiteSettings> {
+    const row = await this.db
+      .prepare('SELECT site_name FROM site_settings WHERE id = 1')
+      .first<{ site_name: string | null }>();
+    if (!row) throw new Error('site_settings singleton row missing');
+    return { siteName: row.site_name };
+  }
+
+  async save(settings: SiteSettings): Promise<void> {
+    await this.db
+      .prepare(`UPDATE site_settings
+         SET site_name = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+         WHERE id = 1`)
+      .bind(settings.siteName)
+      .run();
   }
 }
 
@@ -1911,6 +1941,7 @@ export class SqlRepo implements Repo {
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
+  siteSettings: SiteSettingsRepo;
   webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
@@ -1964,6 +1995,7 @@ export class SqlRepo implements Repo {
     this.usage = new SqlUsageRepo(db);
     this.webSearchUsage = new SqlWebSearchUsageRepo(db);
     this.performance = new SqlPerformanceRepo(db);
+    this.siteSettings = new SqlSiteSettingsRepo(db);
     this.webSearchConfig = new SqlWebSearchConfigRepo(db);
     this.upstreams = new SqlUpstreamRepo(db);
     this.proxies = new SqlProxyRepo(db);

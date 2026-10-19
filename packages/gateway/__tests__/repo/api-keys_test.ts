@@ -20,6 +20,7 @@ const baseKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
   serverSecret: '00'.repeat(32),
   createdAt: '2026-06-19T00:00:00.000Z',
   upstreamIds: null,
+  randomizeUpstreams: false,
   deletedAt: null,
   dumpRetentionSeconds: null,
   openaiResponsesRetentionSeconds: 0,
@@ -144,6 +145,7 @@ test('[sql] targeted API key updates use SQLite-bindable scalar values', async (
     key: 'updated_raw_key',
     lastUsedAt: '2026-07-29T00:00:00.000Z',
     upstreamIds: ['upstream-a'],
+    randomizeUpstreams: true,
     dumpRetentionSeconds: 3600,
     openaiResponsesRetentionSeconds: 7 * 24 * 60 * 60,
   });
@@ -152,8 +154,36 @@ test('[sql] targeted API key updates use SQLite-bindable scalar values', async (
   assertEquals(updated?.key, 'updated_raw_key');
   assertEquals(updated?.lastUsedAt, '2026-07-29T00:00:00.000Z');
   assertEquals(updated?.upstreamIds, ['upstream-a']);
+  assertEquals(updated?.randomizeUpstreams, true);
   assertEquals(updated?.dumpRetentionSeconds, 3600);
   assertEquals(updated?.openaiResponsesRetentionSeconds, 7 * 24 * 60 * 60);
+});
+
+test('migration 0092 defaults existing API keys to configured upstream order', async () => {
+  const db = await createSqlJsDatabase();
+  try {
+    for (const [filename, sql] of migrationSqlByFilename) {
+      if (filename === '0092_api_key_randomize_upstreams.sql') break;
+      db.run(sql);
+    }
+    db.run(`INSERT INTO api_keys (id, user_id, name, key, server_secret, created_at)
+      VALUES ('key_existing', 1, 'Existing', 'raw_existing', '${'ab'.repeat(32)}', '2026-10-19T00:00:00.000Z')`);
+
+    const migration = migrationSqlByFilename.find(([filename]) => filename === '0092_api_key_randomize_upstreams.sql');
+    if (migration === undefined) throw new Error('missing migration 0092_api_key_randomize_upstreams.sql');
+    db.run(migration[1]);
+
+    const [result] = db.exec(`SELECT randomize_upstreams FROM api_keys WHERE id = 'key_existing'`);
+    assertEquals(result?.values, [[0]]);
+    assertThrows(
+      () => db.run(`INSERT INTO api_keys (id, user_id, name, key, server_secret, created_at, randomize_upstreams)
+        VALUES ('key_invalid', 1, 'Invalid', 'raw_invalid', '${'cd'.repeat(32)}', '2026-10-19T00:00:00.000Z', 2)`),
+      Error,
+      'CHECK constraint failed',
+    );
+  } finally {
+    db.close();
+  }
 });
 
 test('migration 0057 backfills distinct server secrets and enforces their canonical form', async () => {

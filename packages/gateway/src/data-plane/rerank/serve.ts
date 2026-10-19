@@ -76,6 +76,7 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
   try {
     const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
+      randomizeUpstreams: ctx.randomizeUpstreams,
       model,
       kind: 'rerank',
       scheduler: ctx.backgroundScheduler,

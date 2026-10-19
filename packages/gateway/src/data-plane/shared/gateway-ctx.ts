@@ -18,6 +18,7 @@ export interface GatewayCtx {
   readonly apiKeyId: string;
   readonly requestStartedAt: number;
   readonly upstreamIds: readonly string[] | null;
+  readonly randomizeUpstreams: boolean;
   readonly abortSignal?: AbortSignal;
   readonly wantsStream: boolean;
   readonly downstreamAbortController?: AbortController;
@@ -78,6 +79,7 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     apiKeyId: apiKey.id,
     requestStartedAt: Date.now(),
     upstreamIds,
+    randomizeUpstreams: apiKey.randomizeUpstreams,
     abortSignal: controller?.signal,
     wantsStream: opts.wantsStream,
     downstreamAbortController: controller,

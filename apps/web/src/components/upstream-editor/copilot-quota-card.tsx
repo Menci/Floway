@@ -66,7 +66,7 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
           label={copilotQuotaName(t, bucket.id, 'allowance')}
           percent={bucket.usedPercent}
           quotaDisplay={preferences.quotaDisplay}
-          right={<Text size={200} className="text-fui-fg3">
+          right={<Text size={200} className="text-fui-fg3 tabular-nums">
             {t('dashboard.upstreamEditor.copilot.quota.amount', {
               amount: formatBucketAmount(bucket, preferences.quotaDisplay === 'used' ? bucket.used : bucket.remaining, locale),
               entitlement: formatBucketAmount(bucket, bucket.entitlement, locale),

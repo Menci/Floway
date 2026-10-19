@@ -13,6 +13,7 @@ const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
   serverSecret: '00'.repeat(32),
   createdAt: '2026-01-01T00:00:00.000Z',
   upstreamIds: null,
+  randomizeUpstreams: false,
   deletedAt: null,
   dumpRetentionSeconds: 3600,
   openaiResponsesRetentionSeconds: 0,

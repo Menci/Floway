@@ -21,6 +21,7 @@ import { defaultLanguage, htmlLanguageFor } from './i18n/languages';
 import { useTranslation } from './i18n/translation';
 import { useSourceMappedStack } from './lib/source-mapped-stack';
 import { DARK_SCHEME_QUERY, useMediaQuery } from './lib/use-media-query';
+import { useSiteSettingsStore } from './stores/site-settings-store';
 import { winuiDarkTheme, winuiLightTheme } from './winui/theme';
 import './i18n';
 import './global.css';
@@ -45,6 +46,13 @@ export const links: Route.LinksFunction = () => [
 ];
 
 const useSystemTheme = () => useMediaQuery(DARK_SCHEME_QUERY) ? winuiDarkTheme : winuiLightTheme;
+
+// The wordmark and document title need the site name before the dashboard
+// paints, and this route mounts once for the whole app.
+export async function clientLoader() {
+  await useSiteSettingsStore.getState().load();
+  return null;
+}
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const theme = useSystemTheme();
