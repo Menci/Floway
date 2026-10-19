@@ -183,12 +183,12 @@ test('a group auditor still sees direct user-target rules on a user scope', asyn
   expect(body.values['User.Audit']).toBe(true);
 });
 
-test('Self effective inherits /Users and concrete self-user rules with Self precedence', async () => {
+test('Self rules are included when resolving the user\'s own user scope', async () => {
   const { adminSession, apiKey, repo } = await setupAppTest();
   const resolveSelf = async () => (await (await requestApp('/api/access-resolve', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
-    body: JSON.stringify({ principal: { kind: 'user', id: apiKey.userId }, scope: { kind: 'self' } }),
+    body: JSON.stringify({ principal: { kind: 'user', id: apiKey.userId }, scope: { kind: 'user', userId: apiKey.userId } }),
   })).json());
 
   await repo.accessRecords.save({ principal: { kind: 'user', id: apiKey.userId }, scope: { kind: 'users' }, sortOrder: 0, values: { 'Permission.Audit': true } });
@@ -199,6 +199,16 @@ test('Self effective inherits /Users and concrete self-user rules with Self prec
 
   await repo.accessRecords.save({ principal: { kind: 'user', id: apiKey.userId }, scope: { kind: 'self' }, sortOrder: 2, values: { 'Permission.Audit': true } });
   expect((await resolveSelf()).values['Permission.Audit']).toBe(true);
+});
+
+test('Self is a rule scope and cannot be used as a resolve target', async () => {
+  const { adminSession } = await setupAppTest();
+  const response = await requestApp('/api/access-resolve', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+    body: JSON.stringify({ principal: { kind: 'user', id: 2 }, scope: { kind: 'self' } }),
+  });
+  assertEquals(response.status, 400);
 });
 
 test('resolving another user\'s scope does not reveal membership groups', async () => {

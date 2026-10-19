@@ -68,7 +68,7 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
     users: scopeData.users.filter(user => data.directory?.principalUserIds.includes(user.id)),
     groups: scopeData.groups.filter(group => data.directory?.principalGroupIds.includes(group.id)),
   }), [data.directory, scopeData]);
-  const effectiveUnavailable = principal === null || scope === null;
+  const effectiveUnavailable = principal === null || scope === null || scope.kind === 'self';
   const showEffective = !effectiveUnavailable && params.get('effective') === 'true';
   useEffect(() => {
     if (navigation.location !== undefined) return;

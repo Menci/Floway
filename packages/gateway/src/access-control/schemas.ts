@@ -25,6 +25,16 @@ export const accessScopeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('group'), groupId: positiveInteger }),
 ]);
 
+export const accessTargetScopeSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('upstreams') }),
+  z.object({ kind: z.literal('upstream'), upstreamId: z.string().min(1) }),
+  z.object({ kind: z.literal('upstreamModel'), upstreamId: z.string().min(1), model: modelPatternSchema }),
+  z.object({ kind: z.literal('users') }),
+  z.object({ kind: z.literal('user'), userId: positiveInteger }),
+  z.object({ kind: z.literal('groups') }),
+  z.object({ kind: z.literal('group'), groupId: positiveInteger }),
+]);
+
 export const accessValuesSchema = z.object({
   'Model.Use': z.boolean().optional(),
   'Upstream.Audit': z.boolean().optional(),

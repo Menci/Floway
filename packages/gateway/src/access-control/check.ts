@@ -33,6 +33,6 @@ export const checkMany = async (
     const targetGroups = target.kind === 'user'
       ? new Set(targetMemberships.get(target.userId)!)
       : new Set<number>();
-    return resolver.satisfies(targetScope(target), targetGroups, requirement, target.kind === 'user' && target.userId === subject.id, target.kind === 'user' ? target.userId : undefined);
+    return resolver.satisfies(targetScope(target), targetGroups, requirement, target.kind === 'user' && target.userId === subject.id);
   });
 };

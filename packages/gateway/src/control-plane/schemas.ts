@@ -17,7 +17,7 @@
 
 import { z } from 'zod';
 
-import { accessPrincipalSchema, accessRecordInputSchema, accessScopeSchema } from '../access-control/schemas.ts';
+import { accessPrincipalSchema, accessRecordInputSchema, accessTargetScopeSchema } from '../access-control/schemas.ts';
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
@@ -281,7 +281,7 @@ export const accessRecordBody = accessRecordInputSchema;
 
 export const resolveAccessBody = z.object({
   principal: accessPrincipalSchema,
-  scope: accessScopeSchema,
+  scope: accessTargetScopeSchema,
   excludeRecordId: z.number().int().positive().optional(),
 }).strict();
 

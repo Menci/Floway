@@ -13,10 +13,10 @@ export const useAccessResolution = ({ enabled, excludeRecordId, principal, revis
   const principalKind = principal?.kind;
   const principalId = principal?.id;
   const scopeJson = scope === null ? null : JSON.stringify(scope);
-  const request = useMemo(() => enabled && principalKind !== undefined && principalId !== undefined && scopeJson !== null ? {
-    json: { principal: { kind: principalKind, id: principalId }, scope: JSON.parse(scopeJson) as AccessScope, ...(excludeRecordId === undefined ? {} : { excludeRecordId }) },
+  const request = useMemo(() => enabled && principalKind !== undefined && principalId !== undefined && scopeJson !== null && scope?.kind !== 'self' ? {
+    json: { principal: { kind: principalKind, id: principalId }, scope: JSON.parse(scopeJson) as Exclude<AccessScope, { kind: 'self' }>, ...(excludeRecordId === undefined ? {} : { excludeRecordId }) },
     revision,
-  } : null, [enabled, excludeRecordId, principalId, principalKind, revision, scopeJson]);
+  } : null, [enabled, excludeRecordId, principalId, principalKind, revision, scopeJson, scope?.kind]);
   const [result, setResult] = useState<{ request: typeof request; data: AccessResolution | null; error: string | null } | null>(null);
   useEffect(() => {
     if (request === null) return;
