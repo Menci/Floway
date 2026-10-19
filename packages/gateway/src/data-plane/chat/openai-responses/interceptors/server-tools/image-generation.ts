@@ -903,6 +903,7 @@ interface ShimState {
   config: MaterializedImageGenerationConfig;
   apiKeyId: string;
   upstreamIds: readonly string[] | null;
+  randomizeUpstreams: boolean;
   backgroundScheduler: BackgroundScheduler;
   runtimeLocation: string;
   downstreamAbortSignal: AbortSignal | undefined;
@@ -994,6 +995,7 @@ const resolveImageCandidate = async (
   try {
     resolution = await enumerateModelCandidates({
       upstreamIds: state.upstreamIds,
+      randomizeUpstreams: state.randomizeUpstreams,
       model: state.config.model,
       kind: 'image',
       scheduler: state.backgroundScheduler,
@@ -1484,6 +1486,7 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
     config: materializedConfig,
     apiKeyId: gatewayCtx.apiKeyId,
     upstreamIds: gatewayCtx.upstreamIds,
+    randomizeUpstreams: gatewayCtx.randomizeUpstreams,
     backgroundScheduler: gatewayCtx.backgroundScheduler,
     runtimeLocation: gatewayCtx.runtimeLocation,
     downstreamAbortSignal: gatewayCtx.abortSignal,

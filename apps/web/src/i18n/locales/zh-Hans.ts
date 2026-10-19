@@ -355,6 +355,7 @@ const zhHansCN = {
           name: '名称',
           key: 'API 密钥',
           upstreams: '上游',
+          upstreamOrder: '上游顺序',
           created: '创建时间',
           lastUsed: '最近使用',
           actions: '操作',
@@ -381,6 +382,8 @@ const zhHansCN = {
           openaiResponsesRetentionHint: '该 API 密钥的 OpenAI Responses 条目可被后续请求按 id 引用的时长（关闭表示不做持久化）',
           retentionHint:
               '启用后，通过该 API 密钥发起的模型请求会在配置窗口内被记录',
+          randomizeUpstreams: '随机排列上游顺序',
+          randomizeUpstreamsHint: '每次解析模型时随机排列当前可用的上游',
         },
         validation: {
           nameRequired: '名称不能为空。',
@@ -392,6 +395,7 @@ const zhHansCN = {
           summary: '{{first}} +{{count, number}}',
           inheritsTitle: '继承全局上游顺序',
         },
+        upstreamOrder: { configured: '优先级顺序', random: '随机' },
         retention: {
           offCapture: '关闭（不记录）',
           offPersist: '关闭（不持久化）',

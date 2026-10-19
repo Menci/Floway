@@ -313,6 +313,7 @@ const keySourceShape = {
 export const createKeyBody = z.object({
   name: z.string().min(1),
   upstream_ids: upstreamIdsValueSchema.optional(),
+  randomize_upstreams: z.boolean().optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
   responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
   ...keySourceShape,
@@ -323,6 +324,7 @@ export const rotateKeyBody = z.object(keySourceShape);
 export const updateKeyBody = z.object({
   name: z.string().min(1).optional(),
   upstream_ids: upstreamIdsValueSchema.optional(),
+  randomize_upstreams: z.boolean().optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
   responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
 });
@@ -755,7 +757,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(22, { error: 'version must be 22 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(23, { error: 'version must be 23 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });

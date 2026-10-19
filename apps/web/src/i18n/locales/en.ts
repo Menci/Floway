@@ -370,6 +370,7 @@ const en = {
           name: 'Name',
           key: 'Key',
           upstreams: 'Upstreams',
+          upstreamOrder: 'Upstream order',
           created: 'Created',
           lastUsed: 'Last Used',
           actions: 'Actions',
@@ -396,6 +397,8 @@ const en = {
           openaiResponsesRetentionHint: 'How long this key\'s OpenAI Responses items stay available for a follow-up request to reference by id (off persists nothing)',
           retentionHint:
               'When enabled, model-invoking requests through this key are captured for the configured window',
+          randomizeUpstreams: 'Randomize upstream order',
+          randomizeUpstreamsHint: 'Shuffle the effective upstream order for each model resolution',
         },
         validation: {
           nameRequired: 'Name is required.',
@@ -407,6 +410,7 @@ const en = {
           summary: '{{first}} +{{count, number}}',
           inheritsTitle: 'Inherits the global upstream order',
         },
+        upstreamOrder: { configured: 'Priority order', random: 'Random' },
         retention: {
           offCapture: 'Off (do not capture)',
           offPersist: 'Off (do not persist)',

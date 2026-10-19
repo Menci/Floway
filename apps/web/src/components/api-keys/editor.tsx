@@ -1,4 +1,4 @@
-import { Database24Regular, History24Regular } from '@fluentui/react-icons';
+import { ArrowShuffle24Regular, Database24Regular, History24Regular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -17,12 +17,13 @@ import { OpenLinkLabel } from '../ui/open-link-label';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
 import { RouteLink } from '../ui/route-link';
+import { SettingsCard, SettingsSwitch } from '../ui/settings-card';
 import { useDiscardGuard } from '../ui/use-discard-guard';
 import { UpstreamAccessControl } from '../upstreams/access-control';
 
 const { Button, DialogActions, DialogTitle, Field } = fluentComponents;
 
-interface KeyFormValues { name: string; keySource: KeySource; customKey: string; upstreamOverride: boolean; upstreamIds: string[]; dumpRetention: RetentionValue; openaiResponsesRetention: Exclude<RetentionValue, null> }
+interface KeyFormValues { name: string; keySource: KeySource; customKey: string; upstreamOverride: boolean; upstreamIds: string[]; randomizeUpstreams: boolean; dumpRetention: RetentionValue; openaiResponsesRetention: Exclude<RetentionValue, null> }
 
 const OPENAI_RESPONSES_RETENTION_MAX_SECONDS = 10 * 365 * 86400;
 
@@ -75,6 +76,7 @@ export function KeyDialog(props: KeyDialogProps) {
           ...keySourceFields,
           upstreamOverride: z.boolean(),
           upstreamIds: z.array(z.string()),
+          randomizeUpstreams: z.boolean(),
           dumpRetention: z.union([z.number(), z.null(), z.literal('invalid')]),
           openaiResponsesRetention: z.union([z.number(), z.literal('invalid')]),
         })
@@ -130,6 +132,7 @@ export function KeyDialog(props: KeyDialogProps) {
       const common = {
         name: values.name.trim(),
         upstream_ids: values.upstreamOverride ? values.upstreamIds : null,
+        randomize_upstreams: values.randomizeUpstreams,
         dump_retention_seconds: parsedRetention(values.dumpRetention),
         responses_retention_seconds: parsedRetention(values.openaiResponsesRetention),
       };
@@ -204,6 +207,18 @@ export function KeyDialog(props: KeyDialogProps) {
           setValue('upstreamOverride', next.override);
           setValue('upstreamIds', next.ids);
         }}
+      />
+
+      <SettingsCard
+        action={<SettingsSwitch
+          checked={values.randomizeUpstreams}
+          disabled={saving}
+          label={t('dashboard.apiKeys.form.randomizeUpstreams')}
+          onChange={checked => setValue('randomizeUpstreams', checked)}
+        />}
+        description={t('dashboard.apiKeys.form.randomizeUpstreamsHint')}
+        header={t('dashboard.apiKeys.form.randomizeUpstreams')}
+        icon={<ArrowShuffle24Regular />}
       />
 
       {isCreate && (
@@ -289,6 +304,7 @@ const keyFormDefaults = (apiKey: ApiKey | null): KeyFormValues => {
     customKey: '',
     upstreamOverride: apiKey?.upstream_ids !== null && apiKey?.upstream_ids !== undefined,
     upstreamIds: apiKey?.upstream_ids ?? [],
+    randomizeUpstreams: apiKey?.randomize_upstreams ?? false,
     dumpRetention: apiKey?.dump_retention_seconds ?? null,
     openaiResponsesRetention: apiKey?.responses_retention_seconds ?? 0,
   };

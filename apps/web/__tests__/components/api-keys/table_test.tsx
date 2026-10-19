@@ -15,8 +15,8 @@ import { renderInApp } from '../../render';
 // sits inside one, so editing, rotating, deleting or copying a key used to
 // select it on the way.
 const keys: ApiKey[] = [
-  { id: 'first', name: 'First key', key: 'sk-first', upstream_ids: null, created_at: '2026-01-01T00:00:00.000Z', last_used_at: null, dump_retention_seconds: null, responses_retention_seconds: 0 },
-  { id: 'second', name: 'Second key', key: 'sk-second', upstream_ids: null, created_at: '2026-01-02T00:00:00.000Z', last_used_at: null, dump_retention_seconds: null, responses_retention_seconds: 0 },
+  { id: 'first', name: 'First key', key: 'sk-first', upstream_ids: null, randomize_upstreams: false, created_at: '2026-01-01T00:00:00.000Z', last_used_at: null, dump_retention_seconds: null, responses_retention_seconds: 0 },
+  { id: 'second', name: 'Second key', key: 'sk-second', upstream_ids: null, randomize_upstreams: true, created_at: '2026-01-02T00:00:00.000Z', last_used_at: null, dump_retention_seconds: null, responses_retention_seconds: 0 },
 ];
 
 const clipboard = { copy: vi.fn(), outcomeFor: () => 'idle' as const };
@@ -41,6 +41,12 @@ const clickButton = async (view: ReturnType<typeof renderTable>, name: string) =
 };
 
 describe('API keys table selection', () => {
+  it('shows each key upstream order mode', () => {
+    const view = renderTable(vi.fn());
+    expect(view.getByText(i18n.t('dashboard.apiKeys.upstreamOrder.configured'))).toBeTruthy();
+    expect(view.getByText(i18n.t('dashboard.apiKeys.upstreamOrder.random'))).toBeTruthy();
+  });
+
   it('does not select the row a command was run from', async () => {
     const onSelect = vi.fn();
     const view = renderTable(onSelect);

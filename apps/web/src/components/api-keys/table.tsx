@@ -122,6 +122,7 @@ export function KeysTable({
             <Tooltip content={upstreamsTitle(key, upstreamById, t)} relationship="description">
               <Text block truncate size={200} className="winui-focus-rect text-fui-fg2" tabIndex={0} wrap={false}>{upstreamsText(key, upstreamById, t)}</Text>
             </Tooltip>
+            <Text block size={200} className="text-fui-fg2">{upstreamOrderText(key, t)}</Text>
             <div className="flex flex-wrap gap-x-3 text-fui-fg3">
               <Text size={200}>{shortDate(key.created_at, locale)}</Text>
               <Text size={200}>{lastUsed}</Text>
@@ -148,10 +149,10 @@ export function KeysTable({
       <Table
         {...gridNavigation}
         aria-label={t('dashboard.apiKeys.table.title')}
-        className="min-w-[960px]"
+        className="min-w-[1080px]"
         role="grid"
       >
-        <TableColumns widths={[null, null, '200px', '120px', '132px', '148px', TABLE_ACTIONS_WIDTH]} />
+        <TableColumns widths={[null, null, '200px', '120px', '120px', '132px', '148px', TABLE_ACTIONS_WIDTH]} />
         <TableHeader>
           <TableRow>
             <TableSelectionCell
@@ -166,6 +167,7 @@ export function KeysTable({
             </TableHeaderCell>
             <TableHeaderCell>{t('dashboard.apiKeys.table.key')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.apiKeys.table.upstreams')}</TableHeaderCell>
+            <TableHeaderCell>{t('dashboard.apiKeys.table.upstreamOrder')}</TableHeaderCell>
             <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'created')} sortDirection={sort.getSortDirection('created')} sortable>
               {t('dashboard.apiKeys.table.created')}
             </TableHeaderCell>
@@ -225,6 +227,7 @@ export function KeysTable({
                   </TableCellLayout>
                 </Tooltip>
               </TableCell>
+              <TableCell>{upstreamOrderText(key, t)}</TableCell>
               <TableCell>
                 <Tooltip content={dateTime(key.created_at, locale)} relationship="description">
                   <span className="winui-focus-rect" tabIndex={0}>{shortDate(key.created_at, locale)}</span>
@@ -269,6 +272,9 @@ const upstreamsText = (
         count: names.length - 2,
       });
 };
+
+const upstreamOrderText = (key: ApiKey, t: TFunction) =>
+  t(key.randomize_upstreams ? 'dashboard.apiKeys.upstreamOrder.random' : 'dashboard.apiKeys.upstreamOrder.configured');
 
 const upstreamsTitle = (
   key: ApiKey,

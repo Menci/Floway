@@ -209,6 +209,7 @@ const openaiResponsesRetentionSchema = parsedBy((value): number => {
 const apiKeySchema = parsedBy((value): ApiKey => {
   const wire = parseRecord(value, 'record must be an object');
   const upstreamIds = parseValue(upstreamIdsSchema, wire.upstreamIds);
+  const randomizeUpstreams = parseValue(z.boolean({ error: 'randomizeUpstreams must be a boolean' }), wire.randomizeUpstreams);
   const userId = parseValue(positiveIntegerSchema('userId'), wire.userId);
   const deletedAt = parseValue(nullableStringSchema('deletedAt'), wire.deletedAt);
   const id = parseValue(nonEmptyStringSchema('id'), wire.id);
@@ -230,6 +231,7 @@ const apiKeySchema = parsedBy((value): ApiKey => {
     createdAt,
     ...lastUsedAt,
     upstreamIds,
+    randomizeUpstreams,
     deletedAt,
     dumpRetentionSeconds,
     openaiResponsesRetentionSeconds,

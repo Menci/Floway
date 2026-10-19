@@ -14,6 +14,7 @@ export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx 
   apiKeyId: 'key_test',
   requestStartedAt: 0,
   upstreamIds: null,
+  randomizeUpstreams: false,
   wantsStream: false,
   runtimeLocation: 'TEST',
   dump: null,

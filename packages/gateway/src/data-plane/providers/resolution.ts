@@ -102,17 +102,21 @@ export const enumerateRealModelCandidates = (
 
 // Target order for an alias walk: `first-available` yields declaration
 // order; `random` shuffles so the outer walk distributes uniformly across
-// targets. Within a single target's real-catalog walk the per-upstream
-// order is always preserved (registry enumeration order); shuffling
-// applies to the target list, not to a target's candidates.
+// targets. Within a single target's real-catalog walk the request's upstream
+// order is preserved; alias shuffling applies to the target list, not to a
+// target's candidates.
+const shuffled = <T>(items: readonly T[]): T[] => {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+};
+
 const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['targets'][number][] => {
   if (alias.selection === 'first-available') return alias.targets;
-  const shuffled = [...alias.targets];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
+  return shuffled(alias.targets);
 };
 
 // Per-request model resolution. Two-branch chain:
@@ -148,10 +152,11 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
 // whose first target matches its own name) resolves to the real model on
 // the first pass; alias names never re-enter the alias layer.
 export const enumerateModelCandidates = async ({
-  upstreamIds, model, kind, scheduler, runtimeLocation,
+  upstreamIds, randomizeUpstreams, model, kind, scheduler, runtimeLocation,
 }: {
   // null = unrestricted; empty list = no providers visible.
   upstreamIds: readonly string[] | null;
+  randomizeUpstreams: boolean;
   model: string;
   kind: ModelKind;
   scheduler: BackgroundScheduler;
@@ -165,10 +170,11 @@ export const enumerateModelCandidates = async ({
   readonly failedUpstreams: readonly string[];
 }> => {
   const upstreams = await getRepo().upstreams.list();
-  const [createFetcherForUpstream, providers] = await Promise.all([
+  const [createFetcherForUpstream, listedProviders] = await Promise.all([
     createPerRequestFetcher(runtimeLocation, upstreams),
     listModelProviders(upstreamIds, upstreams),
   ]);
+  const providers = randomizeUpstreams ? shuffled(listedProviders) : listedProviders;
   const resolutionContext = {
     fetcherForUpstream: createFetcherForUpstream,
     scheduleRefresh: createModelsRefreshScheduler(runtimeLocation, scheduler),

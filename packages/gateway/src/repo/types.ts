@@ -21,6 +21,8 @@ export interface ApiKey {
   // When both levels carry a list the effective list is their intersection
   // taken in this order, so a key that sets one also decides the priority.
   upstreamIds: string[] | null;
+  // Shuffle the effective upstream order once per model resolution.
+  randomizeUpstreams: boolean;
   deletedAt: string | null;
   // null = dump capture disabled; positive integer = seconds of retention.
   dumpRetentionSeconds: number | null;
@@ -273,7 +275,7 @@ export interface ApiKeyRepo {
 
 export type ApiKeyUpdate = Partial<Pick<
   ApiKey,
-  'name' | 'key' | 'lastUsedAt' | 'upstreamIds' | 'dumpRetentionSeconds' | 'openaiResponsesRetentionSeconds'
+  'name' | 'key' | 'lastUsedAt' | 'upstreamIds' | 'randomizeUpstreams' | 'dumpRetentionSeconds' | 'openaiResponsesRetentionSeconds'
 >>;
 
 export interface UsersRepo {

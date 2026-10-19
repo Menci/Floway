@@ -213,6 +213,7 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
     serverSecret: '00'.repeat(32),
     createdAt: '2026-03-15T00:00:00.000Z',
     upstreamIds: null,
+    randomizeUpstreams: false,
     deletedAt: null,
     dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: 30 * 24 * 60 * 60,
