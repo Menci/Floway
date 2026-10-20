@@ -151,8 +151,8 @@ export const permissionsForScope = (scope: AccessScope): readonly AccessPermissi
   case 'upstreamModel': return ['Model.Use'];
   case 'users':
   case 'user':
-  case 'groups':
   case 'group': return ['User.Audit', 'Permission.Audit'];
+  case 'groups': return ['Permission.Audit'];
   }
 };
 

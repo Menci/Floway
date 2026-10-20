@@ -27,12 +27,12 @@ test('uses structural scope keys and validates URL scope values', () => {
   expect(() => parseScope('{"kind":"upstreamModel","upstreamId":"a","model":{"kind":"regex","value":"["}}')).toThrow();
 });
 
-test('maps permission audit to Self, Users, and Groups scopes', () => {
+test('maps audit permissions to their valid identity scopes', () => {
   expect(scopePermissions({ kind: 'self' })).toEqual(['Permission.Audit']);
+  expect(scopePermissions({ kind: 'groups' })).toEqual(['Permission.Audit']);
   for (const scope of [
     { kind: 'users' as const },
     { kind: 'user' as const, userId: 2 },
-    { kind: 'groups' as const },
     { kind: 'group' as const, groupId: 1 },
   ]) expect(scopePermissions(scope)).toEqual(['User.Audit', 'Permission.Audit']);
 });

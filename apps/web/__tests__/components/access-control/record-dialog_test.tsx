@@ -105,6 +105,36 @@ test('keeps an invalid JSON scope in JSON mode until it satisfies the schema', a
   expect(json.getAttribute('aria-invalid')).toBe('true');
 });
 
+test('updates permission controls from each valid JSON scope draft', async () => {
+  const groupRecord: AccessRecord = {
+    ...record,
+    scope: { kind: 'group', groupId: 3 },
+    values: { 'User.Audit': true, 'Permission.Audit': true },
+  };
+  const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => Response.json(init?.method === 'PUT'
+    ? { ...groupRecord, ...JSON.parse(init.body as string) }
+    : { values: { 'User.Audit': false, 'Permission.Audit': false }, records: [], decisions: [] }));
+  vi.stubGlobal('fetch', fetch);
+  await renderDialog({ record: groupRecord });
+  fireEvent.click(screen.getByRole('tab', { name: 'JSON' }));
+  const editor = screen.getByRole('textbox', { name: 'JSON' });
+
+  fireEvent.change(editor, { target: { value: JSON.stringify({ kind: 'groups' }) } });
+  expect(screen.queryByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.User.Audit') })).toBeNull();
+  expect(screen.getByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.Permission.Audit') })).toBeTruthy();
+
+  fireEvent.change(editor, { target: { value: JSON.stringify({ kind: 'group', groupId: 3 }) } });
+  const userAudit = screen.getByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.User.Audit') });
+  fireEvent.click(within(userAudit).getByRole('radio', { name: i18n.t('dashboard.accessControl.states.on') }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.accessControl.actions.save') })); });
+
+  const write = fetch.mock.calls.find(([, init]) => init?.method === 'PUT')!;
+  expect(JSON.parse(write[1]!.body as string)).toMatchObject({
+    scope: { kind: 'group', groupId: 3 },
+    values: { 'User.Audit': true, 'Permission.Audit': true },
+  });
+});
+
 test('shows the exact inherited upstream edit level for a concrete user target', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({
     values: { 'Model.Use': true, 'Upstream.Audit': false, 'Upstream.Edit': 'models' },

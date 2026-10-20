@@ -68,12 +68,22 @@ export function AccessRecordDialog({ data, principalData, initialPrincipal, init
     values: { formValues, scope, scopeJson, values },
   });
   const permissions = useMemo(() => scopePermissions(scope), [scope]);
-  const changeScope = (next: AccessScope | null) => {
+  const applyScope = (next: AccessScope | null) => {
     setScope(next);
-    setScopeJson(JSON.stringify(next, null, 2));
-    setScopeError(null);
     const nextPermissions = scopePermissions(next);
     setValues(current => Object.fromEntries(Object.entries(current).filter(([permission]) => nextPermissions.includes(permission as Permission))) as AccessValues);
+  };
+  const changeScope = (next: AccessScope | null) => {
+    applyScope(next);
+    setScopeJson(JSON.stringify(next, null, 2));
+    setScopeError(null);
+  };
+  const changeScopeJson = (next: string) => {
+    setScopeJson(next);
+    const parsed = scopeSchema.nullable().safeParse(parseJson(next));
+    if (!parsed.success) return;
+    applyScope(parsed.data);
+    setScopeError(null);
   };
 
   const parseJsonScope = (): { scope: AccessScope | null } | null => {
@@ -153,7 +163,7 @@ export function AccessRecordDialog({ data, principalData, initialPrincipal, init
 
     <Field className="min-w-0" label={{ children: renderScopeHeader }} validationMessage={scopeError ?? undefined} validationState={scopeError ? 'error' : undefined}>
       <div className="min-w-0" hidden={scopeMode !== 'visual'}><ScopeEditor className="!w-full" data={data} onChange={changeScope} readOnly={saving} value={scope} /></div>
-      <JsonEditor active={scopeMode === 'json'} invalid={scopeError !== null} label={t('dashboard.accessControl.scope.json')} onChange={setScopeJson} readOnly={saving} value={scopeJson} />
+      <JsonEditor active={scopeMode === 'json'} invalid={scopeError !== null} label={t('dashboard.accessControl.scope.json')} onChange={changeScopeJson} readOnly={saving} value={scopeJson} />
     </Field>
 
     {permissions.length > 0 && <PermissionFields
@@ -182,4 +192,12 @@ const validateVisualScope = (scope: AccessScope | null, setError: (message: stri
   if (parsed.success) return parsed.data;
   setError(parsed.error.message);
   return null;
+};
+
+const parseJson = (value: string): unknown => {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
 };

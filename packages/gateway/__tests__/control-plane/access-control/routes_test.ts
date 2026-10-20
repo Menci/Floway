@@ -329,6 +329,11 @@ test('access-record writes reject unknown principals, invalid scope permissions,
     body: JSON.stringify({ principal: { kind: 'user', id: 2 }, scope: { kind: 'self' }, sortOrder: 0, values: { 'User.Audit': true } }),
   });
   assertEquals(invalidSelf.status, 400);
+  const invalidGroupsUserAudit = await request('/access-records', adminSession, {
+    method: 'POST',
+    body: JSON.stringify({ principal: { kind: 'user', id: 2 }, scope: { kind: 'groups' }, sortOrder: 0, values: { 'User.Audit': true } }),
+  });
+  assertEquals(invalidGroupsUserAudit.status, 400);
   const group = await (await request('/groups', adminSession, { method: 'POST', body: JSON.stringify({ name: 'Self Group', hue: 100, memberIds: [] }) })).json();
   const groupSelf = await request('/access-records', adminSession, {
     method: 'POST',

@@ -22,10 +22,7 @@ const valueRank = (value: NonNullable<AccessValues[AccessPermission]>) => typeof
 const precedenceDepth = (scope: AccessScope) => scope.kind === 'user' ? 3 : accessScopeDepth(scope);
 const isSelfUserScope = (scope: ResolveScope, subjectUserId?: number): boolean =>
   scope.kind === 'user' && scope.userId === subjectUserId;
-// A membership scope names a set of users; the collection form must behave the
-// same way for permissions that follow membership, otherwise `/Groups` and
-// `/Groups/:id` disagree about the same rule.
-const isGroupScope = (scope: AccessScope): boolean => scope.kind === 'group' || scope.kind === 'groups';
+const isGroupScope = (scope: AccessScope): boolean => scope.kind === 'group';
 
 const eligibleRows = (bucket: AccessBucket, target: ResolveScope, permission: AccessPermission, targetGroups: ReadonlySet<number>): PreparedAccessRecord[] =>
   bucket.rows.filter(row => row.record.values[permission] !== undefined
@@ -158,7 +155,6 @@ export const createAccessResolver = (records: readonly AccessRecord[]): AccessRe
       userBuckets.get(scope.userId),
       ...[...targetGroups].map(id => groupBuckets.get(id)),
       usersBucket,
-      groupsBucket,
     ); break;
     case 'group': result.push(groupBuckets.get(scope.groupId), groupsBucket); break;
     case 'upstreams': result.push(upstreamsBucket); break;
