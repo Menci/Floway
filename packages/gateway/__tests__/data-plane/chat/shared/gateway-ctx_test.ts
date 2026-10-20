@@ -5,7 +5,12 @@ import { createNonOpenAIResponsesSourceStore } from '../../../../src/data-plane/
 import { createChatGatewayCtxFromHono } from '../../../../src/data-plane/chat/shared/gateway-ctx.ts';
 import { createSidecarCodecFactory, SidecarDomain } from '../../../../src/data-plane/chat/shared/sidecar-codec.ts';
 import type { AuthVars } from '../../../../src/middleware/auth.ts';
-import type { ApiKey } from '../../../../src/repo/types.ts';
+import type { ApiKey, User } from '../../../../src/repo/types.ts';
+
+const user: User = {
+  id: 1, username: 'owner', passwordHash: null, isAdmin: false,
+  createdAt: '2026-01-01T00:00:00.000Z', deletedAt: null,
+};
 test('creates one reusable sidecar codec factory from the authenticated key without exposing its secret', async () => {
   const apiKey: ApiKey = {
     id: 'key', userId: 1, name: 'test', key: 'test-key', serverSecret: '11'.repeat(32),
@@ -16,6 +21,7 @@ test('creates one reusable sidecar codec factory from the authenticated key with
     Variables: AuthVars;
   }>().get('/', async c => {
     c.set('apiKey', apiKey);
+    c.set('user', user);
     const ctx = createChatGatewayCtxFromHono(c, {
       wantsStream: false, requestBody: { bytes: new Uint8Array(), streamError: null },
       backgroundScheduler: promise => { void promise; },
