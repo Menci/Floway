@@ -714,7 +714,7 @@ function ModelStatus({
           : healthy
             ? <CheckmarkCircleRegular className="block flex-none text-[var(--colorPaletteGreenForeground1)]" fontSize={18} aria-label={t('dashboard.upstreams.cache.ready')} />
             : <WarningRegular className="block flex-none text-[var(--colorPaletteDarkOrangeForeground1)]" fontSize={18} aria-label={t(`dashboard.upstreams.cache.${cacheStatus}`)} />}
-        <Text size={300} wrap={false}>
+        <Text size={300} className="tabular-nums" wrap={false}>
           {count === null
             ? t('dashboard.upstreams.models.unavailable')
             : t('dashboard.upstreams.models.count', { count })}

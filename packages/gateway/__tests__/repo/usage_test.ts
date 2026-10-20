@@ -40,6 +40,7 @@ const apiKey = (id: string, userId: number): ApiKey => ({
   serverSecret: String(userId).padStart(2, '0').repeat(32),
   createdAt: '2026-01-01T00:00:00.000Z',
   upstreamIds: null,
+  randomizeUpstreams: false,
   deletedAt: null,
   dumpRetentionSeconds: null,
   openaiResponsesRetentionSeconds: 0,

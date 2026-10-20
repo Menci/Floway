@@ -8,7 +8,8 @@ import type { ApiKey, User } from '../../repo/types.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import { generateServerSecret } from '../../shared/server-secret.ts';
-import type { changeOwnPasswordBody, createUserBody, updateUserBody } from '../schemas.ts';
+import type { changeOwnPasswordBody, createUserBody, updateOwnPreferencesBody, updateUserBody } from '../schemas.ts';
+import { defaultUserPreferences } from '@floway-dev/protocols/common';
 
 const parseUserId = (raw: string): number | null => {
   const n = Number(raw);
@@ -25,18 +26,24 @@ const unknownGroupsError = async (ids: readonly number[] | undefined): Promise<s
 export const listUsers = async (c: AuthedContext) => {
   const repo = getRepo();
   const users = await repo.users.list();
-  const groupIdsByUser = await repo.groups.listIdsByUserIds(users.map(user => user.id));
-  return c.json(users.map(user => userToAdminWire(user, groupIdsByUser.get(user.id)!)));
+  const [groupIdsByUser, preferenceRows] = await Promise.all([
+    repo.groups.listIdsByUserIds(users.map(user => user.id)),
+    repo.userPreferences.listAll(),
+  ]);
+  const preferencesByUser = new Map(preferenceRows.map(row => [row.userId, row.preferences]));
+  return c.json(users.map(user => userToAdminWire(user, groupIdsByUser.get(user.id)!, preferencesByUser.get(user.id) ?? defaultUserPreferences)));
 };
 
 export const getUserDirectory = async (c: AuthedContext) => {
-  const directory = await getRepo().readUserDirectory();
+  const repo = getRepo();
+  const [directory, preferenceRows] = await Promise.all([repo.readUserDirectory(), repo.userPreferences.listAll()]);
   const groupIdsByUser = new Map(directory.users.map(user => [user.id, [] as number[]]));
   for (const group of directory.groups) {
     for (const userId of group.memberIds) groupIdsByUser.get(userId)!.push(group.id);
   }
+  const preferencesByUser = new Map(preferenceRows.map(row => [row.userId, row.preferences]));
   return c.json({
-    users: directory.users.map(user => userToAdminWire(user, groupIdsByUser.get(user.id)!)),
+    users: directory.users.map(user => userToAdminWire(user, groupIdsByUser.get(user.id)!, preferencesByUser.get(user.id) ?? defaultUserPreferences)),
     groups: directory.groups,
     principalUserIds: directory.users.map(user => user.id),
     principalGroupIds: directory.groups.map(group => group.id),
@@ -68,6 +75,7 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
     serverSecret: generateServerSecret(),
     createdAt: new Date().toISOString(),
     upstreamIds: null,
+    randomizeUpstreams: false,
     deletedAt: null,
     dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: 0,
@@ -83,7 +91,9 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   ]);
   if (body.groupIds !== undefined) await repo.groups.replaceUserGroups(user.id, body.groupIds);
 
-  return c.json({ user: userToAdminWire(user, await repo.groups.listIdsByUserId(user.id)) }, 201);
+  return c.json({
+    user: userToAdminWire(user, await repo.groups.listIdsByUserId(user.id), await repo.userPreferences.get(user.id)),
+  }, 201);
 };
 
 export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
@@ -119,7 +129,7 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     else await repo.sessions.deleteByUserId(id);
   }
 
-  return c.json(userToAdminWire(next, await repo.groups.listIdsByUserId(id)));
+  return c.json(userToAdminWire(next, await repo.groups.listIdsByUserId(id), await repo.userPreferences.get(id)));
 };
 
 export const deleteUser = async (c: AuthedContext) => {
@@ -145,6 +155,23 @@ export const deleteUser = async (c: AuthedContext) => {
   const ok = await repo.users.softDelete(id);
   if (!ok) return c.json({ error: 'user not found' }, 404);
   return c.json({ ok: true });
+};
+
+export const updateOwnPreferences = async (c: CtxWithJson<typeof updateOwnPreferencesBody>) => {
+  const sessionId = sessionIdFromContext(c);
+  if (!sessionId) {
+    return c.json({ error: 'Preferences require a logged-in dashboard session' }, 401);
+  }
+  const userId = userFromContext(c).id;
+  const repo = getRepo();
+  const current = await repo.userPreferences.get(userId);
+  const body = c.req.valid('json');
+  const next = {
+    quotaDisplay: body.quotaDisplay ?? current.quotaDisplay,
+    language: body.language === undefined ? current.language : body.language,
+  };
+  await repo.userPreferences.save(userId, next);
+  return c.json({ preferences: next });
 };
 
 export const changeOwnPassword = async (c: CtxWithJson<typeof changeOwnPasswordBody>) => {

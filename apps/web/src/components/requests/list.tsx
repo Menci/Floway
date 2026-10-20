@@ -269,31 +269,31 @@ function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, 
         <div className="flex items-center gap-3 min-w-0 text-fui-fg3">
           <Tooltip content={t('dashboard.requests.duration', { value: record.durationMs })} relationship="description">
             <span className="inline-flex items-center gap-1 shrink-0">
-              <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatDuration(record.durationMs)}</Text>
+              <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.durationMs)}</Text>
             </span>
           </Tooltip>
           {record.ttftMs != null && (
             <Tooltip content={t('dashboard.requests.ttft', { value: record.ttftMs })} relationship="description">
               <span className="inline-flex items-center gap-1 shrink-0">
-                <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatDuration(record.ttftMs)}</Text>
+                <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.ttftMs)}</Text>
               </span>
             </Tooltip>
           )}
           <Tooltip content={t('dashboard.requests.requestBytes', { value: record.requestBytes })} relationship="description">
             <span className="inline-flex items-center gap-1 shrink-0">
-              <ArrowUploadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatBytes(record.requestBytes, locale)}</Text>
+              <ArrowUploadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatBytes(record.requestBytes, locale)}</Text>
             </span>
           </Tooltip>
           <Tooltip content={t('dashboard.requests.responseBytes', { value: record.responseBytes })} relationship="description">
             <span className="inline-flex items-center gap-1 shrink-0">
-              <ArrowDownloadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatBytes(record.responseBytes, locale)}</Text>
+              <ArrowDownloadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatBytes(record.responseBytes, locale)}</Text>
             </span>
           </Tooltip>
           {rowError
             ? <TruncationTooltip content={rowError} relationship="label">
                 {measureRef => <Text size={200} className={mergeClasses('ml-auto', s.error)} ref={measureRef} truncate wrap={false}>{rowError}</Text>}
               </TruncationTooltip>
-            : <Text size={200} className="ml-auto text-fui-fg3" truncate wrap={false}>
+            : <Text size={200} className="ml-auto text-fui-fg3 tabular-nums" truncate wrap={false}>
                 {tokens === null ? NO_READING : `${formatCompactCount(tokens, locale)} tok`}
               </Text>}
         </div>

@@ -50,8 +50,7 @@ const loaderData = {
 };
 
 const renderPage = (data: Parameters<typeof DashboardMonitorUsage>[0]['loaderData']) => {
-  const isAdmin = data.currentUserId === '1';
-  const user = { id: Number(data.currentUserId), username: isAdmin ? 'admin' : 'operator', isAdmin };
+  const user = { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } };
   const router = createMemoryRouter([{
     path: '/',
     Component: () => <Outlet context={{ user }} />,
@@ -207,7 +206,7 @@ describe('usage dimension controls', () => {
   it('loads the overview contract and derives Search scope from the actor', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'admin-session',
-      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true },
+      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } },
     });
     stubUsageGateway();
 
@@ -221,7 +220,7 @@ describe('usage dimension controls', () => {
   it('reads upstream labels from the overview response', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'admin-session',
-      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true },
+      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } },
     });
     stubUsageGateway();
 
@@ -235,7 +234,7 @@ describe('usage dimension controls', () => {
   it('keeps self-only Search usage grouped by API key', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'operator-session',
-      user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false },
+      user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining', language: null } },
     });
     let requestedView: string | null = null;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {

@@ -7,7 +7,7 @@ import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
 test('the upstream order migration replaces duplicate sparse values with stable ranks', () => {
   const db = new DatabaseSync(':memory:');
   try {
-    const filename = '0093_normalize_upstream_sort_order.sql';
+    const filename = '0097_normalize_upstream_sort_order.sql';
     for (const [name, sql] of migrationSqlByFilename) {
       if (name === filename) break;
       db.exec(sql);

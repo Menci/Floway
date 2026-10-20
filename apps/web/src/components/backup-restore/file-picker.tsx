@@ -132,7 +132,7 @@ export function BackupFileStats({ items }: {
   return <dl className="m-0 grid gap-2 grid-cols-7 max-[900px]:grid-cols-4 max-[560px]:grid-cols-2">
     {items.map(item => <div className={mergeClasses(TIGHT_STACK_CLASS, 'min-w-0')} key={item.key}>
       <dt><Text size={200} className="text-fui-fg2">{item.label}</Text></dt>
-      <dd className="m-0"><Text size={300} weight="semibold">{item.value}</Text></dd>
+      <dd className="m-0"><Text size={300} weight="semibold" className="tabular-nums">{item.value}</Text></dd>
     </div>)}
   </dl>;
 }

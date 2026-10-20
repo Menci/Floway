@@ -5,8 +5,8 @@ import type { OllamaUsageRefresh, UpstreamRecordEnvelope } from '../../api/types
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { dateTime } from '../../lib/format-time';
-import { clampPercent } from '../../lib/percent';
 import { useLocale } from '../../lib/use-locale';
+import { useUserPreferences } from '../../lib/use-preferences';
 import { SECTION_STACK_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { ResourceListActions } from '../ui/resource-list';
@@ -15,13 +15,14 @@ import { StatusBadge } from '../ui/status-badge';
 import { useRefresh } from '../ui/use-refresh';
 import { activityCostHint, activityCostText, activityRangeDays, type OllamaRecord, readWindows } from '../upstreams/ollama-usage';
 import { ProviderIcon } from '../upstreams/provider-badge';
-import { quotaBarColor } from '../upstreams/subscription-quota';
+import { QuotaProgressRow } from '../upstreams/quota-progress-row';
 import { readOllamaAccountUsage } from '@floway-dev/provider-ollama/browser';
 
-const { InfoLabel, ProgressBar, Text } = fluentComponents;
+const { InfoLabel, Text } = fluentComponents;
 
 export function OllamaUsageCard({ probeRecord, readOnly = false, record }: { probeRecord: UpstreamRecordEnvelope; readOnly?: boolean; record: OllamaRecord }) {
   const { t } = useTranslation();
+  const preferences = useUserPreferences();
   const locale = useLocale();
   // A manual refresh persists server-side too; this local copy only avoids
   // re-fetching the whole record to display the reading it just produced.
@@ -72,39 +73,30 @@ export function OllamaUsageCard({ probeRecord, readOnly = false, record }: { pro
     {usage?.included.kind === 'credits' && <div className="grid gap-1">
       <div className="flex items-baseline justify-between gap-3">
         <InfoLabel info={t('dashboard.upstreamEditor.ollama.usage.balanceHint.included')}>{t('dashboard.upstreamEditor.ollama.usage.balance.included')}</InfoLabel>
-        <Text>{activityCostText(usage.included.balanceUsd)}</Text>
+        <Text className="tabular-nums">{activityCostText(usage.included.balanceUsd)}</Text>
       </div>
       <div className="flex flex-wrap justify-between gap-x-3">
-        <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.allowance', { amount: activityCostText(usage.included.allowanceUsd) })}</Text>
+        <Text size={200} className="text-fui-fg3 tabular-nums">{t('dashboard.upstreamEditor.ollama.usage.allowance', { amount: activityCostText(usage.included.allowanceUsd) })}</Text>
         <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.resets', { time: dateTime(usage.included.until, locale) })}</Text>
       </div>
     </div>}
 
-    {windows.map(usageWindow => <div className="grid gap-1" key={usageWindow.key}>
-      <div className="flex items-baseline justify-between gap-3">
-        <Text size={300}>{t(`dashboard.upstreamEditor.ollama.usage.window.${usageWindow.key}`)}</Text>
-        <Text size={200} className="text-fui-fg2">
-          {t('dashboard.upstreamEditor.ollama.usage.remainingPercent', { percent: 100 - usageWindow.percent })}
-        </Text>
-      </div>
-      {/* This is a remaining-quota bar, like a health bar, not usage progress, so its fill is 100 - used percent. */}
-      <ProgressBar
-        color={quotaBarColor(usageWindow.percent)}
-        max={100}
-        thickness="large"
-        value={clampPercent(100 - usageWindow.percent) ?? undefined}
-      />
-      <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.resets', { time: dateTime(usageWindow.resetsAt, locale) })}</Text>
-    </div>)}
+    {windows.map(usageWindow => <QuotaProgressRow
+      key={usageWindow.key}
+      label={t(`dashboard.upstreamEditor.ollama.usage.window.${usageWindow.key}`)}
+      percent={usageWindow.percent}
+      quotaDisplay={preferences.quotaDisplay}
+      footer={<Text size={200} className="text-fui-fg3 tabular-nums">{t('dashboard.upstreamEditor.ollama.usage.resets', { time: dateTime(usageWindow.resetsAt, locale) })}</Text>}
+    />)}
 
     {usage !== null && <div className="flex justify-between gap-3">
       <InfoLabel info={t('dashboard.upstreamEditor.ollama.usage.balanceHint.purchased')}>{t('dashboard.upstreamEditor.ollama.usage.balance.purchased')}</InfoLabel>
-      <Text>{activityCostText(usage.purchasedBalanceUsd)}</Text>
+      <Text className="tabular-nums">{activityCostText(usage.purchasedBalanceUsd)}</Text>
     </div>}
 
     {usage?.activity.usageUsd != null && <div className="flex justify-between gap-3">
       <InfoLabel info={activityCostHint(usage.activity, t, locale)}>{t('dashboard.upstreamEditor.ollama.usage.recentUsage', { count: activityRangeDays(usage.activity.range) })}</InfoLabel>
-      <Text>{activityCostText(usage.activity.usageUsd)}</Text>
+      <Text className="tabular-nums">{activityCostText(usage.activity.usageUsd)}</Text>
     </div>}
 
     {observation !== null && <Text size={200} align="end" className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.observed', { time: dateTime(observation.fetchedAt, locale) })}</Text>}

@@ -110,6 +110,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
       subject: ctx.user,
       upstreamIds: ctx.upstreamIds,
+      randomizeUpstreams: ctx.randomizeUpstreams,
       model,
       kind,
       scheduler: ctx.backgroundScheduler,

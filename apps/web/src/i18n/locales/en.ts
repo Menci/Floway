@@ -4,7 +4,7 @@ const en = {
   translation: {
     app: {
       title: 'Floway',
-      documentTitle: '{{title}} | Floway',
+      documentTitle: '{{title}} | {{siteName}}',
     },
     common: {
       calendar: {
@@ -95,6 +95,7 @@ const en = {
         users: 'Users & Groups',
         permissions: 'Permissions',
         backupRestore: 'Backup / Restore',
+        siteSettings: 'Site settings',
         settings: 'Settings',
       },
       logout: {
@@ -184,14 +185,44 @@ const en = {
           },
         },
       },
+      siteSettings: {
+        description: 'Manage global preferences for this site',
+        name: 'Site name',
+        nameHint: 'Shown beside the mark and in the browser title. Leave blank to use the built-in name.',
+        namePlaceholder: 'Floway',
+        save: 'Save',
+        updated: 'Site name updated',
+        validation: {
+          tooLong: 'Enter at most {{max}} characters.',
+        },
+      },
       settings: {
-        description: 'Manage your Floway account security',
-        changePassword: 'Change password',
+        description: 'Manage your Floway preferences and account security',
+        appearance: 'Appearance',
+        security: 'Security',
+        preferences: {
+          quotaDisplay: {
+            title: 'Quota display',
+            description: 'How quota values are displayed',
+            remaining: 'Remaining',
+            used: 'Usage',
+          },
+          language: {
+            description: 'Language used by the dashboard',
+            browser: 'Follow browser',
+          },
+          save: 'Save preferences',
+          saved: 'Preferences saved.',
+        },
         currentPassword: 'Current password',
         newPassword: 'New password',
         confirmPassword: 'Confirm password',
-        otherDevices: 'Other devices currently logged in as you will be signed out.',
-        save: 'Change password',
+        otherDevices: 'Other sessions are signed out after the change.',
+        password: {
+          title: 'Password',
+          description: 'Change the account password',
+          submit: 'Change password',
+        },
         passwordUpdated: 'Password updated. Other devices have been signed out.',
         validation: {
           currentPasswordRequired: 'Current password is required.',
@@ -368,8 +399,8 @@ const en = {
         table: {
           title: 'API Keys',
           name: 'Name',
-          key: 'Key',
           upstreams: 'Upstreams',
+          upstreamOrder: 'Upstream order',
           created: 'Created',
           lastUsed: 'Last Used',
           actions: 'Actions',
@@ -396,6 +427,8 @@ const en = {
           openaiResponsesRetentionHint: 'How long this key\'s OpenAI Responses items stay available for a follow-up request to reference by id (off persists nothing)',
           retentionHint:
               'When enabled, model-invoking requests through this key are captured for the configured window',
+          randomizeUpstreams: 'Randomize upstream order',
+          randomizeUpstreamsHint: 'Shuffle the upstream order for each new request, while preserving upstream affinity for existing sessions',
         },
         validation: {
           nameRequired: 'Name is required.',
@@ -407,6 +440,7 @@ const en = {
           summary: '{{first}} +{{count, number}}',
           inheritsTitle: 'Inherits the global upstream order',
         },
+        upstreamOrder: { configured: 'Priority order', random: 'Random' },
         retention: {
           offCapture: 'Off (do not capture)',
           offPersist: 'Off (do not persist)',
@@ -482,6 +516,7 @@ const en = {
           percent: '{{percent, number}}%',
           until: 'until {{date}}',
           remaining: '{{label}}: {{percent, number}}% remaining',
+          used: '{{label}}: {{percent, number}}% used',
           resets: 'Resets {{time}}',
           observed: 'Observed {{time}}',
           window: { primary: 'Primary', secondary: 'Secondary' },
@@ -493,10 +528,10 @@ const en = {
           costRangeSelf: '{{from}} to {{until}}: credits this account consumed through model requests, including plan and purchased credits.',
         },
         copilotQuota: {
-          premiumInteractions: { allowance: 'Allowance', balance: 'Balance' },
-          chat: { allowance: 'Chat allowance', balance: 'Chat balance' },
-          completions: { allowance: 'Completions allowance', balance: 'Completions balance' },
-          other: { allowance: '{{name}} allowance', balance: '{{name}} balance' },
+          premiumInteractions: { allowance: 'Allowance', remaining: 'Remaining', usage: 'Usage' },
+          chat: { allowance: 'Chat allowance', remaining: 'Chat remaining', usage: 'Chat usage' },
+          completions: { allowance: 'Completions allowance', remaining: 'Completions remaining', usage: 'Completions usage' },
+          other: { allowance: '{{name}} allowance', remaining: '{{name}} remaining', usage: '{{name}} usage' },
         },
         providers: {
           custom: 'OpenAI- or Anthropic-compatible endpoint',
@@ -900,13 +935,14 @@ const en = {
           deleteMessage: 'Delete {{name}}? This cannot be undone.',
           deleteConfirm: 'Delete model',
         },
+        quotaUsedPercent: '{{percent, number}}% used',
         quotaRemainingPercent: '{{percent, number}}% remaining',
         copilot: {
           quota: {
             title: 'Quota',
             load: 'Load',
             refresh: 'Refresh',
-            used: '{{used}} / {{entitlement}}',
+            amount: '{{amount}} / {{entitlement}}',
             remainingPercent: '{{percent, number}}% remaining',
             unlimited: 'Unlimited',
             unavailable: 'Not included in this plan',
@@ -1223,14 +1259,14 @@ const en = {
       upstreamMetrics: {
         empty: 'No upstream metric observations in this range',
         value: 'Value',
-        windows: { seconds: '{{count, number}}-second window', minutes: '{{count, number}}-minute window', hours: '{{count, number}}-hour window', days: '{{count, number}}-day window' },
+        windows: { seconds: '{{count, number}}-second', minutes: '{{count, number}}-minute', hours: '{{count, number}}-hour', days: '{{count, number}}-day' },
         metrics: {
           window: '{{name}} {{window}}',
+          usage: '{{window}} usage', remaining: '{{window}} remaining',
+          namedUsage: '{{window}} {{name}} usage', namedRemaining: '{{window}} {{name}} remaining',
           includedAllowance: 'Included allowance',
-          fiveHour: '5-hour window', sevenDay: '7-day window',
-          sevenDaySonnet: '7-day Sonnet window', sevenDayOpus: '7-day Opus window',
           extraUsage: 'Extra usage',
-          session: 'Session',
+          sessionUsage: 'Session usage', sessionRemaining: 'Session remaining',
           credits: 'Credit balance',
           past24HoursCost: 'Past 24 hours cost', past7DaysCost: 'Past 7 days cost', past30DaysCost: 'Past month cost', includedBalance: 'Included balance', purchasedBalance: 'Purchased balance',
         },

@@ -1,0 +1,20 @@
+#!/bin/sh
+# Succeeds when the worktree policy has to be enforced at the current
+# checkout: this clone keeps its work in `.worktrees/`, so its main worktree
+# must stay on `main`. Linked worktrees already comply, and a clone without
+# `.worktrees/` leaves worktree use to the user's instruction, so both fail.
+
+# A linked worktree's per-worktree git dir sits under the main repo's
+# .git/worktrees/<name>/, so --absolute-git-dir and --git-common-dir
+# differ. In the main worktree they point at the same .git directory.
+git_dir=$(git rev-parse --absolute-git-dir 2>/dev/null) || exit 1
+common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || exit 1
+# `pwd -P` resolves symlinked checkout paths, which git reports physically in
+# --absolute-git-dir; without it the two paths can denote one directory and
+# still compare unequal, silently disabling the policy.
+common_dir=$(cd "$common_dir" 2>/dev/null && pwd -P) || exit 1
+[ "$git_dir" = "$common_dir" ] || exit 1
+
+# `.worktrees/` is gitignored, so its presence records that this clone adopted
+# linked worktrees.
+[ -d "$(dirname "$common_dir")/.worktrees" ]

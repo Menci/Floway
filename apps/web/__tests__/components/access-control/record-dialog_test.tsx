@@ -15,8 +15,8 @@ vi.mock('../../../src/components/ui/json-editor', () => ({
 
 const data: ScopeExpressionData = {
   users: [
-    { id: 1, username: 'admin', isAdmin: true, createdAt: '', groupIds: [] },
-    { id: 2, username: 'alice', isAdmin: false, createdAt: '', groupIds: [] },
+    { id: 1, username: 'admin', isAdmin: true, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null }, groupIds: [] },
+    { id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null }, groupIds: [] },
   ],
   groups: [{ hue: 120, id: 3, name: 'operators', createdAt: '', deletedAt: null, memberIds: [2] }],
   upstreams: [{ id: 'up_a', name: 'Copilot', kind: 'copilot', enabled: true, hue: 210, cachedModelCount: 0 }],

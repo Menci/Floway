@@ -80,6 +80,7 @@ test('restricted data-plane aliases keep gateway-wide metadata and caller-scoped
     deletedAt: null,
     dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: 0,
+  randomizeUpstreams: false,
   });
   await repo.apiKeys.save({
     id: 'admin-restricted-key',
@@ -92,6 +93,7 @@ test('restricted data-plane aliases keep gateway-wide metadata and caller-scoped
     deletedAt: null,
     dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: 0,
+  randomizeUpstreams: false,
   });
 
   const aliasFor = async (key: string) => {

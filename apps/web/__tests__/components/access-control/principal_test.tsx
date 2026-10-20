@@ -8,7 +8,7 @@ import { renderInApp } from '../../render';
 import type { AccessPrincipal } from '@floway-dev/gateway/browser';
 
 const data: ScopeExpressionData = {
-  users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', groupIds: [1] }],
+  users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null }, groupIds: [1] }],
   groups: [{ id: 1, name: 'Platform', hue: 210, createdAt: '', deletedAt: null, memberIds: [2] }],
   upstreams: [], models: [],
 };

@@ -22,6 +22,7 @@ export const openaiChatCompletionsServe = {
     const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
       subject: ctx.user,
       upstreamIds: ctx.upstreamIds,
+      randomizeUpstreams: ctx.randomizeUpstreams,
       model: payload.model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,

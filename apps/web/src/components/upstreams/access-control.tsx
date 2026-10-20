@@ -127,7 +127,7 @@ function AccessRow({ disabled, index, onToggle, reorder, row }: {
       <ReorderHandle {...reorder.handleProps(index)} label={t('dashboard.upstreams.actions.reorder', { name: row.name })} />
     </div></TableCell>
     <TableCell><ProviderBadge label={row.name} upstream={row.upstream} /></TableCell>
-    <TableCell><span className="whitespace-nowrap">
+    <TableCell><span className="whitespace-nowrap tabular-nums">
       {row.modelCount === null
         ? t('dashboard.upstreamAccess.modelCountUnknown')
         : t('dashboard.upstreamAccess.modelCount', { count: row.modelCount })}

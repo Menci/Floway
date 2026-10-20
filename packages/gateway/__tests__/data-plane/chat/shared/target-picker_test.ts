@@ -83,6 +83,7 @@ describe('enumerateModelCandidates + chatTargetPicker', () => {
     const { candidates } = await enumerateModelCandidates({
       subject: testAdminUser,
       upstreamIds: null,
+      randomizeUpstreams: false,
       model: 'test-model',
       kind: 'chat',
       scheduler: testScheduler,
@@ -107,6 +108,7 @@ describe('enumerateModelCandidates + chatTargetPicker', () => {
     const { candidates } = await enumerateModelCandidates({
       subject: testAdminUser,
       upstreamIds: null,
+      randomizeUpstreams: false,
       model: 'test-model',
       kind: 'chat',
       scheduler: testScheduler,

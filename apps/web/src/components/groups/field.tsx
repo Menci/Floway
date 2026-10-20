@@ -27,7 +27,7 @@ export function UserGroupsField({ disabled, groups, onChange, value }: {
       const group = byId.get(option.value)!;
       return <span className="flex flex-1 items-center justify-between gap-3 min-w-0">
         <GroupIdentity group={group} />
-        <Text className="text-fui-fg2 flex-none" size={200}>{t('dashboard.groupsManagement.members.count', { count: group.memberIds.length })}</Text>
+        <Text className="text-fui-fg2 flex-none tabular-nums" size={200}>{t('dashboard.groupsManagement.members.count', { count: group.memberIds.length })}</Text>
       </span>;
     }}
     renderTag={option => <Tag

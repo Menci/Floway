@@ -25,6 +25,7 @@ export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx 
   user: testUser,
   requestStartedAt: 0,
   upstreamIds: null,
+  randomizeUpstreams: false,
   wantsStream: false,
   runtimeLocation: 'TEST',
   dump: null,

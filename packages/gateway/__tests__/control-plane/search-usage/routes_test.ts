@@ -12,6 +12,7 @@ const seedWebSearchUsage = async (repo: import('../../repo/memory.ts').InMemoryR
     serverSecret: '00'.repeat(32),
     createdAt: '2026-03-15T00:00:00.000Z',
     upstreamIds: null,
+    randomizeUpstreams: false,
     deletedAt: null,
     dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: 0,

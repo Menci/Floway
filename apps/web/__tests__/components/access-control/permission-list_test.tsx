@@ -64,7 +64,7 @@ test('reserves blue for partial access and uses green for maximum access', () =>
 });
 
 const data: ScopeExpressionData = {
-  users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', groupIds: [1] }],
+  users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null }, groupIds: [1] }],
   groups: [{ id: 1, name: 'Platform', hue: 210, memberIds: [2], createdAt: '', deletedAt: null }],
   upstreams: [], models: [],
 };

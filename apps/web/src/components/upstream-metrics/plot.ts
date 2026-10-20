@@ -1,8 +1,8 @@
 import type { UpstreamMetricsMetadata } from './data';
+import type { ResolvedUpstreamMetricDisplaySeries } from './display-name';
 import { hueForSeriesSlot } from '../charts/palette';
 import type { SeriesLegendEntry } from '../charts/series-legends';
-import type { UpstreamMetricRecord } from '@floway-dev/gateway/browser';
-import { upstreamMetricIdentityKey, type UpstreamMetricDisplay, type UpstreamMetricIdentity, type UpstreamMetricUnit } from '@floway-dev/provider/browser';
+import { upstreamMetricIdentityKey, type UpstreamMetricUnit } from '@floway-dev/provider/browser';
 
 export interface UpstreamMetricsSeries extends SeriesLegendEntry { unit: UpstreamMetricUnit; axisPriority: number; form: 'line' | 'area' }
 export interface UpstreamMetricsChart {
@@ -14,26 +14,15 @@ export interface UpstreamMetricsChart {
 }
 
 export const buildUpstreamMetricsChart = (
-  records: readonly UpstreamMetricRecord[],
+  series: readonly ResolvedUpstreamMetricDisplaySeries[],
   upstream: UpstreamMetricsMetadata,
-  resolve: (identity: UpstreamMetricIdentity) => UpstreamMetricDisplay,
 ): UpstreamMetricsChart => {
   const chart: UpstreamMetricsChart = { id: upstream.id, title: upstream.name, entries: [], values: new Map(), hiddenByDefault: new Set() };
-  const metrics = new Map<string, { display: UpstreamMetricDisplay; latest: number }>();
-  for (const record of records) {
-    const display = resolve(record);
-    const id = upstreamMetricIdentityKey(record);
-    let metric = metrics.get(id);
-    if (metric === undefined) {
-      metric = { display, latest: record.value };
-      metrics.set(id, metric);
-      chart.entries.push({ id, label: display.name, unit: display.unit, axisPriority: display.axisPriority, form: display.form, hue: hueForSeriesSlot(chart.entries.length) });
-      chart.values.set(id, []);
-    }
-    metric.latest = record.value;
-    chart.values.get(id)!.push({ timestamp: record.timestamp, value: display.toDisplayValue(record.value) });
-  }
-  for (const [id, { display, latest }] of metrics) {
+  for (const { identity, display, samples } of series) {
+    const id = upstreamMetricIdentityKey(identity);
+    chart.entries.push({ id, label: display.name, unit: display.unit, axisPriority: display.axisPriority, form: display.form, hue: hueForSeriesSlot(chart.entries.length) });
+    chart.values.set(id, samples.map(sample => ({ timestamp: sample.timestamp, value: display.toDisplayValue(sample.value) })));
+    const latest = samples.at(-1)?.value;
     if (display.emptyValue !== null && latest === display.emptyValue) chart.hiddenByDefault.add(id);
   }
   return chart;

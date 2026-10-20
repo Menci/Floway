@@ -64,6 +64,8 @@ import type {
   OpenAIResponsesItemsRepo,
   OpenAIResponsesSnapshotsRepo,
   ScheduledMaintenanceRepo,
+  SiteSettings,
+  SiteSettingsRepo,
   SpilledFilesRepo,
   WebSearchConfigRepo,
   WebSearchUsageRecord,
@@ -82,6 +84,7 @@ import type {
   UsageRepo,
   User,
   UserDirectory,
+  UserPreferencesRepo,
   UsersRepo,
 } from '../../src/repo/types.ts';
 import { serializeStoredConfig, serializeStoredState } from '../../src/repo/upstream-json.ts';
@@ -89,7 +92,7 @@ import { usageMetricRows } from '../../src/repo/usage-metrics.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-histogram.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../../src/shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
-import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, multiplyDecimalStrings, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, type BillingMetric, type DecimalString, type PricingSelector } from '@floway-dev/protocols/common';
+import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, defaultUserPreferences, multiplyDecimalStrings, parseUserPreferences, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, type BillingMetric, type DecimalString, type PricingSelector, type UserPreferences } from '@floway-dev/protocols/common';
 import { normalizeUpstreamMetricIdentity, upstreamMetricIdentityKey, UpstreamGoneError, type UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
@@ -163,6 +166,29 @@ class MemoryUsersRepo implements UsersRepo {
 
   deleteAll(): Promise<void> {
     this.users = [];
+    return Promise.resolve();
+  }
+}
+
+class MemoryUserPreferencesRepo implements UserPreferencesRepo {
+  private readonly preferences = new Map<number, UserPreferences>();
+
+  get(userId: number): Promise<UserPreferences> {
+    const stored = this.preferences.get(userId);
+    return Promise.resolve(stored === undefined ? { ...defaultUserPreferences } : parseUserPreferences(stored));
+  }
+
+  save(userId: number, preferences: UserPreferences): Promise<void> {
+    this.preferences.set(userId, parseUserPreferences(preferences));
+    return Promise.resolve();
+  }
+
+  listAll(): Promise<Array<{ userId: number; preferences: UserPreferences }>> {
+    return Promise.resolve([...this.preferences].map(([userId, preferences]) => ({ userId, preferences: parseUserPreferences(preferences) })));
+  }
+
+  deleteAll(): Promise<void> {
+    this.preferences.clear();
     return Promise.resolve();
   }
 }
@@ -974,6 +1000,19 @@ class MemoryPerformanceRepo implements PerformanceRepo {
     const existing = row.bucketMap.get(key);
     if (existing) { existing.count += 1; return; }
     row.bucketMap.set(key, { metric, lower: edges.lower, upper: edges.upper, count: 1 });
+  }
+}
+
+class MemorySiteSettingsRepo implements SiteSettingsRepo {
+  private settings: SiteSettings = { siteName: null };
+
+  get(): Promise<SiteSettings> {
+    return Promise.resolve({ ...this.settings });
+  }
+
+  save(settings: SiteSettings): Promise<void> {
+    this.settings = { ...settings };
+    return Promise.resolve();
   }
 }
 
@@ -1789,12 +1828,14 @@ export class InMemoryRepo implements Repo {
   };
   apiKeys: ApiKeyRepo;
   users: MemoryUsersRepo;
+  userPreferences: UserPreferencesRepo;
   groups: MemoryGroupsRepo;
   accessRecords: AccessRecordsRepo;
   sessions: SessionsRepo;
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
+  siteSettings: SiteSettingsRepo;
   webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
@@ -1818,6 +1859,7 @@ export class InMemoryRepo implements Repo {
     this.groups = new MemoryGroupsRepo();
     this.users = new MemoryUsersRepo(this.groups);
     this.accessRecords = new MemoryAccessRecordsRepo();
+    this.userPreferences = new MemoryUserPreferencesRepo();
     this.sessions = new MemorySessionsRepo();
     this.expirationSweeps = new MemoryExpirationSweepsRepo();
     this.scheduledMaintenance = new MemoryScheduledMaintenanceRepo();
@@ -1825,6 +1867,7 @@ export class InMemoryRepo implements Repo {
     this.usage = new MemoryUsageRepo(this.apiKeys);
     this.webSearchUsage = new MemoryWebSearchUsageRepo();
     this.performance = new MemoryPerformanceRepo(this.apiKeys);
+    this.siteSettings = new MemorySiteSettingsRepo();
     this.webSearchConfig = new MemoryWebSearchConfigRepo();
     this.upstreams = new MemoryUpstreamRepo();
     this.proxies = new MemoryProxyRepo(this.upstreams);

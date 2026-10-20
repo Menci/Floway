@@ -7,7 +7,7 @@ import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
 test('the permission audit migration splits legacy /Users rules across users and groups', () => {
   const db = new DatabaseSync(':memory:');
   try {
-    const filename = '0094_permission_audit_scopes.sql';
+    const filename = '0098_permission_audit_scopes.sql';
     for (const [name, sql] of migrationSqlByFilename) {
       if (name === filename) break;
       db.exec(sql);
@@ -32,7 +32,7 @@ test('the permission audit migration splits legacy /Users rules across users and
 test('the groups permission migration removes User.Audit from databases that already ran 0094', () => {
   const db = new DatabaseSync(':memory:');
   try {
-    const filename = '0095_groups_permission_audit_only.sql';
+    const filename = '0099_groups_permission_audit_only.sql';
     for (const [name, sql] of migrationSqlByFilename) {
       if (name === filename) break;
       db.exec(sql);

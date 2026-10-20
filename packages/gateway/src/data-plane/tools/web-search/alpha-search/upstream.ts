@@ -33,6 +33,7 @@ export const resolveAlphaSearchDispatcher = async ({
   const { candidates } = await enumerateModelCandidates({
     subject,
     upstreamIds: [config.upstreamId],
+    randomizeUpstreams: false,
     model: config.model,
     kind: 'chat',
     scheduler,

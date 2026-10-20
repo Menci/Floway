@@ -8,18 +8,18 @@ import type { User } from '../../repo/types.ts';
 import { isProductionRequest } from '../../runtime/is-production-request.ts';
 import { dummyPasswordHash, verifyPassword } from '../../shared/passwords.ts';
 import type { authLoginBody } from '../schemas.ts';
-import { userToSessionWire } from '../users/wire.ts';
+import { type SessionCapabilities, userToSessionWire } from '../users/wire.ts';
 import { getEnvOptional, timingSafeEqual } from '@floway-dev/platform';
 
-const sessionUser = async (user: User) => {
+const sessionCapabilities = async (user: User): Promise<SessionCapabilities> => {
   const [canViewPermissionsValue, canViewUpstreamsValue] = await Promise.all([
     canViewPermissions(user),
     canViewUpstreams(user),
   ]);
-  return userToSessionWire(user, {
+  return {
     canViewPermissions: canViewPermissionsValue,
     canViewUpstreams: canViewUpstreamsValue,
-  });
+  };
 };
 
 const resolveLoginUser = async (c: CtxWithJson<typeof authLoginBody>): Promise<User | null> => {
@@ -57,8 +57,13 @@ const resolveLoginUser = async (c: CtxWithJson<typeof authLoginBody>): Promise<U
 export const authLogin = async (c: CtxWithJson<typeof authLoginBody>) => {
   const user = await resolveLoginUser(c);
   if (!user) return c.json({ error: 'Invalid username or password' }, 401);
-  const session = await getRepo().sessions.create(user.id);
-  return c.json({ token: session.id, user: await sessionUser(user) });
+  const repo = getRepo();
+  const [session, capabilities, preferences] = await Promise.all([
+    repo.sessions.create(user.id),
+    sessionCapabilities(user),
+    repo.userPreferences.get(user.id),
+  ]);
+  return c.json({ token: session.id, user: userToSessionWire(user, capabilities, preferences) });
 };
 
 export const authLogout = async (c: AuthedContext) => {
@@ -71,8 +76,12 @@ export const authMe = async (c: AuthedContext) => {
   const user = userFromContext(c);
   const sessionId = sessionIdFromContext(c);
   const apiKey = c.get('apiKey');
+  const [capabilities, preferences] = await Promise.all([
+    sessionCapabilities(user),
+    getRepo().userPreferences.get(user.id),
+  ]);
   return c.json({
-    user: await sessionUser(user),
+    user: userToSessionWire(user, capabilities, preferences),
     viaApiKey: !sessionId,
     apiKey: apiKey ? { id: apiKey.id, name: apiKey.name } : null,
   });

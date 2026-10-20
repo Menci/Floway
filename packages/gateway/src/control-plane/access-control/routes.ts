@@ -8,6 +8,7 @@ import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { accessRecordBody, reorderAccessRecordsBody, resolveAccessBody } from '../schemas.ts';
 import { userToAdminWire } from '../users/wire.ts';
+import { defaultUserPreferences } from '@floway-dev/protocols/common';
 
 const parseRecordId = (raw: string): number | null => {
   const id = Number(raw);
@@ -36,7 +37,7 @@ const loadPermissionSnapshot = async (c: AuthedContext): Promise<{
   return { context, visibleRecords, sourceRecords };
 };
 
-const projectPermissionDirectory = (context: PermissionAuditContext, records: readonly AccessRecord[], admin: boolean) => {
+const projectPermissionDirectory = async (context: PermissionAuditContext, records: readonly AccessRecord[], admin: boolean) => {
   const renderUserIds = new Set(admin ? context.directory.users.map(user => user.id) : context.userIds);
   const renderGroupIds = new Set(admin
     ? context.directory.groups.map(group => group.id)
@@ -52,8 +53,14 @@ const projectPermissionDirectory = (context: PermissionAuditContext, records: re
     .map(group => ({ ...group, memberIds: admin ? group.memberIds : group.memberIds.filter(userId => context.userIds.has(userId)) }));
   const groupIdsByUser = new Map([...renderUserIds].map(userId => [userId, [] as number[]]));
   for (const group of groups) for (const userId of group.memberIds) groupIdsByUser.get(userId)!.push(group.id);
+  const preferenceRows = await getRepo().userPreferences.listAll();
+  const preferencesByUser = new Map(preferenceRows.map(row => [row.userId, row.preferences]));
   return {
-    users: context.directory.users.filter(user => renderUserIds.has(user.id)).map(user => userToAdminWire(user, groupIdsByUser.get(user.id)!)),
+    users: context.directory.users.filter(user => renderUserIds.has(user.id)).map(user => userToAdminWire(
+      user,
+      groupIdsByUser.get(user.id)!,
+      preferencesByUser.get(user.id) ?? defaultUserPreferences,
+    )),
     groups,
     principalUserIds: context.directory.users.filter(user => context.userIds.has(user.id)).map(user => user.id),
     principalGroupIds: context.directory.groups.filter(group => context.directGroupIds.has(group.id)).map(group => group.id),
@@ -84,7 +91,7 @@ export const getPermissionsData = async (c: AuthedContext) => {
   if (snapshot === null) return c.json({ error: 'Permission audit access required' }, 403);
   const admin = userFromContext(c).isAdmin;
   const upstreams = await permissionUpstreamOptions(snapshot.visibleRecords, snapshot.sourceRecords, admin);
-  const directory = projectPermissionDirectory(snapshot.context, snapshot.sourceRecords, admin);
+  const directory = await projectPermissionDirectory(snapshot.context, snapshot.sourceRecords, admin);
   return c.json({ records: snapshot.visibleRecords, directory, upstreams });
 };
 

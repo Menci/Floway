@@ -26,7 +26,7 @@ const gatewayForOperator = (input: RequestInfo | URL) => {
 
 describe('where the performance page reads upstream names from', () => {
   it('names an upstream for an operator, whose session may not read the admin upstream list', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false } });
+    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } } });
     vi.stubGlobal('fetch', vi.fn(gatewayForOperator));
 
     const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance') } as never);
@@ -36,7 +36,7 @@ describe('where the performance page reads upstream names from', () => {
   });
 
   it('makes API key grouping explicitly current-user scoped for an administrator', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'admin-session', user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true } });
+    useAuthStore.getState().primeFromLogin({ token: 'admin-session', user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } } });
     const performanceQueries: URL[] = [];
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
       const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
@@ -52,7 +52,7 @@ describe('where the performance page reads upstream names from', () => {
   });
 
   it('keeps user grouping and breakdown available to an operator like Usage', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false } });
+    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining' as const, language: null } } });
     const performanceQueries: URL[] = [];
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
       const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
@@ -68,7 +68,7 @@ describe('where the performance page reads upstream names from', () => {
   });
 
   it('re-reads a Node overview after removing stale Region URL state', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false } });
+    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } } });
     const fetch = vi.fn(gatewayForOperator);
     vi.stubGlobal('fetch', fetch);
 
@@ -81,7 +81,7 @@ describe('where the performance page reads upstream names from', () => {
   });
 
   it('keeps Region state on Cloudflare', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false } });
+    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } } });
     const fetch = vi.fn((input: RequestInfo | URL) => {
       const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
       return path === '/api/runtime-info'
@@ -99,7 +99,7 @@ describe('where the performance page reads upstream names from', () => {
   });
 
   it('preserves Region state when runtime capability cannot be determined', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false } });
+    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } } });
     const fetch = vi.fn((input: RequestInfo | URL) => {
       const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
       return path === '/api/runtime-info'

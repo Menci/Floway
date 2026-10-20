@@ -28,6 +28,7 @@ const apiKeyToJson = (key: ApiKey, knownUpstreamIds: ReadonlySet<string>) => ({
   created_at: key.createdAt,
   last_used_at: key.lastUsedAt ?? null,
   upstream_ids: pruneUnknownUpstreamIds(key.upstreamIds, knownUpstreamIds),
+  randomize_upstreams: key.randomizeUpstreams,
   dump_retention_seconds: key.dumpRetentionSeconds,
   responses_retention_seconds: key.openaiResponsesRetentionSeconds,
 });
@@ -119,6 +120,7 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
     serverSecret: generateServerSecret(),
     createdAt: new Date().toISOString(),
     upstreamIds: body.upstream_ids ?? null,
+    randomizeUpstreams: body.randomize_upstreams ?? false,
     deletedAt: null,
     dumpRetentionSeconds: body.dump_retention_seconds ?? null,
     openaiResponsesRetentionSeconds: body.responses_retention_seconds ?? 0,
@@ -155,8 +157,8 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
   const id = c.req.param('id')!;
   const body = c.req.valid('json');
 
-  if (body.name === undefined && body.upstream_ids === undefined && body.dump_retention_seconds === undefined && body.responses_retention_seconds === undefined) {
-    return c.json({ error: 'Provide a new name, upstream selection, dump retention, or Stateful OpenAI Responses retention to update.' }, 400);
+  if (body.name === undefined && body.upstream_ids === undefined && body.randomize_upstreams === undefined && body.dump_retention_seconds === undefined && body.responses_retention_seconds === undefined) {
+    return c.json({ error: 'Provide a new name, upstream selection, upstream order, dump retention, or Stateful OpenAI Responses retention to update.' }, 400);
   }
 
   const owned = await ownedKeyForUser(c, id);
@@ -171,6 +173,7 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
   const updated = await getRepo().apiKeys.update(id, {
     ...(body.name !== undefined ? { name: body.name } : {}),
     ...(body.upstream_ids !== undefined ? { upstreamIds: body.upstream_ids } : {}),
+    ...(body.randomize_upstreams !== undefined ? { randomizeUpstreams: body.randomize_upstreams } : {}),
     ...(body.dump_retention_seconds !== undefined ? { dumpRetentionSeconds: body.dump_retention_seconds } : {}),
     ...(body.responses_retention_seconds !== undefined ? { openaiResponsesRetentionSeconds: body.responses_retention_seconds } : {}),
   });

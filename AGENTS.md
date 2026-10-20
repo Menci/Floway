@@ -17,6 +17,7 @@
 | `main` delivery | Require the human's explicit permission for the exact commit before pushing it to `main`; apply each permission to the current local state only. | Human gate |
 | `main` history | Keep `main` linear through fast-forward, rebase, or squash; preserve PR references in squash commits. | Git history review |
 | Force push | Use `--force-with-lease` against the known remote commit and obtain renewed authority after a lease failure. | Git command and human gate |
+| Worktree selection | When `.worktrees` exists, make every change in a linked worktree under `.worktrees/` created from freshly fetched `origin/main` unless the request names another base; when it is absent, use a worktree only when the request explicitly asks for one. | Worktree path and final diff review |
 | Work branches | Commit every worktree change immediately, push commits promptly, and merge `main` into the branch when updating it. | Git status and history |
 | Commit identity | Use the repository's default Git identity, preserve author and committer metadata during rewrites, and omit AI co-author trailers. | Commit review |
 | Pull request creation | Create or modify a Pull Request when the user's request includes Pull Request work. | Human request |
