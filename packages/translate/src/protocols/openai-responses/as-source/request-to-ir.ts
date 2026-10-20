@@ -69,28 +69,28 @@ const userContent = (content: OpenAIResponsesInputMessageEx['content']): IRInput
 const systemContent = (message: OpenAIResponsesInputMessageEx): IRInputTextPart[] => typeof message.content === 'string'
   ? message.content === '' ? [] : [{ type: 'text', text: message.content }]
   : message.content.map(part => {
-    if (part.type !== 'input_text' && part.type !== 'output_text') {
-      throw new TranslatorInputError(`Invalid content block type '${part.type}' in ${message.role} message.`);
-    }
-    return { type: 'text', text: part.text };
-  });
+      if (part.type !== 'input_text' && part.type !== 'output_text') {
+        throw new TranslatorInputError(`Invalid content block type '${part.type}' in ${message.role} message.`);
+      }
+      return { type: 'text', text: part.text };
+    });
 
 const assistantContent = (message: OpenAIResponsesInputMessageEx): IRInputAssistantContentPart[] => typeof message.content === 'string'
   ? message.content === '' ? [] : [{ type: 'text', text: message.content }]
   : message.content.map(part => {
-    if (part.type === 'input_text' || part.type === 'output_text') return { type: 'text' as const, text: part.text };
-    if (part.type === 'refusal') return { type: 'refusal' as const, refusal: part.refusal };
-    throw new TranslatorInputError(`Cannot translate ${part.type} assistant content.`);
-  });
+      if (part.type === 'input_text' || part.type === 'output_text') return { type: 'text' as const, text: part.text };
+      if (part.type === 'refusal') return { type: 'refusal' as const, refusal: part.refusal };
+      throw new TranslatorInputError(`Cannot translate ${part.type} assistant content.`);
+    });
 
 const toolResultContent = (output: string | readonly OpenAIResponsesInputContent[]): string | readonly IRInputToolResultContentPart[] => typeof output === 'string'
   ? output
   : output.map(part => {
-    if (part.type === 'input_image') return { type: 'image' as const, image: imageMedia(part), ...(part.detail == null ? {} : { detail: part.detail }) };
-    if (part.type === 'input_file') return { type: 'file' as const, file: fileMedia(part), ...(typeof part.filename === 'string' ? { filename: part.filename } : {}) };
-    if (part.type === 'refusal') throw new TranslatorInputError('Cannot translate refusal content in a tool output.');
-    return { type: 'text' as const, text: part.text };
-  });
+      if (part.type === 'input_image') return { type: 'image' as const, image: imageMedia(part), ...(part.detail == null ? {} : { detail: part.detail }) };
+      if (part.type === 'input_file') return { type: 'file' as const, file: fileMedia(part), ...(typeof part.filename === 'string' ? { filename: part.filename } : {}) };
+      if (part.type === 'refusal') throw new TranslatorInputError('Cannot translate refusal content in a tool output.');
+      return { type: 'text' as const, text: part.text };
+    });
 
 const assistantItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInputAssistantItem[] => items.map(item => {
   rejectProgramCaller(item);

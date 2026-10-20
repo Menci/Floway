@@ -75,9 +75,9 @@ export const openaiChatCompletionsToolResultContent = (
   return images.length === 0
     ? { content: text, lifted: [] }
     : {
-      content: text === '' ? 'Image output is attached in the following user message.' : text,
-      lifted: [{ type: 'text', text: `Image output from tool call ${callId}:` }, ...images],
-    };
+        content: text === '' ? 'Image output is attached in the following user message.' : text,
+        lifted: [{ type: 'text', text: `Image output from tool call ${callId}:` }, ...images],
+      };
 };
 
 const assistantMessage = (items: readonly IRInputAssistantItem[]): OpenAIChatCompletionsMessage[] => {

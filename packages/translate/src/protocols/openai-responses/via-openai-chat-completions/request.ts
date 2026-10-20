@@ -1,94 +1,21 @@
 import { klona } from 'klona/json';
 
-import { openaiResponsesContentToOpenAIChatCompletionsContent, openaiResponsesContentToText } from './content.ts';
-import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
+import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
+import type { IRInputTurn } from '../../../ir/input.ts';
+import { roundTripAssistantTurn } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
+import { openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/request-from-ir.ts';
 import { restrictAllowedTools } from '../as-source/allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
-import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, isOpenAIResponsesEncryptedReasoning, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
-import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import { openaiResponsesTurnToIR, type OpenAIResponsesCallerFacts } from '../as-source/request-to-ir.ts';
-import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
-import type { IRInputTurn } from '../../../ir/input.ts';
+import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
+import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import { buildCustomToolInputSchema } from '../common/custom-tool-wrap.ts';
-import { openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/request-from-ir.ts';
-import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsResponseFormat, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesCustomToolCallOutputItem, OpenAIResponsesFunctionCallOutputItem, OpenAIResponsesInputImage, CanonicalOpenAIResponsesText, CanonicalOpenAIResponsesInputItem, OpenAIResponsesPayloadEx, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
-
-interface AssistantAccumulator {
-  message: OpenAIChatCompletionsAssistantMessage;
-  reasoningText?: string;
-}
-
-const ensureAssistant = (assistant: AssistantAccumulator | null): AssistantAccumulator =>
-  assistant ?? {
-    message: { role: 'assistant', content: null },
-  };
-
-const appendAssistantText = (assistant: AssistantAccumulator | null, text: string): AssistantAccumulator | null => {
-  if (!text) return assistant;
-
-  const next = ensureAssistant(assistant);
-  next.message.content = typeof next.message.content === 'string' ? next.message.content + text : text;
-  return next;
-};
-
-const appendAssistantToolCall = (
-  assistant: AssistantAccumulator | null,
-  call: { call_id: string; name: string; arguments: string },
-): AssistantAccumulator => {
-  const next = ensureAssistant(assistant);
-  next.message.tool_calls = [
-    ...(next.message.tool_calls ?? []),
-    {
-      id: call.call_id,
-      type: 'function',
-      function: {
-        name: call.name,
-        arguments: call.arguments,
-      },
-    } satisfies OpenAIChatCompletionsToolCall,
-  ];
-  return next;
-};
-
-interface ToolCallOutputProjection {
-  toolContent: string;
-  liftedImageContent: OpenAIChatCompletionsUserContentPart[];
-}
-
-// OpenAI Chat Completions tool messages admit only strings or text parts, while OpenAI Responses tool
-// output also admits images. Keep every tool result contiguous with its
-// assistant tool-call group, then lift its images into one following user
-// message so vision targets receive a legal, usable shape.
-// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/chat/completions/completions.ts#L1893-L1908
-// https://github.com/vercel/ai/blob/c093ee7458ccd5dada05d8461041e47c24ee55c0/packages/google/src/convert-to-google-messages.ts#L137-L180
-const projectToolCallOutput = (item: OpenAIResponsesFunctionCallOutputItem | OpenAIResponsesCustomToolCallOutputItem): ToolCallOutputProjection => {
-  if (typeof item.output === 'string') return { toolContent: item.output, liftedImageContent: [] };
-  if (item.output.some(part => part.type === 'input_file')) {
-    throw new TranslatorInputError('Cannot translate input_file tool output to OpenAI Chat Completions.');
-  }
-
-  const images = item.output.filter((part): part is OpenAIResponsesInputImage => part.type === 'input_image');
-  const textParts = item.output.filter((part): part is CanonicalOpenAIResponsesText =>
-    part.type === 'input_text' || part.type === 'output_text');
-  if (images.length === 0) {
-    return { toolContent: openaiResponsesContentToText(textParts), liftedImageContent: [] };
-  }
-
-  const lifted = openaiResponsesContentToOpenAIChatCompletionsContent([
-    { type: 'input_text', text: `Image output from tool call ${item.call_id}:` },
-    ...images,
-  ]);
-  if (typeof lifted === 'string') throw new Error('Image tool output projection lost its image content');
-  return {
-    toolContent: openaiResponsesContentToText(textParts) || 'Image output is attached in the following user message.',
-    liftedImageContent: lifted as OpenAIChatCompletionsUserContentPart[],
-  };
-};
+import type { OpenAIChatCompletionsResponseFormat, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIResponsesPayloadEx, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 const translateOpenAIResponsesTools = (tools: OpenAIResponsesTool[] | null | undefined, customToolNames: Set<string>): OpenAIChatCompletionsTool[] | undefined => {
   // After allowed_tools selection, Chat Completions can represent only flat
@@ -189,62 +116,6 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
   const customToolNames = new Set<string>();
   const legacyFunctionNames = new Map<string, string>();
   const responseFormat = buildOpenAIChatCompletionsResponseFormat(payload.text);
-
-  const translateAssistantTurn = (items: CanonicalOpenAIResponsesInputItem[]): OpenAIChatCompletionsMessage[] => {
-    let assistant: AssistantAccumulator | null = null;
-    for (const item of flattenInput(items)) {
-      rejectProgramCaller(item);
-      if (item.type === 'reasoning') {
-        if (isOpenAIResponsesEncryptedReasoning(item)) { warnDroppedUnrecognizedAssistantReasoning('openaiResponses', 'openaiChatCompletions'); continue; }
-        assistant = ensureAssistant(assistant);
-        const text = item.summary.map(part => part.text).join('');
-        if (text) assistant.reasoningText = (assistant.reasoningText ?? '') + text;
-      } else if (item.type === 'function_call') assistant = appendAssistantToolCall(assistant, item);
-      else if (item.type === 'custom_tool_call') assistant = appendAssistantToolCall(assistant, { call_id: item.call_id, name: item.name, arguments: JSON.stringify({ input: item.input }) });
-      else if (item.type === 'message' && item.role === 'assistant') {
-        if (Array.isArray(item.content)) {
-          const unsupported = item.content.find(part => part.type === 'input_file' || part.type === 'input_image');
-          if (unsupported !== undefined) throw new TranslatorInputError(`Cannot translate ${unsupported.type} assistant content to OpenAI Chat Completions.`);
-        }
-        assistant = appendAssistantText(assistant, openaiResponsesContentToText(item.content));
-      } else throw new TranslatorInputError(`Invalid input item type '${item.type}'.`);
-    }
-    return assistant === null ? [] : [{ ...assistant.message, ...(assistant.reasoningText === undefined ? {} : { reasoning_text: assistant.reasoningText }) }];
-  };
-
-  const translateNonAssistantInput = (items: CanonicalOpenAIResponsesInputItem[]): OpenAIChatCompletionsMessage[] => {
-    const messages: OpenAIChatCompletionsMessage[] = [];
-    const pendingToolOutputImages: OpenAIChatCompletionsUserContentPart[] = [];
-    const flushToolOutputImages = (): void => {
-      if (pendingToolOutputImages.length === 0) return;
-      messages.push({ role: 'user', content: [...pendingToolOutputImages] });
-      pendingToolOutputImages.length = 0;
-    };
-    for (const item of flattenInput(items)) {
-      if (item.type !== 'function_call_output' && item.type !== 'custom_tool_call_output') flushToolOutputImages();
-      rejectProgramCaller(item);
-      if (item.type === 'function_call_output' || item.type === 'custom_tool_call_output') {
-        const projected = projectToolCallOutput(item);
-        const legacyName = legacyFunctionNames.get(item.call_id);
-        legacyFunctionNames.delete(item.call_id);
-        messages.push(legacyName === undefined
-          ? { role: 'tool', tool_call_id: item.call_id, content: projected.toolContent }
-          : { role: 'function', name: legacyName, content: projected.toolContent });
-        pendingToolOutputImages.push(...projected.liftedImageContent);
-      } else if (item.type === 'message' && item.role !== 'assistant') {
-        if (item.role === 'user') messages.push({ role: 'user', content: openaiResponsesContentToOpenAIChatCompletionsContent(item.content) as OpenAIChatCompletionsUserContentPart[] | string });
-        else {
-          const content = typeof item.content === 'string' ? item.content : item.content.map(part => {
-            if (part.type !== 'input_text' && part.type !== 'output_text') throw new TranslatorInputError('Only text content is supported in Chat system/developer messages.');
-            return { type: 'text' as const, text: part.text };
-          });
-          messages.push({ role: item.role, content });
-        }
-      } else throw new TranslatorInputError(`Invalid input item type '${item.type}'.`);
-    }
-    flushToolOutputImages();
-    return messages;
-  };
 
   const allowed = restrictAllowedTools(payload.tools, payload.tool_choice);
   const tools = translateOpenAIResponsesTools(allowed.tools, customToolNames);

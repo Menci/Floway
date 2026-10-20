@@ -1,3 +1,6 @@
+import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from './content.ts';
+import { partitionGeminiGenerateContentTurns, type GeminiGenerateContentConversationTurn as GeminiGenerateContentTurn } from './conversation-turns.ts';
+import { geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from './tools.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -11,9 +14,6 @@ import type {
 } from '../../../ir/input.ts';
 import { warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
-import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from './content.ts';
-import { partitionGeminiGenerateContentTurns, type GeminiGenerateContentConversationTurn as GeminiGenerateContentTurn } from './conversation-turns.ts';
-import { geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from './tools.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 
 const inlineMedia = (part: GeminiGenerateContentPart): IRInputMedia | null => {
@@ -87,7 +87,9 @@ const assistantItems = (content: GeminiGenerateContentContent, turnIndex: number
       const { call, id } = geminiGenerateContentFunctionCallPart(part, ids, turnIndex, partIndex)!;
       flush();
       // An absent `functionCall.args` becomes `{}`; an explicit `null` keeps
-      // `null`, because both OpenAI protocols distinguish the two.
+      // `null`, because both OpenAI protocols distinguish the two. `??` cannot
+      // express this: it would turn `null` into `{}`.
+      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
       items.push({ type: 'function_call', call_id: id, name: call.name, arguments: JSON.stringify(call.args === undefined ? {} : call.args) });
       return;
     }
@@ -95,7 +97,7 @@ const assistantItems = (content: GeminiGenerateContentContent, turnIndex: number
       const thoughtText = geminiGenerateContentThoughtText(part);
       if (thoughtText !== null) {
         flush();
-        items.push({ type: 'reasoning', summary: [thoughtText] });
+        items.push({ type: 'reasoning', id: geminiGenerateContentReasoningId(turnIndex, partIndex), summary: [thoughtText] });
         return;
       }
       const visible = geminiGenerateContentVisibleText(part);
@@ -119,8 +121,38 @@ const systemParts = (content: GeminiGenerateContentContent | undefined): IRInput
   return text === null ? [] : [{ type: 'text', text }];
 };
 
+/**
+ * One IR turn per source content. A target that keeps its own message
+ * boundaries (Messages) uses this so two adjacent GenerateContent contents do
+ * not merge into one message.
+ */
+export const geminiGenerateContentContentsToIRTurns = (
+  turn: GeminiGenerateContentTurn,
+  contentIndex: number,
+  ids: GeminiGenerateContentToolCallIds,
+  target?: string,
+): IRInputTurn[] => turn.items.map((content, index) => {
+  if (turn.role === 'assistant') {
+    return {
+      role: 'assistant' as const,
+      items: (content.parts?.length ?? 0) === 0 ? [{ type: 'message' as const, content: [] }] : assistantItems(content, contentIndex + index, ids),
+    };
+  }
+  if (content.role !== 'user' && content.role !== undefined) {
+    throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
+  }
+  return {
+    role: 'user' as const,
+    items: (content.parts?.length ?? 0) === 0
+      ? [{ type: 'message' as const, role: 'user' as const, content: [] }]
+      : userParts(content, contentIndex + index, ids, target),
+  };
+});
+
 /** Turn-level entry point so a pair can splice a resolved assistant turn. */
 /** Whether a turn carries a vendor-signed thought signature the IR cannot hold. */
+export const geminiGenerateContentReasoningId = (turnIndex: number, partIndex: number): string => `gemini_reasoning_${turnIndex}_${partIndex}`;
+
 export const geminiGenerateContentDropsReasoning = (turn: GeminiGenerateContentTurn): boolean => turn.role === 'assistant'
   && turn.items.some(content => content.parts?.some(part => part.thoughtSignature !== undefined) ?? false);
 
@@ -134,7 +166,9 @@ export const geminiGenerateContentTurnToIR = (
   if (turn.role === 'assistant') {
     return {
       role: 'assistant',
-      items: turn.items.flatMap((content, index) => assistantItems(content, contentIndex + index, toolIds)),
+      items: turn.items.flatMap((content, index) => (content.parts?.length ?? 0) === 0
+        ? [{ type: 'message' as const, content: [] }]
+        : assistantItems(content, contentIndex + index, toolIds)),
     };
   }
   return {

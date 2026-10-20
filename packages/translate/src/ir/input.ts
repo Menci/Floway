@@ -172,6 +172,9 @@ export type IRInputMedia =
 // path. GenerateContent, conversely, is a source only: no route targets it.
 export interface IRInputReasoningItem {
   readonly type: 'reasoning'; // Responses, Messages, GenerateContent; ChatCompletions as target
+  // A source that names its reasoning items keeps the name; a source that does
+  // not leaves it absent and each writer allocates one.
+  readonly id?: string; // Responses, GenerateContent
   readonly summary?: readonly string[]; // Responses, GenerateContent, ChatCompletions; Messages as target
   readonly content?: readonly string[]; // Responses
 }

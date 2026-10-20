@@ -1,130 +1,25 @@
 import { klona } from 'klona/json';
 
+import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
+import type { IRInputTurn } from '../../../ir/input.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
-import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
+import { anthropicMessagesFromIR } from '../../anthropic-messages/as-target/request-from-ir.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
-import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from '../as-source/content.ts';
+import { geminiGenerateContentText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
-import { collectGeminiGenerateContentReplayContents, hasGeminiGenerateContentThoughtSignature, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
+import { geminiGenerateContentContentsToIRTurns, geminiGenerateContentDropsReasoning } from '../as-source/request-to-ir.ts';
+import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../as-source/schema.ts';
-import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionDeclarations, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
+import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionDeclarations, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
 import {
   ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
-  type AnthropicMessagesAssistantInputContentBlock,
   type AnthropicMessagesPayload,
   type AnthropicMessagesTextBlockParam,
   type AnthropicMessagesTool,
-  type AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
-import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart, GeminiGenerateContentThinkingConfig } from '@floway-dev/protocols/gemini-generate-content';
-
-const inlineDataToContentBlock = (part: GeminiGenerateContentPart): AnthropicMessagesUserContentBlock | null => {
-  const inlineData = geminiGenerateContentInlineData(part);
-  if (inlineData === null) return null;
-
-  switch (inlineData.kind) {
-  case 'image':
-    return {
-      type: 'image',
-      source: {
-        type: 'base64',
-        media_type: inlineData.mimeType,
-        data: inlineData.data,
-      },
-    };
-  case 'pdf':
-    return {
-      type: 'document',
-      source: {
-        type: 'base64',
-        media_type: inlineData.mimeType,
-        data: inlineData.data,
-      },
-    };
-  case 'audio':
-  case 'unsupported':
-    throw new TranslatorInputError(`Cannot translate Gemini generateContent inlineData MIME type '${inlineData.mimeType}' to Anthropic Messages.`);
-  }
-};
-
-const buildUserMessage = (content: GeminiGenerateContentContent, turnIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds): AnthropicMessagesPayload['messages'][number] | null => {
-  const blocks: AnthropicMessagesUserContentBlock[] = [];
-
-  (content.parts ?? []).forEach((part, partIndex) => {
-    const kind = geminiGenerateContentPartKind(part);
-    switch (kind) {
-    case null:
-      return;
-    case 'function_response': {
-      const { response, id } = geminiGenerateContentFunctionResponsePart(part, unmatchedToolCallIds, turnIndex, partIndex, 'last')!;
-      blocks.push({
-        type: 'tool_result',
-        tool_use_id: id,
-        content: JSON.stringify(response.response),
-      });
-      return;
-    }
-    case 'text': {
-      const text = geminiGenerateContentPartText(part);
-      if (text !== null) blocks.push({ type: 'text', text });
-      return;
-    }
-    case 'inline_data': {
-      const inlineData = inlineDataToContentBlock(part);
-      if (inlineData) blocks.push(inlineData);
-      return;
-    }
-    default:
-      throw new TranslatorInputError(`"${kind}" parts are not supported in user content.`);
-    }
-  });
-
-  return blocks.length ? { role: 'user', content: blocks } : (content.parts?.length ?? 0) === 0 ? { role: 'user', content: '' } : null;
-};
-
-const buildAssistantMessage = (content: GeminiGenerateContentContent, turnIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds): AnthropicMessagesPayload['messages'][number] | null => {
-  if (hasGeminiGenerateContentThoughtSignature(content)) {
-    warnDroppedUnrecognizedAssistantReasoning('geminiGenerateContent', 'anthropicMessages');
-  }
-  const blocks: AnthropicMessagesAssistantInputContentBlock[] = [];
-  const parts = (content.parts ?? []).flatMap(part => {
-    const kind = geminiGenerateContentPartKind(part);
-    return kind === null ? [] : [{ kind, part }];
-  });
-
-  parts.forEach(({ kind, part }, partIndex) => {
-    switch (kind) {
-    case 'function_call': {
-      const { call, id } = geminiGenerateContentFunctionCallPart(part, unmatchedToolCallIds, turnIndex, partIndex)!;
-      blocks.push({
-        type: 'tool_use',
-        id,
-        name: call.name,
-        input: klona(call.args),
-      });
-      return;
-    }
-    case 'text': {
-      const thoughtText = geminiGenerateContentThoughtText(part);
-      if (thoughtText !== null) {
-        blocks.push({ signature: '', type: 'thinking', thinking: thoughtText });
-        return;
-      }
-      const text = geminiGenerateContentVisibleText(part);
-      if (text !== null) {
-        blocks.push({ type: 'text', text });
-      }
-      return;
-    }
-    default:
-      throw new TranslatorInputError(`"${kind}" parts are not supported in model content.`);
-    }
-  });
-
-  return blocks.length ? { role: 'assistant', content: blocks } : (content.parts?.length ?? 0) === 0 ? { role: 'assistant', content: '' } : null;
-};
+import type { GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentThinkingConfig } from '@floway-dev/protocols/gemini-generate-content';
 
 interface ThinkingConfigFields {
   thinking?: NonNullable<AnthropicMessagesPayload['thinking']>;
@@ -213,29 +108,31 @@ export const buildTargetRequest = async (
 
   const restoredMessages = new Set<AnthropicMessagesPayload['messages'][number]>();
   let contentIndex = 0;
+  const pieces: (IRInputTurn | IRInputResolvedTurn<AnthropicMessagesPayload['messages'][number]>)[] = [];
   for (const turn of partitionGeminiGenerateContentTurns(payload.contents ?? [])) {
-    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('geminiGenerateContent', 'anthropicMessages', turn.items, codec, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest, collectGeminiGenerateContentReplayContents);
-    if (!roundTrip) {
-      if (turn.role === 'assistant') {
-        for (const [index, content] of turn.items.entries()) {
-          const message = buildAssistantMessage(content, contentIndex + index, unmatchedToolCallIds);
-          if (message) request.messages.push(message);
+    if (turn.role === 'assistant') {
+      const roundTrip = await roundTripAssistantTurn('geminiGenerateContent', 'anthropicMessages', turn.items, codec, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest, collectGeminiGenerateContentReplayContents);
+      if (roundTrip !== undefined) {
+        pieces.push({ kind: 'resolved', turn: roundTrip.turn });
+        restoredMessages.add(roundTrip.turn);
+        if (Array.isArray(roundTrip.turn.content)) for (const block of roundTrip.turn.content) {
+          if (block.type !== 'tool_use' && block.type !== 'server_tool_use') continue;
+          unmatchedToolCallIds[block.name] ??= [];
+          unmatchedToolCallIds[block.name].push(block.id);
         }
-      } else for (const [index, content] of turn.items.entries()) {
-        if (content.role !== 'user' && content.role !== undefined) throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
-        const message = buildUserMessage(content, contentIndex + index, unmatchedToolCallIds);
-        if (message) request.messages.push(message);
+        contentIndex += turn.items.length;
+        continue;
       }
-    } else {
-      request.messages.push(roundTrip.turn);
-      restoredMessages.add(roundTrip.turn);
-      if (Array.isArray(roundTrip.turn.content)) for (const block of roundTrip.turn.content) {
-        if (block.type !== 'tool_use' && block.type !== 'server_tool_use') continue;
-        unmatchedToolCallIds[block.name] ??= [];
-        unmatchedToolCallIds[block.name].push(block.id);
-      }
+      if (geminiGenerateContentDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('geminiGenerateContent', 'anthropicMessages');
     }
+    pieces.push(...geminiGenerateContentContentsToIRTurns(turn, contentIndex, unmatchedToolCallIds, 'Anthropic Messages'));
     contentIndex += turn.items.length;
+  }
+
+  for (const piece of segmentIRInput(pieces)) {
+    if (piece.kind === 'resolved') { request.messages.push(piece.turn); continue; }
+    const translated = await anthropicMessagesFromIR({ turns: piece.turns }, false, { oneMessagePerItem: true });
+    request.messages.push(...translated.messages);
   }
 
   const generationOutputConfig = applyGenerationConfig(request, payload.generationConfig, fallbackMaxOutputTokens);

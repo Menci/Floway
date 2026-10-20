@@ -1,17 +1,16 @@
 import { klona } from 'klona/json';
 
-import { openaiChatCompletionsContentToOpenAIResponsesInputContent, openaiChatCompletionsContentToText } from './content.ts';
-import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
 import type { IRInputTurn } from '../../../ir/input.ts';
-import { openaiResponsesFromIR } from '../../openai-responses/as-target/request-from-ir.ts';
-import { openaiChatCompletionsCallKinds, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/request-to-ir.ts';
+import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
+import { openaiResponsesFromIR } from '../../openai-responses/as-target/request-from-ir.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
-import { collectOpenAIChatCompletionsReplayContents, hasOpenAIChatCompletionsReasoning, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
-import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import { openaiChatCompletionsCallKinds, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/request-to-ir.ts';
+import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
+import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
+import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 const translateChatTools = (tools?: OpenAIChatCompletionsTool[] | null): OpenAIResponsesTool[] =>
   tools?.length
@@ -40,29 +39,6 @@ const translateChatToolChoice = (choice: NonNullable<OpenAIChatCompletionsPayloa
   };
 };
 
-const translateAssistantContent = (message: OpenAIChatCompletionsAssistantMessage): OpenAIResponsesInputContent[] => {
-  const content: OpenAIResponsesInputContent[] = [];
-  let hasRefusalPart = false;
-
-  if (typeof message.content === 'string') {
-    if (message.content) content.push({ type: 'output_text', text: message.content });
-  } else if (Array.isArray(message.content)) {
-    for (const part of message.content) {
-      if (part.type === 'text') content.push({ type: 'output_text', text: part.text });
-      else if (part.type === 'refusal') {
-        content.push({ type: 'refusal', refusal: part.refusal });
-        hasRefusalPart = true;
-      }
-    }
-  }
-
-  if (message.refusal !== undefined && message.refusal !== null && !hasRefusalPart) {
-    content.push({ type: 'refusal', refusal: message.refusal });
-  }
-
-  return content;
-};
-
 export const buildTargetRequest = async (
   payload: OpenAIChatCompletionsPayload,
   codec: SidecarCodec,
@@ -79,9 +55,9 @@ export const buildTargetRequest = async (
   for (const turn of partitionOpenAIChatCompletionsTurns(payload.messages)) {
     const roundTrip = turn.role === 'assistant'
       ? await roundTripAssistantTurn(
-        'openaiChatCompletions', 'openaiResponses', turn.items[0], codec,
-        findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest, collectOpenAIChatCompletionsReplayContents,
-      )
+          'openaiChatCompletions', 'openaiResponses', turn.items[0], codec,
+          findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest, collectOpenAIChatCompletionsReplayContents,
+        )
       : undefined;
     if (roundTrip !== undefined) { pieces.push({ kind: 'resolved', turn: roundTrip.turn }); continue; }
     if (openaiChatCompletionsDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiChatCompletions', 'openaiResponses');
@@ -94,7 +70,7 @@ export const buildTargetRequest = async (
       for (const item of piece.turn) if (item.type === 'custom_tool_call') customToolCallIds.add(item.call_id);
       continue;
     }
-    const translated = openaiResponsesFromIR({ turns: piece.turns }, piece.leading);
+    const translated = openaiResponsesFromIR({ turns: piece.turns }, piece.leading, { compactUserText: true });
     if (translated.instructions !== undefined) instructions.push(translated.instructions);
     input.push(...translated.input);
   }

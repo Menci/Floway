@@ -1,42 +1,23 @@
 import { klona } from 'klona/json';
 
-import { anthropicMessagesReasoningBlockToOpenAIResponsesReasoning } from './reasoning.ts';
+import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
+import type { IRInputTurn } from '../../../ir/input.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
+import { openaiResponsesFromIR } from '../../openai-responses/as-target/request-from-ir.ts';
 import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
-import { anthropicMessagesDropsReasoning, anthropicMessagesSystemToIR, anthropicMessagesTurnToIR } from '../as-source/request-to-ir.ts';
-import { openaiResponsesFromIR } from '../../openai-responses/as-target/request-from-ir.ts';
-import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
-import type { IRInputTurn } from '../../../ir/input.ts';
+import { anthropicMessagesDropsReasoning, anthropicMessagesTurnToIR } from '../as-source/request-to-ir.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from '../as-source/round-trip.ts';
-import {
-  type AnthropicMessagesAssistantMessage,
-  type AnthropicMessagesClientTool,
-  type AnthropicMessagesPayload,
-  type AnthropicMessagesMetadataEx,
-  type AnthropicMessagesServerToolUseBlockParam,
-  type AnthropicMessagesSystemMessage,
-  type AnthropicMessagesTextBlockParam,
-  type AnthropicMessagesToolResultBlock,
-  type AnthropicMessagesToolUseBlockParam,
-  type AnthropicMessagesUserContentBlock,
-  type AnthropicMessagesUserMessage,
-  type AnthropicMessagesWebSearchToolResultBlockParam,
+import type {
+  AnthropicMessagesClientTool,
+  AnthropicMessagesMetadataEx,
+  AnthropicMessagesPayload,
+  AnthropicMessagesTextBlockParam,
 } from '@floway-dev/protocols/anthropic-messages';
 import { FAST_SERVICE_TIER } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
-
-const flattenToolResultContent = (content: AnthropicMessagesToolResultBlock['content']): string => {
-  if (content === undefined) return '';
-  if (typeof content === 'string') return content;
-
-  const textBlocks = content.filter((block): block is AnthropicMessagesTextBlockParam => block.type === 'text');
-  if (textBlocks.length === content.length) return textBlocks.map(block => block.text).join('\n\n');
-
-  return JSON.stringify(content);
-};
+import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 // OpenAI strict-mode JSON Schema validators reject an object schema without an
 // explicit `properties` field. Preserve the source schema while satisfying that
@@ -57,135 +38,8 @@ const resolveReasoningEffort = (payload: AnthropicMessagesPayload): string | und
   return undefined;
 };
 
-const flushPendingContent = (pending: OpenAIResponsesInputContent[], input: CanonicalOpenAIResponsesInputItem[], role: 'user' | 'assistant'): void => {
-  if (pending.length === 0) return;
-  input.push({ type: 'message', role, content: [...pending] });
-  pending.length = 0;
-};
-
-const translateUserContentBlock = (
-  block: Exclude<AnthropicMessagesUserContentBlock, AnthropicMessagesToolResultBlock>,
-  messageIdx: number,
-  blockIdx: number,
-): OpenAIResponsesInputContent => {
-  if (block.type === 'text') return { type: 'input_text', text: block.text };
-  if (block.type === 'image') {
-    if (block.source.type === 'file') return { type: 'input_image', file_id: block.source.file_id };
-    if (block.source.type === 'url') return { type: 'input_image', image_url: block.source.url };
-    return {
-      type: 'input_image',
-      image_url: `data:${block.source.media_type};base64,${block.source.data}`,
-    };
-  }
-
-  throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' user content blocks are not supported on this model`);
-};
-
-const toOpenAIResponsesFunctionCall = (block: AnthropicMessagesToolUseBlockParam | AnthropicMessagesServerToolUseBlockParam): CanonicalOpenAIResponsesInputItem => ({
-  type: 'function_call',
-  call_id: block.id,
-  name: block.name,
-  arguments: JSON.stringify(block.input),
-  status: 'completed',
-});
-
-const toOpenAIResponsesStructuredToolOutput = (block: AnthropicMessagesWebSearchToolResultBlockParam): Extract<CanonicalOpenAIResponsesInputItem, { type: 'function_call_output' }> => ({
-  type: 'function_call_output',
-  call_id: block.tool_use_id,
-  output: JSON.stringify(block.content),
-  status: Array.isArray(block.content) ? 'completed' : 'incomplete',
-});
-
-const translateUserMessage = (message: AnthropicMessagesUserMessage, messageIdx: number): CanonicalOpenAIResponsesInputItem[] => {
-  if (typeof message.content === 'string') {
-    return [{ type: 'message', role: 'user', content: message.content }];
-  }
-
-  const input: CanonicalOpenAIResponsesInputItem[] = [];
-  const pendingContent: OpenAIResponsesInputContent[] = [];
-
-  for (const [blockIdx, block] of message.content.entries()) {
-    if (block.type === 'tool_result') {
-      // OpenAI Responses can represent alternating user content and tool outputs, so
-      // preserve Anthropic Messages block chronology instead of moving all tool results to
-      // the front of the turn.
-      flushPendingContent(pendingContent, input, 'user');
-      input.push({
-        type: 'function_call_output',
-        call_id: block.tool_use_id,
-        output: flattenToolResultContent(block.content),
-        status: block.is_error ? 'incomplete' : 'completed',
-      });
-      continue;
-    }
-
-    pendingContent.push(translateUserContentBlock(block, messageIdx, blockIdx));
-  }
-
-  flushPendingContent(pendingContent, input, 'user');
-  return input;
-};
-
-const translateAssistantMessage = (message: AnthropicMessagesAssistantMessage, messageIdx: number): CanonicalOpenAIResponsesInputItem[] => {
-  if (typeof message.content === 'string') {
-    return [{ type: 'message', role: 'assistant', content: message.content }];
-  }
-
-  const input: CanonicalOpenAIResponsesInputItem[] = [];
-  const pendingContent: OpenAIResponsesInputContent[] = [];
-
-  for (const [blockIdx, block] of message.content.entries()) {
-    if (block.type === 'tool_use' || block.type === 'server_tool_use') {
-      flushPendingContent(pendingContent, input, 'assistant');
-      input.push(toOpenAIResponsesFunctionCall(block));
-      continue;
-    }
-
-    if (block.type === 'web_search_tool_result') {
-      flushPendingContent(pendingContent, input, 'assistant');
-      input.push(toOpenAIResponsesStructuredToolOutput(block));
-      continue;
-    }
-
-    if (block.type === 'redacted_thinking') {
-      warnDroppedUnrecognizedAssistantReasoning('anthropicMessages', 'openaiResponses');
-      continue;
-    }
-
-    if (block.type === 'thinking') {
-      flushPendingContent(pendingContent, input, 'assistant');
-      const reasoning = anthropicMessagesReasoningBlockToOpenAIResponsesReasoning(block);
-      if (reasoning !== null) input.push(reasoning);
-      continue;
-    }
-
-    if (block.type === 'text') {
-      pendingContent.push({ type: 'output_text', text: block.text });
-      continue;
-    }
-
-    throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' assistant content blocks are not supported on this model`);
-  }
-
-  flushPendingContent(pendingContent, input, 'assistant');
-  return input;
-};
-
 // Preserve per-block boundaries when the source carries a
 // AnthropicMessagesTextBlockParam[]; single-string source stays as string content.
-const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessage): CanonicalOpenAIResponsesInputItem[] => [
-  {
-    type: 'message',
-    role: 'system',
-    content: typeof message.content === 'string'
-      ? message.content
-      : message.content.map(block => {
-          if (block.type !== 'text') throw new TranslatorInputError('Only text system content is supported by this Responses translation.');
-          return { type: 'input_text', text: block.text };
-        }),
-  },
-];
-
 // OpenAI Responses' `instructions` field is `string | null` — it cannot carry
 // multiple text blocks faithfully. When the source `AnthropicMessagesPayload.system`
 // is a single string or a single block, the canonical `instructions` slot
@@ -305,8 +159,7 @@ export const buildTargetRequest = async (
       }
       if (anthropicMessagesDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('anthropicMessages', 'openaiResponses');
     }
-    const ir = anthropicMessagesTurnToIR(turn, messageIndex, ' user content blocks are not supported on this model');
-    if (ir.items.length > 0) pieces.push(ir);
+    pieces.push(...anthropicMessagesTurnToIR(turn, messageIndex, ' user content blocks are not supported on this model'));
     messageIndex += turn.items.length;
   }
 

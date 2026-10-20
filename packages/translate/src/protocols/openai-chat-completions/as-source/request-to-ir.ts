@@ -1,3 +1,5 @@
+import { partitionOpenAIChatCompletionsTurns, type OpenAIChatCompletionsConversationTurn } from './conversation-turns.ts';
+import { hasOpenAIChatCompletionsReasoning } from './round-trip.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -8,11 +10,9 @@ import type {
   IRInputToolResultItem,
   IRInputTurn,
   IRInputUserContentPart,
-  IRInputUserItem,
+
 } from '../../../ir/input.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
-import { partitionOpenAIChatCompletionsTurns, type OpenAIChatCompletionsConversationTurn } from './conversation-turns.ts';
-import { hasOpenAIChatCompletionsReasoning } from './round-trip.ts';
 import type { OpenAIChatCompletionsContentPart, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 
 const DATA_URL = /^data:([^;,]+)?;base64,(.*)$/s;
@@ -68,8 +68,8 @@ const assistantItems = (turn: Extract<OpenAIChatCompletionsConversationTurn, { r
   const content: IRInputAssistantContentPart[] = typeof message.content === 'string'
     ? textParts(message.content)
     : (message.content ?? []).map(part => part.type === 'text'
-      ? { type: 'text' as const, text: part.text }
-      : { type: 'refusal' as const, refusal: part.refusal });
+        ? { type: 'text' as const, text: part.text }
+        : { type: 'refusal' as const, refusal: part.refusal });
   if (message.refusal !== undefined && message.refusal !== null && !content.some(part => part.type === 'refusal')) {
     content.push({ type: 'refusal', refusal: message.refusal });
   }
@@ -129,9 +129,9 @@ export const openaiChatCompletionsTurnToIR = (
         content: typeof message.content === 'string'
           ? textParts(message.content, false)
           : (message.content ?? []).map(part => {
-            if (part.type !== 'text') throw new TranslatorInputError(`Invalid '${part.type}' content part in system or developer message. Only 'text' content parts are supported in system messages on this model.`);
-            return { type: 'text' as const, text: part.text };
-          }),
+              if (part.type !== 'text') throw new TranslatorInputError(`Invalid '${part.type}' content part in system or developer message. Only 'text' content parts are supported in system messages on this model.`);
+              return { type: 'text' as const, text: part.text };
+            }),
       }],
     };
   case 'user':

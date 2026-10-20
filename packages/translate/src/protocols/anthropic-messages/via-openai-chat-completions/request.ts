@@ -1,40 +1,22 @@
 import { klona } from 'klona/json';
 
+import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
+import type { IRInputTurn } from '../../../ir/input.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
+import { openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/request-from-ir.ts';
 import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
 import { anthropicMessagesDropsReasoning, anthropicMessagesTurnToIR } from '../as-source/request-to-ir.ts';
-import { openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/request-from-ir.ts';
-import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
-import type { IRInputTurn } from '../../../ir/input.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from '../as-source/round-trip.ts';
 import type {
-  AnthropicMessagesAssistantContentBlock,
-  AnthropicMessagesAssistantMessage,
   AnthropicMessagesClientTool,
   AnthropicMessagesPayload,
-  AnthropicMessagesServerToolUseBlockParam,
-  AnthropicMessagesSystemMessage,
   AnthropicMessagesTextBlockParam,
-  AnthropicMessagesToolResultBlock,
-  AnthropicMessagesToolUseBlockParam,
-  AnthropicMessagesUserContentBlock,
-  AnthropicMessagesUserMessage,
 } from '@floway-dev/protocols/anthropic-messages';
 import { FAST_SERVICE_TIER } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamOptionsEx, OpenAIChatCompletionsTextPart, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
-
-const flattenToolResultContent = (content: AnthropicMessagesToolResultBlock['content']): string => {
-  if (content === undefined) return '';
-  if (typeof content === 'string') return content;
-
-  const textBlocks = content.filter((block): block is AnthropicMessagesTextBlockParam => block.type === 'text');
-  if (textBlocks.length === content.length) return textBlocks.map(block => block.text).join('\n\n');
-
-  return JSON.stringify(content);
-};
+import type { OpenAIChatCompletionsStreamOptionsEx, OpenAIChatCompletionsTextPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
 
 // OpenAI strict-mode JSON Schema validators reject an object schema without an
 // explicit `properties` field. Preserve the source schema while satisfying that
@@ -55,163 +37,6 @@ const resolveReasoningEffort = (payload: AnthropicMessagesPayload): string | und
   return undefined;
 };
 
-const toOpenAIChatCompletionsContent = (content: string | AnthropicMessagesUserContentBlock[] | AnthropicMessagesAssistantContentBlock[]): string | OpenAIChatCompletionsUserContentPart[] => {
-  if (typeof content === 'string') return content;
-
-  if (!content.some(block => block.type === 'image')) {
-    return content
-      .filter((block): block is AnthropicMessagesTextBlockParam => block.type === 'text')
-      .map(block => block.text)
-      .join('\n\n');
-  }
-
-  const parts: OpenAIChatCompletionsUserContentPart[] = [];
-
-  for (const block of content) {
-    if (block.type === 'text') {
-      parts.push({ type: 'text', text: block.text });
-      continue;
-    }
-
-    if (block.type === 'image') {
-      if (block.source.type === 'file') throw new TranslatorInputError('Cannot translate file_id-only Anthropic image input to Chat Completions.');
-      parts.push({ type: 'image_url', image_url: { url: block.source.type === 'url' ? block.source.url : `data:${block.source.media_type};base64,${block.source.data}` } });
-    }
-  }
-
-  return parts;
-};
-
-const toOpenAIChatCompletionsFunctionCall = (block: AnthropicMessagesToolUseBlockParam | AnthropicMessagesServerToolUseBlockParam): OpenAIChatCompletionsToolCall => ({
-  id: block.id,
-  type: 'function',
-  function: {
-    name: block.name,
-    arguments: JSON.stringify(block.input),
-  },
-});
-
-type PendingAssistantMessage = {
-  textParts: string[];
-  toolCalls: OpenAIChatCompletionsToolCall[];
-  reasoningText: string[];
-};
-
-const flushPendingAssistantMessage = (messages: OpenAIChatCompletionsMessage[], pending: PendingAssistantMessage): void => {
-  if (pending.textParts.length === 0 && pending.toolCalls.length === 0 && pending.reasoningText.length === 0) {
-    return;
-  }
-
-  messages.push({
-    role: 'assistant',
-    content: pending.textParts.join('\n\n') || null,
-    ...(pending.toolCalls.length > 0 ? { tool_calls: [...pending.toolCalls] } : {}),
-    ...(pending.reasoningText.length > 0 ? { reasoning_text: pending.reasoningText.join('') } : {}),
-  });
-
-  pending.textParts.length = 0;
-  pending.toolCalls.length = 0;
-  pending.reasoningText.length = 0;
-};
-
-const translateAnthropicMessagesUser = (message: AnthropicMessagesUserMessage, messageIdx: number, legacyFunctionNames: Map<string, string>): OpenAIChatCompletionsMessage[] => {
-  if (!Array.isArray(message.content)) {
-    return [
-      {
-        role: 'user',
-        content: message.content,
-      },
-    ];
-  }
-
-  const messages: OpenAIChatCompletionsMessage[] = [];
-  const pendingUserBlocks: Exclude<AnthropicMessagesUserContentBlock, AnthropicMessagesToolResultBlock>[] = [];
-
-  const flushPendingUserBlocks = () => {
-    if (pendingUserBlocks.length === 0) return;
-    messages.push({
-      role: 'user',
-      content: toOpenAIChatCompletionsContent(pendingUserBlocks),
-    });
-
-    pendingUserBlocks.length = 0;
-  };
-
-  for (const [blockIdx, block] of message.content.entries()) {
-    if (block.type === 'tool_result') {
-      // Preserving source chronology matters more than keeping one OpenAI Chat Completions message,
-      // so interleaved user content and tool results become alternating messages.
-      flushPendingUserBlocks();
-      const content = flattenToolResultContent(block.content);
-      const legacyName = legacyFunctionNames.get(block.tool_use_id);
-      legacyFunctionNames.delete(block.tool_use_id);
-      messages.push(legacyName === undefined
-        ? { role: 'tool', tool_call_id: block.tool_use_id, content }
-        : { role: 'function', name: legacyName, content });
-      continue;
-    }
-
-    if (block.type !== 'text' && block.type !== 'image') {
-      throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' content blocks are not supported on this model`);
-    }
-
-    pendingUserBlocks.push(block);
-  }
-
-  flushPendingUserBlocks();
-
-  return messages;
-};
-
-const translateAnthropicMessagesAssistant = (message: AnthropicMessagesAssistantMessage, messageIdx: number): OpenAIChatCompletionsMessage[] => {
-  if (!Array.isArray(message.content)) {
-    return [
-      {
-        role: 'assistant',
-        content: message.content,
-      },
-    ];
-  }
-
-  const messages: OpenAIChatCompletionsMessage[] = [];
-  const pending: PendingAssistantMessage = {
-    textParts: [],
-    toolCalls: [],
-    reasoningText: [],
-  };
-
-  for (const [blockIdx, block] of message.content.entries()) {
-    switch (block.type) {
-    case 'text':
-      pending.textParts.push(block.text);
-      break;
-    case 'thinking':
-      if (block.thinking !== '') pending.reasoningText.push(block.thinking);
-      break;
-    case 'redacted_thinking':
-      warnDroppedUnrecognizedAssistantReasoning('anthropicMessages', 'openaiChatCompletions');
-      break;
-    case 'tool_use':
-    case 'server_tool_use':
-      pending.toolCalls.push(toOpenAIChatCompletionsFunctionCall(block));
-      break;
-    case 'web_search_tool_result':
-      flushPendingAssistantMessage(messages, pending);
-      messages.push({
-        role: 'tool',
-        tool_call_id: block.tool_use_id,
-        content: JSON.stringify(block.content),
-      });
-      break;
-    default:
-      throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' assistant content blocks are not supported on this model`);
-    }
-  }
-
-  flushPendingAssistantMessage(messages, pending);
-  return messages;
-};
-
 // Anthropic Messages system blocks are prompt boundaries; preserve each one
 // as a separate OpenAI Chat Completions text part so a CC→Anthropic Messages→CC round trip
 // does not silently merge them. Falls back to the simple string form when
@@ -220,16 +45,6 @@ const systemContentFromBlocks = (system: string | AnthropicMessagesTextBlockPara
   typeof system === 'string'
     ? system
     : system.map(block => ({ type: 'text', text: block.text }));
-
-const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessage): OpenAIChatCompletionsMessage[] => [
-  {
-    role: 'system',
-    content: typeof message.content === 'string' ? message.content : message.content.map(block => {
-      if (block.type !== 'text') throw new TranslatorInputError('Only text is supported in Chat system messages.');
-      return { type: 'text', text: block.text };
-    }),
-  },
-];
 
 const translateAnthropicMessagesTools = (tools?: AnthropicMessagesClientTool[]): OpenAIChatCompletionsTool[] | undefined =>
   // Do not hide target-side function-name constraints by renaming tools here;
@@ -309,8 +124,7 @@ export const buildTargetRequest = async (
       }
       if (anthropicMessagesDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('anthropicMessages', 'openaiChatCompletions');
     }
-    const ir = anthropicMessagesTurnToIR(turn, messageIndex);
-    if (ir.items.length > 0) pieces.push(ir);
+    pieces.push(...anthropicMessagesTurnToIR(turn, messageIndex));
     messageIndex += turn.items.length;
   }
 

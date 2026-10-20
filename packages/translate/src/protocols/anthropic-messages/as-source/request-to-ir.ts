@@ -1,3 +1,4 @@
+import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn } from './conversation-turns.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -10,9 +11,8 @@ import type {
   IRInputUserItem,
 } from '../../../ir/input.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
-import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn } from './conversation-turns.ts';
 import type {
-  AnthropicMessagesAssistantInputContentBlock,
+
   AnthropicMessagesImageBlock,
   AnthropicMessagesMessage,
   AnthropicMessagesPayload,
@@ -41,9 +41,9 @@ const imageMedia = (source: AnthropicMessagesImageBlock['source']): IRInputMedia
 const textBlocks = (content: string | readonly AnthropicMessagesTextBlockParam[]): IRInputTextPart[] => typeof content === 'string'
   ? content === '' ? [] : [{ type: 'text', text: content }]
   : content.map(block => {
-    if (block.type !== 'text') throw new TranslatorInputError('Only text system content is supported.');
-    return { type: 'text', text: block.text };
-  });
+      if (block.type !== 'text') throw new TranslatorInputError('Only text system content is supported.');
+      return { type: 'text', text: block.text };
+    });
 
 // Messages carries file content as a `document` block whose source is a PDF,
 // plain text, a URL, or an embedded content array. The IR keeps the same two
@@ -85,11 +85,11 @@ const toolResultPart = (block: AnthropicMessagesToolResultBlock['content'] exten
   : typeof block === 'string'
     ? [{ type: 'text', text: block }]
     : block.flatMap((part): IRInputToolResultContentPart[] => {
-      if (part.type === 'text') return [{ type: 'text', text: part.text }];
-      if (part.type === 'image') return [{ type: 'image', image: imageMedia(part.source) }];
-      if (part.type === 'search_result') return [{ type: 'text', text: JSON.stringify([part]) }];
-      throw new TranslatorInputError(`'${(part as { type: string }).type}' tool result content blocks are not supported.`);
-    });
+        if (part.type === 'text') return [{ type: 'text', text: part.text }];
+        if (part.type === 'image') return [{ type: 'image', image: imageMedia(part.source) }];
+        if (part.type === 'search_result') return [{ type: 'text', text: JSON.stringify([part]) }];
+        throw new TranslatorInputError(`'${(part as { type: string }).type}' tool result content blocks are not supported.`);
+      });
 
 const userItems = (
   message: Exclude<AnthropicMessagesMessage, { role: 'assistant' }>,
@@ -134,10 +134,22 @@ const userItems = (
   return items;
 };
 
-const assistantItems = (message: Extract<AnthropicMessagesMessage, { role: 'assistant' }>, messageIdx: number): IRInputAssistantItem[] => {
-  if (typeof message.content === 'string') return message.content === '' ? [] : [{ type: 'message', content: [{ type: 'text', text: message.content }] }];
+interface AnthropicMessagesAssistantSegments {
+  readonly assistant: IRInputAssistantItem[];
+  // A hosted search result is the model's own tool output rather than a client
+  // turn, so it cannot occupy an assistant item. It is downgraded to a plain
+  // tool result in a following user turn, which is the only shape every target
+  // can express.
+  readonly downgraded: IRInputUserItem[];
+}
+
+const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'assistant' }>, messageIdx: number): AnthropicMessagesAssistantSegments => {
+  if (typeof message.content === 'string') {
+    return { assistant: message.content === '' ? [] : [{ type: 'message', content: [{ type: 'text', text: message.content }] }], downgraded: [] };
+  }
 
   const items: IRInputAssistantItem[] = [];
+  const downgraded: IRInputUserItem[] = [];
   const pending: IRInputAssistantContentPart[] = [];
   const flush = (): void => {
     if (pending.length === 0) return;
@@ -169,6 +181,16 @@ const assistantItems = (message: Extract<AnthropicMessagesMessage, { role: 'assi
     // A hosted search result is server-tool history: no pair translates it, and
     // the gateway's search shim owns its replay.
     case 'web_search_tool_result':
+      flush();
+      downgraded.push({
+        type: 'tool_result',
+        call_id: block.tool_use_id,
+        output: JSON.stringify(block.content),
+        ...(Array.isArray(block.content) ? {} : { is_error: true }),
+      });
+      break;
+    // Hosted results with no plain-tool spelling stay outside the IR entirely;
+    // their owning shim restores them before or after translation.
     case 'web_fetch_tool_result':
     case 'code_execution_tool_result':
     case 'bash_code_execution_tool_result':
@@ -181,7 +203,7 @@ const assistantItems = (message: Extract<AnthropicMessagesMessage, { role: 'assi
     }
   }
   flush();
-  return items;
+  return { assistant: items, downgraded };
 };
 
 export const anthropicMessagesSystemToIR = (system: AnthropicMessagesPayload['system']): IRInputTurn | undefined => {
@@ -198,11 +220,17 @@ export const anthropicMessagesTurnToIR = (
   turn: AnthropicMessagesConversationTurn,
   firstMessageIndex = 0,
   unsupportedSuffix?: string,
-): IRInputTurn => {
+): IRInputTurn[] => {
   if (turn.role === 'assistant') {
-    return { role: 'assistant', items: turn.items.flatMap((message, index) => assistantItems(message, firstMessageIndex + index)) };
+    const turns: IRInputTurn[] = [];
+    for (const [index, message] of turn.items.entries()) {
+      const segments = assistantSegments(message, firstMessageIndex + index);
+      if (segments.assistant.length > 0) turns.push({ role: 'assistant', items: segments.assistant });
+      if (segments.downgraded.length > 0) turns.push({ role: 'user', items: segments.downgraded });
+    }
+    return turns;
   }
-  return {
+  return [{
     role: 'user',
     items: turn.items.flatMap((message, index) => {
       if (message.role !== 'user' && message.role !== 'system') {
@@ -210,7 +238,7 @@ export const anthropicMessagesTurnToIR = (
       }
       return userItems(message, firstMessageIndex + index, unsupportedSuffix);
     }),
-  };
+  }];
 };
 
 export const anthropicMessagesInputToIR = (payload: AnthropicMessagesPayload): IRInputConversation => {
@@ -221,7 +249,7 @@ export const anthropicMessagesInputToIR = (payload: AnthropicMessagesPayload): I
 
   let messageIndex = 0;
   for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
-    turns.push(anthropicMessagesTurnToIR(turn, messageIndex));
+    turns.push(...anthropicMessagesTurnToIR(turn, messageIndex));
     messageIndex += turn.items.length;
   }
   return { turns };

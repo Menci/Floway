@@ -71,7 +71,7 @@ const userContent = async (
       break;
     }
     case 'file': blocks.push(documentBlock(part.file)); break;
-    case 'audio': throw new TranslatorInputError('Cannot translate input audio to Anthropic Messages.');
+    case 'audio': throw new TranslatorInputError(`Cannot translate Gemini generateContent inlineData MIME type '${part.audio.media_type}' to Anthropic Messages.`);
     case 'refusal': throw new TranslatorInputError('Cannot translate refusal content in a user message to Anthropic Messages.');
     default: throw new TranslatorInputError(`Invalid '${(part as { type: string }).type}' content part.`);
     }
@@ -83,10 +83,10 @@ const userContent = async (
 const toolResultContent = (output: string | readonly IRInputToolResultContentPart[]): string | AnthropicMessagesToolResultContentBlock[] => typeof output === 'string'
   ? output
   : [...output].map((part): AnthropicMessagesToolResultContentBlock => {
-    if (part.type === 'text') return { type: 'text', text: part.text };
-    if (part.type === 'image') return imageBlock(part.image);
-    throw new TranslatorInputError('Cannot translate file content in a tool result to Anthropic Messages.');
-  });
+      if (part.type === 'text') return { type: 'text', text: part.text };
+      if (part.type === 'image') return imageBlock(part.image);
+      throw new TranslatorInputError('Cannot translate file content in a tool result to Anthropic Messages.');
+    });
 
 const assistantBlocks = (items: readonly IRInputAssistantItem[]): AnthropicMessagesAssistantInputContentBlock[] => {
   const blocks = items.flatMap<AnthropicMessagesAssistantInputContentBlock>(item => {
@@ -103,17 +103,18 @@ const assistantBlocks = (items: readonly IRInputAssistantItem[]): AnthropicMessa
       throw new TranslatorInputError('Cannot translate a custom tool call to Anthropic Messages.');
     }
   });
-  // Messages' assistant content is a non-empty block list; an empty assistant
-  // turn is spelled as one empty text block.
+  // Messages spells an empty assistant turn as an empty string; a non-empty
+  // turn is a block list.
   return blocks.length === 0 ? [{ type: 'text', text: '' }] : blocks;
 };
 
 // Messages needs an object, so a call whose arguments are malformed keeps the
 // raw text under `raw_arguments` rather than dropping the history.
-const parseArguments = (argumentsJson: string): Record<string, unknown> => {
+const parseArguments = (argumentsJson: string): Record<string, unknown> | null => {
   try {
     const parsed: unknown = JSON.parse(argumentsJson);
-    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : { raw_arguments: argumentsJson };
+    if (parsed === null) return null;
+    return typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : { raw_arguments: argumentsJson };
   } catch {
     return { raw_arguments: argumentsJson };
   }
@@ -142,18 +143,38 @@ export interface AnthropicMessagesRequestFromIR {
  * lifts the leading system run there, one block per source text part so the
  * boundaries survive; later system messages stay inline at their position.
  */
+export interface AnthropicMessagesFromIROptions {
+  /**
+   * Messages groups consecutive client items into one message by default, which
+   * is what a Chat Completions or Responses source expects. A GenerateContent
+   * source treats each `content` as its own message, so its route keeps one
+   * message per item instead.
+   */
+  readonly oneMessagePerItem?: boolean;
+  readonly resolveImage?: AnthropicMessagesImageResolver;
+}
+
 export const anthropicMessagesFromIR = async (
   conversation: IRInputConversation,
   hoistSystem: boolean,
-  resolveImage?: AnthropicMessagesImageResolver,
+  options: AnthropicMessagesFromIROptions = {},
 ): Promise<AnthropicMessagesRequestFromIR> => {
   const system: AnthropicMessagesTextBlockParam[] = [];
   let hoisting = hoistSystem;
   const messages: AnthropicMessagesMessage[] = [];
+  const append = (blocks: AnthropicMessagesUserContentBlock[]): void => {
+    if (options.oneMessagePerItem === true) {
+      if (blocks.length > 0) messages.push({ role: 'user', content: blocks });
+      return;
+    }
+    appendUserBlocks(messages, blocks);
+  };
   for (const turn of conversation.turns) {
     if (turn.role === 'assistant') {
       hoisting = false;
-      messages.push({ role: 'assistant', content: assistantBlocks(turn.items) });
+      const blocks = assistantBlocks(turn.items);
+      const content = blocks.length === 1 && blocks[0].type === 'text' && blocks[0].text === '' ? '' : blocks;
+      messages.push({ role: 'assistant', content });
       continue;
     }
     for (const item of turn.items) {
@@ -171,9 +192,9 @@ export const anthropicMessagesFromIR = async (
         continue;
       }
       hoisting = false;
-      appendUserBlocks(messages, item.type === 'tool_result'
+      append(item.type === 'tool_result'
         ? [{ type: 'tool_result', tool_use_id: item.call_id, content: toolResultContent(item.output), ...(item.is_error === true ? { is_error: true } : {}) }]
-        : await userContent(item, resolveImage));
+        : await userContent(item, options.resolveImage));
     }
   }
   return { system: system.length === 0 ? undefined : system, messages };
