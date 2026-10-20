@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../../../src/protocols/anthropic-messages/via-openai-chat-completions/events.ts';
+import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -27,5 +28,5 @@ test('translateToSourceEvents accepts OpenAI Chat Completions streams without DO
     } satisfies OpenAIChatCompletionsStreamEvent);
   }
 
-  await drain(translateToSourceEvents(stream()));
+  await drain(translateToSourceEvents(stream(), createTestSidecarCodec()));
 });

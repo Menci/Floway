@@ -8,7 +8,7 @@ import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 
 const user: ControlPlaneUser = {
-  id: 2, username: 'operator', isAdmin: false, groupIds: [],
+  id: 2, username: 'operator', isAdmin: false,
   createdAt: '2026-01-01T00:00:00.000Z',
   preferences: { quotaDisplay: 'remaining', language: null },
 };
@@ -21,7 +21,7 @@ describe('user identity settings', () => {
     vi.stubGlobal('fetch', fetch);
     const onSaved = vi.fn(async () => {});
     renderInApp(<OutcomeToastProvider><UserDialog
-      {...(mode === 'create' ? { mode } : { mode, user })}
+      {...(mode === 'create' ? { mode } : { mode, user, groupIds: [] })}
       actorId={1} groups={[]} onOpenChange={vi.fn()} onSaved={onSaved} open
     /></OutcomeToastProvider>);
     expect(screen.queryByRole('switch', { name: i18n.t('dashboard.upstreamAccess.title') })).toBeNull();

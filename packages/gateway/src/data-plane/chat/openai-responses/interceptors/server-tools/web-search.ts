@@ -1,3 +1,5 @@
+import { isEqual } from 'es-toolkit';
+
 import { shortId } from '../../../../../shared/short-id.ts';
 import { truncatePreservingCodePoints } from '../../../../shared/text.ts';
 import { executeAlphaSearch } from '../../../../tools/web-search/alpha-search/execution.ts';
@@ -29,8 +31,8 @@ import {
 } from '../../../../tools/web-search/operations.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../../tools/web-search/provider.ts';
 import type { ConfiguredWebSearchProvider } from '../../../../tools/web-search/types.ts';
-import { type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from '../server-tool-shim.ts';
-import type { OpenAIResponsesFunctionTool, OpenAIResponsesFunctionToolCallItemEx, OpenAIResponsesHostedTool, CanonicalOpenAIResponsesInputItem, OpenAIResponsesOutputWebSearchCall, OpenAIResponsesTool, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
+import type { ServerToolHistoryExpansion, ServerToolLoopState, ServerToolOutputItem, ServerToolRegistration } from '../server-tool-shim.ts';
+import type { OpenAIResponsesFunctionTool, OpenAIResponsesHostedTool, OpenAIResponsesInputWebSearchCall, OpenAIResponsesOutputWebSearchCall, OpenAIResponsesTool, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
 import { collectOpenAIResponsesToolEntries, createRandomOpenAIResponsesItemId, WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf } from '@floway-dev/provider';
 
@@ -258,7 +260,7 @@ export const isHostedWebSearchTool = (tool: OpenAIResponsesTool): tool is OpenAI
 //   `return_token_budget` default `'default'` and
 //   `search_content_types` default `['text']` — observed verbatim in
 //   Copilot's `/responses` echo for `tools: [{type: 'web_search'}]`.
-export const canonicalizeWebSearchTool = (raw: OpenAIResponsesTool): OpenAIResponsesHostedTool | undefined => {
+export const recognizeWebSearchTool = (raw: OpenAIResponsesTool): OpenAIResponsesHostedTool | undefined => {
   if (!isHostedWebSearchTool(raw)) return undefined;
   const canonical: OpenAIResponsesHostedTool = {
     ...raw,
@@ -411,48 +413,10 @@ export const prepareToolsForShim = (
 // context window through the diagnostic that explains it.
 const MAX_MALFORMED_WIRE_DUMP_CHARS = 1024;
 
-/**
- * Persistent `payload.private` shape for one `web_search_call`. One shim call
- * function_call corresponds to exactly one wsc and one op — multi-op
- * shim calls (multi-kind mix or multi-instance same-kind) are rejected at
- * dispatch with an `ambiguous` error, so there is never an array to
- * denormalize. The persisted-payload key IS the wsc id, so we don't repeat
- * it inside.
- *
- * - `functionCallItem` is the upstream's literal function_call from the
- *   originating turn, with `arguments` replaced by the
- *   jsonrepair-canonical strict-JSON form (every other field — type,
- *   call_id, name, status — passes through untouched). Replayed verbatim
- *   so the upstream model's prior assistant turn looks bit-exact.
- *
- * - `ir` stores the action, structured results, and optional upstream
- *   model-facing output straight from `planShimSlots`. Replay uses
- *   `renderWebSearchCallOutput`, which preserves that output when present
- *   and otherwise renders the action and results.
- *
- * Version-tagged: an unknown `v` falls through the no-payload branch in
- * `transformInputItemsForWebSearch` (action re-serialized into the
- * shim call shape, output replaced with the not-preserved notice). Starts
- * at 1; bump only on a wire-incompatible change after release.
- */
-export interface WebSearchCallPrivatePayload {
-  v: 1;
-  functionCallItem: OpenAIResponsesFunctionToolCallItemEx;
-  ir: WebSearchCallIR;
-}
-
-const isWebSearchCallPrivatePayload = (value: unknown): value is WebSearchCallPrivatePayload => {
+const isWebSearchReplayIr = (value: unknown): value is WebSearchCallIR => {
   if (value === null || typeof value !== 'object') return false;
   const obj = value as Record<string, unknown>;
-  if (obj.v !== 1) return false;
-  const fc = obj.functionCallItem;
-  if (fc === null || typeof fc !== 'object') return false;
-  const fcObj = fc as Record<string, unknown>;
-  if (fcObj.type !== 'function_call' || typeof fcObj.call_id !== 'string' || typeof fcObj.name !== 'string' || typeof fcObj.arguments !== 'string') return false;
-  const ir = obj.ir;
-  if (ir === null || typeof ir !== 'object') return false;
-  const irObj = ir as Record<string, unknown>;
-  return irObj.action !== undefined && Array.isArray(irObj.results);
+  return obj.action !== undefined && Array.isArray(obj.results);
 };
 
 export const synthesizeWebSearchCallId = (): string => createRandomOpenAIResponsesItemId('web_search_call');
@@ -464,8 +428,7 @@ const synthesizeReplayCallId = (): string => shortId('cc_replay');
 // Re-serializes a wire `action` back into the shim's JSON arguments
 // shape (`{search_query:[{q}]}` / `{open:[{ref_id}]}` /
 // `{find:[{ref_id,pattern}]}`). Used only on the replay-fallback path to
-// fill the paired function_call's `arguments` when no private payload
-// exists; the happy path replays the upstream's original args verbatim.
+// reconstruct arguments for hosted items that arrived without our replay data.
 const actionToShimCallArgsJson = (action: OpenAIResponsesWebSearchAction): string => {
   switch (action.type) {
   case 'search':
@@ -483,100 +446,37 @@ const actionToShimCallArgsJson = (action: OpenAIResponsesWebSearchAction): strin
   }
 };
 
-// Replay preprocessor: turns echoed `web_search_call` items back into the
-// (function_call, function_call_output) pair the upstream model originally
-// saw on turn 1.
-//
-// Two paths:
-//
-// 1. Private payload hit (the request resolved the wsc id to a persisted
-//    `payload.private`): emit the upstream's literal `functionCallItem`
-//    (jsonrepair-canonical args, original call_id) plus a
-//    `function_call_output` whose body comes from
-//    `renderWebSearchCallOutput`. This is the bit-exact round-trip.
-//
-// 2. No payload (`store: false`, expired, foreign id, cross-account, or
-//    schema-version mismatch): degrade to a synthesized pair whose
-//    `function_call.arguments` is the wire action re-serialized into
-//    the shim call shape (so the model still sees what it asked for) and
-//    whose `function_call_output` text is the not-preserved placeholder.
-//    The shim deliberately does not read `item.results` from the
-//    wire — turn 1's wire results may or may not exist depending on the
-//    client's `include` opt-in, and trusting them across the wire would
-//    couple state correctness to client storage discipline.
-//
-// Echoed items with no `action` at all surface as a placeholder
-// `function_call + function_call_output` pair that inlines the raw wire
-// item so the model can see what the client actually sent.
-export const transformInputItemsForWebSearch = (
-  input: CanonicalOpenAIResponsesInputItem[],
-  toolName: string,
-  getPrivatePayload?: (id: string) => unknown,
-): CanonicalOpenAIResponsesInputItem[] => {
-  const out: CanonicalOpenAIResponsesInputItem[] = [];
-
-  for (const item of input) {
-    if (item.type !== 'web_search_call') {
-      out.push(item);
-      continue;
-    }
-
-    const candidatePayload = item.id !== undefined ? getPrivatePayload?.(item.id) : undefined;
-    if (isWebSearchCallPrivatePayload(candidatePayload)) {
-      out.push(
-        candidatePayload.functionCallItem,
-        {
-          type: 'function_call_output',
-          call_id: candidatePayload.functionCallItem.call_id,
-          output: renderWebSearchCallOutput(candidatePayload.ir),
-        },
-      );
-      continue;
-    }
-
-    if (item.action === undefined) {
-      const callId = synthesizeReplayCallId();
-      // Truncate the wire dump so a deeply-nested or large prior item
-      // doesn't blow the upstream context window via a multi-kilobyte
-      // function_call_output. The model still sees enough to recognize
-      // the malformed shape.
-      const wireDump = truncatePreservingCodePoints(JSON.stringify(item), MAX_MALFORMED_WIRE_DUMP_CHARS);
-      out.push(
-        {
-          type: 'function_call',
-          call_id: callId,
-          name: toolName,
-          arguments: '{}',
-          status: 'completed',
-        },
-        {
-          type: 'function_call_output',
-          call_id: callId,
-          output: `A prior web_search_call item in the conversation history was malformed (no \`action\` field). Original wire item: ${wireDump}`,
-        },
-      );
-      continue;
-    }
-
-    const callId = synthesizeReplayCallId();
-    out.push(
-      {
-        type: 'function_call',
-        call_id: callId,
-        name: toolName,
-        arguments: actionToShimCallArgsJson(item.action),
-        status: 'completed',
-      },
-      {
-        type: 'function_call_output',
-        call_id: callId,
-        // See path 2 in the function docstring above for why the wire
-        // `item.results` is ignored.
-        output: 'Prior search results were not preserved in the conversation history. Call web_search again if you need them.',
-      },
-    );
+// Signed replay data retains results independently of include. Foreign
+// items without that data cannot supply the original model-facing result.
+export const expandWebSearchCall = (
+  item: OpenAIResponsesInputWebSearchCall,
+  replay?: { data: unknown },
+): ServerToolHistoryExpansion => {
+  if (replay !== undefined) {
+    if (!isWebSearchReplayIr(replay.data)) throw new TypeError('Invalid web search replay data');
+    if (isEqual(replay.data.action, item.action)) return { callSource: 'replay', output: renderWebSearchCallOutput(replay.data) };
   }
-  return out;
+
+  if (item.action === undefined) {
+    const callId = synthesizeReplayCallId();
+    // Truncate the wire dump so a deeply-nested or large prior item
+    // doesn't blow the upstream context window via a multi-kilobyte
+    // function_call_output. The model still sees enough to recognize
+    // the malformed shape.
+    const wireDump = truncatePreservingCodePoints(JSON.stringify(item), MAX_MALFORMED_WIRE_DUMP_CHARS);
+    return {
+      callSource: 'synthesized',
+      synthesizedCall: { callId, arguments: '{}' },
+      output: `A prior web_search_call item in the conversation history was malformed (no \`action\` field). Original wire item: ${wireDump}`,
+    };
+  }
+
+  const callId = synthesizeReplayCallId();
+  return {
+    callSource: 'synthesized',
+    synthesizedCall: { callId, arguments: actionToShimCallArgsJson(item.action) },
+    output: 'Prior search results were not preserved in the conversation history. Call web_search again if you need them.',
+  };
 };
 
 // The shim's execution session plus the one wire-shaping flag that lives
@@ -585,8 +485,7 @@ interface ShimState extends WebSearchExecutionSession {
   // Set when the client passed `include: ["web_search_call.results"]` on
   // the request. Native OpenAI Responses gates the `results` field on this
   // include token; the shim follows suit on the wire item — but the IR
-  // (and therefore `payload.private`) always carries the real results
-  // so a subsequent turn echoing the item id can be hydrated regardless.
+  // replay data always carries the real results, regardless of include.
   includeSearchResults: boolean;
   executeAlpha?: (commands: Record<string, unknown>, action: OpenAIResponsesWebSearchAction) => Promise<WebSearchCallIR>;
 }
@@ -779,37 +678,28 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
   return {
     type: 'active',
     baseToolName: SHIM_TOOL_NAME,
-    transformItems: (items, toolName) => transformInputItemsForWebSearch(items, toolName, id => gatewayCtx.store.getPrivatePayload(id)),
+    expandHistoryItem: (item, replayData) => item.type === 'web_search_call'
+      ? expandWebSearchCall(item, replayData)
+      : undefined,
     ...(hasHostedWebSearch
       ? {
           hosted: {
             hostedTypes: WEB_SEARCH_HOSTED_TYPE_NAMES,
-            canonicalize: canonicalizeWebSearchTool,
+            recognizeHostedTool: recognizeWebSearchTool,
             buildFunctionTool: buildShimFunctionTool,
             dispatcher: ({ intercepted, loopState }) => {
-              const commands = intercepted.arguments ?? {};
+              const commands = intercepted.parsedArguments ?? {};
               const responseLength = isSearchResponseLength(commands.response_length)
                 ? commands.response_length
                 : undefined;
               const slot = planShimSlots(
-                parseWebSearchOperations(intercepted.arguments),
+                parseWebSearchOperations(intercepted.parsedArguments),
                 commands,
-                intercepted.name,
+                intercepted.functionCall.name,
                 state,
                 loopState,
                 responseLength,
               );
-              const functionCallItem: OpenAIResponsesFunctionToolCallItemEx = {
-                type: 'function_call',
-                call_id: intercepted.callId,
-                name: intercepted.name,
-                // Serialize the post-jsonrepair parsed object rather than
-                // re-using the upstream's raw `arguments` string (which
-                // might be malformed); `{}` is the safe fallback when
-                // jsonrepair couldn't even produce an object.
-                arguments: JSON.stringify(intercepted.arguments ?? {}),
-                status: 'completed',
-              };
               return [{
                 id: slot.id,
                 startItem: { type: 'web_search_call', status: 'in_progress' },
@@ -822,19 +712,14 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
                   // `results` is gated on the client's `include`
                   // opt-in to match native OpenAI Responses' default wire
                   // shape; the IR keeps them either way for the
-                  // private-payload round-trip.
+                  // replay data.
                   const item: ServerToolOutputItem & Omit<OpenAIResponsesOutputWebSearchCall, 'id'> = state.includeSearchResults
                     ? { type: 'web_search_call', status: 'completed', action: ir.action, results: ir.results }
                     : { type: 'web_search_call', status: 'completed', action: ir.action };
-                  const privatePayload: WebSearchCallPrivatePayload = {
-                    v: 1,
-                    functionCallItem,
-                    ir,
-                  };
                   return {
                     item,
                     endEvents: [{ type: 'response.web_search_call.completed' }],
-                    privatePayload,
+                    replayData: ir,
                   };
                 },
               }];

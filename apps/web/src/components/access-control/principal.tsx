@@ -22,7 +22,7 @@ export function PrincipalIdentity({ data, principal }: { data: ScopeExpressionDa
     return group ? <GroupIdentity group={group} /> : <span className="floway-identity text-fui-fg2"><PeopleRegular />{t('dashboard.accessControl.scope.unknown', { id: String(principal.id) })}</span>;
   }
   const user = data.users.find(user => user.id === principal.id);
-  return user ? <UserIdentity username={user.username} /> : <span className="floway-identity text-fui-fg2"><PersonRegular />{t('dashboard.accessControl.scope.unknown', { id: String(principal.id) })}</span>;
+  return user ? <UserIdentity isAdmin={user.isAdmin} username={user.username} /> : <span className="floway-identity text-fui-fg2"><PersonRegular />{t('dashboard.accessControl.scope.unknown', { id: String(principal.id) })}</span>;
 }
 
 export function PrincipalPicker({ clearable = false, data, disabled = false, includeAll = false, label, onChange, value }: {

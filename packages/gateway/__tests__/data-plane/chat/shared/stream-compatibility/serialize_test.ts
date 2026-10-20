@@ -51,6 +51,15 @@ test('late thinking signature and stop target their original block before the fo
   expect(await collect(serializeAnthropicMessagesStream(frames(source), true))).toEqual([thinking, signature, stop(0), start(1), delta(1, 'answer'), stop(1)]);
 });
 
+test('sidecar crosses an open final block only when item serialization is disabled', async () => {
+  const sidecar = eventFrame({ type: 'content_block_start', index: 1, content_block: { type: 'redacted_thinking', data: 'sidecar' } } as AnthropicMessagesStreamEventEx);
+  const source = [start(0), delta(0, 'answer'), sidecar, stop(1), stop(0)];
+  expect(await collect(serializeAnthropicMessagesStream(frames(source), false))).toEqual(source);
+  expect(await collect(serializeAnthropicMessagesStream(frames(source), true))).toEqual([
+    start(0), delta(0, 'answer'), stop(0), sidecar, stop(1),
+  ]);
+});
+
 test('errors discard withheld items and upstream failures retain the original error object', async () => {
   const error = eventFrame({ type: 'error', error: { type: 'overloaded_error', message: 'failed' } } as AnthropicMessagesStreamEventEx);
   expect(await collect(serializeAnthropicMessagesStream(frames([start(0), start(1), error]), true))).toEqual([start(0), error]);

@@ -2,7 +2,7 @@ import { CubeRegular, MoreHorizontal16Regular, PeopleRegular, PersonRegular, Tex
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentProps, ReactNode, Ref, RefObject } from 'react';
 
-import type { ControlPlaneGroup, ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../../api/types';
+import type { ControlPlaneModel, PermissionsGroup, PermissionsUser, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { type TFunction, useTranslation } from '../../i18n/translation';
 import { GroupIdentity } from '../groups/identity';
@@ -32,10 +32,10 @@ const useStyles = makeStyles({
 });
 
 export interface ScopeExpressionData {
-  groups: ControlPlaneGroup[];
+  groups: PermissionsGroup[];
   models: ControlPlaneModel[];
   upstreams: UpstreamOption[];
-  users: ControlPlaneUser[];
+  users: PermissionsUser[];
 }
 
 export function ScopeEditor(props: Omit<ComponentProps<typeof ScopeExpression>, 'framed'>) {
@@ -370,7 +370,7 @@ const optionsFor = (
     }
   } else if (active === 'instance' && kind === 'user') {
     for (const user of data.users) {
-      add({ key: String(user.id), value: String(user.id), text: user.username, content: <UserIdentity username={user.username} /> }, user.username.toLowerCase().includes(needle));
+      add({ key: String(user.id), value: String(user.id), text: user.username, content: <UserIdentity isAdmin={user.isAdmin} username={user.username} /> }, user.username.toLowerCase().includes(needle));
     }
   } else if (active === 'instance' && kind === 'group') {
     for (const group of data.groups) {
@@ -416,7 +416,7 @@ function InstancePart({ data, kind, t, value }: {
   if (kind === 'user' && value?.kind === 'user') {
     const user = data.users.find(candidate => candidate.id === value.userId);
     return user
-      ? <PartToken><UserIdentity username={user.username} /></PartToken>
+      ? <PartToken><UserIdentity isAdmin={user.isAdmin} username={user.username} /></PartToken>
       : <UnknownPart description={t('dashboard.accessControl.scope.unknownUserId', { id: String(value.userId) })} icon={<PersonRegular />} />;
   }
   if (kind === 'group' && value?.kind === 'group') {

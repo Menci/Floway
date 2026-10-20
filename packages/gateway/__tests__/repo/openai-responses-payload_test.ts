@@ -9,7 +9,6 @@ import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 
 const payload = (content: string) => ({
   item: { type: 'message', id: 'msg_payload', role: 'assistant', content },
-  private: { search: ['one', 'two'] },
 });
 
 const largeContent = (): string => Array.from({ length: 4_096 }, () => crypto.randomUUID()).join('');

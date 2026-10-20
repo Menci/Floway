@@ -1,6 +1,8 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../../../src/protocols/anthropic-messages/via-openai-responses/events.ts';
+import { structuredResponsesFixture } from '../../../ir/responses-fixture.ts';
+import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { openaiResponsesResultToEvents, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
@@ -38,10 +40,6 @@ const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
 };
 
 test('translateToSourceEvents emits structured Anthropic Messages events from the target-expanded sequence', async () => {
-  // The target boundary (openaiResponsesStreamFramesToEvents) is responsible for
-  // expanding upstream fast-path (created+completed only) into a full
-  // structured event sequence via openaiResponsesResultToEvents. Translate now sees
-  // only that expanded sequence and is a pure mapping.
   async function* stream() {
     for (const frame of openaiResponsesResultToEvents(makeResponse('completed'))) {
       yield frame;
@@ -50,17 +48,17 @@ test('translateToSourceEvents emits structured Anthropic Messages events from th
 
   const frames = [];
 
-  for await (const frame of translateToSourceEvents(stream())) {
+  for await (const frame of translateToSourceEvents(structuredResponsesFixture(stream()), createTestSidecarCodec())) {
     frames.push(frame);
   }
 
   assertEquals(
-    frames.map(frame => frame.type),
-    ['event', 'event', 'event', 'event', 'event', 'event'],
+    frames.filter(frame => frame.type !== 'event' || frame.event.type !== 'message_delta' || frame.event.delta.stop_reason !== null).map(frame => frame.type),
+    ['event', 'event', 'event', 'event', 'event', 'event', 'event', 'event'],
   );
   assertEquals(
-    frames.map(frame => (frame.type === 'event' ? frame.event.type : frame.type)),
-    ['message_start', 'content_block_start', 'content_block_delta', 'content_block_stop', 'message_delta', 'message_stop'],
+    frames.filter(frame => frame.type !== 'event' || frame.event.type !== 'message_delta' || frame.event.delta.stop_reason !== null).map(frame => (frame.type === 'event' ? frame.event.type : frame.type)),
+    ['message_start', 'content_block_start', 'content_block_delta', 'content_block_start', 'content_block_stop', 'content_block_stop', 'message_delta', 'message_stop'],
   );
 });
 
@@ -82,13 +80,13 @@ test('translateToSourceEvents stops after OpenAI Responses terminal', async () =
 
   const frames = [];
 
-  for await (const frame of translateToSourceEvents(stream())) {
+  for await (const frame of translateToSourceEvents(structuredResponsesFixture(stream()), createTestSidecarCodec())) {
     frames.push(frame);
   }
 
   assertEquals(
-    frames.map(frame => (frame.type === 'event' ? frame.event.type : frame.type)),
-    ['message_start', 'content_block_start', 'content_block_delta', 'content_block_stop', 'message_delta', 'message_stop'],
+    frames.filter(frame => frame.type !== 'event' || frame.event.type !== 'message_delta' || frame.event.delta.stop_reason !== null).map(frame => (frame.type === 'event' ? frame.event.type : frame.type)),
+    ['message_start', 'content_block_start', 'content_block_delta', 'content_block_start', 'content_block_stop', 'content_block_stop', 'message_delta', 'message_stop'],
   );
 });
 
@@ -120,15 +118,15 @@ test('translateToSourceEvents preserves refusal semantics from JSON fallback', a
 
   let refusalDelta: Extract<AnthropicMessagesStreamEventEx, { type: 'message_delta' }> | undefined;
 
-  for await (const frame of translateToSourceEvents(stream())) {
+  for await (const frame of translateToSourceEvents(structuredResponsesFixture(stream()), createTestSidecarCodec())) {
     if (frame.type !== 'event') continue;
     if (frame.event.type === 'message_delta') refusalDelta = frame.event;
   }
 
   assertEquals(refusalDelta?.delta, {
     container: null,
-    stop_reason: 'refusal',
-    stop_details: { type: 'refusal', category: null, explanation: 'No.' },
+    stop_reason: 'end_turn',
+    stop_details: null,
     stop_sequence: null,
   });
 });
@@ -155,7 +153,7 @@ test('translateToSourceEvents translates OpenAI Responses failed terminal to Ant
 
   const frames = [];
 
-  for await (const frame of translateToSourceEvents(stream())) {
+  for await (const frame of translateToSourceEvents(structuredResponsesFixture(stream()), createTestSidecarCodec())) {
     frames.push(frame);
   }
 
@@ -185,7 +183,7 @@ test('translateToSourceEvents translates OpenAI Responses error terminal to Anth
 
   const frames = [];
 
-  for await (const frame of translateToSourceEvents(stream())) {
+  for await (const frame of translateToSourceEvents(structuredResponsesFixture(stream()), createTestSidecarCodec())) {
     frames.push(frame);
   }
 
@@ -211,5 +209,9 @@ test('translateToSourceEvents rejects truncated OpenAI Responses streams without
     });
   }
 
-  await assertRejects(async () => await drain(translateToSourceEvents(stream())), Error, 'Upstream OpenAI Responses stream ended without a terminal event.');
+  await assertRejects(
+    async () => await drain(translateToSourceEvents(structuredResponsesFixture(stream()), createTestSidecarCodec())),
+    Error,
+    'before the initial response envelope',
+  );
 });

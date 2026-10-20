@@ -6,7 +6,9 @@ import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx } fr
 
 export const translate: TranslateTrip<
   GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent, CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx
-> = async (src, ctx) => ({
-  target: buildTargetRequest(src, ctx.model),
-  events: translateToSourceEvents,
-});
+> = async (src, ctx) => {
+  return {
+    target: await buildTargetRequest(src, ctx.model, ctx.sidecarCodec),
+    events: frames => translateToSourceEvents(frames, ctx.sidecarCodec),
+  };
+};

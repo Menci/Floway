@@ -200,7 +200,9 @@ export type AnthropicMessagesStreamEventEx =
   | AnthropicMessagesErrorEventEx;
 export interface AnthropicMessagesMessageStartEvent {
   type: 'message_start';
-  message: Omit<AnthropicMessagesResult, 'content' | 'stop_reason' | 'stop_sequence'> & {
+  // Request diagnostics are `null` unless the request supplied them, so a stream that reports none may omit the field.
+  // https://github.com/anthropics/anthropic-sdk-typescript/blob/d49bdab458000bcdffe77bd84b03293f31824fb3/src/resources/messages/messages.ts#L2559-L2563
+  message: Omit<AnthropicMessagesResult, 'content' | 'stop_reason' | 'stop_sequence' | 'diagnostics'> & Partial<Pick<AnthropicMessagesResult, 'diagnostics'>> & {
     content: [];
     stop_reason: null;
     stop_sequence: null;
@@ -274,6 +276,6 @@ export { parseAnthropicBetaHeader } from './beta-header.ts';
 
 export { ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE, collectAnthropicMessagesProtocolEventsToResult } from './to-result.ts';
 export { generateAnthropicId } from './id.ts';
-export { reassembleAnthropicMessagesEvents } from './reassemble.ts';
+export { createAnthropicMessagesEventAccumulator, reassembleAnthropicMessagesEvents, type AnthropicMessagesEventAccumulator } from './reassemble.ts';
 export { anthropicMessagesProtocolFrameToSSEFrame } from './to-sse.ts';
 export { PROMPT_TOO_LONG_MESSAGE, buildPromptTooLongBody } from './context-window-error.ts';

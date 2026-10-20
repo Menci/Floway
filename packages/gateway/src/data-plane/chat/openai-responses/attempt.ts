@@ -14,6 +14,7 @@ import { applyRulesToUpstreamOpenAIResponses } from '../shared/alias-rules.ts';
 import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { providerStreamResultToExecuteResult } from '../shared/provider-stream-result.ts';
+import { SidecarDomain } from '../shared/sidecar-codec.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { captureFromDump, traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -37,13 +38,7 @@ interface OpenAIResponsesAttemptBaseArgs {
   readonly headers: Headers;
 }
 
-interface OpenAIResponsesSourceState {
-  readonly privatePayloads: ReadonlyMap<string, unknown>;
-}
-
-export type OpenAIResponsesAttemptInvokeArgs = OpenAIResponsesAttemptBaseArgs & {
-  readonly sourceState?: OpenAIResponsesSourceState;
-};
+export type OpenAIResponsesAttemptInvokeArgs = OpenAIResponsesAttemptBaseArgs;
 type OpenAIResponsesAttemptGenerateArgs = Omit<OpenAIResponsesAttemptInvokeArgs, 'action'>;
 
 // Single entry point for both `action: 'generate'` and `action: 'compact'`.
@@ -75,7 +70,7 @@ type OpenAIResponsesAttemptGenerateArgs = Omit<OpenAIResponsesAttemptInvokeArgs,
 //
 // OpenAI Responses state and client affinity both belong to the native source edge,
 // outside this candidate attempt. Native serve passes the already-hydrated
-// candidate payload plus any private source state; translated inner OpenAI Responses
+// candidate payload; translated inner OpenAI Responses
 // calls pass only their translated payload. Keeping this function free of
 // affinity decoding, state hydration, and persistence
 // prevents an inner OpenAI Responses target from owning another source protocol's
@@ -86,7 +81,6 @@ export const openaiResponsesAttempt = {
     const headers = new Headers(sourceHeaders);
     const targetApi = openaiResponsesTarget.pick(candidate.model.endpoints);
     const payload = { ...klona(args.payload), model: candidate.model.id };
-    ctx.store.beginAttempt(args.sourceState?.privatePayloads ?? new Map());
     // Copilot compaction and Azure-native compaction both emit assistant
     // messages whose content blocks have `type: 'input_text'`, then refuse
     // the same items echoed back as input on the next turn. Normalising
@@ -178,6 +172,7 @@ const dispatchOpenAIResponses = async (
       invocation.payload,
       p => routeOpenAIResponses(p).viaAnthropicMessages({
         model: candidate.model.id,
+        sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
         loadRemoteImage: createExternalImageLoader(ctx.abortSignal),
       }),
@@ -192,7 +187,7 @@ const dispatchOpenAIResponses = async (
     }
     return await traverseTranslation(
       invocation.payload,
-      p => routeOpenAIResponses(p).viaOpenAIChatCompletions({ model: candidate.model.id }),
+      p => routeOpenAIResponses(p).viaOpenAIChatCompletions({ model: candidate.model.id, sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
       translated => openaiChatCompletionsAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
       }),

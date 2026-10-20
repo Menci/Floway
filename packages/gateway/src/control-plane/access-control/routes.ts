@@ -42,9 +42,16 @@ const projectPermissionDirectory = async (context: PermissionAuditContext, recor
       else if (record.scope.kind === 'group') renderGroupIds.add(record.scope.groupId);
     }
   }
+  // The permissions workspace reasons about a group's members, while the
+  // user directory publishes flat memberships so it can also carry join times.
+  const memberIdsByGroup = new Map(context.directory.groups.map(group => [group.id, [] as number[]]));
+  for (const membership of context.directory.memberships) memberIdsByGroup.get(membership.groupId)!.push(membership.userId);
   const groups = context.directory.groups
     .filter(group => renderGroupIds.has(group.id))
-    .map(group => ({ ...group, memberIds: admin ? group.memberIds : group.memberIds.filter(userId => context.userIds.has(userId)) }));
+    .map(group => ({
+      ...group,
+      memberIds: admin ? memberIdsByGroup.get(group.id)! : memberIdsByGroup.get(group.id)!.filter(userId => context.userIds.has(userId)),
+    }));
   const groupIdsByUser = new Map([...renderUserIds].map(userId => [userId, [] as number[]]));
   for (const group of groups) for (const userId of group.memberIds) groupIdsByUser.get(userId)!.push(group.id);
   const preferenceRows = await getRepo().userPreferences.listAll();

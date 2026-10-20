@@ -21,17 +21,21 @@ export const userToSessionWire = (
   ...capabilities,
 });
 
-// Admin listings describe accounts, not the caller's own capabilities, so they
+// Directory rows describe an account, not the caller's capabilities, so they
 // carry no session surface flags.
+export const userToDirectoryWire = (user: User, preferences: UserPreferences) => ({
+  id: user.id,
+  username: user.username,
+  isAdmin: user.isAdmin,
+  preferences,
+  createdAt: user.createdAt,
+});
+
 export const userToAdminWire = (
   user: User,
   groupIds: readonly number[],
   preferences: UserPreferences,
 ) => ({
-  id: user.id,
-  username: user.username,
-  isAdmin: user.isAdmin,
-  preferences,
+  ...userToDirectoryWire(user, preferences),
   groupIds,
-  createdAt: user.createdAt,
 });

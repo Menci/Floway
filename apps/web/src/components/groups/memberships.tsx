@@ -16,7 +16,7 @@ const useStyles = makeStyles({
   measurement: { position: 'absolute', visibility: 'hidden', pointerEvents: 'none', display: 'flex', width: 'max-content', top: 0, left: 0 },
 });
 
-export function GroupMemberships({ groups }: { groups: ControlPlaneGroup[] }) {
+export function GroupMemberships({ groups }: { groups: readonly ControlPlaneGroup[] }) {
   const { t } = useTranslation();
   const styles = useStyles();
   const container = useRef<HTMLDivElement>(null);

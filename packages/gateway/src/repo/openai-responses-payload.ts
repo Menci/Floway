@@ -143,7 +143,6 @@ const parseDescriptor = (id: string, raw: string): StoredOpenAIResponsesPayloadJ
 const assertPayloadObject = (id: string, value: unknown): StoredOpenAIResponsesItemPayload => {
   if (!isRecord(value) || !Object.hasOwn(value, 'item')) throw new Error(`Invalid stored OpenAI Responses payload for id=${id}`);
   const payload: StoredOpenAIResponsesItemPayload = { item: value.item };
-  if (Object.hasOwn(value, 'private')) payload.private = value.private;
   return payload;
 };
 

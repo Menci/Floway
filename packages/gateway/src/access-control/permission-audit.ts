@@ -12,6 +12,8 @@ export interface PermissionAuditContext {
 export const loadPermissionAuditContext = async (subject: User): Promise<PermissionAuditContext> => {
   const repo = getRepo();
   const directory = await repo.readUserDirectory();
+  const memberIdsByGroup = new Map(directory.groups.map(group => [group.id, [] as number[]]));
+  for (const membership of directory.memberships) memberIdsByGroup.get(membership.groupId)!.push(membership.userId);
   if (subject.isAdmin) {
     const groupIds = new Set(directory.groups.map(group => group.id));
     return {
@@ -21,7 +23,7 @@ export const loadPermissionAuditContext = async (subject: User): Promise<Permiss
     };
   }
 
-  const subjectGroupIds = directory.groups.filter(group => group.memberIds.includes(subject.id)).map(group => group.id);
+  const subjectGroupIds = directory.groups.filter(group => memberIdsByGroup.get(group.id)!.includes(subject.id)).map(group => group.id);
   const principals: AccessPrincipal[] = [
     { kind: 'user', id: subject.id },
     ...subjectGroupIds.map(id => ({ kind: 'group' as const, id })),
@@ -42,7 +44,7 @@ export const loadPermissionAuditContext = async (subject: User): Promise<Permiss
   // the user's effective permissions, so the group itself becomes auditable.
   const groupIds = new Set([
     ...directlyAuditedGroupIds,
-    ...directory.groups.filter(group => group.memberIds.some(userId => userIds.has(userId))).map(group => group.id),
+    ...directory.groups.filter(group => memberIdsByGroup.get(group.id)!.some(userId => userIds.has(userId))).map(group => group.id),
   ]);
   return { directory, userIds, groupIds };
 };

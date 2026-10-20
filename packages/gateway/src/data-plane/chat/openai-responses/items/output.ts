@@ -28,14 +28,10 @@ export const wrapOpenAIResponsesClientOutput = async function* (
   const finalizedRow = async (item: OpenAIResponsesOutputItemEx): Promise<StoredOpenAIResponsesItem> => {
     const id = openaiResponsesItemId(item);
     if (id === null) throw new TypeError(`OpenAI Responses ${item.type} output has no id`);
-    const privatePayload = store.getPrivatePayload(id);
     const row: StoredOpenAIResponsesItem = {
       id,
       apiKeyId: store.apiKeyId,
-      payload: {
-        item,
-        ...(privatePayload !== undefined ? { private: privatePayload } : {}),
-      },
+      payload: { item },
       itemHash: await hashOpenAIResponsesItem(item),
       refreshedAt: Date.now(),
     };

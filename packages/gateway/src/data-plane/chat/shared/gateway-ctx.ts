@@ -1,19 +1,20 @@
 import { AffinityRequestContext } from './affinity/index.ts';
+import { createSidecarCodecFactory, type SidecarCodecFactory } from './sidecar-codec.ts';
 import { apiKeyFromContext, type AuthedContext } from '../../../middleware/auth.ts';
 import type { ApiKey } from '../../../repo/types.ts';
 import { createGatewayCtxFromHono, type CreateGatewayCtxOptions, type GatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { OpenAIResponsesStatefulStore } from '../openai-responses/items/store.ts';
 
-// Chat-protocol ctx adds the affinity membrane and the OpenAI Responses item store.
+// Chat-protocol ctx adds affinity, signed sidecars, and the OpenAI Responses item store.
 // The store is present on every chat ctx: native OpenAI Responses entries supply a
-// persisting factory, non-OpenAI-Responses sources a no-backing scratchpad store, so
-// the server-tool shim's request-private state always has a home. Every chat
+// persisting factory, non-OpenAI-Responses sources a no-backing store. Every chat
 // HTTP/WS entry constructs this via `createChatGatewayCtxFromHono` and threads
 // it through serve → narrow → attempt. Passthrough endpoints (OpenAI
 // Embeddings / OpenAI Images / OpenAI Audio Transcriptions / OpenAI
 // Completions) have no stored-items concept and stay on plain `GatewayCtx`.
 export interface ChatGatewayCtx extends GatewayCtx {
   readonly affinity: AffinityRequestContext;
+  readonly sidecarCodecFactory: SidecarCodecFactory;
   readonly store: OpenAIResponsesStatefulStore;
 }
 
@@ -27,9 +28,11 @@ export const createChatGatewayCtxFromHono = (
   storeFactory: (apiKey: ApiKey, requestStartedAt: number) => OpenAIResponsesStatefulStore,
 ): ChatGatewayCtx => {
   const base = createGatewayCtxFromHono(c, opts);
+  const apiKey = apiKeyFromContext(c);
   return {
     ...base,
-    affinity: new AffinityRequestContext(apiKeyFromContext(c).serverSecret),
-    store: storeFactory(apiKeyFromContext(c), base.requestStartedAt),
+    affinity: new AffinityRequestContext(apiKey.serverSecret),
+    sidecarCodecFactory: createSidecarCodecFactory(apiKey.serverSecret),
+    store: storeFactory(apiKey, base.requestStartedAt),
   };
 };

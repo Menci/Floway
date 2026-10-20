@@ -6,7 +6,7 @@ import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload } f
 
 export const translate: TranslateTrip<
   GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent
-> = async (src, ctx) => ({
-  target: buildTargetRequest(src, ctx.model),
-  events: translateToSourceEvents,
-});
+> = async (src, ctx) => {
+  const target = await buildTargetRequest(src, ctx.model, ctx.sidecarCodec);
+  return { target, events: frames => translateToSourceEvents(frames, ctx.sidecarCodec, target.n ?? 1) };
+};

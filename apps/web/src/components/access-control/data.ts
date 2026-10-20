@@ -1,10 +1,10 @@
 import { api, callApi } from '../../api/client';
 import { mapResult, mergeResults } from '../../api/partial-results';
-import type { AccessRecord, ControlPlaneModel, ControlPlaneUserDirectory, UpstreamOption } from '../../api/types';
+import type { AccessRecord, ControlPlaneModel, PermissionsDirectory, UpstreamOption } from '../../api/types';
 
 export interface PermissionsData {
   records: AccessRecord[] | null;
-  directory: ControlPlaneUserDirectory | null;
+  directory: PermissionsDirectory | null;
   models: ControlPlaneModel[] | null;
   upstreams: UpstreamOption[] | null;
   error: string | null;

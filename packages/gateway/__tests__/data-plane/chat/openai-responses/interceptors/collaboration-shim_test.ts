@@ -493,7 +493,7 @@ test('keeps the namespace across an actual hosted-tool loop and restores only th
   const serverShim = withOpenAIResponsesServerToolShim([() => ({
     type: 'active', baseToolName: 'search', hosted: {
       hostedTypes: ['web_search'],
-      canonicalize: tool => tool.type === 'web_search' ? tool : undefined,
+      recognizeHostedTool: tool => tool.type === 'web_search' ? tool : undefined,
       buildFunctionTool: (_tool, name) => ({ type: 'function', name, parameters: { type: 'object' } }),
       dispatcher: () => [{
         id: 'msg_search',

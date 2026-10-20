@@ -1,4 +1,7 @@
+import { isEqual } from 'es-toolkit';
+
 import type { User } from '../../../../../repo/types.ts';
+
 import { sleep } from '../../../../../shared/sleep.ts';
 import { enumerateModelCandidates } from '../../../../providers/resolution.ts';
 import { stampUpstreamCallStart } from '../../../../shared/attempt-timing.ts';
@@ -7,15 +10,13 @@ import type { AttemptState } from '../../../../shared/gateway-ctx.ts';
 import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromOpenAIImagesBody } from '../../../../shared/telemetry/usage.ts';
 import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-loader.ts';
-import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
+import type { ServerToolHistoryExpansion, ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolSlotResult } from '../server-tool-shim.ts';
 import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
-import { decodeForgivingBase64, encodeHex, isImageMediaType, mediaTypeEssence, parseSSEStream } from '@floway-dev/protocols/common';
+import { decodeForgivingBase64, encodeHex, isImageMediaType, isJsonObject, mediaTypeEssence, parseSSEStream } from '@floway-dev/protocols/common';
 import {
   collectOpenAIResponsesToolEntries,
   createRandomOpenAIResponsesItemId,
-  type OpenAIResponsesFunctionCallOutputItem,
   type OpenAIResponsesFunctionTool,
-  type OpenAIResponsesFunctionToolCallItemEx,
   type OpenAIResponsesHostedTool,
   type OpenAIResponsesInputImage,
   type OpenAIResponsesInputImageGenerationCall,
@@ -96,7 +97,7 @@ export const isHostedImageGenerationTool = (tool: OpenAIResponsesTool): tool is 
 // (all `'auto'`) signal "backend decides" rather than concrete values
 // the model needs. Preserving the client's raw shape keeps the echo
 // round-trip minimal — anything the client didn't send stays absent.
-export const canonicalizeImageGenerationTool = (raw: OpenAIResponsesTool): OpenAIResponsesHostedTool | undefined =>
+export const recognizeImageGenerationTool = (raw: OpenAIResponsesTool): OpenAIResponsesHostedTool | undefined =>
   isHostedImageGenerationTool(raw) ? raw : undefined;
 
 // A base64-data-URL or bare-base64 image source bound for an edit call.
@@ -1152,6 +1153,15 @@ const consumeImageResponse = async (
   return { ok: true, b64, echo: extractEcho(parsed) };
 };
 
+const imageReplayInputs = (item: Pick<OpenAIResponsesInputImageGenerationCall, 'action' | 'revised_prompt' | 'size' | 'quality' | 'output_format' | 'background'>) => ({
+  action: item.action,
+  revised_prompt: item.revised_prompt,
+  size: item.size,
+  quality: item.quality,
+  output_format: item.output_format,
+  background: item.background,
+});
+
 // Build the completed/failed `image_generation_call` output item plus its
 // closing events. On success the final bytes ride `output_item.done.item.result`
 // and a `response.image_generation_call.completed` closes the item; on failure
@@ -1167,7 +1177,7 @@ export const imageTerminal = (
   prompt: string,
   action: 'generate' | 'edit',
   outcome: ImageOutcome,
-): ServerToolTerminal => {
+): ServerToolSlotResult => {
   if (!outcome.ok) {
     const item: ServerToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCallEx, 'id'> = {
       type: 'image_generation_call',
@@ -1176,7 +1186,7 @@ export const imageTerminal = (
       revised_prompt: prompt,
       error: { message: outcome.error.message, code: outcome.error.code, type: outcome.error.type },
     };
-    return { item, endEvents: [] };
+    return { item, endEvents: [], replayData: imageReplayInputs(item) };
   }
 
   const item: ServerToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCallEx, 'id'> = {
@@ -1187,7 +1197,7 @@ export const imageTerminal = (
     revised_prompt: prompt,
     ...outcome.echo,
   };
-  return { item, endEvents: [{ type: 'response.image_generation_call.completed' }] };
+  return { item, endEvents: [{ type: 'response.image_generation_call.completed' }], replayData: imageReplayInputs(item) };
 };
 
 // One standalone-images SSE data line, folded into a backend-agnostic signal.
@@ -1248,7 +1258,7 @@ const streamImageGeneration = (
   isEdit: boolean,
   sources: readonly ImageSource[],
   state: ShimState,
-) => async function* (): AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal> {
+) => async function* (): AsyncGenerator<ServerToolLifecycleEvent, ServerToolSlotResult> {
   const resolved = await resolveImageCandidate(isEdit, state);
   if (!resolved.ok) return imageTerminal(prompt, action, { ok: false, error: resolved.error });
   const { provider, fetcher } = resolved.candidate;
@@ -1263,7 +1273,7 @@ const streamImageGeneration = (
     operation: isEdit ? 'image_edit' : 'image_generation',
     runtimeLocation: state.runtimeLocation,
   };
-  const finish = (outcome: ImageOutcome): ServerToolTerminal => {
+  const finish = (outcome: ImageOutcome): ServerToolSlotResult => {
     recordPerformance({ attempt, backgroundScheduler: state.backgroundScheduler }, perfContext, !outcome.ok, 0, performance.now());
     return imageTerminal(prompt, action, outcome);
   };
@@ -1326,79 +1336,50 @@ const streamImageGeneration = (
   return finish({ ok: true, b64: finalB64, echo: finalEcho });
 };
 
-// Output-as-input round-trip: the multi-turn loop feeds accumulated
-// `image_generation_call` items back as the next turn's input, and client
-// histories may echo prior ones. Non-OpenAI-Responses upstreams can't read the item
-// type, so rewrite each into a `function_call` + `function_call_output` pair
-// so the orchestrator sees that it called the tool and what it returned. For
-// a successful call we additionally surface the generated bytes as an
-// `input_image` message, matching Azure's native flow where the image stays
-// in the orchestrator's multimodal context — so the model can describe or
-// iteratively edit what it just produced. The same bytes also reached the
-// downstream client on the synthesized `image_generation_call` item.
-//
-// Fidelity across requests: a client may echo a prior call back as a bare id
-// with the bytes dropped. By the time this seam runs the input item already
-// carries the full result payload — inspectImageSources can bind result bytes
-// directly without any out-of-band lookup. The `image_generation_call` shape
-// needs no out-of-band payload for this to be lossless: every field required
-// to rebuild the pair, INCLUDING the error (`status` + `error{message,code,
-// type}`), has a public home on the item.
-export const transformInputItemsForImageGeneration = (
-  input: CanonicalOpenAIResponsesInputItem[],
-  toolName: string,
-): CanonicalOpenAIResponsesInputItem[] => {
-  const out: CanonicalOpenAIResponsesInputItem[] = [];
-  for (const item of input) {
-    if (item.type !== 'image_generation_call') {
-      out.push(item);
-      continue;
-    }
-    const ig = item as OpenAIResponsesInputImageGenerationCall;
-    const id = ig.id !== undefined && ig.id.length > 0 ? ig.id : synthesizeImageGenerationCallId();
-    const callId = `cc_from_${id}`;
-    // Replay the full failure detail (code/message/retryable) the orchestrator
-    // needs to decide between retry, re-parameterize, and apology — a bare
-    // status would hide whether the failure was transient (EngineOverloaded)
-    // or terminal (content_filter).
-    const output = ig.status === 'failed'
-      ? JSON.stringify({
-          ok: false,
-          error: {
-            type: ig.error?.type ?? 'image_generation_error',
-            code: ig.error?.code ?? 'server_error',
-            message: ig.error?.message ?? 'Image generation failed.',
-            retryable: isRetryableImageError(ig.error?.code ?? '', ig.error?.type),
-          },
-        })
-      : JSON.stringify({ ok: true, status: 'completed', id });
-    const functionCall: OpenAIResponsesFunctionToolCallItemEx = {
-      type: 'function_call',
-      call_id: callId,
-      name: toolName,
-      arguments: JSON.stringify({ prompt: ig.revised_prompt ?? '' }),
-      status: 'completed',
-    };
-    const functionCallOutput: OpenAIResponsesFunctionCallOutputItem = {
-      type: 'function_call_output',
-      call_id: callId,
-      output,
-    };
-    out.push(functionCall, functionCallOutput);
+export const expandImageGenerationCall = (
+  item: OpenAIResponsesInputImageGenerationCall,
+  replay?: { data: unknown },
+): ServerToolHistoryExpansion => {
+  if (replay !== undefined && !isJsonObject(replay.data)) throw new TypeError('Invalid image generation replay data');
+  const id = item.id !== undefined && item.id.length > 0 ? item.id : synthesizeImageGenerationCallId();
+  // Replay the full failure detail (code/message/retryable) the orchestrator
+  // needs to decide between retry, re-parameterize, and apology — a bare
+  // status would hide whether the failure was transient (EngineOverloaded)
+  // or terminal (content_filter).
+  const output = item.status === 'failed'
+    ? JSON.stringify({
+        ok: false,
+        error: {
+          type: item.error?.type ?? 'image_generation_error',
+          code: item.error?.code ?? 'server_error',
+          message: item.error?.message ?? 'Image generation failed.',
+          retryable: isRetryableImageError(item.error?.code ?? '', item.error?.type),
+        },
+      })
+    : JSON.stringify({ ok: true, status: 'completed', id });
+  const feedback: ServerToolHistoryExpansion['feedback'] = [];
 
-    if (ig.status !== 'failed' && typeof ig.result === 'string' && ig.result.length > 0) {
-      const mime = ig.output_format === 'jpeg' ? 'image/jpeg' : 'image/png';
-      out.push({
-        type: 'message',
-        role: 'user',
-        content: [
-          { type: 'input_text', text: 'Generated image:' },
-          { type: 'input_image', image_url: `data:${mime};base64,${ig.result}`, detail: 'auto' },
-        ],
-      });
-    }
+  // Also provide vision input so subsequent turns can inspect or edit the image.
+  if (item.status !== 'failed' && typeof item.result === 'string' && item.result.length > 0) {
+    const mime = item.output_format === 'jpeg' ? 'image/jpeg' : 'image/png';
+    feedback.push({
+      type: 'message',
+      role: 'user',
+      content: [
+        { type: 'input_text', text: 'Generated image:' },
+        { type: 'input_image', image_url: `data:${mime};base64,${item.result}`, detail: 'auto' },
+      ],
+    });
   }
-  return out;
+  if (replay !== undefined && isEqual(replay.data, imageReplayInputs(item))) {
+    return { callSource: 'replay', output, feedback };
+  }
+  return {
+    callSource: 'synthesized',
+    synthesizedCall: { callId: `cc_from_${id}`, arguments: JSON.stringify({ prompt: item.revised_prompt ?? '' }) },
+    output,
+    feedback,
+  };
 };
 
 export const imageGenerationServerTool: ServerToolRegistration = async (invocation, gatewayCtx) => {
@@ -1411,6 +1392,9 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
   const hasHostedTool = tools.some(isHostedImageGenerationTool);
   const hasReplayInput = invocation.payload.input.some(i => i.type === 'image_generation_call');
   if (!hasHostedTool && !hasReplayInput) return { type: 'inactive' };
+  const expandHistoryItem = (item: CanonicalOpenAIResponsesInputItem, replay?: { data: unknown }) => item.type === 'image_generation_call'
+    ? expandImageGenerationCall(item, replay)
+    : undefined;
 
   if (!hasHostedTool) {
     // Replay-only activation: rewrite echoed image_generation_call items so
@@ -1418,7 +1402,7 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
     return {
       type: 'active',
       baseToolName: SHIM_TOOL_NAME,
-      transformItems: transformInputItemsForImageGeneration,
+      expandHistoryItem,
     };
   }
 
@@ -1500,14 +1484,14 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
   return {
     type: 'active',
     baseToolName: SHIM_TOOL_NAME,
-    transformItems: transformInputItemsForImageGeneration,
+    expandHistoryItem,
     hosted: {
       hostedTypes: ['image_generation'],
-      canonicalize: canonicalizeImageGenerationTool,
+      recognizeHostedTool: recognizeImageGenerationTool,
       buildFunctionTool: buildImageGenerationFunctionTool,
       dispatcher: ({ intercepted }) => {
-        const promptArg = intercepted.arguments !== null && typeof intercepted.arguments.prompt === 'string'
-          ? intercepted.arguments.prompt
+        const promptArg = intercepted.parsedArguments !== null && typeof intercepted.parsedArguments.prompt === 'string'
+          ? intercepted.parsedArguments.prompt
           : '';
         const id = synthesizeImageGenerationCallId();
         // Later ReAct turns include prior server-tool output in the live input.
@@ -1529,20 +1513,8 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
         // backend and replay an exhausted tool output so the model steers toward
         // a terminal answer. The exhausted item is a failure, so its `action`
         // field is unused.
-        if (state.imageDispatchCount >= IMAGE_ITERATION_CAP) {
-          return [{
-            id,
-            startItem: { type: 'image_generation_call', status: 'in_progress' },
-            startEvents: [{ type: 'response.image_generation_call.in_progress' }, { type: 'response.image_generation_call.generating' }],
-            async *run() {
-              return imageTerminal(promptArg, 'generate', {
-                ok: false,
-                error: { type: 'image_generation_error', code: 'tool_call_budget_exhausted', message: `Image generation budget (${IMAGE_ITERATION_CAP} attempts) reached for this response. Summarize and finish without another image.`, retryable: false },
-              });
-            },
-          }];
-        }
-        state.imageDispatchCount += 1;
+        const budgetExhausted = state.imageDispatchCount >= IMAGE_ITERATION_CAP;
+        if (!budgetExhausted) state.imageDispatchCount += 1;
 
         return [{
           id,
@@ -1551,13 +1523,14 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
             { type: 'response.image_generation_call.in_progress' },
             { type: 'response.image_generation_call.generating' },
           ],
-          run: streamImageGeneration(
-            promptArg,
-            operation.action,
-            operation.action === 'edit',
-            sources,
-            state,
-          ),
+          async *run() {
+            return budgetExhausted
+              ? imageTerminal(promptArg, 'generate', {
+                  ok: false,
+                  error: { type: 'image_generation_error', code: 'tool_call_budget_exhausted', message: `Image generation budget (${IMAGE_ITERATION_CAP} attempts) reached for this response. Summarize and finish without another image.`, retryable: false },
+                })
+              : yield* streamImageGeneration(promptArg, operation.action, operation.action === 'edit', sources, state)();
+          },
         }];
       },
     },

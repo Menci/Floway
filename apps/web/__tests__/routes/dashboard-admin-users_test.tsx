@@ -4,21 +4,26 @@ import { afterEach, expect, test, vi } from 'vitest';
 
 import type { ControlPlaneGroup, ControlPlaneUser } from '../../src/api/types';
 import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
+import { shortDate } from '../../src/lib/format-time';
 import DashboardAdminUsers, { shouldRevalidate } from '../../src/routes/dashboard-admin-users';
 import { renderInApp } from '../render';
 
 const groups: ControlPlaneGroup[] = [
-  { id: 1, name: 'Platform', hue: 210, memberIds: [1], createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
-  { id: 2, name: 'Research', hue: 150, memberIds: [1], createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
+  { id: 1, name: 'Platform', hue: 210, createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
+  { id: 2, name: 'Research', hue: 150, createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
 ];
-const user: ControlPlaneUser = { id: 1, username: 'frank', isAdmin: true, groupIds: [1, 2], createdAt: '2026-10-01T00:00:00Z', preferences: { quotaDisplay: 'remaining', language: null } };
-const loaderData = { directory: { users: [user], groups }, error: null };
+const user: ControlPlaneUser = { id: 1, username: 'frank', isAdmin: true, createdAt: '2026-10-01T00:00:00Z', preferences: { quotaDisplay: 'remaining', language: null } };
+const memberships = [
+  { groupId: 1, userId: 1, createdAt: '2026-10-10T09:30:00Z' },
+  { groupId: 2, userId: 1, createdAt: '2026-10-12T10:00:00Z' },
+];
+const loaderData = { directory: { users: [user], groups, memberships }, error: null };
 
 afterEach(() => vi.restoreAllMocks());
 
-const renderPage = (entry = '/dashboard/admin/users', data = loaderData) => {
+const renderPage = (entry = '/dashboard/admin/users', data = loaderData, availableWidth = 1000) => {
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-    return new DOMRect(0, 0, this.hasAttribute('data-measure-group') ? 100 : this.hasAttribute('data-measure-overflow') ? 24 : 1000, 24);
+    return new DOMRect(0, 0, this.hasAttribute('data-measure-group') ? 100 : this.hasAttribute('data-measure-overflow') ? 24 : availableWidth, 24);
   });
   const readStyle = window.getComputedStyle.bind(window);
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
@@ -81,7 +86,7 @@ test('retains the selected group when switching tabs', async () => {
 });
 
 test('clears the unavailable group address when no groups remain', async () => {
-  const { router } = renderPage('/dashboard/admin/users?tab=groups&group=2', { ...loaderData, directory: { users: [{ ...user, groupIds: [] }], groups: [] } });
+  const { router } = renderPage('/dashboard/admin/users?tab=groups&group=2', { ...loaderData, directory: { users: [user], groups: [], memberships: [] } });
   await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('group')).toBeNull());
   expect(screen.getByText('No groups found')).toBeTruthy();
 });
@@ -95,10 +100,8 @@ test('does not repeat an untruncated username on hover', async () => {
 });
 
 test('opens hidden group links from the overflow control', async () => {
-  const { router } = renderPage();
+  const { router } = renderPage('/dashboard/admin/users', loaderData, 80);
   await screen.findByRole('button', { name: 'frank' });
-  vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 20, 24));
-  fireEvent.change(screen.getByRole('textbox', { name: 'Search users' }), { target: { value: 'frank' } });
   const overflow = await screen.findByRole('button', { name: 'Show 2 more groups' });
   expect(overflow.querySelector('.floway-group-avatar[data-overflow-count="2"]')?.textContent).toBe('+2');
   expect(overflow.querySelector('.fui-Avatar')?.getAttribute('data-winui-avatar-color')).toBe('neutral');
@@ -132,12 +135,14 @@ test('retains the complete directory and edit membership when refreshing it fail
   expect(dialog.textContent).toContain('Research');
 });
 
-test('keeps the user table without creation metadata and locks every editor during refresh', async () => {
+test('keeps account dates visible and locks every editor during refresh', async () => {
   let finish!: (response: Response) => void;
   vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
   renderPage();
   const name = await screen.findByRole<HTMLButtonElement>('button', { name: 'frank' });
-  expect(screen.queryByRole('columnheader', { name: 'Created' })).toBeNull();
+  expect(screen.getByRole('columnheader', { name: 'Created' })).toBeTruthy();
+  expect(screen.queryByRole('columnheader', { name: 'Role' })).toBeNull();
+  expect(name.getAttribute('aria-description')).toBe('Administrator');
   const table = screen.getByRole('table');
   expect(screen.getAllByRole('columnheader').at(-1)?.textContent).toBe('');
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Refresh users and groups' })); });
@@ -161,7 +166,7 @@ test('changing groups discards an open member removal confirmation', async () =>
 
 test('refreshes both membership directions from the same directory response', async () => {
   const group = { ...groups[0], id: 3, name: 'New group' };
-  const updated = { users: [{ ...user, groupIds: [3] }], groups: [group] };
+  const updated = { users: [user], groups: [group], memberships: [{ ...memberships[0], groupId: 3 }] };
   vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
     const path = new URL(String(input), 'http://localhost').pathname;
     if (path === '/api/user-directory') return Response.json(updated);
@@ -180,7 +185,7 @@ test('refreshes both membership directions from the same directory response', as
 test('keeps an open user editor paired with the group metadata it was opened with', async () => {
   vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
     const path = new URL(String(input), 'http://localhost').pathname;
-    if (path === '/api/user-directory') return Response.json({ users: [{ ...user, groupIds: [] }], groups: [] });
+    if (path === '/api/user-directory') return Response.json({ users: [user], groups: [], memberships: [] });
     throw new Error(`Unexpected request: ${path}`);
   });
   renderPage();
@@ -193,4 +198,34 @@ test('keeps an open user editor paired with the group metadata it was opened wit
   await waitFor(() => expect(groupTab.querySelector('.proportional-nums')?.textContent).toBe('0'));
   expect(screen.getByRole('dialog').textContent).toContain('Platform');
   expect(screen.getByRole('dialog').textContent).toContain('Research');
+});
+
+test('shows account creation dates and an administrator icon beside the username', async () => {
+  const { container } = renderPage();
+  const name = await screen.findByRole('button', { name: 'frank' });
+  expect(screen.queryByRole('columnheader', { name: 'Role' })).toBeNull();
+  expect(screen.getByRole('columnheader', { name: 'Created' })).toBeTruthy();
+  expect(container.querySelector('time')?.getAttribute('datetime')).toBe(user.createdAt);
+  expect(name.querySelector('.floway-admin-indicator')?.getAttribute('aria-label')).toBe('Administrator');
+});
+
+test('shows membership dates and group creation metadata without a separator glyph', async () => {
+  const { container } = renderPage('/dashboard/admin/users?tab=groups&group=1');
+  await screen.findByRole('option', { name: 'Platform' });
+  const table = screen.getByRole('table');
+  expect(screen.queryByRole('columnheader', { name: 'Role' })).toBeNull();
+  expect(screen.getByRole('columnheader', { name: 'Joined' })).toBeTruthy();
+  expect(table.querySelector('time')?.getAttribute('datetime')).toBe(memberships[0]!.createdAt);
+  expect(screen.getByText(`Created ${shortDate(groups[0]!.createdAt, 'en')}`)).toBeTruthy();
+  expect(container.querySelector('section.grid > header')!.textContent).not.toContain('\u00b7');
+});
+
+test('keeps creation metadata in empty group details', async () => {
+  const empty = { ...groups[0]!, id: 3, name: 'Archive' };
+  renderPage('/dashboard/admin/users?tab=groups&group=3', { ...loaderData, directory: { ...loaderData.directory, groups: [...groups, empty] } });
+  await screen.findByRole('option', { name: 'Archive' });
+  expect(screen.getByText('0 members')).toBeTruthy();
+  expect(screen.getByText(`Created ${shortDate(empty.createdAt, 'en')}`)).toBeTruthy();
+  expect(screen.getByText('This group has no members')).toBeTruthy();
+  expect(screen.queryByRole('table')).toBeNull();
 });
