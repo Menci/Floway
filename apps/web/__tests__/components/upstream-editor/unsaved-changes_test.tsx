@@ -3,7 +3,7 @@ import { FormProvider, useForm } from 'react-hook-form';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { UpstreamRecord } from '../../../src/api/types';
-import { UpstreamConfigSidebar } from '../../../src/components/upstream-editor/config-sidebar';
+import { UpstreamConfigSidebar, configReadOnly } from '../../../src/components/upstream-editor/config-sidebar';
 import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/data';
 import { ProviderConfigSection } from '../../../src/components/upstream-editor/provider-config';
@@ -74,7 +74,12 @@ it('keeps Full-only values focusable and selectable in a models-only editor', ()
   expect(prefix.readOnly).toBe(true);
   expect(prefix.disabled).toBe(false);
   expect(baseUrl.closest('[inert]')).toBeNull();
-  expect(screen.getByRole('switch', { name: i18n.t('dashboard.upstreamEditor.fields.fetchModels') }).hasAttribute('disabled')).toBe(false);
+  const catalogSwitch = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('dashboard.upstreamEditor.fields.fetchModels') });
+  expect(catalogSwitch.hasAttribute('disabled')).toBe(false);
+  expect(catalogSwitch.checked).toBe(true);
+  expect(configReadOnly('models')).toEqual({ connection: true, modelsFetch: false });
+  fireEvent.click(catalogSwitch);
+  expect(catalogSwitch.checked).toBe(false);
 });
 
 // The page reads formState.isDirty to decide whether leaving prompts, so each
@@ -99,6 +104,9 @@ it('keeps path overrides and endpoint checkboxes read-only without Full', () => 
   expect(override.readOnly).toBe(true);
   const disabledModels = screen.getByRole('combobox', { name: i18n.t('dashboard.upstreamEditor.sections.disabledModels') }) as HTMLInputElement;
   expect(disabledModels.getAttribute('aria-readonly')).toBe('true');
+  const catalogSwitch = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('dashboard.upstreamEditor.fields.fetchModels') });
+  expect(catalogSwitch.checked).toBe(true);
+  expect(configReadOnly('off')).toEqual({ connection: true, modelsFetch: true });
 });
 
 describe('upstream editor dirtiness across an edit and its undo', () => {

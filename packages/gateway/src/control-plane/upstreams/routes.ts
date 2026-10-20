@@ -76,13 +76,15 @@ const serializeForResponse = async (
   knownProxyIds: ReadonlySet<string>,
   baseSerialize: (r: UpstreamRecord) => SerializedUpstreamRecord = upstreamRecordToJson,
   includeQuota = true,
+  includeModelCount = true,
 ): Promise<UpstreamWithCacheResponse> => {
   const codexQuota = includeQuota ? await codexQuotaForResponse(record) : {};
   const serialized = baseSerialize(record);
+  const cache = modelsCacheStatus(record);
   return {
     ...serialized,
     proxy_fallback_list: pruneDeletedProxyEntries(serialized.proxy_fallback_list, knownProxyIds),
-    modelsCache: modelsCacheStatus(record),
+    modelsCache: includeModelCount ? cache : { ...cache, modelCount: null },
     ...codexQuota,
   };
 };
@@ -94,12 +96,35 @@ const serializeForAccess = async (
   record: StoredUpstreamRecord,
   knownProxyIds: ReadonlySet<string>,
   access: UpstreamAccess,
+  modelUse = true,
 ): Promise<UpstreamWithCacheResponse> => await serializeForResponse(
   record,
   knownProxyIds,
   serializerForAccess(access),
   access.audit || access.edit === 'full',
+  modelUse,
 );
+
+const modelUseForUpstreams = async (
+  c: AuthedContext,
+  subject: ReturnType<typeof userFromContext>,
+  items: readonly StoredUpstreamRecord[],
+): Promise<boolean[] | null> => {
+  if (subject.isAdmin) return null;
+  const grants = await checkMany(subject, items.map(item => ({
+    target: { kind: 'upstream' as const, upstreamId: item.id },
+    requirement: { permission: 'Model.Use' as const },
+  })));
+  if (grants.every(Boolean)) return grants;
+  const coverage = await enumerateAddressableModelIds(
+    subject,
+    effectiveUpstreamIdsFromContext(c),
+    createModelsRefreshScheduler(getRuntimeLocation(c.req.raw), backgroundSchedulerFromContext(c)),
+    [...items],
+  );
+  const covered = new Set(coverage.flatMap(entry => entry.upstreams.map(upstream => upstream.upstreamId)));
+  return items.map((item, index) => grants[index]! || covered.has(item.id));
+};
 
 type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -182,27 +207,7 @@ export const listUpstreams = async (c: AuthedContext) => {
   const subject = userFromContext(c);
   const [items, knownProxyIds] = await Promise.all([getRepo().upstreams.list(), loadKnownProxyIds()]);
   const accesses = await resolveUpstreamAccesses(subject, items.map(item => item.id));
-  // A caller may hold Model.Use for the whole upstream or for individual
-  // models on it. The catalog enumeration finds the latter and skips disabled
-  // upstreams, so combine it with the upstream-level grant to cover both.
-  const modelUse = subject.isAdmin
-    ? null
-    : await (async () => {
-        const [grants, coverage] = await Promise.all([
-          checkMany(subject, items.map(item => ({
-            target: { kind: 'upstream' as const, upstreamId: item.id },
-            requirement: { permission: 'Model.Use' as const },
-          }))),
-          enumerateAddressableModelIds(
-            subject,
-            effectiveUpstreamIdsFromContext(c),
-            createModelsRefreshScheduler(getRuntimeLocation(c.req.raw), backgroundSchedulerFromContext(c)),
-            items,
-          ),
-        ]);
-        const covered = new Set(coverage.flatMap(entry => entry.upstreams.map(upstream => upstream.upstreamId)));
-        return items.map((item, index) => grants[index]! || covered.has(item.id));
-      })();
+  const modelUse = await modelUseForUpstreams(c, subject, items);
   const reorderGroups = new Map<string, string | null>();
   let reorderGroup: string | null = null;
   for (const item of items) {
@@ -214,7 +219,7 @@ export const listUpstreams = async (c: AuthedContext) => {
   return c.json(await Promise.all(items.flatMap((record, index) => {
     const access = accesses.get(record.id)!;
     if (!access.audit && access.edit === 'off') return [];
-    return [serializeForResponse(record, knownProxyIds, upstreamRecordToJson)
+    return [serializeForResponse(record, knownProxyIds, upstreamRecordToJson, true, modelUse === null || modelUse[index]!)
       .then(serialized => ({ ...serialized, editLevel: access.edit, audit: access.audit, modelUse: modelUse === null || modelUse[index]!, reorderGroup: reorderGroups.get(record.id)! }))];
   })));
 };
@@ -263,18 +268,12 @@ export const listUpstreamOptions = async (c: CtxWithQuery<typeof upstreamOptions
     })));
     visibleIds = new Set(items.filter((_item, index) => allowed[index]).map(item => item.id));
   } else if (!subject.isAdmin && view === 'key') {
-    const checks = items.flatMap(item => {
-      const rawIds = item.modelsCache?.models.map(model => model.id).filter(Boolean) ?? [];
-      const ids = new Set(rawIds.flatMap(id => item.modelPrefix === null
-        ? [id]
-        : item.modelPrefix.addressable.map(form => form === 'prefixed' ? `${item.modelPrefix!.prefix}${id}` : id)));
-      return [
-        { item, check: { target: { kind: 'upstream' as const, upstreamId: item.id }, requirement: { permission: 'Model.Use' as const } } },
-        ...[...ids].map(modelId => ({ item, check: { target: { kind: 'upstreamModel' as const, upstreamId: item.id, model: { kind: 'exact' as const, value: modelId } }, requirement: { permission: 'Model.Use' as const } } })),
-      ];
-    });
-    const allowed = await checkMany(subject, checks.map(entry => entry.check));
-    visibleIds = new Set(checks.filter((_entry, index) => allowed[index]).map(entry => entry.item.id));
+    // A key may only cap to a surface the data plane can route. Reuse the
+    // addressable catalog rather than the raw stored rows: the latter still
+    // contains operator-disabled models and would offer a dead upstream.
+    const modelUse = await modelUseForUpstreams(c, subject, items);
+    if (modelUse === null) throw new Error('Non-admin Model.Use resolution returned an admin projection');
+    visibleIds = new Set(items.filter((_item, index) => modelUse[index]).map(item => item.id));
   }
   return c.json(items
     .filter(item => visibleIds.has(item.id))
@@ -317,16 +316,11 @@ export const getUpstream = async (c: AuthedContext<'/:id'>) => {
   const subject = userFromContext(c);
   const access = (await resolveUpstreamAccesses(subject, [id])).get(id)!;
   if (!access.audit && access.edit === 'off') return c.json({ error: 'upstream not found' }, 404);
-  const [record, knownProxyIds, modelUse] = await Promise.all([
-    getRepo().upstreams.getById(id),
-    loadKnownProxyIds(),
-    subject.isAdmin
-      ? true
-      : checkMany(subject, [{ target: { kind: 'upstream' as const, upstreamId: id }, requirement: { permission: 'Model.Use' as const } }]).then(results => results[0]!),
-  ]);
+  const [record, knownProxyIds] = await Promise.all([getRepo().upstreams.getById(id), loadKnownProxyIds()]);
   if (!record) return c.json({ error: 'upstream not found' }, 404);
+  const modelUse = (await modelUseForUpstreams(c, subject, [record]))?.[0] ?? true;
   return c.json({
-    ...await serializeForAccess(record, knownProxyIds, access),
+    ...await serializeForAccess(record, knownProxyIds, access, modelUse),
     cachedModels: modelUse ? cachedModelsForDashboard(record) : null,
     editLevel: access.edit,
     audit: access.audit,
@@ -402,7 +396,8 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
 
 export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '/:id'>) => {
   const id = c.req.param('id');
-  const editLevel = await resolveUpstreamEditLevel(userFromContext(c), id);
+  const subject = userFromContext(c);
+  const editLevel = await resolveUpstreamEditLevel(subject, id);
   if (editLevel === 'off') return c.json({ error: 'Upstream not found' }, 404);
   const existing = await getRepo().upstreams.getById(id);
   if (!existing) return c.json({ error: 'Upstream not found' }, 404);
@@ -499,9 +494,10 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   next = { ...next, config: config.value };
 
   const saved = await saveUpstream({ previous: existing, next });
-  const access = (await resolveUpstreamAccesses(userFromContext(c), [id])).get(id)!;
+  const access = (await resolveUpstreamAccesses(subject, [id])).get(id)!;
+  const modelUse = (await modelUseForUpstreams(c, subject, [saved]))?.[0] ?? true;
   return c.json({
-    ...await serializeForAccess(saved, knownProxyIds, access),
+    ...await serializeForAccess(saved, knownProxyIds, access, modelUse),
     editLevel,
     audit: access.audit,
   });

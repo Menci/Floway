@@ -27,6 +27,7 @@ import {
   generationOptions,
   parseCustomJson,
   playgroundApis,
+  playgroundApisFor,
   supportsImageInput,
   type PlaygroundApi,
   type PlaygroundMessage,
@@ -173,8 +174,11 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const selectedKey = loaderData.keys?.find(key => key.id === keyId) ?? null;
   const cap = selectedKey?.upstream_ids ?? null;
   const catalog = useMemo(() => indexCatalog(loaderData.models), [loaderData.models]);
-  const models = reachableModels(loaderData.models ?? [], cap, model => model.kind === 'chat');
+  const models = reachableModels(loaderData.models ?? [], cap, model => model.kind === 'chat' && playgroundApisFor(model).length > 0);
   const selectedModel = models.find(model => model.id === publicModelId) ?? models[0] ?? null;
+  const availableApis = selectedModel === null ? playgroundApis : playgroundApisFor(selectedModel);
+  const effectiveApi = availableApis.includes(playgroundApi) ? playgroundApi : availableApis[0];
+  if (effectiveApi !== undefined && effectiveApi !== playgroundApi) setPlaygroundApi(effectiveApi);
   const imageEnabled = supportsImageInput(selectedModel);
   const effortOptions = selectedModel?.chat?.reasoning?.effort?.supported ?? [];
   const matchingModels = models.filter(model => {
@@ -228,7 +232,8 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
         return;
       }
     }
-    const customResult = parseCustomJson(playgroundApi, customDraft);
+    if (effectiveApi === undefined) return;
+    const customResult = parseCustomJson(effectiveApi, customDraft);
     if (customResult.error) {
       const message = customResult.error === 'reserved'
         ? t('dashboard.playground.errors.customReserved', { fields: customResult.fields.join(', ') })
@@ -252,7 +257,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     abortRef.current = controller;
 
     try {
-      const wireFetch = createWireFetch(customResult.value, playgroundApi);
+      const wireFetch = createWireFetch(customResult.value, effectiveApi);
 
       const assistantId = randomId();
       let assistantText = '';
@@ -267,12 +272,12 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
         });
       };
       for await (const delta of streamPlaygroundText({
-        api: playgroundApi,
+        api: effectiveApi,
         apiKey: sendTarget.apiKey.key,
         model: sendTarget.model.id,
         system: system.trim(),
         messages: context,
-        options: generationOptions(playgroundApi, reasoningEffort || undefined, defaultMaxOutputTokens(sendTarget.model)),
+        options: generationOptions(effectiveApi, reasoningEffort || undefined, defaultMaxOutputTokens(sendTarget.model)),
         signal: controller.signal,
         fetchImpl: wireFetch,
       })) {
@@ -344,11 +349,11 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
       </Field>
       <Field label={t('dashboard.playground.api')}>
         <Dropdown
-          selectedOptions={[playgroundApi]}
-          value={t(`dashboard.playground.apis.${playgroundApi}`)}
+          selectedOptions={effectiveApi === undefined ? [] : [effectiveApi]}
+          value={effectiveApi === undefined ? '' : t(`dashboard.playground.apis.${effectiveApi}`)}
           onOptionSelect={(_, data) => data.optionValue !== undefined && changeContext(() => setPlaygroundApi(data.optionValue as PlaygroundApi))}
         >
-          {playgroundApis.map(value => <Option key={value} value={value}>{t(`dashboard.playground.apis.${value}`)}</Option>)}
+          {availableApis.map(value => <Option key={value} value={value}>{t(`dashboard.playground.apis.${value}`)}</Option>)}
         </Dropdown>
       </Field>
       <Field label={t('dashboard.playground.model')}>

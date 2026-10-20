@@ -8,6 +8,7 @@ const emptyOverview = (): PerformanceOverviewResponse => ({
   axes: { none: [], keyId: [], userId: [], model: [], upstream: [], operation: [], runtimeLocation: [] },
   dimensionValues: { models: [], upstreams: [], operations: [], runtimeLocations: [], keyIds: [], userIds: [] },
   users: [],
+  upstreams: [],
   keys: [],
 });
 

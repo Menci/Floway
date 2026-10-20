@@ -29,6 +29,7 @@ export const listProxies = async (c: Context) => {
 // the fallback list stays Full-only at the write path.
 export const listProxyOptions = async (c: CtxWithQuery<typeof proxyOptionsQuery>) => {
   const upstreamId = c.req.valid('query').upstream_id;
+  if (!await getRepo().upstreams.getById(upstreamId)) return c.json({ error: 'Upstream not found' }, 404);
   const access = (await resolveUpstreamAccesses(userFromContext(c), [upstreamId])).get(upstreamId)!;
   if (!access.audit && access.edit === 'off') {
     return c.json({ error: 'Upstream not found' }, 404);

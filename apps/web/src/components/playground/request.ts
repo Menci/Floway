@@ -12,6 +12,9 @@ export interface PlaygroundMessage {
 
 export const playgroundApis: PlaygroundApi[] = ['openaiResponses', 'openaiChatCompletions', 'anthropicMessages'];
 
+export const playgroundApisFor = (model: ControlPlaneModel): PlaygroundApi[] =>
+  playgroundApis.filter(api => model.endpoints[api]);
+
 export const supportsImageInput = (model: ControlPlaneModel | null): boolean => {
   const modalities = model?.chat?.modalities?.input;
   return modalities === undefined || modalities.includes('image');

@@ -12,16 +12,15 @@ afterEach(() => {
 });
 
 // The gateway admin-gates every /api/upstreams route; an operator's session
-// gets 403 there and 200 from the upstream picker.
+// gets 403 there while the overview supplies the authorized upstream metadata.
 const gatewayForOperator = (input: RequestInfo | URL) => {
   const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
   if (path === '/api/upstreams') return Promise.resolve(Response.json({ error: 'Admin privileges required' }, { status: 403 }));
-  if (path === '/api/upstream-options') return Promise.resolve(Response.json([{ id: 'up-1', name: 'Copilot seat', kind: 'copilot', enabled: true, hue: 210, cachedModelCount: 3 }]));
   if (path === '/api/runtime-info') return Promise.resolve(Response.json({ kind: 'node', runtimeLocation: 'LOCAL' }));
   return Promise.resolve(Response.json({
     series: [], axes: { none: [], model: [], upstream: [], operation: [], runtimeLocation: [], keyId: [], userId: [] },
     dimensionValues: { models: [], upstreams: [], operations: [], runtimeLocations: [], userIds: [], keyIds: [] },
-    users: [], keys: [],
+    users: [], upstreams: [{ id: 'up-1', name: 'Copilot seat', hue: 210 }], keys: [],
   }));
 };
 
@@ -32,7 +31,7 @@ describe('where the performance page reads upstream names from', () => {
 
     const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance') } as never);
 
-    expect(data.upstreams).toEqual([{ id: 'up-1', name: 'Copilot seat', hue: 210 }]);
+    expect(data.overview?.upstreams).toEqual([{ id: 'up-1', name: 'Copilot seat', hue: 210 }]);
     expect(data.error).toBeNull();
   });
 
@@ -50,6 +49,22 @@ describe('where the performance page reads upstream names from', () => {
     expect(data.state.groupBy).toBe('keyId');
     expect(data.state.filters.userId).toEqual(['1']);
     expect(performanceQueries[0].searchParams.getAll('filter_user_id')).toEqual(['1']);
+  });
+
+  it('keeps user grouping and breakdown available to an operator like Usage', async () => {
+    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false } });
+    const performanceQueries: URL[] = [];
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
+      if (url.pathname === '/api/performance/overview') performanceQueries.push(url);
+      return gatewayForOperator(input);
+    }));
+
+    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance?g=userId&tab=userId') } as never);
+
+    expect(data.state.groupBy).toBe('userId');
+    expect(data.state.breakdown).toBe('userId');
+    expect(performanceQueries[0].searchParams.get('group_by')).toBe('userId');
   });
 
   it('re-reads a Node overview after removing stale Region URL state', async () => {

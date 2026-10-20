@@ -3,7 +3,6 @@ import { dashboardRangeQuery, parseDashboardRange, serializeDashboardRange, type
 import { clearGroupedTelemetryFilters } from '../telemetry/filter-state';
 import { parseHiddenSeries, serializeHiddenSeries } from '../telemetry/hidden-series-url';
 
-export type PerformanceView = 'all-by-user' | 'self-by-key';
 export type PerformanceRange = DashboardRange;
 export type PerformanceGroupBy = 'keyId' | 'userId' | 'model' | 'upstream' | 'operation' | 'runtimeLocation';
 export type PerformanceMetric = 'ttft' | 'tokPerSec';
@@ -79,6 +78,7 @@ export interface PerformanceOverviewResponse {
     userIds: number[];
   };
   users: Array<{ id: number; username: string }>;
+  upstreams: Array<{ id: string; name: string; hue: number }>;
   keys: Array<{ id: string; name: string; createdAt: string }>;
 }
 

@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { MODEL_CATALOG_REVISION } from '../../../src/repo/models-cache-contract.ts';
-import { modelsRefreshIdentity, seedModelsCache } from '../../repo/models-cache-fixture.ts';
+import { seedModelsCache, storedModelsRefreshIdentity } from '../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { projectCustomModels } from '@floway-dev/provider-custom';
@@ -162,6 +162,7 @@ test('Upstream.Audit exposes a redacted record in the listing, detail, and metri
   assertEquals(body.config.baseUrl, 'https://secret.example.com');
   assertEquals(body.config.apiKey, undefined);
   assertEquals(body.cachedModels, null);
+  assertEquals(body.modelsCache.modelCount, null);
 
   const metrics = await requestApp('/api/upstream-metrics?upstream_id=up_restricted&start=0&end=60000&step=60000', { headers: { 'x-api-key': apiKey.key } });
   assertEquals(metrics.status, 200);
@@ -182,6 +183,28 @@ test('a disabled upstream keeps Model.Use coverage so the listing can use its ca
   const response = await requestApp('/api/upstreams', { headers: { 'x-api-key': apiKey.key } });
   const listed = (await response.json() as Array<Record<string, any>>)[0]!;
   assertEquals(listed.modelUse, true);
+});
+
+test('an upstream Model.Use grant and Edit.Models expose the same catalog visibility in list and detail', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.proxies.save({ id: 'proxy_a', name: 'Proxy A', url: 'http://127.0.0.1:8080', dialTimeoutSeconds: null });
+  await saveUpstreamForTest(repo.upstreams, customRecord());
+  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: apiKey.userId });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: apiKey.userId },
+    scope: { kind: 'upstream', upstreamId: 'up_restricted' },
+    sortOrder: 0,
+    values: { 'Model.Use': true, 'Upstream.Edit': 'models' },
+  });
+
+  const list = await requestApp('/api/upstreams', { headers: { 'x-api-key': apiKey.key } });
+  const listed = (await list.json() as Array<Record<string, any>>)[0]!;
+  assertEquals(listed.modelUse, true);
+
+  const detail = await requestApp('/api/upstreams/up_restricted', { headers: { 'x-api-key': apiKey.key } });
+  const body = await detail.json();
+  assertEquals(body.cachedModels, null);
+  assertEquals(body.modelsCache.modelCount, listed.modelsCache.modelCount);
 });
 
 test('Upstream.Audit and Upstream.Edit.Models share the complete redacted serializer', async () => {
@@ -337,13 +360,27 @@ test('provider credential actions require Full and keep create drafts admin-only
   assertEquals((await call('')).status, 403);
 });
 
+test('proxy options treat a dangling upstream ACL as an absent upstream', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: apiKey.userId });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: apiKey.userId },
+    scope: { kind: 'upstream', upstreamId: 'up_deleted' },
+    sortOrder: 0,
+    values: { 'Upstream.Audit': true },
+  });
+
+  const response = await requestApp('/api/proxy-options?upstream_id=up_deleted', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals(response.status, 404);
+});
+
 test('upstream options apply key, audit, and all view predicates', async () => {
   const { repo, apiKey } = await setupAppTest();
   const upstream = customRecord();
   await saveUpstreamForTest(repo.upstreams, upstream);
   const stored = await repo.upstreams.getById(upstream.id);
   if (!stored) throw new Error('upstream missing');
-  await seedModelsCache(repo.upstreams, upstream.id, modelsRefreshIdentity(stored), {
+  await seedModelsCache(repo.upstreams, upstream.id, await storedModelsRefreshIdentity(repo.upstreams, upstream.id), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1,
     models: projectCustomModels(stored),
@@ -371,4 +408,27 @@ test('upstream options apply key, audit, and all view predicates', async () => {
   });
   const auditAfter = await requestApp('/api/upstream-options?view=audit', { headers: { 'x-api-key': apiKey.key } });
   assertEquals((await auditAfter.json()).map((item: { id: string }) => item.id), [upstream.id]);
+});
+
+test('key upstream options hide an upstream whose only granted model is operator-disabled', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const upstream = { ...customRecord(), disabledPublicModelIds: ['gpt-5'] };
+  await saveUpstreamForTest(repo.upstreams, upstream);
+  const stored = await repo.upstreams.getById(upstream.id);
+  if (!stored) throw new Error('upstream missing');
+  await seedModelsCache(repo.upstreams, upstream.id, await storedModelsRefreshIdentity(repo.upstreams, upstream.id), {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 1,
+    models: projectCustomModels(stored),
+  });
+  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: apiKey.userId });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: apiKey.userId },
+    scope: { kind: 'upstreamModel', upstreamId: upstream.id, model: { kind: 'exact', value: 'gpt-5' } },
+    sortOrder: 0,
+    values: { 'Model.Use': true },
+  });
+
+  const response = await requestApp('/api/upstream-options?view=key', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals(await response.json(), []);
 });

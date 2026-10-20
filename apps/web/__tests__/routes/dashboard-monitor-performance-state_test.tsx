@@ -48,6 +48,7 @@ const overview: PerformanceOverviewResponse = {
   },
   dimensionValues: { models: ['model-a', 'model-b'], upstreams: [], operations: [], runtimeLocations: [], keyIds: [], userIds: [] },
   users: [],
+  upstreams: [],
   keys: [],
 };
 
@@ -63,8 +64,6 @@ const renderPage = (search: string) => {
         overview,
         regionAvailable: true,
         state,
-        upstreams: [],
-        view: 'all-by-user',
       }}
       matches={[] as never}
       params={{}}

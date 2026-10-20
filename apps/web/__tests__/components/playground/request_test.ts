@@ -5,11 +5,18 @@ import {
   generationOptions,
   mergeWireBody,
   parseCustomJson,
+  playgroundApisFor,
   supportsImageInput,
 } from '../../../src/components/playground/request';
 import { catalogModel } from '../../api/model-fixture';
 
 describe('custom JSON', () => {
+  it('offers only the Playground protocols the model declares', () => {
+    expect(playgroundApisFor(catalogModel('chat', { endpoints: { openaiChatCompletions: {} } }))).toEqual(['openaiChatCompletions']);
+    expect(playgroundApisFor(catalogModel('responses', { endpoints: { openaiResponses: {} } }))).toEqual(['openaiResponses']);
+    expect(playgroundApisFor(catalogModel('legacy', { endpoints: { openaiCompletions: {} } }))).toEqual([]);
+  });
+
   it('rejects invalid, non-object and reserved fields', () => {
     expect(parseCustomJson('openaiResponses', '{').error).toBe('invalid');
     expect(parseCustomJson('anthropicMessages', '[]').error).toBe('object');

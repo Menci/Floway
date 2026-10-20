@@ -65,16 +65,18 @@ const DEVICE_FLOW_SLOW_DOWN_SECONDS = 5;
 
 export function ProviderConfigSection({
   readOnly = false,
+  modelsFetchReadOnly = readOnly,
   record,
   onPatch,
   onRefreshModels,
 }: {
   readOnly?: boolean;
+  modelsFetchReadOnly?: boolean;
   record: UpstreamRecord;
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
   onRefreshModels: () => void;
 }) {
-  if (record.kind === 'custom') return <CustomConfig onRefreshModels={onRefreshModels} readOnly={readOnly} />;
+  if (record.kind === 'custom') return <CustomConfig modelsFetchReadOnly={modelsFetchReadOnly} onRefreshModels={onRefreshModels} readOnly={readOnly} />;
   if (record.kind === 'azure') return <AzureConfig readOnly={readOnly} />;
   if (record.kind === 'ollama') return <OllamaConfig readOnly={readOnly} record={record} />;
   if (record.kind === 'copilot') return <CopilotConfig onPatch={onPatch} readOnly={readOnly} record={record} />;
@@ -86,7 +88,7 @@ export function ApiPathsSection({ readOnly, record }: { readOnly: boolean; recor
   return <CustomApiPaths readOnly={readOnly} />;
 }
 
-function CustomConfig({ onRefreshModels, readOnly }: { onRefreshModels: () => void; readOnly: boolean }) {
+function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { modelsFetchReadOnly: boolean; onRefreshModels: () => void; readOnly: boolean }) {
   const { t } = useTranslation();
   const { control, setValue } = useFormContext<ValuesForKind<'custom'>>();
   const authStyle = useWatch({ control, name: 'config.authStyle' });
@@ -135,7 +137,7 @@ function CustomConfig({ onRefreshModels, readOnly }: { onRefreshModels: () => vo
         <Switch
           checked={field.value}
           label={t('dashboard.upstreamEditor.fields.fetchModels')}
-          readOnly={readOnly}
+          readOnly={modelsFetchReadOnly}
           onChange={(_, data) => {
             field.onChange(data.checked);
             if (data.checked) onRefreshModels();

@@ -5,7 +5,7 @@ import { contentTypeOf, renderBody } from './body-render';
 import { EventList } from './events';
 import { downloadRecords } from './export';
 import { errorLabel, requestSeverity } from './format';
-import { isSensitiveHeader, redactHeaderValue } from './header-redact';
+import { isSensitiveHeader, REDACTED_HEADER_VALUE, redactHeaderPairs, redactHeaderValue } from './header-redact';
 import { collectKindFromTargetApi, detectCollectKind, type CollectedStream } from './stream-render';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
@@ -32,15 +32,15 @@ function CopyButton({ text }: { text: string }) {
   return <TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('common.copy.action'))} onClick={() => copy(text)} />;
 }
 
-function HeaderTable({ headers }: { headers: Array<[string, string]> }) {
+function HeaderTable({ headers, revealable }: { headers: Array<[string, string]>; revealable: boolean }) {
   const { t } = useTranslation();
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   return <table className="w-full table-fixed font-mono text-left"><colgroup><col className="w-1/3" /><col className="w-2/3" /></colgroup><tbody>
     {headers.map(([name, value], index) => <tr key={index}>
       <th className="align-top py-2 pr-2 font-normal text-fui-fg3 break-words">{name}</th>
       <td className="py-2 pl-2 break-all">
-        {isSensitiveHeader(name) && !revealed.has(index) ? redactHeaderValue(value) : value}
-        {isSensitiveHeader(name) && <TooltipIconButton
+        {isSensitiveHeader(name) && !revealed.has(index) ? value === REDACTED_HEADER_VALUE ? value : redactHeaderValue(value) : value}
+        {isSensitiveHeader(name) && value !== REDACTED_HEADER_VALUE && revealable && <TooltipIconButton
           icon={revealed.has(index) ? <EyeOffRegular /> : <EyeRegular />}
           label={revealed.has(index) ? t('dashboard.requests.hideValue') : t('dashboard.requests.revealValue')}
           onClick={() => setRevealed(current => { const next = new Set(current); if (next.has(index)) next.delete(index); else next.add(index); return next; })}
@@ -161,8 +161,8 @@ function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRe
       <div className="flex items-center gap-2"><HttpMethodBadge method={method ?? record.request.method} /><Text className="font-mono break-all">{endpoint ?? record.request.path}</Text><CopyButton text={endpoint ?? record.request.path} /></div>
       {diagnostics.map((message, i) => <OutcomeMessageBar key={i} intent="warning">{message}</OutcomeMessageBar>)}
       {upstream && !exchange && !legacy && <EmptyStateLine>{t('dashboard.requests.noUpstreamCapture')}</EmptyStateLine>}
-      <div className="flex items-center justify-between gap-2"><Text weight="semibold">{t('dashboard.requests.headers', { count: String(headers.length) })}</Text><CopyButton text={headers.map(([name, value]) => `${name}: ${value}`).join('\n')} /></div>
-      <HeaderTable key={`${source}-${index}`} headers={headers} />
+      <div className="flex items-center justify-between gap-2"><Text weight="semibold">{t('dashboard.requests.headers', { count: String(headers.length) })}</Text><CopyButton text={redactHeaderPairs(headers).map(([name, value]) => `${name}: ${value}`).join('\n')} /></div>
+      <HeaderTable key={`${source}-${index}`} headers={headers} revealable={!upstream} />
     </DialogShell>
   </div>;
 }
