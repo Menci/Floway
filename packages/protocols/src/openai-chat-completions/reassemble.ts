@@ -1,12 +1,12 @@
 import { openaiChatCompletionsErrorPayloadMessage } from './errors.ts';
-import type { OpenAIChatCompletionsChoiceNonStreaming, OpenAIChatCompletionsDelta, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsResult, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsToolCall, OpenAIChatCompletionsAudio, OpenAIChatCompletionsLogprobs } from './index.ts';
+import type { OpenAIChatCompletionsChoiceNonStreaming, OpenAIChatCompletionsChoiceNonStreamingEx, OpenAIChatCompletionsDelta, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsAssistantOutputMessageEx, OpenAIChatCompletionsResultEx, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsToolCall, OpenAIChatCompletionsAudio, OpenAIChatCompletionsLogprobs } from './index.ts';
 import { isJsonObject } from '../common/json.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
 // Field-fidelity contract: every field an upstream emits must reach the
 // non-streaming result. Known streaming fields use their protocol semantics;
 // unknown fields fall through to captureExtras so future extensions survive.
-const KNOWN_DELTA_KEYS = new Set(['audio', 'function_call', 'content', 'role', 'reasoning_text', 'reasoning_opaque', 'reasoning_items', 'refusal', 'tool_calls']);
+const KNOWN_DELTA_KEYS = new Set(['audio', 'function_call', 'content', 'role', 'reasoning_text', 'reasoning_opaque', 'reasoning_items', 'reasoning_details', 'refusal', 'tool_calls']);
 const KNOWN_TOOL_CALL_KEYS = new Set(['index', 'id', 'type', 'function', 'custom']);
 const KNOWN_CHOICE_KEYS = new Set(['index', 'delta', 'finish_reason', 'logprobs']);
 const KNOWN_CHUNK_KEYS = new Set(['id', 'object', 'created', 'model', 'choices', 'usage', 'system_fingerprint', 'service_tier']);
@@ -29,7 +29,8 @@ interface ChoiceAccumulator {
   logprobs?: OpenAIChatCompletionsLogprobs;
   reasoningOpaque?: string;
   refusal?: string;
-  readonly reasoningItems: OpenAIChatCompletionsReasoningItem[];
+  readonly reasoningItems: unknown[];
+  reasoningDetails?: unknown;
   finishReason: OpenAIChatCompletionsChoiceNonStreaming['finish_reason'];
   readonly toolCalls: Map<number, ToolCallAccumulator>;
   readonly choiceExtras: Record<string, unknown>;
@@ -72,6 +73,37 @@ const accumulateToolCalls = (choice: ChoiceAccumulator, value: OpenAIChatComplet
   }
 };
 
+// OpenRouter streams text/summary fragments with repeated indices; encrypted
+// entries are complete opaque blocks and must remain separate.
+// https://github.com/OpenRouterTeam/ai-sdk-provider/blob/e96af18b188cd2df507a2ecdc8b0976856e1f3a0/src/chat/index.ts#L774-L819
+const accumulateReasoningDetails = (current: unknown, incoming: unknown): unknown => {
+  if (!Array.isArray(incoming)) return incoming;
+  const details: unknown[] = Array.isArray(current) ? current : [];
+  for (const detail of incoming) {
+    const previous = details.at(-1);
+    if (!isJsonObject(previous) || !isJsonObject(detail)
+      || previous.type !== detail.type
+      || detail.type !== 'reasoning.text' && detail.type !== 'reasoning.summary'
+      || ['id', 'index', 'format'].some(key => previous[key] != null && detail[key] != null && previous[key] !== detail[key])) {
+      details.push(detail);
+      continue;
+    }
+    const field = detail.type === 'reasoning.text' ? 'text' : 'summary';
+    const previousText = previous[field];
+    const text = detail[field];
+    if (previousText != null && typeof previousText !== 'string' || text != null && typeof text !== 'string') {
+      details.push(detail);
+      continue;
+    }
+    const merged = { ...previous, ...detail };
+    if (typeof previousText === 'string') merged[field] = typeof text === 'string' ? previousText + text : previousText;
+    for (const key of ['id', 'index', 'format']) if (previous[key] != null && detail[key] == null) merged[key] = previous[key];
+    if (detail.type === 'reasoning.text' && typeof previous.signature === 'string' && previous.signature !== '') merged.signature = previous.signature;
+    details[details.length - 1] = merged;
+  }
+  return details;
+};
+
 const finalizedToolCalls = (choice: ChoiceAccumulator): OpenAIChatCompletionsToolCall[] =>
   [...choice.toolCalls.entries()]
     .toSorted(([left], [right]) => left - right)
@@ -108,40 +140,52 @@ const completeAudio = (audio: Partial<OpenAIChatCompletionsAudio>): OpenAIChatCo
   return audio as OpenAIChatCompletionsAudio;
 };
 
-const finalizeChoice = (choice: ChoiceAccumulator): OpenAIChatCompletionsChoiceNonStreaming => {
+const finalizeChoice = (choice: ChoiceAccumulator): OpenAIChatCompletionsChoiceNonStreamingEx => {
   const toolCalls = finalizedToolCalls(choice);
+  const message: OpenAIChatCompletionsAssistantOutputMessageEx = {
+    role: 'assistant',
+    content: choice.content || null,
+    refusal: choice.refusal ?? null,
+    ...(choice.audio === undefined ? {} : { audio: completeAudio(choice.audio) }),
+    ...(choice.functionCall === undefined ? {} : { function_call: choice.functionCall }),
+    ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+    ...(choice.reasoningText ? { reasoning_text: choice.reasoningText } : {}),
+    ...(choice.reasoningOpaque !== undefined ? { reasoning_opaque: choice.reasoningOpaque } : {}),
+    ...(choice.reasoningItems.length > 0 ? { reasoning_items: choice.reasoningItems } : {}),
+    ...(choice.reasoningDetails === undefined ? {} : { reasoning_details: choice.reasoningDetails }),
+    ...choice.messageExtras,
+  };
   return {
     index: choice.index,
     logprobs: choice.logprobs ?? null,
-    message: {
-      role: 'assistant',
-      content: choice.content || null,
-      refusal: choice.refusal ?? null,
-      ...(choice.audio === undefined ? {} : { audio: completeAudio(choice.audio) }),
-      ...(choice.functionCall === undefined ? {} : { function_call: choice.functionCall }),
-      ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
-      ...(choice.reasoningText ? { reasoning_text: choice.reasoningText } : {}),
-      ...(choice.reasoningOpaque !== undefined ? { reasoning_opaque: choice.reasoningOpaque } : {}),
-      ...(choice.reasoningItems.length > 0 ? { reasoning_items: choice.reasoningItems } : {}),
-      ...(choice.refusal !== undefined ? { refusal: choice.refusal } : {}),
-      ...choice.messageExtras,
-    },
+    message,
     finish_reason: choice.finishReason,
     ...choice.choiceExtras,
-  } as OpenAIChatCompletionsChoiceNonStreaming;
+  };
 };
 
-export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterable<OpenAIChatCompletionsStreamEvent>): Promise<OpenAIChatCompletionsResult> {
+export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterable<OpenAIChatCompletionsStreamEvent>): Promise<OpenAIChatCompletionsResultEx> {
+  const accumulator = createOpenAIChatCompletionsEventAccumulator();
+  for await (const chunk of chunks) accumulator.accept(chunk);
+  return accumulator.result();
+}
+
+export interface OpenAIChatCompletionsEventAccumulator {
+  accept: (chunk: OpenAIChatCompletionsStreamEvent) => void;
+  result: () => OpenAIChatCompletionsResultEx;
+}
+
+export const createOpenAIChatCompletionsEventAccumulator = (): OpenAIChatCompletionsEventAccumulator => {
   let id = '';
   let model = '';
   let created = 0;
   let systemFingerprint: string | undefined;
-  let serviceTier: OpenAIChatCompletionsResult['service_tier'];
-  let lastUsage: OpenAIChatCompletionsResult['usage'] | undefined;
+  let serviceTier: OpenAIChatCompletionsResultEx['service_tier'];
+  let lastUsage: OpenAIChatCompletionsResultEx['usage'] | undefined;
   const choices = new Map<number, ChoiceAccumulator>();
   const chunkExtras: Record<string, unknown> = {};
 
-  for await (const chunk of chunks) {
+  const accept = (chunk: OpenAIChatCompletionsStreamEvent): void => {
     const errorMessage = openaiChatCompletionsErrorPayloadMessage(chunk);
     if (errorMessage) throw new Error(`Upstream OpenAI Chat Completions SSE error: ${errorMessage}`);
 
@@ -170,9 +214,8 @@ export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterabl
       if (typeof delta.reasoning_text === 'string') choice.reasoningText += delta.reasoning_text;
       if (typeof delta.reasoning_opaque === 'string') choice.reasoningOpaque = delta.reasoning_opaque;
       if (typeof delta.refusal === 'string') choice.refusal = (choice.refusal ?? '') + delta.refusal;
-      if (Array.isArray(delta.reasoning_items)) {
-        choice.reasoningItems.push(...delta.reasoning_items as OpenAIChatCompletionsReasoningItem[]);
-      }
+      if (Array.isArray(delta.reasoning_items)) choice.reasoningItems.push(...delta.reasoning_items);
+      if (delta.reasoning_details != null) choice.reasoningDetails = accumulateReasoningDetails(choice.reasoningDetails, delta.reasoning_details);
       if (delta.function_call !== undefined) {
         const call = choice.functionCall ??= { name: '', arguments: '' };
         if (delta.function_call.name !== undefined) call.name = delta.function_call.name;
@@ -187,9 +230,9 @@ export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterabl
       accumulateAudio(choice, delta.audio);
       if (streamed.finish_reason != null) choice.finishReason = streamed.finish_reason;
     }
-  }
+  };
 
-  return {
+  const result = (): OpenAIChatCompletionsResultEx => ({
     id,
     object: 'chat.completion',
     created,
@@ -199,5 +242,7 @@ export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterabl
     ...(serviceTier ? { service_tier: serviceTier } : {}),
     ...(lastUsage ? { usage: lastUsage } : {}),
     ...chunkExtras,
-  } as OpenAIChatCompletionsResult;
-}
+  });
+
+  return { accept, result };
+};

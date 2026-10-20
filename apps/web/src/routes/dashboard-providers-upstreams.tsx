@@ -27,7 +27,7 @@ import { moveItem, ReorderHandle, useReorderList } from '../components/ui/reorde
 import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
 import { RouteMenuItem } from '../components/ui/route-menu-item';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { TABLE_ACTIONS_WITH_LEADING_WIDTH, TableActions, TableCentredCell, TableCentredHeader, TableTrailingHeader } from '../components/ui/table-actions';
+import { TABLE_ACTIONS_WITH_LEADING_WIDTH, TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../components/ui/table-actions';
 import { TableColumns } from '../components/ui/table-columns';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { TruncationTooltip } from '../components/ui/truncation-tooltip';
@@ -543,7 +543,7 @@ function UpstreamsTable({
             <TableHeaderCell>{t('dashboard.upstreams.table.details')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.upstreams.table.models')}</TableHeaderCell>
             <TableCentredHeader>{t('dashboard.upstreams.table.enabled')}</TableCentredHeader>
-            <TableTrailingHeader>{t('dashboard.upstreams.table.actions')}</TableTrailingHeader>
+            <TableActionsHeader />
           </TableRow>
         </TableHeader>
         <TableBody {...reorder.listProps()}>
@@ -564,7 +564,7 @@ function UpstreamsTable({
                 <div className="inline-flex items-center gap-1">
                   {/* The rank travels with the row a gesture is moving, so the
                       column reads as the order the drop will commit. */}
-                  <Text className="text-fui-fg3 min-w-[22px] text-center">{reorder.position(index) + 1}</Text>
+                  <Text className="text-fui-fg3 min-w-[22px] text-center tabular-nums">{reorder.position(index) + 1}</Text>
                   <ReorderHandle
                     {...reorder.handleProps(index)}
                     label={t('dashboard.upstreams.actions.reorder', { name: record.name })}
@@ -660,7 +660,7 @@ function ModelStatus({
           : healthy
             ? <CheckmarkCircleRegular className="block flex-none text-[var(--colorPaletteGreenForeground1)]" fontSize={18} aria-label={t('dashboard.upstreams.cache.ready')} />
             : <WarningRegular className="block flex-none text-[var(--colorPaletteDarkOrangeForeground1)]" fontSize={18} aria-label={t(`dashboard.upstreams.cache.${cacheStatus}`)} />}
-        <Text size={300} wrap={false}>
+        <Text size={300} className="tabular-nums" wrap={false}>
           {count === null
             ? t('dashboard.upstreams.models.unavailable')
             : t('dashboard.upstreams.models.count', { count })}

@@ -7,8 +7,10 @@ import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx } fr
 
 export const translate: TranslateTrip<
   AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx
-> = async src => ({
-  target: buildTargetRequest(src),
-  events: translateToSourceEvents,
-  apiError: rewriteContextExceededToPromptTooLong,
-});
+> = async (src, ctx) => {
+  return {
+    target: await buildTargetRequest(src, ctx.sidecarCodec),
+    events: frames => translateToSourceEvents(frames, ctx.sidecarCodec),
+    apiError: rewriteContextExceededToPromptTooLong,
+  };
+};

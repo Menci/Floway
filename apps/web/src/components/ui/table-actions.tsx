@@ -7,9 +7,15 @@ const { TableCell, TableHeaderCell, makeStyles, mergeClasses } = fluentComponent
 
 // Both declarations are load-bearing: a cell aligns its own text, while a
 // header cell's label sits inside a button that aligns itself.
+//
+// A trailing column is where this dashboard puts its measures -- request
+// counts, durations, rates, model counts -- so its figures are tabular at the
+// column's own level: rows then stack digit over digit, and a value that
+// changes from a poll does not resize the cell under it.
 const useStyles = makeStyles({
   trailing: {
     textAlign: 'right',
+    fontVariantNumeric: 'tabular-nums',
     '& .fui-TableHeaderCell__button': { justifyContent: 'flex-end' },
   },
   centred: {
@@ -21,6 +27,10 @@ const useStyles = makeStyles({
 export function TableTrailingHeader({ className, ...props }: TableHeaderCellProps) {
   const styles = useStyles();
   return <TableHeaderCell {...props} className={mergeClasses(styles.trailing, className)} />;
+}
+
+export function TableActionsHeader() {
+  return <TableTrailingHeader />;
 }
 
 export function TableTrailingCell({ className, ...props }: TableCellProps) {

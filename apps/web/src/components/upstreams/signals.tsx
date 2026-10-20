@@ -19,7 +19,9 @@ import { formatRemaining } from '../../lib/format-duration';
 import { dateTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
+import { useUserPreferences } from '../../lib/use-preferences';
 import { ProgressRing } from '../ui/progress-ring';
+import type { QuotaDisplay } from '@floway-dev/protocols/browser';
 import { readOllamaAccountUsage } from '@floway-dev/provider-ollama/browser';
 
 const { Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
@@ -88,15 +90,18 @@ export interface UpstreamReadout {
 const detailText = (parts: (string | null)[]): string =>
   parts.filter(part => part !== null).join('\n');
 
-const meterDetail = (t: TFunction, label: string, percent: number, resetAt: string | null, observedAt: string | number | null, locale: string): string =>
+const shownPercent = (t: TFunction, usedPercent: number, quotaDisplay: QuotaDisplay): string =>
+  t('dashboard.upstreams.signals.percent', { percent: quotaDisplay === 'used' ? Math.round(usedPercent) : 100 - Math.round(usedPercent) });
+
+const meterDetail = (t: TFunction, label: string, usedPercent: number, quotaDisplay: QuotaDisplay, resetAt: string | null, observedAt: string | number | null, locale: string): string =>
   detailText([
-    t('dashboard.upstreams.signals.remaining', { label, percent: 100 - Math.round(percent) }),
+    t(quotaDisplay === 'used' ? 'dashboard.upstreams.signals.used' : 'dashboard.upstreams.signals.remaining', {
+      label,
+      percent: quotaDisplay === 'used' ? Math.round(usedPercent) : 100 - Math.round(usedPercent),
+    }),
     resetAt === null ? null : t('dashboard.upstreams.signals.resets', { time: dateTime(resetAt, locale) }),
     observedAt === null ? null : t('dashboard.upstreams.signals.observed', { time: dateTime(observedAt, locale) }),
   ]);
-
-const remainingPercentValue = (t: TFunction, percent: number): string =>
-  t('dashboard.upstreams.signals.percent', { percent: 100 - Math.round(percent) });
 
 // Last on the line: the windows are what an operator reads at a glance, and this
 // says how long the wait still has to run rather than when it ends -- an instant
@@ -113,7 +118,7 @@ const blockedSignal = (until: string, t: TFunction, locale: string, now: number)
   blocked: true,
 });
 
-const copilotSignals = (record: Extract<UpstreamRecord, { kind: 'copilot' }>, t: TFunction, locale: string): UpstreamSignal[] => {
+const copilotSignals = (record: Extract<UpstreamRecord, { kind: 'copilot' }>, t: TFunction, locale: string, quotaDisplay: QuotaDisplay): UpstreamSignal[] => {
   const quota = copilotQuota(record);
   if (quota === null) return [];
   // Only what is capped: the editor card stands a row in for a seat with nothing
@@ -126,13 +131,13 @@ const copilotSignals = (record: Extract<UpstreamRecord, { kind: 'copilot' }>, t:
     .map(bucket => ({
       key: bucket.id,
       percent: bucket.usedPercent,
-      value: remainingPercentValue(t, bucket.usedPercent),
+      value: shownPercent(t, bucket.usedPercent, quotaDisplay),
       label: quota.reset_at == null ? null : t('dashboard.upstreams.signals.until', { date: shortDate(quota.reset_at, locale) }),
-      detail: meterDetail(t, copilotQuotaName(t, bucket.id, 'allowance'), bucket.usedPercent, quota.reset_at ?? null, quota.observed_at, locale),
+      detail: meterDetail(t, copilotQuotaName(t, bucket.id, 'allowance'), bucket.usedPercent, quotaDisplay, quota.reset_at ?? null, quota.observed_at, locale),
     }));
 };
 
-const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFunction, locale: string, now: number): UpstreamSignal[] => {
+const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFunction, locale: string, now: number, quotaDisplay: QuotaDisplay): UpstreamSignal[] => {
   const entry = latestQuotaEntry(quotaEntries(record.codex_quota, now));
   const credits = latestCredits(record.codex_quota);
   const signals: UpstreamSignal[] = entry === null ? [] : entry.windows.map(item => {
@@ -144,9 +149,9 @@ const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFu
     return {
       key: item.key,
       percent: item.percent,
-      value: remainingPercentValue(t, item.percent),
+      value: shownPercent(t, item.percent, quotaDisplay),
       label,
-      detail: meterDetail(t, label, item.percent, item.resetAt, entry.observedAt, locale),
+      detail: meterDetail(t, label, item.percent, quotaDisplay, item.resetAt, entry.observedAt, locale),
     };
   });
 
@@ -171,7 +176,7 @@ const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFu
   return signals.concat(blockedSignal(entry.rateLimitedUntil, t, locale, now));
 };
 
-const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code' }>, t: TFunction, locale: string, now: number): UpstreamSignal[] => {
+const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code' }>, t: TFunction, locale: string, now: number, quotaDisplay: QuotaDisplay): UpstreamSignal[] => {
   const lookup = findCredential(record);
   const credential = lookup.kind === 'present' ? lookup.credential : null;
   const windows: UpstreamSignal[] = quotaWindows(credential).map(row => {
@@ -182,9 +187,9 @@ const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code'
     return {
       key: row.key,
       percent: row.percent,
-      value: remainingPercentValue(t, row.percent),
+      value: shownPercent(t, row.percent, quotaDisplay),
       label,
-      detail: meterDetail(t, label, row.percent, row.resetAt, row.fetchedAt, locale),
+      detail: meterDetail(t, label, row.percent, quotaDisplay, row.resetAt, row.fetchedAt, locale),
     };
   });
 
@@ -196,7 +201,7 @@ const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code'
   return until === null ? windows : windows.concat(blockedSignal(until, t, locale, now));
 };
 
-const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: TFunction, locale: string): UpstreamSignal[] => {
+const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: TFunction, locale: string, quotaDisplay: QuotaDisplay): UpstreamSignal[] => {
   const probe = record.state?.usageProbe ?? null;
   const observation = probe?.observation ?? null;
   if (observation === null) return [];
@@ -207,9 +212,9 @@ const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: T
     return {
       key: item.key,
       percent: item.percent,
-      value: remainingPercentValue(t, item.percent),
+      value: shownPercent(t, item.percent, quotaDisplay),
       label,
-      detail: meterDetail(t, label, item.percent, item.resetsAt, observation.fetchedAt, locale),
+      detail: meterDetail(t, label, item.percent, quotaDisplay, item.resetsAt, observation.fetchedAt, locale),
     };
   });
 
@@ -220,8 +225,8 @@ const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: T
     signals.push({
       key: 'included',
       percent,
-      value: remainingPercentValue(t, percent),
-      label: `${activityCostText(used)} / ${activityCostText(included.allowanceUsd)}`,
+      value: shownPercent(t, percent, quotaDisplay),
+      label: `${activityCostText(quotaDisplay === 'used' ? used : included.balanceUsd)} / ${activityCostText(included.allowanceUsd)}`,
       detail: detailText([includedCreditsHint(included, t, locale), t('dashboard.upstreamEditor.ollama.usage.resets', { time: dateTime(included.until, locale) })]),
     });
     return signals;
@@ -240,16 +245,16 @@ const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: T
   return signals;
 };
 
-const upstreamSignals = (record: UpstreamRecord, t: TFunction, locale: string, now: number): UpstreamSignal[] => {
+const upstreamSignals = (record: UpstreamRecord, t: TFunction, locale: string, now: number, quotaDisplay: QuotaDisplay): UpstreamSignal[] => {
   switch (record.kind) {
   // An operator-configured endpoint publishes no account of its own to report on.
   case 'custom':
   case 'azure':
     return [];
-  case 'copilot': return copilotSignals(record, t, locale);
-  case 'codex': return codexSignals(record, t, locale, now);
-  case 'claude-code': return claudeCodeSignals(record, t, locale, now);
-  case 'ollama': return ollamaSignals(record, t, locale);
+  case 'copilot': return copilotSignals(record, t, locale, quotaDisplay);
+  case 'codex': return codexSignals(record, t, locale, now, quotaDisplay);
+  case 'claude-code': return claudeCodeSignals(record, t, locale, now, quotaDisplay);
+  case 'ollama': return ollamaSignals(record, t, locale, quotaDisplay);
   }
 };
 
@@ -269,9 +274,9 @@ const upstreamPlan = (record: UpstreamRecord): string | null => {
   }
 };
 
-export const upstreamReadout = (record: UpstreamRecord, t: TFunction, locale: string, now: number): UpstreamReadout => ({
+export const upstreamReadout = (record: UpstreamRecord, t: TFunction, locale: string, now: number, quotaDisplay: QuotaDisplay): UpstreamReadout => ({
   plan: upstreamPlan(record) ?? t(`provider.${record.kind}`, providerLabel(record.kind)),
-  signals: upstreamSignals(record, t, locale, now),
+  signals: upstreamSignals(record, t, locale, now, quotaDisplay),
 });
 
 export function UpstreamSignals({ record }: { record: UpstreamRecord }) {
@@ -281,7 +286,8 @@ export function UpstreamSignals({ record }: { record: UpstreamRecord }) {
   // A rate limit is stated as the time it still has to run, so the readout
   // counts down on the wall clock rather than only when the record changes.
   const now = useNow(WALL_CLOCK_REFRESH_MS);
-  const { plan, signals } = upstreamReadout(record, t, locale, now);
+  const preferences = useUserPreferences();
+  const { plan, signals } = upstreamReadout(record, t, locale, now, preferences.quotaDisplay);
 
   return <div className="flex items-baseline gap-x-1.5 min-w-0">
     <Text size={200} className="text-fui-fg3 flex-none" weight="medium" wrap={false}>
@@ -290,9 +296,9 @@ export function UpstreamSignals({ record }: { record: UpstreamRecord }) {
     <div className="flex items-baseline gap-x-3 min-w-0">
       {signals.map(signal => <Tooltip content={signal.detail} key={signal.key} relationship="description">
         <span className={mergeClasses('winui-focus-rect inline-flex items-baseline gap-1 min-w-0', styles.signal)} tabIndex={0}>
-          {signal.percent !== null && <ProgressRing percent={100 - signal.percent} tone={quotaRingTone(signal.percent)} />}
-          <Text size={200} className={signal.blocked === true ? styles.blocked : styles.value} weight="medium" wrap={false}>{signal.value}</Text>
-          {signal.label !== null && <Text size={200} className={styles.label} truncate wrap={false}>{signal.label}</Text>}
+          {signal.percent !== null && <ProgressRing percent={preferences.quotaDisplay === 'used' ? signal.percent : 100 - signal.percent} tone={quotaRingTone(signal.percent)} />}
+          <Text size={200} className={mergeClasses('tabular-nums', signal.blocked === true ? styles.blocked : styles.value)} weight="medium" wrap={false}>{signal.value}</Text>
+          {signal.label !== null && <Text size={200} className={mergeClasses('tabular-nums', styles.label)} truncate wrap={false}>{signal.label}</Text>}
         </span>
       </Tooltip>)}
     </div>

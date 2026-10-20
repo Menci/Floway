@@ -155,6 +155,7 @@ export function UpstreamMetricsChartSection({ chart, start, end }: { chart: Upst
             width={index === 0 ? chartMargins.left : 0}
             yAxisId={unit}
           />)}
+
           <Tooltip
             content={props => <MetricsCallout {...props} element={element} formatters={formatters} pointerStore={linkedHover.pointerStore} />}
             cursor={{ stroke: 'var(--colorNeutralStroke1)', strokeDasharray: '5,5' }}

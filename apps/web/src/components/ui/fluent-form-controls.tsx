@@ -217,7 +217,7 @@ export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof
     <FluentDropdown
       {...props}
       aria-readonly={readOnly === true ? true : undefined}
-      clearButton={props.clearButton === undefined ? { children: CLEAR_ICON } : props.clearButton}
+      clearButton={props.clearable === true && props.clearButton === undefined ? { children: CLEAR_ICON } : props.clearButton}
       expandIcon={expandIcon === undefined ? EXPAND_ICON : expandIcon}
       onOptionSelect={readOnly === true ? undefined : onOptionSelect}
       positioning={positioning ?? LISTBOX_POSITIONING}

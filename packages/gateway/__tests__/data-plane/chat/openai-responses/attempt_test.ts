@@ -94,7 +94,7 @@ const installRepo = () => {
   void repo.apiKeys.save({
     id: API_KEY_ID, userId: 1, name: 'OpenAI Responses test key', key: 'raw-responses-test',
     serverSecret: '99'.repeat(32), createdAt: '2026-01-01T00:00:00.000Z',
-    upstreamIds: null, deletedAt: null, dumpRetentionSeconds: null,
+    upstreamIds: null, randomizeUpstreams: false, deletedAt: null, dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: TEST_OPENAI_RESPONSES_RETENTION_SECONDS,
   });
   return repo;
@@ -524,6 +524,15 @@ test('generate preserves order and downgrades a disallowed system turn across tr
           return {
             ok: true,
             events: (async function* () {
+              yield eventFrame<AnthropicMessagesStreamEventEx>({
+                type: 'message_start',
+                message: {
+                  container: null, diagnostics: null, stop_details: null,
+                  id: 'msg_test', type: 'message', role: 'assistant', content: [],
+                  model: 'upstream-model', stop_reason: null, stop_sequence: null,
+                  usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 0, output_tokens: 0 },
+                },
+              });
               yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_stop' });
               yield doneFrame();
             })(),
@@ -571,7 +580,7 @@ test('generate preserves order and downgrades a disallowed system turn across tr
 test('generate seeds privatePayload before interceptors so the web-search shim replays the prior wsc results on echo', async () => {
   // End-to-end contract: when a stateless client (e.g. Codex CLI) echoes a
   // prior gateway-created web_search_call by its emitted id, the web-search shim's
-  // `transformItems` (which runs as part of the interceptor chain) must
+  // `expandHistoryItem` (which runs as part of the interceptor chain) must
   // find the persisted `payload.private` and emit the cached function_call
   // + function_call_output pair to upstream — NOT the not-preserved
   // placeholder.
@@ -616,7 +625,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   });
 
   // Capture the upstream-bound body so we can verify what the shim produced
-  // after the echoed wsc passed through transformItems.
+  // after the echoed wsc passed through expandHistoryItem.
   let capturedBody: { input?: unknown[] } | undefined;
   const upstreamResponse = makeOpenAIResponsesResult();
   // The shim's multi-turn loop requires `response.created` (carrying a model
@@ -824,6 +833,15 @@ test('generate lowers agent_message to a framed user message across translation 
           return {
             ok: true,
             events: (async function* () {
+              yield eventFrame<AnthropicMessagesStreamEventEx>({
+                type: 'message_start',
+                message: {
+                  container: null, diagnostics: null, stop_details: null,
+                  id: 'msg_agent', type: 'message', role: 'assistant', content: [],
+                  model: 'test-model', stop_reason: null, stop_sequence: null,
+                  usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 },
+                },
+              });
               yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_stop' });
               yield doneFrame();
             })(),
@@ -865,7 +883,10 @@ test('generate lowers agent_message to a framed user message across translation 
           observedBody = body;
           return {
             ok: true,
-            events: (async function* () { yield doneFrame(); })(),
+            events: (async function* () {
+              yield eventFrame<OpenAIChatCompletionsStreamEvent>({ id: 'chatcmpl_agent', object: 'chat.completion.chunk', created: 0, model: 'test-model', choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: 'stop' }] });
+              yield doneFrame();
+            })(),
             modelKey: 'k',
             headers: new Headers(),
           };

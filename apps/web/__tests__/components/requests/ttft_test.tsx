@@ -22,6 +22,7 @@ const testApiKey: ApiKey = {
   created_at: '2026-01-01T00:00:00.000Z',
   last_used_at: null,
   upstream_ids: null,
+  randomize_upstreams: false,
   dump_retention_seconds: 3600,
   responses_retention_seconds: 0,
 };

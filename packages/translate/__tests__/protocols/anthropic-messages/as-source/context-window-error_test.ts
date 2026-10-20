@@ -1,26 +1,8 @@
 import { test } from 'vitest';
 
-import {
-  isContextExceededError,
-  rewriteContextExceededToPromptTooLong,
-} from '../../../../src/protocols/anthropic-messages/as-source/context-window-error.ts';
+import { rewriteContextExceededToPromptTooLong } from '../../../../src/protocols/anthropic-messages/as-source/context-window-error.ts';
 import { buildPromptTooLongBody, PROMPT_TOO_LONG_MESSAGE } from '@floway-dev/protocols/anthropic-messages';
-import { assert, assertEquals, assertFalse } from '@floway-dev/test-utils';
-
-test('isContextExceededError — recognizes canonical code strings', () => {
-  assert(isContextExceededError({ code: 'context_length_exceeded' }));
-  assert(isContextExceededError({ code: 'model_max_prompt_tokens_exceeded' }));
-  assertFalse(isContextExceededError({ code: 'rate_limit_exceeded' }));
-  assertFalse(isContextExceededError(undefined));
-  assertFalse(isContextExceededError(null));
-});
-
-test('isContextExceededError — recognizes fallback message substrings', () => {
-  assert(isContextExceededError({ message: 'Your input exceeds the context window of this model. Please adjust your input.' }));
-  assert(isContextExceededError({ message: "This model's maximum context length is 4097 tokens." }));
-  assert(isContextExceededError({ message: 'Request body is too large for model context window' }));
-  assertFalse(isContextExceededError({ message: 'a network hiccup' }));
-});
+import { assert, assertEquals } from '@floway-dev/test-utils';
 
 test('buildPromptTooLongBody — Anthropic envelope with load-bearing prefix', () => {
   const body = new TextDecoder().decode(buildPromptTooLongBody());

@@ -8,6 +8,25 @@ export type PerformanceRange = DashboardRange;
 export type PerformanceGroupBy = 'keyId' | 'userId' | 'model' | 'upstream' | 'operation' | 'runtimeLocation';
 export type PerformanceMetric = 'ttft' | 'tokPerSec';
 export type PerformancePercentile = 'p50' | 'p95' | 'p99';
+export type PerformanceTableSortKey = 'group' | 'requests' | 'errors' | 'ttft' | 'speed';
+export type PerformanceTableSortDirection = 'ascending' | 'descending';
+
+export interface PerformanceTableSort {
+  direction: PerformanceTableSortDirection;
+  key: PerformanceTableSortKey;
+}
+
+export type PerformancePercentiles = Record<PerformanceMetric, PerformancePercentile>;
+
+export const performancePercentiles: readonly PerformancePercentile[] = ['p50', 'p95', 'p99'];
+export const performanceGroupByValues: readonly PerformanceGroupBy[] = ['model', 'upstream', 'operation', 'runtimeLocation', 'userId', 'keyId'];
+export const performanceTableSortKeys: readonly PerformanceTableSortKey[] = ['group', 'requests', 'errors', 'ttft', 'speed'];
+export const defaultPerformanceTableSort: PerformanceTableSort = { direction: 'descending', key: 'requests' };
+
+// A name column reads best A to Z, every measure best from its largest value
+// down; a new column opens in the direction its content is usually read in.
+export const performanceSortDirectionForKey = (key: PerformanceTableSortKey): PerformanceTableSortDirection =>
+  key === 'group' ? 'ascending' : 'descending';
 
 export interface PerformanceDisplayRecord {
   bucket: string;
@@ -36,7 +55,12 @@ export interface PerformanceFilters {
 
 export interface PerformanceUrlState {
   metric: PerformanceMetric;
-  percentile: PerformancePercentile;
+  // Keyed by metric: switching the chart from TTFT to output speed must not
+  // reinterpret the reading the operator already chose for the metric they
+  // left.
+  percentiles: PerformancePercentiles;
+  breakdown: PerformanceGroupBy;
+  sort: PerformanceTableSort;
   groupBy: PerformanceGroupBy;
   range: PerformanceRange;
   filters: PerformanceFilters;
@@ -83,12 +107,17 @@ export const performanceValue = (
   metric: PerformanceMetric,
   percentile: PerformancePercentile,
 ): number | null => {
-  if (metric === 'ttft') {
-    return percentile === 'p50' ? record.ttftMsP50 : percentile === 'p95' ? record.ttftMsP95 : record.ttftMsP99;
-  }
+  const ttft = percentile === 'p50' ? record.ttftMsP50 : percentile === 'p95' ? record.ttftMsP95 : record.ttftMsP99;
+  if (metric === 'ttft') return ttft;
   const us = percentile === 'p50' ? record.tpotUsP50 : percentile === 'p95' ? record.tpotUsP95 : record.tpotUsP99;
   return us === null || us <= 0 ? null : 1_000_000 / us;
 };
+
+// p95 leaves five percent of readings below it, which is the share the speed
+// column calls the worst.
+const performancePercentileTail: Record<PerformancePercentile, number> = { p50: 50, p95: 5, p99: 1 };
+
+export const performancePercentileTailOf = (percentile: PerformancePercentile): number => performancePercentileTail[percentile];
 
 // Indexed rather than scanned per call: a group is resolved to a name once per
 // chart series, once per table row and twice per sort comparison.
@@ -121,14 +150,22 @@ export const resolvePerformanceGroup = (
 };
 
 export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUrlState => {
-  const groupBy = oneOf(search.get('g'), ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'], 'model');
+  const groupBy = oneOf(search.get('g'), performanceGroupByValues, 'model');
   const filters = clearGroupedTelemetryFilters({
     model: repeatedValues(search, 'fm'), upstream: repeatedValues(search, 'fu'), operation: repeatedValues(search, 'fo'),
     runtimeLocation: repeatedValues(search, 'fr'), userId: repeatedValues(search, 'fusr'), keyId: repeatedValues(search, 'fk'),
   }, groupBy);
   return {
     metric: oneOf(search.get('m'), ['ttft', 'tokPerSec'], 'ttft'),
-    percentile: oneOf(search.get('pct'), ['p50', 'p95', 'p99'], 'p95'),
+    percentiles: {
+      ttft: oneOf(search.get('ttft_p'), performancePercentiles, 'p95'),
+      tokPerSec: oneOf(search.get('speed_p'), performancePercentiles, 'p95'),
+    },
+    breakdown: oneOf(search.get('tab'), performanceGroupByValues, 'model'),
+    sort: (() => {
+      const key = oneOf(search.get('sort'), performanceTableSortKeys, defaultPerformanceTableSort.key);
+      return { key, direction: oneOf(search.get('dir'), ['ascending', 'descending'], performanceSortDirectionForKey(key)) };
+    })(),
     groupBy,
     range: parseDashboardRange(search),
     filters,
@@ -139,7 +176,11 @@ export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUr
 export const serializePerformanceUrlState = (state: PerformanceUrlState): URLSearchParams => {
   const search = new URLSearchParams();
   if (state.metric !== 'ttft') search.set('m', state.metric);
-  if (state.percentile !== 'p95') search.set('pct', state.percentile);
+  if (state.percentiles.ttft !== 'p95') search.set('ttft_p', state.percentiles.ttft);
+  if (state.percentiles.tokPerSec !== 'p95') search.set('speed_p', state.percentiles.tokPerSec);
+  if (state.breakdown !== 'model') search.set('tab', state.breakdown);
+  if (state.sort.key !== defaultPerformanceTableSort.key) search.set('sort', state.sort.key);
+  if (state.sort.direction !== performanceSortDirectionForKey(state.sort.key)) search.set('dir', state.sort.direction);
   if (state.groupBy !== 'model') search.set('g', state.groupBy);
   serializeDashboardRange(search, state.range);
   const filters: Array<[string, readonly string[]]> = [['fm', state.filters.model], ['fu', state.filters.upstream], ['fo', state.filters.operation], ['fr', state.filters.runtimeLocation], ['fusr', state.filters.userId], ['fk', state.filters.keyId]];
@@ -174,3 +215,8 @@ export const normalizePerformanceDimensionsForRuntime = <State extends Performan
     },
   };
 };
+
+export const normalizePerformanceBreakdownForRuntime = (
+  breakdown: PerformanceGroupBy,
+  cloudflare: boolean,
+): PerformanceGroupBy => !cloudflare && breakdown === 'runtimeLocation' ? 'model' : breakdown;

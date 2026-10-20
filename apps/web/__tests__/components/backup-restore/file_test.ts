@@ -4,6 +4,7 @@ import { BACKUP_FILE_VERSION, parseBackupFile } from '../../../src/components/ba
 
 const data = {
   users: [],
+  userPreferences: [],
   groups: [],
   apiKeys: [],
   upstreams: [],
@@ -13,6 +14,7 @@ const data = {
   upstreamMetrics: [],
   performanceIncluded: false,
   searchConfig: null,
+  siteSettings: { siteName: null },
 };
 
 const backup = (overrides: Record<string, unknown> = {}) => JSON.stringify({
@@ -34,6 +36,10 @@ describe('backup file validation', () => {
   it('rejects unknown fields instead of stripping them', () => {
     expect(parseBackupFile(backup({ typo: true })).ok).toBe(false);
     expect(parseBackupFile(backup({ data: { ...data, typo: [] } })).ok).toBe(false);
+  });
+
+  it('requires the preferences collection this version exports', () => {
+    expect(parseBackupFile(backup({ data: { ...data, userPreferences: undefined } })).ok).toBe(false);
   });
 
   it('keeps performance presence synchronized with its flag', () => {

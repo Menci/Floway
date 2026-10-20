@@ -270,6 +270,62 @@ describe('/alpha/search data plane', () => {
       expect(body.output).toContain('2 matches for pattern: `beta`');
     });
 
+    it('maps response_length and query-level filters onto the provider request', async () => {
+      const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
+      const stub = makeStubProvider();
+      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
+      const app = buildAlphaSearchApp();
+
+      const response = await postSearch(app, apiKey.key, {
+        settings: { filters: { allowed_domains: ['example.com', 'other.com'] } },
+        commands: {
+          search_query: [{ q: 'react', domains: ['example.com', 'blocked.com'], recency: 7 }],
+          response_length: 'short',
+        },
+      });
+      expect(response.status).toBe(200);
+      expect(stub.calls).toHaveLength(1);
+      const request = stub.calls[0].request as WebSearchProviderRequest;
+      expect(request.maxResults).toBe(10);
+      expect(request.allowedDomains).toEqual(['example.com']);
+      expect(request.recencyDays).toBe(7);
+    });
+
+    it('does not widen filtering when global and query domains do not intersect', async () => {
+      const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
+      const stub = makeStubProvider();
+      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
+      const app = buildAlphaSearchApp();
+
+      const response = await postSearch(app, apiKey.key, {
+        settings: { filters: { allowed_domains: ['example.com'] } },
+        commands: { search_query: [{ q: 'react', domains: ['other.com'] }] },
+      });
+      expect(response.status).toBe(200);
+      const body = await response.json() as SearchResponseBody;
+      expect(body.output).toContain('(no results)');
+      expect(stub.calls).toHaveLength(0);
+    });
+
+    it('treats null optional fields as absent', async () => {
+      const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
+      const stub = makeStubProvider();
+      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
+      const app = buildAlphaSearchApp();
+
+      const response = await postSearch(app, apiKey.key, {
+        commands: {
+          search_query: [{ q: 'react', domains: null, recency: null }],
+          response_length: null,
+        },
+      });
+      expect(response.status).toBe(200);
+      expect(stub.calls).toHaveLength(1);
+      const request = stub.calls[0].request as WebSearchProviderRequest;
+      expect(request.allowedDomains).toBeUndefined();
+      expect(request.recencyDays).toBeUndefined();
+    });
+
     it('concatenates multiple commands in order with a blank-line separator', async () => {
       const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
       const stub = makeStubProvider();

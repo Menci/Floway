@@ -4,7 +4,6 @@
 import type { CopilotQuotaSnapshot, UpstreamRecord } from '../../api/types';
 import type { TFunction } from '../../i18n/translation';
 import { formatUsdNumber } from '../../lib/decimal-display';
-import { clampPercent } from '../../lib/percent';
 import { copilotCreditsToUsd, isCopilotCreditQuota } from '@floway-dev/provider-copilot/browser';
 
 export type CopilotRecord = Extract<UpstreamRecord, { kind: 'copilot' }>;
@@ -17,15 +16,15 @@ export interface QuotaBucket {
   // Credit buckets are metered in GitHub AI Credits and shown in dollars.
   credits: boolean;
   entitlement: number;
+  remaining: number;
   used: number;
   usedPercent: number;
-  barPercent: number | null;
 }
 
 // A free seat reports `entitlement: 0` with `percent_remaining: 0`, which as
 // metered would render a full bar on a seat with no premium allotment.
 // `usedPercent` stays as upstream computed it, past 100 for an overage-
-// permitted bucket; only the bar is clamped.
+// permitted bucket; the row clamps what it paints.
 export const readBuckets = (quota: CopilotQuotaSnapshot | null): QuotaBucket[] =>
   Object.entries(quota?.quotas ?? {}).map(([id, detail]) => {
     const usedPercent = Math.round(100 - detail.percent_remaining);
@@ -34,9 +33,9 @@ export const readBuckets = (quota: CopilotQuotaSnapshot | null): QuotaBucket[] =
       kind: detail.unlimited ? 'unlimited' : detail.entitlement > 0 ? 'metered' : 'unavailable',
       credits: isCopilotCreditQuota(id),
       entitlement: detail.entitlement,
+      remaining: isCopilotCreditQuota(id) ? detail.quota_remaining : Math.round(detail.quota_remaining),
       used: isCopilotCreditQuota(id) ? detail.entitlement - detail.quota_remaining : Math.round(detail.entitlement - detail.quota_remaining),
       usedPercent,
-      barPercent: clampPercent(usedPercent),
     };
   });
 
@@ -60,7 +59,7 @@ export const formatBucketAmount = (bucket: QuotaBucket, amount: number, locale: 
 
 // The id is an open string GitHub owns, so one this table does not know is shown
 // as the id itself rather than rewritten.
-export const copilotQuotaName = (t: TFunction, id: string, quantity: 'allowance' | 'balance'): string => {
+export const copilotQuotaName = (t: TFunction, id: string, quantity: 'allowance' | 'remaining' | 'usage'): string => {
   switch (id) {
   case 'premium_interactions': return t(`dashboard.upstreams.copilotQuota.premiumInteractions.${quantity}`);
   case 'chat': return t(`dashboard.upstreams.copilotQuota.chat.${quantity}`);

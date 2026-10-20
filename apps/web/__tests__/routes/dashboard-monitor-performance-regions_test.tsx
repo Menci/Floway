@@ -31,7 +31,9 @@ const renderPage = (regionAvailable: boolean | null, groupBy: 'model' | 'runtime
         regionAvailable,
         state: {
           metric: 'ttft',
-          percentile: 'p95',
+          percentiles: { ttft: 'p95', tokPerSec: 'p95' },
+          breakdown: 'model',
+          sort: { key: 'requests', direction: 'descending' },
           groupBy,
           range: 'today',
           filters: { model: [], upstream: [], operation: [], runtimeLocation: [], userId: [], keyId: [] },

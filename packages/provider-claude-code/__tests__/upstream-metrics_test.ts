@@ -36,16 +36,22 @@ it('delivers nonfinite numeric utilization to the recording boundary', () => {
   expect(claudeCodeProbeMetrics(body)[0]?.value).toBe(Infinity);
 });
 
-it('converts canonical utilization percent into remaining percent for display', () => {
-  const display = resolveUpstreamMetricDisplay({ name: 'quota.utilization', labels: { quota: 'five_hour' } })!;
-  expect(display.axisPriority).toBe(upstreamMetricAxisPriority.subscriptionQuota);
-  expect(display.toDisplayValue(25)).toBe(75);
-  const extra = resolveUpstreamMetricDisplay({ name: 'quota.utilization', labels: { quota: 'extra_usage' } })!;
+it('converts canonical utilization percent into the direction the preference names', () => {
+  const identity = { name: 'quota.utilization', labels: { quota: 'five_hour' } };
+  const remaining = resolveUpstreamMetricDisplay(identity, { quotaDisplay: 'remaining' })!;
+  expect(remaining.axisPriority).toBe(upstreamMetricAxisPriority.subscriptionQuota);
+  expect(remaining.labelKey).toBe('dashboard.upstreamMetrics.metrics.remaining');
+  expect(remaining.toDisplayValue(25)).toBe(75);
+  const used = resolveUpstreamMetricDisplay(identity, { quotaDisplay: 'used' })!;
+  expect(used.labelKey).toBe('dashboard.upstreamMetrics.metrics.usage');
+  expect(used.toDisplayValue(25)).toBe(25);
+  const extra = resolveUpstreamMetricDisplay({ name: 'quota.utilization', labels: { quota: 'extra_usage' } }, { quotaDisplay: 'remaining' })!;
   expect(extra.axisPriority).toBe(upstreamMetricAxisPriority.extraUsage);
+  expect(extra.labelKey).toBe('dashboard.upstreamMetrics.metrics.extraUsage');
   expect(extra.toDisplayValue(25)).toBe(25);
   expect(extra.emptyValue).toBe(0);
 });
 
 it('leaves labels outside the Claude utilization metric schema undecoded', () => {
-  expect(resolveUpstreamMetricDisplay({ name: 'quota.utilization', labels: { quota: 'five_hour', region: 'us' } })).toBeNull();
+  expect(resolveUpstreamMetricDisplay({ name: 'quota.utilization', labels: { quota: 'five_hour', region: 'us' } }, { quotaDisplay: 'used' })).toBeNull();
 });

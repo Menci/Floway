@@ -12,7 +12,7 @@ const groups: ControlPlaneGroup[] = [
   { id: 1, name: 'Platform', hue: 210, createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
   { id: 2, name: 'Research', hue: 150, createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
 ];
-const user: ControlPlaneUser = { id: 1, username: 'frank', isAdmin: true, upstreamIds: null, createdAt: '2026-10-01T00:00:00Z' };
+const user: ControlPlaneUser = { id: 1, username: 'frank', isAdmin: true, upstreamIds: null, createdAt: '2026-10-01T00:00:00Z', preferences: { quotaDisplay: 'remaining', language: null } };
 const memberships = [
   { groupId: 1, userId: 1, createdAt: '2026-10-10T09:30:00Z' },
   { groupId: 2, userId: 1, createdAt: '2026-10-12T10:00:00Z' },
@@ -152,7 +152,7 @@ test('keeps account dates visible and locks every editor during refresh', async 
   expect(screen.queryByRole('columnheader', { name: 'Role' })).toBeNull();
   expect(name.getAttribute('aria-description')).toBe('Administrator');
   const table = screen.getByRole('table');
-  expect(screen.getByRole('columnheader', { name: 'Actions' }).querySelector('.sr-only')).toBeTruthy();
+  expect(screen.getAllByRole('columnheader').at(-1)?.textContent).toBe('');
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Refresh users and groups' })); });
   expect(name.disabled).toBe(true);
   expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Edit user frank' }).disabled).toBe(true);

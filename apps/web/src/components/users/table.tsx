@@ -9,7 +9,7 @@ import { useLocale } from '../../lib/use-locale';
 import { GroupMemberships } from '../groups/memberships';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
-import { TABLE_ACTIONS_WIDTH, TableActions, TableTrailingHeader } from '../ui/table-actions';
+import { TABLE_ACTIONS_WIDTH, TableActions, TableActionsHeader } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
@@ -57,7 +57,7 @@ export function UsersTable({
             <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.created')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.groups')}</TableHeaderCell>
             <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.upstreams')}</TableHeaderCell>
-            <TableTrailingHeader><span className="sr-only">{t('dashboard.users.table.actions')}</span></TableTrailingHeader>
+            <TableActionsHeader />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -72,7 +72,7 @@ export function UsersTable({
                   </Tooltip>
                 </TableCell>
                 <TableCell><GroupMemberships groups={groupsByUser.get(user.id)!} /></TableCell>
-                <TableCell className="whitespace-nowrap">
+                <TableCell className="whitespace-nowrap tabular-nums">
                   {user.upstreamIds === null
                     ? t('dashboard.users.upstreams.all')
                     : t('dashboard.users.upstreams.count', { count: user.upstreamIds.length })}

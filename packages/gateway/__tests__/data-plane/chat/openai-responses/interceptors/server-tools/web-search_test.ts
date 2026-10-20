@@ -8,7 +8,7 @@ import {
   prepareToolsForShim,
   SHIM_TOOL_NAME,
   synthesizeWebSearchCallId,
-  transformInputItemsForWebSearch,
+  expandWebSearchCall,
   WEB_SEARCH_HOSTED_TYPES,
   type WebSearchCallPrivatePayload,
 } from '../../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/web-search.ts';
@@ -95,11 +95,20 @@ test('alpha-search settings preserve every OpenAI setting supported by passthrou
   });
 });
 
-test('local provider support rejects unsupported commands and nested parameters', () => {
+test('local provider support accepts query filters and response length, rejects unsupported commands', () => {
   assertLocalWebSearchSupport({ search_query: [{ q: 'supported' }], open: [], find: [] });
+  assertLocalWebSearchSupport({
+    search_query: [{ q: 'news', recency: 2, domains: ['example.com'] }],
+    response_length: 'short',
+  });
+  // Optional fields serialized as null mean "not provided".
+  assertLocalWebSearchSupport({
+    search_query: [{ q: 'news', recency: null, domains: null }],
+    response_length: null,
+  });
   for (const [commands, path] of [
     [{ image_query: [{ q: 'cat' }] }, 'commands.image_query'],
-    [{ search_query: [{ q: 'news', recency: 2 }] }, 'commands.search_query[0].recency'],
+    [{ response_length: 'huge' }, 'commands.response_length'],
     [{ open: [{ ref_id: 'https://example.com', lineno: 10 }] }, 'commands.open[0].lineno'],
   ] as const) {
     assertThrows(
@@ -129,6 +138,20 @@ test('parseWebSearchOperations parses multiple search_query entries with stable 
       { kind: 'search', arrayIndex: 1, query: 'b' },
       { kind: 'search', arrayIndex: 2, query: 'c' },
     ],
+  );
+});
+
+test('parseWebSearchOperations preserves query-level domains and recency', () => {
+  assertEquals(
+    opsOf({ search_query: [{ q: 'news', domains: ['example.com'], recency: 7 }] }),
+    [{ kind: 'search', arrayIndex: 0, query: 'news', domains: ['example.com'], recencyDays: 7 }],
+  );
+});
+
+test('parseWebSearchOperations ignores null optional fields', () => {
+  assertEquals(
+    opsOf({ search_query: [{ q: 'news', domains: null, recency: null }] }),
+    [{ kind: 'search', arrayIndex: 0, query: 'news' }],
   );
 });
 
@@ -187,13 +210,12 @@ test('parseWebSearchOperations: unsupported sub-properties surface one unsupport
     response_length: 'short',
     search_query: [{ q: 'real' }],
   });
-  assertEquals(ops.length, 6);
+  assertEquals(ops.length, 5);
   assertEquals(ops[0], { kind: 'search', arrayIndex: 0, query: 'real' });
   assertEquals(ops[1], { kind: 'unsupported', subProperty: 'click', arrayIndex: 0 });
   assertEquals(ops[2], { kind: 'unsupported', subProperty: 'screenshot', arrayIndex: 0 });
   assertEquals(ops[3], { kind: 'unsupported', subProperty: 'screenshot', arrayIndex: 1 });
   assertEquals(ops[4], { kind: 'unsupported', subProperty: 'weather', arrayIndex: 0 });
-  assertEquals(ops[5], { kind: 'unsupported', subProperty: 'response_length', arrayIndex: 0 });
 });
 
 test('parseWebSearchOperations: missing q on search_query entry surfaces a missing-argument error sentinel', () => {
@@ -458,7 +480,7 @@ test('prepareToolsForShim rejects invalid hosted fields', () => {
   assertEquals(result.ok, false);
 });
 
-// ── Private-payload restoration (transformInputItemsForWebSearch) ──
+// ── Private-payload restoration (expandWebSearchCall) ──
 
 const makePrivatePayload = (
   upstreamCallId: string,
@@ -477,10 +499,7 @@ const makePrivatePayload = (
   ir: { action, results },
 });
 
-test('transformInputItemsForWebSearch replays the upstream function_call verbatim when a private payload exists', () => {
-  // One wsc maps 1:1 to one shim call. The shim's
-  // jsonrepair-canonical args and the per-op output are persisted on
-  // this single row.
+test('expandWebSearchCall replays the upstream function_call verbatim when a private payload exists', () => {
   const payload = makePrivatePayload(
     'call_orig_xyz',
     '{"search_query":[{"q":"caffeine","topn":5}]}',
@@ -488,8 +507,8 @@ test('transformInputItemsForWebSearch replays the upstream function_call verbati
     [{ type: 'text_result', url: 'u', title: 't', snippet: 'cached body' }],
   );
   const map = new Map<string, unknown>([['ws_xxx_abc', payload]]);
-  const out = transformInputItemsForWebSearch(
-    [{ type: 'web_search_call', id: 'ws_xxx_abc' }],
+  const out = expandWebSearchCall(
+    { type: 'web_search_call', id: 'ws_xxx_abc' },
     'web_search',
     id => map.get(id),
   );
@@ -498,14 +517,12 @@ test('transformInputItemsForWebSearch replays the upstream function_call verbati
   assertEquals(fc.type, 'function_call');
   assertEquals(fc.call_id, 'call_orig_xyz');
   assertEquals(fc.name, 'web_search');
-  // The upstream's call_id and canonical args are preserved bit-exact —
-  // `topn` survives even though the IR drops it.
   assertEquals(fc.arguments, '{"search_query":[{"q":"caffeine","topn":5}]}');
   assertEquals(fco.call_id, 'call_orig_xyz');
   assert(fco.output.includes('cached body'));
 });
 
-test('transformInputItemsForWebSearch replays each echoed wsc independently (one pair per wsc)', () => {
+test('expandWebSearchCall replays each echoed wsc independently (one pair per wsc)', () => {
   // Two distinct shim calls (different upstream call_ids) → two replay
   // pairs, one per wsc.
   const p1 = makePrivatePayload('call_u1', '{"search_query":[{"q":"q1"}]}',
@@ -513,14 +530,11 @@ test('transformInputItemsForWebSearch replays each echoed wsc independently (one
   const p2 = makePrivatePayload('call_u2', '{"search_query":[{"q":"q2"}]}',
     { type: 'search', queries: ['q2'] }, [{ type: 'text_result', url: 'u2', title: 't2', snippet: 'body2' }]);
   const map = new Map<string, unknown>([['ws_one', p1], ['ws_two', p2]]);
-  const out = transformInputItemsForWebSearch(
-    [
-      { type: 'web_search_call', id: 'ws_one' },
-      { type: 'web_search_call', id: 'ws_two' },
-    ],
+  const out = ['ws_one', 'ws_two'].flatMap(id => expandWebSearchCall(
+    { type: 'web_search_call', id },
     'web_search',
     id => map.get(id),
-  );
+  ));
   assertEquals(out.length, 4);
   const callIds = out.map(it => (it as { call_id?: unknown }).call_id).filter((id): id is string => typeof id === 'string');
   assertEquals(callIds, ['call_u1', 'call_u1', 'call_u2', 'call_u2']);
@@ -529,13 +543,13 @@ test('transformInputItemsForWebSearch replays each echoed wsc independently (one
   assert(outputs[1].output.includes('body2'));
 });
 
-test('transformInputItemsForWebSearch emits the not-preserved placeholder even when the wire item still carries results (no payload → we do not trust client-supplied results)', () => {
-  const out = transformInputItemsForWebSearch(
-    [{
+test('expandWebSearchCall emits the not-preserved placeholder even when the wire item still carries results (no payload → we do not trust client-supplied results)', () => {
+  const out = expandWebSearchCall(
+    {
       type: 'web_search_call', id: 'ws_xxx_abc',
       action: { type: 'search', queries: ['caffeine'] },
       results: [{ type: 'text_result', url: 'u', title: 't', snippet: 'public-wire body' }],
-    }],
+    },
     'web_search',
   );
   assertEquals(out.length, 2);
@@ -550,23 +564,20 @@ test('transformInputItemsForWebSearch emits the not-preserved placeholder even w
   assertEquals(fco.output, 'Prior search results were not preserved in the conversation history. Call web_search again if you need them.');
 });
 
-test('transformInputItemsForWebSearch emits the not-preserved placeholder when results are missing and no private payload exists', () => {
-  const out = transformInputItemsForWebSearch(
-    [{ type: 'web_search_call', id: 'ws_xxx_abc', action: { type: 'search', queries: ['q'] } }],
+test('expandWebSearchCall emits the not-preserved placeholder when results are missing and no private payload exists', () => {
+  const out = expandWebSearchCall(
+    { type: 'web_search_call', id: 'ws_xxx_abc', action: { type: 'search', queries: ['q'] } },
     'web_search',
   );
   const fco = out[1] as { type: string; output: string };
   assertEquals(fco.output, 'Prior search results were not preserved in the conversation history. Call web_search again if you need them.');
 });
 
-test('transformInputItemsForWebSearch ignores a stashed value with the wrong schema version (forward-compat)', () => {
+test('expandWebSearchCall exposes an unsupported private payload schema', () => {
   const map = new Map<string, unknown>([['ws_xxx_abc', { v: 99, anything: 'goes' }]]);
-  // Falls back to public-wire reconstruction; no crash, no false hydration.
-  const out = transformInputItemsForWebSearch(
-    [{ type: 'web_search_call', id: 'ws_xxx_abc', action: { type: 'search', queries: ['q'] } }],
+  assertThrows(() => expandWebSearchCall(
+    { type: 'web_search_call', id: 'ws_xxx_abc', action: { type: 'search', queries: ['q'] } },
     'web_search',
     id => map.get(id),
-  );
-  const fco = out[1] as { type: string; output: string };
-  assertEquals(fco.output, 'Prior search results were not preserved in the conversation history. Call web_search again if you need them.');
+  ), TypeError, 'Invalid web search replay payload');
 });

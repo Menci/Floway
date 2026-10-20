@@ -13,6 +13,7 @@ const adminKey: ApiKey = {
   serverSecret: '01'.repeat(32),
   createdAt: '2026-04-01T00:00:00.000Z',
   upstreamIds: null,
+  randomizeUpstreams: false,
   deletedAt: null,
   dumpRetentionSeconds: null,
   openaiResponsesRetentionSeconds: 0,

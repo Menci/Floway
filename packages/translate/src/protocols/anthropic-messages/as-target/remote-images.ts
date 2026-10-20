@@ -4,11 +4,6 @@ import { encodeBase64, mediaTypeEssence } from '@floway-dev/protocols/common';
 
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 
-// Pure translation has no runtime egress of its own. Direct callers that omit
-// a loader retain the existing "unavailable remote image is dropped" semantic;
-// gateway call sites inject the platform-backed loader explicitly.
-export const unavailableRemoteImageLoader: RemoteImageLoader = () => Promise.resolve(null);
-
 const parseDataUrl = (url: string): { mediaType: string; data: string } | null => {
   const match = url.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) return null;

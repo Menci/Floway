@@ -1,7 +1,6 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
-import { storedLanguage } from './language-preference';
 import {
   browserLanguage,
   defaultLanguage,
@@ -24,12 +23,12 @@ import { shellResources } from './shell';
 // Hydration is the one render that cannot be in the visitor's language: it has
 // to reproduce index.html, which was prerendered in the default language. So
 // the active language starts as the default with only ./shell's strings behind
-// it, while `fallbackLng` names the language the visitor will read -- an
-// explicit in-page choice, or the browser language before one has been made --
+// it, while `fallbackLng` names the language the visitor will read -- the
+// browser language, until a signed-in account's stored preference replaces it --
 // and carries the bundle loaded here. Every key outside the shell resolves
 // through that fallback, which puts whatever renders between hydration and
 // LanguageSync in the visitor's language rather than briefly in English.
-const language = storedLanguage() ?? browserLanguage();
+const language = browserLanguage();
 const loaded = new Set<SupportedLanguage>([language]);
 
 void i18n.use(numberFormatter).use(initReactI18next).init({

@@ -31,11 +31,6 @@ export interface EditorAuxData {
 interface UpstreamEditorLoaderDataBase extends EditorAuxData {
   record: UpstreamRecord;
   discovered: UpstreamModelConfig[] | null;
-  // For providers whose credential is an API key, the editor can keep that
-  // stored key when the form's blank secret field is left alone; OAuth
-  // providers do not copy their tokens and start from the blueprint
-  // credential shape instead.
-  preserveCredentials?: boolean;
 }
 
 export type UpstreamEditorLoaderData = UpstreamEditorLoaderDataBase & (
@@ -180,16 +175,26 @@ export const fetchSavedModelCatalog = async (
 // writes the key into the edited values even when nothing filled it in, and
 // dirtiness is decided by comparing those values against the ones the form
 // opened with -- key by key, so a key one side lacks entirely reads as an edit.
-// An optional field therefore opens with its key already present and empty, and
-// every optional field the editor registers needs that seed.
+// An optional field therefore opens with its key already present -- at the
+// stored value when there is one, and undefined otherwise -- and every
+// optional field the editor registers needs that seed.
 const withRegisteredKey = <T extends object, K extends keyof T>(key: K, value: T): T =>
   ({ [key]: undefined, ...value }) as T;
 
+// The API key input registers `config.apiKey` for every kind that renders it,
+// so the form opens with that key present. Seeding an empty string for a config
+// that stores none is what makes a key typed and then deleted read as the state
+// the form opened in; the stored string itself is what the input displays.
+const withApiKeyField = <T extends object>(config: T): T & { apiKey: string } =>
+  ({ ...structuredClone(config), apiKey: (config as { apiKey?: string | null }).apiKey ?? '' });
+
 export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues => {
+  // Kinds whose credential is an API key render a registered field for it, so
+  // the value the editor opens with is the one the operator can see and edit.
+  // The input masks it; nothing about the stored record is withheld.
   const config: UpstreamRecord['config'] = record.kind === 'custom'
     ? {
-        ...structuredClone(record.config),
-        apiKey: '',
+        ...withApiKeyField(record.config),
         // The override fields register the whole map, so the edited value
         // carries every listed path whether or not the stored config does.
         // Seeding the blanks keeps the saved state and the edited state the
@@ -202,11 +207,9 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
         ],
         modelsFetch: withRegisteredKey('endpoint', structuredClone(record.config.modelsFetch)),
       }
-    : record.kind === 'azure'
-      ? { ...structuredClone(record.config), apiKey: '' }
-      : record.kind === 'ollama'
-        ? { ...structuredClone(record.config), apiKey: '' }
-        : structuredClone(record.config);
+    : record.kind === 'azure' || record.kind === 'ollama'
+      ? withApiKeyField(record.config)
+      : structuredClone(record.config);
   const manualModels = manualModelsSupported(record) ? structuredClone(record.config.models) : [];
   return {
     name: record.name,
@@ -225,19 +228,15 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
 
 // The editor holds one flat form model for every provider kind, so the config
 // is assembled structurally and only becomes a specific union member here.
-const configFromValues = (
-  record: UpstreamRecord,
-  values: UpstreamEditorValues,
-  options: { preserveStoredSecret?: boolean } = {},
-): UpstreamRecord['config'] => {
+const configFromValues = (record: UpstreamRecord, values: UpstreamEditorValues): UpstreamRecord['config'] => {
   const config = structuredClone(values.config) as unknown as Record<string, unknown>;
   if (manualModelsSupported(record)) {
     config.models = structuredClone(values.manualModels);
-    const apiKey = typeof config.apiKey === 'string' ? config.apiKey.trim() : '';
-    if (apiKey) config.apiKey = apiKey;
-    else if (options.preserveStoredSecret && 'apiKey' in record.config && record.config.apiKey) {
-      config.apiKey = record.config.apiKey;
-    } else delete config.apiKey;
+    // The input carries the stored key, so an emptied field is the operator
+    // clearing it. Sending the empty value lets the provider reject a required
+    // credential and an optional one drop it; a missing key here would instead
+    // leave the stored one in place through the patch merge.
+    if (typeof config.apiKey === 'string') config.apiKey = config.apiKey.trim();
   }
   if (record.kind === 'custom') {
     const custom = config as Record<string, unknown>;
@@ -265,7 +264,7 @@ export const previewRecord = (record: UpstreamRecord, values: UpstreamEditorValu
     enabled: values.enabled,
     usage_refresh_interval_minutes: values.usageRefreshIntervalMinutes,
     hue: values.hue,
-    config: configFromValues(record, values, { preserveStoredSecret: true }),
+    config: configFromValues(record, values),
     state: values.state,
     proxy_fallback_list: values.proxyFallbackList,
     model_prefix: values.modelPrefix,
@@ -276,7 +275,7 @@ export const previewRecord = (record: UpstreamRecord, values: UpstreamEditorValu
 
 // `sort_order` is left out: the server appends a new upstream after the last
 // one when the field is absent, and the list page owns reordering afterwards.
-export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues, options?: { preserveStoredSecret?: boolean }): CreateUpstreamBody => {
+export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues): CreateUpstreamBody => {
   return {
     kind: record.kind,
     name: values.name.trim(),
@@ -287,7 +286,7 @@ export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues,
     disabled_public_model_ids: values.disabledPublicModelIds,
     proxy_fallback_list: values.proxyFallbackList,
     model_prefix: values.modelPrefix,
-    config: configFromValues(record, values, options),
+    config: configFromValues(record, values),
     ...((record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code')
       ? { state: values.state }
       : {}),

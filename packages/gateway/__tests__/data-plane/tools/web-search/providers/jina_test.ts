@@ -55,6 +55,23 @@ test('createJinaWebSearchProvider sends bearer auth, X-Max-Tokens, X-Site, and g
   );
 });
 
+test('createJinaWebSearchProvider silently ignores recencyDays', async () => {
+  let request: Request | undefined;
+  await withMockedFetch(
+    incoming => {
+      request = incoming;
+      return okEnvelope([]);
+    },
+    async () => {
+      const provider = createJinaWebSearchProvider('jina-test');
+      const result = await provider.search({ query: 'React', recencyDays: 1 });
+      assertEquals(result.type, 'ok');
+      const url = new URL(request!.url);
+      assertEquals(url.searchParams.get('q'), 'React');
+    },
+  );
+});
+
 test('createJinaWebSearchProvider omits X-Site when no allowed domains', async () => {
   let request: Request | undefined;
   await withMockedFetch(

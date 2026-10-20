@@ -24,6 +24,7 @@ const key = (now: number): ApiKey => ({
   serverSecret: '55'.repeat(32),
   createdAt: new Date(now).toISOString(),
   upstreamIds: null,
+  randomizeUpstreams: false,
   deletedAt: null,
   dumpRetentionSeconds: 3600,
   openaiResponsesRetentionSeconds: OPENAI_RESPONSES_RETENTION_SECONDS,
@@ -393,9 +394,13 @@ test('bounded cleanup backfill tracks rows whose API key was hard-deleted', asyn
       if (filename === '0082_expiration_sweep_integrity.sql') break;
       raw.run(sql);
     }
+    raw.run(
+      `INSERT INTO api_keys
+       (id, user_id, name, key, created_at, upstream_ids, deleted_at, dump_retention_seconds, server_secret, responses_retention_seconds)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ['key-a', 1, 'Sweep key', 'raw-sweep-key', new Date(now).toISOString(), null, null, 3600, '55'.repeat(32), OPENAI_RESPONSES_RETENTION_SECONDS],
+    );
     const db = wrapSqlJsDatabase(raw);
-    const repo = new SqlRepo(db);
-    await repo.apiKeys.save(key(now));
     const recordId = '01K00000000000000000ORPH';
     const fileKey = `dumps/v1/key-a/1970010100/${recordId}.req.gz`;
     await db.prepare(
@@ -418,6 +423,7 @@ test('bounded cleanup backfill tracks rows whose API key was hard-deleted', asyn
       raw.run(sql);
     }
 
+    const repo = new SqlRepo(db);
     await repo.expirationSweeps.backfillCleanupTracking(500);
     expect(await db.prepare(
       "SELECT due_at FROM expiration_sweeps WHERE domain = 'dumps' AND key_id = 'key-a'",

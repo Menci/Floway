@@ -32,9 +32,19 @@ test('POST /api/keys defaults durable OpenAI Responses persistence off', async (
     body: JSON.stringify({ name: 'default-off' }),
   });
   assertEquals(response.status, 201);
-  const body = (await response.json()) as { id: string; responses_retention_seconds: number };
+  const body = (await response.json()) as { id: string; randomize_upstreams: boolean; responses_retention_seconds: number };
+  assertEquals(body.randomize_upstreams, false);
   assertEquals(body.responses_retention_seconds, 0);
+  assertEquals((await repo.apiKeys.getById(body.id))?.randomizeUpstreams, false);
   assertEquals((await repo.apiKeys.getById(body.id))?.openaiResponsesRetentionSeconds, 0);
+});
+
+test('PATCH /api/keys/:id enables randomized upstream order', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const response = await ownerPatch(apiKey.id, { randomize_upstreams: true }, apiKey.key);
+  assertEquals(response.status, 200);
+  assertEquals(((await response.json()) as { randomize_upstreams: boolean }).randomize_upstreams, true);
+  assertEquals((await repo.apiKeys.getById(apiKey.id))?.randomizeUpstreams, true);
 });
 
 test('PATCH /api/keys/:id changes only the rolling OpenAI Responses duration', async () => {

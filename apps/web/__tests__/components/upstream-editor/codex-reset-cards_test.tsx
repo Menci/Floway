@@ -7,6 +7,7 @@ import type { CodexRecord } from '../../../src/components/upstreams/codex-accoun
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { stubLocalStorage } from '../../local-storage-stub';
 import { renderInApp } from '../../render';
+import { primeDefaultSession } from '../../test-session';
 
 stubLocalStorage();
 
@@ -29,6 +30,8 @@ const record = upstreamRecord('up_codex', {
 let consumeBodies: Array<{ idempotency_key: string }>;
 let consumeAttempts: number;
 let failFirstConsume: boolean;
+
+beforeEach(() => { primeDefaultSession(); });
 
 beforeEach(() => {
   consumeAttempts = 0;

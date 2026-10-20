@@ -19,6 +19,7 @@ const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
   serverSecret: '00'.repeat(32),
   createdAt: '2026-01-01T00:00:00.000Z',
   upstreamIds: null,
+  randomizeUpstreams: false,
   deletedAt: null,
   dumpRetentionSeconds: null,
   openaiResponsesRetentionSeconds: 0,
@@ -55,7 +56,7 @@ describe('createGatewayCtxFromHono', () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
-      c.set('apiKey', buildApiKey({ id: 'key-1', upstreamIds: ['up-1', 'up-2'] }));
+      c.set('apiKey', buildApiKey({ id: 'key-1', upstreamIds: ['up-1', 'up-2'], randomizeUpstreams: true }));
       ctx = createGatewayCtxFromHono(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
       return c.text('ok');
     });
@@ -63,6 +64,7 @@ describe('createGatewayCtxFromHono', () => {
     assertExists(ctx);
     assertEquals(ctx.apiKeyId, 'key-1');
     assertEquals(ctx.upstreamIds, ['up-1', 'up-2']);
+    assertEquals(ctx.randomizeUpstreams, true);
   });
 
   test('passes upstreamIds through as null on an unrestricted key + uncapped user', async () => {

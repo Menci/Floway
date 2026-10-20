@@ -8,9 +8,10 @@ import DashboardProvidersUpstreams from '../../src/routes/dashboard-providers-up
 import { upstreamRecord } from '../api/upstream-fixture';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
+import { primeDefaultSession } from '../test-session';
 
 stubLocalStorage();
-beforeEach(() => vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1100, 320)));
+beforeEach(() => { primeDefaultSession(); vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1100, 320)); });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 const user = { id: 1, username: 'admin', isAdmin: true, upstreamIds: null };
@@ -37,7 +38,10 @@ const overview = (groupBy = 'model') => ({
 });
 const metrics = (url: URL) => ({
   start: Number(url.searchParams.get('start')), end: Number(url.searchParams.get('end')), step: Number(url.searchParams.get('step')),
-  records: [{ upstreamId: url.searchParams.get('upstream_id'), name: 'quota.remaining', labels: { quota: 'premium_interactions' }, timestamp: Date.now() - 1_000, value: 25 }],
+  records: [
+    { upstreamId: url.searchParams.get('upstream_id'), name: 'quota.remaining', labels: { quota: 'premium_interactions' }, timestamp: Date.now() - 1_000, value: 25 },
+    { upstreamId: url.searchParams.get('upstream_id'), name: 'quota.entitlement', labels: { quota: 'premium_interactions' }, timestamp: Date.now() - 1_000, value: 100 },
+  ],
 });
 const stubGateway = (handler: (url: URL, signal: AbortSignal | undefined) => Promise<Response>) => vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');

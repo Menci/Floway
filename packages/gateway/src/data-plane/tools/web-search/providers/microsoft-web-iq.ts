@@ -29,6 +29,11 @@ const toMicrosoftQuery = (request: WebSearchProviderRequest, query: string) => {
   // site:evil.com`) get rejected at normalization.
   const allowedSites = normalizeDomainList(request.allowedDomains).map(domain => `site:${domain}`);
   const blockedSites = normalizeDomainList(request.blockedDomains).map(domain => `-site:${domain}`);
+  // `recencyDays` is deliberately dropped. Web IQ's search request exposes no
+  // date-window parameter, and rewriting it into query text would change
+  // ranking semantics the caller did not request. Returning the unfiltered
+  // result set is the documented business trade-off: it keeps the call useful
+  // rather than failing or risking an artificial empty result.
   return [query, ...allowedSites, ...blockedSites].join(' ');
 };
 

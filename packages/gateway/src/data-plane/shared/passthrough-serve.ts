@@ -109,6 +109,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     // changes which id the gateway addresses upstream.
     const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
+      randomizeUpstreams: ctx.randomizeUpstreams,
       model,
       kind,
       scheduler: ctx.backgroundScheduler,

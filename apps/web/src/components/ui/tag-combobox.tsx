@@ -34,10 +34,10 @@ export function TagCombobox({ disabled, emptyMessage, label, onChange, options, 
     selectedOptions={value}
   >
     <TagPickerControl expandIcon={<ChevronDown12Regular />}>
-      <TagPickerGroup aria-label={label} className="gap-1.5 min-w-0">
+      <TagPickerGroup aria-label={label}>
         {value.map(id => options.find(option => option.value === id)!).map(renderTag)}
       </TagPickerGroup>
-      <TagPickerInput aria-label={label} autoComplete="off" onChange={event => setQuery(event.target.value)} placeholder={value.length === 0 ? placeholder : undefined} spellCheck={false} value={query} />
+      <TagPickerInput aria-label={label} autoComplete="off" data-query-empty={query.length === 0} onChange={event => setQuery(event.target.value)} placeholder={value.length === 0 ? placeholder : undefined} spellCheck={false} value={query} />
     </TagPickerControl>
     <TagPickerList>{renderList}</TagPickerList>
   </TagPicker>;

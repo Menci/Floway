@@ -237,3 +237,51 @@ test('GET /api/users and /auth/me drop a cap entry whose upstream was deleted', 
   assertEquals(me.status, 200);
   assertEquals(((await me.json()) as { user: { upstreamIds: string[] } }).user.upstreamIds, ['up_x']);
 });
+
+const patchPreferences = (sessionId: string, body: unknown) => requestApp('/api/users/me/preferences', {
+  method: 'PATCH',
+  headers: { 'content-type': 'application/json', 'x-floway-session': sessionId },
+  body: JSON.stringify(body),
+});
+
+test('PATCH /api/users/me/preferences saves the signed-in account preferences and returns them with /auth/me', async () => {
+  const { adminSession, repo } = await setupAppTest({
+    userPreferences: { quotaDisplay: 'remaining', language: null },
+  });
+
+  const response = await patchPreferences(adminSession, { quotaDisplay: 'used', language: 'zh-Hans' });
+  assertEquals(response.status, 200);
+  expect(await response.json()).toEqual({ preferences: { quotaDisplay: 'used', language: 'zh-Hans' } });
+  expect(await repo.userPreferences.get(1)).toEqual({ quotaDisplay: 'used', language: 'zh-Hans' });
+
+  const me = await requestApp('/auth/me', { headers: { 'x-floway-session': adminSession } });
+  const body = (await me.json()) as { user: { preferences: { quotaDisplay: string; language: string | null } } };
+  expect(body.user.preferences).toEqual({ quotaDisplay: 'used', language: 'zh-Hans' });
+});
+
+test('PATCH /api/users/me/preferences merges a partial update and clears language with null', async () => {
+  const { adminSession, repo } = await setupAppTest();
+
+  await patchPreferences(adminSession, { language: 'zh-Hans' });
+  expect(await repo.userPreferences.get(1)).toEqual({ quotaDisplay: 'remaining', language: 'zh-Hans' });
+
+  const cleared = await patchPreferences(adminSession, { language: null });
+  assertEquals(cleared.status, 200);
+  expect(await repo.userPreferences.get(1)).toEqual({ quotaDisplay: 'remaining', language: null });
+});
+
+test('PATCH /api/users/me/preferences rejects an unknown direction and an empty body', async () => {
+  const { adminSession } = await setupAppTest();
+  assertEquals((await patchPreferences(adminSession, { quotaDisplay: 'left' })).status, 400);
+  assertEquals((await patchPreferences(adminSession, {})).status, 400);
+});
+
+test('PATCH /api/users/me/preferences refuses a request authenticated by API key only', async () => {
+  const { apiKey } = await setupAppTest();
+  const response = await requestApp('/api/users/me/preferences', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: JSON.stringify({ quotaDisplay: 'used' }),
+  });
+  assertEquals(response.status, 401);
+});

@@ -1,6 +1,6 @@
 import type { WebSearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
-import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector } from '@floway-dev/protocols/common';
+import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector, UserPreferences } from '@floway-dev/protocols/common';
 import type { PerformanceTelemetryContext, UpstreamMetricIdentity, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
 
 // Provider config, flag overrides, and catalog transport advance this version;
@@ -21,6 +21,8 @@ export interface ApiKey {
   // When both levels carry a list the effective list is their intersection
   // taken in this order, so a key that sets one also decides the priority.
   upstreamIds: string[] | null;
+  // Shuffle the effective upstream order once per model resolution.
+  randomizeUpstreams: boolean;
   deletedAt: string | null;
   // null = dump capture disabled; positive integer = seconds of retention.
   dumpRetentionSeconds: number | null;
@@ -273,8 +275,16 @@ export interface ApiKeyRepo {
 
 export type ApiKeyUpdate = Partial<Pick<
   ApiKey,
-  'name' | 'key' | 'lastUsedAt' | 'upstreamIds' | 'dumpRetentionSeconds' | 'openaiResponsesRetentionSeconds'
+  'name' | 'key' | 'lastUsedAt' | 'upstreamIds' | 'randomizeUpstreams' | 'dumpRetentionSeconds' | 'openaiResponsesRetentionSeconds'
 >>;
+
+export interface UserPreferencesRepo {
+  /** The stored preferences for a user, or the defaults when the account has never written any. */
+  get(userId: number): Promise<UserPreferences>;
+  save(userId: number, preferences: UserPreferences): Promise<void>;
+  listAll(): Promise<Array<{ userId: number; preferences: UserPreferences }>>;
+  deleteAll(): Promise<void>;
+}
 
 export interface UsersRepo {
   list(): Promise<User[]>;
@@ -380,6 +390,17 @@ export interface PerformanceRepo {
   // Replacement upsert used by admin restore paths.
   set(record: PerformanceTelemetryRecord): Promise<void>;
   deleteAll(): Promise<void>;
+}
+
+export interface SiteSettings {
+  // null = this deployment has not chosen a name; the dashboard renders its
+  // built-in default and keeps tracking it across releases.
+  siteName: string | null;
+}
+
+export interface SiteSettingsRepo {
+  get(): Promise<SiteSettings>;
+  save(settings: SiteSettings): Promise<void>;
 }
 
 export interface WebSearchConfigRepo {
@@ -626,11 +647,13 @@ export interface Repo {
   upstreamMetrics: UpstreamMetricsRepo;
   apiKeys: ApiKeyRepo;
   users: UsersRepo;
+  userPreferences: UserPreferencesRepo;
   groups: GroupsRepo;
   sessions: SessionsRepo;
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
+  siteSettings: SiteSettingsRepo;
   webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;

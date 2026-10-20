@@ -143,13 +143,6 @@ export const controlPlaneModels = async (c: CtxWithQuery<typeof modelsQuery>) =>
     };
     return c.json(response);
   } catch (e: unknown) {
-    // Empty-upstreams is a domain state, not an error, on the dashboard:
-    // /v1/models still surfaces it as a 502 (remote clients need to know
-    // the gateway is unconfigured), but the Models tab renders an empty
-    // grid inline.
-    if (e instanceof Error && e.message.startsWith('No upstream provider configured')) {
-      return c.json({ object: 'list', has_more: false, first_id: null, last_id: null, data: [] });
-    }
     return c.json({ error: { message: e instanceof Error ? e.message : String(e), type: 'api_error' } }, 502);
   }
 };

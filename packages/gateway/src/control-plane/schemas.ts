@@ -20,7 +20,7 @@ import { z } from 'zod';
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
-import { isTelemetryBucketGranularity, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, tokenUsageUnattributedUserId, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
+import { isTelemetryBucketGranularity, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, QUOTA_DISPLAYS, RERANK_PROTOCOLS, SUPPORTED_LANGUAGES, tokenUsageUnattributedUserId, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire, UPSTREAM_HUE_DEGREES } from '@floway-dev/provider';
 
 // --- shared atoms ---
@@ -285,6 +285,13 @@ export const changeOwnPasswordBody = z.object({
   newPassword: passwordSchema,
 });
 
+export const updateOwnPreferencesBody = z.object({
+  quotaDisplay: z.enum(QUOTA_DISPLAYS).optional(),
+  language: z.enum(SUPPORTED_LANGUAGES).nullable().optional(),
+}).refine(body => body.quotaDisplay !== undefined || body.language !== undefined, {
+  error: 'Provide quotaDisplay or language',
+});
+
 // --- api keys ---
 
 // `dump_retention_seconds`: null disables capture; a positive integer is the
@@ -313,6 +320,7 @@ const keySourceShape = {
 export const createKeyBody = z.object({
   name: z.string().min(1),
   upstream_ids: upstreamIdsValueSchema.optional(),
+  randomize_upstreams: z.boolean().optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
   responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
   ...keySourceShape,
@@ -323,6 +331,7 @@ export const rotateKeyBody = z.object(keySourceShape);
 export const updateKeyBody = z.object({
   name: z.string().min(1).optional(),
   upstream_ids: upstreamIdsValueSchema.optional(),
+  randomize_upstreams: z.boolean().optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
   responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
 });
@@ -752,10 +761,23 @@ const aliasBodyRulesRefinement = (
 export const createAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinement);
 export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinement);
 
+// --- site settings ---
+
+export const SITE_NAME_MAX_LENGTH = 64;
+
+// An absent or blank name is the operator clearing the override; the built-in
+// default lives in the dashboard, not in the database.
+export const siteSettingsBody = z.object({
+  site_name: z.string()
+    .max(SITE_NAME_MAX_LENGTH, { error: `site_name must be at most ${SITE_NAME_MAX_LENGTH} characters` })
+    .nullish()
+    .transform(value => value == null || value.trim() === '' ? null : value.trim()),
+});
+
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(22, { error: 'version must be 22 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(25, { error: 'version must be 25 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });

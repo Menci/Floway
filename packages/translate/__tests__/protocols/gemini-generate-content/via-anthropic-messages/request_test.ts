@@ -1,16 +1,23 @@
 import { test } from 'vitest';
 
-import { buildTargetRequest } from '../../../../src/protocols/gemini-generate-content/via-anthropic-messages/request.ts';
+import { buildTargetRequest as buildTargetRequestWithSidecar } from '../../../../src/protocols/gemini-generate-content/via-anthropic-messages/request.ts';
+import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentPart, GeminiGenerateContentContent, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
-import { assertEquals, assertThrows } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
-const noOptions = {};
+const noOptions: Parameters<typeof buildTargetRequestWithSidecar>[3] = { fallbackMaxOutputTokens: undefined };
 
 const withMaxOutputTokens = (maxOutputTokens: number) => ({ fallbackMaxOutputTokens: maxOutputTokens });
 
-test('buildTargetRequest forwards an empty thinkingLevel verbatim', () => {
-  const request = buildTargetRequest({
+const buildWithTestSidecar = (
+  payload: Parameters<typeof buildTargetRequestWithSidecar>[0],
+  model: Parameters<typeof buildTargetRequestWithSidecar>[1],
+  options: Parameters<typeof buildTargetRequestWithSidecar>[3],
+) => buildTargetRequestWithSidecar(payload, model, createTestSidecarCodec(), options);
+
+test('buildTargetRequest forwards an empty thinkingLevel verbatim', async () => {
+  const request = await buildWithTestSidecar({
     contents: [],
     generationConfig: { thinkingConfig: { thinkingLevel: '' } },
   }, 'claude-test', noOptions);
@@ -18,8 +25,8 @@ test('buildTargetRequest forwards an empty thinkingLevel verbatim', () => {
   assertEquals(request.output_config, { effort: '' });
 });
 
-test('buildTargetRequest preserves native thinkingBudget beside an empty thinkingLevel', () => {
-  const request = buildTargetRequest({
+test('buildTargetRequest preserves native thinkingBudget beside an empty thinkingLevel', async () => {
+  const request = await buildWithTestSidecar({
     contents: [],
     generationConfig: { thinkingConfig: { thinkingBudget: 2048, thinkingLevel: '' } },
   }, 'claude-test', noOptions);
@@ -28,7 +35,7 @@ test('buildTargetRequest preserves native thinkingBudget beside an empty thinkin
   assertEquals(request.output_config, { effort: '' });
 });
 
-test('buildTargetRequest maps system, default max tokens, and multimodal user content', () => {
+test('buildTargetRequest maps system, default max tokens, and multimodal user content', async () => {
   const payload: GeminiGenerateContentPayload = {
     systemInstruction: {
       parts: [{ text: 'Be precise.' }, { text: 'Use markdown.' }],
@@ -40,7 +47,7 @@ test('buildTargetRequest maps system, default max tokens, and multimodal user co
     ],
   };
 
-  assertEquals(buildTargetRequest(payload, 'claude-test', noOptions), {
+  assertEquals(await buildWithTestSidecar(payload, 'claude-test', noOptions), {
     model: 'claude-test',
     stream: true,
     max_tokens: ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
@@ -73,20 +80,20 @@ test('buildTargetRequest maps system, default max tokens, and multimodal user co
   });
 });
 
-test.each(['audio/wav', 'audio/mp3', 'audio/mpeg', 'text/plain'])('buildTargetRequest rejects Gemini inline data MIME type %s for Anthropic Messages', mimeType => {
-  assertThrows(
-    () => buildTargetRequest({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: 'ZGF0YQ==' } }] }] }, 'claude-test', noOptions),
+test.each(['audio/wav', 'audio/mp3', 'audio/mpeg', 'text/plain'])('buildTargetRequest rejects Gemini inline data MIME type %s for Anthropic Messages', async mimeType => {
+  await assertRejects(
+    () => buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: 'ZGF0YQ==' } }] }] }, 'claude-test', noOptions),
     Error,
     `Cannot translate Gemini generateContent inlineData MIME type '${mimeType}' to Anthropic Messages.`,
   );
 });
 
-test('buildTargetRequest prefers limits.max_output_tokens over the gateway default when payload omits maxOutputTokens', () => {
-  const request = buildTargetRequest({ contents: [] }, 'claude-test', withMaxOutputTokens(6144));
+test('buildTargetRequest prefers limits.max_output_tokens over the gateway default when payload omits maxOutputTokens', async () => {
+  const request = await buildWithTestSidecar({ contents: [] }, 'claude-test', withMaxOutputTokens(6144));
   assertEquals(request.max_tokens, 6144);
 });
 
-test('buildTargetRequest maps generation config and thinking controls', () => {
+test('buildTargetRequest maps generation config and thinking controls', async () => {
   const payload: GeminiGenerateContentPayload = {
     contents: [],
     generationConfig: {
@@ -102,7 +109,7 @@ test('buildTargetRequest maps generation config and thinking controls', () => {
     },
   };
 
-  assertEquals(buildTargetRequest(payload, 'claude-test', noOptions), {
+  assertEquals(await buildWithTestSidecar(payload, 'claude-test', noOptions), {
     model: 'claude-test',
     stream: true,
     messages: [],
@@ -115,10 +122,10 @@ test('buildTargetRequest maps generation config and thinking controls', () => {
     output_config: { effort: 'high' },
   });
 
-  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 0 } } }, 'claude-test', noOptions).thinking, { type: 'disabled' });
+  assertEquals((await buildWithTestSidecar({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 0 } } }, 'claude-test', noOptions)).thinking, { type: 'disabled' });
 });
 
-test('buildTargetRequest maps assistant thinking signatures and tool calls', () => {
+test('buildTargetRequest keeps readable thinking and tool calls while dropping thought signatures', async () => {
   const payload: GeminiGenerateContentPayload = {
     contents: [
       {
@@ -143,11 +150,11 @@ test('buildTargetRequest maps assistant thinking signatures and tool calls', () 
     ],
   };
 
-  assertEquals(buildTargetRequest(payload, 'claude-test', noOptions).messages, [
+  assertEquals((await buildWithTestSidecar(payload, 'claude-test', noOptions)).messages, [
     {
       role: 'assistant',
       content: [
-        { type: 'thinking', thinking: 'private trace', signature: 'sig_1' },
+        { type: 'thinking', thinking: 'private trace', signature: '' },
         {
           type: 'tool_use',
           id: 'call_1',
@@ -159,7 +166,6 @@ test('buildTargetRequest maps assistant thinking signatures and tool calls', () 
     {
       role: 'assistant',
       content: [
-        { type: 'redacted_thinking', data: 'sig_only' },
         {
           type: 'tool_use',
           id: 'gemini_call_1_0',
@@ -172,7 +178,7 @@ test('buildTargetRequest maps assistant thinking signatures and tool calls', () 
   ]);
 });
 
-test('buildTargetRequest correlates omitted function response ids in call order', () => {
+test('buildTargetRequest correlates omitted function response ids in call order', async () => {
   const payload: GeminiGenerateContentPayload = {
     contents: [
       {
@@ -198,7 +204,7 @@ test('buildTargetRequest correlates omitted function response ids in call order'
     ],
   };
 
-  assertEquals(buildTargetRequest(payload, 'claude-test', noOptions).messages, [
+  assertEquals((await buildWithTestSidecar(payload, 'claude-test', noOptions)).messages, [
     {
       role: 'assistant',
       content: [
@@ -240,7 +246,7 @@ test('buildTargetRequest correlates omitted function response ids in call order'
   ]);
 });
 
-test('buildTargetRequest maps tool declarations and tool choice modes', () => {
+test('buildTargetRequest maps tool declarations and tool choice modes', async () => {
   const payload: GeminiGenerateContentPayload = {
     contents: [],
     tools: [
@@ -268,7 +274,7 @@ test('buildTargetRequest maps tool declarations and tool choice modes', () => {
     },
   };
 
-  assertEquals(buildTargetRequest(payload, 'claude-test', noOptions), {
+  assertEquals(await buildWithTestSidecar(payload, 'claude-test', noOptions), {
     model: 'claude-test',
     stream: true,
     messages: [],
@@ -288,13 +294,13 @@ test('buildTargetRequest maps tool declarations and tool choice modes', () => {
     tool_choice: { type: 'tool', name: 'lookup' },
   });
 
-  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'NONE' } } }, 'claude-test', noOptions).tool_choice, { type: 'none' });
-  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'AUTO' } } }, 'claude-test', noOptions).tool_choice, { type: 'auto' });
-  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'VALIDATED' } } }, 'claude-test', noOptions).tool_choice, { type: 'auto' });
-  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'claude-test', noOptions).tool_choice, { type: 'any' });
+  assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'NONE' } } }, 'claude-test', noOptions)).tool_choice, { type: 'none' });
+  assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'AUTO' } } }, 'claude-test', noOptions)).tool_choice, { type: 'auto' });
+  assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'VALIDATED' } } }, 'claude-test', noOptions)).tool_choice, { type: 'auto' });
+  assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'claude-test', noOptions)).tool_choice, { type: 'any' });
 });
 
-test('buildTargetRequest filters tools to multiple allowed names for ANY mode', () => {
+test('buildTargetRequest filters tools to multiple allowed names for ANY mode', async () => {
   const payload: GeminiGenerateContentPayload = {
     contents: [],
     tools: [
@@ -310,7 +316,7 @@ test('buildTargetRequest filters tools to multiple allowed names for ANY mode', 
     },
   };
 
-  assertEquals(buildTargetRequest(payload, 'claude-test', noOptions), {
+  assertEquals(await buildWithTestSidecar(payload, 'claude-test', noOptions), {
     model: 'claude-test',
     stream: true,
     messages: [],
@@ -332,20 +338,20 @@ test('buildTargetRequest filters tools to multiple allowed names for ANY mode', 
   });
 });
 
-test('buildTargetRequest maps dynamic thinking budget to adaptive thinking', () => {
-  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: -1 } } }, 'claude-test', noOptions).thinking, { type: 'adaptive' });
+test('buildTargetRequest maps dynamic thinking budget to adaptive thinking', async () => {
+  assertEquals((await buildWithTestSidecar({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: -1 } } }, 'claude-test', noOptions)).thinking, { type: 'adaptive' });
 });
 
-test('buildTargetRequest wraps generationConfig.responseSchema as output_config.format', () => {
+test('buildTargetRequest wraps generationConfig.responseSchema as output_config.format', async () => {
   const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'], additionalProperties: false };
-  const request = buildTargetRequest({ contents: [], generationConfig: { responseSchema: schema } }, 'claude-test', noOptions);
+  const request = await buildWithTestSidecar({ contents: [], generationConfig: { responseSchema: schema } }, 'claude-test', noOptions);
 
   assertEquals(request.output_config, { format: { type: 'json_schema', schema } });
 });
 
-test('buildTargetRequest merges thinking-level effort with responseSchema format on a single output_config', () => {
+test('buildTargetRequest merges thinking-level effort with responseSchema format on a single output_config', async () => {
   const schema = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false };
-  const request = buildTargetRequest(
+  const request = await buildWithTestSidecar(
     { contents: [], generationConfig: { responseSchema: schema, thinkingConfig: { thinkingLevel: 'high' } } },
     'claude-test',
     noOptions,
@@ -354,10 +360,10 @@ test('buildTargetRequest merges thinking-level effort with responseSchema format
   assertEquals(request.output_config, { effort: 'high', format: { type: 'json_schema', schema } });
 });
 
-test('buildTargetRequest rejects an unknown content role', () => {
-  assertThrows(
+test('buildTargetRequest rejects an unknown content role', async () => {
+  await assertRejects(
     () =>
-      buildTargetRequest(
+      buildWithTestSidecar(
         {
           contents: [{ role: 'system', parts: [{ text: 'Hi' }] } as unknown as GeminiGenerateContentContent],
         },
@@ -369,10 +375,10 @@ test('buildTargetRequest rejects an unknown content role', () => {
   );
 });
 
-test('buildTargetRequest rejects a part with an unsupported kind in user content', () => {
-  assertThrows(
+test('buildTargetRequest rejects a part with an unsupported kind in user content', async () => {
+  await assertRejects(
     () =>
-      buildTargetRequest(
+      buildWithTestSidecar(
         {
           contents: [{ role: 'user', parts: [{ fileData: { mimeType: 'text/plain', fileUri: 'files/abc' } }] }],
         },
@@ -384,10 +390,10 @@ test('buildTargetRequest rejects a part with an unsupported kind in user content
   );
 });
 
-test('buildTargetRequest rejects a function_call part in user content', () => {
-  assertThrows(
+test('buildTargetRequest rejects a function_call part in user content', async () => {
+  await assertRejects(
     () =>
-      buildTargetRequest(
+      buildWithTestSidecar(
         {
           contents: [{ role: 'user', parts: [{ functionCall: { name: 'x', args: {} } }] }],
         },
@@ -399,10 +405,10 @@ test('buildTargetRequest rejects a function_call part in user content', () => {
   );
 });
 
-test('buildTargetRequest rejects an inline_data part in model content', () => {
-  assertThrows(
+test('buildTargetRequest rejects an inline_data part in model content', async () => {
+  await assertRejects(
     () =>
-      buildTargetRequest(
+      buildWithTestSidecar(
         {
           contents: [{ role: 'model', parts: [{ inlineData: { mimeType: 'image/png', data: 'aW1n' } }] }],
         },
@@ -414,10 +420,10 @@ test('buildTargetRequest rejects an inline_data part in model content', () => {
   );
 });
 
-test('buildTargetRequest rejects a part that sets conflicting content fields', () => {
-  assertThrows(
+test('buildTargetRequest rejects a part that sets conflicting content fields', async () => {
+  await assertRejects(
     () =>
-      buildTargetRequest(
+      buildWithTestSidecar(
         {
           contents: [{ role: 'model', parts: [{ text: 'foo', functionCall: { name: 'x', args: {} } } as unknown as GeminiGenerateContentPart] }],
         },
@@ -429,10 +435,10 @@ test('buildTargetRequest rejects a part that sets conflicting content fields', (
   );
 });
 
-test('buildTargetRequest rejects a part with no recognized content field', () => {
-  assertThrows(
+test('buildTargetRequest rejects a part with no recognized content field', async () => {
+  await assertRejects(
     () =>
-      buildTargetRequest(
+      buildWithTestSidecar(
         {
           contents: [{ role: 'user', parts: [{}] }],
         },
@@ -446,6 +452,6 @@ test('buildTargetRequest rejects a part with no recognized content field', () =>
 
 test.each([undefined, []])('preserves an empty model turn with parts %j', async parts => {
   const payload = { contents: [{ role: 'user', parts: [{ text: 'before' }] }, { role: 'model', ...(parts === undefined ? {} : { parts }) }, { role: 'user', parts: [{ text: 'after' }] }] };
-  const result = buildTargetRequest(payload, 'target-model', noOptions);
+  const result = await buildWithTestSidecar(payload, 'target-model', noOptions);
   assertEquals((result.messages as Array<{ role?: string; content?: unknown }>).filter(item => item.role === 'assistant'), [{ role: 'assistant', content: '' }]);
 });

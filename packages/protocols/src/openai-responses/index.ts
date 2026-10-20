@@ -655,15 +655,9 @@ export interface OpenAIResponsesMcpApprovalResponseItem {
   reason?: string | null;
 }
 
-export interface OpenAIResponsesInputImageGenerationCall {
-  type: 'image_generation_call';
-  id?: string;
-  status?: 'completed' | 'in_progress' | 'generating' | 'failed';
-  result?: string;
-  revised_prompt?: string;
-  output_format?: 'png' | 'jpeg';
+export type OpenAIResponsesInputImageGenerationCall = Official.ResponseInputItem.ImageGenerationCall & {
   error?: { message: string; code: string; type?: string };
-}
+};
 
 // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L822-L851
 export type OpenAIResponsesToolAllowedCaller = 'direct' | 'programmatic';
@@ -1041,11 +1035,34 @@ export type OpenAIResponsesAnnotation =
 
 export interface OpenAIResponsesLogprob { token: string; logprob: number; bytes: number[]; top_logprobs: { token: string; logprob: number; bytes: number[] }[] }
 
+// SSE logprobs are a separate standard shape from ResponseOutputText.Logprob.
+// https://github.com/openai/openai-node/blob/7665932e2b7965a5e0a3123fe3de4dbdb4131933/src/resources/responses/responses.ts#L8756-L8791
+export interface OpenAIResponsesStreamLogprob {
+  token: string;
+  logprob: number;
+  top_logprobs?: { token?: string; logprob?: number }[];
+}
+
+// Preserve source byte metadata during translation: ChatCompletions allows null
+// bytes, while Responses SSE does not require any byte metadata. This is our
+// lossless cross-protocol extension, not the standard Responses SSE contract.
+// https://github.com/openai/openai-node/blob/7665932e2b7965a5e0a3123fe3de4dbdb4131933/src/resources/chat/completions/completions.ts#L2187-L2248
+export interface OpenAIResponsesStreamLogprobEx extends Omit<OpenAIResponsesStreamLogprob, 'top_logprobs'> {
+  bytes?: readonly number[] | null;
+  top_logprobs?: readonly (NonNullable<OpenAIResponsesStreamLogprob['top_logprobs']>[number] & { bytes?: readonly number[] | null })[];
+}
+
+// Terminal snapshots retain the source metadata available on the stream; the
+// output standard's required bytes and alternatives cannot be invented.
+// https://github.com/openai/openai-node/blob/7665932e2b7965a5e0a3123fe3de4dbdb4131933/src/resources/responses/responses.ts#L7219-L7261
+export type OpenAIResponsesOutputLogprobEx = Omit<OpenAIResponsesLogprob, 'bytes' | 'top_logprobs'>
+  & Pick<OpenAIResponsesStreamLogprobEx, 'bytes' | 'top_logprobs'>;
+
 export interface OpenAIResponsesOutputText {
   type: 'output_text';
   text: string;
   annotations: OpenAIResponsesAnnotation[];
-  logprobs?: OpenAIResponsesLogprob[];
+  logprobs?: OpenAIResponsesOutputLogprobEx[];
 }
 
 export interface OpenAIResponsesOutputRefusal {
@@ -1223,12 +1240,16 @@ type OpenAIResponsesStreamEventVariant =
     content_index: number;
     text: string;
   }
+  // Both text events carry the token log probabilities of their span.
+  // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L6966-L6995
+  // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L7044-L7075
   | {
     type: 'response.output_text.delta';
     item_id: string;
     output_index: number;
     content_index: number;
     delta: string;
+    logprobs?: OpenAIResponsesStreamLogprobEx[];
   }
   | {
     type: 'response.output_text.done';
@@ -1236,6 +1257,7 @@ type OpenAIResponsesStreamEventVariant =
     output_index: number;
     content_index: number;
     text: string;
+    logprobs?: OpenAIResponsesStreamLogprobEx[];
   }
   | {
     type: 'response.refusal.delta';
@@ -1309,11 +1331,14 @@ type OpenAIResponsesStreamEventVariant =
     output_index: number;
     delta: string;
   }
+  // The done event names the function that was called.
+  // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L3062-L3089
   | {
     type: 'response.function_call_arguments.done';
     item_id: string;
     output_index: number;
     arguments: string;
+    name?: string;
   }
   | {
     type: 'response.custom_tool_call_input.delta';
@@ -1396,6 +1421,7 @@ type OpenAIResponsesStreamEventVariant =
 export type OpenAIResponsesReasoningItem = OpenAIResponsesInputReasoning | OpenAIResponsesOutputReasoning;
 
 export { isOpenAIResponsesTerminalEvent, openaiResponsesResultFromStreamEvent } from './terminal-event.ts';
+export { isOpenAIResponsesAssistantInputItem } from './assistant-items.ts';
 export { WEB_SEARCH_HOSTED_TYPE_NAMES, collectOpenAIResponsesToolEntries, collectOpenAIResponsesTools, mapOpenAIResponsesTools } from './tools.ts';
 
 export { type CanonicalOpenAIResponsesCompactPayload, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesStoredItem, type OpenAIResponsesCompactPayloadEx, toCompactPayloadShape, isOpenAIResponsesCompactionItem } from './compact.ts';

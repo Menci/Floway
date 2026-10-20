@@ -64,7 +64,7 @@ const installRepo = (): InMemoryRepo => {
   void repo.apiKeys.save({
     id: API_KEY_ID, userId: 1, name: 'OpenAI Responses test key', key: 'raw-responses-test',
     serverSecret: '99'.repeat(32), createdAt: '2026-01-01T00:00:00.000Z',
-    upstreamIds: null, deletedAt: null, dumpRetentionSeconds: null,
+    upstreamIds: null, randomizeUpstreams: false, deletedAt: null, dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: TEST_OPENAI_RESPONSES_RETENTION_SECONDS,
   });
   return repo;
@@ -554,7 +554,7 @@ test('Anthropic Messages biology refusal becomes a non-retryable Codex OpenAI Re
   assertEquals(failed?.response.status, 'failed');
   assertEquals(failed?.response.error, {
     code: 'bio_policy',
-    message: 'This content was flagged for possible biological risk. This request could enable biological harm.',
+    message: 'This request could enable biological harm.',
   });
   assertEquals(callAnthropicMessages.mock.calls.length, 1);
 });

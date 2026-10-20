@@ -123,11 +123,10 @@ describe('enumerateAddressableModelIds', () => {
     );
   });
 
-  test('throws "no upstream configured" when the upstream cap is empty — surfacing the same hint /v1/models has always raised', async () => {
+  test('returns an empty surface when the upstream cap is empty', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
 
-    await expect(enumerateAddressableModelIds(null, scheduleRefresh))
-      .rejects.toThrow('No upstream provider configured');
+    await expect(enumerateAddressableModelIds(null, scheduleRefresh)).resolves.toEqual([]);
   });
 });

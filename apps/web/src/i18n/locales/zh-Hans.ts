@@ -2,7 +2,7 @@ const zhHansCN = {
   translation: {
     app: {
       title: 'Floway',
-      documentTitle: '{{title}} | Floway',
+      documentTitle: '{{title}} | {{siteName}}',
     },
     common: {
       calendar: {
@@ -92,6 +92,7 @@ const zhHansCN = {
         performance: '性能',
         users: '用户与用户组',
         backupRestore: '备份 / 恢复',
+        siteSettings: '站点设置',
         settings: '设置',
       },
       logout: {
@@ -172,14 +173,44 @@ const zhHansCN = {
           },
         },
       },
+      siteSettings: {
+        description: '管理本站的全局偏好设置',
+        name: '站点名称',
+        nameHint: '显示在图标旁和浏览器标题中。留空则使用内置名称。',
+        namePlaceholder: 'Floway',
+        save: '保存',
+        updated: '站点名称已更新',
+        validation: {
+          tooLong: '最多输入 {{max}} 个字符。',
+        },
+      },
       settings: {
-        description: '管理你的 Floway 账户安全设置',
-        changePassword: '修改密码',
+        description: '管理你的 Floway 偏好与账户安全',
+        appearance: '外观',
+        security: '安全',
+        preferences: {
+          quotaDisplay: {
+            title: '额度展示',
+            description: '额度数值的显示方式',
+            remaining: '余量',
+            used: '用量',
+          },
+          language: {
+            description: '控制台界面使用的语言',
+            browser: '跟随浏览器',
+          },
+          save: '保存偏好',
+          saved: '偏好已保存。',
+        },
         currentPassword: '当前密码',
         newPassword: '新密码',
         confirmPassword: '确认密码',
-        otherDevices: '当前以你的账户登录的其他设备将会退出登录。',
-        save: '修改密码',
+        otherDevices: '修改后，其他会话将退出登录。',
+        password: {
+          title: '密码',
+          description: '修改账户登录密码',
+          submit: '修改密码',
+        },
         passwordUpdated: '密码已更新，其他设备已退出登录。',
         validation: {
           currentPasswordRequired: '必须填写当前密码。',
@@ -247,7 +278,6 @@ const zhHansCN = {
           created: '创建时间',
           groups: '用户组',
           upstreams: '上游权限',
-          actions: '操作',
         },
         role: { admin: '管理员' },
         upstreams: {
@@ -354,8 +384,8 @@ const zhHansCN = {
         table: {
           title: 'API 密钥',
           name: '名称',
-          key: 'API 密钥',
           upstreams: '上游',
+          upstreamOrder: '上游顺序',
           created: '创建时间',
           lastUsed: '最近使用',
           actions: '操作',
@@ -382,6 +412,8 @@ const zhHansCN = {
           openaiResponsesRetentionHint: '该 API 密钥的 OpenAI Responses 条目可被后续请求按 id 引用的时长（关闭表示不做持久化）',
           retentionHint:
               '启用后，通过该 API 密钥发起的模型请求会在配置窗口内被记录',
+          randomizeUpstreams: '随机排列上游顺序',
+          randomizeUpstreamsHint: '为每个新请求随机排列上游顺序，同时为已有会话保留上游亲和性',
         },
         validation: {
           nameRequired: '名称不能为空。',
@@ -393,6 +425,7 @@ const zhHansCN = {
           summary: '{{first}} +{{count, number}}',
           inheritsTitle: '继承全局上游顺序',
         },
+        upstreamOrder: { configured: '优先级顺序', random: '随机' },
         retention: {
           offCapture: '关闭（不记录）',
           offPersist: '关闭（不持久化）',
@@ -451,13 +484,13 @@ const zhHansCN = {
           details: '详情',
           models: '模型',
           enabled: '启用',
-          actions: '操作',
         },
         signals: {
           plan: '{{plan}}：',
           percent: '{{percent, number}}%',
           until: '至 {{date}}',
           remaining: '{{label}}：剩余{{percent, number}}%',
+          used: '{{label}}：已用{{percent, number}}%',
           resets: '{{time}} 重置',
           observed: '观测于 {{time}}',
           window: { primary: '主窗口', secondary: '次窗口' },
@@ -469,10 +502,10 @@ const zhHansCN = {
           costRangeSelf: '{{from}} 至 {{until}}，本账号使用模型消耗的 Credit（含套餐和购买的 Credit）。',
         },
         copilotQuota: {
-          premiumInteractions: { allowance: '额度', balance: '余额' },
-          chat: { allowance: '对话额度', balance: '对话余额' },
-          completions: { allowance: '补全额度', balance: '补全余额' },
-          other: { allowance: '{{name}} 额度', balance: '{{name}} 余额' },
+          premiumInteractions: { allowance: '额度', remaining: '余量', usage: '用量' },
+          chat: { allowance: '对话额度', remaining: '对话余量', usage: '对话用量' },
+          completions: { allowance: '补全额度', remaining: '补全余量', usage: '补全用量' },
+          other: { allowance: '{{name}} 额度', remaining: '{{name}} 余量', usage: '{{name}} 用量' },
         },
         providers: {
           custom: '兼容 OpenAI 或 Anthropic 的端点',
@@ -533,7 +566,6 @@ const zhHansCN = {
         documentTitleCopy: '复制上游',
         optional: '可选',
         unsaved: '有未保存更改',
-        secretKeep: '留空以保持不变。',
         pathOverridesHint: '留空时使用对应的默认 /v1 路径。',
         disabledModelsHint:
             '禁用后的模型不会出现在目录中，也不会参与路由；其元数据仍可编辑。',
@@ -769,7 +801,6 @@ const zhHansCN = {
           source: '配置方式',
           kind: '类型',
           kindValue: { chat: '对话', embedding: '嵌入', image: '图像', transcription: '转录', rerank: '重排' },
-          actions: '操作',
           copy: '复制模型 ID',
           editNamed: '编辑模型 {{name}}',
           back: '返回模型列表',
@@ -858,13 +889,14 @@ const zhHansCN = {
           deleteMessage: '删除 {{name}}？此操作无法撤销。',
           deleteConfirm: '删除模型',
         },
+        quotaUsedPercent: '已用{{percent, number}}%',
         quotaRemainingPercent: '剩余{{percent, number}}%',
         copilot: {
           'quota': {
             'title': '额度',
             'load': '加载',
             'refresh': '刷新',
-            'used': '{{used}} / {{entitlement}}',
+            'amount': '{{amount}} / {{entitlement}}',
             'remainingPercent': '剩余{{percent, number}}%',
             'unlimited': '无限制',
             'unavailable': '当前套餐不含此项',
@@ -1176,14 +1208,14 @@ const zhHansCN = {
       upstreamMetrics: {
         empty: '此时间范围内没有上游指标观察记录',
         value: '数值',
-        windows: { seconds: '{{count, number}} 秒窗口', minutes: '{{count, number}} 分钟窗口', hours: '{{count, number}} 小时窗口', days: '{{count, number}} 天窗口' },
+        windows: { seconds: '{{count, number}} 秒', minutes: '{{count, number}} 分钟', hours: '{{count, number}} 小时', days: '{{count, number}} 天' },
         metrics: {
           window: '{{name}} {{window}}',
+          usage: '{{window}}用量', remaining: '{{window}}余量',
+          namedUsage: '{{window}} {{name}} 用量', namedRemaining: '{{window}} {{name}} 余量',
           includedAllowance: '套餐额度',
-          fiveHour: '5 小时窗口', sevenDay: '7 天窗口',
-          sevenDaySonnet: '7 天 Sonnet 窗口', sevenDayOpus: '7 天 Opus 窗口',
-          extraUsage: '额外用量',
-          session: '会话',
+          extraUsage: '超额用量',
+          sessionUsage: '会话用量', sessionRemaining: '会话余量',
           credits: 'Credit 余额',
           past24HoursCost: '最近 24 小时费用', past7DaysCost: '最近 7 天费用', past30DaysCost: '最近一个月费用', includedBalance: '套餐余额', purchasedBalance: '购买余额',
         },
@@ -1223,8 +1255,8 @@ const zhHansCN = {
         tables: {
           requests: '请求数',
           errors: '错误',
-          ttftP95: 'TTFT p95',
-          speedP95: '最慢 5% 速度',
+          ttft: 'TTFT {{percentile}}',
+          speed: '最慢 {{tail, number}}% 速度',
         },
       },
       backupRestore: {
@@ -1313,7 +1345,7 @@ const zhHansCN = {
       },
       modelAliases: {
         description: '创建虚拟模型 ID，将请求路由到一个或多个目标模型，并可锁定请求规则', listTitle: '别名', empty: '尚未配置别名。创建别名以公开虚拟模型 ID。',
-        columns: { alias: '别名', kind: '类型', targets: '目标', selection: '选择策略', visibility: '模型列表', actions: '操作' },
+        columns: { alias: '别名', kind: '类型', targets: '目标', selection: '选择策略', visibility: '模型列表' },
         actions: { create: '新建别名', refresh: '刷新别名', save: '保存', delete: '删除', addTarget: '添加目标', editNamed: '编辑别名 {{name}}', copyNamed: '复制别名 {{name}}', deleteNamed: '删除别名 {{name}}' },
         dialog: { createTitle: '创建别名', editTitle: '编辑别名：{{name}}', copyTitle: '复制别名：{{name}}' },
         copy: { nameSuffix: '{{name}} 副本' },
@@ -1331,7 +1363,6 @@ const zhHansCN = {
       proxy: {
         description: '上游回退列表引用的出口代理',
         listTitle: '代理列表',
-        columns: { actions: '操作' },
         empty: '暂无代理。添加代理后即可路由出口流量。',
         unknownAddress: '无法识别的地址',
         addTitle: '添加代理',

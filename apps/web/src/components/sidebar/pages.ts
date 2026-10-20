@@ -11,6 +11,7 @@ import {
   PersonKey20Color,
   SearchSparkle20Color,
   ShareAndroid20Color,
+  Settings20Color,
   TextEditStyle20Color,
 } from '@fluentui/react-icons';
 import type { FluentIcon } from '@fluentui/react-icons';
@@ -73,6 +74,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { to: '/dashboard/admin/users', labelKey: 'dashboard.nav.users', icon: People20Color },
       { to: '/dashboard/admin/backup-restore', labelKey: 'dashboard.nav.backupRestore', icon: Database20Color },
+      { to: '/dashboard/admin/site-settings', labelKey: 'dashboard.nav.siteSettings', icon: Settings20Color },
     ],
   },
 ];
