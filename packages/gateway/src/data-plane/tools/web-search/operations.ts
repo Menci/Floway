@@ -721,6 +721,34 @@ type FetchAndCacheResult =
 
 export type WebSearchPageFetchMap = Map<string, FetchAndCacheResult>;
 
+const comparablePageUrl = (value: string): string => {
+  try {
+    const url = new URL(value);
+    // Fragments are never sent to the server and providers routinely omit them
+    // from the URL they report after fetching.
+    url.hash = '';
+    return url.href;
+  } catch {
+    return value;
+  }
+};
+
+const claimFetchOutcome = <Outcome extends { url: string }>(
+  outcomes: readonly Outcome[],
+  claimed: Set<number>,
+  requestedUrl: string,
+): Outcome | undefined => {
+  let index = outcomes.findIndex((outcome, outcomeIndex) => !claimed.has(outcomeIndex) && outcome.url === requestedUrl);
+  if (index === -1) {
+    const comparable = comparablePageUrl(requestedUrl);
+    index = outcomes.findIndex((outcome, outcomeIndex) =>
+      !claimed.has(outcomeIndex) && comparablePageUrl(outcome.url) === comparable);
+  }
+  if (index === -1) return undefined;
+  claimed.add(index);
+  return outcomes[index];
+};
+
 const runBatchFetch = async (
   needFetch: string[],
   session: WebSearchExecutionSession,
@@ -753,21 +781,53 @@ const runBatchFetch = async (
       return perUrl;
     }
 
-    const failureByUrl = new Map(result.failures.map(f => [f.url, f]));
-    const pageByUrl = new Map(result.pages.map(p => [p.url, p]));
+    type ProviderOutcome =
+      | { type: 'failure'; value: typeof result.failures[number] }
+      | { type: 'page'; value: typeof result.pages[number] };
+    const outcomes = new Map<string, ProviderOutcome>();
+    const unmatchedUrls: string[] = [];
+    const claimedFailures = new Set<number>();
+    const claimedPages = new Set<number>();
+
     for (const url of needFetch) {
-      const failure = failureByUrl.get(url);
-      if (failure) {
+      const failure = claimFetchOutcome(result.failures, claimedFailures, url);
+      if (failure !== undefined) {
+        outcomes.set(url, { type: 'failure', value: failure });
+        continue;
+      }
+      const page = claimFetchOutcome(result.pages, claimedPages, url);
+      if (page !== undefined) {
+        outcomes.set(url, { type: 'page', value: page });
+        continue;
+      }
+      unmatchedUrls.push(url);
+    }
+
+    // A provider may report the post-redirect URL rather than the URL it was
+    // asked to fetch. Pair it only when the remaining request and outcome are
+    // unique; guessing across multiple redirects could attach the wrong page.
+    const remainingFailures = result.failures.filter((_, index) => !claimedFailures.has(index));
+    const remainingPages = result.pages.filter((_, index) => !claimedPages.has(index));
+    if (unmatchedUrls.length === 1 && remainingFailures.length + remainingPages.length === 1) {
+      const url = unmatchedUrls.pop()!;
+      if (remainingFailures.length === 1) outcomes.set(url, { type: 'failure', value: remainingFailures[0] });
+      else outcomes.set(url, { type: 'page', value: remainingPages[0] });
+    }
+
+    for (const url of needFetch) {
+      const outcome = outcomes.get(url);
+      if (outcome?.type === 'failure') {
+        const failure = outcome.value;
         perUrl.set(url, { ok: false, output: openFailedText(url, failure.message ?? failure.errorCode) });
         continue;
       }
-      const page = pageByUrl.get(url);
-      if (!page) {
+      if (outcome?.type !== 'page') {
         // URL silently dropped by the provider — surface as explicit error
         // so the model doesn't see a phantom empty page.
         perUrl.set(url, { ok: false, output: openFailedText(url, 'No page returned') });
         continue;
       }
+      const page = outcome.value;
       const entry: PageCacheEntry = {
         content: page.content,
         truncated: page.truncated,
