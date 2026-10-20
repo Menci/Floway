@@ -17,6 +17,7 @@ import type {
   AnthropicMessagesToolResultContentBlock,
   AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
+import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
 const imageSource = (media: IRInputMedia): AnthropicMessagesImageSource => {
   switch (media.source_kind) {
@@ -58,19 +59,22 @@ const systemContent = (content: readonly IRInputTextPart[]): AnthropicMessagesTe
 
 const userContent = async (
   item: Extract<IRInputUserItem, { type: 'message' }>,
-  resolveImage: AnthropicMessagesImageResolver | undefined,
+  options: AnthropicMessagesFromIROptions,
 ): Promise<AnthropicMessagesUserContentBlock[]> => {
   const blocks: AnthropicMessagesUserContentBlock[] = [];
   for (const part of item.content) {
     switch (part.type) {
     case 'text': blocks.push({ type: 'text', text: part.text }); break;
     case 'image': {
-      if (resolveImage === undefined) { blocks.push(imageBlock(part.image)); break; }
-      const image = await resolveImage(part.image);
+      if (options.resolveImage === undefined) { blocks.push(imageBlock(part.image)); break; }
+      const image = await options.resolveImage(part.image);
       if (image !== null) blocks.push(image);
       break;
     }
-    case 'file': blocks.push(documentBlock(part.file)); break;
+    case 'file':
+      if (options.allowFileContent !== true) throw new TranslatorInputError('Cannot translate input_file message content to Anthropic Messages.');
+      blocks.push(documentBlock(part.file));
+      break;
     case 'audio': throw new TranslatorInputError(`Cannot translate Gemini generateContent inlineData MIME type '${part.audio.media_type}' to Anthropic Messages.`);
     case 'refusal': throw new TranslatorInputError('Cannot translate refusal content in a user message to Anthropic Messages.');
     default: throw new TranslatorInputError(`Invalid '${(part as { type: string }).type}' content part.`);
@@ -80,39 +84,65 @@ const userContent = async (
   return blocks.length === 0 ? [{ type: 'text', text: '' }] : blocks;
 };
 
-const toolResultContent = (output: string | readonly IRInputToolResultContentPart[]): string | AnthropicMessagesToolResultContentBlock[] => typeof output === 'string'
-  ? output
-  : [...output].map((part): AnthropicMessagesToolResultContentBlock => {
-      if (part.type === 'text') return { type: 'text', text: part.text };
-      if (part.type === 'image') return imageBlock(part.image);
-      throw new TranslatorInputError('Cannot translate file content in a tool result to Anthropic Messages.');
-    });
+const toolResultContent = async (
+  output: string | readonly IRInputToolResultContentPart[],
+  resolveImage: AnthropicMessagesImageResolver | undefined,
+): Promise<string | AnthropicMessagesToolResultContentBlock[]> => {
+  if (typeof output === 'string') return output;
+  const blocks: AnthropicMessagesToolResultContentBlock[] = [];
+  for (const part of output) {
+    if (part.type === 'text') { blocks.push({ type: 'text', text: part.text }); continue; }
+    if (part.type === 'file') throw new TranslatorInputError('Cannot translate input_file tool output to Anthropic Messages.');
+    if (resolveImage !== undefined && part.image.source_kind === 'file') {
+      throw new TranslatorInputError('Cannot translate file_id-only image tool output to Anthropic Messages.');
+    }
+    const image = resolveImage === undefined ? imageBlock(part.image) : await resolveImage(part.image);
+    // Unlike user content, an unresolvable tool-result image is a caller error:
+    // the tool returned bytes the target cannot represent.
+    if (image === null) throw new TranslatorInputError('Cannot translate unavailable or unsupported image tool output to Anthropic Messages.');
+    blocks.push(image);
+  }
+  // Messages spells an empty tool result as the empty string.
+  return blocks.length === 0 ? '' : blocks;
+};
 
 const assistantBlocks = (items: readonly IRInputAssistantItem[]): AnthropicMessagesAssistantInputContentBlock[] => {
   const blocks = items.flatMap<AnthropicMessagesAssistantInputContentBlock>(item => {
     switch (item.type) {
     case 'message':
+      // An empty content list still represents an explicitly empty assistant
+      // message, so it emits one empty text block.
+      if (item.content.length === 0) return [{ type: 'text', text: '' }];
       return item.content.map((part): AnthropicMessagesAssistantInputContentBlock => part.type === 'text'
         ? { type: 'text', text: part.text }
         : { type: 'text', text: part.refusal });
-    case 'reasoning':
-      return [{ type: 'thinking', thinking: (item.summary ?? []).join(''), signature: '' }];
+    case 'reasoning': {
+      // A reasoning item that carries no readable text has nothing to replay on
+      // a protocol without opaque reasoning slots.
+      const thinking = (item.summary ?? []).join('');
+      return thinking === '' ? [] : [{ type: 'thinking', thinking, signature: '' }];
+    }
     case 'function_call':
       return [{ type: 'tool_use', id: item.call_id, name: item.name, input: parseArguments(item.arguments) }];
     case 'custom_tool_call':
-      throw new TranslatorInputError('Cannot translate a custom tool call to Anthropic Messages.');
+      // Messages has no freeform tool call; the wrapper schema a custom tool is
+      // declared with takes one `input` string, so the call is projected onto it.
+      return [{ type: 'tool_use', id: item.call_id, name: item.name, input: { input: item.input } }];
     }
   });
   // Messages spells an empty assistant turn as an empty string; a non-empty
   // turn is a block list.
-  return blocks.length === 0 ? [{ type: 'text', text: '' }] : blocks;
+  return blocks;
 };
 
 // Messages needs an object, so a call whose arguments are malformed keeps the
 // raw text under `raw_arguments` rather than dropping the history.
 const parseArguments = (argumentsJson: string): Record<string, unknown> | null => {
+  // An out-of-range JSON number such as `1e400` parses to `Infinity` and would
+  // serialize back as `null`. Parsing with raw-number preservation keeps the
+  // caller's exact token.
   try {
-    const parsed: unknown = JSON.parse(argumentsJson);
+    const parsed = parseJSONWithRawNumbers(argumentsJson);
     if (parsed === null) return null;
     return typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : { raw_arguments: argumentsJson };
   } catch {
@@ -126,11 +156,15 @@ const parseArguments = (argumentsJson: string): Record<string, unknown> | null =
 const appendUserBlocks = (messages: AnthropicMessagesMessage[], blocks: AnthropicMessagesUserContentBlock[]): void => {
   if (blocks.length === 0) return;
   const last = messages.at(-1);
-  if (last?.role === 'user' && Array.isArray(last.content)) {
+  if (last?.role === 'user') {
+    // A string is Messages' spelling of one text block; merging means turning it
+    // back into a list and appending.
+    if (typeof last.content === 'string') { last.content = [{ type: 'text', text: last.content }, ...blocks]; return; }
     last.content.push(...blocks);
     return;
   }
-  messages.push({ role: 'user', content: blocks });
+  // Messages spells a single text block as a bare string.
+  messages.push({ role: 'user', content: blocks.length === 1 && blocks[0].type === 'text' ? blocks[0].text : blocks });
 };
 
 export interface AnthropicMessagesRequestFromIR {
@@ -151,6 +185,17 @@ export interface AnthropicMessagesFromIROptions {
    * message per item instead.
    */
   readonly oneMessagePerItem?: boolean;
+  /**
+   * Whether a dropped assistant turn keeps the neighbouring user turns apart.
+   * A Responses source depends on that boundary; a Chat Completions source
+   * merges adjacent user items as its own protocol does.
+   */
+  readonly separateAfterDroppedAssistant?: boolean;
+  /**
+   * Whether file content may reach the target. A Responses source rejects it;
+   * a GenerateContent source has always mapped an inline PDF to `document`.
+   */
+  readonly allowFileContent?: boolean;
   readonly resolveImage?: AnthropicMessagesImageResolver;
 }
 
@@ -162,9 +207,17 @@ export const anthropicMessagesFromIR = async (
   const system: AnthropicMessagesTextBlockParam[] = [];
   let hoisting = hoistSystem;
   const messages: AnthropicMessagesMessage[] = [];
+  let separated = false;
+  // Messages spells a single text block as a bare string, which is the shape a
+  // client sees for a plain user turn.
+  const userMessage = (blocks: AnthropicMessagesUserContentBlock[]): AnthropicMessagesMessage => ({
+    role: 'user',
+    content: blocks.length === 1 && blocks[0].type === 'text' ? blocks[0].text : blocks,
+  });
   const append = (blocks: AnthropicMessagesUserContentBlock[]): void => {
-    if (options.oneMessagePerItem === true) {
-      if (blocks.length > 0) messages.push({ role: 'user', content: blocks });
+    if (options.oneMessagePerItem === true || separated) {
+      separated = false;
+      if (blocks.length > 0) messages.push(userMessage(blocks));
       return;
     }
     appendUserBlocks(messages, blocks);
@@ -173,6 +226,11 @@ export const anthropicMessagesFromIR = async (
     if (turn.role === 'assistant') {
       hoisting = false;
       const blocks = assistantBlocks(turn.items);
+      // A turn whose every item was dropped contributes no message, but the user
+      // turns around it were never adjacent, so a following user item must not
+      // merge into the previous message. An explicitly empty text item is not
+      // dropped: `assistantBlocks` emitted one empty block for it.
+      if (blocks.length === 0) { separated = options.separateAfterDroppedAssistant === true; continue; }
       const content = blocks.length === 1 && blocks[0].type === 'text' && blocks[0].text === '' ? '' : blocks;
       messages.push({ role: 'assistant', content });
       continue;
@@ -193,8 +251,8 @@ export const anthropicMessagesFromIR = async (
       }
       hoisting = false;
       append(item.type === 'tool_result'
-        ? [{ type: 'tool_result', tool_use_id: item.call_id, content: toolResultContent(item.output), ...(item.is_error === true ? { is_error: true } : {}) }]
-        : await userContent(item, options.resolveImage));
+        ? [{ type: 'tool_result', tool_use_id: item.call_id, content: await toolResultContent(item.output, options.resolveImage), ...(item.is_error === true ? { is_error: true } : {}) }]
+        : await userContent(item, options));
     }
   }
   return { system: system.length === 0 ? undefined : system, messages };

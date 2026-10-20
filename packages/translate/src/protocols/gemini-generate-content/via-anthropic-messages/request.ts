@@ -131,7 +131,7 @@ export const buildTargetRequest = async (
 
   for (const piece of segmentIRInput(pieces)) {
     if (piece.kind === 'resolved') { request.messages.push(piece.turn); continue; }
-    const translated = await anthropicMessagesFromIR({ turns: piece.turns }, false, { oneMessagePerItem: true });
+    const translated = await anthropicMessagesFromIR({ turns: piece.turns }, false, { oneMessagePerItem: true, allowFileContent: true });
     request.messages.push(...translated.messages);
   }
 

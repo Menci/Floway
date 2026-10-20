@@ -15,6 +15,10 @@ import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/nam
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, isOpenAIResponsesEncryptedReasoning, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
+import { openaiResponsesDropsReasoning, openaiResponsesInstructionsToIR, openaiResponsesTurnToIR } from '../as-source/request-to-ir.ts';
+import { anthropicMessagesFromIR } from '../../anthropic-messages/as-target/request-from-ir.ts';
+import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
+import type { IRInputTurn } from '../../../ir/input.ts';
 import { buildCustomToolInputSchema } from '../common/custom-tool-wrap.ts';
 import {
   ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
@@ -294,100 +298,11 @@ export const buildTargetRequest = async (
   const customToolNames = new Set<string>();
   const allowed = restrictAllowedTools(payload.tools, payload.tool_choice);
   const tools = translateTools(allowed.tools, customToolNames);
-  const hoistedSystemBlocks: AnthropicMessagesTextBlockParam[] = [];
-  const hoistedItems = new Set<CanonicalOpenAIResponsesInputItem>();
-  for (const item of canonical.input) {
-    if (item.type === 'additional_tools' || item.type === 'tool_search_output') continue;
-    if (item.type !== 'message' || (item.role !== 'system' && item.role !== 'developer')) break;
-    hoistedSystemBlocks.push(...openaiResponsesSystemBlocks(item));
-    hoistedItems.add(item);
-  }
-  const bareMessages = new Set<AnthropicMessagesMessage>();
-  const translateAssistantTurn = (input: CanonicalOpenAIResponsesInputItem[]): AnthropicMessagesMessage[] => {
-    const messages: AnthropicMessagesMessage[] = [];
-    for (const item of flattenInput(input)) {
-      rejectProgramCaller(item);
-      switch (item.type) {
-      case 'message':
-        if (item.role !== 'assistant') throw new TranslatorInputError(`Invalid assistant message role '${item.role}'.`);
-        messages.push(translateAssistantMessage(item));
-        break;
-      case 'function_call':
-        appendAssistantBlock(messages, { type: 'tool_use', id: item.call_id, name: item.name, input: parseToolArgumentsObject(item.arguments) });
-        break;
-      case 'custom_tool_call':
-        appendAssistantBlock(messages, { type: 'tool_use', id: item.call_id, name: item.name, input: { input: item.input } });
-        break;
-      case 'reasoning': {
-        if (isOpenAIResponsesEncryptedReasoning(item)) {
-          warnDroppedUnrecognizedAssistantReasoning('openaiResponses', 'anthropicMessages');
-          break;
-        }
-        const block = openaiResponsesReasoningToAnthropicMessagesUpstreamBlock(item);
-        if (block) appendAssistantBlock(messages, block);
-        break;
-      }
-      case 'item_reference':
-      case 'web_search_call':
-      case 'image_generation_call':
-        throw new TranslatorInputError(`Invalid input item type '${item.type}'.`);
-      default:
-        throw new TranslatorInputError(`Invalid input item: ${JSON.stringify(item)}`);
-      }
-    }
-    for (const message of messages) bareMessages.add(message);
-    return messages;
-  };
-
-  const translateNonAssistantInput = async (input: CanonicalOpenAIResponsesInputItem[], loadRemoteImage: RemoteImageLoader): Promise<AnthropicMessagesMessage[]> => {
-    const messages: AnthropicMessagesMessage[] = [];
-    for (const item of flattenInput(input).filter(item => !hoistedItems.has(item))) {
-      rejectProgramCaller(item);
-      switch (item.type) {
-      case 'message':
-        switch (item.role) {
-        case 'user': messages.push(await translateUserMessage(item, loadRemoteImage)); break;
-        case 'system':
-        case 'developer': {
-          const blocks = openaiResponsesSystemBlocks(item);
-          messages.push({ role: 'system', content: blocks.length > 0 ? blocks : '' });
-          break;
-        }
-        default: throw new TranslatorInputError(`Invalid role '${item.role}' in input message.`);
-        }
-        break;
-      case 'function_call_output':
-      case 'custom_tool_call_output':
-        appendUserBlock(messages, {
-          type: 'tool_result', tool_use_id: item.call_id,
-          content: await translateToolOutput(item.output, loadRemoteImage),
-          is_error: item.type === 'function_call_output' && item.status === 'incomplete' ? true : undefined,
-        });
-        break;
-      case 'item_reference':
-      case 'web_search_call':
-      case 'image_generation_call':
-        throw new TranslatorInputError(`Invalid input item type '${item.type}'.`);
-      default:
-        throw new TranslatorInputError(`Invalid input item: ${JSON.stringify(item)}`);
-      }
-    }
-    for (const message of messages) bareMessages.add(message);
-    return messages;
-  };
-  // `payload.instructions` is the OpenAI Responses canonical system field; leading
-  // system/developer input items contribute additional blocks immediately
-  // after it. Each source — the instructions field and each leading input
-  // message — is preserved as its own AnthropicMessagesTextBlockParam so the boundary
-  // between "canonical instructions" and "leading input system" survives
-  // and the downstream prompt cache sees stable per-source segments.
-  const systemBlocks: AnthropicMessagesTextBlockParam[] = [
-    ...(payload.instructions ? [{ type: 'text' as const, text: payload.instructions }] : []),
-    ...hoistedSystemBlocks,
-  ];
+  // Every system block comes from the IR writer, which hoists the leading run
+  // and leaves later system messages inline.
+  const systemBlocks: AnthropicMessagesTextBlockParam[] = [];
   const effort = payload.reasoning?.effort;
   const maxTokens = payload.max_output_tokens ?? options.fallbackMaxOutputTokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS;
-  applyLastSystemCacheBreakpoint(systemBlocks);
   applyLastToolCacheBreakpoint(tools);
 
   // Merge reasoning effort + structured-output format into a single
@@ -417,9 +332,50 @@ export const buildTargetRequest = async (
   // OpenAI Responses `metadata` is intentionally omitted on the Anthropic Messages path;
   // not coerced into Anthropic metadata.user_id, prompt-cache, or safety
   // semantics.
+  // A sidecar-resolved turn keeps its own cache metadata, so the last-message
+  // breakpoint skips it.
+  // A sidecar-resolved turn keeps the cache metadata it was stored with, so
+  // only bare-translated messages are candidates for the last-message breakpoint.
+  const restoredMessages = new Set<AnthropicMessagesMessage>();
+  const pieces: (IRInputTurn | IRInputResolvedTurn<AnthropicMessagesMessage>)[] = [];
+  // `instructions` and a leading system input are separate prompt blocks, so
+  // each becomes its own IR system item and the writer hoists both.
+  const instructions = openaiResponsesInstructionsToIR(payload.instructions);
+  if (instructions !== undefined) pieces.push(instructions);
+  for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
+    if (turn.role === 'assistant') {
+      const roundTrip = await roundTripAssistantTurn('openaiResponses', 'anthropicMessages', turn.items, codec, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest, collectOpenAIResponsesReplayContents);
+      if (roundTrip !== undefined) {
+        pieces.push({ kind: 'resolved', turn: roundTrip.turn });
+        restoredMessages.add(roundTrip.turn);
+        continue;
+      }
+      if (openaiResponsesDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiResponses', 'anthropicMessages');
+    }
+    pieces.push(...openaiResponsesTurnToIR(turn, flattenInput));
+  }
+
+  const irMessages: AnthropicMessagesMessage[] = [];
+  for (const piece of segmentIRInput(pieces)) {
+    if (piece.kind === 'resolved') { irMessages.push(piece.turn); continue; }
+    const translated = await anthropicMessagesFromIR({ turns: piece.turns }, piece.leading, {
+      separateAfterDroppedAssistant: true,
+      resolveImage: async media => {
+        // Messages cannot reference a foreign file ID: the bytes must be
+        // fetched, so a caller that supplied only an ID is an error.
+        if (media.source_kind === 'file') throw new TranslatorInputError('Cannot translate file_id-only image content to Anthropic Messages.');
+        return media.source_kind === 'url'
+          ? resolveImageUrlToAnthropicMessagesImage(media.url, options.loadRemoteImage)
+          : resolveImageUrlToAnthropicMessagesImage(`data:${media.media_type ?? ''};base64,${media.data}`, options.loadRemoteImage);
+      },
+    });
+    if (translated.system !== undefined) systemBlocks.push(...translated.system);
+    irMessages.push(...translated.messages);
+
+  }
   const target: AnthropicMessagesPayload = {
     model: payload.model,
-    messages: [],
+    messages: irMessages,
     max_tokens: maxTokens,
     ...(systemBlocks.length > 0 ? { system: systemBlocks } : {}),
     ...(payload.temperature != null ? { temperature: payload.temperature } : {}),
@@ -432,11 +388,8 @@ export const buildTargetRequest = async (
     ...serviceTierFields,
   };
 
-  for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
-    if (turn.role !== 'assistant') { target.messages.push(...await translateNonAssistantInput(turn.items, options.loadRemoteImage)); continue; }
-    const roundTrip = await roundTripAssistantTurn('openaiResponses', 'anthropicMessages', turn.items, codec, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest, collectOpenAIResponsesReplayContents);
-    target.messages.push(...(roundTrip ? [roundTrip.turn] : translateAssistantTurn(turn.items)));
-  }
-  applyLastMessageCacheBreakpoint(target.messages.filter(message => bareMessages.has(message)));
+  // The system blocks are complete only after the IR writer hoisted them.
+  applyLastSystemCacheBreakpoint(systemBlocks);
+  applyLastMessageCacheBreakpoint(target.messages.filter(message => !restoredMessages.has(message)));
   return { target, customToolNames, namespaceToolNames };
 };

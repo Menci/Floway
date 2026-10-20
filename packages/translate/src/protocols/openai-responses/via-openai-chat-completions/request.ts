@@ -2,7 +2,7 @@ import { klona } from 'klona/json';
 
 import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
 import type { IRInputTurn } from '../../../ir/input.ts';
-import { roundTripAssistantTurn } from '../../../round-trip/resolve.ts';
+import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
 import { openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/request-from-ir.ts';
@@ -10,7 +10,7 @@ import { restrictAllowedTools } from '../as-source/allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
-import { openaiResponsesTurnToIR, type OpenAIResponsesCallerFacts } from '../as-source/request-to-ir.ts';
+import { openaiResponsesDropsReasoning, openaiResponsesTurnToIR } from '../as-source/request-to-ir.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import { buildCustomToolInputSchema } from '../common/custom-tool-wrap.ts';
@@ -141,7 +141,6 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
     tool_choice: translateOpenAIResponsesToolChoice(allowed.choice),
   };
 
-  const callerFacts: OpenAIResponsesCallerFacts = { rejectProgramCaller, rejectProgrammatic: () => {} };
   const pieces: (IRInputTurn | IRInputResolvedTurn<OpenAIChatCompletionsMessage>)[] = [];
   // `instructions` is the Responses spelling of a leading system prompt, so it
   // joins the conversation as one.
@@ -160,7 +159,8 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
       pieces.push({ kind: 'resolved', turn: roundTrip.turn });
       continue;
     }
-    pieces.push(openaiResponsesTurnToIR(turn, flattenInput, callerFacts));
+    if (openaiResponsesDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiResponses', 'openaiChatCompletions');
+    pieces.push(...openaiResponsesTurnToIR(turn, flattenInput, item => { throw new TranslatorInputError(`Invalid input item type '${(item as { type: string }).type}'.`); }));
   }
 
   for (const piece of segmentIRInput(pieces)) {

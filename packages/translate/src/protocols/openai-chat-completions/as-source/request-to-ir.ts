@@ -68,13 +68,18 @@ const assistantItems = (turn: Extract<OpenAIChatCompletionsConversationTurn, { r
   const content: IRInputAssistantContentPart[] = typeof message.content === 'string'
     ? textParts(message.content)
     : (message.content ?? []).map(part => part.type === 'text'
-        ? { type: 'text' as const, text: part.text }
-        : { type: 'refusal' as const, refusal: part.refusal });
+      ? { type: 'text' as const, text: part.text }
+      : { type: 'refusal' as const, refusal: part.refusal });
   if (message.refusal !== undefined && message.refusal !== null && !content.some(part => part.type === 'refusal')) {
     content.push({ type: 'refusal', refusal: message.refusal });
   }
 
-  const items: IRInputAssistantItem[] = content.length > 0 ? [{ type: 'message', content }] : [];
+  // A null content with nothing else to say is an explicitly empty assistant
+  // message; with tool calls or a refusal it is simply absent.
+  const emptyMessage = message.content == null && message.refusal == null && (message.tool_calls?.length ?? 0) === 0;
+  const items: IRInputAssistantItem[] = emptyMessage
+    ? [{ type: 'message', content: [{ type: 'text', text: '' }] }]
+    : content.length > 0 ? [{ type: 'message', content }] : [];
   // The legacy single `function_call` field and the `tool_calls` array carry
   // the same concept; the IR keeps only the modern spelling.
   if (message.function_call !== undefined && message.function_call !== null) {

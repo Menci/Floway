@@ -135,7 +135,9 @@ export const geminiGenerateContentContentsToIRTurns = (
   if (turn.role === 'assistant') {
     return {
       role: 'assistant' as const,
-      items: (content.parts?.length ?? 0) === 0 ? [{ type: 'message' as const, content: [] }] : assistantItems(content, contentIndex + index, ids),
+      items: (content.parts?.length ?? 0) === 0
+        ? [{ type: 'message' as const, content: [{ type: 'text' as const, text: '' }] }]
+        : assistantItems(content, contentIndex + index, ids),
     };
   }
   if (content.role !== 'user' && content.role !== undefined) {
@@ -167,7 +169,7 @@ export const geminiGenerateContentTurnToIR = (
     return {
       role: 'assistant',
       items: turn.items.flatMap((content, index) => (content.parts?.length ?? 0) === 0
-        ? [{ type: 'message' as const, content: [] }]
+        ? [{ type: 'message' as const, content: [{ type: 'text' as const, text: '' }] }]
         : assistantItems(content, contentIndex + index, toolIds)),
     };
   }

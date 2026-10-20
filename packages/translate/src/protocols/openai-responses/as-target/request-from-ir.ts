@@ -74,7 +74,7 @@ const assistantItems = (items: readonly IRInputAssistantItem[]): CanonicalOpenAI
       type: 'message',
       role: 'assistant',
       // Responses spelling of an empty assistant history message.
-      content: item.content.length === 0
+      content: item.content.length === 0 || item.content.every(part => part.type === 'text' && part.text === '')
         ? ''
         : item.content.map(part => part.type === 'text'
             ? { type: 'output_text' as const, text: part.text }
