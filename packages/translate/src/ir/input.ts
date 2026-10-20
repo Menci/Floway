@@ -90,7 +90,12 @@ export interface IRInputAssistantMessageItem {
   readonly content: readonly IRInputAssistantContentPart[]; // All
 }
 
-export type IRInputUserContentPart = IRInputTextPart | IRInputImagePart | IRInputFilePart | IRInputAudioPart;
+export type IRInputUserContentPart =
+  | IRInputTextPart
+  | IRInputRefusalPart
+  | IRInputImagePart
+  | IRInputFilePart
+  | IRInputAudioPart;
 
 export type IRInputAssistantContentPart = IRInputTextPart | IRInputRefusalPart;
 
@@ -100,8 +105,10 @@ export interface IRInputTextPart {
 }
 
 // Chat Completions and Responses both carry refusals as a distinct content
-// kind. Messages and GenerateContent have no such block, so their writers
-// project it to text, which is what the routes do today.
+// kind, on assistant content and (on the Chat Completions wire) on user content
+// as well. Messages and GenerateContent have no such block; their writers
+// project assistant refusals to text and reject user refusals, which is what
+// the routes do today.
 export interface IRInputRefusalPart {
   readonly type: 'refusal'; // ChatCompletions, Responses
   readonly refusal: string; // ChatCompletions, Responses
@@ -160,8 +167,9 @@ export type IRInputMedia =
 // Chat Completions is a target here but not a source: its reasoning text
 // aliases are provider extensions with no wire contract, so its reader cannot
 // identify one and produces no reasoning item, matching the current
-// bare-translation behavior. GenerateContent, conversely, is a source only:
-// no route targets it.
+// bare-translation behavior. Its writer emits `reasoning_text`, the alias the
+// gateway already chose for translated output, so reasoning is not lost on that
+// path. GenerateContent, conversely, is a source only: no route targets it.
 export interface IRInputReasoningItem {
   readonly type: 'reasoning'; // Responses, Messages, GenerateContent; ChatCompletions as target
   readonly summary?: readonly string[]; // Responses, GenerateContent, ChatCompletions; Messages as target
@@ -202,6 +210,11 @@ export interface IRInputToolResultItem {
   // carries structured content, so Responses and Messages outputs keep their
   // images and files until the target decides how to flatten them.
   readonly output: string | readonly IRInputToolResultContentPart[]; // All
+  // A Chat Completions `tool` message does not say which call kind it answers;
+  // only the preceding assistant message's `tool_calls` do. Readers record the
+  // fact here so a Responses writer picks `custom_tool_call_output` over
+  // `function_call_output` without re-deriving it from conversation position.
+  readonly tool_kind?: 'function' | 'custom'; // ChatCompletions, Responses
   // Messages spells this as `is_error` and Responses as an incomplete output
   // status; Chat Completions and GenerateContent have no equivalent.
   readonly is_error?: boolean; // Messages, Responses

@@ -10,7 +10,11 @@ import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/nam
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, isOpenAIResponsesEncryptedReasoning, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
+import { openaiResponsesTurnToIR, type OpenAIResponsesCallerFacts } from '../as-source/request-to-ir.ts';
+import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
+import type { IRInputTurn } from '../../../ir/input.ts';
 import { buildCustomToolInputSchema } from '../common/custom-tool-wrap.ts';
+import { openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/request-from-ir.ts';
 import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsResponseFormat, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesCustomToolCallOutputItem, OpenAIResponsesFunctionCallOutputItem, OpenAIResponsesInputImage, CanonicalOpenAIResponsesText, CanonicalOpenAIResponsesInputItem, OpenAIResponsesPayloadEx, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
@@ -248,7 +252,7 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
   // OpenAI-Responses-only state such as `previous_response_id` remains native-only.
   const target: OpenAIChatCompletionsPayload = {
     model: payload.model,
-    messages: payload.instructions ? [{ role: 'system', content: payload.instructions }] : [],
+    messages: [],
     ...(payload.max_output_tokens !== undefined ? { max_tokens: payload.max_output_tokens } : {}),
     stream: true,
     ...(payload.temperature !== undefined ? { temperature: payload.temperature } : {}),
@@ -266,16 +270,35 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
     tool_choice: translateOpenAIResponsesToolChoice(allowed.choice),
   };
 
-  for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
-    if (turn.role !== 'assistant') { target.messages.push(...translateNonAssistantInput(turn.items)); continue; }
-    const roundTrip = await roundTripAssistantTurn('openaiResponses', 'openaiChatCompletions', turn.items, codec, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest, collectOpenAIResponsesReplayContents);
-    if (roundTrip?.turn.function_call != null) {
-      const modernIds = new Set(roundTrip.turn.tool_calls?.map(call => call.id));
-      for (const item of turn.items) {
-        if ((item.type === 'function_call' || item.type === 'custom_tool_call') && !modernIds.has(item.call_id)) legacyFunctionNames.set(item.call_id, roundTrip.turn.function_call.name);
-      }
-    }
-    target.messages.push(...(roundTrip ? [roundTrip.turn] : translateAssistantTurn(turn.items)));
+  const callerFacts: OpenAIResponsesCallerFacts = { rejectProgramCaller, rejectProgrammatic: () => {} };
+  const pieces: (IRInputTurn | IRInputResolvedTurn<OpenAIChatCompletionsMessage>)[] = [];
+  // `instructions` is the Responses spelling of a leading system prompt, so it
+  // joins the conversation as one.
+  if (payload.instructions) {
+    pieces.push({ role: 'user', items: [{ type: 'message', role: 'system', content: [{ type: 'text', text: payload.instructions }] }] });
   }
+  for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
+    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('openaiResponses', 'openaiChatCompletions', turn.items, codec, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest, collectOpenAIResponsesReplayContents);
+    if (roundTrip) {
+      if (roundTrip.turn.function_call != null) {
+        const modernIds = new Set(roundTrip.turn.tool_calls?.map(call => call.id));
+        for (const item of turn.items) {
+          if ((item.type === 'function_call' || item.type === 'custom_tool_call') && !modernIds.has(item.call_id)) legacyFunctionNames.set(item.call_id, roundTrip.turn.function_call.name);
+        }
+      }
+      pieces.push({ kind: 'resolved', turn: roundTrip.turn });
+      continue;
+    }
+    pieces.push(openaiResponsesTurnToIR(turn, flattenInput, callerFacts));
+  }
+
+  for (const piece of segmentIRInput(pieces)) {
+    if (piece.kind === 'resolved') {
+      target.messages.push(piece.turn);
+      continue;
+    }
+    target.messages.push(...openaiChatCompletionsFromIR({ turns: piece.turns }));
+  }
+
   return { target, customToolNames, namespaceToolNames };
 };

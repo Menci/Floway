@@ -1,7 +1,11 @@
 import { klona } from 'klona/json';
 
 import { openaiChatCompletionsContentToOpenAIResponsesInputContent, openaiChatCompletionsContentToText } from './content.ts';
-import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
+import { roundTripAssistantTurn } from '../../../round-trip/resolve.ts';
+import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
+import type { IRInputTurn } from '../../../ir/input.ts';
+import { openaiResponsesFromIR } from '../../openai-responses/as-target/request-from-ir.ts';
+import { openaiChatCompletionsCallKinds, openaiChatCompletionsTurnToIR } from '../as-source/request-to-ir.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
@@ -63,108 +67,32 @@ export const buildTargetRequest = async (
   payload: OpenAIChatCompletionsPayload,
   codec: SidecarCodec,
 ): Promise<CanonicalOpenAIResponsesPayload> => {
-  const instructions: string[] = [];
-  const input: CanonicalOpenAIResponsesInputItem[] = [];
   const customToolCallIds = new Set<string>();
-  let hoistSystemPrefix = true;
+  const callKinds = openaiChatCompletionsCallKinds(payload);
 
-  const translateAssistantMessage = (message: OpenAIChatCompletionsAssistantMessage): void => {
-    hoistSystemPrefix = false;
-    if (hasOpenAIChatCompletionsReasoning(message)) {
-      warnDroppedUnrecognizedAssistantReasoning('openaiChatCompletions', 'openaiResponses');
-    }
-    const assistantContent = translateAssistantContent(message);
-    if (message.tool_calls?.length) {
-      if (assistantContent.length > 0) {
-        input.push({
-          type: 'message',
-          role: 'assistant',
-          content: assistantContent,
-        });
-      }
+  const input: CanonicalOpenAIResponsesInputItem[] = [];
+  const instructions: string[] = [];
 
-      for (const toolCall of message.tool_calls) {
-        if (toolCall.type === 'custom') {
-          customToolCallIds.add(toolCall.id);
-          input.push({ type: 'custom_tool_call', call_id: toolCall.id, ...toolCall.custom, status: 'completed' });
-          continue;
-        }
-        input.push({
-          type: 'function_call',
-          call_id: toolCall.id,
-          name: toolCall.function.name,
-          arguments: toolCall.function.arguments,
-          status: 'completed',
-        });
-      }
-
-      return;
-    }
-
-    input.push({
-      type: 'message',
-      role: 'assistant',
-      content: assistantContent.length > 0 ? assistantContent : '',
-    });
-  };
-
-  const translateNonAssistantMessages = (messages: Exclude<OpenAIChatCompletionsMessage, { role: 'assistant' }>[]): void => {
-    for (const message of messages) {
-      // Only the initial OpenAI Chat Completions `system` prefix maps cleanly to OpenAI Responses
-      // `instructions`; later `system` and `developer` turns are
-      // chronology-bearing input items.
-      if (hoistSystemPrefix && message.role === 'system') {
-        const text = openaiChatCompletionsContentToText(message.content);
-        if (text) instructions.push(text);
-        continue;
-      }
-
-      hoistSystemPrefix = false;
-
-      if (message.role === 'user') {
-        input.push({
-          type: 'message',
-          role: 'user',
-          content: openaiChatCompletionsContentToOpenAIResponsesInputContent(message.content),
-        });
-        continue;
-      }
-
-      if (message.role === 'system' || message.role === 'developer') {
-        input.push({
-          type: 'message',
-          role: message.role,
-          content: openaiChatCompletionsContentToOpenAIResponsesInputContent(message.content),
-        });
-        continue;
-      }
-
-      if (message.role !== 'tool') {
-        throw new TranslatorInputError(`Invalid role '${(message as { role: string }).role}'.`);
-      }
-
-      if (!message.tool_call_id) {
-        throw new TranslatorInputError("Missing required field 'tool_call_id' on a 'tool' role message.");
-      }
-
-      input.push({
-        type: customToolCallIds.has(message.tool_call_id) ? 'custom_tool_call_output' : 'function_call_output',
-        call_id: message.tool_call_id,
-        output: typeof message.content === 'string' ? message.content : JSON.stringify(message.content),
-      });
-    }
-  };
-
+  // A resolved assistant turn is already native Responses structure, so it
+  // splits the conversation into IR segments around itself.
+  const pieces: (IRInputTurn | IRInputResolvedTurn<readonly CanonicalOpenAIResponsesInputItem[]>)[] = [];
   for (const turn of partitionOpenAIChatCompletionsTurns(payload.messages)) {
-    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('openaiChatCompletions', 'openaiResponses', turn.items[0], codec, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest, collectOpenAIChatCompletionsReplayContents);
-    if (!roundTrip) {
-      if (turn.role === 'assistant') translateAssistantMessage(turn.items[0]);
-      else translateNonAssistantMessages(turn.items);
+    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn(
+      'openaiChatCompletions', 'openaiResponses', turn.items[0], codec,
+      findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest, collectOpenAIChatCompletionsReplayContents,
+    );
+    pieces.push(roundTrip ? { kind: 'resolved', turn: roundTrip.turn } : openaiChatCompletionsTurnToIR(turn, callKinds));
+  }
+
+  for (const piece of segmentIRInput(pieces)) {
+    if (piece.kind === 'resolved') {
+      input.push(...piece.turn);
+      for (const item of piece.turn) if (item.type === 'custom_tool_call') customToolCallIds.add(item.call_id);
       continue;
     }
-    hoistSystemPrefix = false;
-    input.push(...roundTrip.turn);
-    for (const item of roundTrip.turn) if (item.type === 'custom_tool_call') customToolCallIds.add(item.call_id);
+    const translated = openaiResponsesFromIR({ turns: piece.turns }, piece.leading);
+    if (translated.instructions !== undefined) instructions.push(translated.instructions);
+    input.push(...translated.input);
   }
 
   const format = klona(payload.response_format);
