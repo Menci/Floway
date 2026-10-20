@@ -108,9 +108,11 @@ const assistantMessage = (items: readonly IRInputAssistantItem[]): OpenAIChatCom
       break;
     }
   }
+  // A turn carrying reasoning or tool calls with no text spells its content as
+  // null; a turn with neither is an explicitly empty message and keeps ''.
   return [{
     role: 'assistant',
-    content: text.length === 0 ? null : text.join('\n\n'),
+    content: text.length === 0 && (toolCalls.length > 0 || reasoning.length > 0) ? null : text.join('\n\n'),
     ...(refusals.length === 0 ? {} : { refusal: refusals.join('\n\n') }),
     ...(reasoning.length === 0 ? {} : { reasoning_text: reasoning.join('') }),
     ...(toolCalls.length === 0 ? {} : { tool_calls: toolCalls }),

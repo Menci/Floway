@@ -12,7 +12,7 @@ import type {
 import { warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from './content.ts';
-import { partitionGeminiGenerateContentTurns } from './conversation-turns.ts';
+import { partitionGeminiGenerateContentTurns, type GeminiGenerateContentConversationTurn as GeminiGenerateContentTurn } from './conversation-turns.ts';
 import { geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from './tools.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 
@@ -21,18 +21,18 @@ const inlineMedia = (part: GeminiGenerateContentPart): IRInputMedia | null => {
   return inlineData === null ? null : { source_kind: 'base64', media_type: inlineData.mimeType, data: inlineData.data };
 };
 
-const inlinePart = (part: GeminiGenerateContentPart): IRInputUserContentPart => {
+const inlinePart = (part: GeminiGenerateContentPart, target?: string): IRInputUserContentPart => {
   const inlineData = geminiGenerateContentInlineData(part);
   if (inlineData === null) throw new TranslatorInputError('Expected inline data.');
   switch (inlineData.kind) {
   case 'image': return { type: 'image', image: inlineMedia(part)! };
   case 'pdf': return { type: 'file', file: inlineMedia(part)! };
   case 'audio': return { type: 'audio', audio: { media_type: inlineData.mimeType, data: inlineData.data } };
-  case 'unsupported': throw new TranslatorInputError(`Cannot translate Gemini generateContent inlineData MIME type '${inlineData.mimeType}'.`);
+  case 'unsupported': throw new TranslatorInputError(`Cannot translate Gemini generateContent inlineData MIME type '${inlineData.mimeType}'${target === undefined ? '.' : ` to ${target}.`}`);
   }
 };
 
-const userParts = (content: GeminiGenerateContentContent, turnIndex: number, ids: GeminiGenerateContentToolCallIds): IRInputUserItem[] => {
+const userParts = (content: GeminiGenerateContentContent, turnIndex: number, ids: GeminiGenerateContentToolCallIds, target?: string): IRInputUserItem[] => {
   const items: IRInputUserItem[] = [];
   const pending: IRInputUserContentPart[] = [];
   const flush = (): void => {
@@ -58,7 +58,7 @@ const userParts = (content: GeminiGenerateContentContent, turnIndex: number, ids
       return;
     }
     case 'inline_data':
-      pending.push(inlinePart(part));
+      pending.push(inlinePart(part, target));
       return;
     default:
       throw new TranslatorInputError(`"${kind}" parts are not supported in user content.`);
@@ -86,7 +86,9 @@ const assistantItems = (content: GeminiGenerateContentContent, turnIndex: number
     case 'function_call': {
       const { call, id } = geminiGenerateContentFunctionCallPart(part, ids, turnIndex, partIndex)!;
       flush();
-      items.push({ type: 'function_call', call_id: id, name: call.name, arguments: JSON.stringify(call.args ?? {}) });
+      // An absent `functionCall.args` becomes `{}`; an explicit `null` keeps
+      // `null`, because both OpenAI protocols distinguish the two.
+      items.push({ type: 'function_call', call_id: id, name: call.name, arguments: JSON.stringify(call.args === undefined ? {} : call.args) });
       return;
     }
     case 'text': {
@@ -115,6 +117,37 @@ const assistantItems = (content: GeminiGenerateContentContent, turnIndex: number
 const systemParts = (content: GeminiGenerateContentContent | undefined): IRInputTextPart[] => {
   const text = geminiGenerateContentText(content);
   return text === null ? [] : [{ type: 'text', text }];
+};
+
+/** Turn-level entry point so a pair can splice a resolved assistant turn. */
+/** Whether a turn carries a vendor-signed thought signature the IR cannot hold. */
+export const geminiGenerateContentDropsReasoning = (turn: GeminiGenerateContentTurn): boolean => turn.role === 'assistant'
+  && turn.items.some(content => content.parts?.some(part => part.thoughtSignature !== undefined) ?? false);
+
+export const geminiGenerateContentTurnToIR = (
+  turn: GeminiGenerateContentTurn,
+  contentIndex: number,
+  ids?: GeminiGenerateContentToolCallIds,
+  target?: string,
+): IRInputTurn => {
+  const toolIds = ids ?? Object.create(null);
+  if (turn.role === 'assistant') {
+    return {
+      role: 'assistant',
+      items: turn.items.flatMap((content, index) => assistantItems(content, contentIndex + index, toolIds)),
+    };
+  }
+  return {
+    role: 'user',
+    items: turn.items.flatMap((content, index) => {
+      if (content.role !== 'user' && content.role !== undefined) {
+        throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
+      }
+      return (content.parts?.length ?? 0) === 0
+        ? [{ type: 'message' as const, role: 'user' as const, content: [] }]
+        : userParts(content, contentIndex + index, toolIds, target);
+    }),
+  };
 };
 
 export const geminiGenerateContentInputToIR = (payload: GeminiGenerateContentPayload): IRInputConversation => {

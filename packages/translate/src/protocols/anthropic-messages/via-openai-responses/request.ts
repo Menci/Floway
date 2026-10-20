@@ -305,7 +305,7 @@ export const buildTargetRequest = async (
       }
       if (anthropicMessagesDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('anthropicMessages', 'openaiResponses');
     }
-    const ir = anthropicMessagesTurnToIR(turn, messageIndex);
+    const ir = anthropicMessagesTurnToIR(turn, messageIndex, ' user content blocks are not supported on this model');
     if (ir.items.length > 0) pieces.push(ir);
     messageIndex += turn.items.length;
   }

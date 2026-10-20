@@ -5,6 +5,10 @@ import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
+import { geminiGenerateContentDropsReasoning, geminiGenerateContentTurnToIR } from '../as-source/request-to-ir.ts';
+import { openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/request-from-ir.ts';
+import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
+import type { IRInputTurn } from '../../../ir/input.ts';
 import { geminiGenerateContentReasoningEffort } from '../as-source/reasoning.ts';
 import { collectGeminiGenerateContentReplayContents, hasGeminiGenerateContentThoughtSignature, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../as-source/schema.ts';
@@ -238,37 +242,37 @@ export const buildTargetRequest = async (
   }
 
   let contentIndex = 0;
+  const pieces: (IRInputTurn | IRInputResolvedTurn<OpenAIChatCompletionsMessage>)[] = [];
   for (const turn of partitionGeminiGenerateContentTurns(payload.contents ?? [])) {
-    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('geminiGenerateContent', 'openaiChatCompletions', turn.items, codec, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest, collectGeminiGenerateContentReplayContents);
-    if (!roundTrip) {
-      if (turn.role === 'assistant') {
-        for (const [index, content] of turn.items.entries()) {
-          if ((content.parts?.length ?? 0) === 0) { request.messages.push({ role: 'assistant', content: '' }); continue; }
-          const message = buildAssistantMessage(content, contentIndex + index, unmatchedToolCallIds);
-          if (message) request.messages.push(message);
+    if (turn.role === 'assistant') {
+      const roundTrip = await roundTripAssistantTurn('geminiGenerateContent', 'openaiChatCompletions', turn.items, codec, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest, collectGeminiGenerateContentReplayContents);
+      if (roundTrip !== undefined) {
+        pieces.push({ kind: 'resolved', turn: roundTrip.turn });
+        if (roundTrip.turn.function_call == null) {
+          for (const call of roundTrip.turn.tool_calls ?? []) {
+            const name = call.type === 'function' ? call.function.name : call.custom.name;
+            unmatchedToolCallIds[name] ??= [];
+            unmatchedToolCallIds[name].push(call.id);
+          }
+        } else {
+          const modernIds = new Set(roundTrip.turn.tool_calls?.map(call => call.id));
+          for (const [index, content] of turn.items.entries()) for (const [partIndex, part] of (content.parts ?? []).entries()) {
+            const invocation = geminiGenerateContentFunctionCallPart(part, unmatchedToolCallIds, contentIndex + index, partIndex);
+            if (invocation !== null && !modernIds.has(invocation.id)) legacyFunctionNames.set(invocation.id, roundTrip.turn.function_call.name);
+          }
         }
-      } else for (const [index, content] of turn.items.entries()) {
-        if (content.role !== 'user' && content.role !== undefined) throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
-        if ((content.parts?.length ?? 0) === 0) { request.messages.push({ role: 'user', content: '' }); continue; }
-        request.messages.push(...buildUserMessages(content, contentIndex + index, unmatchedToolCallIds, legacyFunctionNames));
-      }
-    } else {
-      request.messages.push(roundTrip.turn);
-      if (roundTrip.turn.function_call == null) {
-        for (const call of roundTrip.turn.tool_calls ?? []) {
-          const name = call.type === 'function' ? call.function.name : call.custom.name;
-          unmatchedToolCallIds[name] ??= [];
-          unmatchedToolCallIds[name].push(call.id);
-        }
-      } else {
-        const modernIds = new Set(roundTrip.turn.tool_calls?.map(call => call.id));
-        for (const [index, content] of turn.items.entries()) for (const [partIndex, part] of (content.parts ?? []).entries()) {
-          const invocation = geminiGenerateContentFunctionCallPart(part, unmatchedToolCallIds, contentIndex + index, partIndex);
-          if (invocation !== null && !modernIds.has(invocation.id)) legacyFunctionNames.set(invocation.id, roundTrip.turn.function_call.name);
-        }
+        contentIndex += turn.items.length;
+        continue;
       }
     }
+    if (geminiGenerateContentDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('geminiGenerateContent', 'openaiChatCompletions');
+    pieces.push(geminiGenerateContentTurnToIR(turn, contentIndex, unmatchedToolCallIds, 'OpenAI Chat Completions'));
     contentIndex += turn.items.length;
+  }
+
+  for (const piece of segmentIRInput(pieces)) {
+    if (piece.kind === 'resolved') { request.messages.push(piece.turn); continue; }
+    request.messages.push(...openaiChatCompletionsFromIR({ turns: piece.turns }, { legacyFunctionNames }));
   }
 
   applyGenerationConfig(request, payload.generationConfig);
