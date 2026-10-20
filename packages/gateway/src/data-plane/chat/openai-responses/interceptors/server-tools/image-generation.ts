@@ -1,7 +1,6 @@
 import { isEqual } from 'es-toolkit';
 
 import type { User } from '../../../../../repo/types.ts';
-
 import { sleep } from '../../../../../shared/sleep.ts';
 import { enumerateModelCandidates } from '../../../../providers/resolution.ts';
 import { stampUpstreamCallStart } from '../../../../shared/attempt-timing.ts';
