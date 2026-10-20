@@ -267,15 +267,15 @@ function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, 
           />}
         </div>
         <div className="flex items-center gap-3 min-w-0 text-fui-fg3">
-          <Tooltip content={t('dashboard.requests.duration', { value: record.durationMs })} relationship="description">
+          <Tooltip content={t('dashboard.requests.duration', { value: formatDuration(record.durationMs, locale) })} relationship="description">
             <span className="inline-flex items-center gap-1 shrink-0">
-              <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.durationMs)}</Text>
+              <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.durationMs, locale)}</Text>
             </span>
           </Tooltip>
           {record.ttftMs != null && (
-            <Tooltip content={t('dashboard.requests.ttft', { value: record.ttftMs })} relationship="description">
+            <Tooltip content={t('dashboard.requests.ttft', { value: formatDuration(record.ttftMs, locale) })} relationship="description">
               <span className="inline-flex items-center gap-1 shrink-0">
-                <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.ttftMs)}</Text>
+                <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.ttftMs, locale)}</Text>
               </span>
             </Tooltip>
           )}

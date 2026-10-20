@@ -56,7 +56,9 @@ function PerformanceChart({ chart, hidden }: { chart: PerformancePlot; hidden: S
   const chartStyles = usePerformanceChartStyles();
   const chartRootStyles = useChartFrame();
   const locale = useLocale();
-  const formatter = chart.metric === 'ttft' ? formatDuration : formatTokenRate;
+  const formatter = chart.metric === 'ttft'
+    ? (value: number) => formatDuration(value, locale)
+    : formatTokenRate;
   const entryByLegend = useMemo(() => new Map(chart.entries.map(entry => [entry.legend, entry])), [chart.entries]);
   const visibleData = useMemo(() => visibleSeriesData(chart.entries, chart.data, hidden), [chart.data, chart.entries, hidden]);
   const values = visibleData.lineChartData?.flatMap(series => series.data.map(point => point.y).filter((value): value is number => typeof value === 'number' && value > 0)) ?? [];
@@ -85,6 +87,7 @@ function PerformanceChartCallout({ data, details, entryByLegend, title }: {
   title: string;
 }) {
   const { t } = useTranslation();
+  const locale = useLocale();
   // The chart keeps its hover state across a range or metric switch and can ask
   // for a callout carrying legends from the replaced dataset; such a row is
   // dropped rather than substituted.
@@ -99,7 +102,7 @@ function PerformanceChartCallout({ data, details, entryByLegend, title }: {
         color: item.color,
         key: entry.id,
         label: entry.label,
-        values: [formatDuration(point?.ttft ?? null), formatTokenRate(point?.outputSpeed ?? null)],
+        values: [formatDuration(point?.ttft ?? null, locale), formatTokenRate(point?.outputSpeed ?? null)],
       }];
     });
 

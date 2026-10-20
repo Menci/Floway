@@ -1,3 +1,5 @@
+import { formatDurationUnit } from '../../lib/format-duration';
+
 // The thresholds are stated once for every subscription upstream, so a reading
 // that colours a bar in the editor colours the ring beside it in the list the
 // same way.
@@ -44,10 +46,10 @@ export const usageStatusFromHeaviest = (heaviest: number | null): UsageHeavyOrAc
 // A window is named by the length it covers rather than by the field it arrived
 // in, so the five hours a Codex header states in minutes and the five hours
 // Ollama documents for its session allowance read as one window in one row.
-export const windowLengthLabel = (minutes: number): string =>
+export const windowLengthLabel = (minutes: number, locale: string): string =>
   minutes % (24 * 60) === 0
-    ? `${minutes / (24 * 60)}d`
-    : minutes % 60 === 0 ? `${minutes / 60}h` : `${minutes}m`;
+    ? formatDurationUnit(minutes / (24 * 60), 'day', locale)
+    : minutes % 60 === 0 ? formatDurationUnit(minutes / 60, 'hour', locale) : formatDurationUnit(minutes, 'minute', locale);
 
 export const FIVE_HOUR_WINDOW_MINUTES = 5 * 60;
 export const SEVEN_DAY_WINDOW_MINUTES = 7 * 24 * 60;

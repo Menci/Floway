@@ -281,11 +281,11 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const summaryCards = [
     ['requests', formatCount(summary?.requests ?? 0, locale)],
     ['errors', formatCount(summary?.errors ?? 0, locale)],
-    ['ttftP50', formatDuration(summary?.ttftMsP50 ?? null)],
+    ['ttftP50', formatDuration(summary?.ttftMsP50 ?? null, locale)],
     ['speedP50', formatTokenRateFromTpot(summary?.tpotUsP50 ?? null)],
-    ['ttftP95', formatDuration(summary?.ttftMsP95 ?? null)],
+    ['ttftP95', formatDuration(summary?.ttftMsP95 ?? null, locale)],
     ['speedP95', formatTokenRateFromTpot(summary?.tpotUsP95 ?? null)],
-    ['ttftP99', formatDuration(summary?.ttftMsP99 ?? null)],
+    ['ttftP99', formatDuration(summary?.ttftMsP99 ?? null, locale)],
     ['speedP99', formatTokenRateFromTpot(summary?.tpotUsP99 ?? null)],
   ] as const;
   return <section className="dashboard-page">

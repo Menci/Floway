@@ -3,7 +3,7 @@ import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { CalendarNavigationIcon } from './calendar-navigation-icon';
 import { useTranslation } from '../../i18n/translation';
 import { calendarDate, parseCalendarDate } from '../../lib/calendar-date';
-import { formatDate } from '../../lib/format-time';
+import { formatDate, numericDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { RANGE_CELL_BORDER, RANGE_CELL_STROKE, RANGE_CELL_SIZE, RANGE_CONTENT_SIZE, RANGE_DRILL_EASING, RANGE_DRILL_MS, RANGE_DRILL_OUT_MS, RANGE_HEADER_FADE_MS, RANGE_LARGE_COLUMNS, RANGE_NAVIGATION_MS, RANGE_SNAPSHOT_MS, rangeNavigationFrames } from '../../winui/calendar-range';
 
@@ -200,7 +200,7 @@ export function CalendarRange({ autoFocus = false, displayDate, onChange, value 
             const rangeStart = endpoint === 'start';
             const arcRadius = radius + (rangeStart ? -RANGE_CELL_STROKE : RANGE_CELL_STROKE);
             const bandEdge = rangeStart ? cellSize : 0;
-            return <button aria-current={current ? 'date' : undefined} aria-label={mode === 'month' ? formatDate(cell, locale, { year: 'numeric', month: 'long', day: 'numeric' }) : label.replace('\n', '')} aria-selected={endpoint !== undefined || inRange} aria-hidden={!sameScope(mode, cell, date) || undefined} className="floway-range-cell" data-date={key} data-endpoint={endpoint} data-in-range={inRange || undefined} data-single={single || undefined} data-today={current || undefined} data-outside={!sameScope(mode, cell, date) || undefined} disabled={key > MAX_DATE || last < MIN_DATE || !sameScope(mode, cell, date)} key={key} onClick={() => select(cell)} onKeyDown={event => keyDown(event, cell)} role="gridcell" tabIndex={key === focusKey ? 0 : -1} type="button">
+            return <button aria-current={current ? 'date' : undefined} aria-label={mode === 'month' ? (locale.startsWith('zh') ? numericDate(cell, true) : formatDate(cell, locale, { year: 'numeric', month: 'long', day: 'numeric' })) : label.replace('\n', '')} aria-selected={endpoint !== undefined || inRange} aria-hidden={!sameScope(mode, cell, date) || undefined} className="floway-range-cell" data-date={key} data-endpoint={endpoint} data-in-range={inRange || undefined} data-single={single || undefined} data-today={current || undefined} data-outside={!sameScope(mode, cell, date) || undefined} disabled={key > MAX_DATE || last < MIN_DATE || !sameScope(mode, cell, date)} key={key} onClick={() => select(cell)} onKeyDown={event => keyDown(event, cell)} role="gridcell" tabIndex={key === focusKey ? 0 : -1} type="button">
               <svg aria-hidden="true" className="floway-range-cell-paint" viewBox={`0 0 ${cellSize} ${cellSize}`}>
                 {inRange && <rect className="floway-range-band" width={cellSize} height={shapeLayoutSize} y={shapeOffset} />}
                 {endpoint && !single && value.end !== null && <path className="floway-range-band" d={`M ${bandEdge} ${shapeOffset} L ${circleSize / 2} ${shapeOffset} A ${arcRadius} ${radius} 0 0 ${rangeStart ? 0 : 1} ${circleSize / 2} ${shapeOffset + circleSize + RANGE_CELL_STROKE / 2} L ${bandEdge} ${shapeOffset + circleSize + RANGE_CELL_STROKE / 2} Z`} />}

@@ -29,9 +29,10 @@ describe('absolute timestamps', () => {
     expect(long.length).toBeGreaterThan(shortDate(INSTANT_ISO, 'en').length);
   });
 
-  it('spells the date the way the locale does', () => {
-    expect(shortDate(INSTANT_ISO, 'zh-Hans')).toContain('年');
-    expect(shortDate(INSTANT_ISO, 'en')).not.toContain('年');
+  it('writes a Chinese date numerically and leaves other locales to Intl', () => {
+    expect(shortDate(INSTANT_ISO, 'zh-Hans')).toMatch(/^\d{4}\/\d{2}\/\d{2}$/);
+    expect(shortDate(INSTANT_ISO, 'zh-Hans')).not.toMatch(/[年月日]/);
+    expect(shortDate(INSTANT_ISO, 'en')).toMatch(/^[A-Z][a-z]{2} \d{1,2}, \d{4}$/);
   });
 });
 
@@ -62,15 +63,26 @@ describe('relative timestamps', () => {
 
   it('narrows on request and follows the locale', () => {
     expect(relativeTime(INSTANT_EPOCH - 3_600_000, 'en', { now: INSTANT_EPOCH, style: 'narrow' })).toBe('1h ago');
-    expect(relativeTime(INSTANT_EPOCH - 3_600_000, 'zh-Hans', { now: INSTANT_EPOCH })).toBe('1小时前');
+    expect(relativeTime(INSTANT_EPOCH - 3_600_000, 'zh-Hans', { now: INSTANT_EPOCH, style: 'narrow' })).toBe('1 小时前');
+    expect(relativeTime(INSTANT_EPOCH - 3_600_000, 'zh-Hans', { now: INSTANT_EPOCH })).toBe('1 小时前');
+    expect(relativeTime(INSTANT_EPOCH - 90_000, 'zh-Hans', { now: INSTANT_EPOCH })).toBe('1 分钟前');
+  });
+
+  it('words a one-day distance instead of counting it', () => {
+    expect(relativeTime(INSTANT_EPOCH - 86_400_000, 'zh-Hans', { now: INSTANT_EPOCH })).toBe('昨天');
+    expect(relativeTime(INSTANT_EPOCH, 'zh-Hans', { now: INSTANT_EPOCH })).toBe('现在');
+    expect(relativeTime(INSTANT_EPOCH + 86_400_000, 'zh-Hans', { now: INSTANT_EPOCH })).toBe('明天');
   });
 });
 
 const calendarDay = new Date(2026, 9, 10, 8, 30);
 
-it('spaces Chinese date units across full dates, calendar headings and month cells', () => {
-  expect(shortDate(calendarDay.getTime(), 'zh-Hans')).toBe('2026 年 10 月 10 日');
-  expect(dateTime(calendarDay.getTime(), 'zh-Hans')).toBe('2026 年 10 月 10 日 08:30:00');
+it('writes Chinese dates numerically across full dates and times of day', () => {
+  expect(shortDate(calendarDay.getTime(), 'zh-Hans')).toBe('2026/10/10');
+  expect(dateTime(calendarDay.getTime(), 'zh-Hans')).toBe('2026/10/10 08:30:00');
+});
+
+it('leaves calendar headings, month cells, and weekdays to Intl in Chinese', () => {
   expect(formatDate(calendarDay, 'zh-Hans', { year: 'numeric', month: 'long' })).toBe('2026 年 10 月');
   expect(formatDate(calendarDay, 'zh-Hans', { month: 'short' })).toBe('10 月');
   expect(formatDate(calendarDay, 'zh-Hans', { weekday: 'long' })).toBe('星期六');

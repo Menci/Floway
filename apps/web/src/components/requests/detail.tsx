@@ -10,6 +10,7 @@ import { collectKindFromTargetApi, detectCollectKind, type CollectedStream } fro
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { formatDuration } from '../../lib/format-duration';
+import { useLocale } from '../../lib/use-locale';
 import { DialogShell } from '../ui/dialog-shell';
 import { EmptyStateLine } from '../ui/empty-state';
 import { Dropdown } from '../ui/fluent-form-controls';
@@ -70,6 +71,7 @@ export function RequestDetailPanel({ collected, upstreamCollected, error, record
 
 function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRecord; collected: CollectedStream | null; upstreamCollected: CollectedStream | null }) {
   const { t } = useTranslation();
+  const locale = useLocale();
   const [source, setSource] = useState<Source>('response');
   const [view, setView] = useState('collected');
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -131,15 +133,15 @@ function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRe
         {Object.entries(labels).map(([value, label]) => <Option key={value} value={value}>{label}</Option>)}
       </Dropdown>
       <HttpStatusBadge severity={requestSeverity(status, record.meta.error)}>{status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>
-      <Tooltip content={t('dashboard.requests.duration', { value: record.meta.durationMs })} relationship="description">
+      <Tooltip content={t('dashboard.requests.duration', { value: formatDuration(record.meta.durationMs, locale) })} relationship="description">
         <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
-          <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.meta.durationMs)}</Text>
+          <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.meta.durationMs, locale)}</Text>
         </span>
       </Tooltip>
       {record.meta.ttftMs != null && (
-        <Tooltip content={t('dashboard.requests.ttft', { value: record.meta.ttftMs })} relationship="description">
+        <Tooltip content={t('dashboard.requests.ttft', { value: formatDuration(record.meta.ttftMs, locale) })} relationship="description">
           <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
-            <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.meta.ttftMs)}</Text>
+            <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.meta.ttftMs, locale)}</Text>
           </span>
         </Tooltip>
       )}

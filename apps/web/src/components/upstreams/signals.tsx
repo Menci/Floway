@@ -145,7 +145,7 @@ const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFu
     // so an unlabelled window falls back to the position it arrived in.
     const label = item.windowMinutes === null
       ? t(`dashboard.upstreams.signals.window.${item.key}`)
-      : windowLengthLabel(item.windowMinutes);
+      : windowLengthLabel(item.windowMinutes, locale);
     return {
       key: item.key,
       percent: item.percent,
@@ -180,7 +180,7 @@ const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code'
   const lookup = findCredential(record);
   const credential = lookup.kind === 'present' ? lookup.credential : null;
   const windows: UpstreamSignal[] = quotaWindows(credential).map(row => {
-    const length = windowLengthLabel(WINDOW_MINUTES[row.key]);
+    const length = windowLengthLabel(WINDOW_MINUTES[row.key], locale);
     // Anthropic reports the Sonnet allowance as a second window of the same
     // length, so the model it covers is what tells the two apart.
     const label = row.key === 'sevenDaySonnet' ? `${length} Sonnet` : length;
@@ -208,7 +208,7 @@ const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: T
 
   const usage = readOllamaAccountUsage(observation.data);
   const signals: UpstreamSignal[] = readWindows(usage.included).map(item => {
-    const label = windowLengthLabel(item.minutes);
+    const label = windowLengthLabel(item.minutes, locale);
     return {
       key: item.key,
       percent: item.percent,
