@@ -217,16 +217,15 @@ export const buildTargetRequest = async (
   const callKinds = openaiChatCompletionsCallKinds(payload);
   const pieces: (IRInputTurn | IRInputResolvedTurn<AnthropicMessagesMessage>)[] = [];
   for (const turn of partitionOpenAIChatCompletionsTurns(payload.messages)) {
-    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn(
-      'openaiChatCompletions', 'anthropicMessages', turn.items[0], codec,
-      findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest, collectOpenAIChatCompletionsReplayContents,
-    );
-    if (roundTrip === undefined || roundTrip === false) {
-      if (openaiChatCompletionsDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiChatCompletions', 'anthropicMessages');
-      pieces.push(openaiChatCompletionsTurnToIR(turn, callKinds));
-      continue;
-    }
-    pieces.push({ kind: 'resolved', turn: roundTrip.turn });
+    const roundTrip = turn.role === 'assistant'
+      ? await roundTripAssistantTurn(
+        'openaiChatCompletions', 'anthropicMessages', turn.items[0], codec,
+        findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest, collectOpenAIChatCompletionsReplayContents,
+      )
+      : undefined;
+    if (roundTrip !== undefined) { pieces.push({ kind: 'resolved', turn: roundTrip.turn }); continue; }
+    if (openaiChatCompletionsDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiChatCompletions', 'anthropicMessages');
+    pieces.push(openaiChatCompletionsTurnToIR(turn, callKinds));
   }
 
   const systemBlocks: AnthropicMessagesTextBlockParam[] = [];

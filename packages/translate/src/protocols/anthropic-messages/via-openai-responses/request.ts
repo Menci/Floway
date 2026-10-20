@@ -6,6 +6,10 @@ import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
 import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
+import { anthropicMessagesDropsReasoning, anthropicMessagesSystemToIR, anthropicMessagesTurnToIR } from '../as-source/request-to-ir.ts';
+import { openaiResponsesFromIR } from '../../openai-responses/as-target/request-from-ir.ts';
+import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
+import type { IRInputTurn } from '../../../ir/input.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from '../as-source/round-trip.ts';
 import {
   type AnthropicMessagesAssistantMessage,
@@ -286,20 +290,30 @@ export const buildTargetRequest = async (
   // https://platform.openai.com/docs/guides/fast-mode
   const serviceTier = payload.speed === 'fast' ? FAST_SERVICE_TIER : payload.speed === undefined ? payload.service_tier : undefined;
   const toolChoice = translateToolChoice(payload.tool_choice, clientTools);
-  const input = [...prependItems];
+  // `placeAnthropicMessagesSystem` owns the single-block/multi-block decision:
+  // one block fits the string-valued `instructions` slot, several become a
+  // leading input message that keeps their boundaries.
+  const pieces: (IRInputTurn | IRInputResolvedTurn<CanonicalOpenAIResponsesInputItem[]>)[] = [];
   let messageIndex = 0;
   for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
     if (turn.role === 'assistant') {
       const roundTrip = await roundTripAssistantTurn('anthropicMessages', 'openaiResponses', turn.items, codec, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest, collectAnthropicMessagesReplayContents);
-      input.push(...(roundTrip ? roundTrip.turn : turn.items.flatMap((message, index) => translateAssistantMessage(message, messageIndex + index))));
-    } else for (const [index, message] of turn.items.entries()) {
-      switch (message.role) {
-      case 'user': input.push(...translateUserMessage(message, messageIndex + index)); break;
-      case 'system': input.push(...translateAnthropicMessagesSystem(message)); break;
-      default: throw new TranslatorInputError(`messages.${messageIndex + index}.role: role '${(message as { role: string }).role}' is not supported on this model`);
+      if (roundTrip !== undefined) {
+        pieces.push({ kind: 'resolved', turn: roundTrip.turn });
+        messageIndex += turn.items.length;
+        continue;
       }
+      if (anthropicMessagesDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('anthropicMessages', 'openaiResponses');
     }
+    const ir = anthropicMessagesTurnToIR(turn, messageIndex);
+    if (ir.items.length > 0) pieces.push(ir);
     messageIndex += turn.items.length;
+  }
+
+  const input: CanonicalOpenAIResponsesInputItem[] = [...prependItems];
+  for (const piece of segmentIRInput(pieces)) {
+    if (piece.kind === 'resolved') { input.push(...piece.turn); continue; }
+    input.push(...openaiResponsesFromIR({ turns: piece.turns }, false).input);
   }
 
   // Keep fallback semantics strict: do not synthesize `temperature: 1`,

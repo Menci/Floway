@@ -9,10 +9,8 @@ import type {
   IRInputUserContentPart,
   IRInputUserItem,
 } from '../../../ir/input.ts';
-import { warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
-import { filterAnthropicMessagesClientTools } from './client-tools.ts';
-import { partitionAnthropicMessagesTurns } from './conversation-turns.ts';
+import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn } from './conversation-turns.ts';
 import type {
   AnthropicMessagesAssistantInputContentBlock,
   AnthropicMessagesImageBlock,
@@ -62,12 +60,20 @@ const documentMedia = (block: Extract<AnthropicMessagesUserContentBlock, { type:
   }
 };
 
-const userContentPart = (block: Exclude<AnthropicMessagesUserContentBlock, AnthropicMessagesToolResultBlock>): IRInputUserContentPart => {
+interface MessagePosition {
+  readonly messageIdx: number;
+  readonly blockIdx: number;
+}
+
+const userContentPart = (
+  block: Exclude<AnthropicMessagesUserContentBlock, AnthropicMessagesToolResultBlock>,
+  at: MessagePosition,
+): IRInputUserContentPart => {
   switch (block.type) {
   case 'text': return { type: 'text', text: block.text };
   case 'image': return { type: 'image', image: imageMedia(block.source) };
   case 'document': return { type: 'file', file: documentMedia(block) };
-  default: throw new TranslatorInputError(`'${(block as { type: string }).type}' user content blocks are not supported.`);
+  default: throw new TranslatorInputError(`messages.${at.messageIdx}.content.${at.blockIdx}.type: '${(block as { type: string }).type}' content blocks are not supported on this model`);
   }
 };
 
@@ -78,10 +84,11 @@ const toolResultPart = (block: AnthropicMessagesToolResultBlock['content'] exten
     : block.flatMap((part): IRInputToolResultContentPart[] => {
       if (part.type === 'text') return [{ type: 'text', text: part.text }];
       if (part.type === 'image') return [{ type: 'image', image: imageMedia(part.source) }];
+      if (part.type === 'search_result') return [{ type: 'text', text: JSON.stringify([part]) }];
       throw new TranslatorInputError(`'${(part as { type: string }).type}' tool result content blocks are not supported.`);
     });
 
-const userItems = (message: Exclude<AnthropicMessagesMessage, { role: 'assistant' }>): IRInputUserItem[] => {
+const userItems = (message: Exclude<AnthropicMessagesMessage, { role: 'assistant' }>, messageIdx: number): IRInputUserItem[] => {
   if (message.role === 'system') {
     if (typeof message.content !== 'string' && message.content.some(block => block.type !== 'text')) {
       throw new TranslatorInputError('Only text system content is supported.');
@@ -102,7 +109,7 @@ const userItems = (message: Exclude<AnthropicMessagesMessage, { role: 'assistant
 
   // Messages keeps tool results inline with user content. Flat IR items keep
   // the chronology and let each target regroup.
-  for (const block of message.content) {
+  for (const [blockIdx, block] of message.content.entries()) {
     if (block.type === 'tool_result') {
       flush();
       const output = toolResultPart(block.content);
@@ -114,13 +121,13 @@ const userItems = (message: Exclude<AnthropicMessagesMessage, { role: 'assistant
       });
       continue;
     }
-    pending.push(userContentPart(block));
+    pending.push(userContentPart(block, { messageIdx, blockIdx }));
   }
   flush();
   return items;
 };
 
-const assistantItems = (message: Extract<AnthropicMessagesMessage, { role: 'assistant' }>): IRInputAssistantItem[] => {
+const assistantItems = (message: Extract<AnthropicMessagesMessage, { role: 'assistant' }>, messageIdx: number): IRInputAssistantItem[] => {
   if (typeof message.content === 'string') return message.content === '' ? [] : [{ type: 'message', content: [{ type: 'text', text: message.content }] }];
 
   const items: IRInputAssistantItem[] = [];
@@ -131,7 +138,7 @@ const assistantItems = (message: Extract<AnthropicMessagesMessage, { role: 'assi
     pending.length = 0;
   };
 
-  for (const block of message.content) {
+  for (const [blockIdx, block] of message.content.entries()) {
     switch (block.type) {
     case 'text':
       pending.push({ type: 'text', text: block.text });
@@ -143,7 +150,6 @@ const assistantItems = (message: Extract<AnthropicMessagesMessage, { role: 'assi
     case 'redacted_thinking':
       // The redacted payload is an opaque, vendor-signed blob; the sidecar is
       // the only place that can carry it back to the same vendor.
-      warnDroppedUnrecognizedAssistantReasoning('anthropicMessages', 'openaiResponses');
       break;
     case 'tool_use':
       flush();
@@ -164,34 +170,48 @@ const assistantItems = (message: Extract<AnthropicMessagesMessage, { role: 'assi
       flush();
       break;
     default:
-      throw new TranslatorInputError(`'${(block as { type: string }).type}' assistant content blocks are not supported.`);
+      throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' assistant content blocks are not supported on this model`);
     }
   }
   flush();
   return items;
 };
 
+export const anthropicMessagesSystemToIR = (system: AnthropicMessagesPayload['system']): IRInputTurn | undefined => {
+  if (system === undefined) return undefined;
+  const content = textBlocks(system);
+  return content.length === 0 ? undefined : { role: 'user', items: [{ type: 'message', role: 'system', content }] };
+};
+
+/** Whether a turn carries reasoning only the sidecar can restore. */
+export const anthropicMessagesDropsReasoning = (turn: AnthropicMessagesConversationTurn): boolean => turn.role === 'assistant'
+  && turn.items.some(message => Array.isArray(message.content) && message.content.some(block => block.type === 'redacted_thinking'));
+
+export const anthropicMessagesTurnToIR = (turn: AnthropicMessagesConversationTurn, firstMessageIndex = 0): IRInputTurn => {
+  if (turn.role === 'assistant') {
+    return { role: 'assistant', items: turn.items.flatMap((message, index) => assistantItems(message, firstMessageIndex + index)) };
+  }
+  return {
+    role: 'user',
+    items: turn.items.flatMap((message, index) => {
+      if (message.role !== 'user' && message.role !== 'system') {
+        throw new TranslatorInputError(`messages.${firstMessageIndex + index}.role: role '${(message as { role: string }).role}' is not supported on this model`);
+      }
+      return userItems(message, firstMessageIndex + index);
+    }),
+  };
+};
+
 export const anthropicMessagesInputToIR = (payload: AnthropicMessagesPayload): IRInputConversation => {
   const turns: IRInputTurn[] = [];
   // Messages' top-level system is the same concept as a leading system item.
-  const system = payload.system;
-  if (system !== undefined) {
-    const content = textBlocks(system);
-    if (content.length > 0) turns.push({ role: 'user', items: [{ type: 'message', role: 'system', content }] });
-  }
+  const system = anthropicMessagesSystemToIR(payload.system);
+  if (system !== undefined) turns.push(system);
 
-  filterAnthropicMessagesClientTools(payload.tools);
-
+  let messageIndex = 0;
   for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
-    if (turn.role === 'assistant') {
-      const items = turn.items.flatMap((message, index) => {
-        if (index > 0) warnDroppedUnrecognizedAssistantReasoning('anthropicMessages', 'openaiResponses');
-        return assistantItems(message);
-      });
-      turns.push({ role: 'assistant', items });
-      continue;
-    }
-    turns.push({ role: 'user', items: turn.items.flatMap(userItems) });
+    turns.push(anthropicMessagesTurnToIR(turn, messageIndex));
+    messageIndex += turn.items.length;
   }
   return { turns };
 };

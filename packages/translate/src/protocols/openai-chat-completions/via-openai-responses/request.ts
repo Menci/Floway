@@ -77,16 +77,15 @@ export const buildTargetRequest = async (
   // splits the conversation into IR segments around itself.
   const pieces: (IRInputTurn | IRInputResolvedTurn<readonly CanonicalOpenAIResponsesInputItem[]>)[] = [];
   for (const turn of partitionOpenAIChatCompletionsTurns(payload.messages)) {
-    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn(
-      'openaiChatCompletions', 'openaiResponses', turn.items[0], codec,
-      findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest, collectOpenAIChatCompletionsReplayContents,
-    );
-    if (roundTrip === undefined || roundTrip === false) {
-      if (openaiChatCompletionsDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiChatCompletions', 'openaiResponses');
-      pieces.push(openaiChatCompletionsTurnToIR(turn, callKinds));
-      continue;
-    }
-    pieces.push({ kind: 'resolved', turn: roundTrip.turn });
+    const roundTrip = turn.role === 'assistant'
+      ? await roundTripAssistantTurn(
+        'openaiChatCompletions', 'openaiResponses', turn.items[0], codec,
+        findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest, collectOpenAIChatCompletionsReplayContents,
+      )
+      : undefined;
+    if (roundTrip !== undefined) { pieces.push({ kind: 'resolved', turn: roundTrip.turn }); continue; }
+    if (openaiChatCompletionsDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiChatCompletions', 'openaiResponses');
+    pieces.push(openaiChatCompletionsTurnToIR(turn, callKinds));
   }
 
   for (const piece of segmentIRInput(pieces)) {

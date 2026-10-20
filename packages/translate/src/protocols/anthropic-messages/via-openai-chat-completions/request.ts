@@ -5,6 +5,10 @@ import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
 import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
+import { anthropicMessagesDropsReasoning, anthropicMessagesTurnToIR } from '../as-source/request-to-ir.ts';
+import { openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/request-from-ir.ts';
+import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
+import type { IRInputTurn } from '../../../ir/input.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from '../as-source/round-trip.ts';
 import type {
   AnthropicMessagesAssistantContentBlock,
@@ -287,25 +291,32 @@ export const buildTargetRequest = async (
   const messages: OpenAIChatCompletionsMessage[] = payload.system == null || (typeof payload.system === 'string' ? payload.system === '' : payload.system.length === 0)
     ? []
     : [{ role: 'system', content: systemContentFromBlocks(payload.system) }];
+  const pieces: (IRInputTurn | IRInputResolvedTurn<OpenAIChatCompletionsMessage>)[] = [];
   let messageIndex = 0;
   for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
     if (turn.role === 'assistant') {
       const roundTrip = await roundTripAssistantTurn('anthropicMessages', 'openaiChatCompletions', turn.items, codec, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest, collectAnthropicMessagesReplayContents);
-      if (roundTrip?.turn.function_call != null) {
-        const modernIds = new Set(roundTrip.turn.tool_calls?.map(call => call.id));
-        for (const message of turn.items) if (Array.isArray(message.content)) for (const block of message.content) {
-          if ((block.type === 'tool_use' || block.type === 'server_tool_use') && !modernIds.has(block.id)) legacyFunctionNames.set(block.id, roundTrip.turn.function_call.name);
+      if (roundTrip !== undefined) {
+        if (roundTrip.turn.function_call != null) {
+          const modernIds = new Set(roundTrip.turn.tool_calls?.map(call => call.id));
+          for (const message of turn.items) if (Array.isArray(message.content)) for (const block of message.content) {
+            if ((block.type === 'tool_use' || block.type === 'server_tool_use') && !modernIds.has(block.id)) legacyFunctionNames.set(block.id, roundTrip.turn.function_call.name);
+          }
         }
+        pieces.push({ kind: 'resolved', turn: roundTrip.turn });
+        messageIndex += turn.items.length;
+        continue;
       }
-      messages.push(...(roundTrip ? [roundTrip.turn] : turn.items.flatMap((message, index) => translateAnthropicMessagesAssistant(message, messageIndex + index))));
-    } else for (const [index, message] of turn.items.entries()) {
-      switch (message.role) {
-      case 'user': messages.push(...translateAnthropicMessagesUser(message, messageIndex + index, legacyFunctionNames)); break;
-      case 'system': messages.push(...translateAnthropicMessagesSystem(message)); break;
-      default: throw new TranslatorInputError(`messages.${messageIndex + index}.role: role '${(message as { role: string }).role}' is not supported on this model`);
-      }
+      if (anthropicMessagesDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('anthropicMessages', 'openaiChatCompletions');
     }
+    const ir = anthropicMessagesTurnToIR(turn, messageIndex);
+    if (ir.items.length > 0) pieces.push(ir);
     messageIndex += turn.items.length;
+  }
+
+  for (const piece of segmentIRInput(pieces)) {
+    if (piece.kind === 'resolved') { messages.push(piece.turn); continue; }
+    messages.push(...openaiChatCompletionsFromIR({ turns: piece.turns }, { legacyFunctionNames }));
   }
 
   return {
