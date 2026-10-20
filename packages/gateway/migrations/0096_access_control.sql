@@ -1,3 +1,11 @@
+-- Access-control replacement for the former per-user upstream cap.
+--
+-- The user-level whitelist becomes Model.Use ACL rules, and the order that
+-- only inherited keys used moves onto those keys before the column is dropped.
+-- An upstream cap of NULL meant every upstream, an array meant those upstreams,
+-- and an empty array meant none, so each case translates to a different set of
+-- rules rather than a single wildcard grant.
+
 CREATE TABLE access_records (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   principal_type TEXT NOT NULL CHECK (principal_type IN ('user', 'group')),
@@ -11,8 +19,6 @@ CREATE TABLE access_records (
   UNIQUE (principal_type, principal_id, scope_key)
 );
 
--- Preserve the user-level upstream whitelist exactly: NULL meant every
--- upstream, an array meant those upstreams, and an empty array meant none.
 INSERT INTO access_records (
   principal_type, principal_id, scope_json, scope_key, sort_order, values_json, created_at, updated_at
 )
@@ -67,3 +73,13 @@ INSERT INTO users_new (id, username, password_hash, is_admin, created_at, delete
 DROP TABLE users;
 ALTER TABLE users_new RENAME TO users;
 CREATE UNIQUE INDEX idx_users_username_active ON users(username) WHERE deleted_at IS NULL;
+
+-- Upstream priority is a single gapless ordering now that the per-user order is
+-- gone, so collapse any duplicate or sparse ranks into stable positions. The
+-- tie-break matches the order the list endpoint has always used.
+WITH ranked AS (
+  SELECT id, row_number() OVER (ORDER BY sort_order, created_at, id) - 1 AS normalized_sort_order
+  FROM upstreams
+)
+UPDATE upstreams
+SET sort_order = (SELECT normalized_sort_order FROM ranked WHERE ranked.id = upstreams.id);
