@@ -30,6 +30,17 @@ const imageSource = (media: IRInputMedia): AnthropicMessagesImageSource => {
 
 const imageBlock = (media: IRInputMedia): AnthropicMessagesImageBlock => ({ type: 'image', source: imageSource(media) });
 
+/**
+ * Messages accepts only base64, URL, or file IDs for an image source, but a
+ * remote URL must sometimes be inlined because an upstream rejects fetching it.
+ * The loader is target-owned, exactly like the output path's remote-image
+ * adapter, so it stays out of the IR value.
+ *
+ * A URL the loader cannot resolve is dropped instead of failing the request:
+ * the prompt remains usable and the caller sees no image rather than an error.
+ */
+export type AnthropicMessagesImageResolver = (media: IRInputMedia) => Promise<AnthropicMessagesImageBlock | null>;
+
 const documentBlock = (media: IRInputMedia): AnthropicMessagesUserContentBlock => {
   switch (media.source_kind) {
   case 'url': return { type: 'document', source: { type: 'url', url: media.url } };
@@ -45,15 +56,29 @@ const documentBlock = (media: IRInputMedia): AnthropicMessagesUserContentBlock =
 
 const systemContent = (content: readonly IRInputTextPart[]): AnthropicMessagesTextBlockParam[] => content.map(part => ({ type: 'text', text: part.text }));
 
-const userContent = (item: Extract<IRInputUserItem, { type: 'message' }>): AnthropicMessagesUserContentBlock[] => item.content.map(part => {
-  switch (part.type) {
-  case 'text': return { type: 'text', text: part.text };
-  case 'image': return imageBlock(part.image);
-  case 'file': return documentBlock(part.file);
-  case 'audio': throw new TranslatorInputError('Cannot translate input audio to Anthropic Messages.');
-  case 'refusal': throw new TranslatorInputError('Cannot translate refusal content in a user message to Anthropic Messages.');
+const userContent = async (
+  item: Extract<IRInputUserItem, { type: 'message' }>,
+  resolveImage: AnthropicMessagesImageResolver | undefined,
+): Promise<AnthropicMessagesUserContentBlock[]> => {
+  const blocks: AnthropicMessagesUserContentBlock[] = [];
+  for (const part of item.content) {
+    switch (part.type) {
+    case 'text': blocks.push({ type: 'text', text: part.text }); break;
+    case 'image': {
+      if (resolveImage === undefined) { blocks.push(imageBlock(part.image)); break; }
+      const image = await resolveImage(part.image);
+      if (image !== null) blocks.push(image);
+      break;
+    }
+    case 'file': blocks.push(documentBlock(part.file)); break;
+    case 'audio': throw new TranslatorInputError('Cannot translate input audio to Anthropic Messages.');
+    case 'refusal': throw new TranslatorInputError('Cannot translate refusal content in a user message to Anthropic Messages.');
+    default: throw new TranslatorInputError(`Invalid '${(part as { type: string }).type}' content part.`);
+    }
   }
-});
+  // Messages' user content is a non-empty block list in the same way.
+  return blocks.length === 0 ? [{ type: 'text', text: '' }] : blocks;
+};
 
 const toolResultContent = (output: string | readonly IRInputToolResultContentPart[]): string | AnthropicMessagesToolResultContentBlock[] => typeof output === 'string'
   ? output
@@ -78,7 +103,9 @@ const assistantBlocks = (items: readonly IRInputAssistantItem[]): AnthropicMessa
       throw new TranslatorInputError('Cannot translate a custom tool call to Anthropic Messages.');
     }
   });
-  return blocks;
+  // Messages' assistant content is a non-empty block list; an empty assistant
+  // turn is spelled as one empty text block.
+  return blocks.length === 0 ? [{ type: 'text', text: '' }] : blocks;
 };
 
 // Messages needs an object, so a call whose arguments are malformed keeps the
@@ -105,24 +132,51 @@ const appendUserBlocks = (messages: AnthropicMessagesMessage[], blocks: Anthropi
   messages.push({ role: 'user', content: blocks });
 };
 
-export const anthropicMessagesFromIR = (conversation: IRInputConversation): AnthropicMessagesMessage[] => {
+export interface AnthropicMessagesRequestFromIR {
+  readonly system: AnthropicMessagesTextBlockParam[] | undefined;
+  readonly messages: AnthropicMessagesMessage[];
+}
+
+/**
+ * Messages keeps the system prompt in its own top-level field. `hoistSystem`
+ * lifts the leading system run there, one block per source text part so the
+ * boundaries survive; later system messages stay inline at their position.
+ */
+export const anthropicMessagesFromIR = async (
+  conversation: IRInputConversation,
+  hoistSystem: boolean,
+  resolveImage?: AnthropicMessagesImageResolver,
+): Promise<AnthropicMessagesRequestFromIR> => {
+  const system: AnthropicMessagesTextBlockParam[] = [];
+  let hoisting = hoistSystem;
   const messages: AnthropicMessagesMessage[] = [];
   for (const turn of conversation.turns) {
     if (turn.role === 'assistant') {
+      hoisting = false;
       messages.push({ role: 'assistant', content: assistantBlocks(turn.items) });
       continue;
     }
     for (const item of turn.items) {
       if (item.type === 'message' && item.role !== 'user') {
+        // Messages system content is text-only, so an image there is a caller
+        // error rather than something to drop.
+        if (item.content.some(part => part.type !== 'text')) {
+          throw new TranslatorInputError(`Invalid '${(item.content.find(part => part.type !== 'text') as { type: string }).type}' content part in ${item.role} message. Only 'text' content parts are supported in ${item.role} messages on this model.`);
+        }
+        if (hoisting) {
+          system.push(...systemContent(item.content));
+          continue;
+        }
         messages.push({ role: 'system', content: systemContent(item.content) });
         continue;
       }
+      hoisting = false;
       appendUserBlocks(messages, item.type === 'tool_result'
         ? [{ type: 'tool_result', tool_use_id: item.call_id, content: toolResultContent(item.output), ...(item.is_error === true ? { is_error: true } : {}) }]
-        : userContent(item));
+        : await userContent(item, resolveImage));
     }
   }
-  return messages;
+  return { system: system.length === 0 ? undefined : system, messages };
 };
 
 export type { IRInputAssistantContentPart };

@@ -297,7 +297,7 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
       target.messages.push(piece.turn);
       continue;
     }
-    target.messages.push(...openaiChatCompletionsFromIR({ turns: piece.turns }));
+    target.messages.push(...openaiChatCompletionsFromIR({ turns: piece.turns }, { legacyFunctionNames }));
   }
 
   return { target, customToolNames, namespaceToolNames };

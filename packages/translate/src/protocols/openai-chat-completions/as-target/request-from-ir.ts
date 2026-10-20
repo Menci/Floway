@@ -117,7 +117,10 @@ const assistantMessage = (items: readonly IRInputAssistantItem[]): OpenAIChatCom
   }];
 };
 
-const userMessages = (items: readonly IRInputUserItem[]): OpenAIChatCompletionsMessage[] => {
+const userMessages = (
+  items: readonly IRInputUserItem[],
+  legacyFunctionNames?: ReadonlyMap<string, string>,
+): OpenAIChatCompletionsMessage[] => {
   // Images lifted out of consecutive tool results gather into one user message
   // after the run, so a tool-call group stays contiguous.
   const messages: OpenAIChatCompletionsMessage[] = [];
@@ -129,13 +132,17 @@ const userMessages = (items: readonly IRInputUserItem[]): OpenAIChatCompletionsM
   };
   for (const item of items) {
     if (item.type !== 'tool_result') flushImages();
-    messages.push(...openaiChatCompletionsUserItem(item, lifted => pendingImages.push(...lifted)));
+    messages.push(...openaiChatCompletionsUserItem(item, lifted => pendingImages.push(...lifted), legacyFunctionNames));
   }
   flushImages();
   return messages;
 };
 
-const openaiChatCompletionsUserItem = (item: IRInputUserItem, lift: (parts: readonly OpenAIChatCompletionsUserContentPart[]) => void): OpenAIChatCompletionsMessage[] => [item].flatMap<OpenAIChatCompletionsMessage>(item => {
+const openaiChatCompletionsUserItem = (
+  item: IRInputUserItem,
+  lift: (parts: readonly OpenAIChatCompletionsUserContentPart[]) => void,
+  legacyFunctionNames?: ReadonlyMap<string, string>,
+): OpenAIChatCompletionsMessage[] => [item].flatMap<OpenAIChatCompletionsMessage>(item => {
   switch (item.type) {
   case 'message':
     return [item.role === 'user'
@@ -147,14 +154,29 @@ const openaiChatCompletionsUserItem = (item: IRInputUserItem, lift: (parts: read
   case 'tool_result': {
     const projected = openaiChatCompletionsToolResultContent(item.call_id, item.output);
     lift(projected.lifted);
-    return [{ role: 'tool', tool_call_id: item.call_id, content: projected.content }];
+    const legacyName = legacyFunctionNames?.get(item.call_id);
+    return [legacyName === undefined
+      ? { role: 'tool', tool_call_id: item.call_id, content: projected.content }
+      : { role: 'function', name: legacyName, content: projected.content }];
   }
   }
 });
 
-export const openaiChatCompletionsFromIR = (conversation: IRInputConversation): OpenAIChatCompletionsMessage[] => conversation.turns.flatMap(turn => turn.role === 'assistant'
+export interface OpenAIChatCompletionsFromIROptions {
+  /**
+   * A resolved assistant turn may carry a legacy single `function_call`, whose
+   * later tool messages must use the legacy `function` role. The route owns
+   * that mapping because only it sees the resolved native turn.
+   */
+  readonly legacyFunctionNames?: ReadonlyMap<string, string>;
+}
+
+export const openaiChatCompletionsFromIR = (
+  conversation: IRInputConversation,
+  options: OpenAIChatCompletionsFromIROptions = {},
+): OpenAIChatCompletionsMessage[] => conversation.turns.flatMap(turn => turn.role === 'assistant'
   ? assistantMessage(turn.items)
-  : userMessages(turn.items));
+  : userMessages(turn.items, options.legacyFunctionNames));
 
 /**
  * Chat Completions has no top-level instructions slot, so a leading system run

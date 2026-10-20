@@ -10,7 +10,6 @@ import type {
   IRInputUserContentPart,
   IRInputUserItem,
 } from '../../../ir/input.ts';
-import { warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import { partitionOpenAIChatCompletionsTurns, type OpenAIChatCompletionsConversationTurn } from './conversation-turns.ts';
 import { hasOpenAIChatCompletionsReasoning } from './round-trip.ts';
@@ -29,7 +28,10 @@ const mediaFromUrl = (url: string): IRInputMedia => {
   return { source_kind: 'base64', ...(mediaType === undefined || mediaType === '' ? {} : { media_type: mediaType }), data: dataUrl[2] };
 };
 
-const textParts = (value: string): IRInputTextPart[] => value === '' ? [] : [{ type: 'text', text: value }];
+// An explicitly empty user or assistant message still occupies a native
+// message of its own, so those keep one empty text part. An empty system run
+// contributes nothing to the system prompt and is dropped instead.
+const textParts = (value: string, keepEmpty = true): IRInputTextPart[] => value === '' && !keepEmpty ? [] : [{ type: 'text', text: value }];
 
 const userContentPart = (part: OpenAIChatCompletionsContentPart): IRInputUserContentPart => {
   switch (part.type) {
@@ -51,6 +53,8 @@ const userContentPart = (part: OpenAIChatCompletionsContentPart): IRInputUserCon
     if (part.file.file_data !== undefined) return { type: 'file', file: { source_kind: 'base64', data: part.file.file_data }, ...filename };
     throw new TranslatorInputError("A Chat Completions file part requires 'file_id' or 'file_data'.");
   }
+  default:
+    throw new TranslatorInputError(`Invalid '${(part as { type: string }).type}' content part. Only 'text', 'image_url', 'input_audio', 'file', and 'refusal' are supported.`);
   }
 };
 
@@ -60,9 +64,6 @@ const toolResultContent = (content: string | readonly { text: string }[]): strin
 
 const assistantItems = (turn: Extract<OpenAIChatCompletionsConversationTurn, { role: 'assistant' }>): IRInputAssistantItem[] => {
   const message = turn.items[0];
-  // Reasoning reaches Chat Completions only through provider extensions with no
-  // wire contract; a reader cannot tell which alias a provider meant.
-  if (hasOpenAIChatCompletionsReasoning(message)) warnDroppedUnrecognizedAssistantReasoning('openaiChatCompletions', 'openaiResponses');
 
   const content: IRInputAssistantContentPart[] = typeof message.content === 'string'
     ? textParts(message.content)
@@ -86,6 +87,14 @@ const assistantItems = (turn: Extract<OpenAIChatCompletionsConversationTurn, { r
   }
   return items;
 };
+
+/**
+ * Chat Completions assistant history may carry reasoning under provider
+ * extension aliases with no wire contract. A reader cannot tell which alias a
+ * provider meant, so it emits no reasoning item; the route reports the loss.
+ */
+export const openaiChatCompletionsDropsReasoning = (turn: OpenAIChatCompletionsConversationTurn): boolean =>
+  turn.role === 'assistant' && hasOpenAIChatCompletionsReasoning(turn.items[0]);
 
 /**
  * Call kinds keyed by call ID. A Chat `tool` message does not state which kind
@@ -115,7 +124,14 @@ export const openaiChatCompletionsTurnToIR = (
       items: [{
         type: 'message',
         role: message.role,
-        content: typeof message.content === 'string' ? textParts(message.content) : message.content.map(part => ({ type: 'text', text: part.text })),
+        // A non-text part in system/developer content has no representation on
+        // any target, so it is rejected here rather than dropped silently.
+        content: typeof message.content === 'string'
+          ? textParts(message.content, false)
+          : (message.content ?? []).map(part => {
+            if (part.type !== 'text') throw new TranslatorInputError(`Invalid '${part.type}' content part in system or developer message. Only 'text' content parts are supported in system messages on this model.`);
+            return { type: 'text' as const, text: part.text };
+          }),
       }],
     };
   case 'user':
@@ -124,7 +140,7 @@ export const openaiChatCompletionsTurnToIR = (
       items: [{
         type: 'message',
         role: 'user',
-        content: typeof message.content === 'string' ? textParts(message.content) : message.content.map(userContentPart),
+        content: message.content == null ? [{ type: 'text', text: '' }] : typeof message.content === 'string' ? textParts(message.content) : message.content.map(userContentPart),
       }],
     };
   case 'tool': {

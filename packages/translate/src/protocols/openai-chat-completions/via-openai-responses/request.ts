@@ -1,11 +1,11 @@
 import { klona } from 'klona/json';
 
 import { openaiChatCompletionsContentToOpenAIResponsesInputContent, openaiChatCompletionsContentToText } from './content.ts';
-import { roundTripAssistantTurn } from '../../../round-trip/resolve.ts';
+import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
 import type { IRInputTurn } from '../../../ir/input.ts';
 import { openaiResponsesFromIR } from '../../openai-responses/as-target/request-from-ir.ts';
-import { openaiChatCompletionsCallKinds, openaiChatCompletionsTurnToIR } from '../as-source/request-to-ir.ts';
+import { openaiChatCompletionsCallKinds, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/request-to-ir.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
@@ -81,7 +81,12 @@ export const buildTargetRequest = async (
       'openaiChatCompletions', 'openaiResponses', turn.items[0], codec,
       findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest, collectOpenAIChatCompletionsReplayContents,
     );
-    pieces.push(roundTrip ? { kind: 'resolved', turn: roundTrip.turn } : openaiChatCompletionsTurnToIR(turn, callKinds));
+    if (roundTrip === undefined || roundTrip === false) {
+      if (openaiChatCompletionsDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiChatCompletions', 'openaiResponses');
+      pieces.push(openaiChatCompletionsTurnToIR(turn, callKinds));
+      continue;
+    }
+    pieces.push({ kind: 'resolved', turn: roundTrip.turn });
   }
 
   for (const piece of segmentIRInput(pieces)) {
