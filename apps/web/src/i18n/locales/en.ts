@@ -289,14 +289,8 @@ const en = {
           username: 'Username',
           role: 'Role',
           groups: 'Groups',
-          actions: 'Actions',
         },
         role: { admin: 'Administrator', operator: 'Operator' },
-        upstreams: {
-          all: 'All upstreams',
-          count_one: '{{count, number}} upstream',
-          count_other: '{{count, number}} upstreams',
-        },
         dialog: {
           createTitle: 'New user',
           editTitle: 'Edit {{username}}',
@@ -1319,7 +1313,7 @@ const en = {
         filters: { allPrincipals: 'All visible principals', noPrincipals: 'No matching users or groups', clearPrincipal: 'Clear user or group filter' },
         columns: { 'Model.Use': 'Use models', 'Upstream.Audit': 'Audit upstream', 'Upstream.Edit': 'Edit upstream', 'User.Audit': 'Audit users', 'Permission.Audit': 'Audit permissions' },
         pagination: { previous: 'Previous page', next: 'Next page', range: '{{from, number}} - {{to, number}} / {{total, number}}' },
-        actions: { add: 'New rule', edit: 'Edit rule', delete: 'Delete rule', save: 'Save rule', refresh: 'Refresh permissions', clearFilters: 'Clear filters', removeScopeSegment: 'Remove last scope segment', reorder: 'Reorder rule' },
+        actions: { add: 'New rule', edit: 'Edit rule', delete: 'Delete rule', save: 'Save rule', refresh: 'Refresh permissions', clearFilters: 'Clear filters', removeScopeSegment: 'Remove last scope segment', reorder: 'Reorder rule', column: 'Actions' },
         effective: {
           label: 'Show effective',
           activeAssignment: 'Active assignment',

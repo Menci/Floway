@@ -278,13 +278,8 @@ const zhHansCN = {
           username: '用户名',
           role: '角色',
           groups: '用户组',
-          actions: '操作',
         },
         role: { admin: '管理员', operator: '操作员' },
-        upstreams: {
-          all: '全部上游',
-          count_other: '{{count, number}} 个上游',
-        },
         dialog: {
           createTitle: '新建用户',
           editTitle: '编辑 {{username}}',
@@ -1267,7 +1262,7 @@ const zhHansCN = {
         filters: { allPrincipals: '所有可见用户与用户组', noPrincipals: '没有匹配的用户或用户组', clearPrincipal: '清除用户或用户组筛选' },
         columns: { 'Model.Use': '使用模型', 'Upstream.Audit': '审计上游', 'Upstream.Edit': '编辑上游', 'User.Audit': '审计用户', 'Permission.Audit': '审计权限' },
         pagination: { previous: '上一页', next: '下一页', range: '{{from, number}} - {{to, number}} / {{total, number}}' },
-        actions: { add: '新建规则', edit: '编辑规则', delete: '删除规则', save: '保存规则', refresh: '刷新权限', clearFilters: '清除筛选', removeScopeSegment: '移除范围最后一段', reorder: '调整规则顺序' },
+        actions: { add: '新建规则', edit: '编辑规则', delete: '删除规则', save: '保存规则', refresh: '刷新权限', clearFilters: '清除筛选', removeScopeSegment: '移除范围最后一段', reorder: '调整规则顺序', column: '操作' },
         effective: {
           label: '显示生效权限',
           activeAssignment: '生效的分配规则',

@@ -55,7 +55,7 @@ export function RulesTable(props: RulesTableProps) {
       <TableHeaderCell>{t('dashboard.accessControl.fields.scope')}</TableHeaderCell>
       <TableHeaderCell>{t('dashboard.accessControl.fields.principal')}</TableHeaderCell>
       <TableHeaderCell>{t('dashboard.accessControl.fields.permissions')}</TableHeaderCell>
-      {props.admin && <TableHeaderCell><span className="sr-only">{t('dashboard.users.table.actions')}</span></TableHeaderCell>}
+      {props.admin && <TableHeaderCell><span className="sr-only">{t('dashboard.accessControl.actions.column')}</span></TableHeaderCell>}
     </TableRow></TableHeader>
     {recordSegments(props.records).map(segment => <RulesSegment {...props} key={segment.key} segment={segment} />)}
   </Table></ScrollArea>;
