@@ -219,6 +219,10 @@ export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof
       aria-readonly={readOnly === true ? true : undefined}
       clearButton={props.clearable === true && props.clearButton === undefined ? { children: CLEAR_ICON } : props.clearButton}
       expandIcon={expandIcon === undefined ? EXPAND_ICON : expandIcon}
+      // `readOnly` has to withdraw the popup as well as the selection: leaving
+      // it open would show a list of choices that the control is about to
+      // refuse, which reads as enabled until the second click does nothing.
+      open={readOnly === true ? false : props.open}
       onOptionSelect={readOnly === true ? undefined : onOptionSelect}
       positioning={positioning ?? LISTBOX_POSITIONING}
       listbox={listboxFor(listWidth, false, emptyMessage)}

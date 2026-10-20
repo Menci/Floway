@@ -71,7 +71,7 @@ export const navGroups: NavGroup[] = [
     ],
   },
   {
-    labelKey: 'dashboard.groups.management',
+    labelKey: 'dashboard.groups.admin',
     items: [
       { to: '/dashboard/admin/users', labelKey: 'dashboard.nav.users', icon: People20Color, adminOnly: true },
       { to: '/dashboard/admin/permissions', labelKey: 'dashboard.nav.permissions', icon: PersonKey20Color, permissions: true },

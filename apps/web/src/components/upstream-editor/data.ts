@@ -28,6 +28,7 @@ export interface EditorAuxData {
 }
 
 interface UpstreamEditorLoaderDataBase extends EditorAuxData {
+  audit?: boolean;
   editLevel: 'off' | 'models' | 'full';
   record: UpstreamRecord;
   discovered: UpstreamModelConfig[] | null;

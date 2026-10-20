@@ -101,6 +101,15 @@ describe('upstream model workspace field-array transitions', () => {
     expect(toggle.hasAttribute('disabled')).toBe(false);
   });
 
+  it('renders the enable switch read-only for an audit-only editor', () => {
+    renderInApp(<Harness editLevel="off" />);
+    const toggle = screen.getAllByRole('switch').find(node => node.getAttribute('aria-label')?.includes('model-a'))!;
+    expect(toggle.getAttribute('aria-readonly')).toBe('true');
+    expect((toggle as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(toggle);
+    expect((toggle as HTMLInputElement).checked).toBe(true);
+  });
+
   const detailLabel = models('imageDetailOriginal');
 
   it('opens a newly added model in the detail editor', async () => {

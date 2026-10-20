@@ -21,6 +21,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   const aux = await loadEditorAux(params.id);
   return {
     ...aux,
+    audit: recordResult.data.audit,
     editLevel: recordResult.data.editLevel,
     record: recordResult.data,
     discovered: recordResult.data.cachedModels,

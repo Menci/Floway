@@ -34,7 +34,7 @@ test('permission reads require Permission.Audit while writes still require admin
   assertEquals((await requestApp('/api/access-records', { headers: { 'x-api-key': apiKey.key } })).status, 200);
 });
 
-test('auditing a user exposes their rules and every membership group rule', async () => {
+test('auditing a user makes their membership groups auditable and visible in the principal picker', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.users.save({ id: 3, username: 'bob', passwordHash: null, isAdmin: false, createdAt: '', deletedAt: null });
   await repo.users.save({ id: 4, username: 'hidden-member', passwordHash: null, isAdmin: false, createdAt: '', deletedAt: null });
@@ -49,14 +49,16 @@ test('auditing a user exposes their rules and every membership group rule', asyn
 
   const response = await requestApp('/api/permissions', { headers: { 'x-api-key': apiKey.key } });
   const body = await response.json();
-  expect(body.records.map((record: { principal: { kind: string; id: number } }) => `${record.principal.kind}:${record.principal.id}`)).toEqual(['user:3']);
+  expect(body.records.map((record: { principal: { kind: string; id: number } }) => `${record.principal.kind}:${record.principal.id}`)).toEqual([
+    'user:3', `group:${first.id}`, `group:${second.id}`,
+  ]);
   expect(body.directory.users.map((user: { id: number }) => user.id)).toEqual([3]);
   expect(body.directory.groups).toEqual([
     expect.objectContaining({ id: first.id, memberIds: [3] }),
     expect.objectContaining({ id: second.id, memberIds: [3] }),
   ]);
   expect(body.directory.principalUserIds).toEqual([3]);
-  expect(body.directory.principalGroupIds).toEqual([]);
+  expect(body.directory.principalGroupIds).toEqual([first.id, second.id]);
 
   const effective = await requestApp('/api/access-resolve', {
     method: 'POST',
@@ -104,7 +106,7 @@ test('an audited user resolves their own effective user scope with membership-gr
   expect(body.records.map((record: { principal: { kind: string } }) => record.principal.kind)).toEqual(['group']);
 });
 
-test('an audited user can see membership-group source identities without gaining unrelated principals', async () => {
+test('an audited user can see membership-group identities without gaining unrelated users', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.users.save({ id: 3, username: 'audited', passwordHash: null, isAdmin: false, createdAt: '', deletedAt: null });
   await repo.users.save({ id: 4, username: 'source-target', passwordHash: null, isAdmin: false, createdAt: '', deletedAt: null });
@@ -114,10 +116,10 @@ test('an audited user can see membership-group source identities without gaining
   await repo.accessRecords.save({ principal: { kind: 'group', id: group.id }, scope: { kind: 'user', userId: 4 }, sortOrder: 0, values: { 'User.Audit': true } });
 
   const body = await (await requestApp('/api/permissions', { headers: { 'x-api-key': apiKey.key } })).json();
-  expect(body.records).toEqual([]);
+  expect(body.records.map((record: { principal: { kind: string; id: number } }) => `${record.principal.kind}:${record.principal.id}`)).toEqual([`group:${group.id}`]);
   expect(body.directory.users.map((user: { id: number }) => user.id)).toEqual([3, 4]);
   expect(body.directory.principalUserIds).toEqual([3]);
-  expect(body.directory.principalGroupIds).toEqual([]);
+  expect(body.directory.principalGroupIds).toEqual([group.id]);
   expect(body.directory.groups).toEqual([expect.objectContaining({ id: group.id, memberIds: [3] })]);
 });
 
@@ -265,7 +267,7 @@ test('non-admin access resolve accepts only projected user and group principals'
     body: JSON.stringify({ principal, scope: { kind: 'upstreams' } }),
   });
   assertEquals((await call({ kind: 'user', id: 3 })).status, 200);
-  assertEquals((await call({ kind: 'group', id: group.id })).status, 404);
+  assertEquals((await call({ kind: 'group', id: group.id })).status, 200);
   assertEquals((await call({ kind: 'user', id: apiKey.userId })).status, 404);
   assertEquals((await call({ kind: 'group', id: group.id + 1 })).status, 404);
 });

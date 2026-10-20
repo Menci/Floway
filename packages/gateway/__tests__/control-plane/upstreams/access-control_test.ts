@@ -169,6 +169,33 @@ test('Upstream.Audit exposes a redacted record in the listing, detail, and metri
   assertEquals((await metrics.json()).records.length, 1);
 });
 
+test('Upstream.Audit sees the cached catalog count without receiving catalog rows', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await saveUpstreamForTest(repo.upstreams, customRecord());
+  await seedModelsCache(repo.upstreams, 'up_restricted', await storedModelsRefreshIdentity(repo.upstreams, 'up_restricted'), {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 1_700_000_000_000,
+    models: projectCustomModels((await repo.upstreams.getById('up_restricted'))!),
+  });
+  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: apiKey.userId });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: apiKey.userId },
+    scope: { kind: 'upstream', upstreamId: 'up_restricted' },
+    sortOrder: 0,
+    values: { 'Upstream.Audit': true },
+  });
+
+  const list = await requestApp('/api/upstreams', { headers: { 'x-api-key': apiKey.key } });
+  const listed = (await list.json() as Array<Record<string, any>>)[0]!;
+  assertEquals(listed.modelUse, false);
+  assertEquals(listed.modelsCache.modelCount, 1);
+
+  const detail = await requestApp('/api/upstreams/up_restricted', { headers: { 'x-api-key': apiKey.key } });
+  const body = await detail.json();
+  assertEquals(body.modelsCache.modelCount, 1);
+  assertEquals(body.cachedModels, null);
+});
+
 test('a disabled upstream keeps Model.Use coverage so the listing can use its cached count', async () => {
   const { repo, apiKey } = await setupAppTest();
   await saveUpstreamForTest(repo.upstreams, { ...customRecord(), enabled: false });
@@ -358,6 +385,28 @@ test('provider credential actions require Full and keep create drafts admin-only
   await grant(repo, apiKey.userId, 'full');
   assertEquals((await call('up_restricted')).status, 200);
   assertEquals((await call('')).status, 403);
+});
+
+test('provider credential actions require a persisted upstream even with a dangling Full ACL', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: apiKey.userId });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: apiKey.userId },
+    scope: { kind: 'upstream', upstreamId: 'up_deleted' },
+    sortOrder: 0,
+    values: { 'Upstream.Edit': 'full' },
+  });
+
+  const response = await requestApp('/api/upstreams/claude-code/oauth/authorize-url', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: JSON.stringify({
+      record: { id: 'up_deleted', kind: 'claude-code', config: {}, state: {}, proxy_fallback_list: [] },
+      challenge: 'challenge',
+      state: 'state',
+    }),
+  });
+  assertEquals(response.status, 404);
 });
 
 test('proxy options treat a dangling upstream ACL as an absent upstream', async () => {

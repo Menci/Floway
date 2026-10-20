@@ -76,15 +76,13 @@ const serializeForResponse = async (
   knownProxyIds: ReadonlySet<string>,
   baseSerialize: (r: UpstreamRecord) => SerializedUpstreamRecord = upstreamRecordToJson,
   includeQuota = true,
-  includeModelCount = true,
 ): Promise<UpstreamWithCacheResponse> => {
   const codexQuota = includeQuota ? await codexQuotaForResponse(record) : {};
   const serialized = baseSerialize(record);
-  const cache = modelsCacheStatus(record);
   return {
     ...serialized,
     proxy_fallback_list: pruneDeletedProxyEntries(serialized.proxy_fallback_list, knownProxyIds),
-    modelsCache: includeModelCount ? cache : { ...cache, modelCount: null },
+    modelsCache: modelsCacheStatus(record),
     ...codexQuota,
   };
 };
@@ -96,13 +94,11 @@ const serializeForAccess = async (
   record: StoredUpstreamRecord,
   knownProxyIds: ReadonlySet<string>,
   access: UpstreamAccess,
-  modelUse = true,
 ): Promise<UpstreamWithCacheResponse> => await serializeForResponse(
   record,
   knownProxyIds,
   serializerForAccess(access),
   access.audit || access.edit === 'full',
-  modelUse,
 );
 
 const modelUseForUpstreams = async (
@@ -219,7 +215,7 @@ export const listUpstreams = async (c: AuthedContext) => {
   return c.json(await Promise.all(items.flatMap((record, index) => {
     const access = accesses.get(record.id)!;
     if (!access.audit && access.edit === 'off') return [];
-    return [serializeForResponse(record, knownProxyIds, upstreamRecordToJson, true, modelUse === null || modelUse[index]!)
+    return [serializeForResponse(record, knownProxyIds, upstreamRecordToJson)
       .then(serialized => ({ ...serialized, editLevel: access.edit, audit: access.audit, modelUse: modelUse === null || modelUse[index]!, reorderGroup: reorderGroups.get(record.id)! }))];
   })));
 };
@@ -320,7 +316,7 @@ export const getUpstream = async (c: AuthedContext<'/:id'>) => {
   if (!record) return c.json({ error: 'upstream not found' }, 404);
   const modelUse = (await modelUseForUpstreams(c, subject, [record]))?.[0] ?? true;
   return c.json({
-    ...await serializeForAccess(record, knownProxyIds, access, modelUse),
+    ...await serializeForAccess(record, knownProxyIds, access),
     cachedModels: modelUse ? cachedModelsForDashboard(record) : null,
     editLevel: access.edit,
     audit: access.audit,
@@ -495,9 +491,8 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
 
   const saved = await saveUpstream({ previous: existing, next });
   const access = (await resolveUpstreamAccesses(subject, [id])).get(id)!;
-  const modelUse = (await modelUseForUpstreams(c, subject, [saved]))?.[0] ?? true;
   return c.json({
-    ...await serializeForAccess(saved, knownProxyIds, access, modelUse),
+    ...await serializeForAccess(saved, knownProxyIds, access),
     editLevel,
     audit: access.audit,
   });

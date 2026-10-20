@@ -77,11 +77,11 @@ const customRecord = upstreamRecord('up_custom', {
 });
 const discovered = [{ upstreamModelId: 'new-model', publicModelId: 'new-model', kind: 'chat' as const, endpoints: { openaiChatCompletions: {} } }];
 
-const renderPage = (currentRecord = record, initialDiscovered: UpstreamModelConfig[] | null = null, editLevel: 'off' | 'models' | 'full' = 'full') => {
+const renderPage = (currentRecord = record, initialDiscovered: UpstreamModelConfig[] | null = null, editLevel: 'off' | 'models' | 'full' = 'full', audit = true) => {
   const router = createMemoryRouter([{
     path: '/editor',
     element: <OutcomeToastProvider><UpstreamEditorPage data={{
-      mode: 'edit', editLevel, record: currentRecord, discovered: initialDiscovered,
+      mode: 'edit', audit, editLevel, record: currentRecord, discovered: initialDiscovered,
       proxies: [], runtime: { kind: 'node', runtimeLocation: 'TEST' },
     }} /></OutcomeToastProvider>,
   }], { initialEntries: ['/editor'] });
@@ -96,7 +96,7 @@ beforeEach(() => {
 });
 
 test('an audit-only editor opens the saved record with no Save action', () => {
-  renderPage(record, discovered, 'off');
+  renderPage(record, discovered, 'off', true);
   expect(screen.queryByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') })).toBeNull();
 });
 

@@ -665,9 +665,7 @@ function UpstreamSegment({
         <TableCell>
           <TableActions leading={<TooltipIconButton aria-controls={canAudit ? `upstream-telemetry-${encodeURIComponent(record.id)}` : undefined} aria-expanded={canAudit ? expandedId === record.id : undefined}
             disabled={reorderBusy || !canAudit} icon={<DataTrendingRegular />} label={t('dashboard.upstreams.actions.metricsNamed', { name: record.name })} onClick={() => onTelemetry(record)} />}>
-            {canEdit
-              ? <TooltipIconButton disabled={busy} icon={<EditRegular />} label={t('dashboard.upstreams.actions.editNamed', { name: record.name })} to={upstreamEditorPath(record)} />
-              : <TooltipIconButton disabled icon={<EditRegular />} label={t('dashboard.upstreams.actions.editNamed', { name: record.name })} onClick={() => {}} />}
+            <TooltipIconButton disabled={busy} icon={<EditRegular />} label={t('dashboard.upstreams.actions.editNamed', { name: record.name })} to={upstreamEditorPath(record)} />
             {administrator && <TooltipIconButton disabled={busy} icon={<CopyRegular />} label={t('dashboard.upstreams.actions.copyNamed', { name: record.name })} to={upstreamCopyPath(record)} />}
             {administrator && <TooltipIconButton danger disabled={busy && !deleting} disabledFocusable={deleting} icon={deleting ? <Spinner size="tiny" /> : <DeleteRegular />}
               label={t('dashboard.upstreams.actions.deleteNamed', { name: record.name })} onClick={() => onDelete(record)} />}
@@ -771,14 +769,13 @@ const buildModelCounts = (
     }
   }
   const countFor = (record: ListedUpstreamRecord): number | null => {
-    // The catalog is filtered by Model.Use: an upstream visible through Audit
-    // alone has no row to count, which is not the same as having none. Neither
-    // the cached size nor Azure's configured list is a substitute for a
-    // catalog this caller may not see.
-    if (!record.modelUse) return null;
     // Azure's catalog is the operator's own configured list, so it is known
     // without the listing.
     if (record.kind === 'azure') return record.config.models.length;
+    // The live catalog is filtered by Model.Use. Auditors still see the size
+    // of the catalog the upstream stored while it was on, without gaining the
+    // catalog rows themselves.
+    if (!record.modelUse) return record.modelsCache.modelCount;
     // The model registry builds providers from enabled upstreams only, so the
     // listing has nothing to say about a disabled upstream: the size of the
     // catalog it stored while it was on is the count instead, and null when it

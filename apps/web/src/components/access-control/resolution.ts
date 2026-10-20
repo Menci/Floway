@@ -18,6 +18,11 @@ export const useAccessResolution = ({ enabled, excludeRecordId, principal, revis
     revision,
   } : null, [enabled, excludeRecordId, principalId, principalKind, revision, scopeJson, scope?.kind]);
   const [result, setResult] = useState<{ request: typeof request; data: AccessResolution | null; error: string | null } | null>(null);
+  // Closing the dialog disables the request, but the surface is still mounted
+  // for its exit motion. Throwing the last resolution away in that frame makes
+  // every permission field flash "Inherit (unknown)". The last result is only
+  // dropped when the principal or scope actually changes.
+  const [lastRequest, setLastRequest] = useState<typeof request>(null);
   useEffect(() => {
     if (request === null) return;
     const controller = new AbortController();
@@ -27,6 +32,9 @@ export const useAccessResolution = ({ enabled, excludeRecordId, principal, revis
     });
     return () => controller.abort();
   }, [request]);
-  const current = request !== null && result?.request === request ? result : null;
+  if (request !== lastRequest && request !== null) setLastRequest(request);
+  const current = result === null ? null
+    : request === null ? result.request === lastRequest ? result : null
+      : result.request === request ? result : null;
   return { data: current?.data ?? null, error: current?.error ?? null, pending: request !== null && current === null };
 };

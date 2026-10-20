@@ -122,14 +122,14 @@ test('target-only identities render in rules without entering the principal pick
   expect(screen.queryByRole('option', { name: /Review Subjects/ })).toBeNull();
 });
 
-test('an audited user sees membership-group rules only as effective sources, never as an Applies-to choice', async () => {
+test('an audited user sees membership-group rules and can pick those groups in Applies to', async () => {
   const data: PermissionsData = {
     ...initial,
     directory: {
       users: [{ id: 3, username: 'bob', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null }, groupIds: [2] }],
       groups: [{ id: 2, name: 'Review Subjects', hue: 180, memberIds: [3], createdAt: '', deletedAt: null }],
       principalUserIds: [3],
-      principalGroupIds: [],
+      principalGroupIds: [2],
     },
     records: [
       { id: 5, principal: { kind: 'user', id: 3 }, scope, sortOrder: 0, values: { 'Model.Use': true }, createdAt: '', updatedAt: '' },
@@ -159,7 +159,7 @@ test('an audited user sees membership-group rules only as effective sources, nev
   const picker = screen.getByRole('combobox', { name: 'Applies to' });
   fireEvent.click(picker);
   expect(await screen.findByRole('option', { name: /bob/ })).toBeTruthy();
-  expect(screen.queryByRole('option', { name: /Review Subjects/ })).toBeNull();
+  expect(await screen.findByRole('option', { name: /Review Subjects/ })).toBeTruthy();
 });
 
 test('the permissions loader stays on the page for an authorized operator and requests one permission snapshot', async () => {
@@ -446,6 +446,28 @@ test('resolution errors stay visible and are not presented as an empty permissio
   expect(screen.queryByText('No matching rules')).toBeNull();
   await act(async () => { fireEvent.click(screen.getByRole('switch', { name: 'Show effective' })); });
   expect(await screen.findByRole('table')).toBeTruthy();
+});
+
+test('a save refresh keeps the table and its controls available while it is in flight', async () => {
+  const originalFetch = vi.mocked(fetch).getMockImplementation()!;
+  let finishRefresh!: () => Promise<void>;
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(String(input), 'http://localhost').pathname;
+    if (path.startsWith('/api/access-records/') && init?.method === 'PUT') return Response.json(initial.records![1]);
+    if (path === '/api/permissions') return new Promise<Response>(resolve => { finishRefresh = async () => resolve(await originalFetch(input, init)); });
+    return originalFetch(input, init);
+  }));
+  const { container } = renderPage();
+  await screen.findByRole('table');
+  const edit = screen.getAllByRole<HTMLButtonElement>('button', { name: 'Edit rule' }).find(button => !button.disabled)!;
+  fireEvent.click(edit);
+  const dialog = await screen.findByRole('dialog');
+  await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: 'Save rule' })); });
+  await waitFor(() => expect(finishRefresh).toBeTypeOf('function'));
+  expect(screen.getByRole('table')).toBeTruthy();
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: 'New rule' }).disabled).toBe(false);
+  expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(3);
+  await act(async () => { await finishRefresh(); });
 });
 
 test('preview query parameters never expose design or example controls', async () => {

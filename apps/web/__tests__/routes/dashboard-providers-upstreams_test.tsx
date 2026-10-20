@@ -191,18 +191,22 @@ it('handles a reorder shortcut once at the item container', async () => {
   await waitFor(() => expect(reorders).toEqual([{ expectedIds: ['first', 'second'], ids: ['second', 'first'] }]));
 });
 
-it('opens telemetry for an audit-only row while keeping edit, switch, copy, delete, and drag unavailable', async () => {
+it('opens telemetry and the read-only editor for an audit-only row while keeping mutations unavailable', async () => {
+  const pageData = {
+    ...withAccess(true, 'off'),
+    upstreams: withAccess(true, 'off').upstreams.map((record, index) => index === 0 ? { ...record, modelUse: false, modelsCache: { ...record.modelsCache, modelCount: 7 } } : record),
+  };
   stubGateway(async url => {
     if (url.pathname === '/api/token-usage/overview') return Response.json(overview());
     if (url.pathname === '/api/upstream-metrics') return Response.json(metrics(url));
     throw new Error(`Unexpected request: ${url.pathname}`);
-  }, { ...withAccess(true, 'off'), upstreams: withAccess(true, 'off').upstreams.map((record, index) => index === 0 ? { ...record, modelUse: false } : record) });
-  renderPage({ id: 2, username: 'auditor', isAdmin: false, canViewPermissions: false, canViewUpstreams: true }, withAccess(true, 'off'));
+  }, pageData);
+  renderPage({ id: 2, username: 'auditor', isAdmin: false, canViewPermissions: false, canViewUpstreams: true }, pageData);
 
   const row = await screen.findByRole('row', { name: 'Usage and metrics for First' });
   expect(screen.getByRole('link', { name: 'First' })).toBeTruthy();
-  expect(within(row).getByText('Count unavailable')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Edit upstream First' }).hasAttribute('disabled')).toBe(true);
+  expect(within(row).getByText('7 models')).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Edit upstream First' }).getAttribute('aria-disabled')).toBeNull();
   expect(screen.getByRole('switch', { name: 'Toggle upstream First' }).hasAttribute('disabled')).toBe(true);
   expect(screen.queryByRole('button', { name: 'Copy upstream First' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Delete upstream First' })).toBeNull();

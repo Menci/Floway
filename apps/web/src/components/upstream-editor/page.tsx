@@ -51,7 +51,9 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const toasts = useOutcomeToasts();
   const [record, setRecord] = useState(data.record);
   const editLevel = data.editLevel;
-  const readOnly = editLevel === 'off';
+  // Audit-only access is a read of the record's configuration, not an edit at
+  // level `off`; the editor has to withdraw every mutation control either way.
+  const readOnly = editLevel === 'off' && data.audit;
   // Two provider patches can be in flight at once -- refreshing a credential
   // and probing a quota are separate buttons, neither disabling the other -- so
   // the second one's continuation holds the render the first was dispatched

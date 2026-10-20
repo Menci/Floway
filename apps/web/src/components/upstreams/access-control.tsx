@@ -29,6 +29,7 @@ interface UpstreamAccessRow {
   modelCount: number | null;
   name: string;
   selected: boolean;
+  unavailable: boolean;
   upstream: { hue: number; kind: UpstreamOption['kind'] };
 }
 
@@ -155,15 +156,23 @@ const accessRows = (
     modelCount: upstream.enabled ? (modelCounts.get(upstream.id) ?? 0) : upstream.cachedModelCount,
     name: upstream.name,
     selected: isSelected,
+    unavailable: false,
     upstream: { hue: upstream.hue, kind: upstream.kind },
   });
-  // Selected first, in the order the cap states, then the rest. An id absent
-  // from `available` has none: the control plane serves a cap already projected
-  // through what the principal can reach, so every id here resolves.
+  // Selected first, in the order the cap states, then the rest. A saved id
+  // that is no longer in the caller's addressable surface stays visible so the
+  // owner can remove or reorder it instead of silently persisting a hidden cap.
   return [
-    ...ids.flatMap(id => {
+    ...ids.flatMap((id): UpstreamAccessRow[] => {
       const upstream = byId.get(id);
-      return upstream ? [rowFor(upstream, true)] : [];
+      return upstream ? [rowFor(upstream, true)] : [{
+        id,
+        modelCount: null,
+        name: id,
+        selected: true,
+        unavailable: true,
+        upstream: { hue: 0, kind: 'custom' },
+      }];
     }),
     ...available.filter(upstream => !selected.has(upstream.id)).map(upstream => rowFor(upstream, false)),
   ];

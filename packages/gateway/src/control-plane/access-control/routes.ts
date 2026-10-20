@@ -1,4 +1,4 @@
-import { canAuditPrincipal, hasPermissionAuditTarget, loadPermissionAuditContext, permissionAuditSourcePrincipals, type PermissionAuditContext } from '../../access-control/permission-audit.ts';
+import { canAuditPrincipal, hasPermissionAuditTarget, loadPermissionAuditContext, permissionAuditVisiblePrincipals, type PermissionAuditContext } from '../../access-control/permission-audit.ts';
 import { resolveEffectiveAssignments } from '../../access-control/resolution.ts';
 import { AccessRecordConflictError } from '../../access-control/types.ts';
 import type { AccessPrincipal, AccessRecord, AccessRecordInput } from '../../access-control/types.ts';
@@ -26,22 +26,16 @@ const principalError = async (input: AccessRecordInput): Promise<string | null> 
 const loadPermissionSnapshot = async (c: AuthedContext): Promise<{
   context: PermissionAuditContext;
   visibleRecords: AccessRecord[];
-  sourceRecords: AccessRecord[];
 } | null> => {
   const context = await loadPermissionAuditContext(userFromContext(c));
   if (!hasPermissionAuditTarget(context)) return null;
-  const sourceRecords = await getRepo().accessRecords.listByPrincipals(permissionAuditSourcePrincipals(context));
-  const visibleRecords = sourceRecords.filter(record => record.principal.kind === 'user'
-    ? context.userIds.has(record.principal.id)
-    : context.directGroupIds.has(record.principal.id));
-  return { context, visibleRecords, sourceRecords };
+  const visibleRecords = await getRepo().accessRecords.listByPrincipals(permissionAuditVisiblePrincipals(context));
+  return { context, visibleRecords };
 };
 
 const projectPermissionDirectory = async (context: PermissionAuditContext, records: readonly AccessRecord[], admin: boolean) => {
   const renderUserIds = new Set(admin ? context.directory.users.map(user => user.id) : context.userIds);
-  const renderGroupIds = new Set(admin
-    ? context.directory.groups.map(group => group.id)
-    : [...context.directGroupIds, ...context.membershipGroupIds]);
+  const renderGroupIds = new Set(admin ? context.directory.groups.map(group => group.id) : context.groupIds);
   if (!admin) {
     for (const record of records) {
       if (record.scope.kind === 'user') renderUserIds.add(record.scope.userId);
@@ -63,14 +57,14 @@ const projectPermissionDirectory = async (context: PermissionAuditContext, recor
     )),
     groups,
     principalUserIds: context.directory.users.filter(user => context.userIds.has(user.id)).map(user => user.id),
-    principalGroupIds: context.directory.groups.filter(group => context.directGroupIds.has(group.id)).map(group => group.id),
+    principalGroupIds: context.directory.groups.filter(group => context.groupIds.has(group.id)).map(group => group.id),
   };
 };
 
-const permissionUpstreamOptions = async (visibleRecords: readonly AccessRecord[], sourceRecords: readonly AccessRecord[], admin: boolean) => {
+const permissionUpstreamOptions = async (visibleRecords: readonly AccessRecord[], admin: boolean) => {
   const items = await getRepo().upstreams.list();
   const all = admin || visibleRecords.some(record => record.scope.kind === 'upstreams');
-  const ids = new Set(sourceRecords.flatMap(record => record.scope.kind === 'upstream' || record.scope.kind === 'upstreamModel' ? [record.scope.upstreamId] : []));
+  const ids = new Set(visibleRecords.flatMap(record => record.scope.kind === 'upstream' || record.scope.kind === 'upstreamModel' ? [record.scope.upstreamId] : []));
   return items.filter(item => all || ids.has(item.id)).map(item => ({
     id: item.id,
     name: item.name,
@@ -90,8 +84,8 @@ export const getPermissionsData = async (c: AuthedContext) => {
   const snapshot = await loadPermissionSnapshot(c);
   if (snapshot === null) return c.json({ error: 'Permission audit access required' }, 403);
   const admin = userFromContext(c).isAdmin;
-  const upstreams = await permissionUpstreamOptions(snapshot.visibleRecords, snapshot.sourceRecords, admin);
-  const directory = await projectPermissionDirectory(snapshot.context, snapshot.sourceRecords, admin);
+  const upstreams = await permissionUpstreamOptions(snapshot.visibleRecords, admin);
+  const directory = await projectPermissionDirectory(snapshot.context, snapshot.visibleRecords, admin);
   return c.json({ records: snapshot.visibleRecords, directory, upstreams });
 };
 

@@ -57,7 +57,7 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
     const next = await loadPermissionsData(data, signal);
     if (!signal.aborted) { setData(next); setError(next.error); }
   };
-  const { refresh, refreshing } = useRefresh(reload);
+  const { refresh, refreshInBackground, backgroundRefreshing, refreshing } = useRefresh(reload);
   const query = params.get('q') ?? '';
   const scopeData = useMemo<ScopeExpressionData>(() => ({
     users: data.directory?.users ?? [], groups: data.directory?.groups ?? [],
@@ -120,10 +120,14 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
   }, [data.records, principal, query, resolution.data, scope, scopeData, search, showEffective, t]);
   const snapshot = { view, source: { data, search, resolution: resolution.data, language: i18n.language } };
   const [displayed, setDisplayed] = useState<typeof snapshot | null>(loaded ? snapshot : null);
+  // A background refresh keeps the table on screen while its request is in
+  // flight, but the arrival of new data still replaces it; `loading` covers
+  // the foreground case where the old snapshot must survive until the new one
+  // is ready.
   const keepDisplayed = loading || resolution.error !== null;
   if (loaded && !keepDisplayed && (displayed?.source.data !== data || displayed?.source.search !== search
     || displayed?.source.resolution !== resolution.data || displayed?.source.language !== i18n.language)) setDisplayed(snapshot);
-  const results = keepDisplayed && displayed !== null ? displayed.view : view;
+  const results = (keepDisplayed || (backgroundRefreshing && displayed !== null)) && displayed !== null ? displayed.view : view;
   const administrator = showEffective && principal?.kind === 'user' && scopeData.users.some(user => user.id === principal.id && user.isAdmin);
   const create = () => editor.open({ ...(principal === null ? {} : { principal }), ...(scope === null ? {} : { scope }) });
   const reorder = async (ids: number[], from: number, to: number) => {
@@ -165,7 +169,7 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
       const result = await callApi(() => api.api['access-records'][':id'].$delete({ param: { id: String(record.id) } }));
       if (result.error) { handle.settle(); return result.error.message; }
       handle.succeed(t('dashboard.accessControl.toast.delete.success'));
-      await refresh();
+      await refreshInBackground();
       return null;
     } finally {
       setRemoving(false);
@@ -222,6 +226,6 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
         <TooltipIconButton disabled={busy || results.page === results.totalPages} icon={<ChevronRightRegular />} label={t('dashboard.accessControl.pagination.next')} onClick={() => updateParams(next => next.set('page', String(results.page + 1)))} />
       </div>}
     </>}
-    {admin && editor.invocation && <AccessRecordDialog data={scopeData} principalData={principalData} initialPrincipal={editor.invocation.value.principal} initialScope={editor.invocation.value.scope} key={editor.invocation.key} onOpenChange={open => { if (!open) editor.close(); }} onSaved={refresh} open={editor.isOpen} record={editor.invocation.value.record} suggestedSortOrder={Math.max(-1, ...(data.records ?? []).map(record => record.sortOrder)) + 1} />}
+    {admin && editor.invocation && <AccessRecordDialog data={scopeData} principalData={principalData} initialPrincipal={editor.invocation.value.principal} initialScope={editor.invocation.value.scope} key={editor.invocation.key} onOpenChange={open => { if (!open) editor.close(); }} onSaved={refreshInBackground} open={editor.isOpen} record={editor.invocation.value.record} suggestedSortOrder={Math.max(-1, ...(data.records ?? []).map(record => record.sortOrder)) + 1} />}
   </section>;
 }

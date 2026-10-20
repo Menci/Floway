@@ -41,7 +41,11 @@ export const fullUpstreamActionError = async (
   if (upstreamId === '') {
     return subject.isAdmin ? null : { status: 403, error: 'Creating upstream credentials requires administrator privileges' };
   }
-  return await resolveUpstreamEditLevel(subject, upstreamId) === 'full'
+  const [editLevel, record] = await Promise.all([
+    resolveUpstreamEditLevel(subject, upstreamId),
+    getRepo().upstreams.getById(upstreamId),
+  ]);
+  return editLevel === 'full' && record !== null
     ? null
     : { status: 404, error: 'Upstream not found' };
 };
