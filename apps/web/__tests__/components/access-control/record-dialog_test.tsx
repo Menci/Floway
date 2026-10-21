@@ -135,6 +135,27 @@ test('updates permission controls from each valid JSON scope draft', async () =>
   });
 });
 
+test('an administrator target keeps its permission fields and saves normally', async () => {
+  const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => Response.json(init?.method === 'PUT'
+    ? { ...record, ...JSON.parse(init.body as string) }
+    : { values: { 'Model.Use': true, 'Upstream.Audit': true, 'Upstream.Edit': 'full' }, records: [], decisions: [] }));
+  vi.stubGlobal('fetch', fetch);
+  await renderDialog({ record: { ...record, principal: { kind: 'user', id: 1 } } });
+
+  const save = screen.getByRole<HTMLButtonElement>('button', { name: 'Save rule' });
+  expect(save.disabled).toBe(false);
+  expect(screen.getAllByRole<HTMLInputElement>('radio').every(input => !input.disabled)).toBe(true);
+  const edit = await screen.findByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.Upstream.Edit') });
+  fireEvent.click(within(edit).getByRole('radio', { name: i18n.t('dashboard.accessControl.states.off') }));
+  await act(async () => { fireEvent.click(save); });
+  const write = fetch.mock.calls.find(([, init]) => init?.method === 'PUT');
+  expect(write).toBeTruthy();
+  expect(JSON.parse(write![1]!.body as string)).toMatchObject({
+    principal: { kind: 'user', id: 1 },
+    values: { 'Model.Use': true, 'Upstream.Edit': 'off' },
+  });
+});
+
 test('shows the exact inherited upstream edit level for a concrete user target', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({
     values: { 'Model.Use': true, 'Upstream.Audit': false, 'Upstream.Edit': 'models' },
