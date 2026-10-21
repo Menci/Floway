@@ -1,17 +1,12 @@
-import { tokenBasePricing, type ModelPricing, type PriceVector } from '@floway-dev/protocols/common';
+import { modelPricing, tokenBasePricing, tokenPricingEntry, type ModelPricing, type PriceVector } from '@floway-dev/protocols/common';
 
 type PricingRule = readonly [keys: readonly string[], rates: PriceVector];
 
-// Request valuation uses Ollama's published standard rates, including cache
-// reads. Actual account consumption comes from /api/usage: off-peak discounts
-// and billing boundaries can make it differ from a standard-rate estimate.
+// Request valuation uses Ollama's published rates, including cache reads and
+// scheduled prices. Account consumption from /api/usage remains authoritative;
+// the gateway estimates each request using its start time.
 // https://ollama.com/pricing
 const STANDARD_PRICING: readonly PricingRule[] = [
-  // Cloud aliases are published under each family's tags page.
-  // https://ollama.com/library/deepseek-v4.1-flash/tags
-  [['deepseek-v4.1-flash', 'deepseek-v4.1-flash:cloud'], { input_tokens: '0.30', input_cache_read_tokens: '0.006', output_tokens: '1.20' }],
-  // https://ollama.com/library/deepseek-v4-pro/tags
-  [['deepseek-v4-pro', 'deepseek-v4-pro:0813', 'deepseek-v4-pro:cloud', 'deepseek-v4-pro:0813-cloud'], { input_tokens: '1.32', input_cache_read_tokens: '0.044', output_tokens: '3.96' }],
   // https://ollama.com/library/gemma4/tags
   [['gemma4', 'gemma4:31b', 'gemma4:cloud', 'gemma4:31b-cloud'], { input_tokens: '0.14', input_cache_read_tokens: '0.05', output_tokens: '0.40' }],
   // https://ollama.com/library/glm-5.2/tags
@@ -84,5 +79,28 @@ const PRICING_BY_MODEL = new Map<string, ModelPricing>([...STANDARD_PRICING, ...
   const pricing = tokenBasePricing(rates);
   return keys.map(key => [key, pricing] as const);
 }));
+
+// Ollama's peak clock is its own: Monday–Friday 12:00–18:00 UTC. Its
+// published schedule has no Chinese-holiday exclusion. Do not substitute
+// DeepSeek's first-party windows merely because the model/rates are the same.
+// https://ollama.com/pricing
+const scheduledPricing = (offPeak: PriceVector, peak: PriceVector): ModelPricing => modelPricing(
+  tokenPricingEntry(offPeak),
+  tokenPricingEntry(peak, { timeWindow: { timeZone: 'UTC', weekdays: [1, 2, 3, 4, 5], start: '12:00', end: '18:00' } }),
+);
+
+// https://ollama.com/library/deepseek-v4.1-flash/tags
+const FLASH_PRICING = scheduledPricing(
+  { input_tokens: '0.15', input_cache_read_tokens: '0.003', output_tokens: '0.60' },
+  { input_tokens: '0.30', input_cache_read_tokens: '0.006', output_tokens: '1.20' },
+);
+for (const key of ['deepseek-v4.1-flash', 'deepseek-v4.1-flash:cloud']) PRICING_BY_MODEL.set(key, FLASH_PRICING);
+
+// https://ollama.com/library/deepseek-v4-pro/tags
+const PRO_PRICING = scheduledPricing(
+  { input_tokens: '0.66', input_cache_read_tokens: '0.022', output_tokens: '1.98' },
+  { input_tokens: '1.32', input_cache_read_tokens: '0.044', output_tokens: '3.96' },
+);
+for (const key of ['deepseek-v4-pro', 'deepseek-v4-pro:0813', 'deepseek-v4-pro:cloud', 'deepseek-v4-pro:0813-cloud']) PRICING_BY_MODEL.set(key, PRO_PRICING);
 
 export const pricingForOllamaModelKey = (modelKey: string): ModelPricing | null => PRICING_BY_MODEL.get(modelKey) ?? null;

@@ -12,6 +12,8 @@ import {
   pricingFieldRate,
   pricingFromDrafts,
   thresholdCoordinate,
+  timeWindowCoordinate,
+  withTimeWindowCoordinate,
   visiblePricingFields,
   withEqualityCoordinate,
   withRate,
@@ -19,6 +21,7 @@ import {
   type PricingEntryDraft,
   type PricingField,
 } from './pricing-model';
+import { TimeWindowEditor } from './time-window-editor';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { EmptyState } from '../ui/empty-state';
@@ -154,6 +157,7 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
     case 'base-count': return t(`${key}baseCount`);
     case 'rate-metrics': return t(`${key}rateMetrics`);
     case 'duplicate-selector': return t(`${key}duplicateSelector`);
+    case 'time-window-conflict': return t(`${key}timeWindowConflict`);
     case 'threshold-operator-conflict': return t(`${key}thresholdConflict`);
     }
   };
@@ -222,6 +226,12 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
         />
         <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
           {PRICING_AXES.map(axis => {
+            if (axis.kind === 'time-window') return <TimeWindowEditor
+              key={axis.id}
+              value={timeWindowCoordinate(active)}
+              readOnly={readOnly}
+              onChange={value => patchActive(draft => withTimeWindowCoordinate(draft, value))}
+            />;
             if (axis.kind === 'equality') {
               const current = active.selector[axis.id];
               return <Field className="min-w-0" key={axis.id} label={t('dashboard.upstreamEditor.models.serviceTierName')} hint={t('dashboard.upstreamEditor.models.serviceTierHint')}>

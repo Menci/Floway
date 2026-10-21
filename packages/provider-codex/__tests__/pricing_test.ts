@@ -52,7 +52,7 @@ for (const [modelKey, entries] of Object.entries(CODEX_GPT_5_6_GRID)) {
     const pricing = pricingForCodexModelKey(modelKey);
     assertEquals(pricing?.entries.filter(entry => {
       const coordinate = entry.selector?.inputTokens;
-      return entry.selector?.serviceTier === undefined && typeof coordinate === 'object' && coordinate.operator === 'gt' && coordinate.value === 272000;
+      return entry.selector?.serviceTier === undefined && typeof coordinate === 'object' && 'operator' in coordinate && coordinate.operator === 'gt' && coordinate.value === 272000;
     }).length, 1);
   });
 }

@@ -83,7 +83,7 @@ test('model validation rejects duplicate selectors and conflicting threshold ope
       { selector: { inputTokens: { operator: 'gt', value: 16 } }, rates: { input_tokens: '2' } },
       { selector: { serviceTier: 'fast', inputTokens: { operator: 'gte', value: 16 } }, rates: { input_tokens: '3' } },
     ],
-  }), Error, 'overlapping equality scopes');
+  }), Error, 'overlapping pricing scopes');
 });
 
 test('model validation requires exactly one base entry and uses it as the rate-field reference', () => {
