@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import { createIRCollector } from '../../src/ir/collector.ts';
-import { IRAbsent } from '../../src/ir/types.ts';
+import { createIRCollector } from '../../src/ir/output/collector.ts';
+import { IRAbsent } from '../../src/ir/output/types.ts';
 
 describe('IR accumulator', () => {
   test('stores plain accumulated state without publication metadata', () => {

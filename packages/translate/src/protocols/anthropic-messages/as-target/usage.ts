@@ -1,4 +1,4 @@
-import type { IRUsage } from '../../../ir/types.ts';
+import type { IRUsage } from '../../../ir/output/types.ts';
 import { requireTokenCount } from '../../../shared/token-count.ts';
 import { type AnthropicMessagesUsageDeltaEx, splitAnthropicMessagesCacheCreationTokens } from '@floway-dev/protocols/anthropic-messages';
 import { splitInclusiveInputTokens } from '@floway-dev/protocols/common';

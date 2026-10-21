@@ -9,7 +9,7 @@ import type {
   IRInputUserContentPart,
   IRInputUserItem,
   IRInputUserTurn,
-} from '../../src/ir/input.ts';
+} from '../../src/ir/input/types.ts';
 
 // The input IR states no runtime behaviour yet; these assertions pin the shape
 // so a later reader or writer cannot widen it silently. Every construction is a

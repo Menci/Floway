@@ -19,7 +19,7 @@ import the source protocol's subpath and call
    functional names without another protocol name.
 5. **Output IR** — keep private types, its path schema, stream operations,
    validation, accumulation, operation paths, and native ordinal mapping under
-   `ir/`. Native SSE adapters
+   `ir/output/`, and the input model under `ir/input/`. Native SSE adapters
    belong to their protocol: `as-target/sse-from.ts` consumes upstream SSE and
    `as-source/sse-to.ts` emits client SSE with its sidecar. The return path is
    upstream SSE → IR SSE → client SSE with sidecar. IR stays internal to translate.
@@ -33,7 +33,9 @@ import the source protocol's subpath and call
 
 ## Current Production Subdirectories
 
-- `ir/` — output model, its path schema, and protocol-independent streaming state.
+- `ir/common/` — values both directions share: the JSON shape, `IRAbsent`, the error payload, text ranges.
+- `ir/input/` — the request conversation model and its segmentation.
+- `ir/output/` — the returned-stream model, its path schema, and protocol-independent streaming state.
 - `round-trip/` — authenticated assistant-turn sidecars, replay validation, and native stream coordination.
 - `protocols/anthropic-messages/as-source/` — interprets Messages requests and emits Messages SSE.
 - `protocols/anthropic-messages/as-target/` — maps requests to Messages and consumes Messages SSE.

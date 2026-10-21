@@ -1,26 +1,14 @@
-// The JSON value shape, declared once; IRValue adds the IRAbsent marker wherever a leaf may hold it.
+import type { IRAbsent } from '../common/absent.ts';
+import type { IRTextRange } from '../common/text-range.ts';
+
+export type { IRJSONObject, IRJSONValue } from '../common/json.ts';
+export type { IRErrorPayload } from '../common/error.ts';
+export type { IRTextRange } from '../common/text-range.ts';
+export { IRAbsent } from '../common/absent.ts';
+
+// The value shape of the output IR: JSON plus `IRAbsent` at any leaf that may be
+// determined-never-to-arrive.
 type IRValueOf<Extra> = Extra | null | boolean | number | string | readonly IRValueOf<Extra>[] | { readonly [key: string]: IRValueOf<Extra> };
-
-// All
-export type IRJSONValue = IRValueOf<never>;
-
-// All
-export type IRJSONObject = { readonly [key: string]: IRJSONValue };
-
-// The error fields upstream protocols agree on; each writer picks the ones its protocol defines.
-export interface IRErrorPayload {
-  readonly message: string;
-  readonly type?: string;
-  readonly code?: string | null;
-  readonly param?: string | null;
-  readonly provider_specific_fields?: Readonly<Record<string, unknown>>;
-}
-
-// All
-export const IRAbsent: unique symbol = Symbol('IRAbsent');
-
-// All
-export type IRAbsent = typeof IRAbsent;
 
 // All
 export type IRValue = IRValueOf<IRAbsent>;
@@ -126,7 +114,7 @@ export type IRSourceCitation = {
   readonly source_label?: string | null; // All
   readonly source_text?: string; // Messages, GenerateContent
   readonly source_page_range?: IRSourcePageRange; // Messages, GenerateContent
-  readonly output_text_range?: IRUTF16TextRange; // ChatCompletions, Responses, GenerateContent
+  readonly output_text_range?: IRTextRange; // ChatCompletions, Responses, GenerateContent
 } & (
   | {
     readonly source_kind: 'url' | 'document' | 'search_result'; // All
@@ -143,12 +131,6 @@ export type IRSourceCitation = {
 interface IRSourcePageRange {
   readonly start_one_based: number; // Messages, GenerateContent
   readonly end_one_based_exclusive: number; // Messages
-}
-
-// ChatCompletions, Responses, GenerateContent
-export interface IRUTF16TextRange {
-  readonly start: number; // ChatCompletions, Responses, GenerateContent
-  readonly end_exclusive: number; // ChatCompletions, Responses, GenerateContent
 }
 
 // ChatCompletions, Responses, GenerateContent

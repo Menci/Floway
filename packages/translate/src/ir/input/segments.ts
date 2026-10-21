@@ -1,4 +1,4 @@
-import type { IRInputTurn } from './input.ts';
+import type { IRInputTurn } from './types.ts';
 
 // A conversation translates in segments split at sidecar-resolved assistant
 // turns. Those turns are already native target structure, so a writer emits

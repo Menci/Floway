@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { createIRBuilder } from '../../../../src/ir/stream.ts';
+import { createIRBuilder } from '../../../../src/ir/output/stream.ts';
 import { flattenNamespaceTools } from '../../../../src/protocols/openai-responses/as-source/namespace-tools.ts';
 import { openaiResponsesFromIR } from '../../../../src/protocols/openai-responses/as-source/sse-to.ts';
 import { appendField, collectContentViews, createReferenceBuilder, createFieldState, createReferenceFinalizer } from '../../../../src/round-trip/reference/reference-builder.ts';

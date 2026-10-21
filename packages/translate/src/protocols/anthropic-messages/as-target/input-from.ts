@@ -6,7 +6,7 @@ import type {
   IRInputTextPart,
   IRInputToolResultContentPart,
   IRInputUserItem,
-} from '../../../ir/input.ts';
+} from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type {
   AnthropicMessagesAssistantInputContentBlock,
@@ -89,7 +89,6 @@ const toolResultContent = async (
   options: AnthropicMessagesFromIROptions,
 ): Promise<string | AnthropicMessagesToolResultContentBlock[]> => {
   if (typeof output === 'string') return output;
-  if (options.keepToolResultTextParts === false) return '';
   const blocks: AnthropicMessagesToolResultContentBlock[] = [];
   for (const part of output) {
     if (part.type === 'text') { blocks.push({ type: 'text', text: part.text }); continue; }
@@ -204,12 +203,6 @@ export interface AnthropicMessagesFromIROptions {
    * a GenerateContent source has always mapped an inline PDF to `document`.
    */
   readonly allowFileContent?: boolean;
-  /**
-   * Whether a tool result whose source carried text parts keeps them. The Chat
-   * Completions target of these routes has always dropped them, keeping only a
-   * string payload.
-   */
-  readonly keepToolResultTextParts?: boolean;
   readonly resolveImage?: AnthropicMessagesImageResolver;
 }
 

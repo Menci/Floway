@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
 
 import { collect, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, iterate } from './helpers.ts';
-import { createIRCollector } from '../../src/ir/collector.ts';
-import { consumeIRRecords, createIRBuilder } from '../../src/ir/stream.ts';
+import { createIRCollector } from '../../src/ir/output/collector.ts';
+import { consumeIRRecords, createIRBuilder } from '../../src/ir/output/stream.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 
 const initializeTextPart = (collector: ReturnType<typeof createIRCollector>, part: object): void => {

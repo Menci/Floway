@@ -11,7 +11,7 @@ import type {
   IRInputTurn,
   IRInputUserContentPart,
 
-} from '../../../ir/input.ts';
+} from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { OpenAIChatCompletionsContentPart, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 

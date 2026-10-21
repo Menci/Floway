@@ -9,7 +9,7 @@ import type {
   IRInputTurn,
   IRInputUserContentPart,
   IRInputUserItem,
-} from '../../../ir/input.ts';
+} from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type {
 

@@ -2,12 +2,12 @@ import { restoreNamespaceOutputItem, type NamespaceToolNames } from './namespace
 import { createRandomOpenAIResponsesResponseId } from './response-id.ts';
 import { collectOpenAIResponsesTextViews, computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
-import type { IRCollector } from '../../../ir/collector.ts';
-import { irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/operation-paths.ts';
-import { createIROrdinalMapper } from '../../../ir/ordinal-mapper.ts';
-import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/stream.ts';
-import { IRAbsent, type IR, type IRItem, type IRMessageItem, type IRSourceCitation, type IRTokenLogprob } from '../../../ir/types.ts';
-import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/unit-queue.ts';
+import type { IRCollector } from '../../../ir/output/collector.ts';
+import { irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/output/operation-paths.ts';
+import { createIROrdinalMapper } from '../../../ir/output/ordinal-mapper.ts';
+import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/output/stream.ts';
+import { IRAbsent, type IR, type IRItem, type IRMessageItem, type IRSourceCitation, type IRTokenLogprob } from '../../../ir/output/types.ts';
+import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/output/unit-queue.ts';
 import { appendContent, createContentState, type ContentState, type ContentStates } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';

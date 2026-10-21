@@ -1,5 +1,5 @@
 import { ContentReference, type AssistantTurnStateFor, type ContentReferenceSegment } from './assistant-turn.ts';
-import type { IRJSONObject } from '../../ir/types.ts';
+import type { IRJSONObject } from '../../ir/output/types.ts';
 import { parseJSONObject } from '../../shared/json/object.ts';
 import type { AssistantTurnByProtocol, AssistantTurnFor } from '../assistant-turn.ts';
 import type { TextPlacement, TextPlacementIndex } from '../text-groups.ts';

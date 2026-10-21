@@ -7,8 +7,8 @@ import {
   type IRPartHandle,
   type IRWriteHandle,
   type IRRelativePath,
-} from '../../../ir/stream.ts';
-import { IRAbsent, type IRErrorPayload, type IRSourceCitation } from '../../../ir/types.ts';
+} from '../../../ir/output/stream.ts';
+import { IRAbsent, type IRErrorPayload, type IRSourceCitation } from '../../../ir/output/types.ts';
 import { appendField, createFieldState, type FieldStates, type FieldState, type ReferencePieceId } from '../../../round-trip/reference/reference-builder.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';

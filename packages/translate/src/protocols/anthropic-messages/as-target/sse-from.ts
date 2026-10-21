@@ -1,7 +1,7 @@
 import type { AnthropicMessagesAssistantState } from './assistant-turn.ts';
 import { type AnthropicMessagesInputCounts, usageToIR } from './usage.ts';
-import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRRecord } from '../../../ir/stream.ts';
-import type { IRSourceCitation } from '../../../ir/types.ts';
+import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRRecord } from '../../../ir/output/stream.ts';
+import type { IRSourceCitation } from '../../../ir/output/types.ts';
 import { appendField, createFieldState, type FieldState, type FieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';

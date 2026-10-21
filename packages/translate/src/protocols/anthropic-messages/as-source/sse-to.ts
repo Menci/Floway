@@ -1,11 +1,11 @@
 import { collectAnthropicMessagesTextViews, computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
-import type { IRCollector } from '../../../ir/collector.ts';
-import { isIRItemPath, isIRPartPath, irPathKey } from '../../../ir/operation-paths.ts';
-import { createIROrdinalMapper } from '../../../ir/ordinal-mapper.ts';
-import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/stream.ts';
-import { IRAbsent, type IR, type IRErrorPayload, type IRJSONObject } from '../../../ir/types.ts';
-import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/unit-queue.ts';
+import type { IRCollector } from '../../../ir/output/collector.ts';
+import { isIRItemPath, isIRPartPath, irPathKey } from '../../../ir/output/operation-paths.ts';
+import { createIROrdinalMapper } from '../../../ir/output/ordinal-mapper.ts';
+import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/output/stream.ts';
+import { IRAbsent, type IR, type IRErrorPayload, type IRJSONObject } from '../../../ir/output/types.ts';
+import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/output/unit-queue.ts';
 import { appendContent, createContentState, type ContentState, type ContentStates } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';

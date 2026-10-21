@@ -2,8 +2,8 @@ import { expect, test, vi } from 'vitest';
 
 import { anthropicMessagesFromIR, collect, collectIR, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
 import { nativeResult } from './translation-cases.ts';
-import type { IRRecord } from '../../src/ir/stream.ts';
-import { IRAbsent } from '../../src/ir/types.ts';
+import type { IRRecord } from '../../src/ir/output/stream.ts';
+import { IRAbsent } from '../../src/ir/output/types.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 
 const chat = (delta: any, finish_reason: string | null = null) => eventFrame({ id: 'chatcmpl_lifecycle', model: 'served', created: 1, choices: [{ index: 0, delta, finish_reason }] } as any);

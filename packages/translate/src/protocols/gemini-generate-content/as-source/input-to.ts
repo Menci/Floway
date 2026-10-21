@@ -11,7 +11,7 @@ import type {
   IRInputTurn,
   IRInputUserContentPart,
   IRInputUserItem,
-} from '../../../ir/input.ts';
+} from '../../../ir/input/types.ts';
 import { warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';

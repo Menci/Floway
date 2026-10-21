@@ -1,5 +1,5 @@
-import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
-import type { IRInputTurn } from '../../../ir/input.ts';
+import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
+import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
 import { openaiResponsesFromIR } from '../../openai-responses/as-target/input-from.ts';

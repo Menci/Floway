@@ -1,9 +1,9 @@
 import { collectOpenAIChatCompletionsTextViews, computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
-import { irItemPath, irPartPath, irPathKey } from '../../../ir/operation-paths.ts';
-import { createIROrdinalMapper } from '../../../ir/ordinal-mapper.ts';
-import { consumeIRRecords, type IRRecord } from '../../../ir/stream.ts';
-import { IRAbsent, type IRErrorPayload, type IRItem, type IRMessageItem, type IRTokenLogprob } from '../../../ir/types.ts';
+import { irItemPath, irPartPath, irPathKey } from '../../../ir/output/operation-paths.ts';
+import { createIROrdinalMapper } from '../../../ir/output/ordinal-mapper.ts';
+import { consumeIRRecords, type IRRecord } from '../../../ir/output/stream.ts';
+import { IRAbsent, type IRErrorPayload, type IRItem, type IRMessageItem, type IRTokenLogprob } from '../../../ir/output/types.ts';
 import { appendContent, createContentState, type ContentStates, type ContentState } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';

@@ -1,5 +1,5 @@
-import { consumeIRRecords, createIRBuilder, type IRRecord } from '../../src/ir/stream.ts';
-import type { IR, IRItem } from '../../src/ir/types.ts';
+import { consumeIRRecords, createIRBuilder, type IRRecord } from '../../src/ir/output/stream.ts';
+import type { IR, IRItem } from '../../src/ir/output/types.ts';
 import { anthropicMessagesFromIR as anthropicMessagesFromIRProduction } from '../../src/protocols/anthropic-messages/as-source/sse-to.ts';
 import { irFromAnthropicMessages as irFromAnthropicMessagesProduction } from '../../src/protocols/anthropic-messages/as-target/sse-from.ts';
 import { geminiGenerateContentFromIR as geminiGenerateContentFromIRProduction } from '../../src/protocols/gemini-generate-content/as-source/sse-to.ts';

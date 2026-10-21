@@ -2,7 +2,7 @@ import { expect, test, vi } from 'vitest';
 
 import { anthropicMessagesFromIR, collectIR, collect, completeIR, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
 import { fixtureFrames, nativeResult } from './translation-cases.ts';
-import { createIRBuilder } from '../../src/ir/stream.ts';
+import { createIRBuilder } from '../../src/ir/output/stream.ts';
 import { translateToSourceEvents as messagesViaChat } from '../../src/protocols/anthropic-messages/via-openai-chat-completions/events.ts';
 import { buildTargetRequest as messagesRequestViaChat } from '../../src/protocols/anthropic-messages/via-openai-chat-completions/request.ts';
 import { translateToSourceEvents as messagesViaResponses } from '../../src/protocols/anthropic-messages/via-openai-responses/events.ts';

@@ -1,6 +1,6 @@
 import { ContentReference, type AssistantTurnStateFor, type ContentReferenceSegment, type ReferenceableAssistantTurnFor } from './assistant-turn.ts';
 import { createReferenceFinalizer, isFieldState, pairedChildren, type FieldState, type FieldStates, type ReferenceBuilder } from './reference-builder.ts';
-import type { IRJSONObject } from '../../ir/types.ts';
+import type { IRJSONObject } from '../../ir/output/types.ts';
 import { requireJSONObject } from '../../shared/json/object.ts';
 import { rawJSON } from '../../shared/json/raw-json.ts';
 import type { AssistantTurnByProtocol, AssistantTurnFor } from '../assistant-turn.ts';

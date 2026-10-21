@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { createIRBuilder } from '../../src/ir/stream.ts';
+import { createIRBuilder } from '../../src/ir/output/stream.ts';
 
 test('carries optional source part IDs on append operations', () => {
   const builder = createIRBuilder();

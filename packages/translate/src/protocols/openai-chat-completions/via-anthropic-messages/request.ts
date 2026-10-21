@@ -1,7 +1,7 @@
 import { klona } from 'klona/json';
 
-import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
-import type { IRInputTurn } from '../../../ir/input.ts';
+import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
+import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec, RemoteImageLoader } from '../../../types.ts';
@@ -89,9 +89,6 @@ export const buildTargetRequest = async (
       continue;
     }
     const translated = await anthropicMessagesFromIR({ turns: piece.turns }, piece.leading, {
-      // A Chat `tool` message's text-part array has always reached Messages as
-      // an empty payload; only its string form survives.
-      keepToolResultTextParts: false,
       resolveImage: async media => {
         if (media.source_kind === 'url') return await resolveImageUrlToAnthropicMessagesImage(media.url, options.loadRemoteImage);
         if (media.source_kind === 'file') return { type: 'image', source: { type: 'file', file_id: media.file_id } };

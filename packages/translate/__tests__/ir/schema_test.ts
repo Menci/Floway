@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { irEndedUnit, irItemPath, irPartPath, irRecordOwnerPaths, irUnitChain, irUnitPath, isIRAppendTarget, isIRItemPath, isIRAbsentTarget, isIRPartPath } from '../../src/ir/operation-paths.ts';
+import { irEndedUnit, irItemPath, irPartPath, irRecordOwnerPaths, irUnitChain, irUnitPath, isIRAppendTarget, isIRItemPath, isIRAbsentTarget, isIRPartPath } from '../../src/ir/output/operation-paths.ts';
 
 const root = {
   choices: [{

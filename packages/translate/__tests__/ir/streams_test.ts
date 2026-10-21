@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { anthropicMessagesFromIR, collectIR, collect, completeIR, events, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
-import { createIRBuilder } from '../../src/ir/stream.ts';
-import type { IRItem, IRJSONObject } from '../../src/ir/types.ts';
+import { createIRBuilder } from '../../src/ir/output/stream.ts';
+import type { IRItem, IRJSONObject } from '../../src/ir/output/types.ts';
 import { usageFromIR as messagesUsageFromIR } from '../../src/protocols/anthropic-messages/as-source/usage.ts';
 import { usageToIR as messagesUsageToIR } from '../../src/protocols/anthropic-messages/as-target/usage.ts';
 import { usageFromIR as responsesUsageFromIR } from '../../src/protocols/openai-responses/as-source/usage.ts';

@@ -1,4 +1,4 @@
-import type { IRUsage } from '../../../ir/types.ts';
+import type { IRUsage } from '../../../ir/output/types.ts';
 import { requireTokenCount } from '../../../shared/token-count.ts';
 import type { OpenAIChatCompletionsUsageEx } from '@floway-dev/protocols/openai-chat-completions';
 
