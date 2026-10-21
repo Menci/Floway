@@ -305,7 +305,7 @@ const zhHansCN = {
         delete: {
           title: '删除用户',
           message:
-              '删除 {{username}}？该用户的会话会被撤销，API 密钥将停止工作。此操作无法撤销。',
+              '删除 {{username}}？该用户的会话会被撤销，API 密钥将停止工作。',
         },
         createdDefaultKey: '每个新用户都会自动创建一个 Default API 密钥。',
       },
@@ -323,7 +323,7 @@ const zhHansCN = {
         members: { joined: '加入时间', count_other: '{{count, number}} 名成员', empty: '这个用户组还没有成员', allAdded: '所有用户都已加入该组', noMatches: '没有匹配的用户' },
         dialog: { createTitle: '新建用户组', editTitle: '编辑 {{name}}' },
         fields: { name: '名称', members: '成员', hue: '颜色' },
-        delete: { title: '删除用户组', message: '删除 {{name}}？该组的成员关系将被移除。' },
+        delete: { title: '删除用户组', message: '删除 {{name}}？' },
         toast: {
           create: { pending: '正在创建用户组 {{name}}', success: '已创建用户组 {{name}}' },
           edit: { pending: '正在保存用户组 {{name}}', success: '已保存用户组 {{name}}' },
@@ -339,7 +339,7 @@ const zhHansCN = {
         models: '模型',
         modelCount_other: '{{count, number}} 个模型',
         modelCountUnknown: '数量不可用',
-        emptyWarning: '未选择任何上游。启用限制时，将没有可用上游。',
+        emptyWarning: '未选择任何上游。',
       },
       apiKeys: {
         empty: '还没有 API 密钥。创建一个后即可调用 Floway。',
@@ -453,11 +453,11 @@ const zhHansCN = {
         agentSetup: { agent: 'Agent', accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', commandPending: '正在准备安装命令…', modelSelection: '模型选择', miscSettings: '杂项设置', selectKey: '请先在上方选择 API 密钥。', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', timedOut: '网关未在规定时间内响应。', retry: '重试', expires: '页面可见时链接会自动续期，离开后即过期。', providerName: 'Provider ID', defaultThinkingLevel: '默认思考强度', defaultThinkingHint: '作用于 Pi 的所有 provider。选择默认模型后，可选强度会按模型支持范围筛选。', unsupportedThinking: '此模型的思考选项数量超出 Pi 的支持范围。', keepExisting: '保留已有设置', maxRetries: '最大重试次数', piMaxRetriesHint: '0 表示关闭重试。留空会保留已有设置。作用于 Pi 的所有 provider，默认重试 3 次。', ompMaxRetriesHint: '0 表示关闭重试。留空会保留已有设置。作用于 OMP 的所有 provider，默认重试 10 次。', providerHint: '留空时使用 floway。每个 Floway 连接使用不同 ID，例如 floway-home 或 floway-work。可使用小写字母、数字、点、连字符和下划线。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '思考强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型。', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count, number}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接。', disableAutoMemory: '停用自动记忆', disableAutoMemoryHint: '禁止 Claude Code 读写其自动记忆目录。', disableAgentView: '停用 Agent 视图', disableAgentViewHint: '关闭后台 agent 与 agent 视图，包括 `claude agents`、`--bg` 和 `/background`。', piModelHint: '设置 Pi 的启动模型，作用于所有 provider。Floway 扩展会在启动和打开模型选择器时刷新模型，安装脚本会按需安装或更新 Pi。', ompModelHint: '设置 OMP 的启动模型，作用于所有 provider。OMP 启动时会加载 Floway 的当前模型列表，可使用 /floway-refresh 刷新。安装脚本会按需安装或更新 OMP。' },
         rotate: {
           title: '轮换 API 密钥',
-          message: '为 {{name}} 选择替换 API 密钥。轮换后旧 API 密钥会立即停止工作。',
+          message: '轮换 {{name}} 的 API 密钥？旧 API 密钥会立即停止工作。',
         },
         delete: {
           title: '删除 API 密钥',
-          message: '删除 API 密钥 {{name}}？此操作无法撤销，该 API 密钥会立即停止工作。',
+          message: '删除 API 密钥 {{name}}？该密钥会立即停止工作。',
         },
       },
       upstreams: {
@@ -543,7 +543,7 @@ const zhHansCN = {
         },
         delete: {
           title: '删除上游',
-          message: '删除上游 {{name}}？此操作无法撤销。',
+          message: '删除上游 {{name}}？',
         },
         toast: {
           reload: { pending: '正在刷新上游' },
@@ -882,7 +882,7 @@ const zhHansCN = {
           delete: '删除手动模型',
           deleteNamed: '删除手动模型 {{name}}',
           deleteTitle: '删除模型',
-          deleteMessage: '删除 {{name}}？此操作无法撤销。',
+          deleteMessage: '删除 {{name}}？',
           deleteConfirm: '删除模型',
         },
         quotaUsedPercent: '已用{{percent, number}}%',
@@ -938,7 +938,7 @@ const zhHansCN = {
             empty: '此 ChatGPT 订阅当前没有可用的重置卡。',
             status: { available: '可用', expired: '已过期', redeemed: '已兑换', redeeming: '兑换中' },
             confirmTitle: '使用这张重置卡？',
-            confirmMessage: '现在使用“{{title}}”？这会重置符合条件的 Codex 限额窗口，且无法撤销。',
+            confirmMessage: '现在使用“{{title}}”？这会重置符合条件的 Codex 限额窗口。',
             refreshWarning: '重置卡已处理，但 Floway 未能刷新所有详情。请刷新重置卡以查看当前状态。',
             loadError: '无法加载重置卡，请再次刷新。',
             redeemError: '无法确认重置结果。重试将安全地检查同一次兑换。',
@@ -1084,7 +1084,7 @@ const zhHansCN = {
         },
         fetchDirty: {
           title: '保存修改后获取模型？',
-          message: '模型发现使用已保存的上游配置。保存这些修改后即可获取模型。',
+          message: '模型发现使用已保存的上游配置。',
           saveAndFetch: '保存并获取模型',
           unsavedCredential: '请先通过对应的提供方控件应用凭据修改，再保存。',
         },
@@ -1268,7 +1268,7 @@ const zhHansCN = {
           label: '显示生效权限',
           activeAssignment: '生效的分配规则',
           checked: '选中：',
-          checkedDescription: '显示该用户或用户组在当前范围、从祖先范围继承、或由通配符匹配的所有权限分配规则，并高亮显示生效权限。',
+          checkedDescription: '显示该用户或用户组在当前范围、从祖先范围继承、或由通配符匹配的所有权限分配规则。',
           unchecked: '未选中：',
           uncheckedDescription: '显示该用户或用户组在当前范围以及子范围下的所有权限分配规则。',
         },
@@ -1305,7 +1305,7 @@ const zhHansCN = {
           delete: { pending: '正在删除规则', success: '已删除规则' },
         },
         validation: { scopeRequired: '请选择范围。', emptyRecord: '至少将一项权限设置为开、关、仅模型或完整。' },
-        delete: { title: '删除规则', groupTitle: '删除用户组规则', message: '删除 {{name}} 的这条规则？继承的权限将生效。', groupMessage: '删除 {{name}} 的这条规则？它适用于整个用户组。' },
+        delete: { title: '删除规则', groupTitle: '删除用户组规则', message: '删除 {{name}} 的这条规则？', groupMessage: '删除 {{name}} 的这条规则？它适用于整个用户组。' },
         empty: '没有规则',
         administratorBypass: '管理员拥有完整权限，不受权限规则限制。',
       },
@@ -1364,7 +1364,7 @@ const zhHansCN = {
         },
         confirmTitle: '确认导入',
         confirmMessage:
-            '将从所选备份文件导入数据。在替换模式下，所有现有数据将被首先删除。是否继续？',
+            '将首先删除所有现有数据。',
       },
       searchConfig: {
         heading: '搜索提供商',
@@ -1407,7 +1407,7 @@ const zhHansCN = {
         metadata: { heading: '手动声明元数据', description: '/v1/models 为此别名报告的能力', manual: '手动声明元数据', limits: 'Token 限制', context: '上下文窗口', prompt: '提示 token', output: '输出 token', imageInput: '图像输入', imageDetailOriginal: '图像细节“original”', reasoning: '思考', effortEnabled: '强度级别', budgetEnabled: '预算 token', adaptive: '自适应', mandatory: '强制思考', efforts: '支持的强度', effortsHint: '使用逗号分隔；保留顺序。', defaultEffort: '默认强度', minBudget: '最小预算', maxBudget: '最大预算' },
         warnings: { label: '别名警告', shadow: '别名 ID 会遮蔽真实模型 {{id}} {{display}}。', noTarget: '当前没有目标可解析到此 gateway 上的模型。', unknownTarget: '{{id}} 当前无法解析到已启用模型。', wrongKind: '{{id}} 是 {{actual}} 模型，但此别名类型为 {{expected}}。', notAdvertisedEffort: '目标未声明思考强度能力。', unsupportedEffort: '目标声明的强度为：{{values}}。', adaptiveBudgetConflict: '自适应思考不能与固定预算同时使用。', notAdvertisedBudget: '目标未声明思考预算能力。', budgetBelow: '低于目标最小值（{{value, number}}）。', budgetAbove: '高于目标最大值（{{value, number}}）。', notAdvertisedAdaptive: '目标未声明自适应思考能力。', ruleAdvisory: '一项或多项规则可能不受此目标支持。' },
         validation: { nameRequired: '请输入别名 ID。', duplicate: '已存在使用此 ID 的别名。', targetRequired: '请输入目标模型 ID。', budget: '思考预算必须是非负整数。', adaptiveBudget: '自适应思考不能与固定预算同时使用。', metadataNumber: '请输入 0 或更大的整数 token 数。', metadataRange: '最大预算必须大于或等于最小预算。' },
-        delete: { title: '删除别名', message: '删除别名 {{name}}？此操作无法撤销。' },
+        delete: { title: '删除别名', message: '删除别名 {{name}}？' },
         toast: { save: { pending: '正在保存别名 {{name}}', success: '已保存别名 {{name}}' }, delete: { pending: '正在删除别名 {{name}}', success: '已删除别名 {{name}}' } },
         errors: { message: '无法完成别名操作：{{message}}', models: '模型目录不可用：{{message}}' },
       },
@@ -1495,7 +1495,7 @@ const zhHansCN = {
         },
         delete: {
           title: '删除代理',
-          message: '删除代理 {{name}}？此操作无法撤销。',
+          message: '删除代理 {{name}}？',
           conflict: '无法删除：代理正被上游引用。',
           conflictWithIds: '被引用的上游 ID：{{ids}}',
         },

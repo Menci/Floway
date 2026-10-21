@@ -317,7 +317,7 @@ const en = {
         delete: {
           title: 'Delete user',
           message:
-              'Delete {{username}}? Their sessions will be revoked and their API keys will stop working. This cannot be undone.',
+              'Delete {{username}}? Their sessions will be revoked and their API keys will stop working.',
         },
         createdDefaultKey: 'A Default API key is created with each new user.',
       },
@@ -336,7 +336,7 @@ const en = {
         members: { joined: 'Joined', count_one: '{{count, number}} member', count_other: '{{count, number}} members', empty: 'This group has no members', allAdded: 'All users are already members', noMatches: 'No matching users' },
         dialog: { createTitle: 'New group', editTitle: 'Edit {{name}}' },
         fields: { name: 'Name', members: 'Members', hue: 'Color' },
-        delete: { title: 'Delete group', message: 'Delete {{name}}? Its membership will be removed.' },
+        delete: { title: 'Delete group', message: 'Delete {{name}}?' },
         toast: {
           create: { pending: 'Creating group {{name}}', success: 'Created group {{name}}' },
           edit: { pending: 'Saving group {{name}}', success: 'Saved group {{name}}' },
@@ -353,7 +353,7 @@ const en = {
         modelCount_one: '{{count, number}} model',
         modelCount_other: '{{count, number}} models',
         modelCountUnknown: 'Count unavailable',
-        emptyWarning: 'No upstreams are selected. No upstreams will be available while this limit is on.',
+        emptyWarning: 'No upstreams are selected.',
       },
       apiKeys: {
         empty: 'No API keys yet. Create one to call Floway.',
@@ -475,12 +475,12 @@ const en = {
         rotate: {
           title: 'Rotate API Key',
           message:
-              'Choose a replacement for {{name}}. The old key stops working immediately.',
+              'Rotate {{name}}? The old key stops working immediately.',
         },
         delete: {
           title: 'Delete API Key',
           message:
-              'Delete key {{name}}? This cannot be undone and the key stops working immediately.',
+              'Delete key {{name}}? It stops working immediately.',
         },
       },
       upstreams: {
@@ -570,7 +570,7 @@ const en = {
         },
         delete: {
           title: 'Delete upstream',
-          message: 'Delete upstream {{name}}? This cannot be undone.',
+          message: 'Delete upstream {{name}}?',
         },
         toast: {
           reload: { pending: 'Refreshing upstreams' },
@@ -927,7 +927,7 @@ const en = {
           delete: 'Delete manual model',
           deleteNamed: 'Delete manual model {{name}}',
           deleteTitle: 'Delete model',
-          deleteMessage: 'Delete {{name}}? This cannot be undone.',
+          deleteMessage: 'Delete {{name}}?',
           deleteConfirm: 'Delete model',
         },
         quotaUsedPercent: '{{percent, number}}% used',
@@ -983,7 +983,7 @@ const en = {
             empty: 'No reset cards are available for this ChatGPT subscription.',
             status: { available: 'Available', expired: 'Expired', redeemed: 'Redeemed', redeeming: 'Redeeming' },
             confirmTitle: 'Use this reset card?',
-            confirmMessage: 'Use “{{title}}” now? This resets the eligible Codex rate-limit windows and cannot be undone.',
+            confirmMessage: 'Use “{{title}}” now? This resets the eligible Codex rate-limit windows.',
             refreshWarning: 'The card was processed, but Floway could not refresh all details. Refresh reset cards to check their current state.',
             loadError: 'Could not load reset cards. Try refreshing again.',
             redeemError: 'Could not confirm the reset. Retry to check the same redemption safely.',
@@ -1133,7 +1133,7 @@ const en = {
         },
         fetchDirty: {
           title: 'Save changes before fetching models?',
-          message: 'Model discovery uses the saved upstream configuration. Save these changes to fetch its models.',
+          message: 'Model discovery uses the saved upstream configuration.',
           saveAndFetch: 'Save and fetch models',
           unsavedCredential: 'Apply credential changes using the provider controls before saving.',
         },
@@ -1319,7 +1319,7 @@ const en = {
           label: 'Show effective',
           activeAssignment: 'Active assignment',
           checked: 'Checked:',
-          checkedDescription: 'Shows this user or group’s rules at the current scope, inherited from ancestors, or matched by wildcard patterns. Highlights effective permissions.',
+          checkedDescription: 'Shows this user or group’s rules at the current scope, inherited from ancestors, or matched by wildcard patterns.',
           unchecked: 'Unchecked:',
           uncheckedDescription: 'Shows this user or group’s rules at the current scope and its descendants.',
         },
@@ -1356,7 +1356,7 @@ const en = {
           delete: { pending: 'Deleting rule', success: 'Deleted rule' },
         },
         validation: { scopeRequired: 'Select a scope.', emptyRecord: 'Set at least one permission to On, Off, Models, or Full.' },
-        delete: { title: 'Delete rule', groupTitle: 'Delete group rule', message: 'Delete this rule for {{name}}? Inherited permissions will apply.', groupMessage: 'Delete this rule for {{name}}? It applies to the whole group.' },
+        delete: { title: 'Delete rule', groupTitle: 'Delete group rule', message: 'Delete this rule for {{name}}?', groupMessage: 'Delete this rule for {{name}}? It applies to the whole group.' },
         empty: 'No rules',
         administratorBypass: 'Administrators have full access and are not limited by access rules.',
       },
@@ -1428,7 +1428,7 @@ const en = {
         },
         confirmTitle: 'Confirm Import',
         confirmMessage:
-            'This will import data from the selected backup file. In replace mode, all existing data will be deleted first. Continue?',
+            'All existing data will be deleted first.',
       },
       searchConfig: {
         heading: 'Search Provider',
@@ -1481,7 +1481,7 @@ const en = {
         metadata: { heading: 'Announce metadata manually', description: 'Capabilities reported for this alias by /v1/models', manual: 'Announce metadata manually', limits: 'Token limits', context: 'Context window', prompt: 'Prompt tokens', output: 'Output tokens', imageInput: 'Image input', imageDetailOriginal: 'Image detail "original"', reasoning: 'Reasoning', effortEnabled: 'Effort levels', budgetEnabled: 'Budget tokens', adaptive: 'Adaptive', mandatory: 'Mandatory', efforts: 'Supported efforts', effortsHint: 'Comma-separated; order is preserved.', defaultEffort: 'Default effort', minBudget: 'Minimum budget', maxBudget: 'Maximum budget' },
         warnings: { label: 'Alias warning', shadow: 'Alias ID shadows the real model {{id}} {{display}}.', noTarget: 'No target currently resolves to a model on this gateway.', unknownTarget: '{{id}} does not currently resolve to an enabled model.', wrongKind: '{{id}} is a {{actual}} model, but this alias is {{expected}}.', notAdvertisedEffort: 'Target does not advertise reasoning effort.', unsupportedEffort: 'Target advertises effort levels: {{values}}.', adaptiveBudgetConflict: 'Adaptive reasoning cannot be combined with a fixed budget.', notAdvertisedBudget: 'Target does not advertise a reasoning budget.', budgetBelow: 'Below target minimum ({{value, number}}).', budgetAbove: 'Above target maximum ({{value, number}}).', notAdvertisedAdaptive: 'Target does not advertise adaptive reasoning.', ruleAdvisory: 'One or more rules may not be supported by this target.' },
         validation: { nameRequired: 'Enter an alias ID.', duplicate: 'An alias with this ID already exists.', targetRequired: 'Enter a target model ID.', budget: 'Reasoning budget must be a non-negative integer.', adaptiveBudget: 'Adaptive reasoning cannot be combined with a fixed budget.', metadataNumber: 'Enter a whole number of tokens, zero or greater.', metadataRange: 'Maximum budget must be greater than or equal to minimum budget.' },
-        delete: { title: 'Delete alias', message: 'Delete alias {{name}}? This cannot be undone.' },
+        delete: { title: 'Delete alias', message: 'Delete alias {{name}}?' },
         toast: { save: { pending: 'Saving alias {{name}}', success: 'Saved alias {{name}}' }, delete: { pending: 'Deleting alias {{name}}', success: 'Deleted alias {{name}}' } },
         errors: { message: 'Could not complete the alias operation: {{message}}', models: 'Model catalog unavailable: {{message}}' },
       },
@@ -1570,7 +1570,7 @@ const en = {
         },
         delete: {
           title: 'Delete proxy',
-          message: 'Delete proxy {{name}}? This cannot be undone.',
+          message: 'Delete proxy {{name}}?',
           conflict: 'Cannot delete: proxy is referenced by upstreams.',
           conflictWithIds: 'Referenced by upstream IDs: {{ids}}',
         },
