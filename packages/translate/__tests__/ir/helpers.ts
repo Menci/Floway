@@ -1,5 +1,5 @@
 import { consumeIRRecords, createIRBuilder, type IRRecord } from '../../src/ir/output/stream.ts';
-import type { IR, IRItem } from '../../src/ir/output/types.ts';
+import type { IR, IROutputItem } from '../../src/ir/output/types.ts';
 import { anthropicMessagesFromIR as anthropicMessagesFromIRProduction } from '../../src/protocols/anthropic-messages/as-source/sse-to.ts';
 import { irFromAnthropicMessages as irFromAnthropicMessagesProduction } from '../../src/protocols/anthropic-messages/as-target/sse-from.ts';
 import { geminiGenerateContentFromIR as geminiGenerateContentFromIRProduction } from '../../src/protocols/gemini-generate-content/as-source/sse-to.ts';
@@ -26,7 +26,7 @@ const writer = <Protocol extends 'anthropicMessages' | 'geminiGenerateContent' |
 });
 const namespaceToolNames = flattenNamespaceTools({ model: 'test', input: [], tools: [] }).names;
 
-// These ordinary IR fixtures use independent mock participants. Provenance is
+// These ordinary output IR fixtures use independent mock participants. Provenance is
 // exercised by the native-reader and public-route tests sharing one coordinator.
 const withoutProvenance = async function* (records: AsyncIterable<IRRecord>): AsyncGenerator<IRRecord> {
   for await (const record of records) {
@@ -53,7 +53,7 @@ export const openaiResponsesFromIR = (records: Parameters<typeof openaiResponses
   openaiResponsesFromIRProduction(records, { ...options, roundTrip: writer<'openaiResponses'>(), namespaceToolNames });
 export const geminiGenerateContentFromIR = (records: Parameters<typeof geminiGenerateContentFromIRProduction>[0], options: Omit<Parameters<typeof geminiGenerateContentFromIRProduction>[1], 'roundTrip'> = {}) =>
   geminiGenerateContentFromIRProduction(records, { ...options, roundTrip: writer<'geminiGenerateContent'>() });
-export const completeIR = (value: readonly IRItem[]): IRRecord[] => {
+export const completeIR = (value: readonly IROutputItem[]): IRRecord[] => {
   const b = createIRBuilder();
   b.choice(0);
   b.assign(['model'], 'model');
@@ -105,7 +105,7 @@ export const collectIR = async (records: AsyncIterable<IRRecord>): Promise<IR> =
   let state: IR = { choices: [] };
   for await (const value of consumeIRRecords(records)) {
     state = value.collector.state;
-    if (value.record.type === 'error') throw new Error('IR generation failed', { cause: value.record.error });
+    if (value.record.type === 'error') throw new Error('output IR generation failed', { cause: value.record.error });
   }
   return state;
 };

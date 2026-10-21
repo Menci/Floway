@@ -83,7 +83,7 @@ export const appendContent = (builder: ReferenceBuilder, content: ContentState, 
     builder.resolutions.set(partId, { contentId: content.contentId, start: offset, endExclusive: offset + piece.length });
     offset += piece.length;
   }
-  if (offset !== content.text.length) throw new Error('IR text and its original parts have different lengths');
+  if (offset !== content.text.length) throw new Error('output IR text and its original parts have different lengths');
 };
 
 export const isFieldState = (value: unknown): value is FieldState =>

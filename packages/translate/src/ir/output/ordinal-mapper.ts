@@ -8,7 +8,7 @@ export const createIROrdinalMapper = () => {
   let next = 0;
   const open = (path: IRPath): number => {
     const key = irPathKey(path);
-    if (ordinals.has(key)) throw new TypeError(`IR unit is already open: ${key}`);
+    if (ordinals.has(key)) throw new TypeError(`output IR unit is already open: ${key}`);
     const ordinal = next++;
     ordinals.set(key, ordinal);
     return ordinal;
@@ -16,7 +16,7 @@ export const createIROrdinalMapper = () => {
   const get = (path: IRPath): number => {
     const key = irPathKey(path);
     const ordinal = ordinals.get(key);
-    if (ordinal === undefined) throw new TypeError(`Unknown open IR unit: ${key}`);
+    if (ordinal === undefined) throw new TypeError(`Unknown open output IR unit: ${key}`);
     return ordinal;
   };
   const close = (path: IRPath): void => {

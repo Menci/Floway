@@ -121,7 +121,7 @@ const systemParts = (content: GeminiGenerateContentContent | undefined): IRInput
 };
 
 /**
- * One IR turn per source content. A target that keeps its own message
+ * One output IR turn per source content. A target that keeps its own message
  * boundaries (Messages) uses this so two adjacent GenerateContent contents do
  * not merge into one message.
  */
@@ -151,7 +151,7 @@ export const geminiGenerateContentContentsToIRTurns = (
 });
 
 /** Turn-level entry point so a pair can splice a resolved assistant turn. */
-/** Whether a turn carries a vendor-signed thought signature the IR cannot hold. */
+/** Whether a turn carries a vendor-signed thought signature the output IR cannot hold. */
 export const geminiGenerateContentReasoningId = (turnIndex: number, partIndex: number): string => `gemini_reasoning_${turnIndex}_${partIndex}`;
 
 export const geminiGenerateContentDropsReasoning = (turn: GeminiGenerateContentTurn): boolean => turn.role === 'assistant'
@@ -197,7 +197,7 @@ export const geminiGenerateContentInputToIR = (payload: GeminiGenerateContentPay
     for (const [index, content] of turn.items.entries()) {
       if (turn.role === 'assistant') {
         // A thought signature is a vendor-signed value with no cross-vendor
-        // meaning, so it never reaches the IR.
+        // meaning, so it never reaches the output IR.
         void warnDroppedUnrecognizedAssistantReasoning;
         const items = assistantItems(content, contentIndex + index, ids);
         turns.push({ role: 'assistant', items });

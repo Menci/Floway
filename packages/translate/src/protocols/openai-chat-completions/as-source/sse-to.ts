@@ -3,7 +3,7 @@ import { usageFromIR } from './usage.ts';
 import { irItemPath, irPartPath, irPathKey } from '../../../ir/output/operation-paths.ts';
 import { createIROrdinalMapper } from '../../../ir/output/ordinal-mapper.ts';
 import { consumeIRRecords, type IRRecord } from '../../../ir/output/stream.ts';
-import { IRAbsent, type IRErrorPayload, type IRItem, type IRMessageItem, type IRTokenLogprob } from '../../../ir/output/types.ts';
+import { IRAbsent, type IRErrorPayload, type IROutputItem, type IROutputMessageItem, type IROutputTokenLogprob } from '../../../ir/output/types.ts';
 import { appendContent, createContentState, type ContentStates, type ContentState } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
@@ -28,19 +28,19 @@ const irChatError = (error: IRErrorPayload): IRErrorPayload => ({
 });
 
 interface OpenAIChatCompletionsSSEOutputOptions extends RoundTripOutputOptions<'openaiChatCompletions'> {
-  // Replay identity belongs to the newly emitted target audio, not the source IR content.
+  // Replay identity belongs to the newly emitted target audio, not the source output IR content.
   audioMetadata?: (choice: number) => { id: string; expires_at: number };
   continuousUsageStats?: boolean;
 }
 
 const tierFields = (tier?: string): { service_tier?: string } => tier === undefined ? {} : { service_tier: tier };
 
-type IRToolCallItem = Extract<IRItem, { type: 'function_call' | 'custom_tool_call' }>;
+type IRToolCallItem = Extract<IROutputItem, { type: 'function_call' | 'custom_tool_call' }>;
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const isIRItem = (value: unknown): value is IRItem => {
+const isIRItem = (value: unknown): value is IROutputItem => {
   if (!isRecord(value)) return false;
   switch (value.type) {
   case 'message': return Array.isArray(value.content);
@@ -51,7 +51,7 @@ const isIRItem = (value: unknown): value is IRItem => {
   }
 };
 
-const partType = (value: unknown): IRMessageItem['content'][number]['type'] | undefined => {
+const partType = (value: unknown): IROutputMessageItem['content'][number]['type'] | undefined => {
   if (!isRecord(value)) return undefined;
   return value.type === 'text' || value.type === 'refusal' || value.type === 'image' || value.type === 'audio' ? value.type : undefined;
 };
@@ -71,7 +71,7 @@ const logprobMetadata = (value: unknown): LogprobMetadata | undefined => {
   return undefined;
 };
 
-const isIRTokenLogprob = (value: unknown): value is IRTokenLogprob =>
+const isIRTokenLogprob = (value: unknown): value is IROutputTokenLogprob =>
   isRecord(value) && typeof value.token === 'string' && typeof value.logprob === 'number';
 
 // Emitted deltas carry the assistant extension fields (reasoning, annotations) beside the standard ones.
@@ -88,8 +88,8 @@ export const openaiChatCompletionsFromIR = async function* (
   const startedChoices = new Set<number>();
   const tools = new Map<number, ReturnType<typeof createIROrdinalMapper>>();
   const startedAudio = new Set<string>();
-  const itemTypes = new Map<string, IRItem['type']>();
-  const partTypes = new Map<string, IRMessageItem['content'][number]['type']>();
+  const itemTypes = new Map<string, IROutputItem['type']>();
+  const partTypes = new Map<string, IROutputMessageItem['content'][number]['type']>();
   const logprobRefusal = new Map<string, boolean>();
   const nativeAccumulators = new Map<number, ReturnType<typeof createOpenAIChatCompletionsEventAccumulator>>();
   const nativeAccumulator = (choice: number): ReturnType<typeof createOpenAIChatCompletionsEventAccumulator> => {
@@ -181,7 +181,7 @@ export const openaiChatCompletionsFromIR = async function* (
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;
     if (record.type === 'write' && record.path[0] === 'usage') usage = state.usage === undefined ? undefined : usageFromIR(state.usage);
     if (record.type === 'start') {
-      if (state.model === undefined) throw new TypeError('ChatCompletions output requires an IR model before start');
+      if (state.model === undefined) throw new TypeError('ChatCompletions output requires an output IR model before start');
       const id = options.id ?? record.id;
       metadata = {
         id: id === undefined || id === '' ? `chatcmpl-${crypto.randomUUID()}` : id,

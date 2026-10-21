@@ -41,7 +41,14 @@ const imageMedia = (part: Extract<OpenAIResponsesInputContent, { type: 'input_im
 const fileMedia = (part: Extract<OpenAIResponsesInputContent, { type: 'input_file' }>): IRInputMedia => {
   if (typeof part.file_id === 'string') return { source_kind: 'file', file_id: part.file_id };
   if (typeof part.file_url === 'string') return { source_kind: 'url', url: part.file_url };
-  if (typeof part.file_data === 'string') return { source_kind: 'base64', data: part.file_data };
+  if (typeof part.file_data === 'string') {
+    // `file_data` is either raw base64 or a data URL; a data URL also states the
+    // media type a target may need.
+    const dataUrl = DATA_URL.exec(part.file_data);
+    if (dataUrl === null) return { source_kind: 'base64', data: part.file_data };
+    const mediaType = dataUrl[1]?.trim();
+    return { source_kind: 'base64', ...(mediaType === undefined || mediaType === '' ? {} : { media_type: mediaType }), data: dataUrl[2] };
+  }
   throw new TranslatorInputError('An OpenAI Responses input_file requires file_id, file_url, or file_data.');
 };
 
@@ -161,7 +168,7 @@ export interface OpenAIResponsesInputIR {
   readonly namespaceToolNames: NamespaceToolNames;
 }
 
-/** Whether a turn carries an encrypted reasoning carrier the IR cannot hold. */
+/** Whether a turn carries an encrypted reasoning carrier the output IR cannot hold. */
 export const openaiResponsesDropsReasoning = (turn: { readonly role: 'assistant' | 'bare'; readonly items: readonly CanonicalOpenAIResponsesInputItem[] }): boolean =>
   turn.items.some(item => item.type === 'reasoning' && isOpenAIResponsesEncryptedReasoning(item));
 

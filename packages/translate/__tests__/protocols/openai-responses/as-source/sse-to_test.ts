@@ -6,7 +6,7 @@ import { openaiResponsesFromIR } from '../../../../src/protocols/openai-response
 import { appendField, collectContentViews, createReferenceBuilder, createFieldState, createReferenceFinalizer } from '../../../../src/round-trip/reference/reference-builder.ts';
 import { type RoundTripWriter } from '../../../../src/round-trip/stream.ts';
 
-test('collects sparse namespace-restored Responses state from emitted IR atoms', async () => {
+test('collects sparse namespace-restored Responses state from emitted output IR atoms', async () => {
   const namespace = flattenNamespaceTools({
     model: 'model',
     input: [],

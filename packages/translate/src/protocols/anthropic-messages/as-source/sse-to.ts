@@ -118,7 +118,7 @@ export const anthropicMessagesFromIR = async function* (
     return value;
   };
 
-  // Queues the content blocks that the IR structures initialized by a record will become.
+  // Queues the content blocks that the output IR structures initialized by a record will become.
   const registerUnits = (record: IRRecord, state: IR): void => {
     if (record.type === 'write' && record.kind === 'initialize') {
       let path: IRPath | undefined;
@@ -154,7 +154,7 @@ export const anthropicMessagesFromIR = async function* (
     unit.pendingText?.delete(key);
   };
 
-  // Opens the waiting units in IR order, until one still lacks what its start event needs.
+  // Opens the waiting units in output IR order, until one still lacks what its start event needs.
   const openPendingUnits = (state: IR, collector: IRCollector): AnthropicMessagesStreamEventEx[] => {
     const pendingEvents: AnthropicMessagesStreamEventEx[] = [];
     while (pending.head !== undefined) {
@@ -223,7 +223,7 @@ export const anthropicMessagesFromIR = async function* (
     if (record.type === 'error') { yield emit({ type: 'error', error: irMessagesError(record.error) }); return; }
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;
     if (record.type === 'start') {
-      if (state.model === undefined) throw new TypeError('Messages output requires an IR model before start');
+      if (state.model === undefined) throw new TypeError('Messages output requires an output IR model before start');
       const id = options.id ?? record.id;
       metadata = { id: id === undefined || id === '' ? generateAnthropicId('msg') : id, model: state.model };
       yield emit({

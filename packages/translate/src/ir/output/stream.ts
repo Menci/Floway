@@ -1,6 +1,6 @@
 import { createIRCollector, type IRCollector } from './collector.ts';
 import { irItemPath, irPartPath, irPathKey, irUnitPath } from './operation-paths.ts';
-import type { IRErrorPayload, IRUsage, IRValue } from './types.ts';
+import type { IRErrorPayload, IROutputUsage, IRValue } from './types.ts';
 
 export type IRPath = readonly (string | number)[];
 export type IRWrite = Readonly<
@@ -50,7 +50,7 @@ export interface IRChoiceHandle extends IRWriteHandle {
 }
 
 export const createIRBuilder = (maxChoices = 1) => {
-  if (!Number.isSafeInteger(maxChoices) || maxChoices <= 0) throw new RangeError(`IR maxChoices must be a positive safe integer: ${maxChoices}`);
+  if (!Number.isSafeInteger(maxChoices) || maxChoices <= 0) throw new RangeError(`output IR maxChoices must be a positive safe integer: ${maxChoices}`);
   const collector = createIRCollector();
   const { state } = collector;
   let records: IRRecord[] = [];
@@ -100,12 +100,12 @@ export const createIRBuilder = (maxChoices = 1) => {
     current: subpath => collector.value(relativePath(path, subpath)),
   });
   // Usage arrives as cumulative snapshots, so each reported field replaces the previous one.
-  const usage = (fields: IRUsage): void => {
+  const usage = (fields: IROutputUsage): void => {
     if (state.usage === undefined) initialize(['usage'], {});
     for (const [key, value] of Object.entries(fields)) assign(['usage', key], value);
   };
   const choice = (index: number): IRChoiceHandle => {
-    if (!Number.isSafeInteger(index) || index < 0 || index >= maxChoices) throw new RangeError(`IR choice index exceeds the configured choice count: ${index}`);
+    if (!Number.isSafeInteger(index) || index < 0 || index >= maxChoices) throw new RangeError(`output IR choice index exceeds the configured choice count: ${index}`);
     while (choices.size <= index) {
       const choiceIndex = choices.size;
       const path = irUnitPath('choice', choiceIndex);
@@ -183,15 +183,15 @@ export const consumeIRRecords = async function* (records: AsyncIterable<IRRecord
   let started = false;
   let finished = false;
   for await (const record of records) {
-    if (finished) throw new Error('IR record arrived after finish');
+    if (finished) throw new Error('output IR record arrived after finish');
     if (record.type === 'write') {
       collector.apply(record);
     } else {
       if (record.type === 'start') {
-        if (started) throw new Error('Duplicate IR start');
+        if (started) throw new Error('Duplicate output IR start');
         started = true;
       } else if (record.type === 'finish') {
-        if (!started) throw new Error('IR finish arrived before start');
+        if (!started) throw new Error('output IR finish arrived before start');
         finished = true;
       } else if (record.type === 'error') {
         finished = true;
@@ -200,5 +200,5 @@ export const consumeIRRecords = async function* (records: AsyncIterable<IRRecord
     }
     yield { record, collector };
   }
-  if (!finished) throw new Error('IR stream ended without finish');
+  if (!finished) throw new Error('output IR stream ended without finish');
 };

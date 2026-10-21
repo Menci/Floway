@@ -1,7 +1,7 @@
 import type { AnthropicMessagesAssistantState } from './assistant-turn.ts';
 import { type AnthropicMessagesInputCounts, usageToIR } from './usage.ts';
 import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRRecord } from '../../../ir/output/stream.ts';
-import type { IRSourceCitation } from '../../../ir/output/types.ts';
+import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
 import { appendField, createFieldState, type FieldState, type FieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';
@@ -15,7 +15,7 @@ import {
 } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
-const messagesCitationToIR = (citation: AnthropicMessagesTextCitation): IRSourceCitation | undefined => {
+const messagesCitationToIR = (citation: AnthropicMessagesTextCitation): IROutputSourceCitation | undefined => {
   const isSearchLocation = citation.type === 'web_search_result_location' || citation.type === 'search_result_location';
   const source = citation.type === 'web_search_result_location' ? citation.url
     : citation.type === 'search_result_location' ? citation.source : citation.file_id ?? undefined;
@@ -31,10 +31,10 @@ const messagesCitationToIR = (citation: AnthropicMessagesTextCitation): IRSource
     ...(citation.type === 'page_location'
       ? { source_page_range: { start_one_based: citation.start_page_number, end_one_based_exclusive: citation.end_page_number } }
       : {}),
-  } as IRSourceCitation;
+  } as IROutputSourceCitation;
 };
 
-// Blocks that open no IR item; their content is not translated.
+// Blocks that open no output IR item; their content is not translated.
 const UNTRANSLATED_BLOCK_TYPES: readonly string[] = [
   'redacted_thinking',
   'server_tool_use',

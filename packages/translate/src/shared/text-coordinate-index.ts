@@ -141,11 +141,11 @@ export class TextCoordinateIndex {
   #utf16Range(range: IRTextRange): readonly [number, number] {
     if (!Number.isInteger(range.start) || !Number.isInteger(range.end_exclusive)
       || range.start < 0 || range.end_exclusive < range.start || range.end_exclusive > this.#utf16Length) {
-      throw new RangeError('IR range is outside text or splits a surrogate pair');
+      throw new RangeError('output IR range is outside text or splits a surrogate pair');
     }
     const start = this.#boundaries.get(range.start);
     const end = this.#boundaries.get(range.end_exclusive);
-    if (start === INVALID_BOUNDARY || end === INVALID_BOUNDARY) throw new RangeError('IR range is outside text or splits a surrogate pair');
+    if (start === INVALID_BOUNDARY || end === INVALID_BOUNDARY) throw new RangeError('output IR range is outside text or splits a surrogate pair');
     return [start, end];
   }
 }

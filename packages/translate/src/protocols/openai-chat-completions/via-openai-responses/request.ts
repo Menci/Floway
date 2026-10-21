@@ -50,7 +50,7 @@ export const buildTargetRequest = async (
   const instructions: string[] = [];
 
   // A resolved assistant turn is already native Responses structure, so it
-  // splits the conversation into IR segments around itself.
+  // splits the conversation into output IR segments around itself.
   const pieces: (IRInputTurn | IRInputResolvedTurn<readonly CanonicalOpenAIResponsesInputItem[]>)[] = [];
   for (const turn of partitionOpenAIChatCompletionsTurns(payload.messages)) {
     const roundTrip = turn.role === 'assistant'

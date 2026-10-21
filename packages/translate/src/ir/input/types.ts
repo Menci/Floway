@@ -1,7 +1,7 @@
 // Input-side Fit IR: one request's conversation, expressed once so every
 // `A via B` pair translates the same source semantics instead of re-deriving
 // them from a foreign wire shape. It is the counterpart of the returned-stream
-// IR in this directory and observes the same Fit rule: a concept belongs here
+// output IR in `ir/output/` and observes the same Fit rule: a concept belongs here
 // only when at least one translated pair can carry it into another protocol.
 // Native residual structure (encrypted reasoning, vendor signatures, hosted
 // tool calls, item identities) belongs to the authenticated sidecar and the
@@ -162,7 +162,7 @@ export type IRInputMedia =
 // opaque replay material are vendor-signed values with no cross-vendor
 // meaning; the authenticated sidecar exists for exactly those, so they never
 // enter the IR. `summary` and `content` stay separate even though most targets
-// concatenate them, matching the stream IR's decision.
+// concatenate them, matching the output IR's decision.
 //
 // Chat Completions is a target here but not a source: its reasoning text
 // aliases are provider extensions with no wire contract, so its reader cannot
@@ -189,7 +189,7 @@ export interface IRInputFunctionCallItem {
   // JSON text, never a parsed object. Chat Completions and Responses carry
   // arguments as strings that may be malformed, and a reader that parsed them
   // would have to invent a wrapper for invalid JSON. Each target parses at its
-  // own boundary with its own fallback, as the stream IR's writers do.
+  // own boundary with its own fallback, as the output IR's writers do.
   // Absent only when the source had no argument object at all, which is
   // distinct from an explicit `null` or `{}`.
   readonly arguments?: string; // All

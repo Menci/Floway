@@ -1,15 +1,15 @@
-import type { IRUsage } from '../../../ir/output/types.ts';
+import type { IROutputUsage } from '../../../ir/output/types.ts';
 import { requireTokenCount } from '../../../shared/token-count.ts';
 import { splitInclusiveOutputTokens } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentModalityTokenCount, GeminiGenerateContentUsageMetadata } from '@floway-dev/protocols/gemini-generate-content';
 
-export const usageFromIR = (usage: IRUsage): GeminiGenerateContentUsageMetadata => {
-  const count = (key: keyof IRUsage): number | undefined => usage[key] === undefined ? undefined : requireTokenCount(key, usage[key]);
+export const usageFromIR = (usage: IROutputUsage): GeminiGenerateContentUsageMetadata => {
+  const count = (key: keyof IROutputUsage): number | undefined => usage[key] === undefined ? undefined : requireTokenCount(key, usage[key]);
   const input = count('input_tokens_inclusive') ?? 0;
   const output = count('output_tokens_inclusive') ?? 0;
   const reasoning = count('reasoning_tokens');
   const split = splitInclusiveOutputTokens(output, reasoning);
-  const modalityTokens = (keys: readonly (readonly [modality: string, key: keyof IRUsage])[]): GeminiGenerateContentModalityTokenCount[] =>
+  const modalityTokens = (keys: readonly (readonly [modality: string, key: keyof IROutputUsage])[]): GeminiGenerateContentModalityTokenCount[] =>
     keys.flatMap(([modality, key]) => usage[key] === undefined ? [] : [{ modality, tokenCount: requireTokenCount(key, usage[key]) }]);
   const promptDetails = modalityTokens([['AUDIO', 'input_audio_tokens'], ['IMAGE', 'input_image_tokens'], ['TEXT', 'input_text_tokens']]);
   const candidatesDetails = modalityTokens([['AUDIO', 'output_audio_tokens'], ['TEXT', 'output_text_tokens']]);

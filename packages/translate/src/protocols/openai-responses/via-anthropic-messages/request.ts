@@ -137,7 +137,7 @@ export const buildTargetRequest = async (
   const customToolNames = new Set<string>();
   const allowed = restrictAllowedTools(payload.tools, payload.tool_choice);
   const tools = translateTools(allowed.tools, customToolNames);
-  // Every system block comes from the IR writer, which hoists the leading run
+  // Every system block comes from the output IR writer, which hoists the leading run
   // and leaves later system messages inline.
   const systemBlocks: AnthropicMessagesTextBlockParam[] = [];
   const effort = payload.reasoning?.effort;
@@ -178,7 +178,7 @@ export const buildTargetRequest = async (
   const restoredMessages = new Set<AnthropicMessagesMessage>();
   const pieces: (IRInputTurn | IRInputResolvedTurn<AnthropicMessagesMessage>)[] = [];
   // `instructions` and a leading system input are separate prompt blocks, so
-  // each becomes its own IR system item and the writer hoists both.
+  // each becomes its own output IR system item and the writer hoists both.
   const instructions = openaiResponsesInstructionsToIR(payload.instructions);
   if (instructions !== undefined) pieces.push(instructions);
   for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
@@ -199,6 +199,9 @@ export const buildTargetRequest = async (
     if (piece.kind === 'resolved') { irMessages.push(piece.turn); continue; }
     const translated = await anthropicMessagesFromIR({ turns: piece.turns }, piece.leading, {
       separateAfterDroppedAssistant: true,
+      // Messages carries files as `document` blocks, so a Responses `input_file`
+      // is representable without loss.
+      allowFileContent: true,
       resolveImage: async media => {
         // Messages cannot reference a foreign file ID: the bytes must be
         // fetched, so a caller that supplied only an ID is an error.
@@ -227,7 +230,7 @@ export const buildTargetRequest = async (
     ...serviceTierFields,
   };
 
-  // The system blocks are complete only after the IR writer hoisted them.
+  // The system blocks are complete only after the output IR writer hoisted them.
   applyLastSystemCacheBreakpoint(systemBlocks);
   applyLastMessageCacheBreakpoint(target.messages.filter(message => !restoredMessages.has(message)));
   return { target, customToolNames, namespaceToolNames };

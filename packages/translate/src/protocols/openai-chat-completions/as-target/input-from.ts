@@ -13,7 +13,7 @@ import type {
   OpenAIChatCompletionsUserContentPart,
 } from '@floway-dev/protocols/openai-chat-completions';
 
-// Chat Completions names a container while the IR keeps MIME types.
+// Chat Completions names a container while the output IR keeps MIME types.
 const audioFormat = (mediaType: string): string => {
   if (mediaType === 'audio/wav') return 'wav';
   if (mediaType === 'audio/mpeg' || mediaType === 'audio/mp3') return 'mp3';
@@ -57,7 +57,7 @@ const userContent = (item: Extract<IRInputUserItem, { type: 'message' }>): strin
 };
 
 /**
- * A Chat `tool` message admits only text, while the IR tool result may carry
+ * A Chat `tool` message admits only text, while the output IR tool result may carry
  * images. The image parts are lifted into a user message that follows the
  * result, so a vision target still receives them.
  *

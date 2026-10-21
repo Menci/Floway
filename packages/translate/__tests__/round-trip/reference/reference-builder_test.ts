@@ -135,7 +135,7 @@ describe('ReferenceBuilder', () => {
     expect(changedFinalizer.referencedContentHashes).toEqual([]);
   });
 
-  it('resolves every original SSE atom within one merged IR append', async () => {
+  it('resolves every original SSE atom within one merged output IR append', async () => {
     const builder = createReferenceBuilder();
     const field = createFieldState('text');
     const first = appendField(builder, field, 'hel');

@@ -35,7 +35,7 @@ const imageBlock = (media: IRInputMedia): AnthropicMessagesImageBlock => ({ type
  * Messages accepts only base64, URL, or file IDs for an image source, but a
  * remote URL must sometimes be inlined because an upstream rejects fetching it.
  * The loader is target-owned, exactly like the output path's remote-image
- * adapter, so it stays out of the IR value.
+ * adapter, so it stays out of the output IR value.
  *
  * A URL the loader cannot resolve is dropped instead of failing the request:
  * the prompt remains usable and the caller sees no image rather than an error.
@@ -157,7 +157,7 @@ const parseArguments = (argumentsJson: string): Record<string, unknown> | null =
   }
 };
 
-// Messages keeps tool results inside a user message, so consecutive IR tool
+// Messages keeps tool results inside a user message, so consecutive output IR tool
 // results collapse into one message and interleaved user content stays ordered
 // inside it.
 const appendUserBlocks = (messages: AnthropicMessagesMessage[], blocks: AnthropicMessagesUserContentBlock[]): void => {

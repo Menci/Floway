@@ -1,11 +1,11 @@
-import type { IRUsage } from '../../../ir/output/types.ts';
+import type { IROutputUsage } from '../../../ir/output/types.ts';
 import { requireTokenCount } from '../../../shared/token-count.ts';
 import { splitInclusiveInputTokens } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsUsageEx } from '@floway-dev/protocols/openai-chat-completions';
 
-export const usageToIR = (usage: Partial<OpenAIChatCompletionsUsageEx>): IRUsage => {
-  const result: Partial<Record<keyof IRUsage, number>> = {};
-  const put = (key: keyof IRUsage, value: number | undefined | null): void => { if (value != null) result[key] = requireTokenCount(key, value); };
+export const usageToIR = (usage: Partial<OpenAIChatCompletionsUsageEx>): IROutputUsage => {
+  const result: Partial<Record<keyof IROutputUsage, number>> = {};
+  const put = (key: keyof IROutputUsage, value: number | undefined | null): void => { if (value != null) result[key] = requireTokenCount(key, value); };
   put('input_tokens_inclusive', usage.prompt_tokens);
   put('output_tokens_inclusive', usage.completion_tokens);
   put('total_tokens', usage.total_tokens);
