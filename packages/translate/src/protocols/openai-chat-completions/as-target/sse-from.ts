@@ -7,8 +7,8 @@ import {
   type IRPartHandle,
   type IRWriteHandle,
   type IRRelativePath,
-} from '../../../ir/stream.ts';
-import { IRAbsent, type IRErrorPayload, type IRSourceCitation } from '../../../ir/types.ts';
+} from '../../../ir/output/stream.ts';
+import { IRAbsent, type IRErrorPayload, type IROutputSourceCitation } from '../../../ir/output/types.ts';
 import { appendField, createFieldState, type FieldStates, type FieldState, type ReferencePieceId } from '../../../round-trip/reference/reference-builder.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
@@ -231,7 +231,7 @@ export const irFromOpenAIChatCompletions = async function* (
     // Only the message that is still open can receive citations; earlier parts already ended.
     const openSegments = state.message?.isOpen === true ? state.textSegments.filter(segment => segment.item === state.message) : [];
     for (const segment of openSegments) {
-      const converted: IRSourceCitation[] = citations.flatMap(({ annotation, range }) => {
+      const converted: IROutputSourceCitation[] = citations.flatMap(({ annotation, range }) => {
         const start = Math.max(range.start, segment.start);
         const end = Math.min(range.end_exclusive, segment.end);
         if (start >= end) return [];

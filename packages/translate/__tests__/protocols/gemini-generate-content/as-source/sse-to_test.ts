@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { createIRBuilder } from '../../../../src/ir/stream.ts';
+import { createIRBuilder } from '../../../../src/ir/output/stream.ts';
 import { geminiGenerateContentFromIR } from '../../../../src/protocols/gemini-generate-content/as-source/sse-to.ts';
 import { appendField, collectContentViews, createReferenceBuilder, createFieldState, createReferenceFinalizer } from '../../../../src/round-trip/reference/reference-builder.ts';
 import { type RoundTripWriter } from '../../../../src/round-trip/stream.ts';

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import type { IRRecord } from '../../../../src/ir/stream.ts';
+import type { IRRecord } from '../../../../src/ir/output/stream.ts';
 import type { OpenAIChatCompletionsInputAssistantTurn } from '../../../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
 import { irFromOpenAIChatCompletions } from '../../../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
 import { appendContent, collectContentViews, createContentState, createReferenceBuilder } from '../../../../src/round-trip/reference/reference-builder.ts';
@@ -97,7 +97,7 @@ const traceTools = async (frames: ReturnType<typeof chunk>[], options: { prefix?
   return { turn, fieldState, appends, finalized };
 };
 
-test('keeps merged pre-name arguments in one IR append with every original atom ID', async () => {
+test('keeps merged pre-name arguments in one output IR append with every original atom ID', async () => {
   const result = await traceTools([
     chunk([{ index: 0, delta: { tool_calls: [{ index: 0, id: 'call', type: 'function', function: { arguments: '{"x":' } }] }, finish_reason: null }]),
     chunk([{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '1}' } }] }, finish_reason: null }]),

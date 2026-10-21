@@ -1,13 +1,15 @@
 import { klona } from 'klona/json';
 
-import { openaiChatCompletionsContentToOpenAIResponsesInputContent, openaiChatCompletionsContentToText } from './content.ts';
+import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
+import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
-import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
+import { openaiResponsesEnvelopeFromIR, openaiResponsesFromIR } from '../../openai-responses/as-target/input-from.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
-import { collectOpenAIChatCompletionsReplayContents, hasOpenAIChatCompletionsReasoning, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
-import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import { openaiChatCompletionsEnvelopeToIR, openaiChatCompletionsCallKinds, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/input-to.ts';
+import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
+import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
+import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 const translateChatTools = (tools?: OpenAIChatCompletionsTool[] | null): OpenAIResponsesTool[] =>
   tools?.length
@@ -36,144 +38,43 @@ const translateChatToolChoice = (choice: NonNullable<OpenAIChatCompletionsPayloa
   };
 };
 
-const translateAssistantContent = (message: OpenAIChatCompletionsAssistantMessage): OpenAIResponsesInputContent[] => {
-  const content: OpenAIResponsesInputContent[] = [];
-  let hasRefusalPart = false;
-
-  if (typeof message.content === 'string') {
-    if (message.content) content.push({ type: 'output_text', text: message.content });
-  } else if (Array.isArray(message.content)) {
-    for (const part of message.content) {
-      if (part.type === 'text') content.push({ type: 'output_text', text: part.text });
-      else if (part.type === 'refusal') {
-        content.push({ type: 'refusal', refusal: part.refusal });
-        hasRefusalPart = true;
-      }
-    }
-  }
-
-  if (message.refusal !== undefined && message.refusal !== null && !hasRefusalPart) {
-    content.push({ type: 'refusal', refusal: message.refusal });
-  }
-
-  return content;
-};
-
 export const buildTargetRequest = async (
   payload: OpenAIChatCompletionsPayload,
   codec: SidecarCodec,
 ): Promise<CanonicalOpenAIResponsesPayload> => {
-  const instructions: string[] = [];
-  const input: CanonicalOpenAIResponsesInputItem[] = [];
   const customToolCallIds = new Set<string>();
-  let hoistSystemPrefix = true;
+  const callKinds = openaiChatCompletionsCallKinds(payload);
 
-  const translateAssistantMessage = (message: OpenAIChatCompletionsAssistantMessage): void => {
-    hoistSystemPrefix = false;
-    if (hasOpenAIChatCompletionsReasoning(message)) {
-      warnDroppedUnrecognizedAssistantReasoning('openaiChatCompletions', 'openaiResponses');
-    }
-    const assistantContent = translateAssistantContent(message);
-    if (message.tool_calls?.length) {
-      if (assistantContent.length > 0) {
-        input.push({
-          type: 'message',
-          role: 'assistant',
-          content: assistantContent,
-        });
-      }
+  const input: CanonicalOpenAIResponsesInputItem[] = [];
+  const instructions: string[] = [];
 
-      for (const toolCall of message.tool_calls) {
-        if (toolCall.type === 'custom') {
-          customToolCallIds.add(toolCall.id);
-          input.push({ type: 'custom_tool_call', call_id: toolCall.id, ...toolCall.custom, status: 'completed' });
-          continue;
-        }
-        input.push({
-          type: 'function_call',
-          call_id: toolCall.id,
-          name: toolCall.function.name,
-          arguments: toolCall.function.arguments,
-          status: 'completed',
-        });
-      }
-
-      return;
-    }
-
-    input.push({
-      type: 'message',
-      role: 'assistant',
-      content: assistantContent.length > 0 ? assistantContent : '',
-    });
-  };
-
-  const translateNonAssistantMessages = (messages: Exclude<OpenAIChatCompletionsMessage, { role: 'assistant' }>[]): void => {
-    for (const message of messages) {
-      // Only the initial OpenAI Chat Completions `system` prefix maps cleanly to OpenAI Responses
-      // `instructions`; later `system` and `developer` turns are
-      // chronology-bearing input items.
-      if (hoistSystemPrefix && message.role === 'system') {
-        const text = openaiChatCompletionsContentToText(message.content);
-        if (text) instructions.push(text);
-        continue;
-      }
-
-      hoistSystemPrefix = false;
-
-      if (message.role === 'user') {
-        input.push({
-          type: 'message',
-          role: 'user',
-          content: openaiChatCompletionsContentToOpenAIResponsesInputContent(message.content),
-        });
-        continue;
-      }
-
-      if (message.role === 'system' || message.role === 'developer') {
-        input.push({
-          type: 'message',
-          role: message.role,
-          content: openaiChatCompletionsContentToOpenAIResponsesInputContent(message.content),
-        });
-        continue;
-      }
-
-      if (message.role !== 'tool') {
-        throw new TranslatorInputError(`Invalid role '${(message as { role: string }).role}'.`);
-      }
-
-      if (!message.tool_call_id) {
-        throw new TranslatorInputError("Missing required field 'tool_call_id' on a 'tool' role message.");
-      }
-
-      input.push({
-        type: customToolCallIds.has(message.tool_call_id) ? 'custom_tool_call_output' : 'function_call_output',
-        call_id: message.tool_call_id,
-        output: typeof message.content === 'string' ? message.content : JSON.stringify(message.content),
-      });
-    }
-  };
-
+  // A resolved assistant turn is already native Responses structure, so it
+  // splits the conversation into output IR segments around itself.
+  const pieces: (IRInputTurn | IRInputResolvedTurn<readonly CanonicalOpenAIResponsesInputItem[]>)[] = [];
   for (const turn of partitionOpenAIChatCompletionsTurns(payload.messages)) {
-    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('openaiChatCompletions', 'openaiResponses', turn.items[0], codec, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest, collectOpenAIChatCompletionsReplayContents);
-    if (!roundTrip) {
-      if (turn.role === 'assistant') translateAssistantMessage(turn.items[0]);
-      else translateNonAssistantMessages(turn.items);
-      continue;
-    }
-    hoistSystemPrefix = false;
-    input.push(...roundTrip.turn);
-    for (const item of roundTrip.turn) if (item.type === 'custom_tool_call') customToolCallIds.add(item.call_id);
+    const roundTrip = turn.role === 'assistant'
+      ? await roundTripAssistantTurn(
+          'openaiChatCompletions', 'openaiResponses', turn.items[0], codec,
+          findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest, collectOpenAIChatCompletionsReplayContents,
+        )
+      : undefined;
+    if (roundTrip !== undefined) { pieces.push({ kind: 'resolved', turn: roundTrip.turn }); continue; }
+    if (openaiChatCompletionsDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiChatCompletions', 'openaiResponses');
+    pieces.push(openaiChatCompletionsTurnToIR(turn, callKinds));
   }
 
-  const format = klona(payload.response_format);
-  if (format?.type === 'json_schema' && format.json_schema.schema === undefined) throw new TranslatorInputError('Cannot translate json_schema response format without a schema.');
-  const responseTextConfig = format == null ? undefined : {
-    format: format.type === 'json_schema'
-      ? { type: 'json_schema' as const, ...format.json_schema, schema: format.json_schema.schema! }
-      : format,
-  };
+  for (const piece of segmentIRInput(pieces)) {
+    if (piece.kind === 'resolved') {
+      input.push(...piece.turn);
+      for (const item of piece.turn) if (item.type === 'custom_tool_call') customToolCallIds.add(item.call_id);
+      continue;
+    }
+    const translated = openaiResponsesFromIR({ turns: piece.turns }, piece.leading, { compactUserText: true });
+    if (translated.instructions !== undefined) instructions.push(translated.instructions);
+    input.push(...translated.input);
+  }
+
+  const envelope = openaiResponsesEnvelopeFromIR(openaiChatCompletionsEnvelopeToIR(payload));
 
   const reasoningEffort = payload.reasoning_effort ?? undefined;
   const reasoning = reasoningEffort !== undefined ? { effort: reasoningEffort } : undefined;
@@ -182,9 +83,6 @@ export const buildTargetRequest = async (
     model: payload.model,
     input,
     ...(instructions.length > 0 ? { instructions: instructions.join('\n\n') } : {}),
-    ...(payload.temperature !== undefined ? { temperature: payload.temperature } : {}),
-    ...(payload.top_p !== undefined ? { top_p: payload.top_p } : {}),
-    ...(payload.max_tokens !== undefined ? { max_output_tokens: payload.max_tokens } : {}),
     ...(payload.tools !== undefined ? { tools: translateChatTools(payload.tools) } : {}),
     // Omit tool_choice without tools: xAI-backed upstreams reject this shape.
     // https://github.com/Wei-Shaw/sub2api/issues/4819
@@ -200,9 +98,9 @@ export const buildTargetRequest = async (
     ...(payload.store !== undefined ? { store: payload.store } : {}),
     ...(payload.parallel_tool_calls !== undefined ? { parallel_tool_calls: payload.parallel_tool_calls } : {}),
     ...(reasoning ? { reasoning } : {}),
-    ...(responseTextConfig !== undefined ? { text: responseTextConfig } : {}),
     ...(payload.prompt_cache_key !== undefined ? { prompt_cache_key: payload.prompt_cache_key } : {}),
     ...(payload.safety_identifier !== undefined ? { safety_identifier: payload.safety_identifier } : {}),
     ...(payload.service_tier !== undefined ? { service_tier: payload.service_tier } : {}),
+    ...envelope,
   };
 };

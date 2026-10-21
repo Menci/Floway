@@ -3,7 +3,7 @@ import type { IREvent, IRPath, IRRecord } from './stream.ts';
 
 // Everything here is derived from the schema in schema.ts. A path is resolved against the
 // schema, and the answers come from the traits of the node it lands on. Where the node
-// depends on which variant of a union the IR holds there, the variant is read from `root`
+// depends on which variant of a union the output IR holds there, the variant is read from `root`
 // (the accumulated IR), so `root` must already contain the structure the path goes through.
 
 export const irPathKey = (path: IRPath): string => JSON.stringify(path);
@@ -152,12 +152,12 @@ export const irUnitPath = (kind: IRUnitKind, ...indices: readonly number[]): IRP
   let template = unitTemplates.get(kind);
   if (template === undefined) {
     template = findUnitTemplate(irSchema, kind, []);
-    if (template === undefined) throw new TypeError(`The IR schema has no ${kind} unit`);
+    if (template === undefined) throw new TypeError(`The output IR schema has no ${kind} unit`);
     unitTemplates.set(kind, template);
   }
   let next = 0;
   const path = template.map(segment => segment === WILDCARD ? indices[next++] : segment);
-  if (next !== indices.length) throw new TypeError(`IR ${kind} paths take ${next} indices, got ${indices.length}`);
+  if (next !== indices.length) throw new TypeError(`output IR ${kind} paths take ${next} indices, got ${indices.length}`);
   return path;
 };
 

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { createIRBuilder } from '../../../../src/ir/stream.ts';
+import { createIRBuilder } from '../../../../src/ir/output/stream.ts';
 import { openaiChatCompletionsFromIR } from '../../../../src/protocols/openai-chat-completions/as-source/sse-to.ts';
 import { createReferenceBuilder, collectContentViews, createFieldState, createReferenceFinalizer, appendField } from '../../../../src/round-trip/reference/reference-builder.ts';
 import { type RoundTripWriter } from '../../../../src/round-trip/stream.ts';

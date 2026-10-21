@@ -276,3 +276,12 @@ test('allowed_tools retains both native callable kinds', async () => {
   });
   assertEquals(result.tool_choice, { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: 'lookup' }, { type: 'custom', name: 'edit' }] });
 });
+
+test.each([
+  { name: 'max_completion_tokens only', input: { max_completion_tokens: 64 }, expected: 64 },
+  { name: 'max_tokens only', input: { max_tokens: 32 }, expected: 32 },
+  { name: 'both, newer spelling wins', input: { max_tokens: 32, max_completion_tokens: 64 }, expected: 64 },
+])('buildTargetRequest forwards $name as max_output_tokens', async ({ input, expected }) => {
+  const result = await buildWithTestSidecar({ model: 'gpt-test', messages: [{ role: 'user', content: 'hi' }], ...input });
+  assertEquals(result.max_output_tokens, expected);
+});

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { IRJSONObject } from '../../../src/ir/types.ts';
+import type { IRJSONObject } from '../../../src/ir/output/types.ts';
 import { collectAnthropicMessagesTextViews } from '../../../src/protocols/anthropic-messages/as-source/round-trip.ts';
 import type { AnthropicMessagesReferenceableAssistantTurn } from '../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
 import { collectGeminiGenerateContentTextViews } from '../../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
@@ -135,7 +135,7 @@ describe('ReferenceBuilder', () => {
     expect(changedFinalizer.referencedContentHashes).toEqual([]);
   });
 
-  it('resolves every original SSE atom within one merged IR append', async () => {
+  it('resolves every original SSE atom within one merged output IR append', async () => {
     const builder = createReferenceBuilder();
     const field = createFieldState('text');
     const first = appendField(builder, field, 'hel');

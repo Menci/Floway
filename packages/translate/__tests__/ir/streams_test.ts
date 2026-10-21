@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { anthropicMessagesFromIR, collectIR, collect, completeIR, events, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
-import { createIRBuilder } from '../../src/ir/stream.ts';
-import type { IRItem, IRJSONObject } from '../../src/ir/types.ts';
+import { createIRBuilder } from '../../src/ir/output/stream.ts';
+import type { IROutputItem, IRJSONObject } from '../../src/ir/output/types.ts';
 import { usageFromIR as messagesUsageFromIR } from '../../src/protocols/anthropic-messages/as-source/usage.ts';
 import { usageToIR as messagesUsageToIR } from '../../src/protocols/anthropic-messages/as-target/usage.ts';
 import { usageFromIR as responsesUsageFromIR } from '../../src/protocols/openai-responses/as-source/usage.ts';
@@ -70,7 +70,7 @@ const translateChatFrames = async (nativeFrames: readonly any[]) => {
   };
 };
 
-describe('IR streaming', () => {
+describe('output IR streaming', () => {
   it.each([['ChatCompletions', chat], ['Responses', responses], ['Messages', messages]] as const)('normalizes %s without flattening source strings', async (_name, source) => {
     const value = await collectIR(source());
     expect(value.usage?.input_tokens_inclusive).toBe(11);
@@ -359,7 +359,7 @@ describe('IR streaming', () => {
     expect(result.output.map(item => item.type)).toEqual(['message', 'image_generation_call', 'message', 'reasoning']);
   });
 
-  it('marks ChatCompletions length termination incomplete and exposes IR errors', async () => {
+  it('marks ChatCompletions length termination incomplete and exposes output IR errors', async () => {
     const frames = await collect(irFromOpenAIChatCompletions(iterate([chatFrame([{ index: 0, delta: { content: 'text' }, finish_reason: 'length' }]), doneFrame()])));
     expect(frames.find(record => record.type === 'finish')).toMatchObject({ status: 'incomplete' });
     await expect(collectIR(iterate([{ type: 'error', error: { message: 'failure' } }]))).rejects.toThrow();
@@ -419,7 +419,7 @@ describe('IR streaming', () => {
     expect(result.output[0]).toMatchObject({ content: [{ logprobs: tokens }] });
   });
 
-  it.each<{ items: readonly IRItem[] }>([{ items: [] }, { items: [{ type: 'reasoning', content: ['thought'] }] }])('exposes invalid logprob item ownership %j', async ({ items }) => {
+  it.each<{ items: readonly IROutputItem[] }>([{ items: [] }, { items: [{ type: 'reasoning', content: ['thought'] }] }])('exposes invalid logprob item ownership %j', async ({ items }) => {
     const frames = completeIR(items);
     const end = frames.findIndex(record => record.type === 'choice_end');
     const logprobs = [
@@ -431,7 +431,7 @@ describe('IR streaming', () => {
     await expect(collect(openaiChatCompletionsFromIR(iterate(frames), options))).rejects.toThrow();
   });
 
-  it('uses the same lifecycle validation when collecting IR', async () => {
+  it('uses the same lifecycle validation when collecting output IR', async () => {
     for (const records of [[{ type: 'finish', status: 'completed' }], [{ type: 'start', id: 's', model: 'm' }, { type: 'start', id: 's', model: 'm' }, { type: 'finish', status: 'completed' }]]) {
       await expect(collectIR(iterate(records as any))).rejects.toThrow();
     }
@@ -477,8 +477,8 @@ describe('IR streaming', () => {
     ['Responses', openaiResponsesFromIR],
     ['Messages', anthropicMessagesFromIR],
     ['GenerateContent', geminiGenerateContentFromIR],
-  ] as const)('%s rejects IR start without a model', async (_name, adapter) => {
-    await expect(collect<unknown>(adapter(iterate([{ type: 'start', id: 'source' }] as any), options))).rejects.toThrow('requires an IR model');
+  ] as const)('%s rejects output IR start without a model', async (_name, adapter) => {
+    await expect(collect<unknown>(adapter(iterate([{ type: 'start', id: 'source' }] as any), options))).rejects.toThrow('requires an output IR model');
   });
 
 });

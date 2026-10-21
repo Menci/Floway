@@ -1,5 +1,5 @@
 import { ContentReference, type AssistantTurnStateFor, type ContentReferenceSegment } from './assistant-turn.ts';
-import type { IRJSONObject } from '../../ir/types.ts';
+import type { IRJSONObject } from '../../ir/output/types.ts';
 import { parseJSONObject } from '../../shared/json/object.ts';
 import type { AssistantTurnByProtocol, AssistantTurnFor } from '../assistant-turn.ts';
 import type { TextPlacement, TextPlacementIndex } from '../text-groups.ts';
@@ -83,7 +83,7 @@ export const appendContent = (builder: ReferenceBuilder, content: ContentState, 
     builder.resolutions.set(partId, { contentId: content.contentId, start: offset, endExclusive: offset + piece.length });
     offset += piece.length;
   }
-  if (offset !== content.text.length) throw new Error('IR text and its original parts have different lengths');
+  if (offset !== content.text.length) throw new Error('output IR text and its original parts have different lengths');
 };
 
 export const isFieldState = (value: unknown): value is FieldState =>

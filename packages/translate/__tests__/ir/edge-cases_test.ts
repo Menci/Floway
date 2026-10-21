@@ -2,7 +2,7 @@ import { expect, test, vi } from 'vitest';
 
 import { anthropicMessagesFromIR, collectIR, collect, completeIR, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
 import { fixtureFrames, nativeResult } from './translation-cases.ts';
-import { createIRBuilder } from '../../src/ir/stream.ts';
+import { createIRBuilder } from '../../src/ir/output/stream.ts';
 import { translateToSourceEvents as messagesViaChat } from '../../src/protocols/anthropic-messages/via-openai-chat-completions/events.ts';
 import { buildTargetRequest as messagesRequestViaChat } from '../../src/protocols/anthropic-messages/via-openai-chat-completions/request.ts';
 import { translateToSourceEvents as messagesViaResponses } from '../../src/protocols/anthropic-messages/via-openai-responses/events.ts';
@@ -63,7 +63,7 @@ test('ChatCompletions rejects generated content before any non-empty model', asy
   ])))).rejects.toThrow('before a non-empty model');
 });
 
-test('ChatCompletions role-only choices still require finish_reason without creating IR records', async () => {
+test('ChatCompletions role-only choices still require finish_reason without creating output IR records', async () => {
   const role = eventFrame({ id: 'chat_role', model: 'served', choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }] } as any);
   await expect(collectIR(irFromOpenAIChatCompletions(iterate([role])))).rejects.toThrow('ended without finish_reason');
 

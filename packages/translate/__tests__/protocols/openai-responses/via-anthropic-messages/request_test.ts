@@ -156,15 +156,16 @@ test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTa
   );
 });
 
-test('buildTargetRequest rejects file message content', async () => {
-  await assertRejects(
-    () => buildWithTestSidecar({
-      ...minimalPayload,
-      input: [{ type: 'message', role: 'user', content: [{ type: 'input_file', file_id: 'file_1' }] }],
-    }),
-    Error,
-    'input_file message content',
-  );
+test.each([
+  { name: 'file_id', part: { type: 'input_file' as const, file_id: 'file_1' }, source: { type: 'file', file_id: 'file_1' } },
+  { name: 'file_url', part: { type: 'input_file' as const, file_url: 'https://example.com/a.pdf' }, source: { type: 'url', url: 'https://example.com/a.pdf' } },
+  { name: 'file_data data URL', part: { type: 'input_file' as const, file_data: 'data:application/pdf;base64,JVBERi0=' }, source: { type: 'base64', media_type: 'application/pdf', data: 'JVBERi0=' } },
+])('buildTargetRequest maps input_file $name to a Messages document', async ({ part, source }) => {
+  const result = await buildWithTestSidecar({
+    ...minimalPayload,
+    input: [{ type: 'message', role: 'user', content: [part] }],
+  });
+  assertEquals(result.target.messages.at(-1), { role: 'user', content: [{ type: 'document', source }] });
 });
 
 test('buildTargetRequest rejects file assistant content', async () => {

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { createIRBuilder } from '../../src/ir/stream.ts';
+import { createIRBuilder } from '../../src/ir/output/stream.ts';
 
 test('write handles build unit paths and ensure fields once', () => {
   const builder = createIRBuilder();

@@ -1,10 +1,10 @@
 import { collectGeminiGenerateContentTextViews, computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
-import type { IRCollector } from '../../../ir/collector.ts';
-import { irItemPath, irPartPath, irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/operation-paths.ts';
-import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/stream.ts';
-import { IRAbsent, type IR, type IRErrorPayload, type IRJSONObject, type IRSourceCitation, type IRTokenLogprob } from '../../../ir/types.ts';
-import { createIRUnitQueue, createIRUnitRegistry, type IRUnitQueue } from '../../../ir/unit-queue.ts';
+import type { IRCollector } from '../../../ir/output/collector.ts';
+import { irItemPath, irPartPath, irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/output/operation-paths.ts';
+import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/output/stream.ts';
+import { IRAbsent, type IR, type IRErrorPayload, type IRJSONObject, type IROutputSourceCitation, type IROutputTokenLogprob } from '../../../ir/output/types.ts';
+import { createIRUnitQueue, createIRUnitRegistry, type IRUnitQueue } from '../../../ir/output/unit-queue.ts';
 import { appendContent, createContentState, type ContentStates, type ContentState as ReferenceContentState } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
@@ -185,7 +185,7 @@ export const geminiGenerateContentFromIR = async function* (
       : undefined;
   };
 
-  // Queues the units that the IR structures initialized by a record will become.
+  // Queues the units that the output IR structures initialized by a record will become.
   const registerUnits = (record: IRRecord, state: IR): void => {
     if (record.type === 'write' && record.kind === 'initialize') {
       const choice = record.path[1];
@@ -205,7 +205,7 @@ export const geminiGenerateContentFromIR = async function* (
     }
   };
 
-  // Opens each choice's waiting units in IR order, until one still lacks what its part needs.
+  // Opens each choice's waiting units in output IR order, until one still lacks what its part needs.
   const openPendingUnits = function* (record: IRRecord, state: IR, collector: IRCollector): Generator<EventFrame<GeminiGenerateContentStreamEvent>> {
     const endingChoice = record.type === 'choice_end' ? record : undefined;
     for (const [choice, queue] of queues) {
@@ -355,7 +355,7 @@ export const geminiGenerateContentFromIR = async function* (
     if (record.type === 'error') { yield eventFrame({ error: irGenerateContentError(record.error) }); return; }
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;
     if (record.type === 'start') {
-      if (state.model === undefined) throw new TypeError('GenerateContent output requires an IR model before start');
+      if (state.model === undefined) throw new TypeError('GenerateContent output requires an output IR model before start');
       const id = options.id ?? record.id;
       metadata = { id: id === undefined || id === '' ? crypto.randomUUID() : id, model: state.model };
       started = true;
@@ -430,14 +430,14 @@ export const geminiGenerateContentFromIR = async function* (
   }
 };
 
-const logprobsResult = (tokens: readonly IRTokenLogprob[]): NonNullable<GeminiGenerateContentCandidate['logprobsResult']> => ({
+const logprobsResult = (tokens: readonly IROutputTokenLogprob[]): NonNullable<GeminiGenerateContentCandidate['logprobsResult']> => ({
   chosenCandidates: tokens.map(token => ({ token: token.token, logProbability: token.logprob })),
   topCandidates: tokens.map(token => ({
     candidates: (token.top_logprobs ?? []).map(alternative => ({ token: alternative.token, logProbability: alternative.logprob })),
   })),
 });
 
-const groundingChunk = (citation: IRSourceCitation): GeminiGenerateContentGroundingChunk => {
+const groundingChunk = (citation: IROutputSourceCitation): GeminiGenerateContentGroundingChunk => {
   if (citation.source_kind === 'url') return { web: { uri: citation.source, title: citation.source_label ?? undefined } };
   return {
     retrievedContext: {

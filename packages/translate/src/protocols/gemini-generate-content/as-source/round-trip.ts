@@ -1,4 +1,4 @@
-import type { IRJSONObject } from '../../../ir/types.ts';
+import type { IRJSONObject } from '../../../ir/output/types.ts';
 import type { ReplayContent } from '../../../round-trip/reference/assistant-turn.ts';
 import type { EncodedRoundTripSidecar } from '../../../round-trip/resolve.ts';
 import { collectTextGroups, collectTextPlacementIndex, type TextContribution, type TextPlacementIndex } from '../../../round-trip/text-groups.ts';
