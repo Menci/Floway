@@ -17,6 +17,7 @@ import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 
 import { signalAbortReason } from './abort.ts';
 import { copy } from './bytes.ts';
+import { filterDistrustedRootCAs } from './distrusted-root-cas.ts';
 import type { DuplexStream } from './types.ts';
 
 let cryptoInstalled = false;
@@ -32,13 +33,18 @@ const ensureCrypto = (): void => {
 // PEM that should reach the userspace TLS trust set has to land in the
 // global *before* the first handshake. We push deduplicated by exact PEM
 // string; the library normalises whitespace internally when parsing.
+//
+// Runtime trust stores still carry roots the upstream root programs have
+// since distrusted, so additions pass through the same filter the bundled
+// list does. Without it, importing `tls.rootCertificates` would silently
+// re-trust an anchor the rest of the industry has dropped.
 interface TrustGlobals { TLS_ADDITIONAL_ROOT_CA_LIST?: string[] }
 export const addTrustedRootCAs = (pems: readonly string[]): void => {
   if (pems.length === 0) return;
   const g = globalThis as unknown as TrustGlobals;
   const list = (g.TLS_ADDITIONAL_ROOT_CA_LIST ??= []);
   const seen = new Set(list);
-  for (const pem of pems) {
+  for (const pem of filterDistrustedRootCAs(pems)) {
     if (seen.has(pem)) continue;
     seen.add(pem);
     list.push(pem);

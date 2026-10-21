@@ -1,5 +1,5 @@
 diff --git a/lib/crypto/webcrypto.js b/lib/crypto/webcrypto.js
-index 249b580e66ce6845e2375fbb68aca7767c4cbcfa..30e48fb6ce021544c09e5aa835efdee5022675f8 100644
+index 249b580..30e48fb 100644
 --- a/lib/crypto/webcrypto.js
 +++ b/lib/crypto/webcrypto.js
 @@ -246,7 +246,7 @@ export const webcryptoCrypto = {
@@ -61,7 +61,7 @@ index 249b580e66ce6845e2375fbb68aca7767c4cbcfa..30e48fb6ce021544c09e5aa835efdee5
  function getHashAlgorithm(sig) {
      if (sig.endsWith('SHA256')) {
 diff --git a/lib/make-tls-client.js b/lib/make-tls-client.js
-index 6dea9236436c5eb445d7d96a2df926103144d3b3..c2ef0bbf860d307d79764f14d8007145fe37d348 100644
+index c168ac3..da85c1f 100644
 --- a/lib/make-tls-client.js
 +++ b/lib/make-tls-client.js
 @@ -16,7 +16,7 @@ import { parseServerHello } from "./utils/parse-server-hello.js";
@@ -117,7 +117,7 @@ index 6dea9236436c5eb445d7d96a2df926103144d3b3..c2ef0bbf860d307d79764f14d8007145
                          break;
                      case SUPPORTED_RECORD_TYPE_MAP.FINISHED:
                          await processServerFinish(content);
-@@ -253,7 +271,7 @@ export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, l
+@@ -254,7 +272,7 @@ export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, l
                          });
                          logger.debug('verified server key share signature');
                          if (verifyServerCertificate && !certificatesVerified) {
@@ -126,7 +126,7 @@ index 6dea9236436c5eb445d7d96a2df926103144d3b3..c2ef0bbf860d307d79764f14d8007145
                              logger.debug('verified certificate chain');
                              certificatesVerified = true;
                          }
-@@ -528,7 +546,17 @@ export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, l
+@@ -529,7 +547,17 @@ export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, l
      }
      async function getKeyPair(keyType) {
          const algorithm = SUPPORTED_NAMED_CURVE_MAP[keyType].algorithm;
@@ -145,7 +145,7 @@ index 6dea9236436c5eb445d7d96a2df926103144d3b3..c2ef0bbf860d307d79764f14d8007145
          return { algorithm, keyPair: keyPairs[keyType] };
      }
      return {
-@@ -570,10 +598,10 @@ export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, l
+@@ -571,10 +599,10 @@ export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, l
              if (handshakeDone) {
                  throw new Error('Handshake already done');
              }
@@ -158,7 +158,7 @@ index 6dea9236436c5eb445d7d96a2df926103144d3b3..c2ef0bbf860d307d79764f14d8007145
                  host,
                  keysToShare: await Promise.all(namedCurves
                      .map(async (keyType) => {
-@@ -591,6 +619,15 @@ export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, l
+@@ -592,6 +620,15 @@ export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, l
                  signatureAlgorithms,
                  applicationLayerProtocols,
              });
@@ -175,7 +175,7 @@ index 6dea9236436c5eb445d7d96a2df926103144d3b3..c2ef0bbf860d307d79764f14d8007145
              if (opts?.psk) {
                  earlySecret = opts.psk.earlySecret;
 diff --git a/lib/types/x509.d.ts b/lib/types/x509.d.ts
-index 7291581cfd496c4e32c28078e2373ee05f49ceed..aa5281ba4b98b3dfd9e7661f01b0628442eddbce 100644
+index 7291581..aa5281b 100644
 --- a/lib/types/x509.d.ts
 +++ b/lib/types/x509.d.ts
 @@ -16,6 +16,7 @@ export type X509Certificate<T = any> = {
@@ -187,7 +187,7 @@ index 7291581cfd496c4e32c28078e2373ee05f49ceed..aa5281ba4b98b3dfd9e7661f01b06284
      getPublicKey(): CertificatePublicKey;
      /**
 diff --git a/lib/utils/additional-root-cas.js b/lib/utils/additional-root-cas.js
-index 269141c7eba8168a4cb4d7d0da5f3e1e0321a1de..308bb84d34173d74a57e580544c902b2623f259c 100644
+index 269141c..308bb84 100644
 --- a/lib/utils/additional-root-cas.js
 +++ b/lib/utils/additional-root-cas.js
 @@ -13,185 +13,4 @@ else {
@@ -376,8 +376,32 @@ index 269141c7eba8168a4cb4d7d0da5f3e1e0321a1de..308bb84d34173d74a57e580544c902b2
 ------END CERTIFICATE-----` // Sectigo Public Server Authentication CA DV R36
 -);
  export {};
+diff --git a/lib/utils/blocked-spki.d.ts b/lib/utils/blocked-spki.d.ts
+new file mode 100644
+index 0000000..7c9684e
+--- /dev/null
++++ b/lib/utils/blocked-spki.d.ts
+@@ -0,0 +1,2 @@
++export declare function setBlockedSPKIChecker(check: ((spki: Uint8Array) => boolean) | null): void;
++export declare function isBlockedSPKI(spki: Uint8Array): boolean;
+diff --git a/lib/utils/blocked-spki.js b/lib/utils/blocked-spki.js
+new file mode 100644
+index 0000000..c6cc4ca
+--- /dev/null
++++ b/lib/utils/blocked-spki.js
+@@ -0,0 +1,10 @@
++// SubjectPublicKeyInfo hashes that must never anchor a verified chain. The
++// policy lives with the caller: this module only stores the predicate it is
++// given, so the library ships no opinion about which keys are compromised.
++let isBlocked = () => false;
++export function setBlockedSPKIChecker(check) {
++    isBlocked = check || (() => false);
++}
++export function isBlockedSPKI(spki) {
++    return isBlocked(spki);
++}
 diff --git a/lib/utils/client-hello.js b/lib/utils/client-hello.js
-index 8ecb8226beb284d78c309a4ae5223ad3aa756ba1..fadda3ad356ffd427e573f23e3b36ff3309ecedc 100644
+index 8ecb822..fadda3a 100644
 --- a/lib/utils/client-hello.js
 +++ b/lib/utils/client-hello.js
 @@ -2,6 +2,7 @@ import { crypto } from "../crypto/index.js";
@@ -401,7 +425,7 @@ index 8ecb8226beb284d78c309a4ae5223ad3aa756ba1..fadda3ad356ffd427e573f23e3b36ff3
          packSessionTicketExtension(),
          packVersionsExtension(supportedProtocolVersions),
 diff --git a/lib/utils/generics.js b/lib/utils/generics.js
-index 4e2986ab30883f62e4c1ff3c283260032ca017f5..b380375ecb560416c513e6b35454c9c1d87cb008 100644
+index 4e2986a..b380375 100644
 --- a/lib/utils/generics.js
 +++ b/lib/utils/generics.js
 @@ -1,12 +1,15 @@
@@ -425,9 +449,29 @@ index 4e2986ab30883f62e4c1ff3c283260032ca017f5..b380375ecb560416c513e6b35454c9c1
  }
  export function xor(a, b) {
      const result = new Uint8Array(a.length);
+diff --git a/lib/utils/index.d.ts b/lib/utils/index.d.ts
+index f140aac..7db3567 100644
+--- a/lib/utils/index.d.ts
++++ b/lib/utils/index.d.ts
+@@ -15,4 +15,5 @@ export * from './mozilla-root-cas.ts';
+ export * from './session-ticket.ts';
+ export * from './wrapped-record.ts';
+ export * from './x509.ts';
++export * from "./blocked-spki.ts";
+ export * from './parse-client-hello.ts';
+diff --git a/lib/utils/index.js b/lib/utils/index.js
+index 1ae4bfd..d9cc94d 100644
+--- a/lib/utils/index.js
++++ b/lib/utils/index.js
+@@ -15,4 +15,5 @@ export * from "./mozilla-root-cas.js";
+ export * from "./session-ticket.js";
+ export * from "./wrapped-record.js";
+ export * from "./x509.js";
++export * from "./blocked-spki.js";
+ export * from "./parse-client-hello.js";
 diff --git a/lib/utils/ip.d.ts b/lib/utils/ip.d.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..b631a4ff25a023dc30a540fe737828234e6fdc36
+index 0000000..b631a4f
 --- /dev/null
 +++ b/lib/utils/ip.d.ts
 @@ -0,0 +1,7 @@
@@ -440,7 +484,7 @@ index 0000000000000000000000000000000000000000..b631a4ff25a023dc30a540fe73782823
 +};
 diff --git a/lib/utils/ip.js b/lib/utils/ip.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..31859d41861a7265847c51d578160269ec582983
+index 0000000..31859d4
 --- /dev/null
 +++ b/lib/utils/ip.js
 @@ -0,0 +1,106 @@
@@ -551,18 +595,20 @@ index 0000000000000000000000000000000000000000..31859d41861a7265847c51d578160269
 +    return groups;
 +}
 diff --git a/lib/utils/parse-certificate.js b/lib/utils/parse-certificate.js
-index 0e0dcdd4b61b80670ebf59a998596103b9892e4c..fd106081d8b5b4a61fb5eb173e54e53093ef5afd 100644
+index 6948487..9201b68 100644
 --- a/lib/utils/parse-certificate.js
 +++ b/lib/utils/parse-certificate.js
-@@ -3,6 +3,7 @@ import { crypto } from "../crypto/index.js";
+@@ -3,7 +3,9 @@ import { crypto } from "../crypto/index.js";
  import { SUPPORTED_NAMED_CURVE_MAP, SUPPORTED_SIGNATURE_ALGS, SUPPORTED_SIGNATURE_ALGS_MAP } from "./constants.js";
  import { getHash } from "./decryption-utils.js";
  import { areUint8ArraysEqual, asciiToUint8Array, concatenateUint8Arrays } from "./generics.js";
 +import { classifyHostIdentity } from "./ip.js";
  import { MOZILLA_ROOT_CA_LIST } from "./mozilla-root-cas.js";
++import { isBlockedSPKI } from "./blocked-spki.js";
  import { expectReadWithLength, packWithLength } from "./packets.js";
  import { defaultFetchCertificateBytes, loadX509FromDer, loadX509FromPem } from "./x509.js";
-@@ -98,11 +99,24 @@ export async function verifyCertificateChain(chain, host, logger, fetchCertifica
+ const CERT_VERIFY_TXT = asciiToUint8Array('TLS 1.3, server CertificateVerify');
+@@ -109,17 +111,37 @@ export async function verifyCertificateChain(chain, host, logger, fetchCertifica
          ...(additionalRootCAs || [])
      ];
      const leaf = chain[0];
@@ -591,9 +637,22 @@ index 0e0dcdd4b61b80670ebf59a998596103b9892e4c..fd106081d8b5b4a61fb5eb173e54e530
 +    if (!matchesIdentity) {
          throw new Error(`Certificate is not for host ${host}`);
      }
-     chain = [...chain]; // clone to allow appending fetched certs
+     const remainingChain = chain.slice(1);
+     let cert = leaf;
+     for (let i = 0;; i++) {
+         const cn = cert.getSubjectField('CN');
++        // A compromised key must be rejected wherever it sits in the chain.
++        // Removing the roots that cross-signed it would also drop unrelated
++        // certificates that share those roots, so the key itself is the unit
++        // of distrust. The checker is supplied by the caller.
++        if (isBlockedSPKI(cert.getPublicKey().buffer)) {
++            throw new Error(`Certificate ${cn} (i: ${i}) has a compromised public key`);
++        }
+         if (!cert.isWithinValidity()) {
+             throw new Error(`Certificate ${cn} (i: ${i}) is outside validity`);
+         }
 diff --git a/lib/utils/x509.d.ts b/lib/utils/x509.d.ts
-index 92adf6b7adef6f004229ce3b7aa526aa5e7338f7..e6c4a0567b763b005633d855a023dfcc7f268e0a 100644
+index 92adf6b..e6c4a05 100644
 --- a/lib/utils/x509.d.ts
 +++ b/lib/utils/x509.d.ts
 @@ -1,5 +1,9 @@
@@ -609,7 +668,7 @@ index 92adf6b7adef6f004229ce3b7aa526aa5e7338f7..e6c4a0567b763b005633d855a023dfcc
 +};
  export declare function defaultFetchCertificateBytes(url: string): Promise<Uint8Array<any>>;
 diff --git a/lib/utils/x509.js b/lib/utils/x509.js
-index f733b968d2b622d02bb0d23a9295819dedb16f9a..dca98a1a62464a82e0f8bbb1104257c3190844f2 100644
+index a9247e6..eef6b1c 100644
 --- a/lib/utils/x509.js
 +++ b/lib/utils/x509.js
 @@ -25,15 +25,10 @@ export function loadX509FromPem(pem) {
@@ -631,8 +690,8 @@ index f733b968d2b622d02bb0d23a9295819dedb16f9a..dca98a1a62464a82e0f8bbb1104257c3
 +            return getAlternativeNames(cert, 'ip');
          },
          isIssuer({ internal: ofCert }) {
-             var i = ofCert.issuer;
-@@ -63,6 +58,16 @@ export function loadX509FromPem(pem) {
+             const issuerName = normalizeDistinguishedName(ofCert.issuerName);
+@@ -74,6 +69,16 @@ export function loadX509FromPem(pem) {
          },
      };
  }
@@ -646,6 +705,66 @@ index f733b968d2b622d02bb0d23a9295819dedb16f9a..dca98a1a62464a82e0f8bbb1104257c3
 +    }
 +    return [];
 +}
- function getSigAlgorithm(key, { signatureAlgorithm }) {
-     if (!('name' in signatureAlgorithm)) {
-         throw new Error('Missing signature algorithm name');
+ function normalizeDistinguishedName(name) {
+     return JSON.stringify(name.toJSON().map(rdn => (Object.entries(rdn)
+         .flatMap(([type, values]) => values.map(value => [
+diff --git a/lib/utils/mozilla-root-cas.js b/lib/utils/mozilla-root-cas.js
+--- a/lib/utils/mozilla-root-cas.js
++++ b/lib/utils/mozilla-root-cas.js
+@@ -1727,56 +1727,6 @@
+ zMOl6W8KjptlwlCFtaOgUxLMVYdh84GuEEZhvUQhuMI9dM9+JDX6HAcOmz0iyu8x
+ L4ysEr3vQCj8KWefshNPZiTEUxnpHikV7+ZtsH8tZ/3zbBt1RqPlShfppNcL
+ -----END CERTIFICATE-----`, //CA Disig Root R2
+-    `-----BEGIN CERTIFICATE-----
+-MIICKzCCAbGgAwIBAgIKe3G2gla4EnycqDAKBggqhkjOPQQDAzBaMQswCQYDVQQG
+-EwJVUzETMBEGA1UECxMKZW1TaWduIFBLSTEUMBIGA1UEChMLZU11ZGhyYSBJbmMx
+-IDAeBgNVBAMTF2VtU2lnbiBFQ0MgUm9vdCBDQSAtIEMzMB4XDTE4MDIxODE4MzAw
+-MFoXDTQzMDIxODE4MzAwMFowWjELMAkGA1UEBhMCVVMxEzARBgNVBAsTCmVtU2ln
+-biBQS0kxFDASBgNVBAoTC2VNdWRocmEgSW5jMSAwHgYDVQQDExdlbVNpZ24gRUND
+-IFJvb3QgQ0EgLSBDMzB2MBAGByqGSM49AgEGBSuBBAAiA2IABP2lYa57JhAd6bci
+-MK4G9IGzsUJxlTm801Ljr6/58pc1kjZGDoeVjbk5Wum739D+yAdBPLtVb4Ojavti
+-sIGJAnB9SMVK4+kiVCJNk7tCDK93nCOmfddhEc5lx/h//vXyqaNCMEAwHQYDVR0O
+-BBYEFPtaSNCAIEDyqOkAB2kZd6fmw/TPMA4GA1UdDwEB/wQEAwIBBjAPBgNVHRMB
+-Af8EBTADAQH/MAoGCCqGSM49BAMDA2gAMGUCMQC02C8Cif22TGK6Q04ThHK1rt0c
+-3ta13FaPWEBaLd4gTCKDypOofu4SQMfWh0/434UCMBwUZOR8loMRnLDRWmFLpg9J
+-0wD8ofzkpf9/rdcw0Md3f76BB1UwUCAU9Vc4CqgxUQ==
+------END CERTIFICATE-----`, //emSign ECC Root CA - C3
+-    `-----BEGIN CERTIFICATE-----
+-MIICTjCCAdOgAwIBAgIKPPYHqWhwDtqLhDAKBggqhkjOPQQDAzBrMQswCQYDVQQG
+-EwJJTjETMBEGA1UECxMKZW1TaWduIFBLSTElMCMGA1UEChMcZU11ZGhyYSBUZWNo
+-bm9sb2dpZXMgTGltaXRlZDEgMB4GA1UEAxMXZW1TaWduIEVDQyBSb290IENBIC0g
+-RzMwHhcNMTgwMjE4MTgzMDAwWhcNNDMwMjE4MTgzMDAwWjBrMQswCQYDVQQGEwJJ
+-TjETMBEGA1UECxMKZW1TaWduIFBLSTElMCMGA1UEChMcZU11ZGhyYSBUZWNobm9s
+-b2dpZXMgTGltaXRlZDEgMB4GA1UEAxMXZW1TaWduIEVDQyBSb290IENBIC0gRzMw
+-djAQBgcqhkjOPQIBBgUrgQQAIgNiAAQjpQy4LRL1KPOxst3iAhKAnjlfSU2fySU0
+-WXTsuwYc58Byr+iuL+FBVIcUqEqy6HyC5ltqtdyzdc6LBtCGI79G1Y4PPwT01xyS
+-fvalY8L1X44uT6EYGQIrMgqCZH0Wk9GjQjBAMB0GA1UdDgQWBBR8XQKEE9TMipuB
+-zhccLikenEhjQjAOBgNVHQ8BAf8EBAMCAQYwDwYDVR0TAQH/BAUwAwEB/zAKBggq
+-hkjOPQQDAwNpADBmAjEAvvNhzwIQHWSVB7gYboiFBS+DCBeQyh+KTOgNG3qxrdWB
+-CUfvO6wIBHxcmbHtRwfSAjEAnbpV/KlK6O3t5nYBQnvI+GDZjVGLVTv7jHvrZQnD
+-+JbNR6iC8hZVdyR+EhCVBCyj
+------END CERTIFICATE-----`, //emSign ECC Root CA - G3
+-    `-----BEGIN CERTIFICATE-----
+-MIIDczCCAlugAwIBAgILAK7PALrEzzL4Q7IwDQYJKoZIhvcNAQELBQAwVjELMAkG
+-A1UEBhMCVVMxEzARBgNVBAsTCmVtU2lnbiBQS0kxFDASBgNVBAoTC2VNdWRocmEg
+-SW5jMRwwGgYDVQQDExNlbVNpZ24gUm9vdCBDQSAtIEMxMB4XDTE4MDIxODE4MzAw
+-MFoXDTQzMDIxODE4MzAwMFowVjELMAkGA1UEBhMCVVMxEzARBgNVBAsTCmVtU2ln
+-biBQS0kxFDASBgNVBAoTC2VNdWRocmEgSW5jMRwwGgYDVQQDExNlbVNpZ24gUm9v
+-dCBDQSAtIEMxMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAz+upufGZ
+-BczYKCFK83M0UYRWEPWgTywS4/oTmifQz/l5GnRfHXk5/Fv4cI7gklL35CX5VIPZ
+-HdPIWoU/Xse2B+4+wM6ar6xWQio5JXDWv7V7Nq2s9nPczdcdioOl+yuQFTdrHCZH
+-3DspVpNqs8FqOp099cGXOFgFixwR4+S0uF2FHYP+eF8LRWgYSKVGczQ7/g/IdrvH
+-GPMF0Ybzhe3nudkyrVWIzqa2kbBPrH4VI5b2P/AgNBbeCsbEBEV5f6f9vtKppa+c
+-xSMq9zwhbL2vj07FOrLzNBL834AaSaTUqZX3noleoomslMuoaJuvimUnzYnu3Yy1
+-aylwQ6BpC+S5DwIDAQABo0IwQDAdBgNVHQ4EFgQU/qHgcB4qAzlSWkK+XJGFehiq
+-TbUwDgYDVR0PAQH/BAQDAgEGMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQEL
+-BQADggEBAMJKVvoVIXsoounlHfv4LcQ5lkFMOycsxGwYFYDGrK9HWS8mC+M2sO87
+-/kOXSTKZEhVb3xEp/6tT+LvBeA+snFOvV71ojD1pM/CjoCNjO2RnIkSt1XHLVip4
+-kqNPEjE2NuLe/gDEo2APJ62gsIq1NnpSob0n9CAnYuhNlCQT5AoE6TyrLshDCUrG
+-YQTlSTR+08TI9Q/Aqum6VF7zYytPT1DU/rl7mYw9wC68AivTxEDkigcxHpvOJpkT
+-+xHqmiIMERnHXhuBUDDIlhJu58tBf5E7oke3VIAb3ADMmpDqw8NQBmIMMMAVSKeo
+-WXzhriKi4gp6D/piq1JM4fHfyr6DDUI=
+------END CERTIFICATE-----`, //emSign Root CA - C1
+     `-----BEGIN CERTIFICATE-----
+ MIIDlDCCAnygAwIBAgIKMfXkYgxsWO3W2DANBgkqhkiG9w0BAQsFADBnMQswCQYD
+ VQQGEwJJTjETMBEGA1UECxMKZW1TaWduIFBLSTElMCMGA1UEChMcZU11ZGhyYSBU

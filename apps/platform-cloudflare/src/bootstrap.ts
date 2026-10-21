@@ -12,7 +12,7 @@ import { timingSafeEqual } from './timing-safe-equal.ts';
 import { FileDumpStore, initDumpBroker, initDumpStore, initExecutionCellNamespace } from '@floway-dev/gateway';
 import { dumpCodec } from '@floway-dev/gateway/dump-codec';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
-import { addTrustedRootCAs } from '@floway-dev/http';
+import { addTrustedRootCAs, installBlockedSpkiCheck } from '@floway-dev/http';
 import {
   IMAGE_CACHE_POLICY,
   initEnv,
@@ -68,6 +68,7 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
   initImageProcessor(createCloudflareImageProcessor(env.IMAGES));
   initSocketDial(cloudflareSocketDial);
   addTrustedRootCAs(cloudflareRuntimeRootCAs);
+  installBlockedSpkiCheck();
   initDumpStore(new FileDumpStore(env.DB, files));
   const executionCells = new DurableObjectExecutionCellNamespace(env.EXECUTION_DO);
   initExecutionCellNamespace(executionCells);

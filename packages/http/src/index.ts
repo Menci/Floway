@@ -30,6 +30,17 @@ export { decodeChunked } from './chunked.ts';
 export { userspaceTls, addTrustedRootCAs } from './tls.ts';
 export type { UserspaceTlsOptions, TlsStream } from './tls.ts';
 
+export {
+  DISTRUSTED_ROOT_CAS,
+  certificateSha256,
+  filterDistrustedRootCAs,
+  isDistrustedRootCA,
+} from './distrusted-root-cas.ts';
+export type { DistrustedRootCA } from './distrusted-root-cas.ts';
+
+export { BLOCKED_SPKIS, EMUDHRA_COMPROMISE, installBlockedSpkiCheck, spkiSha256 } from './blocked-spki.ts';
+export type { BlockedSpki } from './blocked-spki.ts';
+
 export { wsUpgradeAndFrame } from './ws-upgrade.ts';
 export type { WsUpgradeOptions } from './ws-upgrade.ts';
 

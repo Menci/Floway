@@ -12,7 +12,7 @@ import { timingSafeEqual } from './timing-safe-equal.ts';
 import { FileDumpStore, initDumpBroker, initDumpStore } from '@floway-dev/gateway';
 import { dumpCodec } from '@floway-dev/gateway/dump-codec';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
-import { addTrustedRootCAs } from '@floway-dev/http';
+import { addTrustedRootCAs, installBlockedSpkiCheck } from '@floway-dev/http';
 import {
   getEnvOptional,
   IMAGE_CACHE_POLICY,
@@ -42,6 +42,7 @@ export const bootstrapNodePlatform = (): { db: SqlDatabase } => {
   initFileStore(files);
   initSocketDial(nodeSocketDial);
   addTrustedRootCAs(nodeRuntimeRootCAs);
+  installBlockedSpkiCheck();
   const db = createNodeSqliteDatabase(dbPath);
   initImageCacheStore(new SqliteImageCacheStore(db, IMAGE_CACHE_POLICY));
   initImageProcessor(createSharpImageProcessor());

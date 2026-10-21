@@ -395,19 +395,45 @@ describe('userspaceTls — certificate reference identity', () => {
 });
 
 describe('addTrustedRootCAs', () => {
-  it('deduplicates additions against the existing global list', () => {
+  const trustedFixture = async (): Promise<string> => await readFile(
+    new URL('./fixtures/ip-san.generated.pem', import.meta.url),
+    'utf8',
+  );
+
+  it('deduplicates additions against the existing global list', async () => {
     const g = globalThis as unknown as TrustGlobals;
     g.TLS_ADDITIONAL_ROOT_CA_LIST = [];
-    const pem = '-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----';
+    const pem = await trustedFixture();
     addTrustedRootCAs([pem, pem]);
     addTrustedRootCAs([pem]);
     expect(g.TLS_ADDITIONAL_ROOT_CA_LIST).toEqual([pem]);
   });
 
-  it('initialises the global list if it is missing', () => {
+  it('initialises the global list if it is missing', async () => {
     const g = globalThis as unknown as TrustGlobals;
     delete g.TLS_ADDITIONAL_ROOT_CA_LIST;
-    addTrustedRootCAs(['pem-a']);
-    expect(g.TLS_ADDITIONAL_ROOT_CA_LIST).toEqual(['pem-a']);
+    const pem = await trustedFixture();
+    addTrustedRootCAs([pem]);
+    expect(g.TLS_ADDITIONAL_ROOT_CA_LIST).toEqual([pem]);
+  });
+
+  it('rejects a value that is not a certificate instead of trusting it blindly', () => {
+    const g = globalThis as unknown as TrustGlobals;
+    g.TLS_ADDITIONAL_ROOT_CA_LIST = [];
+
+    expect(() => addTrustedRootCAs(['pem-a'])).toThrow();
+  });
+
+  // Platform bootstraps pass the runtime's whole trust store here. If a root
+  // the root programs have dropped survives that import, the userspace TLS
+  // client re-trusts it even though the runtime's own TLS stack would not.
+  it('refuses to add a distrusted root', async () => {
+    const g = globalThis as unknown as TrustGlobals;
+    g.TLS_ADDITIONAL_ROOT_CA_LIST = [];
+    const pem = await readFile(new URL('./fixtures/em-sign-ecc-root-ca-g3.generated.pem', import.meta.url), 'utf8');
+
+    addTrustedRootCAs([pem]);
+
+    expect(g.TLS_ADDITIONAL_ROOT_CA_LIST).toEqual([]);
   });
 });
