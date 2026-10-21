@@ -15,8 +15,8 @@ import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/nam
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, isOpenAIResponsesEncryptedReasoning, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
-import { openaiResponsesDropsReasoning, openaiResponsesInstructionsToIR, openaiResponsesTurnToIR } from '../as-source/request-to-ir.ts';
-import { anthropicMessagesFromIR } from '../../anthropic-messages/as-target/request-from-ir.ts';
+import { openaiResponsesDropsReasoning, openaiResponsesInstructionsToIR, openaiResponsesTurnToIR } from '../as-source/input-to.ts';
+import { anthropicMessagesFromIR } from '../../anthropic-messages/as-target/input-from.ts';
 import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
 import type { IRInputTurn } from '../../../ir/input.ts';
 import { buildCustomToolInputSchema } from '../common/custom-tool-wrap.ts';

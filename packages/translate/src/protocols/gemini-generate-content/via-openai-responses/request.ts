@@ -2,11 +2,11 @@ import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segm
 import type { IRInputTurn } from '../../../ir/input.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
-import { openaiResponsesFromIR } from '../../openai-responses/as-target/request-from-ir.ts';
+import { openaiResponsesFromIR } from '../../openai-responses/as-target/input-from.ts';
 import { geminiGenerateContentText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
 import { geminiGenerateContentReasoningEffort } from '../as-source/reasoning.ts';
-import { geminiGenerateContentDropsReasoning, geminiGenerateContentTurnToIR } from '../as-source/request-to-ir.ts';
+import { geminiGenerateContentDropsReasoning, geminiGenerateContentTurnToIR } from '../as-source/input-to.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../as-source/schema.ts';
 import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionDeclarations, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
