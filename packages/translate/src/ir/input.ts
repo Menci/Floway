@@ -190,7 +190,9 @@ export interface IRInputFunctionCallItem {
   // arguments as strings that may be malformed, and a reader that parsed them
   // would have to invent a wrapper for invalid JSON. Each target parses at its
   // own boundary with its own fallback, as the stream IR's writers do.
-  readonly arguments: string; // All
+  // Absent only when the source had no argument object at all, which is
+  // distinct from an explicit `null` or `{}`.
+  readonly arguments?: string; // All
 }
 
 export interface IRInputCustomToolCallItem {

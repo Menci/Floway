@@ -58,6 +58,9 @@ const userContentPart = (part: OpenAIChatCompletionsContentPart): IRInputUserCon
   }
 };
 
+// Chat's `tool` content array is transport fragments of one payload. The IR
+// keeps the parts so a target that accepts structured content can use them; a
+// target that only carries strings decides how to flatten.
 const toolResultContent = (content: string | readonly { text: string }[]): string | readonly IRInputToolResultContentPart[] => typeof content === 'string'
   ? content
   : content.map(part => ({ type: 'text' as const, text: part.text }));
@@ -68,8 +71,8 @@ const assistantItems = (turn: Extract<OpenAIChatCompletionsConversationTurn, { r
   const content: IRInputAssistantContentPart[] = typeof message.content === 'string'
     ? textParts(message.content)
     : (message.content ?? []).map(part => part.type === 'text'
-      ? { type: 'text' as const, text: part.text }
-      : { type: 'refusal' as const, refusal: part.refusal });
+        ? { type: 'text' as const, text: part.text }
+        : { type: 'refusal' as const, refusal: part.refusal });
   if (message.refusal !== undefined && message.refusal !== null && !content.some(part => part.type === 'refusal')) {
     content.push({ type: 'refusal', refusal: message.refusal });
   }

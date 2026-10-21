@@ -1,46 +1,32 @@
 import { klona } from 'klona/json';
 
-import { openaiResponsesReasoningToAnthropicMessagesUpstreamBlock } from './reasoning.ts';
+import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
+import type { IRInputTurn } from '../../../ir/input.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
-import { parseJSONObject } from '../../../shared/json/object.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec, RemoteImageLoader } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
+import { anthropicMessagesFromIR } from '../../anthropic-messages/as-target/input-from.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-messages/as-target/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
 import { restrictAllowedTools } from '../as-source/allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
-import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
-import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
-import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, isOpenAIResponsesEncryptedReasoning, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
-import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import { openaiResponsesDropsReasoning, openaiResponsesInstructionsToIR, openaiResponsesTurnToIR } from '../as-source/input-to.ts';
-import { anthropicMessagesFromIR } from '../../anthropic-messages/as-target/input-from.ts';
-import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input-segments.ts';
-import type { IRInputTurn } from '../../../ir/input.ts';
+import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
+import { rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
+import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
+import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import { buildCustomToolInputSchema } from '../common/custom-tool-wrap.ts';
 import {
   ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
-  type AnthropicMessagesAssistantContentBlock,
-  type AnthropicMessagesAssistantInputContentBlock,
-  type AnthropicMessagesAssistantMessage,
   type AnthropicMessagesMessage,
   type AnthropicMessagesPayload,
   type AnthropicMessagesTextBlockParam,
   type AnthropicMessagesTool,
-  type AnthropicMessagesToolResultBlock,
-  type AnthropicMessagesToolResultContentBlock,
-  type AnthropicMessagesUserContentBlock,
-  type AnthropicMessagesUserMessage,
 } from '@floway-dev/protocols/anthropic-messages';
 import { isFastServiceTier } from '@floway-dev/protocols/common';
 import type {
-  OpenAIResponsesInputContent,
-  OpenAIResponsesInputImage,
-  CanonicalOpenAIResponsesInputItem,
-  OpenAIResponsesInputMessageEx,
-  CanonicalOpenAIResponsesText,
   OpenAIResponsesRequestPayloadEx,
   OpenAIResponsesTool,
   OpenAIResponsesToolChoice,
@@ -56,14 +42,6 @@ interface BuildTargetRequestOptions {
    */
   fallbackMaxOutputTokens: number | undefined;
 }
-
-const parseToolArgumentsObject = (argumentsJson: string): Record<string, unknown> => {
-  try {
-    return parseJSONObject(argumentsJson);
-  } catch {
-    return { raw_arguments: argumentsJson };
-  }
-};
 
 const anthropicServiceTierFieldsFromOpenAI = (serviceTier: string | null | undefined): Partial<AnthropicMessagesPayload> =>
   isFastServiceTier(serviceTier)
@@ -226,8 +204,8 @@ export const buildTargetRequest = async (
         // fetched, so a caller that supplied only an ID is an error.
         if (media.source_kind === 'file') throw new TranslatorInputError('Cannot translate file_id-only image content to Anthropic Messages.');
         return media.source_kind === 'url'
-          ? resolveImageUrlToAnthropicMessagesImage(media.url, options.loadRemoteImage)
-          : resolveImageUrlToAnthropicMessagesImage(`data:${media.media_type ?? ''};base64,${media.data}`, options.loadRemoteImage);
+          ? await resolveImageUrlToAnthropicMessagesImage(media.url, options.loadRemoteImage)
+          : await resolveImageUrlToAnthropicMessagesImage(`data:${media.media_type ?? ''};base64,${media.data}`, options.loadRemoteImage);
       },
     });
     if (translated.system !== undefined) systemBlocks.push(...translated.system);

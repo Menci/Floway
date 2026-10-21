@@ -185,7 +185,6 @@ export const openaiResponsesTurnToIR = (
   return [{ role: 'assistant', items: assistantItems(items, unknownItem) }];
 };
 
-
 export const openaiResponsesInputToIR = (source: OpenAIResponsesRequestPayloadEx): OpenAIResponsesInputIR => {
   const canonical = canonicalizeOpenAIResponsesPayload(source);
   const { payload, names, flattenInput } = flattenNamespaceTools(canonical);

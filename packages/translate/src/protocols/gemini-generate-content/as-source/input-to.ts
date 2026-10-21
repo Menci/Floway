@@ -86,11 +86,10 @@ const assistantItems = (content: GeminiGenerateContentContent, turnIndex: number
     case 'function_call': {
       const { call, id } = geminiGenerateContentFunctionCallPart(part, ids, turnIndex, partIndex)!;
       flush();
-      // An absent `functionCall.args` becomes `{}`; an explicit `null` keeps
-      // `null`, because both OpenAI protocols distinguish the two. `??` cannot
-      // express this: it would turn `null` into `{}`.
-      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-      items.push({ type: 'function_call', call_id: id, name: call.name, arguments: JSON.stringify(call.args === undefined ? {} : call.args) });
+      // An absent `functionCall.args` stays absent: `JSON.stringify(undefined)`
+      // is `undefined`, so the field is omitted exactly as before. An explicit
+      // `null` keeps `null`, because both OpenAI protocols distinguish the two.
+      items.push({ type: 'function_call', call_id: id, name: call.name, arguments: JSON.stringify(call.args) });
       return;
     }
     case 'text': {

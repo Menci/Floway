@@ -76,7 +76,7 @@ const userContent = async (
       blocks.push(documentBlock(part.file));
       break;
     case 'audio': throw new TranslatorInputError(`Cannot translate Gemini generateContent inlineData MIME type '${part.audio.media_type}' to Anthropic Messages.`);
-    case 'refusal': throw new TranslatorInputError('Cannot translate refusal content in a user message to Anthropic Messages.');
+    case 'refusal': throw new TranslatorInputError("Invalid 'refusal' content part. Only 'text' and 'image_url' are supported in user content.");
     default: throw new TranslatorInputError(`Invalid '${(part as { type: string }).type}' content part.`);
     }
   }
@@ -86,17 +86,18 @@ const userContent = async (
 
 const toolResultContent = async (
   output: string | readonly IRInputToolResultContentPart[],
-  resolveImage: AnthropicMessagesImageResolver | undefined,
+  options: AnthropicMessagesFromIROptions,
 ): Promise<string | AnthropicMessagesToolResultContentBlock[]> => {
   if (typeof output === 'string') return output;
+  if (options.keepToolResultTextParts === false) return '';
   const blocks: AnthropicMessagesToolResultContentBlock[] = [];
   for (const part of output) {
     if (part.type === 'text') { blocks.push({ type: 'text', text: part.text }); continue; }
     if (part.type === 'file') throw new TranslatorInputError('Cannot translate input_file tool output to Anthropic Messages.');
-    if (resolveImage !== undefined && part.image.source_kind === 'file') {
+    if (options.resolveImage !== undefined && part.image.source_kind === 'file') {
       throw new TranslatorInputError('Cannot translate file_id-only image tool output to Anthropic Messages.');
     }
-    const image = resolveImage === undefined ? imageBlock(part.image) : await resolveImage(part.image);
+    const image = options.resolveImage === undefined ? imageBlock(part.image) : await options.resolveImage(part.image);
     // Unlike user content, an unresolvable tool-result image is a caller error:
     // the tool returned bytes the target cannot represent.
     if (image === null) throw new TranslatorInputError('Cannot translate unavailable or unsupported image tool output to Anthropic Messages.');
@@ -123,7 +124,14 @@ const assistantBlocks = (items: readonly IRInputAssistantItem[]): AnthropicMessa
       return thinking === '' ? [] : [{ type: 'thinking', thinking, signature: '' }];
     }
     case 'function_call':
-      return [{ type: 'tool_use', id: item.call_id, name: item.name, input: parseArguments(item.arguments) }];
+      return [{
+        type: 'tool_use' as const,
+        id: item.call_id,
+        name: item.name,
+        // An absent argument object stays absent; Messages omits the `input`
+        // key entirely for a tool call that takes no arguments.
+        ...(item.arguments === undefined ? {} : { input: parseArguments(item.arguments) }),
+      }] as AnthropicMessagesAssistantInputContentBlock[];
     case 'custom_tool_call':
       // Messages has no freeform tool call; the wrapper schema a custom tool is
       // declared with takes one `input` string, so the call is projected onto it.
@@ -196,6 +204,12 @@ export interface AnthropicMessagesFromIROptions {
    * a GenerateContent source has always mapped an inline PDF to `document`.
    */
   readonly allowFileContent?: boolean;
+  /**
+   * Whether a tool result whose source carried text parts keeps them. The Chat
+   * Completions target of these routes has always dropped them, keeping only a
+   * string payload.
+   */
+  readonly keepToolResultTextParts?: boolean;
   readonly resolveImage?: AnthropicMessagesImageResolver;
 }
 
@@ -251,7 +265,7 @@ export const anthropicMessagesFromIR = async (
       }
       hoisting = false;
       append(item.type === 'tool_result'
-        ? [{ type: 'tool_result', tool_use_id: item.call_id, content: await toolResultContent(item.output, options.resolveImage), ...(item.is_error === true ? { is_error: true } : {}) }]
+        ? [{ type: 'tool_result', tool_use_id: item.call_id, content: await toolResultContent(item.output, options), ...(item.is_error === true ? { is_error: true } : {}) }]
         : await userContent(item, options));
     }
   }

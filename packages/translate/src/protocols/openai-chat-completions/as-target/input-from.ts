@@ -40,7 +40,7 @@ const filePart = (media: IRInputMedia, filename?: string | null): OpenAIChatComp
 };
 
 const userContent = (item: Extract<IRInputUserItem, { type: 'message' }>): string | OpenAIChatCompletionsUserContentPart[] => {
-  if (item.content.every(part => part.type === 'text')) return item.content.flatMap(part => part.type === 'text' ? [part.text] : []).join('');
+  if (item.content.every(part => part.type === 'text')) return item.content.flatMap(part => part.type === 'text' ? [part.text] : []).join('\n\n');
   const parts = item.content.flatMap<OpenAIChatCompletionsContentPart>(part => {
     switch (part.type) {
     case 'text': return [{ type: 'text', text: part.text }];
@@ -98,7 +98,13 @@ const assistantMessage = (items: readonly IRInputAssistantItem[]): OpenAIChatCom
       if (item.content !== undefined) reasoning.push(item.content.join(''));
       break;
     case 'function_call':
-      toolCalls.push({ id: item.call_id, type: 'function', function: { name: item.name, arguments: item.arguments } });
+      toolCalls.push({
+        id: item.call_id,
+        type: 'function',
+        // Chat requires an `arguments` string; an absent argument object is
+        // spelled `undefined` on the wire as before.
+        function: { name: item.name, arguments: item.arguments as string },
+      });
       break;
     case 'custom_tool_call':
       // Chat Completions must express a freeform tool call as a function call
@@ -108,6 +114,8 @@ const assistantMessage = (items: readonly IRInputAssistantItem[]): OpenAIChatCom
       break;
     }
   }
+  // A turn with no text, tool calls, or reasoning carries nothing.
+  if (text.length === 0 && toolCalls.length === 0 && reasoning.length === 0) return [];
   // A turn carrying reasoning or tool calls with no text spells its content as
   // null; a turn with neither is an explicitly empty message and keeps ''.
   return [{

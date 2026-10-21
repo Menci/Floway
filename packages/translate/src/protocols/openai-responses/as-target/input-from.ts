@@ -88,7 +88,15 @@ const assistantItems = (items: readonly IRInputAssistantItem[]): CanonicalOpenAI
       ...(item.content === undefined ? {} : { content: item.content.map(text => ({ type: 'reasoning_text' as const, text })) }),
     };
   case 'function_call':
-    return { type: 'function_call', call_id: item.call_id, name: item.name, arguments: item.arguments, status: 'completed' };
+    return {
+      type: 'function_call',
+      call_id: item.call_id,
+      name: item.name,
+      // Responses states `arguments` as a string; an absent argument object is
+      // serialized to `undefined` and dropped by the wire encoder.
+      arguments: item.arguments as string,
+      status: 'completed',
+    };
   case 'custom_tool_call':
     return { type: 'custom_tool_call', call_id: item.call_id, name: item.name, input: item.input, status: 'completed' };
   }
@@ -150,7 +158,7 @@ export const openaiResponsesFromIR = (
       return assistantItems(item.items);
     }
     return item.items.flatMap((entry): CanonicalOpenAIResponsesInputItem[] => {
-      if (hoisting && entry.type === 'message' && entry.role !== 'user') {
+      if (hoisting && entry.type === 'message' && entry.role === 'system') {
         const text = entry.content.map(part => part.text).join('');
         if (text !== '') instructions.push(text);
         return [];

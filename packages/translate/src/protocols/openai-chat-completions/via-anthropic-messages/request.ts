@@ -6,9 +6,9 @@ import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } fro
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec, RemoteImageLoader } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
+import { anthropicMessagesFromIR } from '../../anthropic-messages/as-target/input-from.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-messages/as-target/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
-import { anthropicMessagesFromIR } from '../../anthropic-messages/as-target/input-from.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
 import { openaiChatCompletionsCallKinds, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/input-to.ts';
@@ -89,6 +89,9 @@ export const buildTargetRequest = async (
       continue;
     }
     const translated = await anthropicMessagesFromIR({ turns: piece.turns }, piece.leading, {
+      // A Chat `tool` message's text-part array has always reached Messages as
+      // an empty payload; only its string form survives.
+      keepToolResultTextParts: false,
       resolveImage: async media => {
         if (media.source_kind === 'url') return await resolveImageUrlToAnthropicMessagesImage(media.url, options.loadRemoteImage);
         if (media.source_kind === 'file') return { type: 'image', source: { type: 'file', file_id: media.file_id } };
