@@ -1,6 +1,11 @@
+import { klona } from 'klona/json';
+
 import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn } from './conversation-turns.ts';
 import type {
   IRInputAssistantContentPart,
+  IRInputEnvelope,
+  IRInputOutputFormat,
+  IRInputSampling,
   IRInputAssistantItem,
   IRInputConversation,
   IRInputMedia,
@@ -253,4 +258,32 @@ export const anthropicMessagesInputToIR = (payload: AnthropicMessagesPayload): I
     messageIndex += turn.items.length;
   }
   return { turns };
+};
+
+/**
+ * Messages states one ceiling, `max_tokens`, and its structured-output schema
+ * lives in `output_config.format`. `top_k` is a Messages-only sampling knob.
+ */
+export const anthropicMessagesEnvelopeToIR = (payload: AnthropicMessagesPayload): IRInputEnvelope => {
+  const sampling: IRInputSampling = {
+    ...(payload.temperature == null ? {} : { temperature: payload.temperature }),
+    ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
+    ...(payload.top_k == null ? {} : { top_k: payload.top_k }),
+    ...(payload.stop_sequences == null ? {} : { stop: [...payload.stop_sequences] }),
+    max_output_tokens: { max_tokens: payload.max_tokens },
+  };
+
+  const format = payload.output_config?.format;
+  // Messages' structured-output schema is already strict by contract, so the
+  // fact is stated here rather than left for a target to invent.
+  // https://platform.claude.com/docs/en/build-with-claude/structured-outputs
+  const outputFormat: IRInputOutputFormat | undefined = format?.type === 'json_schema'
+    ? { type: 'json_schema', schema: klona(format.schema), strict: true }
+    : undefined;
+
+  return {
+    model: payload.model,
+    sampling,
+    ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
+  };
 };

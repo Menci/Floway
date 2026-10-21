@@ -1,8 +1,14 @@
+import { klona } from 'klona/json';
+
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from './content.ts';
 import { partitionGeminiGenerateContentTurns, type GeminiGenerateContentConversationTurn as GeminiGenerateContentTurn } from './conversation-turns.ts';
+import { geminiResponseSchema } from './schema.ts';
 import { geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from './tools.ts';
 import type {
   IRInputAssistantContentPart,
+  IRInputEnvelope,
+  IRInputOutputFormat,
+  IRInputSampling,
   IRInputAssistantItem,
   IRInputConversation,
   IRInputMedia,
@@ -211,4 +217,28 @@ export const geminiGenerateContentInputToIR = (payload: GeminiGenerateContentPay
     contentIndex += turn.items.length;
   }
   return { turns };
+};
+
+/** GenerateContent keeps every sampling knob inside `generationConfig`. */
+export const geminiGenerateContentEnvelopeToIR = (payload: GeminiGenerateContentPayload, model: string): IRInputEnvelope => {
+  const config = payload.generationConfig;
+  const schema = config === undefined ? undefined : geminiResponseSchema(config);
+  const outputFormat: IRInputOutputFormat | undefined = schema !== undefined
+    ? { type: 'json_schema', schema: klona(schema) }
+    : config?.responseMimeType === 'application/json' ? { type: 'json_object' } : undefined;
+
+  const sampling: IRInputSampling = {
+    ...(config?.temperature == null ? {} : { temperature: config.temperature }),
+    ...(config?.topP == null ? {} : { top_p: config.topP }),
+    ...(config?.topK == null ? {} : { top_k: config.topK }),
+    ...(config?.stopSequences == null ? {} : { stop: [...config.stopSequences] }),
+    ...(config?.seed == null ? {} : { seed: config.seed }),
+    ...(config?.maxOutputTokens == null ? {} : { max_output_tokens: { max_output_tokens: config.maxOutputTokens } }),
+  };
+
+  return {
+    model,
+    ...(Object.keys(sampling).length === 0 ? {} : { sampling }),
+    ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
+  };
 };

@@ -3,11 +3,10 @@ import { klona } from 'klona/json';
 import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
 import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
-import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
-import { openaiResponsesFromIR } from '../../openai-responses/as-target/input-from.ts';
+import { openaiResponsesEnvelopeFromIR, openaiResponsesFromIR } from '../../openai-responses/as-target/input-from.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
-import { openaiChatCompletionsCallKinds, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/input-to.ts';
+import { openaiChatCompletionsEnvelopeToIR, openaiChatCompletionsCallKinds, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/input-to.ts';
 import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
@@ -75,13 +74,7 @@ export const buildTargetRequest = async (
     input.push(...translated.input);
   }
 
-  const format = klona(payload.response_format);
-  if (format?.type === 'json_schema' && format.json_schema.schema === undefined) throw new TranslatorInputError('Cannot translate json_schema response format without a schema.');
-  const responseTextConfig = format == null ? undefined : {
-    format: format.type === 'json_schema'
-      ? { type: 'json_schema' as const, ...format.json_schema, schema: format.json_schema.schema! }
-      : format,
-  };
+  const envelope = openaiResponsesEnvelopeFromIR(openaiChatCompletionsEnvelopeToIR(payload));
 
   const reasoningEffort = payload.reasoning_effort ?? undefined;
   const reasoning = reasoningEffort !== undefined ? { effort: reasoningEffort } : undefined;
@@ -90,9 +83,6 @@ export const buildTargetRequest = async (
     model: payload.model,
     input,
     ...(instructions.length > 0 ? { instructions: instructions.join('\n\n') } : {}),
-    ...(payload.temperature !== undefined ? { temperature: payload.temperature } : {}),
-    ...(payload.top_p !== undefined ? { top_p: payload.top_p } : {}),
-    ...(payload.max_tokens !== undefined ? { max_output_tokens: payload.max_tokens } : {}),
     ...(payload.tools !== undefined ? { tools: translateChatTools(payload.tools) } : {}),
     // Omit tool_choice without tools: xAI-backed upstreams reject this shape.
     // https://github.com/Wei-Shaw/sub2api/issues/4819
@@ -108,9 +98,9 @@ export const buildTargetRequest = async (
     ...(payload.store !== undefined ? { store: payload.store } : {}),
     ...(payload.parallel_tool_calls !== undefined ? { parallel_tool_calls: payload.parallel_tool_calls } : {}),
     ...(reasoning ? { reasoning } : {}),
-    ...(responseTextConfig !== undefined ? { text: responseTextConfig } : {}),
     ...(payload.prompt_cache_key !== undefined ? { prompt_cache_key: payload.prompt_cache_key } : {}),
     ...(payload.safety_identifier !== undefined ? { safety_identifier: payload.safety_identifier } : {}),
     ...(payload.service_tier !== undefined ? { service_tier: payload.service_tier } : {}),
+    ...envelope,
   };
 };

@@ -2,6 +2,7 @@ import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
   IRInputConversation,
+  IRInputEnvelope,
   IRInputMedia,
   IRInputTextPart,
   IRInputToolResultContentPart,
@@ -13,6 +14,7 @@ import type {
   AnthropicMessagesImageBlock,
   AnthropicMessagesImageSource,
   AnthropicMessagesMessage,
+  AnthropicMessagesPayload,
   AnthropicMessagesTextBlockParam,
   AnthropicMessagesToolResultContentBlock,
   AnthropicMessagesUserContentBlock,
@@ -266,3 +268,25 @@ export const anthropicMessagesFromIR = async (
 };
 
 export type { IRInputAssistantContentPart };
+
+/**
+ * Messages states one ceiling, `max_tokens`, and its structured-output schema
+ * lives in `output_config.format`. It has no `seed` and no `max_tokens` alias,
+ * so a source that only stated `max_completion_tokens` still lands here.
+ */
+export const anthropicMessagesEnvelopeFromIR = (envelope: IRInputEnvelope): Omit<Partial<AnthropicMessagesPayload>, 'model'> => {
+  const limits = envelope.sampling?.max_output_tokens;
+  const ceiling = limits?.max_tokens ?? limits?.max_completion_tokens ?? limits?.max_output_tokens;
+  const format = envelope.output_format;
+
+  return {
+    ...(ceiling === undefined ? {} : { max_tokens: ceiling }),
+    ...(envelope.sampling?.temperature === undefined ? {} : { temperature: envelope.sampling.temperature }),
+    ...(envelope.sampling?.top_p === undefined ? {} : { top_p: envelope.sampling.top_p }),
+    ...(envelope.sampling?.top_k === undefined ? {} : { top_k: envelope.sampling.top_k }),
+    ...(envelope.sampling?.stop === undefined ? {} : { stop_sequences: [...envelope.sampling.stop] }),
+    ...(format?.type === 'json_schema' && format.schema !== undefined
+      ? { output_config: { format: { type: 'json_schema' as const, schema: format.schema } } }
+      : {}),
+  };
+};

@@ -18,8 +18,50 @@
 // lifecycle events, no accumulation. That is the whole structural difference
 // from the stream IR; the Fit boundary is identical.
 //
-// Request-envelope fields (model, tool declarations, sampling parameters,
-// response format) are outside this definition. See the design record on #594.
+// The request envelope: everything about a request that is not its
+// conversation. Tool declarations are not here yet, because `allowed_tools`
+// selectors reference them and the two must enter together.
+export interface IRInputEnvelope {
+  readonly model: string; // All
+  readonly sampling?: IRInputSampling; // All
+  readonly output_format?: IRInputOutputFormat; // ChatCompletions, Responses, Messages, GenerateContent
+}
+
+// Every sampling knob that more than one protocol expresses. A target that
+// cannot carry one drops it; a target that can carries it verbatim.
+export interface IRInputSampling {
+  readonly temperature?: number; // All
+  readonly top_p?: number; // All
+  readonly top_k?: number; // Messages, GenerateContent
+  readonly stop?: readonly string[]; // All
+  readonly seed?: number; // ChatCompletions, GenerateContent
+  readonly max_output_tokens?: IRInputMaxOutputTokens; // All
+}
+
+// One ceiling, spelled three ways. `max_tokens` predates reasoning models and
+// counts only visible output; `max_completion_tokens` is its documented alias
+// that also counts hidden reasoning tokens, so a request may carry either and
+// they are not interchangeable. Responses states the same ceiling once as
+// `max_output_tokens`.
+//
+// A source that states more than one of them is kept as stated: some upstreams
+// reject a request carrying both, so the choice of which one to forward belongs
+// to the target writer rather than to the reader.
+export interface IRInputMaxOutputTokens {
+  readonly max_tokens?: number; // ChatCompletions, Messages, GenerateContent
+  readonly max_completion_tokens?: number; // ChatCompletions
+  readonly max_output_tokens?: number; // Responses
+}
+
+// Structured output. `strict` is three-state: absent means the source did not
+// say, which is not the same as `false`.
+export interface IRInputOutputFormat {
+  readonly type: 'text' | 'json_object' | 'json_schema'; // All
+  readonly name?: string; // ChatCompletions, Responses
+  readonly description?: string; // ChatCompletions, Responses
+  readonly schema?: Readonly<Record<string, unknown>>; // All
+  readonly strict?: boolean; // ChatCompletions, Responses, Messages
+}
 
 export interface IRInputConversation {
   readonly turns: readonly IRInputTurn[];

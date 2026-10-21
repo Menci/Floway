@@ -1,62 +1,32 @@
-import { klona } from 'klona/json';
-
 import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
 import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
-import { openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
+import { openaiChatCompletionsEnvelopeFromIR, openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
 import { geminiGenerateContentText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
-import { geminiGenerateContentDropsReasoning, geminiGenerateContentTurnToIR } from '../as-source/input-to.ts';
+import { geminiGenerateContentDropsReasoning, geminiGenerateContentEnvelopeToIR, geminiGenerateContentTurnToIR } from '../as-source/input-to.ts';
 import { geminiGenerateContentReasoningEffort } from '../as-source/reasoning.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
-import { geminiFunctionParameters, geminiResponseSchema } from '../as-source/schema.ts';
+import { geminiFunctionParameters } from '../as-source/schema.ts';
 import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionDeclarations, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
-import type { GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
 
-const applyGenerationConfig = (request: OpenAIChatCompletionsPayload, generationConfig?: GeminiGenerateContentGenerationConfig): void => {
-  if (!generationConfig) return;
+const applyGenerationConfig = (request: OpenAIChatCompletionsPayload, payload: GeminiGenerateContentPayload, model: string): void => {
+  const source = geminiGenerateContentEnvelopeToIR(payload, model);
+  Object.assign(request, openaiChatCompletionsEnvelopeFromIR({
+    ...source,
+    // Chat requires a name for a json_schema format; this is the established
+    // spelling for a GenerateContent source.
+    ...(source.output_format === undefined ? {} : { output_format: { ...source.output_format, name: 'gemini_response' } }),
+  }));
 
-  if (generationConfig.maxOutputTokens !== undefined) {
-    request.max_tokens = generationConfig.maxOutputTokens;
-  }
-  if (generationConfig.temperature !== undefined) {
-    request.temperature = generationConfig.temperature;
-  }
-  if (generationConfig.topP !== undefined) {
-    request.top_p = generationConfig.topP;
-  }
-  if (generationConfig.stopSequences !== undefined) {
-    request.stop = klona(generationConfig.stopSequences);
-  }
-  if (generationConfig.candidateCount !== undefined) {
-    request.n = generationConfig.candidateCount;
-  }
-  if (generationConfig.presencePenalty !== undefined) {
-    request.presence_penalty = generationConfig.presencePenalty;
-  }
-  if (generationConfig.frequencyPenalty !== undefined) {
-    request.frequency_penalty = generationConfig.frequencyPenalty;
-  }
-  if (generationConfig.seed !== undefined) {
-    request.seed = generationConfig.seed;
-  }
-
-  const schema = geminiResponseSchema(generationConfig);
-  if (schema !== undefined) {
-    request.response_format = {
-      type: 'json_schema',
-      json_schema: {
-        name: 'gemini_response',
-        schema,
-      },
-    };
-  } else if (generationConfig.responseMimeType === 'application/json') {
-    request.response_format = { type: 'json_object' };
-  }
-
-  const reasoningEffort = geminiGenerateContentReasoningEffort(generationConfig.thinkingConfig);
+  const config = payload.generationConfig;
+  if (config?.candidateCount !== undefined) request.n = config.candidateCount;
+  if (config?.presencePenalty !== undefined) request.presence_penalty = config.presencePenalty;
+  if (config?.frequencyPenalty !== undefined) request.frequency_penalty = config.frequencyPenalty;
+  const reasoningEffort = config === undefined ? null : geminiGenerateContentReasoningEffort(config.thinkingConfig);
   if (reasoningEffort !== null) request.reasoning_effort = reasoningEffort;
 };
 
@@ -128,7 +98,7 @@ export const buildTargetRequest = async (
     request.messages.push(...openaiChatCompletionsFromIR({ turns: piece.turns }, { legacyFunctionNames }));
   }
 
-  applyGenerationConfig(request, payload.generationConfig);
+  applyGenerationConfig(request, payload, model);
 
   const tools = buildTools(payload);
   if (tools) {

@@ -5,10 +5,10 @@ import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
-import { openaiResponsesFromIR } from '../../openai-responses/as-target/input-from.ts';
+import { openaiResponsesEnvelopeFromIR, openaiResponsesFromIR } from '../../openai-responses/as-target/input-from.ts';
 import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
-import { anthropicMessagesDropsReasoning, anthropicMessagesTurnToIR } from '../as-source/input-to.ts';
+import { anthropicMessagesDropsReasoning, anthropicMessagesEnvelopeToIR, anthropicMessagesTurnToIR } from '../as-source/input-to.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from '../as-source/round-trip.ts';
 import type {
   AnthropicMessagesClientTool,
@@ -129,14 +129,13 @@ export const buildTargetRequest = async (
   const reasoning = effort !== undefined ? { effort } : undefined;
   const clientTools = filterAnthropicMessagesClientTools(payload.tools);
   const { instructions, prependItems } = placeAnthropicMessagesSystem(payload.system);
-  // Anthropic's structured-output schema is already strict. Supply the name
-  // required by OpenAI and let OpenAI report any schema constraint it rejects.
-  // https://platform.claude.com/docs/en/build-with-claude/structured-outputs
-  const format = payload.output_config?.format;
-  const jsonSchema = format?.type === 'json_schema'
-    ? { name: 'messages_response', strict: true as const, schema: klona(format.schema) }
-    : undefined;
-  const text = jsonSchema ? { format: { type: 'json_schema' as const, ...jsonSchema } } : undefined;
+  const sourceEnvelope = anthropicMessagesEnvelopeToIR(payload);
+  const envelope = openaiResponsesEnvelopeFromIR({
+    ...sourceEnvelope,
+    // Messages has no name for its structured-output schema; the Responses wire
+    // requires one and this is the established spelling.
+    ...(sourceEnvelope.output_format === undefined ? {} : { output_format: { ...sourceEnvelope.output_format, name: 'messages_response' } }),
+  });
 
   // Anthropic `speed: 'fast'` selects OpenAI's priority lane. Without an
   // explicit speed, preserve Anthropic's service tier as an open string.
@@ -178,15 +177,12 @@ export const buildTargetRequest = async (
     model: payload.model,
     input,
     ...(instructions !== null ? { instructions } : {}),
-    ...(payload.temperature !== undefined ? { temperature: payload.temperature } : {}),
-    ...(payload.top_p !== undefined ? { top_p: payload.top_p } : {}),
-    max_output_tokens: payload.max_tokens,
+    ...envelope,
     ...(payload.tools !== undefined ? { tools: translateTools(clientTools) } : {}),
     ...(toolChoice !== undefined ? { tool_choice: toolChoice } : {}),
     ...(payload.metadata ? { metadata: translateMetadata(payload.metadata as AnthropicMessagesMetadataEx) } : {}),
     stream: true,
     ...(reasoning ? { reasoning } : {}),
-    ...(text ? { text } : {}),
     ...(serviceTier !== undefined ? { service_tier: serviceTier } : {}),
   };
 };

@@ -6,12 +6,12 @@ import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } fro
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec, RemoteImageLoader } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
-import { anthropicMessagesFromIR } from '../../anthropic-messages/as-target/input-from.ts';
+import { anthropicMessagesEnvelopeFromIR, anthropicMessagesFromIR } from '../../anthropic-messages/as-target/input-from.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-messages/as-target/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
-import { openaiChatCompletionsCallKinds, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/input-to.ts';
+import { openaiChatCompletionsEnvelopeToIR, openaiChatCompletionsCallKinds, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/input-to.ts';
 import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesMessage, type AnthropicMessagesPayload, type AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
 import { isFastServiceTier } from '@floway-dev/protocols/common';
@@ -128,13 +128,13 @@ export const buildTargetRequest = async (
   // json_schema: { schema } }`); `json_object` / `text` / absent have no
   // Anthropic Messages equivalent and drop.
   const { thinking, effort: reasoningEffort } = anthropicMessagesReasoningFieldsFromEffort(payload.reasoning_effort);
-  const responseFormat = payload.response_format;
-  const jsonSchema = responseFormat?.type === 'json_schema' ? (responseFormat.json_schema as Record<string, unknown> | undefined) : undefined;
-  const formatSchema =
-    jsonSchema?.schema && typeof jsonSchema.schema === 'object' && !Array.isArray(jsonSchema.schema) ? (jsonSchema.schema as Record<string, unknown>) : undefined;
-  const outputConfig: NonNullable<AnthropicMessagesPayload['output_config']> = {};
-  if (reasoningEffort !== undefined) outputConfig.effort = reasoningEffort;
-  if (formatSchema) outputConfig.format = { type: 'json_schema', schema: klona(formatSchema) };
+  const envelope = anthropicMessagesEnvelopeFromIR(openaiChatCompletionsEnvelopeToIR(payload));
+  // `output_config` merges the structured-output format with the reasoning
+  // effort, which the envelope does not carry.
+  const outputConfig: NonNullable<AnthropicMessagesPayload['output_config']> = {
+    ...(reasoningEffort === undefined ? {} : { effort: reasoningEffort }),
+    ...envelope.output_config,
+  };
   const hasOutputConfig = Object.keys(outputConfig).length > 0;
 
   // OpenAI's accelerated request lane maps to Anthropic's `speed: 'fast'`;
@@ -145,17 +145,13 @@ export const buildTargetRequest = async (
 
   // OpenAI user and generic metadata are not interpreted as Messages user_id.
   return {
+    ...envelope,
     model: payload.model,
+    // Messages requires a ceiling and a fallback may supply it; the envelope
+    // states one only when the source did.
+    max_tokens: envelope.max_tokens ?? maxTokens,
     messages,
-    max_tokens: maxTokens,
     ...(systemBlocks.length > 0 ? { system: systemBlocks } : {}),
-    ...(payload.temperature != null ? { temperature: payload.temperature } : {}),
-    ...(payload.top_p != null ? { top_p: payload.top_p } : {}),
-    ...(payload.stop != null
-      ? {
-          stop_sequences: Array.isArray(payload.stop) ? klona(payload.stop) : [payload.stop],
-        }
-      : {}),
     stream: true,
     ...(tools ? { tools } : {}),
     ...(payload.tool_choice != null ? { tool_choice: translateOpenAIChatCompletionsToolChoice(payload.tool_choice) } : {}),

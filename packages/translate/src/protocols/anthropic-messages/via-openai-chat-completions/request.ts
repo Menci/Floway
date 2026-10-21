@@ -5,10 +5,10 @@ import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
-import { openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
+import { openaiChatCompletionsEnvelopeFromIR, openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
 import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
-import { anthropicMessagesDropsReasoning, anthropicMessagesTurnToIR } from '../as-source/input-to.ts';
+import { anthropicMessagesDropsReasoning, anthropicMessagesEnvelopeToIR, anthropicMessagesTurnToIR } from '../as-source/input-to.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from '../as-source/round-trip.ts';
 import type {
   AnthropicMessagesClientTool,
@@ -89,14 +89,13 @@ export const buildTargetRequest = async (
   // Pass effort through verbatim; per-upstream enum acceptance (e.g. some
   // backends rejecting `xhigh`/`max`) is the target interceptor's concern.
   const reasoningEffort = resolveReasoningEffort(payload);
-  // Anthropic's structured-output schema is already strict. Supply the name
-  // required by OpenAI and let OpenAI report any schema constraint it rejects.
-  // https://platform.claude.com/docs/en/build-with-claude/structured-outputs
-  const format = payload.output_config?.format;
-  const jsonSchema = format?.type === 'json_schema'
-    ? { name: 'messages_response', strict: true as const, schema: klona(format.schema) }
-    : undefined;
-  const responseFormat = jsonSchema ? { type: 'json_schema' as const, json_schema: jsonSchema } : undefined;
+  const sourceEnvelope = anthropicMessagesEnvelopeToIR(payload);
+  const envelope = openaiChatCompletionsEnvelopeFromIR({
+    ...sourceEnvelope,
+    // Messages has no name for its structured-output schema; the Chat wire
+    // requires one and this is the established spelling.
+    ...(sourceEnvelope.output_format === undefined ? {} : { output_format: { ...sourceEnvelope.output_format, name: 'messages_response' } }),
+  });
 
   // Anthropic `speed: 'fast'` selects OpenAI's priority lane. Without an
   // explicit speed, preserve Anthropic's service tier as an open string.
@@ -150,11 +149,9 @@ export const buildTargetRequest = async (
     // to the final usage-only chunk. Ref:
     // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/generate/base/protocol.py#L241-L243
     stream_options: { include_usage: true, continuous_usage_stats: true } as OpenAIChatCompletionsStreamOptionsEx,
-    temperature: payload.temperature,
-    top_p: payload.top_p,
+    ...envelope,
     tools: translateAnthropicMessagesTools(clientTools),
     tool_choice: translateAnthropicMessagesToolChoice(payload.tool_choice, clientTools),
-    ...(responseFormat ? { response_format: responseFormat } : {}),
     ...(serviceTier !== undefined ? { service_tier: serviceTier } : {}),
   };
 };

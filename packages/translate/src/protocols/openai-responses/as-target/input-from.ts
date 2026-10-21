@@ -1,5 +1,7 @@
 import type {
   IRInputAssistantItem,
+  IRInputEnvelope,
+  IRInputOutputFormat,
   IRInputConversation,
   IRInputMedia,
   IRInputToolResultContentPart,
@@ -8,6 +10,7 @@ import type {
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type {
   CanonicalOpenAIResponsesInputItem,
+  CanonicalOpenAIResponsesPayload,
   OpenAIResponsesInputContent,
   OpenAIResponsesToolOutputContent,
 } from '@floway-dev/protocols/openai-responses';
@@ -169,4 +172,44 @@ export const openaiResponsesFromIR = (
   });
 
   return { instructions: instructions.length === 0 ? undefined : instructions.join('\n\n'), input };
+};
+
+const requireSchema = (format: IRInputOutputFormat): Readonly<Record<string, unknown>> => {
+  if (format.schema === undefined) throw new TranslatorInputError('Cannot translate json_schema response format without a schema.');
+  return format.schema;
+};
+
+/**
+ * Responses states the ceiling once and nests no schema details: `text.format`
+ * is flat. `strict` stays absent when the source did not say, because an
+ * omitted Responses tool/format strictness is not the same as `false`.
+ */
+export const openaiResponsesEnvelopeFromIR = (envelope: IRInputEnvelope): Partial<CanonicalOpenAIResponsesPayload> => {
+  const limits = envelope.sampling?.max_output_tokens;
+  const ceiling = limits?.max_output_tokens ?? limits?.max_completion_tokens ?? limits?.max_tokens;
+  const format = envelope.output_format;
+
+  return {
+    ...(ceiling === undefined ? {} : { max_output_tokens: ceiling }),
+    ...(envelope.sampling?.temperature === undefined ? {} : { temperature: envelope.sampling.temperature }),
+    ...(envelope.sampling?.top_p === undefined ? {} : { top_p: envelope.sampling.top_p }),
+    ...(format === undefined
+      ? {}
+      : {
+          text: {
+            format: format.type === 'json_schema'
+              ? {
+                  type: 'json_schema' as const,
+                  // Responses requires both a name and a schema; the IR makes them
+                  // optional because Chat and Messages spell them differently. A
+                  // source without a schema cannot be expressed here at all.
+                  name: format.name ?? 'response',
+                  schema: requireSchema(format),
+                  ...(format.description === undefined ? {} : { description: format.description }),
+                  ...(format.strict === undefined ? {} : { strict: format.strict }),
+                }
+              : { type: format.type },
+          },
+        }),
+  };
 };

@@ -1,9 +1,15 @@
+import { klona } from 'klona/json';
+
 import { partitionOpenAIChatCompletionsTurns, type OpenAIChatCompletionsConversationTurn } from './conversation-turns.ts';
 import { hasOpenAIChatCompletionsReasoning } from './round-trip.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
   IRInputConversation,
+  IRInputEnvelope,
+  IRInputMaxOutputTokens,
+  IRInputOutputFormat,
+  IRInputSampling,
   IRInputMedia,
   IRInputTextPart,
   IRInputToolResultContentPart,
@@ -170,4 +176,48 @@ export const openaiChatCompletionsTurnToIR = (
 export const openaiChatCompletionsInputToIR = (payload: OpenAIChatCompletionsPayload): IRInputConversation => {
   const callKinds = openaiChatCompletionsCallKinds(payload);
   return { turns: partitionOpenAIChatCompletionsTurns(payload.messages).map(turn => openaiChatCompletionsTurnToIR(turn, callKinds)) };
+};
+
+/**
+ * Chat Completions states one ceiling under two names. `max_tokens` predates
+ * reasoning models; `max_completion_tokens` is the documented alias whose count
+ * includes hidden reasoning tokens. A request may legitimately carry either, so
+ * both survive into the IR and the target decides which to forward.
+ *
+ * https://help.openai.com/en/articles/5072518-controlling-the-length-of-openai-model-responses
+ * https://community.openai.com/t/why-was-max-tokens-changed-to-max-completion-tokens/938077
+ */
+export const openaiChatCompletionsEnvelopeToIR = (payload: OpenAIChatCompletionsPayload): IRInputEnvelope => {
+  const maxOutputTokens: IRInputMaxOutputTokens = {
+    ...(payload.max_tokens == null ? {} : { max_tokens: payload.max_tokens }),
+    ...(payload.max_completion_tokens == null ? {} : { max_completion_tokens: payload.max_completion_tokens }),
+  };
+
+  const sampling: IRInputSampling = {
+    ...(payload.temperature == null ? {} : { temperature: payload.temperature }),
+    ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
+    ...(payload.stop == null ? {} : { stop: typeof payload.stop === 'string' ? [payload.stop] : [...payload.stop] }),
+    ...(payload.seed == null ? {} : { seed: payload.seed }),
+    ...(Object.keys(maxOutputTokens).length === 0 ? {} : { max_output_tokens: maxOutputTokens }),
+  };
+
+  const format = payload.response_format;
+  const outputFormat: IRInputOutputFormat | undefined = format === undefined ? undefined
+    : format.type === 'json_schema'
+      ? {
+          type: 'json_schema',
+          ...(format.json_schema.name === undefined ? {} : { name: format.json_schema.name }),
+          ...(format.json_schema.description === undefined ? {} : { description: format.json_schema.description }),
+          ...(format.json_schema.schema === undefined ? {} : { schema: klona(format.json_schema.schema) }),
+          // The tool-side and format-side `strict` share a spelling; an omitted
+          // format strictness stays absent so the target applies its own default.
+          ...(format.json_schema.strict == null ? {} : { strict: format.json_schema.strict }),
+        }
+      : { type: format.type };
+
+  return {
+    model: payload.model,
+    ...(Object.keys(sampling).length === 0 ? {} : { sampling }),
+    ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
+  };
 };

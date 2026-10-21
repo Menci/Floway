@@ -2,50 +2,32 @@ import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segm
 import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
-import { openaiResponsesFromIR } from '../../openai-responses/as-target/input-from.ts';
+import { openaiResponsesEnvelopeFromIR, openaiResponsesFromIR } from '../../openai-responses/as-target/input-from.ts';
 import { geminiGenerateContentText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
-import { geminiGenerateContentDropsReasoning, geminiGenerateContentTurnToIR } from '../as-source/input-to.ts';
+import { geminiGenerateContentDropsReasoning, geminiGenerateContentEnvelopeToIR, geminiGenerateContentTurnToIR } from '../as-source/input-to.ts';
 import { geminiGenerateContentReasoningEffort } from '../as-source/reasoning.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
-import { geminiFunctionParameters, geminiResponseSchema } from '../as-source/schema.ts';
+import { geminiFunctionParameters } from '../as-source/schema.ts';
 import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionDeclarations, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
-import type { GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 
-const applyGenerationConfig = (request: CanonicalOpenAIResponsesPayload, generationConfig?: GeminiGenerateContentGenerationConfig): void => {
-  if (!generationConfig) return;
+const applyGenerationConfig = (request: CanonicalOpenAIResponsesPayload, payload: GeminiGenerateContentPayload, model: string): void => {
+  const source = geminiGenerateContentEnvelopeToIR(payload, model);
+  Object.assign(request, openaiResponsesEnvelopeFromIR({
+    ...source,
+    // Responses requires a name for a json_schema format; this is the
+    // established spelling for a GenerateContent source.
+    ...(source.output_format === undefined ? {} : { output_format: { ...source.output_format, name: 'gemini_response' } }),
+  }));
 
-  if (generationConfig.maxOutputTokens !== undefined) {
-    request.max_output_tokens = generationConfig.maxOutputTokens;
-  }
-  if (generationConfig.temperature !== undefined) {
-    request.temperature = generationConfig.temperature;
-  }
-  if (generationConfig.topP !== undefined) {
-    request.top_p = generationConfig.topP;
-  }
-
-  const schema = geminiResponseSchema(generationConfig);
-  if (schema !== undefined) {
-    request.text = {
-      ...request.text,
-      format: {
-        type: 'json_schema',
-        name: 'gemini_response',
-        schema,
-      },
-    };
-  } else if (generationConfig.responseMimeType === 'application/json') {
-    request.text = { ...request.text, format: { type: 'json_object' } };
-  }
-
-  const effort = geminiGenerateContentReasoningEffort(generationConfig.thinkingConfig);
+  const config = payload.generationConfig;
+  const effort = config === undefined ? null : geminiGenerateContentReasoningEffort(config.thinkingConfig);
   if (effort === null) return;
-
   request.reasoning = {
     effort,
-    ...(effort !== 'none' && generationConfig.thinkingConfig?.includeThoughts === true ? { summary: 'detailed' as const } : {}),
+    ...(effort !== 'none' && config?.thinkingConfig?.includeThoughts === true ? { summary: 'detailed' as const } : {}),
   };
 };
 
@@ -103,7 +85,7 @@ export const buildTargetRequest = async (
     input.push(...openaiResponsesFromIR({ turns: piece.turns }, false).input);
   }
 
-  applyGenerationConfig(request, payload.generationConfig);
+  applyGenerationConfig(request, payload, model);
 
   const tools = buildTools(payload);
   if (tools) {

@@ -1,17 +1,15 @@
-import { klona } from 'klona/json';
-
 import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
 import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
-import { anthropicMessagesFromIR } from '../../anthropic-messages/as-target/input-from.ts';
+import { anthropicMessagesEnvelopeFromIR, anthropicMessagesFromIR } from '../../anthropic-messages/as-target/input-from.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
 import { geminiGenerateContentText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
-import { geminiGenerateContentContentsToIRTurns, geminiGenerateContentDropsReasoning } from '../as-source/input-to.ts';
+import { geminiGenerateContentContentsToIRTurns, geminiGenerateContentDropsReasoning, geminiGenerateContentEnvelopeToIR } from '../as-source/input-to.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
-import { geminiFunctionParameters, geminiResponseSchema } from '../as-source/schema.ts';
+import { geminiFunctionParameters } from '../as-source/schema.ts';
 import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionDeclarations, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
 import {
   ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
@@ -19,7 +17,7 @@ import {
   type AnthropicMessagesTextBlockParam,
   type AnthropicMessagesTool,
 } from '@floway-dev/protocols/anthropic-messages';
-import type { GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentThinkingConfig } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentPayload, GeminiGenerateContentThinkingConfig } from '@floway-dev/protocols/gemini-generate-content';
 
 interface ThinkingConfigFields {
   thinking?: NonNullable<AnthropicMessagesPayload['thinking']>;
@@ -48,25 +46,19 @@ const applyThinkingConfig = (thinkingConfig?: GeminiGenerateContentThinkingConfi
   };
 };
 
-const applyGenerationConfig = (request: AnthropicMessagesPayload, generationConfig: GeminiGenerateContentGenerationConfig | undefined, fallbackMaxOutputTokens: number): NonNullable<AnthropicMessagesPayload['output_config']> => {
-  request.max_tokens = generationConfig?.maxOutputTokens ?? fallbackMaxOutputTokens;
-
-  if (!generationConfig) return {};
-
-  if (generationConfig.temperature !== undefined) {
-    request.temperature = generationConfig.temperature;
-  }
-  if (generationConfig.topP !== undefined) {
-    request.top_p = generationConfig.topP;
-  }
-  if (generationConfig.topK !== undefined) {
-    request.top_k = generationConfig.topK;
-  }
-  if (generationConfig.stopSequences !== undefined) {
-    request.stop_sequences = klona(generationConfig.stopSequences);
-  }
-  const schema = geminiResponseSchema(generationConfig);
-  return schema === undefined ? {} : { format: { type: 'json_schema', schema } };
+const applyGenerationConfig = (
+  request: AnthropicMessagesPayload,
+  payload: GeminiGenerateContentPayload,
+  model: string,
+  fallbackMaxOutputTokens: number,
+): NonNullable<AnthropicMessagesPayload['output_config']> => {
+  const envelope = anthropicMessagesEnvelopeFromIR(geminiGenerateContentEnvelopeToIR(payload, model));
+  Object.assign(request, envelope);
+  // Messages requires a ceiling; a model-advertised cap supplies one when the
+  // source omitted it.
+  request.max_tokens = envelope.max_tokens ?? fallbackMaxOutputTokens;
+  const format = envelope.output_config?.format;
+  return format === undefined ? {} : { format };
 };
 
 const buildTools = (payload: GeminiGenerateContentPayload): AnthropicMessagesTool[] | undefined => {
@@ -135,7 +127,7 @@ export const buildTargetRequest = async (
     request.messages.push(...translated.messages);
   }
 
-  const generationOutputConfig = applyGenerationConfig(request, payload.generationConfig, fallbackMaxOutputTokens);
+  const generationOutputConfig = applyGenerationConfig(request, payload, model, fallbackMaxOutputTokens);
   const { thinking, outputConfig: thinkingOutputConfig } = applyThinkingConfig(payload.generationConfig?.thinkingConfig);
   const outputConfig = { ...generationOutputConfig, ...thinkingOutputConfig };
   const hasGenerationOutputConfig = Object.keys(generationOutputConfig).length > 0;

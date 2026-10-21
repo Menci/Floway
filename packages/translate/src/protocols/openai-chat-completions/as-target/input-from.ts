@@ -1,5 +1,6 @@
 import type {
   IRInputAssistantItem,
+  IRInputEnvelope,
   IRInputConversation,
   IRInputMedia,
   IRInputToolResultContentPart,
@@ -8,6 +9,7 @@ import type {
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type {
   OpenAIChatCompletionsContentPart,
+  OpenAIChatCompletionsPayload,
   OpenAIChatCompletionsMessage,
   OpenAIChatCompletionsToolCall,
   OpenAIChatCompletionsUserContentPart,
@@ -197,3 +199,39 @@ export const openaiChatCompletionsTurnFromIR = (turn: IRInputConversation['turns
   : userMessages(turn.items);
 
 export type { OpenAIChatCompletionsContentPart };
+
+/**
+ * Writes the envelope onto a Chat Completions payload. Chat accepts both ceiling
+ * names but some upstreams reject a request carrying them together, so the
+ * newer spelling wins when the source stated both.
+ *
+ * https://github.com/agentscope-ai/agentscope-java/issues/905
+ */
+export const openaiChatCompletionsEnvelopeFromIR = (envelope: IRInputEnvelope): Partial<OpenAIChatCompletionsPayload> => {
+  const limits = envelope.sampling?.max_output_tokens;
+  const ceiling = limits?.max_completion_tokens ?? limits?.max_tokens ?? limits?.max_output_tokens;
+  const format = envelope.output_format;
+
+  return {
+    ...(ceiling === undefined ? {} : { max_tokens: ceiling }),
+    ...(envelope.sampling?.temperature === undefined ? {} : { temperature: envelope.sampling.temperature }),
+    ...(envelope.sampling?.top_p === undefined ? {} : { top_p: envelope.sampling.top_p }),
+    ...(envelope.sampling?.stop === undefined ? {} : { stop: [...envelope.sampling.stop] }),
+    ...(envelope.sampling?.seed === undefined ? {} : { seed: envelope.sampling.seed }),
+    ...(format === undefined
+      ? {}
+      : format.type === 'json_schema'
+        ? {
+            response_format: {
+              type: 'json_schema' as const,
+              json_schema: {
+                name: format.name ?? 'response',
+                ...(format.description === undefined ? {} : { description: format.description }),
+                ...(format.schema === undefined ? {} : { schema: format.schema }),
+                ...(format.strict === undefined ? {} : { strict: format.strict }),
+              },
+            },
+          }
+        : { response_format: { type: format.type } }),
+  };
+};

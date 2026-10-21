@@ -5,17 +5,17 @@ import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
-import { openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
+import { openaiChatCompletionsEnvelopeFromIR, openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
 import { restrictAllowedTools } from '../as-source/allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
-import { openaiResponsesDropsReasoning, openaiResponsesTurnToIR } from '../as-source/input-to.ts';
+import { openaiResponsesEnvelopeToIR, openaiResponsesDropsReasoning, openaiResponsesTurnToIR } from '../as-source/input-to.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import { buildCustomToolInputSchema } from '../common/custom-tool-wrap.ts';
-import type { OpenAIChatCompletionsResponseFormat, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesPayloadEx, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 const translateOpenAIResponsesTools = (tools: OpenAIResponsesTool[] | null | undefined, customToolNames: Set<string>): OpenAIChatCompletionsTool[] | undefined => {
   // After allowed_tools selection, Chat Completions can represent only flat
@@ -72,31 +72,6 @@ const translateOpenAIResponsesToolChoice = (choice?: OpenAIResponsesToolChoice |
   return { type: 'function', function: { name: choice.name } };
 };
 
-const buildOpenAIChatCompletionsResponseFormat = (text: OpenAIResponsesPayloadEx['text']): OpenAIChatCompletionsPayload['response_format'] | undefined => {
-  if (text === undefined) return undefined;
-  if (text === null) return undefined;
-  // `text: {}` means no explicit format. Keep it omitted instead of converting
-  // absence into an explicit OpenAI Chat Completions `response_format: null`.
-  const format = klona(text.format);
-  if (!Object.hasOwn(text, 'format') || format === undefined) return undefined;
-  if (format === null) return undefined;
-  // OpenAI Responses API uses a flat json_schema shape
-  // ({ type, name, strict, schema }), while OpenAI Chat Completions wraps the
-  // schema details under a nested `json_schema` field. Reshape only when
-  // needed; pass `text`/`json_object` and already-wrapped variants through.
-  // Without this, OpenAI Chat Completions upstreams reject the request with
-  // "When response_format type is 'json_schema', the 'json_schema' field
-  // must be provided".
-  // References:
-  //   https://platform.openai.com/docs/api-reference/responses/create
-  //   https://platform.openai.com/docs/api-reference/chat/create#chat-create-response_format
-  if (format.type === 'json_schema' && !('json_schema' in format)) {
-    const { type: _type, ...rest } = format;
-    return { type: 'json_schema', json_schema: rest as Extract<OpenAIChatCompletionsResponseFormat, { type: 'json_schema' }>['json_schema'] };
-  }
-  return format as OpenAIChatCompletionsResponseFormat;
-};
-
 export interface TargetRequestResult {
   target: OpenAIChatCompletionsPayload;
   namespaceToolNames: NamespaceToolNames;
@@ -115,23 +90,20 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
   rejectProgrammaticOpenAIResponsesPayload(payload, 'OpenAI Chat Completions');
   const customToolNames = new Set<string>();
   const legacyFunctionNames = new Map<string, string>();
-  const responseFormat = buildOpenAIChatCompletionsResponseFormat(payload.text);
+  const envelope = openaiChatCompletionsEnvelopeFromIR(openaiResponsesEnvelopeToIR(payload));
 
   const allowed = restrictAllowedTools(payload.tools, payload.tool_choice);
   const tools = translateOpenAIResponsesTools(allowed.tools, customToolNames);
   // Same-purpose OpenAI fields pass through directly here, while broader
   // OpenAI-Responses-only state such as `previous_response_id` remains native-only.
   const target: OpenAIChatCompletionsPayload = {
+    ...envelope,
     model: payload.model,
     messages: [],
-    ...(payload.max_output_tokens !== undefined ? { max_tokens: payload.max_output_tokens } : {}),
     stream: true,
-    ...(payload.temperature !== undefined ? { temperature: payload.temperature } : {}),
-    ...(payload.top_p !== undefined ? { top_p: payload.top_p } : {}),
     ...(payload.metadata !== undefined ? { metadata: klona(payload.metadata) } : {}),
     ...(payload.store !== undefined ? { store: payload.store } : {}),
     ...(payload.parallel_tool_calls != null ? { parallel_tool_calls: payload.parallel_tool_calls } : {}),
-    ...(responseFormat !== undefined ? { response_format: responseFormat } : {}),
     ...(payload.prompt_cache_key !== undefined ? { prompt_cache_key: payload.prompt_cache_key } : {}),
     ...(payload.safety_identifier !== undefined ? { safety_identifier: payload.safety_identifier } : {}),
     ...(payload.reasoning?.effort != null ? { reasoning_effort: payload.reasoning.effort } : {}),

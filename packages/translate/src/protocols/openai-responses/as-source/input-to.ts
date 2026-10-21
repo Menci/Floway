@@ -1,7 +1,12 @@
+import { klona } from 'klona/json';
+
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
   IRInputConversation,
+  IRInputEnvelope,
+  IRInputOutputFormat,
+  IRInputSampling,
   IRInputMedia,
   IRInputTextPart,
   IRInputToolResultContentPart,
@@ -18,6 +23,7 @@ import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '.
 import { isOpenAIResponsesEncryptedReasoning } from './round-trip.ts';
 import type {
   CanonicalOpenAIResponsesInputItem,
+  CanonicalOpenAIResponsesPayload,
   OpenAIResponsesInputContent,
   OpenAIResponsesInputMessageEx,
   OpenAIResponsesRequestPayloadEx,
@@ -212,4 +218,41 @@ export const openaiResponsesInputToIR = (source: OpenAIResponsesRequestPayloadEx
       : { role: 'user', items: userItems(items, reject) });
   }
   return { conversation: { turns }, namespaceToolNames: names };
+};
+
+/**
+ * Responses states the ceiling once, as `max_output_tokens`. Its `text.format`
+ * carries the structured-output schema flat, unlike Chat's nested spelling.
+ */
+export const openaiResponsesEnvelopeToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputEnvelope => {
+  const sampling: IRInputSampling = {
+    ...(payload.temperature == null ? {} : { temperature: payload.temperature }),
+    ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
+    ...(payload.max_output_tokens == null ? {} : { max_output_tokens: { max_output_tokens: payload.max_output_tokens } }),
+  };
+
+  const format = payload.text?.format;
+  const outputFormat: IRInputOutputFormat | undefined = format === undefined || format === null ? undefined
+    : format.type === 'json_schema'
+      ? {
+        // A caller may hand the Chat-Completions-nested spelling to the
+        // Responses field; its details are still the same schema.
+          ...('json_schema' in format && typeof format.json_schema === 'object' && format.json_schema !== null
+            ? format.json_schema as Record<string, unknown>
+            : {}),
+          type: 'json_schema',
+          ...('name' in format && typeof format.name === 'string' ? { name: format.name } : {}),
+          ...('description' in format && typeof format.description === 'string' ? { description: format.description } : {}),
+          ...('schema' in format && format.schema !== undefined && format.schema !== null && typeof format.schema === 'object'
+            ? { schema: klona(format.schema) as Record<string, unknown> }
+            : {}),
+          ...('strict' in format && typeof format.strict === 'boolean' ? { strict: format.strict } : {}),
+        }
+      : { type: format.type };
+
+  return {
+    model: payload.model,
+    ...(Object.keys(sampling).length === 0 ? {} : { sampling }),
+    ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
+  };
 };
