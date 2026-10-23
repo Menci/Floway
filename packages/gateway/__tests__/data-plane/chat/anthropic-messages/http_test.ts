@@ -240,6 +240,62 @@ test('POST /v1/messages/count_tokens proxies the upstream measurement body', asy
   assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
 });
 
+test('POST /v1/messages/count_tokens forwards an upstream rate limit and retry hint unchanged', async () => {
+  installRepo();
+  const body = '{"error":{"type":"rate_limit_error","message":"wait"}}';
+  const callAnthropicMessagesCountTokens = vi.fn(async () => ({
+    response: new Response(body, {
+      status: 429,
+      headers: { 'content-type': 'application/json', 'retry-after': '17', 'request-id': 'req-count', 'set-cookie': 'private=1' },
+    }),
+    modelKey: 'k',
+  }));
+  queueCandidates([makeCandidate({ callAnthropicMessagesCountTokens })]);
+  const response = await makeApp().request('/v1/messages/count_tokens', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }] }),
+  });
+  assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
+  assertEquals(response.status, 429);
+  assertEquals(response.headers.get('retry-after'), '17');
+  assertEquals(response.headers.get('request-id'), 'req-count');
+  assertEquals(response.headers.get('set-cookie'), null);
+  assertEquals(await response.text(), body);
+});
+
+test('POST /v1/messages does not switch upstreams after the response stream opens and breaks', async () => {
+  installRepo();
+  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
+    ok: true,
+    events: (async function* () {
+      yield eventFrame(makeAnthropicMessagesEvents()[0]!);
+      throw new Error('connection reset after message_start');
+    })(),
+    modelKey: 'k',
+    headers: new Headers(),
+  }));
+  const secondCall = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
+    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'second', headers: new Headers(),
+  }));
+  queueCandidates([
+    makeCandidate({ upstream: 'first', callAnthropicMessages }),
+    makeCandidate({ upstream: 'second', callAnthropicMessages: secondCall }),
+  ]);
+  const response = await makeApp().request('/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'test-model', max_tokens: 32, stream: true, messages: [{ role: 'user', content: 'hello' }] }),
+  });
+  const body = await response.text();
+  assertEquals(response.status, 200);
+  assert(body.includes('event: message_start'));
+  assert(body.includes('event: error'));
+  assert(body.includes('connection reset after message_start'));
+  assertEquals(secondCall.mock.calls.length, 0);
+  await flushBackground();
+});
+
 test('POST /v1/messages forwards upstream response headers end-to-end (streaming) and strips hop-by-hop / cookies', async () => {
   installRepo();
   const upstreamHeaders = new Headers({

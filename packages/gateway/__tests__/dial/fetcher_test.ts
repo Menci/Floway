@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createFetcher } from '../../src/dial/fetcher.ts';
 import type { ProxyEntry } from '../../src/dial/proxy-catalog.ts';
+import { UpstreamTransportError } from '../../src/dial/transport-error.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import type { HttpRequest } from '@floway-dev/http';
 import { isReplayableBody, type FetchInit, type ReplayableBody } from '@floway-dev/provider';
@@ -376,7 +377,7 @@ describe('createFetcher', () => {
       socketDial: () => ({ ...stubSocketDial, shouldConnectErrorFallbackToFetch: error => error === blocked }),
     });
 
-    await expect(fetcher('https://example.com', { method: 'GET' })).rejects.toBe(fetchError);
+    await expect(fetcher('https://example.com', { method: 'GET' })).rejects.toMatchObject({ name: UpstreamTransportError.name, cause: fetchError });
   });
 
   it('keeps the configured order when a fetch entry matches the current colo', async () => {

@@ -140,9 +140,9 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
 
     // Iterate the viable list. Each candidate's attempt runs the upstream
     // HTTP call and records performance telemetry; the shared
-    // iterator returns the first 2xx or, on exhaustion, the last non-2xx
-    // result. Request-perf and dump attribution wait until this point so
-    // they land against the terminal candidate.
+    // iterator returns the first 2xx or, on exhaustion, the selected failure
+    // with the earliest retry hint preferred. Request-perf and dump attribution
+    // wait until this point so they land against the selected candidate.
     const result = await iterateCandidates(
       viable,
       'passthroughServe',
@@ -160,7 +160,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     }
 
     if (!response.ok) {
-      // Exhausted — forward the last upstream response verbatim so clients
+      // Exhausted — forward the selected upstream response verbatim so clients
       // still see real upstream telemetry (status, retry-after, request-id,
       // ...) rather than a synthetic gateway envelope.
       recordFailedRequest(ctx, performanceContext);

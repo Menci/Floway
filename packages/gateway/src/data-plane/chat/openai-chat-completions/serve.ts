@@ -37,9 +37,9 @@ export const openaiChatCompletionsServe = {
     // Try each affinity-selected candidate in order. A successful attempt (SSE
     // stream opened) is the final answer; an api-error or internal-error
     // from one candidate falls through to the next so the gateway absorbs
-    // transient 5xx/429/network failures. When the list is exhausted, the
-    // most recent failure is forwarded verbatim so the client still sees
-    // real upstream telemetry rather than a synthetic envelope. Each attempt
+    // transient 5xx/429/network failures. On exhaustion, the selected failure
+    // is forwarded verbatim, preferring the earliest retry hint, so the client
+    // still sees real upstream telemetry rather than a synthetic envelope. Each attempt
     // stamps its private payload clone with the candidate's canonical model id
     // so aliases and prefixed ids resolve without mutating the caller payload.
     return await iterateCandidates(
