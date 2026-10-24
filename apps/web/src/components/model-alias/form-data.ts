@@ -53,6 +53,16 @@ export const aliasDefaults = (alias: ModelAlias | null): AliasFormValues => {
   };
 };
 
+export const copiedAliasName = (name: string, aliases: readonly ModelAlias[]): string => {
+  const names = new Set(aliases.map(alias => alias.name));
+  const base = `${name}-copy`;
+  if (!names.has(base)) return base;
+
+  let suffix = 2;
+  while (names.has(`${base}-${suffix}`)) suffix++;
+  return `${base}-${suffix}`;
+};
+
 // `sort_order` is left out: absent, the server appends a new alias last and
 // keeps an existing one's place.
 export const aliasBody = (values: AliasFormValues): AliasWriteBody => {

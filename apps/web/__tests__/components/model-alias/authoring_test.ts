@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { computeAnnouncedMetadata } from '../../../src/components/model-alias/announced-metadata';
-import { aliasBody, aliasDefaults, metadataForKind } from '../../../src/components/model-alias/form-data';
+import { aliasBody, aliasDefaults, copiedAliasName, metadataForKind } from '../../../src/components/model-alias/form-data';
 import { computeAliasWarnings, computeModelWarning, computeRuleWarnings } from '../../../src/components/model-alias/warnings';
 import { indexCatalog } from '../../../src/components/models/catalog-index';
 import { catalogModel } from '../../api/model-fixture';
@@ -111,5 +111,20 @@ describe('alias wire body', () => {
     values.targets = [target('image-1', { verbosity: 'high' })];
     values.announcedMetadata = { limits: { max_output_tokens: 10 } };
     expect(aliasBody(values)).toMatchObject({ targets: [{ rules: {} }], announced_metadata: null });
+  });
+});
+
+describe('alias copy naming', () => {
+  it('uses a stable ASCII suffix and skips occupied IDs', () => {
+    const aliases: ModelAlias[] = ['old-copy', 'old-copy-2'].map((name, index) => ({
+      id: `alias-${index}`, name, kind: 'chat', selection: 'first-available', display_name: null,
+      visible_in_models_list: true, targets: [target('a')], announced_metadata: null,
+      sort_order: index, created_at: '2026-01-01', updated_at: '2026-01-01',
+    }));
+    const copiedName = copiedAliasName('old', aliases);
+
+    expect(copiedName).toBe('old-copy-3');
+    expect(copiedName).toMatch(/^[A-Za-z0-9.-]+$/);
+    expect(copiedAliasName('old', aliases)).toBe(copiedName);
   });
 });
