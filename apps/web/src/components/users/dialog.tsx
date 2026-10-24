@@ -114,7 +114,8 @@ export function UserDialog(props: UserDialogProps) {
   };
 
   return (
-    <>{discardConfirmation}<DialogShell
+    <DialogShell
+      nestedDialogs={discardConfirmation}
       width="editor"
       open={props.open}
       actions={
@@ -178,7 +179,7 @@ export function UserDialog(props: UserDialogProps) {
         <MessageBar intent="info"><MessageBarBody>{t('dashboard.users.createdDefaultKey')}</MessageBarBody></MessageBar>
       )}
       {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
-    </DialogShell></>
+    </DialogShell>
   );
 }
 

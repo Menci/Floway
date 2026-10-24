@@ -153,7 +153,8 @@ export function KeyDialog(props: KeyDialogProps) {
   };
 
   return (
-    <>{discardConfirmation}<DialogShell
+    <DialogShell
+      nestedDialogs={discardConfirmation}
       width="editor"
       open={props.open}
       onOpenChange={(_, data) => { if (!data.open && !saving) requestClose(); }}
@@ -286,7 +287,7 @@ export function KeyDialog(props: KeyDialogProps) {
       {error && (
         <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>
       )}
-    </DialogShell></>
+    </DialogShell>
   );
 }
 

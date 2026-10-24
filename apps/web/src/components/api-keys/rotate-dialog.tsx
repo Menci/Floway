@@ -67,7 +67,8 @@ export function RotateKeyDialog({
   };
 
   return (
-    <>{discardConfirmation}<DialogShell
+    <DialogShell
+      nestedDialogs={discardConfirmation}
       open={open}
       onOpenChange={(_, data) => { if (!data.open && !saving) requestClose(); }}
       onSubmit={() => void handleSubmit(rotate)()}
@@ -95,6 +96,6 @@ export function RotateKeyDialog({
         source={values.keySource}
       />
       {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
-    </DialogShell></>
+    </DialogShell>
   );
 }

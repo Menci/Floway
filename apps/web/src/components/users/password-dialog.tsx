@@ -70,7 +70,8 @@ export function PasswordDialog({ onOpenChange, open, onSaved, user }: {
   };
 
   return (
-    <>{discardConfirmation}<DialogShell
+    <DialogShell
+      nestedDialogs={discardConfirmation}
       open={open}
       actions={<DialogActions>
         <Button disabled={saving} onClick={requestClose}>{t('common.cancel')}</Button>
@@ -101,6 +102,6 @@ export function PasswordDialog({ onOpenChange, open, onSaved, user }: {
         </Field>
       )} />
       {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
-    </DialogShell></>
+    </DialogShell>
   );
 }

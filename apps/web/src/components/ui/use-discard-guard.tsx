@@ -20,11 +20,16 @@ export const useDiscardGuard = <T,>({ onClose, values }: { onClose: () => void; 
   const { t } = useTranslation();
   const prompt = useDialogInvocation<void>();
   const discarding = useRef(false);
+  const returnFocusTo = useRef<HTMLElement | null>(null);
   const [openedWith] = useState(() => JSON.stringify(values));
   const dirty = JSON.stringify(values) !== openedWith;
 
   const requestClose = useCallback(() => {
-    if (dirty) prompt.open(); else onClose();
+    if (dirty) {
+      const activeElement = document.activeElement;
+      returnFocusTo.current = activeElement instanceof HTMLElement ? activeElement : null;
+      prompt.open();
+    } else onClose();
   }, [dirty, onClose, prompt]);
 
   // Closing the guarded dialog in the same commit that closes this one would
@@ -36,8 +41,14 @@ export const useDiscardGuard = <T,>({ onClose, values }: { onClose: () => void; 
     message={t('common.discard.message')}
     onConfirm={() => { discarding.current = true; prompt.close(); }}
     onExited={() => {
-      if (!discarding.current) return;
+      if (!discarding.current) {
+        const element = returnFocusTo.current;
+        returnFocusTo.current = null;
+        if (element?.isConnected) element.focus();
+        return;
+      }
       discarding.current = false;
+      returnFocusTo.current = null;
       onClose();
     }}
     onOpenChange={open => { if (!open) prompt.close(); }}

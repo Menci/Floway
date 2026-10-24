@@ -183,7 +183,8 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
       && issues.config.host === undefined && issues.config.port === undefined;
   }, [values]);
 
-  return <>{discardConfirmation}<DialogShell
+  return <DialogShell
+    nestedDialogs={discardConfirmation}
     open={open}
     actions={<DialogActions>
       <Button className="!whitespace-nowrap" disabled={saving || testing} onClick={requestClose}>{t('common.cancel')}</Button>
@@ -216,5 +217,5 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
       title={testResult.ok ? t('dashboard.proxy.test.ok') : t('dashboard.proxy.test.failed')}
     >{testResult.ok ? t('dashboard.proxy.test.egressIp', { ip: testResult.egress_ip }) : testResult.error}</OutcomeMessageBar>}
     {saveError && <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>}
-  </DialogShell></>;
+  </DialogShell>;
 }

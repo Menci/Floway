@@ -17,9 +17,10 @@ const surfaceWidthClasses = {
 // Fluent can only animate a dialog out while the surface is still mounted, so
 // `open` is a prop: a shell hard-coded to `open` and closed by unmounting leaves
 // the exit no frames to run in.
-export function DialogShell({ actions, children, onExited, onOpenChange, onSubmit, open, surfaceClassName, title, width = 'standard' }: {
+export function DialogShell({ actions, children, nestedDialogs, onExited, onOpenChange, onSubmit, open, surfaceClassName, title, width = 'standard' }: {
   actions: ReactNode;
   children: ReactNode;
+  nestedDialogs?: ReactNode;
   /**
    * Runs once the surface has finished animating out. A caller whose
    * confirmation destroys the tree the dialog lives in does the deed here:
@@ -60,6 +61,7 @@ export function DialogShell({ actions, children, onExited, onOpenChange, onSubmi
             {actions}
           </DialogBody>
         </form>
+        {nestedDialogs}
       </DialogSurface>
     </Dialog>
   );
