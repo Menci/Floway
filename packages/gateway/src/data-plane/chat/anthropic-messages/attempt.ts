@@ -56,6 +56,7 @@ export const anthropicMessagesAttempt = {
       candidate,
       targetApi,
       headers,
+      anthropicBeta,
     };
     return await runInterceptors(invocation, ctx, anthropicMessagesInterceptors, async () => {
       if (targetApi === 'anthropicMessages') {
@@ -65,7 +66,7 @@ export const anthropicMessagesAttempt = {
           providerModelOf(candidate),
           body,
           ctx.abortSignal,
-          buildAnthropicMessagesUpstreamCallOptions(candidate, ctx, invocation.headers, anthropicBeta),
+          buildAnthropicMessagesUpstreamCallOptions(candidate, ctx, invocation.headers, invocation.anthropicBeta),
         );
         return await providerStreamResultToExecuteResult(providerResult, candidate, targetApi, ctx, createAnthropicMessagesBillableUsageReader());
       }
@@ -107,6 +108,7 @@ export const anthropicMessagesAttempt = {
       candidate,
       targetApi,
       headers,
+      anthropicBeta,
     };
     const response = await runInterceptors(invocation, ctx, anthropicMessagesCountTokensInterceptors, async () => {
       if (candidate.rules !== undefined) applyRulesToUpstreamAnthropicMessages(invocation.payload, candidate.rules);
@@ -115,7 +117,7 @@ export const anthropicMessagesAttempt = {
         providerModelOf(candidate),
         body,
         ctx.abortSignal,
-        buildAnthropicMessagesUpstreamCallOptions(candidate, ctx, invocation.headers, anthropicBeta),
+        buildAnthropicMessagesUpstreamCallOptions(candidate, ctx, invocation.headers, invocation.anthropicBeta),
       );
       return response;
     });

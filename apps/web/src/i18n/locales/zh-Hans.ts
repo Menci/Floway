@@ -744,7 +744,7 @@ const zhHansCN = {
             'strip-billing-attribution': {
               label: '移除 Claude Code 计费归属标记',
               description:
-                  'Claude Code 会在系统提示词中加入 `x-anthropic-billing-header`，供 Anthropic 计费判断，但对于**非 Anthropic 官方上游**，这个标记没有作用，且很可能会**破坏前缀缓存**。\n当上游不是 Anthropic 官方时应开启，以在系统提示词中移除这个标记。\n**Anthropic 官方上游**（如 Claude Code）**不应开启**，否则会影响计费。',
+                  'Claude Code 会在系统提示词中加入 `x-anthropic-billing-header`，并发送 `claude-code-20250219` beta 标记，让 Anthropic 按 Claude Code 用量计费。只有 **Claude Code 订阅**上游需要这些标记；对其他上游，它们很可能会**破坏前缀缓存**；对使用 API Key 的 Anthropic API，它们会让请求按 Claude Code 计费，而 Max 和 Team 套餐附带的每月 API 额度不覆盖 Claude Code，请求会因“余额不足”（credit balance is too low）而失败。\n除 Claude Code 订阅外的所有上游（包括使用 API Key 的 Anthropic API）都应开启，以移除这两个标记。\n**Claude Code 订阅**上游**不应开启**，否则请求将不再计入套餐额度。',
             },
             'strip-prompt-cache-key': {
               label: '去除 Prompt Cache Key',
