@@ -199,6 +199,7 @@ const customConfigSchema = z.object({
   }).strict()),
   // Live upstream /models fetch. `endpoint` parsing happens in the runtime.
   modelsFetch: z.object({ enabled: z.boolean(), endpoint: z.string().optional() }).optional(),
+  useOfficialPricing: z.boolean().optional(),
   // Statically configured per-model overrides merged with the live fetch.
   models: z.array(upstreamModelSchema).optional(),
 });

@@ -88,6 +88,7 @@ interface CustomUpstreamConfigBase {
   pathOverrides?: Partial<Record<CustomPathOverrideKey, string>>;
   ingressHeadersRules: CustomIngressHeaderRule[];
   modelsFetch: CustomModelsFetch;
+  useOfficialPricing?: boolean;
   models: UpstreamModelConfig[];
 }
 
@@ -211,12 +212,16 @@ export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstre
 
   const raw = record.config;
   const authStyle = authStyleField(raw.authStyle);
+  if (raw.useOfficialPricing !== undefined && typeof raw.useOfficialPricing !== 'boolean') {
+    throw new Error('Malformed custom upstream config: useOfficialPricing must be a boolean');
+  }
   const base = {
     baseUrl: baseUrlField(raw.baseUrl),
     endpoints: endpointsField(raw.endpoints, 'custom upstream config: endpoints', { allowEmpty: true }),
     ...(raw.pathOverrides !== undefined ? { pathOverrides: pathOverridesField(raw.pathOverrides) } : {}),
     ingressHeadersRules: ingressHeadersRulesField(raw.ingressHeadersRules),
     modelsFetch: modelsFetchField(raw.modelsFetch),
+    ...(raw.useOfficialPricing !== undefined ? { useOfficialPricing: raw.useOfficialPricing } : {}),
     models: modelsField(raw.models ?? [], 'custom'),
   };
 

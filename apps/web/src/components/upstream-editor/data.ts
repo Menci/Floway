@@ -211,6 +211,7 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
           { key: '', value: null },
         ],
         modelsFetch: withRegisteredKey('endpoint', structuredClone(record.config.modelsFetch)),
+        useOfficialPricing: record.config.useOfficialPricing ?? false,
       }
     : record.kind === 'azure' || record.kind === 'ollama'
       ? withApiKeyField(record.config)

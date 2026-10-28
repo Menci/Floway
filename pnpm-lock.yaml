@@ -614,6 +614,18 @@ importers:
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../provider
+      '@floway-dev/provider-claude-code':
+        specifier: workspace:*
+        version: link:../provider-claude-code
+      '@floway-dev/provider-codex':
+        specifier: workspace:*
+        version: link:../provider-codex
+      '@floway-dev/provider-copilot':
+        specifier: workspace:*
+        version: link:../provider-copilot
+      '@floway-dev/provider-ollama':
+        specifier: workspace:*
+        version: link:../provider-ollama
     devDependencies:
       '@floway-dev/test-utils':
         specifier: workspace:*

@@ -13,7 +13,11 @@
   },
   "dependencies": {
     "@floway-dev/protocols": "workspace:*",
-    "@floway-dev/provider": "workspace:*"
+    "@floway-dev/provider": "workspace:*",
+    "@floway-dev/provider-claude-code": "workspace:*",
+    "@floway-dev/provider-codex": "workspace:*",
+    "@floway-dev/provider-copilot": "workspace:*",
+    "@floway-dev/provider-ollama": "workspace:*"
   },
   "devDependencies": {
     "@floway-dev/test-utils": "workspace:*"

@@ -1,15 +1,20 @@
 import { test } from 'vitest';
 
-import { createCustomProvider } from '../src/provider.ts';
+import { createCustomProvider, projectCustomDiscoveredModels } from '../src/provider.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { parseRerankRequest } from '@floway-dev/protocols/rerank';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
+import { pricingForClaudeCodeModelKey } from '@floway-dev/provider-claude-code';
+import { pricingForCodexModelKey } from '@floway-dev/provider-codex';
+import { pricingForCopilotPublicModelId } from '@floway-dev/provider-copilot';
+import { pricingForOllamaModelKey } from '@floway-dev/provider-ollama';
 import { assertEquals, assertExists, assertRejects, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 interface BuildOptions {
   ingressHeadersRules?: { key: string; value: string | null }[];
   modelsFetchEnabled?: boolean;
+  useOfficialPricing?: boolean;
   models?: UpstreamModelConfig[];
 }
 
@@ -36,6 +41,7 @@ const buildCustomUpstream = (options: BuildOptions = {}): UpstreamRecord => ({
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: options.ingressHeadersRules ?? [],
     modelsFetch: { enabled: options.modelsFetchEnabled ?? true },
+    useOfficialPricing: options.useOfficialPricing,
     models: options.models ?? [],
   },
 });
@@ -175,6 +181,64 @@ test('getProvidedModels carries pricing on auto models', async () => {
   );
 
   assertEquals(models[0]?.pricing, upstreamPricing);
+});
+
+test.each([undefined, false, true])('Custom reference pricing is opt-in and preserves price precedence (%s)', async useOfficialPricing => {
+  const manualPricing: ModelPricing = { entries: [{ rates: { input_tokens: '0' } }] };
+  const upstreamPricing: ModelPricing = { entries: [{ rates: { input_tokens: '0.000001' } }] };
+  const references = [
+    ['gpt-5.4', pricingForCodexModelKey('gpt-5.4')],
+    ['claude-opus-4-6', pricingForClaudeCodeModelKey('claude-opus-4-6')],
+    ['gemini-2.5-pro', pricingForCopilotPublicModelId('gemini-2.5-pro')],
+    ['deepseek-v4-pro', pricingForOllamaModelKey('deepseek-v4-pro')],
+  ] as const;
+  const response = {
+    data: [
+      ...references.map(([id]) => ({ id })),
+      { id: 'gpt-5.4-mini', pricing: upstreamPricing },
+      { id: 'gpt-5.5', pricing: upstreamPricing },
+      { id: 'unknown-model' },
+    ],
+  };
+
+  for (const modelsFetchEnabled of [false, true]) {
+    const record = buildCustomUpstream({
+      useOfficialPricing,
+      modelsFetchEnabled,
+      models: [
+        ...references.map(([upstreamModelId]) => ({ upstreamModelId, publicModelId: `alias-${upstreamModelId}`, kind: 'chat' as const, endpoints: { openaiChatCompletions: {} } })),
+        { upstreamModelId: 'gpt-5.4-mini', kind: 'chat', endpoints: { openaiChatCompletions: {} } },
+        { upstreamModelId: 'gpt-5.5', kind: 'chat', endpoints: { openaiChatCompletions: {} }, pricing: manualPricing },
+        { upstreamModelId: 'unknown-model', publicModelId: 'gpt-6-sol', kind: 'chat', endpoints: { openaiChatCompletions: {} } },
+      ],
+    });
+    let fetchCalls = 0;
+    const models = await withMockedFetch(() => {
+      fetchCalls++;
+      return jsonResponse(response);
+    }, async () => await createCustomProvider(record).instance.getProvidedModels(directFetcher));
+    assertEquals(fetchCalls, modelsFetchEnabled ? 1 : 0);
+    const byId = new Map(models.map(model => [model.upstreamModelId, model]));
+    for (const [id, pricing] of references) {
+      assertExists(pricing);
+      assertEquals(byId.get(id)?.pricing, useOfficialPricing ? pricing : undefined);
+    }
+    assertEquals(byId.get('gpt-5.4-mini')?.pricing, modelsFetchEnabled ? upstreamPricing : useOfficialPricing ? pricingForCodexModelKey('gpt-5.4-mini') : undefined);
+    assertEquals(byId.get('gpt-5.5')?.pricing, manualPricing);
+    assertEquals(byId.get('unknown-model')?.pricing, undefined);
+  }
+
+  const record = buildCustomUpstream({ useOfficialPricing });
+  const autoModels = await withMockedFetch(() => jsonResponse(response), async () => await createCustomProvider(record).instance.getProvidedModels(directFetcher));
+  const discovered = projectCustomDiscoveredModels(record, response);
+  for (const models of [autoModels, discovered]) {
+    assertEquals(models.map(model => model.pricing), [
+      ...references.map(([, pricing]) => useOfficialPricing ? pricing : undefined),
+      upstreamPricing,
+      upstreamPricing,
+      undefined,
+    ]);
+  }
 });
 
 test('getProvidedModels carries chat metadata on auto models', async () => {

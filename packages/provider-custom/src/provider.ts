@@ -4,13 +4,26 @@ import { fetchCustomModels, type CustomModelsResponse, type CustomRawModel } fro
 import { customFetchAlphaSearch, customFetchOpenAIAudioTranscriptions, customFetchOpenAIChatCompletions, customFetchOpenAICompletions, customFetchOpenAIEmbeddings, customFetchOpenAIImagesEdits, customFetchOpenAIImagesGenerations, customFetchAnthropicMessages, customFetchAnthropicMessagesCountTokens, customFetchRerank, customFetchOpenAIResponses, customFetchOpenAIResponsesCompact } from './fetch.ts';
 import { inferEndpointsFromModelId } from './infer-endpoints.ts';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
-import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
+import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResultEx, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
 import { headersForAnthropicMessagesCall, jsonRequestBody, serializeModelFieldOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FetchInit, type FlagId, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
+import { pricingForClaudeCodeModelKey } from '@floway-dev/provider-claude-code';
+import { pricingForCodexModelKey } from '@floway-dev/provider-codex';
+import { pricingForCopilotPublicModelId } from '@floway-dev/provider-copilot';
+import { pricingForOllamaModelKey } from '@floway-dev/provider-ollama';
 
 const rawModelIdOf = (model: ProviderModel): string => model.providerData as string;
+
+const withOfficialPricing = <T extends { upstreamModelId: string; pricing?: ModelPricing }>(model: T, enabled: boolean | undefined): T => {
+  if (!enabled || model.pricing !== undefined) return model;
+  const pricing = pricingForCodexModelKey(model.upstreamModelId)
+    ?? pricingForClaudeCodeModelKey(model.upstreamModelId)
+    ?? pricingForCopilotPublicModelId(model.upstreamModelId)
+    ?? pricingForOllamaModelKey(model.upstreamModelId);
+  return pricing === null ? model : { ...model, pricing };
+};
 
 const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> => {
   const partial: Omit<ProviderModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> = {
@@ -69,7 +82,7 @@ export const projectCustomDiscoveredModels = (
     if (model.pricing !== undefined) projected.pricing = model.pricing;
     if (kind === 'chat' && model.chat !== undefined) projected.chat = model.chat;
     projected.opaqueBlobCompatibilityScope = model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true };
-    return projected;
+    return withOfficialPricing(projected, config.useOfficialPricing);
   });
 };
 
@@ -131,7 +144,7 @@ export const projectCustomModels = (
     if (kind === 'chat' && model.chat) internal.chat = model.chat;
     return internal;
   });
-  if (!config.modelsFetch.enabled || response === undefined) return manualModels;
+  if (!config.modelsFetch.enabled || response === undefined) return manualModels.map(model => withOfficialPricing(model, config.useOfficialPricing));
 
   const fetchedPricing = new Map(
     response.data.flatMap(model => model.pricing ? [[model.id, model.pricing] as const] : []),
@@ -144,7 +157,8 @@ export const projectCustomModels = (
   // Drop any auto-fetched model whose id is pinned by a manual override so
   // the manual copy is the only one emitted for that id.
   const filtered: CustomModelsResponse = { data: response.data.filter(raw => !overriddenIds.has(raw.id)) };
-  return [...effectiveManualModels, ...finalizeCustomModels(filtered, configuredEndpoints, upstreamFlags)];
+  return [...effectiveManualModels, ...finalizeCustomModels(filtered, configuredEndpoints, upstreamFlags)]
+    .map(model => withOfficialPricing(model, config.useOfficialPricing));
 };
 
 export const createCustomProvider = (record: UpstreamRecord): Provider => {
