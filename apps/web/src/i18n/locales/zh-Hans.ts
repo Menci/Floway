@@ -1273,7 +1273,7 @@ const zhHansCN = {
           ttftP95: 'TTFT p95', speedP95: '最慢 5% 速度',
           ttftP99: 'TTFT p99', speedP99: '最慢 1% 速度',
         },
-        chartTitle: '{{group}}：{{metric}} {{percentile}}',
+        chartTitle: '{{group}}：{{metric}}',
         series: {
           label: '性能序列选择',
         },

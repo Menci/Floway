@@ -32,7 +32,7 @@ const renderPage = (regionAvailable: boolean | null, groupBy: 'model' | 'runtime
         regionAvailable,
         state: {
           metric: 'ttft',
-          percentiles: { ttft: 'p95', tokPerSec: 'p95' },
+          percentile: 'p95',
           breakdown: 'model',
           sort: { key: 'requests', direction: 'descending' },
           groupBy,
@@ -59,7 +59,7 @@ describe('Performance Region dimensions', () => {
   it('does not turn an unauthorized URL user filter into a dropdown option', () => {
     const state = {
       metric: 'ttft' as const,
-      percentiles: { ttft: 'p95' as const, tokPerSec: 'p95' as const },
+      percentile: 'p95' as const,
       breakdown: 'model' as const,
       sort: { key: 'requests' as const, direction: 'descending' as const },
       groupBy: 'model' as const,

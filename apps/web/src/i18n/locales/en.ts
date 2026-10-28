@@ -1322,7 +1322,7 @@ const en = {
           ttftP95: 'TTFT p95', speedP95: 'Worst 5% speed',
           ttftP99: 'TTFT p99', speedP99: 'Worst 1% speed',
         },
-        chartTitle: '{{group}}: {{metric}} {{percentile}}',
+        chartTitle: '{{group}}: {{metric}}',
         series: {
           label: 'Performance series selection',
         },

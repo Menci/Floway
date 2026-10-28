@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -35,11 +35,11 @@ const record = (group: string, values: Partial<PerformanceDisplayRecord> = {}): 
 const overview: PerformanceOverviewResponse = {
   series: [record('model-a'), record('model-b')],
   axes: {
-    none: [],
+    none: [record('')],
     keyId: [],
     userId: [],
     model: [
-      record('model-a', { requests: 2, ttftMsP50: 100, ttftMsP95: 400, ttftMsP99: 100 }),
+      record('model-a', { requests: 2, ttftMsP50: 100, ttftMsP95: 400, ttftMsP99: 450, tpotUsP50: 10_000, tpotUsP95: 50_000, tpotUsP99: 60_000 }),
       record('model-b', { requests: 9, ttftMsP50: 200, ttftMsP95: 300, ttftMsP99: 500 }),
     ],
     upstream: [],
@@ -52,7 +52,7 @@ const overview: PerformanceOverviewResponse = {
   keys: [],
 };
 
-const renderPage = (search: string) => {
+const renderPage = (search: string, data = overview) => {
   const state = parsePerformanceUrlState(new URLSearchParams(search));
   const router = createMemoryRouter([{
     path: '/',
@@ -61,7 +61,7 @@ const renderPage = (search: string) => {
         currentUserId: '1',
         error: null,
         loadedAt,
-        overview,
+        overview: data,
         regionAvailable: true,
         state,
       }}
@@ -76,13 +76,40 @@ const renderPage = (search: string) => {
 const urlSearch = (router: ReturnType<typeof renderPage>['router']) => new URLSearchParams(router.state.location.search);
 
 describe('Performance table state', () => {
-  it('labels each table column with the percentile chosen for its metric', () => {
+  it.each(['ttft', 'tokPerSec'] as const)('updates both table metrics for every percentile with chart %s', async metric => {
+    const data = { ...overview, axes: { ...overview.axes, model: [record('model-a')] } };
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    renderPage(`m=${metric}`, data);
+    const group = 'By Model';
+    const table = within(screen.getByRole('table', { name: group }));
+    const summary = () => screen.getByText('Speed p50').parentElement!.parentElement!.textContent;
+    const initialSummary = summary();
+    expect(initialSummary).toContain('50.0 tok/s');
+
+    for (const [percentile, tail, latency, speed] of [
+      ['p50', 50, '100ms', '50.0 tok/s'],
+      ['p99', 1, '300ms', '12.5 tok/s'],
+      ['p95', 5, '200ms', '25.0 tok/s'],
+    ] as const) {
+      await act(async () => { fireEvent.click(screen.getByRole('radio', { name: percentile })); });
+      expect(table.getByRole('columnheader', { name: `TTFT ${percentile}` })).toBeTruthy();
+      expect(table.getByRole('columnheader', { name: `Worst ${tail}% speed` })).toBeTruthy();
+      expect(table.getAllByRole('cell', { name: latency }).length).toBeGreaterThan(0);
+      expect(table.getAllByRole('cell', { name: speed }).length).toBeGreaterThan(0);
+      expect(screen.getByText(`${group}: ${metric === 'ttft' ? `TTFT ${percentile}` : `Worst ${tail}% speed`}`)).toBeTruthy();
+      expect(summary()).toBe(initialSummary);
+    }
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('normalizes both table columns to the active metric percentile in legacy links', () => {
     renderPage('ttft_p=p99&speed_p=p50');
 
     expect(screen.getByRole('columnheader', { name: 'TTFT p99' })).toBeTruthy();
-    expect(screen.getByRole('columnheader', { name: 'Worst 50% speed' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Worst 1% speed' })).toBeTruthy();
     expect(screen.getAllByRole('cell', { name: '500ms' }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('cell', { name: '50.0 tok/s' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('cell', { name: '12.5 tok/s' }).length).toBeGreaterThan(0);
   });
 
   it('sorts the table by the percentile its column names', async () => {
@@ -92,27 +119,57 @@ describe('Performance table state', () => {
     expect(modelOrder()).toEqual(['model-a', 'model-b']);
 
     await act(async () => { fireEvent.click(screen.getByRole('radio', { name: 'p99' })); });
-    await waitFor(() => expect(urlSearch(router).get('ttft_p')).toBe('p99'));
+    await waitFor(() => expect(urlSearch(router).get('p')).toBe('p99'));
     expect(modelOrder()).toEqual(['model-b', 'model-a']);
   });
 
-  it('reads each metric percentile independently when the chart metric changes', async () => {
-    const { router } = renderPage('ttft_p=p99&speed_p=p50');
+  it('preserves the shared percentile across metric switches, links, refresh and reload', async () => {
+    const fetch = vi.fn(async () => Response.json(overview));
+    vi.stubGlobal('fetch', fetch);
+    const { router, unmount } = renderPage('ttft_p=p99&speed_p=p50');
 
+    const target = screen.getByRole('radio', { name: 'p50' }).getAttribute('href');
+    expect(parsePerformanceUrlState(new URL(target!, 'http://localhost').searchParams).percentile).toBe('p50');
     await act(async () => { fireEvent.click(screen.getByRole('radio', { name: 'p50' })); });
-    await waitFor(() => expect(urlSearch(router).get('ttft_p')).toBe('p50'));
-    expect(urlSearch(router).get('speed_p')).toBe('p50');
+    await waitFor(() => expect(urlSearch(router).get('p')).toBe('p50'));
+    expect(urlSearch(router).has('ttft_p')).toBe(false);
+    expect(urlSearch(router).has('speed_p')).toBe(false);
 
     await act(async () => { fireEvent.click(screen.getByRole('radio', { name: 'Output speed' })); });
     await waitFor(() => expect(urlSearch(router).get('m')).toBe('tokPerSec'));
-    expect(urlSearch(router).get('ttft_p')).toBe('p50');
-    expect(urlSearch(router).get('speed_p')).toBe('p50');
+    expect(screen.getByRole('radio', { name: 'p50' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByText('By Model: Worst 50% speed')).toBeTruthy();
 
     await act(async () => { fireEvent.click(screen.getByRole('radio', { name: 'p99' })); });
-    await waitFor(() => expect(urlSearch(router).get('speed_p')).toBe('p99'));
-    expect(urlSearch(router).get('ttft_p')).toBe('p50');
-    expect(screen.getByRole('columnheader', { name: 'TTFT p50' })).toBeTruthy();
+    await waitFor(() => expect(urlSearch(router).get('p')).toBe('p99'));
+    expect(screen.getByRole('columnheader', { name: 'TTFT p99' })).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'Worst 1% speed' })).toBeTruthy();
+    expect(screen.getByText('By Model: Worst 1% speed')).toBeTruthy();
+    expect(fetch).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh performance' }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh performance' }).hasAttribute('disabled')).toBe(false));
+    expect(urlSearch(router).get('p')).toBe('p99');
+    const address = urlSearch(router).toString();
+    unmount();
+    renderPage(address);
+    expect(screen.getByText('By Model: Worst 1% speed')).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'TTFT p99' })).toBeTruthy();
+    await act(async () => { fireEvent.click(screen.getByRole('radio', { name: 'TTFT' })); });
+    expect(screen.getByText('By Model: TTFT p99')).toBeTruthy();
+  });
+
+  it.each([
+    ['ttft', 'speed', ['model-b', 'model-a'], ['model-a', 'model-b']],
+    ['tokPerSec', 'ttft', ['model-a', 'model-b'], ['model-b', 'model-a']],
+  ] as const)('updates the inactive metric sort with chart %s', async (metric, sort, before, after) => {
+    renderPage(`m=${metric}&sort=${sort}`);
+    const modelOrder = () => screen.getAllByRole('row').slice(1).map(row => row.querySelector('td')?.textContent);
+    expect(modelOrder()).toEqual(before);
+    await act(async () => { fireEvent.click(screen.getByRole('radio', { name: 'p99' })); });
+    expect(modelOrder()).toEqual(after);
+    expect(screen.getByRole('columnheader', { name: sort === 'ttft' ? 'TTFT p99' : 'Worst 1% speed' }).getAttribute('aria-sort')).toBe('descending');
   });
 
   it('opens the breakdown and sort the URL names', () => {
