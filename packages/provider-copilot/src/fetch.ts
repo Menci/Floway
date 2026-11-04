@@ -75,3 +75,7 @@ export const copilotFetchOpenAIEmbeddings = (config: CopilotFetchConfig, init: F
   copilotFetchInternal(config, '/embeddings', init, options);
 export const copilotFetchModels = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/models', init, options);
+// Copilot serves decision models at the System One path it advertises in
+// `supported_endpoints`; the body is forwarded unchanged.
+export const copilotFetchSystemOne = (config: CopilotFetchConfig, path: string, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
+  copilotFetchInternal(config, path, init, options);

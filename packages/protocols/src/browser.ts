@@ -13,6 +13,7 @@ export type * from './openai-embeddings/index.ts';
 export type * from './openai-images/index.ts';
 export type * from './openai-audio/index.ts';
 export type * from './rerank/index.ts';
+export type * from './decision/index.ts';
 
 export {
   DEFAULT_LANGUAGE,
@@ -98,7 +99,7 @@ export {
   isMultipartFormDataMediaType,
 } from './common/media-type.ts';
 
-export { RERANK_PROTOCOLS, materializeOpaqueBlobCompatibilityIdentity } from './common/models.ts';
+export { DECISION_PROTOCOLS, RERANK_PROTOCOLS, materializeOpaqueBlobCompatibilityIdentity } from './common/models.ts';
 
 export {
   MAX_OPAQUE_TRAILER_BYTES,
@@ -219,3 +220,13 @@ export {
   renderRerankResponse,
   serializeRerankRequest,
 } from './rerank/translate.ts';
+
+export { DEFAULT_DECISION_PATHS } from './decision/default-paths.ts';
+
+export {
+  parseDecisionRequest,
+  parseDecisionResponse,
+  parseDecisionUsage,
+  renderDecisionResponse,
+  serializeDecisionRequest,
+} from './decision/translate.ts';

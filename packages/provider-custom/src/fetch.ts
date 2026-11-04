@@ -59,6 +59,9 @@ const customFetchInternal = async (
 export const customFetchRerank = (config: CustomUpstreamConfig, path: string, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(config, path, init, options);
 
+export const customFetchDecision = (config: CustomUpstreamConfig, path: string, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+  customFetchInternal(config, path, init, options);
+
 export const customFetchOpenAIChatCompletions = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(config, pathOverrideFor(config, '/chat/completions'), init, options);
 export const customFetchOpenAIResponses = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>

@@ -3,6 +3,7 @@ import { useEffect, useId, useRef } from 'react';
 
 import type { ModelRow } from './data';
 import { publicModelId } from './data';
+import { DecisionTargetEditor } from './decision-target-editor';
 import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, IMAGE_ENDPOINT_KEYS, shapeForKind } from './endpoints';
 import { FeatureFlagsEditor } from './feature-flags';
 import { type ModelValidationField, modelValidationIssues } from './model-validation';
@@ -71,9 +72,12 @@ export function ModelDetail({
   const setKind = (kind: UpstreamModelConfig['kind']) => patch({
     kind,
     chat: kind === 'chat' ? row.config.chat : undefined,
+    // Only a chat turn carries an opaque blob, so the scope goes with the kind.
+    opaqueBlobCompatibilityScope: kind === 'chat' ? row.config.opaqueBlobCompatibilityScope : undefined,
     rerankTarget: undefined,
+    decisionTarget: undefined,
     ...(kind === 'image' ? { limits: undefined } : {}),
-    ...shapeForKind(kind, row.config),
+    ...shapeForKind(kind, row.config, record.kind),
   });
 
   const updateLimit = (key: keyof NonNullable<UpstreamModelConfig['limits']>, raw: string) => {
@@ -155,6 +159,9 @@ export function ModelDetail({
                 <Option value="chat">Chat</Option><Option value="embedding">Embedding</Option><Option value="image">Image</Option><Option value="transcription">Transcription</Option>
                 {/* The gateway only accepts a rerank target on a custom upstream, so the kind is offered only where it can be saved. */}
                 {record.kind === 'custom' && <Option value="rerank">Rerank</Option>}
+                {/* Decision models are first-class on custom, Azure, Ollama, Copilot, and
+                    every other upstream that serves the System One contract. */}
+                <Option value="decision">Decision</Option>
               </Dropdown>
             </Field>
             <Field className="min-w-0" label={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deployment') : t('dashboard.upstreamEditor.models.upstreamId')} validationMessage={upstreamIdError} validationState={upstreamIdError ? 'error' : undefined}>
@@ -166,7 +173,9 @@ export function ModelDetail({
           </div>
         </EditorSection>
 
-        <EditorSection
+        {/* Opaque blobs ride a chat turn's history across models; no other kind
+            carries one. */}
+        {row.config.kind === 'chat' && <EditorSection
           info={<span className="whitespace-pre-line">{t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityHint')}</span>}
           level={3}
           title={t('dashboard.upstreamEditor.models.opaqueBlobCompatibility')}
@@ -188,7 +197,7 @@ export function ModelDetail({
               onChange={(_, data) => updateOpaqueBlobCompatibilityScope({ bindToUpstream: data.checked })}
             />
           </div>
-        </EditorSection>
+        </EditorSection>}
 
         {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <EditorSection error={validationMessage('endpoints')} level={3} title={t('dashboard.upstreamEditor.models.endpoints')}>
           <div className={`${TWO_COLUMN_FORM_CLASS} ${CHECKBOX_LIST_CLASS}`}>
@@ -208,6 +217,10 @@ export function ModelDetail({
 
         {row.config.kind === 'rerank' && row.config.rerankTarget && <EditorSection error={validationMessage('rerankTarget')} level={3} title={t('dashboard.upstreamEditor.models.rerankTarget')}>
           <RerankTargetEditor readOnly={fieldsReadOnly} value={row.config.rerankTarget} onChange={rerankTarget => patch({ rerankTarget })} />
+        </EditorSection>}
+
+        {row.config.kind === 'decision' && record.kind === 'custom' && <EditorSection error={validationMessage('decisionTarget')} level={3} title={t('dashboard.upstreamEditor.models.decisionTarget')}>
+          <DecisionTargetEditor readOnly={fieldsReadOnly} value={row.config.decisionTarget ?? { protocol: 'typesafe-systemone' }} onChange={decisionTarget => patch({ decisionTarget })} />
         </EditorSection>}
 
         {row.config.kind !== 'image' && <EditorSection level={3} title={t('dashboard.upstreamEditor.models.capabilities')}>
@@ -310,6 +323,7 @@ const modelKindLabel = (kind: UpstreamModelConfig['kind']): string => {
   case 'image': return 'Image';
   case 'transcription': return 'Transcription';
   case 'rerank': return 'Rerank';
+  case 'decision': return 'Decision';
   }
 };
 

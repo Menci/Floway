@@ -4,7 +4,7 @@ import { kindForEndpoints, parseModelKind } from '../../src/common/endpoints.ts'
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('parseModelKind accepts endpoint families and rejects unknown storage values', () => {
-  for (const kind of ['chat', 'embedding', 'image', 'rerank', 'transcription'] as const) assertEquals(parseModelKind(kind), kind);
+  for (const kind of ['chat', 'embedding', 'image', 'rerank', 'transcription', 'decision'] as const) assertEquals(parseModelKind(kind), kind);
   assertThrows(() => parseModelKind('video'), Error, 'model kind is invalid: "video"');
   assertThrows(() => parseModelKind(null), Error, 'model kind is invalid: null');
 });
@@ -28,4 +28,8 @@ test('kindForEndpoints returns embedding for OpenAI Embeddings and chat for chat
 
 test('kindForEndpoints returns rerank for the semantic rerank endpoint', () => {
   assertEquals(kindForEndpoints({ rerank: {} }), 'rerank');
+});
+
+test('kindForEndpoints returns decision for the decision endpoint', () => {
+  assertEquals(kindForEndpoints({ decision: {} }), 'decision');
 });
