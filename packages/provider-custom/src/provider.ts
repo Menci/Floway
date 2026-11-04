@@ -276,6 +276,9 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
       );
       return { response, modelKey: rawModelId, target };
     },
+    // Custom upstream configuration cannot declare `systemOne`, so no catalog
+    // model routes here.
+    callSystemOne: () => Promise.reject(new Error('Custom provider does not support callSystemOne')),
   };
 
   return {

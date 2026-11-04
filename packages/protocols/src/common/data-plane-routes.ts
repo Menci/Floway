@@ -26,6 +26,8 @@ export const PUBLIC_DATA_PLANE_ROUTES = {
   cohereV2Rerank: { method: 'POST', paths: ['/v2/rerank'] },
   jinaV1Rerank: { method: 'POST', paths: ['/jina/v1/rerank'] },
   voyageV1Rerank: { method: 'POST', paths: ['/voyage/v1/rerank'] },
+  openaiDecisions: { method: 'POST', paths: ['/v1/decisions', '/decisions'] },
+  systemOne: { method: 'POST', paths: ['/v1/systemone', '/systemone'] },
 } as const;
 
 export type PublicDataPlaneRouteId = keyof typeof PUBLIC_DATA_PLANE_ROUTES;

@@ -13,6 +13,7 @@ export type * from './openai-embeddings/index.ts';
 export type * from './openai-images/index.ts';
 export type * from './openai-audio/index.ts';
 export type * from './rerank/index.ts';
+export type * from './decisions/index.ts';
 
 export {
   DEFAULT_LANGUAGE,

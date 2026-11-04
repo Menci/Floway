@@ -122,6 +122,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
       return { response, modelKey: upstreamModelId };
     },
     callRerank: () => Promise.reject(new Error('Azure provider does not support callRerank')),
+    callSystemOne: () => Promise.reject(new Error('Azure provider does not support callSystemOne')),
   };
 
   return {

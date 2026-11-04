@@ -213,6 +213,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       return { response, modelKey: rawModelId };
     },
     callRerank: rejectUnsupported('callRerank'),
+    callSystemOne: rejectUnsupported('callSystemOne'),
   };
 
   return {
