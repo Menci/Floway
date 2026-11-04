@@ -23,14 +23,14 @@ import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { EmptyState } from '../ui/empty-state';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
-import { CONTROL_ROW_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SectionHeader } from '../ui/section-header';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, type ModelPricingIssue } from '@floway-dev/protocols/browser';
 
-const { Button, Field, List, ListItem, Option, Text, Toolbar, ToolbarButton, Tooltip, makeStyles } = fluentComponents;
+const { Button, Field, List, ListItem, Option, Text, makeStyles } = fluentComponents;
 const usePricingStyles = makeStyles({
   // WinUI centres one line in a 40px minimum with no block padding; a rule row
   // carries two. Everything else stays the WinUI layer's, whose doubled
@@ -173,11 +173,6 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
 
   return <div className={`grid min-w-0 grid-cols-[240px_minmax(0,1fr)] items-stretch ${PANE_GAP_CLASS} max-[760px]:grid-cols-1`}>
     <aside className="grid h-full min-w-0 content-start gap-2 border-0 border-r border-solid border-fui-divider pr-4 max-[760px]:border-b max-[760px]:border-r-0 max-[760px]:pb-4" aria-label={t('dashboard.upstreamEditor.models.pricingRules')}>
-      {!readOnly && <Toolbar className={`!justify-end !p-0 ${CONTROL_ROW_CLASS}`} size="small">
-        <Tooltip content={t('dashboard.upstreamEditor.models.addPricingOverride')} relationship="label">
-          <ToolbarButton aria-label={t('dashboard.upstreamEditor.models.addPricingOverride')} icon={<AddRegular />} onClick={addEntry} />
-        </Tooltip>
-      </Toolbar>}
       <List
         aria-label={t('dashboard.upstreamEditor.models.pricingRules')}
         onSelectionChange={(_, data) => {
@@ -207,6 +202,9 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
           </ListItem>;
         })}
       </List>
+      {!readOnly && <Button appearance="subtle" className="!justify-start !px-0" icon={<AddRegular />} onClick={addEntry} size="small">
+        {t('dashboard.upstreamEditor.models.addPricingOverride')}
+      </Button>}
     </aside>
 
     {active && <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-4">
@@ -224,7 +222,7 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
           {PRICING_AXES.map(axis => {
             if (axis.kind === 'equality') {
               const current = active.selector[axis.id];
-              return <Field className="min-w-0" key={axis.id} label={t('dashboard.upstreamEditor.models.serviceTierName')} hint={t('dashboard.upstreamEditor.models.serviceTierHint')}>
+              return <Field className="min-w-0" key={axis.id} label={t('dashboard.upstreamEditor.models.serviceTierName')}>
                 <Input
                   className="!w-full"
                   placeholder={t('dashboard.upstreamEditor.models.serviceTierPlaceholder')}
@@ -239,7 +237,7 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
             // Two field-aware controls under one Field would both take its
             // generated control id; the label names the one that carries the
             // value, and the operator select speaks for itself.
-            return <Field className="min-w-0" key={axis.id} label={{ children: t('dashboard.upstreamEditor.models.inputTokens'), htmlFor: thresholdId }} hint={t('dashboard.upstreamEditor.models.inputTokensHint')}>
+            return <Field className="min-w-0" key={axis.id} label={{ children: t('dashboard.upstreamEditor.models.inputTokens'), htmlFor: thresholdId }}>
               <div className="flex min-w-0 items-center gap-2">
                 <Dropdown
                   aria-label={t('dashboard.upstreamEditor.models.operator')}
