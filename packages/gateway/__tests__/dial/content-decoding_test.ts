@@ -29,6 +29,9 @@ test.each(['direct_connect', 'proxy'])('%s carries runtime decoding through the 
         close: async () => {},
       };
     },
+    // Both cases pin plain HTTP targets, so the transport never reaches the
+    // upgrade; a call here would mean the fixture stopped matching the case.
+    startTls: async () => { throw new Error('plain-HTTP fixture: no TLS upgrade'); },
   };
   const decode = vi.fn(() => Duplex.toWeb(createBrotliDecompress()) as unknown as ReadableWritablePair<Uint8Array, Uint8Array>);
   const contentDecoders: HttpContentDecoders = new Map([['br', decode]]);

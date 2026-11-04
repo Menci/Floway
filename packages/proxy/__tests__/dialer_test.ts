@@ -10,21 +10,12 @@ import { dialTrojan } from '../src/protocols/trojan.ts';
 import { dialVlessTcpTls, dialVlessWsTls } from '../src/protocols/vless.ts';
 import type { ProxyConfig } from '../src/proxy-config.ts';
 import type { DialOptions, DialResult, ProxyRequestTarget, SocketDial } from '../src/types.ts';
-import { userspaceTls } from '@floway-dev/http';
 
 const noopStream = (): DialResult => {
   const readable = new ReadableStream<Uint8Array>({ start(c) { c.close(); } });
   const writable = new WritableStream<Uint8Array>();
   return { readable, writable };
 };
-
-vi.mock('@floway-dev/http', async importOriginal => {
-  const actual = await importOriginal<typeof import('@floway-dev/http')>();
-  return {
-    ...actual,
-    userspaceTls: vi.fn(actual.userspaceTls),
-  };
-});
 
 vi.mock('../src/protocols/http-connect.ts', () => ({
   dialHttpConnect: vi.fn(async () => noopStream()),
@@ -57,6 +48,9 @@ const target: ProxyRequestTarget = {
 
 const stubSocketDial: SocketDial = {
   connect: async () => {
+    throw new Error('stub socket dial — tests should not reach here');
+  },
+  startTls: async () => {
     throw new Error('stub socket dial — tests should not reach here');
   },
 };
@@ -151,8 +145,7 @@ describe('runProxiedRequest — post-dial teardown', () => {
   it('cancels the dialed readable when the inner-TLS step throws past the dial', async () => {
     // Track every cancel attempt directly on the readable so the assertion
     // doesn't depend on cancel-hook semantics (the hook doesn't fire once
-    // the underlying source is already done/errored, which userspaceTls's
-    // pump leaves the EOFed source in by the time the catch runs).
+    // the underlying source is already done or errored).
     let cancelCalls = 0;
     let lastCancelReason: unknown = undefined;
     vi.mocked(dialSocks5).mockImplementationOnce(async () => {
@@ -182,22 +175,20 @@ describe('runProxiedRequest — post-dial teardown', () => {
 });
 
 describe('runDirectConnectRequest', () => {
-  beforeEach(() => {
-    vi.mocked(userspaceTls).mockReset();
-    vi.mocked(userspaceTls).mockImplementation(async () => noopStream());
-  });
-
-  const makeSocketDial = (responseHead: string, connect: () => void = () => {}): {
+  const makeSocketDial = (responseHead: string, connect: () => void = () => {}, startTls = vi.fn(async () => noopStream())): {
     socketDial: SocketDial;
     written: () => string;
     closeCalls: () => number;
+    startTls: ReturnType<typeof vi.fn>;
   } => {
     let writeBuf = new Uint8Array(0);
     let closes = 0;
     return {
       written: () => new TextDecoder().decode(writeBuf),
       closeCalls: () => closes,
+      startTls,
       socketDial: {
+        startTls,
         connect: async () => {
           connect();
           return {
@@ -314,8 +305,7 @@ describe('runDirectConnectRequest', () => {
 
   it('passes an IPv4 literal through as both the TLS host and verification identity', async () => {
     const cause = new Error('certificate rejected');
-    vi.mocked(userspaceTls).mockRejectedValueOnce(cause);
-    const direct = makeSocketDial('');
+    const direct = makeSocketDial('', () => {}, vi.fn(async () => { throw cause; }));
 
     const failure = runDirectConnectRequest(
       { host: '192.0.2.10', port: 443, tls: true },
@@ -328,7 +318,7 @@ describe('runDirectConnectRequest', () => {
       stage: 'inner-tls',
       cause,
     });
-    expect(userspaceTls).toHaveBeenCalledWith(
+    expect(direct.startTls).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         host: '192.0.2.10',
@@ -339,15 +329,14 @@ describe('runDirectConnectRequest', () => {
   });
 
   it('preserves an IPv6 literal as the verification identity', async () => {
-    vi.mocked(userspaceTls).mockRejectedValueOnce(new Error('stop after options'));
-    const direct = makeSocketDial('');
+    const direct = makeSocketDial('', () => {}, vi.fn(async () => { throw new Error('stop after options'); }));
 
     await expect(runDirectConnectRequest(
       { host: '2001:db8::1', port: 443, tls: true },
       { method: 'GET', path: '/', headers: [] },
       { socketDial: direct.socketDial },
     )).rejects.toMatchObject({ stage: 'inner-tls' });
-    expect(userspaceTls).toHaveBeenCalledWith(
+    expect(direct.startTls).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         host: '2001:db8::1',
@@ -358,6 +347,7 @@ describe('runDirectConnectRequest', () => {
 
   it('bounds the raw TCP connect with the direct-connect dial deadline', async () => {
     const socketDial: SocketDial = {
+      ...stubSocketDial,
       connect: async (_host, _port, options) => {
         return await new Promise<never>((_, reject) => {
           options?.signal?.addEventListener('abort', () => reject(options.signal!.reason), { once: true });
@@ -383,7 +373,7 @@ describe('runDirectConnectRequest', () => {
 // mocked to return a duplex whose write-side captures the request line +
 // headers; the canned response keeps fetchOnStream from hanging.
 //
-// All cases pin target.tls=false to keep the test off userspaceTls, which
+// All cases pin target.tls=false to keep the test off the TLS upgrade, which
 // won't complete a handshake against a canned response stream. We cover
 // the tls=false default branch (port 80 → omit) and the non-default branch
 // (port 8080 → include); the tls=true default branch (port 443 → omit)

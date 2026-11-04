@@ -1,11 +1,10 @@
-// Userspace TLS adapter over a raw plain-TCP byte transport.
+// Userspace TLS adapter over an established duplex byte transport.
 //
-// Some runtimes' native `Socket.startTls()` cannot wrap a duplex that has
-// already exchanged plain bytes — workerd is one example (issue #2712),
-// which means proxy paths that finish a plaintext handshake (HTTP CONNECT,
-// SOCKS5, …) cannot upgrade through the runtime's TLS primitive there. A
-// userspace TLS client sidesteps the runtime entirely, so this package
-// can offer the same TLS upgrade on every target.
+// Runtimes that expose TLS on an already-open socket use their own
+// implementation — Node's `tls.connect({ socket })`. workerd's
+// `Socket.startTls()` cannot wrap a duplex that has already exchanged plain
+// bytes (issue #2712), so every post-handshake upgrade there runs through
+// this adapter instead.
 //
 // `@reclaimprotocol/tls` provides a TLS 1.2/1.3 client implemented in JS using
 // Web Crypto + @noble. We wrap it as an adapter that takes a duplex byte
@@ -24,25 +23,6 @@ const ensureCrypto = (): void => {
   if (cryptoInstalled) return;
   setCryptoImplementation(webcryptoCrypto);
   cryptoInstalled = true;
-};
-
-// `@reclaimprotocol/tls`'s `loadRootCAs()` is module-memoised — it merges
-// `MOZILLA_ROOT_CA_LIST` with `globalThis.TLS_ADDITIONAL_ROOT_CA_LIST` on
-// first call and freezes the result, ignoring later additions. So every
-// PEM that should reach the userspace TLS trust set has to land in the
-// global *before* the first handshake. We push deduplicated by exact PEM
-// string; the library normalises whitespace internally when parsing.
-interface TrustGlobals { TLS_ADDITIONAL_ROOT_CA_LIST?: string[] }
-export const addTrustedRootCAs = (pems: readonly string[]): void => {
-  if (pems.length === 0) return;
-  const g = globalThis as unknown as TrustGlobals;
-  const list = (g.TLS_ADDITIONAL_ROOT_CA_LIST ??= []);
-  const seen = new Set(list);
-  for (const pem of pems) {
-    if (seen.has(pem)) continue;
-    seen.add(pem);
-    list.push(pem);
-  }
 };
 
 export interface UserspaceTlsOptions {

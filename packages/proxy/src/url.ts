@@ -238,8 +238,8 @@ const parseVless = (
   // via `socketDial(tls=true)`, which ties SNI to the URL host; neither
   // surface accepts an SNI override on the wire, so a `?sni=` query param
   // is silently dropped to avoid round-tripping a field the dialer cannot
-  // honour. REALITY keeps `?sni=` as the spoofed front domain because its
-  // userspace TLS stack drives the SNI directly.
+  // honour. REALITY keeps `?sni=` as the spoofed front domain because it
+  // drives the ClientHello itself.
   if (type === 'tcp' && security === 'tls') {
     const config: VlessTcpTlsProxyConfig = {
       kind: 'vless-tcp',

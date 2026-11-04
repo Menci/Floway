@@ -1,18 +1,15 @@
 // Trojan client.
 //
-// We do BOTH the outer TLS (to the Trojan server) and the inner TLS (to the
-// upstream HTTPS) in userspace, because workerd's outer TLS implementation
-// splits the first application-data write into two TLS records (~4 bytes +
-// rest). sing-box's trojan inbound reads the 56-byte key with `conn.Read`,
-// which short-reads on the 4-byte first record and rejects with
-// "bad request size: fallback disabled". Doing the outer TLS in userspace
-// gives us full control of record framing.
+// The Trojan request header (56-byte hex(SHA-224(password)) + CRLF +
+// SOCKS-like address) MUST land in the same TLS record as the first
+// follow-up bytes from whichever wrapper consumes the post-trojan stream.
+// sing-box's inbound reads the key with `conn.Read`, which returns at most
+// one record, and short-reads reject with "bad request size" when no
+// fallback is configured. We surface the header as `prefix` on the dial
+// result so the next byte sink — the inner TLS handshake or the request
+// writer — folds it into its own first write.
 //
-// The Trojan request header (56-byte hex(SHA-224(password)) + CRLF + SOCKS-
-// like address) MUST land in the same record as the first follow-up bytes
-// from whichever wrapper consumes the post-trojan stream. We surface the
-// header as `prefix` on the DialResult so whoever owns the next write
-// folds it in.
+// Spec: https://trojan-gfw.github.io/trojan/protocol
 
 import { sha224 } from '@noble/hashes/sha2.js';
 
@@ -21,8 +18,7 @@ import { ProxyDialError } from '../dial-error.ts';
 import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../dial-target.ts';
 import { utf8Bytes } from '../encoding.ts';
 import type { TrojanProxyConfig } from '../proxy-config.ts';
-import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
-import { userspaceTls, type TlsStream } from '@floway-dev/http';
+import type { DialOptions, DialResult, DialedSocket, DialTarget } from '../types.ts';
 
 export const dialTrojan = async (
   config: TrojanProxyConfig,
@@ -34,7 +30,7 @@ export const dialTrojan = async (
   const socket = await connectOrDialError(options.socketDial, config.host, config.port, { signal: options.signal });
 
   try {
-    return await dialTrojanInner(socket, config, target, options.signal);
+    return await dialTrojanInner(options, socket, config, target);
   } catch (err) {
     void socket.close().catch(() => {});
     throw err;
@@ -42,31 +38,28 @@ export const dialTrojan = async (
 };
 
 const dialTrojanInner = async (
+  options: DialOptions,
   socket: DialedSocket,
   config: TrojanProxyConfig,
   target: DialTarget,
-  signal: AbortSignal | undefined,
 ): Promise<DialResult> => {
-  let outerTls: TlsStream;
-  try {
-    outerTls = await userspaceTls(socket, {
-      host: config.sni ?? config.host,
-      // Operator escape hatch for self-signed trojan-server leaves (the
-      // trojan-go reference inbound runs self-signed by default); the
-      // wrapper chain-validates otherwise.
-      insecure: config.allowInsecure,
-      signal,
-    });
-  } catch (cause) {
-    throw new ProxyDialError('outer tls handshake to trojan server failed', 'outer-tls', { cause });
-  }
-
-  const header = buildTrojanRequestHeader(config.password, target);
+  const outerTls = await options.socketDial.startTls(socket, {
+    host: config.sni ?? config.host,
+    // Operator escape hatch for self-signed trojan-server leaves (the
+    // trojan-go reference inbound runs self-signed by default); the
+    // runtime chain-validates otherwise.
+    insecure: config.allowInsecure,
+    signal: options.signal,
+  }).catch((cause: unknown) => {
+    throw cause instanceof ProxyDialError
+      ? cause
+      : new ProxyDialError('outer tls handshake to trojan server failed', 'outer-tls', { cause });
+  });
 
   return {
     readable: outerTls.readable,
     writable: outerTls.writable,
-    prefix: header,
+    prefix: buildTrojanRequestHeader(config.password, target),
   };
 };
 

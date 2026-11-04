@@ -5,7 +5,7 @@ import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 import { describe, expect, it } from 'vitest';
 
 import { makeFakeDuplex } from './test-utils.ts';
-import { addTrustedRootCAs, userspaceTls } from '../src/tls.ts';
+import { userspaceTls } from '../src/tls.ts';
 
 const { loadX509FromPem, setCryptoImplementation, verifyCertificateChain } = reclaimTls;
 
@@ -299,8 +299,6 @@ describe('userspaceTls — prefix coalescing', () => {
   });
 });
 
-interface TrustGlobals { TLS_ADDITIONAL_ROOT_CA_LIST?: string[] }
-
 const quietLogger = {
   trace() {},
   debug() {},
@@ -391,23 +389,5 @@ describe('userspaceTls — certificate reference identity', () => {
 
   it('preserves DNS SAN wildcard matching for DNS hosts', async () => {
     await expect(verifyFixtureIdentity('ip-san.generated.pem', 'api.example.test')).resolves.toBeUndefined();
-  });
-});
-
-describe('addTrustedRootCAs', () => {
-  it('deduplicates additions against the existing global list', () => {
-    const g = globalThis as unknown as TrustGlobals;
-    g.TLS_ADDITIONAL_ROOT_CA_LIST = [];
-    const pem = '-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----';
-    addTrustedRootCAs([pem, pem]);
-    addTrustedRootCAs([pem]);
-    expect(g.TLS_ADDITIONAL_ROOT_CA_LIST).toEqual([pem]);
-  });
-
-  it('initialises the global list if it is missing', () => {
-    const g = globalThis as unknown as TrustGlobals;
-    delete g.TLS_ADDITIONAL_ROOT_CA_LIST;
-    addTrustedRootCAs(['pem-a']);
-    expect(g.TLS_ADDITIONAL_ROOT_CA_LIST).toEqual(['pem-a']);
   });
 });

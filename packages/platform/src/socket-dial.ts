@@ -1,6 +1,8 @@
 // Runtime-agnostic byte-stream dial primitive. Each runtime supplies a
 // concrete impl via initSocketDial; callers obtain it via getSocketDial().
 
+import type { DuplexStream } from '@floway-dev/http';
+
 interface SocketDialOptions {
   /**
    * Wrap the connection with the runtime's native TLS implementation. The
@@ -28,8 +30,49 @@ export interface DialedSocket {
   close(): Promise<void>;
 }
 
+export interface TlsUpgradeOptions {
+  /**
+   * TLS peer identity. DNS names are sent in the ClientHello `server_name`
+   * extension; IP literals omit that extension (RFC 6066 §3). Also the
+   * certificate reference identity unless `verifyHost` is set.
+   */
+  host: string;
+  /**
+   * Override the certificate reference identity independently from `host`.
+   * An IP literal must match an `iPAddress` SAN; a DNS name matches CN and
+   * `dNSName` SANs. Defaults to `host`.
+   */
+  verifyHost?: string;
+  /** ALPN protocols to offer, in preference order. */
+  alpn?: string[];
+  /**
+   * Accept the peer certificate without chain validation or name matching.
+   * For self-signed proxy leaves only.
+   */
+  insecure?: boolean;
+  /**
+   * Bytes to write to the transport before the handshake starts. Proxy
+   * protocols whose request header precedes the tunneled TLS — trojan's —
+   * need it to reach the peer ahead of the ClientHello; a userspace
+   * implementation may additionally coalesce it into the first handshake
+   * record.
+   */
+  prefix?: Uint8Array;
+  /** Cancellation, honoured during and after the handshake. */
+  signal?: AbortSignal;
+}
+
 export interface SocketDial {
   connect(host: string, port: number, opts?: SocketDialOptions): Promise<DialedSocket>;
+  /**
+   * Wrap an established duplex in TLS. Every protocol that speaks TLS to a
+   * peer — a proxy's outer leg, the upstream's inner leg, an inner leg over
+   * an outer one — goes through this, so the runtime decides whether the
+   * handshake is native or userspace. A dial can be plain TCP and still need
+   * TLS afterwards (HTTP CONNECT, SOCKS5), which is why this is separate
+   * from `connect`.
+   */
+  startTls(transport: DuplexStream, opts: TlsUpgradeOptions): Promise<DuplexStream>;
   /** Whether an error thrown by connect() permits retrying the HTTP request through runtime fetch. */
   shouldConnectErrorFallbackToFetch?(error: unknown): boolean;
 }
