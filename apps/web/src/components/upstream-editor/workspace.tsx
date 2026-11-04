@@ -303,7 +303,7 @@ function ModelsWorkspace({ detailSection, discovered, modelSelection, modelsErro
     append({
       upstreamModelId: '',
       kind: 'chat',
-      ...shapeForKind('chat', { endpoints: {} }),
+      ...shapeForKind('chat', { endpoints: {} }, record.kind),
       opaqueBlobCompatibilityScope: { bindToUpstream: true },
     });
     onOpenModel({ locator: '', manualIndex, rowKey: null });

@@ -89,3 +89,22 @@ test('assertOllamaUpstreamRecord rejects rerank models', () => {
     'rerank models require a custom upstream',
   );
 });
+
+test('assertOllamaUpstreamRecord rejects an operator-authored decision target', () => {
+  assertThrows(
+    () => assertOllamaUpstreamRecord({
+      ...baseRecord,
+      config: {
+        ...(baseRecord.config as Record<string, unknown>),
+        models: [{
+          upstreamModelId: 'nimble',
+          kind: 'decision',
+          endpoints: { decision: {} },
+          decisionTarget: { protocol: 'systemone' },
+        }],
+      },
+    }),
+    Error,
+    'decision target is not configurable on this upstream',
+  );
+});

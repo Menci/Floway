@@ -346,3 +346,23 @@ test('assertAzureUpstreamRecord rejects model.pricing with non-number input_cach
     'pricing.entries[0].rates.input_cache_read_tokens must be a decimal string',
   );
 });
+
+test('assertAzureUpstreamRecord rejects an operator-authored decision target', () => {
+  assertThrows(
+    () => assertAzureUpstreamRecord({
+      kind: 'azure',
+      config: {
+        endpoint: 'https://example.openai.azure.com',
+        apiKey: 'key',
+        models: [{
+          upstreamModelId: 'decision-1',
+          kind: 'decision',
+          endpoints: { decision: {} },
+          decisionTarget: { protocol: 'systemone' },
+        }],
+      },
+    }),
+    Error,
+    'decision target is not configurable on this upstream',
+  );
+});

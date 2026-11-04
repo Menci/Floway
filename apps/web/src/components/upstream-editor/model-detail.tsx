@@ -75,7 +75,7 @@ export function ModelDetail({
     rerankTarget: undefined,
     decisionTarget: undefined,
     ...(kind === 'image' ? { limits: undefined } : {}),
-    ...shapeForKind(kind, row.config),
+    ...shapeForKind(kind, row.config, record.kind),
   });
 
   const updateLimit = (key: keyof NonNullable<UpstreamModelConfig['limits']>, raw: string) => {
@@ -215,7 +215,7 @@ export function ModelDetail({
           <RerankTargetEditor readOnly={fieldsReadOnly} value={row.config.rerankTarget} onChange={rerankTarget => patch({ rerankTarget })} />
         </EditorSection>}
 
-        {row.config.kind === 'decision' && <EditorSection error={validationMessage('decisionTarget')} level={3} title={t('dashboard.upstreamEditor.models.decisionTarget')}>
+        {row.config.kind === 'decision' && record.kind === 'custom' && <EditorSection error={validationMessage('decisionTarget')} level={3} title={t('dashboard.upstreamEditor.models.decisionTarget')}>
           <DecisionTargetEditor readOnly={fieldsReadOnly} value={row.config.decisionTarget ?? { protocol: 'systemone' }} onChange={decisionTarget => patch({ decisionTarget })} />
         </EditorSection>}
 

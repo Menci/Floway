@@ -82,8 +82,11 @@ export const parseOllamaUpstreamConfig = (config: unknown): OllamaUpstreamConfig
   if (models.some(model => model.kind === 'rerank')) {
     throw new Error('Malformed ollama upstream config: rerank models require a custom upstream');
   }
-  // Decision models are served natively at /v1/systemone; a manual row must
-  // still carry a decisionTarget, which modelsField enforces.
+  // Ollama serves decision models over System One, a fixed dialect, so a
+  // operator-supplied target could only contradict the provider.
+  if (models.some(model => model.kind === 'decision' && model.decisionTarget !== undefined)) {
+    throw new Error('Malformed ollama upstream config: decision target is not configurable on this upstream');
+  }
 
   return {
     baseUrl: baseUrlField(config.baseUrl),
