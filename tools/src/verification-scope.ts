@@ -9,6 +9,7 @@
 // so faking it needs a `runner` account on an Ubuntu host, not `CI=true`.
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
+import { basename, relative } from 'node:path';
 import { argv, env, platform } from 'node:process';
 
 export type RunnerFacts = {
@@ -116,6 +117,34 @@ const VITEST_VALUE_OPTIONS = new Set([
 const isTestFile = (target: string): boolean => /_test\.tsx?$/.test(target);
 
 /**
+ * A trap: every package carries one of these, and every Vitest config refuses a
+ * run whose arguments name it. A shell expands `**\/*_test.ts` before Vitest
+ * sees it, so a glob arrives as a list of explicit test files — the one shape
+ * the check above cannot tell from a hand-written list. The trap is what makes
+ * that expansion announce itself.
+ */
+export const TRAP_TEST_FILENAME = 'disallow-full-tests_test.ts';
+
+const findTrapTargets = (targets: readonly string[]): string[] =>
+  targets.filter(target => basename(target) === TRAP_TEST_FILENAME);
+
+/**
+ * A glob over the test tree expands to trap files *alongside* real ones. Naming
+ * a single trap is harmless — it is a trivial test — and keeps the trap bodies
+ * themselves verifiable. Anything else that includes a trap is either such an
+ * expansion or a deliberate sweep of the traps, so both are refused.
+ */
+const describesExpansion = (targets: readonly string[]): string[] => {
+  const traps = findTrapTargets(targets);
+  if (traps.length === 0 || (targets.length === 1 && traps.length === 1)) return [];
+  return traps;
+};
+
+/** True when the arguments show a pattern was expanded over the test tree. */
+export const isExpandedTrapList = (targets: readonly string[]): boolean =>
+  describesExpansion(targets).length > 0;
+
+/**
  * Refuses a Vitest run that does not name the test files it exercises. Vitest
  * matches filters as substrings, so a directory, a package, or a project
  * selects everything beneath it and is refused exactly like no filter at all.
@@ -126,6 +155,14 @@ export const requireNamedTestFiles = (): void => {
   if (VITEST_SUBCOMMANDS_WITHOUT_TESTS.has(command)) return;
 
   const targets = parseTargets(args, VITEST_VALUE_OPTIONS, VITEST_SUBCOMMANDS);
+  const traps = describesExpansion(targets);
+  if (traps.length > 0) {
+    throw new Error(
+      `The arguments name ${traps.length} trap test file(s), which means a pattern was expanded into a list: `
+      + `${traps.map(trap => relative(process.cwd(), trap)).join(', ')}. `
+      + 'Name the test files you changed instead of matching them with a glob.',
+    );
+  }
   const missing = targets.filter(target => isTestFile(target) && !existsSync(target));
   if (missing.length > 0) {
     throw new Error(`No such test file: ${missing.join(', ')}`);
@@ -153,6 +190,14 @@ export const requireNamedLintFiles = (): void => {
   if (args[0] === '--print-config' || args[0] === '--inspect-config') return;
 
   const targets = parseTargets(args, ESLINT_VALUE_OPTIONS, new Set());
+  const traps = describesExpansion(targets);
+  if (traps.length > 0) {
+    throw new Error(
+      `The arguments name ${traps.length} trap file(s), which means a pattern was expanded into a list: `
+      + `${traps.map(trap => relative(process.cwd(), trap)).join(', ')}. `
+      + 'Name the files you changed instead of matching them with a glob.',
+    );
+  }
   if (targets.length > 0 && targets.every(target => ESLINT_LINT_EXTENSIONS.test(target))) return;
   requireCiRunner('Linting without naming the files');
 };

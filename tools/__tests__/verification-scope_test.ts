@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { findRunnerViolations, parseTargets, type RunnerFacts } from '../src/verification-scope.ts';
+import { findRunnerViolations, isExpandedTrapList, parseTargets, TRAP_TEST_FILENAME, type RunnerFacts } from '../src/verification-scope.ts';
 
 const runnerEnv = {
   GITHUB_ACTIONS: 'true',
@@ -71,5 +71,40 @@ describe('parseTargets', () => {
   it('drops the subcommand and standalone flags', () => {
     expect(parseTargets(['run', '--changed', 'a_test.ts'], valueOptions, subcommands))
       .toEqual(['a_test.ts']);
+  });
+});
+
+describe('the trap that detects an expanded glob', () => {
+  const trap = `packages/http/__tests__/${TRAP_TEST_FILENAME}`;
+  const real = 'packages/http/__tests__/parser_test.ts';
+
+  it('names a file every package carries', async () => {
+    const { execFileSync } = await import('node:child_process');
+    const found = execFileSync(
+      'find',
+      ['packages', 'apps', 'tools', '-name', TRAP_TEST_FILENAME, '-not', '-path', '*/node_modules/*'],
+      { encoding: 'utf8' },
+    ).trim().split('\n').filter(Boolean);
+
+    expect(TRAP_TEST_FILENAME).toBe('disallow-full-tests_test.ts');
+    expect(found.length).toBeGreaterThanOrEqual(19);
+    expect(found).toContain('packages/http/__tests__/disallow-full-tests_test.ts');
+    expect(found).toContain('packages/gateway/__tests__/repo/disallow-full-tests_test.ts');
+  });
+
+  it('recognizes a glob that expanded to traps and real files together', () => {
+    expect(isExpandedTrapList([real, trap])).toBe(true);
+  });
+
+  it('recognizes a sweep of traps alone', () => {
+    expect(isExpandedTrapList([trap, `packages/proxy/__tests__/${TRAP_TEST_FILENAME}`])).toBe(true);
+  });
+
+  it('allows naming one trap directly, so the trap body stays verifiable', () => {
+    expect(isExpandedTrapList([trap])).toBe(false);
+  });
+
+  it('allows an ordinary list of test files', () => {
+    expect(isExpandedTrapList([real])).toBe(false);
   });
 });
