@@ -39,18 +39,17 @@ export interface TlsUpgradeOptions {
   host: string;
   /**
    * Override the certificate reference identity independently from `host`.
-   * An IP literal must match an `iPAddress` SAN; a DNS name matches CN and
-   * `dNSName` SANs. Defaults to `host`.
+   * An IP literal must match an `iPAddress` SAN. A DNS name matches `dNSName`
+   * SANs; the userspace path also accepts a CN match, while Node ignores CN
+   * once the certificate lists any DNS SAN. Defaults to `host`.
    */
   verifyHost?: string;
   /**
    * Replace the certificate identity check. The callback receives
    * `verifyHost ?? host` and the leaf certificate, and returns an Error to
-   * reject the handshake.
-   *
-   * The shape mirrors `tls.checkServerIdentity` but promises fewer fields, so
-   * a callback written against it runs unchanged on every runtime; Node's own
-   * function needs an adapter, since its `PeerCertificate` carries more.
+   * reject the handshake. Node's `tls.checkServerIdentity` remains the
+   * default, and a callback written against this type fits its option slot,
+   * so one callback serves every runtime.
    *
    * Chain validation is unaffected.
    */
@@ -77,12 +76,13 @@ export interface TlsUpgradeOptions {
 export interface SocketDial {
   connect(host: string, port: number, opts?: SocketDialOptions): Promise<DialedSocket>;
   /**
-   * Wrap an established duplex in TLS. Every protocol that speaks TLS to a
-   * peer — a proxy's outer leg, the upstream's inner leg, an inner leg over
-   * an outer one — goes through this, so the runtime decides whether the
-   * handshake is native or userspace. A dial can be plain TCP and still need
-   * TLS afterwards (HTTP CONNECT, SOCKS5), which is why this is separate
-   * from `connect`.
+   * Wrap an established duplex in TLS. Callers use it for every TLS leg that
+   * follows a plaintext exchange — a proxy's outer leg where the protocol
+   * needs one (trojan), the upstream's inner leg, an inner leg over an outer
+   * one — so the runtime decides whether the handshake is native or
+   * userspace. A dial can be plain TCP and still need TLS afterwards (HTTP
+   * CONNECT, SOCKS5), which is why this is separate from `connect`. REALITY
+   * builds its own ClientHello and never reaches this.
    */
   startTls(transport: DuplexStream, opts: TlsUpgradeOptions): Promise<DuplexStream>;
   /** Whether an error thrown by connect() permits retrying the HTTP request through runtime fetch. */

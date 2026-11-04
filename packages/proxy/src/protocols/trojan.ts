@@ -1,18 +1,18 @@
 // Trojan client.
 //
 // The request header (56-byte hex(SHA-224(password)) + CRLF + SOCKS-like
-// address) MUST land in the same TLS record as the first follow-up bytes from
-// whichever wrapper consumes the post-trojan stream. sing-box's inbound reads
-// the key with `conn.Read`, which returns at most one record, and short-reads
-// reject with "bad request size" when no fallback is configured. We surface
-// the header as `prefix` on the dial result so the next byte sink — the inner
-// TLS handshake or the request writer — folds it into its own first write.
+// address) MUST reach the peer inside a single TLS record. sing-box's inbound
+// reads the key with `conn.Read`, which returns at most one record's payload,
+// and a short read rejects with "bad request size" when no fallback is
+// configured. We surface the header as `prefix` on the dial result so every
+// wrapper that consumes the post-trojan stream writes it ahead of its own
+// first bytes.
 //
-// That constraint also rules out a native TLS outer leg on workerd: its
-// implementation splits the first application-data write across two records
+// The record boundary is also why workerd cannot serve the outer leg
+// natively: its first application-data write is split across two records
 // (~4 bytes then the rest), which is exactly the short read the inbound
-// rejects. Node's TLS keeps a small write in a single record, so the outer
-// and inner legs there run natively with the header delivered intact.
+// rejects. Node keeps a small write in a single record, so both legs there run
+// natively with the header delivered intact.
 //
 // Spec: https://trojan-gfw.github.io/trojan/protocol
 
@@ -54,8 +54,8 @@ const dialTrojanInner = async (
     outerTls = await options.socketDial.startTls(socket, {
       host: config.sni ?? config.host,
       // Operator escape hatch for self-signed trojan-server leaves (the
-      // trojan-go reference inbound runs self-signed by default); the
-      // runtime chain-validates otherwise.
+      // trojan-go reference inbound runs self-signed by default); the upgrade
+      // chain-validates otherwise.
       insecure: config.allowInsecure,
       signal: options.signal,
     });
