@@ -23,14 +23,13 @@ export interface RerankTarget {
   path?: string;
 }
 
-// Decision endpoints speak the System One contract (`state` plus a map of
-// typed questions). Every reachable provider serves it unchanged today —
-// TypeSafe Jev at /v1/systemone, Copilot's microsoft-decision-1 at
-// /v1/systemone, and Microsoft-Decision-1 on Foundry at
-// /providers/microsoft/v1/systemone. `openai-decisions` is the OpenAI
-// Decisions shape (`input` plus an array of `predicate`/`choice`/`score`
-// questions); it has no reachable upstream yet and exists so a provider can
-// declare it once one does.
+// Decision endpoints speak the System One contract (`state` plus a map of typed
+// questions). Reachable providers serve it at TypeSafe Jev's and Ollama's
+// /v1/systemone, Copilot's microsoft-decision-1 /v1/systemone, and
+// Microsoft-Decision-1's /providers/microsoft/v1/systemone on Foundry.
+// `openai-decisions` is the OpenAI Decisions shape (`input` plus an array of
+// `predicate`/`choice`/`score` questions); no reachable upstream serves it, and
+// it exists so a provider can declare it once one does.
 export const DECISION_PROTOCOLS = ['systemone', 'openai-decisions'] as const;
 export type DecisionProtocol = typeof DECISION_PROTOCOLS[number];
 // Both dialects are callable ingress: `/v1/systemone` speaks the System One
@@ -39,9 +38,8 @@ export type DecisionProtocol = typeof DECISION_PROTOCOLS[number];
 export type DecisionSourceProtocol = DecisionProtocol;
 
 // The question primitives a target accepts. A dialect name does not imply a
-// capability: Copilot's microsoft-decision-1 answers noul, choice, and score,
-// while an Azure Foundry deployment of the same model currently accepts only
-// choice. Compatibility checks read this instead of the protocol.
+// capability: a deployment may answer only a subset, so compatibility reads
+// `questionTypes`, not the protocol.
 export const DECISION_QUESTION_TYPES = ['noul', 'choice', 'score'] as const;
 export type DecisionQuestionType = typeof DECISION_QUESTION_TYPES[number];
 

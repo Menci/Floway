@@ -312,8 +312,7 @@ const decisionTargetField = (value: unknown, label: string): DecisionTarget | un
   };
 };
 
-export const opaqueBlobCompatibilityScopeField = (value: unknown,
-  label: string): OpaqueBlobCompatibilityScope | undefined => {
+export const opaqueBlobCompatibilityScopeField = (value: unknown, label: string): OpaqueBlobCompatibilityScope | undefined => {
   if (value === undefined) return undefined;
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
   const unknownKeys = Object.keys(value).filter(key => key !== 'bindToUpstream' && key !== 'key');

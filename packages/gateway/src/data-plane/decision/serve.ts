@@ -29,9 +29,8 @@ const parseJson = (bytes: Uint8Array): unknown => {
   }
 };
 
-// Output tokens are free for every decision model we route; only input tokens
-// reach billing. A provider that reports no usage still records the request
-// through recordPerformance.
+// Floway bills decision models on input tokens only. A provider that reports no
+// usage still records the request through recordPerformance.
 const settleDecision = (
   ctx: GatewayCtx,
   performanceContext: PerformanceTelemetryContext,
@@ -41,7 +40,8 @@ const settleDecision = (
 ): void => {
   const quantities: UsageQuantities = {};
   if (usage?.inputTokens !== undefined) quantities.input_tokens = parseDecimalString(String(usage.inputTokens));
-  ctx.backgroundScheduler(recordUsage(ctx.apiKeyId, identity, quantities, {}).catch(error => {
+  const pricingFacts = usage?.inputTokens === undefined ? {} : { inputTokens: usage.inputTokens };
+  ctx.backgroundScheduler(recordUsage(ctx.apiKeyId, identity, quantities, pricingFacts).catch(error => {
     console.error('Failed to record decision usage:', error);
   }));
   recordPerformance(ctx, performanceContext, failed, 0, performance.now());
@@ -128,10 +128,14 @@ export const decision = (sourceProtocol: DecisionSourceProtocol) => async (c: Co
       return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
     }
 
+    const sameProtocol = sourceProtocol === terminal.target.protocol;
     let upstreamBody: Record<string, unknown>;
     try {
       upstreamBody = await terminal.response.clone().json() as Record<string, unknown>;
     } catch (error) {
+      // A cross-dialect client cannot read the upstream's own body, so a
+      // translation failure must surface instead of being forwarded as success.
+      if (!sameProtocol) throw error;
       console.warn(
         `decision: failed to parse 2xx upstream body for ${model}; usage row will be request-only`,
         error instanceof Error ? error.message : String(error),
@@ -141,16 +145,8 @@ export const decision = (sourceProtocol: DecisionSourceProtocol) => async (c: Co
       usageSettled = true;
       return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
     }
-    try {
-      measuredUsage = parseDecisionUsage(upstreamBody);
-    } catch (error) {
-      console.warn(
-        `decision: failed to parse usage for ${model}; usage row will be request-only`,
-        error instanceof Error ? error.message : String(error),
-      );
-      measuredUsage = undefined;
-    }
-    if (sourceProtocol === terminal.target.protocol) {
+    measuredUsage = parseDecisionUsage(upstreamBody);
+    if (sameProtocol) {
       ctx.dump?.success(terminal.identity, null);
       settleDecision(ctx, terminal.performance, terminal.identity, measuredUsage, false);
       usageSettled = true;

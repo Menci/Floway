@@ -29,9 +29,10 @@ const finiteNumber = (value: unknown, field: string): number => {
   return value;
 };
 
-// The System One contract allows 2–255 options for a Choice and 2–10 levels for
-// a Score; the OpenAI contract matches.
-// https://docs.typesafe.ai/primitives/choice
+// OpenAI requires 2–255 choices and 2–10 levels; System One's schema permits a
+// single option or level, and these stricter bounds are applied to both.
+// https://developers.openai.com/api/reference/resources/decisions/methods/create
+// https://docs.typesafe.ai/primitives/score
 const CHOICE_OPTION_MIN = 2;
 const CHOICE_OPTION_MAX = 255;
 const SCORE_LEVEL_MIN = 2;
@@ -40,8 +41,8 @@ const SCORE_LEVEL_MAX = 10;
 // --- System One assets ----------------------------------------------------
 
 // A System One image is an entry in a top-level `assets` map, referenced by a
-// string written where the image belongs. The asset holds a base64 PNG or JPEG,
-// which is the only form the contract defines.
+// string written where the image belongs. This gateway reads the base64 PNG or
+// JPEG form.
 // https://docs.typesafe.ai/images
 const systemOneAssetImage = (reference: string, assets: unknown): DecisionImagePart | undefined => {
   if (!isRecord(assets) || !Object.hasOwn(assets, reference)) return undefined;
@@ -116,9 +117,9 @@ const openAIContent = (content: unknown, field: string): readonly DecisionConten
 
 const OPENAI_MESSAGE_ROLES = new Set(['user', 'developer', 'system', 'assistant']);
 
-// OpenAI `input` may be a string or an ordered list of messages with function
-// calls and tool outputs. System One has no notion of turns, so the canonical
-// form flattens text, JSON, and images into one ordered evidence list.
+// OpenAI `input` may be a string or an ordered list of role-bearing messages.
+// System One has no notion of turns, so the canonical form flattens text, JSON,
+// and images into one ordered evidence list; a non-message item is rejected.
 const openAIInputState = (input: unknown): DecisionState => {
   if (typeof input === 'string') return { kind: 'text', value: input };
   if (!Array.isArray(input) || input.length === 0) throw new Error('input must be a string or a non-empty array');
@@ -138,8 +139,8 @@ const openAIInputState = (input: unknown): DecisionState => {
 
 // --- System One request -> canonical --------------------------------------
 
-// System One rejects unknown top-level arguments with a 400, so parsing mirrors
-// that strictness instead of silently dropping fields the model never sees.
+// Unknown top-level fields are rejected rather than silently dropped, so a
+// caller's mistake reaches them instead of being hidden from the model.
 const SYSTEMONE_TOP_LEVEL_FIELDS = new Set(['model', 'state', 'questions', 'assets']);
 
 // System One instructions are text (possibly structured data serialized once).
@@ -237,8 +238,8 @@ const parseSystemOneRequest = (value: Record<string, unknown>): CanonicalDecisio
 
 const OPENAI_TOP_LEVEL_FIELDS = new Set([
   'model', 'input', 'questions',
-  // Caller controls the target reads when it speaks this dialect; preserved in
-  // `raw` for a same-protocol forward rather than modelled canonically.
+  // Caller-controlled fields this dialect supports; kept only in `raw` for a
+  // same-protocol forward, not modelled canonically.
   'prompt_cache_key', 'prompt_cache_options', 'safety_identifier',
 ]);
 
@@ -309,9 +310,10 @@ const requestQuestionTypes = (request: CanonicalDecisionRequest): readonly Decis
   request.questions.map(question => question.type);
 
 // The only incompatibility is a question type the target does not answer. Both
-// dialects express every value a question can carry, so nothing about the
-// content is judged here: whether a model reads an image is the model's answer
-// to give, not a reason to refuse the request.
+// dialects carry text, JSON, and image content, so the content itself is never a
+// reason to refuse here: whether a model reads an image is the model's answer to
+// give. A value one dialect cannot represent (a typed choice collision) surfaces
+// at serialization.
 export const decisionRequestIncompatibility = (target: DecisionTarget, request: CanonicalDecisionRequest): string | null => {
   if (target.questionTypes === undefined) return null;
   const supported = new Set<DecisionQuestionType>(target.questionTypes);
@@ -579,8 +581,9 @@ const parseOpenAIDecisionsResponse = (body: Record<string, unknown>): CanonicalD
         ...(Object.keys(legend).length === 0 ? {} : { legend }),
       };
     }
-    // A refusal answers one question while the rest still resolve; it carries no
-    // typed value, so it is not surfaced as an answer.
+    // The upstream lets a refusal answer one question while the rest resolve;
+    // this canonical form has no refusal case, so the whole body is rejected
+    // rather than silently returning a short answer list.
     throw new Error(`answers[${index}].type ${JSON.stringify(entry.type)} is not supported`);
   });
   return {
@@ -598,12 +601,12 @@ export const parseDecisionResponse = (protocol: DecisionProtocol, body: Record<s
   }
 };
 
-// Output tokens are free for every decision model we route, so only input
-// tokens reach billing. Both dialects keep the counts under `usage`.
+// Floway bills decision models on input tokens only; both dialects carry
+// `input_tokens` and `output_tokens` under `usage`.
 const usageNumbers = (body: Record<string, unknown>): { inputTokens?: number; outputTokens?: number } => {
   if (!isRecord(body.usage)) return {};
-  const inputTokens = optionalNumber(body.usage.input_tokens ?? body.usage.prompt_tokens);
-  const outputTokens = optionalNumber(body.usage.output_tokens ?? body.usage.completion_tokens);
+  const inputTokens = optionalNumber(body.usage.input_tokens);
+  const outputTokens = optionalNumber(body.usage.output_tokens);
   return {
     ...(inputTokens === undefined ? {} : { inputTokens }),
     ...(outputTokens === undefined ? {} : { outputTokens }),

@@ -49,9 +49,7 @@ const rawModelIdOf = (model: ProviderModel): string => model.providerData as str
 // kind/endpoints projection — the others are request-time signals.
 const CHAT_ENDPOINTS: ModelEndpoints = { openaiCompletions: {}, openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} };
 const EMBEDDING_ENDPOINTS: ModelEndpoints = { openaiEmbeddings: {} };
-// Ollama serves decision models over the System One contract. Every decision
-// model in its library answers noul, choice, and score; none accepts images, so
-// no capability narrowing is needed here.
+// Ollama serves decision models over the System One contract.
 // https://docs.ollama.com/capabilities/decision
 const DECISION_ENDPOINTS: ModelEndpoints = { decision: {} };
 

@@ -24,7 +24,7 @@ export function DecisionTargetEditor({ onChange, readOnly, value }: {
 }) {
   const { t } = useTranslation();
   // An undefined questionTypes means every primitive; the checkboxes show the
-  // effective set and collapse back to undefined when all four are on, so a
+  // effective set and collapse back to undefined when every type is on, so a
   // row that accepts everything stores no narrowing at all.
   const selected = value.questionTypes ?? DECISION_QUESTION_TYPES;
   const setQuestionTypes = (next: DecisionQuestionType[]) => {
@@ -56,7 +56,10 @@ export function DecisionTargetEditor({ onChange, readOnly, value }: {
           value={value.path ?? ''}
           onChange={(_, data) => {
             const path = data.value.trim();
-            onChange(path === '' ? { protocol: value.protocol } : { ...value, path });
+            // "Use the protocol default" is the absence of the field; the other
+            // target fields keep their value when it is cleared.
+            const { path: _path, ...rest } = value;
+            onChange(path === '' ? rest : { ...rest, path });
           }}
         />
       </Field>

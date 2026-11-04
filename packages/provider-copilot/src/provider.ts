@@ -505,7 +505,8 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     callOpenAIAudioTranscriptions: rejectUnsupported('callOpenAIAudioTranscriptions'),
     callRerank: rejectUnsupported('callRerank'),
     callDecision: async (model: ProviderModel, request: CanonicalDecisionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => {
-      const target = model.decisionTarget ?? { protocol: 'systemone' as const };
+      const target = model.decisionTarget;
+      if (target === undefined) throw new Error(`Decision model ${model.id} has no outbound target`);
       const rawModel = rawModelFor(model, 'decision');
       const body = serializeDecisionRequest(target.protocol, rawModel.id, request);
       const response = await copilotFetchSystemOne(

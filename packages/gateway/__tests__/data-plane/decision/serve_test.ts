@@ -310,3 +310,45 @@ test('/v1/systemone forwards an assets-bearing body verbatim to a System One tar
   // Same dialect, so the whole body including assets reaches the upstream.
   assertEquals(await upstreamRequest.clone().json(), { ...body, model: 'raw-decision' });
 });
+
+test('/v1/decisions surfaces a cross-dialect upstream body it cannot parse', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  // The client speaks OpenAI Decisions; the target speaks System One, so the
+  // upstream body must be translated — an unparseable one cannot be forwarded.
+  await saveDecisionUpstream(repo, { protocol: 'systemone' });
+
+  await withMockedFetch(
+    () => new Response('upstream is unavailable', { status: 200, headers: { 'content-type': 'text/plain' } }),
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/decisions', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({
+          model: 'public-decision',
+          input: 'The API returns 500.',
+          questions: [{ type: 'predicate', name: 'is_bug', instructions: 'Is this a bug?' }],
+        }),
+      });
+      assertEquals(response.status, 502);
+    },
+  );
+});
+
+test('/v1/systemone forwards an unparseable same-dialect body verbatim', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveDecisionUpstream(repo, { protocol: 'systemone' });
+
+  await withMockedFetch(
+    () => new Response('opaque upstream bytes', { status: 200, headers: { 'content-type': 'text/plain' } }),
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/systemone', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify(choiceRequest),
+      });
+      // Same dialect: the body needs no translation, so it passes through.
+      assertEquals(response.status, 200);
+      assertEquals(await response.text(), 'opaque upstream bytes');
+    },
+  );
+});

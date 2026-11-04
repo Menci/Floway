@@ -1,8 +1,9 @@
 import type { DecisionSourceProtocol } from '../common/models.ts';
 
 // A decision request carries evidence and typed questions. Both dialects can
-// hold text, JSON, and images; the canonical form keeps all three so a target
-// that reads images still receives them.
+// hold text, JSON, and images, so the canonical form keeps all three. A System
+// One target additionally gates images behind a vendor header this gateway
+// sends only through a custom upstream's ingress rules.
 // https://developers.openai.com/api/reference/resources/decisions/methods/create
 // https://docs.typesafe.ai/images
 export interface DecisionTextPart {
@@ -21,18 +22,13 @@ export interface DecisionImagePart {
 export interface DecisionJsonPart {
   type: 'json';
   data: Record<string, unknown> | readonly unknown[];
-  // System One lets an asset reference stand in for an image anywhere a string
-  // may appear, including a JSON field. The structure stays as sent (with the
-  // reference strings intact) and the images those references resolved to ride
-  // alongside, so a target that speaks inline image parts still receives them.
-  images?: readonly DecisionImagePart[];
 }
 
 export type DecisionContentPart = DecisionTextPart | DecisionImagePart | DecisionJsonPart;
 
 // The evidence the questions are asked about. `text` and `json` are the two
 // single-value forms System One accepts directly; `parts` keeps an ordered mix
-// (including images) that only a target reading images can receive.
+// including images.
 export type DecisionState =
   | { kind: 'text'; value: string }
   | { kind: 'json'; value: Record<string, unknown> | readonly unknown[]; images?: readonly DecisionImagePart[] }
@@ -123,12 +119,11 @@ export type DecisionAnswer = DecisionNoulAnswer | DecisionChoiceAnswer | Decisio
 
 export interface CanonicalDecisionResponse {
   raw: Record<string, unknown>;
-  // The versioned model id the upstream reports answering with. Log it: a
-  // provider may update weights behind a stable alias.
+  // The model id the upstream reports answering with, rendered back to the
+  // client. It can differ from the Floway model id, since a provider may update
+  // weights behind a stable alias.
   model?: string;
   answers: readonly DecisionAnswer[];
-  inputTokens?: number;
-  outputTokens?: number;
 }
 
 export interface ParsedDecisionRequest {
