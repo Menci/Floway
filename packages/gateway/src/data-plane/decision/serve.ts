@@ -21,9 +21,11 @@ import type { TelemetryModelIdentity } from '@floway-dev/provider';
 const apiError = (c: Context, message: string, status: ContentfulStatusCode): Response =>
   c.json({ error: { message, type: 'api_error' } }, status);
 
+// Raw-number parsing keeps a caller's own digits — a same-dialect forward
+// re-emits `raw` verbatim, so parsing to a number first would rewrite them.
 const parseJson = (bytes: Uint8Array): unknown => {
   try {
-    return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+    return parseJSONWithRawNumbers(new TextDecoder().decode(bytes));
   } catch {
     throw new Error('Decision request body must be valid JSON');
   }

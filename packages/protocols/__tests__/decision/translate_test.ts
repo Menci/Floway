@@ -553,3 +553,34 @@ describe('optional instructions', () => {
     expect('criteria' in parsed.request.questions[0]).toBe(false);
   });
 });
+
+describe('instruction shape follows the source dialect, not the contents', () => {
+  test('a System One instruction array is structured data even when items carry `type`', () => {
+    const parsed = parseDecisionRequest('systemone', {
+      model: 'jev-1.13',
+      state: 'x',
+      questions: { q: { type: 'noul', instructions: [{ type: 'fact', text: 'a' }, { type: 'fact', text: 'b' }] } },
+    });
+    const wire = serializeDecisionRequest('systemone', 'm', parsed.request) as { questions: Record<string, { instructions: unknown }> };
+    // Not converted into input_text/input_image parts.
+    expect(wire.questions.q.instructions).toEqual([{ type: 'fact', text: 'a' }, { type: 'fact', text: 'b' }]);
+  });
+
+  test('an OpenAI instruction array of parts lowers into System One assets', () => {
+    const parsed = parseDecisionRequest('openai-decisions', {
+      model: 'gpt-6-luna',
+      input: 'x',
+      questions: [{
+        type: 'predicate',
+        name: 'q',
+        instructions: [{ type: 'input_text', text: 'look' }, { type: 'input_image', image_url: 'data:image/png;base64,AA' }],
+      }],
+    });
+    const wire = serializeDecisionRequest('systemone', 'm', parsed.request) as {
+      questions: Record<string, { instructions: unknown }>;
+      assets?: Record<string, unknown>;
+    };
+    expect(wire.questions.q.instructions).toEqual(['look', 'image-0']);
+    expect(wire.assets).toEqual({ 'image-0': { type: 'image', format: 'png', data_base64: 'AA' } });
+  });
+});

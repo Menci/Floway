@@ -44,16 +44,12 @@ export type DecisionState =
 //  ContentValue } | ContentValue[] | null`
 export type DecisionEntry = string | Record<string, unknown> | readonly unknown[] | null;
 
-// Instructions are text, an ordered content mix (the OpenAI shape), or — on
-// System One — any structured value the model reads as given. The array arm is
-// ambiguous by design: only the source dialect says whether it is a content
-// part list or a plain array.
+// Instructions are text, an ordered content mix (the OpenAI shape), or any
+// structured value. The array arm is ambiguous by itself: only the source
+// dialect says whether it is a content-part list or a plain array, so
+// serialization discriminates on `sourceProtocol`, never on the contents.
 // https://docs.typesafe.ai/primitives#advanced-structure
-export type DecisionInstructions =
-  | string
-  | readonly DecisionContentPart[]
-  | Record<string, unknown>
-  | readonly unknown[];
+export type DecisionInstructions = DecisionEntry;
 
 // Choice values are typed: the OpenAI contract defines value as string or
 // boolean and treats `true` and `"true"` as distinct options. System One keys

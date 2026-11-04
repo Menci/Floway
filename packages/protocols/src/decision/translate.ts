@@ -144,13 +144,11 @@ const openAIInputState = (input: unknown): DecisionState => {
 // caller's mistake reaches them instead of being hidden from the model.
 const SYSTEMONE_TOP_LEVEL_FIELDS = new Set(['model', 'state', 'questions', 'assets']);
 
-// System One instructions are text (possibly structured data serialized once).
-// A whole-string asset reference becomes that image.
-// System One accepts a structured instruction and reads it as given, so the
-// structure is kept rather than stringified into text the model would parse.
-// Omitted and null both mean "no instructions": both SDKs type `instructions`
-// as optional and nullable, so a question may carry its whole meaning in
-// `criteria`.
+// System One reads a structured instruction as given, so the structure is kept
+// rather than stringified into text the model would parse. A whole-string
+// asset reference becomes that image. Omitted and null both mean "no
+// instructions": both SDKs type it as optional and nullable, so a question may
+// carry its whole meaning in `criteria`.
 const systemOneInstructions = (value: unknown, field: string, assets: unknown): DecisionInstructions | undefined => {
   if (value === undefined || value === null) return undefined;
   if (typeof value === 'string') {
@@ -347,11 +345,16 @@ const systemOneCarrier = (): SystemOneCarrier => {
   };
 };
 
-const systemOneInstructionsValue = (instructions: DecisionInstructions, carrier: SystemOneCarrier): unknown => {
-  if (typeof instructions === 'string') return instructions;
-  // A structured instruction is not a content-part list; it goes as given.
-  if (!Array.isArray(instructions)) return instructions;
-  return instructions.map((part, index) => carrier.reference(part, index));
+// A content-part list is lowered into assets; any other array is structured
+// data the model reads as given, so only an OpenAI-sourced array is mapped.
+const systemOneInstructionsValue = (
+  instructions: DecisionInstructions | undefined,
+  carrier: SystemOneCarrier,
+  sourceProtocol: DecisionSourceProtocol,
+): unknown => {
+  if (instructions === undefined) return undefined;
+  if (sourceProtocol !== 'openai-decisions' || !Array.isArray(instructions)) return instructions;
+  return (instructions as readonly DecisionContentPart[]).map((part, index) => carrier.reference(part, index));
 };
 
 const systemOneStateValue = (state: DecisionState, carrier: SystemOneCarrier): unknown => {
@@ -373,7 +376,7 @@ const serializeSystemOne = (model: string, request: CanonicalDecisionRequest): R
     if (question.type === 'noul') {
       return [question.name, {
         type: 'noul',
-        ...(question.instructions === undefined ? {} : { instructions: systemOneInstructionsValue(question.instructions, carrier) }),
+        ...(question.instructions === undefined ? {} : { instructions: systemOneInstructionsValue(question.instructions, carrier, request.sourceProtocol) }),
         ...(question.criteria === undefined ? {} : { criteria: question.criteria }),
       }];
     }
@@ -388,13 +391,13 @@ const serializeSystemOne = (model: string, request: CanonicalDecisionRequest): R
       }
       return [question.name, {
         type: 'choice',
-        ...(question.instructions === undefined ? {} : { instructions: systemOneInstructionsValue(question.instructions, carrier) }),
+        ...(question.instructions === undefined ? {} : { instructions: systemOneInstructionsValue(question.instructions, carrier, request.sourceProtocol) }),
         criteria,
       }];
     }
     return [question.name, {
       type: 'score',
-      ...(question.instructions === undefined ? {} : { instructions: systemOneInstructionsValue(question.instructions, carrier) }),
+      ...(question.instructions === undefined ? {} : { instructions: systemOneInstructionsValue(question.instructions, carrier, request.sourceProtocol) }),
       criteria: question.levels.map(level => level.label),
     }];
   }));
@@ -415,13 +418,12 @@ const openAIContentParts = (parts: readonly DecisionContentPart[]): readonly Rec
 
 // Only a content-part list becomes OpenAI parts; a structured instruction has
 // no OpenAI form, so it is sent as its JSON text.
-const openAIInstructions = (instructions: DecisionInstructions | undefined): unknown => {
+// Only an OpenAI-sourced request carries content parts; a System One array is
+// structured data the model reads as given, so it is sent unchanged.
+const openAIInstructions = (instructions: DecisionInstructions | undefined, sourceProtocol: DecisionSourceProtocol): unknown => {
   if (instructions === undefined) return undefined;
-  if (typeof instructions === 'string') return instructions;
-  if (Array.isArray(instructions) && instructions.every(part => isRecord(part) && typeof part.type === 'string')) {
-    return openAIContentParts(instructions as readonly DecisionContentPart[]);
-  }
-  return instructions;
+  if (sourceProtocol !== 'openai-decisions' || !Array.isArray(instructions)) return instructions;
+  return openAIContentParts(instructions as readonly DecisionContentPart[]);
 };
 
 const openAIStateValue = (state: DecisionState): unknown => {
@@ -446,14 +448,14 @@ const serializeOpenAIDecisions = (model: string, request: CanonicalDecisionReque
       return {
         type: 'predicate',
         name: question.name,
-        ...(question.instructions === undefined ? {} : { instructions: openAIInstructions(question.instructions) }),
+        ...(question.instructions === undefined ? {} : { instructions: openAIInstructions(question.instructions, request.sourceProtocol) }),
       };
     }
     if (question.type === 'choice') {
       return {
         type: 'choice',
         name: question.name,
-        ...(question.instructions === undefined ? {} : { instructions: openAIInstructions(question.instructions) }),
+        ...(question.instructions === undefined ? {} : { instructions: openAIInstructions(question.instructions, request.sourceProtocol) }),
         choices: question.options.map(option => ({
           value: option.value,
           ...(option.description === undefined ? {} : { description: option.description }),
@@ -463,7 +465,7 @@ const serializeOpenAIDecisions = (model: string, request: CanonicalDecisionReque
     return {
       type: 'score',
       name: question.name,
-      ...(question.instructions === undefined ? {} : { instructions: openAIInstructions(question.instructions) }),
+      ...(question.instructions === undefined ? {} : { instructions: openAIInstructions(question.instructions, request.sourceProtocol) }),
       levels: question.levels.map(level => ({
         label: level.label,
         ...(level.description === undefined ? {} : { description: level.description }),
