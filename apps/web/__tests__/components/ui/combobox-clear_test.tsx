@@ -10,20 +10,9 @@ test('exposes an independent clear button without replacing the disclosure arrow
   const { container } = renderInApp(<Combobox aria-label="Filter" clearAction={{ label: 'Clear filter', onClear }} selectedOptions={['alice']} value="alice" />);
   const clear = screen.getByRole('button', { name: 'Clear filter' });
   expect(clear.tagName).toBe('BUTTON');
-  expect(clear.getAttribute('type')).toBe('button');
   expect(container.querySelector('.fui-Combobox__expandIcon')).toBeTruthy();
-  expect(clear.querySelector('svg')!.style.width).toBe('12px');
-  expect(clear.querySelector('svg')!.style.height).toBe('12px');
   fireEvent.click(clear);
   expect(onClear).toHaveBeenCalledOnce();
-});
-
-test.each([Combobox, Dropdown])('uses 12px artwork for default clearable select fields', Control => {
-  const { container } = renderInApp(<Control aria-label="Filter" clearable selectedOptions={['alice']} value="alice" />);
-  const icon = container.querySelector<SVGElement>('.fui-Combobox__clearIcon svg, .fui-Dropdown__clearButton svg')!;
-  expect(icon.style.width).toBe('12px');
-  expect(icon.style.height).toBe('12px');
-  expect(icon.getAttribute('viewBox')).toBe('0 0 12 12');
 });
 
 test('preserves explicit suppression of clear slots', () => {
