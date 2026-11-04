@@ -765,7 +765,7 @@ export const claudeConfig = (overrides: Partial<AgentSetupConfiguration['claudeC
   apiKeyId: 'key-a',
   claudeCode: {
     model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
-    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false, ...overrides,
+    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, disableArtifact: false, modelDiscovery: false, ...overrides,
   },
   codex: { model: null, reasoningEffort: null },
   pi: { thinkingLevel: null, retry: { enabled: null, maxRetries: null }, provider: 'floway', model: null },
@@ -777,7 +777,7 @@ export const codexConfig = (overrides: Partial<AgentSetupConfiguration['codex']>
   apiKeyId: 'key-a',
   claudeCode: {
     model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
-    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
+    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, disableArtifact: false, modelDiscovery: false,
   },
   codex: { model: null, reasoningEffort: null, ...overrides },
   pi: { thinkingLevel: null, retry: { enabled: null, maxRetries: null }, provider: 'floway', model: null },
@@ -794,7 +794,7 @@ export const bothConfig = (
   apiKeyId: 'key-a',
   claudeCode: {
     model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
-    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false, ...claude,
+    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, disableArtifact: false, modelDiscovery: false, ...claude,
   },
   codex: { model: null, reasoningEffort: null, ...codex },
   pi: { thinkingLevel: null, retry: { enabled: null, maxRetries: null }, provider: 'floway', model: null, ...pi },
@@ -806,7 +806,7 @@ export const piConfig = (overrides: Partial<AgentSetupConfiguration['pi']> = {})
   apiKeyId: 'key-a',
   claudeCode: {
     model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
-    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
+    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, disableArtifact: false, modelDiscovery: false,
   },
   codex: { model: null, reasoningEffort: null },
   pi: { thinkingLevel: null, retry: { enabled: null, maxRetries: null }, provider: 'floway', model: null, ...overrides },
@@ -818,7 +818,7 @@ export const ompConfig = (overrides: Partial<AgentSetupConfiguration['omp']> = {
   apiKeyId: 'key-a',
   claudeCode: {
     model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
-    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
+    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, disableArtifact: false, modelDiscovery: false,
   },
   codex: { model: null, reasoningEffort: null },
   omp: { retry: { enabled: null, maxRetries: null }, provider: 'floway', model: null, ...overrides },

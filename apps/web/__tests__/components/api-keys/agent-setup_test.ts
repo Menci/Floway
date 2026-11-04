@@ -34,6 +34,7 @@ describe('Agent Setup snippets', () => {
       optOutAiAttribution: false,
       disableAutoMemory: false,
       disableAgentView: false,
+      disableArtifact: false,
       modelDiscovery: false,
     })) as { env: Record<string, string> };
 
@@ -58,6 +59,7 @@ describe('Agent Setup snippets', () => {
       optOutAiAttribution: false,
       disableAutoMemory: false,
       disableAgentView: false,
+      disableArtifact: false,
       modelDiscovery: false,
     })) as { env: Record<string, string> };
 
@@ -77,6 +79,7 @@ describe('Agent Setup snippets', () => {
       optOutAiAttribution: false,
       disableAutoMemory: false,
       disableAgentView: false,
+      disableArtifact: false,
       modelDiscovery: true,
     } as const;
 
@@ -84,6 +87,10 @@ describe('Agent Setup snippets', () => {
       .not.toHaveProperty('cleanupPeriodDays');
     expect(JSON.parse(buildAgentClaudeSnippet('https://floway.example', 'key', base)))
       .not.toHaveProperty('attribution');
+    expect(JSON.parse(buildAgentClaudeSnippet('https://floway.example', 'key', base)))
+      .not.toHaveProperty('enableArtifact');
+    expect(JSON.parse(buildAgentClaudeSnippet('https://floway.example', 'key', base)))
+      .not.toHaveProperty('disableArtifact');
 
     expect(JSON.parse(buildAgentClaudeSnippet('https://floway.example', 'key', {
       ...base,
@@ -91,9 +98,12 @@ describe('Agent Setup snippets', () => {
       optOutAiAttribution: true,
       disableAutoMemory: false,
       disableAgentView: false,
+      disableArtifact: true,
     }))).toMatchObject({
       cleanupPeriodDays: 365,
       attribution: { commit: '', pr: '', sessionUrl: false },
+      enableArtifact: false,
+      disableArtifact: true,
     });
   });
 });
