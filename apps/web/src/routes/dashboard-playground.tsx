@@ -267,7 +267,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           return current.map(message => message.id === assistantId ? { ...message, text } : message);
         });
       };
-      for await (const delta of streamPlaygroundText({
+      const stream = streamPlaygroundText({
         api: playgroundApi,
         apiKey: sendTarget.apiKey.key,
         model: sendTarget.model.id,
@@ -276,14 +276,26 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
         options: generationOptions(playgroundApi, reasoningEffort || undefined, defaultMaxOutputTokens(sendTarget.model)),
         signal: controller.signal,
         fetchImpl: wireFetch,
-      })) {
-        assistantText += delta;
+      });
+      let assistantOutput: PlaygroundMessage['assistantOutput'];
+      while (true) {
+        const next = await stream.next();
+        if (next.done) {
+          assistantOutput = next.value ?? undefined;
+          break;
+        }
+        assistantText += next.value;
         renderFrame ??= requestAnimationFrame(commitAssistantText);
       }
       if (renderFrame !== null) cancelAnimationFrame(renderFrame);
-      if (assistantText) commitAssistantText();
-      else if (!controller.signal.aborted) {
-        setMessages(current => [...current, { id: assistantId, role: 'assistant', text: t('dashboard.playground.emptyResponse') }]);
+      if (!controller.signal.aborted) {
+        const text = assistantText || t('dashboard.playground.emptyResponse');
+        setMessages(current => {
+          const existing = current.findIndex(message => message.id === assistantId);
+          const assistantMessage: PlaygroundMessage = { id: assistantId, role: 'assistant', text, ...(assistantOutput && { assistantOutput }) };
+          if (existing < 0) return [...current, assistantMessage];
+          return current.map(message => message.id === assistantId ? assistantMessage : message);
+        });
       }
     } catch (error) {
       if (!isAbortError(error) && !controller.signal.aborted) {
@@ -314,7 +326,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
       const index = current.findIndex(message => message.id === id);
       if (index < 0) return current;
       return current.slice(0, index + 1).map(message => message.id === id
-        ? { ...message, text: draft.text.trim(), ...(message.role === 'user' && draft.imageUrl.trim() ? { imageUrl: draft.imageUrl.trim() } : { imageUrl: undefined }) }
+        ? { ...message, text: draft.text.trim(), assistantOutput: undefined, ...(message.role === 'user' && draft.imageUrl.trim() ? { imageUrl: draft.imageUrl.trim() } : { imageUrl: undefined }) }
         : message);
     });
     editDialog.close();
