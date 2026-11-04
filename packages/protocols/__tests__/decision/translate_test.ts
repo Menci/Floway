@@ -479,3 +479,77 @@ describe('number token fidelity', () => {
     expect(() => parseDecisionResponse('systemone', body)).toThrow(/must be a finite number/);
   });
 });
+
+describe('structured descriptions', () => {
+  test('a structured instruction reaches a System One target as given', () => {
+    const parsed = parseDecisionRequest('systemone', {
+      model: 'jev-1.13',
+      state: 'x',
+      questions: { q: { type: 'noul', instructions: { question: 'Is it urgent?', context: { plan: 'pro' } } } },
+    });
+    expect(parsed.request.questions[0].instructions).toEqual({ question: 'Is it urgent?', context: { plan: 'pro' } });
+    const wire = serializeDecisionRequest('systemone', 'm', parsed.request) as { questions: Record<string, { instructions: unknown }> };
+    expect(wire.questions.q.instructions).toEqual({ question: 'Is it urgent?', context: { plan: 'pro' } });
+  });
+
+  test('a structured Choice option description survives a same-dialect forward', () => {
+    const body = {
+      model: 'jev-1.13',
+      state: 'x',
+      questions: {
+        q: { type: 'choice', instructions: 'i', criteria: { a: { what: 'A', not_for: 'B' }, b: null } },
+      },
+    };
+    const parsed = parseDecisionRequest('systemone', body);
+    expect(serializeDecisionRequest('systemone', 'm', parsed.request)).toEqual({ ...body, model: 'm' });
+  });
+
+  test('a structured score level stays structured', () => {
+    const parsed = parseDecisionRequest('systemone', {
+      model: 'jev-1.13', state: 'x',
+      questions: { q: { type: 'score', instructions: 'i', criteria: [{ level: 'low' }, 'high'] } },
+    });
+    expect(parsed.request.questions[0]).toMatchObject({ levels: [{ label: { level: 'low' } }, { label: 'high' }] });
+  });
+
+  test('a structured legend value comes back structured', () => {
+    const response = parseDecisionResponse('systemone', {
+      answers: { q: { type: 'score', score: 1, confidence: 0.9, legend: { '0': { level: 'low' }, '1': 'high' }, probabilities: { '0': 0.2, '1': 0.8 } } },
+    });
+    expect(response.answers[0]).toMatchObject({ legend: { '0': { level: 'low' }, '1': 'high' } });
+  });
+});
+
+describe('optional instructions', () => {
+  test('a question may omit instructions and carry its meaning in criteria', () => {
+    const parsed = parseDecisionRequest('systemone', {
+      model: 'jev-1.13',
+      state: 'x',
+      questions: { q: { type: 'noul', criteria: { true: 'Is advertising', false: 'Is legitimate' } } },
+    });
+    expect(parsed.request.questions[0]).toEqual({
+      type: 'noul',
+      name: 'q',
+      criteria: { true: 'Is advertising', false: 'Is legitimate' },
+    });
+    // The key stays absent rather than becoming null or ''.
+    const wire = serializeDecisionRequest('systemone', 'm', parsed.request) as { questions: Record<string, Record<string, unknown>> };
+    expect('instructions' in wire.questions.q).toBe(false);
+  });
+
+  test('explicit null instructions are accepted too', () => {
+    const parsed = parseDecisionRequest('systemone', {
+      model: 'jev-1.13', state: 'x',
+      questions: { q: { type: 'noul', instructions: null, criteria: { true: 'yes' } } },
+    });
+    expect(parsed.request.questions[0].instructions).toBeUndefined();
+  });
+
+  test('null Noul criteria is accepted', () => {
+    const parsed = parseDecisionRequest('systemone', {
+      model: 'jev-1.13', state: 'x',
+      questions: { q: { type: 'noul', instructions: 'Is it urgent?', criteria: null } },
+    });
+    expect('criteria' in parsed.request.questions[0]).toBe(false);
+  });
+});

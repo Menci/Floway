@@ -5,6 +5,7 @@ import type {
   DecisionChoiceOption,
   DecisionChoiceQuestion,
   DecisionContentPart,
+  DecisionEntry,
   DecisionImagePart,
   DecisionInstructions,
   DecisionNoulQuestion,
@@ -145,13 +146,20 @@ const SYSTEMONE_TOP_LEVEL_FIELDS = new Set(['model', 'state', 'questions', 'asse
 
 // System One instructions are text (possibly structured data serialized once).
 // A whole-string asset reference becomes that image.
-const systemOneInstructions = (value: unknown, field: string, assets: unknown): DecisionInstructions => {
+// System One accepts a structured instruction and reads it as given, so the
+// structure is kept rather than stringified into text the model would parse.
+// Omitted and null both mean "no instructions": both SDKs type `instructions`
+// as optional and nullable, so a question may carry its whole meaning in
+// `criteria`.
+const systemOneInstructions = (value: unknown, field: string, assets: unknown): DecisionInstructions | undefined => {
+  if (value === undefined || value === null) return undefined;
   if (typeof value === 'string') {
     const image = systemOneAssetImage(value, assets);
     return image === undefined ? value : [image];
   }
-  if (isRecord(value) || Array.isArray(value)) return JSON.stringify(value);
-  throw new Error(`${field} must be a string`);
+  if (isRecord(value)) return value;
+  if (Array.isArray(value)) return value;
+  throw new Error(`${field} must be a string, an object, an array, or null`);
 };
 
 // A whole-string asset reference becomes an image part; a structured state keeps
@@ -170,19 +178,24 @@ const systemOneState = (state: unknown, assets: unknown): DecisionState => {
 
 const systemOneNoul = (name: string, value: Record<string, unknown>, assets: unknown): DecisionNoulQuestion => {
   const instructions = systemOneInstructions(value.instructions, `questions.${name}.instructions`, assets);
-  if (value.criteria === undefined) return { type: 'noul', name, instructions };
+  // `null` is the SDK's explicit "no criteria", equivalent to omitting it.
+  if (value.criteria === undefined || value.criteria === null) return { type: 'noul', name, instructions };
   if (!isRecord(value.criteria)) throw new Error(`questions.${name}.criteria must be an object`);
   const trueCriterion = value.criteria.true;
   const falseCriterion = value.criteria.false;
-  if (trueCriterion !== undefined && typeof trueCriterion !== 'string') throw new Error(`questions.${name}.criteria.true must be a string`);
-  if (falseCriterion !== undefined && typeof falseCriterion !== 'string') throw new Error(`questions.${name}.criteria.false must be a string`);
+  if (trueCriterion !== undefined && typeof trueCriterion !== 'string' && !isRecord(trueCriterion) && !Array.isArray(trueCriterion)) {
+    throw new Error(`questions.${name}.criteria.true must be a string, an object, or an array`);
+  }
+  if (falseCriterion !== undefined && typeof falseCriterion !== 'string' && !isRecord(falseCriterion) && !Array.isArray(falseCriterion)) {
+    throw new Error(`questions.${name}.criteria.false must be a string, an object, or an array`);
+  }
   return {
     type: 'noul',
     name,
     instructions,
     criteria: {
-      ...(trueCriterion === undefined ? {} : { true: trueCriterion }),
-      ...(falseCriterion === undefined ? {} : { false: falseCriterion }),
+      ...(trueCriterion === undefined ? {} : { true: trueCriterion as DecisionEntry }),
+      ...(falseCriterion === undefined ? {} : { false: falseCriterion as DecisionEntry }),
     },
   };
 };
@@ -191,10 +204,11 @@ const systemOneChoice = (name: string, value: Record<string, unknown>, assets: u
   const instructions = systemOneInstructions(value.instructions, `questions.${name}.instructions`, assets);
   if (!isRecord(value.criteria)) throw new Error(`questions.${name}.criteria must be an object`);
   const options: DecisionChoiceOption[] = Object.entries(value.criteria).map(([option, description]) => {
-    if (description !== null && typeof description !== 'string') {
-      throw new Error(`questions.${name}.criteria.${option} must be a string or null`);
+    if (description === null) return { value: option };
+    if (typeof description !== 'string' && !isRecord(description) && !Array.isArray(description)) {
+      throw new Error(`questions.${name}.criteria.${option} must be a string, an object, an array, or null`);
     }
-    return description === null ? { value: option } : { value: option, description };
+    return { value: option, description: description as DecisionEntry };
   });
   if (options.length < CHOICE_OPTION_MIN || options.length > CHOICE_OPTION_MAX) {
     throw new Error(`questions.${name}.criteria must have ${CHOICE_OPTION_MIN}-${CHOICE_OPTION_MAX} options`);
@@ -209,8 +223,10 @@ const systemOneScore = (name: string, value: Record<string, unknown>, assets: un
     throw new Error(`questions.${name}.criteria must have ${SCORE_LEVEL_MIN}-${SCORE_LEVEL_MAX} levels`);
   }
   const levels: DecisionScoreLevel[] = value.criteria.map((level, index) => {
-    if (typeof level !== 'string') throw new Error(`questions.${name}.criteria[${index}] must be a string`);
-    return { label: level };
+    if (typeof level !== 'string' && !isRecord(level) && !Array.isArray(level)) {
+      throw new Error(`questions.${name}.criteria[${index}] must be a string, an object, or an array`);
+    }
+    return { label: level as DecisionEntry };
   });
   return { type: 'score', name, instructions, levels };
 };
@@ -331,8 +347,12 @@ const systemOneCarrier = (): SystemOneCarrier => {
   };
 };
 
-const systemOneInstructionsValue = (instructions: DecisionInstructions, carrier: SystemOneCarrier): unknown =>
-  typeof instructions === 'string' ? instructions : instructions.map((part, index) => carrier.reference(part, index));
+const systemOneInstructionsValue = (instructions: DecisionInstructions, carrier: SystemOneCarrier): unknown => {
+  if (typeof instructions === 'string') return instructions;
+  // A structured instruction is not a content-part list; it goes as given.
+  if (!Array.isArray(instructions)) return instructions;
+  return instructions.map((part, index) => carrier.reference(part, index));
+};
 
 const systemOneStateValue = (state: DecisionState, carrier: SystemOneCarrier): unknown => {
   if (state.kind === 'text') return state.value;
@@ -353,12 +373,12 @@ const serializeSystemOne = (model: string, request: CanonicalDecisionRequest): R
     if (question.type === 'noul') {
       return [question.name, {
         type: 'noul',
-        instructions: systemOneInstructionsValue(question.instructions, carrier),
+        ...(question.instructions === undefined ? {} : { instructions: systemOneInstructionsValue(question.instructions, carrier) }),
         ...(question.criteria === undefined ? {} : { criteria: question.criteria }),
       }];
     }
     if (question.type === 'choice') {
-      const criteria: Record<string, string | null> = {};
+      const criteria: Record<string, DecisionEntry | null> = {};
       for (const option of question.options) {
         const key = String(option.value);
         // System One keys options by string, so two typed values that read the
@@ -368,13 +388,13 @@ const serializeSystemOne = (model: string, request: CanonicalDecisionRequest): R
       }
       return [question.name, {
         type: 'choice',
-        instructions: systemOneInstructionsValue(question.instructions, carrier),
+        ...(question.instructions === undefined ? {} : { instructions: systemOneInstructionsValue(question.instructions, carrier) }),
         criteria,
       }];
     }
     return [question.name, {
       type: 'score',
-      instructions: systemOneInstructionsValue(question.instructions, carrier),
+      ...(question.instructions === undefined ? {} : { instructions: systemOneInstructionsValue(question.instructions, carrier) }),
       criteria: question.levels.map(level => level.label),
     }];
   }));
@@ -393,8 +413,16 @@ const openAIContentParts = (parts: readonly DecisionContentPart[]): readonly Rec
   return { type: 'input_json', data: part.data };
 });
 
-const openAIInstructions = (instructions: DecisionInstructions): unknown =>
-  typeof instructions === 'string' ? instructions : openAIContentParts(instructions);
+// Only a content-part list becomes OpenAI parts; a structured instruction has
+// no OpenAI form, so it is sent as its JSON text.
+const openAIInstructions = (instructions: DecisionInstructions | undefined): unknown => {
+  if (instructions === undefined) return undefined;
+  if (typeof instructions === 'string') return instructions;
+  if (Array.isArray(instructions) && instructions.every(part => isRecord(part) && typeof part.type === 'string')) {
+    return openAIContentParts(instructions as readonly DecisionContentPart[]);
+  }
+  return instructions;
+};
 
 const openAIStateValue = (state: DecisionState): unknown => {
   if (state.kind === 'text') return state.value;
@@ -415,13 +443,17 @@ const serializeOpenAIDecisions = (model: string, request: CanonicalDecisionReque
   input: openAIStateValue(request.state),
   questions: request.questions.map(question => {
     if (question.type === 'noul') {
-      return { type: 'predicate', name: question.name, instructions: openAIInstructions(question.instructions) };
+      return {
+        type: 'predicate',
+        name: question.name,
+        ...(question.instructions === undefined ? {} : { instructions: openAIInstructions(question.instructions) }),
+      };
     }
     if (question.type === 'choice') {
       return {
         type: 'choice',
         name: question.name,
-        instructions: openAIInstructions(question.instructions),
+        ...(question.instructions === undefined ? {} : { instructions: openAIInstructions(question.instructions) }),
         choices: question.options.map(option => ({
           value: option.value,
           ...(option.description === undefined ? {} : { description: option.description }),
@@ -431,7 +463,7 @@ const serializeOpenAIDecisions = (model: string, request: CanonicalDecisionReque
     return {
       type: 'score',
       name: question.name,
-      instructions: openAIInstructions(question.instructions),
+      ...(question.instructions === undefined ? {} : { instructions: openAIInstructions(question.instructions) }),
       levels: question.levels.map(level => ({
         label: level.label,
         ...(level.description === undefined ? {} : { description: level.description }),
@@ -471,14 +503,10 @@ const numberRecord = (value: unknown): Record<string, number> | undefined => {
   return out;
 };
 
-const stringRecord = (value: unknown): Record<string, string> | undefined => {
-  if (!isRecord(value)) return undefined;
-  const out: Record<string, string> = {};
-  for (const [key, entry] of Object.entries(value)) {
-    if (typeof entry === 'string') out[key] = entry;
-  }
-  return out;
-};
+// Every legend entry is kept: System One echoes the criteria value it was
+// given, which may be a string, an object, or an array.
+const entryRecord = (value: unknown): Record<string, DecisionEntry> | undefined =>
+  isRecord(value) ? value as Record<string, DecisionEntry> : undefined;
 
 // Both dialects mark `confidence` and `probabilities` required on Choice and
 // Score answers, so a missing one is a broken response rather than an answer
@@ -501,18 +529,23 @@ const systemOneAnswer = (name: string, value: unknown): DecisionAnswer => {
   }
   if (value.type === 'score') {
     const score = finiteNumber(value.score, `answers.${name}.score`);
-    const legend = stringRecord(value.legend);
+    const legend = entryRecord(value.legend);
     const record = requiredNumberRecord(value.probabilities, `answers.${name}.probabilities`);
     return {
       type: 'score',
       name,
       score,
       confidence,
-      probabilities: Object.entries(record).map(([level, probability]) => ({
-        value: Number(level),
-        ...(legend?.[level] === undefined ? {} : { label: legend[level] }),
-        probability,
-      })),
+      probabilities: Object.entries(record).map(([level, probability]) => {
+        // OpenAI's per-level `label` is a string; a structured System One
+        // criteria stays in `legend` and is not flattened into it.
+        const label = legend?.[level];
+        return {
+          value: Number(level),
+          ...(typeof label === 'string' ? { label } : {}),
+          probability,
+        };
+      }),
       ...(legend === undefined ? {} : { legend }),
     };
   }

@@ -35,7 +35,25 @@ export type DecisionState =
   | { kind: 'json'; value: Record<string, unknown> | readonly unknown[]; images?: readonly DecisionImagePart[] }
   | { kind: 'parts'; parts: readonly DecisionContentPart[] };
 
-export type DecisionInstructions = string | readonly DecisionContentPart[];
+// Anywhere a description goes — a question's instructions, a Choice option's
+// description, a Score level, or a Noul's criteria — System One accepts text,
+// a JSON object, a JSON array, or null, and reads structure as given. Both
+// official SDKs type it identically:
+// https://github.com/typesafe-ai/typesafe-typescript/blob/main/src/types.ts
+// `type EntryType = string | Asset | TextWithAssets | { [key: string]:
+//  ContentValue } | ContentValue[] | null`
+export type DecisionEntry = string | Record<string, unknown> | readonly unknown[] | null;
+
+// Instructions are text, an ordered content mix (the OpenAI shape), or — on
+// System One — any structured value the model reads as given. The array arm is
+// ambiguous by design: only the source dialect says whether it is a content
+// part list or a plain array.
+// https://docs.typesafe.ai/primitives#advanced-structure
+export type DecisionInstructions =
+  | string
+  | readonly DecisionContentPart[]
+  | Record<string, unknown>
+  | readonly unknown[];
 
 // Choice values are typed: the OpenAI contract defines value as string or
 // boolean and treats `true` and `"true"` as distinct options. System One keys
@@ -43,32 +61,40 @@ export type DecisionInstructions = string | readonly DecisionContentPart[];
 // between the two.
 export interface DecisionChoiceOption {
   value: string | boolean;
-  description?: string;
+  description?: DecisionEntry;
 }
 
 export interface DecisionScoreLevel {
-  label: string;
-  description?: string;
+  // A level is the whole description System One scores against, so it carries
+  // the same string-or-structure shape as any other description.
+  label: DecisionEntry;
+  description?: DecisionEntry;
 }
 
 export interface DecisionNoulQuestion {
   type: 'noul';
   name: string;
-  instructions: DecisionInstructions;
-  criteria?: { true?: string; false?: string };
+  // Omitted or null is legal: a question may carry its whole meaning in
+  // `criteria`.
+  instructions?: DecisionInstructions;
+  criteria?: { true?: DecisionEntry; false?: DecisionEntry } | null;
 }
 
 export interface DecisionChoiceQuestion {
   type: 'choice';
   name: string;
-  instructions: DecisionInstructions;
+  // Omitted or null is legal: a question may carry its whole meaning in
+  // `criteria`.
+  instructions?: DecisionInstructions;
   options: readonly DecisionChoiceOption[];
 }
 
 export interface DecisionScoreQuestion {
   type: 'score';
   name: string;
-  instructions: DecisionInstructions;
+  // Omitted or null is legal: a question may carry its whole meaning in
+  // `criteria`.
+  instructions?: DecisionInstructions;
   // Ordered from lowest to highest; the index is the level number. The model
   // returns a probability-weighted average, so the score can fall between two
   // levels.
@@ -117,7 +143,9 @@ export interface DecisionScoreAnswer {
   confidence: JsonNumber;
   // Level label keyed by level number. Every System One answer carries it; the
   // OpenAI shape has no separate legend and inlines each label instead.
-  legend?: Record<string, string>;
+  // System One echoes each level's criteria value verbatim, so a structured
+  // criteria comes back structured.
+  legend?: Record<string, DecisionEntry>;
   probabilities: readonly { value: number; label?: string; probability: JsonNumber }[];
 }
 
