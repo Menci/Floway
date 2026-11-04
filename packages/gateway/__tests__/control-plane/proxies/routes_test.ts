@@ -16,6 +16,9 @@ const stubFailingSocketDial = (): SocketDial => ({
   connect: async () => {
     throw new Error('stub: dial refused');
   },
+  startTls: async () => {
+    throw new Error('stub: dial refused');
+  },
 });
 
 beforeEach(() => {

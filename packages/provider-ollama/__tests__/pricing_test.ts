@@ -53,9 +53,27 @@ test('DeepSeek standard rates are estimated independently of the response servic
 });
 
 test('all currently published cloud model IDs have standard valuation rates', () => {
-  for (const key of ['deepseek-v4.1-flash', 'deepseek-v4-pro:0813', 'gemma4:31b', 'glm-5.2', 'glm-5.3', 'glm-5.3-flash', 'gpt-oss:120b', 'gpt-oss:20b', 'kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6', 'minimax-m3', 'minimax-m2.7', 'mistral-large-4', 'mistral-large-3:675b', 'nemotron-3-nano:30b', 'nemotron-3-super', 'nemotron-3-ultra']) {
+  for (const key of ['deepseek-v4.1-flash', 'deepseek-v4-pro:0813', 'gemma4:31b', 'glm-5.2', 'glm-5.3', 'glm-5.3-flash', 'gpt-oss:120b', 'gpt-oss:20b', 'kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6', 'minimax-m3', 'minimax-m2.7', 'mistral-large-4', 'mistral-large-3:675b', 'nemotron-3-nano:30b', 'nemotron-3-super', 'nemotron-3-ultra', 'clef', 'kimi-k3.1-pro', 'mimo-v2.6-flash', 'mimo-v2.6-pro', 'minimax-m3.1-flash', 'muse-spark-open']) {
     if (pricingForOllamaModelKey(key) === null) throw new Error(`Missing standard valuation: ${key}`);
   }
   assertEquals(pricingForOllamaModelKey('gpt-oss:120b')?.entries[0]?.rates.input_cache_read_tokens, '0.000000014');
   assertEquals(pricingForOllamaModelKey('mistral-large-3:675b')?.entries[0]?.rates.input_cache_read_tokens, undefined);
+});
+
+test('Ollama prices its current cloud catalog from the standard rate card', () => {
+  const rates = (key: string) => priceRequest(pricingForOllamaModelKey(key), { inputTokens: 0 }).rates;
+
+  assertEquals(rates('kimi-k3.1-pro'), published({ input_tokens: '2.00', input_cache_read_tokens: '0.20', output_tokens: '10.00' }));
+  assertEquals(rates('mimo-v2.6-flash'), published({ input_tokens: '0.14', input_cache_read_tokens: '0.0028', output_tokens: '0.28' }));
+  assertEquals(rates('mimo-v2.6-pro'), published({ input_tokens: '0.435', input_cache_read_tokens: '0.0036', output_tokens: '0.87' }));
+  assertEquals(rates('minimax-m3.1-flash'), published({ input_tokens: '0.15', input_cache_read_tokens: '0.015', output_tokens: '0.60' }));
+  assertEquals(rates('muse-spark-open'), published({ input_tokens: '1.25', input_cache_read_tokens: '0.15', output_tokens: '4.25' }));
+
+  // Cloudflare Clef answers a state plus typed questions and bills input only,
+  // so it is the one table row whose vector carries no output rate.
+  assertEquals(rates('clef'), published({ input_tokens: '0.24' }));
+  assertEquals(pricingForOllamaModelKey('clef')?.entries[0]?.rates.output_tokens, undefined);
+
+  // Mistral Large 4 follows the vendor's current card, not its launch rates.
+  assertEquals(rates('mistral-large-4'), published({ input_tokens: '0.70', input_cache_read_tokens: '0.07', output_tokens: '2.10' }));
 });

@@ -10,6 +10,21 @@ const STANDARD_PRICING: readonly PricingRule[] = [
   // Cloud aliases are published under each family's tags page.
   // https://ollama.com/library/deepseek-v4.1-flash/tags
   [['deepseek-v4.1-flash', 'deepseek-v4.1-flash:cloud'], { input_tokens: '0.30', input_cache_read_tokens: '0.006', output_tokens: '1.20' }],
+  // Cloudflare Clef is a decision model: it answers a state plus typed
+  // questions and bills input only, so the vector carries no output rate.
+  // https://ollama.com/pricing
+  // https://ollama.com/library/clef/tags
+  [['clef', 'clef:cloud', 'clef:27b', 'clef:27b-cloud'], { input_tokens: '0.24' }],
+  // https://ollama.com/library/kimi-k3.1-pro/tags
+  [['kimi-k3.1-pro', 'kimi-k3.1-pro:cloud'], { input_tokens: '2.00', input_cache_read_tokens: '0.20', output_tokens: '10.00' }],
+  // https://ollama.com/library/mimo-v2.6-flash/tags
+  [['mimo-v2.6-flash', 'mimo-v2.6-flash:cloud'], { input_tokens: '0.14', input_cache_read_tokens: '0.0028', output_tokens: '0.28' }],
+  // https://ollama.com/library/mimo-v2.6-pro/tags
+  [['mimo-v2.6-pro', 'mimo-v2.6-pro:cloud'], { input_tokens: '0.435', input_cache_read_tokens: '0.0036', output_tokens: '0.87' }],
+  // https://ollama.com/library/minimax-m3.1-flash/tags
+  [['minimax-m3.1-flash', 'minimax-m3.1-flash:cloud'], { input_tokens: '0.15', input_cache_read_tokens: '0.015', output_tokens: '0.60' }],
+  // https://ollama.com/library/muse-spark-open/tags
+  [['muse-spark-open', 'muse-spark-open:cloud'], { input_tokens: '1.25', input_cache_read_tokens: '0.15', output_tokens: '4.25' }],
   // https://ollama.com/library/deepseek-v4-pro/tags
   [['deepseek-v4-pro', 'deepseek-v4-pro:0813', 'deepseek-v4-pro:cloud', 'deepseek-v4-pro:0813-cloud'], { input_tokens: '1.32', input_cache_read_tokens: '0.044', output_tokens: '3.96' }],
   // https://ollama.com/library/gemma4/tags
@@ -34,7 +49,7 @@ const STANDARD_PRICING: readonly PricingRule[] = [
   // https://ollama.com/library/minimax-m2.7/tags
   [['minimax-m2.7', 'minimax-m2.7:cloud'], { input_tokens: '0.30', input_cache_read_tokens: '0.06', output_tokens: '1.20' }],
   // https://ollama.com/library/mistral-large-4/tags
-  [['mistral-large-4', 'mistral-large-4:cloud'], { input_tokens: '0.68', input_cache_read_tokens: '0.07', output_tokens: '2.09' }],
+  [['mistral-large-4', 'mistral-large-4:cloud'], { input_tokens: '0.70', input_cache_read_tokens: '0.07', output_tokens: '2.10' }],
   // https://ollama.com/library/mistral-large-3/tags
   [['mistral-large-3', 'mistral-large-3:675b', 'mistral-large-3:675b-cloud'], { input_tokens: '0.50', output_tokens: '1.50' }],
   // https://ollama.com/library/nemotron-3-nano/tags
