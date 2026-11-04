@@ -25,7 +25,7 @@
 | Stacked Pull Requests | Keep dependent Pull Requests draft and targeted at their predecessor; retarget and publish each one when all dependencies reach `main`. | Pull Request state |
 | `CHANGELOG.md` | Apply only the exact content the human requests and otherwise leave the file untouched. | Human request and final diff review |
 | Completion | Run and read every relevant verification selected for the task before claiming completion. | Verification output |
-| Local verification | Lint task-owned files, run the narrowest relevant test files or directories, select the owning TypeScript projects, and widen scope only when the changed contract requires it. | Reported commands and final diff |
+| Local verification | Name the test files and lint targets under change and select their owning TypeScript projects; every Vitest and ESLint config refuses a run that names none, unless it is the GitHub-hosted runner that runs `verify.yaml`. | Refused commands and final diff |
 | Verification ownership | Put repository-wide lint, typecheck, tests, generated-output checks, and builds directly in `verify.yaml`; expose local commands only when their scope is intrinsic or caller-supplied. | Package scripts and CI workflow review |
 | Test placement | Place package tests and test-only support under `__tests__/` mirroring production directories; keep `@floway-dev/test-utils` in its owning production location. | Vitest configs and repository review |
 | Generated files | Give every checked-in generator output a `.generated.` filename infix and keep generated and vendored attributes aligned. | `.gitattributes` and drift checks |
