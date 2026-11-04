@@ -111,7 +111,8 @@ subset for a model.
 6. Add boundary tests for exact ids, aliases, dated releases, RegExp coverage,
    threshold edges, Base fallback, and the per-base-unit result through
    `priceRequest`.
-7. Run all affected provider tests, typecheck, lint, and the full test suite.
+7. Run the affected provider tests, their typecheck, and lint over the changed files.
+   CI owns the complete suite.
 8. If an existing rate changed, use `$backfill-usage-pricing` for the intended
    historical usage slice. Catalog revisioning changes future snapshots; it
    does not rewrite recorded `unit_price` values.

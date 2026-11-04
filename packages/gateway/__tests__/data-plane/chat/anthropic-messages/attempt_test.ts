@@ -144,6 +144,28 @@ test('generate carries anthropic-beta through the Anthropic Messages boundary ou
   assertEquals(upstreamAnthropicBeta, ['context-1m-2025-08-07', 'advanced-tool-use-2025-11-20']);
 });
 
+test('generate and countTokens drop the Claude Code beta flag on candidates that strip billing attribution', async () => {
+  installRepo();
+  const upstreamAnthropicBeta: Array<readonly string[] | undefined> = [];
+  const callAnthropicMessages = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
+    upstreamAnthropicBeta.push(opts?.anthropicBeta);
+    return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers() };
+  });
+  const callAnthropicMessagesCountTokens = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderCallResult> => {
+    upstreamAnthropicBeta.push(opts?.anthropicBeta);
+    return { response: Response.json({ input_tokens: 1 }), modelKey: 'k' };
+  });
+  const candidate = makeCandidate({ callAnthropicMessages, callAnthropicMessagesCountTokens, enabledFlags: new Set(['strip-billing-attribution']) });
+  const anthropicBeta = ['claude-code-20250219', 'interleaved-thinking-2025-05-14'];
+
+  const result = await anthropicMessagesAttempt.generate({ payload: makePayload(), ctx: makeGatewayCtx(), candidate, headers: new Headers(), anthropicBeta });
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  await anthropicMessagesAttempt.countTokens({ payload: makePayload(), ctx: makeGatewayCtx(), candidate, headers: new Headers(), anthropicBeta });
+
+  assertEquals(upstreamAnthropicBeta, [['interleaved-thinking-2025-05-14'], ['interleaved-thinking-2025-05-14']]);
+});
+
 test('generate translate-to-responses branch routes through openaiResponsesAttempt', async () => {
   installRepo();
   let upstreamHeaders: Headers | undefined;

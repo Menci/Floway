@@ -19,6 +19,7 @@ const fullConfiguration: AgentSetupConfiguration = {
     optOutAiAttribution: true,
     disableAutoMemory: true,
     disableAgentView: true,
+    disableArtifact: true,
     modelDiscovery: true,
   },
   codex: {
@@ -44,7 +45,7 @@ describe('agentSetupConfigurationSchema', () => {
       apiKeyId: 'key-a',
       claudeCode: {
         model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
-        defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
+        defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, disableArtifact: false, modelDiscovery: false,
       },
       codex: { model: null, reasoningEffort: 'vendor-tier' },
       pi: { model: null, provider: 'floway', thinkingLevel: null, retry: { enabled: null, maxRetries: null } },
@@ -136,7 +137,7 @@ describe('defaultAgentSetupConfiguration', () => {
       apiKeyId: 'key-a',
       claudeCode: {
         model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
-        defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: true,
+        defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, disableArtifact: false, modelDiscovery: true,
       },
       codex: { model: null, reasoningEffort: null },
       pi: { model: null, provider: '', thinkingLevel: null, retry: { enabled: null, maxRetries: null } },

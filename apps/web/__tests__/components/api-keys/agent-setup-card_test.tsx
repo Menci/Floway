@@ -21,6 +21,7 @@ const configuration = (apiKeyId: string): AgentSetupConfiguration => ({
     optOutAiAttribution: true,
     disableAutoMemory: true,
     disableAgentView: true,
+    disableArtifact: true,
     modelDiscovery: false,
   },
   codex: { model: null, reasoningEffort: null },
@@ -79,6 +80,7 @@ const shownSettings = () => ({
   attributionOptOut: screen.getByRole<HTMLInputElement>('switch', { name: 'Opt out of Claude Code AI attribution' }).checked,
   autoMemoryOptOut: screen.getByRole<HTMLInputElement>('switch', { name: 'Disable auto memory' }).checked,
   agentViewOptOut: screen.getByRole<HTMLInputElement>('switch', { name: 'Disable agent view' }).checked,
+  artifactOptOut: screen.getByRole<HTMLInputElement>('switch', { name: 'Disable Artifacts' }).checked,
 });
 
 // One store answers for the whole session, so the fields show the lease's
@@ -87,7 +89,7 @@ const shownSettings = () => ({
 describe('Agent Setup card fields', () => {
   it('draws every setting from the lease the session holds', () => {
     renderInApp(<Host />);
-    expect(shownSettings()).toEqual({ effort: 'high', modelDiscovery: false, attributionOptOut: true, autoMemoryOptOut: true, agentViewOptOut: true });
+    expect(shownSettings()).toEqual({ effort: 'high', modelDiscovery: false, attributionOptOut: true, autoMemoryOptOut: true, agentViewOptOut: true, artifactOptOut: true });
   });
 
   it('renders the Pi tab with dynamic discovery and no config snippet tab', () => {
@@ -163,7 +165,7 @@ describe('Agent Setup card fields', () => {
     vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
     renderInApp(<Host />);
     act(() => { screen.getByRole('button', { name: PICK_SECOND_KEY }).click(); });
-    expect(shownSettings()).toEqual({ effort: 'high', modelDiscovery: false, attributionOptOut: true, autoMemoryOptOut: true, agentViewOptOut: true });
+    expect(shownSettings()).toEqual({ effort: 'high', modelDiscovery: false, attributionOptOut: true, autoMemoryOptOut: true, agentViewOptOut: true, artifactOptOut: true });
     vi.unstubAllGlobals();
   });
 });

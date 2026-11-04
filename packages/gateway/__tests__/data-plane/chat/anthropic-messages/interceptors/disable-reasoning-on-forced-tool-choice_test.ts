@@ -24,6 +24,7 @@ const invocation = (
   }),
   targetApi: 'anthropicMessages',
   headers: new Headers(),
+  anthropicBeta: [],
 });
 
 test('messages forced tool_choice disables thinking and strips output_config', async () => {

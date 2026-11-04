@@ -67,7 +67,7 @@ patchedDependencies:
   '@discoveryjs/json-ext@1.1.0': patches/@discoveryjs__json-ext@1.1.0.patch
   'klona@2.0.6': patches/klona@2.0.6.patch
   '@fluentui/react-charts@9.3.22': patches/@fluentui__react-charts@9.3.22.patch
-  '@reclaimprotocol/tls@0.1.2': patches/@reclaimprotocol__tls@0.1.2.patch
+  '@reclaimprotocol/tls@0.1.5': patches/@reclaimprotocol__tls@0.1.5.patch
   'overlayscrollbars@2.13.0': patches/overlayscrollbars@2.13.0.patch
 
 # Charts imports these runtime packages but omits them from its manifest.

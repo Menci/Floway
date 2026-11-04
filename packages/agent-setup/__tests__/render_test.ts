@@ -16,6 +16,7 @@ const fullConfiguration: AgentSetupConfiguration = {
     optOutAiAttribution: true,
     disableAutoMemory: true,
     disableAgentView: true,
+    disableArtifact: true,
     modelDiscovery: true,
   },
   codex: {
@@ -53,6 +54,7 @@ describe('renderShellPrefix', () => {
       "SETUP_CLAUDE_OPT_OUT_AI_ATTRIBUTION='1'",
       "SETUP_CLAUDE_DISABLE_AUTO_MEMORY='1'",
       "SETUP_CLAUDE_DISABLE_AGENT_VIEW='1'",
+      "SETUP_CLAUDE_DISABLE_ARTIFACT='1'",
       "SETUP_CLAUDE_MODEL_DISCOVERY='1'",
       '',
     ].join('\n'));
@@ -88,7 +90,7 @@ describe('renderShellPrefix', () => {
         apiKeyId: 'key-a',
         claudeCode: {
           model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
-          defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
+          defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, disableArtifact: false, modelDiscovery: false,
         },
         codex: { model: null, reasoningEffort: null },
         pi: { model: null, provider: 'floway', thinkingLevel: null, retry: { enabled: null, maxRetries: null } },
@@ -101,6 +103,7 @@ describe('renderShellPrefix', () => {
     expect(prefix).toContain("SETUP_CLAUDE_OPT_OUT_AI_ATTRIBUTION=''");
     expect(prefix).toContain("SETUP_CLAUDE_DISABLE_AUTO_MEMORY=''");
     expect(prefix).toContain("SETUP_CLAUDE_DISABLE_AGENT_VIEW=''");
+    expect(prefix).toContain("SETUP_CLAUDE_DISABLE_ARTIFACT=''");
     expect(prefix).not.toContain('SETUP_CODEX_');
     expect(prefix).not.toContain('SETUP_PI_');
   });
@@ -196,7 +199,7 @@ describe('renderPowerShellPrefix', () => {
         apiKeyId: 'key-a',
         claudeCode: {
           model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
-          defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
+          defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, disableArtifact: false, modelDiscovery: false,
         },
         codex: { model: null, reasoningEffort: null },
         pi: { model: null, provider: 'floway', thinkingLevel: null, retry: { enabled: null, maxRetries: null } },
@@ -209,6 +212,7 @@ describe('renderPowerShellPrefix', () => {
     expect(prefix).toContain('$SetupClaudeOptOutAiAttribution = $false');
     expect(prefix).toContain('$SetupClaudeDisableAutoMemory = $false');
     expect(prefix).toContain('$SetupClaudeDisableAgentView = $false');
+    expect(prefix).toContain('$SetupClaudeDisableArtifact = $false');
     expect(prefix).not.toContain('$SetupCodex');
     expect(prefix).not.toContain('$SetupPi');
   });
@@ -224,6 +228,7 @@ describe('renderPowerShellPrefix', () => {
     expect(prefix).toContain('$SetupClaudeOptOutAiAttribution = $true');
     expect(prefix).toContain('$SetupClaudeDisableAutoMemory = $true');
     expect(prefix).toContain('$SetupClaudeDisableAgentView = $true');
+    expect(prefix).toContain('$SetupClaudeDisableArtifact = $true');
   });
 
   test('renders pi prefix assignments for PowerShell with quoting, the extension path, and null handling', () => {
