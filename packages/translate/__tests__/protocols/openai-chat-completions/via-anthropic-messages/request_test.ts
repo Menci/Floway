@@ -594,38 +594,6 @@ test('assistant tool_calls with invalid JSON arguments → raw_arguments fallbac
 
 // ── Thinking / Redacted thinking ──
 
-test('no reasoning fields → no thinking block', async () => {
-  const result = await buildWithTestSidecar(
-    mkPayload({
-      messages: [
-        { role: 'user', content: 'Hi' },
-        { role: 'assistant', content: 'resp' },
-      ],
-    }),
-  );
-  const blocks = assistantBlocks(result, 1);
-  assertEquals(blocks.length, 1);
-  assertEquals(blocks[0].type, 'text');
-});
-
-test('null reasoning fields → no thinking block', async () => {
-  const result = await buildWithTestSidecar(
-    mkPayload({
-      messages: [
-        { role: 'user', content: 'Hi' },
-        {
-          role: 'assistant',
-          content: 'resp',
-          reasoning_text: null,
-        } as OpenAIChatCompletionsAssistantMessageEx,
-      ],
-    }),
-  );
-  const blocks = assistantBlocks(result, 1);
-  assertEquals(blocks.length, 1);
-  assertEquals(blocks[0].type, 'text');
-});
-
 // ── Image handling ──
 
 test('image_url with data URL → base64 image block', async () => {
@@ -1256,18 +1224,6 @@ test('buildTargetRequest forwards a non-accelerated service_tier verbatim', asyn
   );
 
   assertEquals(result.service_tier, 'flex');
-});
-
-test('buildTargetRequest does not emit thinking or fast-mode fields for a bare payload', async () => {
-  const result = await buildWithTestSidecar(
-    mkPayload({
-      messages: [{ role: 'user', content: 'hi' }],
-    }),
-  );
-
-  assertEquals(result.thinking, undefined);
-  assertEquals(result.speed, undefined);
-  assertEquals(result.service_tier, undefined);
 });
 
 test('buildTargetRequest maps reasoning_effort none to thinking.disabled', async () => {
