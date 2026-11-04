@@ -455,3 +455,34 @@ describe('required answer fields', () => {
     expect(response.answers[0]).toEqual({ type: 'noul', name: 'q', noul: 0.5 });
   });
 });
+
+describe('refusal answers', () => {
+  test('carries a refusal through while the other answers still resolve', () => {
+    const response = parseDecisionResponse('openai-decisions', {
+      answers: [
+        { type: 'refusal', name: 'private' },
+        { type: 'predicate', name: 'public', probability: 0.9 },
+      ],
+    });
+    expect(response.answers).toEqual([
+      { type: 'refusal', name: 'private' },
+      { type: 'noul', name: 'public', noul: 0.9 },
+    ]);
+  });
+
+  test('renders a refusal back into the OpenAI shape', () => {
+    const response = parseDecisionResponse('openai-decisions', {
+      answers: [{ type: 'refusal', name: 'private' }],
+    });
+    expect(renderDecisionResponse('openai-decisions', response)).toEqual({
+      answers: [{ type: 'refusal', name: 'private' }],
+    });
+  });
+
+  test('System One cannot express a refusal', () => {
+    const response = parseDecisionResponse('openai-decisions', {
+      answers: [{ type: 'refusal', name: 'private' }],
+    });
+    expect(() => renderDecisionResponse('systemone', response)).toThrow(/refusal, which System One cannot express/);
+  });
+});

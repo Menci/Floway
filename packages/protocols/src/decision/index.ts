@@ -117,7 +117,15 @@ export interface DecisionScoreAnswer {
   probabilities: readonly { value: number; label?: string; probability: number }[];
 }
 
-export type DecisionAnswer = DecisionNoulAnswer | DecisionChoiceAnswer | DecisionScoreAnswer;
+// The model declined one question. The OpenAI dialect defines this answer; the
+// System One dialect has no refusal case at all. It carries no probability; the
+// standard defines no reason string.
+export interface DecisionRefusalAnswer {
+  type: 'refusal';
+  name: string;
+}
+
+export type DecisionAnswer = DecisionNoulAnswer | DecisionChoiceAnswer | DecisionScoreAnswer | DecisionRefusalAnswer;
 
 export interface CanonicalDecisionResponse {
   raw: Record<string, unknown>;

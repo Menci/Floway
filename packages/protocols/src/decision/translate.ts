@@ -574,6 +574,10 @@ const parseOpenAIDecisionsResponse = (body: Record<string, unknown>): CanonicalD
   const answers: DecisionAnswer[] = body.answers.map((entry, index) => {
     if (!isRecord(entry)) throw new Error(`answers[${index}] must be an object`);
     const name = requiredString(entry.name, 'answers[].name');
+    // A refusal answers only its own question; the others still resolve, so it
+    // is carried through as its own answer rather than failing the response. It
+    // carries no probability, so it is decided before reading one.
+    if (entry.type === 'refusal') return { type: 'refusal', name };
     if (entry.type === 'predicate') return { type: 'noul', name, noul: finiteNumber(entry.probability, `answers.${name}.probability`) };
     const confidence = finiteNumber(entry.confidence, `answers.${name}.confidence`);
     if (entry.type === 'choice') {
@@ -604,9 +608,6 @@ const parseOpenAIDecisionsResponse = (body: Record<string, unknown>): CanonicalD
         ...(Object.keys(legend).length === 0 ? {} : { legend }),
       };
     }
-    // The upstream lets a refusal answer one question while the rest resolve;
-    // this canonical form has no refusal case, so the whole body is rejected
-    // rather than silently returning a short answer list.
     throw new Error(`answers[${index}].type ${JSON.stringify(entry.type)} is not supported`);
   });
   return {
@@ -652,6 +653,8 @@ const renderUsage = (response: CanonicalDecisionResponse): Record<string, unknow
 const renderSystemOneResponse = (response: CanonicalDecisionResponse): Record<string, unknown> => {
   const answers: Record<string, unknown> = {};
   for (const answer of response.answers) {
+    // System One defines no refusal answer, so it cannot be rendered there.
+    if (answer.type === 'refusal') throw new Error(`answers.${answer.name} is a refusal, which System One cannot express`);
     if (answer.type === 'noul') {
       answers[answer.name] = { type: 'noul', noul: answer.noul };
     } else if (answer.type === 'choice') {
@@ -681,6 +684,7 @@ const renderSystemOneResponse = (response: CanonicalDecisionResponse): Record<st
 
 const renderOpenAIDecisionsResponse = (response: CanonicalDecisionResponse): Record<string, unknown> => {
   const answers = response.answers.map(answer => {
+    if (answer.type === 'refusal') return { type: 'refusal', name: answer.name };
     if (answer.type === 'noul') return { type: 'predicate', name: answer.name, probability: answer.noul };
     if (answer.type === 'choice') {
       return {

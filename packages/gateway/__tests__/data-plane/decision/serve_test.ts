@@ -352,3 +352,30 @@ test('/v1/systemone forwards an unparseable same-dialect body verbatim', async (
     },
   );
 });
+
+test('/v1/decisions returns a refusal alongside the answers that resolved', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  // Same dialect, so the upstream body is forwarded untouched — including the
+  // refusal — instead of failing because one question was declined.
+  await saveDecisionUpstream(repo, { protocol: 'openai-decisions' });
+
+  const body = {
+    answers: [
+      { type: 'refusal', name: 'private' },
+      { type: 'predicate', name: 'public', probability: 0.9 },
+    ],
+    usage: { input_tokens: 20 },
+  };
+  await withMockedFetch(
+    () => jsonResponse(body),
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/decisions', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify(openAIShape),
+      });
+      assertEquals(response.status, 200);
+      assertEquals(await response.json(), body);
+    },
+  );
+});
