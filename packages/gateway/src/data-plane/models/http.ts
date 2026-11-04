@@ -74,6 +74,27 @@ const toClaudeCodeCatalog = (response: PublicModelsResponse) => {
 const isClaudeCodeUserAgent = (userAgent: string | undefined): boolean =>
   userAgent?.startsWith('claude-code/') ?? false;
 
+// Both official TypeSafe SDKs (`typesafe-sdk`, `@typesafe-ai/sdk`) parse
+// `/v1/models` as `{ models: [{ name, description, release_date }] }` with all
+// three required, and they identify themselves as `typesafe-sdk/<version>`.
+// Every other caller gets the OpenAI/Anthropic superset.
+//
+// `release_date` must be `YYYY-MM-DD`. A model the catalog gives no date keeps
+// the epoch, the same least-lossy sentinel the Claude Code catalog uses: it
+// cannot be mistaken for a real release and is stable across fetches.
+// https://github.com/typesafe-ai/typesafe-sdk/blob/main/src/_schemas/models.py
+// https://github.com/typesafe-ai/typesafe-typescript/blob/main/src/types.ts
+const toTypeSafeCatalog = (response: PublicModelsResponse) => ({
+  models: response.data.map(model => ({
+    name: model.id,
+    description: model.display_name,
+    release_date: model.created_at?.slice(0, 10) ?? '1970-01-01',
+  })),
+});
+
+const isTypeSafeUserAgent = (userAgent: string | undefined): boolean =>
+  userAgent?.startsWith('typesafe-sdk/') ?? false;
+
 export const serveModels = async (c: Context): Promise<Response> => {
   try {
     const userAgent = c.req.header('user-agent');
@@ -107,6 +128,8 @@ export const serveModels = async (c: Context): Promise<Response> => {
       const root = url.pathname.replace(/\/(?:v1\/)?models$/, '');
       return Response.json(toOmpCatalog(publicCatalog, configuredEndpoint ?? `${url.origin}${root}`, provider));
     }
+
+    if (isTypeSafeUserAgent(userAgent)) return Response.json(toTypeSafeCatalog(publicCatalog));
 
     // Model discovery uses claude-code/<version>; inference uses claude-cli/*.
     // Match the discovery UA when selecting Claude Code's catalog format.
