@@ -471,6 +471,11 @@ export const serializeDecisionRequest = (protocol: DecisionProtocol, model: stri
 
 const optionalNumber = (value: unknown): number | undefined => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
 
+const requiredNumberRecord = (value: unknown, field: string): Record<string, number> => {
+  if (!isRecord(value)) throw new Error(`${field} must be an object`);
+  return numberRecord(value) ?? {};
+};
+
 const numberRecord = (value: unknown): Record<string, number> | undefined => {
   if (!isRecord(value)) return undefined;
   const out: Record<string, number> = {};
@@ -489,39 +494,39 @@ const stringRecord = (value: unknown): Record<string, string> | undefined => {
   return out;
 };
 
+// Both dialects mark `confidence` and `probabilities` required on Choice and
+// Score answers, so a missing one is a broken response rather than an answer
+// without detail. System One also carries a separate `legend`; the OpenAI shape
+// inlines each label instead.
 const systemOneAnswer = (name: string, value: unknown): DecisionAnswer => {
   if (!isRecord(value)) throw new Error(`answers.${name} must be an object`);
   if (value.type === 'noul') return { type: 'noul', name, noul: finiteNumber(value.noul, `answers.${name}.noul`) };
-  const confidence = optionalNumber(value.confidence);
+  const confidence = finiteNumber(value.confidence, `answers.${name}.confidence`);
   if (value.type === 'choice') {
     const choice = requiredString(value.choice, `answers.${name}.choice`);
-    const record = numberRecord(value.probabilities);
+    const record = requiredNumberRecord(value.probabilities, `answers.${name}.probabilities`);
     return {
       type: 'choice',
       name,
       choice,
-      ...(confidence === undefined ? {} : { confidence }),
-      ...(record === undefined ? {} : { probabilities: Object.entries(record).map(([option, probability]) => ({ value: option, probability })) }),
+      confidence,
+      probabilities: Object.entries(record).map(([option, probability]) => ({ value: option, probability })),
     };
   }
   if (value.type === 'score') {
     const score = finiteNumber(value.score, `answers.${name}.score`);
     const legend = stringRecord(value.legend);
-    const record = numberRecord(value.probabilities);
+    const record = requiredNumberRecord(value.probabilities, `answers.${name}.probabilities`);
     return {
       type: 'score',
       name,
       score,
-      ...(confidence === undefined ? {} : { confidence }),
-      ...(record === undefined
-        ? {}
-        : {
-            probabilities: Object.entries(record).map(([level, probability]) => ({
-              value: Number(level),
-              ...(legend?.[level] === undefined ? {} : { label: legend[level] }),
-              probability,
-            })),
-          }),
+      confidence,
+      probabilities: Object.entries(record).map(([level, probability]) => ({
+        value: Number(level),
+        ...(legend?.[level] === undefined ? {} : { label: legend[level] }),
+        probability,
+      })),
       ...(legend === undefined ? {} : { legend }),
     };
   }
@@ -537,13 +542,30 @@ const parseSystemOneResponse = (body: Record<string, unknown>): CanonicalDecisio
   };
 };
 
-const openAITypedProbabilities = (value: unknown, field: string): readonly { value: string | boolean; probability: number }[] | undefined => {
-  if (!Array.isArray(value)) return undefined;
+// OpenAI marks `probabilities` required on Choice and Score answers, so a
+// non-array is a broken response. A missing entry value type is likewise an
+// upstream contract violation, not the absence of detail.
+const openAITypedProbabilities = (value: unknown, field: string): readonly { value: string | boolean; probability: number }[] => {
+  if (!Array.isArray(value)) throw new Error(`${field} must be an array`);
   return value.map((entry, index) => {
     if (!isRecord(entry)) throw new Error(`${field}[${index}] must be an object`);
     const raw = entry.value;
     if (typeof raw !== 'string' && typeof raw !== 'boolean') throw new Error(`${field}[${index}].value must be a string or boolean`);
     return { value: raw, probability: finiteNumber(entry.probability, `${field}[${index}].probability`) };
+  });
+};
+
+const openAIScoreProbabilities = (value: unknown, field: string): readonly { value: number; label?: string; probability: number }[] => {
+  if (!Array.isArray(value)) throw new Error(`${field} must be an array`);
+  return value.map((entry, index) => {
+    if (!isRecord(entry)) throw new Error(`${field}[${index}] must be an object`);
+    if (typeof entry.value !== 'number') throw new Error(`${field}[${index}].value must be a number`);
+    if (entry.label !== undefined && typeof entry.label !== 'string') throw new Error(`${field}[${index}].label must be a string`);
+    return {
+      value: entry.value,
+      ...(entry.label === undefined ? {} : { label: entry.label }),
+      probability: finiteNumber(entry.probability, `${field}[${index}].probability`),
+    };
   });
 };
 
@@ -553,31 +575,32 @@ const parseOpenAIDecisionsResponse = (body: Record<string, unknown>): CanonicalD
     if (!isRecord(entry)) throw new Error(`answers[${index}] must be an object`);
     const name = requiredString(entry.name, 'answers[].name');
     if (entry.type === 'predicate') return { type: 'noul', name, noul: finiteNumber(entry.probability, `answers.${name}.probability`) };
-    const confidence = optionalNumber(entry.confidence);
+    const confidence = finiteNumber(entry.confidence, `answers.${name}.confidence`);
     if (entry.type === 'choice') {
       const raw = entry.choice;
       if (typeof raw !== 'string' && typeof raw !== 'boolean') throw new Error(`answers.${name}.choice must be a string or boolean`);
-      const probabilities = openAITypedProbabilities(entry.probabilities, `answers.${name}.probabilities`);
-      return { type: 'choice', name, choice: raw, ...(confidence === undefined ? {} : { confidence }), ...(probabilities === undefined ? {} : { probabilities }) };
+      return {
+        type: 'choice',
+        name,
+        choice: raw,
+        confidence,
+        probabilities: openAITypedProbabilities(entry.probabilities, `answers.${name}.probabilities`),
+      };
     }
     if (entry.type === 'score') {
+      const probabilities = openAIScoreProbabilities(entry.probabilities, `answers.${name}.probabilities`);
+      // The OpenAI shape has no separate legend; derive it from the inline
+      // labels so a same-dialect System One reader sees the level names.
       const legend: Record<string, string> = {};
-      const probabilities: { value: number; probability: number; label?: string }[] = [];
-      if (Array.isArray(entry.probabilities)) {
-        for (const [levelIndex, level] of entry.probabilities.entries()) {
-          if (!isRecord(level)) throw new Error(`answers.${name}.probabilities[${levelIndex}] must be an object`);
-          if (typeof level.value !== 'number') throw new Error(`answers.${name}.probabilities[${levelIndex}].value must be a number`);
-          const probability = finiteNumber(level.probability, `answers.${name}.probabilities[${levelIndex}].probability`);
-          if (typeof level.label === 'string') legend[String(level.value)] = level.label;
-          probabilities.push({ value: level.value, ...(typeof level.label === 'string' ? { label: level.label } : {}), probability });
-        }
+      for (const level of probabilities) {
+        if (level.label !== undefined) legend[String(level.value)] = level.label;
       }
       return {
         type: 'score',
         name,
         score: finiteNumber(entry.score, `answers.${name}.score`),
-        ...(confidence === undefined ? {} : { confidence }),
-        ...(Array.isArray(entry.probabilities) ? { probabilities } : {}),
+        confidence,
+        probabilities,
         ...(Object.keys(legend).length === 0 ? {} : { legend }),
       };
     }
@@ -635,15 +658,15 @@ const renderSystemOneResponse = (response: CanonicalDecisionResponse): Record<st
       answers[answer.name] = {
         type: 'choice',
         choice: String(answer.choice),
-        ...(answer.confidence === undefined ? {} : { confidence: answer.confidence }),
-        ...(answer.probabilities === undefined ? {} : { probabilities: Object.fromEntries(answer.probabilities.map(entry => [String(entry.value), entry.probability])) }),
+        confidence: answer.confidence,
+        probabilities: Object.fromEntries(answer.probabilities.map(entry => [String(entry.value), entry.probability])),
       };
     } else {
       answers[answer.name] = {
         type: 'score',
         score: answer.score,
-        ...(answer.confidence === undefined ? {} : { confidence: answer.confidence }),
-        ...(answer.probabilities === undefined ? {} : { probabilities: Object.fromEntries(answer.probabilities.map(entry => [String(entry.value), entry.probability])) }),
+        confidence: answer.confidence,
+        probabilities: Object.fromEntries(answer.probabilities.map(entry => [String(entry.value), entry.probability])),
         ...(answer.legend === undefined ? {} : { legend: answer.legend }),
       };
     }
@@ -664,18 +687,16 @@ const renderOpenAIDecisionsResponse = (response: CanonicalDecisionResponse): Rec
         type: 'choice',
         name: answer.name,
         choice: answer.choice,
-        ...(answer.confidence === undefined ? {} : { confidence: answer.confidence }),
-        ...(answer.probabilities === undefined ? {} : { probabilities: answer.probabilities.map(entry => ({ value: entry.value, probability: entry.probability })) }),
+        confidence: answer.confidence,
+        probabilities: answer.probabilities.map(entry => ({ value: entry.value, probability: entry.probability })),
       };
     }
     return {
       type: 'score',
       name: answer.name,
       score: answer.score,
-      ...(answer.confidence === undefined ? {} : { confidence: answer.confidence }),
-      ...(answer.probabilities === undefined
-        ? {}
-        : { probabilities: answer.probabilities.map(entry => ({ value: entry.value, ...(entry.label === undefined ? {} : { label: entry.label }), probability: entry.probability })) }),
+      confidence: answer.confidence,
+      probabilities: answer.probabilities.map(entry => ({ value: entry.value, ...(entry.label === undefined ? {} : { label: entry.label }), probability: entry.probability })),
     };
   });
   const usage = renderUsage(response);

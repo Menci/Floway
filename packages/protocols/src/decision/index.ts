@@ -99,20 +99,22 @@ export interface DecisionChoiceAnswer {
   type: 'choice';
   name: string;
   choice: string | boolean;
-  confidence?: number;
+  // Both dialects mark these required on a Choice answer.
+  confidence: number;
   // One entry per supplied option, summing to 1.
-  probabilities?: readonly { value: string | boolean; probability: number }[];
+  probabilities: readonly { value: string | boolean; probability: number }[];
 }
 
 export interface DecisionScoreAnswer {
   type: 'score';
   name: string;
   score: number;
-  confidence?: number;
-  // Level label keyed by level number. Providers key these by string over
-  // HTTP; the SDKs key them by int, so we normalize to string keys.
+  // Both dialects mark these required on a Score answer.
+  confidence: number;
+  // Level label keyed by level number. Every System One answer carries it; the
+  // OpenAI shape has no separate legend and inlines each label instead.
   legend?: Record<string, string>;
-  probabilities?: readonly { value: number; label?: string; probability: number }[];
+  probabilities: readonly { value: number; label?: string; probability: number }[];
 }
 
 export type DecisionAnswer = DecisionNoulAnswer | DecisionChoiceAnswer | DecisionScoreAnswer;

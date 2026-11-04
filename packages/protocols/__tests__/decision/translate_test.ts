@@ -421,3 +421,37 @@ describe('image evidence', () => {
     expect(parsed.request.state).toEqual({ kind: 'json', value: { ticket: 'x', count: 3 } });
   });
 });
+
+describe('required answer fields', () => {
+  test('a Choice answer missing confidence is a broken response', () => {
+    expect(() => parseDecisionResponse('systemone', {
+      answers: { q: { type: 'choice', choice: 'a', probabilities: { a: 1 } } },
+    })).toThrow(/answers\.q\.confidence/);
+  });
+
+  test('a Choice answer missing probabilities is a broken response', () => {
+    expect(() => parseDecisionResponse('systemone', {
+      answers: { q: { type: 'choice', choice: 'a', confidence: 1 } },
+    })).toThrow(/answers\.q\.probabilities/);
+  });
+
+  test('a Score answer missing confidence is a broken response', () => {
+    expect(() => parseDecisionResponse('systemone', {
+      answers: { q: { type: 'score', score: 1, probabilities: { '0': 1 }, legend: { '0': 'low' } } },
+    })).toThrow(/answers\.q\.confidence/);
+  });
+
+  test('the OpenAI shape requires confidence and probabilities too', () => {
+    expect(() => parseDecisionResponse('openai-decisions', {
+      answers: [{ type: 'choice', name: 'q', choice: 'a', probabilities: [{ value: 'a', probability: 1 }] }],
+    })).toThrow(/answers\.q\.confidence/);
+    expect(() => parseDecisionResponse('openai-decisions', {
+      answers: [{ type: 'predicate', name: 'p', probability: 0.5 }, { type: 'score', name: 'q', score: 1, confidence: 1 }],
+    })).toThrow(/answers\.q\.probabilities/);
+  });
+
+  test('a noul answer has no confidence, and none is required', () => {
+    const response = parseDecisionResponse('systemone', { answers: { q: { type: 'noul', noul: 0.5 } } });
+    expect(response.answers[0]).toEqual({ type: 'noul', name: 'q', noul: 0.5 });
+  });
+});
