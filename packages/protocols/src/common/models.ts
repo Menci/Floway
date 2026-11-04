@@ -23,6 +23,39 @@ export interface RerankTarget {
   path?: string;
 }
 
+// Decision endpoints speak the System One contract (`state` plus a map of
+// typed questions). Every reachable provider serves it unchanged today —
+// TypeSafe Jev at /v1/systemone, Copilot's microsoft-decision-1 at
+// /v1/systemone, and Microsoft-Decision-1 on Foundry at
+// /providers/microsoft/v1/systemone. `openai-decisions` is the OpenAI
+// Decisions shape (`input` plus an array of `predicate`/`choice`/`score`
+// questions); it has no reachable upstream yet and exists so a provider can
+// declare it once one does.
+export const DECISION_PROTOCOLS = ['systemone', 'openai-decisions'] as const;
+export type DecisionProtocol = typeof DECISION_PROTOCOLS[number];
+
+// The question primitives a target accepts. A dialect name does not imply a
+// capability: Copilot's microsoft-decision-1 answers noul, choice, and score,
+// while an Azure Foundry deployment of the same model currently accepts only
+// choice. Compatibility checks read this instead of the protocol.
+export const DECISION_QUESTION_TYPES = ['noul', 'choice', 'score'] as const;
+export type DecisionQuestionType = typeof DECISION_QUESTION_TYPES[number];
+
+// Decision has no vendor-neutral upstream URL: Foundry serves it under a
+// resource path the OpenAI v1 base cannot express, and a compatible System One
+// server may expose any path. The operator chooses the wire protocol on each
+// model and may replace its canonical path. Keeping this off the upstream
+// prevents one model's protocol choice from leaking onto every other model at
+// the same base URL.
+export interface DecisionTarget {
+  protocol: DecisionProtocol;
+  path?: string;
+  // Omitted means every primitive is accepted. Present narrows the target to
+  // the listed question types so pre-dispatch filtering rejects a request the
+  // deployment would answer with an upstream 4xx.
+  questionTypes?: readonly DecisionQuestionType[];
+}
+
 export type Modality = 'text' | 'image';
 
 // Chat capability metadata for one model. Providers that can read it off the
@@ -124,8 +157,8 @@ export interface PublicModel {
   // candidate carrying one of its preferred chat targets, and Gemini
   // generateContent has no key of its own at all. The non-chat keys
   // (`openaiCompletions`, `openaiEmbeddings`, `openaiImagesGenerations`,
-  // `openaiImagesEdits`, `rerank`, `openaiAudioTranscriptions`) are callable
-  // exactly where they appear.
+  // `openaiImagesEdits`, `rerank`, `openaiAudioTranscriptions`, `systemOne`)
+  // are callable exactly where they appear.
   endpoints: ModelEndpoints;
   pricing?: ModelPricing;
   chat?: ChatModelInfo;

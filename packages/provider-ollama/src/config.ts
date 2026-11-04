@@ -82,6 +82,9 @@ export const parseOllamaUpstreamConfig = (config: unknown): OllamaUpstreamConfig
   if (models.some(model => model.kind === 'rerank')) {
     throw new Error('Malformed ollama upstream config: rerank models require a custom upstream');
   }
+  // Decision models are served natively at /v1/systemone; a manual row must
+  // still carry a decisionTarget, which modelsField enforces.
+
   return {
     baseUrl: baseUrlField(config.baseUrl),
     ...(apiKey !== undefined ? { apiKey } : {}),

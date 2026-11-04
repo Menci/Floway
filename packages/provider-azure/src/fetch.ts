@@ -1,5 +1,5 @@
 import type { AzureUpstreamConfig } from './config.ts';
-import { azureAnthropicBaseUrl, azureOpenAiV1BaseUrl } from './endpoint.ts';
+import { azureAnthropicBaseUrl, azureOpenAiV1BaseUrl, azureResourceRootUrl } from './endpoint.ts';
 import { type FetchInit, type UpstreamFetchOptions, joinBaseAndPath } from '@floway-dev/provider';
 
 const azureFetchUrl = async (
@@ -79,6 +79,10 @@ export const azureFetchOpenAIImagesEdits = (config: AzureUpstreamConfig, init: F
 // https://github.com/Azure/azure-rest-api-specs/blob/928047803788f7377fa003a26ba2bdc2e0fcccc0/specification/cognitiveservices/OpenAI.Inference/routes/audio_transcription.tsp#L19-L49
 export const azureFetchOpenAIAudioTranscriptions = (config: AzureUpstreamConfig, deployment: string, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchUrl(config, 'openai', azureDeploymentScopedOpenAIAudioTranscriptionUrl(config, deployment), init, options);
+// The decision contract is resource-scoped, so the path is absolute from the
+// resource host rather than relative to the OpenAI v1 base.
+export const azureFetchDecision = (config: AzureUpstreamConfig, path: string, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+  azureFetchUrl(config, 'openai', joinBaseAndPath(azureResourceRootUrl(config.endpoint), path), init, options);
 export const azureFetchAnthropicMessages = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'anthropic', '/v1/messages', init, options);
 export const azureFetchAnthropicMessagesCountTokens = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>

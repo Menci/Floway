@@ -1,6 +1,6 @@
 import { PUBLIC_DATA_PLANE_ROUTES, type PublicDataPlaneRouteId } from '@floway-dev/protocols/browser';
 
-export type ApiDocsGroup = 'models' | 'generation' | 'media' | 'rerank' | 'search';
+export type ApiDocsGroup = 'models' | 'generation' | 'media' | 'rerank' | 'decision' | 'search';
 
 export interface ApiDocsEndpoint<Name extends string = string> {
   docs: string;
@@ -53,6 +53,8 @@ export const apiDocsEndpoints = [
   endpoint('cohereV2Rerank', { group: 'rerank', name: 'cohereV2Rerank', docs: 'https://docs.cohere.com/v2/reference/rerank' }),
   endpoint('jinaV1Rerank', { group: 'rerank', name: 'jinaRerank', docs: 'https://jina.ai/reranker' }),
   endpoint('voyageV1Rerank', { group: 'rerank', name: 'voyageRerank', docs: 'https://docs.voyageai.com/reference/reranker-api' }),
+
+  endpoint('systemOne', { group: 'decision', name: 'systemOne', docs: 'https://docs.typesafe.ai/api' }),
 
   endpoint('alphaSearch', { group: 'search', name: 'codexSearch', docs: codexSearchDocs }),
 ] satisfies readonly ApiDocsEndpoint[];

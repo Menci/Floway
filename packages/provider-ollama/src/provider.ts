@@ -29,12 +29,13 @@ import { chatFromOllamaRaw } from './chat-from-raw.ts';
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
 import { OLLAMA_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchOllamaCatalog, type OllamaCatalog } from './fetch-models.ts';
-import { ollamaFetchOpenAIAudioTranscriptions, ollamaFetchOpenAIChatCompletions, ollamaFetchOpenAICompletions, ollamaFetchOpenAIEmbeddings, ollamaFetchAnthropicMessages, ollamaFetchAnthropicMessagesCountTokens, ollamaFetchOpenAIResponses, ollamaFetchOpenAIResponsesCompact } from './fetch.ts';
+import { ollamaFetchDecision, ollamaFetchOpenAIAudioTranscriptions, ollamaFetchOpenAIChatCompletions, ollamaFetchOpenAICompletions, ollamaFetchOpenAIEmbeddings, ollamaFetchAnthropicMessages, ollamaFetchAnthropicMessagesCountTokens, ollamaFetchOpenAIResponses, ollamaFetchOpenAIResponsesCompact } from './fetch.ts';
 import { pricingForOllamaModelKey } from './pricing.ts';
 import { readOllamaUpstreamState } from './state.ts';
 import { scheduleOllamaUsageProbe, runOllamaScheduledTask } from './usage-probe.ts';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
+import { DEFAULT_DECISION_PATHS, serializeDecisionRequest, type CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResultEx, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { headersForAnthropicMessagesCall, jsonRequestBody, publicModelId, resolveEffectiveFlags, serializeModelFieldOpenAIAudioTranscriptionRequest, streamingProviderCall, type FetchInit, type FlagId, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
@@ -48,6 +49,11 @@ const rawModelIdOf = (model: ProviderModel): string => model.providerData as str
 // kind/endpoints projection — the others are request-time signals.
 const CHAT_ENDPOINTS: ModelEndpoints = { openaiCompletions: {}, openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} };
 const EMBEDDING_ENDPOINTS: ModelEndpoints = { openaiEmbeddings: {} };
+// Ollama serves decision models over the System One contract. Every decision
+// model in its library answers noul, choice, and score; none accepts images, so
+// no capability narrowing is needed here.
+// https://docs.ollama.com/capabilities/decision
+const DECISION_ENDPOINTS: ModelEndpoints = { systemOne: {} };
 
 const finalizeOllamaModels = (
   catalog: OllamaCatalog,
@@ -55,7 +61,9 @@ const finalizeOllamaModels = (
 ): ProviderModel[] => {
   const models: ProviderModel[] = [];
   for (const raw of catalog.data) {
-    const endpoints = raw.capabilities.has('embedding') ? EMBEDDING_ENDPOINTS : CHAT_ENDPOINTS;
+    const endpoints = raw.capabilities.has('embedding')
+      ? EMBEDDING_ENDPOINTS
+      : raw.capabilities.has('decision') ? DECISION_ENDPOINTS : CHAT_ENDPOINTS;
     const limits: ProviderModel['limits'] = {};
     if (raw.contextLength !== undefined) limits.max_context_window_tokens = raw.contextLength;
     const model: ProviderModel = {
@@ -68,6 +76,7 @@ const finalizeOllamaModels = (
       providerData: raw.id,
       enabledFlags,
       opaqueBlobCompatibilityScope: { bindToUpstream: true },
+      ...(endpoints.systemOne ? { decisionTarget: { protocol: 'systemone' as const } } : {}),
     };
     if (raw.modifiedAt !== undefined) model.created = raw.modifiedAt;
     const pricing = pricingForOllamaModelKey(raw.id);
@@ -114,6 +123,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       providerData: model.upstreamModelId,
       enabledFlags,
       opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
+      ...(model.decisionTarget ? { decisionTarget: model.decisionTarget } : {}),
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
     const pricing = model.pricing ?? pricingForOllamaModelKey(model.upstreamModelId);
@@ -213,6 +223,19 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       return { response, modelKey: rawModelId };
     },
     callRerank: rejectUnsupported('callRerank'),
+    callDecision: async (model: ProviderModel, request: CanonicalDecisionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => {
+      const target = model.decisionTarget;
+      if (target === undefined) throw new Error(`Decision model ${model.id} has no outbound target`);
+      const rawModelId = rawModelIdOf(model);
+      const body = serializeDecisionRequest(target.protocol, rawModelId, request);
+      const response = await ollamaFetchDecision(
+        config,
+        target.path ?? DEFAULT_DECISION_PATHS[target.protocol],
+        { method: 'POST', body: jsonRequestBody(body), signal },
+        { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
+      );
+      return { response, modelKey: rawModelId, target };
+    },
   };
 
   return {

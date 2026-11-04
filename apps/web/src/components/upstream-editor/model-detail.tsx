@@ -3,6 +3,7 @@ import { useEffect, useId, useRef } from 'react';
 
 import type { ModelRow } from './data';
 import { publicModelId } from './data';
+import { DecisionTargetEditor } from './decision-target-editor';
 import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, IMAGE_ENDPOINT_KEYS, shapeForKind } from './endpoints';
 import { FeatureFlagsEditor } from './feature-flags';
 import { type ModelValidationField, modelValidationIssues } from './model-validation';
@@ -72,6 +73,7 @@ export function ModelDetail({
     kind,
     chat: kind === 'chat' ? row.config.chat : undefined,
     rerankTarget: undefined,
+    decisionTarget: undefined,
     ...(kind === 'image' ? { limits: undefined } : {}),
     ...shapeForKind(kind, row.config),
   });
@@ -155,6 +157,9 @@ export function ModelDetail({
                 <Option value="chat">Chat</Option><Option value="embedding">Embedding</Option><Option value="image">Image</Option><Option value="transcription">Transcription</Option>
                 {/* The gateway only accepts a rerank target on a custom upstream, so the kind is offered only where it can be saved. */}
                 {record.kind === 'custom' && <Option value="rerank">Rerank</Option>}
+                {/* Decision models are first-class on custom, Azure, Ollama, Copilot, and
+                    every other upstream that serves the System One contract. */}
+                <Option value="decision">Decision</Option>
               </Dropdown>
             </Field>
             <Field className="min-w-0" label={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deployment') : t('dashboard.upstreamEditor.models.upstreamId')} validationMessage={upstreamIdError} validationState={upstreamIdError ? 'error' : undefined}>
@@ -208,6 +213,10 @@ export function ModelDetail({
 
         {row.config.kind === 'rerank' && row.config.rerankTarget && <EditorSection error={validationMessage('rerankTarget')} level={3} title={t('dashboard.upstreamEditor.models.rerankTarget')}>
           <RerankTargetEditor readOnly={fieldsReadOnly} value={row.config.rerankTarget} onChange={rerankTarget => patch({ rerankTarget })} />
+        </EditorSection>}
+
+        {row.config.kind === 'decision' && row.config.decisionTarget && <EditorSection error={validationMessage('decisionTarget')} level={3} title={t('dashboard.upstreamEditor.models.decisionTarget')}>
+          <DecisionTargetEditor readOnly={fieldsReadOnly} value={row.config.decisionTarget} onChange={decisionTarget => patch({ decisionTarget })} />
         </EditorSection>}
 
         {row.config.kind !== 'image' && <EditorSection level={3} title={t('dashboard.upstreamEditor.models.capabilities')}>
@@ -310,6 +319,7 @@ const modelKindLabel = (kind: UpstreamModelConfig['kind']): string => {
   case 'image': return 'Image';
   case 'transcription': return 'Transcription';
   case 'rerank': return 'Rerank';
+  case 'decision': return 'Decision';
   }
 };
 

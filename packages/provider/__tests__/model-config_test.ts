@@ -296,6 +296,50 @@ describe('modelsField rerank targets', () => {
   });
 });
 
+describe('modelsField decision targets', () => {
+  test('requires an explicit target for a decision model', () => {
+    expect(() => modelsField([{
+      upstreamModelId: 'decision-1',
+      kind: 'decision',
+      endpoints: { systemOne: {} },
+    }], 'p')).toThrow(/decisionTarget is required/);
+  });
+
+  test('accepts a supported protocol, path, and narrowed question types', () => {
+    const [model] = modelsField([{
+      upstreamModelId: 'decision-1',
+      kind: 'decision',
+      endpoints: { systemOne: {} },
+      decisionTarget: { protocol: 'systemone', path: ' /providers/microsoft/v1/systemone ', questionTypes: ['choice'] },
+    }], 'p');
+    expect(model.decisionTarget).toEqual({ protocol: 'systemone', path: '/providers/microsoft/v1/systemone', questionTypes: ['choice'] });
+  });
+
+  test('rejects a decision target on a model that is not decision', () => {
+    expect(() => modelsField([{
+      upstreamModelId: 'chat',
+      kind: 'chat',
+      endpoints: { openaiChatCompletions: {} },
+      decisionTarget: { protocol: 'systemone' },
+    }], 'p')).toThrow(/decisionTarget is only allowed/);
+  });
+
+  test('rejects an unknown protocol and an unknown question type', () => {
+    expect(() => modelsField([{
+      upstreamModelId: 'decision-1',
+      kind: 'decision',
+      endpoints: { systemOne: {} },
+      decisionTarget: { protocol: 'jev' },
+    }], 'p')).toThrow(/unsupported decision protocol/);
+    expect(() => modelsField([{
+      upstreamModelId: 'decision-1',
+      kind: 'decision',
+      endpoints: { systemOne: {} },
+      decisionTarget: { protocol: 'systemone', questionTypes: ['box'] },
+    }], 'p')).toThrow(/questionTypes\[0\]/);
+  });
+});
+
 test('modelsField parses a full model entry', () => {
   const models = modelsField(
     [

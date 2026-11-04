@@ -21,6 +21,9 @@ export const assertAzureUpstreamRecord = (record: UpstreamRecord): AzureUpstream
   if (models.some(model => model.kind === 'rerank')) {
     throw new Error('Malformed azure upstream config: rerank models require a custom upstream');
   }
+  // Decision models are a first-class Foundry deployment, so they stay on this
+  // provider; a manual row must still carry a decisionTarget, which modelsField
+  // enforces.
 
   const config: AzureUpstreamConfig = {
     endpoint: azureEndpointField(record.config.endpoint, 'azure upstream config: endpoint'),

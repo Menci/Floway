@@ -1,6 +1,6 @@
 import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
 import { validateUpstreamPath } from './join.ts';
-import { BILLING_METRICS, canonicalizePricingSelector, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, type BillingMetric, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type OpaqueBlobCompatibilityScope, type PriceVector, type PricingSelector, type PublicModelLimits, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_METRICS, canonicalizePricingSelector, DECISION_PROTOCOLS, DECISION_QUESTION_TYPES, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, type BillingMetric, type ChatModelInfo, type DecisionProtocol, type DecisionQuestionType, type DecisionTarget, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type OpaqueBlobCompatibilityScope, type PriceVector, type PricingSelector, type PublicModelLimits, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
 
 // The catalog-side name for the wire chat metadata. Shape lives in
 // @floway-dev/protocols/common so PublicModel.chat and the upstream catalog
@@ -24,6 +24,7 @@ export interface UpstreamModelConfig {
   pricing?: ModelPricing;
   chat?: UpstreamChatModelConfig;
   rerankTarget?: RerankTarget;
+  decisionTarget?: DecisionTarget;
   opaqueBlobCompatibilityScope?: OpaqueBlobCompatibilityScope;
   // Floway-internal (camelCase, not surfaced on PublicModel).
   upstreamModelId: string;
@@ -59,7 +60,7 @@ export const optionalStringField = (value: unknown, label: string): string | und
 };
 
 const MODEL_ENDPOINT_KEYS: ReadonlySet<ModelEndpointKey> = new Set<ModelEndpointKey>([
-  'openaiCompletions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages', 'openaiEmbeddings', 'openaiImagesGenerations', 'openaiImagesEdits', 'rerank', 'openaiAudioTranscriptions',
+  'openaiCompletions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages', 'openaiEmbeddings', 'openaiImagesGenerations', 'openaiImagesEdits', 'rerank', 'openaiAudioTranscriptions', 'systemOne',
 ]);
 
 // The structured per-model capability map. A present key declares the model is
@@ -149,6 +150,8 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
 };
 
 const RERANK_PROTOCOL_SET: ReadonlySet<RerankProtocol> = new Set(RERANK_PROTOCOLS);
+const DECISION_PROTOCOL_SET: ReadonlySet<DecisionProtocol> = new Set(DECISION_PROTOCOLS);
+const DECISION_QUESTION_TYPE_SET: ReadonlySet<DecisionQuestionType> = new Set(DECISION_QUESTION_TYPES);
 
 const MODALITY_VALUES: ReadonlySet<Modality> = new Set<Modality>(['text', 'image']);
 
@@ -280,10 +283,37 @@ const rerankTargetField = (value: unknown, label: string): RerankTarget | undefi
   return { protocol: value.protocol as RerankProtocol, path: path.value };
 };
 
-export const opaqueBlobCompatibilityScopeField = (
-  value: unknown,
-  label: string,
-): OpaqueBlobCompatibilityScope | undefined => {
+const decisionTargetField = (value: unknown, label: string): DecisionTarget | undefined => {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
+  const unknownKeys = Object.keys(value).filter(key => key !== 'protocol' && key !== 'path' && key !== 'questionTypes');
+  if (unknownKeys.length > 0) throw new Error(`Malformed ${label}: unknown fields: ${unknownKeys.join(', ')}`);
+  if (typeof value.protocol !== 'string' || !DECISION_PROTOCOL_SET.has(value.protocol as DecisionProtocol)) {
+    throw new Error(`Malformed ${label}.protocol: unsupported decision protocol ${JSON.stringify(value.protocol)}`);
+  }
+  let questionTypes: readonly DecisionQuestionType[] | undefined;
+  if (value.questionTypes !== undefined) {
+    if (!Array.isArray(value.questionTypes) || value.questionTypes.length === 0) {
+      throw new Error(`Malformed ${label}.questionTypes: must be a non-empty array`);
+    }
+    questionTypes = value.questionTypes.map((entry, index) => {
+      if (typeof entry !== 'string' || !DECISION_QUESTION_TYPE_SET.has(entry as DecisionQuestionType)) {
+        throw new Error(`Malformed ${label}.questionTypes[${index}]: must be one of ${DECISION_QUESTION_TYPES.join(', ')}`);
+      }
+      return entry as DecisionQuestionType;
+    });
+  }
+  const path = value.path === undefined ? undefined : validateUpstreamPath(value.path, `${label}.path`);
+  if (path !== undefined && !path.ok) throw new Error(path.error);
+  return {
+    protocol: value.protocol as DecisionProtocol,
+    ...(path === undefined ? {} : { path: path.value }),
+    ...(questionTypes === undefined ? {} : { questionTypes }),
+  };
+};
+
+export const opaqueBlobCompatibilityScopeField = (value: unknown,
+  label: string): OpaqueBlobCompatibilityScope | undefined => {
   if (value === undefined) return undefined;
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
   const unknownKeys = Object.keys(value).filter(key => key !== 'bindToUpstream' && key !== 'key');
@@ -303,6 +333,7 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   const effectiveKind = kindForEndpoints(endpoints);
   const chat = chatField(value.chat, `${label}.chat`);
   const rerankTarget = rerankTargetField(value.rerankTarget, `${label}.rerankTarget`);
+  const decisionTarget = decisionTargetField(value.decisionTarget, `${label}.decisionTarget`);
   if (chat !== undefined && kind !== 'chat') {
     throw new Error(`Malformed ${label}: chat field is only allowed when kind === 'chat'`);
   }
@@ -312,6 +343,12 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   if (effectiveKind !== 'rerank' && rerankTarget !== undefined) {
     throw new Error(`Malformed ${label}: rerankTarget is only allowed when endpoints select rerank`);
   }
+  if (effectiveKind === 'decision' && decisionTarget === undefined) {
+    throw new Error(`Malformed ${label}: decisionTarget is required when endpoints select decision`);
+  }
+  if (effectiveKind !== 'decision' && decisionTarget !== undefined) {
+    throw new Error(`Malformed ${label}: decisionTarget is only allowed when endpoints select decision`);
+  }
   return {
     kind,
     endpoints,
@@ -320,6 +357,7 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
     ...(pricing ? { pricing } : {}),
     ...(chat ? { chat } : {}),
     ...(rerankTarget ? { rerankTarget } : {}),
+    ...(decisionTarget ? { decisionTarget } : {}),
     ...(value.opaqueBlobCompatibilityScope !== undefined
       ? { opaqueBlobCompatibilityScope: opaqueBlobCompatibilityScopeField(value.opaqueBlobCompatibilityScope, `${label}.opaqueBlobCompatibilityScope`) }
       : {}),
