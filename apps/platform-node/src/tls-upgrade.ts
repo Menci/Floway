@@ -6,11 +6,6 @@ import { socketToReadable, socketToWritable } from './node-socket-streams.ts';
 import type { DuplexStream } from '@floway-dev/http';
 import { normalizeDialHost, throwAbort, type TlsUpgradeOptions } from '@floway-dev/platform';
 
-// Idle time before the first keepalive probe, matching the raw dialer: a peer
-// that disappears without a close-notify is otherwise held open by whoever
-// is still reading, for as long as they keep waiting.
-const KEEPALIVE_INITIAL_DELAY_MS = 60_000;
-
 // Serialize the transport's Web-Streams duplex as a Node duplex so
 // `tls.connect()` can wrap it. A TLSSocket is itself a Duplex, so an inner
 // upgrade over an outer one — trojan's inner TLS over the visit to the proxy
@@ -20,10 +15,11 @@ const transportToDuplex = (transport: DuplexStream): Duplex => {
     readable: transport.readable,
     writable: transport.writable,
   } as Parameters<typeof Duplex.fromWeb>[0]) as Duplex;
-  // `tls.connect` re-emits what it observes on the socket, but nothing is
-  // listening to a failed transport write. Hold it here so a rejected write
-  // cannot land as an unhandled rejection; the handshake or the stream
-  // consumer reports the failure.
+  // A rejected transport write surfaces as an 'error' event on this duplex
+  // with no listener of its own, which terminates the process: `Duplex.fromWeb`
+  // turns the failed web-stream write into an event, and before `tls.connect`
+  // wraps the stream nothing re-emits it. Hold it here so the handshake or the
+  // stream consumer reports the failure instead.
   duplex.on('error', () => { /* reported by the TLS socket or its consumer */ });
   return duplex;
 };
@@ -92,8 +88,6 @@ export const startNodeTls = async (
     socket.once('secureConnect', onReady);
     socket.once('error', onError);
   });
-
-  socket.setKeepAlive(true, KEEPALIVE_INITIAL_DELAY_MS);
 
   const readable = socketToReadable(socket);
   const writable = socketToWritable(socket);

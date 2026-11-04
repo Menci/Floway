@@ -46,8 +46,8 @@ export interface TestCertificateOptions {
 }
 
 /**
- * Issue a leaf under a freshly generated CA. The leaf's subject carries no
- * identity of its own, so a test that passes proves the SANs were read.
+ * Issue a leaf under a freshly generated CA. The leaf's subject names an
+ * unrelated host, so a test that passes proves the SANs were read.
  */
 export const createTestCertificateChain = async (
   options: TestCertificateOptions = {},

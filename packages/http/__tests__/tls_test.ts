@@ -394,10 +394,9 @@ describe('userspaceTls — certificate reference identity', () => {
 });
 
 describe('userspaceTls — checkServerIdentity', () => {
-  // The fixture's leaf chains to no root the library ships, so these cases
-  // reject from the callback itself: it runs before chain validation, which is
-  // exactly the ordering that lets a caller report an identity failure rather
-  // than a trust failure.
+  // The fixture's leaf chains to no root the library ships. A case that
+  // expects the callback's error therefore also proves the ordering: the
+  // callback runs before chain validation, which would otherwise reject first.
   it('receives verifyHost and the presented leaf, and can reject', async () => {
     const seen: Array<{ identity: string; cn: unknown; san: string | undefined }> = [];
     const chain = await startFixtureTlsServer();
@@ -421,7 +420,7 @@ describe('userspaceTls — checkServerIdentity', () => {
 
   it('reports the callback error rather than the chain failure behind it', async () => {
     // Ordering proof: the leaf is untrusted, so a callback that never ran
-    // would surface "does not chain to a trusted root" instead.
+    // would surface the chain error ("Missing issuer for certificate …").
     const chain = await startFixtureTlsServer();
     try {
       await expect(userspaceTls(await connectRaw(chain.port), {

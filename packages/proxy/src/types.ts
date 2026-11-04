@@ -78,7 +78,8 @@ export interface ProxyRequestTarget extends DialTarget {
 }
 
 // Structurally identical to @floway-dev/platform's TlsUpgradeOptions;
-// duplicated for the same reason as SocketDialOptions below.
+// duplicated rather than imported so @floway-dev/proxy stays runtime-agnostic
+// and the platform's impl is assignable by structural typing.
 export interface TlsUpgradeOptions {
   /** TLS peer identity; also the certificate identity unless `verifyHost` is set. */
   host: string;

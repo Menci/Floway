@@ -89,11 +89,12 @@ export const cloudflareSocketDial: SocketDial = {
     };
   },
 
-  // Every upgrade here follows a plaintext handshake, and workerd's
-  // `startTls()` cannot upgrade a socket that has already exchanged bytes
-  // (and requires `secureTransport: 'starttls'` at connect time regardless),
-  // so the upgrade runs in userspace. `connect({ tls: true })` above is the
-  // only place TLS is left to workerd.
+  // Upgrades land on sockets this dialer opened with `secureTransport` 'on'
+  // or 'off', and workerd's `startTls()` requires 'starttls' at connect time;
+  // where a plaintext handshake already ran, it also fails once bytes have
+  // been exchanged (issue #2712). So every upgrade runs in userspace, and the
+  // `secureTransport: 'on'` branch above is the only place TLS is left to
+  // workerd.
   // https://github.com/cloudflare/workerd/issues/2712
   startTls: (transport, opts) => userspaceTls(transport, opts),
 };
