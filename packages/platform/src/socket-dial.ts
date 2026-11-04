@@ -1,7 +1,7 @@
 // Runtime-agnostic byte-stream dial primitive. Each runtime supplies a
 // concrete impl via initSocketDial; callers obtain it via getSocketDial().
 
-import type { DuplexStream } from '@floway-dev/http';
+import type { CheckServerIdentity, DuplexStream } from '@floway-dev/http';
 
 interface SocketDialOptions {
   /**
@@ -43,6 +43,21 @@ export interface TlsUpgradeOptions {
    * `dNSName` SANs. Defaults to `host`.
    */
   verifyHost?: string;
+  /**
+   * Replace the certificate identity check. The callback receives
+   * `verifyHost ?? host` and the leaf certificate, and returns an Error to
+   * reject the handshake. Same contract as `tls.checkServerIdentity`, so the
+   * runtime's native implementation can be passed straight through.
+   *
+   * Chain validation is unaffected.
+   */
+  checkServerIdentity?: CheckServerIdentity;
+  /**
+   * Additional PEM roots to trust alongside the runtime's own store. A
+   * runtime whose trust store is unreachable from userspace (workerd) has no
+   * other way to reach a private CA.
+   */
+  additionalRootCAs?: readonly string[];
   /** ALPN protocols to offer, in preference order. */
   alpn?: string[];
   /**

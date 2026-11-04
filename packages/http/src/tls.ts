@@ -11,7 +11,7 @@
 // transport and returns a fresh { readable, writable } pair carrying the
 // upstream's decrypted application data.
 
-import { makeTLSClient, setCryptoImplementation } from '@reclaimprotocol/tls';
+import { loadX509FromPem, makeTLSClient, setCryptoImplementation } from '@reclaimprotocol/tls';
 import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 
 import { signalAbortReason } from './abort.ts';
@@ -29,7 +29,8 @@ export interface UserspaceTlsOptions {
   /**
    * TLS peer identity. DNS names are sent in the ClientHello `server_name`
    * extension; IPv4 and IPv6 literals cause that extension to be omitted.
-   * Also used for certificate verification unless `verifyHost` is set.
+   * Also used for certificate verification unless `verifyHost` or
+   * `checkServerIdentity` is set.
    */
   host: string;
   /**
@@ -37,7 +38,24 @@ export interface UserspaceTlsOptions {
    * An IP literal must match an `iPAddress` SAN. Defaults to `host`.
    */
   verifyHost?: string;
+  /**
+   * Replace the certificate identity check. The callback receives the
+   * identity to prove — `verifyHost ?? host` — plus the leaf certificate,
+   * and returns an Error to reject the handshake or `undefined` to accept.
+   * Same contract as `tls.checkServerIdentity`, so the runtime's native
+   * implementation can be passed straight through here.
+   *
+   * Chain validation is unaffected: a rejected leaf still has to be issued
+   * by a trusted root.
+   */
+  checkServerIdentity?: CheckServerIdentity;
   alpn?: string[];
+  /**
+   * Additional PEM roots to trust alongside the library's bundled Mozilla
+   * list. Lets a caller reach a private CA without relying on the
+   * process-global `TLS_ADDITIONAL_ROOT_CA_LIST`.
+   */
+  additionalRootCAs?: readonly string[];
   /**
    * When true, all server certificates are accepted (no chain validation,
    * no name match).
@@ -69,6 +87,53 @@ export interface UserspaceTlsOptions {
 }
 
 export type TlsStream = DuplexStream;
+
+/**
+ * The peer-certificate fields `tls.checkServerIdentity` reads. Naming them
+ * here keeps the callback assignable from Node's own function in one
+ * direction and from our userspace leaf adapter in the other, so a caller can
+ * write one callback and use it on every runtime.
+ */
+/** The certificate adapter `@reclaimprotocol/tls` hands to its hooks. */
+interface LibraryCertificate {
+  internal: { rawData: ArrayBuffer };
+  getSubjectField(name: string): string[];
+  getAlternativeDNSNames?(): string[];
+  getAlternativeIPAddresses?(): string[];
+}
+
+export interface PeerCertificateIdentity {
+  /** DER bytes of the leaf certificate. */
+  raw: Uint8Array;
+  /** Repeated CNs arrive as an array, matching Node's own certificate shape. */
+  subject: { CN?: string | string[] };
+  /** Node's textual SAN form, e.g. `DNS:a.example, IP Address:127.0.0.1`. */
+  subjectaltname?: string;
+}
+
+/**
+ * Certificate identity check. Receives the identity to prove and the leaf,
+ * and returns an Error when the certificate does not cover that identity.
+ */
+export type CheckServerIdentity = (
+  identity: string,
+  certificate: PeerCertificateIdentity,
+) => Error | undefined;
+
+// The library hands certificates as an adapter over a parsed X.509 object;
+// `tls.checkServerIdentity` wants Node's textual SAN form, so rebuild it from
+// the adapter's typed accessors.
+const toIdentityCertificate = (leaf: LibraryCertificate): PeerCertificateIdentity => {
+  const names = [
+    ...(leaf.getAlternativeDNSNames?.() ?? []).map(name => `DNS:${name}`),
+    ...(leaf.getAlternativeIPAddresses?.() ?? []).map(address => `IP Address:${address}`),
+  ];
+  return {
+    raw: new Uint8Array(leaf.internal.rawData),
+    subject: { CN: leaf.getSubjectField('CN')[0] },
+    ...(names.length === 0 ? {} : { subjectaltname: names.join(', ') }),
+  };
+};
 
 // On error the returned promise rejects; on TLS clean-end the readable closes;
 // on any error after handshake the readable errors.
@@ -160,22 +225,35 @@ export const userspaceTls = async (
   let pendingPrefix: Uint8Array | null = opts.prefix ?? null;
 
   // `@reclaimprotocol/tls`'s exported TLSClientOptions typing is missing
-  // two things this call site uses: `verifyHost` (added by our pnpm patch)
-  // and a relaxed `onTlsEnd` error type (we forward errors from the runtime
-  // which can be non-Error rejects, but the upstream typing assumes
-  // `Error`). Build the options against a locally extended adapter type so
-  // we still get field-level checking on what we pass, then run a single
-  // `as` at the call site to bridge to the upstream parameter shape. When
-  // the upstream typing absorbs the patch, this extension type and the
-  // cast become redundant.
+  // three things this call site uses: `verifyHost` and `skipIdentityCheck`
+  // (both added by our pnpm patch) and a relaxed `onTlsEnd` error type (we
+  // forward errors from the runtime which can be non-Error rejects, but the
+  // upstream typing assumes `Error`). Build the options against a locally
+  // extended adapter type so we still get field-level checking on what we
+  // pass, then run a single `as` at the call site to bridge to the upstream
+  // parameter shape. When the upstream typing absorbs the patch, this
+  // extension type and the cast become redundant.
   type PatchedTLSOptions = Parameters<typeof makeTLSClient>[0] & {
     verifyHost?: string;
+    checkServerIdentity?: (identity: string, certificate: LibraryCertificate) => Promise<void>;
     onTlsEnd?: (error?: unknown) => void;
   };
   const tlsOptions: PatchedTLSOptions = {
     host: opts.host,
     verifyHost: opts.verifyHost,
     verifyServerCertificate: !opts.insecure,
+    // The library embeds its own X.509 adapter; parse the extra roots with it
+    // so both sides agree on the certificate representation.
+    ...(opts.additionalRootCAs === undefined ? {} : { rootCAs: opts.additionalRootCAs.map(loadX509FromPem) }),
+    // The library runs this before its chain walk and skips the hostname
+    // match when it is present, so exactly one identity check happens and a
+    // rejection is reported as an identity failure rather than a trust one.
+    checkServerIdentity: opts.insecure || opts.checkServerIdentity === undefined
+      ? undefined
+      : async (identity, certificate) => {
+        const error = opts.checkServerIdentity!(identity, toIdentityCertificate(certificate));
+        if (error !== undefined) throw error;
+      },
     applicationLayerProtocols: opts.alpn,
     cipherSuites: opts.cipherSuites ?? ['TLS_AES_256_GCM_SHA384', 'TLS_AES_128_GCM_SHA256'],
     write({ header, content }) {

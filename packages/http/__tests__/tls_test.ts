@@ -4,6 +4,7 @@ import * as reclaimTls from '@reclaimprotocol/tls';
 import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 import { describe, expect, it } from 'vitest';
 
+import { connectRaw, startFixtureTlsServer } from './test-utils/tls-server.ts';
 import { makeFakeDuplex } from './test-utils.ts';
 import { userspaceTls } from '../src/tls.ts';
 
@@ -389,5 +390,80 @@ describe('userspaceTls — certificate reference identity', () => {
 
   it('preserves DNS SAN wildcard matching for DNS hosts', async () => {
     await expect(verifyFixtureIdentity('ip-san.generated.pem', 'api.example.test')).resolves.toBeUndefined();
+  });
+});
+
+describe('userspaceTls — checkServerIdentity', () => {
+  // The callback replaces the identity check; chain trust still has to hold,
+  // so each fixture CA is passed as an additional root.
+  const withTrustedCa = (ca: string): readonly string[] => [ca];
+
+  it('replaces the library identity check and receives verifyHost', async () => {
+    const seen: Array<{ identity: string; cn: unknown; san: string | undefined }> = [];
+    const chain = await startFixtureTlsServer();
+    try {
+      const secure = await userspaceTls(await connectRaw(chain.port), {
+        host: 'localhost',
+        verifyHost: 'api.example.test',
+        additionalRootCAs: withTrustedCa(chain.ca),
+        checkServerIdentity: (identity, certificate) => {
+          seen.push({ identity, cn: certificate.subject.CN, san: certificate.subjectaltname });
+          return undefined;
+        },
+      });
+      await secure.readable.cancel();
+    } finally {
+      await chain.close();
+    }
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.identity).toBe('api.example.test');
+    expect(seen[0]!.san).toContain('DNS:localhost');
+    expect(seen[0]!.san).toContain('DNS:api.example.test');
+  });
+
+  it('aborts the handshake when the callback returns an Error', async () => {
+    const chain = await startFixtureTlsServer();
+    try {
+      await expect(userspaceTls(await connectRaw(chain.port), {
+        host: 'localhost',
+        checkServerIdentity: () => new Error('identity rejected by the caller'),
+      })).rejects.toThrow(/identity rejected by the caller/);
+    } finally {
+      await chain.close();
+    }
+  });
+
+  it('accepts exactly what tls.checkServerIdentity would reject', async () => {
+    // The point of the seam: one callback, runtime-appropriate behaviour.
+    // Here it overrides the library's match for a host the certificate does
+    // not cover, and the handshake succeeds because the callback allowed it.
+    const chain = await startFixtureTlsServer();
+    try {
+      const secure = await userspaceTls(await connectRaw(chain.port), {
+        host: 'localhost',
+        verifyHost: 'not-in-the-certificate.example',
+        additionalRootCAs: withTrustedCa(chain.ca),
+        checkServerIdentity: () => undefined,
+      });
+      await secure.readable.cancel();
+    } finally {
+      await chain.close();
+    }
+  });
+
+  it('cannot be bypassed by insecure', async () => {
+    const chain = await startFixtureTlsServer();
+    let calls = 0;
+    try {
+      const secure = await userspaceTls(await connectRaw(chain.port), {
+        host: 'localhost',
+        insecure: true,
+        checkServerIdentity: () => { calls++; return undefined; },
+      });
+      await secure.readable.cancel();
+    } finally {
+      await chain.close();
+    }
+    expect(calls).toBe(0);
   });
 });

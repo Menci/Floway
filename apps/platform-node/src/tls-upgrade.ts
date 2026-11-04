@@ -29,10 +29,15 @@ const transportToDuplex = (transport: DuplexStream): Duplex => {
 };
 
 // Node verifies the peer against `servername` when it is set and against
-// `host` otherwise, so a caller that separates the SNI name from the
-// reference identity has to supply the check itself.
-const makeIdentityCheck = (identity: string) => (_servername: string, peer: tls.PeerCertificate): Error | undefined =>
-  tls.checkServerIdentity(identity, peer);
+// `host` otherwise, so a caller that separates the SNI name from the reference
+// identity, or that supplies its own check, has to install one here. Node's
+// `checkServerIdentity` is the default; a caller-provided callback replaces it
+// with the same `(identity, certificate) => Error | undefined` contract.
+const makeIdentityCheck = (
+  identity: string,
+  check: TlsUpgradeOptions['checkServerIdentity'],
+) => (_servername: string, peer: tls.PeerCertificate): Error | undefined =>
+  check === undefined ? tls.checkServerIdentity(identity, peer) : check(identity, peer);
 
 // `signal` is honoured at three layers: (1) pre-upgrade short-circuit, (2)
 // node:tls native abort during the handshake, (3) post-handshake
@@ -70,8 +75,13 @@ export const startNodeTls = async (
     host: identity,
     ...(net.isIP(servername) === 0 ? { servername } : {}),
     ALPNProtocols: opts.alpn,
+    // Node adds these to its own store rather than replacing it, which is
+    // what "additional" means to the caller.
+    ...(opts.additionalRootCAs === undefined
+      ? {}
+      : { ca: [...tls.getCACertificates('default'), ...opts.additionalRootCAs] }),
     rejectUnauthorized: !opts.insecure,
-    ...(opts.insecure ? {} : { checkServerIdentity: makeIdentityCheck(identity) }),
+    ...(opts.insecure ? {} : { checkServerIdentity: makeIdentityCheck(identity, opts.checkServerIdentity) }),
     signal,
   });
 

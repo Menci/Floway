@@ -19,7 +19,7 @@ patchedDependencies:
     hash: 417a079919ce252b1c003999de6ff7a4279810d4a351e194b20141bc13b0bcba
     path: patches/@fluentui__react-charts@9.3.22.patch
   '@reclaimprotocol/tls@0.1.5':
-    hash: 2e2db833e07309e5e131acc48df45ce367c76aaea0620172abf844992ad30875
+    hash: fd75b05b0a643883395d9f7204121ee76c22bb1532313f14e27b1e06fe4af70e
     path: patches/@reclaimprotocol__tls@0.1.5.patch
   cbor-x@1.6.6:
     hash: fe60080adce8d75e0431840c40fc8086df2ac5625589179e5ddab432216c33a7
@@ -453,10 +453,14 @@ importers:
         version: 2.2.0
       '@reclaimprotocol/tls':
         specifier: 0.1.5
-        version: 0.1.5(patch_hash=2e2db833e07309e5e131acc48df45ce367c76aaea0620172abf844992ad30875)
+        version: 0.1.5(patch_hash=fd75b05b0a643883395d9f7204121ee76c22bb1532313f14e27b1e06fe4af70e)
       '@scure/base':
         specifier: ^2.2.0
         version: 2.2.0
+    devDependencies:
+      '@peculiar/x509':
+        specifier: ^1.14.3
+        version: 1.14.3
 
   packages/interceptor:
     devDependencies:
@@ -648,7 +652,7 @@ importers:
         version: 2.2.0
       '@reclaimprotocol/tls':
         specifier: 0.1.5
-        version: 0.1.5(patch_hash=2e2db833e07309e5e131acc48df45ce367c76aaea0620172abf844992ad30875)
+        version: 0.1.5(patch_hash=fd75b05b0a643883395d9f7204121ee76c22bb1532313f14e27b1e06fe4af70e)
       '@scure/base':
         specifier: ^2.2.0
         version: 2.2.0
@@ -8141,7 +8145,7 @@ snapshots:
     optionalDependencies:
       typescript: 5.9.3
 
-  '@reclaimprotocol/tls@0.1.5(patch_hash=2e2db833e07309e5e131acc48df45ce367c76aaea0620172abf844992ad30875)':
+  '@reclaimprotocol/tls@0.1.5(patch_hash=fd75b05b0a643883395d9f7204121ee76c22bb1532313f14e27b1e06fe4af70e)':
     dependencies:
       '@noble/ciphers': 1.3.0
       '@noble/curves': 1.9.7
