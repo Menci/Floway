@@ -68,23 +68,13 @@ test('buildTargetRequest preserves scalar and content-part assistant refusals as
 
 // ── service_tier → speed mapping ──
 
-test('buildTargetRequest maps service_tier:fast to speed:fast (no service_tier on target)', async () => {
+// OpenAI renamed priority processing to Fast mode; both spellings ask for the
+// same lane, so both map onto Anthropic's `speed`.
+test.each(['fast', 'priority'])('buildTargetRequest maps service_tier:%s to speed:fast (no service_tier on target)', async serviceTier => {
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'hi' }],
-      service_tier: 'fast',
-    }),
-  );
-
-  assertEquals(result.speed, 'fast');
-  assertFalse('service_tier' in result);
-});
-
-test('buildTargetRequest maps service_tier:priority to speed:fast (no service_tier on target)', async () => {
-  const result = await buildWithTestSidecar(
-    mkPayload({
-      messages: [{ role: 'user', content: 'hi' }],
-      service_tier: 'priority',
+      service_tier: serviceTier,
     }),
   );
 
@@ -854,36 +844,19 @@ test('always emits stream: true regardless of source stream flag', async () => {
 
 // ── Tool choice mapping ──
 
-test('tool_choice auto → { type: auto }', async () => {
+test.each([
+  ['auto', { type: 'auto' }],
+  ['none', { type: 'none' }],
+  ['required', { type: 'any' }],
+] as const)('tool_choice %s maps onto the Messages tool_choice', async (choice, expected) => {
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
       tools: [{ type: 'function', function: { name: 'f', parameters: { type: 'object' } } }],
-      tool_choice: 'auto',
+      tool_choice: choice,
     }),
   );
-  assertEquals(result.tool_choice, { type: 'auto' });
-});
-
-test('tool_choice none → { type: none }', async () => {
-  const result = await buildWithTestSidecar(
-    mkPayload({
-      messages: [{ role: 'user', content: 'Hi' }],
-      tool_choice: 'none',
-    }),
-  );
-  assertEquals(result.tool_choice, { type: 'none' });
-});
-
-test('tool_choice required → { type: any }', async () => {
-  const result = await buildWithTestSidecar(
-    mkPayload({
-      messages: [{ role: 'user', content: 'Hi' }],
-      tools: [{ type: 'function', function: { name: 'f', parameters: { type: 'object' } } }],
-      tool_choice: 'required',
-    }),
-  );
-  assertEquals(result.tool_choice, { type: 'any' });
+  assertEquals(result.tool_choice, expected);
 });
 
 test('tool_choice specific function → { type: tool, name }', async () => {
