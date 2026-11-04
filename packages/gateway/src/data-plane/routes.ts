@@ -3,6 +3,8 @@ import type { Hono } from 'hono';
 import { mountAlphaSearchRoutes } from './alpha-search/routes.ts';
 import { mountChatRoutes } from './chat/routes.ts';
 import { mountCodexRoutes } from './codex/routes.ts';
+import { openaiDecisions } from './decisions/openai-decisions.ts';
+import { systemOne } from './decisions/system-one.ts';
 import { serveGeminiModelInfo, serveGeminiModels } from './models/gemini.ts';
 import { serveModels } from './models/http.ts';
 import { openaiAudioTranscriptions } from './openai-audio/http.ts';
@@ -31,4 +33,6 @@ export const mountDataPlane = (app: Hono<{ Variables: AuthVars }>) => {
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.cohereV2Rerank, (method, path) => app.on(method, path, rerank('cohere-v2')));
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.jinaV1Rerank, (method, path) => app.on(method, path, rerank('jina-v1')));
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.voyageV1Rerank, (method, path) => app.on(method, path, rerank('voyage-v1')));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openaiDecisions, (method, path) => app.on(method, path, openaiDecisions));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.systemOne, (method, path) => app.on(method, path, systemOne));
 };
