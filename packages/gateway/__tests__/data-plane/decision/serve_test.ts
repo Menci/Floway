@@ -28,7 +28,7 @@ const saveDecisionUpstream = async (
         upstreamModelId: 'raw-decision',
         publicModelId: 'public-decision',
         kind: 'decision',
-        endpoints: { systemOne: {} },
+        endpoints: { decision: {} },
         decisionTarget: target,
         ...(pricing === undefined ? {} : { pricing }),
       }],
@@ -45,6 +45,12 @@ const choiceRequest = {
   model: 'public-decision',
   state: 'The API returns 500 on every call.',
   questions: { team: { type: 'choice', instructions: 'Which team?', criteria: { billing: 'Charges', engineering: 'Bugs' } } },
+};
+
+const openAIShape = {
+  model: 'public-decision',
+  input: 'The API returns 500.',
+  questions: [{ type: 'predicate', name: 'is_bug', instructions: 'Is this a bug?' }],
 };
 
 test('/v1/systemone forwards a System One request and records input tokens', async () => {
@@ -149,4 +155,160 @@ test('/v1/systemone rejects a malformed body before any upstream call', async ()
     body: JSON.stringify({ ...choiceRequest, stream: true }),
   });
   assertEquals(response.status, 400);
+});
+
+test('/v1/decisions accepts the OpenAI shape and translates to a System One target', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveDecisionUpstream(repo, { protocol: 'systemone' });
+
+  let upstreamRequest: Request | undefined;
+  await withMockedFetch(
+    async request => {
+      upstreamRequest = request;
+      return jsonResponse({
+        model: 'microsoft-decision-1',
+        answers: { team: { type: 'choice', choice: 'engineering', confidence: 0.99, probabilities: { billing: 0.01, engineering: 0.99 } } },
+        usage: { input_tokens: 40, output_tokens: 1 },
+      });
+    },
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/decisions', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({
+          model: 'public-decision',
+          input: 'The API returns 500 on every call.',
+          questions: [{
+            type: 'choice',
+            name: 'team',
+            instructions: 'Which team?',
+            choices: [{ value: 'billing', description: 'Charges' }, { value: 'engineering', description: 'Bugs' }],
+          }],
+        }),
+      });
+      assertEquals(response.status, 200);
+      assertEquals(await response.json(), {
+        model: 'microsoft-decision-1',
+        answers: [{
+          type: 'choice',
+          name: 'team',
+          choice: 'engineering',
+          confidence: 0.99,
+          probabilities: [{ value: 'billing', probability: 0.01 }, { value: 'engineering', probability: 0.99 }],
+        }],
+        usage: { input_tokens: 40, output_tokens: 1 },
+      });
+    },
+  );
+
+  assertExists(upstreamRequest);
+  assertEquals(new URL(upstreamRequest.url).pathname, '/v1/systemone');
+  assertEquals(await upstreamRequest.clone().json(), {
+    model: 'raw-decision',
+    state: 'The API returns 500 on every call.',
+    questions: { team: { type: 'choice', instructions: 'Which team?', criteria: { billing: 'Charges', engineering: 'Bugs' } } },
+  });
+});
+
+test('/v1/decisions forwards opaquely to a target on the same dialect', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveDecisionUpstream(repo, { protocol: 'openai-decisions' });
+
+  const sent = { ...openAIShape, model: 'raw-decision' };
+  let upstreamRequest: Request | undefined;
+  await withMockedFetch(
+    async request => {
+      upstreamRequest = request;
+      return jsonResponse({
+        model: 'gpt-6-luna',
+        answers: [{ type: 'predicate', name: 'is_bug', probability: 0.92 }],
+        usage: { input_tokens: 12, output_tokens: 0 },
+      });
+    },
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/decisions', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify(openAIShape),
+      });
+      assertEquals(response.status, 200);
+      // Same dialect, so the upstream body is forwarded unchanged.
+      assertEquals(await response.json(), {
+        model: 'gpt-6-luna',
+        answers: [{ type: 'predicate', name: 'is_bug', probability: 0.92 }],
+        usage: { input_tokens: 12, output_tokens: 0 },
+      });
+    },
+  );
+
+  assertExists(upstreamRequest);
+  assertEquals(await upstreamRequest.clone().json(), sent);
+});
+
+test('/v1/decisions refuses image evidence for a text-only target before dispatch', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveDecisionUpstream(repo, { protocol: 'systemone' });
+
+  let called = false;
+  await withMockedFetch(
+    () => {
+      called = true;
+      return jsonResponse({});
+    },
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/decisions', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({
+          model: 'public-decision',
+          input: [{
+            role: 'user', content: [
+              { type: 'input_text', text: 'Inspect this.' },
+              { type: 'input_image', image_url: 'data:image/png;base64,AAAA' },
+            ],
+          }],
+          questions: [{ type: 'predicate', name: 'damaged', instructions: 'Is it damaged?' }],
+        }),
+      });
+      assertEquals(response.status, 400);
+      const body = await response.json() as { error: { message: string } };
+      assertEquals(body.error.message.includes('image evidence'), true);
+    },
+  );
+
+  assertEquals(called, false);
+});
+
+test('/v1/decisions forwards image evidence when the target reads images', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveDecisionUpstream(repo, { protocol: 'openai-decisions', images: true });
+
+  let upstreamRequest: Request | undefined;
+  await withMockedFetch(
+    async request => {
+      upstreamRequest = request;
+      return jsonResponse({ answers: [{ type: 'predicate', name: 'damaged', probability: 0.88 }], usage: { input_tokens: 90 } });
+    },
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/decisions', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({
+          model: 'public-decision',
+          input: [{
+            role: 'user', content: [
+              { type: 'input_text', text: 'Inspect this.' },
+              { type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'high' },
+            ],
+          }],
+          questions: [{ type: 'predicate', name: 'damaged', instructions: 'Is it damaged?' }],
+        }),
+      });
+      assertEquals(response.status, 200);
+    },
+  );
+
+  assertExists(upstreamRequest);
+  const sent = await upstreamRequest.clone().json() as { input: readonly { content: readonly Record<string, unknown>[] }[] };
+  assertEquals(sent.input[0].content[1], { type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'high' });
 });

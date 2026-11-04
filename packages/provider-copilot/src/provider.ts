@@ -81,7 +81,7 @@ const copilotPathToModelEndpoint = (path: string): ModelEndpointKey | undefined 
     return 'openaiImagesEdits';
   case '/systemone':
   case '/v1/systemone':
-    return 'systemOne';
+    return 'decision';
   default:
     return undefined;
   }
@@ -119,7 +119,7 @@ const copilotModelEndpoints = (rawModels: readonly CopilotRawModel[]): ModelEndp
   if (rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiEmbeddings'))) return { openaiEmbeddings: {} };
   // A decision model is a family of one: no other endpoint family shares its
   // row, so this branch never competes with the chat/embeddings collapse above.
-  return rawModels.some(model => rawModelSupportsEndpoint(model, 'systemOne')) ? { systemOne: {} } : {};
+  return rawModels.some(model => rawModelSupportsEndpoint(model, 'decision')) ? { decision: {} } : {};
 };
 
 const chatReasoningEffort = (body: Omit<OpenAIChatCompletionsPayload, 'model'>): string | undefined => (body.reasoning_effort && body.reasoning_effort !== 'none' ? body.reasoning_effort : undefined);
@@ -191,7 +191,7 @@ const finalizeCopilotModels = (
       kind: kindForEndpoints(endpoints),
       endpoints,
       providerData: { rawModels: variants } satisfies CopilotProviderData,
-      ...(endpoints.systemOne ? { decisionTarget: { protocol: 'systemone' as const } } : {}),
+      ...(endpoints.decision ? { decisionTarget: { protocol: 'systemone' as const } } : {}),
       ...(pricing ? { pricing } : {}),
       ...((mergedModel.owned_by?.toLowerCase() === 'openai' || /^(?:gpt-|o[134](?:-|$)|codex-)/.test(mergedModel.id))
         ? { opaqueBlobCompatibilityScope: { bindToUpstream: true, key: 'openai' } }
@@ -506,7 +506,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     callRerank: rejectUnsupported('callRerank'),
     callDecision: async (model: ProviderModel, request: CanonicalDecisionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => {
       const target = model.decisionTarget ?? { protocol: 'systemone' as const };
-      const rawModel = rawModelFor(model, 'systemOne');
+      const rawModel = rawModelFor(model, 'decision');
       const body = serializeDecisionRequest(target.protocol, rawModel.id, request);
       const response = await copilotFetchSystemOne(
         upstreamConfig,

@@ -53,7 +53,7 @@ const EMBEDDING_ENDPOINTS: ModelEndpoints = { openaiEmbeddings: {} };
 // model in its library answers noul, choice, and score; none accepts images, so
 // no capability narrowing is needed here.
 // https://docs.ollama.com/capabilities/decision
-const DECISION_ENDPOINTS: ModelEndpoints = { systemOne: {} };
+const DECISION_ENDPOINTS: ModelEndpoints = { decision: {} };
 
 const finalizeOllamaModels = (
   catalog: OllamaCatalog,
@@ -76,7 +76,7 @@ const finalizeOllamaModels = (
       providerData: raw.id,
       enabledFlags,
       opaqueBlobCompatibilityScope: { bindToUpstream: true },
-      ...(endpoints.systemOne ? { decisionTarget: { protocol: 'systemone' as const } } : {}),
+      ...(endpoints.decision ? { decisionTarget: { protocol: 'systemone' as const } } : {}),
     };
     if (raw.modifiedAt !== undefined) model.created = raw.modifiedAt;
     const pricing = pricingForOllamaModelKey(raw.id);

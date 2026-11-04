@@ -1,49 +1,89 @@
-// The System One state: a string, a JSON object, or a JSON array. Decision
-// models read it as evidence and never treat it as instructions.
-// https://docs.typesafe.ai/primitives
-export type DecisionState = string | Record<string, unknown> | readonly unknown[];
+import type { DecisionSourceProtocol } from '../common/models.ts';
 
-// One question. `name` is the caller's key; the model never sees it and the
-// answer echoes it. `noul` gives a yes/no probability; `choice` selects one of
-// an unordered set; `score` places the state on ordered levels. A Choice and a
-// Score each take criteria — a map of options and an ordered list of levels —
-// and a Noul's criteria optionally define what yes and no mean.
+// A decision request carries evidence and typed questions. Both dialects can
+// hold text, JSON, and images; the canonical form keeps all three so a target
+// that reads images still receives them.
+// https://developers.openai.com/api/reference/resources/decisions/methods/create
+// https://docs.typesafe.ai/images
+export interface DecisionTextPart {
+  type: 'text';
+  text: string;
+}
+
+export interface DecisionImagePart {
+  type: 'image';
+  // A base64 data URL or a publicly accessible HTTP(S) URL. File IDs are not
+  // supported by either dialect.
+  imageUrl: string;
+  detail?: 'low' | 'high' | 'auto' | 'original';
+}
+
+export interface DecisionJsonPart {
+  type: 'json';
+  data: Record<string, unknown> | readonly unknown[];
+}
+
+export type DecisionContentPart = DecisionTextPart | DecisionImagePart | DecisionJsonPart;
+
+// The evidence the questions are asked about. `text` and `json` are the two
+// single-value forms System One accepts directly; `parts` keeps an ordered mix
+// (including images) that only a target reading images can receive.
+export type DecisionState =
+  | { kind: 'text'; value: string }
+  | { kind: 'json'; value: Record<string, unknown> | readonly unknown[] }
+  | { kind: 'parts'; parts: readonly DecisionContentPart[] };
+
+export type DecisionInstructions = string | readonly DecisionContentPart[];
+
+// Choice values are typed: the OpenAI contract defines value as string or
+// boolean and treats `true` and `"true"` as distinct options. System One keys
+// options by string, so a target on that dialect cannot represent a collision
+// between the two.
+export interface DecisionChoiceOption {
+  value: string | boolean;
+  description?: string;
+}
+
+export interface DecisionScoreLevel {
+  label: string;
+  description?: string;
+}
+
 export interface DecisionNoulQuestion {
   type: 'noul';
   name: string;
-  instructions: string;
+  instructions: DecisionInstructions;
   criteria?: { true?: string; false?: string };
 }
 
 export interface DecisionChoiceQuestion {
   type: 'choice';
   name: string;
-  instructions: string;
-  // Option value mapped to a description, or null when the value is
-  // self-explanatory. Order is irrelevant for a Choice and preserved verbatim
-  // so a same-protocol forward reaches the model unchanged.
-  criteria: Record<string, string | null>;
+  instructions: DecisionInstructions;
+  options: readonly DecisionChoiceOption[];
 }
 
 export interface DecisionScoreQuestion {
   type: 'score';
   name: string;
-  instructions: string;
+  instructions: DecisionInstructions;
   // Ordered from lowest to highest; the index is the level number. The model
   // returns a probability-weighted average, so the score can fall between two
   // levels.
-  criteria: readonly string[];
+  levels: readonly DecisionScoreLevel[];
 }
 
 export type DecisionQuestion = DecisionNoulQuestion | DecisionChoiceQuestion | DecisionScoreQuestion;
 
 export interface CanonicalDecisionRequest {
+  // The ingress dialect the client spoke. A request forwards to a target on the
+  // same dialect opaquely; across dialects it is serialized from the canonical
+  // fields below.
+  sourceProtocol: DecisionSourceProtocol;
   // The wire body as received, so a same-protocol forward can preserve vendor
   // extensions the canonical form does not model.
   raw: Record<string, unknown>;
   state: DecisionState;
-  // Insertion order matches the caller's request and is preserved on a
-  // same-protocol forward.
   questions: readonly DecisionQuestion[];
 }
 
@@ -57,10 +97,10 @@ export interface DecisionNoulAnswer {
 export interface DecisionChoiceAnswer {
   type: 'choice';
   name: string;
-  choice: string;
+  choice: string | boolean;
   confidence?: number;
-  // Option value to probability. Sums to 1.
-  probabilities?: Record<string, number>;
+  // One entry per supplied option, summing to 1.
+  probabilities?: readonly { value: string | boolean; probability: number }[];
 }
 
 export interface DecisionScoreAnswer {
@@ -71,7 +111,7 @@ export interface DecisionScoreAnswer {
   // Level label keyed by level number. Providers key these by string over
   // HTTP; the SDKs key them by int, so we normalize to string keys.
   legend?: Record<string, string>;
-  probabilities?: Record<string, number>;
+  probabilities?: readonly { value: number; label?: string; probability: number }[];
 }
 
 export type DecisionAnswer = DecisionNoulAnswer | DecisionChoiceAnswer | DecisionScoreAnswer;

@@ -13,6 +13,7 @@ import { recordFailedRequest, recordPerformance, type PerformanceTelemetryContex
 import { recordUsage } from '../shared/telemetry/usage.ts';
 import { forwardUpstreamResponse } from '../shared/upstream-response.ts';
 import { parseDecimalString } from '@floway-dev/protocols/common';
+import type { DecisionSourceProtocol } from '@floway-dev/protocols/common';
 import { decisionRequestIncompatibility, parseDecisionRequest, parseDecisionResponse, parseDecisionUsage, renderDecisionResponse, type ParsedDecisionRequest } from '@floway-dev/protocols/decision';
 import { httpResponseToResponse, ProviderModelsUnavailableError, providerModelOf, toInternalDebugError } from '@floway-dev/provider';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
@@ -48,11 +49,11 @@ const settleDecision = (
 
 const unsupportedMessage = (model: string): string => `Model ${model} does not support decision.`;
 
-export const decision = async (c: Context): Promise<Response> => {
+export const decision = (sourceProtocol: DecisionSourceProtocol) => async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
   let parsedRequest: ParsedDecisionRequest;
   try {
-    parsedRequest = parseDecisionRequest(parseJson(requestBody.bytes));
+    parsedRequest = parseDecisionRequest(sourceProtocol, parseJson(requestBody.bytes));
   } catch (error) {
     const ctx = createGatewayCtxFromHono(c, {
       wantsStream: false,
@@ -94,7 +95,7 @@ export const decision = async (c: Context): Promise<Response> => {
 
     const routable = candidates.flatMap(candidate => {
       const providerModel = providerModelOf(candidate);
-      return candidate.model.endpoints.systemOne === undefined || providerModel.decisionTarget === undefined
+      return candidate.model.endpoints.decision === undefined || providerModel.decisionTarget === undefined
         ? []
         : [{ candidate, target: providerModel.decisionTarget }];
     });
@@ -149,8 +150,14 @@ export const decision = async (c: Context): Promise<Response> => {
       );
       measuredUsage = undefined;
     }
+    if (sourceProtocol === terminal.target.protocol) {
+      ctx.dump?.success(terminal.identity, null);
+      settleDecision(ctx, terminal.performance, terminal.identity, measuredUsage, false);
+      usageSettled = true;
+      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
+    }
     const canonical = parseDecisionResponse(terminal.target.protocol, upstreamBody);
-    const rendered = renderDecisionResponse(canonical);
+    const rendered = renderDecisionResponse(sourceProtocol, canonical);
     ctx.dump?.success(terminal.identity, null);
     settleDecision(ctx, terminal.performance, terminal.identity, measuredUsage, false);
     usageSettled = true;

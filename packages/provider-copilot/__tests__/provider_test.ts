@@ -1599,10 +1599,10 @@ test('Copilot provider derives decision endpoints and forwards the System One bo
       const models = await provider.getProvidedModels(directFetcher);
       const decision = models.find(model => model.id === 'microsoft-decision-1')!;
       assertEquals(decision.kind, 'decision');
-      assertEquals(decision.endpoints, { systemOne: {} });
+      assertEquals(decision.endpoints, { decision: {} });
       assertEquals(decision.decisionTarget, { protocol: 'systemone' });
 
-      const parsed = parseDecisionRequest({
+      const parsed = parseDecisionRequest('systemone', {
         model: 'microsoft-decision-1',
         state: 'The API returns 500 on every call.',
         questions: { team: { type: 'choice', instructions: 'Which team?', criteria: { billing: 'Charges', engineering: 'Bugs' } } },

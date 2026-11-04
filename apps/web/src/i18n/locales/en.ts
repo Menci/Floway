@@ -251,6 +251,7 @@ const en = {
           openAiEmbeddings: 'OpenAI Embeddings', openAiImageGeneration: 'OpenAI Image Generations', openAiImageEdit: 'OpenAI Image Edits', openAiTranscription: 'OpenAI Audio Transcriptions',
           cohereV1Rerank: 'Cohere Rerank v1', cohereV2Rerank: 'Cohere Rerank v2', jinaRerank: 'Jina Rerank', voyageRerank: 'Voyage Rerank',
           systemOne: 'System One decisions',
+          openAiDecisions: 'OpenAI Decisions',
           codexSearch: 'Codex alpha search',
         },
       },

@@ -30,6 +30,6 @@ test('kindForEndpoints returns rerank for the semantic rerank endpoint', () => {
   assertEquals(kindForEndpoints({ rerank: {} }), 'rerank');
 });
 
-test('kindForEndpoints returns decision for the System One endpoint', () => {
-  assertEquals(kindForEndpoints({ systemOne: {} }), 'decision');
+test('kindForEndpoints returns decision for the decision endpoint', () => {
+  assertEquals(kindForEndpoints({ decision: {} }), 'decision');
 });

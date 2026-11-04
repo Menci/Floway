@@ -55,6 +55,7 @@ export const apiDocsEndpoints = [
   endpoint('voyageV1Rerank', { group: 'rerank', name: 'voyageRerank', docs: 'https://docs.voyageai.com/reference/reranker-api' }),
 
   endpoint('systemOne', { group: 'decision', name: 'systemOne', docs: 'https://docs.typesafe.ai/api' }),
+  endpoint('openaiDecisions', { group: 'decision', name: 'openAiDecisions', docs: 'https://developers.openai.com/api/docs/guides/decisions' }),
 
   endpoint('alphaSearch', { group: 'search', name: 'codexSearch', docs: codexSearchDocs }),
 ] satisfies readonly ApiDocsEndpoint[];

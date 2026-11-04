@@ -99,7 +99,7 @@ export {
   isMultipartFormDataMediaType,
 } from './common/media-type.ts';
 
-export { DECISION_QUESTION_TYPES, RERANK_PROTOCOLS, materializeOpaqueBlobCompatibilityIdentity } from './common/models.ts';
+export { DECISION_PROTOCOLS, DECISION_QUESTION_TYPES, RERANK_PROTOCOLS, materializeOpaqueBlobCompatibilityIdentity } from './common/models.ts';
 
 export {
   MAX_OPAQUE_TRAILER_BYTES,

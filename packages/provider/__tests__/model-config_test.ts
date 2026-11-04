@@ -301,7 +301,7 @@ describe('modelsField decision targets', () => {
     expect(() => modelsField([{
       upstreamModelId: 'decision-1',
       kind: 'decision',
-      endpoints: { systemOne: {} },
+      endpoints: { decision: {} },
     }], 'p')).toThrow(/decisionTarget is required/);
   });
 
@@ -309,7 +309,7 @@ describe('modelsField decision targets', () => {
     const [model] = modelsField([{
       upstreamModelId: 'decision-1',
       kind: 'decision',
-      endpoints: { systemOne: {} },
+      endpoints: { decision: {} },
       decisionTarget: { protocol: 'systemone', path: ' /providers/microsoft/v1/systemone ', questionTypes: ['choice'] },
     }], 'p');
     expect(model.decisionTarget).toEqual({ protocol: 'systemone', path: '/providers/microsoft/v1/systemone', questionTypes: ['choice'] });
@@ -328,13 +328,13 @@ describe('modelsField decision targets', () => {
     expect(() => modelsField([{
       upstreamModelId: 'decision-1',
       kind: 'decision',
-      endpoints: { systemOne: {} },
+      endpoints: { decision: {} },
       decisionTarget: { protocol: 'jev' },
     }], 'p')).toThrow(/unsupported decision protocol/);
     expect(() => modelsField([{
       upstreamModelId: 'decision-1',
       kind: 'decision',
-      endpoints: { systemOne: {} },
+      endpoints: { decision: {} },
       decisionTarget: { protocol: 'systemone', questionTypes: ['box'] },
     }], 'p')).toThrow(/questionTypes\[0\]/);
   });

@@ -240,6 +240,7 @@ const zhHansCN = {
           openAiEmbeddings: 'OpenAI Embeddings', openAiImageGeneration: 'OpenAI 图像生成', openAiImageEdit: 'OpenAI 图像编辑', openAiTranscription: 'OpenAI 音频转录',
           cohereV1Rerank: 'Cohere Rerank v1', cohereV2Rerank: 'Cohere Rerank v2', jinaRerank: 'Jina Rerank', voyageRerank: 'Voyage Rerank',
           systemOne: 'System One 决策',
+          openAiDecisions: 'OpenAI Decisions',
           codexSearch: 'Codex Alpha 搜索',
         },
       },

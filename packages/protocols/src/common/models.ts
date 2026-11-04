@@ -33,6 +33,10 @@ export interface RerankTarget {
 // declare it once one does.
 export const DECISION_PROTOCOLS = ['systemone', 'openai-decisions'] as const;
 export type DecisionProtocol = typeof DECISION_PROTOCOLS[number];
+// Both dialects are callable ingress: `/v1/systemone` speaks the System One
+// contract and `/v1/decisions` speaks the OpenAI Decisions one. The same pair
+// doubles as the outbound target vocabulary.
+export type DecisionSourceProtocol = DecisionProtocol;
 
 // The question primitives a target accepts. A dialect name does not imply a
 // capability: Copilot's microsoft-decision-1 answers noul, choice, and score,
@@ -54,6 +58,10 @@ export interface DecisionTarget {
   // the listed question types so pre-dispatch filtering rejects a request the
   // deployment would answer with an upstream 4xx.
   questionTypes?: readonly DecisionQuestionType[];
+  // Whether the deployment reads images. Both dialects can carry them, but a
+  // model that ignores image evidence would answer confidently on its absence,
+  // so image requests are refused unless the target opts in. Omitted means no.
+  images?: boolean;
 }
 
 export type Modality = 'text' | 'image';
@@ -157,7 +165,7 @@ export interface PublicModel {
   // candidate carrying one of its preferred chat targets, and Gemini
   // generateContent has no key of its own at all. The non-chat keys
   // (`openaiCompletions`, `openaiEmbeddings`, `openaiImagesGenerations`,
-  // `openaiImagesEdits`, `rerank`, `openaiAudioTranscriptions`, `systemOne`)
+  // `openaiImagesEdits`, `rerank`, `openaiAudioTranscriptions`, `decision`)
   // are callable exactly where they appear.
   endpoints: ModelEndpoints;
   pricing?: ModelPricing;
