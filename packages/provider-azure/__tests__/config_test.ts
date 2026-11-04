@@ -350,7 +350,7 @@ test('assertAzureUpstreamRecord rejects model.pricing with non-number input_cach
 test('assertAzureUpstreamRecord rejects an operator-authored decision target', () => {
   assertThrows(
     () => assertAzureUpstreamRecord({
-      kind: 'azure',
+      ...baseRecord,
       config: {
         endpoint: 'https://example.openai.azure.com',
         apiKey: 'key',

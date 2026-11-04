@@ -14,6 +14,7 @@ import type {
   DecisionState,
   ParsedDecisionRequest,
 } from './index.ts';
+import { parseJsonNumber, type JsonNumber } from '../common/json.ts';
 import type { DecisionProtocol, DecisionSourceProtocol } from '../common/models.ts';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -24,10 +25,9 @@ const requiredString = (value: unknown, field: string): string => {
   return value;
 };
 
-const finiteNumber = (value: unknown, field: string): number => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${field} must be a finite number`);
-  return value;
-};
+// Answer numbers keep their source token when the upstream body was parsed with
+// `parseJSONWithRawNumbers`, so a probability re-serializes byte for byte.
+const finiteNumber = (value: unknown, field: string): JsonNumber => parseJsonNumber(value, field);
 
 // OpenAI requires 2–255 choices and 2–10 levels; System One's schema permits a
 // single option or level, and these stricter bounds are applied to both.
@@ -531,7 +531,7 @@ const parseSystemOneResponse = (body: Record<string, unknown>): CanonicalDecisio
 // OpenAI marks `probabilities` required on Choice and Score answers, so a
 // non-array is a broken response. A missing entry value type is likewise an
 // upstream contract violation, not the absence of detail.
-const openAITypedProbabilities = (value: unknown, field: string): readonly { value: string | boolean; probability: number }[] => {
+const openAITypedProbabilities = (value: unknown, field: string): readonly { value: string | boolean; probability: JsonNumber }[] => {
   if (!Array.isArray(value)) throw new Error(`${field} must be an array`);
   return value.map((entry, index) => {
     if (!isRecord(entry)) throw new Error(`${field}[${index}] must be an object`);
@@ -541,7 +541,7 @@ const openAITypedProbabilities = (value: unknown, field: string): readonly { val
   });
 };
 
-const openAIScoreProbabilities = (value: unknown, field: string): readonly { value: number; label?: string; probability: number }[] => {
+const openAIScoreProbabilities = (value: unknown, field: string): readonly { value: number; label?: string; probability: JsonNumber }[] => {
   if (!Array.isArray(value)) throw new Error(`${field} must be an array`);
   return value.map((entry, index) => {
     if (!isRecord(entry)) throw new Error(`${field}[${index}] must be an object`);

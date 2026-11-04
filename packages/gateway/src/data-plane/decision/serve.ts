@@ -12,7 +12,7 @@ import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { recordFailedRequest, recordPerformance, type PerformanceTelemetryContext } from '../shared/telemetry/performance.ts';
 import { recordUsage } from '../shared/telemetry/usage.ts';
 import { forwardUpstreamResponse } from '../shared/upstream-response.ts';
-import { parseDecimalString } from '@floway-dev/protocols/common';
+import { parseDecimalString, parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 import type { DecisionSourceProtocol } from '@floway-dev/protocols/common';
 import { parseDecisionRequest, parseDecisionResponse, parseDecisionUsage, renderDecisionResponse, type ParsedDecisionRequest } from '@floway-dev/protocols/decision';
 import { httpResponseToResponse, ProviderModelsUnavailableError, providerModelOf, toInternalDebugError } from '@floway-dev/provider';
@@ -121,7 +121,9 @@ export const decision = (sourceProtocol: DecisionSourceProtocol) => async (c: Co
     const sameProtocol = sourceProtocol === terminal.target.protocol;
     let upstreamBody: Record<string, unknown>;
     try {
-      upstreamBody = await terminal.response.clone().json() as Record<string, unknown>;
+      // Raw-number parsing keeps each probability's source token, so a
+      // cross-dialect render writes the digits back unchanged.
+      upstreamBody = parseJSONWithRawNumbers(await terminal.response.clone().text()) as Record<string, unknown>;
     } catch (error) {
       // A cross-dialect client cannot read the upstream's own body, so a
       // translation failure must surface instead of being forwarded as success.

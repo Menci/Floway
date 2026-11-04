@@ -1,3 +1,4 @@
+import type { JsonNumber } from '../common/json.ts';
 import type { DecisionSourceProtocol } from '../common/models.ts';
 
 // A decision request carries evidence and typed questions. Both dialects can
@@ -88,11 +89,14 @@ export interface CanonicalDecisionRequest {
   questions: readonly DecisionQuestion[];
 }
 
+// Probabilities keep the upstream's own number token: a parsed JavaScript
+// number would re-serialize `1.0` as `1` and a value beyond the double range as
+// `null`, and a decision answer is exactly the place those digits matter.
 export interface DecisionNoulAnswer {
   type: 'noul';
   name: string;
   // Probability that the answer is yes. Noul has no separate confidence.
-  noul: number;
+  noul: JsonNumber;
 }
 
 export interface DecisionChoiceAnswer {
@@ -100,21 +104,21 @@ export interface DecisionChoiceAnswer {
   name: string;
   choice: string | boolean;
   // Both dialects mark these required on a Choice answer.
-  confidence: number;
+  confidence: JsonNumber;
   // One entry per supplied option, summing to 1.
-  probabilities: readonly { value: string | boolean; probability: number }[];
+  probabilities: readonly { value: string | boolean; probability: JsonNumber }[];
 }
 
 export interface DecisionScoreAnswer {
   type: 'score';
   name: string;
-  score: number;
+  score: JsonNumber;
   // Both dialects mark these required on a Score answer.
-  confidence: number;
+  confidence: JsonNumber;
   // Level label keyed by level number. Every System One answer carries it; the
   // OpenAI shape has no separate legend and inlines each label instead.
   legend?: Record<string, string>;
-  probabilities: readonly { value: number; label?: string; probability: number }[];
+  probabilities: readonly { value: number; label?: string; probability: JsonNumber }[];
 }
 
 // The model declined one question. The OpenAI dialect defines this answer; the

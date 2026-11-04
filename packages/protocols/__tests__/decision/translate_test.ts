@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
+import { parseJSONWithRawNumbers } from '../../src/common/json.ts';
 import { parseDecisionRequest, parseDecisionResponse, parseDecisionUsage, renderDecisionResponse, serializeDecisionRequest } from '../../src/decision/translate.ts';
 
 const choiceRequest = {
@@ -460,5 +461,21 @@ describe('refusal answers', () => {
       answers: [{ type: 'refusal', name: 'private' }],
     });
     expect(() => renderDecisionResponse('systemone', response)).toThrow(/refusal, which System One cannot express/);
+  });
+});
+
+describe('number token fidelity', () => {
+  test('a raw-number parse keeps a probability lexeme through a cross-dialect render', () => {
+    const body = parseJSONWithRawNumbers('{"answers":{"q":{"type":"noul","noul":1.0}}}') as Record<string, unknown>;
+    const response = parseDecisionResponse('systemone', body);
+    // The source wrote `1.0`; a plain JSON.parse would re-emit `1`.
+    expect(JSON.stringify(renderDecisionResponse('openai-decisions', response))).toContain('"probability":1.0');
+  });
+
+  test('a value beyond the double range survives instead of becoming null', () => {
+    const body = parseJSONWithRawNumbers('{"answers":{"q":{"type":"noul","noul":1e400}}}') as Record<string, unknown>;
+    // Infinity is not a number the contract allows, so the answer is rejected
+    // rather than silently written as null.
+    expect(() => parseDecisionResponse('systemone', body)).toThrow(/must be a finite number/);
   });
 });
