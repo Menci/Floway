@@ -1,5 +1,5 @@
 import type { JsonNumber } from '../common/json.ts';
-import type { DecisionSourceProtocol } from '../common/models.ts';
+import type { DecisionProtocol } from '../common/models.ts';
 
 // A decision request carries evidence and typed questions. Both dialects can
 // hold text, JSON, and images, so the canonical form keeps all three. A System
@@ -103,7 +103,7 @@ export interface CanonicalDecisionRequest {
   // The ingress dialect the client spoke. A request forwards to a target on the
   // same dialect opaquely; across dialects it is serialized from the canonical
   // fields below.
-  sourceProtocol: DecisionSourceProtocol;
+  sourceProtocol: DecisionProtocol;
   // The wire body as received, so a same-protocol forward can preserve vendor
   // extensions the canonical form does not model.
   raw: Record<string, unknown>;

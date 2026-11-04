@@ -12,8 +12,7 @@ import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { recordFailedRequest, recordPerformance, type PerformanceTelemetryContext } from '../shared/telemetry/performance.ts';
 import { recordUsage } from '../shared/telemetry/usage.ts';
 import { forwardUpstreamResponse } from '../shared/upstream-response.ts';
-import { parseDecimalString, parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
-import type { DecisionSourceProtocol } from '@floway-dev/protocols/common';
+import { parseDecimalString, parseJSONWithRawNumbers, type DecisionProtocol } from '@floway-dev/protocols/common';
 import { parseDecisionRequest, parseDecisionResponse, parseDecisionUsage, renderDecisionResponse, type ParsedDecisionRequest } from '@floway-dev/protocols/decision';
 import { httpResponseToResponse, ProviderModelsUnavailableError, providerModelOf, toInternalDebugError } from '@floway-dev/provider';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
@@ -51,7 +50,7 @@ const settleDecision = (
 
 const unsupportedMessage = (model: string): string => `Model ${model} does not support decision.`;
 
-export const decision = (sourceProtocol: DecisionSourceProtocol) => async (c: Context): Promise<Response> => {
+export const decision = (sourceProtocol: DecisionProtocol) => async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
   let parsedRequest: ParsedDecisionRequest;
   try {

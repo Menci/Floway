@@ -32,11 +32,6 @@ export interface RerankTarget {
 // it exists so a provider can declare it once one does.
 export const DECISION_PROTOCOLS = ['systemone', 'openai-decisions'] as const;
 export type DecisionProtocol = typeof DECISION_PROTOCOLS[number];
-// Both dialects are callable ingress: `/v1/systemone` speaks the System One
-// contract and `/v1/decisions` speaks the OpenAI Decisions one. The same pair
-// doubles as the outbound target vocabulary.
-export type DecisionSourceProtocol = DecisionProtocol;
-
 // Decision has no vendor-neutral upstream URL: Foundry serves it under a
 // resource path the OpenAI v1 base cannot express, and a compatible System One
 // server may expose any path. The operator chooses the wire protocol on each

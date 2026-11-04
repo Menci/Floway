@@ -16,7 +16,7 @@ import type {
   ParsedDecisionRequest,
 } from './index.ts';
 import { parseJsonNumber, type JsonNumber } from '../common/json.ts';
-import type { DecisionProtocol, DecisionSourceProtocol } from '../common/models.ts';
+import type { DecisionProtocol } from '../common/models.ts';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -308,7 +308,7 @@ const parseOpenAIDecisionsRequest = (value: Record<string, unknown>): CanonicalD
   return { sourceProtocol: 'openai-decisions', raw: value, state, questions };
 };
 
-export const parseDecisionRequest = (protocol: DecisionSourceProtocol, value: unknown): ParsedDecisionRequest => {
+export const parseDecisionRequest = (protocol: DecisionProtocol, value: unknown): ParsedDecisionRequest => {
   if (!isRecord(value)) throw new Error('Decision request body must be an object');
   const model = requiredString(value.model, 'model');
   switch (protocol) {
@@ -350,7 +350,7 @@ const systemOneCarrier = (): SystemOneCarrier => {
 const systemOneInstructionsValue = (
   instructions: DecisionInstructions | undefined,
   carrier: SystemOneCarrier,
-  sourceProtocol: DecisionSourceProtocol,
+  sourceProtocol: DecisionProtocol,
 ): unknown => {
   if (instructions === undefined) return undefined;
   if (sourceProtocol !== 'openai-decisions' || !Array.isArray(instructions)) return instructions;
@@ -420,7 +420,7 @@ const openAIContentParts = (parts: readonly DecisionContentPart[]): readonly Rec
 // no OpenAI form, so it is sent as its JSON text.
 // Only an OpenAI-sourced request carries content parts; a System One array is
 // structured data the model reads as given, so it is sent unchanged.
-const openAIInstructions = (instructions: DecisionInstructions | undefined, sourceProtocol: DecisionSourceProtocol): unknown => {
+const openAIInstructions = (instructions: DecisionInstructions | undefined, sourceProtocol: DecisionProtocol): unknown => {
   if (instructions === undefined) return undefined;
   if (sourceProtocol !== 'openai-decisions' || !Array.isArray(instructions)) return instructions;
   return openAIContentParts(instructions as readonly DecisionContentPart[]);
@@ -732,7 +732,7 @@ const renderOpenAIDecisionsResponse = (response: CanonicalDecisionResponse): Rec
   };
 };
 
-export const renderDecisionResponse = (protocol: DecisionSourceProtocol, response: CanonicalDecisionResponse): Record<string, unknown> => {
+export const renderDecisionResponse = (protocol: DecisionProtocol, response: CanonicalDecisionResponse): Record<string, unknown> => {
   switch (protocol) {
   case 'systemone': return renderSystemOneResponse(response);
   case 'openai-decisions': return renderOpenAIDecisionsResponse(response);
