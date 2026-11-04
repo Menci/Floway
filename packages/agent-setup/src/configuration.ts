@@ -49,10 +49,11 @@ export const agentSetupConfigurationSchema = z.object({
     // Ref: https://code.claude.com/docs/en/settings#available-settings
     disableAutoMemory: z.boolean(),
     disableAgentView: z.boolean(),
-    // The artifact opt-out writes enableArtifact: false, not the deprecated
-    // disableArtifact setting. Default only this field for saved configurations.
-    // Ref: https://code.claude.com/docs/en/settings#available-settings
-    disableArtifact: z.boolean().default(false),
+    // Claude Code honors enableArtifact: false from v2.1.242 and reads the
+    // deprecated disableArtifact: true as the same opt-out on older releases,
+    // so true writes both and false omits both managed keys.
+    // Ref: https://code.claude.com/docs/en/settings-reference#enableartifact
+    disableArtifact: z.boolean(),
     modelDiscovery: z.boolean(),
   }).strict(),
   codex: z.object({

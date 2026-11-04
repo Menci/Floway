@@ -105,6 +105,7 @@ function Write-SetupClaudeSettings {
   #       https://docs.claude.com/en/docs/claude-code/model-config#environment-variables
   #       https://docs.claude.com/en/docs/claude-code/settings
   #       https://code.claude.com/docs/en/settings#attribution-settings
+  #       https://code.claude.com/docs/en/settings-reference#enableartifact
   Set-SetupProp $document.env 'ANTHROPIC_BASE_URL' $SetupEndpoint
   Set-SetupProp $document.env 'ANTHROPIC_AUTH_TOKEN' $SetupApiKey
   Set-SetupOptionalProp $document.env 'ANTHROPIC_MODEL' $SetupClaudeModel
@@ -120,9 +121,13 @@ function Write-SetupClaudeSettings {
   else { Remove-SetupProp $document 'autoMemoryEnabled' }
   if ($SetupClaudeDisableAgentView) { Set-SetupProp $document 'disableAgentView' $true }
   else { Remove-SetupProp $document 'disableAgentView' }
-  Remove-SetupProp $document 'disableArtifact'
-  if ($SetupClaudeDisableArtifact) { Set-SetupProp $document 'enableArtifact' $false }
-  else { Remove-SetupProp $document 'enableArtifact' }
+  if ($SetupClaudeDisableArtifact) {
+    Set-SetupProp $document 'enableArtifact' $false
+    Set-SetupProp $document 'disableArtifact' $true
+  } else {
+    Remove-SetupProp $document 'enableArtifact'
+    Remove-SetupProp $document 'disableArtifact'
+  }
   if ($SetupClaudeOptOutAiAttribution) {
     if ($document.PSObject.Properties.Name -notcontains 'attribution') {
       $document | Add-Member -NotePropertyName attribution -NotePropertyValue ([PSCustomObject]@{})

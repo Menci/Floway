@@ -89,6 +89,8 @@ describe('Agent Setup snippets', () => {
       .not.toHaveProperty('attribution');
     expect(JSON.parse(buildAgentClaudeSnippet('https://floway.example', 'key', base)))
       .not.toHaveProperty('enableArtifact');
+    expect(JSON.parse(buildAgentClaudeSnippet('https://floway.example', 'key', base)))
+      .not.toHaveProperty('disableArtifact');
 
     expect(JSON.parse(buildAgentClaudeSnippet('https://floway.example', 'key', {
       ...base,
@@ -101,6 +103,7 @@ describe('Agent Setup snippets', () => {
       cleanupPeriodDays: 365,
       attribution: { commit: '', pr: '', sessionUrl: false },
       enableArtifact: false,
+      disableArtifact: true,
     });
   });
 });

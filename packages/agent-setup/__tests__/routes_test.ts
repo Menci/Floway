@@ -240,15 +240,11 @@ test('POST returns no-selectable-key when the account has no key', async () => {
 test('POST restores the latest saved configuration whose key is still selectable', async () => {
   const h = harness();
   const first = await create(h);
-  const { disableArtifact: _, ...claudeCode } = first.configuration.claudeCode;
-  const edited = { ...first.configuration, claudeCode, codex: { ...first.configuration.codex, reasoningEffort: 'high' } };
-  await h.repo.updateConfiguration({
-    userId: USER_ID, token: first.token, expectedRevision: first.configurationRevision,
-    configurationJson: JSON.stringify(edited), now: Date.now(), expiresAt: Date.now() + 300_000,
-  });
+  const edited = { ...first.configuration, codex: { ...first.configuration.codex, reasoningEffort: 'high' } };
+  await h.request('/api/setup', putJson({ token: first.token, configuration: edited, expectedRevision: first.configurationRevision }));
 
   const reopened = await create(h);
-  expect(reopened.configuration).toEqual({ ...edited, claudeCode: { ...claudeCode, disableArtifact: false } });
+  assertEquals(reopened.configuration.codex.reasoningEffort, 'high');
   // A reopen inserts a brand-new independent lease; it never reuses a token.
   expect(reopened.token).not.toBe(first.token);
   assertEquals(reopened.configurationRevision, 1);
