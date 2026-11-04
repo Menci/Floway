@@ -88,8 +88,8 @@ export type TlsStream = DuplexStream;
 interface LibraryCertificate {
   internal: { rawData: ArrayBuffer };
   getSubjectField(name: string): string[];
-  getAlternativeDNSNames?(): string[];
-  getAlternativeIPAddresses?(): string[];
+  getAlternativeDNSNames(): string[];
+  getAlternativeIPAddresses(): string[];
 }
 
 /**
@@ -120,13 +120,13 @@ export type CheckServerIdentity = (
 // the adapter's typed accessors.
 const toIdentityCertificate = (leaf: LibraryCertificate): PeerCertificateIdentity => {
   const names = [
-    ...(leaf.getAlternativeDNSNames?.() ?? []).map(name => `DNS:${name}`),
-    ...(leaf.getAlternativeIPAddresses?.() ?? []).map(address => `IP Address:${address}`),
+    ...leaf.getAlternativeDNSNames().map(name => `DNS:${name}`),
+    ...leaf.getAlternativeIPAddresses().map(address => `IP Address:${address}`),
   ];
-  const commonNames = leaf.getSubjectField('CN');
   return {
     raw: new Uint8Array(leaf.internal.rawData),
-    subject: { CN: commonNames.length > 1 ? commonNames : commonNames[0] },
+    // Node accepts a match on any repeated CN, so the array is passed intact.
+    subject: { CN: leaf.getSubjectField('CN') },
     ...(names.length === 0 ? {} : { subjectaltname: names.join(', ') }),
   };
 };

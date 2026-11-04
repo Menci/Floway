@@ -35,9 +35,9 @@ const makeIdentityCheck = (
 ) => (_servername: string, peer: tls.PeerCertificate): Error | undefined =>
   check === undefined ? tls.checkServerIdentity(identity, peer) : check(identity, peer);
 
-// `signal` is honoured at three layers: (1) pre-upgrade short-circuit, (2)
-// node:tls native abort during the handshake, (3) post-handshake
-// socket.destroy() so subsequent reads and writes reject.
+// `signal` is honoured at two layers: a pre-upgrade short-circuit, and the
+// abort wiring `tls.connect` installs on the socket for its whole lifetime —
+// handshake and streaming alike.
 export const startNodeTls = async (
   transport: DuplexStream,
   opts: TlsUpgradeOptions,
@@ -100,17 +100,6 @@ export const startNodeTls = async (
       console.debug('[tls-upgrade] post-handshake error:', err);
     }
   });
-
-  if (signal) {
-    const captured = signal;
-    const onAbort = (): void => { socket.destroy(); };
-    captured.addEventListener('abort', onAbort, { once: true });
-    socket.once('close', () => { captured.removeEventListener('abort', onAbort); });
-    // addEventListener on an already-aborted signal does not fire, so an
-    // abort that landed between the entry check and this install would
-    // otherwise be lost; drive it synchronously to close that window.
-    if (captured.aborted) onAbort();
-  }
 
   // Teardown needs no `close()` here: cancelling `readable` destroys the
   // TLS socket through its pipeline, and aborting `writable` destroys it
