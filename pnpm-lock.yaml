@@ -142,6 +142,9 @@ importers:
       '@floway-dev/test-utils':
         specifier: workspace:*
         version: link:../../packages/test-utils
+      '@peculiar/x509':
+        specifier: ^1.14.3
+        version: 1.14.3
       '@types/node':
         specifier: ^22
         version: 22.19.19

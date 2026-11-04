@@ -1,4 +1,3 @@
-import { X509Certificate } from 'node:crypto';
 import net from 'node:net';
 import { Duplex } from 'node:stream';
 import tls from 'node:tls';
@@ -29,20 +28,11 @@ const transportToDuplex = (transport: DuplexStream): Duplex => {
   return duplex;
 };
 
-// Node checks the peer against `servername` when it is set and against `host`
-// otherwise, and its hostname matcher compares `iPAddress` SANs by their
-// textual form — so `2001:db8::1` fails a SAN spelled
-// `2001:0DB8:0:0:0:0:0:1` even though both denote the same address.
-// https://github.com/nodejs/node/blob/v22.23.4/lib/tls.js#L579-L600
-// We supply the check ourselves so the reference identity is always the one
-// the caller named, and so an IP identity is compared as an address.
-const makeIdentityCheck = (identity: string) => (_servername: string, peer: tls.PeerCertificate): Error | undefined => {
-  const leaf = new X509Certificate(peer.raw);
-  const matched = net.isIP(identity) !== 0
-    ? leaf.checkIP(identity) !== undefined
-    : leaf.checkHost(identity) !== undefined;
-  return matched ? undefined : new Error(`Certificate is not for host ${identity}`);
-};
+// Node verifies the peer against `servername` when it is set and against
+// `host` otherwise, so a caller that separates the SNI name from the
+// reference identity has to supply the check itself.
+const makeIdentityCheck = (identity: string) => (_servername: string, peer: tls.PeerCertificate): Error | undefined =>
+  tls.checkServerIdentity(identity, peer);
 
 // `signal` is honoured at three layers: (1) pre-upgrade short-circuit, (2)
 // node:tls native abort during the handshake, (3) post-handshake
