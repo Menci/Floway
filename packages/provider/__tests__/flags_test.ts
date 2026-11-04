@@ -11,55 +11,18 @@ test('provider flags: every catalog id is kebab-case', () => {
   }
 });
 
-test('provider flags: resolveEffectiveFlags — no layers → empty set', () => {
-  const set = resolveEffectiveFlags([]);
-  assertEquals([...set].sort(), []);
-});
-
-test('provider flags: resolveEffectiveFlags — a layer with a true flag adds it', () => {
-  const set = resolveEffectiveFlags([{ 'strip-prompt-cache-key': true }]);
-  assertEquals([...set].sort(), ['strip-prompt-cache-key']);
-});
-
-test('provider flags: resolveEffectiveFlags — a later layer can force-off an earlier true', () => {
-  const set = resolveEffectiveFlags([
-    { 'strip-prompt-cache-key': true },
-    { 'strip-prompt-cache-key': false },
-  ]);
-  assertEquals([...set].sort(), []);
-});
-
-test('provider flags: resolveEffectiveFlags — a still-later layer can force-on again', () => {
-  const set = resolveEffectiveFlags([
-    { 'strip-prompt-cache-key': true },
-    { 'strip-prompt-cache-key': false },
-    { 'strip-prompt-cache-key': true },
-  ]);
-  assertEquals([...set].sort(), ['strip-prompt-cache-key']);
-});
-
-test('provider flags: resolveEffectiveFlags — upstream layer force-on adds a flag', () => {
-  const set = resolveEffectiveFlags([{ 'vendor-deepseek': true }]);
-  assertEquals([...set].sort(), ['vendor-deepseek']);
-});
-
-test('provider flags: resolveEffectiveFlags — model layer force-off wins over upstream force-on', () => {
-  const set = resolveEffectiveFlags([
-    { 'vendor-deepseek': true },
-    { 'vendor-deepseek': false },
-  ]);
-  assertEquals([...set].sort(), []);
-});
-
-test('provider flags: resolveEffectiveFlags — later layer wins when both set the same flag', () => {
-  const set = resolveEffectiveFlags([
-    { 'vendor-qwen': false },
-    { 'vendor-qwen': true },
-  ]);
-  assertEquals([...set].sort(), ['vendor-qwen']);
-});
-
-test('provider flags: resolveEffectiveFlags — undefined layers are skipped', () => {
-  const set = resolveEffectiveFlags([undefined, { 'strip-prompt-cache-key': true }, undefined]);
-  assertEquals([...set].sort(), ['strip-prompt-cache-key']);
+// Layer precedence is one rule applied consistently: later layers win, a `true`
+// adds, a `false` removes (including a flag an earlier layer added), and an
+// absent key inherits. Each row is one position in that order.
+test.each([
+  ['no layers', [], []],
+  ['a true flag adds it', [{ 'strip-prompt-cache-key': true }], ['strip-prompt-cache-key']],
+  ['a later layer forces off an earlier true', [{ 'strip-prompt-cache-key': true }, { 'strip-prompt-cache-key': false }], []],
+  ['a still-later layer forces on again', [{ 'strip-prompt-cache-key': true }, { 'strip-prompt-cache-key': false }, { 'strip-prompt-cache-key': true }], ['strip-prompt-cache-key']],
+  ['an upstream force-on adds a flag', [{ 'vendor-deepseek': true }], ['vendor-deepseek']],
+  ['a model force-off wins over an upstream force-on', [{ 'vendor-deepseek': true }, { 'vendor-deepseek': false }], []],
+  ['a later layer wins when both set the same flag', [{ 'vendor-qwen': false }, { 'vendor-qwen': true }], ['vendor-qwen']],
+  ['undefined layers are skipped', [undefined, { 'strip-prompt-cache-key': true }, undefined], ['strip-prompt-cache-key']],
+])('provider flags: resolveEffectiveFlags — %s', (_label, layers, expected) => {
+  assertEquals([...resolveEffectiveFlags(layers as Parameters<typeof resolveEffectiveFlags>[0])].sort(), expected);
 });
