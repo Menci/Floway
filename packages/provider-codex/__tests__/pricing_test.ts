@@ -149,3 +149,36 @@ test('Codex GPT-6 Sol and Luna resolve every published service tier and context 
     for (const [facts, rates] of grid) assertEquals(priceRequest(pricing, facts).rates, published(rates));
   }
 });
+
+test('Codex GPT-6.1 Terra prices every published lane at half of GPT-6.1 Sol', () => {
+  const pricing = pricingForCodexModelKey('gpt-6.1-terra');
+  const cases = [
+    [{ inputTokens: 272000 }, { input_tokens: '1', input_cache_read_tokens: '0.05', input_cache_write_tokens: '1.25', output_tokens: '5' }],
+    [{ inputTokens: 272001 }, { input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '7.5' }],
+    [{ serviceTier: 'priority', inputTokens: 272000 }, { input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '10' }],
+    [{ serviceTier: 'priority', inputTokens: 272001 }, { input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '15' }],
+    [{ serviceTier: 'flex', inputTokens: 272000 }, { input_tokens: '0.5', input_cache_read_tokens: '0.025', input_cache_write_tokens: '0.625', output_tokens: '2.5' }],
+    [{ serviceTier: 'flex', inputTokens: 272001 }, { input_tokens: '1', input_cache_read_tokens: '0.05', input_cache_write_tokens: '1.25', output_tokens: '3.75' }],
+  ] as const;
+
+  for (const [facts, rates] of cases) {
+    assertEquals(priceRequest(pricing, facts).rates, published(rates));
+  }
+  assertEquals(pricingForCodexModelKey('gpt-6.1-terra-fast'), null);
+});
+
+test('Codex Daybreak slugs price the models their access programs resolve to', () => {
+  // Blue is the GPT-5.6 Sol program, Red the GPT-5.6 Cyber one. Neither slug
+  // advertises a service tier, so a priority selector stays on the base rates
+  // rather than inheriting the Fast lane its underlying model sells elsewhere.
+  const blue = pricingForCodexModelKey('gpt-daybreak-blue-latest');
+  assertEquals(priceRequest(blue, { inputTokens: 272000 }).rates, published({ input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '20' }));
+  assertEquals(priceRequest(blue, { inputTokens: 272001 }).rates, published({ input_tokens: '8', input_cache_read_tokens: '0.8', input_cache_write_tokens: '10', output_tokens: '30' }));
+  assertEquals(priceRequest(blue, { serviceTier: 'priority', inputTokens: 0 }).rates, published({ input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '20' }));
+
+  const cyber = published({ input_tokens: '12.5', input_cache_read_tokens: '1.25', input_cache_write_tokens: '15.625', output_tokens: '75' });
+  const red = pricingForCodexModelKey('gpt-daybreak-red-latest');
+  assertEquals(priceRequest(red, { inputTokens: 0 }).rates, cyber);
+  // OpenAI's cyber card publishes no long-context band.
+  assertEquals(priceRequest(red, { inputTokens: 372001 }).rates, cyber);
+});

@@ -197,3 +197,22 @@ test('Copilot GPT-6 Sol and Luna price Standard and the anticipated Fast mode la
     assertEquals(priceRequest(pricing, { serviceTier: 'priority', inputTokens: 272001 }).rates, published(rates.priorityLong));
   }
 });
+
+test('Copilot prices the models its live catalog added since the last refresh', () => {
+  const rates = (id: string) => priceRequest(pricingForCopilotPublicModelId(id), { inputTokens: 0 }).rates;
+
+  const terra = pricingForCopilotPublicModelId('gpt-6.1-terra');
+  assertEquals(priceRequest(terra, { inputTokens: 272000 }).rates, published({ input_tokens: '1', input_cache_read_tokens: '0.05', input_cache_write_tokens: '1.25', output_tokens: '5' }));
+  assertEquals(priceRequest(terra, { inputTokens: 272001 }).rates, published({ input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '7.5' }));
+  // Copilot publishes no `-fast` sibling for Terra, so the lane stays unreachable.
+  assertEquals(priceRequest(terra, { serviceTier: 'priority', inputTokens: 0 }).rates, published({ input_tokens: '1', input_cache_read_tokens: '0.05', input_cache_write_tokens: '1.25', output_tokens: '5' }));
+
+  assertEquals(rates('mai-code-2'), published({ input_tokens: '1', input_cache_read_tokens: '0.05', output_tokens: '5' }));
+
+  assertEquals(rates('gpt-image-2.5-flare'), published({ input_tokens: '5', input_cache_read_tokens: '1.25', input_image_tokens: '8', output_image_tokens: '30' }));
+
+  // MAI-Code-2-Flash and microsoft-decision-1 quote zero on every metric, and a
+  // promotional zero is Copilot's charge rather than a vendor rate.
+  assertEquals(pricingForCopilotPublicModelId('mai-code-2-flash'), null);
+  assertEquals(pricingForCopilotPublicModelId('microsoft-decision-1'), null);
+});
