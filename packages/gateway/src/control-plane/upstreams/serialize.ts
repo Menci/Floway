@@ -57,6 +57,7 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
         ...(config.pathOverrides !== undefined ? { pathOverrides: clone(config.pathOverrides) } : {}),
         ingressHeadersRules: clone(config.ingressHeadersRules),
         modelsFetch: clone(config.modelsFetch),
+        ...(config.useOfficialPricing !== undefined ? { useOfficialPricing: config.useOfficialPricing } : {}),
         models: clone(config.models),
         apiKeySet: config.authStyle !== 'none' && hasSecret(config.apiKey),
       },

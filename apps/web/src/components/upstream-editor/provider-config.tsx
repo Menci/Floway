@@ -133,6 +133,14 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
         </Field>
       )} />
       {authStyle !== 'none' && <SecretField readOnly={readOnly} />}
+      <Controller control={control} name="config.useOfficialPricing" render={({ field }) => (
+        <Switch
+          checked={field.value === true}
+          readOnly={readOnly}
+          label={t('dashboard.upstreamEditor.fields.useOfficialPricing')}
+          onChange={(_, data) => field.onChange(data.checked)}
+        />
+      )} />
       <Controller control={control} name="config.modelsFetch.enabled" render={({ field }) => (
         <Switch
           checked={field.value}

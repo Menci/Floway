@@ -1,3 +1,4 @@
+import { withReferencePricing } from '../data-plane/providers/reference-pricing.ts';
 import { createPreviewProvider } from '../data-plane/providers/registry.ts';
 import { createPerRequestFetcher, createValidatedPerRequestFetcher, InvalidProxyConfigurationError } from '../dial/per-request.ts';
 import { getRepo } from '../repo/index.ts';
@@ -148,9 +149,13 @@ const discoverModels = async (record: UpstreamRecord, fetcher: Fetcher, fetchCus
 }> => await withRedactedCredentialEcho(fetcher, async trackedFetcher => {
   if (record.kind === 'custom') {
     const custom = assertCustomUpstreamRecord(record);
-    if (!fetchCustomLive && !custom.config.modelsFetch.enabled) return { models: projectCustomModels(record), discovered: [] };
-    const response = await fetchCustomModels(custom.config, trackedFetcher);
-    return { models: projectCustomModels(record, response), discovered: projectCustomDiscoveredModels(record, response) };
+    const response = fetchCustomLive || custom.config.modelsFetch.enabled
+      ? await fetchCustomModels(custom.config, trackedFetcher)
+      : undefined;
+    return {
+      models: withReferencePricing(projectCustomModels(record, response), custom.config.useOfficialPricing),
+      discovered: response === undefined ? [] : projectCustomDiscoveredModels(record, response),
+    };
   }
   return { models: [...await createPreviewProvider(record).instance.getProvidedModels(trackedFetcher)] };
 });
