@@ -11,6 +11,9 @@ const stubSocketDial: SocketDial = {
   connect: async () => {
     throw new Error('stub: per-request_test should not reach a real dial');
   },
+  startTls: async () => {
+    throw new Error('stub: per-request_test should not reach a real dial');
+  },
 };
 
 const COPILOT_CONFIG = {

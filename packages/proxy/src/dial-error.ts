@@ -11,14 +11,14 @@
 //                        out of 1..65535, …). No TCP slot was burned.
 //   'tcp-connect'      — TCP-level connect to the proxy / direct upstream
 //                        failed (refused, unreachable, deadline).
-//   'outer-tls'        — userspace TLS handshake to the proxy itself failed
-//                        (Trojan / REALITY outer leg). The proxy server saw
-//                        a TLS attempt but rejected it.
+//   'outer-tls'        — TLS handshake to the proxy itself failed (Trojan /
+//                        REALITY outer leg). The proxy server saw a TLS
+//                        attempt but rejected it.
 //   'proxy-handshake'  — proxy spoke its protocol back but framed a refusal
 //                        (CONNECT 4xx, SOCKS5 reply error, SS / SS2022 /
 //                        VLESS bad reply, REALITY HMAC mismatch).
-//   'inner-tls'        — userspace TLS handshake to the upstream over the
-//                        proxy's post-handshake stream failed.
+//   'inner-tls'        — TLS handshake to the upstream over the proxy's
+//                        post-handshake stream failed.
 
 export class ProxyDialError extends Error {
   override readonly name = 'ProxyDialError';

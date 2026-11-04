@@ -4,8 +4,9 @@ import * as reclaimTls from '@reclaimprotocol/tls';
 import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 import { describe, expect, it } from 'vitest';
 
+import { connectRaw, startFixtureTlsServer } from './test-utils/tls-server.ts';
 import { makeFakeDuplex } from './test-utils.ts';
-import { addTrustedRootCAs, userspaceTls } from '../src/tls.ts';
+import { userspaceTls } from '../src/tls.ts';
 
 const { loadX509FromPem, setCryptoImplementation, verifyCertificateChain } = reclaimTls;
 
@@ -299,8 +300,6 @@ describe('userspaceTls — prefix coalescing', () => {
   });
 });
 
-interface TrustGlobals { TLS_ADDITIONAL_ROOT_CA_LIST?: string[] }
-
 const quietLogger = {
   trace() {},
   debug() {},
@@ -394,20 +393,71 @@ describe('userspaceTls — certificate reference identity', () => {
   });
 });
 
-describe('addTrustedRootCAs', () => {
-  it('deduplicates additions against the existing global list', () => {
-    const g = globalThis as unknown as TrustGlobals;
-    g.TLS_ADDITIONAL_ROOT_CA_LIST = [];
-    const pem = '-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----';
-    addTrustedRootCAs([pem, pem]);
-    addTrustedRootCAs([pem]);
-    expect(g.TLS_ADDITIONAL_ROOT_CA_LIST).toEqual([pem]);
+describe('userspaceTls — checkServerIdentity', () => {
+  // The fixture's leaf chains to no root the library ships. A case that
+  // expects the callback's error therefore also proves the ordering: the
+  // callback runs before chain validation, which would otherwise reject first.
+  it('receives verifyHost and the presented leaf, and can reject', async () => {
+    const seen: Array<{ identity: string; cn: unknown; san: string | undefined }> = [];
+    const chain = await startFixtureTlsServer();
+    try {
+      await expect(userspaceTls(await connectRaw(chain.port), {
+        host: 'localhost',
+        verifyHost: 'api.example.test',
+        checkServerIdentity: (identity, certificate) => {
+          seen.push({ identity, cn: certificate.subject.CN, san: certificate.subjectaltname });
+          return new Error('stop after observing');
+        },
+      })).rejects.toThrow(/stop after observing/);
+    } finally {
+      await chain.close();
+    }
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.identity).toBe('api.example.test');
+    expect(seen[0]!.san).toContain('DNS:localhost');
+    expect(seen[0]!.san).toContain('DNS:api.example.test');
   });
 
-  it('initialises the global list if it is missing', () => {
-    const g = globalThis as unknown as TrustGlobals;
-    delete g.TLS_ADDITIONAL_ROOT_CA_LIST;
-    addTrustedRootCAs(['pem-a']);
-    expect(g.TLS_ADDITIONAL_ROOT_CA_LIST).toEqual(['pem-a']);
+  it('reports the callback error rather than the chain failure behind it', async () => {
+    // Ordering proof: the leaf is untrusted, so a callback that never ran
+    // would surface the chain error ("Missing issuer for certificate …").
+    const chain = await startFixtureTlsServer();
+    try {
+      await expect(userspaceTls(await connectRaw(chain.port), {
+        host: 'localhost',
+        checkServerIdentity: () => new Error('identity rejected by the caller'),
+      })).rejects.toThrow(/identity rejected by the caller/);
+    } finally {
+      await chain.close();
+    }
+  });
+
+  it('still enforces chain trust when the callback accepts', async () => {
+    const chain = await startFixtureTlsServer();
+    try {
+      await expect(userspaceTls(await connectRaw(chain.port), {
+        host: 'localhost',
+        verifyHost: 'not-in-the-certificate.example',
+        checkServerIdentity: () => undefined,
+      })).rejects.toThrow(/does not chain to a trusted root|Missing issuer/);
+    } finally {
+      await chain.close();
+    }
+  });
+
+  it('cannot be bypassed by insecure', async () => {
+    const chain = await startFixtureTlsServer();
+    let calls = 0;
+    try {
+      const secure = await userspaceTls(await connectRaw(chain.port), {
+        host: 'localhost',
+        insecure: true,
+        checkServerIdentity: () => { calls++; return undefined; },
+      });
+      await secure.readable.cancel();
+    } finally {
+      await chain.close();
+    }
+    expect(calls).toBe(0);
   });
 });
