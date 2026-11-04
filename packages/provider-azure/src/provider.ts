@@ -68,7 +68,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
           opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
           // A Foundry decision deployment answers the System One contract; the
           // dialect is not the operator's to choose.
-          ...(kind === 'decision' ? { decisionTarget: { protocol: 'systemone' as const } } : {}),
+          ...(kind === 'decision' ? { decisionTarget: { protocol: 'typesafe-systemone' as const } } : {}),
         };
       }));
     },

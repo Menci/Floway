@@ -7,7 +7,7 @@ import {
   parseStoredJson,
   preserveDecodedStoredJsonProperties,
 } from './stored-json.ts';
-import { BILLING_METRICS, DECISION_PROTOCOLS,  MODEL_KINDS, RERANK_PROTOCOLS, parseNonNegativeDecimalString } from '@floway-dev/protocols/common';
+import { BILLING_METRICS, DECISION_PROTOCOLS, MODEL_KINDS, RERANK_PROTOCOLS, parseNonNegativeDecimalString } from '@floway-dev/protocols/common';
 import type { ModelPrefixConfig, ProxyFallbackEntry, UpstreamModelsCache } from '@floway-dev/provider';
 import { OPTIONAL_FLAG_IDS } from '@floway-dev/provider/flags';
 

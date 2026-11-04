@@ -1231,7 +1231,7 @@ test('the TypeSafe SDK user agent receives the { models } catalog its parsers re
         publicModelId: 'jev-1.13',
         kind: 'decision',
         endpoints: { decision: {} },
-        decisionTarget: { protocol: 'systemone' },
+        decisionTarget: { protocol: 'typesafe-systemone' },
       }],
     },
   }));

@@ -313,9 +313,9 @@ describe('modelsField decision targets', () => {
       upstreamModelId: 'decision-1',
       kind: 'decision',
       endpoints: { decision: {} },
-      decisionTarget: { protocol: 'systemone', path: ' /providers/microsoft/v1/systemone ' },
+      decisionTarget: { protocol: 'typesafe-systemone', path: ' /providers/microsoft/v1/systemone ' },
     }], 'p');
-    expect(model.decisionTarget).toEqual({ protocol: 'systemone', path: '/providers/microsoft/v1/systemone' });
+    expect(model.decisionTarget).toEqual({ protocol: 'typesafe-systemone', path: '/providers/microsoft/v1/systemone' });
   });
 
   test('rejects a decision target on a model that is not decision', () => {
@@ -323,7 +323,7 @@ describe('modelsField decision targets', () => {
       upstreamModelId: 'chat',
       kind: 'chat',
       endpoints: { openaiChatCompletions: {} },
-      decisionTarget: { protocol: 'systemone' },
+      decisionTarget: { protocol: 'typesafe-systemone' },
     }], 'p')).toThrow(/decisionTarget is only allowed/);
   });
 

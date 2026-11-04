@@ -17,7 +17,7 @@ const choiceRequest = {
 
 describe('decision request ingress', () => {
   test('parses a System One body into canonical questions', () => {
-    const parsed = parseDecisionRequest('systemone', choiceRequest);
+    const parsed = parseDecisionRequest('typesafe-systemone', choiceRequest);
     expect(parsed.model).toBe('microsoft-decision-1');
     expect(parsed.request.state).toEqual({ kind: 'text', value: 'The API returns 500 on every call.' });
     expect(parsed.request.questions).toEqual([
@@ -34,7 +34,7 @@ describe('decision request ingress', () => {
   });
 
   test('keeps noul criteria and score levels', () => {
-    const parsed = parseDecisionRequest('systemone', {
+    const parsed = parseDecisionRequest('typesafe-systemone', {
       model: 'jev-1.13',
       state: { ticket: 'I want a refund' },
       questions: {
@@ -56,7 +56,7 @@ describe('decision request ingress', () => {
   });
 
   test('rejects a choice question outside the 2-255 option bound', () => {
-    expect(() => parseDecisionRequest('systemone', {
+    expect(() => parseDecisionRequest('typesafe-systemone', {
       model: 'm',
       state: 's',
       questions: { q: { type: 'choice', instructions: 'i', criteria: { only: null } } },
@@ -64,7 +64,7 @@ describe('decision request ingress', () => {
   });
 
   test('rejects a score question outside the 2-10 level bound', () => {
-    expect(() => parseDecisionRequest('systemone', {
+    expect(() => parseDecisionRequest('typesafe-systemone', {
       model: 'm',
       state: 's',
       questions: { q: { type: 'score', instructions: 'i', criteria: ['one'] } },
@@ -72,15 +72,15 @@ describe('decision request ingress', () => {
   });
 
   test('rejects unknown top-level arguments the way System One does', () => {
-    expect(() => parseDecisionRequest('systemone', { ...choiceRequest, stream: true })).toThrow(/does not support stream/);
+    expect(() => parseDecisionRequest('typesafe-systemone', { ...choiceRequest, stream: true })).toThrow(/does not support stream/);
   });
 
   test('rejects questions as an array', () => {
-    expect(() => parseDecisionRequest('systemone', { model: 'm', state: 's', questions: [] })).toThrow(/questions must be an object/);
+    expect(() => parseDecisionRequest('typesafe-systemone', { model: 'm', state: 's', questions: [] })).toThrow(/questions must be an object/);
   });
 
   test('rejects an unsupported question type', () => {
-    expect(() => parseDecisionRequest('systemone', {
+    expect(() => parseDecisionRequest('typesafe-systemone', {
       model: 'm',
       state: 's',
       questions: { q: { type: 'predicate', instructions: 'i' } },
@@ -90,13 +90,13 @@ describe('decision request ingress', () => {
 
 describe('decision request serialization', () => {
   test('a same-protocol forward preserves the raw body and vendor extensions', () => {
-    const parsed = parseDecisionRequest('systemone', choiceRequest);
-    const wire = serializeDecisionRequest('systemone', 'microsoft-decision-1', parsed.request);
+    const parsed = parseDecisionRequest('typesafe-systemone', choiceRequest);
+    const wire = serializeDecisionRequest('typesafe-systemone', 'microsoft-decision-1', parsed.request);
     expect(wire).toEqual(choiceRequest);
   });
 
   test('the OpenAI dialect renames noul to predicate and expands criteria', () => {
-    const parsed = parseDecisionRequest('systemone', {
+    const parsed = parseDecisionRequest('typesafe-systemone', {
       model: 'jev-1.13',
       state: 's',
       questions: {
@@ -141,7 +141,7 @@ describe('decision response parsing', () => {
       },
       usage: { input_tokens: 56, output_tokens: 1 },
     };
-    const response = parseDecisionResponse('systemone', body);
+    const response = parseDecisionResponse('typesafe-systemone', body);
     expect(response.model).toBe('microsoft-decision-1');
     expect(response.answers).toEqual([
       {
@@ -159,7 +159,7 @@ describe('decision response parsing', () => {
   });
 
   test('keeps score legend and full-precision numbers', () => {
-    const response = parseDecisionResponse('systemone', {
+    const response = parseDecisionResponse('typesafe-systemone', {
       answers: {
         s: {
           confidence: 0.9482735850747837,
@@ -184,7 +184,7 @@ describe('decision response parsing', () => {
   });
 
   test('noul carries no confidence', () => {
-    const response = parseDecisionResponse('systemone', {
+    const response = parseDecisionResponse('typesafe-systemone', {
       answers: { r: { noul: 0.9988304897966891, type: 'noul' } },
     });
     expect(response.answers[0]).toEqual({ type: 'noul', name: 'r', noul: 0.9988304897966891 });
@@ -214,7 +214,7 @@ describe('decision response rendering', () => {
       answers: [{ type: 'predicate', name: 'damage', probability: 0.92 }],
       usage: { input_tokens: 12, output_tokens: 0 },
     });
-    expect(renderDecisionResponse('systemone', response)).toEqual({
+    expect(renderDecisionResponse('typesafe-systemone', response)).toEqual({
       model: 'gpt-6-luna',
       answers: { damage: { type: 'noul', noul: 0.92 } },
       usage: { input_tokens: 12, output_tokens: 0 },
@@ -253,7 +253,7 @@ describe('OpenAI Decisions ingress', () => {
   });
 
   test('renders an OpenAI answer array from a System One target response', () => {
-    const response = parseDecisionResponse('systemone', {
+    const response = parseDecisionResponse('typesafe-systemone', {
       answers: {
         is_bug: { type: 'noul', noul: 0.92 },
         team: { type: 'choice', choice: 'billing', confidence: 0.93, probabilities: { billing: 0.95, other: 0.05 } },
@@ -310,7 +310,7 @@ describe('protocol-standard fields', () => {
       questions: [{ type: 'choice', name: 'q', instructions: 'i', choices: [{ value: true }, { value: 'true' }] }],
     });
     // It cannot be lowered to System One, whose option keys are strings.
-    expect(() => serializeDecisionRequest('systemone', 'raw', parsed.request)).toThrow(/collapse to the same System One label/);
+    expect(() => serializeDecisionRequest('typesafe-systemone', 'raw', parsed.request)).toThrow(/collapse to the same System One label/);
   });
 
   test('keeps score level descriptions through OpenAI ingress and rendering', () => {
@@ -355,7 +355,7 @@ describe('image evidence', () => {
 
   test('lowers image parts into System One assets', () => {
     const parsed = parseDecisionRequest('openai-decisions', imageRequest);
-    const wire = serializeDecisionRequest('systemone', 'raw', parsed.request) as {
+    const wire = serializeDecisionRequest('typesafe-systemone', 'raw', parsed.request) as {
       state: unknown; assets: Record<string, { format: string; data_base64: string }>;
     };
     expect(wire.assets).toEqual({ 'image-0': { type: 'image', format: 'png', data_base64: 'AAAA' } });
@@ -363,7 +363,7 @@ describe('image evidence', () => {
   });
 
   test('lifts System One assets back into image parts', () => {
-    const parsed = parseDecisionRequest('systemone', {
+    const parsed = parseDecisionRequest('typesafe-systemone', {
       model: 'm',
       state: { photo: 'img-1' },
       assets: { 'img-1': { type: 'image', format: 'jpg', data_base64: 'BBBB' } },
@@ -401,19 +401,19 @@ describe('image evidence', () => {
 
 describe('required answer fields', () => {
   test('a Choice answer missing confidence is a broken response', () => {
-    expect(() => parseDecisionResponse('systemone', {
+    expect(() => parseDecisionResponse('typesafe-systemone', {
       answers: { q: { type: 'choice', choice: 'a', probabilities: { a: 1 } } },
     })).toThrow(/answers\.q\.confidence/);
   });
 
   test('a Choice answer missing probabilities is a broken response', () => {
-    expect(() => parseDecisionResponse('systemone', {
+    expect(() => parseDecisionResponse('typesafe-systemone', {
       answers: { q: { type: 'choice', choice: 'a', confidence: 1 } },
     })).toThrow(/answers\.q\.probabilities/);
   });
 
   test('a Score answer missing confidence is a broken response', () => {
-    expect(() => parseDecisionResponse('systemone', {
+    expect(() => parseDecisionResponse('typesafe-systemone', {
       answers: { q: { type: 'score', score: 1, probabilities: { '0': 1 }, legend: { '0': 'low' } } },
     })).toThrow(/answers\.q\.confidence/);
   });
@@ -428,7 +428,7 @@ describe('required answer fields', () => {
   });
 
   test('a noul answer has no confidence, and none is required', () => {
-    const response = parseDecisionResponse('systemone', { answers: { q: { type: 'noul', noul: 0.5 } } });
+    const response = parseDecisionResponse('typesafe-systemone', { answers: { q: { type: 'noul', noul: 0.5 } } });
     expect(response.answers[0]).toEqual({ type: 'noul', name: 'q', noul: 0.5 });
   });
 });
@@ -460,14 +460,14 @@ describe('refusal answers', () => {
     const response = parseDecisionResponse('openai-decisions', {
       answers: [{ type: 'refusal', name: 'private' }],
     });
-    expect(() => renderDecisionResponse('systemone', response)).toThrow(/refusal, which System One cannot express/);
+    expect(() => renderDecisionResponse('typesafe-systemone', response)).toThrow(/refusal, which System One cannot express/);
   });
 });
 
 describe('number token fidelity', () => {
   test('a raw-number parse keeps a probability lexeme through a cross-dialect render', () => {
     const body = parseJSONWithRawNumbers('{"answers":{"q":{"type":"noul","noul":1.0}}}') as Record<string, unknown>;
-    const response = parseDecisionResponse('systemone', body);
+    const response = parseDecisionResponse('typesafe-systemone', body);
     // The source wrote `1.0`; a plain JSON.parse would re-emit `1`.
     expect(JSON.stringify(renderDecisionResponse('openai-decisions', response))).toContain('"probability":1.0');
   });
@@ -476,19 +476,19 @@ describe('number token fidelity', () => {
     const body = parseJSONWithRawNumbers('{"answers":{"q":{"type":"noul","noul":1e400}}}') as Record<string, unknown>;
     // Infinity is not a number the contract allows, so the answer is rejected
     // rather than silently written as null.
-    expect(() => parseDecisionResponse('systemone', body)).toThrow(/must be a finite number/);
+    expect(() => parseDecisionResponse('typesafe-systemone', body)).toThrow(/must be a finite number/);
   });
 });
 
 describe('structured descriptions', () => {
   test('a structured instruction reaches a System One target as given', () => {
-    const parsed = parseDecisionRequest('systemone', {
+    const parsed = parseDecisionRequest('typesafe-systemone', {
       model: 'jev-1.13',
       state: 'x',
       questions: { q: { type: 'noul', instructions: { question: 'Is it urgent?', context: { plan: 'pro' } } } },
     });
     expect(parsed.request.questions[0].instructions).toEqual({ question: 'Is it urgent?', context: { plan: 'pro' } });
-    const wire = serializeDecisionRequest('systemone', 'm', parsed.request) as { questions: Record<string, { instructions: unknown }> };
+    const wire = serializeDecisionRequest('typesafe-systemone', 'm', parsed.request) as { questions: Record<string, { instructions: unknown }> };
     expect(wire.questions.q.instructions).toEqual({ question: 'Is it urgent?', context: { plan: 'pro' } });
   });
 
@@ -500,12 +500,12 @@ describe('structured descriptions', () => {
         q: { type: 'choice', instructions: 'i', criteria: { a: { what: 'A', not_for: 'B' }, b: null } },
       },
     };
-    const parsed = parseDecisionRequest('systemone', body);
-    expect(serializeDecisionRequest('systemone', 'm', parsed.request)).toEqual({ ...body, model: 'm' });
+    const parsed = parseDecisionRequest('typesafe-systemone', body);
+    expect(serializeDecisionRequest('typesafe-systemone', 'm', parsed.request)).toEqual({ ...body, model: 'm' });
   });
 
   test('a structured score level stays structured', () => {
-    const parsed = parseDecisionRequest('systemone', {
+    const parsed = parseDecisionRequest('typesafe-systemone', {
       model: 'jev-1.13', state: 'x',
       questions: { q: { type: 'score', instructions: 'i', criteria: [{ level: 'low' }, 'high'] } },
     });
@@ -513,7 +513,7 @@ describe('structured descriptions', () => {
   });
 
   test('a structured legend value comes back structured', () => {
-    const response = parseDecisionResponse('systemone', {
+    const response = parseDecisionResponse('typesafe-systemone', {
       answers: { q: { type: 'score', score: 1, confidence: 0.9, legend: { '0': { level: 'low' }, '1': 'high' }, probabilities: { '0': 0.2, '1': 0.8 } } },
     });
     expect(response.answers[0]).toMatchObject({ legend: { '0': { level: 'low' }, '1': 'high' } });
@@ -522,7 +522,7 @@ describe('structured descriptions', () => {
 
 describe('optional instructions', () => {
   test('a question may omit instructions and carry its meaning in criteria', () => {
-    const parsed = parseDecisionRequest('systemone', {
+    const parsed = parseDecisionRequest('typesafe-systemone', {
       model: 'jev-1.13',
       state: 'x',
       questions: { q: { type: 'noul', criteria: { true: 'Is advertising', false: 'Is legitimate' } } },
@@ -533,12 +533,12 @@ describe('optional instructions', () => {
       criteria: { true: 'Is advertising', false: 'Is legitimate' },
     });
     // The key stays absent rather than becoming null or ''.
-    const wire = serializeDecisionRequest('systemone', 'm', parsed.request) as { questions: Record<string, Record<string, unknown>> };
+    const wire = serializeDecisionRequest('typesafe-systemone', 'm', parsed.request) as { questions: Record<string, Record<string, unknown>> };
     expect('instructions' in wire.questions.q).toBe(false);
   });
 
   test('explicit null instructions are accepted too', () => {
-    const parsed = parseDecisionRequest('systemone', {
+    const parsed = parseDecisionRequest('typesafe-systemone', {
       model: 'jev-1.13', state: 'x',
       questions: { q: { type: 'noul', instructions: null, criteria: { true: 'yes' } } },
     });
@@ -546,7 +546,7 @@ describe('optional instructions', () => {
   });
 
   test('null Noul criteria is accepted', () => {
-    const parsed = parseDecisionRequest('systemone', {
+    const parsed = parseDecisionRequest('typesafe-systemone', {
       model: 'jev-1.13', state: 'x',
       questions: { q: { type: 'noul', instructions: 'Is it urgent?', criteria: null } },
     });
@@ -556,12 +556,12 @@ describe('optional instructions', () => {
 
 describe('instruction shape follows the source dialect, not the contents', () => {
   test('a System One instruction array is structured data even when items carry `type`', () => {
-    const parsed = parseDecisionRequest('systemone', {
+    const parsed = parseDecisionRequest('typesafe-systemone', {
       model: 'jev-1.13',
       state: 'x',
       questions: { q: { type: 'noul', instructions: [{ type: 'fact', text: 'a' }, { type: 'fact', text: 'b' }] } },
     });
-    const wire = serializeDecisionRequest('systemone', 'm', parsed.request) as { questions: Record<string, { instructions: unknown }> };
+    const wire = serializeDecisionRequest('typesafe-systemone', 'm', parsed.request) as { questions: Record<string, { instructions: unknown }> };
     // Not converted into input_text/input_image parts.
     expect(wire.questions.q.instructions).toEqual([{ type: 'fact', text: 'a' }, { type: 'fact', text: 'b' }]);
   });
@@ -576,7 +576,7 @@ describe('instruction shape follows the source dialect, not the contents', () =>
         instructions: [{ type: 'input_text', text: 'look' }, { type: 'input_image', image_url: 'data:image/png;base64,AA' }],
       }],
     });
-    const wire = serializeDecisionRequest('systemone', 'm', parsed.request) as {
+    const wire = serializeDecisionRequest('typesafe-systemone', 'm', parsed.request) as {
       questions: Record<string, { instructions: unknown }>;
       assets?: Record<string, unknown>;
     };

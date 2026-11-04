@@ -39,7 +39,7 @@ const INITIAL_RERANK_TARGET: RerankTarget = { protocol: 'cohere-v2' };
 // A new decision row starts on the System One contract, which every reachable
 // provider serves; the operator changes the dialect only for an OpenAI Decisions
 // target. An upstream that knows its own dialect fills the same default in.
-const INITIAL_DECISION_TARGET: DecisionTarget = { protocol: 'systemone' };
+const INITIAL_DECISION_TARGET: DecisionTarget = { protocol: 'typesafe-systemone' };
 
 // What a discovered model declares when it names no kind of its own, or names
 // `chat`. The gateway hands both the upstream's configured map unchanged

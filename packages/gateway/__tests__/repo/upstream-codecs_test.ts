@@ -38,7 +38,7 @@ test('stored model cache round-trips a decision target', () => {
       endpoints: { decision: {} },
       opaqueBlobCompatibilityScope: { bindToUpstream: true },
       enabledFlags: new Set(),
-      decisionTarget: { protocol: 'systemone', path: '/providers/microsoft/v1/systemone' },
+      decisionTarget: { protocol: 'typesafe-systemone', path: '/providers/microsoft/v1/systemone' },
     }],
     lastError: null,
   };

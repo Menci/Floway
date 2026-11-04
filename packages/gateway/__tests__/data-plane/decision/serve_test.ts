@@ -55,7 +55,7 @@ const openAIShape = {
 
 test('/v1/systemone forwards a System One request and records input tokens', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await saveDecisionUpstream(repo, { protocol: 'systemone' }, { entries: [{ rates: { input_tokens: '0.000042' } }] });
+  await saveDecisionUpstream(repo, { protocol: 'typesafe-systemone' }, { entries: [{ rates: { input_tokens: '0.000042' } }] });
 
   let upstreamRequest: Request | undefined;
   await withMockedFetch(
@@ -99,7 +99,7 @@ test('/v1/systemone forwards a System One request and records input tokens', asy
 
 test('/v1/systemone rejects an unknown model with 404 and a wrong-kind model with 400', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await saveDecisionUpstream(repo, { protocol: 'systemone' });
+  await saveDecisionUpstream(repo, { protocol: 'typesafe-systemone' });
 
   const missing = await requestAppWithWarmModels('/v1/systemone', {
     method: 'POST',
@@ -118,7 +118,7 @@ test('/v1/systemone rejects an unknown model with 404 and a wrong-kind model wit
 
 test('/v1/systemone rejects a malformed body before any upstream call', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await saveDecisionUpstream(repo, { protocol: 'systemone' });
+  await saveDecisionUpstream(repo, { protocol: 'typesafe-systemone' });
 
   const response = await requestAppWithWarmModels('/v1/systemone', {
     method: 'POST',
@@ -130,7 +130,7 @@ test('/v1/systemone rejects a malformed body before any upstream call', async ()
 
 test('/v1/decisions accepts the OpenAI shape and translates to a System One target', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await saveDecisionUpstream(repo, { protocol: 'systemone' });
+  await saveDecisionUpstream(repo, { protocol: 'typesafe-systemone' });
 
   let upstreamRequest: Request | undefined;
   await withMockedFetch(
@@ -218,7 +218,7 @@ test('/v1/decisions forwards opaquely to a target on the same dialect', async ()
 
 test('/v1/decisions lowers image evidence into System One assets', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await saveDecisionUpstream(repo, { protocol: 'systemone' });
+  await saveDecisionUpstream(repo, { protocol: 'typesafe-systemone' });
 
   let upstreamRequest: Request | undefined;
   await withMockedFetch(
@@ -253,7 +253,7 @@ test('/v1/decisions lowers image evidence into System One assets', async () => {
 
 test('/v1/systemone forwards an assets-bearing body verbatim to a System One target', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await saveDecisionUpstream(repo, { protocol: 'systemone' });
+  await saveDecisionUpstream(repo, { protocol: 'typesafe-systemone' });
 
   const body = {
     model: 'public-decision',
@@ -286,7 +286,7 @@ test('/v1/decisions surfaces a cross-dialect upstream body it cannot parse', asy
   const { apiKey, repo } = await setupAppTest();
   // The client speaks OpenAI Decisions; the target speaks System One, so the
   // upstream body must be translated — an unparseable one cannot be forwarded.
-  await saveDecisionUpstream(repo, { protocol: 'systemone' });
+  await saveDecisionUpstream(repo, { protocol: 'typesafe-systemone' });
 
   await withMockedFetch(
     () => new Response('upstream is unavailable', { status: 200, headers: { 'content-type': 'text/plain' } }),
@@ -307,7 +307,7 @@ test('/v1/decisions surfaces a cross-dialect upstream body it cannot parse', asy
 
 test('/v1/systemone forwards an unparseable same-dialect body verbatim', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await saveDecisionUpstream(repo, { protocol: 'systemone' });
+  await saveDecisionUpstream(repo, { protocol: 'typesafe-systemone' });
 
   await withMockedFetch(
     () => new Response('opaque upstream bytes', { status: 200, headers: { 'content-type': 'text/plain' } }),

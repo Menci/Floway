@@ -45,7 +45,7 @@ const SCORE_LEVEL_MAX = 10;
 // string written where the image belongs. This gateway reads the base64 PNG or
 // JPEG form.
 // https://docs.typesafe.ai/images
-const systemOneAssetImage = (reference: string, assets: unknown): DecisionImagePart | undefined => {
+const typesafeSystemOneAssetImage = (reference: string, assets: unknown): DecisionImagePart | undefined => {
   if (!isRecord(assets) || !Object.hasOwn(assets, reference)) return undefined;
   const asset = assets[reference];
   if (!isRecord(asset) || (asset.type !== undefined && asset.type !== 'image')) return undefined;
@@ -61,7 +61,7 @@ const collectAssetImages = (value: unknown, assets: unknown): DecisionImagePart[
   const walk = (node: unknown): void => {
     if (typeof node === 'string') {
       if (seen.has(node)) return;
-      const image = systemOneAssetImage(node, assets);
+      const image = typesafeSystemOneAssetImage(node, assets);
       if (image !== undefined) {
         seen.add(node);
         found.push(image);
@@ -149,10 +149,10 @@ const SYSTEMONE_TOP_LEVEL_FIELDS = new Set(['model', 'state', 'questions', 'asse
 // asset reference becomes that image. Omitted and null both mean "no
 // instructions": both SDKs type it as optional and nullable, so a question may
 // carry its whole meaning in `criteria`.
-const systemOneInstructions = (value: unknown, field: string, assets: unknown): DecisionInstructions | undefined => {
+const typesafeSystemOneInstructions = (value: unknown, field: string, assets: unknown): DecisionInstructions | undefined => {
   if (value === undefined || value === null) return undefined;
   if (typeof value === 'string') {
-    const image = systemOneAssetImage(value, assets);
+    const image = typesafeSystemOneAssetImage(value, assets);
     return image === undefined ? value : [image];
   }
   if (isRecord(value)) return value;
@@ -162,9 +162,9 @@ const systemOneInstructions = (value: unknown, field: string, assets: unknown): 
 
 // A whole-string asset reference becomes an image part; a structured state keeps
 // its shape and carries the images its references resolved to.
-const systemOneState = (state: unknown, assets: unknown): DecisionState => {
+const typesafeSystemOneState = (state: unknown, assets: unknown): DecisionState => {
   if (typeof state === 'string') {
-    const image = systemOneAssetImage(state, assets);
+    const image = typesafeSystemOneAssetImage(state, assets);
     return image === undefined ? { kind: 'text', value: state } : { kind: 'parts', parts: [image] };
   }
   if (isRecord(state) || Array.isArray(state)) {
@@ -174,8 +174,8 @@ const systemOneState = (state: unknown, assets: unknown): DecisionState => {
   throw new Error('state must be a string, an object, or an array');
 };
 
-const systemOneNoul = (name: string, value: Record<string, unknown>, assets: unknown): DecisionNoulQuestion => {
-  const instructions = systemOneInstructions(value.instructions, `questions.${name}.instructions`, assets);
+const typesafeSystemOneNoul = (name: string, value: Record<string, unknown>, assets: unknown): DecisionNoulQuestion => {
+  const instructions = typesafeSystemOneInstructions(value.instructions, `questions.${name}.instructions`, assets);
   // `null` is the SDK's explicit "no criteria", equivalent to omitting it.
   if (value.criteria === undefined || value.criteria === null) return { type: 'noul', name, instructions };
   if (!isRecord(value.criteria)) throw new Error(`questions.${name}.criteria must be an object`);
@@ -198,8 +198,8 @@ const systemOneNoul = (name: string, value: Record<string, unknown>, assets: unk
   };
 };
 
-const systemOneChoice = (name: string, value: Record<string, unknown>, assets: unknown): DecisionChoiceQuestion => {
-  const instructions = systemOneInstructions(value.instructions, `questions.${name}.instructions`, assets);
+const typesafeSystemOneChoice = (name: string, value: Record<string, unknown>, assets: unknown): DecisionChoiceQuestion => {
+  const instructions = typesafeSystemOneInstructions(value.instructions, `questions.${name}.instructions`, assets);
   if (!isRecord(value.criteria)) throw new Error(`questions.${name}.criteria must be an object`);
   const options: DecisionChoiceOption[] = Object.entries(value.criteria).map(([option, description]) => {
     if (description === null) return { value: option };
@@ -214,8 +214,8 @@ const systemOneChoice = (name: string, value: Record<string, unknown>, assets: u
   return { type: 'choice', name, instructions, options };
 };
 
-const systemOneScore = (name: string, value: Record<string, unknown>, assets: unknown): DecisionScoreQuestion => {
-  const instructions = systemOneInstructions(value.instructions, `questions.${name}.instructions`, assets);
+const typesafeSystemOneScore = (name: string, value: Record<string, unknown>, assets: unknown): DecisionScoreQuestion => {
+  const instructions = typesafeSystemOneInstructions(value.instructions, `questions.${name}.instructions`, assets);
   if (!Array.isArray(value.criteria)) throw new Error(`questions.${name}.criteria must be an array of level descriptions`);
   if (value.criteria.length < SCORE_LEVEL_MIN || value.criteria.length > SCORE_LEVEL_MAX) {
     throw new Error(`questions.${name}.criteria must have ${SCORE_LEVEL_MIN}-${SCORE_LEVEL_MAX} levels`);
@@ -231,9 +231,9 @@ const systemOneScore = (name: string, value: Record<string, unknown>, assets: un
 
 const parseSystemOneQuestion = (name: string, value: unknown, assets: unknown): DecisionQuestion => {
   if (!isRecord(value)) throw new Error(`questions.${name} must be an object`);
-  if (value.type === 'noul') return systemOneNoul(name, value, assets);
-  if (value.type === 'choice') return systemOneChoice(name, value, assets);
-  if (value.type === 'score') return systemOneScore(name, value, assets);
+  if (value.type === 'noul') return typesafeSystemOneNoul(name, value, assets);
+  if (value.type === 'choice') return typesafeSystemOneChoice(name, value, assets);
+  if (value.type === 'score') return typesafeSystemOneScore(name, value, assets);
   throw new Error(`questions.${name}.type must be one of noul, choice, score`);
 };
 
@@ -241,11 +241,11 @@ const parseSystemOneRequest = (value: Record<string, unknown>): CanonicalDecisio
   const unknownFields = Object.keys(value).filter(key => !SYSTEMONE_TOP_LEVEL_FIELDS.has(key));
   if (unknownFields.length > 0) throw new Error(`System One does not support ${unknownFields.join(', ')}`);
   if (value.state === undefined) throw new Error('state is required');
-  const state = systemOneState(value.state, value.assets);
+  const state = typesafeSystemOneState(value.state, value.assets);
   if (!isRecord(value.questions)) throw new Error('questions must be an object keyed by question name');
   const questions = Object.entries(value.questions).map(([name, entry]) => parseSystemOneQuestion(name, entry, value.assets));
   if (questions.length === 0) throw new Error('questions must contain at least one question');
-  return { sourceProtocol: 'systemone', raw: value, state, questions };
+  return { sourceProtocol: 'typesafe-systemone', raw: value, state, questions };
 };
 
 // --- OpenAI request -> canonical ------------------------------------------
@@ -312,7 +312,7 @@ export const parseDecisionRequest = (protocol: DecisionProtocol, value: unknown)
   if (!isRecord(value)) throw new Error('Decision request body must be an object');
   const model = requiredString(value.model, 'model');
   switch (protocol) {
-  case 'systemone': return { model, request: parseSystemOneRequest(value) };
+  case 'typesafe-systemone': return { model, request: parseSystemOneRequest(value) };
   case 'openai-decisions': return { model, request: parseOpenAIDecisionsRequest(value) };
   default: protocol satisfies never; throw new Error(`Unhandled decision protocol: ${protocol as string}`);
   }
@@ -329,7 +329,7 @@ interface SystemOneCarrier {
   reference: (part: DecisionContentPart, index: number) => unknown;
 }
 
-const systemOneCarrier = (): SystemOneCarrier => {
+const typesafeSystemOneCarrier = (): SystemOneCarrier => {
   const assets: Record<string, unknown> = {};
   let count = 0;
   return {
@@ -347,7 +347,7 @@ const systemOneCarrier = (): SystemOneCarrier => {
 
 // A content-part list is lowered into assets; any other array is structured
 // data the model reads as given, so only an OpenAI-sourced array is mapped.
-const systemOneInstructionsValue = (
+const typesafeSystemOneInstructionsValue = (
   instructions: DecisionInstructions | undefined,
   carrier: SystemOneCarrier,
   sourceProtocol: DecisionProtocol,
@@ -357,7 +357,7 @@ const systemOneInstructionsValue = (
   return (instructions as readonly DecisionContentPart[]).map((part, index) => carrier.reference(part, index));
 };
 
-const systemOneStateValue = (state: DecisionState, carrier: SystemOneCarrier): unknown => {
+const typesafeSystemOneStateValue = (state: DecisionState, carrier: SystemOneCarrier): unknown => {
   if (state.kind === 'text') return state.value;
   // A structured state already carries its references; images lifted from it
   // ride alongside, so lower them into assets under fresh references.
@@ -371,12 +371,12 @@ const systemOneStateValue = (state: DecisionState, carrier: SystemOneCarrier): u
 };
 
 const serializeSystemOne = (model: string, request: CanonicalDecisionRequest): Record<string, unknown> => {
-  const carrier = systemOneCarrier();
+  const carrier = typesafeSystemOneCarrier();
   const questions = Object.fromEntries(request.questions.map(question => {
     if (question.type === 'noul') {
       return [question.name, {
         type: 'noul',
-        ...(question.instructions === undefined ? {} : { instructions: systemOneInstructionsValue(question.instructions, carrier, request.sourceProtocol) }),
+        ...(question.instructions === undefined ? {} : { instructions: typesafeSystemOneInstructionsValue(question.instructions, carrier, request.sourceProtocol) }),
         ...(question.criteria === undefined ? {} : { criteria: question.criteria }),
       }];
     }
@@ -391,17 +391,17 @@ const serializeSystemOne = (model: string, request: CanonicalDecisionRequest): R
       }
       return [question.name, {
         type: 'choice',
-        ...(question.instructions === undefined ? {} : { instructions: systemOneInstructionsValue(question.instructions, carrier, request.sourceProtocol) }),
+        ...(question.instructions === undefined ? {} : { instructions: typesafeSystemOneInstructionsValue(question.instructions, carrier, request.sourceProtocol) }),
         criteria,
       }];
     }
     return [question.name, {
       type: 'score',
-      ...(question.instructions === undefined ? {} : { instructions: systemOneInstructionsValue(question.instructions, carrier, request.sourceProtocol) }),
+      ...(question.instructions === undefined ? {} : { instructions: typesafeSystemOneInstructionsValue(question.instructions, carrier, request.sourceProtocol) }),
       criteria: question.levels.map(level => level.label),
     }];
   }));
-  const state = systemOneStateValue(request.state, carrier);
+  const state = typesafeSystemOneStateValue(request.state, carrier);
   return {
     model,
     state,
@@ -481,7 +481,7 @@ const serializeOpenAIDecisions = (model: string, request: CanonicalDecisionReque
 export const serializeDecisionRequest = (protocol: DecisionProtocol, model: string, request: CanonicalDecisionRequest): Record<string, unknown> => {
   if (protocol === request.sourceProtocol) return { ...request.raw, model };
   switch (protocol) {
-  case 'systemone': return serializeSystemOne(model, request);
+  case 'typesafe-systemone': return serializeSystemOne(model, request);
   case 'openai-decisions': return serializeOpenAIDecisions(model, request);
   default: protocol satisfies never; throw new Error(`Unhandled decision protocol: ${protocol as string}`);
   }
@@ -514,7 +514,7 @@ const entryRecord = (value: unknown): Record<string, DecisionEntry> | undefined 
 // Score answers, so a missing one is a broken response rather than an answer
 // without detail. System One also carries a separate `legend`; the OpenAI shape
 // inlines each label instead.
-const systemOneAnswer = (name: string, value: unknown): DecisionAnswer => {
+const typesafeSystemOneAnswer = (name: string, value: unknown): DecisionAnswer => {
   if (!isRecord(value)) throw new Error(`answers.${name} must be an object`);
   if (value.type === 'noul') return { type: 'noul', name, noul: finiteNumber(value.noul, `answers.${name}.noul`) };
   const confidence = finiteNumber(value.confidence, `answers.${name}.confidence`);
@@ -559,7 +559,7 @@ const parseSystemOneResponse = (body: Record<string, unknown>): CanonicalDecisio
   return {
     raw: body,
     ...(typeof body.model === 'string' ? { model: body.model } : {}),
-    answers: Object.entries(body.answers).map(([name, entry]) => systemOneAnswer(name, entry)),
+    answers: Object.entries(body.answers).map(([name, entry]) => typesafeSystemOneAnswer(name, entry)),
   };
 };
 
@@ -640,7 +640,7 @@ const parseOpenAIDecisionsResponse = (body: Record<string, unknown>): CanonicalD
 
 export const parseDecisionResponse = (protocol: DecisionProtocol, body: Record<string, unknown>): CanonicalDecisionResponse => {
   switch (protocol) {
-  case 'systemone': return parseSystemOneResponse(body);
+  case 'typesafe-systemone': return parseSystemOneResponse(body);
   case 'openai-decisions': return parseOpenAIDecisionsResponse(body);
   default: protocol satisfies never; throw new Error(`Unhandled decision protocol: ${protocol as string}`);
   }
@@ -734,7 +734,7 @@ const renderOpenAIDecisionsResponse = (response: CanonicalDecisionResponse): Rec
 
 export const renderDecisionResponse = (protocol: DecisionProtocol, response: CanonicalDecisionResponse): Record<string, unknown> => {
   switch (protocol) {
-  case 'systemone': return renderSystemOneResponse(response);
+  case 'typesafe-systemone': return renderSystemOneResponse(response);
   case 'openai-decisions': return renderOpenAIDecisionsResponse(response);
   default: protocol satisfies never; throw new Error(`Unhandled decision protocol: ${protocol as string}`);
   }

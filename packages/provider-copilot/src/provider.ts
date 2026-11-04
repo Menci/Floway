@@ -191,7 +191,7 @@ const finalizeCopilotModels = (
       kind: kindForEndpoints(endpoints),
       endpoints,
       providerData: { rawModels: variants } satisfies CopilotProviderData,
-      ...(endpoints.decision ? { decisionTarget: { protocol: 'systemone' as const } } : {}),
+      ...(endpoints.decision ? { decisionTarget: { protocol: 'typesafe-systemone' as const } } : {}),
       ...(pricing ? { pricing } : {}),
       ...((mergedModel.owned_by?.toLowerCase() === 'openai' || /^(?:gpt-|o[134](?:-|$)|codex-)/.test(mergedModel.id))
         ? { opaqueBlobCompatibilityScope: { bindToUpstream: true, key: 'openai' } }

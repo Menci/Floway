@@ -1600,15 +1600,15 @@ test('Copilot provider derives decision endpoints and forwards the System One bo
       const decision = models.find(model => model.id === 'microsoft-decision-1')!;
       assertEquals(decision.kind, 'decision');
       assertEquals(decision.endpoints, { decision: {} });
-      assertEquals(decision.decisionTarget, { protocol: 'systemone' });
+      assertEquals(decision.decisionTarget, { protocol: 'typesafe-systemone' });
 
-      const parsed = parseDecisionRequest('systemone', {
+      const parsed = parseDecisionRequest('typesafe-systemone', {
         model: 'microsoft-decision-1',
         state: 'The API returns 500 on every call.',
         questions: { team: { type: 'choice', instructions: 'Which team?', criteria: { billing: 'Charges', engineering: 'Bugs' } } },
       });
       const result = await provider.callDecision(decision, parsed.request, undefined, noopUpstreamCallOptions());
-      assertEquals(result.target, { protocol: 'systemone' });
+      assertEquals(result.target, { protocol: 'typesafe-systemone' });
       assertEquals(result.response.status, 200);
     },
   );

@@ -358,7 +358,7 @@ test('assertAzureUpstreamRecord rejects an operator-authored decision target', (
           upstreamModelId: 'decision-1',
           kind: 'decision',
           endpoints: { decision: {} },
-          decisionTarget: { protocol: 'systemone' },
+          decisionTarget: { protocol: 'typesafe-systemone' },
         }],
       },
     }),

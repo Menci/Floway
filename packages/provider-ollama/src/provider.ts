@@ -74,7 +74,7 @@ const finalizeOllamaModels = (
       providerData: raw.id,
       enabledFlags,
       opaqueBlobCompatibilityScope: { bindToUpstream: true },
-      ...(endpoints.decision ? { decisionTarget: { protocol: 'systemone' as const } } : {}),
+      ...(endpoints.decision ? { decisionTarget: { protocol: 'typesafe-systemone' as const } } : {}),
     };
     if (raw.modifiedAt !== undefined) model.created = raw.modifiedAt;
     const pricing = pricingForOllamaModelKey(raw.id);
@@ -123,7 +123,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
       // Ollama serves every decision model over System One; the dialect is not
       // the operator's to choose.
-      ...(kind === 'decision' ? { decisionTarget: { protocol: 'systemone' as const } } : {}),
+      ...(kind === 'decision' ? { decisionTarget: { protocol: 'typesafe-systemone' as const } } : {}),
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
     const pricing = model.pricing ?? pricingForOllamaModelKey(model.upstreamModelId);

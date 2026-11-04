@@ -32,6 +32,6 @@ export const mountDataPlane = (app: Hono<{ Variables: AuthVars }>) => {
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.cohereV2Rerank, (method, path) => app.on(method, path, rerank('cohere-v2')));
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.jinaV1Rerank, (method, path) => app.on(method, path, rerank('jina-v1')));
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.voyageV1Rerank, (method, path) => app.on(method, path, rerank('voyage-v1')));
-  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.systemOne, (method, path) => app.on(method, path, decision('systemone')));
-  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openaiDecisions, (method, path) => app.on(method, path, decision('openai-decisions')));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.typesafeSystemOne, (method, path) => app.on(method, path, decision('typesafe-systemone')));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openAiDecisions, (method, path) => app.on(method, path, decision('openai-decisions')));
 };

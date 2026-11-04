@@ -30,7 +30,7 @@ export interface RerankTarget {
 // `openai-decisions` is the OpenAI Decisions shape (`input` plus an array of
 // `predicate`/`choice`/`score` questions); no reachable upstream serves it, and
 // it exists so a provider can declare it once one does.
-export const DECISION_PROTOCOLS = ['systemone', 'openai-decisions'] as const;
+export const DECISION_PROTOCOLS = ['typesafe-systemone', 'openai-decisions'] as const;
 export type DecisionProtocol = typeof DECISION_PROTOCOLS[number];
 // Decision has no vendor-neutral upstream URL: Foundry serves it under a
 // resource path the OpenAI v1 base cannot express, and a compatible System One

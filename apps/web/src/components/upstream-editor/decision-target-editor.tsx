@@ -7,7 +7,7 @@ import { type DecisionProtocol, type DecisionTarget, DEFAULT_DECISION_PATHS } fr
 const { Field, Option } = fluentComponents;
 
 const PROTOCOL_LABELS: Record<DecisionProtocol, string> = {
-  'systemone': 'System One',
+  'typesafe-systemone': 'System One',
   'openai-decisions': 'OpenAI Decisions',
 };
 
