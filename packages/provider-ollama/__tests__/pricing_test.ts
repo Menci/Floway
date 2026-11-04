@@ -59,9 +59,22 @@ test('Ollama prices Kimi K3 at its official standard rate', () => {
   );
 });
 
-test('DeepSeek standard rates are estimated independently of the response service tier', () => {
-  const rates = published({ input_tokens: '1.32', input_cache_read_tokens: '0.044', output_tokens: '3.96' });
-  for (const key of ['deepseek-v4-pro', 'deepseek-v4-pro:0813', 'deepseek-v4-pro:0813-cloud']) assertEquals(priceRequest(pricingForOllamaModelKey(key), { serviceTier: 'default', inputTokens: 1 }).rates, rates);
+test('DeepSeek schedules use Ollama hours, including cache rates and all published aliases', () => {
+  const groups = [
+    { keys: ['deepseek-v4.1-flash', 'deepseek-v4.1-flash:cloud'], peak: { input_tokens: '0.30', input_cache_read_tokens: '0.006', output_tokens: '1.20' }, offPeak: { input_tokens: '0.15', input_cache_read_tokens: '0.003', output_tokens: '0.60' } },
+    { keys: ['deepseek-v4-pro', 'deepseek-v4-pro:0813', 'deepseek-v4-pro:cloud', 'deepseek-v4-pro:0813-cloud'], peak: { input_tokens: '1.32', input_cache_read_tokens: '0.044', output_tokens: '3.96' }, offPeak: { input_tokens: '0.66', input_cache_read_tokens: '0.022', output_tokens: '1.98' } },
+  ];
+  for (const { keys, peak, offPeak } of groups) for (const key of keys) {
+    for (const [instant, isPeak] of [
+      ['2026-10-16T01:00:00Z', false], // DeepSeek direct is peak; Ollama is not.
+      ['2026-10-16T11:59:59.999Z', false], ['2026-10-16T12:00:00Z', true],
+      ['2026-10-16T17:59:59.999Z', true], ['2026-10-16T18:00:00Z', false],
+      ['2026-10-17T12:00:00Z', false], ['2026-10-18T12:00:00Z', false],
+      ['2026-10-19T12:00:00Z', true], ['2026-10-01T12:00:00Z', true], // Chinese holidays do not change Ollama's schedule.
+    ] as const) {
+      assertEquals(priceRequest(pricingForOllamaModelKey(key), { serviceTier: 'default', inputTokens: 1, requestStartedAt: Date.parse(instant) }).rates, published(isPeak ? peak : offPeak));
+    }
+  }
   assertEquals(pricingForOllamaModelKey('deepseek-v4-pro:unknown'), null);
 });
 

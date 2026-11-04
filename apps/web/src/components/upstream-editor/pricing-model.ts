@@ -13,6 +13,7 @@ import {
   type PricingCoordinateValue,
   type PricingSelector,
   type PricingThresholdOperator,
+  type PricingTimeWindowCoordinate,
 } from '@floway-dev/protocols/browser';
 
 export interface PricingField {
@@ -50,7 +51,7 @@ export interface PricingThresholdDraft {
 
 export interface PricingEntryDraft {
   id: number;
-  selector: Record<string, string | PricingThresholdDraft | undefined>;
+  selector: Record<string, string | PricingThresholdDraft | PricingTimeWindowCoordinate | undefined>;
   rates: ModelPricing['entries'][number]['rates'];
 }
 
@@ -68,6 +69,7 @@ const compactSelector = (draft: PricingEntryDraft): PricingSelector => {
   const selector: Record<string, PricingCoordinateValue> = {};
   for (const [axisId, coordinate] of Object.entries(draft.selector)) {
     if (typeof coordinate === 'string') selector[axisId] = coordinate;
+    else if (coordinate && 'timeZone' in coordinate) selector[axisId] = coordinate;
     else if (coordinate?.value !== undefined) selector[axisId] = { operator: coordinate.operator, value: coordinate.value };
   }
   return selector;
@@ -96,6 +98,7 @@ export const pricingEntryCoordinateLabel = (draft: PricingEntryDraft): string =>
     const coordinate = draft.selector[axis.id];
     if (axis.kind === 'equality') return typeof coordinate === 'string' && coordinate !== '' ? [coordinate] : [];
     if (!coordinate || typeof coordinate !== 'object') return [];
+    if ('timeZone' in coordinate) return [`${coordinate.start}–${coordinate.end} (${coordinate.timeZone}; ${coordinate.weekdays.join(', ')})`];
     if (coordinate.value === undefined) return [];
     return [`${coordinate.operator === 'gte' ? '>=' : '>'} ${coordinate.value} tokens`];
   });
@@ -136,7 +139,7 @@ export const pricingFromDrafts = (drafts: readonly PricingEntryDraft[]): ModelPr
 
 export const thresholdCoordinate = (draft: PricingEntryDraft, axisId: string): PricingThresholdDraft | undefined => {
   const value = draft.selector[axisId];
-  return value && typeof value === 'object' ? value : undefined;
+  return value && typeof value === 'object' && 'operator' in value ? value : undefined;
 };
 
 export const withEqualityCoordinate = (draft: PricingEntryDraft, axisId: string, raw: string): PricingEntryDraft => {
@@ -165,3 +168,11 @@ export const withRate = (draft: PricingEntryDraft, field: PricingField, raw: str
   else rates[field.metric] = value;
   return { ...draft, rates };
 };
+
+export const timeWindowCoordinate = (draft: PricingEntryDraft): PricingTimeWindowCoordinate | undefined => {
+  const value = draft.selector.timeWindow;
+  return value && typeof value === 'object' && 'timeZone' in value ? value : undefined;
+};
+
+export const withTimeWindowCoordinate = (draft: PricingEntryDraft, value: PricingTimeWindowCoordinate | undefined): PricingEntryDraft =>
+  ({ ...draft, selector: { ...draft.selector, timeWindow: value } });

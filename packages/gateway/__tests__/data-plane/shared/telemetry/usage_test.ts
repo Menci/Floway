@@ -95,6 +95,7 @@ test('recordUsage persists caller-supplied metrics with resolved prices', async 
     },
     { input_tokens: '90' },
     {},
+    Date.now(),
   );
 
   const rows = await repo.usage.listAll();
@@ -117,6 +118,7 @@ test('recordUsage prices audio duration and token metrics together', async () =>
     },
     { input_audio_seconds: '90.5', input_audio_tokens: '2400' },
     { inputTokens: 2400 },
+    Date.now(),
   );
 
   const [row] = await repo.usage.listAll();
