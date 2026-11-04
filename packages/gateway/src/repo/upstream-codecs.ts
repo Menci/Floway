@@ -7,7 +7,7 @@ import {
   parseStoredJson,
   preserveDecodedStoredJsonProperties,
 } from './stored-json.ts';
-import { BILLING_METRICS, DECISION_PROTOCOLS, DECISION_QUESTION_TYPES, MODEL_KINDS, RERANK_PROTOCOLS, parseNonNegativeDecimalString } from '@floway-dev/protocols/common';
+import { BILLING_METRICS, DECISION_PROTOCOLS,  MODEL_KINDS, RERANK_PROTOCOLS, parseNonNegativeDecimalString } from '@floway-dev/protocols/common';
 import type { ModelPrefixConfig, ProxyFallbackEntry, UpstreamModelsCache } from '@floway-dev/provider';
 import { OPTIONAL_FLAG_IDS } from '@floway-dev/provider/flags';
 
@@ -93,7 +93,6 @@ const providerModelSchema = z.object({
   decisionTarget: z.object({
     protocol: z.enum(DECISION_PROTOCOLS),
     path: z.string().optional(),
-    questionTypes: z.array(z.enum(DECISION_QUESTION_TYPES)).optional(),
   }).passthrough().optional(),
   enabledFlags: z.array(z.enum(OPTIONAL_FLAG_IDS)).transform(flags => new Set(flags)),
   flagOverrides: flagOverridesSchema.optional(),
@@ -116,7 +115,6 @@ const discoveredModelSchema = z.object({
   decisionTarget: z.object({
     protocol: z.enum(DECISION_PROTOCOLS),
     path: z.string().optional(),
-    questionTypes: z.array(z.enum(DECISION_QUESTION_TYPES)).optional(),
   }).passthrough().optional(),
   flagOverrides: flagOverridesSchema.optional(),
 }).passthrough();

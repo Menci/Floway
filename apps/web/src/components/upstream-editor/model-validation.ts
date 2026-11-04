@@ -26,9 +26,7 @@ export const modelValidationIssues = (model: UpstreamModelConfig): ModelValidati
   } else if (model.rerankTarget?.path !== undefined && !validateUpstreamPath(model.rerankTarget.path, 'path').ok) {
     issues.push({ field: 'rerankTarget', message: 'dashboard.upstreamEditor.models.rerankPathInvalid' });
   }
-  if (effectiveKind === 'decision' && model.decisionTarget === undefined) {
-    issues.push({ field: 'decisionTarget', message: 'dashboard.upstreamEditor.models.decisionTargetRequired' });
-  } else if (effectiveKind !== null && effectiveKind !== 'decision' && model.decisionTarget !== undefined) {
+  if (effectiveKind !== null && effectiveKind !== 'decision' && model.decisionTarget !== undefined) {
     issues.push({ field: 'decisionTarget', message: 'dashboard.upstreamEditor.models.decisionTargetUnexpected' });
   } else if (model.decisionTarget?.path !== undefined && !validateUpstreamPath(model.decisionTarget.path, 'path').ok) {
     issues.push({ field: 'decisionTarget', message: 'dashboard.upstreamEditor.models.decisionPathInvalid' });

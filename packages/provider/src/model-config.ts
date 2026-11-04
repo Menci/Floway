@@ -1,6 +1,6 @@
 import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
 import { validateUpstreamPath } from './join.ts';
-import { BILLING_METRICS, canonicalizePricingSelector, DECISION_PROTOCOLS, DECISION_QUESTION_TYPES, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, type BillingMetric, type ChatModelInfo, type DecisionProtocol, type DecisionQuestionType, type DecisionTarget, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type OpaqueBlobCompatibilityScope, type PriceVector, type PricingSelector, type PublicModelLimits, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_METRICS, canonicalizePricingSelector, DECISION_PROTOCOLS, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, type BillingMetric, type ChatModelInfo, type DecisionProtocol, type DecisionTarget, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type OpaqueBlobCompatibilityScope, type PriceVector, type PricingSelector, type PublicModelLimits, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
 
 // The catalog-side name for the wire chat metadata. Shape lives in
 // @floway-dev/protocols/common so PublicModel.chat and the upstream catalog
@@ -151,7 +151,6 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
 
 const RERANK_PROTOCOL_SET: ReadonlySet<RerankProtocol> = new Set(RERANK_PROTOCOLS);
 const DECISION_PROTOCOL_SET: ReadonlySet<DecisionProtocol> = new Set(DECISION_PROTOCOLS);
-const DECISION_QUESTION_TYPE_SET: ReadonlySet<DecisionQuestionType> = new Set(DECISION_QUESTION_TYPES);
 
 const MODALITY_VALUES: ReadonlySet<Modality> = new Set<Modality>(['text', 'image']);
 
@@ -286,29 +285,16 @@ const rerankTargetField = (value: unknown, label: string): RerankTarget | undefi
 const decisionTargetField = (value: unknown, label: string): DecisionTarget | undefined => {
   if (value === undefined) return undefined;
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
-  const unknownKeys = Object.keys(value).filter(key => key !== 'protocol' && key !== 'path' && key !== 'questionTypes');
+  const unknownKeys = Object.keys(value).filter(key => key !== 'protocol' && key !== 'path');
   if (unknownKeys.length > 0) throw new Error(`Malformed ${label}: unknown fields: ${unknownKeys.join(', ')}`);
   if (typeof value.protocol !== 'string' || !DECISION_PROTOCOL_SET.has(value.protocol as DecisionProtocol)) {
     throw new Error(`Malformed ${label}.protocol: unsupported decision protocol ${JSON.stringify(value.protocol)}`);
-  }
-  let questionTypes: readonly DecisionQuestionType[] | undefined;
-  if (value.questionTypes !== undefined) {
-    if (!Array.isArray(value.questionTypes) || value.questionTypes.length === 0) {
-      throw new Error(`Malformed ${label}.questionTypes: must be a non-empty array`);
-    }
-    questionTypes = value.questionTypes.map((entry, index) => {
-      if (typeof entry !== 'string' || !DECISION_QUESTION_TYPE_SET.has(entry as DecisionQuestionType)) {
-        throw new Error(`Malformed ${label}.questionTypes[${index}]: must be one of ${DECISION_QUESTION_TYPES.join(', ')}`);
-      }
-      return entry as DecisionQuestionType;
-    });
   }
   const path = value.path === undefined ? undefined : validateUpstreamPath(value.path, `${label}.path`);
   if (path !== undefined && !path.ok) throw new Error(path.error);
   return {
     protocol: value.protocol as DecisionProtocol,
     ...(path === undefined ? {} : { path: path.value }),
-    ...(questionTypes === undefined ? {} : { questionTypes }),
   };
 };
 
@@ -341,9 +327,6 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   }
   if (effectiveKind !== 'rerank' && rerankTarget !== undefined) {
     throw new Error(`Malformed ${label}: rerankTarget is only allowed when endpoints select rerank`);
-  }
-  if (effectiveKind === 'decision' && decisionTarget === undefined) {
-    throw new Error(`Malformed ${label}: decisionTarget is required when endpoints select decision`);
   }
   if (effectiveKind !== 'decision' && decisionTarget !== undefined) {
     throw new Error(`Malformed ${label}: decisionTarget is only allowed when endpoints select decision`);

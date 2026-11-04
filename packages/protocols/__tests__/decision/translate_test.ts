@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { decisionRequestIncompatibility, parseDecisionRequest, parseDecisionResponse, parseDecisionUsage, renderDecisionResponse, serializeDecisionRequest } from '../../src/decision/translate.ts';
+import { parseDecisionRequest, parseDecisionResponse, parseDecisionUsage, renderDecisionResponse, serializeDecisionRequest } from '../../src/decision/translate.ts';
 
 const choiceRequest = {
   model: 'microsoft-decision-1',
@@ -84,21 +84,6 @@ describe('decision request ingress', () => {
       state: 's',
       questions: { q: { type: 'predicate', instructions: 'i' } },
     })).toThrow(/must be one of noul, choice, score/);
-  });
-});
-
-describe('decision compatibility', () => {
-  const parsed = parseDecisionRequest('systemone', choiceRequest);
-  const request = parsed.request;
-
-  test('a target with no declared question types answers everything', () => {
-    expect(decisionRequestIncompatibility({ protocol: 'systemone' }, request)).toBeNull();
-  });
-
-  test('a target declaring only choice rejects a noul question', () => {
-    const noul = parseDecisionRequest('systemone', { model: 'm', state: 's', questions: { q: { type: 'noul', instructions: 'i' } } }).request;
-    expect(decisionRequestIncompatibility({ protocol: 'systemone', questionTypes: ['choice'] }, noul)).toMatch(/noul questions/);
-    expect(decisionRequestIncompatibility({ protocol: 'systemone', questionTypes: ['choice'] }, request)).toBeNull();
   });
 });
 
@@ -323,9 +308,7 @@ describe('protocol-standard fields', () => {
       input: 'x',
       questions: [{ type: 'choice', name: 'q', instructions: 'i', choices: [{ value: true }, { value: 'true' }] }],
     });
-    // The request is not refused for its content; it simply cannot be lowered to
-    // System One, whose option keys are strings.
-    expect(decisionRequestIncompatibility({ protocol: 'systemone' }, parsed.request)).toBeNull();
+    // It cannot be lowered to System One, whose option keys are strings.
     expect(() => serializeDecisionRequest('systemone', 'raw', parsed.request)).toThrow(/collapse to the same System One label/);
   });
 
@@ -367,13 +350,6 @@ describe('image evidence', () => {
         { type: 'image', imageUrl: 'data:image/png;base64,AAAA', detail: 'high' },
       ],
     });
-  });
-
-  test('never refuses a request for its content', () => {
-    const parsed = parseDecisionRequest('openai-decisions', imageRequest);
-    // Both dialects express images; which model reads them is the model's call.
-    expect(decisionRequestIncompatibility({ protocol: 'openai-decisions' }, parsed.request)).toBeNull();
-    expect(decisionRequestIncompatibility({ protocol: 'systemone' }, parsed.request)).toBeNull();
   });
 
   test('lowers image parts into System One assets', () => {

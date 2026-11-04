@@ -215,8 +215,8 @@ export function ModelDetail({
           <RerankTargetEditor readOnly={fieldsReadOnly} value={row.config.rerankTarget} onChange={rerankTarget => patch({ rerankTarget })} />
         </EditorSection>}
 
-        {row.config.kind === 'decision' && row.config.decisionTarget && <EditorSection error={validationMessage('decisionTarget')} level={3} title={t('dashboard.upstreamEditor.models.decisionTarget')}>
-          <DecisionTargetEditor readOnly={fieldsReadOnly} value={row.config.decisionTarget} onChange={decisionTarget => patch({ decisionTarget })} />
+        {row.config.kind === 'decision' && <EditorSection error={validationMessage('decisionTarget')} level={3} title={t('dashboard.upstreamEditor.models.decisionTarget')}>
+          <DecisionTargetEditor readOnly={fieldsReadOnly} value={row.config.decisionTarget ?? { protocol: 'systemone' }} onChange={decisionTarget => patch({ decisionTarget })} />
         </EditorSection>}
 
         {row.config.kind !== 'image' && <EditorSection level={3} title={t('dashboard.upstreamEditor.models.capabilities')}>

@@ -14,7 +14,7 @@ import { recordUsage } from '../shared/telemetry/usage.ts';
 import { forwardUpstreamResponse } from '../shared/upstream-response.ts';
 import { parseDecimalString } from '@floway-dev/protocols/common';
 import type { DecisionSourceProtocol } from '@floway-dev/protocols/common';
-import { decisionRequestIncompatibility, parseDecisionRequest, parseDecisionResponse, parseDecisionUsage, renderDecisionResponse, type ParsedDecisionRequest } from '@floway-dev/protocols/decision';
+import { parseDecisionRequest, parseDecisionResponse, parseDecisionUsage, renderDecisionResponse, type ParsedDecisionRequest } from '@floway-dev/protocols/decision';
 import { httpResponseToResponse, ProviderModelsUnavailableError, providerModelOf, toInternalDebugError } from '@floway-dev/provider';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
@@ -103,18 +103,8 @@ export const decision = (sourceProtocol: DecisionSourceProtocol) => async (c: Co
       ctx.dump?.error('gateway');
       return finalizeGatewayResponse(ctx, apiError(c, appendFailedUpstreams(unsupportedMessage(model), failedUpstreams), 400));
     }
-    const viable = routable.filter(({ target }) => decisionRequestIncompatibility(target, request) === null);
-    if (viable.length === 0) {
-      const reasons = [...new Set(routable.flatMap(({ target }) => {
-        const reason = decisionRequestIncompatibility(target, request);
-        return reason === null ? [] : [reason];
-      }))];
-      ctx.dump?.error('gateway');
-      return finalizeGatewayResponse(ctx, apiError(c, `Model ${model} does not support this decision request: ${reasons.join('; ')}.`, 400));
-    }
-
     terminal = await iterateCandidates(
-      viable.map(({ candidate }) => candidate),
+      routable.map(({ candidate }) => candidate),
       'decision',
       ctx,
       'decision',

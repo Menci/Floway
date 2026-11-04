@@ -14,7 +14,7 @@ import type {
   DecisionState,
   ParsedDecisionRequest,
 } from './index.ts';
-import type { DecisionProtocol, DecisionQuestionType, DecisionSourceProtocol, DecisionTarget } from '../common/models.ts';
+import type { DecisionProtocol, DecisionSourceProtocol } from '../common/models.ts';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -304,26 +304,12 @@ export const parseDecisionRequest = (protocol: DecisionSourceProtocol, value: un
   }
 };
 
-// --- compatibility --------------------------------------------------------
-
-const requestQuestionTypes = (request: CanonicalDecisionRequest): readonly DecisionQuestionType[] =>
-  request.questions.map(question => question.type);
-
-// The only incompatibility is a question type the target does not answer. Both
-// dialects carry text, JSON, and image content, so the content itself is never a
-// reason to refuse here: whether a model reads an image is the model's answer to
-// give. A value one dialect cannot represent (a typed choice collision) surfaces
-// at serialization.
-export const decisionRequestIncompatibility = (target: DecisionTarget, request: CanonicalDecisionRequest): string | null => {
-  if (target.questionTypes === undefined) return null;
-  const supported = new Set<DecisionQuestionType>(target.questionTypes);
-  const unsupported = requestQuestionTypes(request).filter(type => !supported.has(type));
-  if (unsupported.length === 0) return null;
-  return `${[...new Set(unsupported)].join(', ')} questions require a target that answers them`;
-};
-
 // --- serialization --------------------------------------------------------
 
+// System One gates images behind a vendor request header this gateway does not
+// send, so an image cannot be lowered into that target at all: emitting an asset
+// the upstream ignores would trade the image for a confident answer about its
+// absence.
 interface SystemOneCarrier {
   assets: Record<string, unknown>;
   reference: (part: DecisionContentPart, index: number) => unknown;

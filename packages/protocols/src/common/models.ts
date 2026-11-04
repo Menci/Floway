@@ -37,12 +37,6 @@ export type DecisionProtocol = typeof DECISION_PROTOCOLS[number];
 // doubles as the outbound target vocabulary.
 export type DecisionSourceProtocol = DecisionProtocol;
 
-// The question primitives a target accepts. A dialect name does not imply a
-// capability: a deployment may answer only a subset, so compatibility reads
-// `questionTypes`, not the protocol.
-export const DECISION_QUESTION_TYPES = ['noul', 'choice', 'score'] as const;
-export type DecisionQuestionType = typeof DECISION_QUESTION_TYPES[number];
-
 // Decision has no vendor-neutral upstream URL: Foundry serves it under a
 // resource path the OpenAI v1 base cannot express, and a compatible System One
 // server may expose any path. The operator chooses the wire protocol on each
@@ -52,10 +46,6 @@ export type DecisionQuestionType = typeof DECISION_QUESTION_TYPES[number];
 export interface DecisionTarget {
   protocol: DecisionProtocol;
   path?: string;
-  // Omitted means every primitive is accepted. Present narrows the target to
-  // the listed question types so pre-dispatch filtering rejects a request the
-  // deployment would answer with an upstream 4xx.
-  questionTypes?: readonly DecisionQuestionType[];
 }
 
 export type Modality = 'text' | 'image';

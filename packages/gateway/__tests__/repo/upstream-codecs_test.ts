@@ -26,7 +26,7 @@ test('existing model caches without Custom discovery remain readable', () => {
   expect(decodeUpstreamModelsCache(encodeUpstreamModelsCache(cache), 'up_existing')).toEqual(cache);
 });
 
-test('stored model cache round-trips a decision target with narrowed question types', () => {
+test('stored model cache round-trips a decision target', () => {
   const cache: UpstreamModelsCache = {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 100,
@@ -38,7 +38,7 @@ test('stored model cache round-trips a decision target with narrowed question ty
       endpoints: { decision: {} },
       opaqueBlobCompatibilityScope: { bindToUpstream: true },
       enabledFlags: new Set(),
-      decisionTarget: { protocol: 'systemone', path: '/providers/microsoft/v1/systemone', questionTypes: ['choice'] },
+      decisionTarget: { protocol: 'systemone', path: '/providers/microsoft/v1/systemone' },
     }],
     lastError: null,
   };

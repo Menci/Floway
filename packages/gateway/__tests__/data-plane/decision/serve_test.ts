@@ -97,35 +97,6 @@ test('/v1/systemone forwards a System One request and records input tokens', asy
   assertEquals(performance[0]?.requests, 1);
 });
 
-test('a target that declares only choice refuses a noul question before dispatch', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await saveDecisionUpstream(repo, { protocol: 'systemone', questionTypes: ['choice'] });
-
-  let called = false;
-  await withMockedFetch(
-    () => {
-      called = true;
-      return jsonResponse({});
-    },
-    async () => {
-      const response = await requestAppWithWarmModels('/v1/systemone', {
-        method: 'POST',
-        headers: requestHeaders(apiKey.key),
-        body: JSON.stringify({
-          model: 'public-decision',
-          state: 'I want a refund.',
-          questions: { refund: { type: 'noul', instructions: 'Is a refund requested?' } },
-        }),
-      });
-      assertEquals(response.status, 400);
-      const body = await response.json() as { error: { message: string } };
-      assertEquals(body.error.message.includes('noul questions'), true);
-    },
-  );
-
-  assertEquals(called, false);
-});
-
 test('/v1/systemone rejects an unknown model with 404 and a wrong-kind model with 400', async () => {
   const { apiKey, repo } = await setupAppTest();
   await saveDecisionUpstream(repo, { protocol: 'systemone' });

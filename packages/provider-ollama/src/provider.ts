@@ -121,7 +121,9 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       providerData: model.upstreamModelId,
       enabledFlags,
       opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
-      ...(model.decisionTarget ? { decisionTarget: model.decisionTarget } : {}),
+      // Ollama serves every decision model over System One, so the operator's
+      // omission is not ambiguous; an explicit target still wins.
+      ...(kind === 'decision' ? { decisionTarget: model.decisionTarget ?? { protocol: 'systemone' as const } } : {}),
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
     const pricing = model.pricing ?? pricingForOllamaModelKey(model.upstreamModelId);

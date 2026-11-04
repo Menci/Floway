@@ -35,9 +35,9 @@ export const endpointOptionsFor = (
 // operator confirms or changes it.
 const INITIAL_RERANK_TARGET: RerankTarget = { protocol: 'cohere-v2' };
 
-// Every non-compatible decision server speaks the System One contract, so a new
-// decision row starts there; the operator changes the dialect only for an
-// OpenAI Decisions target.
+// A new decision row starts on the System One contract, which every reachable
+// provider serves; the operator changes the dialect only for an OpenAI Decisions
+// target. An upstream that knows its own dialect fills the same default in.
 const INITIAL_DECISION_TARGET: DecisionTarget = { protocol: 'systemone' };
 
 // What a discovered model declares when it names no kind of its own, or names

@@ -143,7 +143,6 @@ export interface ParsedDecisionRequest {
 
 export { DEFAULT_DECISION_PATHS } from './default-paths.ts';
 export {
-  decisionRequestIncompatibility,
   parseDecisionRequest,
   parseDecisionResponse,
   parseDecisionUsage,

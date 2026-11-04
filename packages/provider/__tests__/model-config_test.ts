@@ -297,22 +297,25 @@ describe('modelsField rerank targets', () => {
 });
 
 describe('modelsField decision targets', () => {
-  test('requires an explicit target for a decision model', () => {
-    expect(() => modelsField([{
-      upstreamModelId: 'decision-1',
-      kind: 'decision',
-      endpoints: { decision: {} },
-    }], 'p')).toThrow(/decisionTarget is required/);
-  });
-
-  test('accepts a supported protocol, path, and narrowed question types', () => {
+  test('accepts a decision model without an explicit target', () => {
+    // Azure, Ollama, and Copilot know their own dialect; only a custom upstream
+    // has no default and rejects a missing target at dispatch.
     const [model] = modelsField([{
       upstreamModelId: 'decision-1',
       kind: 'decision',
       endpoints: { decision: {} },
-      decisionTarget: { protocol: 'systemone', path: ' /providers/microsoft/v1/systemone ', questionTypes: ['choice'] },
     }], 'p');
-    expect(model.decisionTarget).toEqual({ protocol: 'systemone', path: '/providers/microsoft/v1/systemone', questionTypes: ['choice'] });
+    expect(model.decisionTarget).toBeUndefined();
+  });
+
+  test('accepts a supported protocol and path', () => {
+    const [model] = modelsField([{
+      upstreamModelId: 'decision-1',
+      kind: 'decision',
+      endpoints: { decision: {} },
+      decisionTarget: { protocol: 'systemone', path: ' /providers/microsoft/v1/systemone ' },
+    }], 'p');
+    expect(model.decisionTarget).toEqual({ protocol: 'systemone', path: '/providers/microsoft/v1/systemone' });
   });
 
   test('rejects a decision target on a model that is not decision', () => {
@@ -324,19 +327,13 @@ describe('modelsField decision targets', () => {
     }], 'p')).toThrow(/decisionTarget is only allowed/);
   });
 
-  test('rejects an unknown protocol and an unknown question type', () => {
+  test('rejects an unknown protocol', () => {
     expect(() => modelsField([{
       upstreamModelId: 'decision-1',
       kind: 'decision',
       endpoints: { decision: {} },
       decisionTarget: { protocol: 'jev' },
     }], 'p')).toThrow(/unsupported decision protocol/);
-    expect(() => modelsField([{
-      upstreamModelId: 'decision-1',
-      kind: 'decision',
-      endpoints: { decision: {} },
-      decisionTarget: { protocol: 'systemone', questionTypes: ['box'] },
-    }], 'p')).toThrow(/questionTypes\[0\]/);
   });
 });
 
