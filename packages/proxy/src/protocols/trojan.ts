@@ -1,13 +1,18 @@
 // Trojan client.
 //
-// The Trojan request header (56-byte hex(SHA-224(password)) + CRLF +
-// SOCKS-like address) MUST land in the same TLS record as the first
-// follow-up bytes from whichever wrapper consumes the post-trojan stream.
-// sing-box's inbound reads the key with `conn.Read`, which returns at most
-// one record, and short-reads reject with "bad request size" when no
-// fallback is configured. We surface the header as `prefix` on the dial
-// result so the next byte sink — the inner TLS handshake or the request
-// writer — folds it into its own first write.
+// The request header (56-byte hex(SHA-224(password)) + CRLF + SOCKS-like
+// address) MUST land in the same TLS record as the first follow-up bytes from
+// whichever wrapper consumes the post-trojan stream. sing-box's inbound reads
+// the key with `conn.Read`, which returns at most one record, and short-reads
+// reject with "bad request size" when no fallback is configured. We surface
+// the header as `prefix` on the dial result so the next byte sink — the inner
+// TLS handshake or the request writer — folds it into its own first write.
+//
+// That constraint also rules out a native TLS outer leg on workerd: its
+// implementation splits the first application-data write across two records
+// (~4 bytes then the rest), which is exactly the short read the inbound
+// rejects. Node's TLS keeps a small write in a single record, so the outer
+// and inner legs there run natively with the header delivered intact.
 //
 // Spec: https://trojan-gfw.github.io/trojan/protocol
 

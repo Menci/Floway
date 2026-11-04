@@ -77,12 +77,17 @@ export interface ProxyRequestTarget extends DialTarget {
   alpn?: string[];
 }
 
+// Structurally identical to @floway-dev/platform's TlsUpgradeOptions;
+// duplicated for the same reason as SocketDialOptions below.
 export interface TlsUpgradeOptions {
   /** TLS peer identity; also the certificate identity unless `verifyHost` is set. */
   host: string;
   /** Reference identity the certificate chain must prove. Defaults to `host`. */
   verifyHost?: string;
-  /** Replaces the certificate identity check; see `TlsUpgradeOptions`. */
+  /**
+   * Replace the certificate identity check. Receives the reference identity
+   * and the leaf certificate; returning an Error rejects the handshake.
+   */
   checkServerIdentity?: CheckServerIdentity;
   /** ALPN protocols to offer, in preference order. */
   alpn?: string[];

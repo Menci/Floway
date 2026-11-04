@@ -82,12 +82,6 @@ export interface UserspaceTlsOptions {
 
 export type TlsStream = DuplexStream;
 
-/**
- * The peer-certificate fields `tls.checkServerIdentity` reads. Naming them
- * here keeps the callback assignable from Node's own function in one
- * direction and from our userspace leaf adapter in the other, so a caller can
- * write one callback and use it on every runtime.
- */
 /** The certificate adapter `@reclaimprotocol/tls` hands to its hooks. */
 interface LibraryCertificate {
   internal: { rawData: ArrayBuffer };
@@ -96,6 +90,12 @@ interface LibraryCertificate {
   getAlternativeIPAddresses?(): string[];
 }
 
+/**
+ * The peer-certificate fields `tls.checkServerIdentity` reads. Naming them
+ * here keeps the callback assignable from Node's own function in one
+ * direction and from our userspace leaf adapter in the other, so a caller can
+ * write one callback and use it on every runtime.
+ */
 export interface PeerCertificateIdentity {
   /** DER bytes of the leaf certificate. */
   raw: Uint8Array;
@@ -218,15 +218,15 @@ export const userspaceTls = async (
 
   let pendingPrefix: Uint8Array | null = opts.prefix ?? null;
 
-  // `@reclaimprotocol/tls`'s exported TLSClientOptions typing is missing
-  // three things this call site uses: `verifyHost` and `skipIdentityCheck`
-  // (both added by our pnpm patch) and a relaxed `onTlsEnd` error type (we
-  // forward errors from the runtime which can be non-Error rejects, but the
-  // upstream typing assumes `Error`). Build the options against a locally
-  // extended adapter type so we still get field-level checking on what we
-  // pass, then run a single `as` at the call site to bridge to the upstream
-  // parameter shape. When the upstream typing absorbs the patch, this
-  // extension type and the cast become redundant.
+  // `@reclaimprotocol/tls`'s exported TLSClientOptions typing is missing two
+  // things this call site uses: `verifyHost` and `checkServerIdentity` (both
+  // added by our pnpm patch) and a relaxed `onTlsEnd` error type (we forward
+  // errors from the runtime which can be non-Error rejects, but the upstream
+  // typing assumes `Error`). Build the options against a locally extended
+  // adapter type so we still get field-level checking on what we pass, then
+  // run a single `as` at the call site to bridge to the upstream parameter
+  // shape. When the upstream typing absorbs the patch, this extension type
+  // and the cast become redundant.
   type PatchedTLSOptions = Parameters<typeof makeTLSClient>[0] & {
     verifyHost?: string;
     checkServerIdentity?: (identity: string, certificate: LibraryCertificate) => Promise<void>;
