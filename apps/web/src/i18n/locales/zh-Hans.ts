@@ -849,7 +849,7 @@ const zhHansCN = {
           pricingRates: '价格',
           pricingRatesHint: '单位为美元/百万 Token。每条规则至少填写一项，并保持价格类型一致。',
           priceNotSet: '未设置',
-          pricingBase: '基础价格', serviceTier: '服务层级', serviceTierHint: '留空表示基础价格。', operator: '运算符', inputTokens: '输入 Token 阈值', inputTokensHint: '留空表示适用于所有输入大小。', addPricingEntry: '添加价格项', removePricingEntry: '移除价格项', noPricingEntries: '尚未配置价格', addPricingEntryHint: '请先添加基础价格项。', pricingErrors: '价格校验错误', invalidPricing: '价格项存在校验错误。',
+          pricingBase: '基础价格', serviceTier: '服务层级', operator: '运算符', inputTokens: '输入 Token 阈值', addPricingEntry: '添加价格项', removePricingEntry: '移除价格项', noPricingEntries: '尚未配置价格', addPricingEntryHint: '请先添加基础价格项。', pricingErrors: '价格校验错误', invalidPricing: '价格项存在校验错误。',
           pricingIssue: {
             emptyCatalog: '请先添加基础价格。',
             emptyRates: '请为这条规则至少填写一项价格。',
