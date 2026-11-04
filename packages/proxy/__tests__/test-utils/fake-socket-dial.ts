@@ -25,13 +25,13 @@ export interface FakeServer {
 
 export interface FakeSocketDial {
   socketDial: SocketDial;
-  /** TLS upgrades the dialer requested, in order, with the transport and options it passed. */
+  /** Options each TLS upgrade was asked for, in call order. */
   tlsUpgrades: Array<{ opts: TlsUpgradeOptions }>;
   /**
    * Answer the next TLS upgrade with a fresh fake duplex, or fail it with
-   * the given error. Without either, the upgrade rejects.
+   * the given error. An upgrade with nothing staged rejects.
    */
-  acceptNextUpgrade(): FakeServer;
+  acceptNextUpgrade(): void;
   failNextUpgrade(err: unknown): void;
   /** Awaits the next connect call (or the first if not yet observed). */
   awaitConnect(): Promise<FakeServer>;
@@ -46,7 +46,7 @@ export const makeFakeSocketDial = (): FakeSocketDial => {
   const serverReady = new Promise<FakeServer>(resolve => { resolveServer = resolve; });
 
   let pendingConnectError: unknown = null;
-  let pendingUpgrade: { accept: true; server: FakeServer; socket: DialedSocket } | { accept: false; error: unknown } | null = null;
+  let pendingUpgrade: { accept: true; socket: DialedSocket } | { accept: false; error: unknown } | null = null;
   let connectCount = 0;
   const tlsUpgrades: Array<{ opts: TlsUpgradeOptions }> = [];
 
@@ -83,9 +83,7 @@ export const makeFakeSocketDial = (): FakeSocketDial => {
     awaitConnect: async () => server ?? await serverReady,
     failNextConnect: err => { pendingConnectError = err; },
     acceptNextUpgrade: () => {
-      const { socket, srv } = makeFakeSocket();
-      pendingUpgrade = { accept: true, server: srv, socket };
-      return srv;
+      pendingUpgrade = { accept: true, socket: makeFakeSocket().socket };
     },
     failNextUpgrade: err => { pendingUpgrade = { accept: false, error: err }; },
     connectCount: () => connectCount,

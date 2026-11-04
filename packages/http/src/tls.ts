@@ -232,6 +232,9 @@ export const userspaceTls = async (
     checkServerIdentity?: (identity: string, certificate: LibraryCertificate) => Promise<void>;
     onTlsEnd?: (error?: unknown) => void;
   };
+  // A caller-supplied check runs only when the certificate is actually being
+  // verified; `insecure` accepts every peer, so there is nothing to check.
+  const checker = opts.insecure ? undefined : opts.checkServerIdentity;
   const tlsOptions: PatchedTLSOptions = {
     host: opts.host,
     verifyHost: opts.verifyHost,
@@ -239,12 +242,12 @@ export const userspaceTls = async (
     // The library runs this before its chain walk and skips the hostname
     // match when it is present, so exactly one identity check happens and a
     // rejection is reported as an identity failure rather than a trust one.
-    checkServerIdentity: opts.insecure || opts.checkServerIdentity === undefined
-      ? undefined
-      : async (identity, certificate) => {
-        const error = opts.checkServerIdentity!(identity, toIdentityCertificate(certificate));
+    ...(checker === undefined ? {} : {
+      checkServerIdentity: async (identity: string, certificate: LibraryCertificate): Promise<void> => {
+        const error = checker(identity, toIdentityCertificate(certificate));
         if (error !== undefined) throw error;
       },
+    }),
     applicationLayerProtocols: opts.alpn,
     cipherSuites: opts.cipherSuites ?? ['TLS_AES_256_GCM_SHA384', 'TLS_AES_128_GCM_SHA256'],
     write({ header, content }) {
