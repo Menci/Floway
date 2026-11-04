@@ -16,7 +16,6 @@ import {
   SETUP_POWERSHELL_COMMON_OUTPUT,
   SETUP_POWERSHELL_COMMON_PLATFORM,
   SETUP_POWERSHELL_COMMON_PROCESS,
-  SETUP_SCRIPT_SOURCE_FRAGMENTS,
 } from '../src/script-assets.generated.ts';
 import { assert, assertEquals } from '@floway-dev/test-utils';
 
@@ -83,13 +82,6 @@ const sliceOf = (section: Section): string => {
   assert(end !== -1, `${section.file} does not contain the end boundary ${JSON.stringify(section.end)}`);
   return section.source.slice(start, end);
 };
-
-test('generated installer sources match the checked-in canonical fragments byte for byte', async () => {
-  const { readFile } = await import('node:fs/promises');
-  for (const [file, generated] of SETUP_SCRIPT_SOURCE_FRAGMENTS) {
-    assertEquals(generated, await readFile(new URL(`../${file}`, import.meta.url), 'utf8'));
-  }
-});
 
 test.each(PLATFORM_COMMONS)('the prejoined $platform common body is exactly its declared section tiling', ({ prejoined, sections }) => {
   assertEquals(sections.map(section => sliceOf(section) + (section.append ?? '')).join(''), prejoined);

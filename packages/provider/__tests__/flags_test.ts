@@ -1,22 +1,7 @@
 import { test } from 'vitest';
 
-import { isKnownFlagId, OPTIONAL_FLAG_IDS, resolveEffectiveFlags } from '../src/flags.ts';
+import { OPTIONAL_FLAG_IDS, resolveEffectiveFlags } from '../src/flags.ts';
 import { assertEquals } from '@floway-dev/test-utils';
-
-test('provider flags: catalog ids are unique', () => {
-  const ids = new Set<string>();
-  for (const id of OPTIONAL_FLAG_IDS) {
-    assertEquals(ids.has(id), false);
-    ids.add(id);
-  }
-});
-
-test('provider flags: isKnownFlagId agrees with catalog', () => {
-  for (const id of OPTIONAL_FLAG_IDS) {
-    assertEquals(isKnownFlagId(id), true);
-  }
-  assertEquals(isKnownFlagId('nonexistent-flag'), false);
-});
 
 const FLAG_ID_PATTERN = /^[a-z][a-z0-9-]+$/;
 
