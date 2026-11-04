@@ -286,7 +286,7 @@ const rerankTargetField = (value: unknown, label: string): RerankTarget | undefi
 const decisionTargetField = (value: unknown, label: string): DecisionTarget | undefined => {
   if (value === undefined) return undefined;
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
-  const unknownKeys = Object.keys(value).filter(key => key !== 'protocol' && key !== 'path' && key !== 'questionTypes' && key !== 'images');
+  const unknownKeys = Object.keys(value).filter(key => key !== 'protocol' && key !== 'path' && key !== 'questionTypes');
   if (unknownKeys.length > 0) throw new Error(`Malformed ${label}: unknown fields: ${unknownKeys.join(', ')}`);
   if (typeof value.protocol !== 'string' || !DECISION_PROTOCOL_SET.has(value.protocol as DecisionProtocol)) {
     throw new Error(`Malformed ${label}.protocol: unsupported decision protocol ${JSON.stringify(value.protocol)}`);
@@ -303,16 +303,12 @@ const decisionTargetField = (value: unknown, label: string): DecisionTarget | un
       return entry as DecisionQuestionType;
     });
   }
-  if (value.images !== undefined && typeof value.images !== 'boolean') {
-    throw new Error(`Malformed ${label}.images: must be a boolean`);
-  }
   const path = value.path === undefined ? undefined : validateUpstreamPath(value.path, `${label}.path`);
   if (path !== undefined && !path.ok) throw new Error(path.error);
   return {
     protocol: value.protocol as DecisionProtocol,
     ...(path === undefined ? {} : { path: path.value }),
     ...(questionTypes === undefined ? {} : { questionTypes }),
-    ...(value.images === undefined ? {} : { images: value.images }),
   };
 };
 

@@ -317,14 +317,16 @@ describe('protocol-standard fields', () => {
     });
   });
 
-  test('refuses a typed choice collision on a System One target', () => {
+  test('a typed choice collision is a serialization impossibility, not a content refusal', () => {
     const parsed = parseDecisionRequest('openai-decisions', {
       model: 'm',
       input: 'x',
       questions: [{ type: 'choice', name: 'q', instructions: 'i', choices: [{ value: true }, { value: 'true' }] }],
     });
-    expect(decisionRequestIncompatibility({ protocol: 'systemone' }, parsed.request)).toMatch(/differ only by type/);
-    expect(decisionRequestIncompatibility({ protocol: 'openai-decisions' }, parsed.request)).toBeNull();
+    // The request is not refused for its content; it simply cannot be lowered to
+    // System One, whose option keys are strings.
+    expect(decisionRequestIncompatibility({ protocol: 'systemone' }, parsed.request)).toBeNull();
+    expect(() => serializeDecisionRequest('systemone', 'raw', parsed.request)).toThrow(/collapse to the same System One label/);
   });
 
   test('keeps score level descriptions through OpenAI ingress and rendering', () => {
@@ -367,10 +369,36 @@ describe('image evidence', () => {
     });
   });
 
-  test('refuses image evidence for a target that does not read images', () => {
+  test('never refuses a request for its content', () => {
     const parsed = parseDecisionRequest('openai-decisions', imageRequest);
-    expect(decisionRequestIncompatibility({ protocol: 'systemone' }, parsed.request)).toMatch(/image evidence/);
-    expect(decisionRequestIncompatibility({ protocol: 'systemone', images: true }, parsed.request)).toBeNull();
+    // Both dialects express images; which model reads them is the model's call.
+    expect(decisionRequestIncompatibility({ protocol: 'openai-decisions' }, parsed.request)).toBeNull();
+    expect(decisionRequestIncompatibility({ protocol: 'systemone' }, parsed.request)).toBeNull();
+  });
+
+  test('lowers image parts into System One assets', () => {
+    const parsed = parseDecisionRequest('openai-decisions', imageRequest);
+    const wire = serializeDecisionRequest('systemone', 'raw', parsed.request) as {
+      state: unknown; assets: Record<string, { format: string; data_base64: string }>;
+    };
+    expect(wire.assets).toEqual({ 'image-0': { type: 'image', format: 'png', data_base64: 'AAAA' } });
+    expect(wire.state).toEqual(['Inspect this.', 'image-0']);
+  });
+
+  test('lifts System One assets back into image parts', () => {
+    const parsed = parseDecisionRequest('systemone', {
+      model: 'm',
+      state: { photo: 'img-1' },
+      assets: { 'img-1': { type: 'image', format: 'jpg', data_base64: 'BBBB' } },
+      questions: { q: { type: 'noul', instructions: 'Is `photo` damaged?' } },
+    });
+    // The structure stays as sent; the images its references resolved to ride
+    // alongside so a target speaking inline image parts still receives them.
+    expect(parsed.request.state).toEqual({
+      kind: 'json',
+      value: { photo: 'img-1' },
+      images: [{ type: 'image', imageUrl: 'data:image/jpeg;base64,BBBB' }],
+    });
   });
 
   test('re-serializes image evidence back into the OpenAI shape', () => {

@@ -245,15 +245,15 @@ test('/v1/decisions forwards opaquely to a target on the same dialect', async ()
   assertEquals(await upstreamRequest.clone().json(), sent);
 });
 
-test('/v1/decisions refuses image evidence for a text-only target before dispatch', async () => {
+test('/v1/decisions lowers image evidence into System One assets', async () => {
   const { apiKey, repo } = await setupAppTest();
   await saveDecisionUpstream(repo, { protocol: 'systemone' });
 
-  let called = false;
+  let upstreamRequest: Request | undefined;
   await withMockedFetch(
-    () => {
-      called = true;
-      return jsonResponse({});
+    async request => {
+      upstreamRequest = request;
+      return jsonResponse({ answers: { damaged: { type: 'noul', noul: 0.1 } }, usage: { input_tokens: 30 } });
     },
     async () => {
       const response = await requestAppWithWarmModels('/v1/decisions', {
@@ -270,45 +270,43 @@ test('/v1/decisions refuses image evidence for a text-only target before dispatc
           questions: [{ type: 'predicate', name: 'damaged', instructions: 'Is it damaged?' }],
         }),
       });
-      assertEquals(response.status, 400);
-      const body = await response.json() as { error: { message: string } };
-      assertEquals(body.error.message.includes('image evidence'), true);
+      assertEquals(response.status, 200);
     },
   );
 
-  assertEquals(called, false);
+  assertExists(upstreamRequest);
+  const sent = await upstreamRequest.clone().json() as { state: unknown; assets: Record<string, unknown> };
+  assertEquals(sent.assets, { 'image-0': { type: 'image', format: 'png', data_base64: 'AAAA' } });
+  assertEquals(sent.state, ['Inspect this.', 'image-0']);
 });
 
-test('/v1/decisions forwards image evidence when the target reads images', async () => {
+test('/v1/systemone forwards an assets-bearing body verbatim to a System One target', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await saveDecisionUpstream(repo, { protocol: 'openai-decisions', images: true });
+  await saveDecisionUpstream(repo, { protocol: 'systemone' });
 
+  const body = {
+    model: 'public-decision',
+    state: { photo: 'img-1' },
+    assets: { 'img-1': { type: 'image', format: 'png', data_base64: 'AAAA' } },
+    questions: { damaged: { type: 'noul', instructions: 'Is `photo` damaged?' } },
+  };
   let upstreamRequest: Request | undefined;
   await withMockedFetch(
     async request => {
       upstreamRequest = request;
-      return jsonResponse({ answers: [{ type: 'predicate', name: 'damaged', probability: 0.88 }], usage: { input_tokens: 90 } });
+      return jsonResponse({ answers: { damaged: { type: 'noul', noul: 0.1 } }, usage: { input_tokens: 30 } });
     },
     async () => {
-      const response = await requestAppWithWarmModels('/v1/decisions', {
+      const response = await requestAppWithWarmModels('/v1/systemone', {
         method: 'POST',
         headers: requestHeaders(apiKey.key),
-        body: JSON.stringify({
-          model: 'public-decision',
-          input: [{
-            role: 'user', content: [
-              { type: 'input_text', text: 'Inspect this.' },
-              { type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'high' },
-            ],
-          }],
-          questions: [{ type: 'predicate', name: 'damaged', instructions: 'Is it damaged?' }],
-        }),
+        body: JSON.stringify(body),
       });
       assertEquals(response.status, 200);
     },
   );
 
   assertExists(upstreamRequest);
-  const sent = await upstreamRequest.clone().json() as { input: readonly { content: readonly Record<string, unknown>[] }[] };
-  assertEquals(sent.input[0].content[1], { type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'high' });
+  // Same dialect, so the whole body including assets reaches the upstream.
+  assertEquals(await upstreamRequest.clone().json(), { ...body, model: 'raw-decision' });
 });

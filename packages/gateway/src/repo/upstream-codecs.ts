@@ -94,7 +94,6 @@ const providerModelSchema = z.object({
     protocol: z.enum(DECISION_PROTOCOLS),
     path: z.string().optional(),
     questionTypes: z.array(z.enum(DECISION_QUESTION_TYPES)).optional(),
-    images: z.boolean().optional(),
   }).passthrough().optional(),
   enabledFlags: z.array(z.enum(OPTIONAL_FLAG_IDS)).transform(flags => new Set(flags)),
   flagOverrides: flagOverridesSchema.optional(),
@@ -118,7 +117,6 @@ const discoveredModelSchema = z.object({
     protocol: z.enum(DECISION_PROTOCOLS),
     path: z.string().optional(),
     questionTypes: z.array(z.enum(DECISION_QUESTION_TYPES)).optional(),
-    images: z.boolean().optional(),
   }).passthrough().optional(),
   flagOverrides: flagOverridesSchema.optional(),
 }).passthrough();

@@ -58,10 +58,6 @@ export interface DecisionTarget {
   // the listed question types so pre-dispatch filtering rejects a request the
   // deployment would answer with an upstream 4xx.
   questionTypes?: readonly DecisionQuestionType[];
-  // Whether the deployment reads images. Both dialects can carry them, but a
-  // model that ignores image evidence would answer confidently on its absence,
-  // so image requests are refused unless the target opts in. Omitted means no.
-  images?: boolean;
 }
 
 export type Modality = 'text' | 'image';

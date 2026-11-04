@@ -21,6 +21,11 @@ export interface DecisionImagePart {
 export interface DecisionJsonPart {
   type: 'json';
   data: Record<string, unknown> | readonly unknown[];
+  // System One lets an asset reference stand in for an image anywhere a string
+  // may appear, including a JSON field. The structure stays as sent (with the
+  // reference strings intact) and the images those references resolved to ride
+  // alongside, so a target that speaks inline image parts still receives them.
+  images?: readonly DecisionImagePart[];
 }
 
 export type DecisionContentPart = DecisionTextPart | DecisionImagePart | DecisionJsonPart;
@@ -30,7 +35,7 @@ export type DecisionContentPart = DecisionTextPart | DecisionImagePart | Decisio
 // (including images) that only a target reading images can receive.
 export type DecisionState =
   | { kind: 'text'; value: string }
-  | { kind: 'json'; value: Record<string, unknown> | readonly unknown[] }
+  | { kind: 'json'; value: Record<string, unknown> | readonly unknown[]; images?: readonly DecisionImagePart[] }
   | { kind: 'parts'; parts: readonly DecisionContentPart[] };
 
 export type DecisionInstructions = string | readonly DecisionContentPart[];

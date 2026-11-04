@@ -5,6 +5,7 @@ import type {
   DecisionChoiceOption,
   DecisionChoiceQuestion,
   DecisionContentPart,
+  DecisionImagePart,
   DecisionInstructions,
   DecisionNoulQuestion,
   DecisionQuestion,
@@ -29,33 +30,75 @@ const finiteNumber = (value: unknown, field: string): number => {
 };
 
 // The System One contract allows 2–255 options for a Choice and 2–10 levels for
-// a Score; the OpenAI contract matches. A target with different limits narrows
-// through `questionTypes` before reaching here.
+// a Score; the OpenAI contract matches.
 // https://docs.typesafe.ai/primitives/choice
 const CHOICE_OPTION_MIN = 2;
 const CHOICE_OPTION_MAX = 255;
 const SCORE_LEVEL_MIN = 2;
 const SCORE_LEVEL_MAX = 10;
 
-const isImageDetail = (value: unknown): value is 'low' | 'high' | 'auto' | 'original' =>
-  value === 'low' || value === 'high' || value === 'auto' || value === 'original';
+// --- System One assets ----------------------------------------------------
 
-const decided = <T>(value: unknown, field: string, check: (candidate: unknown) => candidate is T, allowed: string): T => {
-  if (!check(value)) throw new Error(`${field} must be one of ${allowed}`);
-  return value;
+// A System One image is an entry in a top-level `assets` map, referenced by a
+// string written where the image belongs. The asset holds a base64 PNG or JPEG,
+// which is the only form the contract defines.
+// https://docs.typesafe.ai/images
+const systemOneAssetImage = (reference: string, assets: unknown): DecisionImagePart | undefined => {
+  if (!isRecord(assets) || !Object.hasOwn(assets, reference)) return undefined;
+  const asset = assets[reference];
+  if (!isRecord(asset) || (asset.type !== undefined && asset.type !== 'image')) return undefined;
+  const format = typeof asset.format === 'string' ? asset.format : 'png';
+  const data = typeof asset.data_base64 === 'string' ? asset.data_base64 : '';
+  return { type: 'image', imageUrl: `data:image/${format === 'jpg' ? 'jpeg' : format};base64,${data}` };
 };
 
-// --- OpenAI content parts -> canonical parts -------------------------------
+// Every asset a structured value references, in encounter order, deduplicated.
+const collectAssetImages = (value: unknown, assets: unknown): DecisionImagePart[] => {
+  const found: DecisionImagePart[] = [];
+  const seen = new Set<string>();
+  const walk = (node: unknown): void => {
+    if (typeof node === 'string') {
+      if (seen.has(node)) return;
+      const image = systemOneAssetImage(node, assets);
+      if (image !== undefined) {
+        seen.add(node);
+        found.push(image);
+      }
+      return;
+    }
+    if (Array.isArray(node)) { for (const item of node) walk(item); return; }
+    if (isRecord(node)) { for (const item of Object.values(node)) walk(item); }
+  };
+  walk(value);
+  return found;
+};
+
+// A base64 data URL becomes a System One asset. An http(s) URL has no asset
+// form — the contract holds images by value only.
+const dataUrlAsset = (imageUrl: string, index: number): { format: string; dataBase64: string } => {
+  const match = /^data:image\/([a-zA-Z0-9.+-]+);base64,(.*)$/s.exec(imageUrl);
+  if (match === null) throw new Error(`image ${index} must be a base64 data URL to reach a System One target`);
+  const subtype = match[1].toLowerCase();
+  const format = subtype === 'jpeg' ? 'jpg' : subtype;
+  if (format !== 'png' && format !== 'jpg') throw new Error(`image ${index} must be png or jpg to reach a System One target`);
+  return { format, dataBase64: match[2].replace(/\s+/g, '') };
+};
+
+// --- OpenAI content parts -> canonical parts ------------------------------
+
+const isImageDetail = (value: unknown): value is 'low' | 'high' | 'auto' | 'original' =>
+  value === 'low' || value === 'high' || value === 'auto' || value === 'original';
 
 const openAIContentPart = (part: unknown, field: string): DecisionContentPart => {
   if (!isRecord(part)) throw new Error(`${field} must be an object`);
   if (part.type === 'input_text') return { type: 'text', text: requiredString(part.text, `${field}.text`) };
   if (part.type === 'input_image') {
     const detail = part.detail ?? undefined;
+    if (detail !== undefined && !isImageDetail(detail)) throw new Error(`${field}.detail must be one of low, high, auto, original`);
     return {
       type: 'image',
       imageUrl: requiredString(part.image_url, `${field}.image_url`),
-      ...(detail === undefined ? {} : { detail: decided(detail, `${field}.detail`, isImageDetail, 'low, high, auto, original') }),
+      ...(detail === undefined ? {} : { detail }),
     };
   }
   if (part.type === 'input_json') {
@@ -75,9 +118,8 @@ const OPENAI_MESSAGE_ROLES = new Set(['user', 'developer', 'system', 'assistant'
 
 // OpenAI `input` may be a string or an ordered list of messages with function
 // calls and tool outputs. System One has no notion of turns, so the canonical
-// form flattens text, JSON, and images into one ordered evidence list; a target
-// that reads images receives them.
-const openAIState = (input: unknown): DecisionState => {
+// form flattens text, JSON, and images into one ordered evidence list.
+const openAIInputState = (input: unknown): DecisionState => {
   if (typeof input === 'string') return { kind: 'text', value: input };
   if (!Array.isArray(input) || input.length === 0) throw new Error('input must be a string or a non-empty array');
   const parts: DecisionContentPart[] = [];
@@ -98,27 +140,35 @@ const openAIState = (input: unknown): DecisionState => {
 
 // System One rejects unknown top-level arguments with a 400, so parsing mirrors
 // that strictness instead of silently dropping fields the model never sees.
-// `assets` is accepted so an image-bearing request survives; the assets stay
-// opaque and ride through `raw` on a same-protocol forward.
 const SYSTEMONE_TOP_LEVEL_FIELDS = new Set(['model', 'state', 'questions', 'assets']);
 
-// System One instructions may be structured data; keep the text form verbatim
-// and preserve structure by serializing it once.
-const systemOneInstructions = (value: unknown, field: string): DecisionInstructions => {
-  if (typeof value === 'string') return value;
+// System One instructions are text (possibly structured data serialized once).
+// A whole-string asset reference becomes that image.
+const systemOneInstructions = (value: unknown, field: string, assets: unknown): DecisionInstructions => {
+  if (typeof value === 'string') {
+    const image = systemOneAssetImage(value, assets);
+    return image === undefined ? value : [image];
+  }
   if (isRecord(value) || Array.isArray(value)) return JSON.stringify(value);
   throw new Error(`${field} must be a string`);
 };
 
-const systemOneState = (value: unknown): DecisionState => {
-  if (typeof value === 'string') return { kind: 'text', value };
-  if (isRecord(value)) return { kind: 'json', value };
-  if (Array.isArray(value)) return { kind: 'json', value: value as readonly unknown[] };
+// A whole-string asset reference becomes an image part; a structured state keeps
+// its shape and carries the images its references resolved to.
+const systemOneState = (state: unknown, assets: unknown): DecisionState => {
+  if (typeof state === 'string') {
+    const image = systemOneAssetImage(state, assets);
+    return image === undefined ? { kind: 'text', value: state } : { kind: 'parts', parts: [image] };
+  }
+  if (isRecord(state) || Array.isArray(state)) {
+    const images = collectAssetImages(state, assets);
+    return { kind: 'json', value: state as Record<string, unknown> | readonly unknown[], ...(images.length === 0 ? {} : { images }) };
+  }
   throw new Error('state must be a string, an object, or an array');
 };
 
-const systemOneNoul = (name: string, value: Record<string, unknown>): DecisionNoulQuestion => {
-  const instructions = systemOneInstructions(value.instructions, `questions.${name}.instructions`);
+const systemOneNoul = (name: string, value: Record<string, unknown>, assets: unknown): DecisionNoulQuestion => {
+  const instructions = systemOneInstructions(value.instructions, `questions.${name}.instructions`, assets);
   if (value.criteria === undefined) return { type: 'noul', name, instructions };
   if (!isRecord(value.criteria)) throw new Error(`questions.${name}.criteria must be an object`);
   const trueCriterion = value.criteria.true;
@@ -136,8 +186,8 @@ const systemOneNoul = (name: string, value: Record<string, unknown>): DecisionNo
   };
 };
 
-const systemOneChoice = (name: string, value: Record<string, unknown>): DecisionChoiceQuestion => {
-  const instructions = systemOneInstructions(value.instructions, `questions.${name}.instructions`);
+const systemOneChoice = (name: string, value: Record<string, unknown>, assets: unknown): DecisionChoiceQuestion => {
+  const instructions = systemOneInstructions(value.instructions, `questions.${name}.instructions`, assets);
   if (!isRecord(value.criteria)) throw new Error(`questions.${name}.criteria must be an object`);
   const options: DecisionChoiceOption[] = Object.entries(value.criteria).map(([option, description]) => {
     if (description !== null && typeof description !== 'string') {
@@ -151,8 +201,8 @@ const systemOneChoice = (name: string, value: Record<string, unknown>): Decision
   return { type: 'choice', name, instructions, options };
 };
 
-const systemOneScore = (name: string, value: Record<string, unknown>): DecisionScoreQuestion => {
-  const instructions = systemOneInstructions(value.instructions, `questions.${name}.instructions`);
+const systemOneScore = (name: string, value: Record<string, unknown>, assets: unknown): DecisionScoreQuestion => {
+  const instructions = systemOneInstructions(value.instructions, `questions.${name}.instructions`, assets);
   if (!Array.isArray(value.criteria)) throw new Error(`questions.${name}.criteria must be an array of level descriptions`);
   if (value.criteria.length < SCORE_LEVEL_MIN || value.criteria.length > SCORE_LEVEL_MAX) {
     throw new Error(`questions.${name}.criteria must have ${SCORE_LEVEL_MIN}-${SCORE_LEVEL_MAX} levels`);
@@ -164,11 +214,11 @@ const systemOneScore = (name: string, value: Record<string, unknown>): DecisionS
   return { type: 'score', name, instructions, levels };
 };
 
-const parseSystemOneQuestion = (name: string, value: unknown): DecisionQuestion => {
+const parseSystemOneQuestion = (name: string, value: unknown, assets: unknown): DecisionQuestion => {
   if (!isRecord(value)) throw new Error(`questions.${name} must be an object`);
-  if (value.type === 'noul') return systemOneNoul(name, value);
-  if (value.type === 'choice') return systemOneChoice(name, value);
-  if (value.type === 'score') return systemOneScore(name, value);
+  if (value.type === 'noul') return systemOneNoul(name, value, assets);
+  if (value.type === 'choice') return systemOneChoice(name, value, assets);
+  if (value.type === 'score') return systemOneScore(name, value, assets);
   throw new Error(`questions.${name}.type must be one of noul, choice, score`);
 };
 
@@ -176,9 +226,9 @@ const parseSystemOneRequest = (value: Record<string, unknown>): CanonicalDecisio
   const unknownFields = Object.keys(value).filter(key => !SYSTEMONE_TOP_LEVEL_FIELDS.has(key));
   if (unknownFields.length > 0) throw new Error(`System One does not support ${unknownFields.join(', ')}`);
   if (value.state === undefined) throw new Error('state is required');
-  const state = systemOneState(value.state);
+  const state = systemOneState(value.state, value.assets);
   if (!isRecord(value.questions)) throw new Error('questions must be an object keyed by question name');
-  const questions = Object.entries(value.questions).map(([name, entry]) => parseSystemOneQuestion(name, entry));
+  const questions = Object.entries(value.questions).map(([name, entry]) => parseSystemOneQuestion(name, entry, value.assets));
   if (questions.length === 0) throw new Error('questions must contain at least one question');
   return { sourceProtocol: 'systemone', raw: value, state, questions };
 };
@@ -236,7 +286,7 @@ const parseOpenAIDecisionsRequest = (value: Record<string, unknown>): CanonicalD
   const unknownFields = Object.keys(value).filter(key => !OPENAI_TOP_LEVEL_FIELDS.has(key));
   if (unknownFields.length > 0) throw new Error(`OpenAI Decisions does not support ${unknownFields.join(', ')}`);
   if (value.input === undefined) throw new Error('input is required');
-  const state = openAIState(value.input);
+  const state = openAIInputState(value.input);
   if (!Array.isArray(value.questions)) throw new Error('questions must be an array');
   const questions = value.questions.map((entry, index) => openAIQuestion(entry, index));
   if (questions.length === 0) throw new Error('questions must contain at least one question');
@@ -258,75 +308,95 @@ export const parseDecisionRequest = (protocol: DecisionSourceProtocol, value: un
 const requestQuestionTypes = (request: CanonicalDecisionRequest): readonly DecisionQuestionType[] =>
   request.questions.map(question => question.type);
 
-const hasImage = (request: CanonicalDecisionRequest): boolean =>
-  (request.state.kind === 'parts' && request.state.parts.some(part => part.type === 'image'))
-  || request.questions.some(question => Array.isArray(question.instructions) && question.instructions.some(part => part.type === 'image'));
-
-// System One keys options by string, so `true` and `"true"` collapse there.
-const hasTypedChoiceCollision = (request: CanonicalDecisionRequest): boolean =>
-  request.questions.some(question => {
-    if (question.type !== 'choice') return false;
-    const seen = new Set<string>();
-    for (const option of question.options) {
-      const key = String(option.value);
-      if (seen.has(key)) return true;
-      seen.add(key);
-    }
-    return false;
-  });
-
-// A target accepts a request when its dialect can express every question and
-// its declared capability covers every question type. The protocol name alone
-// never decides this: a dialect may accept a primitive another rejects.
+// The only incompatibility is a question type the target does not answer. Both
+// dialects express every value a question can carry, so nothing about the
+// content is judged here: whether a model reads an image is the model's answer
+// to give, not a reason to refuse the request.
 export const decisionRequestIncompatibility = (target: DecisionTarget, request: CanonicalDecisionRequest): string | null => {
-  if (target.questionTypes !== undefined) {
-    const supported = new Set<DecisionQuestionType>(target.questionTypes);
-    const unsupported = requestQuestionTypes(request).filter(type => !supported.has(type));
-    if (unsupported.length > 0) {
-      return `${[...new Set(unsupported)].join(', ')} questions require a target that answers them`;
-    }
-  }
-  if (target.protocol === 'systemone' && hasTypedChoiceCollision(request)) {
-    return 'choice values that differ only by type cannot be represented on a System One target';
-  }
-  // Images are only representable where the target reads them; a target that
-  // does not would silently drop the evidence.
-  if (hasImage(request) && target.images !== true) {
-    return 'image evidence requires a target that reads images';
-  }
-  return null;
+  if (target.questionTypes === undefined) return null;
+  const supported = new Set<DecisionQuestionType>(target.questionTypes);
+  const unsupported = requestQuestionTypes(request).filter(type => !supported.has(type));
+  if (unsupported.length === 0) return null;
+  return `${[...new Set(unsupported)].join(', ')} questions require a target that answers them`;
 };
 
 // --- serialization --------------------------------------------------------
 
-const systemOneStateValue = (state: DecisionState): unknown => {
-  if (state.kind !== 'parts') return state.value;
-  return state.parts.map(part => part.type === 'text' ? part.text : part.type === 'json' ? JSON.stringify(part.data) : '').join('\n');
+interface SystemOneCarrier {
+  assets: Record<string, unknown>;
+  reference: (part: DecisionContentPart, index: number) => unknown;
+}
+
+const systemOneCarrier = (): SystemOneCarrier => {
+  const assets: Record<string, unknown> = {};
+  let count = 0;
+  return {
+    assets,
+    reference: (part, index) => {
+      if (part.type === 'text') return part.text;
+      if (part.type === 'json') return part.data;
+      const { format, dataBase64 } = dataUrlAsset(part.imageUrl, index);
+      const ref = `image-${count++}`;
+      assets[ref] = { type: 'image', format, data_base64: dataBase64 };
+      return ref;
+    },
+  };
+};
+
+const systemOneInstructionsValue = (instructions: DecisionInstructions, carrier: SystemOneCarrier): unknown =>
+  typeof instructions === 'string' ? instructions : instructions.map((part, index) => carrier.reference(part, index));
+
+const systemOneStateValue = (state: DecisionState, carrier: SystemOneCarrier): unknown => {
+  if (state.kind === 'text') return state.value;
+  // A structured state already carries its references; images lifted from it
+  // ride alongside, so lower them into assets under fresh references.
+  if (state.kind === 'json') {
+    const images = state.images ?? [];
+    if (images.length === 0) return state.value;
+    return [...images.map((image, index) => carrier.reference(image, index)), state.value];
+  }
+  const mapped = state.parts.map((part, index) => carrier.reference(part, index));
+  return mapped.length === 1 ? mapped[0] : mapped;
 };
 
 const serializeSystemOne = (model: string, request: CanonicalDecisionRequest): Record<string, unknown> => {
+  const carrier = systemOneCarrier();
   const questions = Object.fromEntries(request.questions.map(question => {
     if (question.type === 'noul') {
       return [question.name, {
         type: 'noul',
-        instructions: question.instructions,
+        instructions: systemOneInstructionsValue(question.instructions, carrier),
         ...(question.criteria === undefined ? {} : { criteria: question.criteria }),
       }];
     }
     if (question.type === 'choice') {
+      const criteria: Record<string, string | null> = {};
+      for (const option of question.options) {
+        const key = String(option.value);
+        // System One keys options by string, so two typed values that read the
+        // same cannot be carried without merging them.
+        if (Object.hasOwn(criteria, key)) throw new Error(`choice question ${question.name} has values that collapse to the same System One label`);
+        criteria[key] = option.description ?? null;
+      }
       return [question.name, {
         type: 'choice',
-        instructions: question.instructions,
-        criteria: Object.fromEntries(question.options.map(option => [String(option.value), option.description ?? null])),
+        instructions: systemOneInstructionsValue(question.instructions, carrier),
+        criteria,
       }];
     }
     return [question.name, {
       type: 'score',
-      instructions: question.instructions,
+      instructions: systemOneInstructionsValue(question.instructions, carrier),
       criteria: question.levels.map(level => level.label),
     }];
   }));
-  return { model, state: systemOneStateValue(request.state), questions };
+  const state = systemOneStateValue(request.state, carrier);
+  return {
+    model,
+    state,
+    questions,
+    ...(Object.keys(carrier.assets).length === 0 ? {} : { assets: carrier.assets }),
+  };
 };
 
 const openAIContentParts = (parts: readonly DecisionContentPart[]): readonly Record<string, unknown>[] => parts.map(part => {
@@ -338,15 +408,23 @@ const openAIContentParts = (parts: readonly DecisionContentPart[]): readonly Rec
 const openAIInstructions = (instructions: DecisionInstructions): unknown =>
   typeof instructions === 'string' ? instructions : openAIContentParts(instructions);
 
+const openAIStateValue = (state: DecisionState): unknown => {
+  if (state.kind === 'text') return state.value;
+  if (state.kind === 'json') {
+    const images = state.images ?? [];
+    if (images.length === 0) return state.value;
+    return [{ role: 'user', content: [...images.map(image => ({ type: 'input_image', image_url: image.imageUrl, ...(image.detail === undefined ? {} : { detail: image.detail }) })), { type: 'input_json', data: state.value }] }];
+  }
+  return [{ role: 'user', content: openAIContentParts(state.parts) }];
+};
+
 // OpenAI's Decisions shape: `input`, an array of questions whose yes/no type is
 // `predicate`, choice options as `{value, description?}`, and score levels as
 // `{label, description?}`.
 // https://developers.openai.com/api/docs/guides/decisions
 const serializeOpenAIDecisions = (model: string, request: CanonicalDecisionRequest): Record<string, unknown> => ({
   model,
-  input: request.state.kind === 'parts'
-    ? [{ role: 'user', content: openAIContentParts(request.state.parts) }]
-    : request.state.value,
+  input: openAIStateValue(request.state),
   questions: request.questions.map(question => {
     if (question.type === 'noul') {
       return { type: 'predicate', name: question.name, instructions: openAIInstructions(question.instructions) };
@@ -409,9 +487,6 @@ const stringRecord = (value: unknown): Record<string, string> | undefined => {
   return out;
 };
 
-// System One answers key off the question name and carry `noul`/`choice`/
-// `score` with their probabilities. Level keys stay string-keyed, matching the
-// HTTP contract.
 const systemOneAnswer = (name: string, value: unknown): DecisionAnswer => {
   if (!isRecord(value)) throw new Error(`answers.${name} must be an object`);
   if (value.type === 'noul') return { type: 'noul', name, noul: finiteNumber(value.noul, `answers.${name}.noul`) };
