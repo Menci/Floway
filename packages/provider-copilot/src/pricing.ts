@@ -73,6 +73,17 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
     tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' }, { serviceTier: 'priority' }),
     tokenPricingEntry({ input_tokens: '8', input_cache_read_tokens: '0.4', input_cache_write_tokens: '10', output_tokens: '30' }, { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } }),
   )],
+  // GPT-6.1 Terra reached Copilot's catalog with OpenAI's standard and
+  // long-context bands quoted in credits, and no `-fast` sibling, so the
+  // accelerated lane the vendor sells stays out of this table the same way the
+  // base-only Opus 5.5 row keeps its Fast mode out.
+  // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
+  // https://developers.openai.com/api/docs/models/gpt-6.1-terra
+  // https://developers.openai.com/api/docs/pricing
+  ['gpt-6.1-terra', modelPricing(
+    tokenPricingEntry({ input_tokens: '1', input_cache_read_tokens: '0.05', input_cache_write_tokens: '1.25', output_tokens: '5' }),
+    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '7.5' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
   // Two Copilot accounts began returning GPT-6 Astra on 2026-09-05 and served
   // a real `/responses` request as `model: "gpt-6-astra"` with
   // `service_tier: "default"`. Their catalogs quote exactly OpenAI's standard
@@ -247,6 +258,27 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   // https://github.com/microsoft/vscode/blob/5582533430f001c356c9eb45d2de5faae08e7481/src/vs/platform/agentHost/common/agentModelPricing.ts
   ['mai-code-1.1-flash', tokenBasePricing({ input_tokens: '0.2', input_cache_read_tokens: '0.02', input_cache_write_tokens: '0.25', output_tokens: '1.2' })],
   [/^mai-code-1-flash/, tokenBasePricing({ input_tokens: '0.75', input_cache_read_tokens: '0.075', output_tokens: '4.5' })],
+  // MAI-Code-2.x1 is preview-gated to Business and Enterprise and quotes a
+  // cache-read rate but no cache-write rate, so the entry carries the metrics
+  // Copilot actually prices. MAI-Code-2-Flash quotes zero across every metric,
+  // and microsoft-decision-1 has no token metrics at all: like
+  // `trajectory-compaction` below, neither gets a rule, because a promotional
+  // zero is Copilot's charge rather than a rate these entries can record.
+  // https://github.com/microsoft/vscode/blob/5582533430f001c356c9eb45d2de5faae08e7481/src/vs/platform/agentHost/common/agentModelPricing.ts
+  ['mai-code-2', tokenBasePricing({ input_tokens: '1', input_cache_read_tokens: '0.05', output_tokens: '5' })],
+  // GPT Image 2.5 Flare is a preview-gated image model. OpenAI bills its text
+  // and image input separately and prices output only in image tokens; the
+  // cached image rate has no `BILLING_METRICS` member, so the entry records
+  // the text cache rate alone, exactly as the Codex image model does.
+  // https://developers.openai.com/api/docs/pricing#image-generation
+  ['gpt-image-2.5-flare', modelPricing(
+    tokenPricingEntry({
+      input_tokens: '5',
+      input_cache_read_tokens: '1.25',
+      input_image_tokens: '8',
+      output_image_tokens: '30',
+    }),
+  )],
   [/^text-embedding-3-small/, tokenBasePricing({ input_tokens: '0.02', output_tokens: '0' })],
   ['text-embedding-ada-002', tokenBasePricing({ input_tokens: '0.1', output_tokens: '0' })],
   // No rule for `trajectory-compaction`, and none is coming: Copilot quotes
