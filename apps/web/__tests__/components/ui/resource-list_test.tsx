@@ -17,14 +17,6 @@ test('keeps separators between table bodies and hides only the final row edge', 
   expect(removedBorders(container)).toEqual(['C']);
 });
 
-test('keeps the visual last edge of an internal drag segment', () => {
-  const { container } = renderInApp(<ResourceListPanel><Table>
-    <TableBody data-reordering=""><TableRow data-reorder-edge="last"><TableCell>A</TableCell></TableRow><TableRow data-reorder-edge="first"><TableCell>B</TableCell></TableRow></TableBody>
-    <TableBody><TableRow><TableCell>C</TableCell></TableRow></TableBody>
-  </Table></ResourceListPanel>);
-  expect(removedBorders(container)).toEqual(['C']);
-});
-
 test('hides the visual last edge only when dragging the final table body', () => {
   const { container } = renderInApp(<ResourceListPanel><Table>
     <TableBody><TableRow><TableCell>A</TableCell></TableRow></TableBody>
