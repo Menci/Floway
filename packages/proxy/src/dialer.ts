@@ -175,7 +175,6 @@ const runRequestOnStream = async (
           host: target.sni ?? target.host,
           verifyHost: target.verifyHost ?? target.sni ?? target.host,
           checkServerIdentity: target.checkServerIdentity,
-          additionalRootCAs: target.additionalRootCAs,
           alpn: target.alpn,
           prefix: dialed.prefix,
           signal: options.signal,

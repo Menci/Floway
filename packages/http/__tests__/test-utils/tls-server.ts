@@ -29,35 +29,18 @@ const toPem = (label: string, der: ArrayBuffer): string => {
 
 export interface FixtureTlsServer {
   port: number;
-  /** PEM of the issuing CA. */
-  ca: string;
   close: () => Promise<void>;
 }
 
 export const startFixtureTlsServer = async (): Promise<FixtureTlsServer> => {
-  const caKeys = await webcrypto.subtle.generateKey(ALGORITHM, true, ['sign', 'verify']);
-  const ca = await X509CertificateGenerator.createSelfSigned({
-    serialNumber: '01',
-    name: 'CN=e2e-upstream CA',
-    notBefore: new Date(Date.now() - VALIDITY_MS),
-    notAfter: new Date(Date.now() + VALIDITY_MS),
-    signingAlgorithm: ALGORITHM,
-    keys: caKeys,
-    extensions: [
-      new BasicConstraintsExtension(true, undefined, true),
-      new KeyUsagesExtension(KeyUsageFlags.keyCertSign | KeyUsageFlags.cRLSign),
-    ],
-  });
   const keys = await webcrypto.subtle.generateKey(ALGORITHM, true, ['sign', 'verify']);
-  const certificate = await X509CertificateGenerator.create({
-    serialNumber: '02',
-    subject: 'CN=unrelated.example',
-    issuer: ca.subject,
+  const certificate = await X509CertificateGenerator.createSelfSigned({
+    serialNumber: '01',
+    name: 'CN=unrelated.example',
     notBefore: new Date(Date.now() - VALIDITY_MS),
     notAfter: new Date(Date.now() + VALIDITY_MS),
     signingAlgorithm: ALGORITHM,
-    publicKey: keys.publicKey,
-    signingKey: caKeys.privateKey,
+    keys,
     extensions: [
       new BasicConstraintsExtension(false, undefined, true),
       new KeyUsagesExtension(KeyUsageFlags.digitalSignature),
@@ -70,10 +53,9 @@ export const startFixtureTlsServer = async (): Promise<FixtureTlsServer> => {
     ],
   });
   const cert = certificate.toString('pem');
-  const caPem = ca.toString('pem');
   const key = toPem('PRIVATE KEY', await webcrypto.subtle.exportKey('pkcs8', keys.privateKey));
 
-  const server = tls.createServer({ cert, key, ca: caPem }, socket => {
+  const server = tls.createServer({ cert, key }, socket => {
     socket.on('data', chunk => socket.write(chunk));
     socket.on('error', () => { /* peer hangup is expected during teardown */ });
   });
@@ -82,7 +64,6 @@ export const startFixtureTlsServer = async (): Promise<FixtureTlsServer> => {
   if (address === null || typeof address === 'string') throw new Error('TLS server has no address');
   return {
     port: address.port,
-    ca: caPem,
     close: () => new Promise(resolve => server.close(() => resolve())),
   };
 };

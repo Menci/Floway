@@ -73,13 +73,6 @@ export interface ProxyRequestTarget extends DialTarget {
    */
   checkServerIdentity?: CheckServerIdentity;
 
-  /**
-   * Extra PEM roots to trust for the inner TLS leg. A runtime whose trust
-   * store is unreachable from userspace has no other way to reach a private
-   * CA.
-   */
-  additionalRootCAs?: readonly string[];
-
   /** Optional ALPN protocol list for the inner TLS handshake. */
   alpn?: string[];
 }
@@ -91,8 +84,6 @@ export interface TlsUpgradeOptions {
   verifyHost?: string;
   /** Replaces the certificate identity check; see `TlsUpgradeOptions`. */
   checkServerIdentity?: CheckServerIdentity;
-  /** Extra PEM roots to trust alongside the runtime's store. */
-  additionalRootCAs?: readonly string[];
   /** ALPN protocols to offer, in preference order. */
   alpn?: string[];
   /** Accept any peer certificate. Self-signed proxy leaves only. */

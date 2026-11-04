@@ -75,11 +75,6 @@ export const startNodeTls = async (
     host: identity,
     ...(net.isIP(servername) === 0 ? { servername } : {}),
     ALPNProtocols: opts.alpn,
-    // Node adds these to its own store rather than replacing it, which is
-    // what "additional" means to the caller.
-    ...(opts.additionalRootCAs === undefined
-      ? {}
-      : { ca: [...tls.getCACertificates('default'), ...opts.additionalRootCAs] }),
     rejectUnauthorized: !opts.insecure,
     ...(opts.insecure ? {} : { checkServerIdentity: makeIdentityCheck(identity, opts.checkServerIdentity) }),
     signal,

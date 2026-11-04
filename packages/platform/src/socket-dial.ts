@@ -52,12 +52,6 @@ export interface TlsUpgradeOptions {
    * Chain validation is unaffected.
    */
   checkServerIdentity?: CheckServerIdentity;
-  /**
-   * Additional PEM roots to trust alongside the runtime's own store. A
-   * runtime whose trust store is unreachable from userspace (workerd) has no
-   * other way to reach a private CA.
-   */
-  additionalRootCAs?: readonly string[];
   /** ALPN protocols to offer, in preference order. */
   alpn?: string[];
   /**

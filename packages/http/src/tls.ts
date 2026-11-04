@@ -11,7 +11,7 @@
 // transport and returns a fresh { readable, writable } pair carrying the
 // upstream's decrypted application data.
 
-import { loadX509FromPem, makeTLSClient, setCryptoImplementation } from '@reclaimprotocol/tls';
+import { makeTLSClient, setCryptoImplementation } from '@reclaimprotocol/tls';
 import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 
 import { signalAbortReason } from './abort.ts';
@@ -50,12 +50,6 @@ export interface UserspaceTlsOptions {
    */
   checkServerIdentity?: CheckServerIdentity;
   alpn?: string[];
-  /**
-   * Additional PEM roots to trust alongside the library's bundled Mozilla
-   * list. Lets a caller reach a private CA without relying on the
-   * process-global `TLS_ADDITIONAL_ROOT_CA_LIST`.
-   */
-  additionalRootCAs?: readonly string[];
   /**
    * When true, all server certificates are accepted (no chain validation,
    * no name match).
@@ -242,9 +236,6 @@ export const userspaceTls = async (
     host: opts.host,
     verifyHost: opts.verifyHost,
     verifyServerCertificate: !opts.insecure,
-    // The library embeds its own X.509 adapter; parse the extra roots with it
-    // so both sides agree on the certificate representation.
-    ...(opts.additionalRootCAs === undefined ? {} : { rootCAs: opts.additionalRootCAs.map(loadX509FromPem) }),
     // The library runs this before its chain walk and skips the hostname
     // match when it is present, so exactly one identity check happens and a
     // rejection is reported as an identity failure rather than a trust one.

@@ -394,24 +394,22 @@ describe('userspaceTls — certificate reference identity', () => {
 });
 
 describe('userspaceTls — checkServerIdentity', () => {
-  // The callback replaces the identity check; chain trust still has to hold,
-  // so each fixture CA is passed as an additional root.
-  const withTrustedCa = (ca: string): readonly string[] => [ca];
-
-  it('replaces the library identity check and receives verifyHost', async () => {
+  // The fixture's leaf chains to no root the library ships, so these cases
+  // reject from the callback itself: it runs before chain validation, which is
+  // exactly the ordering that lets a caller report an identity failure rather
+  // than a trust failure.
+  it('receives verifyHost and the presented leaf, and can reject', async () => {
     const seen: Array<{ identity: string; cn: unknown; san: string | undefined }> = [];
     const chain = await startFixtureTlsServer();
     try {
-      const secure = await userspaceTls(await connectRaw(chain.port), {
+      await expect(userspaceTls(await connectRaw(chain.port), {
         host: 'localhost',
         verifyHost: 'api.example.test',
-        additionalRootCAs: withTrustedCa(chain.ca),
         checkServerIdentity: (identity, certificate) => {
           seen.push({ identity, cn: certificate.subject.CN, san: certificate.subjectaltname });
-          return undefined;
+          return new Error('stop after observing');
         },
-      });
-      await secure.readable.cancel();
+      })).rejects.toThrow(/stop after observing/);
     } finally {
       await chain.close();
     }
@@ -421,7 +419,9 @@ describe('userspaceTls — checkServerIdentity', () => {
     expect(seen[0]!.san).toContain('DNS:api.example.test');
   });
 
-  it('aborts the handshake when the callback returns an Error', async () => {
+  it('reports the callback error rather than the chain failure behind it', async () => {
+    // Ordering proof: the leaf is untrusted, so a callback that never ran
+    // would surface "does not chain to a trusted root" instead.
     const chain = await startFixtureTlsServer();
     try {
       await expect(userspaceTls(await connectRaw(chain.port), {
@@ -433,19 +433,14 @@ describe('userspaceTls — checkServerIdentity', () => {
     }
   });
 
-  it('accepts exactly what tls.checkServerIdentity would reject', async () => {
-    // The point of the seam: one callback, runtime-appropriate behaviour.
-    // Here it overrides the library's match for a host the certificate does
-    // not cover, and the handshake succeeds because the callback allowed it.
+  it('still enforces chain trust when the callback accepts', async () => {
     const chain = await startFixtureTlsServer();
     try {
-      const secure = await userspaceTls(await connectRaw(chain.port), {
+      await expect(userspaceTls(await connectRaw(chain.port), {
         host: 'localhost',
         verifyHost: 'not-in-the-certificate.example',
-        additionalRootCAs: withTrustedCa(chain.ca),
         checkServerIdentity: () => undefined,
-      });
-      await secure.readable.cancel();
+      })).rejects.toThrow(/does not chain to a trusted root|Missing issuer/);
     } finally {
       await chain.close();
     }
