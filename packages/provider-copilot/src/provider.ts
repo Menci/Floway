@@ -3,7 +3,7 @@ import { COMPACTION_TRIGGER, compactionResponse } from './compaction.ts';
 import { assertCopilotUpstreamRecord } from './config.ts';
 import { COPILOT_DEFAULT_FLAGS, defaultFlagsForCopilotModel } from './defaults.ts';
 import { fetchCopilotModels } from './fetch-models.ts';
-import { copilotFetchOpenAIChatCompletions, copilotFetchOpenAIEmbeddings, copilotFetchAnthropicMessages, copilotFetchAnthropicMessagesCountTokens, copilotFetchOpenAIResponses, type CopilotDataPlaneFetchOptions } from './fetch.ts';
+import { copilotFetchOpenAIChatCompletions, copilotFetchOpenAIEmbeddings, copilotFetchAnthropicMessages, copilotFetchAnthropicMessagesCountTokens, copilotFetchOpenAIResponses, copilotFetchSystemOne, type CopilotDataPlaneFetchOptions } from './fetch.ts';
 import { COPILOT_ANTHROPIC_MESSAGES_BOUNDARY, COPILOT_ANTHROPIC_MESSAGES_COUNT_TOKENS_BOUNDARY } from './interceptors/anthropic-messages/index.ts';
 import type { AnthropicMessagesBoundaryCtx } from './interceptors/anthropic-messages/types.ts';
 import { COPILOT_OPENAI_CHAT_COMPLETIONS_BOUNDARY } from './interceptors/openai-chat-completions/index.ts';
@@ -78,6 +78,11 @@ const copilotPathToModelEndpoint = (path: string): ModelEndpointKey | undefined 
   case '/images/edits':
   case '/v1/images/edits':
     return 'openaiImagesEdits';
+  // Copilot serves decision models (capabilities.type "decisions") only on
+  // this path; the unprefixed `/systemone` 404s.
+  // https://github.com/agentgateway/agentgateway/issues/4221
+  case '/v1/systemone':
+    return 'systemOne';
   default:
     return undefined;
   }
@@ -108,7 +113,11 @@ const copilotModelEndpoints = (rawModels: readonly CopilotRawModel[]): ModelEndp
     return { openaiChatCompletions: {} };
   }
 
-  return rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiEmbeddings')) ? { openaiEmbeddings: {} } : {};
+  if (rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiEmbeddings'))) {
+    return { openaiEmbeddings: {} };
+  }
+
+  return rawModels.some(model => rawModelSupportsEndpoint(model, 'systemOne')) ? { systemOne: {} } : {};
 };
 
 const chatReasoningEffort = (body: Omit<OpenAIChatCompletionsPayload, 'model'>): string | undefined => (body.reasoning_effort && body.reasoning_effort !== 'none' ? body.reasoning_effort : undefined);
@@ -492,6 +501,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     callOpenAIImagesEdits: rejectUnsupported('callOpenAIImagesEdits'),
     callOpenAIAudioTranscriptions: rejectUnsupported('callOpenAIAudioTranscriptions'),
     callRerank: rejectUnsupported('callRerank'),
+    callSystemOne: (model, body, signal, opts) => call(copilotFetchSystemOne, body, signal, rawModelFor(model, 'systemOne'), [...opts.headers], opts),
   };
 
   return {

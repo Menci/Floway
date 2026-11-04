@@ -73,5 +73,7 @@ export const copilotFetchAnthropicMessagesCountTokens = (config: CopilotFetchCon
   copilotFetchInternal(config, '/v1/messages/count_tokens', init, options);
 export const copilotFetchOpenAIEmbeddings = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/embeddings', init, options);
+export const copilotFetchSystemOne = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
+  copilotFetchInternal(config, '/v1/systemone', init, options);
 export const copilotFetchModels = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/models', init, options);

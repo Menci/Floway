@@ -1553,3 +1553,54 @@ test('Copilot provider merges the -fast raw variant and reaches it through servi
   assertEquals(sent.map(body => body.model), ['gpt-5.6-sol', 'gpt-5.6-sol-fast', 'gpt-5.6-sol-fast', 'gpt-5.6-sol']);
   assertEquals(sent.every(body => !('service_tier' in body)), true);
 });
+
+// Captured from Copilot `/models` on 2026-11-04 (enterprise seat).
+const COPILOT_DECISION_MODEL = {
+  billing: { restricted_to: ['business', 'enterprise'], token_prices: { batch_size: 0, default: { cache_price: 0, cache_write_price: 0, input_price: 0, output_price: 0 } } },
+  capabilities: { family: 'microsoft-decision-1', object: 'model_capabilities', supports: {}, tokenizer: 'o200k_base', type: 'decisions' },
+  id: 'microsoft-decision-1',
+  is_chat_default: false,
+  is_chat_fallback: false,
+  model_picker_enabled: false,
+  model_picker_price_category: 'low',
+  name: 'Microsoft-Decision-1',
+  object: 'model',
+  preview: true,
+  supported_endpoints: ['/v1/systemone'],
+  vendor: 'Experimental',
+  version: 'microsoft-decision-1',
+};
+
+test('Copilot provider projects a /v1/systemone model as a System One decision model and calls that path', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const provider = createCopilotProvider(copilotUpstream).instance;
+  const calls: { path: string; body: unknown }[] = [];
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.enterprise.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') return jsonResponse({ object: 'list', data: [COPILOT_DECISION_MODEL] });
+      calls.push({ path: url.pathname, body: await request.json() });
+      return jsonResponse({ model: 'microsoft-decision-1', answers: { a: { type: 'noul', noul: 0.4 } }, usage: { input_tokens: 18, output_tokens: 1 } });
+    },
+    async () => {
+      const [model] = await provider.getProvidedModels(directFetcher);
+      assertEquals(model.id, 'microsoft-decision-1');
+      assertEquals(model.kind, 'decision');
+      assertEquals(model.endpoints, { systemOne: {} });
+
+      const { response, modelKey } = await provider.callSystemOne(model, { state: 'x', questions: { a: { type: 'noul', instructions: '?' } } }, undefined, noopUpstreamCallOptions());
+      assertEquals(response.status, 200);
+      assertEquals(modelKey, 'microsoft-decision-1');
+    },
+  );
+
+  assertEquals(calls, [{
+    path: '/v1/systemone',
+    body: { state: 'x', questions: { a: { type: 'noul', instructions: '?' } }, model: 'microsoft-decision-1' },
+  }]);
+});
