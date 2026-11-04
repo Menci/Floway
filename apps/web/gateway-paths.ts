@@ -33,4 +33,6 @@ export const wranglerProxiedPaths = [
   '/models',
   '/images/generations',
   '/images/edits',
+  '/decisions',
+  '/systemone',
 ];

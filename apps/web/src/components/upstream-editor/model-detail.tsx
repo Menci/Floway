@@ -310,6 +310,7 @@ const modelKindLabel = (kind: UpstreamModelConfig['kind']): string => {
   case 'image': return 'Image';
   case 'transcription': return 'Transcription';
   case 'rerank': return 'Rerank';
+  case 'decision': return 'Decision';
   }
 };
 

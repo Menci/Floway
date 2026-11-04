@@ -13,6 +13,7 @@ export const ENDPOINT_PATHS = {
   openaiImagesGenerations: '/images/generations',
   openaiImagesEdits: '/images/edits',
   openaiAudioTranscriptions: '/audio/transcriptions',
+  systemOne: '/systemone',
 } as const satisfies Record<keyof ModelEndpoints, string>;
 
 export const CHAT_ENDPOINT_KEYS = ['openaiCompletions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages'] as const satisfies readonly (keyof ModelEndpoints)[];
@@ -56,6 +57,7 @@ export const shapeForKind = (
 ): { endpoints: ModelEndpoints; rerankTarget?: RerankTarget } => {
   if (kind === 'embedding') return { endpoints: { openaiEmbeddings: {} } };
   if (kind === 'transcription') return { endpoints: { openaiAudioTranscriptions: {} } };
+  if (kind === 'decision') return { endpoints: { systemOne: {} } };
   if (kind === 'rerank') return { endpoints: { rerank: {} }, rerankTarget: current.rerankTarget ?? INITIAL_RERANK_TARGET };
   const family = kind === 'image' ? IMAGE_ENDPOINT_KEYS : CHAT_ENDPOINT_KEYS;
   const kept: ModelEndpoints = {};

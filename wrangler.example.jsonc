@@ -86,6 +86,8 @@
       "/embeddings",
       "/images/*",
       "/models",
+      "/decisions",
+      "/systemone",
       "/azure-api.codex/*"
     ]
   },

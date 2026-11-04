@@ -45,6 +45,8 @@ const gatewayPaths = new Set([
   '/models',
   '/images/generations',
   '/images/edits',
+  '/decisions',
+  '/systemone',
 ]);
 
 const contentTypes: Record<string, string> = {
