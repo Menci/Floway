@@ -96,5 +96,5 @@ export const cloudflareSocketDial: SocketDial = {
   // `secureTransport: 'on'` branch above is the only place TLS is left to
   // workerd.
   // https://github.com/cloudflare/workerd/issues/2712
-  startTls: (transport, opts) => userspaceTls(transport, opts),
+  startTls: userspaceTls,
 };

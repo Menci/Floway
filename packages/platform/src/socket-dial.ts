@@ -46,8 +46,11 @@ export interface TlsUpgradeOptions {
   /**
    * Replace the certificate identity check. The callback receives
    * `verifyHost ?? host` and the leaf certificate, and returns an Error to
-   * reject the handshake. Same contract as `tls.checkServerIdentity`, so the
-   * runtime's native implementation can be passed straight through.
+   * reject the handshake.
+   *
+   * The shape mirrors `tls.checkServerIdentity` but promises fewer fields, so
+   * a callback written against it runs unchanged on every runtime; Node's own
+   * function needs an adapter, since its `PeerCertificate` carries more.
    *
    * Chain validation is unaffected.
    */

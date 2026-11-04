@@ -14,7 +14,7 @@ const transportToDuplex = (transport: DuplexStream): Duplex => {
   const duplex = Duplex.fromWeb({
     readable: transport.readable,
     writable: transport.writable,
-  } as Parameters<typeof Duplex.fromWeb>[0]) as Duplex;
+  } as Parameters<typeof Duplex.fromWeb>[0]);
   // A rejected transport write surfaces as an 'error' event on this duplex
   // with no listener of its own, which terminates the process: `Duplex.fromWeb`
   // turns the failed web-stream write into an event, and before `tls.connect`

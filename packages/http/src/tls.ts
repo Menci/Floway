@@ -42,10 +42,12 @@ export interface UserspaceTlsOptions {
    * Replace the certificate identity check. The callback receives the
    * identity to prove — `verifyHost ?? host` — plus the leaf certificate,
    * and returns an Error to reject the handshake or `undefined` to accept.
-   * Same contract as `tls.checkServerIdentity`, so the runtime's native
-   * implementation can be passed straight through here.
    *
-   * Chain validation is unaffected: a rejected leaf still has to be issued
+   * The shape mirrors `tls.checkServerIdentity` but promises fewer fields, so
+   * one callback runs unchanged on every runtime; Node's own function needs an
+   * adapter, since its `PeerCertificate` carries more.
+   *
+   * Chain validation is unaffected: an accepted leaf still has to be issued
    * by a trusted root.
    */
   checkServerIdentity?: CheckServerIdentity;
@@ -91,10 +93,9 @@ interface LibraryCertificate {
 }
 
 /**
- * The peer-certificate fields `tls.checkServerIdentity` reads. Naming them
- * here keeps the callback assignable from Node's own function in one
- * direction and from our userspace leaf adapter in the other, so a caller can
- * write one callback and use it on every runtime.
+ * The peer-certificate fields `tls.checkServerIdentity` reads. Narrowing to
+ * them lets one callback run on every runtime: Node's `PeerCertificate` and
+ * our userspace leaf adapter both satisfy this shape.
  */
 export interface PeerCertificateIdentity {
   /** DER bytes of the leaf certificate. */
@@ -122,9 +123,10 @@ const toIdentityCertificate = (leaf: LibraryCertificate): PeerCertificateIdentit
     ...(leaf.getAlternativeDNSNames?.() ?? []).map(name => `DNS:${name}`),
     ...(leaf.getAlternativeIPAddresses?.() ?? []).map(address => `IP Address:${address}`),
   ];
+  const commonNames = leaf.getSubjectField('CN');
   return {
     raw: new Uint8Array(leaf.internal.rawData),
-    subject: { CN: leaf.getSubjectField('CN')[0] },
+    subject: { CN: commonNames.length > 1 ? commonNames : commonNames[0] },
     ...(names.length === 0 ? {} : { subjectaltname: names.join(', ') }),
   };
 };

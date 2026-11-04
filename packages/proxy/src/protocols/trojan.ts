@@ -24,6 +24,7 @@ import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from
 import { utf8Bytes } from '../encoding.ts';
 import type { TrojanProxyConfig } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialedSocket, DialTarget } from '../types.ts';
+import type { DuplexStream } from '@floway-dev/http';
 
 export const dialTrojan = async (
   config: TrojanProxyConfig,
@@ -35,7 +36,7 @@ export const dialTrojan = async (
   const socket = await connectOrDialError(options.socketDial, config.host, config.port, { signal: options.signal });
 
   try {
-    return await dialTrojanInner(options, socket, config, target);
+    return await dialTrojanInner(socket, config, target, options);
   } catch (err) {
     void socket.close().catch(() => {});
     throw err;
@@ -43,23 +44,24 @@ export const dialTrojan = async (
 };
 
 const dialTrojanInner = async (
-  options: DialOptions,
   socket: DialedSocket,
   config: TrojanProxyConfig,
   target: DialTarget,
+  options: DialOptions,
 ): Promise<DialResult> => {
-  const outerTls = await options.socketDial.startTls(socket, {
-    host: config.sni ?? config.host,
-    // Operator escape hatch for self-signed trojan-server leaves (the
-    // trojan-go reference inbound runs self-signed by default); the
-    // runtime chain-validates otherwise.
-    insecure: config.allowInsecure,
-    signal: options.signal,
-  }).catch((cause: unknown) => {
-    throw cause instanceof ProxyDialError
-      ? cause
-      : new ProxyDialError('outer tls handshake to trojan server failed', 'outer-tls', { cause });
-  });
+  let outerTls: DuplexStream;
+  try {
+    outerTls = await options.socketDial.startTls(socket, {
+      host: config.sni ?? config.host,
+      // Operator escape hatch for self-signed trojan-server leaves (the
+      // trojan-go reference inbound runs self-signed by default); the
+      // runtime chain-validates otherwise.
+      insecure: config.allowInsecure,
+      signal: options.signal,
+    });
+  } catch (cause) {
+    throw new ProxyDialError('outer tls handshake to trojan server failed', 'outer-tls', { cause });
+  }
 
   return {
     readable: outerTls.readable,
