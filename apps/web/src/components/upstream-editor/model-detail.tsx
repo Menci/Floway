@@ -72,6 +72,8 @@ export function ModelDetail({
   const setKind = (kind: UpstreamModelConfig['kind']) => patch({
     kind,
     chat: kind === 'chat' ? row.config.chat : undefined,
+    // Only a chat turn carries an opaque blob, so the scope goes with the kind.
+    opaqueBlobCompatibilityScope: kind === 'chat' ? row.config.opaqueBlobCompatibilityScope : undefined,
     rerankTarget: undefined,
     decisionTarget: undefined,
     ...(kind === 'image' ? { limits: undefined } : {}),
@@ -171,7 +173,9 @@ export function ModelDetail({
           </div>
         </EditorSection>
 
-        <EditorSection
+        {/* Opaque blobs ride a chat turn's history across models; no other kind
+            carries one. */}
+        {row.config.kind === 'chat' && <EditorSection
           info={<span className="whitespace-pre-line">{t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityHint')}</span>}
           level={3}
           title={t('dashboard.upstreamEditor.models.opaqueBlobCompatibility')}
@@ -193,7 +197,7 @@ export function ModelDetail({
               onChange={(_, data) => updateOpaqueBlobCompatibilityScope({ bindToUpstream: data.checked })}
             />
           </div>
-        </EditorSection>
+        </EditorSection>}
 
         {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <EditorSection error={validationMessage('endpoints')} level={3} title={t('dashboard.upstreamEditor.models.endpoints')}>
           <div className={`${TWO_COLUMN_FORM_CLASS} ${CHECKBOX_LIST_CLASS}`}>
