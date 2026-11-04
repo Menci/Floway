@@ -174,7 +174,6 @@ const runRequestOnStream = async (
         tls = await options.socketDial.startTls(stream, {
           host: target.sni ?? target.host,
           verifyHost: target.verifyHost ?? target.sni ?? target.host,
-          checkServerIdentity: target.checkServerIdentity,
           alpn: target.alpn,
           prefix: dialed.prefix,
           signal: options.signal,

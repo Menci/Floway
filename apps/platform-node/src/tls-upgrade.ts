@@ -26,14 +26,10 @@ const transportToDuplex = (transport: DuplexStream): Duplex => {
 
 // Node verifies the peer against `servername` when it is set and against
 // `host` otherwise, so a caller that separates the SNI name from the reference
-// identity, or that supplies its own check, has to install one here. Node's
-// `checkServerIdentity` is the default; a caller-provided callback replaces it
-// with the same `(identity, certificate) => Error | undefined` contract.
-const makeIdentityCheck = (
-  identity: string,
-  check: TlsUpgradeOptions['checkServerIdentity'],
-) => (_servername: string, peer: tls.PeerCertificate): Error | undefined =>
-  check === undefined ? tls.checkServerIdentity(identity, peer) : check(identity, peer);
+// identity has to install the check itself.
+const makeIdentityCheck = (identity: string) =>
+  (_servername: string, peer: tls.PeerCertificate): Error | undefined =>
+    tls.checkServerIdentity(identity, peer);
 
 // `signal` is honoured at two layers: a pre-upgrade short-circuit, and the
 // abort wiring `tls.connect` installs on the socket for its whole lifetime —
@@ -72,7 +68,7 @@ export const startNodeTls = async (
     ...(net.isIP(servername) === 0 ? { servername } : {}),
     ALPNProtocols: opts.alpn,
     rejectUnauthorized: !opts.insecure,
-    ...(opts.insecure ? {} : { checkServerIdentity: makeIdentityCheck(identity, opts.checkServerIdentity) }),
+    ...(opts.insecure ? {} : { checkServerIdentity: makeIdentityCheck(identity) }),
     signal,
   });
 

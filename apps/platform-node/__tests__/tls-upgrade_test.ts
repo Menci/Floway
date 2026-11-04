@@ -126,45 +126,6 @@ describe('startNodeTls — handshake', () => {
     });
   });
 
-  it('hands the leaf to a caller-supplied checkServerIdentity', async () => {
-    const chain = await makeChain();
-    await withTrustedCa(chain.ca, async () => {
-      const server = await startTlsServer(chain);
-      try {
-        const seen: Array<{ identity: string; san: string | undefined }> = [];
-        const secure = await startNodeTls(await dialRaw(server.port), {
-          host: 'localhost',
-          verifyHost: 'api.example.test',
-          checkServerIdentity: (identity, certificate) => {
-            seen.push({ identity, san: certificate.subjectaltname });
-            return undefined;
-          },
-        });
-        await secure.readable.cancel();
-        expect(seen).toHaveLength(1);
-        expect(seen[0]!.identity).toBe('api.example.test');
-        expect(seen[0]!.san).toContain('DNS:localhost');
-      } finally {
-        await server.close();
-      }
-    });
-  });
-
-  it('rejects the handshake when checkServerIdentity returns an Error', async () => {
-    const chain = await makeChain();
-    await withTrustedCa(chain.ca, async () => {
-      const server = await startTlsServer(chain);
-      try {
-        await expect(startNodeTls(await dialRaw(server.port), {
-          host: 'localhost',
-          checkServerIdentity: () => new Error('identity rejected by the caller'),
-        })).rejects.toThrow(/identity rejected by the caller/);
-      } finally {
-        await server.close();
-      }
-    });
-  });
-
   it('accepts an untrusted certificate when insecure is set', async () => {
     const chain = await makeChain();
     const server = await startTlsServer(chain, (socket, chunk) => socket.write(chunk));

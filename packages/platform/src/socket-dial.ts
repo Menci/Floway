@@ -1,7 +1,7 @@
 // Runtime-agnostic byte-stream dial primitive. Each runtime supplies a
 // concrete impl via initSocketDial; callers obtain it via getSocketDial().
 
-import type { CheckServerIdentity, DuplexStream } from '@floway-dev/http';
+import type { DuplexStream } from '@floway-dev/http';
 
 interface SocketDialOptions {
   /**
@@ -44,16 +44,6 @@ export interface TlsUpgradeOptions {
    * once the certificate lists any DNS SAN. Defaults to `host`.
    */
   verifyHost?: string;
-  /**
-   * Replace the certificate identity check. The callback receives
-   * `verifyHost ?? host` and the leaf certificate, and returns an Error to
-   * reject the handshake. Node's `tls.checkServerIdentity` remains the
-   * default, and a callback written against this type fits its option slot,
-   * so one callback serves every runtime.
-   *
-   * Chain validation is unaffected.
-   */
-  checkServerIdentity?: CheckServerIdentity;
   /** ALPN protocols to offer, in preference order. */
   alpn?: string[];
   /**

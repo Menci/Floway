@@ -5,7 +5,7 @@
 // SNI, ALPN, and HTTP-shaped concerns live one layer up in the
 // orchestrator (runProxiedRequest).
 
-import type { CheckServerIdentity, DuplexStream, HttpContentDecoders } from '@floway-dev/http';
+import type { DuplexStream, HttpContentDecoders } from '@floway-dev/http';
 
 /** Pure transport target: where the proxy should land us. */
 export interface DialTarget {
@@ -66,13 +66,6 @@ export interface ProxyRequestTarget extends DialTarget {
    */
   verifyHost?: string;
 
-  /**
-   * Replace the certificate identity check for the inner TLS leg. Receives
-   * `verifyHost ?? sni ?? host` and the leaf certificate; returning an Error
-   * rejects the handshake. Same contract as `tls.checkServerIdentity`.
-   */
-  checkServerIdentity?: CheckServerIdentity;
-
   /** Optional ALPN protocol list for the inner TLS handshake. */
   alpn?: string[];
 }
@@ -84,11 +77,6 @@ export interface TlsUpgradeOptions {
   host: string;
   /** Reference identity the certificate chain must prove. Defaults to `host`. */
   verifyHost?: string;
-  /**
-   * Replace the certificate identity check. Receives the reference identity
-   * and the leaf certificate; returning an Error rejects the handshake.
-   */
-  checkServerIdentity?: CheckServerIdentity;
   /** ALPN protocols to offer, in preference order. */
   alpn?: string[];
   /** Accept any peer certificate. Self-signed proxy leaves only. */
