@@ -775,7 +775,7 @@ const en = {
             'strip-billing-attribution': {
               label: 'Remove Claude Code Billing Attribution',
               description:
-                  'Claude Code adds `x-anthropic-billing-header` to the system prompt so Anthropic can determine billing attribution. This marker serves no purpose for **non-official Anthropic upstreams** and is likely to **break prefix caching**.\nEnable this option when the upstream is not an official Anthropic service to remove the marker from the system prompt.\nDo **not** enable it for official Anthropic upstreams such as Claude Code, or billing attribution may be affected.',
+                  'Claude Code adds `x-anthropic-billing-header` to the system prompt and sends the `claude-code-20250219` beta flag so Anthropic bills the request as Claude Code usage. Only a **Claude Code subscription** upstream needs these markers. Elsewhere they are likely to **break prefix caching**, and on the Anthropic API with an API key they bill the request as Claude Code, which the monthly API credits of Max and Team plans do not cover, so the request fails with “credit balance is too low”.\nEnable this option for every upstream other than a Claude Code subscription, including the Anthropic API with an API key, to remove both markers.\nDo **not** enable it for a Claude Code subscription upstream, or the request falls off plan billing.',
             },
             'strip-prompt-cache-key': {
               label: 'Remove Prompt Cache Key',

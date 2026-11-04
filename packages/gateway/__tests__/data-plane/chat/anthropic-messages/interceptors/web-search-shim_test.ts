@@ -47,6 +47,7 @@ const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesInvocat
   }),
   targetApi: 'anthropicMessages',
   headers: new Headers(),
+  anthropicBeta: [],
 });
 
 const encodeUnsignedPayload = (payload: unknown): string => btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');

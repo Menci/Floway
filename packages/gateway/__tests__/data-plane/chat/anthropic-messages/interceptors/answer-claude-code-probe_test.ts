@@ -34,6 +34,7 @@ const invocation = (payload: AnthropicMessagesPayload, userAgent: string | null 
   candidate: stubModelCandidate({ model: { endpoints: { openaiResponses: {} } } }),
   targetApi: 'openaiResponses',
   headers: new Headers(userAgent === null ? {} : { 'user-agent': userAgent }),
+  anthropicBeta: [],
 });
 
 const passthrough = async (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>> =>
