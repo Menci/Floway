@@ -62,9 +62,6 @@ const userContent = (item: Extract<IRInputUserItem, { type: 'message' }>, compac
   return item.content.map(part => {
     switch (part.type) {
     case 'text': return { type: 'input_text' as const, text: part.text };
-    // Responses user content admits a refusal part, so a Chat source that stated
-    // one keeps it rather than failing the request.
-    case 'refusal': return { type: 'refusal' as const, refusal: part.refusal };
     case 'image': return inputContent(part.image, part.detail);
     case 'file': return fileContent(part.file, part.filename);
     case 'audio': throw new TranslatorInputError(`Cannot translate Gemini generateContent inlineData MIME type '${part.audio.media_type}' to OpenAI Responses.`);
@@ -187,14 +184,13 @@ const requireSchema = (format: IRInputOutputFormat): Readonly<Record<string, unk
  * omitted Responses tool/format strictness is not the same as `false`.
  */
 export const openaiResponsesEnvelopeFromIR = (envelope: IRInputEnvelope): Partial<CanonicalOpenAIResponsesPayload> => {
-  const limits = envelope.sampling?.max_output_tokens;
-  const ceiling = limits?.max_output_tokens ?? limits?.max_completion_tokens ?? limits?.max_tokens;
+  const ceiling = envelope.max_output_tokens;
   const format = envelope.output_format;
 
   return {
     ...(ceiling === undefined ? {} : { max_output_tokens: ceiling }),
-    ...(envelope.sampling?.temperature === undefined ? {} : { temperature: envelope.sampling.temperature }),
-    ...(envelope.sampling?.top_p === undefined ? {} : { top_p: envelope.sampling.top_p }),
+    ...(envelope.temperature === undefined ? {} : { temperature: envelope.temperature }),
+    ...(envelope.top_p === undefined ? {} : { top_p: envelope.top_p }),
     ...(format === undefined
       ? {}
       : {

@@ -84,7 +84,6 @@ const userContent = async (
       blocks.push(documentBlock(part.file));
       break;
     case 'audio': throw new TranslatorInputError(`Cannot translate Gemini generateContent inlineData MIME type '${part.audio.media_type}' to Anthropic Messages.`);
-    case 'refusal': throw new TranslatorInputError("Invalid 'refusal' content part. Only 'text' and 'image_url' are supported in user content.");
     default: throw new TranslatorInputError(`Invalid '${(part as { type: string }).type}' content part.`);
     }
   }
@@ -281,16 +280,15 @@ export type { IRInputAssistantContentPart };
  * so a source that only stated `max_completion_tokens` still lands here.
  */
 export const anthropicMessagesEnvelopeFromIR = (envelope: IRInputEnvelope): Omit<Partial<AnthropicMessagesPayload>, 'model'> => {
-  const limits = envelope.sampling?.max_output_tokens;
-  const ceiling = limits?.max_tokens ?? limits?.max_completion_tokens ?? limits?.max_output_tokens;
+  const ceiling = envelope.max_output_tokens;
   const format = envelope.output_format;
 
   return {
     ...(ceiling === undefined ? {} : { max_tokens: ceiling }),
-    ...(envelope.sampling?.temperature === undefined ? {} : { temperature: envelope.sampling.temperature }),
-    ...(envelope.sampling?.top_p === undefined ? {} : { top_p: envelope.sampling.top_p }),
-    ...(envelope.sampling?.top_k === undefined ? {} : { top_k: envelope.sampling.top_k }),
-    ...(envelope.sampling?.stop === undefined ? {} : { stop_sequences: [...envelope.sampling.stop] }),
+    ...(envelope.temperature === undefined ? {} : { temperature: envelope.temperature }),
+    ...(envelope.top_p === undefined ? {} : { top_p: envelope.top_p }),
+    ...(envelope.top_k === undefined ? {} : { top_k: envelope.top_k }),
+    ...(envelope.stop === undefined ? {} : { stop_sequences: [...envelope.stop] }),
     ...(format?.type === 'json_schema' && format.schema !== undefined
       ? { output_config: { format: { type: 'json_schema' as const, schema: format.schema } } }
       : {}),

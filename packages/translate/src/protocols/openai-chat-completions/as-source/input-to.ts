@@ -7,9 +7,7 @@ import type {
   IRInputAssistantItem,
   IRInputConversation,
   IRInputEnvelope,
-  IRInputMaxOutputTokens,
   IRInputOutputFormat,
-  IRInputSampling,
   IRInputMedia,
   IRInputTextPart,
   IRInputToolResultContentPart,
@@ -19,7 +17,7 @@ import type {
 
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
-import type { OpenAIChatCompletionsContentPart, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsUserContentPart } from '@floway-dev/protocols/openai-chat-completions';
 
 const DATA_URL = /^data:([^;,]+)?;base64,(.*)$/s;
 
@@ -39,12 +37,10 @@ const mediaFromUrl = (url: string): IRInputMedia => {
 // contributes nothing to the system prompt and is dropped instead.
 const textParts = (value: string, keepEmpty = true): IRInputTextPart[] => value === '' && !keepEmpty ? [] : [{ type: 'text', text: value }];
 
-const userContentPart = (part: OpenAIChatCompletionsContentPart): IRInputUserContentPart => {
+const userContentPart = (part: OpenAIChatCompletionsUserContentPart): IRInputUserContentPart => {
   switch (part.type) {
   case 'text':
     return { type: 'text', text: part.text };
-  case 'refusal':
-    return { type: 'refusal', refusal: part.refusal };
   case 'image_url':
     return {
       type: 'image',
@@ -60,7 +56,7 @@ const userContentPart = (part: OpenAIChatCompletionsContentPart): IRInputUserCon
     throw new TranslatorInputError("A Chat Completions file part requires 'file_id' or 'file_data'.");
   }
   default:
-    throw new TranslatorInputError(`Invalid '${(part as { type: string }).type}' content part. Only 'text', 'image_url', 'input_audio', 'file', and 'refusal' are supported.`);
+    throw new TranslatorInputError(`Invalid '${(part as { type: string }).type}' content part. Only 'text', 'image_url', 'input_audio', and 'file' are supported.`);
   }
 };
 
@@ -180,26 +176,15 @@ export const openaiChatCompletionsInputToIR = (payload: OpenAIChatCompletionsPay
 
 /**
  * Chat Completions states one ceiling under two names. `max_tokens` predates
- * reasoning models; `max_completion_tokens` is the documented alias whose count
- * includes hidden reasoning tokens. A request may legitimately carry either, so
- * both survive into the IR and the target decides which to forward.
+ * reasoning models; `max_completion_tokens` is its replacement and counts hidden
+ * reasoning tokens as well. A request that states both is collapsed to the wider
+ * bound, which is the ceiling the caller asked for.
  *
  * https://help.openai.com/en/articles/5072518-controlling-the-length-of-openai-model-responses
  * https://community.openai.com/t/why-was-max-tokens-changed-to-max-completion-tokens/938077
  */
 export const openaiChatCompletionsEnvelopeToIR = (payload: OpenAIChatCompletionsPayload): IRInputEnvelope => {
-  const maxOutputTokens: IRInputMaxOutputTokens = {
-    ...(payload.max_tokens == null ? {} : { max_tokens: payload.max_tokens }),
-    ...(payload.max_completion_tokens == null ? {} : { max_completion_tokens: payload.max_completion_tokens }),
-  };
-
-  const sampling: IRInputSampling = {
-    ...(payload.temperature == null ? {} : { temperature: payload.temperature }),
-    ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
-    ...(payload.stop == null ? {} : { stop: typeof payload.stop === 'string' ? [payload.stop] : [...payload.stop] }),
-    ...(payload.seed == null ? {} : { seed: payload.seed }),
-    ...(Object.keys(maxOutputTokens).length === 0 ? {} : { max_output_tokens: maxOutputTokens }),
-  };
+  const ceiling = payload.max_completion_tokens ?? payload.max_tokens;
 
   const format = payload.response_format;
   const outputFormat: IRInputOutputFormat | undefined = format === undefined ? undefined
@@ -216,7 +201,11 @@ export const openaiChatCompletionsEnvelopeToIR = (payload: OpenAIChatCompletions
       : { type: format.type };
 
   return {
-    ...(Object.keys(sampling).length === 0 ? {} : { sampling }),
+    ...(payload.temperature == null ? {} : { temperature: payload.temperature }),
+    ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
+    ...(payload.stop == null ? {} : { stop: typeof payload.stop === 'string' ? [payload.stop] : [...payload.stop] }),
+    ...(payload.seed == null ? {} : { seed: payload.seed }),
+    ...(ceiling == null ? {} : { max_output_tokens: ceiling }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
   };
 };

@@ -6,7 +6,6 @@ import type {
   IRInputConversation,
   IRInputEnvelope,
   IRInputOutputFormat,
-  IRInputSampling,
   IRInputMedia,
   IRInputTextPart,
   IRInputToolResultContentPart,
@@ -63,8 +62,6 @@ const userContentPart = (part: OpenAIResponsesInputContent): IRInputUserContentP
   case 'input_text':
   case 'output_text':
     return { type: 'text', text: part.text };
-  case 'refusal':
-    return { type: 'refusal', refusal: part.refusal };
   case 'input_image': {
     const image = imageMedia(part);
     return { type: 'image', image, ...(part.detail == null ? {} : { detail: part.detail }) };
@@ -74,7 +71,7 @@ const userContentPart = (part: OpenAIResponsesInputContent): IRInputUserContentP
   }
 };
 
-const userContent = (content: OpenAIResponsesInputMessageEx['content']): IRInputUserContentPart[] => typeof content === 'string'
+const userContent = (content: string | OpenAIResponsesInputContent[]): IRInputUserContentPart[] => typeof content === 'string'
   ? content === '' ? [] : [{ type: 'text', text: content }]
   : content.map(userContentPart);
 
@@ -90,10 +87,12 @@ const systemContent = (message: OpenAIResponsesInputMessageEx): IRInputTextPart[
 // An explicitly empty assistant message still occupies a message of its own, so
 // it keeps one empty text part; only a message with no content field at all has
 // nothing to replay.
-const assistantContent = (message: OpenAIResponsesInputMessageEx): IRInputAssistantContentPart[] => typeof message.content === 'string'
+const assistantContent = (message: Extract<OpenAIResponsesInputMessageEx, { role: 'assistant' }>): IRInputAssistantContentPart[] => typeof message.content === 'string'
   ? [{ type: 'text', text: message.content }]
   : message.content.map(part => {
       if (part.type === 'input_text' || part.type === 'output_text') return { type: 'text' as const, text: part.text };
+      // An assistant turn replays model output, so a refusal it produced is
+      // history like any other part.
       if (part.type === 'refusal') return { type: 'refusal' as const, refusal: part.refusal };
       throw new TranslatorInputError(`Cannot translate ${part.type} assistant content.`);
     });
@@ -103,7 +102,6 @@ const toolResultContent = (output: string | readonly OpenAIResponsesInputContent
   : output.map(part => {
       if (part.type === 'input_image') return { type: 'image' as const, image: imageMedia(part), ...(part.detail == null ? {} : { detail: part.detail }) };
       if (part.type === 'input_file') return { type: 'file' as const, file: fileMedia(part), ...(typeof part.filename === 'string' ? { filename: part.filename } : {}) };
-      if (part.type === 'refusal') throw new TranslatorInputError('Cannot translate refusal content in a tool output.');
       return { type: 'text' as const, text: part.text };
     });
 
@@ -228,12 +226,6 @@ export const openaiResponsesInputToIR = (source: OpenAIResponsesRequestPayloadEx
  * carries the structured-output schema flat, unlike Chat's nested spelling.
  */
 export const openaiResponsesEnvelopeToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputEnvelope => {
-  const sampling: IRInputSampling = {
-    ...(payload.temperature == null ? {} : { temperature: payload.temperature }),
-    ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
-    ...(payload.max_output_tokens == null ? {} : { max_output_tokens: { max_output_tokens: payload.max_output_tokens } }),
-  };
-
   const format = payload.text?.format;
   const outputFormat: IRInputOutputFormat | undefined = format === undefined || format === null ? undefined
     : format.type === 'json_schema'
@@ -254,7 +246,9 @@ export const openaiResponsesEnvelopeToIR = (payload: CanonicalOpenAIResponsesPay
       : { type: format.type };
 
   return {
-    ...(Object.keys(sampling).length === 0 ? {} : { sampling }),
+    ...(payload.temperature == null ? {} : { temperature: payload.temperature }),
+    ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
+    ...(payload.max_output_tokens == null ? {} : { max_output_tokens: payload.max_output_tokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
   };
 };

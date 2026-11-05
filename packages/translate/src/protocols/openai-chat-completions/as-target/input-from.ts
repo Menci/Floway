@@ -8,7 +8,6 @@ import type {
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type {
-  OpenAIChatCompletionsContentPart,
   OpenAIChatCompletionsPayload,
   OpenAIChatCompletionsMessage,
   OpenAIChatCompletionsToolCall,
@@ -43,19 +42,14 @@ const filePart = (media: IRInputMedia, filename?: string | null): OpenAIChatComp
 
 const userContent = (item: Extract<IRInputUserItem, { type: 'message' }>): string | OpenAIChatCompletionsUserContentPart[] => {
   if (item.content.every(part => part.type === 'text')) return item.content.flatMap(part => part.type === 'text' ? [part.text] : []).join('\n\n');
-  const parts = item.content.flatMap<OpenAIChatCompletionsContentPart>(part => {
+  return item.content.map(part => {
     switch (part.type) {
-    case 'text': return [{ type: 'text', text: part.text }];
-    case 'refusal': return [{ type: 'refusal', refusal: part.refusal }];
-    case 'image': return [imageUrlPart(part.image, part.detail)];
-    case 'file': return [filePart(part.file, part.filename)];
-    case 'audio': return [{ type: 'input_audio', input_audio: { data: part.audio.data, format: audioFormat(part.audio.media_type) } }];
+    case 'text': return { type: 'text' as const, text: part.text };
+    case 'image': return imageUrlPart(part.image, part.detail);
+    case 'file': return filePart(part.file, part.filename);
+    case 'audio': return { type: 'input_audio' as const, input_audio: { data: part.audio.data, format: audioFormat(part.audio.media_type) } };
     }
   });
-  // The wire content union accepts a refusal part, but the pinned user-message
-  // declaration narrows it away. Responses user content can carry one, so keep
-  // the existing pass-through rather than dropping it.
-  return parts as OpenAIChatCompletionsUserContentPart[];
 };
 
 /**
@@ -198,29 +192,23 @@ export const openaiChatCompletionsTurnFromIR = (turn: IRInputConversation['turns
   ? assistantMessage(turn.items)
   : userMessages(turn.items);
 
-export type { OpenAIChatCompletionsContentPart };
-
 /**
  * Writes the envelope onto a Chat Completions payload. `max_tokens` is
  * deprecated and incompatible with the o-series models, so the ceiling is
- * always stated as `max_completion_tokens`; a source that stated both keeps the
- * newer spelling for the same reason, and some upstreams reject a request
- * carrying them together.
+ * stated as `max_completion_tokens`.
  *
- * https://github.com/openai/openai-openapi/blob/master/openapi.yaml (FunctionObject / max_tokens)
- * https://github.com/agentscope-ai/agentscope-java/issues/905
+ * https://github.com/openai/openai-openapi/blob/master/openapi.yaml (max_tokens)
  */
 export const openaiChatCompletionsEnvelopeFromIR = (envelope: IRInputEnvelope): Partial<OpenAIChatCompletionsPayload> => {
-  const limits = envelope.sampling?.max_output_tokens;
-  const ceiling = limits?.max_completion_tokens ?? limits?.max_tokens ?? limits?.max_output_tokens;
+  const ceiling = envelope.max_output_tokens;
   const format = envelope.output_format;
 
   return {
     ...(ceiling === undefined ? {} : { max_completion_tokens: ceiling }),
-    ...(envelope.sampling?.temperature === undefined ? {} : { temperature: envelope.sampling.temperature }),
-    ...(envelope.sampling?.top_p === undefined ? {} : { top_p: envelope.sampling.top_p }),
-    ...(envelope.sampling?.stop === undefined ? {} : { stop: [...envelope.sampling.stop] }),
-    ...(envelope.sampling?.seed === undefined ? {} : { seed: envelope.sampling.seed }),
+    ...(envelope.temperature === undefined ? {} : { temperature: envelope.temperature }),
+    ...(envelope.top_p === undefined ? {} : { top_p: envelope.top_p }),
+    ...(envelope.stop === undefined ? {} : { stop: [...envelope.stop] }),
+    ...(envelope.seed === undefined ? {} : { seed: envelope.seed }),
     ...(format === undefined
       ? {}
       : format.type === 'json_schema'

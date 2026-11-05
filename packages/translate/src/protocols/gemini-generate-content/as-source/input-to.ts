@@ -8,7 +8,6 @@ import type {
   IRInputAssistantContentPart,
   IRInputEnvelope,
   IRInputOutputFormat,
-  IRInputSampling,
   IRInputAssistantItem,
   IRInputConversation,
   IRInputMedia,
@@ -229,17 +228,13 @@ export const geminiGenerateContentEnvelopeToIR = (payload: GeminiGenerateContent
     ? { type: 'json_schema', schema: klona(schema) }
     : config?.responseMimeType === 'application/json' ? { type: 'json_object' } : undefined;
 
-  const sampling: IRInputSampling = {
+  return {
     ...(config?.temperature == null ? {} : { temperature: config.temperature }),
     ...(config?.topP == null ? {} : { top_p: config.topP }),
     ...(config?.topK == null ? {} : { top_k: config.topK }),
     ...(config?.stopSequences == null ? {} : { stop: [...config.stopSequences] }),
     ...(config?.seed == null ? {} : { seed: config.seed }),
-    ...(config?.maxOutputTokens == null ? {} : { max_output_tokens: { max_output_tokens: config.maxOutputTokens } }),
-  };
-
-  return {
-    ...(Object.keys(sampling).length === 0 ? {} : { sampling }),
+    ...(config?.maxOutputTokens == null ? {} : { max_output_tokens: config.maxOutputTokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
   };
 };

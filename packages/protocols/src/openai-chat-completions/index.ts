@@ -101,8 +101,10 @@ export interface OpenAIChatCompletionsInputAudioPart { type: 'input_audio'; inpu
 export interface OpenAIChatCompletionsFilePart { type: 'file'; file: { file_data?: string; file_id?: string; filename?: string } }
 export interface OpenAIChatCompletionsRefusalPart { type: 'refusal'; refusal: string }
 export type OpenAIChatCompletionsUserContentPart = OpenAIChatCompletionsTextPart | OpenAIChatCompletionsImagePart | OpenAIChatCompletionsInputAudioPart | OpenAIChatCompletionsFilePart;
+// A refusal is model output, so it exists only on the assistant side; the user
+// content union has no such arm.
+// https://github.com/openai/openai-node/blob/master/src/resources/chat/completions/completions.ts (ChatCompletionContentPart)
 export type OpenAIChatCompletionsAssistantContentPart = OpenAIChatCompletionsTextPart | OpenAIChatCompletionsRefusalPart;
-export type OpenAIChatCompletionsContentPart = OpenAIChatCompletionsUserContentPart | OpenAIChatCompletionsRefusalPart;
 
 // Provider extension types belong only at the assistant boundary.
 export interface OpenAIChatCompletionsAssistantExtensions {

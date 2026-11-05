@@ -1,7 +1,7 @@
 import { memoizedDataUrlCompressor } from '../image-compression.ts';
 import { targetSizeForOpenAIResponsesChat } from '../image-size.ts';
 import type { OpenAIResponsesBoundaryCtx } from './types.ts';
-import type { OpenAIResponsesInputContent, OpenAIResponsesInputImage, OpenAIResponsesToolOutputContent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputContent, OpenAIResponsesInputImage, OpenAIResponsesOutputRefusal, OpenAIResponsesToolOutputContent } from '@floway-dev/protocols/openai-responses';
 import { isBase64ImageDataUrl } from '@floway-dev/provider';
 
 // A single client request can reach this boundary more than once — a
@@ -38,7 +38,7 @@ const compressInlineImages = async (ctx: OpenAIResponsesBoundaryCtx): Promise<vo
       compressedUrls.set(target.part, await compress(target.imageUrl));
     }),
   );
-  const hasCompressedImage = (part: OpenAIResponsesInputContent): part is CompressibleImagePart =>
+  const hasCompressedImage = (part: OpenAIResponsesInputContent | OpenAIResponsesOutputRefusal): part is CompressibleImagePart =>
     part.type === 'input_image' && compressedUrls.has(part as CompressibleImagePart);
   const rewriteImage = (part: CompressibleImagePart): CompressibleImagePart => {
     const imageUrl = compressedUrls.get(part);
@@ -51,7 +51,7 @@ const compressInlineImages = async (ctx: OpenAIResponsesBoundaryCtx): Promise<vo
     });
     return rewritten;
   };
-  const rewriteParts = <TPart extends OpenAIResponsesInputContent | OpenAIResponsesToolOutputContent>(parts: TPart[]): TPart[] =>
+  const rewriteParts = <TPart extends OpenAIResponsesInputContent | OpenAIResponsesOutputRefusal | OpenAIResponsesToolOutputContent>(parts: TPart[]): TPart[] =>
     parts.map(part => hasCompressedImage(part) ? rewriteImage(part) as TPart : part);
 
   ctx.payload = {
@@ -59,7 +59,7 @@ const compressInlineImages = async (ctx: OpenAIResponsesBoundaryCtx): Promise<vo
     input: ctx.payload.input.map(item => {
       if (item.type === 'message' && Array.isArray(item.content)) {
         return item.content.some(hasCompressedImage)
-          ? { ...item, content: rewriteParts(item.content) }
+          ? { ...item, content: rewriteParts(item.content) } as CanonicalOpenAIResponsesInputItem
           : item;
       }
       if ((item.type === 'function_call_output' || item.type === 'custom_tool_call_output') && Array.isArray(item.output)) {

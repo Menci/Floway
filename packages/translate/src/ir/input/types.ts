@@ -25,35 +25,27 @@
 // `model` is absent on purpose: every route selects the target model from
 // operator configuration and writes it onto the payload itself, so an IR field
 // would be filled by readers and read by nobody.
+//
+// Every field names one request-wide concept, never a protocol's spelling of
+// it: a reader normalizes what its wire stated and a writer spells it again for
+// its own target. A knob a target cannot express is dropped there.
 export interface IRInputEnvelope {
-  readonly sampling?: IRInputSampling; // All
-  readonly output_format?: IRInputOutputFormat; // ChatCompletions, Responses, Messages, GenerateContent
-}
-
-// Every sampling knob that more than one protocol expresses. A target that
-// cannot carry one drops it; a target that can carries it verbatim.
-export interface IRInputSampling {
   readonly temperature?: number; // All
   readonly top_p?: number; // All
   readonly top_k?: number; // Messages, GenerateContent
   readonly stop?: readonly string[]; // All
   readonly seed?: number; // ChatCompletions, GenerateContent
-  readonly max_output_tokens?: IRInputMaxOutputTokens; // All
-}
-
-// One ceiling, spelled three ways. `max_tokens` predates reasoning models and
-// counts only visible output; `max_completion_tokens` is its documented alias
-// that also counts hidden reasoning tokens, so a request may carry either and
-// they are not interchangeable. Responses states the same ceiling once as
-// `max_output_tokens`.
-//
-// A source that states more than one of them is kept as stated: some upstreams
-// reject a request carrying both, so the choice of which one to forward belongs
-// to the target writer rather than to the reader.
-export interface IRInputMaxOutputTokens {
-  readonly max_tokens?: number; // ChatCompletions, Messages, GenerateContent
-  readonly max_completion_tokens?: number; // ChatCompletions
-  readonly max_output_tokens?: number; // Responses
+  // One ceiling. Chat Completions states it as `max_tokens` or
+  // `max_completion_tokens`, and only the latter counts hidden reasoning
+  // tokens; Responses states it as `max_output_tokens`, Messages and
+  // GenerateContent as their single spelling.
+  //
+  // A source that states several names keeps the widest ceiling it stated,
+  // because that is the bound the caller asked for. Collapsing to one value here
+  // is what lets a writer emit a single field: upstreams reject a request that
+  // carries two.
+  readonly max_output_tokens?: number; // All
+  readonly output_format?: IRInputOutputFormat; // ChatCompletions, Responses, Messages, GenerateContent
 }
 
 // Structured output. `strict` is three-state: absent means the source did not
@@ -137,7 +129,6 @@ export interface IRInputAssistantMessageItem {
 
 export type IRInputUserContentPart =
   | IRInputTextPart
-  | IRInputRefusalPart
   | IRInputImagePart
   | IRInputFilePart
   | IRInputAudioPart;
@@ -149,10 +140,8 @@ export interface IRInputTextPart {
   readonly text: string; // All
 }
 
-// Chat Completions and Responses both carry refusals as a distinct content
-// kind, on assistant content and on user content as well. Messages and
-// GenerateContent have no such block, so their writers project assistant
-// refusals to text and reject a user refusal, which is what those routes do.
+// A refusal is model output, so only assistant history carries one. No protocol
+// accepts it in client-produced content.
 export interface IRInputRefusalPart {
   readonly type: 'refusal'; // ChatCompletions, Responses
   readonly refusal: string; // ChatCompletions, Responses

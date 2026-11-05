@@ -5,7 +5,6 @@ import type {
   IRInputAssistantContentPart,
   IRInputEnvelope,
   IRInputOutputFormat,
-  IRInputSampling,
   IRInputAssistantItem,
   IRInputConversation,
   IRInputMedia,
@@ -258,14 +257,6 @@ export const anthropicMessagesInputToIR = (payload: AnthropicMessagesPayload): I
  * lives in `output_config.format`. `top_k` is a Messages-only sampling knob.
  */
 export const anthropicMessagesEnvelopeToIR = (payload: AnthropicMessagesPayload): IRInputEnvelope => {
-  const sampling: IRInputSampling = {
-    ...(payload.temperature == null ? {} : { temperature: payload.temperature }),
-    ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
-    ...(payload.top_k == null ? {} : { top_k: payload.top_k }),
-    ...(payload.stop_sequences == null ? {} : { stop: [...payload.stop_sequences] }),
-    max_output_tokens: { max_tokens: payload.max_tokens },
-  };
-
   const format = payload.output_config?.format;
   // Messages' structured-output schema is already strict by contract, so the
   // fact is stated here rather than left for a target to invent.
@@ -275,7 +266,11 @@ export const anthropicMessagesEnvelopeToIR = (payload: AnthropicMessagesPayload)
     : undefined;
 
   return {
-    sampling,
+    ...(payload.temperature == null ? {} : { temperature: payload.temperature }),
+    ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
+    ...(payload.top_k == null ? {} : { top_k: payload.top_k }),
+    ...(payload.stop_sequences == null ? {} : { stop: [...payload.stop_sequences] }),
+    ...(payload.max_tokens == null ? {} : { max_output_tokens: payload.max_tokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
   };
 };
