@@ -76,7 +76,12 @@ export function ModelDetail({
     opaqueBlobCompatibilityScope: kind === 'chat' ? row.config.opaqueBlobCompatibilityScope : undefined,
     rerankTarget: undefined,
     decisionTarget: undefined,
+    // An image row states no token limits at all; any other non-chat row keeps
+    // the input budgets but drops the output budget the form no longer shows.
     ...(kind === 'image' ? { limits: undefined } : {}),
+    ...(kind !== 'chat' && kind !== 'image' && row.config.limits !== undefined
+      ? { limits: cleanLimits({ ...row.config.limits, max_output_tokens: undefined }) }
+      : {}),
     ...shapeForKind(kind, row.config, record.kind),
   });
 
@@ -224,10 +229,18 @@ export function ModelDetail({
         </EditorSection>}
 
         {row.config.kind !== 'image' && <EditorSection level={3} title={t('dashboard.upstreamEditor.models.capabilities')}>
-          <div className="grid grid-cols-3 gap-4 max-[760px]:grid-cols-1">
+          {/* `max_output_tokens` caps generated tokens, and only a chat turn
+              generates a stream of them. A decision model answers with typed
+              answers (`usage.output_tokens` is one token per question, not a
+              cap), and embedding, rerank, and transcription responses carry no
+              generated stream at all. The other two limits bound the input a
+              request may carry, so they apply to every kind here — Copilot
+              reports both for its decision models (`max_prompt_tokens:
+              872000` inside a 1,000,000-token window). */}
+          <div className={`grid gap-4 max-[760px]:grid-cols-1 ${row.config.kind === 'chat' ? 'grid-cols-3' : 'grid-cols-2'}`}>
             <NumberField label={t('dashboard.upstreamEditor.models.contextWindow')} placeholder="e.g. 1050000" readOnly={fieldsReadOnly} value={row.config.limits?.max_context_window_tokens} onChange={raw => updateLimit('max_context_window_tokens', raw)} />
             <NumberField label={t('dashboard.upstreamEditor.models.promptTokens')} placeholder="e.g. 922000" readOnly={fieldsReadOnly} value={row.config.limits?.max_prompt_tokens} onChange={raw => updateLimit('max_prompt_tokens', raw)} />
-            <NumberField label={t('dashboard.upstreamEditor.models.outputTokens')} placeholder="e.g. 128000" readOnly={fieldsReadOnly} value={row.config.limits?.max_output_tokens} onChange={raw => updateLimit('max_output_tokens', raw)} />
+            {row.config.kind === 'chat' && <NumberField label={t('dashboard.upstreamEditor.models.outputTokens')} placeholder="e.g. 128000" readOnly={fieldsReadOnly} value={row.config.limits?.max_output_tokens} onChange={raw => updateLimit('max_output_tokens', raw)} />}
           </div>
           {row.config.kind === 'chat' && <>
             <div aria-labelledby={imageInputLabelId} className="grid gap-3" role="group">
@@ -325,6 +338,11 @@ const modelKindLabel = (kind: UpstreamModelConfig['kind']): string => {
   case 'rerank': return 'Rerank';
   case 'decision': return 'Decision';
   }
+};
+
+const cleanLimits = (limits: NonNullable<UpstreamModelConfig['limits']>): NonNullable<UpstreamModelConfig['limits']> | undefined => {
+  const next = Object.fromEntries(Object.entries(limits).filter(([, value]) => value !== undefined)) as NonNullable<UpstreamModelConfig['limits']>;
+  return Object.keys(next).length === 0 ? undefined : next;
 };
 
 const optionalNumber = (raw: string): number | undefined => raw === '' ? undefined : Number.isFinite(Number(raw)) && Number(raw) >= 0 ? Number(raw) : undefined;

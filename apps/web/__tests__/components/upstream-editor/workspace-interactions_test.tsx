@@ -171,6 +171,48 @@ describe('upstream model workspace field-array transitions', () => {
     expect((screen.getByRole('textbox', { name: models('upstreamId') }) as HTMLInputElement).value).toBe('model-a');
   });
 
+  // Every kind but chat generates no token stream, so none of them states an
+  // output budget; each still states the two limits that bound its input.
+  // Image is excluded from the panel entirely and so is not listed here.
+  const nonChatRows = [
+    { kind: 'rerank', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' as const } },
+    { kind: 'embedding', endpoints: { openaiEmbeddings: {} } },
+    { kind: 'transcription', endpoints: { openaiAudioTranscriptions: {} } },
+    { kind: 'decision', endpoints: { decision: {} }, decisionTarget: { protocol: 'typesafe-systemone' as const } },
+  ] as const;
+
+  for (const row of nonChatRows) {
+    it(`states no output-token budget on a ${row.kind} row`, () => {
+      const custom = upstreamRecord(`up_${row.kind}`, {
+        name: row.kind,
+        kind: 'custom',
+        config: {
+          baseUrl: 'https://example.com',
+          authStyle: 'bearer',
+          apiKey: '',
+          endpoints: row.endpoints,
+          ingressHeadersRules: [],
+          modelsFetch: { enabled: false },
+          models: [{ upstreamModelId: 'm', publicModelId: 'm', display_name: 'm', ...row }],
+        },
+        state: null,
+      });
+
+      renderInApp(<Harness source={custom} />);
+      fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.models.editNamed', { name: 'm' }) }));
+
+      expect(screen.queryByRole('spinbutton', { name: models('outputTokens') })).toBe(null);
+      expect(screen.getByRole('spinbutton', { name: models('contextWindow') })).toBeTruthy();
+      expect(screen.getByRole('spinbutton', { name: models('promptTokens') })).toBeTruthy();
+    });
+  }
+
+  it('states an output-token budget on a chatting row', () => {
+    renderInApp(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.models.editNamed', { name: 'model-a' }) }));
+    expect(screen.getByRole('spinbutton', { name: models('outputTokens') })).toBeTruthy();
+  });
+
   it('reports a missing model ID only after it prevents returning to the list', async () => {
     renderInApp(<Harness />);
 
