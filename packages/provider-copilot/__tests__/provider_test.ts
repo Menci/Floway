@@ -111,6 +111,7 @@ const setupCopilotTest = async (recordOverrides: Partial<UpstreamRecord> = {}): 
 interface CopilotModelFixture {
   id: string;
   display_name?: string;
+  capabilitiesType?: string;
   supported_endpoints?: string[];
   reasoningEfforts?: string[];
   maxContextWindowTokens?: number;
@@ -127,7 +128,7 @@ const copilotModels = (models: CopilotModelFixture[]) => ({
     version: '1',
     supported_endpoints: model.supported_endpoints ?? [],
     capabilities: {
-      type: 'chat',
+      type: model.capabilitiesType ?? 'chat',
       limits: {
         ...(model.maxContextWindowTokens !== undefined ? { max_context_window_tokens: model.maxContextWindowTokens } : {}),
         ...(model.maxPromptTokens !== undefined ? { max_prompt_tokens: model.maxPromptTokens } : {}),
@@ -1668,6 +1669,52 @@ test('Copilot provider derives decision endpoints and forwards the System One bo
   assertEquals(sent[0].questions, { team: { type: 'choice', instructions: 'Which team?', criteria: { billing: 'Charges', engineering: 'Bugs' } } });
 });
 
+test('Copilot sends an OpenAI Decisions model to /v1/decisions in its own dialect', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const provider = createCopilotProvider(copilotUpstream).instance;
+  const sent: { path: string; body: Record<string, unknown> }[] = [];
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 't', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-6-luna-decisions', capabilitiesType: 'decisions', supported_endpoints: ['/v1/decisions'] }]));
+      }
+      if (url.pathname === '/v1/decisions') {
+        sent.push({ path: url.pathname, body: (await request.json()) as Record<string, unknown> });
+        return jsonResponse({
+          model: 'gpt-6-luna',
+          answers: [{ type: 'predicate', name: 'p', probability: 1 }],
+          usage: { input_tokens: 158, output_tokens: 0 },
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const decision = (await provider.getProvidedModels(directFetcher))[0]!;
+      const parsed = parseDecisionRequest('openai-decisions', {
+        model: 'gpt-6-luna-decisions',
+        input: 'The API returns 500 on every call.',
+        questions: [{ type: 'predicate', name: 'p', instructions: 'Is this a bug?' }],
+      });
+      const result = await provider.callDecision(decision, parsed.request, undefined, noopUpstreamCallOptions());
+      assertEquals(result.target, { protocol: 'openai-decisions' });
+      assertEquals(result.response.status, 200);
+    },
+  );
+
+  assertEquals(sent.length, 1);
+  assertEquals(sent[0].path, '/v1/decisions');
+  // The wire body is the OpenAI Decisions shape, addressed by the catalog id.
+  assertEquals(sent[0].body.model, 'gpt-6-luna-decisions');
+  assertEquals(sent[0].body.input, 'The API returns 500 on every call.');
+  assertEquals(sent[0].body.questions, [{ type: 'predicate', name: 'p', instructions: 'Is this a bug?' }]);
+});
+
 test('Copilot does not infer a decision endpoint from a chat model', async () => {
   const { copilotUpstream } = await setupCopilotTest();
   const instance = createCopilotProvider(copilotUpstream);
@@ -1689,6 +1736,39 @@ test('Copilot does not infer a decision endpoint from a chat model', async () =>
       const models = await provider.getProvidedModels(directFetcher);
       assertEquals(models[0].kind, 'chat');
       assertEquals(models[0].decisionTarget, undefined);
+    },
+  );
+});
+
+test('a decision model maps its advertised path onto the dialect it serves', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const provider = createCopilotProvider(copilotUpstream).instance;
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 't', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([
+          { id: 'gpt-6-luna-decisions', capabilitiesType: 'decisions', supported_endpoints: ['/v1/decisions'] },
+          { id: 'microsoft-decision-1', capabilitiesType: 'decisions', supported_endpoints: ['/v1/systemone'] },
+        ]));
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const models = await provider.getProvidedModels(directFetcher);
+      const byId = new Map(models.map(model => [model.id, model]));
+      // `/v1/decisions` is the OpenAI Decisions dialect: mapping only
+      // `/v1/systemone` used to leave this entry with no endpoints, and an
+      // empty endpoint map projects to chat.
+      assertEquals(byId.get('gpt-6-luna-decisions')?.kind, 'decision');
+      assertEquals(byId.get('gpt-6-luna-decisions')?.endpoints, { decision: {} });
+      assertEquals(byId.get('gpt-6-luna-decisions')?.decisionTarget, { protocol: 'openai-decisions' });
+      assertEquals(byId.get('microsoft-decision-1')?.decisionTarget, { protocol: 'typesafe-systemone' });
     },
   );
 });
