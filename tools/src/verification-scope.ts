@@ -7,7 +7,8 @@
 // The CI exemption is not a variable a shell can declare: it requires the
 // runner's OS identity together with the variables the Actions runner injects,
 // so faking it needs a `runner` account on an Ubuntu host, not `CI=true`.
-import { existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
 import { basename, relative } from 'node:path';
 import { argv, env, platform } from 'node:process';
@@ -119,26 +120,42 @@ const VITEST_VALUE_OPTIONS = new Set([
 const isTestFile = (target: string): boolean => /_test\.tsx?$/.test(target);
 
 /**
- * A trap: every package carries one of these, and every Vitest config refuses a
- * run whose arguments name it. A shell expands `**\/*_test.ts` before Vitest
- * sees it, so a glob arrives as a list of explicit test files — the one shape
- * the check above cannot tell from a hand-written list. The trap is what makes
- * that expansion announce itself.
+ * A trap identifies itself with a token derived from its own filename, so the
+ * traps share no filename prefix, no marker literal, and no line of text. One
+ * `-name`, `--exclude`, or `grep -v` pattern therefore removes at most one of
+ * them: a sweep over the test tree stays visible instead of quietly dropping
+ * the traps along with the tests.
+ *
+ * Derived rather than stored, so this module carries no literal a filter could
+ * match, and a trap cannot be cloned into another file and still be recognized.
  */
-export const TRAP_TEST_FILENAME = 'disallow-full-tests_test.ts';
+export const trapToken = (filename: string): string =>
+  createHash('sha256').update(filename).digest('hex').slice(0, 16);
+
+const isTrapFile = (target: string): boolean => {
+  if (!/\.tsx?$/.test(target)) return false;
+  try {
+    if (!statSync(target).isFile()) return false;
+    return readFileSync(target, 'utf8').includes(trapToken(basename(target)));
+  } catch {
+    // A path that does not exist is reported by the caller's missing-file
+    // check; it cannot be a trap.
+    return false;
+  }
+};
 
 const findTrapTargets = (targets: readonly string[]): string[] =>
-  targets.filter(target => basename(target) === TRAP_TEST_FILENAME);
+  targets.filter(isTrapFile);
 
 /**
- * A glob over the test tree expands to trap files *alongside* real ones. Naming
- * a single trap is harmless — it is a trivial test — and keeps the trap bodies
- * themselves verifiable. Anything else that includes a trap is either such an
- * expansion or a deliberate sweep of the traps, so both are refused.
+ * A pattern over the test tree expands to traps *alongside* real files. A list
+ * of traps alone runs nothing worth hiding, so it is allowed and keeps the trap
+ * bodies themselves verifiable; a mixed list is the expansion this guard exists
+ * to catch.
  */
 const describesExpansion = (targets: readonly string[]): string[] => {
   const traps = findTrapTargets(targets);
-  if (traps.length === 0 || (targets.length === 1 && traps.length === 1)) return [];
+  if (traps.length === 0 || traps.length === targets.length) return [];
   return traps;
 };
 
