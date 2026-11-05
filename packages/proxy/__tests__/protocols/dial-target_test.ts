@@ -8,7 +8,6 @@ import { dialSocks5 } from '../../src/protocols/socks5.ts';
 import { dialTrojan } from '../../src/protocols/trojan.ts';
 import { dialVlessTcpTls, dialVlessWsTls } from '../../src/protocols/vless.ts';
 import type {
-  DialTarget,
   HttpProxyConfig,
   RealityProxyConfig,
   Shadowsocks2022ProxyConfig,
@@ -18,7 +17,7 @@ import type {
   VlessTcpTlsProxyConfig,
   VlessWsTlsProxyConfig,
 } from '../../src/proxy-config.ts';
-import type { SocketDial } from '../../src/types.ts';
+import type { DialTarget, SocketDial } from '../../src/types.ts';
 import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 
 // Every dialer reaches the target through the same two guards in
@@ -87,7 +86,7 @@ describe('pre-dial target validation reaches every dialer', () => {
   );
 });
 
-const httpConfig = (): HttpProxyConfig => ({ kind: 'http', host: 'proxy.example', port: 8080, name: 'http' });
+const httpConfig = (): HttpProxyConfig => ({ kind: 'http', host: 'proxy.example', port: 8080, name: 'http', tls: false });
 
 const realityConfig = (): RealityProxyConfig => ({
   kind: 'reality',
