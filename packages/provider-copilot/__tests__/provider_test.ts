@@ -1240,6 +1240,7 @@ test('Copilot provider passes unknown speed values to the upstream verbatim so t
 
 interface CopilotModelCapabilityFixture {
   id: string;
+  type?: 'chat' | 'image';
   supported_endpoints?: string[];
   supports?: {
     vision?: boolean;
@@ -1258,7 +1259,7 @@ const copilotModelsWithCapabilities = (models: CopilotModelCapabilityFixture[]) 
     version: '1',
     supported_endpoints: model.supported_endpoints ?? ['/chat/completions'],
     capabilities: {
-      type: 'chat',
+      type: model.type ?? 'chat',
       limits: {},
       ...(model.supports !== undefined ? { supports: model.supports } : {}),
     },
@@ -1372,6 +1373,109 @@ test('Copilot chat field: no capabilities → no chat field', async () => {
     { id: 'basic-model' },
   ]);
   assertEquals(model.chat, undefined);
+});
+
+// Copilot's catalog advertises the two image surfaces as separate paths, and
+// the gateway serves each as its own inbound route. A model must therefore
+// carry both keys, and its `kind` must come out as `image` rather than the
+// empty-endpoint `chat` row the old projection produced.
+test('Copilot catalog projects an image model with both image endpoints and kind=image', async () => {
+  const [model] = await getModelsWithCapabilities([
+    { id: 'gpt-image-2.5-flare', type: 'image', supported_endpoints: ['/v1/images/generations', '/v1/images/edits'] },
+  ]);
+  assertEquals(model.kind, 'image');
+  assertEquals(model.endpoints, { openaiImagesGenerations: {}, openaiImagesEdits: {} });
+  assertEquals(model.chat, undefined);
+  // Rates are per token; the table quotes USD per million.
+  assertEquals(model.pricing?.entries[0]?.rates.output_image_tokens, '0.00003');
+});
+
+test('Copilot catalog projects an image model that advertises one surface', async () => {
+  const [model] = await getModelsWithCapabilities([
+    { id: 'gpt-image-generate-only', type: 'image', supported_endpoints: ['/v1/images/generations'] },
+  ]);
+  assertEquals(model.kind, 'image');
+  assertEquals(model.endpoints, { openaiImagesGenerations: {} });
+});
+
+const imageModelCatalog = () => copilotModelsWithCapabilities([
+  { id: 'gpt-image-2.5-flare', type: 'image', supported_endpoints: ['/v1/images/generations', '/v1/images/edits'] },
+]);
+
+const setupImageModelTest = async () => {
+  const harness = await setupCopilotTest();
+  const provider = createCopilotProvider(harness.copilotUpstream).instance;
+  return { harness, provider };
+};
+
+test('Copilot image generations POSTs JSON to the v1 path with the raw model id', async () => {
+  const { provider } = await setupImageModelTest();
+  let captured: { path: string; contentType: string | null; body: Record<string, unknown> } | undefined;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') return jsonResponse(imageModelCatalog());
+      captured = {
+        path: url.pathname,
+        contentType: request.headers.get('content-type'),
+        body: (await request.json()) as Record<string, unknown>,
+      };
+      return jsonResponse({ created: 1, data: [{ b64_json: 'AAAA' }] });
+    },
+    async () => {
+      const [model] = await provider.getProvidedModels(directFetcher);
+      const result = await provider.callOpenAIImagesGenerations(model, { prompt: 'a red square' }, undefined, noopUpstreamCallOptions());
+      assertEquals(result.response.status, 200);
+    },
+  );
+
+  assertEquals(captured?.path, '/v1/images/generations');
+  assertEquals(captured?.contentType, 'application/json');
+  assertEquals(captured?.body.prompt, 'a red square');
+  assertEquals(captured?.body.model, 'gpt-image-2.5-flare');
+});
+
+// The regression this guards: `copilotAuthedFetch` used to pin
+// `Content-Type: application/json` unconditionally, which made Copilot answer
+// a multipart edit with `400 Failed to decode image edit request` before
+// reading a single part. A FormData body must reach the runtime untouched so
+// it can set its own boundary.
+test('Copilot image edits keeps multipart uploads free of a JSON content-type', async () => {
+  const { provider } = await setupImageModelTest();
+  let captured: { path: string; contentType: string | null; body: string } | undefined;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') return jsonResponse(imageModelCatalog());
+      captured = {
+        path: url.pathname,
+        contentType: request.headers.get('content-type'),
+        body: await request.text(),
+      };
+      return jsonResponse({ created: 1, data: [{ b64_json: 'AAAA' }] });
+    },
+    async () => {
+      const [model] = await provider.getProvidedModels(directFetcher);
+      const file = new File([new Uint8Array([0x89, 0x50, 0x4E, 0x47])], 'in.png', { type: 'image/png' });
+      const result = await provider.callOpenAIImagesEdits(model, { images: [{ type: 'upload', file }], parameters: { prompt: 'make it blue' } }, undefined, noopUpstreamCallOptions());
+      assertEquals(result.response.status, 200);
+    },
+  );
+
+  assertEquals(captured?.path, '/v1/images/edits');
+  assertEquals(captured?.contentType?.startsWith('multipart/form-data; boundary='), true);
+  assertEquals(captured?.body.includes('name="image"'), true);
+  assertEquals(captured?.body.includes('name="prompt"'), true);
 });
 
 // Copilot reports the seat's entitlement on every data-plane response, so a
