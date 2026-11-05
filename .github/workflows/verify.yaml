@@ -19,8 +19,6 @@ jobs:
       fail-fast: false
       matrix:
         check:
-          - name: lint
-            run: pnpm exec cross-env NODE_OPTIONS="--max-old-space-size=12288" eslint --cache .
           - name: typecheck
             run: pnpm -r run typecheck && pnpm exec tsc --noEmit -p tsconfig.scripts.json
           - name: generated-assets
@@ -45,10 +43,46 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
       - name: Generate route types
-        if: matrix.check.name == 'lint' || matrix.check.name == 'typecheck'
+        if: matrix.check.name == 'typecheck'
         run: pnpm run typegen
       - name: ${{ matrix.check.name }}
         run: ${{ matrix.check.run }}
+
+  # Lint is type-aware: every file is parsed against its TypeScript project, so
+  # its cost scales with the file count and one runner spent 124 s on it. The two
+  # halves below hold 1208 and 797 files; they are complementary by
+  # construction — `apps` and `packages/gateway` in one, every other package in
+  # the other — so no file is linted twice. The root config files belong to the
+  # second half, which is what keeps them covered after the split.
+  lint:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: lint (apps and gateway)
+            targets: apps packages/gateway
+          - name: lint (other packages)
+            targets: eslint.config.ts vitest.config.ts packages/agent-setup packages/http packages/interceptor packages/platform packages/protocols packages/provider packages/provider-azure packages/provider-claude-code packages/provider-codex packages/provider-copilot packages/provider-custom packages/provider-ollama packages/proxy packages/test-utils packages/translate scripts tools
+    name: ${{ matrix.name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate route types
+        run: pnpm run typegen
+      - name: ${{ matrix.name }}
+        run: pnpm exec cross-env NODE_OPTIONS="--max-old-space-size=12288" eslint --cache ${{ matrix.targets }}
 
   # The suite splits into two shapes that cannot share one runner budget: the
   # installer integration project runs one file at a time (each case spawns a
@@ -97,6 +131,11 @@ jobs:
       - name: test-installers (${{ matrix.shard }}/6)
         run: CODEX_TEST_BIN="$GITHUB_WORKSPACE/data/codex-ci/node_modules/.bin/codex" pnpm exec cross-env NODE_OPTIONS="--max-old-space-size=8192" vitest run --project agent-setup-installers --shard=${{ matrix.shard }}/6
 
+  # Ten shards for the 771 non-installer files. At five the slowest shard sat at
+  # 124 s of test time and the run ended there; at ten each shard carries about
+  # 77 files. The per-job runner setup below is ~30 s and does not divide, so
+  # this is the point where sharding stops buying much: ten shards land near
+  # 70 s of test time on top of that setup.
   test:
     permissions:
       contents: read
@@ -104,8 +143,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5]
-    name: test (${{ matrix.shard }}/5)
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    name: test (${{ matrix.shard }}/10)
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -120,5 +159,5 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Install latest Codex for installer compatibility
         run: npm install --prefix data/codex-ci --no-save --package-lock=false @openai/codex@latest
-      - name: test (${{ matrix.shard }}/5)
-        run: CODEX_TEST_BIN="$GITHUB_WORKSPACE/data/codex-ci/node_modules/.bin/codex" pnpm exec cross-env NODE_OPTIONS="--max-old-space-size=8192" vitest run --project '!agent-setup-installers' --shard=${{ matrix.shard }}/5
+      - name: test (${{ matrix.shard }}/10)
+        run: CODEX_TEST_BIN="$GITHUB_WORKSPACE/data/codex-ci/node_modules/.bin/codex" pnpm exec cross-env NODE_OPTIONS="--max-old-space-size=8192" vitest run --project '!agent-setup-installers' --shard=${{ matrix.shard }}/10
