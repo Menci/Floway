@@ -33,6 +33,11 @@ function DetailHarness({ initial }: { initial: AnnouncedMetadata }) {
   </>;
 }
 
+function KindHarness({ kind }: { kind: 'chat' | 'embedding' | 'rerank' | 'transcription' | 'decision' | 'image' }) {
+  const [value, setValue] = useState<AnnouncedMetadata>({});
+  return <MetadataEditor disabled={false} issues={{}} kind={kind} onChange={setValue} readOnly={false} value={value} />;
+}
+
 describe('model alias metadata editor', () => {
   it('preserves a comma while another supported effort is being entered', () => {
     renderInApp(<Harness />);
@@ -93,6 +98,32 @@ describe('model alias metadata editor', () => {
     fireEvent.click(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }));
     expect(screen.getByRole<HTMLInputElement>('switch', { name: imageDetailOriginalLabel }).checked).toBe(false);
     expect(screen.getByTestId('detail').textContent).toBe('false');
+  });
+
+  // A prompt budget only exists to share the window with an output budget, so
+  // a kind that generates no token stream states neither. The upstream editor
+  // states the same rule on the same model.
+  for (const kind of ['embedding', 'rerank', 'transcription', 'decision'] as const) {
+    it(`states only a context window on a ${kind} alias`, () => {
+      renderInApp(<KindHarness kind={kind} />);
+      const limit = (key: string) => screen.queryByRole('spinbutton', { name: i18n.t(`dashboard.models.limits.${key}`) });
+      expect(limit('context')).not.toBeNull();
+      expect(limit('prompt')).toBeNull();
+      expect(limit('output')).toBeNull();
+    });
+  }
+
+  it('states the prompt and output split on a chat alias', () => {
+    renderInApp(<KindHarness kind="chat" />);
+    const limit = (key: string) => screen.queryByRole('spinbutton', { name: i18n.t(`dashboard.models.limits.${key}`) });
+    expect(limit('context')).not.toBeNull();
+    expect(limit('prompt')).not.toBeNull();
+    expect(limit('output')).not.toBeNull();
+  });
+
+  it('states no limits at all on an image alias', () => {
+    renderInApp(<KindHarness kind="image" />);
+    expect(screen.queryByRole('spinbutton', { name: i18n.t('dashboard.models.limits.context') })).toBeNull();
   });
 
   it('round-trips a false detail claim rather than collapsing it to absent', () => {

@@ -3,6 +3,8 @@ import { useId, useState } from 'react';
 import type { AnnouncedMetadataField, AnnouncedMetadataIssues } from './validation';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
+import type { ModelLimitKey } from '../models/limits';
+import { ModelLimitsFields } from '../models/limits-editor';
 import { Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { SectionHeader } from '../ui/section-header';
@@ -25,7 +27,7 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
 }) {
   const { t } = useTranslation();
   const imageInputLabelId = useId();
-  const patchLimit = (key: 'max_context_window_tokens' | 'max_prompt_tokens' | 'max_output_tokens', raw: string) => {
+  const patchLimit = (key: ModelLimitKey, raw: string) => {
     const limits = { ...(value.limits ?? {}), [key]: numberValue(raw) };
     if (limits[key] === undefined) delete limits[key];
     onChange({ ...value, limits: Object.keys(limits).length ? limits : undefined });
@@ -48,14 +50,21 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
 
   return (
     <div className="grid gap-5" role="group" aria-label={t('dashboard.modelAliases.metadata.heading')}>
-      <section className={SECTION_STACK_CLASS}>
+      {kind !== 'image' && <section className={SECTION_STACK_CLASS}>
         <SectionHeader level={4} title={t('dashboard.modelAliases.metadata.limits')} />
-        <div className="grid grid-cols-3 gap-3 max-[680px]:grid-cols-1">
-          <Field label={t('dashboard.modelAliases.metadata.context')} {...issueProps('max_context_window_tokens')}><Input disabled={disabled} min={0} readOnly={readOnly} type="number" value={value.limits?.max_context_window_tokens?.toString() ?? ''} onChange={(_, data) => patchLimit('max_context_window_tokens', data.value)} /></Field>
-          <Field label={t('dashboard.modelAliases.metadata.prompt')} {...issueProps('max_prompt_tokens')}><Input disabled={disabled} min={0} readOnly={readOnly} type="number" value={value.limits?.max_prompt_tokens?.toString() ?? ''} onChange={(_, data) => patchLimit('max_prompt_tokens', data.value)} /></Field>
-          <Field label={t('dashboard.modelAliases.metadata.output')} {...issueProps('max_output_tokens')}><Input disabled={disabled} min={0} readOnly={readOnly} type="number" value={value.limits?.max_output_tokens?.toString() ?? ''} onChange={(_, data) => patchLimit('max_output_tokens', data.value)} /></Field>
-        </div>
-      </section>
+        <ModelLimitsFields
+          columnGapClass="gap-3"
+          errorFor={key => {
+            const message = issues[key];
+            return message === undefined ? undefined : t(message);
+          }}
+          kind={kind}
+          limits={value.limits}
+          onChange={patchLimit}
+          readOnly={readOnly || disabled}
+          t={t}
+        />
+      </section>}
       {kind === 'chat' && <>
         {/* Image input leads the group that depends on it, matching the shape
             the upstream editor's capabilities section gives the same two fields. */}
