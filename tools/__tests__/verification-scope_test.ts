@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { basename } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
-import { findRunnerViolations, isExpandedTrapList, parseTargets, TRAP_MARKER, type RunnerFacts } from '../src/verification-scope.ts';
+import { findRunnerViolations, isExpandedTrapList, parseTargets, trapToken, type RunnerFacts } from '../src/verification-scope.ts';
 
 const runnerEnv = {
   GITHUB_ACTIONS: 'true',
@@ -81,22 +84,30 @@ describe('parseTargets', () => {
 });
 
 describe('the trap that detects an expanded glob', () => {
-  const trap = 'packages/http/__tests__/name-the-suite-in-http_test.ts';
-  const otherTrap = 'packages/proxy/__tests__/name-the-suite-in-proxy_test.ts';
+  const trap = 'packages/http/__tests__/lantern_test.ts';
+  const otherTrap = 'packages/proxy/__tests__/yarrow_test.ts';
   const real = 'packages/http/__tests__/parser_test.ts';
 
-  it('gives every trap its own filename, so one exclude cannot hide them', async () => {
+  it('gives every trap an unrelated filename and its own token', async () => {
     const { execFileSync } = await import('node:child_process');
     const found = execFileSync(
-      'grep',
-      ['-rl', '--include=*_test.ts', '--include=*_test.tsx', '--exclude-dir=node_modules', TRAP_MARKER, 'packages', 'apps', 'tools'],
+      'find', ['packages', 'apps', 'tools', '-name', '*_test.ts', '-not', '-path', '*/node_modules/*'],
       { encoding: 'utf8' },
     ).trim().split('\n').filter(Boolean);
 
-    expect(found.length).toBeGreaterThanOrEqual(19);
-    expect(found).toContain(trap);
-    expect(found).toContain('packages/gateway/__tests__/repo/name-the-suite-in-repo_test.ts');
-    expect(new Set(found.map(path => path.split('/').pop())).size).toBe(found.length);
+    const traps = found.filter(path => readFileSync(path, 'utf8').includes(trapToken(basename(path))));
+    const names = traps.map(path => basename(path, '_test.ts'));
+
+    expect(traps.length).toBeGreaterThanOrEqual(19);
+    expect(traps).toContain(trap);
+    expect(traps).toContain('packages/gateway/__tests__/repo/kestrel_test.ts');
+    // No shared prefix or suffix, so one `-name` or `grep -v` cannot remove two.
+    expect(new Set(names).size).toBe(names.length);
+    for (const a of names) {
+      for (const b of names) {
+        if (a !== b) expect(a.includes(b) || b.includes(a)).toBe(false);
+      }
+    }
   });
 
   it('recognizes a glob that expanded to traps and real files together', () => {
