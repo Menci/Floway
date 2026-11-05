@@ -23,8 +23,6 @@ jobs:
             run: pnpm exec cross-env NODE_OPTIONS="--max-old-space-size=12288" eslint --cache .
           - name: typecheck
             run: pnpm -r run typecheck && pnpm exec tsc --noEmit -p tsconfig.scripts.json
-          - name: test
-            run: CODEX_TEST_BIN="$GITHUB_WORKSPACE/data/codex-ci/node_modules/.bin/codex" pnpm exec cross-env NODE_OPTIONS="--max-old-space-size=8192" vitest run
           - name: generated-assets
             run: pnpm --filter @floway-dev/agent-setup run generate-assets --check
           # `build.yaml` does not run on pull requests.
@@ -46,11 +44,64 @@ jobs:
           cache: pnpm
       - name: Install
         run: pnpm install --frozen-lockfile
-      - name: Install latest Codex for installer compatibility
-        if: matrix.check.name == 'test'
-        run: npm install --prefix data/codex-ci --no-save --package-lock=false @openai/codex@latest
       - name: Generate route types
         if: matrix.check.name == 'lint' || matrix.check.name == 'typecheck'
         run: pnpm run typegen
       - name: ${{ matrix.check.name }}
         run: ${{ matrix.check.run }}
+
+  # The suite splits into two shapes that cannot share one runner budget: the
+  # installer integration project runs one file at a time (each case spawns a
+  # real shell, and `fileParallelism` is off for it), and it is worth about a
+  # third of the whole run on its own. The remaining files are spread over
+  # `--shard` so one job no longer carries every one of them.
+  #
+  # Both jobs run on separate runners, which is the parallelism the local runs
+  # cannot have: two workers on one machine lose Microsoft PowerShell cases to
+  # CPU contention, while two runners do not.
+  test-installers:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Install latest Codex for installer compatibility
+        run: npm install --prefix data/codex-ci --no-save --package-lock=false @openai/codex@latest
+      - name: test-installers
+        run: CODEX_TEST_BIN="$GITHUB_WORKSPACE/data/codex-ci/node_modules/.bin/codex" pnpm exec cross-env NODE_OPTIONS="--max-old-space-size=8192" vitest run --project agent-setup-installers
+
+  test:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5]
+    name: test (${{ matrix.shard }}/5)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Install latest Codex for installer compatibility
+        run: npm install --prefix data/codex-ci --no-save --package-lock=false @openai/codex@latest
+      - name: test (${{ matrix.shard }}/5)
+        run: CODEX_TEST_BIN="$GITHUB_WORKSPACE/data/codex-ci/node_modules/.bin/codex" pnpm exec cross-env NODE_OPTIONS="--max-old-space-size=8192" vitest run --project '!agent-setup-installers' --shard=${{ matrix.shard }}/5
