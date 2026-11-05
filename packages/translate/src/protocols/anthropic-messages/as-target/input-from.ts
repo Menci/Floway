@@ -44,6 +44,12 @@ const imageBlock = (media: IRInputMedia): AnthropicMessagesImageBlock => ({ type
  */
 export type AnthropicMessagesImageResolver = (media: IRInputMedia) => Promise<AnthropicMessagesImageBlock | null>;
 
+/**
+ * The wire distinguishes a plain-text document from a binary one and carries the
+ * binary MIME type as a string, so the caller's media type travels verbatim and
+ * the selected upstream decides whether it accepts it. Rewriting an unknown type
+ * to PDF would describe the bytes wrongly.
+ */
 const documentBlock = (media: IRInputMedia): AnthropicMessagesUserContentBlock => {
   switch (media.source_kind) {
   case 'url': return { type: 'document', source: { type: 'url', url: media.url } };
@@ -52,7 +58,7 @@ const documentBlock = (media: IRInputMedia): AnthropicMessagesUserContentBlock =
     if (media.media_type === undefined) throw new TranslatorInputError('Anthropic Messages document input requires a media type.');
     return media.media_type === 'text/plain'
       ? { type: 'document', source: { type: 'text', media_type: 'text/plain', data: media.data } }
-      : { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: media.data } };
+      : { type: 'document', source: { type: 'base64', media_type: media.media_type, data: media.data } };
   }
   }
 };

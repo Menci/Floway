@@ -89,12 +89,11 @@ test('buildTargetRequest maps Gemini inline audio to Chat Completions input audi
   }]);
 });
 
-test('buildTargetRequest rejects unsupported Gemini inline data MIME types for Chat Completions', async () => {
-  await assertRejects(
-    () => buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'text/plain', data: 'dGV4dA==' } }] }] }, 'gpt-test'),
-    Error,
-    "Cannot translate Gemini generateContent inlineData MIME type 'text/plain' to OpenAI Chat Completions.",
-  );
+test('buildTargetRequest forwards a non-audio inline MIME type from Gemini as a Chat file part', async () => {
+  // Chat carries the media type in the data URL, so it travels verbatim and the
+  // selected upstream decides whether it accepts it.
+  const request = await buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'text/plain', data: 'dGV4dA==' } }] }] }, 'gpt-test');
+  assertEquals(request.messages, [{ role: 'user', content: [{ type: 'file', file: { file_data: 'data:text/plain;base64,dGV4dA==' } }] }]);
 });
 
 test('buildTargetRequest maps function calls, tool responses, and readable reasoning history', async () => {

@@ -27,18 +27,22 @@ const inlineMedia = (part: GeminiGenerateContentPart): IRInputMedia | null => {
   return inlineData === null ? null : { source_kind: 'base64', media_type: inlineData.mimeType, data: inlineData.data };
 };
 
-const inlinePart = (part: GeminiGenerateContentPart, target?: string): IRInputUserContentPart => {
+const inlinePart = (part: GeminiGenerateContentPart): IRInputUserContentPart => {
   const inlineData = geminiGenerateContentInlineData(part);
   if (inlineData === null) throw new TranslatorInputError('Expected inline data.');
   switch (inlineData.kind) {
   case 'image': return { type: 'image', image: inlineMedia(part)! };
   case 'pdf': return { type: 'file', file: inlineMedia(part)! };
   case 'audio': return { type: 'audio', audio: { media_type: inlineData.mimeType, data: inlineData.data } };
-  case 'unsupported': throw new TranslatorInputError(`Cannot translate Gemini generateContent inlineData MIME type '${inlineData.mimeType}'${target === undefined ? '.' : ` to ${target}.`}`);
+  // GenerateContent states any MIME type inline, and every target that carries a
+  // file part carries its media type verbatim. A type this snapshot does not
+  // recognize is forwarded as a file so the selected upstream decides whether it
+  // accepts it.
+  case 'unsupported': return { type: 'file', file: inlineMedia(part)! };
   }
 };
 
-const userParts = (content: GeminiGenerateContentContent, turnIndex: number, ids: GeminiGenerateContentToolCallIds, target?: string): IRInputUserItem[] => {
+const userParts = (content: GeminiGenerateContentContent, turnIndex: number, ids: GeminiGenerateContentToolCallIds): IRInputUserItem[] => {
   const items: IRInputUserItem[] = [];
   const pending: IRInputUserContentPart[] = [];
   const flush = (): void => {
@@ -64,7 +68,7 @@ const userParts = (content: GeminiGenerateContentContent, turnIndex: number, ids
       return;
     }
     case 'inline_data':
-      pending.push(inlinePart(part, target));
+      pending.push(inlinePart(part));
       return;
     default:
       throw new TranslatorInputError(`"${kind}" parts are not supported in user content.`);
@@ -135,7 +139,6 @@ export const geminiGenerateContentContentsToIRTurns = (
   turn: GeminiGenerateContentTurn,
   contentIndex: number,
   ids: GeminiGenerateContentToolCallIds,
-  target?: string,
 ): IRInputTurn[] => turn.items.map((content, index) => {
   if (turn.role === 'assistant') {
     return {
@@ -152,7 +155,7 @@ export const geminiGenerateContentContentsToIRTurns = (
     role: 'user' as const,
     items: (content.parts?.length ?? 0) === 0
       ? [{ type: 'message' as const, role: 'user' as const, content: [] }]
-      : userParts(content, contentIndex + index, ids, target),
+      : userParts(content, contentIndex + index, ids),
   };
 });
 
@@ -167,7 +170,6 @@ export const geminiGenerateContentTurnToIR = (
   turn: GeminiGenerateContentTurn,
   contentIndex: number,
   ids?: GeminiGenerateContentToolCallIds,
-  target?: string,
 ): IRInputTurn => {
   const toolIds = ids ?? Object.create(null);
   if (turn.role === 'assistant') {
@@ -186,7 +188,7 @@ export const geminiGenerateContentTurnToIR = (
       }
       return (content.parts?.length ?? 0) === 0
         ? [{ type: 'message' as const, role: 'user' as const, content: [] }]
-        : userParts(content, contentIndex + index, toolIds, target);
+        : userParts(content, contentIndex + index, toolIds);
     }),
   };
 };

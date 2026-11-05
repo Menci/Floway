@@ -80,12 +80,19 @@ test('buildTargetRequest maps system, default max tokens, and multimodal user co
   });
 });
 
-test.each(['audio/wav', 'audio/mp3', 'audio/mpeg', 'text/plain'])('buildTargetRequest rejects Gemini inline data MIME type %s for Anthropic Messages', async mimeType => {
+test.each(['audio/wav', 'audio/mp3', 'audio/mpeg'])('buildTargetRequest rejects Gemini inline audio MIME type %s for Anthropic Messages', async mimeType => {
   await assertRejects(
     () => buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: 'ZGF0YQ==' } }] }] }, 'claude-test', noOptions),
     Error,
     `Cannot translate Gemini generateContent inlineData MIME type '${mimeType}' to Anthropic Messages.`,
   );
+});
+
+test('buildTargetRequest forwards a non-audio inline MIME type from Gemini as a Messages document', async () => {
+  // GenerateContent states any MIME type inline; the document's media type
+  // travels verbatim so the selected upstream decides whether it accepts it.
+  const request = await buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'text/plain', data: 'ZGF0YQ==' } }] }] }, 'claude-test', noOptions);
+  assertEquals(request.messages, [{ role: 'user', content: [{ type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'ZGF0YQ==' } }] }]);
 });
 
 test('buildTargetRequest prefers limits.max_output_tokens over the gateway default when payload omits maxOutputTokens', async () => {

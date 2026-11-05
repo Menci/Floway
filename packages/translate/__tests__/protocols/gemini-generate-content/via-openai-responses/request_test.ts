@@ -64,12 +64,19 @@ test('buildTargetRequest maps instructions and multimodal user input without def
   });
 });
 
-test.each(['audio/wav', 'audio/mp3', 'audio/mpeg', 'text/plain'])('buildTargetRequest rejects Gemini inline data MIME type %s for Responses', async mimeType => {
+test.each(['audio/wav', 'audio/mp3', 'audio/mpeg'])('buildTargetRequest rejects Gemini inline audio MIME type %s for Responses', async mimeType => {
   await assertRejects(
     () => buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: 'ZGF0YQ==' } }] }] }, 'gpt-test'),
     Error,
     `Cannot translate Gemini generateContent inlineData MIME type '${mimeType}' to OpenAI Responses.`,
   );
+});
+
+test('buildTargetRequest forwards a non-audio inline MIME type from Gemini as a Responses file', async () => {
+  // Responses carries the media type in the data URL, so it travels verbatim and
+  // the selected upstream decides whether it accepts it.
+  const request = await buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'text/plain', data: 'ZGF0YQ==' } }] }] }, 'gpt-test');
+  assertEquals(request.input, [{ type: 'message', role: 'user', content: [{ type: 'input_file', file_data: 'data:text/plain;base64,ZGF0YQ==' }] }]);
 });
 
 test('buildTargetRequest maps assistant reasoning, function calls, and call-order outputs', async () => {

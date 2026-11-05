@@ -73,6 +73,19 @@ export type AnthropicMessagesImageSource =
   | { type: 'file'; file_id: string };
 export interface AnthropicMessagesImageBlock { type: 'image'; source: AnthropicMessagesImageSource; cache_control?: AnthropicMessagesCacheControl | null; transformations?: { oversized_image?: 'downsize' | 'error' } | null }
 
+// The snapshot pins a binary document's `media_type` to `'application/pdf'`,
+// while the wire treats it as a MIME string: an upstream decides what it
+// accepts. Translation forwards the caller's media type verbatim, which the
+// snapshot cannot express without claiming the bytes are a PDF they are not.
+export type AnthropicMessagesDocumentBlockEx = {
+  type: 'document';
+  source: Omit<Extract<Native.DocumentBlockParam['source'], { type: 'base64' }>, 'media_type'> & { media_type: string };
+  cache_control?: AnthropicMessagesCacheControl | null;
+  citations?: Native.CitationsConfigParam | null;
+  context?: string | null;
+  title?: string | null;
+};
+
 export type AnthropicMessagesSearchResultBlock = Native.SearchResultBlockParam | Beta.BetaSearchResultBlockParam;
 
 export type AnthropicMessagesWebSearchResultBlock = Native.WebSearchResultBlock | Beta.BetaWebSearchResultBlock;
@@ -132,7 +145,7 @@ export type AnthropicMessagesUserContentBlock = AnthropicMessagesInputContentBlo
 
 export type AnthropicMessagesAssistantContentBlock = Native.ContentBlock | Beta.BetaContentBlock;
 export type AnthropicMessagesAssistantInputContentBlock = Native.ContentBlockParam | Beta.BetaContentBlockParam;
-export type AnthropicMessagesInputContentBlock = AnthropicMessagesAssistantInputContentBlock;
+export type AnthropicMessagesInputContentBlock = AnthropicMessagesAssistantInputContentBlock | AnthropicMessagesDocumentBlockEx;
 
 export interface AnthropicMessagesUserMessage extends Omit<Beta.BetaMessageParam, 'role' | 'content'> {
   role: 'user';

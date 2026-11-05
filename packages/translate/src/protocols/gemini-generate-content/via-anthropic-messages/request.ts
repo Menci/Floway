@@ -117,7 +117,7 @@ export const buildTargetRequest = async (
       }
       if (geminiGenerateContentDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('geminiGenerateContent', 'anthropicMessages');
     }
-    pieces.push(...geminiGenerateContentContentsToIRTurns(turn, contentIndex, unmatchedToolCallIds, 'Anthropic Messages'));
+    pieces.push(...geminiGenerateContentContentsToIRTurns(turn, contentIndex, unmatchedToolCallIds));
     contentIndex += turn.items.length;
   }
 
