@@ -1226,10 +1226,10 @@ test('buildTargetRequest rejects an unknown message role', async () => {
     () =>
       buildWithTestSidecar({
         model: 'claude-test',
-        messages: [{ role: 'function', content: 'hi' } as unknown as OpenAIChatCompletionsMessage],
+        messages: [{ role: 'critic', content: 'hi' } as unknown as OpenAIChatCompletionsMessage],
       }),
     Error,
-    "Invalid role 'function'",
+    "Invalid role 'critic'",
   );
 });
 

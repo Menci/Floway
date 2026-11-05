@@ -6,7 +6,7 @@ import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } fro
 import type { SidecarCodec } from '../../../types.ts';
 import { openaiResponsesSettingsFromIR, openaiResponsesFromIR } from '../../openai-responses/as-target/input-from.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
-import { openaiChatCompletionsSettingsToIR, openaiChatCompletionsCallKinds, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/input-to.ts';
+import { openaiChatCompletionsSettingsToIR, openaiChatCompletionsInputContext, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/input-to.ts';
 import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
@@ -44,7 +44,7 @@ export const buildTargetRequest = async (
   codec: SidecarCodec,
 ): Promise<CanonicalOpenAIResponsesPayload> => {
   const customToolCallIds = new Set<string>();
-  const callKinds = openaiChatCompletionsCallKinds(payload);
+  const context = openaiChatCompletionsInputContext(payload);
 
   const input: CanonicalOpenAIResponsesInputItem[] = [];
   const instructions: string[] = [];
@@ -61,7 +61,7 @@ export const buildTargetRequest = async (
       : undefined;
     if (roundTrip !== undefined) { pieces.push({ kind: 'resolved', turn: roundTrip.turn }); continue; }
     if (openaiChatCompletionsDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiChatCompletions', 'openaiResponses');
-    pieces.push(openaiChatCompletionsTurnToIR(turn, callKinds));
+    pieces.push(openaiChatCompletionsTurnToIR(turn, context));
   }
 
   for (const piece of segmentIRInput(pieces)) {
@@ -70,8 +70,8 @@ export const buildTargetRequest = async (
       for (const item of piece.turn) if (item.type === 'custom_tool_call') customToolCallIds.add(item.call_id);
       continue;
     }
-    const translated = openaiResponsesFromIR({ turns: piece.turns }, piece.leading, { compactUserText: true });
-    if (translated.instructions !== undefined) instructions.push(translated.instructions);
+    const translated = openaiResponsesFromIR({ turns: piece.turns }, piece.leading);
+    if (translated.instructions != null) instructions.push(translated.instructions);
     input.push(...translated.input);
   }
 

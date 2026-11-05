@@ -167,7 +167,7 @@ export const buildTargetRequest = async (
   const input: CanonicalOpenAIResponsesInputItem[] = [...prependItems];
   for (const piece of segmentIRInput(pieces)) {
     if (piece.kind === 'resolved') { input.push(...piece.turn); continue; }
-    input.push(...openaiResponsesFromIR({ turns: piece.turns }, false, { compactUserText: true }).input);
+    input.push(...openaiResponsesFromIR({ turns: piece.turns }, false).input);
   }
 
   // Keep fallback semantics strict: do not synthesize `temperature: 1`,

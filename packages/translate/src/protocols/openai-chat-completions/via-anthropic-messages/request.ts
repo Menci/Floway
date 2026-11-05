@@ -11,7 +11,7 @@ import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-mess
 import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
-import { openaiChatCompletionsSettingsToIR, openaiChatCompletionsCallKinds, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/input-to.ts';
+import { openaiChatCompletionsSettingsToIR, openaiChatCompletionsInputContext, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/input-to.ts';
 import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesMessage, type AnthropicMessagesPayload, type AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
 import { isFastServiceTier } from '@floway-dev/protocols/common';
@@ -65,7 +65,7 @@ export const buildTargetRequest = async (
   codec: SidecarCodec,
   options: BuildTargetRequestOptions,
 ): Promise<AnthropicMessagesPayload> => {
-  const callKinds = openaiChatCompletionsCallKinds(payload);
+  const context = openaiChatCompletionsInputContext(payload);
   const pieces: (IRInputTurn | IRInputResolvedTurn<AnthropicMessagesMessage>)[] = [];
   for (const turn of partitionOpenAIChatCompletionsTurns(payload.messages)) {
     const roundTrip = turn.role === 'assistant'
@@ -76,7 +76,7 @@ export const buildTargetRequest = async (
       : undefined;
     if (roundTrip !== undefined) { pieces.push({ kind: 'resolved', turn: roundTrip.turn }); continue; }
     if (openaiChatCompletionsDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiChatCompletions', 'anthropicMessages');
-    pieces.push(openaiChatCompletionsTurnToIR(turn, callKinds));
+    pieces.push(openaiChatCompletionsTurnToIR(turn, context));
   }
 
   const systemBlocks: AnthropicMessagesTextBlockParam[] = [];

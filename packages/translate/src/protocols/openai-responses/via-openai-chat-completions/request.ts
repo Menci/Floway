@@ -89,7 +89,6 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
   const { payload, names: namespaceToolNames, flattenInput } = flattenNamespaceTools(canonical);
   rejectProgrammaticOpenAIResponsesPayload(payload, 'OpenAI Chat Completions');
   const customToolNames = new Set<string>();
-  const legacyFunctionNames = new Map<string, string>();
   const settings = openaiChatCompletionsSettingsFromIR(openaiResponsesSettingsToIR(payload));
 
   const allowed = restrictAllowedTools(payload.tools, payload.tool_choice);
@@ -122,12 +121,6 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
   for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
     const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('openaiResponses', 'openaiChatCompletions', turn.items, codec, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest, collectOpenAIResponsesReplayContents);
     if (roundTrip) {
-      if (roundTrip.turn.function_call != null) {
-        const modernIds = new Set(roundTrip.turn.tool_calls?.map(call => call.id));
-        for (const item of turn.items) {
-          if ((item.type === 'function_call' || item.type === 'custom_tool_call') && !modernIds.has(item.call_id)) legacyFunctionNames.set(item.call_id, roundTrip.turn.function_call.name);
-        }
-      }
       pieces.push({ kind: 'resolved', turn: roundTrip.turn });
       continue;
     }
@@ -140,7 +133,7 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
       target.messages.push(piece.turn);
       continue;
     }
-    target.messages.push(...openaiChatCompletionsFromIR({ turns: piece.turns }, { legacyFunctionNames }));
+    target.messages.push(...openaiChatCompletionsFromIR({ turns: piece.turns }));
   }
 
   return { target, customToolNames, namespaceToolNames };

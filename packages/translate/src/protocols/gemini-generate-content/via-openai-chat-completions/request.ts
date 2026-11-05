@@ -9,12 +9,12 @@ import { geminiGenerateContentDropsReasoning, geminiGenerateContentSettingsToIR,
 import { geminiGenerateContentReasoningEffort } from '../as-source/reasoning.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
 import { geminiFunctionParameters } from '../as-source/schema.ts';
-import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionDeclarations, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
+import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionDeclarations, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
 
-const applyGenerationConfig = (request: OpenAIChatCompletionsPayload, payload: GeminiGenerateContentPayload): void => {
-  const source = geminiGenerateContentSettingsToIR(payload);
+const applyGenerationConfig = (request: OpenAIChatCompletionsPayload, payload: GeminiGenerateContentPayload, model: string): void => {
+  const source = geminiGenerateContentSettingsToIR(payload, model);
   Object.assign(request, openaiChatCompletionsSettingsFromIR({
     ...source,
     // Chat requires a name for a json_schema format; this is the established
@@ -57,7 +57,6 @@ export const buildTargetRequest = async (
     messages: [],
   };
   const unmatchedToolCallIds: GeminiGenerateContentToolCallIds = Object.create(null);
-  const legacyFunctionNames = new Map<string, string>();
 
   const systemText = geminiGenerateContentText(payload.systemInstruction);
   if (systemText !== null) {
@@ -77,12 +76,6 @@ export const buildTargetRequest = async (
             unmatchedToolCallIds[name] ??= [];
             unmatchedToolCallIds[name].push(call.id);
           }
-        } else {
-          const modernIds = new Set(roundTrip.turn.tool_calls?.map(call => call.id));
-          for (const [index, content] of turn.items.entries()) for (const [partIndex, part] of (content.parts ?? []).entries()) {
-            const invocation = geminiGenerateContentFunctionCallPart(part, unmatchedToolCallIds, contentIndex + index, partIndex);
-            if (invocation !== null && !modernIds.has(invocation.id)) legacyFunctionNames.set(invocation.id, roundTrip.turn.function_call.name);
-          }
         }
         contentIndex += turn.items.length;
         continue;
@@ -95,10 +88,10 @@ export const buildTargetRequest = async (
 
   for (const piece of segmentIRInput(pieces)) {
     if (piece.kind === 'resolved') { request.messages.push(piece.turn); continue; }
-    request.messages.push(...openaiChatCompletionsFromIR({ turns: piece.turns }, { legacyFunctionNames }));
+    request.messages.push(...openaiChatCompletionsFromIR({ turns: piece.turns }));
   }
 
-  applyGenerationConfig(request, payload);
+  applyGenerationConfig(request, payload, model);
 
   const tools = buildTools(payload);
   if (tools) {

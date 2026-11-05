@@ -52,7 +52,7 @@ const applyGenerationConfig = (
   model: string,
   fallbackMaxOutputTokens: number,
 ): NonNullable<AnthropicMessagesPayload['output_config']> => {
-  const settings = anthropicMessagesSettingsFromIR(geminiGenerateContentSettingsToIR(payload));
+  const settings = anthropicMessagesSettingsFromIR(geminiGenerateContentSettingsToIR(payload, model));
   Object.assign(request, settings);
   // Messages requires a ceiling; a model-advertised cap supplies one when the
   // source omitted it.
@@ -123,7 +123,7 @@ export const buildTargetRequest = async (
 
   for (const piece of segmentIRInput(pieces)) {
     if (piece.kind === 'resolved') { request.messages.push(piece.turn); continue; }
-    const translated = await anthropicMessagesFromIR({ turns: piece.turns }, false, { oneMessagePerItem: true, allowFileContent: true });
+    const translated = await anthropicMessagesFromIR({ turns: piece.turns }, false);
     request.messages.push(...translated.messages);
   }
 

@@ -221,7 +221,7 @@ export const geminiGenerateContentInputToIR = (payload: GeminiGenerateContentPay
 };
 
 /** GenerateContent keeps every sampling knob inside `generationConfig`. */
-export const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentPayload): IRInputSettings => {
+export const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentPayload, model: string): IRInputSettings => {
   const config = payload.generationConfig;
   const schema = config === undefined ? undefined : geminiResponseSchema(config);
   const outputFormat: IRInputOutputFormat | undefined = schema !== undefined
@@ -229,6 +229,8 @@ export const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContent
     : config?.responseMimeType === 'application/json' ? { type: 'json_object' } : undefined;
 
   return {
+    model,
+    stream: true,
     ...(config?.temperature == null ? {} : { temperature: config.temperature }),
     ...(config?.topP == null ? {} : { top_p: config.topP }),
     ...(config?.topK == null ? {} : { top_k: config.topK }),

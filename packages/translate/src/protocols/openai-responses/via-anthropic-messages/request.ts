@@ -198,10 +198,8 @@ export const buildTargetRequest = async (
   for (const piece of segmentIRInput(pieces)) {
     if (piece.kind === 'resolved') { irMessages.push(piece.turn); continue; }
     const translated = await anthropicMessagesFromIR({ turns: piece.turns }, piece.leading, {
-      separateAfterDroppedAssistant: true,
       // Messages carries files as `document` blocks, so a Responses `input_file`
       // is representable without loss.
-      allowFileContent: true,
       resolveImage: async media => {
         // Messages cannot reference a foreign file ID: the bytes must be
         // fetched, so a caller that supplied only an ID is an error.

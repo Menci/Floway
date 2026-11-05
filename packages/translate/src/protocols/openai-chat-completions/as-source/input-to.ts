@@ -1,6 +1,6 @@
 import { klona } from 'klona/json';
 
-import { partitionOpenAIChatCompletionsTurns, type OpenAIChatCompletionsConversationTurn } from './conversation-turns.ts';
+import { partitionOpenAIChatCompletionsTurns, type OpenAIChatCompletionsConversationMessage, type OpenAIChatCompletionsConversationTurn } from './conversation-turns.ts';
 import { hasOpenAIChatCompletionsReasoning } from './round-trip.ts';
 import type {
   IRInputAssistantContentPart,
@@ -14,6 +14,7 @@ import type {
   IRInputToolResultItem,
   IRInputTurn,
   IRInputUserContentPart,
+  IRInputUserItem,
 
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
@@ -36,6 +37,34 @@ const mediaFromUrl = (url: string): IRInputMedia => {
 // message of its own, so those keep one empty text part. An empty system run
 // contributes nothing to the system prompt and is dropped instead.
 const textParts = (value: string, keepEmpty = true): IRInputTextPart[] => value === '' && !keepEmpty ? [] : [{ type: 'text', text: value }];
+
+// A legacy call states only its name, so its identity is the name plus which
+// occurrence of that name it is. Both the call and its result take the id from
+// the same counter, so they correlate without a wire id.
+const legacyCallId = (name: string, occurrence: number): string => `legacy__${name}__${occurrence}`;
+
+// Reader-side state over the whole payload: a Chat `tool` message does not say
+// which call kind it answers, and a legacy result names its call by function
+// name alone. Both are recovered here, before the IR states them per item.
+export interface OpenAIChatCompletionsInputContext {
+  readonly callKinds: ReadonlyMap<string, 'function' | 'custom'>;
+  // Occurrences of each legacy function name consumed so far, so a repeated
+  // name yields a distinct id per call and a distinct id per result.
+  readonly legacyCalls: Map<string, number>;
+  readonly legacyResults: Map<string, number>;
+}
+
+export const openaiChatCompletionsInputContext = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsInputContext => ({
+  callKinds: openaiChatCompletionsCallKinds(payload),
+  legacyCalls: new Map<string, number>(),
+  legacyResults: new Map<string, number>(),
+});
+
+const takeOccurrence = (counts: Map<string, number>, name: string): number => {
+  const occurrence = counts.get(name) ?? 0;
+  counts.set(name, occurrence + 1);
+  return occurrence;
+};
 
 const userContentPart = (part: OpenAIChatCompletionsUserContentPart): IRInputUserContentPart => {
   switch (part.type) {
@@ -67,7 +96,7 @@ const toolResultContent = (content: string | readonly { text: string }[]): strin
   ? content
   : content.map(part => ({ type: 'text' as const, text: part.text }));
 
-const assistantItems = (turn: Extract<OpenAIChatCompletionsConversationTurn, { role: 'assistant' }>): IRInputAssistantItem[] => {
+const assistantItems = (turn: Extract<OpenAIChatCompletionsConversationTurn, { role: 'assistant' }>, context: OpenAIChatCompletionsInputContext): IRInputAssistantItem[] => {
   const message = turn.items[0];
 
   const content: IRInputAssistantContentPart[] = typeof message.content === 'string'
@@ -81,14 +110,22 @@ const assistantItems = (turn: Extract<OpenAIChatCompletionsConversationTurn, { r
 
   // A null content with nothing else to say is an explicitly empty assistant
   // message; with tool calls or a refusal it is simply absent.
-  const emptyMessage = message.content == null && message.refusal == null && (message.tool_calls?.length ?? 0) === 0;
+  const legacyCall = message.function_call ?? undefined;
+  const emptyMessage = message.content == null && message.refusal == null && (message.tool_calls?.length ?? 0) === 0 && legacyCall === undefined;
   const items: IRInputAssistantItem[] = emptyMessage
     ? [{ type: 'message', content: [{ type: 'text', text: '' }] }]
     : content.length > 0 ? [{ type: 'message', content }] : [];
-  // The legacy single `function_call` field and the `tool_calls` array carry
-  // the same concept; the input IR keeps only the modern spelling.
-  if (message.function_call !== undefined && message.function_call !== null) {
-    throw new TranslatorInputError('Cannot translate the legacy function_call field; supply tool_calls instead.');
+  // The legacy single `function_call` field carries a call with no id. It is
+  // still input a client may send, so it becomes a call with a deterministic
+  // id that a following legacy `role: 'function'` result recomputes from the
+  // same name occurrence.
+  if (legacyCall !== undefined) {
+    items.push({
+      type: 'function_call',
+      call_id: legacyCallId(legacyCall.name, takeOccurrence(context.legacyCalls, legacyCall.name)),
+      name: legacyCall.name,
+      arguments: legacyCall.arguments,
+    });
   }
   for (const call of message.tool_calls ?? []) {
     items.push(call.type === 'custom'
@@ -121,57 +158,60 @@ export const openaiChatCompletionsCallKinds = (payload: OpenAIChatCompletionsPay
 
 export const openaiChatCompletionsTurnToIR = (
   turn: OpenAIChatCompletionsConversationTurn,
-  callKinds: ReadonlyMap<string, 'function' | 'custom'>,
+  context: OpenAIChatCompletionsInputContext,
 ): IRInputTurn => {
-  if (turn.role === 'assistant') return { role: 'assistant', items: assistantItems(turn) };
+  if (turn.role === 'assistant') return { role: 'assistant', items: assistantItems(turn, context) };
 
-  const message = turn.items[0];
+  // Every client message in one turn contributes its items, in order, to the
+  // same IR turn; a target that groups them differently reads the item list.
+  return { role: 'user', items: turn.items.flatMap(message => userItems(message, context)) };
+};
+
+const userItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, { role: 'assistant' }>, context: OpenAIChatCompletionsInputContext): IRInputUserItem[] => {
   switch (message.role) {
   case 'system':
   case 'developer':
-    return {
-      role: 'user',
-      items: [{
-        type: 'message',
-        role: message.role,
-        // A non-text part in system/developer content has no representation on
-        // any target, so it is rejected here rather than dropped silently.
-        content: typeof message.content === 'string'
-          ? textParts(message.content, false)
-          : (message.content ?? []).map(part => {
-              if (part.type !== 'text') throw new TranslatorInputError(`Invalid '${part.type}' content part in system or developer message. Only 'text' content parts are supported in system messages on this model.`);
-              return { type: 'text' as const, text: part.text };
-            }),
-      }],
-    };
+    return [{
+      type: 'message',
+      role: message.role,
+      // A non-text part in system/developer content has no representation on
+      // any target, so it is rejected here rather than dropped silently.
+      content: typeof message.content === 'string'
+        ? textParts(message.content, false)
+        : (message.content ?? []).map(part => {
+            if (part.type !== 'text') throw new TranslatorInputError(`Invalid '${part.type}' content part in system or developer message. Only 'text' content parts are supported in system messages on this model.`);
+            return { type: 'text' as const, text: part.text };
+          }),
+    }];
   case 'user':
-    return {
+    return [{
+      type: 'message',
       role: 'user',
-      items: [{
-        type: 'message',
-        role: 'user',
-        content: message.content == null ? [{ type: 'text', text: '' }] : typeof message.content === 'string' ? textParts(message.content) : message.content.map(userContentPart),
-      }],
-    };
+      content: message.content == null ? [{ type: 'text', text: '' }] : typeof message.content === 'string' ? textParts(message.content) : message.content.map(userContentPart),
+    }];
   case 'tool': {
     if (!message.tool_call_id) throw new TranslatorInputError("Missing required field 'tool_call_id' on a 'tool' role message.");
-    const toolKind = callKinds.get(message.tool_call_id);
+    const toolKind = context.callKinds.get(message.tool_call_id);
     const result: IRInputToolResultItem = {
       type: 'tool_result',
       call_id: message.tool_call_id,
       output: toolResultContent(message.content),
       ...(toolKind === undefined ? {} : { tool_kind: toolKind }),
     };
-    return { role: 'user', items: [result] };
+    return [result];
   }
+  // A legacy result answers the legacy call of the same name; the id it
+  // recomputes is the one the reader gave that call.
+  case 'function':
+    return [{ type: 'tool_result', call_id: legacyCallId(message.name, takeOccurrence(context.legacyResults, message.name)), output: message.content == null ? '' : toolResultContent(message.content) }];
   default:
     throw new TranslatorInputError(`Invalid role '${(message as { role: string }).role}'.`);
   }
 };
 
 export const openaiChatCompletionsInputToIR = (payload: OpenAIChatCompletionsPayload): IRInputConversation => {
-  const callKinds = openaiChatCompletionsCallKinds(payload);
-  return { turns: partitionOpenAIChatCompletionsTurns(payload.messages).map(turn => openaiChatCompletionsTurnToIR(turn, callKinds)) };
+  const context = openaiChatCompletionsInputContext(payload);
+  return { turns: partitionOpenAIChatCompletionsTurns(payload.messages).map(turn => openaiChatCompletionsTurnToIR(turn, context)) };
 };
 
 /**
@@ -201,6 +241,8 @@ export const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletions
       : { type: format.type };
 
   return {
+    model: payload.model,
+    stream: payload.stream === true,
     ...(payload.temperature == null ? {} : { temperature: payload.temperature }),
     ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
     ...(payload.stop == null ? {} : { stop: typeof payload.stop === 'string' ? [payload.stop] : [...payload.stop] }),

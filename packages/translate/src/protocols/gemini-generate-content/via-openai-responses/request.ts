@@ -13,8 +13,8 @@ import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFuncti
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 
-const applyGenerationConfig = (request: CanonicalOpenAIResponsesPayload, payload: GeminiGenerateContentPayload): void => {
-  const source = geminiGenerateContentSettingsToIR(payload);
+const applyGenerationConfig = (request: CanonicalOpenAIResponsesPayload, payload: GeminiGenerateContentPayload, model: string): void => {
+  const source = geminiGenerateContentSettingsToIR(payload, model);
   Object.assign(request, openaiResponsesSettingsFromIR({
     ...source,
     // Responses requires a name for a json_schema format; this is the
@@ -85,7 +85,7 @@ export const buildTargetRequest = async (
     input.push(...openaiResponsesFromIR({ turns: piece.turns }, false).input);
   }
 
-  applyGenerationConfig(request, payload);
+  applyGenerationConfig(request, payload, model);
 
   const tools = buildTools(payload);
   if (tools) {

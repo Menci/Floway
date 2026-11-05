@@ -29,11 +29,11 @@ const nativeFrames = (mode: 'legacy' | 'modern' | 'mixed', name: string, argumen
 };
 
 const assertNativeHistory = (target: OpenAIChatCompletionsPayload, name: string, contents: string[]): void => {
-  expect(target.messages.filter(message => message.role === 'function' || message.role === 'tool')).toEqual([
-    { role: 'function', name, content: contents[0] },
-    { role: 'tool', tool_call_id: 'native-modern', content: contents[1] },
-    { role: 'function', name, content: contents[2] },
-  ]);
+  // Every result is written in the modern spelling; a legacy source call was
+  // normalized into the IR, so no result restates the legacy `function` role.
+  const results = target.messages.filter(message => message.role === 'tool');
+  expect(results.map(message => message.content)).toEqual(contents);
+  expect(results[1]).toEqual({ role: 'tool', tool_call_id: 'native-modern', content: contents[1] });
   const assistants = target.messages.filter(message => message.role === 'assistant');
   expect(assistants).toHaveLength(3);
   expect(assistants[0].function_call).toEqual({ name, arguments: '{"x":1}' });
@@ -129,9 +129,11 @@ test('Gemini keeps modern IDs separate when a vendor stream includes both call f
   const native = replay.target.messages.find(message => message.role === 'assistant');
   expect(native?.function_call).toEqual({ name: 'lookup', arguments: '{"x":1}' });
   expect(native?.tool_calls).toEqual([{ id: 'native-modern', type: 'function', function: { name: 'lookup', arguments: '{"x":1}' } }]);
+  // The id-less legacy response correlates through the deterministic id the
+  // reader assigned to its call, and is written in the modern spelling.
   expect(replay.target.messages.slice(-2)).toEqual([
     { role: 'tool', tool_call_id: 'native-modern', content: '{"modern":true}' },
-    { role: 'function', name: 'lookup', content: '{"legacy":true}' },
+    { role: 'tool', tool_call_id: 'gemini_call_2_1', content: '{"legacy":true}' },
   ]);
 });
 

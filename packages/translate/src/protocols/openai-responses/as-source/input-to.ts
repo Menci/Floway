@@ -246,6 +246,8 @@ export const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPay
       : { type: format.type };
 
   return {
+    model: payload.model,
+    stream: payload.stream === true,
     ...(payload.temperature == null ? {} : { temperature: payload.temperature }),
     ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
     ...(payload.max_output_tokens == null ? {} : { max_output_tokens: payload.max_output_tokens }),

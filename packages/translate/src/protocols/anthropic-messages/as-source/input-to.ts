@@ -266,6 +266,8 @@ export const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload)
     : undefined;
 
   return {
+    model: payload.model,
+    stream: payload.stream === true,
     ...(payload.temperature == null ? {} : { temperature: payload.temperature }),
     ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
     ...(payload.top_k == null ? {} : { top_k: payload.top_k }),

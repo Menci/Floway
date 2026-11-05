@@ -123,10 +123,7 @@ const assistantMessage = (items: readonly IRInputAssistantItem[]): OpenAIChatCom
   }];
 };
 
-const userMessages = (
-  items: readonly IRInputUserItem[],
-  legacyFunctionNames?: ReadonlyMap<string, string>,
-): OpenAIChatCompletionsMessage[] => {
+const userMessages = (items: readonly IRInputUserItem[]): OpenAIChatCompletionsMessage[] => {
   // Images lifted out of consecutive tool results gather into one user message
   // after the run, so a tool-call group stays contiguous.
   const messages: OpenAIChatCompletionsMessage[] = [];
@@ -138,7 +135,7 @@ const userMessages = (
   };
   for (const item of items) {
     if (item.type !== 'tool_result') flushImages();
-    messages.push(...openaiChatCompletionsUserItem(item, lifted => pendingImages.push(...lifted), legacyFunctionNames));
+    messages.push(...openaiChatCompletionsUserItem(item, lifted => pendingImages.push(...lifted)));
   }
   flushImages();
   return messages;
@@ -147,7 +144,6 @@ const userMessages = (
 const openaiChatCompletionsUserItem = (
   item: IRInputUserItem,
   lift: (parts: readonly OpenAIChatCompletionsUserContentPart[]) => void,
-  legacyFunctionNames?: ReadonlyMap<string, string>,
 ): OpenAIChatCompletionsMessage[] => [item].flatMap<OpenAIChatCompletionsMessage>(item => {
   switch (item.type) {
   case 'message':
@@ -160,29 +156,18 @@ const openaiChatCompletionsUserItem = (
   case 'tool_result': {
     const projected = openaiChatCompletionsToolResultContent(item.call_id, item.output);
     lift(projected.lifted);
-    const legacyName = legacyFunctionNames?.get(item.call_id);
-    return [legacyName === undefined
-      ? { role: 'tool', tool_call_id: item.call_id, content: projected.content }
-      : { role: 'function', name: legacyName, content: projected.content }];
+    // Results are always written in the modern spelling; a legacy source call is
+    // normalized when it enters the IR, so no target has to restate that form.
+    return [{ role: 'tool', tool_call_id: item.call_id, content: projected.content }];
   }
   }
 });
 
-export interface OpenAIChatCompletionsFromIROptions {
-  /**
-   * A resolved assistant turn may carry a legacy single `function_call`, whose
-   * later tool messages must use the legacy `function` role. The route owns
-   * that mapping because only it sees the resolved native turn.
-   */
-  readonly legacyFunctionNames?: ReadonlyMap<string, string>;
-}
-
 export const openaiChatCompletionsFromIR = (
   conversation: IRInputConversation,
-  options: OpenAIChatCompletionsFromIROptions = {},
 ): OpenAIChatCompletionsMessage[] => conversation.turns.flatMap(turn => turn.role === 'assistant'
   ? assistantMessage(turn.items)
-  : userMessages(turn.items, options.legacyFunctionNames));
+  : userMessages(turn.items));
 
 /**
  * Chat Completions has no top-level instructions slot, so a leading system run

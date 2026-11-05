@@ -85,7 +85,6 @@ export const buildTargetRequest = async (
   codec: SidecarCodec,
 ): Promise<OpenAIChatCompletionsPayload> => {
   const clientTools = filterAnthropicMessagesClientTools(payload.tools);
-  const legacyFunctionNames = new Map<string, string>();
   // Pass effort through verbatim; per-upstream enum acceptance (e.g. some
   // backends rejecting `xhigh`/`max`) is the target interceptor's concern.
   const reasoningEffort = resolveReasoningEffort(payload);
@@ -111,12 +110,6 @@ export const buildTargetRequest = async (
     if (turn.role === 'assistant') {
       const roundTrip = await roundTripAssistantTurn('anthropicMessages', 'openaiChatCompletions', turn.items, codec, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest, collectAnthropicMessagesReplayContents);
       if (roundTrip !== undefined) {
-        if (roundTrip.turn.function_call != null) {
-          const modernIds = new Set(roundTrip.turn.tool_calls?.map(call => call.id));
-          for (const message of turn.items) if (Array.isArray(message.content)) for (const block of message.content) {
-            if ((block.type === 'tool_use' || block.type === 'server_tool_use') && !modernIds.has(block.id)) legacyFunctionNames.set(block.id, roundTrip.turn.function_call.name);
-          }
-        }
         pieces.push({ kind: 'resolved', turn: roundTrip.turn });
         messageIndex += turn.items.length;
         continue;
@@ -129,7 +122,7 @@ export const buildTargetRequest = async (
 
   for (const piece of segmentIRInput(pieces)) {
     if (piece.kind === 'resolved') { messages.push(piece.turn); continue; }
-    messages.push(...openaiChatCompletionsFromIR({ turns: piece.turns }, { legacyFunctionNames }));
+    messages.push(...openaiChatCompletionsFromIR({ turns: piece.turns }));
   }
 
   return {

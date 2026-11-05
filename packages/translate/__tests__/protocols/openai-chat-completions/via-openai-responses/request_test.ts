@@ -169,7 +169,9 @@ test('buildTargetRequest hoists only the initial contiguous system prefix', asyn
 
   assertEquals(result.instructions, 'sys-1\n\nsys-2');
   assertEquals(result.input, [
-    { type: 'message', role: 'user', content: 'u1' },
+    // A user message keeps its parts: Responses accepts both spellings, and the
+    // array is the one that states each part the IR carried.
+    { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'u1' }] },
     { type: 'message', role: 'developer', content: 'dev-late' },
     { type: 'message', role: 'system', content: 'sys-late' },
     {
@@ -220,14 +222,16 @@ test('buildTargetRequest preserves explicit tool strict and defaults omission to
 });
 
 test('buildTargetRequest rejects an unknown message role', async () => {
+  // `function` is a legacy role the reader accepts; only a role no Chat wire
+  // defines reaches this rejection.
   await assertRejects(
     () =>
       buildWithTestSidecar({
         model: 'gpt-test',
-        messages: [{ role: 'function', content: 'hi' } as unknown as OpenAIChatCompletionsMessage],
+        messages: [{ role: 'critic', content: 'hi' } as unknown as OpenAIChatCompletionsMessage],
       }),
     Error,
-    "Invalid role 'function'",
+    "Invalid role 'critic'",
   );
 });
 

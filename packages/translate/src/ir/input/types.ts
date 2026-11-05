@@ -25,14 +25,17 @@
 // Tool declarations are not here yet, because `allowed_tools` selectors
 // reference them and the two must enter together.
 //
-// `model` is absent on purpose: every route selects the target model from
-// operator configuration and writes it onto the payload itself, so an IR field
-// would be filled by readers and read by nobody.
-//
 // Every field names one request-wide concept, never a protocol's spelling of
 // it: a reader normalizes what its wire stated and a writer spells it again for
 // its own target. A knob a target cannot express is dropped there.
 export interface IRInputSettings {
+  // The source's model id. A route that must override it (because the operator
+  // chose a target model) starts from a conversation and settings it built
+  // itself, so this field always states the model the request asks for.
+  readonly model: string;
+  // The request is a streaming one. Every route this IR serves translates a
+  // stream, so the field carries the caller's value rather than a constant.
+  readonly stream: boolean;
   readonly temperature?: number; // All
   readonly top_p?: number; // All
   readonly top_k?: number; // Messages, GenerateContent
@@ -60,6 +63,68 @@ export interface IRInputOutputFormat {
   readonly schema?: Readonly<Record<string, unknown>>; // All
   readonly strict?: boolean; // ChatCompletions, Responses, Messages
 }
+
+// One request, from the source's wire to the target's. A writer produces the
+// target payload from this alone: everything a caller can state about a request
+// is here, so no route has to patch a field onto a writer's result.
+export interface IRInputRequest {
+  readonly conversation: IRInputConversation;
+  readonly settings: IRInputSettings;
+  // Absent and empty are the same thing: a request that declares no tool.
+  readonly tools?: readonly IRInputTool[];
+  readonly tool_choice?: IRInputToolChoice;
+}
+
+// A callable the model may invoke. Hosted tools (web search, code execution,
+// file search, computer use) have no cross-vendor meaning and stay in the
+// native reader, matching the Fit rule for hosted history.
+//
+// Messages expresses both arms as one declaration shape; the distinction
+// survives only where the target distinguishes it.
+export type IRInputTool = IRInputFunctionTool | IRInputCustomTool;
+
+export interface IRInputFunctionTool {
+  readonly type: 'function';
+  readonly name: string;
+  readonly description?: string;
+  // A JSON Schema object. Responses and Chat Completions require one, Messages
+  // always states one, so the reader forwards what the source declared.
+  readonly parameters?: Readonly<Record<string, unknown>>;
+  // Three-state: absent means the source did not say. Chat defaults to false,
+  // Responses requires the field, so a writer states its target's requirement.
+  readonly strict?: boolean;
+}
+
+// A freeform tool: the model returns the string the declaration describes, and
+// the target either has a native arm (Chat, Responses) or wraps it in a
+// single-`input`-string function schema (Messages).
+export interface IRInputCustomTool {
+  readonly type: 'custom';
+  readonly name: string;
+  readonly description?: string;
+  // The constrained grammar a target uses to validate the model's string.
+  readonly format?: IRInputCustomToolFormat;
+}
+
+export type IRInputCustomToolFormat =
+  | { readonly type: 'text' }
+  | { readonly type: 'grammar'; readonly definition: string; readonly syntax: string };
+
+// What the model may call, and how freely. `allowed_tools` is `auto` but with a
+// narrowed visible set, so it stays a distinct arm rather than being flattened
+// into `auto` plus a filtered declaration list: widening or narrowing the
+// declaration list changes what the model can see, not what it may choose.
+export type IRInputToolChoice =
+  | 'auto'
+  | 'none'
+  | 'required'
+  | { readonly type: 'function'; readonly name: string }
+  | { readonly type: 'custom'; readonly name: string }
+  | { readonly type: 'allowed_tools'; readonly mode: 'auto' | 'required'; readonly tools: readonly IRInputToolSelection[] };
+
+// A selector names one declared callable by kind and name, which is what every
+// protocol's selector arm states.
+export type IRInputToolSelection = { readonly type: 'function'; readonly name: string } | { readonly type: 'custom'; readonly name: string };
 
 export interface IRInputConversation {
   readonly turns: readonly IRInputTurn[];

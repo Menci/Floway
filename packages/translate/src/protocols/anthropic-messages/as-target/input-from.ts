@@ -80,7 +80,6 @@ const userContent = async (
       break;
     }
     case 'file':
-      if (options.allowFileContent !== true) throw new TranslatorInputError('Cannot translate input_file message content to Anthropic Messages.');
       blocks.push(documentBlock(part.file));
       break;
     case 'audio': throw new TranslatorInputError(`Cannot translate Gemini generateContent inlineData MIME type '${part.audio.media_type}' to Anthropic Messages.`);
@@ -164,23 +163,6 @@ const parseArguments = (argumentsJson: string): Record<string, unknown> | null =
   }
 };
 
-// Messages keeps tool results inside a user message, so consecutive input IR tool
-// results collapse into one message and interleaved user content stays ordered
-// inside it.
-const appendUserBlocks = (messages: AnthropicMessagesMessage[], blocks: AnthropicMessagesUserContentBlock[]): void => {
-  if (blocks.length === 0) return;
-  const last = messages.at(-1);
-  if (last?.role === 'user') {
-    // A string is Messages' spelling of one text block; merging means turning it
-    // back into a list and appending.
-    if (typeof last.content === 'string') { last.content = [{ type: 'text', text: last.content }, ...blocks]; return; }
-    last.content.push(...blocks);
-    return;
-  }
-  // Messages spells a single text block as a bare string.
-  messages.push({ role: 'user', content: blocks.length === 1 && blocks[0].type === 'text' ? blocks[0].text : blocks });
-};
-
 export interface AnthropicMessagesRequestFromIR {
   readonly system: AnthropicMessagesTextBlockParam[] | undefined;
   readonly messages: AnthropicMessagesMessage[];
@@ -192,24 +174,8 @@ export interface AnthropicMessagesRequestFromIR {
  * boundaries survive; later system messages stay inline at their position.
  */
 export interface AnthropicMessagesFromIROptions {
-  /**
-   * Messages groups consecutive client items into one message by default, which
-   * is what a Chat Completions or Responses source expects. A GenerateContent
-   * source treats each `content` as its own message, so its route keeps one
-   * message per item instead.
-   */
-  readonly oneMessagePerItem?: boolean;
-  /**
-   * Whether a dropped assistant turn keeps the neighbouring user turns apart.
-   * A Responses source depends on that boundary; a Chat Completions source
-   * merges adjacent user items as its own protocol does.
-   */
-  readonly separateAfterDroppedAssistant?: boolean;
-  /**
-   * Whether file content may reach the target. A Responses source rejects it;
-   * a GenerateContent source has always mapped an inline PDF to `document`.
-   */
-  readonly allowFileContent?: boolean;
+  // Injected by the caller's runtime, not by the route: Messages sometimes has
+  // to fetch a remote image before it can state one.
   readonly resolveImage?: AnthropicMessagesImageResolver;
 }
 
@@ -221,20 +187,17 @@ export const anthropicMessagesFromIR = async (
   const system: AnthropicMessagesTextBlockParam[] = [];
   let hoisting = hoistSystem;
   const messages: AnthropicMessagesMessage[] = [];
-  let separated = false;
   // Messages spells a single text block as a bare string, which is the shape a
   // client sees for a plain user turn.
   const userMessage = (blocks: AnthropicMessagesUserContentBlock[]): AnthropicMessagesMessage => ({
     role: 'user',
     content: blocks.length === 1 && blocks[0].type === 'text' ? blocks[0].text : blocks,
   });
+  // One IR turn becomes one message: the items inside it belong together, and a
+  // turn boundary is what keeps two runs apart. The IR states that grouping, so
+  // the writer never re-derives it from item kinds.
   const append = (blocks: AnthropicMessagesUserContentBlock[]): void => {
-    if (options.oneMessagePerItem === true || separated) {
-      separated = false;
-      if (blocks.length > 0) messages.push(userMessage(blocks));
-      return;
-    }
-    appendUserBlocks(messages, blocks);
+    if (blocks.length > 0) messages.push(userMessage(blocks));
   };
   for (const turn of conversation.turns) {
     if (turn.role === 'assistant') {
@@ -244,11 +207,12 @@ export const anthropicMessagesFromIR = async (
       // turns around it were never adjacent, so a following user item must not
       // merge into the previous message. An explicitly empty text item is not
       // dropped: `assistantBlocks` emitted one empty block for it.
-      if (blocks.length === 0) { separated = options.separateAfterDroppedAssistant === true; continue; }
+      if (blocks.length === 0) continue;
       const content = blocks.length === 1 && blocks[0].type === 'text' && blocks[0].text === '' ? '' : blocks;
       messages.push({ role: 'assistant', content });
       continue;
     }
+    const turnBlocks: AnthropicMessagesUserContentBlock[] = [];
     for (const item of turn.items) {
       if (item.type === 'message' && item.role !== 'user') {
         // Messages system content is text-only, so an image there is a caller
@@ -264,10 +228,11 @@ export const anthropicMessagesFromIR = async (
         continue;
       }
       hoisting = false;
-      append(item.type === 'tool_result'
-        ? [{ type: 'tool_result', tool_use_id: item.call_id, content: await toolResultContent(item.output, options), ...(item.is_error === true ? { is_error: true } : {}) }]
-        : await userContent(item, options));
+      turnBlocks.push(...(item.type === 'tool_result'
+        ? [{ type: 'tool_result' as const, tool_use_id: item.call_id, content: await toolResultContent(item.output, options), ...(item.is_error === true ? { is_error: true } : {}) }]
+        : await userContent(item, options)));
     }
+    append(turnBlocks);
   }
   return { system: system.length === 0 ? undefined : system, messages };
 };

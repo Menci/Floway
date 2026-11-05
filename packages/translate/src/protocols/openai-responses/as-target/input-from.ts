@@ -54,20 +54,17 @@ const toolResultOutput = (output: string | readonly IRInputToolResultContentPart
       return fileContent(part.file, part.filename) as OpenAIResponsesToolOutputContent;
     });
 
-const userContent = (item: Extract<IRInputUserItem, { type: 'message' }>, compactText: boolean): OpenAIResponsesInputContent[] | string => {
-  // Responses accepts both spellings. A Chat Completions source is written back
-  // as a compact string; a GenerateContent source keeps its part array so its
-  // own boundaries survive.
-  if (compactText && item.content.length === 1 && item.content[0].type === 'text') return item.content[0].text;
-  return item.content.map(part => {
-    switch (part.type) {
-    case 'text': return { type: 'input_text' as const, text: part.text };
-    case 'image': return inputContent(part.image, part.detail);
-    case 'file': return fileContent(part.file, part.filename);
-    case 'audio': throw new TranslatorInputError(`Cannot translate Gemini generateContent inlineData MIME type '${part.audio.media_type}' to OpenAI Responses.`);
-    }
-  });
-};
+// Responses accepts a bare string or a part array. The array is the general
+// spelling, so it is used unconditionally: the IR states each part and the
+// target keeps them, without a writer having to know how the source phrased it.
+const userContent = (item: Extract<IRInputUserItem, { type: 'message' }>): OpenAIResponsesInputContent[] => item.content.map(part => {
+  switch (part.type) {
+  case 'text': return { type: 'input_text' as const, text: part.text };
+  case 'image': return inputContent(part.image, part.detail);
+  case 'file': return fileContent(part.file, part.filename);
+  case 'audio': throw new TranslatorInputError(`Cannot translate Gemini generateContent inlineData MIME type '${part.audio.media_type}' to OpenAI Responses.`);
+  }
+});
 
 const assistantItems = (items: readonly IRInputAssistantItem[]): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
   switch (item.type) {
@@ -104,10 +101,10 @@ const assistantItems = (items: readonly IRInputAssistantItem[]): CanonicalOpenAI
   }
 });
 
-const userItems = (items: readonly IRInputUserItem[], compactText: boolean): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
+const userItems = (items: readonly IRInputUserItem[]): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
   switch (item.type) {
   case 'message': {
-    if (item.role === 'user') return { type: 'message', role: 'user', content: userContent(item, compactText) };
+    if (item.role === 'user') return { type: 'message', role: 'user', content: userContent(item) };
     // Responses accepts a bare string for a text-only message. A single text
     // part collapses to it so the common case stays on the compact spelling;
     // several parts keep the array so their boundaries survive.
@@ -125,20 +122,6 @@ const userItems = (items: readonly IRInputUserItem[], compactText: boolean): Can
   }
 });
 
-export interface OpenAIResponsesFromIROptions {
-  /**
-   * Write a single-text user message as the compact string. A Chat Completions
-   * source maps one-to-one onto that spelling; a GenerateContent source keeps
-   * its part array.
-   */
-  readonly compactUserText?: boolean;
-}
-
-export interface OpenAIResponsesRequestFromIR {
-  readonly instructions: string | undefined;
-  readonly input: CanonicalOpenAIResponsesInputItem[];
-}
-
 /**
  * `hoistSystem` lifts the leading system/developer run into the Responses
  * `instructions` slot. Only the first segment of a conversation may do so.
@@ -149,8 +132,7 @@ export interface OpenAIResponsesRequestFromIR {
 export const openaiResponsesFromIR = (
   conversation: IRInputConversation,
   hoistSystem: boolean,
-  options: OpenAIResponsesFromIROptions = {},
-): OpenAIResponsesRequestFromIR => {
+): Pick<CanonicalOpenAIResponsesPayload, 'instructions' | 'input'> => {
   const instructions: string[] = [];
   let hoisting = hoistSystem;
 
@@ -166,7 +148,7 @@ export const openaiResponsesFromIR = (
         return [];
       }
       hoisting = false;
-      return userItems([entry], options.compactUserText === true);
+      return userItems([entry]);
     });
   });
 
