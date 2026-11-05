@@ -275,7 +275,7 @@ test('buildTargetRequest maps generation config and reasoning effort', async () 
     model: 'gpt-test',
     stream: true,
     messages: [],
-    max_tokens: 512,
+    max_completion_tokens: 512,
     temperature: 0.25,
     top_p: 0.8,
     stop: ['END'],

@@ -131,7 +131,7 @@ const systemParts = (content: GeminiGenerateContentContent | undefined): IRInput
 };
 
 /**
- * One output IR turn per source content. A target that keeps its own message
+ * One input IR turn per source content. A target that keeps its own message
  * boundaries (Messages) uses this so two adjacent GenerateContent contents do
  * not merge into one message.
  */
@@ -160,7 +160,7 @@ export const geminiGenerateContentContentsToIRTurns = (
 });
 
 /** Turn-level entry point so a pair can splice a resolved assistant turn. */
-/** Whether a turn carries a vendor-signed thought signature the output IR cannot hold. */
+/** Whether a turn carries a vendor-signed thought signature the input IR cannot hold. */
 export const geminiGenerateContentReasoningId = (turnIndex: number, partIndex: number): string => `gemini_reasoning_${turnIndex}_${partIndex}`;
 
 export const geminiGenerateContentDropsReasoning = (turn: GeminiGenerateContentTurn): boolean => turn.role === 'assistant'
@@ -205,7 +205,7 @@ export const geminiGenerateContentInputToIR = (payload: GeminiGenerateContentPay
     for (const [index, content] of turn.items.entries()) {
       if (turn.role === 'assistant') {
         // A thought signature is a vendor-signed value with no cross-vendor
-        // meaning, so it never reaches the output IR.
+        // meaning, so it never reaches the input IR.
         void warnDroppedUnrecognizedAssistantReasoning;
         const items = assistantItems(content, contentIndex + index, ids);
         turns.push({ role: 'assistant', items });
@@ -222,7 +222,7 @@ export const geminiGenerateContentInputToIR = (payload: GeminiGenerateContentPay
 };
 
 /** GenerateContent keeps every sampling knob inside `generationConfig`. */
-export const geminiGenerateContentEnvelopeToIR = (payload: GeminiGenerateContentPayload, model: string): IRInputEnvelope => {
+export const geminiGenerateContentEnvelopeToIR = (payload: GeminiGenerateContentPayload): IRInputEnvelope => {
   const config = payload.generationConfig;
   const schema = config === undefined ? undefined : geminiResponseSchema(config);
   const outputFormat: IRInputOutputFormat | undefined = schema !== undefined
@@ -239,7 +239,6 @@ export const geminiGenerateContentEnvelopeToIR = (payload: GeminiGenerateContent
   };
 
   return {
-    model,
     ...(Object.keys(sampling).length === 0 ? {} : { sampling }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
   };

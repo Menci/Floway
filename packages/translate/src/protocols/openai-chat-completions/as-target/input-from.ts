@@ -15,7 +15,7 @@ import type {
   OpenAIChatCompletionsUserContentPart,
 } from '@floway-dev/protocols/openai-chat-completions';
 
-// Chat Completions names a container while the output IR keeps MIME types.
+// Chat Completions names a container while the input IR keeps MIME types.
 const audioFormat = (mediaType: string): string => {
   if (mediaType === 'audio/wav') return 'wav';
   if (mediaType === 'audio/mpeg' || mediaType === 'audio/mp3') return 'mp3';
@@ -59,7 +59,7 @@ const userContent = (item: Extract<IRInputUserItem, { type: 'message' }>): strin
 };
 
 /**
- * A Chat `tool` message admits only text, while the output IR tool result may carry
+ * A Chat `tool` message admits only text, while the input IR tool result may carry
  * images. The image parts are lifted into a user message that follows the
  * result, so a vision target still receives them.
  *
@@ -201,10 +201,13 @@ export const openaiChatCompletionsTurnFromIR = (turn: IRInputConversation['turns
 export type { OpenAIChatCompletionsContentPart };
 
 /**
- * Writes the envelope onto a Chat Completions payload. Chat accepts both ceiling
- * names but some upstreams reject a request carrying them together, so the
- * newer spelling wins when the source stated both.
+ * Writes the envelope onto a Chat Completions payload. `max_tokens` is
+ * deprecated and incompatible with the o-series models, so the ceiling is
+ * always stated as `max_completion_tokens`; a source that stated both keeps the
+ * newer spelling for the same reason, and some upstreams reject a request
+ * carrying them together.
  *
+ * https://github.com/openai/openai-openapi/blob/master/openapi.yaml (FunctionObject / max_tokens)
  * https://github.com/agentscope-ai/agentscope-java/issues/905
  */
 export const openaiChatCompletionsEnvelopeFromIR = (envelope: IRInputEnvelope): Partial<OpenAIChatCompletionsPayload> => {
@@ -213,7 +216,7 @@ export const openaiChatCompletionsEnvelopeFromIR = (envelope: IRInputEnvelope): 
   const format = envelope.output_format;
 
   return {
-    ...(ceiling === undefined ? {} : { max_tokens: ceiling }),
+    ...(ceiling === undefined ? {} : { max_completion_tokens: ceiling }),
     ...(envelope.sampling?.temperature === undefined ? {} : { temperature: envelope.sampling.temperature }),
     ...(envelope.sampling?.top_p === undefined ? {} : { top_p: envelope.sampling.top_p }),
     ...(envelope.sampling?.stop === undefined ? {} : { stop: [...envelope.sampling.stop] }),

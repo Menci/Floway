@@ -51,7 +51,7 @@ const textBlocks = (content: string | readonly AnthropicMessagesTextBlockParam[]
     });
 
 // Messages carries file content as a `document` block whose source is a PDF,
-// plain text, a URL, or an embedded content array. The output IR keeps the same two
+// plain text, a URL, or an embedded content array. The input IR keeps the same two
 // payload kinds it uses everywhere else.
 const documentMedia = (block: Extract<AnthropicMessagesUserContentBlock, { type: 'document' }>): IRInputMedia => {
   const source = block.source;
@@ -119,7 +119,7 @@ const userItems = (
     pending.length = 0;
   };
 
-  // Messages keeps tool results inline with user content. Flat output IR items keep
+  // Messages keeps tool results inline with user content. Flat input IR items keep
   // the chronology and let each target regroup.
   for (const [blockIdx, block] of message.content.entries()) {
     if (block.type === 'tool_result') {
@@ -194,15 +194,8 @@ const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'a
         ...(Array.isArray(block.content) ? {} : { is_error: true }),
       });
       break;
-    // Hosted results with no plain-tool spelling stay outside the output IR entirely;
-    // their owning shim restores them before or after translation.
-    case 'web_fetch_tool_result':
-    case 'code_execution_tool_result':
-    case 'bash_code_execution_tool_result':
-    case 'text_editor_code_execution_tool_result':
-    case 'tool_search_tool_result':
-      flush();
-      break;
+    // Hosted results other than search have no plain-tool spelling and no
+    // cross-vendor counterpart, so the turn fails rather than losing history.
     default:
       throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' assistant content blocks are not supported on this model`);
     }
@@ -282,7 +275,6 @@ export const anthropicMessagesEnvelopeToIR = (payload: AnthropicMessagesPayload)
     : undefined;
 
   return {
-    model: payload.model,
     sampling,
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
   };

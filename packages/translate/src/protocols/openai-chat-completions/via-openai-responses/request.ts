@@ -19,8 +19,9 @@ const translateChatTools = (tools?: OpenAIChatCompletionsTool[] | null): OpenAIR
           type: 'function',
           name: tool.function.name,
           parameters: klona(tool.function.parameters) ?? { type: 'object', properties: {} },
-          // OpenAI Chat Completions function tools are non-strict by default while OpenAI Responses function
-          // tools default strict; make omission explicit to preserve OpenAI Chat Completions semantics.
+          // A Responses function tool requires `strict`, so an omitted Chat value
+          // must be stated, and Chat's own default is non-strict.
+          // https://github.com/openai/openai-openapi/blob/master/openapi.yaml (Function)
           strict: tool.function.strict ?? false,
           ...(tool.function.description ? { description: tool.function.description } : {}),
         };

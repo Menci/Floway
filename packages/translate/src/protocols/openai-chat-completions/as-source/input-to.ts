@@ -24,7 +24,7 @@ import type { OpenAIChatCompletionsContentPart, OpenAIChatCompletionsPayload } f
 const DATA_URL = /^data:([^;,]+)?;base64,(.*)$/s;
 
 // Chat Completions names an audio container while the other protocols name a
-// MIME type. The output IR keeps the MIME type so a Chat source can reach GenerateContent.
+// MIME type. The input IR keeps the MIME type so a Chat source can reach GenerateContent.
 const AUDIO_MEDIA_TYPES: Readonly<Record<string, string>> = { wav: 'audio/wav', mp3: 'audio/mp3' };
 
 const mediaFromUrl = (url: string): IRInputMedia => {
@@ -64,7 +64,7 @@ const userContentPart = (part: OpenAIChatCompletionsContentPart): IRInputUserCon
   }
 };
 
-// Chat's `tool` content array is transport fragments of one payload. The output IR
+// Chat's `tool` content array is transport fragments of one payload. The input IR
 // keeps the parts so a target that accepts structured content can use them; a
 // target that only carries strings decides how to flatten.
 const toolResultContent = (content: string | readonly { text: string }[]): string | readonly IRInputToolResultContentPart[] => typeof content === 'string'
@@ -90,7 +90,7 @@ const assistantItems = (turn: Extract<OpenAIChatCompletionsConversationTurn, { r
     ? [{ type: 'message', content: [{ type: 'text', text: '' }] }]
     : content.length > 0 ? [{ type: 'message', content }] : [];
   // The legacy single `function_call` field and the `tool_calls` array carry
-  // the same concept; the output IR keeps only the modern spelling.
+  // the same concept; the input IR keeps only the modern spelling.
   if (message.function_call !== undefined && message.function_call !== null) {
     throw new TranslatorInputError('Cannot translate the legacy function_call field; supply tool_calls instead.');
   }
@@ -216,7 +216,6 @@ export const openaiChatCompletionsEnvelopeToIR = (payload: OpenAIChatCompletions
       : { type: format.type };
 
   return {
-    model: payload.model,
     ...(Object.keys(sampling).length === 0 ? {} : { sampling }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
   };

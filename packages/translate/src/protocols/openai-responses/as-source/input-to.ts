@@ -174,7 +174,7 @@ export interface OpenAIResponsesInputIR {
   readonly namespaceToolNames: NamespaceToolNames;
 }
 
-/** Whether a turn carries an encrypted reasoning carrier the output IR cannot hold. */
+/** Whether a turn carries an encrypted reasoning carrier the input IR cannot hold. */
 export const openaiResponsesDropsReasoning = (turn: { readonly role: 'assistant' | 'bare'; readonly items: readonly CanonicalOpenAIResponsesInputItem[] }): boolean =>
   turn.items.some(item => item.type === 'reasoning' && isOpenAIResponsesEncryptedReasoning(item));
 
@@ -251,7 +251,6 @@ export const openaiResponsesEnvelopeToIR = (payload: CanonicalOpenAIResponsesPay
       : { type: format.type };
 
   return {
-    model: payload.model,
     ...(Object.keys(sampling).length === 0 ? {} : { sampling }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
   };

@@ -52,7 +52,7 @@ const applyGenerationConfig = (
   model: string,
   fallbackMaxOutputTokens: number,
 ): NonNullable<AnthropicMessagesPayload['output_config']> => {
-  const envelope = anthropicMessagesEnvelopeFromIR(geminiGenerateContentEnvelopeToIR(payload, model));
+  const envelope = anthropicMessagesEnvelopeFromIR(geminiGenerateContentEnvelopeToIR(payload));
   Object.assign(request, envelope);
   // Messages requires a ceiling; a model-advertised cap supplies one when the
   // source omitted it.

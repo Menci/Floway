@@ -21,8 +21,11 @@
 // The request envelope: everything about a request that is not its
 // conversation. Tool declarations are not here yet, because `allowed_tools`
 // selectors reference them and the two must enter together.
+//
+// `model` is absent on purpose: every route selects the target model from
+// operator configuration and writes it onto the payload itself, so an IR field
+// would be filled by readers and read by nobody.
 export interface IRInputEnvelope {
-  readonly model: string; // All
   readonly sampling?: IRInputSampling; // All
   readonly output_format?: IRInputOutputFormat; // ChatCompletions, Responses, Messages, GenerateContent
 }

@@ -75,8 +75,10 @@ const translateTools = (tools: AnthropicMessagesClientTool[] | undefined): OpenA
     type: 'function',
     name: tool.name,
     parameters: normalizeToolInputSchema(tool.input_schema),
-    // OpenAI Responses tools default stricter than Anthropic/OpenAI-Chat-Completions-style function tools,
-    // so omitted source strictness is made explicit as false.
+    // A Responses function tool requires `strict`, so an omitted source value is
+    // stated; Anthropic validates against the declared schema without the
+    // Structured Outputs subset restriction.
+    // https://github.com/openai/openai-openapi/blob/master/openapi.yaml (Function)
     strict: tool.strict ?? false,
     ...(tool.description ? { description: tool.description } : {}),
   }));

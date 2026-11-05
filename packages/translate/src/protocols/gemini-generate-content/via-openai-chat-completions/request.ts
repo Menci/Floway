@@ -13,8 +13,8 @@ import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFuncti
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
 
-const applyGenerationConfig = (request: OpenAIChatCompletionsPayload, payload: GeminiGenerateContentPayload, model: string): void => {
-  const source = geminiGenerateContentEnvelopeToIR(payload, model);
+const applyGenerationConfig = (request: OpenAIChatCompletionsPayload, payload: GeminiGenerateContentPayload): void => {
+  const source = geminiGenerateContentEnvelopeToIR(payload);
   Object.assign(request, openaiChatCompletionsEnvelopeFromIR({
     ...source,
     // Chat requires a name for a json_schema format; this is the established
@@ -98,7 +98,7 @@ export const buildTargetRequest = async (
     request.messages.push(...openaiChatCompletionsFromIR({ turns: piece.turns }, { legacyFunctionNames }));
   }
 
-  applyGenerationConfig(request, payload, model);
+  applyGenerationConfig(request, payload);
 
   const tools = buildTools(payload);
   if (tools) {
