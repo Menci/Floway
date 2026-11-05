@@ -3,7 +3,7 @@ import { COMPACTION_TRIGGER, compactionResponse } from './compaction.ts';
 import { assertCopilotUpstreamRecord } from './config.ts';
 import { COPILOT_DEFAULT_FLAGS, defaultFlagsForCopilotModel } from './defaults.ts';
 import { fetchCopilotModels } from './fetch-models.ts';
-import { copilotFetchOpenAIChatCompletions, copilotFetchOpenAIEmbeddings, copilotFetchAnthropicMessages, copilotFetchAnthropicMessagesCountTokens, copilotFetchOpenAIImagesEdits, copilotFetchOpenAIImagesGenerations, copilotFetchOpenAIResponses, copilotFetchSystemOne, type CopilotDataPlaneFetchOptions } from './fetch.ts';
+import { copilotFetchOpenAIChatCompletions, copilotFetchOpenAIEmbeddings, copilotFetchAnthropicMessages, copilotFetchAnthropicMessagesCountTokens, copilotFetchOpenAIImagesEdits, copilotFetchOpenAIImagesGenerations, copilotFetchOpenAIResponses, copilotFetchDecision, type CopilotDataPlaneFetchOptions } from './fetch.ts';
 import { COPILOT_ANTHROPIC_MESSAGES_BOUNDARY, COPILOT_ANTHROPIC_MESSAGES_COUNT_TOKENS_BOUNDARY } from './interceptors/anthropic-messages/index.ts';
 import type { AnthropicMessagesBoundaryCtx } from './interceptors/anthropic-messages/types.ts';
 import { COPILOT_OPENAI_CHAT_COMPLETIONS_BOUNDARY } from './interceptors/openai-chat-completions/index.ts';
@@ -20,7 +20,7 @@ import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts'
 import type { CopilotRawModel } from './types.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { parseAnthropicMessagesStream, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, isFastServiceTier, kindForEndpoints } from '@floway-dev/protocols/common';
+import { type DecisionProtocol, type DecisionTarget, type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, isFastServiceTier, kindForEndpoints } from '@floway-dev/protocols/common';
 import { DEFAULT_DECISION_PATHS, serializeDecisionRequest, type CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import { parseOpenAIChatCompletionsStream, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
@@ -81,10 +81,35 @@ const copilotPathToModelEndpoint = (path: string): ModelEndpointKey | undefined 
     return 'openaiImagesEdits';
   case '/systemone':
   case '/v1/systemone':
+  case '/decisions':
+  case '/v1/decisions':
     return 'decision';
   default:
     return undefined;
   }
+};
+
+// Copilot names the dialect each decision model serves through the path it
+// advertises: `/v1/systemone` speaks System One and `/v1/decisions` speaks
+// OpenAI Decisions. The two are exclusive per model — calling the other one
+// answers 400 `no_available_model_endpoints` — so the advertised path is the
+// only authority for the target dialect.
+const COPILOT_DECISION_PATH_PROTOCOL: Readonly<Record<string, DecisionProtocol>> = {
+  '/systemone': 'typesafe-systemone',
+  '/v1/systemone': 'typesafe-systemone',
+  '/decisions': 'openai-decisions',
+  '/v1/decisions': 'openai-decisions',
+};
+
+const copilotDecisionTarget = (variants: readonly CopilotRawModel[]): DecisionTarget => {
+  const advertised = variants.flatMap(variant => variant.supported_endpoints ?? []);
+  const protocols = [...new Set(advertised.flatMap(path => COPILOT_DECISION_PATH_PROTOCOL[path] ?? []))];
+  if (protocols.length !== 1) {
+    throw new Error(
+      `Copilot decision model advertises ${protocols.length === 0 ? 'no decision path' : `multiple decision dialects (${protocols.join(', ')})`} in supported_endpoints ${JSON.stringify(advertised)}`,
+    );
+  }
+  return { protocol: protocols[0] };
 };
 
 const rawModelSupportsEndpoint = (model: CopilotRawModel, endpoint: ModelEndpointKey): boolean => {
@@ -96,10 +121,13 @@ const rawModelSupportsEndpoint = (model: CopilotRawModel, endpoint: ModelEndpoin
     return model.supported_endpoints === undefined && model.capabilities?.type === 'chat';
   }
   if (endpoint === 'openaiEmbeddings') return model.supported_endpoints === undefined && model.capabilities?.type === 'embeddings';
-  // Decision models are never inferred: Copilot's catalog carries
-  // `capabilities.type: "decisions"` but only lists the served path in
-  // `supported_endpoints`, and a decision model is picker-hidden. Requiring the
-  // advertised path keeps a chat model from being routed to /v1/systemone.
+  // A decision model declares `capabilities.type: "decisions"`. The advertised
+  // path alone cannot decide this: the same family is reached over
+  // `/v1/systemone` and `/v1/decisions`, and a catalog that omits
+  // `supported_endpoints` (or lists a path this map does not know yet) would
+  // otherwise fall through to the chat fallback and be routed to
+  // /v1/chat/completions. The declared type is the authority.
+  if (endpoint === 'decision') return model.capabilities?.type === 'decisions';
   return false;
 };
 
@@ -202,7 +230,7 @@ const finalizeCopilotModels = (
       kind: kindForEndpoints(endpoints),
       endpoints,
       providerData: { rawModels: variants } satisfies CopilotProviderData,
-      ...(endpoints.decision ? { decisionTarget: { protocol: 'typesafe-systemone' as const } } : {}),
+      ...(endpoints.decision ? { decisionTarget: copilotDecisionTarget(variants) } : {}),
       ...(pricing ? { pricing } : {}),
       ...((mergedModel.owned_by?.toLowerCase() === 'openai' || /^(?:gpt-|o[134](?:-|$)|codex-)/.test(mergedModel.id))
         ? { opaqueBlobCompatibilityScope: { bindToUpstream: true, key: 'openai' } }
@@ -534,7 +562,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       if (target === undefined) throw new Error(`Decision model ${model.id} has no outbound target`);
       const rawModel = rawModelFor(model, 'decision');
       const body = serializeDecisionRequest(target.protocol, rawModel.id, request);
-      const response = await copilotFetchSystemOne(
+      const response = await copilotFetchDecision(
         upstreamConfig,
         target.path ?? DEFAULT_DECISION_PATHS[target.protocol],
         { method: 'POST', body: jsonRequestBody(body), signal },
