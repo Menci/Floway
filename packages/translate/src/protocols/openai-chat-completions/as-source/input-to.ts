@@ -6,7 +6,7 @@ import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
   IRInputConversation,
-  IRInputEnvelope,
+  IRInputSettings,
   IRInputOutputFormat,
   IRInputMedia,
   IRInputTextPart,
@@ -183,7 +183,7 @@ export const openaiChatCompletionsInputToIR = (payload: OpenAIChatCompletionsPay
  * https://help.openai.com/en/articles/5072518-controlling-the-length-of-openai-model-responses
  * https://community.openai.com/t/why-was-max-tokens-changed-to-max-completion-tokens/938077
  */
-export const openaiChatCompletionsEnvelopeToIR = (payload: OpenAIChatCompletionsPayload): IRInputEnvelope => {
+export const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload): IRInputSettings => {
   const ceiling = payload.max_completion_tokens ?? payload.max_tokens;
 
   const format = payload.response_format;

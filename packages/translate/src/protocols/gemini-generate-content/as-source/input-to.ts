@@ -6,7 +6,7 @@ import { geminiResponseSchema } from './schema.ts';
 import { geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from './tools.ts';
 import type {
   IRInputAssistantContentPart,
-  IRInputEnvelope,
+  IRInputSettings,
   IRInputOutputFormat,
   IRInputAssistantItem,
   IRInputConversation,
@@ -221,7 +221,7 @@ export const geminiGenerateContentInputToIR = (payload: GeminiGenerateContentPay
 };
 
 /** GenerateContent keeps every sampling knob inside `generationConfig`. */
-export const geminiGenerateContentEnvelopeToIR = (payload: GeminiGenerateContentPayload): IRInputEnvelope => {
+export const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentPayload): IRInputSettings => {
   const config = payload.generationConfig;
   const schema = config === undefined ? undefined : geminiResponseSchema(config);
   const outputFormat: IRInputOutputFormat | undefined = schema !== undefined

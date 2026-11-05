@@ -18,9 +18,12 @@
 // lifecycle events, no accumulation. That is the whole structural difference
 // from the stream IR; the Fit boundary is identical.
 //
-// The request envelope: everything about a request that is not its
-// conversation. Tool declarations are not here yet, because `allowed_tools`
-// selectors reference them and the two must enter together.
+// How a request is generated, as opposed to what its conversation says. These
+// are the request-wide settings every protocol names, normalized once so a
+// writer can respell them for its own target.
+//
+// Tool declarations are not here yet, because `allowed_tools` selectors
+// reference them and the two must enter together.
 //
 // `model` is absent on purpose: every route selects the target model from
 // operator configuration and writes it onto the payload itself, so an IR field
@@ -29,7 +32,7 @@
 // Every field names one request-wide concept, never a protocol's spelling of
 // it: a reader normalizes what its wire stated and a writer spells it again for
 // its own target. A knob a target cannot express is dropped there.
-export interface IRInputEnvelope {
+export interface IRInputSettings {
   readonly temperature?: number; // All
   readonly top_p?: number; // All
   readonly top_k?: number; // Messages, GenerateContent

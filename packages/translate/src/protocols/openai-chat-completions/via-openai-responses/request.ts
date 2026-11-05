@@ -4,9 +4,9 @@ import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segm
 import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
-import { openaiResponsesEnvelopeFromIR, openaiResponsesFromIR } from '../../openai-responses/as-target/input-from.ts';
+import { openaiResponsesSettingsFromIR, openaiResponsesFromIR } from '../../openai-responses/as-target/input-from.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
-import { openaiChatCompletionsEnvelopeToIR, openaiChatCompletionsCallKinds, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/input-to.ts';
+import { openaiChatCompletionsSettingsToIR, openaiChatCompletionsCallKinds, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/input-to.ts';
 import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
@@ -75,7 +75,7 @@ export const buildTargetRequest = async (
     input.push(...translated.input);
   }
 
-  const envelope = openaiResponsesEnvelopeFromIR(openaiChatCompletionsEnvelopeToIR(payload));
+  const settings = openaiResponsesSettingsFromIR(openaiChatCompletionsSettingsToIR(payload));
 
   const reasoningEffort = payload.reasoning_effort ?? undefined;
   const reasoning = reasoningEffort !== undefined ? { effort: reasoningEffort } : undefined;
@@ -102,6 +102,6 @@ export const buildTargetRequest = async (
     ...(payload.prompt_cache_key !== undefined ? { prompt_cache_key: payload.prompt_cache_key } : {}),
     ...(payload.safety_identifier !== undefined ? { safety_identifier: payload.safety_identifier } : {}),
     ...(payload.service_tier !== undefined ? { service_tier: payload.service_tier } : {}),
-    ...envelope,
+    ...settings,
   };
 };

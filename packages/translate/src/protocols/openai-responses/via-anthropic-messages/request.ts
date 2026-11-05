@@ -6,13 +6,13 @@ import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } fro
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec, RemoteImageLoader } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
-import { anthropicMessagesEnvelopeFromIR, anthropicMessagesFromIR } from '../../anthropic-messages/as-target/input-from.ts';
+import { anthropicMessagesSettingsFromIR, anthropicMessagesFromIR } from '../../anthropic-messages/as-target/input-from.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-messages/as-target/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
 import { restrictAllowedTools } from '../as-source/allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
-import { openaiResponsesEnvelopeToIR, openaiResponsesDropsReasoning, openaiResponsesInstructionsToIR, openaiResponsesTurnToIR } from '../as-source/input-to.ts';
+import { openaiResponsesSettingsToIR, openaiResponsesDropsReasoning, openaiResponsesInstructionsToIR, openaiResponsesTurnToIR } from '../as-source/input-to.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
@@ -215,12 +215,12 @@ export const buildTargetRequest = async (
     irMessages.push(...translated.messages);
 
   }
-  const envelope = anthropicMessagesEnvelopeFromIR(openaiResponsesEnvelopeToIR(payload));
+  const settings = anthropicMessagesSettingsFromIR(openaiResponsesSettingsToIR(payload));
   const target: AnthropicMessagesPayload = {
-    ...envelope,
+    ...settings,
     model: payload.model,
     messages: irMessages,
-    max_tokens: envelope.max_tokens ?? maxTokens,
+    max_tokens: settings.max_tokens ?? maxTokens,
     ...(systemBlocks.length > 0 ? { system: systemBlocks } : {}),
     stream: true,
     tools,

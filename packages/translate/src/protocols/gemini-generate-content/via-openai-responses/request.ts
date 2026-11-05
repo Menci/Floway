@@ -2,10 +2,10 @@ import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segm
 import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
-import { openaiResponsesEnvelopeFromIR, openaiResponsesFromIR } from '../../openai-responses/as-target/input-from.ts';
+import { openaiResponsesSettingsFromIR, openaiResponsesFromIR } from '../../openai-responses/as-target/input-from.ts';
 import { geminiGenerateContentText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
-import { geminiGenerateContentDropsReasoning, geminiGenerateContentEnvelopeToIR, geminiGenerateContentTurnToIR } from '../as-source/input-to.ts';
+import { geminiGenerateContentDropsReasoning, geminiGenerateContentSettingsToIR, geminiGenerateContentTurnToIR } from '../as-source/input-to.ts';
 import { geminiGenerateContentReasoningEffort } from '../as-source/reasoning.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
 import { geminiFunctionParameters } from '../as-source/schema.ts';
@@ -14,8 +14,8 @@ import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-
 import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 
 const applyGenerationConfig = (request: CanonicalOpenAIResponsesPayload, payload: GeminiGenerateContentPayload): void => {
-  const source = geminiGenerateContentEnvelopeToIR(payload);
-  Object.assign(request, openaiResponsesEnvelopeFromIR({
+  const source = geminiGenerateContentSettingsToIR(payload);
+  Object.assign(request, openaiResponsesSettingsFromIR({
     ...source,
     // Responses requires a name for a json_schema format; this is the
     // established spelling for a GenerateContent source.

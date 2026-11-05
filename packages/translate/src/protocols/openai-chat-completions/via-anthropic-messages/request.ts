@@ -6,12 +6,12 @@ import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } fro
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec, RemoteImageLoader } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
-import { anthropicMessagesEnvelopeFromIR, anthropicMessagesFromIR } from '../../anthropic-messages/as-target/input-from.ts';
+import { anthropicMessagesSettingsFromIR, anthropicMessagesFromIR } from '../../anthropic-messages/as-target/input-from.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-messages/as-target/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
-import { openaiChatCompletionsEnvelopeToIR, openaiChatCompletionsCallKinds, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/input-to.ts';
+import { openaiChatCompletionsSettingsToIR, openaiChatCompletionsCallKinds, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/input-to.ts';
 import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesMessage, type AnthropicMessagesPayload, type AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
 import { isFastServiceTier } from '@floway-dev/protocols/common';
@@ -128,12 +128,12 @@ export const buildTargetRequest = async (
   // json_schema: { schema } }`); `json_object` / `text` / absent have no
   // Anthropic Messages equivalent and drop.
   const { thinking, effort: reasoningEffort } = anthropicMessagesReasoningFieldsFromEffort(payload.reasoning_effort);
-  const envelope = anthropicMessagesEnvelopeFromIR(openaiChatCompletionsEnvelopeToIR(payload));
+  const settings = anthropicMessagesSettingsFromIR(openaiChatCompletionsSettingsToIR(payload));
   // `output_config` merges the structured-output format with the reasoning
-  // effort, which the envelope does not carry.
+  // effort, which the settings do not carry.
   const outputConfig: NonNullable<AnthropicMessagesPayload['output_config']> = {
     ...(reasoningEffort === undefined ? {} : { effort: reasoningEffort }),
-    ...envelope.output_config,
+    ...settings.output_config,
   };
   const hasOutputConfig = Object.keys(outputConfig).length > 0;
 
@@ -145,11 +145,11 @@ export const buildTargetRequest = async (
 
   // OpenAI user and generic metadata are not interpreted as Messages user_id.
   return {
-    ...envelope,
+    ...settings,
     model: payload.model,
-    // Messages requires a ceiling and a fallback may supply it; the envelope
-    // states one only when the source did.
-    max_tokens: envelope.max_tokens ?? maxTokens,
+    // Messages requires a ceiling and a fallback may supply it; the settings
+    // state one only when the source did.
+    max_tokens: settings.max_tokens ?? maxTokens,
     messages,
     ...(systemBlocks.length > 0 ? { system: systemBlocks } : {}),
     stream: true,

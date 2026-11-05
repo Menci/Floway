@@ -2,10 +2,10 @@ import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segm
 import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
-import { openaiChatCompletionsEnvelopeFromIR, openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
+import { openaiChatCompletionsSettingsFromIR, openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
 import { geminiGenerateContentText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
-import { geminiGenerateContentDropsReasoning, geminiGenerateContentEnvelopeToIR, geminiGenerateContentTurnToIR } from '../as-source/input-to.ts';
+import { geminiGenerateContentDropsReasoning, geminiGenerateContentSettingsToIR, geminiGenerateContentTurnToIR } from '../as-source/input-to.ts';
 import { geminiGenerateContentReasoningEffort } from '../as-source/reasoning.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
 import { geminiFunctionParameters } from '../as-source/schema.ts';
@@ -14,8 +14,8 @@ import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
 
 const applyGenerationConfig = (request: OpenAIChatCompletionsPayload, payload: GeminiGenerateContentPayload): void => {
-  const source = geminiGenerateContentEnvelopeToIR(payload);
-  Object.assign(request, openaiChatCompletionsEnvelopeFromIR({
+  const source = geminiGenerateContentSettingsToIR(payload);
+  Object.assign(request, openaiChatCompletionsSettingsFromIR({
     ...source,
     // Chat requires a name for a json_schema format; this is the established
     // spelling for a GenerateContent source.

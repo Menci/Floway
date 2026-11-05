@@ -4,7 +4,7 @@ import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
   IRInputConversation,
-  IRInputEnvelope,
+  IRInputSettings,
   IRInputOutputFormat,
   IRInputMedia,
   IRInputTextPart,
@@ -225,7 +225,7 @@ export const openaiResponsesInputToIR = (source: OpenAIResponsesRequestPayloadEx
  * Responses states the ceiling once, as `max_output_tokens`. Its `text.format`
  * carries the structured-output schema flat, unlike Chat's nested spelling.
  */
-export const openaiResponsesEnvelopeToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputEnvelope => {
+export const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputSettings => {
   const format = payload.text?.format;
   const outputFormat: IRInputOutputFormat | undefined = format === undefined || format === null ? undefined
     : format.type === 'json_schema'

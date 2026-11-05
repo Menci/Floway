@@ -1,6 +1,6 @@
 import type {
   IRInputAssistantItem,
-  IRInputEnvelope,
+  IRInputSettings,
   IRInputConversation,
   IRInputMedia,
   IRInputToolResultContentPart,
@@ -193,22 +193,22 @@ export const openaiChatCompletionsTurnFromIR = (turn: IRInputConversation['turns
   : userMessages(turn.items);
 
 /**
- * Writes the envelope onto a Chat Completions payload. `max_tokens` is
+ * Writes the settings onto a Chat Completions payload. `max_tokens` is
  * deprecated and incompatible with the o-series models, so the ceiling is
  * stated as `max_completion_tokens`.
  *
  * https://github.com/openai/openai-openapi/blob/master/openapi.yaml (max_tokens)
  */
-export const openaiChatCompletionsEnvelopeFromIR = (envelope: IRInputEnvelope): Partial<OpenAIChatCompletionsPayload> => {
-  const ceiling = envelope.max_output_tokens;
-  const format = envelope.output_format;
+export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): Partial<OpenAIChatCompletionsPayload> => {
+  const ceiling = settings.max_output_tokens;
+  const format = settings.output_format;
 
   return {
     ...(ceiling === undefined ? {} : { max_completion_tokens: ceiling }),
-    ...(envelope.temperature === undefined ? {} : { temperature: envelope.temperature }),
-    ...(envelope.top_p === undefined ? {} : { top_p: envelope.top_p }),
-    ...(envelope.stop === undefined ? {} : { stop: [...envelope.stop] }),
-    ...(envelope.seed === undefined ? {} : { seed: envelope.seed }),
+    ...(settings.temperature === undefined ? {} : { temperature: settings.temperature }),
+    ...(settings.top_p === undefined ? {} : { top_p: settings.top_p }),
+    ...(settings.stop === undefined ? {} : { stop: [...settings.stop] }),
+    ...(settings.seed === undefined ? {} : { seed: settings.seed }),
     ...(format === undefined
       ? {}
       : format.type === 'json_schema'

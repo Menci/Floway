@@ -1,6 +1,6 @@
 import type {
   IRInputAssistantItem,
-  IRInputEnvelope,
+  IRInputSettings,
   IRInputOutputFormat,
   IRInputConversation,
   IRInputMedia,
@@ -183,14 +183,14 @@ const requireSchema = (format: IRInputOutputFormat): Readonly<Record<string, unk
  * is flat. `strict` stays absent when the source did not say, because an
  * omitted Responses tool/format strictness is not the same as `false`.
  */
-export const openaiResponsesEnvelopeFromIR = (envelope: IRInputEnvelope): Partial<CanonicalOpenAIResponsesPayload> => {
-  const ceiling = envelope.max_output_tokens;
-  const format = envelope.output_format;
+export const openaiResponsesSettingsFromIR = (settings: IRInputSettings): Partial<CanonicalOpenAIResponsesPayload> => {
+  const ceiling = settings.max_output_tokens;
+  const format = settings.output_format;
 
   return {
     ...(ceiling === undefined ? {} : { max_output_tokens: ceiling }),
-    ...(envelope.temperature === undefined ? {} : { temperature: envelope.temperature }),
-    ...(envelope.top_p === undefined ? {} : { top_p: envelope.top_p }),
+    ...(settings.temperature === undefined ? {} : { temperature: settings.temperature }),
+    ...(settings.top_p === undefined ? {} : { top_p: settings.top_p }),
     ...(format === undefined
       ? {}
       : {

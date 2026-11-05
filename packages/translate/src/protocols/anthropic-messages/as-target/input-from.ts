@@ -2,7 +2,7 @@ import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
   IRInputConversation,
-  IRInputEnvelope,
+  IRInputSettings,
   IRInputMedia,
   IRInputTextPart,
   IRInputToolResultContentPart,
@@ -279,16 +279,16 @@ export type { IRInputAssistantContentPart };
  * lives in `output_config.format`. It has no `seed` and no `max_tokens` alias,
  * so a source that only stated `max_completion_tokens` still lands here.
  */
-export const anthropicMessagesEnvelopeFromIR = (envelope: IRInputEnvelope): Omit<Partial<AnthropicMessagesPayload>, 'model'> => {
-  const ceiling = envelope.max_output_tokens;
-  const format = envelope.output_format;
+export const anthropicMessagesSettingsFromIR = (settings: IRInputSettings): Omit<Partial<AnthropicMessagesPayload>, 'model'> => {
+  const ceiling = settings.max_output_tokens;
+  const format = settings.output_format;
 
   return {
     ...(ceiling === undefined ? {} : { max_tokens: ceiling }),
-    ...(envelope.temperature === undefined ? {} : { temperature: envelope.temperature }),
-    ...(envelope.top_p === undefined ? {} : { top_p: envelope.top_p }),
-    ...(envelope.top_k === undefined ? {} : { top_k: envelope.top_k }),
-    ...(envelope.stop === undefined ? {} : { stop_sequences: [...envelope.stop] }),
+    ...(settings.temperature === undefined ? {} : { temperature: settings.temperature }),
+    ...(settings.top_p === undefined ? {} : { top_p: settings.top_p }),
+    ...(settings.top_k === undefined ? {} : { top_k: settings.top_k }),
+    ...(settings.stop === undefined ? {} : { stop_sequences: [...settings.stop] }),
     ...(format?.type === 'json_schema' && format.schema !== undefined
       ? { output_config: { format: { type: 'json_schema' as const, schema: format.schema } } }
       : {}),

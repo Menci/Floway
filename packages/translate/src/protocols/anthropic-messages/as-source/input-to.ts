@@ -3,7 +3,7 @@ import { klona } from 'klona/json';
 import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn } from './conversation-turns.ts';
 import type {
   IRInputAssistantContentPart,
-  IRInputEnvelope,
+  IRInputSettings,
   IRInputOutputFormat,
   IRInputAssistantItem,
   IRInputConversation,
@@ -256,7 +256,7 @@ export const anthropicMessagesInputToIR = (payload: AnthropicMessagesPayload): I
  * Messages states one ceiling, `max_tokens`, and its structured-output schema
  * lives in `output_config.format`. `top_k` is a Messages-only sampling knob.
  */
-export const anthropicMessagesEnvelopeToIR = (payload: AnthropicMessagesPayload): IRInputEnvelope => {
+export const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload): IRInputSettings => {
   const format = payload.output_config?.format;
   // Messages' structured-output schema is already strict by contract, so the
   // fact is stated here rather than left for a target to invent.

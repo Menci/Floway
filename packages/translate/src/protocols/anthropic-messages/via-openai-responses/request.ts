@@ -5,10 +5,10 @@ import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
-import { openaiResponsesEnvelopeFromIR, openaiResponsesFromIR } from '../../openai-responses/as-target/input-from.ts';
+import { openaiResponsesSettingsFromIR, openaiResponsesFromIR } from '../../openai-responses/as-target/input-from.ts';
 import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
-import { anthropicMessagesDropsReasoning, anthropicMessagesEnvelopeToIR, anthropicMessagesTurnToIR } from '../as-source/input-to.ts';
+import { anthropicMessagesDropsReasoning, anthropicMessagesSettingsToIR, anthropicMessagesTurnToIR } from '../as-source/input-to.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from '../as-source/round-trip.ts';
 import type {
   AnthropicMessagesClientTool,
@@ -131,12 +131,12 @@ export const buildTargetRequest = async (
   const reasoning = effort !== undefined ? { effort } : undefined;
   const clientTools = filterAnthropicMessagesClientTools(payload.tools);
   const { instructions, prependItems } = placeAnthropicMessagesSystem(payload.system);
-  const sourceEnvelope = anthropicMessagesEnvelopeToIR(payload);
-  const envelope = openaiResponsesEnvelopeFromIR({
-    ...sourceEnvelope,
+  const sourceSettings = anthropicMessagesSettingsToIR(payload);
+  const settings = openaiResponsesSettingsFromIR({
+    ...sourceSettings,
     // Messages has no name for its structured-output schema; the Responses wire
     // requires one and this is the established spelling.
-    ...(sourceEnvelope.output_format === undefined ? {} : { output_format: { ...sourceEnvelope.output_format, name: 'messages_response' } }),
+    ...(sourceSettings.output_format === undefined ? {} : { output_format: { ...sourceSettings.output_format, name: 'messages_response' } }),
   });
 
   // Anthropic `speed: 'fast'` selects OpenAI's priority lane. Without an
@@ -179,7 +179,7 @@ export const buildTargetRequest = async (
     model: payload.model,
     input,
     ...(instructions !== null ? { instructions } : {}),
-    ...envelope,
+    ...settings,
     ...(payload.tools !== undefined ? { tools: translateTools(clientTools) } : {}),
     ...(toolChoice !== undefined ? { tool_choice: toolChoice } : {}),
     ...(payload.metadata ? { metadata: translateMetadata(payload.metadata as AnthropicMessagesMetadataEx) } : {}),

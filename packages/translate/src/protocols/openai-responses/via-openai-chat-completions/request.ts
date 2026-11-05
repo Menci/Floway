@@ -5,10 +5,10 @@ import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
-import { openaiChatCompletionsEnvelopeFromIR, openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
+import { openaiChatCompletionsSettingsFromIR, openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
 import { restrictAllowedTools } from '../as-source/allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
-import { openaiResponsesEnvelopeToIR, openaiResponsesDropsReasoning, openaiResponsesTurnToIR } from '../as-source/input-to.ts';
+import { openaiResponsesSettingsToIR, openaiResponsesDropsReasoning, openaiResponsesTurnToIR } from '../as-source/input-to.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
@@ -90,14 +90,14 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
   rejectProgrammaticOpenAIResponsesPayload(payload, 'OpenAI Chat Completions');
   const customToolNames = new Set<string>();
   const legacyFunctionNames = new Map<string, string>();
-  const envelope = openaiChatCompletionsEnvelopeFromIR(openaiResponsesEnvelopeToIR(payload));
+  const settings = openaiChatCompletionsSettingsFromIR(openaiResponsesSettingsToIR(payload));
 
   const allowed = restrictAllowedTools(payload.tools, payload.tool_choice);
   const tools = translateOpenAIResponsesTools(allowed.tools, customToolNames);
   // Same-purpose OpenAI fields pass through directly here, while broader
   // OpenAI-Responses-only state such as `previous_response_id` remains native-only.
   const target: OpenAIChatCompletionsPayload = {
-    ...envelope,
+    ...settings,
     model: payload.model,
     messages: [],
     stream: true,

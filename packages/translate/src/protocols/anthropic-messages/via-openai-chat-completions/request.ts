@@ -5,10 +5,10 @@ import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
-import { openaiChatCompletionsEnvelopeFromIR, openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
+import { openaiChatCompletionsSettingsFromIR, openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
 import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
-import { anthropicMessagesDropsReasoning, anthropicMessagesEnvelopeToIR, anthropicMessagesTurnToIR } from '../as-source/input-to.ts';
+import { anthropicMessagesDropsReasoning, anthropicMessagesSettingsToIR, anthropicMessagesTurnToIR } from '../as-source/input-to.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from '../as-source/round-trip.ts';
 import type {
   AnthropicMessagesClientTool,
@@ -89,12 +89,12 @@ export const buildTargetRequest = async (
   // Pass effort through verbatim; per-upstream enum acceptance (e.g. some
   // backends rejecting `xhigh`/`max`) is the target interceptor's concern.
   const reasoningEffort = resolveReasoningEffort(payload);
-  const sourceEnvelope = anthropicMessagesEnvelopeToIR(payload);
-  const envelope = openaiChatCompletionsEnvelopeFromIR({
-    ...sourceEnvelope,
+  const sourceSettings = anthropicMessagesSettingsToIR(payload);
+  const settings = openaiChatCompletionsSettingsFromIR({
+    ...sourceSettings,
     // Messages has no name for its structured-output schema; the Chat wire
     // requires one and this is the established spelling.
-    ...(sourceEnvelope.output_format === undefined ? {} : { output_format: { ...sourceEnvelope.output_format, name: 'messages_response' } }),
+    ...(sourceSettings.output_format === undefined ? {} : { output_format: { ...sourceSettings.output_format, name: 'messages_response' } }),
   });
 
   // Anthropic `speed: 'fast'` selects OpenAI's priority lane. Without an
@@ -148,7 +148,7 @@ export const buildTargetRequest = async (
     // to the final usage-only chunk. Ref:
     // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/generate/base/protocol.py#L241-L243
     stream_options: { include_usage: true, continuous_usage_stats: true } as OpenAIChatCompletionsStreamOptionsEx,
-    ...envelope,
+    ...settings,
     tools: translateAnthropicMessagesTools(clientTools),
     tool_choice: translateAnthropicMessagesToolChoice(payload.tool_choice, clientTools),
     ...(serviceTier !== undefined ? { service_tier: serviceTier } : {}),

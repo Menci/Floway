@@ -3,11 +3,11 @@ import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
-import { anthropicMessagesEnvelopeFromIR, anthropicMessagesFromIR } from '../../anthropic-messages/as-target/input-from.ts';
+import { anthropicMessagesSettingsFromIR, anthropicMessagesFromIR } from '../../anthropic-messages/as-target/input-from.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
 import { geminiGenerateContentText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
-import { geminiGenerateContentContentsToIRTurns, geminiGenerateContentDropsReasoning, geminiGenerateContentEnvelopeToIR } from '../as-source/input-to.ts';
+import { geminiGenerateContentContentsToIRTurns, geminiGenerateContentDropsReasoning, geminiGenerateContentSettingsToIR } from '../as-source/input-to.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
 import { geminiFunctionParameters } from '../as-source/schema.ts';
 import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionDeclarations, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
@@ -52,12 +52,12 @@ const applyGenerationConfig = (
   model: string,
   fallbackMaxOutputTokens: number,
 ): NonNullable<AnthropicMessagesPayload['output_config']> => {
-  const envelope = anthropicMessagesEnvelopeFromIR(geminiGenerateContentEnvelopeToIR(payload));
-  Object.assign(request, envelope);
+  const settings = anthropicMessagesSettingsFromIR(geminiGenerateContentSettingsToIR(payload));
+  Object.assign(request, settings);
   // Messages requires a ceiling; a model-advertised cap supplies one when the
   // source omitted it.
-  request.max_tokens = envelope.max_tokens ?? fallbackMaxOutputTokens;
-  const format = envelope.output_config?.format;
+  request.max_tokens = settings.max_tokens ?? fallbackMaxOutputTokens;
+  const format = settings.output_config?.format;
   return format === undefined ? {} : { format };
 };
 
