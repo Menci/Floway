@@ -87,8 +87,11 @@ const systemContent = (message: OpenAIResponsesInputMessageEx): IRInputTextPart[
       return { type: 'text', text: part.text };
     });
 
+// An explicitly empty assistant message still occupies a message of its own, so
+// it keeps one empty text part; only a message with no content field at all has
+// nothing to replay.
 const assistantContent = (message: OpenAIResponsesInputMessageEx): IRInputAssistantContentPart[] => typeof message.content === 'string'
-  ? message.content === '' ? [] : [{ type: 'text', text: message.content }]
+  ? [{ type: 'text', text: message.content }]
   : message.content.map(part => {
       if (part.type === 'input_text' || part.type === 'output_text') return { type: 'text' as const, text: part.text };
       if (part.type === 'refusal') return { type: 'refusal' as const, refusal: part.refusal };

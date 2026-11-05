@@ -150,10 +150,9 @@ export interface IRInputTextPart {
 }
 
 // Chat Completions and Responses both carry refusals as a distinct content
-// kind, on assistant content and (on the Chat Completions wire) on user content
-// as well. Messages and GenerateContent have no such block; their writers
-// project assistant refusals to text and reject user refusals, which is what
-// the routes do today.
+// kind, on assistant content and on user content as well. Messages and
+// GenerateContent have no such block, so their writers project assistant
+// refusals to text and reject a user refusal, which is what those routes do.
 export interface IRInputRefusalPart {
   readonly type: 'refusal'; // ChatCompletions, Responses
   readonly refusal: string; // ChatCompletions, Responses

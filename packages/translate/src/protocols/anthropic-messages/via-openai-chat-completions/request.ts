@@ -136,7 +136,6 @@ export const buildTargetRequest = async (
     model: payload.model,
     messages,
     ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
-    max_tokens: payload.max_tokens,
     stop: klona(payload.stop_sequences),
     stream: true,
     // Ask the upstream for usage on every streaming chunk, not just the final

@@ -62,7 +62,9 @@ const userContent = (item: Extract<IRInputUserItem, { type: 'message' }>, compac
   return item.content.map(part => {
     switch (part.type) {
     case 'text': return { type: 'input_text' as const, text: part.text };
-    case 'refusal': throw new TranslatorInputError('Cannot translate refusal content in a user message.');
+    // Responses user content admits a refusal part, so a Chat source that stated
+    // one keeps it rather than failing the request.
+    case 'refusal': return { type: 'refusal' as const, refusal: part.refusal };
     case 'image': return inputContent(part.image, part.detail);
     case 'file': return fileContent(part.file, part.filename);
     case 'audio': throw new TranslatorInputError(`Cannot translate Gemini generateContent inlineData MIME type '${part.audio.media_type}' to OpenAI Responses.`);

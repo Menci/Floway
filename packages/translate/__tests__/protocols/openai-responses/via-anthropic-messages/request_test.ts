@@ -79,6 +79,21 @@ test('buildTargetRequest preserves OpenAI Responses assistant refusal history as
   assertEquals(message.content[0], { type: 'text', text: 'Cannot help.', cache_control: { type: 'ephemeral' } });
 });
 
+test('buildTargetRequest keeps an explicitly empty assistant message', async () => {
+  // An empty string is a stated assistant turn, not an absent one: the source
+  // chose to record it, so the target receives a message of its own.
+  const result = await buildWithTestSidecar({
+    ...minimalPayload,
+    input: [
+      { type: 'message', role: 'assistant', content: '' },
+      { type: 'message', role: 'user', content: 'hi' },
+    ],
+  });
+
+  assertEquals(result.target.messages.map(message => message.role), ['assistant', 'user']);
+  assertEquals(result.target.messages[0], { role: 'assistant', content: '' });
+});
+
 test('buildTargetRequest accepts an implicit message discriminator', async () => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
