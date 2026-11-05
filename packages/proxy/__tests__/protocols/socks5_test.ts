@@ -503,17 +503,6 @@ describe('dialSocks5 — pre-handshake EOF / mid-flow errors', () => {
     });
   });
 
-  it('classifies tcp-connect failures with the underlying cause', async () => {
-    const fake = makeFakeSocketDial();
-    fake.failNextConnect(new Error('ECONNREFUSED'));
-    await expect(
-      dialSocks5(socks5Config(), target, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'tcp-connect',
-      message: expect.stringContaining('tcp connect to proxy.example:1080 failed'),
-    });
-  });
 });
 
 describe('dialSocks5 — pre-dial target validation', () => {

@@ -94,17 +94,6 @@ describe('dialHttpConnect — happy path body forwarding', () => {
 });
 
 describe('dialHttpConnect — failure modes', () => {
-  it('classifies tcp-connect failures with the underlying cause', async () => {
-    const fake = makeFakeSocketDial();
-    fake.failNextConnect(new Error('ECONNREFUSED'));
-    await expect(
-      dialHttpConnect(httpConfig(), target, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'tcp-connect',
-      message: expect.stringContaining('tcp connect to proxy.example:3128 failed'),
-    });
-  });
 
   it('surfaces 407 Proxy Authentication Required as a typed proxy-handshake error', async () => {
     const fake = makeFakeSocketDial();

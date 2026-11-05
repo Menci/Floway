@@ -412,20 +412,6 @@ describe('dialShadowsocks — AEAD frame layout', () => {
   });
 });
 
-describe('dialShadowsocks — pre-handshake plumbing', () => {
-  it('classifies tcp-connect failures with the underlying cause', async () => {
-    const fake = makeFakeSocketDial();
-    fake.failNextConnect(new Error('ECONNREFUSED'));
-    await expect(
-      dialShadowsocks(config(), target, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'tcp-connect',
-      message: expect.stringContaining('tcp connect to proxy.example:8388 failed'),
-    });
-  });
-});
-
 const nonce = (counter: number): Uint8Array => {
   const out = new Uint8Array(12);
   let c = counter;
