@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { findRunnerViolations, isExpandedTrapList, parseTargets, TRAP_TEST_FILENAME, type RunnerFacts } from '../src/verification-scope.ts';
+import { findRunnerViolations, isExpandedTrapList, parseTargets, TRAP_MARKER, type RunnerFacts } from '../src/verification-scope.ts';
 
 const runnerEnv = {
   GITHUB_ACTIONS: 'true',
@@ -81,29 +81,30 @@ describe('parseTargets', () => {
 });
 
 describe('the trap that detects an expanded glob', () => {
-  const trap = `packages/http/__tests__/${TRAP_TEST_FILENAME}`;
+  const trap = 'packages/http/__tests__/name-the-suite-in-http_test.ts';
+  const otherTrap = 'packages/proxy/__tests__/name-the-suite-in-proxy_test.ts';
   const real = 'packages/http/__tests__/parser_test.ts';
 
-  it('names a file every package carries', async () => {
+  it('gives every trap its own filename, so one exclude cannot hide them', async () => {
     const { execFileSync } = await import('node:child_process');
     const found = execFileSync(
-      'find',
-      ['packages', 'apps', 'tools', '-name', TRAP_TEST_FILENAME, '-not', '-path', '*/node_modules/*'],
+      'grep',
+      ['-rl', '--include=*_test.ts', '--include=*_test.tsx', '--exclude-dir=node_modules', TRAP_MARKER, 'packages', 'apps', 'tools'],
       { encoding: 'utf8' },
     ).trim().split('\n').filter(Boolean);
 
-    expect(TRAP_TEST_FILENAME).toBe('disallow-full-tests_test.ts');
     expect(found.length).toBeGreaterThanOrEqual(19);
-    expect(found).toContain('packages/http/__tests__/disallow-full-tests_test.ts');
-    expect(found).toContain('packages/gateway/__tests__/repo/disallow-full-tests_test.ts');
+    expect(found).toContain(trap);
+    expect(found).toContain('packages/gateway/__tests__/repo/name-the-suite-in-repo_test.ts');
+    expect(new Set(found.map(path => path.split('/').pop())).size).toBe(found.length);
   });
 
   it('recognizes a glob that expanded to traps and real files together', () => {
     expect(isExpandedTrapList([real, trap])).toBe(true);
   });
 
-  it('recognizes a sweep of traps alone', () => {
-    expect(isExpandedTrapList([trap, `packages/proxy/__tests__/${TRAP_TEST_FILENAME}`])).toBe(true);
+  it('allows a list of traps alone, which runs nothing worth hiding', () => {
+    expect(isExpandedTrapList([trap, otherTrap])).toBe(false);
   });
 
   it('allows naming one trap directly, so the trap body stays verifiable', () => {
