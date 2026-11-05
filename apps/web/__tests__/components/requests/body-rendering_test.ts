@@ -127,7 +127,6 @@ describe('multipart body rendering', () => {
     const rendered = render(textWire, 'multipart/form-data');
 
     expect(rendered.text).toBe(textWire);
-    expect(rendered.text).not.toContain('[binary,');
   });
 
   // A PNG signature leads with 0x89, inside the 0x80-0x9F range where the

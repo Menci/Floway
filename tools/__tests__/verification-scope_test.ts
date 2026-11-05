@@ -49,8 +49,14 @@ describe('findRunnerViolations', () => {
   it('rejects another workflow on a GitHub-hosted runner', () => {
     expect(findRunnerViolations({
       ...runner,
-      env: { ...runnerEnv, GITHUB_JOB: 'build' },
-    })).toEqual(['GITHUB_JOB is build, not verify']);
+      env: { ...runnerEnv, GITHUB_WORKFLOW_REF: 'Menci/Floway/.github/workflows/build.yaml@refs/heads/main' },
+    })).toEqual(['GITHUB_WORKFLOW_REF is Menci/Floway/.github/workflows/build.yaml@refs/heads/main, not the verify workflow']);
+  });
+
+  it('accepts any job inside Verify, which spreads its suite across jobs', () => {
+    for (const job of ['verify', 'test', 'test-installers']) {
+      expect(findRunnerViolations({ ...runner, env: { ...runnerEnv, GITHUB_JOB: job } })).toEqual([]);
+    }
   });
 
   it('rejects a non-Ubuntu Linux host', () => {

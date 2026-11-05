@@ -60,9 +60,11 @@ export const findRunnerViolations = (facts: RunnerFacts): string[] => {
   expect(facts.env.RUNNER_ENVIRONMENT === 'github-hosted', `RUNNER_ENVIRONMENT is ${facts.env.RUNNER_ENVIRONMENT ?? 'unset'}, not github-hosted`);
   expect(facts.env.RUNNER_OS === 'Linux', `RUNNER_OS is ${facts.env.RUNNER_OS ?? 'unset'}, not Linux`);
 
-  // Tie the exemption to the workflow that owns repository-wide verification,
-  // so no other workflow inherits it.
-  expect(facts.env.GITHUB_JOB === 'verify', `GITHUB_JOB is ${facts.env.GITHUB_JOB ?? 'unset'}, not verify`);
+  // Tie the exemption to the workflow file that owns repository-wide
+  // verification, so no other workflow inherits it. The job inside that
+  // workflow is deliberately not part of the check: Verify spreads its suite
+  // over several jobs, and pinning one job name would forbid the sharding it
+  // needs.
   expect(
     facts.env.GITHUB_WORKFLOW_REF?.includes('/.github/workflows/verify.yaml@') ?? false,
     `GITHUB_WORKFLOW_REF is ${facts.env.GITHUB_WORKFLOW_REF ?? 'unset'}, not the verify workflow`,

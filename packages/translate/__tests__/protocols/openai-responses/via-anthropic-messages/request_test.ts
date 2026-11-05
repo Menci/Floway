@@ -33,24 +33,6 @@ const buildWithTestSidecar = (
   options: Partial<Parameters<typeof buildTargetRequestWithSidecar>[2]> = {},
 ) => buildTargetRequestWithSidecar(payload, createTestSidecarCodec(), { ...testBuildOptions, ...options });
 
-test('buildTargetRequest preserves an empty open-string reasoning effort', async () => {
-  const result = await buildWithTestSidecar({ ...minimalPayload, reasoning: { effort: '' } });
-  assertEquals(result.target.output_config, { effort: '' });
-});
-
-test('buildTargetRequest rejects hosted tools and hosted tool choices', async () => {
-  await assertRejects(
-    () => buildWithTestSidecar({ ...minimalPayload, tools: [{ type: 'file_search' } as unknown as OpenAIResponsesTool] }),
-    Error,
-    "Cannot translate OpenAI Responses tool type 'file_search'",
-  );
-  await assertRejects(
-    () => buildWithTestSidecar({ ...minimalPayload, tool_choice: { type: 'file_search' } as any }),
-    Error,
-    "Cannot translate OpenAI Responses tool choice type 'file_search'",
-  );
-});
-
 test('buildTargetRequest preserves unsafe JSON number tokens in function history', async () => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,

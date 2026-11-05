@@ -56,8 +56,10 @@ describe('a tooltip restoring text its trigger cannot show', () => {
   beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); });
 
-  it('stays away from a label the trigger shows in full', async () => {
-    renderInApp(<Trigger clientWidth={120} content="Copilot" scrollWidth={120} />);
+  // The second row carries the margin the measurement keeps for an engine that
+  // rounds the two box properties in opposite directions.
+  it.each([120, 121])('stays away from a label the trigger shows in full (scrollWidth %i)', async scrollWidth => {
+    renderInApp(<Trigger clientWidth={120} content="Copilot" scrollWidth={scrollWidth} />);
     await settle();
 
     await hover(screen.getByText('Copilot'));
@@ -108,16 +110,5 @@ describe('a tooltip restoring text its trigger cannot show', () => {
     await hover(screen.getByText('Claude Code on a long account'));
 
     expect(screen.getByRole('tooltip').textContent).toBe('Claude Code on a long account');
-  });
-
-  // The margin the measurement keeps for an engine that rounds the two box
-  // properties in opposite directions.
-  it('treats a pixel of overflow as text that fits', async () => {
-    renderInApp(<Trigger clientWidth={120} content="Copilot" scrollWidth={121} />);
-    await settle();
-
-    await hover(screen.getByText('Copilot'));
-
-    expect(screen.queryByRole('tooltip')).toBeNull();
   });
 });

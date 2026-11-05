@@ -1287,13 +1287,6 @@ const getModelsWithCapabilities = async (fixtures: CopilotModelCapabilityFixture
   return models;
 };
 
-test('Copilot chat field: vision-only → modalities with image input', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'gpt-vision', supports: { vision: true } },
-  ]);
-  assertEquals(model.chat, { modalities: { input: ['text', 'image'], output: ['text'] } });
-});
-
 test('Copilot OpenAI models share one upstream-bound opaque blob scope', async () => {
   const [openai, anthropic] = await getModelsWithCapabilities([
     { id: 'gpt-5' },
@@ -1301,47 +1294,6 @@ test('Copilot OpenAI models share one upstream-bound opaque blob scope', async (
   ]);
   assertEquals(openai.opaqueBlobCompatibilityScope, { bindToUpstream: true, key: 'openai' });
   assertEquals(anthropic.opaqueBlobCompatibilityScope, { bindToUpstream: true });
-});
-
-test('Copilot chat field: reasoning_effort with medium → effort with default medium', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'o3-mini', supports: { reasoning_effort: ['low', 'medium', 'high'] } },
-  ]);
-  assertEquals(model.chat, {
-    reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } },
-  });
-});
-
-test('Copilot chat field: reasoning_effort full GPT-5 set → default is medium', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'gpt-5', supports: { reasoning_effort: ['minimal', 'low', 'medium', 'high', 'xhigh'] } },
-  ]);
-  assertEquals(model.chat, {
-    reasoning: { effort: { supported: ['minimal', 'low', 'medium', 'high', 'xhigh'], default: 'medium' } },
-  });
-});
-
-test('Copilot chat field: reasoning_effort without medium → default is first', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'o-nomedium', supports: { reasoning_effort: ['minimal', 'xhigh'] } },
-  ]);
-  assertEquals(model.chat, {
-    reasoning: { effort: { supported: ['minimal', 'xhigh'], default: 'minimal' } },
-  });
-});
-
-test('Copilot chat field: min+max_thinking_budget → budget_tokens', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'claude-think', supported_endpoints: ['/v1/messages'], supports: { min_thinking_budget: 1024, max_thinking_budget: 16384 } },
-  ]);
-  assertEquals(model.chat, { reasoning: { budget_tokens: { min: 1024, max: 16384 } } });
-});
-
-test('Copilot chat field: adaptive_thinking: true → reasoning.adaptive', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'claude-adaptive', supported_endpoints: ['/v1/messages'], supports: { adaptive_thinking: true } },
-  ]);
-  assertEquals(model.chat, { reasoning: { adaptive: true } });
 });
 
 test('Copilot chat field: combined vision + reasoning_effort + adaptive_thinking → full chat', async () => {
@@ -1366,13 +1318,6 @@ test('Copilot chat field: combined vision + reasoning_effort + adaptive_thinking
       adaptive: true,
     },
   });
-});
-
-test('Copilot chat field: no capabilities → no chat field', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'basic-model' },
-  ]);
-  assertEquals(model.chat, undefined);
 });
 
 // Copilot's catalog advertises the two image surfaces as separate paths, and

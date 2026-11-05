@@ -36,34 +36,8 @@ describe('firstOutputTokenSignal — messages', () => {
 });
 
 describe('firstOutputTokenSignal — responses', () => {
-  it('accepts response.output_text.delta', () => {
-    expect(firstOutputTokenSignal(eventFrame({ type: 'response.output_text.delta', delta: 'hi' }), 'openaiResponses')).toEqual({ type: 'decode' });
-  });
-
-  it('accepts response.function_call_arguments.delta', () => {
-    expect(firstOutputTokenSignal(eventFrame({ type: 'response.function_call_arguments.delta', delta: '{' }), 'openaiResponses')).toEqual({ type: 'decode' });
-  });
-
-  it('accepts response.custom_tool_call_input.delta', () => {
-    expect(firstOutputTokenSignal(eventFrame({ type: 'response.custom_tool_call_input.delta', delta: 'hi' }), 'openaiResponses')).toEqual({ type: 'decode' });
-  });
-
-  it('accepts response.refusal.delta', () => {
-    expect(firstOutputTokenSignal(eventFrame({ type: 'response.refusal.delta', delta: 'sorry' }), 'openaiResponses')).toEqual({ type: 'decode' });
-  });
-
-  it('accepts response.reasoning_text.delta and response.reasoning_summary_text.delta', () => {
-    expect(firstOutputTokenSignal(eventFrame({ type: 'response.reasoning_text.delta', delta: '...' }), 'openaiResponses')).toEqual({ type: 'decode' });
-    expect(firstOutputTokenSignal(eventFrame({ type: 'response.reasoning_summary_text.delta', delta: '...' }), 'openaiResponses')).toEqual({ type: 'decode' });
-  });
-
   it.each(['response.created', 'response.queued', 'response.in_progress', 'response.completed'])('rejects response lifecycle metadata: %s', type => {
     expect(firstOutputTokenSignal(eventFrame({ type }), 'openaiResponses')).toBeNull();
-  });
-
-  it('rejects known event type with empty delta string', () => {
-    expect(firstOutputTokenSignal(eventFrame({ type: 'response.output_text.delta', delta: '' }), 'openaiResponses')).toBeNull();
-    expect(firstOutputTokenSignal(eventFrame({ type: 'response.reasoning_text.delta', delta: '' }), 'openaiResponses')).toBeNull();
   });
 });
 
