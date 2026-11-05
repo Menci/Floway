@@ -49,11 +49,12 @@ jobs:
         run: ${{ matrix.check.run }}
 
   # Lint is type-aware: every file is parsed against its TypeScript project, so
-  # its cost scales with the file count and one runner spent 124 s on it. The two
-  # halves below hold 1208 and 797 files; they are complementary by
-  # construction — `apps` and `packages/gateway` in one, every other package in
-  # the other — so no file is linted twice. The root config files belong to the
-  # second half, which is what keeps them covered after the split.
+  # its cost scales with the file count and one runner spent 124 s on it. It runs
+  # as three jobs, and the split follows measured cost rather than file count:
+  # `apps` plus `packages/gateway` together took 102 s while the other 797 files
+  # took 69 s, which is why `apps` is not grouped with `packages` here. The three
+  # targets are complementary by construction, so no file is linted twice, and
+  # the root config files sit in the last group to keep them covered.
   lint:
     permissions:
       contents: read
@@ -62,8 +63,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: lint (apps and gateway)
-            targets: apps packages/gateway
+          - name: lint (apps)
+            targets: apps
+          - name: lint (gateway)
+            targets: packages/gateway
           - name: lint (other packages)
             targets: eslint.config.ts vitest.config.ts packages/agent-setup packages/http packages/interceptor packages/platform packages/protocols packages/provider packages/provider-azure packages/provider-claude-code packages/provider-codex packages/provider-copilot packages/provider-custom packages/provider-ollama packages/proxy packages/test-utils packages/translate scripts tools
     name: ${{ matrix.name }}
