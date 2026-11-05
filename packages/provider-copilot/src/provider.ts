@@ -3,7 +3,7 @@ import { COMPACTION_TRIGGER, compactionResponse } from './compaction.ts';
 import { assertCopilotUpstreamRecord } from './config.ts';
 import { COPILOT_DEFAULT_FLAGS, defaultFlagsForCopilotModel } from './defaults.ts';
 import { fetchCopilotModels } from './fetch-models.ts';
-import { copilotFetchOpenAIChatCompletions, copilotFetchOpenAIEmbeddings, copilotFetchAnthropicMessages, copilotFetchAnthropicMessagesCountTokens, copilotFetchOpenAIResponses, copilotFetchSystemOne, type CopilotDataPlaneFetchOptions } from './fetch.ts';
+import { copilotFetchOpenAIChatCompletions, copilotFetchOpenAIEmbeddings, copilotFetchAnthropicMessages, copilotFetchAnthropicMessagesCountTokens, copilotFetchOpenAIImagesEdits, copilotFetchOpenAIImagesGenerations, copilotFetchOpenAIResponses, copilotFetchSystemOne, type CopilotDataPlaneFetchOptions } from './fetch.ts';
 import { COPILOT_ANTHROPIC_MESSAGES_BOUNDARY, COPILOT_ANTHROPIC_MESSAGES_COUNT_TOKENS_BOUNDARY } from './interceptors/anthropic-messages/index.ts';
 import type { AnthropicMessagesBoundaryCtx } from './interceptors/anthropic-messages/types.ts';
 import { COPILOT_OPENAI_CHAT_COMPLETIONS_BOUNDARY } from './interceptors/openai-chat-completions/index.ts';
@@ -24,7 +24,7 @@ import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, isFastS
 import { DEFAULT_DECISION_PATHS, serializeDecisionRequest, type CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import { parseOpenAIChatCompletionsStream, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
-import { eventResult, getProviderRepo, headersForAnthropicMessagesCall, jsonRequestBody, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FetchInit, type FlagOverrides, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { eventResult, getProviderRepo, headersForAnthropicMessagesCall, jsonRequestBody, serializeOpenAIImagesEditsRequest, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FetchInit, type FlagOverrides, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -117,6 +117,17 @@ const copilotModelEndpoints = (rawModels: readonly CopilotRawModel[]): ModelEndp
   }
 
   if (rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiEmbeddings'))) return { openaiEmbeddings: {} };
+  // Image models are their own family too, but unlike the chat collapse above
+  // they advertise two independently routable surfaces: the gateway serves
+  // `/v1/images/generations` and `/v1/images/edits` as separate inbound routes,
+  // so a model that declares both must carry both keys. Copilot's live
+  // `gpt-image-2.5-flare` entry lists both paths and serves real requests on
+  // each, and declaring only one would make the other route reject the model.
+  const imageEndpoints: ModelEndpoints = {
+    ...(rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiImagesGenerations')) ? { openaiImagesGenerations: {} } : {}),
+    ...(rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiImagesEdits')) ? { openaiImagesEdits: {} } : {}),
+  };
+  if (Object.keys(imageEndpoints).length > 0) return imageEndpoints;
   // A decision model is a family of one: no other endpoint family shares its
   // row, so this branch never competes with the chat/embeddings collapse above.
   return rawModels.some(model => rawModelSupportsEndpoint(model, 'decision')) ? { decision: {} } : {};
@@ -498,10 +509,24 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       return { response, modelKey: rawModel.id };
     },
     callOpenAIEmbeddings: (model, body, signal, opts) => call(copilotFetchOpenAIEmbeddings, copilotOpenAIEmbeddingsBody(body), signal, rawModelFor(model, 'openaiEmbeddings'), [...opts.headers], opts),
-    // Copilot has no /images/* upstream; catalog never emits a kind='image'
-    // model, so these stubs are unreachable.
-    callOpenAIImagesGenerations: rejectUnsupported('callOpenAIImagesGenerations'),
-    callOpenAIImagesEdits: rejectUnsupported('callOpenAIImagesEdits'),
+    callOpenAIImagesGenerations: (model, body, signal, opts) =>
+      call(copilotFetchOpenAIImagesGenerations, body, signal, rawModelFor(model, 'openaiImagesGenerations'), [...opts.headers], opts),
+    callOpenAIImagesEdits: async (model, request, signal, opts) => {
+      const rawModel = rawModelFor(model, 'openaiImagesEdits');
+      // `serializeOpenAIImagesEditsRequest` yields multipart when every source
+      // is an upload or an inlined data URL, and JSON references otherwise.
+      // Copilot accepts both encodings. A `reference` source carrying a remote
+      // URL is the one shape it refuses with
+      // `400 external image URLs are not supported`; that response is relayed
+      // to the caller unchanged rather than pre-empted here.
+      const body = await serializeOpenAIImagesEditsRequest(request, rawModel.id);
+      const response = await copilotFetchOpenAIImagesEdits(
+        upstreamConfig,
+        { method: 'POST', body, signal },
+        { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall, waitUntil: opts.waitUntil },
+      );
+      return { response, modelKey: rawModel.id };
+    },
     callOpenAIAudioTranscriptions: rejectUnsupported('callOpenAIAudioTranscriptions'),
     callRerank: rejectUnsupported('callRerank'),
     callDecision: async (model: ProviderModel, request: CanonicalDecisionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => {
