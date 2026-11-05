@@ -32,6 +32,12 @@ describe('pricingForClaudeCodeModelKey', () => {
     expect(priceRequest(pricing, { inputTokens: 100001 }).rates).toEqual(published({ input_tokens: '0.5', input_cache_read_tokens: '0.05', input_cache_write_tokens: '0.625', input_cache_write_1h_tokens: '1', output_tokens: '2.5' }));
   });
 
+  test('prices the Mythos family from its gated public cards', () => {
+    expect(priceRequest(pricingForClaudeCodeModelKey('claude-mythos-5'), { inputTokens: 0 }).rates).toEqual(published({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', input_cache_write_1h_tokens: '20', output_tokens: '50' }));
+    // 5.1 matches Fable 5.1: equal input/output rates, cache reads cut to 0.025×.
+    expect(priceRequest(pricingForClaudeCodeModelKey('claude-mythos-5-1'), { inputTokens: 0 }).rates).toEqual(published({ input_tokens: '10', input_cache_read_tokens: '0.25', input_cache_write_tokens: '12.5', input_cache_write_1h_tokens: '20', output_tokens: '50' }));
+  });
+
   test('returns null for the bare 4.5 alias, future dated snapshots, and unknown ids', () => {
     expect(pricingForClaudeCodeModelKey('claude-opus-4-5')).toBeNull();
     expect(pricingForClaudeCodeModelKey('claude-opus-4-5-20990101')).toBeNull();

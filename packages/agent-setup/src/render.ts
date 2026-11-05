@@ -67,6 +67,7 @@ export const renderShellPrefix = (input: RenderPrefixInput): string => {
       ['SETUP_CLAUDE_OPT_OUT_AI_ATTRIBUTION', shellFlag(claudeCode.optOutAiAttribution)],
       ['SETUP_CLAUDE_DISABLE_AUTO_MEMORY', shellFlag(claudeCode.disableAutoMemory)],
       ['SETUP_CLAUDE_DISABLE_AGENT_VIEW', shellFlag(claudeCode.disableAgentView)],
+      ['SETUP_CLAUDE_DISABLE_ARTIFACT', shellFlag(claudeCode.disableArtifact)],
       ['SETUP_CLAUDE_MODEL_DISCOVERY', shellFlag(claudeCode.modelDiscovery)],
     );
   } else if (input.agent === 'codex') {
@@ -121,6 +122,7 @@ export const renderPowerShellPrefix = (input: RenderPrefixInput): string => {
       ['$SetupClaudeOptOutAiAttribution', powerShellBool(claudeCode.optOutAiAttribution)],
       ['$SetupClaudeDisableAutoMemory', powerShellBool(claudeCode.disableAutoMemory)],
       ['$SetupClaudeDisableAgentView', powerShellBool(claudeCode.disableAgentView)],
+      ['$SetupClaudeDisableArtifact', powerShellBool(claudeCode.disableArtifact)],
       ['$SetupClaudeModelDiscovery', powerShellBool(claudeCode.modelDiscovery)],
     );
   } else if (input.agent === 'codex') {

@@ -176,9 +176,6 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const catalog = useMemo(() => indexCatalog(loaderData.models), [loaderData.models]);
   const models = reachableModels(loaderData.models ?? [], cap, model => model.kind === 'chat' && playgroundApisFor(model).length > 0);
   const selectedModel = models.find(model => model.id === publicModelId) ?? models[0] ?? null;
-  const availableApis = selectedModel === null ? playgroundApis : playgroundApisFor(selectedModel);
-  const effectiveApi = availableApis.includes(playgroundApi) ? playgroundApi : availableApis[0];
-  if (effectiveApi !== undefined && effectiveApi !== playgroundApi) setPlaygroundApi(effectiveApi);
   const imageEnabled = supportsImageInput(selectedModel);
   const effortOptions = selectedModel?.chat?.reasoning?.effort?.supported ?? [];
   const matchingModels = models.filter(model => {
@@ -232,8 +229,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
         return;
       }
     }
-    if (effectiveApi === undefined) return;
-    const customResult = parseCustomJson(effectiveApi, customDraft);
+    const customResult = parseCustomJson(playgroundApi, customDraft);
     if (customResult.error) {
       const message = customResult.error === 'reserved'
         ? t('dashboard.playground.errors.customReserved', { fields: customResult.fields.join(', ') })
@@ -257,7 +253,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     abortRef.current = controller;
 
     try {
-      const wireFetch = createWireFetch(customResult.value, effectiveApi);
+      const wireFetch = createWireFetch(customResult.value, playgroundApi);
 
       const assistantId = randomId();
       let assistantText = '';
@@ -271,23 +267,35 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           return current.map(message => message.id === assistantId ? { ...message, text } : message);
         });
       };
-      for await (const delta of streamPlaygroundText({
-        api: effectiveApi,
+      const stream = streamPlaygroundText({
+        api: playgroundApi,
         apiKey: sendTarget.apiKey.key,
         model: sendTarget.model.id,
         system: system.trim(),
         messages: context,
-        options: generationOptions(effectiveApi, reasoningEffort || undefined, defaultMaxOutputTokens(sendTarget.model)),
+        options: generationOptions(playgroundApi, reasoningEffort || undefined, defaultMaxOutputTokens(sendTarget.model)),
         signal: controller.signal,
         fetchImpl: wireFetch,
-      })) {
-        assistantText += delta;
+      });
+      let assistantOutput: PlaygroundMessage['assistantOutput'];
+      while (true) {
+        const next = await stream.next();
+        if (next.done) {
+          assistantOutput = next.value ?? undefined;
+          break;
+        }
+        assistantText += next.value;
         renderFrame ??= requestAnimationFrame(commitAssistantText);
       }
       if (renderFrame !== null) cancelAnimationFrame(renderFrame);
-      if (assistantText) commitAssistantText();
-      else if (!controller.signal.aborted) {
-        setMessages(current => [...current, { id: assistantId, role: 'assistant', text: t('dashboard.playground.emptyResponse') }]);
+      if (!controller.signal.aborted) {
+        const text = assistantText || t('dashboard.playground.emptyResponse');
+        setMessages(current => {
+          const existing = current.findIndex(message => message.id === assistantId);
+          const assistantMessage: PlaygroundMessage = { id: assistantId, role: 'assistant', text, ...(assistantOutput && { assistantOutput }) };
+          if (existing < 0) return [...current, assistantMessage];
+          return current.map(message => message.id === assistantId ? assistantMessage : message);
+        });
       }
     } catch (error) {
       if (!isAbortError(error) && !controller.signal.aborted) {
@@ -318,7 +326,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
       const index = current.findIndex(message => message.id === id);
       if (index < 0) return current;
       return current.slice(0, index + 1).map(message => message.id === id
-        ? { ...message, text: draft.text.trim(), ...(message.role === 'user' && draft.imageUrl.trim() ? { imageUrl: draft.imageUrl.trim() } : { imageUrl: undefined }) }
+        ? { ...message, text: draft.text.trim(), assistantOutput: undefined, ...(message.role === 'user' && draft.imageUrl.trim() ? { imageUrl: draft.imageUrl.trim() } : { imageUrl: undefined }) }
         : message);
     });
     editDialog.close();
@@ -349,11 +357,11 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
       </Field>
       <Field label={t('dashboard.playground.api')}>
         <Dropdown
-          selectedOptions={effectiveApi === undefined ? [] : [effectiveApi]}
-          value={effectiveApi === undefined ? '' : t(`dashboard.playground.apis.${effectiveApi}`)}
+          selectedOptions={[playgroundApi]}
+          value={t(`dashboard.playground.apis.${playgroundApi}`)}
           onOptionSelect={(_, data) => data.optionValue !== undefined && changeContext(() => setPlaygroundApi(data.optionValue as PlaygroundApi))}
         >
-          {availableApis.map(value => <Option key={value} value={value}>{t(`dashboard.playground.apis.${value}`)}</Option>)}
+          {playgroundApis.map(value => <Option key={value} value={value}>{t(`dashboard.playground.apis.${value}`)}</Option>)}
         </Dropdown>
       </Field>
       <Field label={t('dashboard.playground.model')}>

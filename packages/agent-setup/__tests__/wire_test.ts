@@ -16,6 +16,7 @@ const fullConfiguration: AgentSetupConfiguration = {
     optOutAiAttribution: true,
     disableAutoMemory: true,
     disableAgentView: true,
+    disableArtifact: true,
     modelDiscovery: true,
   },
   codex: {

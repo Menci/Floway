@@ -6,7 +6,8 @@ import type { ProviderModel, UpstreamModelsCache, UpstreamProviderKind, Upstream
 import type { Fetcher } from './options.ts';
 import type { ProviderScheduledOptions } from './scheduled.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import type { ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
+import type { DecisionTarget, ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
+import type { CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAICompletionsPayload } from '@floway-dev/protocols/openai-completions';
 import type { OpenAIEmbeddingsPayload } from '@floway-dev/protocols/openai-embeddings';
@@ -53,6 +54,12 @@ export interface ProviderCallResult {
 
 export interface ProviderRerankCallResult extends ProviderCallResult {
   target: RerankTarget;
+}
+
+// The target rides back so the serve layer knows which dialect shaped the
+// response and can pick the matching parser.
+export interface ProviderDecisionCallResult extends ProviderCallResult {
+  target: DecisionTarget;
 }
 
 // Streaming endpoints (Anthropic Messages / OpenAI Responses / OpenAI Chat Completions) return decoded
@@ -154,6 +161,7 @@ export interface ProviderInstance {
   callOpenAIImagesEdits(model: ProviderModel, request: OpenAIImagesEditsRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callOpenAIAudioTranscriptions(model: ProviderModel, request: OpenAIAudioTranscriptionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callRerank(model: ProviderModel, request: CanonicalRerankRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderRerankCallResult>;
+  callDecision(model: ProviderModel, request: CanonicalDecisionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderDecisionCallResult>;
 }
 
 // Static, module-shaped surface each provider package exports. The gateway

@@ -63,6 +63,16 @@ const CLAUDE_CODE_MODEL_PRICING: Record<string, ModelPricing> = {
   // https://github.com/anomalyco/models.dev/blob/bf06cd2a3ae2922acd435ddc441ca5874f93ee8a/providers/anthropic/models/claude-fable-5-1.toml
   'claude-fable-5-1': FABLE_5_1_PRICING,
   'claude-fable-5': tokenBasePricing({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', input_cache_write_1h_tokens: '20', output_tokens: '50' }),
+  // Mythos is Anthropic's gated cyber-defence family; the subscription catalog
+  // lists it only for organizations verified through the Trusted Access
+  // program, but the public card fixes its rates. 5.1 matches Fable 5.1's card
+  // exactly — $10/$50 with cache reads cut to 0.025× — while 5 keeps the
+  // standard 0.1× read multiplier and Fable 5's rates.
+  // https://platform.claude.com/docs/en/models/mythos-5/overview
+  // https://platform.claude.com/docs/en/models/mythos-5-1/overview
+  // https://platform.claude.com/docs/en/about-claude/pricing
+  'claude-mythos-5-1': FABLE_5_1_PRICING,
+  'claude-mythos-5': tokenBasePricing({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', input_cache_write_1h_tokens: '20', output_tokens: '50' }),
   'claude-sonnet-4-5-20250929': SONNET_PRICING,
   'claude-opus-4-5-20251101': OPUS_PRICING,
   'claude-haiku-4-5-20251001': tokenBasePricing({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', input_cache_write_1h_tokens: '2', output_tokens: '5' }),

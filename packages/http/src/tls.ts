@@ -1,11 +1,10 @@
-// Userspace TLS adapter over a raw plain-TCP byte transport.
+// Userspace TLS adapter over an established duplex byte transport.
 //
-// Some runtimes' native `Socket.startTls()` cannot wrap a duplex that has
-// already exchanged plain bytes — workerd is one example (issue #2712),
-// which means proxy paths that finish a plaintext handshake (HTTP CONNECT,
-// SOCKS5, …) cannot upgrade through the runtime's TLS primitive there. A
-// userspace TLS client sidesteps the runtime entirely, so this package
-// can offer the same TLS upgrade on every target.
+// Runtimes that expose TLS on an already-open socket use their own
+// implementation — Node's `tls.connect({ socket })`. workerd's
+// `Socket.startTls()` cannot wrap a duplex that has already exchanged plain
+// bytes (issue #2712), so every post-handshake upgrade there runs through
+// this adapter instead.
 //
 // `@reclaimprotocol/tls` provides a TLS 1.2/1.3 client implemented in JS using
 // Web Crypto + @noble. We wrap it as an adapter that takes a duplex byte
@@ -26,30 +25,12 @@ const ensureCrypto = (): void => {
   cryptoInstalled = true;
 };
 
-// `@reclaimprotocol/tls`'s `loadRootCAs()` is module-memoised — it merges
-// `MOZILLA_ROOT_CA_LIST` with `globalThis.TLS_ADDITIONAL_ROOT_CA_LIST` on
-// first call and freezes the result, ignoring later additions. So every
-// PEM that should reach the userspace TLS trust set has to land in the
-// global *before* the first handshake. We push deduplicated by exact PEM
-// string; the library normalises whitespace internally when parsing.
-interface TrustGlobals { TLS_ADDITIONAL_ROOT_CA_LIST?: string[] }
-export const addTrustedRootCAs = (pems: readonly string[]): void => {
-  if (pems.length === 0) return;
-  const g = globalThis as unknown as TrustGlobals;
-  const list = (g.TLS_ADDITIONAL_ROOT_CA_LIST ??= []);
-  const seen = new Set(list);
-  for (const pem of pems) {
-    if (seen.has(pem)) continue;
-    seen.add(pem);
-    list.push(pem);
-  }
-};
-
 export interface UserspaceTlsOptions {
   /**
    * TLS peer identity. DNS names are sent in the ClientHello `server_name`
    * extension; IPv4 and IPv6 literals cause that extension to be omitted.
-   * Also used for certificate verification unless `verifyHost` is set.
+   * Also used for certificate verification unless `verifyHost` or
+   * `checkServerIdentity` is set.
    */
   host: string;
   /**
@@ -57,6 +38,19 @@ export interface UserspaceTlsOptions {
    * An IP literal must match an `iPAddress` SAN. Defaults to `host`.
    */
   verifyHost?: string;
+  /**
+   * Replace the certificate identity check. The callback receives the
+   * identity to prove — `verifyHost ?? host` — plus the leaf certificate,
+   * and returns an Error to reject the handshake or `undefined` to accept.
+   *
+   * The shape mirrors `tls.checkServerIdentity` but promises fewer fields, so
+   * one callback runs unchanged on every runtime; Node's own function needs an
+   * adapter, since its `PeerCertificate` carries more.
+   *
+   * Chain validation is unaffected: an accepted leaf still has to be issued
+   * by a trusted root.
+   */
+  checkServerIdentity?: CheckServerIdentity;
   alpn?: string[];
   /**
    * When true, all server certificates are accepted (no chain validation,
@@ -89,6 +83,53 @@ export interface UserspaceTlsOptions {
 }
 
 export type TlsStream = DuplexStream;
+
+/** The certificate adapter `@reclaimprotocol/tls` hands to its hooks. */
+interface LibraryCertificate {
+  internal: { rawData: ArrayBuffer };
+  getSubjectField(name: string): string[];
+  getAlternativeDNSNames(): string[];
+  getAlternativeIPAddresses(): string[];
+}
+
+/**
+ * The peer-certificate fields `tls.checkServerIdentity` reads. Narrowing to
+ * them lets one callback run on every runtime: Node's `PeerCertificate` and
+ * our userspace leaf adapter both satisfy this shape.
+ */
+export interface PeerCertificateIdentity {
+  /** DER bytes of the leaf certificate. */
+  raw: Uint8Array;
+  /** Repeated CNs arrive as an array, matching Node's own certificate shape. */
+  subject: { CN?: string | string[] };
+  /** Node's textual SAN form, e.g. `DNS:a.example, IP Address:127.0.0.1`. */
+  subjectaltname?: string;
+}
+
+/**
+ * Certificate identity check. Receives the identity to prove and the leaf,
+ * and returns an Error when the certificate does not cover that identity.
+ */
+export type CheckServerIdentity = (
+  identity: string,
+  certificate: PeerCertificateIdentity,
+) => Error | undefined;
+
+// The library hands certificates as an adapter over a parsed X.509 object;
+// `tls.checkServerIdentity` wants Node's textual SAN form, so rebuild it from
+// the adapter's typed accessors.
+const toIdentityCertificate = (leaf: LibraryCertificate): PeerCertificateIdentity => {
+  const names = [
+    ...leaf.getAlternativeDNSNames().map(name => `DNS:${name}`),
+    ...leaf.getAlternativeIPAddresses().map(address => `IP Address:${address}`),
+  ];
+  return {
+    raw: new Uint8Array(leaf.internal.rawData),
+    // Node accepts a match on any repeated CN, so the array is passed intact.
+    subject: { CN: leaf.getSubjectField('CN') },
+    ...(names.length === 0 ? {} : { subjectaltname: names.join(', ') }),
+  };
+};
 
 // On error the returned promise rejects; on TLS clean-end the readable closes;
 // on any error after handshake the readable errors.
@@ -179,23 +220,36 @@ export const userspaceTls = async (
 
   let pendingPrefix: Uint8Array | null = opts.prefix ?? null;
 
-  // `@reclaimprotocol/tls`'s exported TLSClientOptions typing is missing
-  // two things this call site uses: `verifyHost` (added by our pnpm patch)
-  // and a relaxed `onTlsEnd` error type (we forward errors from the runtime
-  // which can be non-Error rejects, but the upstream typing assumes
-  // `Error`). Build the options against a locally extended adapter type so
-  // we still get field-level checking on what we pass, then run a single
-  // `as` at the call site to bridge to the upstream parameter shape. When
-  // the upstream typing absorbs the patch, this extension type and the
-  // cast become redundant.
+  // `@reclaimprotocol/tls`'s exported TLSClientOptions typing is missing two
+  // things this call site uses: `verifyHost` and `checkServerIdentity` (both
+  // added by our pnpm patch) and a relaxed `onTlsEnd` error type (we forward
+  // errors from the runtime which can be non-Error rejects, but the upstream
+  // typing assumes `Error`). Build the options against a locally extended
+  // adapter type so we still get field-level checking on what we pass, then
+  // run a single `as` at the call site to bridge to the upstream parameter
+  // shape. When the upstream typing absorbs the patch, this extension type
+  // and the cast become redundant.
   type PatchedTLSOptions = Parameters<typeof makeTLSClient>[0] & {
     verifyHost?: string;
+    checkServerIdentity?: (identity: string, certificate: LibraryCertificate) => Promise<void>;
     onTlsEnd?: (error?: unknown) => void;
   };
+  // A caller-supplied check runs only when the certificate is actually being
+  // verified; `insecure` accepts every peer, so there is nothing to check.
+  const checker = opts.insecure ? undefined : opts.checkServerIdentity;
   const tlsOptions: PatchedTLSOptions = {
     host: opts.host,
     verifyHost: opts.verifyHost,
     verifyServerCertificate: !opts.insecure,
+    // The library runs this before its chain walk and skips the hostname
+    // match when it is present, so exactly one identity check happens and a
+    // rejection is reported as an identity failure rather than a trust one.
+    ...(checker === undefined ? {} : {
+      checkServerIdentity: async (identity: string, certificate: LibraryCertificate): Promise<void> => {
+        const error = checker(identity, toIdentityCertificate(certificate));
+        if (error !== undefined) throw error;
+      },
+    }),
     applicationLayerProtocols: opts.alpn,
     cipherSuites: opts.cipherSuites ?? ['TLS_AES_256_GCM_SHA384', 'TLS_AES_128_GCM_SHA256'],
     write({ header, content }) {

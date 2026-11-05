@@ -241,7 +241,7 @@ const en = {
           baseUrl: 'Base URL',
           warning: 'Dashboard session tokens and ADMIN_KEY are not data-plane credentials.',
         },
-        groups: { models: 'Model discovery', generation: 'Text and multimodal generation', media: 'Embeddings, images, and audio', rerank: 'Rerank protocols', search: 'Codex search' },
+        groups: { models: 'Model discovery', generation: 'Text and multimodal generation', media: 'Embeddings, images, and audio', rerank: 'Rerank protocols', decision: 'Decision protocols', search: 'Codex search' },
         endpointNames: {
           openAiModels: 'OpenAI model list', geminiModels: 'Gemini model list', geminiModel: 'Gemini model details',
           openAiCompletions: 'OpenAI Completions', openAiChat: 'OpenAI Chat Completions',
@@ -250,6 +250,8 @@ const en = {
           geminiGenerateContentGenerate: 'Gemini generateContent', geminiGenerateContentStream: 'Gemini streamGenerateContent (SSE)', geminiGenerateContentCount: 'Gemini countTokens',
           openAiEmbeddings: 'OpenAI Embeddings', openAiImageGeneration: 'OpenAI Image Generations', openAiImageEdit: 'OpenAI Image Edits', openAiTranscription: 'OpenAI Audio Transcriptions',
           cohereV1Rerank: 'Cohere Rerank v1', cohereV2Rerank: 'Cohere Rerank v2', jinaRerank: 'Jina Rerank', voyageRerank: 'Voyage Rerank',
+          typesafeSystemOne: 'System One decisions',
+          openAiDecisions: 'OpenAI Decisions',
           codexSearch: 'Codex alpha search',
         },
       },
@@ -317,7 +319,7 @@ const en = {
         delete: {
           title: 'Delete user',
           message:
-              'Delete {{username}}? Their sessions will be revoked and their API keys will stop working. This cannot be undone.',
+              'Delete {{username}}? Their sessions will be revoked and their API keys will stop working.',
         },
         createdDefaultKey: 'A Default API key is created with each new user.',
       },
@@ -336,7 +338,7 @@ const en = {
         members: { joined: 'Joined', count_one: '{{count, number}} member', count_other: '{{count, number}} members', empty: 'This group has no members', allAdded: 'All users are already members', noMatches: 'No matching users' },
         dialog: { createTitle: 'New group', editTitle: 'Edit {{name}}' },
         fields: { name: 'Name', members: 'Members', hue: 'Color' },
-        delete: { title: 'Delete group', message: 'Delete {{name}}? Its membership will be removed.' },
+        delete: { title: 'Delete group', message: 'Delete {{name}}?' },
         toast: {
           create: { pending: 'Creating group {{name}}', success: 'Created group {{name}}' },
           edit: { pending: 'Saving group {{name}}', success: 'Saved group {{name}}' },
@@ -353,7 +355,7 @@ const en = {
         modelCount_one: '{{count, number}} model',
         modelCount_other: '{{count, number}} models',
         modelCountUnknown: 'Count unavailable',
-        emptyWarning: 'No upstreams are selected. No upstreams will be available while this limit is on.',
+        emptyWarning: 'No upstreams are selected.',
       },
       apiKeys: {
         empty: 'No API keys yet. Create one to call Floway.',
@@ -469,18 +471,18 @@ const en = {
           codexAuthHint: 'Store the Floway provider token beside that config, leaving the official account login alone.',
         },
         agentSetup: {
-          agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', timedOut: 'The gateway did not answer in time.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', providerName: 'Provider ID', defaultThinkingLevel: 'Default thinking level', defaultThinkingHint: 'Applies to all Pi providers. Select a default model to limit the choices to its supported thinking levels.', unsupportedThinking: 'This model exposes more thinking options than Pi can represent.', keepExisting: 'Keep existing setting', maxRetries: 'Maximum retries', piMaxRetriesHint: '0 disables retries. Leave blank to keep the current setting. Applies to all Pi providers; Pi defaults to 3 retries.', ompMaxRetriesHint: '0 disables retries. Leave blank to keep the current setting. Applies to all OMP providers; OMP defaults to 10 retries.', providerHint: 'Leave blank to use floway. Use a different ID for each Floway connection, such as floway-home or floway-work. IDs use lowercase letters, numbers, dots, hyphens, and underscores.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway.', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count, number}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links.', disableAutoMemory: 'Disable auto memory', disableAutoMemoryHint: 'Stop Claude Code from reading or writing its auto memory directory.', disableAgentView: 'Disable agent view', disableAgentViewHint: 'Turn off background agents and agent view, including `claude agents`, `--bg`, and `/background`.', piModelHint: 'Sets Pi’s startup model across all providers. The Floway extension refreshes available models at startup and when the model picker opens. Setup installs or updates Pi when needed.',
+          agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', timedOut: 'The gateway did not answer in time.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', providerName: 'Provider ID', defaultThinkingLevel: 'Default thinking level', defaultThinkingHint: 'Applies to all Pi providers. Select a default model to limit the choices to its supported thinking levels.', unsupportedThinking: 'This model exposes more thinking options than Pi can represent.', keepExisting: 'Keep existing setting', maxRetries: 'Maximum retries', piMaxRetriesHint: '0 disables retries. Leave blank to keep the current setting. Applies to all Pi providers; Pi defaults to 3 retries.', ompMaxRetriesHint: '0 disables retries. Leave blank to keep the current setting. Applies to all OMP providers; OMP defaults to 10 retries.', providerHint: 'Leave blank to use floway. Use a different ID for each Floway connection, such as floway-home or floway-work. IDs use lowercase letters, numbers, dots, hyphens, and underscores.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway.', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count, number}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links.', disableAutoMemory: 'Disable auto memory', disableAutoMemoryHint: 'Stop Claude Code from reading or writing its auto memory directory.', disableAgentView: 'Disable agent view', disableAgentViewHint: 'Turn off background agents and agent view, including `claude agents`, `--bg`, and `/background`.', disableArtifact: 'Disable Artifacts', disableArtifactHint: 'Turn off the Artifact, ArtifactData, and ArtifactComments tools by setting `enableArtifact` to false.', piModelHint: 'Sets Pi’s startup model across all providers. The Floway extension refreshes available models at startup and when the model picker opens. Setup installs or updates Pi when needed.',
           ompModelHint: 'Sets OMP’s startup model across all providers. OMP loads current Floway models at startup; use /floway-refresh to refresh them. Setup installs or updates OMP when needed.',
         },
         rotate: {
           title: 'Rotate API Key',
           message:
-              'Choose a replacement for {{name}}. The old key stops working immediately.',
+              'Rotate {{name}}? The old key stops working immediately.',
         },
         delete: {
           title: 'Delete API Key',
           message:
-              'Delete key {{name}}? This cannot be undone and the key stops working immediately.',
+              'Delete key {{name}}? It stops working immediately.',
         },
       },
       upstreams: {
@@ -570,7 +572,7 @@ const en = {
         },
         delete: {
           title: 'Delete upstream',
-          message: 'Delete upstream {{name}}? This cannot be undone.',
+          message: 'Delete upstream {{name}}?',
         },
         toast: {
           reload: { pending: 'Refreshing upstreams' },
@@ -775,7 +777,7 @@ const en = {
             'strip-billing-attribution': {
               label: 'Remove Claude Code Billing Attribution',
               description:
-                  'Claude Code adds `x-anthropic-billing-header` to the system prompt so Anthropic can determine billing attribution. This marker serves no purpose for **non-official Anthropic upstreams** and is likely to **break prefix caching**.\nEnable this option when the upstream is not an official Anthropic service to remove the marker from the system prompt.\nDo **not** enable it for official Anthropic upstreams such as Claude Code, or billing attribution may be affected.',
+                  'Claude Code adds `x-anthropic-billing-header` to the system prompt and sends the `claude-code-20250219` beta flag so Anthropic bills the request as Claude Code usage. Only a **Claude Code subscription** upstream needs these markers. Elsewhere they are likely to **break prefix caching**, and on the Anthropic API with an API key they bill the request as Claude Code, which the monthly API credits of Max and Team plans do not cover, so the request fails with “credit balance is too low”.\nEnable this option for every upstream other than a Claude Code subscription, including the Anthropic API with an API key, to remove both markers.\nDo **not** enable it for a Claude Code subscription upstream, or the request falls off plan billing.',
             },
             'strip-prompt-cache-key': {
               label: 'Remove Prompt Cache Key',
@@ -801,6 +803,10 @@ const en = {
           editWithUi: 'Edit with UI',
           yamlHint: 'Manual models only. Auto-discovered models resolve from the upstream and are not listed here.',
           yamlTitle: 'Models YAML',
+          decisionPath: 'Path override',
+          decisionPathHint: 'Leave blank to use the protocol default.',
+          decisionProtocol: 'Decision protocol',
+          decisionTarget: 'Decision target',
           rerankPath: 'Path override',
           rerankPathHint: 'Leave blank to use the protocol default.',
           rerankProtocol: 'Rerank protocol',
@@ -828,7 +834,7 @@ const en = {
           id: 'Model ID',
           source: 'Config',
           kind: 'Kind',
-          kindValue: { chat: 'Chat', embedding: 'Embedding', image: 'Image', transcription: 'Transcription', rerank: 'Rerank' },
+          kindValue: { chat: 'Chat', embedding: 'Embedding', image: 'Image', transcription: 'Transcription', rerank: 'Rerank', decision: 'Decision' },
           copy: 'Copy model ID',
           editNamed: 'Edit model {{name}}',
           back: 'Back to models',
@@ -884,10 +890,8 @@ const en = {
           priceNotSet: 'Not set',
           pricingBase: 'Base',
           serviceTier: 'Service tier',
-          serviceTierHint: 'Blank selects the Base rate.',
           operator: 'Operator',
           inputTokens: 'Input token threshold',
-          inputTokensHint: 'Blank applies at every input size.',
           addPricingEntry: 'Add pricing entry',
           removePricingEntry: 'Remove pricing entry',
           noPricingEntries: 'No pricing configured',
@@ -923,11 +927,13 @@ const en = {
           rerankTargetRequired: 'Select a Rerank target for this endpoint.',
           rerankTargetUnexpected: 'Remove the Rerank target from a model that does not use the Rerank endpoint.',
           rerankPathInvalid: 'The Rerank path override must start with / and cannot contain //, /./, or /../.',
+          decisionTargetUnexpected: 'Remove the Decision target from a model that does not use the System One endpoint.',
+          decisionPathInvalid: 'The Decision path override must start with / and cannot contain //, /./, or /../.',
           invalidConfiguration: 'This model contains a configuration that cannot be saved.',
           delete: 'Delete manual model',
           deleteNamed: 'Delete manual model {{name}}',
           deleteTitle: 'Delete model',
-          deleteMessage: 'Delete {{name}}? This cannot be undone.',
+          deleteMessage: 'Delete {{name}}?',
           deleteConfirm: 'Delete model',
         },
         quotaUsedPercent: '{{percent, number}}% used',
@@ -983,7 +989,7 @@ const en = {
             empty: 'No reset cards are available for this ChatGPT subscription.',
             status: { available: 'Available', expired: 'Expired', redeemed: 'Redeemed', redeeming: 'Redeeming' },
             confirmTitle: 'Use this reset card?',
-            confirmMessage: 'Use “{{title}}” now? This resets the eligible Codex rate-limit windows and cannot be undone.',
+            confirmMessage: 'Use “{{title}}” now? This resets the eligible Codex rate-limit windows.',
             refreshWarning: 'The card was processed, but Floway could not refresh all details. Refresh reset cards to check their current state.',
             loadError: 'Could not load reset cards. Try refreshing again.',
             redeemError: 'Could not confirm the reset. Retry to check the same redemption safely.',
@@ -1133,7 +1139,7 @@ const en = {
         },
         fetchDirty: {
           title: 'Save changes before fetching models?',
-          message: 'Model discovery uses the saved upstream configuration. Save these changes to fetch its models.',
+          message: 'Model discovery uses the saved upstream configuration.',
           saveAndFetch: 'Save and fetch models',
           unsavedCredential: 'Apply credential changes using the provider controls before saving.',
         },
@@ -1319,7 +1325,7 @@ const en = {
           label: 'Show effective',
           activeAssignment: 'Active assignment',
           checked: 'Checked:',
-          checkedDescription: 'Shows this user or group’s rules at the current scope, inherited from ancestors, or matched by wildcard patterns. Highlights effective permissions.',
+          checkedDescription: 'Shows this user or group’s rules at the current scope, inherited from ancestors, or matched by wildcard patterns.',
           unchecked: 'Unchecked:',
           uncheckedDescription: 'Shows this user or group’s rules at the current scope and its descendants.',
         },
@@ -1356,7 +1362,7 @@ const en = {
           delete: { pending: 'Deleting rule', success: 'Deleted rule' },
         },
         validation: { scopeRequired: 'Select a scope.', emptyRecord: 'Set at least one permission to On, Off, Models, or Full.' },
-        delete: { title: 'Delete rule', groupTitle: 'Delete group rule', message: 'Delete this rule for {{name}}? Inherited permissions will apply.', groupMessage: 'Delete this rule for {{name}}? It applies to the whole group.' },
+        delete: { title: 'Delete rule', groupTitle: 'Delete group rule', message: 'Delete this rule for {{name}}?', groupMessage: 'Delete this rule for {{name}}? It applies to the whole group.' },
         empty: 'No rules',
         administratorBypass: 'Administrators have full access and are not limited by access rules.',
       },
@@ -1428,7 +1434,7 @@ const en = {
         },
         confirmTitle: 'Confirm Import',
         confirmMessage:
-            'This will import data from the selected backup file. In replace mode, all existing data will be deleted first. Continue?',
+            'All existing data will be deleted first.',
       },
       searchConfig: {
         heading: 'Search Provider',
@@ -1473,7 +1479,7 @@ const en = {
         dialog: { createTitle: 'Create alias', editTitle: 'Edit alias: {{name}}', copyTitle: 'Copy alias: {{name}}' },
         copy: { nameSuffix: '{{name}} copy' },
         form: { name: 'Alias ID', namePlaceholder: 'my-alias-id', displayName: 'Display name', displayPlaceholder: 'Optional display name', kind: 'Kind', selection: 'Selection', visible: 'Visible in /v1/models', visibleHint: 'A hidden alias stays out of the listing but can still be requested by name' },
-        kind: { chat: 'Chat', embedding: 'Embedding', image: 'Image', rerank: 'Rerank', transcription: 'Transcription' },
+        kind: { chat: 'Chat', embedding: 'Embedding', image: 'Image', rerank: 'Rerank', transcription: 'Transcription', decision: 'Decision' },
         selection: { first: 'First available', random: 'Random' },
         visibility: { visible: 'Visible', hidden: 'Hidden' },
         target: { heading: 'Models', description: 'Targets are tried in order when using First available. Select a suggestion or enter any model ID.', label: 'Target {{number, number}}', modelId: 'Target model ID', placeholder: 'target model id', toggle: 'Toggle target rules', reorder: 'Reorder target', remove: 'Remove target', count_one: '{{count, number}} target', count_other: '{{count, number}} targets' },
@@ -1481,7 +1487,7 @@ const en = {
         metadata: { heading: 'Announce metadata manually', description: 'Capabilities reported for this alias by /v1/models', manual: 'Announce metadata manually', limits: 'Token limits', context: 'Context window', prompt: 'Prompt tokens', output: 'Output tokens', imageInput: 'Image input', imageDetailOriginal: 'Image detail "original"', reasoning: 'Reasoning', effortEnabled: 'Effort levels', budgetEnabled: 'Budget tokens', adaptive: 'Adaptive', mandatory: 'Mandatory', efforts: 'Supported efforts', effortsHint: 'Comma-separated; order is preserved.', defaultEffort: 'Default effort', minBudget: 'Minimum budget', maxBudget: 'Maximum budget' },
         warnings: { label: 'Alias warning', shadow: 'Alias ID shadows the real model {{id}} {{display}}.', noTarget: 'No target currently resolves to a model on this gateway.', unknownTarget: '{{id}} does not currently resolve to an enabled model.', wrongKind: '{{id}} is a {{actual}} model, but this alias is {{expected}}.', notAdvertisedEffort: 'Target does not advertise reasoning effort.', unsupportedEffort: 'Target advertises effort levels: {{values}}.', adaptiveBudgetConflict: 'Adaptive reasoning cannot be combined with a fixed budget.', notAdvertisedBudget: 'Target does not advertise a reasoning budget.', budgetBelow: 'Below target minimum ({{value, number}}).', budgetAbove: 'Above target maximum ({{value, number}}).', notAdvertisedAdaptive: 'Target does not advertise adaptive reasoning.', ruleAdvisory: 'One or more rules may not be supported by this target.' },
         validation: { nameRequired: 'Enter an alias ID.', duplicate: 'An alias with this ID already exists.', targetRequired: 'Enter a target model ID.', budget: 'Reasoning budget must be a non-negative integer.', adaptiveBudget: 'Adaptive reasoning cannot be combined with a fixed budget.', metadataNumber: 'Enter a whole number of tokens, zero or greater.', metadataRange: 'Maximum budget must be greater than or equal to minimum budget.' },
-        delete: { title: 'Delete alias', message: 'Delete alias {{name}}? This cannot be undone.' },
+        delete: { title: 'Delete alias', message: 'Delete alias {{name}}?' },
         toast: { save: { pending: 'Saving alias {{name}}', success: 'Saved alias {{name}}' }, delete: { pending: 'Deleting alias {{name}}', success: 'Deleted alias {{name}}' } },
         errors: { message: 'Could not complete the alias operation: {{message}}', models: 'Model catalog unavailable: {{message}}' },
       },
@@ -1570,7 +1576,7 @@ const en = {
         },
         delete: {
           title: 'Delete proxy',
-          message: 'Delete proxy {{name}}? This cannot be undone.',
+          message: 'Delete proxy {{name}}?',
           conflict: 'Cannot delete: proxy is referenced by upstreams.',
           conflictWithIds: 'Referenced by upstream IDs: {{ids}}',
         },

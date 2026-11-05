@@ -58,6 +58,7 @@ const modelEndpointsSchema = z.object({
   openaiImagesEdits: z.object({}).optional(),
   openaiAudioTranscriptions: z.object({}).optional(),
   rerank: z.object({}).optional(),
+  decision: z.object({}).optional(),
 });
 
 const priceSchema = z.string().transform((value, ctx) => {

@@ -7,6 +7,11 @@ import stylisticPlugin from '@stylistic/eslint-plugin';
 
 import type { Linter } from 'eslint';
 
+import { isEslintCliRun, requireNamedLintFiles } from './tools/src/verification-scope.ts';
+
+// Local work lints the files it touched; a repository-wide walk belongs to CI.
+if (isEslintCliRun()) requireNamedLintFiles();
+
 // Every sibling of components/ui that carries domain knowledge. Listing the
 // domain component directories individually is deliberate: a bare
 // './apps/web/src/components' zone would also forbid components/ui from

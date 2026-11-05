@@ -40,8 +40,14 @@ test('the extension migration adds both clients and preserves existing preferenc
     const values = Object.fromEntries(rows.map(row => [row.token, JSON.parse(row.configuration_json)]));
     expect(values.defaults).toEqual(defaults);
     expect(values.selected).toEqual({ ...fixtures.selected, pi, omp });
-    for (const value of Object.values(values)) expect(agentSetupConfigurationSchema.safeParse(value).success).toBe(true);
     for (const row of rows) expect(row).toMatchObject({ configuration_revision: 7, expires_at: 9000, created_at: 100, updated_at: 200 });
+
+    // The schema describes the current shape, so it only validates rows once
+    // every later migration has backfilled the fields they introduced.
+    const index = migrationSqlByFilename.findIndex(([name]) => name === filename);
+    for (const [, sql] of migrationSqlByFilename.slice(index + 1)) db.exec(sql);
+    const migrated = db.prepare('SELECT configuration_json FROM agent_setup').all() as { configuration_json: string }[];
+    for (const row of migrated) expect(agentSetupConfigurationSchema.safeParse(JSON.parse(row.configuration_json)).success).toBe(true);
   } finally {
     db.close();
   }

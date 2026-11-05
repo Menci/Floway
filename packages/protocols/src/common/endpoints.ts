@@ -13,7 +13,7 @@
 //
 // Add a value here only when we actually route that endpoint family — do not
 // pre-declare future capabilities.
-export const MODEL_KINDS = ['chat', 'embedding', 'image', 'rerank', 'transcription'] as const;
+export const MODEL_KINDS = ['chat', 'embedding', 'image', 'rerank', 'transcription', 'decision'] as const;
 export type ModelKind = typeof MODEL_KINDS[number];
 
 export const parseModelKind = (value: unknown, label = 'model kind'): ModelKind => {
@@ -41,6 +41,11 @@ export interface ModelEndpoints {
   openaiImagesEdits?: {};
   openaiAudioTranscriptions?: {};
   rerank?: {};
+  // Decision models answer typed questions with probabilities instead of
+  // generating text. The family name follows `rerank`: the wire dialect is a
+  // per-model `DecisionTarget`, not the endpoint key, because the same model
+  // family is reachable over more than one dialect.
+  decision?: {};
 }
 
 // Names a single endpoint within ModelEndpoints — used where one endpoint is
@@ -50,13 +55,15 @@ export type ModelEndpointKey = keyof ModelEndpoints;
 // Derive the high-level model kind from the supported endpoints.
 // `openaiEmbeddings` implies embedding,
 // `openaiImagesGenerations`/`openaiImagesEdits` implies image, `rerank`
-// implies rerank, `openaiAudioTranscriptions` implies transcription, and
-// generation protocols imply chat. Mixed endpoint sets use this first-match order for the
-// single kind while dispatch continues to narrow on each endpoint's presence.
+// implies rerank, `openaiAudioTranscriptions` implies transcription,
+// `decision` implies decision, and generation protocols imply chat. Mixed
+// endpoint sets use this first-match order for the single kind while dispatch
+// continues to narrow on each endpoint's presence.
 export const kindForEndpoints = (endpoints: ModelEndpoints): ModelKind => {
   if (endpoints.openaiEmbeddings) return 'embedding';
   if (endpoints.openaiImagesGenerations || endpoints.openaiImagesEdits) return 'image';
   if (endpoints.rerank) return 'rerank';
   if (endpoints.openaiAudioTranscriptions) return 'transcription';
+  if (endpoints.decision) return 'decision';
   return 'chat';
 };

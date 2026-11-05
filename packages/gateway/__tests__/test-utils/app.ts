@@ -190,7 +190,10 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   // they actually dial. Installing a refusing dial keeps the default transport
   // reachable — a test that asserts on the empty-policy path gets a real
   // `tcp connect to <host>:<port> failed` rather than a missing-platform crash.
-  initSocketDial({ connect: (host, port) => Promise.reject(new Error(`refused by the app-test SocketDial: ${host}:${port}`)) });
+  initSocketDial({
+    connect: (host, port) => Promise.reject(new Error(`refused by the app-test SocketDial: ${host}:${port}`)),
+    startTls: () => Promise.reject(new Error('refused by the app-test SocketDial: TLS upgrade')),
+  });
   // Route background promises through the shared tracker so flushBackground()
   // can deterministically await them — see test-utils/background-tracker.ts.
   initBackgroundSchedulerResolver(_c => trackBackground);

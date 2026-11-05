@@ -1,4 +1,4 @@
-import { act } from '@testing-library/react';
+import { act, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, expect, test, vi } from 'vitest';
 
@@ -7,13 +7,17 @@ import type { useReorderList } from '../../../src/components/ui/reorder-list';
 import { renderInApp } from '../../render';
 
 const controllers = vi.hoisted(() => [] as Array<Parameters<typeof useReorderList>[0]>);
+const handleIndices = vi.hoisted(() => [] as number[]);
 vi.mock('../../../src/components/ui/reorder-list', async importOriginal => {
   const actual = await importOriginal<typeof import('../../../src/components/ui/reorder-list')>();
   return {
     ...actual,
     useReorderList: (options: Parameters<typeof useReorderList>[0]) => {
       controllers.push(options);
-      return { listProps: () => ({}), itemProps: () => ({}), handleProps: () => ({}), position: (index: number) => index };
+      return {
+        listProps: () => ({}), itemProps: () => ({}), position: (index: number) => index,
+        handleProps: (index: number) => { handleIndices.push(index); return { disabled: index < 0 }; },
+      };
     },
   };
 });
@@ -23,12 +27,35 @@ const records: Props['records'] = ['gpt-5', 'gpt-6'].map((value, index) => ({
   values: { 'Model.Use': true }, createdAt: '', updatedAt: '',
 }));
 const data: Props['data'] = { users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null }, groupIds: [] }], groups: [], models: [], upstreams: [{ id: 'up_a', name: 'Copilot', kind: 'copilot', hue: 210, enabled: true, cachedModelCount: 0 }] };
-const renderTable = (onReorder: Props['onReorder'] = vi.fn(async () => records)) => {
+const administratorData: Props['data'] = { ...data, users: [{ ...data.users[0]!, id: 1, username: 'admin', isAdmin: true }] };
+const administratorRecords: Props['records'] = records.map(record => ({ ...record, principal: { kind: 'user', id: 1 } }));
+const renderTable = (
+  onReorder: Props['onReorder'] = vi.fn(async () => records),
+  tableData: Props['data'] = data,
+  tableRecords: Props['records'] = records,
+) => {
   const onReordered = vi.fn();
   const onReorderError = vi.fn(async (_error: unknown) => {});
-  return { ...renderInApp(<MemoryRouter><RulesTable admin busy={false} data={data} decisions={null} onEdit={vi.fn()} onRemove={async () => null} onReorder={onReorder} onReordered={onReordered} onReorderError={onReorderError} onScopeSelect={vi.fn()} params={new URLSearchParams()} records={records} /></MemoryRouter>), onReorder, onReordered, onReorderError };
+  const onEdit = vi.fn();
+  const onRemove = vi.fn(async () => null);
+  return { ...renderInApp(<MemoryRouter><RulesTable admin busy={false} data={tableData} decisions={null} onEdit={onEdit} onRemove={onRemove} onReorder={onReorder} onReordered={onReordered} onReorderError={onReorderError} onScopeSelect={vi.fn()} params={new URLSearchParams()} records={tableRecords} /></MemoryRouter>), onEdit, onRemove, onReorder, onReordered, onReorderError };
 };
-beforeEach(() => { controllers.length = 0; });
+beforeEach(() => { controllers.length = 0; handleIndices.length = 0; });
+
+test('an administrator principal stays editable, deletable and reorderable', async () => {
+  const { onEdit } = renderTable(vi.fn(async () => administratorRecords), administratorData, administratorRecords);
+  const rows = [...document.querySelectorAll<HTMLElement>('[data-rule-id]')];
+  expect(rows).toHaveLength(2);
+  for (const [index, row] of rows.entries()) {
+    const edit = within(row).getByRole<HTMLButtonElement>('button', { name: 'Edit rule' });
+    expect(edit.disabled).toBe(false);
+    expect(within(row).getByRole<HTMLButtonElement>('button', { name: 'Delete rule' }).disabled).toBe(false);
+    fireEvent.click(edit);
+    expect(onEdit).toHaveBeenLastCalledWith(administratorRecords[index]);
+  }
+  expect(handleIndices).toEqual([0, 1]);
+  expect(controllers[0]!.disabled).toBe(false);
+});
 
 test('a pointer drop persists before the controller commits the rendered order', async () => {
   const { onReorder, onReordered } = renderTable();

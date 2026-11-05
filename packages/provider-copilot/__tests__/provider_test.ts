@@ -8,6 +8,7 @@ import { readCopilotUpstreamState, type CopilotUpstreamState } from '../src/stat
 import type { CopilotRawModel } from '../src/types.ts';
 import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import { parseDecisionRequest } from '@floway-dev/protocols/decision';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, initProviderRepo } from '@floway-dev/provider';
 import { assertEquals, assertRejects, assertThrows, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -1552,4 +1553,93 @@ test('Copilot provider merges the -fast raw variant and reaches it through servi
   assertEquals(listed, ['gpt-5.6-sol', 'grok-code-fast']);
   assertEquals(sent.map(body => body.model), ['gpt-5.6-sol', 'gpt-5.6-sol-fast', 'gpt-5.6-sol-fast', 'gpt-5.6-sol']);
   assertEquals(sent.every(body => !('service_tier' in body)), true);
+});
+
+test('Copilot provider derives decision endpoints and forwards the System One body', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const instance = createCopilotProvider(copilotUpstream);
+  const provider = instance.instance;
+  const sent: Record<string, unknown>[] = [];
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+
+      if (url.hostname === 'update.code.visualstudio.com') {
+        return jsonResponse(['1.110.1']);
+      }
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(
+          copilotModels([
+            { id: 'microsoft-decision-1', supported_endpoints: ['/v1/systemone'] },
+            { id: 'gpt-chat', supported_endpoints: ['/chat/completions'] },
+          ]),
+        );
+      }
+      if (url.pathname === '/v1/systemone') {
+        sent.push((await request.json()) as Record<string, unknown>);
+        return jsonResponse({
+          model: 'microsoft-decision-1',
+          answers: { team: { type: 'choice', choice: 'engineering', confidence: 0.99, probabilities: { engineering: 0.99, billing: 0.01 } } },
+          usage: { input_tokens: 56, output_tokens: 1 },
+        });
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const models = await provider.getProvidedModels(directFetcher);
+      const decision = models.find(model => model.id === 'microsoft-decision-1')!;
+      assertEquals(decision.kind, 'decision');
+      assertEquals(decision.endpoints, { decision: {} });
+      assertEquals(decision.decisionTarget, { protocol: 'typesafe-systemone' });
+
+      const parsed = parseDecisionRequest('typesafe-systemone', {
+        model: 'microsoft-decision-1',
+        state: 'The API returns 500 on every call.',
+        questions: { team: { type: 'choice', instructions: 'Which team?', criteria: { billing: 'Charges', engineering: 'Bugs' } } },
+      });
+      const result = await provider.callDecision(decision, parsed.request, undefined, noopUpstreamCallOptions());
+      assertEquals(result.target, { protocol: 'typesafe-systemone' });
+      assertEquals(result.response.status, 200);
+    },
+  );
+
+  assertEquals(sent.length, 1);
+  assertEquals(sent[0].model, 'microsoft-decision-1');
+  assertEquals(sent[0].state, 'The API returns 500 on every call.');
+  assertEquals(sent[0].questions, { team: { type: 'choice', instructions: 'Which team?', criteria: { billing: 'Charges', engineering: 'Bugs' } } });
+});
+
+test('Copilot does not infer a decision endpoint from a chat model', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const instance = createCopilotProvider(copilotUpstream);
+  const provider = instance.instance;
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 't', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-chat', supported_endpoints: ['/chat/completions'] }]));
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const models = await provider.getProvidedModels(directFetcher);
+      assertEquals(models[0].kind, 'chat');
+      assertEquals(models[0].decisionTarget, undefined);
+    },
+  );
 });

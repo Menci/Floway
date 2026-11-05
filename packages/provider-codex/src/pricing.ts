@@ -47,6 +47,49 @@ const CODEX_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: Mo
     tokenPricingEntry({ input_tokens: '1', input_cache_read_tokens: '0.05', input_cache_write_tokens: '1.25', output_tokens: '5' }, { serviceTier: 'flex' }),
     tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '7.5' }, { serviceTier: 'flex', inputTokens: { operator: 'gt', value: 272000 } }),
   )],
+  // GPT-6.1 Terra lists at half of GPT-6.1 Sol's rates across every lane. The
+  // Codex catalog advertises a Fast lane for it, so the `priority` pair is
+  // reachable; OpenAI publishes no Ultrafast column for this model, and the
+  // catalog carries no service tier for it either.
+  // https://developers.openai.com/api/docs/models/gpt-6.1-terra
+  // https://developers.openai.com/api/docs/pricing
+  // https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/models-manager/models.json
+  // https://github.com/anomalyco/models.dev/blob/main/providers/openai/models/gpt-6.1-terra.toml
+  ['gpt-6.1-terra', modelPricing(
+    tokenPricingEntry({ input_tokens: '1', input_cache_read_tokens: '0.05', input_cache_write_tokens: '1.25', output_tokens: '5' }),
+    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '7.5' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '10' }, { serviceTier: 'priority' }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '15' }, { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '0.5', input_cache_read_tokens: '0.025', input_cache_write_tokens: '0.625', output_tokens: '2.5' }, { serviceTier: 'flex' }),
+    tokenPricingEntry({ input_tokens: '1', input_cache_read_tokens: '0.05', input_cache_write_tokens: '1.25', output_tokens: '3.75' }, { serviceTier: 'flex', inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
+  // Daybreak Blue and Red are access programs rather than models of their own:
+  // OpenAI bills the request against the underlying model, and tells callers to
+  // select the program through `access_programs.cyber`. Their Codex slugs are
+  // therefore priced as the models they resolve to — Blue as GPT-5.6 Sol, Red
+  // as GPT-5.6 Cyber. Both catalogs agree, LiteLLM included.
+  //
+  // Neither slug advertises a service tier, so this table also omits the Fast
+  // lane its underlying models sell elsewhere; a priority selector on either
+  // id would name a lane Copilot-style catalogs never publish here.
+  // https://developers.openai.com/api/docs/guides/daybreak
+  // https://developers.openai.com/api/docs/pricing
+  // https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/models-manager/models.json
+  // https://github.com/anomalyco/models.dev/blob/main/providers/openai/models/gpt-daybreak-blue-latest.toml
+  // https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json
+  ['gpt-daybreak-blue-latest', modelPricing(
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '20' }),
+    tokenPricingEntry({ input_tokens: '8', input_cache_read_tokens: '0.8', input_cache_write_tokens: '10', output_tokens: '30' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
+  // GPT-5.6 Cyber publishes one band only: OpenAI's cyber table leaves the
+  // long-context column empty, unlike the mainline cards that reprice above
+  // 272k.
+  // https://developers.openai.com/api/docs/models/gpt-5.6-cyber
+  // https://developers.openai.com/api/docs/pricing
+  // https://github.com/anomalyco/models.dev/blob/main/providers/openai/models/gpt-daybreak-red-latest.toml
+  ['gpt-daybreak-red-latest', modelPricing(
+    tokenPricingEntry({ input_tokens: '12.5', input_cache_read_tokens: '1.25', input_cache_write_tokens: '15.625', output_tokens: '75' }),
+  )],
   // Announced on 2026-09-03 and rolling out first to enterprises in OpenAI's
   // Trusted Access Program; broader API and subscription access is coming in
   // the following days. The public model card already fixes the id, limits and

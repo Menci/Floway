@@ -1,9 +1,12 @@
-import type { PlaygroundApi, PlaygroundMessage } from './request';
+import type { PlaygroundApi, PlaygroundAssistantOutput, PlaygroundMessage } from './request';
 import { errorMessageFromPayload } from '../../lib/error-payload';
 import {
+  reassembleAnthropicMessagesEvents,
   type AnthropicMessagesStreamEventEx,
   parseSSEStream,
+  reassembleOpenAIChatCompletionsEvents,
   type OpenAIChatCompletionsStreamEvent,
+  reassembleOpenAIResponsesEvents,
   type OpenAIResponsesStreamEventEx,
 } from '@floway-dev/protocols/browser';
 
@@ -44,8 +47,19 @@ const contentFor = (message: PlaygroundMessage, api: PlaygroundApi): unknown => 
   ];
 };
 
+const turnsFor = (messages: readonly PlaygroundMessage[], api: PlaygroundApi): unknown[] =>
+  messages.flatMap<unknown>(message => {
+    const output = message.role === 'assistant' ? message.assistantOutput : undefined;
+    if (output?.api === api) {
+      if (output.api === 'openaiResponses') return output.items;
+      if (output.api === 'openaiChatCompletions') return [output.message];
+      return [{ role: 'assistant', content: output.content }];
+    }
+    return [{ role: message.role, content: contentFor(message, api) }];
+  });
+
 const bodyFor = ({ api, model, system, messages, options }: PlaygroundRequest): unknown => {
-  const turns = messages.map(message => ({ role: message.role, content: contentFor(message, api) }));
+  const turns = turnsFor(messages, api);
   if (api === 'anthropicMessages') {
     return { model, stream: true, ...(system ? { system } : {}), messages: turns, ...options };
   }
@@ -58,6 +72,28 @@ const bodyFor = ({ api, model, system, messages, options }: PlaygroundRequest): 
     messages: [...(system ? [{ role: 'system', content: system }] : []), ...turns],
     ...options,
   };
+};
+
+const eventsFrom = async function*<T>(events: readonly T[]): AsyncGenerator<T> {
+  yield* events;
+};
+
+const assistantOutputFrom = async (
+  api: PlaygroundApi,
+  events: readonly unknown[],
+): Promise<PlaygroundAssistantOutput | null> => {
+  if (events.length === 0) return null;
+  if (api === 'openaiResponses') {
+    const result = await reassembleOpenAIResponsesEvents(eventsFrom(events as OpenAIResponsesStreamEventEx[]));
+    return { api: 'openaiResponses', items: result.output };
+  }
+  if (api === 'openaiChatCompletions') {
+    const result = await reassembleOpenAIChatCompletionsEvents(eventsFrom(events as OpenAIChatCompletionsStreamEvent[]));
+    const message = result.choices[0]?.message;
+    return message ? { api: 'openaiChatCompletions', message } : null;
+  }
+  const result = await reassembleAnthropicMessagesEvents(eventsFrom(events as AnthropicMessagesStreamEventEx[]));
+  return { api: 'anthropicMessages', content: result.content };
 };
 
 const textDelta = (api: PlaygroundApi, event: unknown): string => {
@@ -84,7 +120,9 @@ const streamFailureMessage = (api: PlaygroundApi, payload: unknown): string | nu
 
 // Wire shapes come from @floway-dev/protocols rather than a third-party client,
 // which would hide the fields this gateway exists to carry.
-export const streamPlaygroundText = async function* (request: PlaygroundRequest): AsyncGenerator<string> {
+export const streamPlaygroundText = async function* (
+  request: PlaygroundRequest,
+): AsyncGenerator<string, PlaygroundAssistantOutput | null> {
   const { api, apiKey, signal, fetchImpl } = request;
   const response = await fetchImpl(PATH_BY_API[api], {
     method: 'POST',
@@ -108,8 +146,9 @@ export const streamPlaygroundText = async function* (request: PlaygroundRequest)
     throw new Error(errorMessageFromPayload(parsed) ?? (raw || `HTTP ${response.status}`));
   }
 
+  const events: unknown[] = [];
   for await (const frame of parseSSEStream(response.body, { signal })) {
-    if (frame.data === '[DONE]') return;
+    if (frame.data === '[DONE]') break;
     let payload: unknown;
     try {
       payload = JSON.parse(frame.data);
@@ -118,7 +157,10 @@ export const streamPlaygroundText = async function* (request: PlaygroundRequest)
     }
     const failure = streamFailureMessage(api, payload);
     if (failure !== null) throw new Error(failure);
+    events.push(payload);
     const delta = textDelta(api, payload);
     if (delta) yield delta;
   }
+
+  return await assistantOutputFrom(api, events);
 };

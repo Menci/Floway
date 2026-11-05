@@ -8,6 +8,7 @@
 #       https://docs.claude.com/en/docs/claude-code/model-config#environment-variables
 #       https://docs.claude.com/en/docs/claude-code/settings
 #       https://code.claude.com/docs/en/settings#attribution-settings
+#       https://code.claude.com/docs/en/settings-reference#enableartifact
 CLAUDE_MERGE_PROGRAM='
   if type != "object" then error("root is not a JSON object")
   elif (has("env") and ((.env | type) != "object")) then error("env is not a JSON object")
@@ -26,6 +27,11 @@ CLAUDE_MERGE_PROGRAM='
   | (if $cleanup == "" then del(.cleanupPeriodDays) else .cleanupPeriodDays = ($cleanup | tonumber) end)
   | (if $disableAutoMemory == "1" then .autoMemoryEnabled = false else del(.autoMemoryEnabled) end)
   | (if $disableAgentView == "1" then .disableAgentView = true else del(.disableAgentView) end)
+  | (if $disableArtifact == "1" then
+      .enableArtifact = false | .disableArtifact = true
+    else
+      del(.enableArtifact, .disableArtifact)
+    end)
   | (if $optOutAttribution == "1" then
       .attribution = ((.attribution // {}) + { "commit": "", "pr": "", "sessionUrl": false })
     else
@@ -153,6 +159,7 @@ claude_write_settings() {
       --arg optOutAttribution "$SETUP_CLAUDE_OPT_OUT_AI_ATTRIBUTION" \
       --arg disableAutoMemory "$SETUP_CLAUDE_DISABLE_AUTO_MEMORY" \
       --arg disableAgentView "$SETUP_CLAUDE_DISABLE_AGENT_VIEW" \
+      --arg disableArtifact "$SETUP_CLAUDE_DISABLE_ARTIFACT" \
       "$CLAUDE_MERGE_PROGRAM" > "$_cw_stage"; then
     out_error 'failed to construct updated Claude settings.'
     rm -f "$_cw_stage"

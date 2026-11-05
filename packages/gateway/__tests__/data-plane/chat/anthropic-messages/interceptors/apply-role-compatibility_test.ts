@@ -23,6 +23,7 @@ const applyRoles = async (
     candidate: stubModelCandidate({ enabledFlags }),
     targetApi,
     headers: new Headers(),
+    anthropicBeta: [],
   };
   await withRoleCompatibilityApplied(invocation, gatewayCtx, okEvents);
   return invocation.payload.messages;

@@ -597,6 +597,7 @@ test('model discovery returns empty catalogs when no provider is configured', as
     { path: '/models', userAgent: 'claude-code/2.1.206', body: { data: [], first_id: null, has_more: false, last_id: null } },
     { path: '/models', userAgent: 'pi/0.68.0', body: { models: [] } },
     { path: '/v1/models', userAgent: 'omp/18.8.4', body: { api: 'floway:floway', models: [], wireApis: {}, streamOptions: {}, payloadRemovals: {} } },
+    { path: '/v1/models', userAgent: 'typesafe-sdk/0.7.5', body: { models: [] } },
   ];
   await withMockedFetch(request => {
     if (new URL(request.url).hostname === 'raw.githubusercontent.com') return new Response(null, { status: 404 });
@@ -1206,6 +1207,49 @@ test('/v1/models serves omp-tailored catalog to omp/* callers and preserves prec
       const codexBody = (await codexResp.json()) as { object?: unknown; models: Array<{ slug: string }> };
       assertEquals(codexBody.object, undefined);
       assertEquals(Array.isArray(codexBody.models), true);
+    },
+  );
+});
+
+test('the TypeSafe SDK user agent receives the { models } catalog its parsers require', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  clearInProcessCopilotTokenCache();
+
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
+    id: 'up_typesafe',
+    name: 'Decision Provider',
+    config: {
+      baseUrl: 'https://decision.example.com',
+      authStyle: 'bearer',
+      ingressHeadersRules: [],
+      apiKey: 'sk-decision',
+      endpoints: {},
+      modelsFetch: { enabled: false },
+      models: [{
+        upstreamModelId: 'jev-1.13',
+        publicModelId: 'jev-1.13',
+        kind: 'decision',
+        endpoints: { decision: {} },
+        decisionTarget: { protocol: 'typesafe-systemone' },
+      }],
+    },
+  }));
+
+  // The warm helper only runs under an installed fetch mock.
+  await withMockedFetch(
+    () => { throw new Error('a manual custom model needs no fetch'); },
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'typesafe-sdk/0.7.5' },
+      });
+      assertEquals(response.status, 200);
+      const body = (await response.json()) as { models: Array<{ name: string; description: string; release_date: string }> };
+      assertEquals(body.models.map(model => model.name), ['jev-1.13']);
+      // All three fields are required by both SDKs; a model with no date keeps the
+      // epoch sentinel rather than omitting the key.
+      assertEquals(body.models[0].description, 'jev-1.13');
+      assertEquals(body.models[0].release_date, '1970-01-01');
     },
   );
 });

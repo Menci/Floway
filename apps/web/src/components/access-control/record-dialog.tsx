@@ -148,7 +148,7 @@ export function AccessRecordDialog({ data, principalData, initialPrincipal, init
   return <>{discardConfirmation}<Suspense fallback={null}><DialogShell
     actions={<DialogActions>
       <Button disabled={saving} onClick={requestClose}>{t('common.cancel')}</Button>
-      <Button appearance="primary" disabled={administratorBypass} disabledFocusable={saving} type="submit">{t('dashboard.accessControl.actions.save')}</Button>
+      <Button appearance="primary" disabledFocusable={saving} type="submit">{t('dashboard.accessControl.actions.save')}</Button>
     </DialogActions>}
     onOpenChange={(_, event) => !event.open && !saving && requestClose()}
     onSubmit={() => void handleSubmit(save)()}
@@ -167,7 +167,7 @@ export function AccessRecordDialog({ data, principalData, initialPrincipal, init
     </Field>
 
     {permissions.length > 0 && <PermissionFields
-      disabled={saving || administratorBypass}
+      disabled={saving}
       inherited={resolution?.values}
       onChange={(permission, value) => setValues(current => {
         if (value !== undefined) return { ...current, [permission]: value };

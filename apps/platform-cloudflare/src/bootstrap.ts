@@ -6,13 +6,11 @@ import { cloudflareHttpContentDecoders } from './http-content-decoders.ts';
 import { createCloudflareImageProcessor, type ImagesBinding } from './image-processor.ts';
 import { KvImageCacheStore, type KvNamespace } from './kv-image-cache-store.ts';
 import { R2FileStore, type R2BucketLike } from './r2-file-store.ts';
-import { cloudflareRuntimeRootCAs } from './runtime-root-cas.ts';
 import { cloudflareSocketDial } from './socket-dial.ts';
 import { timingSafeEqual } from './timing-safe-equal.ts';
 import { FileDumpStore, initDumpBroker, initDumpStore, initExecutionCellNamespace } from '@floway-dev/gateway';
 import { dumpCodec } from '@floway-dev/gateway/dump-codec';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
-import { addTrustedRootCAs } from '@floway-dev/http';
 import {
   IMAGE_CACHE_POLICY,
   initEnv,
@@ -67,7 +65,6 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
   initImageCacheStore(new KvImageCacheStore(env.KV, IMAGE_CACHE_POLICY));
   initImageProcessor(createCloudflareImageProcessor(env.IMAGES));
   initSocketDial(cloudflareSocketDial);
-  addTrustedRootCAs(cloudflareRuntimeRootCAs);
   initDumpStore(new FileDumpStore(env.DB, files));
   const executionCells = new DurableObjectExecutionCellNamespace(env.EXECUTION_DO);
   initExecutionCellNamespace(executionCells);

@@ -7,7 +7,7 @@ describe('API Docs catalog', () => {
   it('keeps every endpoint row unique and every group visible', () => {
     const identities = apiDocsEndpoints.map(endpoint => `${endpoint.method} ${endpoint.path}`);
     expect(new Set(identities).size).toBe(identities.length);
-    expect(apiDocsGroups).toEqual(['models', 'generation', 'media', 'rerank', 'search']);
+    expect(apiDocsGroups).toEqual(['models', 'generation', 'media', 'rerank', 'decision', 'search']);
   });
 
   it('covers every reference route and groups compatibility aliases', () => {

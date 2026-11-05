@@ -2,7 +2,7 @@ import { pricingEntryDraftsFor, pricingIsValid } from './pricing-model';
 import { kindForEndpoints } from '@floway-dev/protocols/browser';
 import { validateUpstreamPath, modelsField, type UpstreamModelConfig } from '@floway-dev/provider/browser';
 
-export type ModelValidationField = 'configuration' | 'endpoints' | 'pricing' | 'reasoning' | 'rerankTarget' | 'upstreamModelId';
+export type ModelValidationField = 'configuration' | 'endpoints' | 'pricing' | 'reasoning' | 'rerankTarget' | 'decisionTarget' | 'upstreamModelId';
 
 export interface ModelValidationIssue {
   field: ModelValidationField;
@@ -25,6 +25,11 @@ export const modelValidationIssues = (model: UpstreamModelConfig): ModelValidati
     issues.push({ field: 'rerankTarget', message: 'dashboard.upstreamEditor.models.rerankTargetUnexpected' });
   } else if (model.rerankTarget?.path !== undefined && !validateUpstreamPath(model.rerankTarget.path, 'path').ok) {
     issues.push({ field: 'rerankTarget', message: 'dashboard.upstreamEditor.models.rerankPathInvalid' });
+  }
+  if (effectiveKind !== null && effectiveKind !== 'decision' && model.decisionTarget !== undefined) {
+    issues.push({ field: 'decisionTarget', message: 'dashboard.upstreamEditor.models.decisionTargetUnexpected' });
+  } else if (model.decisionTarget?.path !== undefined && !validateUpstreamPath(model.decisionTarget.path, 'path').ok) {
+    issues.push({ field: 'decisionTarget', message: 'dashboard.upstreamEditor.models.decisionPathInvalid' });
   }
 
   const effort = model.chat?.reasoning?.effort;

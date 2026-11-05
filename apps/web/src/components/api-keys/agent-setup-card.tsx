@@ -290,6 +290,12 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
         label={t('dashboard.apiKeys.agentSetup.disableAgentView')}
         onChange={checked => patchClaude({ disableAgentView: checked })}
       />
+      <SwitchSetting
+        checked={configuration.claudeCode.disableArtifact}
+        description={t('dashboard.apiKeys.agentSetup.disableArtifactHint')}
+        label={t('dashboard.apiKeys.agentSetup.disableArtifact')}
+        onChange={checked => patchClaude({ disableArtifact: checked })}
+      />
       <div className={FIELD_GRID_CLASS}>
         <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.cleanupRetention'), t('dashboard.apiKeys.agentSetup.cleanupRetentionHint')) }}>
           <Dropdown
