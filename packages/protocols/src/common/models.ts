@@ -23,13 +23,15 @@ export interface RerankTarget {
   path?: string;
 }
 
-// Decision endpoints speak the System One contract (`state` plus a map of typed
-// questions). Reachable providers serve it at TypeSafe Jev's and Ollama's
-// /v1/systemone, Copilot's microsoft-decision-1 /v1/systemone, and
-// Microsoft-Decision-1's /providers/microsoft/v1/systemone on Foundry.
-// `openai-decisions` is the OpenAI Decisions shape (`input` plus an array of
-// `predicate`/`choice`/`score` questions); no reachable upstream serves it, and
-// it exists so a provider can declare it once one does.
+// Decision endpoints speak one of two wire dialects. `typesafe-systemone`
+// carries `state` plus a map of typed questions; reachable servers are TypeSafe
+// Jev's and Ollama's /v1/systemone, Copilot's microsoft-decision-1
+// /v1/systemone, and Microsoft-Decision-1's /providers/microsoft/v1/systemone
+// on Foundry. `openai-decisions` carries `input` plus an array of
+// `predicate`/`choice`/`score` questions; Copilot serves it at
+// gpt-6-luna-decisions' /v1/decisions. One model serves exactly one dialect:
+// Copilot answers 400 `no_available_model_endpoints` when the model is called
+// over the other one.
 export const DECISION_PROTOCOLS = ['typesafe-systemone', 'openai-decisions'] as const;
 export type DecisionProtocol = typeof DECISION_PROTOCOLS[number];
 // Decision has no vendor-neutral upstream URL: Foundry serves it under a
