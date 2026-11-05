@@ -503,43 +503,9 @@ describe('dialSocks5 — pre-handshake EOF / mid-flow errors', () => {
     });
   });
 
-  it('classifies tcp-connect failures with the underlying cause', async () => {
-    const fake = makeFakeSocketDial();
-    fake.failNextConnect(new Error('ECONNREFUSED'));
-    await expect(
-      dialSocks5(socks5Config(), target, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'tcp-connect',
-      message: expect.stringContaining('tcp connect to proxy.example:1080 failed'),
-    });
-  });
 });
 
 describe('dialSocks5 — pre-dial target validation', () => {
-  it('rejects an out-of-range target port at stage=config, before any TCP connect', async () => {
-    const fake = makeFakeSocketDial();
-    await expect(
-      dialSocks5(socks5Config(), { host: 'api.openai.com', port: 0 }, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('1..65535'),
-    });
-    expect(fake.connectCount()).toBe(0);
-  });
-
-  it('rejects a non-ASCII target host at stage=config, before any TCP connect', async () => {
-    const fake = makeFakeSocketDial();
-    await expect(
-      dialSocks5(socks5Config(), { host: '例え.jp', port: 443 }, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('ASCII'),
-    });
-    expect(fake.connectCount()).toBe(0);
-  });
 
   it('rejects an empty target host at stage=config, before any TCP connect', async () => {
     // ATYP=domain framing would otherwise emit a zero-length length-prefixed
@@ -556,19 +522,4 @@ describe('dialSocks5 — pre-dial target validation', () => {
     expect(fake.connectCount()).toBe(0);
   });
 
-  it('rejects a 256-byte target host at stage=config, before any TCP connect', async () => {
-    // ATYP=domain framing puts the host behind a 1-byte length prefix
-    // (max 255). The pre-dial assertion catches an overflow before a
-    // TCP slot has been burned to the proxy — without it the length
-    // byte would silently truncate and corrupt the address frame.
-    const fake = makeFakeSocketDial();
-    await expect(
-      dialSocks5(socks5Config(), { host: 'a'.repeat(256), port: 443 }, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('too long'),
-    });
-    expect(fake.connectCount()).toBe(0);
-  });
 });

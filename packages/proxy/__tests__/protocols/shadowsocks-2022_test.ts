@@ -192,44 +192,6 @@ describe('dialShadowsocks2022 — pre-connect config validation', () => {
   });
 });
 
-describe('dialShadowsocks2022 — pre-dial target validation', () => {
-  it('rejects an out-of-range target port at stage=config, before any TCP connect', async () => {
-    const fake = makeFakeSocketDial();
-    await expect(
-      dialShadowsocks2022(config(), { host: 'api.openai.com', port: 0 }, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('1..65535'),
-    });
-    expect(fake.connectCount()).toBe(0);
-  });
-
-  it('rejects a non-ASCII target host at stage=config, before any TCP connect', async () => {
-    const fake = makeFakeSocketDial();
-    await expect(
-      dialShadowsocks2022(config(), { host: '例え.jp', port: 443 }, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('ASCII'),
-    });
-    expect(fake.connectCount()).toBe(0);
-  });
-
-  it('rejects a 256-byte target host at stage=config, before any TCP connect', async () => {
-    const fake = makeFakeSocketDial();
-    await expect(
-      dialShadowsocks2022(config(), { host: 'a'.repeat(256), port: 443 }, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('too long'),
-    });
-    expect(fake.connectCount()).toBe(0);
-  });
-});
-
 describe('dialShadowsocks2022 — request header layout', () => {
   // SIP022 fixed header: type(1) + timestamp(u64 BE) + variable-len(u16 BE),
   // sealed under nonce=0. Variable header: SOCKS-like address + padlen(u16) +

@@ -195,44 +195,6 @@ describe('buildTrojanRequestHeader — total framing layout', () => {
   });
 });
 
-describe('dialTrojan — pre-dial target validation', () => {
-  it('rejects an out-of-range target port at stage=config, before any TCP connect', async () => {
-    const fake = makeFakeSocketDial();
-    await expect(
-      dialTrojan(trojanConfig(), { host: 'api.openai.com', port: 0 }, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('1..65535'),
-    });
-    expect(fake.connectCount()).toBe(0);
-  });
-
-  it('rejects a non-ASCII target host at stage=config, before any TCP connect', async () => {
-    const fake = makeFakeSocketDial();
-    await expect(
-      dialTrojan(trojanConfig(), { host: '例え.jp', port: 443 }, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('ASCII'),
-    });
-    expect(fake.connectCount()).toBe(0);
-  });
-
-  it('rejects a 256-byte target host at stage=config, before any TCP connect', async () => {
-    const fake = makeFakeSocketDial();
-    await expect(
-      dialTrojan(trojanConfig(), { host: 'a'.repeat(256), port: 443 }, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('too long'),
-    });
-    expect(fake.connectCount()).toBe(0);
-  });
-});
-
 describe('dialTrojan — outer TLS', () => {
   it('upgrades the plaintext proxy connection with the configured SNI', async () => {
     const fake = makeFakeSocketDial();

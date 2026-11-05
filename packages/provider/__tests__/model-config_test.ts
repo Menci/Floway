@@ -56,9 +56,13 @@ describe('chatField', () => {
     });
   });
 
-  test('parses reasoning with budget_tokens only', () => {
-    const chat = chatField({ reasoning: { budget_tokens: { min: 100, max: 5000 } } }, 'm.chat');
-    expect(chat?.reasoning).toEqual({ budget_tokens: { min: 100, max: 5000 } });
+  test.each([
+    ['budget_tokens only', { budget_tokens: { min: 100, max: 5000 } }],
+    ['empty budget_tokens (bounds unknown)', { budget_tokens: {} }],
+    ['adaptive: true', { adaptive: true }],
+    ['mandatory: true', { mandatory: true }],
+  ])('parses reasoning with %s', (_label, reasoning) => {
+    expect(chatField({ reasoning }, 'm.chat')?.reasoning).toEqual(reasoning);
   });
 
   // Unlike reasoning.adaptive / reasoning.mandatory, `false` here is the
@@ -78,25 +82,10 @@ describe('chatField', () => {
       .toThrow(/image_detail_original.*boolean/);
   });
 
-  test('parses reasoning with empty budget_tokens (bounds unknown)', () => {
-    const chat = chatField({ reasoning: { budget_tokens: {} } }, 'm.chat');
-    expect(chat?.reasoning).toEqual({ budget_tokens: {} });
-  });
-
-  test('parses reasoning with adaptive: true', () => {
-    const chat = chatField({ reasoning: { adaptive: true } }, 'm.chat');
-    expect(chat?.reasoning).toEqual({ adaptive: true });
-  });
-
   test('strips adaptive: false to absent', () => {
     const chat = chatField({ reasoning: { adaptive: false, mandatory: true } }, 'm.chat');
     expect(chat?.reasoning).toEqual({ mandatory: true });
     expect(chat?.reasoning?.adaptive).toBeUndefined();
-  });
-
-  test('parses reasoning with mandatory: true', () => {
-    const chat = chatField({ reasoning: { mandatory: true } }, 'm.chat');
-    expect(chat?.reasoning).toEqual({ mandatory: true });
   });
 
   test('strips mandatory: false to absent', () => {
@@ -131,29 +120,20 @@ describe('chatField', () => {
       .toThrow(/at least one of effort, budget_tokens, adaptive, mandatory/);
   });
 
-  test('rejects non-boolean adaptive', () => {
-    expect(() => chatField({ reasoning: { adaptive: 'yes' } }, 'm.chat'))
-      .toThrow(/adaptive.*boolean/);
+  test.each([
+    ['adaptive', { adaptive: 'yes' }, /adaptive.*boolean/],
+    ['mandatory', { mandatory: 1 }, /mandatory.*boolean/],
+  ])('rejects non-boolean %s', (_label, reasoning, message) => {
+    expect(() => chatField({ reasoning }, 'm.chat')).toThrow(message);
   });
 
-  test('rejects non-boolean mandatory', () => {
-    expect(() => chatField({ reasoning: { mandatory: 1 } }, 'm.chat'))
-      .toThrow(/mandatory.*boolean/);
-  });
-
-  test('rejects effort.default not in effort.supported', () => {
-    expect(() => chatField({ reasoning: { effort: { supported: ['low', 'high'], default: 'medium' } } }, 'm.chat'))
-      .toThrow(/effort\.default/);
-  });
-
-  test('rejects empty effort.supported', () => {
-    expect(() => chatField({ reasoning: { effort: { supported: [], default: '' } } }, 'm.chat'))
-      .toThrow(/effort\.supported/);
-  });
-
-  test('rejects empty string in effort.supported', () => {
-    expect(() => chatField({ reasoning: { effort: { supported: ['low', ''], default: 'low' } } }, 'm.chat'))
-      .toThrow(/effort\.supported/);
+  test.each([
+    ['default not in supported', { supported: ['low', 'high'], default: 'medium' }, /effort\.default/],
+    ['no default', { supported: ['low'] }, /effort\.default/],
+    ['empty supported', { supported: [], default: '' }, /effort\.supported/],
+    ['empty string in supported', { supported: ['low', ''], default: 'low' }, /effort\.supported/],
+  ])('rejects effort with %s', (_label, effort, message) => {
+    expect(() => chatField({ reasoning: { effort } }, 'm.chat')).toThrow(message);
   });
 
   test('deduplicates effort.supported entries', () => {
@@ -161,24 +141,12 @@ describe('chatField', () => {
     expect(chat?.reasoning?.effort?.supported).toEqual(['low', 'high']);
   });
 
-  test('rejects budget_tokens.max < budget_tokens.min', () => {
-    expect(() => chatField({ reasoning: { budget_tokens: { min: 500, max: 100 } } }, 'm.chat'))
-      .toThrow(/max must be >= min/);
-  });
-
-  test('rejects negative budget_tokens.min', () => {
-    expect(() => chatField({ reasoning: { budget_tokens: { min: -1 } } }, 'm.chat'))
-      .toThrow(/non-negative integer/);
-  });
-
-  test('rejects non-integer budget_tokens.max', () => {
-    expect(() => chatField({ reasoning: { budget_tokens: { max: 1.5 } } }, 'm.chat'))
-      .toThrow(/non-negative integer/);
-  });
-
-  test('rejects reasoning without effort.default', () => {
-    expect(() => chatField({ reasoning: { effort: { supported: ['low'] } } }, 'm.chat'))
-      .toThrow(/effort\.default/);
+  test.each([
+    ['max < min', { min: 500, max: 100 }, /max must be >= min/],
+    ['negative min', { min: -1 }, /non-negative integer/],
+    ['non-integer max', { max: 1.5 }, /non-negative integer/],
+  ])('rejects budget_tokens with %s', (_label, budget_tokens, message) => {
+    expect(() => chatField({ reasoning: { budget_tokens } }, 'm.chat')).toThrow(message);
   });
 
   test('returns undefined when chat block is empty', () => {

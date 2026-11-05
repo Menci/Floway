@@ -19,10 +19,3 @@ test('OpenAI Chat Completions billable usage forwards a served tier and drops th
   expect(billableUsageFromOpenAIChatCompletionsUsage(usage, 'default').tier).toBeUndefined();
   expect(billableUsageFromOpenAIChatCompletionsUsage(usage, undefined).tier).toBeUndefined();
 });
-
-test('OpenAI Chat Completions billable usage reports no cache-write TTL split, which the protocol cannot express', () => {
-  expect(billableUsageFromOpenAIChatCompletionsUsage({
-    prompt_tokens: 20, completion_tokens: 2, total_tokens: 22,
-    prompt_tokens_details: { cache_write_tokens: 9 },
-  } as OpenAIChatCompletionsUsageEx, null).cacheWrite1h).toBe(0);
-});

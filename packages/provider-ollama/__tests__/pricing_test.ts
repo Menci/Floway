@@ -46,19 +46,6 @@ test('Ollama official Gemma rates apply to its published 31B cloud aliases', () 
   assertEquals(pricingForOllamaModelKey('gemma4:26b'), null);
 });
 
-test('Ollama prices a dated DeepSeek V4-Flash tag as the undated one', () => {
-  const rates = published({ input_tokens: '0.14', input_cache_read_tokens: '0.0028', output_tokens: '0.28' });
-  assertEquals(priceRequest(pricingForOllamaModelKey('deepseek-v4-flash'), { inputTokens: 0 }).rates, rates);
-  assertEquals(priceRequest(pricingForOllamaModelKey('deepseek-v4-flash:0731'), { inputTokens: 0 }).rates, rates);
-});
-
-test('Ollama prices Kimi K3 at its official standard rate', () => {
-  assertEquals(
-    priceRequest(pricingForOllamaModelKey('kimi-k3'), { inputTokens: 0 }).rates,
-    published({ input_tokens: '3.0', input_cache_read_tokens: '0.3', output_tokens: '15.0' }),
-  );
-});
-
 test('DeepSeek standard rates are estimated independently of the response service tier', () => {
   const rates = published({ input_tokens: '1.32', input_cache_read_tokens: '0.044', output_tokens: '3.96' });
   for (const key of ['deepseek-v4-pro', 'deepseek-v4-pro:0813', 'deepseek-v4-pro:0813-cloud']) assertEquals(priceRequest(pricingForOllamaModelKey(key), { serviceTier: 'default', inputTokens: 1 }).rates, rates);

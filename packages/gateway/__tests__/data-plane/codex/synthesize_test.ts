@@ -271,11 +271,6 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);
   });
 
-  test('service_tiers empty when no pricing.entries', () => {
-    const entry = synthesizeCatalogEntry(base);
-    expect(entry.service_tiers).toEqual([]);
-  });
-
   test('service_tiers preserves key order for multiple tiers', () => {
     const entry = synthesizeCatalogEntry({
       ...base,

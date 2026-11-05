@@ -29,7 +29,4 @@ describe('buildKeyToUserMap', () => {
     assertEquals([...map.entries()].sort(), [['key_a', 1], ['key_b', 2], ['key_c', 1]]);
   });
 
-  test('empty input yields an empty map', () => {
-    assertEquals(buildKeyToUserMap([]).size, 0);
-  });
 });

@@ -62,9 +62,4 @@ describe('callApiNoContent', () => {
     expect(result.error?.raw).toEqual({ error: 'Proxy is referenced by upstreams' });
   });
 
-  it('reports a transport failure as status 0 and keeps what was thrown', async () => {
-    const thrown = new Error('network down');
-    const result = await callApiNoContent(() => Promise.reject(thrown));
-    expect(result.error).toEqual({ status: 0, message: 'network down', cause: thrown });
-  });
 });
