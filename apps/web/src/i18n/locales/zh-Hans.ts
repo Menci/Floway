@@ -884,7 +884,7 @@ const zhHansCN = {
           rerankTargetRequired: '请为此 API 选择 Rerank 目标。',
           rerankTargetUnexpected: '未使用 Rerank API 的模型不能配置 Rerank 目标。',
           rerankPathInvalid: 'Rerank 路径覆盖必须以 / 开头，且不能包含 //、/./ 或 /../。',
-          decisionTargetUnexpected: '未使用 System One API 的模型不能配置 Decision 目标。',
+          decisionTargetUnexpected: '未使用 Decision API 的模型不能配置 Decision 目标。',
           decisionPathInvalid: 'Decision 路径覆盖必须以 / 开头，且不能包含 //、/./ 或 /../。',
           invalidConfiguration: '此模型包含无法保存的配置。',
           delete: '删除手动模型',

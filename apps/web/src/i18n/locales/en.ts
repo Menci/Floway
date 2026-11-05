@@ -927,7 +927,7 @@ const en = {
           rerankTargetRequired: 'Select a Rerank target for this endpoint.',
           rerankTargetUnexpected: 'Remove the Rerank target from a model that does not use the Rerank endpoint.',
           rerankPathInvalid: 'The Rerank path override must start with / and cannot contain //, /./, or /../.',
-          decisionTargetUnexpected: 'Remove the Decision target from a model that does not use the System One endpoint.',
+          decisionTargetUnexpected: 'Remove the Decision target from a model that does not use the Decision endpoint.',
           decisionPathInvalid: 'The Decision path override must start with / and cannot contain //, /./, or /../.',
           invalidConfiguration: 'This model contains a configuration that cannot be saved.',
           delete: 'Delete manual model',

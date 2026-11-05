@@ -160,7 +160,7 @@ export function ModelDetail({
                 {/* The gateway only accepts a rerank target on a custom upstream, so the kind is offered only where it can be saved. */}
                 {record.kind === 'custom' && <Option value="rerank">Rerank</Option>}
                 {/* Decision models are first-class on custom, Azure, Ollama, Copilot, and
-                    every other upstream that serves the System One contract. */}
+                    every other upstream that serves a decision dialect. */}
                 <Option value="decision">Decision</Option>
               </Dropdown>
             </Field>
