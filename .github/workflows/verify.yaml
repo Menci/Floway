@@ -60,9 +60,17 @@ jobs:
   # machine cannot have: two workers on one host lose Microsoft PowerShell
   # cases to CPU contention, while two runners do not.
   #
-  # The installer shard count is two because that project holds six files and
-  # the heaviest is 63 s; more shards would leave some with a single file and
-  # no way to level them.
+  # The installer project has one shard per heavy file. Its files take 53/43/40/
+  # 36/35/6 s on a runner plus the trap at 0 s, and any shard count below six
+  # leaves at least one job carrying two of the heavy ones: at two shards the
+  # slowest job is 129 s, at three 96 s, and at six the slowest is codex at
+  # 43 s. The extra runners cost a minute of setup each and nothing else.
+  #
+  # Six is the useful ceiling rather than seven: the seventh shard would hold
+  # only the trap, which finishes in milliseconds. Adding a real test file to
+  # the project needs this count revisited; Vitest refuses a shard count above
+  # the resolved file count rather than passing with an empty job, so a mismatch
+  # fails the workflow instead of silently skipping a file.
   test-installers:
     permissions:
       contents: read
@@ -70,8 +78,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
-    name: test-installers (${{ matrix.shard }}/2)
+        shard: [1, 2, 3, 4, 5, 6]
+    name: test-installers (${{ matrix.shard }}/6)
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -86,8 +94,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Install latest Codex for installer compatibility
         run: npm install --prefix data/codex-ci --no-save --package-lock=false @openai/codex@latest
-      - name: test-installers (${{ matrix.shard }}/2)
-        run: CODEX_TEST_BIN="$GITHUB_WORKSPACE/data/codex-ci/node_modules/.bin/codex" pnpm exec cross-env NODE_OPTIONS="--max-old-space-size=8192" vitest run --project agent-setup-installers --shard=${{ matrix.shard }}/2
+      - name: test-installers (${{ matrix.shard }}/6)
+        run: CODEX_TEST_BIN="$GITHUB_WORKSPACE/data/codex-ci/node_modules/.bin/codex" pnpm exec cross-env NODE_OPTIONS="--max-old-space-size=8192" vitest run --project agent-setup-installers --shard=${{ matrix.shard }}/6
 
   test:
     permissions:
