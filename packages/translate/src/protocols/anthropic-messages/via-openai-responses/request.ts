@@ -23,14 +23,17 @@ export const buildTargetRequest = async (
     if (turn.role === 'assistant') {
       const roundTrip = await roundTripAssistantTurn('anthropicMessages', 'openaiResponses', turn.items, codec, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest, collectAnthropicMessagesReplayContents);
       if (roundTrip !== undefined) {
+        // A held client turn sits before this resolved turn in the source, so it
+        // is released first.
+        pieces.push(...source.observeResolvedTurn(turn));
         pieces.push({ kind: 'resolved', turn: roundTrip.turn });
-        source.observeResolvedTurn(turn);
         continue;
       }
       if (anthropicMessagesDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('anthropicMessages', 'openaiResponses');
     }
     pieces.push(...source.turnToIR(turn));
   }
+  pieces.push(...source.finish());
 
   // Keep fallback semantics strict: do not synthesize `temperature: 1`,
   // `store: false`, `parallel_tool_calls: true`, `reasoning.summary`, or

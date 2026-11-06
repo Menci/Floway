@@ -2,7 +2,6 @@ import { klona } from 'klona/json';
 
 import { filterAnthropicMessagesClientTools } from './client-tools.ts';
 import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn } from './conversation-turns.ts';
-import { mergeAdjacentIRInputClientTurns } from '../../../ir/input/segments.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputRequest,
@@ -11,7 +10,6 @@ import type {
   IRInputToolChoice,
   IRInputOutputFormat,
   IRInputAssistantItem,
-  IRInputConversation,
   IRInputMedia,
   IRInputTextPart,
   IRInputToolResultContentPart,
@@ -270,22 +268,6 @@ export const anthropicMessagesTurnToIR = (
   }];
 };
 
-export const anthropicMessagesInputToIR = (payload: AnthropicMessagesPayload): IRInputConversation => {
-  const turns: IRInputTurn[] = [];
-  // Messages' top-level system is the same concept as a leading system item.
-  const system = anthropicMessagesSystemToIR(payload.system);
-  if (system !== undefined) turns.push(system);
-
-  let messageIndex = 0;
-  for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
-    turns.push(...anthropicMessagesTurnToIR(turn, messageIndex));
-    messageIndex += turn.items.length;
-  }
-  // A server tool's result becomes a client turn of its own; when the next real
-  // client message already is one, the two state the same turn.
-  return { turns: mergeAdjacentIRInputClientTurns(turns) };
-};
-
 /**
  * Messages states one ceiling, `max_tokens`, and its structured-output schema
  * lives in `output_config.format`. `top_k` is a Messages-only sampling knob.
@@ -410,6 +392,14 @@ const reasoningEffortFromAnthropicMessages = (payload: AnthropicMessagesPayload)
  *
  * The conversation is returned unsegmented so a route can splice a
  * sidecar-resolved assistant turn into it.
+ *
+ * Downgrading a server tool leaves a client turn of its own — the result the
+ * API wrote into the assistant message — and the caller's next message is
+ * usually a client turn too. The IR is strictly alternating, so the trailing
+ * client turn is held back until the next source turn settles whether the two
+ * state the same turn. `finish` releases what is still held once the
+ * conversation ends, and a resolved turn releases it first because that turn is
+ * written natively and sits between the two.
  */
 export interface AnthropicMessagesSource {
   readonly request: IRInputRequest;
@@ -418,11 +408,36 @@ export interface AnthropicMessagesSource {
   turnToIR: (turn: AnthropicMessagesConversationTurn) => IRInputTurn[];
   // A resolved turn is written natively by the target, so it yields no IR, but
   // it still occupies source messages that later diagnostics count past.
-  observeResolvedTurn: (turn: AnthropicMessagesConversationTurn) => void;
+  observeResolvedTurn: (turn: AnthropicMessagesConversationTurn) => IRInputTurn[];
+  finish: () => IRInputTurn[];
 }
 
 export const anthropicMessagesSource = (payload: AnthropicMessagesPayload): AnthropicMessagesSource => {
   let messageIndex = 0;
+  // The trailing client turn, kept back because the next source turn may state
+  // the same client turn.
+  let held: Extract<IRInputTurn, { kind: 'client' }> | undefined;
+
+  const release = (): IRInputTurn[] => {
+    if (held === undefined) return [];
+    const turns: IRInputTurn[] = [held];
+    held = undefined;
+    return turns;
+  };
+
+  const settle = (turns: IRInputTurn[]): IRInputTurn[] => {
+    const first = turns[0];
+    if (held !== undefined && first?.kind === 'client') {
+      turns[0] = { kind: 'client', items: [...held.items, ...first.items] };
+      held = undefined;
+    } else {
+      turns.unshift(...release());
+    }
+    const last = turns.at(-1);
+    if (last?.kind === 'client') held = turns.pop() as Extract<IRInputTurn, { kind: 'client' }>;
+    return turns;
+  };
+
   return {
     request: {
       conversation: { turns: [] },
@@ -434,10 +449,12 @@ export const anthropicMessagesSource = (payload: AnthropicMessagesPayload): Anth
     turnToIR: turn => {
       const turns = anthropicMessagesTurnToIR(turn, messageIndex);
       messageIndex += turn.items.length;
-      return turns;
+      return settle(turns);
     },
     observeResolvedTurn: turn => {
       messageIndex += turn.items.length;
+      return release();
     },
+    finish: release,
   };
 };

@@ -177,6 +177,39 @@ test('buildTargetRequest drops filtered-native tool_choice and rewrites assistan
   ]);
 });
 
+test('buildTargetRequest folds a server tool result into the client turn that follows it', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [
+      { role: 'user', content: 'search please' },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'looking' },
+          { type: 'server_tool_use', id: 'st_1', name: 'web_search', input: { query: 'q' } },
+          { type: 'web_search_tool_result', tool_use_id: 'st_1', content: [] },
+        ],
+      },
+      { role: 'user', content: 'thanks' },
+    ],
+  });
+
+  // The result the API wrote into the assistant message and the caller's next
+  // message are one client turn in the IR, so they stay one run of messages on
+  // the wire instead of being split by an invented boundary.
+  assertEquals(result.messages, [
+    { role: 'user', content: 'search please' },
+    {
+      role: 'assistant',
+      content: 'looking',
+      tool_calls: [{ id: 'st_1', type: 'function', function: { name: 'web_search', arguments: '{"query":"q"}' } }],
+    },
+    { role: 'tool', tool_call_id: 'st_1', content: '[]' },
+    { role: 'user', content: 'thanks' },
+  ]);
+});
+
 test('buildTargetRequest flattens text-block tool_result content but serializes search-result arrays', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',

@@ -44,24 +44,3 @@ export const segmentIRInput = <Turn>(pieces: readonly (IRInputTurn | IRInputReso
   flush();
   return segments;
 };
-
-/**
- * Folds adjacent client turns into one.
- *
- * The IR is strictly alternating: a client turn and an assistant turn never
- * follow their own kind. A reader that has to answer a server tool with a
- * synthetic client turn can still land beside a real one, so it merges them
- * here instead of leaving a gap no writer can express.
- */
-export const mergeAdjacentIRInputClientTurns = (turns: readonly IRInputTurn[]): IRInputTurn[] => {
-  const merged: IRInputTurn[] = [];
-  for (const turn of turns) {
-    const previous = merged.at(-1);
-    if (turn.kind === 'client' && previous?.kind === 'client') {
-      merged[merged.length - 1] = { kind: 'client', items: [...previous.items, ...turn.items] };
-      continue;
-    }
-    merged.push(turn);
-  }
-  return merged;
-};
