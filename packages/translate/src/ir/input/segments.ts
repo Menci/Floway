@@ -57,8 +57,8 @@ export const mergeAdjacentIRInputClientTurns = (turns: readonly IRInputTurn[]): 
   const merged: IRInputTurn[] = [];
   for (const turn of turns) {
     const previous = merged.at(-1);
-    if (turn.role === 'user' && previous?.role === 'user') {
-      merged[merged.length - 1] = { role: 'user', items: [...previous.items, ...turn.items] };
+    if (turn.kind === 'client' && previous?.kind === 'client') {
+      merged[merged.length - 1] = { kind: 'client', items: [...previous.items, ...turn.items] };
       continue;
     }
     merged.push(turn);

@@ -152,7 +152,7 @@ const conversationFromIR = (
   let hoisting = hoistSystem;
 
   const input = conversation.turns.flatMap(item => {
-    if (item.role === 'assistant') {
+    if (item.kind === 'assistant') {
       hoisting = false;
       return assistantItems(item.items);
     }

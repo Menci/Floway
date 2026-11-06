@@ -179,7 +179,7 @@ export const openaiResponsesDropsReasoning = (turn: { readonly role: 'assistant'
 
 /** The top-level `instructions` field as its own leading system item. */
 export const openaiResponsesInstructionsToIR = (instructions: string | null | undefined): IRInputTurn | undefined => instructions
-  ? { role: 'user', items: [{ type: 'prompt', role: 'system', content: [{ type: 'text', text: instructions }] }] }
+  ? { kind: 'client', items: [{ type: 'prompt', role: 'system', content: [{ type: 'text', text: instructions }] }] }
   : undefined;
 
 export const openaiResponsesTurnToIR = (
@@ -187,11 +187,11 @@ export const openaiResponsesTurnToIR = (
   flattenInput: (input: readonly CanonicalOpenAIResponsesInputItem[]) => CanonicalOpenAIResponsesInputItem[],
 ): IRInputTurn[] => {
   const items = flattenInput(turn.items);
-  if (turn.role !== 'assistant') return [{ role: 'user', items: userItems(items) }];
+  if (turn.role !== 'assistant') return [{ kind: 'client', items: userItems(items) }];
   // Every assistant item was dropped (an opaque reasoning carrier, say). The
   // turn carried a boundary that must survive, so writers still see it as a
   // separator but emit no message for it.
-  return [{ role: 'assistant', items: assistantItems(items) }];
+  return [{ kind: 'assistant', items: assistantItems(items) }];
 };
 
 /**

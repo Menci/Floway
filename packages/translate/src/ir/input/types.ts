@@ -184,13 +184,17 @@ export type IRInputTurn = IRInputClientTurn | IRInputAssistantTurn;
 // tool results live here too, and `role: 'user'` would describe only one of
 // them. The assistant branch is the only other one, which is what the sidecar
 // selects on.
+//
+// `kind` rather than `role` keeps the turn discriminant distinct from the item
+// `role`: an item's role says who stated it, while a turn's kind says only
+// which of the two branches it is.
 export interface IRInputClientTurn {
-  readonly role: 'user';
+  readonly kind: 'client';
   readonly items: readonly IRInputClientItem[];
 }
 
 export interface IRInputAssistantTurn {
-  readonly role: 'assistant';
+  readonly kind: 'assistant';
   readonly items: readonly IRInputAssistantItem[];
 }
 

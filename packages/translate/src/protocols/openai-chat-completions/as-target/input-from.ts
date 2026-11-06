@@ -171,7 +171,7 @@ const openaiChatCompletionsUserItem = (
 
 export const openaiChatCompletionsFromIR = (
   conversation: IRInputConversation,
-): OpenAIChatCompletionsMessage[] => conversation.turns.flatMap(turn => turn.role === 'assistant'
+): OpenAIChatCompletionsMessage[] => conversation.turns.flatMap(turn => turn.kind === 'assistant'
   ? assistantMessage(turn.items)
   : userMessages(turn.items));
 

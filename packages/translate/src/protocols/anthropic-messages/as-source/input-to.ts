@@ -235,7 +235,7 @@ const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'a
 export const anthropicMessagesSystemToIR = (system: AnthropicMessagesPayload['system']): IRInputTurn | undefined => {
   if (system === undefined) return undefined;
   const content = textBlocks(system);
-  return content.length === 0 ? undefined : { role: 'user', items: [{ type: 'prompt', role: 'system', content }] };
+  return content.length === 0 ? undefined : { kind: 'client', items: [{ type: 'prompt', role: 'system', content }] };
 };
 
 /** Whether a turn carries reasoning only the sidecar can restore. */
@@ -253,14 +253,14 @@ export const anthropicMessagesTurnToIR = (
         // The pair a server tool states is one call and the result written into
         // the same message, so the result becomes the client turn that answers
         // it before the next run of assistant content begins.
-        if (segment.assistant.length > 0) turns.push({ role: 'assistant', items: segment.assistant });
-        if (segment.serverResults.length > 0) turns.push({ role: 'user', items: segment.serverResults });
+        if (segment.assistant.length > 0) turns.push({ kind: 'assistant', items: segment.assistant });
+        if (segment.serverResults.length > 0) turns.push({ kind: 'client', items: segment.serverResults });
       }
     }
     return turns;
   }
   return [{
-    role: 'user',
+    kind: 'client',
     items: turn.items.flatMap((message, index) => {
       if (message.role !== 'user' && message.role !== 'system') {
         throw new TranslatorInputError(`messages.${firstMessageIndex + index}.role: role '${(message as { role: string }).role}' is not supported on this model`);

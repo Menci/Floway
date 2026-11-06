@@ -169,11 +169,11 @@ export const openaiChatCompletionsTurnToIR = (
   turn: OpenAIChatCompletionsConversationTurn,
   context: OpenAIChatCompletionsInputContext,
 ): IRInputTurn => {
-  if (turn.role === 'assistant') return { role: 'assistant', items: assistantItems(turn, context) };
+  if (turn.role === 'assistant') return { kind: 'assistant', items: assistantItems(turn, context) };
 
   // Every client message in one turn contributes its items, in order, to the
   // same IR turn; a target that groups them differently reads the item list.
-  return { role: 'user', items: turn.items.flatMap(message => userItems(message, context)) };
+  return { kind: 'client', items: turn.items.flatMap(message => userItems(message, context)) };
 };
 
 const userItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, { role: 'assistant' }>, context: OpenAIChatCompletionsInputContext): IRInputClientItem[] => {

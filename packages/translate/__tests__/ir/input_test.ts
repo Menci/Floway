@@ -38,11 +38,11 @@ describe('input IR shape', () => {
       { type: 'function_call', call_id: 'call_1', name: 'lookup', arguments: '{"q":1}' },
       { type: 'custom_tool_call', call_id: 'call_2', name: 'edit', input: 'raw' },
     ];
-    const user: IRInputClientTurn = { role: 'user', items: userItems };
-    const assistant: IRInputAssistantTurn = { role: 'assistant', items: assistantItems };
+    const user: IRInputClientTurn = { kind: 'client', items: userItems };
+    const assistant: IRInputAssistantTurn = { kind: 'assistant', items: assistantItems };
     const conversation: IRInputConversation = { turns: [user, assistant] };
 
-    expect(conversation.turns.map(turn => turn.role)).toEqual(['user', 'assistant']);
+    expect(conversation.turns.map(turn => turn.kind)).toEqual(['client', 'assistant']);
     expect(user.items.map(item => item.type)).toEqual(['prompt', 'prompt', 'message', 'tool_result', 'tool_result']);
     expect(assistant.items.map(item => item.type)).toEqual(['reasoning', 'message', 'function_call', 'custom_tool_call']);
   });

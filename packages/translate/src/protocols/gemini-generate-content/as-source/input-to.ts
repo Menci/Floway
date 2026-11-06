@@ -144,7 +144,7 @@ export const geminiGenerateContentContentsToIRTurns = (
 ): IRInputTurn[] => turn.items.map((content, index) => {
   if (turn.role === 'assistant') {
     return {
-      role: 'assistant' as const,
+      kind: 'assistant' as const,
       items: (content.parts?.length ?? 0) === 0
         ? [{ type: 'message' as const, content: [{ type: 'text' as const, text: '' }] }]
         : assistantItems(content, contentIndex + index, ids),
@@ -154,7 +154,7 @@ export const geminiGenerateContentContentsToIRTurns = (
     throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
   }
   return {
-    role: 'user' as const,
+    kind: 'client' as const,
     items: (content.parts?.length ?? 0) === 0
       ? [{ type: 'message' as const, role: 'user' as const, content: [] }]
       : userParts(content, contentIndex + index, ids),
@@ -176,14 +176,14 @@ export const geminiGenerateContentTurnToIR = (
   const toolIds = ids ?? Object.create(null);
   if (turn.role === 'assistant') {
     return {
-      role: 'assistant',
+      kind: 'assistant',
       items: turn.items.flatMap((content, index) => (content.parts?.length ?? 0) === 0
         ? [{ type: 'message' as const, content: [{ type: 'text' as const, text: '' }] }]
         : assistantItems(content, contentIndex + index, toolIds)),
     };
   }
   return {
-    role: 'user',
+    kind: 'client',
     items: turn.items.flatMap((content, index) => {
       if (content.role !== 'user' && content.role !== undefined) {
         throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
@@ -198,7 +198,7 @@ export const geminiGenerateContentTurnToIR = (
 /** A GenerateContent system instruction is the conversation's leading prompt. */
 export const geminiGenerateContentSystemToIR = (content: GeminiGenerateContentContent | undefined): IRInputTurn | undefined => {
   const parts = systemParts(content);
-  return parts.length === 0 ? undefined : { role: 'user', items: [{ type: 'prompt', role: 'system', content: parts }] };
+  return parts.length === 0 ? undefined : { kind: 'client', items: [{ type: 'prompt', role: 'system', content: parts }] };
 };
 
 export const geminiGenerateContentInputToIR = (payload: GeminiGenerateContentPayload): IRInputConversation => {
@@ -215,13 +215,13 @@ export const geminiGenerateContentInputToIR = (payload: GeminiGenerateContentPay
         // A thought signature is a vendor-signed value with no cross-vendor
         // meaning, so it never reaches the input IR.
         const items = assistantItems(content, contentIndex + index, ids);
-        turns.push({ role: 'assistant', items });
+        turns.push({ kind: 'assistant', items });
         continue;
       }
       if (content.role !== 'user' && content.role !== undefined) {
         throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
       }
-      turns.push({ role: 'user', items: (content.parts?.length ?? 0) === 0 ? [{ type: 'message', role: 'user', content: [] }] : userParts(content, contentIndex + index, ids) });
+      turns.push({ kind: 'client', items: (content.parts?.length ?? 0) === 0 ? [{ type: 'message', role: 'user', content: [] }] : userParts(content, contentIndex + index, ids) });
     }
     contentIndex += turn.items.length;
   }

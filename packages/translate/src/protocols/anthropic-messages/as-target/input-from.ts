@@ -235,7 +235,7 @@ export const anthropicMessagesRequestFromIR = async (
     if (blocks.length > 0) messages.push(userMessage(blocks));
   };
   for (const turn of conversation.turns) {
-    if (turn.role === 'assistant') {
+    if (turn.kind === 'assistant') {
       hoisting = false;
       const blocks = assistantBlocks(turn.items);
       // A turn whose every item was dropped contributes no message, but the user
