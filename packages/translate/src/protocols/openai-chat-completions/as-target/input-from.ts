@@ -8,7 +8,7 @@ import type {
   IRInputConversation,
   IRInputMedia,
   IRInputToolResultContentPart,
-  IRInputUserItem,
+  IRInputClientItem,
 } from '../../../ir/input/types.ts';
 import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
@@ -46,7 +46,7 @@ const filePart = (media: IRInputMedia, filename?: string | null): OpenAIChatComp
   }
 };
 
-const userContent = (item: Extract<IRInputUserItem, { type: 'message' }>): string | OpenAIChatCompletionsUserContentPart[] => {
+const userContent = (item: Extract<IRInputClientItem, { type: 'message' }>): string | OpenAIChatCompletionsUserContentPart[] => {
   if (item.content.every(part => part.type === 'text')) return item.content.flatMap(part => part.type === 'text' ? [part.text] : []).join('\n\n');
   return item.content.map(part => {
     switch (part.type) {
@@ -129,7 +129,7 @@ const assistantMessage = (items: readonly IRInputAssistantItem[]): OpenAIChatCom
   }];
 };
 
-const userMessages = (items: readonly IRInputUserItem[]): OpenAIChatCompletionsMessage[] => {
+const userMessages = (items: readonly IRInputClientItem[]): OpenAIChatCompletionsMessage[] => {
   // Images lifted out of consecutive tool results gather into one user message
   // after the run, so a tool-call group stays contiguous.
   const messages: OpenAIChatCompletionsMessage[] = [];
@@ -148,7 +148,7 @@ const userMessages = (items: readonly IRInputUserItem[]): OpenAIChatCompletionsM
 };
 
 const openaiChatCompletionsUserItem = (
-  item: IRInputUserItem,
+  item: IRInputClientItem,
   lift: (parts: readonly OpenAIChatCompletionsUserContentPart[]) => void,
 ): OpenAIChatCompletionsMessage[] => [item].flatMap<OpenAIChatCompletionsMessage>(item => {
   switch (item.type) {

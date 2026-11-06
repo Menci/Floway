@@ -18,7 +18,7 @@ import type {
   IRInputToolResultItem,
   IRInputTurn,
   IRInputUserContentPart,
-  IRInputUserItem,
+  IRInputClientItem,
 
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
@@ -176,7 +176,7 @@ export const openaiChatCompletionsTurnToIR = (
   return { role: 'user', items: turn.items.flatMap(message => userItems(message, context)) };
 };
 
-const userItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, { role: 'assistant' }>, context: OpenAIChatCompletionsInputContext): IRInputUserItem[] => {
+const userItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, { role: 'assistant' }>, context: OpenAIChatCompletionsInputContext): IRInputClientItem[] => {
   switch (message.role) {
   case 'system':
   case 'developer':

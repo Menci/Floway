@@ -19,7 +19,7 @@ import type {
   IRInputToolResultItem,
   IRInputTurn,
   IRInputUserContentPart,
-  IRInputUserItem,
+  IRInputClientItem,
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
@@ -44,8 +44,8 @@ const inlinePart = (part: GeminiGenerateContentPart): IRInputUserContentPart => 
   }
 };
 
-const userParts = (content: GeminiGenerateContentContent, turnIndex: number, ids: GeminiGenerateContentToolCallIds): IRInputUserItem[] => {
-  const items: IRInputUserItem[] = [];
+const userParts = (content: GeminiGenerateContentContent, turnIndex: number, ids: GeminiGenerateContentToolCallIds): IRInputClientItem[] => {
+  const items: IRInputClientItem[] = [];
   const pending: IRInputUserContentPart[] = [];
   const flush = (): void => {
     if (pending.length === 0) return;

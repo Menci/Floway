@@ -16,7 +16,7 @@ import type {
   IRInputToolResultContentPart,
   IRInputTurn,
   IRInputUserContentPart,
-  IRInputUserItem,
+  IRInputClientItem,
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type {
@@ -103,7 +103,7 @@ const userItems = (
   message: Exclude<AnthropicMessagesMessage, { role: 'assistant' }>,
   messageIdx: number,
   unsupportedSuffix?: string,
-): IRInputUserItem[] => {
+): IRInputClientItem[] => {
   if (message.role === 'system') {
     if (typeof message.content !== 'string' && message.content.some(block => block.type !== 'text')) {
       throw new TranslatorInputError('Only text system content is supported.');
@@ -114,7 +114,7 @@ const userItems = (
     return [{ type: 'message', role: 'user', content: message.content === '' ? [] : [{ type: 'text', text: message.content }] }];
   }
 
-  const items: IRInputUserItem[] = [];
+  const items: IRInputClientItem[] = [];
   const pending: IRInputUserContentPart[] = [];
   const flush = (): void => {
     if (pending.length === 0) return;
@@ -148,7 +148,7 @@ interface AnthropicMessagesAssistantSegments {
   // turn, so it cannot occupy an assistant item. It is downgraded to a plain
   // tool result in a following user turn, which is the only shape every target
   // can express.
-  readonly downgraded: IRInputUserItem[];
+  readonly downgraded: IRInputClientItem[];
 }
 
 const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'assistant' }>, messageIdx: number): AnthropicMessagesAssistantSegments => {
@@ -157,7 +157,7 @@ const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'a
   }
 
   const items: IRInputAssistantItem[] = [];
-  const downgraded: IRInputUserItem[] = [];
+  const downgraded: IRInputClientItem[] = [];
   const pending: IRInputAssistantContentPart[] = [];
   const flush = (): void => {
     if (pending.length === 0) return;

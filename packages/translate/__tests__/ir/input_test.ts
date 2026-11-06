@@ -7,8 +7,8 @@ import type {
   IRInputToolResultContentPart,
   IRInputToolResultItem,
   IRInputUserContentPart,
-  IRInputUserItem,
-  IRInputUserTurn,
+  IRInputClientItem,
+  IRInputClientTurn,
 } from '../../src/ir/input/types.ts';
 
 // The input IR states no runtime behaviour yet; these assertions pin the shape
@@ -25,7 +25,7 @@ describe('input IR shape', () => {
   ];
 
   test('a conversation carries user and assistant turns in order', () => {
-    const userItems: IRInputUserItem[] = [
+    const userItems: IRInputClientItem[] = [
       { type: 'message', role: 'system', content: [{ type: 'text', text: 'be brief' }] },
       { type: 'message', role: 'developer', content: [{ type: 'text', text: 'tools are strict' }] },
       { type: 'message', role: 'user', content: userParts },
@@ -38,7 +38,7 @@ describe('input IR shape', () => {
       { type: 'function_call', call_id: 'call_1', name: 'lookup', arguments: '{"q":1}' },
       { type: 'custom_tool_call', call_id: 'call_2', name: 'edit', input: 'raw' },
     ];
-    const user: IRInputUserTurn = { role: 'user', items: userItems };
+    const user: IRInputClientTurn = { role: 'user', items: userItems };
     const assistant: IRInputAssistantTurn = { role: 'assistant', items: assistantItems };
     const conversation: IRInputConversation = { turns: [user, assistant] };
 

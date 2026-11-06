@@ -9,7 +9,7 @@ import type {
   IRInputConversation,
   IRInputMedia,
   IRInputToolResultContentPart,
-  IRInputUserItem,
+  IRInputClientItem,
   IRInputSystemMessageItem,
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
@@ -63,7 +63,7 @@ const toolResultOutput = (output: string | readonly IRInputToolResultContentPart
 // Responses accepts a bare string or a part array. The array is the general
 // spelling, so it is used unconditionally: the IR states each part and the
 // target keeps them, without a writer having to know how the source phrased it.
-const userContent = (item: Extract<IRInputUserItem, { type: 'message' }>): OpenAIResponsesInputContent[] => item.content.map(part => {
+const userContent = (item: Extract<IRInputClientItem, { type: 'message' }>): OpenAIResponsesInputContent[] => item.content.map(part => {
   switch (part.type) {
   case 'text': return { type: 'input_text' as const, text: part.text };
   case 'image': return inputContent(part.image, part.detail);
@@ -107,7 +107,7 @@ const assistantItems = (items: readonly IRInputAssistantItem[]): CanonicalOpenAI
   }
 });
 
-const userItems = (items: readonly IRInputUserItem[]): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
+const userItems = (items: readonly IRInputClientItem[]): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
   switch (item.type) {
   case 'message': {
     if (item.role !== 'user') {
@@ -138,7 +138,7 @@ const userItems = (items: readonly IRInputUserItem[]): CanonicalOpenAIResponsesI
 // A leading system or developer run states the request's prompt, which
 // Responses keeps in its own top-level slot. Every later system message stays
 // inline as an ordinary input item.
-const isHoistablePrompt = (entry: IRInputUserItem): entry is IRInputSystemMessageItem =>
+const isHoistablePrompt = (entry: IRInputClientItem): entry is IRInputSystemMessageItem =>
   entry.type === 'message' && (entry.role === 'system' || entry.role === 'developer');
 
 const conversationFromIR = (

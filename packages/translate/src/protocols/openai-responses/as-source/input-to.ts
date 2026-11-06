@@ -16,7 +16,7 @@ import type {
   IRInputToolResultItem,
   IRInputTurn,
   IRInputUserContentPart,
-  IRInputUserItem,
+  IRInputClientItem,
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type {
@@ -137,7 +137,7 @@ const assistantItems = (items: readonly CanonicalOpenAIResponsesInputItem[], unk
   }
 }).filter((item): item is IRInputAssistantItem => item !== undefined);
 
-const userItems = (items: readonly CanonicalOpenAIResponsesInputItem[], unknownItem: (item: CanonicalOpenAIResponsesInputItem) => never): IRInputUserItem[] => items.map(item => {
+const userItems = (items: readonly CanonicalOpenAIResponsesInputItem[], unknownItem: (item: CanonicalOpenAIResponsesInputItem) => never): IRInputClientItem[] => items.map(item => {
   rejectProgramCaller(item);
   switch (item.type) {
   case 'message':

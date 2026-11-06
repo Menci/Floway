@@ -11,8 +11,8 @@
 // sidecar resolves to the source protocol's native turn bypasses this IR
 // entirely. The other two are the types below:
 //
-//     A user turn      -> IRInputUserTurn      -> B user turn
-//     A assistant turn -> IRInputAssistantTurn -> B assistant turn
+//     A client turn    -> IRInputClientTurn    -> B client turn
+//     An assistant turn -> IRInputAssistantTurn -> B assistant turn
 //
 // A request arrives complete, so this IR is a plain value: no paths, no
 // lifecycle events, no accumulation. That is the whole structural difference
@@ -176,14 +176,16 @@ export interface IRInputConversation {
 // merge adjacent messages of the same class. Writers regroup the flat item
 // list into whatever boundaries their protocol uses, so the source grouping
 // never constrains them.
-export type IRInputTurn = IRInputUserTurn | IRInputAssistantTurn;
+export type IRInputTurn = IRInputClientTurn | IRInputAssistantTurn;
 
-// Client-produced input. The branch is named `user` because the sidecar branch
-// selects on assistant-versus-not; the items inside keep their real roles,
-// so system, developer, and tool results live here too.
-export interface IRInputUserTurn {
+// Everything the client stated. The branch is named `client` rather than `user`
+// because its items keep their real roles: system and developer prompts and
+// tool results live here too, and `role: 'user'` would describe only one of
+// them. The assistant branch is the only other one, which is what the sidecar
+// selects on.
+export interface IRInputClientTurn {
   readonly role: 'user';
-  readonly items: readonly IRInputUserItem[];
+  readonly items: readonly IRInputClientItem[];
 }
 
 export interface IRInputAssistantTurn {
@@ -198,7 +200,7 @@ export interface IRInputAssistantTurn {
 // message's own parts together while tool results and tool calls remain
 // separate items lets every writer reproduce its own grouping without this IR
 // prejudging one protocol's shape.
-export type IRInputUserItem = IRInputSystemMessageItem | IRInputUserMessageItem | IRInputToolResultItem;
+export type IRInputClientItem = IRInputSystemMessageItem | IRInputUserMessageItem | IRInputToolResultItem;
 
 export type IRInputAssistantItem =
   | IRInputAssistantMessageItem

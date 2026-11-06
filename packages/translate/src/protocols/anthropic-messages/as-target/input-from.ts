@@ -9,7 +9,7 @@ import type {
   IRInputMedia,
   IRInputTextPart,
   IRInputToolResultContentPart,
-  IRInputUserItem,
+  IRInputClientItem,
 } from '../../../ir/input/types.ts';
 import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
@@ -72,7 +72,7 @@ const documentBlock = (media: IRInputMedia): AnthropicMessagesUserContentBlock =
 const systemContent = (content: readonly IRInputTextPart[]): AnthropicMessagesTextBlockParam[] => content.map(part => ({ type: 'text', text: part.text }));
 
 const userContent = async (
-  item: Extract<IRInputUserItem, { type: 'message' }>,
+  item: Extract<IRInputClientItem, { type: 'message' }>,
   options: AnthropicMessagesRequestFromIROptions,
 ): Promise<AnthropicMessagesUserContentBlock[]> => {
   const blocks: AnthropicMessagesUserContentBlock[] = [];
