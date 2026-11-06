@@ -8,13 +8,13 @@ import type { IRInputTool, IRInputToolChoice } from './types.ts';
  * a named tool say which callable the model must choose, not which ones it may
  * know about.
  *
- * A writer narrows the list because that is the one spelling every upstream on
- * a wire understands, while a selector arm may be unimplemented. The written
- * choice then carries only the mode.
+ * A writer narrows the list because that is the one spelling every upstream
+ * understands, while a selector arm of its own may be unimplemented. The
+ * written choice then carries only the mode.
  *
- * The selection names a kind as well as a name because Chat, Responses, and
- * Messages all let one request declare a function and a custom tool that share
- * a name; only the matching kind is selected.
+ * The selection names a kind as well as a name because a request may declare a
+ * function and a custom tool that share a name; only the matching kind is
+ * selected.
  */
 export const irInputToolsForChoice = (
   tools: readonly IRInputTool[] | undefined,
