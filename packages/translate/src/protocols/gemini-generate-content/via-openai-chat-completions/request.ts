@@ -1,8 +1,8 @@
-import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
+import type { IRInputResolvedTurn } from '../../../ir/input/segments.ts';
 import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
-import { openaiChatCompletionsRequestFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
+import { openaiChatCompletionsPayloadFromSegments } from '../../openai-chat-completions/as-target/segmented-request.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
 import { geminiGenerateContentDropsReasoning, geminiGenerateContentRequestToIR, geminiGenerateContentSystemToIR, geminiGenerateContentTurnToIR } from '../as-source/input-to.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
@@ -17,7 +17,6 @@ export const buildTargetRequest = async (
 ): Promise<OpenAIChatCompletionsPayload> => {
   const unmatchedToolCallIds: GeminiGenerateContentToolCallIds = Object.create(null);
   const ir = geminiGenerateContentRequestToIR(payload, model);
-  const messages: OpenAIChatCompletionsMessage[] = [];
 
   let contentIndex = 0;
   const pieces: (IRInputTurn | IRInputResolvedTurn<OpenAIChatCompletionsMessage>)[] = [];
@@ -47,14 +46,5 @@ export const buildTargetRequest = async (
   const system = geminiGenerateContentSystemToIR(payload.systemInstruction);
   if (system !== undefined) pieces.unshift(system);
 
-  let base: OpenAIChatCompletionsPayload | undefined;
-  for (const piece of segmentIRInput(pieces)) {
-    if (piece.kind === 'resolved') { messages.push(piece.turn); continue; }
-    const translated = openaiChatCompletionsRequestFromIR({ ...ir, conversation: { turns: piece.turns } });
-    base ??= translated;
-    messages.push(...translated.messages);
-  }
-  base ??= openaiChatCompletionsRequestFromIR({ ...ir, conversation: { turns: [] } });
-
-  return { ...base, messages };
+  return openaiChatCompletionsPayloadFromSegments(ir, pieces, turn => turn);
 };

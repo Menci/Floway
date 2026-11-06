@@ -1,8 +1,8 @@
-import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
+import type { IRInputResolvedTurn } from '../../../ir/input/segments.ts';
 import type { IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
-import { openaiChatCompletionsRequestFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
+import { openaiChatCompletionsPayloadFromSegments } from '../../openai-chat-completions/as-target/segmented-request.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
 import { anthropicMessagesDropsReasoning, anthropicMessagesSettingsToIR, anthropicMessagesSystemToIR, anthropicMessagesToolsToIR, anthropicMessagesTurnToIR } from '../as-source/input-to.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from '../as-source/round-trip.ts';
@@ -18,7 +18,6 @@ export const buildTargetRequest = async (
     settings: anthropicMessagesSettingsToIR(payload),
     ...anthropicMessagesToolsToIR(payload),
   };
-  const messages: OpenAIChatCompletionsMessage[] = [];
   const pieces: (IRInputTurn | IRInputResolvedTurn<OpenAIChatCompletionsMessage>)[] = [];
   // The top-level `system` field is the request's prompt, so it opens the
   // conversation; the writer places it like any other turn.
@@ -39,17 +38,5 @@ export const buildTargetRequest = async (
     messageIndex += turn.items.length;
   }
 
-  let base: OpenAIChatCompletionsPayload | undefined;
-  for (const piece of segmentIRInput(pieces)) {
-    if (piece.kind === 'resolved') { messages.push(piece.turn); continue; }
-    const translated = openaiChatCompletionsRequestFromIR({ ...ir, conversation: { turns: piece.turns } });
-    base ??= translated;
-    messages.push(...translated.messages);
-  }
-  base ??= openaiChatCompletionsRequestFromIR({ ...ir, conversation: { turns: [] } });
-
-  return {
-    ...base,
-    messages,
-  };
+  return openaiChatCompletionsPayloadFromSegments(ir, pieces, turn => turn);
 };

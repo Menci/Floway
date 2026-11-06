@@ -1,9 +1,9 @@
-import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
+import type { IRInputResolvedTurn } from '../../../ir/input/segments.ts';
 import { irInputCustomToolNames } from '../../../ir/input/select-tools.ts';
 import type { IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
-import { openaiChatCompletionsRequestFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
+import { openaiChatCompletionsPayloadFromSegments } from '../../openai-chat-completions/as-target/segmented-request.ts';
 import { validateAllowedTools } from '../as-source/allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
 import { openaiResponsesSettingsToIR, openaiResponsesToolsToIR, openaiResponsesDropsReasoning, openaiResponsesInstructionsToIR, openaiResponsesTurnToIR } from '../as-source/input-to.ts';
@@ -55,17 +55,7 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
     pieces.push(...openaiResponsesTurnToIR(turn, flattenInput));
   }
 
-  const messages: OpenAIChatCompletionsMessage[] = [];
-  let base: OpenAIChatCompletionsPayload | undefined;
-  for (const piece of segmentIRInput(pieces)) {
-    if (piece.kind === 'resolved') { messages.push(piece.turn); continue; }
-    const translated = openaiChatCompletionsRequestFromIR({ ...ir, conversation: { turns: piece.turns } });
-    base ??= translated;
-    messages.push(...translated.messages);
-  }
-  base ??= openaiChatCompletionsRequestFromIR({ ...ir, conversation: { turns: [] } });
-
-  const target: OpenAIChatCompletionsPayload = { ...base, messages };
+  const target = openaiChatCompletionsPayloadFromSegments(ir, pieces, turn => turn);
 
   // Chat cannot express a freeform declaration on every upstream, so the writer
   // states one as a single-string function; the names let its returned calls be
