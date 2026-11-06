@@ -68,7 +68,7 @@ const userContent = (item: Extract<IRInputClientItem, { type: 'message' }>): Ope
   case 'text': return { type: 'input_text' as const, text: part.text };
   case 'image': return inputContent(part.image, part.detail);
   case 'file': return fileContent(part.file, part.filename);
-  case 'audio': throw new TranslatorInputError(`Cannot translate Gemini generateContent inlineData MIME type '${part.audio.media_type}' to OpenAI Responses.`);
+  case 'audio': throw new TranslatorInputError(`Cannot translate an audio part of MIME type '${part.audio.media_type}' to OpenAI Responses.`);
   }
 });
 

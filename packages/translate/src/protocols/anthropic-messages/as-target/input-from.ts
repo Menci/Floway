@@ -88,7 +88,7 @@ const userContent = async (
     case 'file':
       blocks.push(documentBlock(part.file));
       break;
-    case 'audio': throw new TranslatorInputError(`Cannot translate Gemini generateContent inlineData MIME type '${part.audio.media_type}' to Anthropic Messages.`);
+    case 'audio': throw new TranslatorInputError(`Cannot translate an audio part of MIME type '${part.audio.media_type}' to Anthropic Messages.`);
     default: throw new TranslatorInputError(`Invalid '${(part as { type: string }).type}' content part.`);
     }
   }

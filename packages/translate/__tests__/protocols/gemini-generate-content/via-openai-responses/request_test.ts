@@ -70,7 +70,7 @@ test.each(['audio/wav', 'audio/mp3', 'audio/mpeg'])('buildTargetRequest rejects 
   await assertRejects(
     () => buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: 'ZGF0YQ==' } }] }] }, 'gpt-test'),
     Error,
-    `Cannot translate Gemini generateContent inlineData MIME type '${mimeType}' to OpenAI Responses.`,
+    `Cannot translate an audio part of MIME type '${mimeType}' to OpenAI Responses.`,
   );
 });
 

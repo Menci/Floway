@@ -85,7 +85,7 @@ test.each(['audio/wav', 'audio/mp3', 'audio/mpeg'])('buildTargetRequest rejects 
   await assertRejects(
     () => buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: 'ZGF0YQ==' } }] }] }, 'claude-test', noOptions),
     Error,
-    `Cannot translate Gemini generateContent inlineData MIME type '${mimeType}' to Anthropic Messages.`,
+    `Cannot translate an audio part of MIME type '${mimeType}' to Anthropic Messages.`,
   );
 });
 
