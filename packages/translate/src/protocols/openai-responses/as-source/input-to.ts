@@ -184,11 +184,11 @@ export const openaiResponsesDropsReasoning = (turn: { readonly role: 'assistant'
   turn.items.some(item => item.type === 'reasoning' && isOpenAIResponsesEncryptedReasoning(item));
 
 /** The top-level `instructions` field as its own leading system item. */
-export const openaiResponsesInstructionsToIR = (instructions: string | null | undefined): IRInputTurn | undefined => instructions
+const openaiResponsesInstructionsToIR = (instructions: string | null | undefined): IRInputTurn | undefined => instructions
   ? { kind: 'client', items: [{ type: 'prompt', role: 'system', content: [{ type: 'text', text: instructions }] }] }
   : undefined;
 
-export const openaiResponsesTurnToIR = (
+const openaiResponsesTurnToIR = (
   turn: { readonly role: 'assistant' | 'bare'; readonly items: readonly CanonicalOpenAIResponsesInputItem[] },
   flattenInput: (input: readonly CanonicalOpenAIResponsesInputItem[]) => CanonicalOpenAIResponsesInputItem[],
 ): IRInputTurn[] => {
@@ -253,7 +253,7 @@ const toolChoiceToIR = (choice: NonNullable<CanonicalOpenAIResponsesPayload['too
   throw new TranslatorInputError(`Cannot translate OpenAI Responses tool choice type '${choice.type}'.`);
 };
 
-export const openaiResponsesToolsToIR = (payload: CanonicalOpenAIResponsesPayload): Pick<IRInputRequest, 'tools' | 'tool_choice'> => {
+const openaiResponsesToolsToIR = (payload: CanonicalOpenAIResponsesPayload): Pick<IRInputRequest, 'tools' | 'tool_choice'> => {
   const tools = payload.tools?.map(toolToIR);
   const toolChoice = payload.tool_choice == null ? undefined : toolChoiceToIR(payload.tool_choice);
   return {
@@ -262,7 +262,7 @@ export const openaiResponsesToolsToIR = (payload: CanonicalOpenAIResponsesPayloa
   };
 };
 
-export const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputSettings => {
+const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputSettings => {
   const format = payload.text?.format;
   const outputFormat: IRInputOutputFormat | undefined = format === undefined || format === null ? undefined
     : format.type === 'json_schema'

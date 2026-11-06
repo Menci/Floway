@@ -231,7 +231,7 @@ const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'a
   return { segments };
 };
 
-export const anthropicMessagesSystemToIR = (system: AnthropicMessagesPayload['system']): IRInputTurn | undefined => {
+const anthropicMessagesSystemToIR = (system: AnthropicMessagesPayload['system']): IRInputTurn | undefined => {
   if (system === undefined) return undefined;
   const content = textBlocks(system);
   return content.length === 0 ? undefined : { kind: 'client', items: [{ type: 'prompt', role: 'system', content }] };
@@ -241,7 +241,7 @@ export const anthropicMessagesSystemToIR = (system: AnthropicMessagesPayload['sy
 export const anthropicMessagesDropsReasoning = (turn: AnthropicMessagesConversationTurn): boolean => turn.role === 'assistant'
   && turn.items.some(message => Array.isArray(message.content) && message.content.some(block => block.type === 'redacted_thinking'));
 
-export const anthropicMessagesTurnToIR = (
+const anthropicMessagesTurnToIR = (
   turn: AnthropicMessagesConversationTurn,
   firstMessageIndex = 0,
 ): IRInputTurn[] => {
@@ -304,7 +304,7 @@ const toolChoiceToIR = (choice: NonNullable<AnthropicMessagesPayload['tool_choic
   }
 };
 
-export const anthropicMessagesToolsToIR = (payload: AnthropicMessagesPayload): Pick<IRInputRequest, 'tools' | 'tool_choice'> => {
+const anthropicMessagesToolsToIR = (payload: AnthropicMessagesPayload): Pick<IRInputRequest, 'tools' | 'tool_choice'> => {
   const clientTools = filterAnthropicMessagesClientTools(payload.tools);
   const declarations = clientTools === undefined ? [] : clientTools.map(toolToIR);
   // A selector is validated against the declarations either way: dropping one
@@ -316,7 +316,7 @@ export const anthropicMessagesToolsToIR = (payload: AnthropicMessagesPayload): P
   };
 };
 
-export const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload): IRInputSettings => {
+const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload): IRInputSettings => {
   const format = payload.output_config?.format;
   // Messages' structured-output schema is already strict by contract, so the
   // fact is stated here rather than left for a target to invent. It states no

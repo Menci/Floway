@@ -167,7 +167,7 @@ export const geminiGenerateContentDropsReasoning = (turn: GeminiGenerateContentT
   && turn.items.some(content => content.parts?.some(part => part.thoughtSignature !== undefined) ?? false);
 
 /** A GenerateContent system instruction is the conversation's leading prompt. */
-export const geminiGenerateContentSystemToIR = (content: GeminiGenerateContentContent | undefined): IRInputTurn | undefined => {
+const geminiGenerateContentSystemToIR = (content: GeminiGenerateContentContent | undefined): IRInputTurn | undefined => {
   const parts = systemParts(content);
   return parts.length === 0 ? undefined : { kind: 'client', items: [{ type: 'prompt', role: 'system', content: parts }] };
 };
@@ -269,7 +269,7 @@ export const geminiGenerateContentSource = (payload: GeminiGenerateContentPayloa
 };
 
 /** GenerateContent keeps every sampling knob inside `generationConfig`. */
-export const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentPayload, model: string): IRInputSettings => {
+const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentPayload, model: string): IRInputSettings => {
   const config = payload.generationConfig;
   const reasoningEffort = geminiGenerateContentReasoningEffort(config?.thinkingConfig);
   const schema = config === undefined ? undefined : geminiResponseSchema(config);

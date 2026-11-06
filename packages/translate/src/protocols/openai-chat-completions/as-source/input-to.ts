@@ -55,7 +55,7 @@ const legacyCallId = (name: string, occurrence: number): string => `legacy__${na
 // Reader-side state over the whole payload: a Chat `tool` message does not say
 // which call kind it answers, and a legacy result names its call by function
 // name alone. Both are recovered here, before the IR states them per item.
-export interface OpenAIChatCompletionsInputContext {
+interface OpenAIChatCompletionsInputContext {
   readonly callKinds: ReadonlyMap<string, 'function' | 'custom'>;
   // Occurrences of each legacy function name consumed so far, so a repeated
   // name yields a distinct id per call and a distinct id per result.
@@ -63,7 +63,7 @@ export interface OpenAIChatCompletionsInputContext {
   readonly legacyResults: Map<string, number>;
 }
 
-export const openaiChatCompletionsInputContext = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsInputContext => ({
+const openaiChatCompletionsInputContext = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsInputContext => ({
   callKinds: openaiChatCompletionsCallKinds(payload),
   legacyCalls: new Map<string, number>(),
   legacyResults: new Map<string, number>(),
@@ -156,7 +156,7 @@ export const openaiChatCompletionsDropsReasoning = (turn: OpenAIChatCompletionsC
  * Call kinds keyed by call ID. A Chat `tool` message does not state which kind
  * it answers; only the preceding assistant message's `tool_calls` do.
  */
-export const openaiChatCompletionsCallKinds = (payload: OpenAIChatCompletionsPayload): ReadonlyMap<string, 'function' | 'custom'> => {
+const openaiChatCompletionsCallKinds = (payload: OpenAIChatCompletionsPayload): ReadonlyMap<string, 'function' | 'custom'> => {
   const kinds = new Map<string, 'function' | 'custom'>();
   for (const message of payload.messages) {
     if (message.role !== 'assistant') continue;
@@ -165,7 +165,7 @@ export const openaiChatCompletionsCallKinds = (payload: OpenAIChatCompletionsPay
   return kinds;
 };
 
-export const openaiChatCompletionsTurnToIR = (
+const openaiChatCompletionsTurnToIR = (
   turn: OpenAIChatCompletionsConversationTurn,
   context: OpenAIChatCompletionsInputContext,
 ): IRInputTurn => {
@@ -264,7 +264,7 @@ const toolChoiceToIR = (choice: NonNullable<OpenAIChatCompletionsPayload['tool_c
   return selectionToIR(choice);
 };
 
-export const openaiChatCompletionsToolsToIR = (payload: OpenAIChatCompletionsPayload): Pick<IRInputRequest, 'tools' | 'tool_choice'> => {
+const openaiChatCompletionsToolsToIR = (payload: OpenAIChatCompletionsPayload): Pick<IRInputRequest, 'tools' | 'tool_choice'> => {
   const tools = payload.tools?.map(toolToIR).filter((tool): tool is IRInputTool => tool !== undefined);
   return {
     ...(tools === undefined || tools.length === 0 ? {} : { tools }),
@@ -272,13 +272,13 @@ export const openaiChatCompletionsToolsToIR = (payload: OpenAIChatCompletionsPay
   };
 };
 
-export const openaiChatCompletionsRequestToIR = (payload: OpenAIChatCompletionsPayload): IRInputRequest => ({
+const openaiChatCompletionsRequestToIR = (payload: OpenAIChatCompletionsPayload): IRInputRequest => ({
   conversation: { turns: [] },
   settings: openaiChatCompletionsSettingsToIR(payload),
   ...openaiChatCompletionsToolsToIR(payload),
 });
 
-export const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload): IRInputSettings => {
+const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload): IRInputSettings => {
   const ceiling = payload.max_completion_tokens ?? payload.max_tokens;
 
   const format = payload.response_format;
