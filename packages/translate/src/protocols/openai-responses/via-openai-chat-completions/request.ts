@@ -1,16 +1,12 @@
 import type { IRInputResolvedTurn } from '../../../ir/input/segments.ts';
 import { irInputCustomToolNames } from '../../../ir/input/select-tools.ts';
-import type { IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
+import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
 import { openaiChatCompletionsPayloadFromSegments } from '../../openai-chat-completions/as-target/segmented-request.ts';
-import { validateAllowedTools } from '../as-source/allowed-tools.ts';
-import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
-import { openaiResponsesSettingsToIR, openaiResponsesToolsToIR, openaiResponsesDropsReasoning, openaiResponsesInstructionsToIR, openaiResponsesTurnToIR } from '../as-source/input-to.ts';
-import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
-import { rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
+import { openaiResponsesDropsReasoning, openaiResponsesInstructionsToIR, openaiResponsesSource } from '../as-source/input-to.ts';
+import type { NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
-import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 
@@ -26,33 +22,23 @@ export interface TargetRequestResult {
   readonly customToolNames: ReadonlySet<string>;
 }
 
-export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec): Promise<TargetRequestResult> => {
-  const canonical = canonicalizeOpenAIResponsesPayload(source);
-  const { payload, names: namespaceToolNames, flattenInput } = flattenNamespaceTools(canonical);
-  // A subset selector names flat callables, so it is checked once namespace and
-  // hosted selectors have been rewritten into them: one that still is not flat
-  // names something this translation cannot carry.
-  validateAllowedTools(payload.tools, payload.tool_choice, payload.input);
-  rejectProgrammaticOpenAIResponsesPayload(payload, 'OpenAI Chat Completions');
-  const ir: IRInputRequest = {
-    conversation: { turns: [] },
-    settings: openaiResponsesSettingsToIR(payload),
-    ...openaiResponsesToolsToIR(payload),
-  };
+export const buildTargetRequest = async (input: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec): Promise<TargetRequestResult> => {
+  const source = openaiResponsesSource(input);
+  const ir = source.request;
 
   const pieces: (IRInputTurn | IRInputResolvedTurn<OpenAIChatCompletionsMessage>)[] = [];
   // `instructions` is the request's own prompt field, so it opens the
   // conversation ahead of the messages the caller wrote.
-  const instructions = openaiResponsesInstructionsToIR(payload.instructions);
+  const instructions = openaiResponsesInstructionsToIR(source.instructions);
   if (instructions !== undefined) pieces.push(instructions);
-  for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
+  for (const turn of source.conversation) {
     const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('openaiResponses', 'openaiChatCompletions', turn.items, codec, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest, collectOpenAIResponsesReplayContents);
     if (roundTrip) {
       pieces.push({ kind: 'resolved', turn: roundTrip.turn });
       continue;
     }
     if (openaiResponsesDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiResponses', 'openaiChatCompletions');
-    pieces.push(...openaiResponsesTurnToIR(turn, flattenInput));
+    pieces.push(...source.turnToIR(turn));
   }
 
   const target = openaiChatCompletionsPayloadFromSegments(ir, pieces, turn => turn);
@@ -60,5 +46,5 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
   // Chat cannot express a freeform declaration on every upstream, so the writer
   // states one as a single-string function; the names let its returned calls be
   // recognised as freeform again.
-  return { target, customToolNames: irInputCustomToolNames(ir), namespaceToolNames };
+  return { target, customToolNames: irInputCustomToolNames(ir), namespaceToolNames: source.namespaceToolNames };
 };

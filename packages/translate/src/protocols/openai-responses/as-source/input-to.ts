@@ -1,6 +1,10 @@
 import { klona } from 'klona/json';
 
-import { rejectProgramCaller } from './programmatic-tooling.ts';
+import { validateAllowedTools } from './allowed-tools.ts';
+import { partitionOpenAIResponsesTurns, type OpenAIResponsesConversationTurn } from './conversation-turns.ts';
+import { flattenNamespaceTools, type NamespaceToolNames } from './namespace-tools.ts';
+import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from './programmatic-tooling.ts';
+import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import { isOpenAIResponsesEncryptedReasoning } from './round-trip.ts';
 import type {
   IRInputAssistantContentPart,
@@ -24,6 +28,7 @@ import type {
   CanonicalOpenAIResponsesPayload,
   OpenAIResponsesInputContent,
   OpenAIResponsesInputMessageEx,
+  OpenAIResponsesRequestPayloadEx,
   OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
 
@@ -291,5 +296,40 @@ export const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPay
     ...(payload.prompt_cache_key === undefined ? {} : { prompt_cache_key: payload.prompt_cache_key }),
     ...(payload.safety_identifier === undefined ? {} : { safety_identifier: payload.safety_identifier }),
     ...(payload.text?.verbosity == null ? {} : { verbosity: payload.text.verbosity }),
+  };
+};
+
+/**
+ * A Responses request prepared for translation, with the source's own rewrites
+ * applied.
+ *
+ * Namespace flattening changes names inside the conversation, so every turn has
+ * to be read through the same mapping that produced `request`. Presenting them
+ * together keeps that mapping with the reader that built it instead of handing
+ * a closure to each route.
+ */
+export interface OpenAIResponsesSource {
+  readonly request: IRInputRequest;
+  readonly instructions: string | null | undefined;
+  readonly namespaceToolNames: NamespaceToolNames;
+  readonly conversation: readonly OpenAIResponsesConversationTurn[];
+  turnToIR: (turn: OpenAIResponsesConversationTurn) => IRInputTurn[];
+}
+
+export const openaiResponsesSource = (source: OpenAIResponsesRequestPayloadEx): OpenAIResponsesSource => {
+  const canonical = canonicalizeOpenAIResponsesPayload(source);
+  const { payload, names, flattenInput } = flattenNamespaceTools(canonical);
+  validateAllowedTools(payload.tools, payload.tool_choice, payload.input);
+  rejectProgrammaticOpenAIResponsesPayload(payload, 'translation');
+  return {
+    request: {
+      conversation: { turns: [] },
+      settings: openaiResponsesSettingsToIR(payload),
+      ...openaiResponsesToolsToIR(payload),
+    },
+    instructions: payload.instructions,
+    namespaceToolNames: names,
+    conversation: partitionOpenAIResponsesTurns(canonical.input),
+    turnToIR: turn => openaiResponsesTurnToIR(turn, flattenInput),
   };
 };

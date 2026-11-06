@@ -1,18 +1,14 @@
 import type { IRInputResolvedTurn } from '../../../ir/input/segments.ts';
 import { irInputCustomToolNames } from '../../../ir/input/select-tools.ts';
-import type { IRInputMedia, IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
+import type { IRInputMedia, IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec, RemoteImageLoader } from '../../../types.ts';
 import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
 import { anthropicMessagesPayloadFromSegments } from '../../anthropic-messages/as-target/segmented-request.ts';
-import { validateAllowedTools } from '../as-source/allowed-tools.ts';
-import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
-import { openaiResponsesSettingsToIR, openaiResponsesToolsToIR, openaiResponsesDropsReasoning, openaiResponsesInstructionsToIR, openaiResponsesTurnToIR } from '../as-source/input-to.ts';
-import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
-import { rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
+import { openaiResponsesDropsReasoning, openaiResponsesInstructionsToIR, openaiResponsesSource } from '../as-source/input-to.ts';
+import type { NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
-import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import type { AnthropicMessagesMessage, AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type {
   OpenAIResponsesRequestPayloadEx,
@@ -51,28 +47,18 @@ const responsesImageResolver = (loadRemoteImage: RemoteImageLoader) => async (me
 };
 
 export const buildTargetRequest = async (
-  source: OpenAIResponsesRequestPayloadEx,
+  input: OpenAIResponsesRequestPayloadEx,
   codec: SidecarCodec,
   options: BuildTargetRequestOptions,
 ): Promise<TargetRequestResult> => {
-  const canonical = canonicalizeOpenAIResponsesPayload(source);
-  const { payload, names: namespaceToolNames, flattenInput } = flattenNamespaceTools(canonical);
-  // A subset selector names flat callables, so it is checked once namespace and
-  // hosted selectors have been rewritten into them: one that still is not flat
-  // names something this translation cannot carry.
-  validateAllowedTools(payload.tools, payload.tool_choice, payload.input);
-  rejectProgrammaticOpenAIResponsesPayload(payload, 'Anthropic Messages');
-  const request: IRInputRequest = {
-    conversation: { turns: [] },
-    settings: openaiResponsesSettingsToIR(payload),
-    ...openaiResponsesToolsToIR(payload),
-  };
+  const source = openaiResponsesSource(input);
+  const request = source.request;
   const pieces: (IRInputTurn | IRInputResolvedTurn<AnthropicMessagesMessage>)[] = [];
   // `instructions` and a leading system input are separate prompt blocks, so
   // each becomes its own output IR system item and the writer hoists both.
-  const instructions = openaiResponsesInstructionsToIR(payload.instructions);
+  const instructions = openaiResponsesInstructionsToIR(source.instructions);
   if (instructions !== undefined) pieces.push(instructions);
-  for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
+  for (const turn of source.conversation) {
     if (turn.role === 'assistant') {
       const roundTrip = await roundTripAssistantTurn('openaiResponses', 'anthropicMessages', turn.items, codec, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest, collectOpenAIResponsesReplayContents);
       if (roundTrip !== undefined) {
@@ -81,7 +67,7 @@ export const buildTargetRequest = async (
       }
       if (openaiResponsesDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiResponses', 'anthropicMessages');
     }
-    pieces.push(...openaiResponsesTurnToIR(turn, flattenInput));
+    pieces.push(...source.turnToIR(turn));
   }
 
   const target = await anthropicMessagesPayloadFromSegments(
@@ -92,5 +78,5 @@ export const buildTargetRequest = async (
     // is representable without loss.
     { resolveImage: responsesImageResolver(options.loadRemoteImage), fallbackMaxOutputTokens: options.fallbackMaxOutputTokens },
   );
-  return { target, customToolNames: irInputCustomToolNames(request), namespaceToolNames };
+  return { target, customToolNames: irInputCustomToolNames(request), namespaceToolNames: source.namespaceToolNames };
 };
