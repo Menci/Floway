@@ -10,6 +10,7 @@ import type {
   IRInputMedia,
   IRInputToolResultContentPart,
   IRInputUserItem,
+  IRInputSystemMessageItem,
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type {
@@ -134,14 +135,13 @@ const userItems = (items: readonly IRInputUserItem[]): CanonicalOpenAIResponsesI
   }
 });
 
-/**
- * `hoistSystem` lifts the leading system/developer run into the Responses
- * `instructions` slot. Only the first segment of a conversation may do so.
- *
- * Responses spells the slot as one string, so a multi-block run is joined with
- * blank lines. A multi-message run collapses the same way.
- */
-export const openaiResponsesFromIR = (
+// A leading system or developer run states the request's prompt, which
+// Responses keeps in its own top-level slot. Every later system message stays
+// inline as an ordinary input item.
+const isHoistablePrompt = (entry: IRInputUserItem): entry is IRInputSystemMessageItem =>
+  entry.type === 'message' && (entry.role === 'system' || entry.role === 'developer');
+
+const conversationFromIR = (
   conversation: IRInputConversation,
   hoistSystem: boolean,
 ): Pick<CanonicalOpenAIResponsesPayload, 'instructions' | 'input'> => {
@@ -154,7 +154,7 @@ export const openaiResponsesFromIR = (
       return assistantItems(item.items);
     }
     return item.items.flatMap((entry): CanonicalOpenAIResponsesInputItem[] => {
-      if (hoisting && entry.type === 'message' && entry.role === 'system') {
+      if (hoisting && isHoistablePrompt(entry)) {
         const text = entry.content.map(part => part.text).join('');
         if (text !== '') instructions.push(text);
         return [];
@@ -166,6 +166,18 @@ export const openaiResponsesFromIR = (
 
   return { instructions: instructions.length === 0 ? undefined : instructions.join('\n\n'), input };
 };
+
+/**
+ * `hoistSystem` lifts the leading system/developer run into the Responses
+ * `instructions` slot. Only the first segment of a conversation may do so.
+ *
+ * Responses spells the slot as one string, so a multi-block run is joined with
+ * blank lines. A multi-message run collapses the same way.
+ */
+export const openaiResponsesFromIR = (
+  conversation: IRInputConversation,
+  hoistSystem: boolean,
+): Pick<CanonicalOpenAIResponsesPayload, 'instructions' | 'input'> => conversationFromIR(conversation, hoistSystem);
 
 const requireSchema = (format: IRInputOutputFormat): Readonly<Record<string, unknown>> => {
   if (format.schema === undefined) throw new TranslatorInputError('Cannot translate json_schema response format without a schema.');
@@ -235,24 +247,7 @@ export const openaiResponsesRequestFromIR = (
   hoistSystem: boolean,
 ): CanonicalOpenAIResponsesPayload => {
   const { conversation, settings } = request;
-  const instructions: string[] = [];
-  let hoisting = hoistSystem;
-
-  const input = conversation.turns.flatMap(item => {
-    if (item.role === 'assistant') {
-      hoisting = false;
-      return assistantItems(item.items);
-    }
-    return item.items.flatMap((entry): CanonicalOpenAIResponsesInputItem[] => {
-      if (hoisting && entry.type === 'message' && entry.role === 'system') {
-        const text = entry.content.map(part => part.text).join('');
-        if (text !== '') instructions.push(text);
-        return [];
-      }
-      hoisting = false;
-      return userItems([entry]);
-    });
-  });
+  const { instructions, input } = conversationFromIR(conversation, hoistSystem);
 
   const tools = irInputToolsForChoice(request.tools, request.tool_choice);
   const choice = irInputToolChoiceForTools(request.tool_choice, tools);
@@ -264,7 +259,7 @@ export const openaiResponsesRequestFromIR = (
     // The gateway always translates a stream; the source flag only says how
     // the client wants its own response framed.
     stream: true,
-    ...(instructions.length === 0 ? {} : { instructions: instructions.join('\n\n') }),
+    ...(instructions === undefined ? {} : { instructions }),
     ...(tools === undefined || tools.length === 0 ? {} : { tools: tools.map(toolFromIR) }),
     ...(choice === undefined ? {} : { tool_choice: toolChoiceFromIR(choice) }),
   };

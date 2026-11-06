@@ -182,6 +182,22 @@ test('buildTargetRequest hoists only the initial contiguous system prefix', asyn
   ]);
 });
 
+test('buildTargetRequest hoists a leading developer prefix beside a system one', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'gpt-test',
+    messages: [
+      { role: 'developer', content: 'dev-1' },
+      { role: 'system', content: 'sys-1' },
+      { role: 'user', content: 'u1' },
+    ],
+  });
+
+  // A developer message is the same prompt boundary a system message is, so a
+  // leading run of either kind is what `instructions` states.
+  assertEquals(result.instructions, 'dev-1\n\nsys-1');
+  assertEquals(result.input, [{ type: 'message', role: 'user', content: 'u1' }]);
+});
+
 test('buildTargetRequest preserves explicit tool strict and defaults omission to false', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
