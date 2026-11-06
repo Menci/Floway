@@ -216,8 +216,11 @@ export type IRInputAssistantItem =
 // `system` becomes a leading item the same way. Responses keeps later
 // system/developer messages inline, Chat Completions forwards them as
 // developer/system messages, and Messages has an inline system role.
+// A prompt boundary carries its own discriminant: it restricts its content to
+// text and every writer treats it differently from user content, so a reader of
+// the union has to tell them apart without re-reading `role`.
 export interface IRInputSystemMessageItem {
-  readonly type: 'message'; // ChatCompletions, Responses, Messages
+  readonly type: 'prompt'; // ChatCompletions, Responses, Messages
   readonly role: 'system' | 'developer'; // ChatCompletions, Responses; Messages has `system` only
   // Text only: no pair carries media in system or developer content. Messages
   // and Chat Completions accept text there, and every route rejects anything

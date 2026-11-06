@@ -153,12 +153,12 @@ const openaiChatCompletionsUserItem = (
 ): OpenAIChatCompletionsMessage[] => [item].flatMap<OpenAIChatCompletionsMessage>(item => {
   switch (item.type) {
   case 'message':
-    return [item.role === 'user'
-      ? { role: 'user', content: userContent(item) }
-      // A single text part collapses to the string spelling Chat accepts for
-      // text-only system/developer messages; several parts keep their array so
-      // block boundaries survive.
-      : { role: item.role, content: item.content.length === 1 ? item.content[0].text : item.content.map(part => ({ type: 'text' as const, text: part.text })) }];
+    return [{ role: 'user', content: userContent(item) }];
+  case 'prompt':
+    // A single text part collapses to the string spelling Chat accepts for
+    // text-only system/developer messages; several parts keep their array so
+    // block boundaries survive.
+    return [{ role: item.role, content: item.content.length === 1 ? item.content[0].text : item.content.map(part => ({ type: 'text' as const, text: part.text })) }];
   case 'tool_result': {
     const projected = openaiChatCompletionsToolResultContent(item.call_id, item.output);
     lift(projected.lifted);

@@ -148,7 +148,7 @@ const userItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInput
     switch (item.role) {
     case 'user': return [{ type: 'message' as const, role: 'user' as const, content: userContent(item.content) }];
     case 'system':
-    case 'developer': return [{ type: 'message' as const, role: item.role, content: systemContent(item) }];
+    case 'developer': return [{ type: 'prompt' as const, role: item.role, content: systemContent(item) }];
     default: throw new TranslatorInputError(`Invalid role '${item.role}' in input message.`);
     }
   case 'function_call_output': {
@@ -179,7 +179,7 @@ export const openaiResponsesDropsReasoning = (turn: { readonly role: 'assistant'
 
 /** The top-level `instructions` field as its own leading system item. */
 export const openaiResponsesInstructionsToIR = (instructions: string | null | undefined): IRInputTurn | undefined => instructions
-  ? { role: 'user', items: [{ type: 'message', role: 'system', content: [{ type: 'text', text: instructions }] }] }
+  ? { role: 'user', items: [{ type: 'prompt', role: 'system', content: [{ type: 'text', text: instructions }] }] }
   : undefined;
 
 export const openaiResponsesTurnToIR = (

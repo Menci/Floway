@@ -249,7 +249,7 @@ export const anthropicMessagesRequestFromIR = async (
     }
     const turnBlocks: AnthropicMessagesUserContentBlock[] = [];
     for (const item of turn.items) {
-      if (item.type === 'message' && item.role !== 'user') {
+      if (item.type === 'prompt') {
         // Messages system content is text-only, so an image there is a caller
         // error rather than something to drop.
         if (item.content.some(part => part.type !== 'text')) {

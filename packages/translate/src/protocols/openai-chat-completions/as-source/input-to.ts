@@ -181,7 +181,7 @@ const userItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, { 
   case 'system':
   case 'developer':
     return [{
-      type: 'message',
+      type: 'prompt',
       role: message.role,
       // A non-text part in system/developer content has no representation on
       // any target, so it is rejected here rather than dropped silently.

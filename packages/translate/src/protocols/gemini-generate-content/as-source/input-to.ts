@@ -198,7 +198,7 @@ export const geminiGenerateContentTurnToIR = (
 /** A GenerateContent system instruction is the conversation's leading prompt. */
 export const geminiGenerateContentSystemToIR = (content: GeminiGenerateContentContent | undefined): IRInputTurn | undefined => {
   const parts = systemParts(content);
-  return parts.length === 0 ? undefined : { role: 'user', items: [{ type: 'message', role: 'system', content: parts }] };
+  return parts.length === 0 ? undefined : { role: 'user', items: [{ type: 'prompt', role: 'system', content: parts }] };
 };
 
 export const geminiGenerateContentInputToIR = (payload: GeminiGenerateContentPayload): IRInputConversation => {

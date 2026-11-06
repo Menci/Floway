@@ -26,8 +26,8 @@ describe('input IR shape', () => {
 
   test('a conversation carries user and assistant turns in order', () => {
     const userItems: IRInputClientItem[] = [
-      { type: 'message', role: 'system', content: [{ type: 'text', text: 'be brief' }] },
-      { type: 'message', role: 'developer', content: [{ type: 'text', text: 'tools are strict' }] },
+      { type: 'prompt', role: 'system', content: [{ type: 'text', text: 'be brief' }] },
+      { type: 'prompt', role: 'developer', content: [{ type: 'text', text: 'tools are strict' }] },
       { type: 'message', role: 'user', content: userParts },
       { type: 'tool_result', call_id: 'call_1', output: 'ok' },
       { type: 'tool_result', call_id: 'call_2', output: [{ type: 'text', text: 'see' }, { type: 'image', image: { source_kind: 'url', url: 'https://example.com/b.png' } }], is_error: true },
@@ -43,7 +43,7 @@ describe('input IR shape', () => {
     const conversation: IRInputConversation = { turns: [user, assistant] };
 
     expect(conversation.turns.map(turn => turn.role)).toEqual(['user', 'assistant']);
-    expect(user.items.map(item => item.type)).toEqual(['message', 'message', 'message', 'tool_result', 'tool_result']);
+    expect(user.items.map(item => item.type)).toEqual(['prompt', 'prompt', 'message', 'tool_result', 'tool_result']);
     expect(assistant.items.map(item => item.type)).toEqual(['reasoning', 'message', 'function_call', 'custom_tool_call']);
   });
 

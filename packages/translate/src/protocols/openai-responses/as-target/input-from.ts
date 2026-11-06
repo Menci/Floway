@@ -109,15 +109,15 @@ const assistantItems = (items: readonly IRInputAssistantItem[]): CanonicalOpenAI
 
 const userItems = (items: readonly IRInputClientItem[]): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
   switch (item.type) {
+  case 'prompt': {
+    // A prompt boundary states its text plainly: one part is that string, and
+    // several keep their array so the boundaries between them survive.
+    const content = item.content.length === 1
+      ? item.content[0].text
+      : item.content.map(part => ({ type: 'input_text' as const, text: part.text }));
+    return { type: 'message', role: item.role, content };
+  }
   case 'message': {
-    if (item.role !== 'user') {
-      // A prompt boundary states its text plainly: one part is that string, and
-      // several keep their array so the boundaries between them survive.
-      const content = item.content.length === 1
-        ? item.content[0].text
-        : item.content.map(part => ({ type: 'input_text' as const, text: part.text }));
-      return { type: 'message', role: item.role, content };
-    }
     // One text part is what a plain prompt states, and Responses spells a
     // text message as a bare string; several parts keep their array so the
     // boundaries between them survive.
@@ -139,7 +139,7 @@ const userItems = (items: readonly IRInputClientItem[]): CanonicalOpenAIResponse
 // Responses keeps in its own top-level slot. Every later system message stays
 // inline as an ordinary input item.
 const isHoistablePrompt = (entry: IRInputClientItem): entry is IRInputSystemMessageItem =>
-  entry.type === 'message' && (entry.role === 'system' || entry.role === 'developer');
+  entry.type === 'prompt';
 
 const conversationFromIR = (
   conversation: IRInputConversation,

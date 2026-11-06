@@ -107,7 +107,7 @@ const userItems = (
     if (typeof message.content !== 'string' && message.content.some(block => block.type !== 'text')) {
       throw new TranslatorInputError('Only text system content is supported.');
     }
-    return [{ type: 'message', role: 'system', content: textBlocks(message.content as string | readonly AnthropicMessagesTextBlockParam[]) }];
+    return [{ type: 'prompt', role: 'system', content: textBlocks(message.content as string | readonly AnthropicMessagesTextBlockParam[]) }];
   }
   if (typeof message.content === 'string') {
     return [{ type: 'message', role: 'user', content: message.content === '' ? [] : [{ type: 'text', text: message.content }] }];
@@ -235,7 +235,7 @@ const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'a
 export const anthropicMessagesSystemToIR = (system: AnthropicMessagesPayload['system']): IRInputTurn | undefined => {
   if (system === undefined) return undefined;
   const content = textBlocks(system);
-  return content.length === 0 ? undefined : { role: 'user', items: [{ type: 'message', role: 'system', content }] };
+  return content.length === 0 ? undefined : { role: 'user', items: [{ type: 'prompt', role: 'system', content }] };
 };
 
 /** Whether a turn carries reasoning only the sidecar can restore. */
