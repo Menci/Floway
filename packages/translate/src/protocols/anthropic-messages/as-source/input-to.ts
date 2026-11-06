@@ -2,6 +2,7 @@ import { klona } from 'klona/json';
 
 import { filterAnthropicMessagesClientTools } from './client-tools.ts';
 import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn } from './conversation-turns.ts';
+import { mergeAdjacentIRInputClientTurns } from '../../../ir/input/segments.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputRequest,
@@ -142,69 +143,95 @@ const userItems = (
   return items;
 };
 
+// A server tool runs on Anthropic's own backend and its result is written into
+// the assistant message by the API, so the client never answers it. Every target
+// we write states one call and its result as a separate call/result pair anyway
+// (Chat's `tool` message follows its `tool_calls`), so the pair has to become a
+// turn boundary here.
+//
+// https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool
+const SERVER_TOOL_RESULT_TYPES: ReadonlySet<string> = new Set([
+  'web_search_tool_result',
+  'web_fetch_tool_result',
+  'code_execution_tool_result',
+  'bash_code_execution_tool_result',
+  'text_editor_code_execution_tool_result',
+  'tool_search_tool_result',
+]);
+
 interface AnthropicMessagesAssistantSegments {
-  readonly assistant: IRInputAssistantItem[];
-  // A hosted search result is the model's own tool output rather than a client
-  // turn, so it cannot occupy an assistant item. It is downgraded to a plain
-  // tool result in a following user turn, which is the only shape every target
-  // can express.
-  readonly downgraded: IRInputClientItem[];
+  // One entry per run of assistant items, each followed by the tool results the
+  // server wrote into the same message. Reading the pairs in order reproduces
+  // the block sequence: an assistant turn, then the client turn that answers it.
+  readonly segments: readonly {
+    readonly assistant: readonly IRInputAssistantItem[];
+    readonly serverResults: readonly IRInputClientItem[];
+  }[];
 }
 
 const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'assistant' }>, messageIdx: number): AnthropicMessagesAssistantSegments => {
   if (typeof message.content === 'string') {
-    return { assistant: message.content === '' ? [] : [{ type: 'message', content: [{ type: 'text', text: message.content }] }], downgraded: [] };
+    return { segments: [{ assistant: message.content === '' ? [] : [{ type: 'message', content: [{ type: 'text', text: message.content }] }], serverResults: [] }] };
   }
 
-  const items: IRInputAssistantItem[] = [];
-  const downgraded: IRInputClientItem[] = [];
+  const segments: { assistant: IRInputAssistantItem[]; serverResults: IRInputClientItem[] }[] = [];
+  let assistant: IRInputAssistantItem[] = [];
+  let serverResults: IRInputClientItem[] = [];
   const pending: IRInputAssistantContentPart[] = [];
-  const flush = (): void => {
+  const flushText = (): void => {
     if (pending.length === 0) return;
-    items.push({ type: 'message', content: [...pending] });
+    assistant.push({ type: 'message', content: [...pending] });
     pending.length = 0;
+  };
+  // A result closes the run it answers, so the pair becomes one segment.
+  const flushSegment = (): void => {
+    flushText();
+    if (assistant.length === 0 && serverResults.length === 0) return;
+    segments.push({ assistant, serverResults });
+    assistant = [];
+    serverResults = [];
   };
 
   for (const [blockIdx, block] of message.content.entries()) {
+    if (SERVER_TOOL_RESULT_TYPES.has(block.type)) {
+      flushText();
+      const result = block as { tool_use_id: string; content: unknown };
+      serverResults.push({
+        type: 'tool_result',
+        call_id: result.tool_use_id,
+        output: JSON.stringify(result.content),
+      });
+      flushSegment();
+      continue;
+    }
     switch (block.type) {
     case 'text':
       pending.push({ type: 'text', text: block.text });
       break;
     case 'thinking':
-      flush();
-      if (block.thinking !== '') items.push({ type: 'reasoning', summary: [block.thinking] });
+      flushText();
+      if (block.thinking !== '') assistant.push({ type: 'reasoning', summary: [block.thinking] });
       break;
     case 'redacted_thinking':
       // The redacted payload is an opaque, vendor-signed blob; the sidecar is
       // the only place that can carry it back to the same vendor.
       break;
+    // A client tool and a server tool are the same fact to every target: a call
+    // the rest of the conversation answers. Only the client answers a client
+    // call, which is what the next real user turn carries.
     case 'tool_use':
-      flush();
-      items.push({ type: 'function_call', call_id: block.id, name: block.name, arguments: JSON.stringify(block.input) });
-      break;
     case 'server_tool_use':
-      flush();
-      items.push({ type: 'function_call', call_id: block.id, name: block.name, arguments: JSON.stringify(block.input) });
+      flushText();
+      assistant.push({ type: 'function_call', call_id: block.id, name: block.name, arguments: JSON.stringify(block.input) });
       break;
-    // A hosted search result is server-tool history: no pair translates it, and
-    // the gateway's search shim owns its replay.
-    case 'web_search_tool_result':
-      flush();
-      downgraded.push({
-        type: 'tool_result',
-        call_id: block.tool_use_id,
-        output: JSON.stringify(block.content),
-        ...(Array.isArray(block.content) ? {} : { is_error: true }),
-      });
-      break;
-    // Hosted results other than search have no plain-tool spelling and no
-    // cross-vendor counterpart, so the turn fails rather than losing history.
+    // Hosted results other than the ones above have no plain-tool spelling and
+    // no cross-vendor counterpart.
     default:
       throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' assistant content blocks are not supported on this model`);
     }
   }
-  flush();
-  return { assistant: items, downgraded };
+  flushSegment();
+  return { segments };
 };
 
 export const anthropicMessagesSystemToIR = (system: AnthropicMessagesPayload['system']): IRInputTurn | undefined => {
@@ -225,9 +252,13 @@ export const anthropicMessagesTurnToIR = (
   if (turn.role === 'assistant') {
     const turns: IRInputTurn[] = [];
     for (const [index, message] of turn.items.entries()) {
-      const segments = assistantSegments(message, firstMessageIndex + index);
-      if (segments.assistant.length > 0) turns.push({ role: 'assistant', items: segments.assistant });
-      if (segments.downgraded.length > 0) turns.push({ role: 'user', items: segments.downgraded });
+      for (const segment of assistantSegments(message, firstMessageIndex + index).segments) {
+        // The pair a server tool states is one call and the result written into
+        // the same message, so the result becomes the client turn that answers
+        // it before the next run of assistant content begins.
+        if (segment.assistant.length > 0) turns.push({ role: 'assistant', items: segment.assistant });
+        if (segment.serverResults.length > 0) turns.push({ role: 'user', items: segment.serverResults });
+      }
     }
     return turns;
   }
@@ -253,7 +284,9 @@ export const anthropicMessagesInputToIR = (payload: AnthropicMessagesPayload): I
     turns.push(...anthropicMessagesTurnToIR(turn, messageIndex));
     messageIndex += turn.items.length;
   }
-  return { turns };
+  // A server tool's result becomes a client turn of its own; when the next real
+  // client message already is one, the two state the same turn.
+  return { turns: mergeAdjacentIRInputClientTurns(turns) };
 };
 
 /**

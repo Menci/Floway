@@ -103,6 +103,88 @@ test('buildTargetRequest drops filtered-native tool_choice and rewrites assistan
   ]);
 });
 
+test('buildTargetRequest pairs each server tool round with its own result', async () => {
+  const search = (id: string, query: string) => [
+    { caller: { type: 'direct' as const }, type: 'server_tool_use' as const, id, name: 'web_search' as const, input: { query } },
+    {
+      type: 'web_search_tool_result' as const,
+      tool_use_id: id,
+      content: [{ type: 'web_search_result' as const, url: `https://example.com/${id}`, title: id, encrypted_content: `enc-${id}` }],
+    },
+  ];
+  const result = await buildWithTestSidecar({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [
+      {
+        role: 'assistant',
+        // Two search rounds in one message, with the model's own text between
+        // and after them.
+        content: [
+          { type: 'text', text: 'First search.' },
+          ...search('st_1', 'a'),
+          { type: 'text', text: 'Refining.' },
+          ...search('st_2', 'b'),
+          { type: 'text', text: 'Final answer.' },
+        ],
+      },
+    ],
+  });
+
+  // Each round is a call and its own result, in the order the source stated
+  // them: the text that follows a result belongs to the next round, not to the
+  // end of the message.
+  assertEquals(result.input, [
+    { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'First search.' }] },
+    { type: 'function_call', call_id: 'st_1', name: 'web_search', arguments: '{"query":"a"}', status: 'completed' },
+    {
+      type: 'function_call_output',
+      call_id: 'st_1',
+      output: '[{"type":"web_search_result","url":"https://example.com/st_1","title":"st_1","encrypted_content":"enc-st_1"}]',
+      status: 'completed',
+    },
+    // The text between the rounds belongs to the round that follows it.
+    { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Refining.' }] },
+    { type: 'function_call', call_id: 'st_2', name: 'web_search', arguments: '{"query":"b"}', status: 'completed' },
+    {
+      type: 'function_call_output',
+      call_id: 'st_2',
+      output: '[{"type":"web_search_result","url":"https://example.com/st_2","title":"st_2","encrypted_content":"enc-st_2"}]',
+      status: 'completed',
+    },
+    { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Final answer.' }] },
+  ]);
+});
+
+test('buildTargetRequest folds a trailing server result into the next client turn', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [
+      {
+        role: 'assistant',
+        // The message ends on the result: the search finished but the model
+        // said nothing after it.
+        content: [
+          { type: 'text', text: 'Searching.' },
+          { caller: { type: 'direct' as const }, type: 'server_tool_use' as const, id: 'st_1', name: 'web_search' as const, input: { query: 'a' } },
+          { type: 'web_search_tool_result' as const, tool_use_id: 'st_1', content: [] },
+        ],
+      },
+      { role: 'user', content: 'Now use those results.' },
+    ],
+  });
+
+  // The result answers the call, and the client's own message follows it in the
+  // same turn rather than opening a second one.
+  assertEquals(result.input, [
+    { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Searching.' }] },
+    { type: 'function_call', call_id: 'st_1', name: 'web_search', arguments: '{"query":"a"}', status: 'completed' },
+    { type: 'function_call_output', call_id: 'st_1', output: '[]', status: 'completed' },
+    { type: 'message', role: 'user', content: 'Now use those results.' },
+  ]);
+});
+
 test('buildTargetRequest maps output_config.effort directly to reasoning.effort', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
