@@ -34,7 +34,8 @@ import the source protocol's subpath and call
 ## Current Production Subdirectories
 
 - `ir/common/` — values both directions share: the JSON shape, `IRAbsent`, the error payload, text ranges.
-- `ir/input/` — the request conversation model and its segmentation.
+- `ir/input/` — the request conversation model, its segmentation, and the
+  protocol-independent reader that walks a source conversation into it.
 - `ir/output/` — the returned-stream model, its path schema, and protocol-independent streaming state.
 - `round-trip/` — authenticated assistant-turn sidecars, replay validation, and native stream coordination.
 - `protocols/anthropic-messages/as-source/` — interprets Messages requests and emits Messages SSE.
