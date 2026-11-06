@@ -533,7 +533,7 @@ test('buildTargetRequest preserves in-array system text blocks as separate input
   });
 });
 
-test('buildTargetRequest preserves chronology of multiple in-array system messages', async () => {
+test('buildTargetRequest hoists a leading in-array system message and keeps later ones in place', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -546,13 +546,15 @@ test('buildTargetRequest preserves chronology of multiple in-array system messag
     ],
   });
 
+  // The leading run is what the request states before its first turn, so it is
+  // the prompt; a system message after a turn happened stays where it was.
+  assertEquals(result.instructions, 'mid-array A');
   const input = result.input as Array<{ type: string; role?: string }>;
-  assertEquals(input.length, 5);
-  assertEquals(input[0].role, 'system');
-  assertEquals(input[1].role, 'user');
-  assertEquals(input[2].role, 'assistant');
-  assertEquals(input[3].role, 'system');
-  assertEquals(input[4].role, 'user');
+  assertEquals(input.length, 4);
+  assertEquals(input[0].role, 'user');
+  assertEquals(input[1].role, 'assistant');
+  assertEquals(input[2].role, 'system');
+  assertEquals(input[3].role, 'user');
 });
 
 test('buildTargetRequest rejects an unknown message role', async () => {
