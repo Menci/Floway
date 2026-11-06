@@ -310,7 +310,9 @@ export const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPay
  */
 export interface OpenAIResponsesSource {
   readonly request: IRInputRequest;
-  readonly instructions: string | null | undefined;
+  // Responses states its prompt in a top-level `instructions` field, which the
+  // input IR represents as a leading prompt turn like every other protocol's.
+  readonly prompt: IRInputTurn | undefined;
   readonly namespaceToolNames: NamespaceToolNames;
   readonly conversation: readonly OpenAIResponsesConversationTurn[];
   turnToIR: (turn: OpenAIResponsesConversationTurn) => IRInputTurn[];
@@ -327,7 +329,7 @@ export const openaiResponsesSource = (source: OpenAIResponsesRequestPayloadEx): 
       settings: openaiResponsesSettingsToIR(payload),
       ...openaiResponsesToolsToIR(payload),
     },
-    instructions: payload.instructions,
+    prompt: openaiResponsesInstructionsToIR(payload.instructions),
     namespaceToolNames: names,
     conversation: partitionOpenAIResponsesTurns(canonical.input),
     turnToIR: turn => openaiResponsesTurnToIR(turn, flattenInput),

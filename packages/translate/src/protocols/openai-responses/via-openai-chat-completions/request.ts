@@ -4,7 +4,7 @@ import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
 import { openaiChatCompletionsPayloadFromSegments } from '../../openai-chat-completions/as-target/segmented-request.ts';
-import { openaiResponsesDropsReasoning, openaiResponsesInstructionsToIR, openaiResponsesSource } from '../as-source/input-to.ts';
+import { openaiResponsesDropsReasoning, openaiResponsesSource } from '../as-source/input-to.ts';
 import type { NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
@@ -29,8 +29,7 @@ export const buildTargetRequest = async (input: OpenAIResponsesRequestPayloadEx,
   const pieces: (IRInputTurn | IRInputResolvedTurn<OpenAIChatCompletionsMessage>)[] = [];
   // `instructions` is the request's own prompt field, so it opens the
   // conversation ahead of the messages the caller wrote.
-  const instructions = openaiResponsesInstructionsToIR(source.instructions);
-  if (instructions !== undefined) pieces.push(instructions);
+  if (source.prompt !== undefined) pieces.push(source.prompt);
   for (const turn of source.conversation) {
     const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('openaiResponses', 'openaiChatCompletions', turn.items, codec, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest, collectOpenAIResponsesReplayContents);
     if (roundTrip) {

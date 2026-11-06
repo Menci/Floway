@@ -6,7 +6,7 @@ import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec, RemoteImageLoader } from '../../../types.ts';
 import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
 import { anthropicMessagesPayloadFromSegments } from '../../anthropic-messages/as-target/segmented-request.ts';
-import { openaiResponsesDropsReasoning, openaiResponsesInstructionsToIR, openaiResponsesSource } from '../as-source/input-to.ts';
+import { openaiResponsesDropsReasoning, openaiResponsesSource } from '../as-source/input-to.ts';
 import type { NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
 import type { AnthropicMessagesMessage, AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
@@ -56,8 +56,7 @@ export const buildTargetRequest = async (
   const pieces: (IRInputTurn | IRInputResolvedTurn<AnthropicMessagesMessage>)[] = [];
   // `instructions` and a leading system input are separate prompt blocks, so
   // each becomes its own output IR system item and the writer hoists both.
-  const instructions = openaiResponsesInstructionsToIR(source.instructions);
-  if (instructions !== undefined) pieces.push(instructions);
+  if (source.prompt !== undefined) pieces.push(source.prompt);
   for (const turn of source.conversation) {
     if (turn.role === 'assistant') {
       const roundTrip = await roundTripAssistantTurn('openaiResponses', 'anthropicMessages', turn.items, codec, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest, collectOpenAIResponsesReplayContents);
