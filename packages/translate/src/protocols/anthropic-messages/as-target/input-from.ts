@@ -104,7 +104,7 @@ const toolResultContent = async (
   const blocks: AnthropicMessagesToolResultContentBlock[] = [];
   for (const part of output) {
     if (part.type === 'text') { blocks.push({ type: 'text', text: part.text }); continue; }
-    if (part.type === 'file') throw new TranslatorInputError('Cannot translate input_file tool output to Anthropic Messages.');
+    if (part.type === 'file') throw new TranslatorInputError('Cannot translate file tool output to Anthropic Messages.');
     if (options.resolveImage !== undefined && part.image.source_kind === 'file') {
       throw new TranslatorInputError('Cannot translate file_id-only image tool output to Anthropic Messages.');
     }

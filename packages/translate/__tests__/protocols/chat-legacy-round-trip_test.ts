@@ -146,6 +146,6 @@ test('restored legacy results retain the ordinary Responses input_file rejection
   const output = { type: 'function_call_output' as const, call_id: call.call_id, output: [{ type: 'input_file' as const, file_id: 'unsupported-file' }] };
   const input = toOpenAIResponsesInputAssistantTurn(result.output);
   for (const history of [input, input.filter(item => item.type !== 'reasoning')]) {
-    await expect(routeOpenAIResponses({ model: 'public-model', input: [...history, output] }).viaOpenAIChatCompletions(context)).rejects.toThrow('Cannot translate input_file tool output to OpenAI Chat Completions.');
+    await expect(routeOpenAIResponses({ model: 'public-model', input: [...history, output] }).viaOpenAIChatCompletions(context)).rejects.toThrow('Cannot translate file tool output to OpenAI Chat Completions.');
   }
 });

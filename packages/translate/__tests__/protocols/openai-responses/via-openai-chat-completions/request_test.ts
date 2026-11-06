@@ -471,7 +471,7 @@ test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTa
       input: [{ type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
     }),
     Error,
-    'input_file tool output',
+    'file tool output',
   );
 });
 

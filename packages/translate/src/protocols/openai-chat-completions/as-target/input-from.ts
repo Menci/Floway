@@ -72,7 +72,7 @@ export const openaiChatCompletionsToolResultContent = (
   output: string | readonly IRInputToolResultContentPart[],
 ): { readonly content: string; readonly lifted: OpenAIChatCompletionsUserContentPart[] } => {
   if (typeof output === 'string') return { content: output, lifted: [] };
-  if (output.some(part => part.type === 'file')) throw new TranslatorInputError('Cannot translate input_file tool output to OpenAI Chat Completions.');
+  if (output.some(part => part.type === 'file')) throw new TranslatorInputError('Cannot translate file tool output to OpenAI Chat Completions.');
   const text = output.flatMap(part => part.type === 'text' ? [part.text] : []).join('');
   const images = output.flatMap(part => part.type === 'image' ? [imageUrlPart(part.image, part.detail)] : []);
   return images.length === 0
