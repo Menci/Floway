@@ -179,10 +179,6 @@ export const openaiChatCompletionsFromIR = (
  * Chat Completions has no top-level instructions slot, so a leading system run
  * stays an ordinary message there.
  */
-export const openaiChatCompletionsTurnFromIR = (turn: IRInputConversation['turns'][number]): OpenAIChatCompletionsMessage[] => turn.role === 'assistant'
-  ? assistantMessage(turn.items)
-  : userMessages(turn.items);
-
 /**
  * Writes the settings onto a Chat Completions payload. `max_tokens` is
  * deprecated and incompatible with the o-series models, so the ceiling is
@@ -249,9 +245,7 @@ export const openaiChatCompletionsRequestFromIR = (request: IRInputRequest): Ope
     ...openaiChatCompletionsSettingsFromIR(request.settings),
     model: request.settings.model,
     messages: openaiChatCompletionsFromIR(request.conversation),
-    // The gateway always translates a stream; the source flag only says how
-    // the client wants its own response framed.
-    stream: true,
+    stream: request.settings.stream,
     ...(tools === undefined || tools.length === 0 ? {} : { tools: tools.map(toolFromIR) }),
     ...(choice === undefined ? {} : { tool_choice: toolChoiceFromIR(choice) }),
   };

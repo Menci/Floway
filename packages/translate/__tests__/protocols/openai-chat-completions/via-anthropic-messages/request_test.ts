@@ -864,9 +864,7 @@ test('stop array → stop_sequences array', async () => {
   assertEquals(result.stop_sequences, ['END', 'STOP']);
 });
 
-test('always emits stream: true regardless of source stream flag', async () => {
-  // Translation assumes streaming upstream (provider forces stream=true);
-  // source `respond.ts` collects SSE when client wants non-stream.
+test('states the source stream flag on the target', async () => {
   const streamed = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
@@ -881,7 +879,7 @@ test('always emits stream: true regardless of source stream flag', async () => {
       stream: false,
     }),
   );
-  assertEquals(nonStreamed.stream, true);
+  assertEquals(nonStreamed.stream, false);
 });
 
 // ── Tool choice mapping ──

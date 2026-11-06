@@ -281,9 +281,7 @@ export const anthropicMessagesRequestFromIR = async (
     max_tokens: request.settings.max_output_tokens ?? options.fallbackMaxOutputTokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
     messages,
     ...(system.length === 0 ? {} : { system }),
-    // The gateway always translates a stream; the source flag only says how
-    // the client wants its own response framed.
-    stream: true,
+    stream: request.settings.stream,
     ...(selectedTools === undefined || selectedTools.length === 0 ? {} : { tools: selectedTools.map(toolFromIR) }),
     ...(choice === undefined ? {} : { tool_choice: toolChoiceFromIR(choice) }),
   };

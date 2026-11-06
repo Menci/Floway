@@ -1,9 +1,10 @@
 import { klona } from 'klona/json';
 
+import { rejectProgramCaller } from './programmatic-tooling.ts';
+import { isOpenAIResponsesEncryptedReasoning } from './round-trip.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
-  IRInputConversation,
   IRInputRequest,
   IRInputSettings,
   IRInputTool,
@@ -18,17 +19,11 @@ import type {
   IRInputUserItem,
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
-import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
-import { partitionOpenAIResponsesTurns } from './conversation-turns.ts';
-import { flattenNamespaceTools, type NamespaceToolNames } from './namespace-tools.ts';
-import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from './programmatic-tooling.ts';
-import { isOpenAIResponsesEncryptedReasoning } from './round-trip.ts';
 import type {
   CanonicalOpenAIResponsesInputItem,
   CanonicalOpenAIResponsesPayload,
   OpenAIResponsesInputContent,
   OpenAIResponsesInputMessageEx,
-  OpenAIResponsesRequestPayloadEx,
   OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
 
@@ -174,11 +169,6 @@ const userItems = (items: readonly CanonicalOpenAIResponsesInputItem[], unknownI
   }
 });
 
-export interface OpenAIResponsesInputIR {
-  readonly conversation: IRInputConversation;
-  readonly namespaceToolNames: NamespaceToolNames;
-}
-
 /** Whether a turn carries an encrypted reasoning carrier the input IR cannot hold. */
 export const openaiResponsesDropsReasoning = (turn: { readonly role: 'assistant' | 'bare'; readonly items: readonly CanonicalOpenAIResponsesInputItem[] }): boolean =>
   turn.items.some(item => item.type === 'reasoning' && isOpenAIResponsesEncryptedReasoning(item));
@@ -201,28 +191,6 @@ export const openaiResponsesTurnToIR = (
   // turn carried a boundary that must survive, so writers still see it as a
   // separator but emit no message for it.
   return [{ role: 'assistant', items: assistantItems(items, unknownItem) }];
-};
-
-export const openaiResponsesInputToIR = (source: OpenAIResponsesRequestPayloadEx): OpenAIResponsesInputIR => {
-  const canonical = canonicalizeOpenAIResponsesPayload(source);
-  const { payload, names, flattenInput } = flattenNamespaceTools(canonical);
-  rejectProgrammaticOpenAIResponsesPayload(payload, 'translation');
-
-  const turns: IRInputTurn[] = [];
-  const reject = (item: CanonicalOpenAIResponsesInputItem): never => {
-    throw new TranslatorInputError(`Invalid input item: ${JSON.stringify(item)}`);
-  };
-  if (payload.instructions) {
-    turns.push({ role: 'user', items: [{ type: 'message', role: 'system', content: [{ type: 'text', text: payload.instructions }] }] });
-  }
-  for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
-    const items = flattenInput(turn.items);
-    if (items.length === 0) continue;
-    turns.push(turn.role === 'assistant'
-      ? { role: 'assistant', items: assistantItems(items, reject) }
-      : { role: 'user', items: userItems(items, reject) });
-  }
-  return { conversation: { turns }, namespaceToolNames: names };
 };
 
 /**
@@ -284,16 +252,6 @@ export const openaiResponsesToolsToIR = (payload: CanonicalOpenAIResponsesPayloa
   return {
     ...(tools === undefined || tools.length === 0 ? {} : { tools }),
     ...(toolChoice === undefined ? {} : { tool_choice: toolChoice }),
-  };
-};
-
-export const openaiResponsesRequestToIR = (source: OpenAIResponsesRequestPayloadEx): IRInputRequest => {
-  const { conversation } = openaiResponsesInputToIR(source);
-  const payload = canonicalizeOpenAIResponsesPayload(source);
-  return {
-    conversation,
-    settings: openaiResponsesSettingsToIR(payload),
-    ...openaiResponsesToolsToIR(payload),
   };
 };
 

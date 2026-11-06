@@ -303,12 +303,6 @@ export const anthropicMessagesToolsToIR = (payload: AnthropicMessagesPayload): P
   };
 };
 
-export const anthropicMessagesRequestToIR = (payload: AnthropicMessagesPayload): IRInputRequest => ({
-  conversation: anthropicMessagesInputToIR(payload),
-  settings: anthropicMessagesSettingsToIR(payload),
-  ...anthropicMessagesToolsToIR(payload),
-});
-
 export const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload): IRInputSettings => {
   const format = payload.output_config?.format;
   // Messages' structured-output schema is already strict by contract, so the

@@ -256,9 +256,7 @@ export const openaiResponsesRequestFromIR = (
     ...openaiResponsesSettingsFromIR(settings),
     model: settings.model,
     input,
-    // The gateway always translates a stream; the source flag only says how
-    // the client wants its own response framed.
-    stream: true,
+    stream: settings.stream,
     ...(instructions === undefined ? {} : { instructions }),
     ...(tools === undefined || tools.length === 0 ? {} : { tools: tools.map(toolFromIR) }),
     ...(choice === undefined ? {} : { tool_choice: toolChoiceFromIR(choice) }),

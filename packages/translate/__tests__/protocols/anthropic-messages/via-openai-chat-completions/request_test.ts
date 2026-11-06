@@ -594,6 +594,7 @@ test('buildTargetRequest asks upstream for continuous streaming usage stats', as
     model: 'gpt-test',
     max_tokens: 256,
     messages: [{ role: 'user', content: 'hi' }],
+    stream: true,
   });
 
   assertEquals(result.stream, true);
