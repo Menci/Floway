@@ -1,9 +1,13 @@
 import { klona } from 'klona/json';
 
+import { filterAnthropicMessagesClientTools } from './client-tools.ts';
 import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn } from './conversation-turns.ts';
 import type {
   IRInputAssistantContentPart,
+  IRInputRequest,
   IRInputSettings,
+  IRInputTool,
+  IRInputToolChoice,
   IRInputOutputFormat,
   IRInputAssistantItem,
   IRInputConversation,
@@ -16,7 +20,7 @@ import type {
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type {
-
+  AnthropicMessagesClientTool,
   AnthropicMessagesImageBlock,
   AnthropicMessagesMessage,
   AnthropicMessagesPayload,
@@ -256,13 +260,63 @@ export const anthropicMessagesInputToIR = (payload: AnthropicMessagesPayload): I
  * Messages states one ceiling, `max_tokens`, and its structured-output schema
  * lives in `output_config.format`. `top_k` is a Messages-only sampling knob.
  */
+// A Messages client declaration carries a JSON Schema under `input_schema` and
+// states both callable kinds with the same shape, so the arm is the neutral one
+// every target can express.
+const toolToIR = (tool: AnthropicMessagesClientTool): IRInputTool => {
+  const format = tool.input_schema as { type?: unknown } & Record<string, unknown>;
+  return {
+    type: 'function',
+    name: tool.name,
+    ...(tool.description === undefined ? {} : { description: tool.description }),
+    ...(format === undefined ? {} : { parameters: klona(tool.input_schema) as unknown as Readonly<Record<string, unknown>> }),
+    ...(tool.strict === undefined ? {} : { strict: tool.strict }),
+  };
+};
+
+const toolChoiceToIR = (choice: NonNullable<AnthropicMessagesPayload['tool_choice']>, declarations: readonly IRInputTool[]): IRInputToolChoice => {
+  switch (choice.type) {
+  case 'auto': return 'auto';
+  case 'any': return 'required';
+  case 'none': return 'none';
+  default: {
+    // A selector names a declaration the same request supplies; a request that
+    // points at nothing cannot be translated into any target's vocabulary.
+    const name = (choice as { name: string }).name;
+    if (!declarations.some(tool => tool.name === name)) {
+      throw new TranslatorInputError(`Anthropic Messages tool_choice names an undeclared tool: ${String(name)}`);
+    }
+    return { type: 'function', name };
+  }
+  }
+};
+
+export const anthropicMessagesToolsToIR = (payload: AnthropicMessagesPayload): Pick<IRInputRequest, 'tools' | 'tool_choice'> => {
+  const clientTools = filterAnthropicMessagesClientTools(payload.tools);
+  const declarations = clientTools === undefined ? [] : clientTools.map(toolToIR);
+  // A selector is validated against the declarations either way: dropping one
+  // that names nothing would widen what the model may call.
+  const toolChoice = payload.tool_choice == null ? undefined : toolChoiceToIR(payload.tool_choice, declarations);
+  return {
+    ...(declarations.length === 0 ? {} : { tools: declarations }),
+    ...(toolChoice === undefined ? {} : { tool_choice: toolChoice }),
+  };
+};
+
+export const anthropicMessagesRequestToIR = (payload: AnthropicMessagesPayload): IRInputRequest => ({
+  conversation: anthropicMessagesInputToIR(payload),
+  settings: anthropicMessagesSettingsToIR(payload),
+  ...anthropicMessagesToolsToIR(payload),
+});
+
 export const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload): IRInputSettings => {
   const format = payload.output_config?.format;
   // Messages' structured-output schema is already strict by contract, so the
-  // fact is stated here rather than left for a target to invent.
+  // fact is stated here rather than left for a target to invent. It states no
+  // name, while the OpenAI wires require one; this is the established spelling.
   // https://platform.claude.com/docs/en/build-with-claude/structured-outputs
   const outputFormat: IRInputOutputFormat | undefined = format?.type === 'json_schema'
-    ? { type: 'json_schema', schema: klona(format.schema), strict: true }
+    ? { type: 'json_schema', name: 'messages_response', schema: klona(format.schema), strict: true }
     : undefined;
 
   return {
@@ -274,5 +328,6 @@ export const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload)
     ...(payload.stop_sequences == null ? {} : { stop: [...payload.stop_sequences] }),
     ...(payload.max_tokens == null ? {} : { max_output_tokens: payload.max_tokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
+    ...(payload.service_tier == null ? {} : { service_tier: payload.service_tier }),
   };
 };

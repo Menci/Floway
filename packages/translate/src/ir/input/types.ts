@@ -52,6 +52,39 @@ export interface IRInputSettings {
   // carries two.
   readonly max_output_tokens?: number; // All
   readonly output_format?: IRInputOutputFormat; // ChatCompletions, Responses, Messages, GenerateContent
+  // Key/value tags a caller attaches for its own bookkeeping. Both OpenAI
+  // protocols carry the same shape, so it survives their translation verbatim.
+  readonly metadata?: Readonly<Record<string, string>>; // ChatCompletions, Responses
+  // Whether the upstream keeps the response for later retrieval.
+  readonly store?: boolean; // ChatCompletions, Responses
+  // The service tier the caller asks for, forwarded as the open string every
+  // protocol defines; a target whose tier vocabulary differs maps it there.
+  readonly service_tier?: string; // ChatCompletions, Responses, Messages
+  // Whether the model may issue several calls in one turn.
+  readonly parallel_tool_calls?: boolean; // ChatCompletions, Responses
+  // The reasoning effort an OpenAI protocol states as an open string. Messages
+  // combines its own effort and thinking controls into the same axis, so the
+  // writer there derives both.
+  readonly reasoning_effort?: string; // ChatCompletions, Responses
+  // Whether the caller asks for readable reasoning, and how much of it. An open
+  // string because Responses defines an enumerated scale while GenerateContent
+  // states a boolean.
+  readonly reasoning_summary?: string; // Responses, GenerateContent
+  // How much prose the model should produce. Both OpenAI protocols state the
+  // same open scale, Chat at the top level and Responses under `text`.
+  readonly verbosity?: string; // ChatCompletions, Responses
+  // A key the caller groups cacheable prefixes by. Both wires accept an
+  // explicit `null`, which is distinct from omitting the field: `null` states
+  // that no key applies, while an absent field defers to the target.
+  readonly prompt_cache_key?: string | null; // ChatCompletions, Responses
+  // An opaque caller identity the upstream uses for abuse review. Nullable for
+  // the same reason as `prompt_cache_key`.
+  readonly safety_identifier?: string | null; // ChatCompletions, Responses
+  // How many independent completions the caller asks for.
+  readonly candidate_count?: number; // ChatCompletions, GenerateContent
+  // Repetition penalties. Chat and GenerateContent state the same pair.
+  readonly presence_penalty?: number; // ChatCompletions, GenerateContent
+  readonly frequency_penalty?: number; // ChatCompletions, GenerateContent
 }
 
 // Structured output. `strict` is three-state: absent means the source did not

@@ -209,13 +209,15 @@ test('buildTargetRequest preserves explicit tool strict and defaults omission to
     {
       type: 'function',
       name: 'explicit_strict',
-      parameters: { type: 'object' },
+      // An object schema states its property list explicitly: OpenAI's
+      // strict-mode validators reject one that omits it.
+      parameters: { type: 'object', properties: {} },
       strict: true,
     },
     {
       type: 'function',
       name: 'implicit_non_strict',
-      parameters: { type: 'object' },
+      parameters: { type: 'object', properties: {} },
       strict: false,
     },
   ]);

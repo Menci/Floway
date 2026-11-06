@@ -1,16 +1,22 @@
+import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
 import type {
   IRInputAssistantItem,
+  IRInputRequest,
   IRInputSettings,
+  IRInputTool,
+  IRInputToolChoice,
   IRInputConversation,
   IRInputMedia,
   IRInputToolResultContentPart,
   IRInputUserItem,
 } from '../../../ir/input/types.ts';
+import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type {
   OpenAIChatCompletionsPayload,
   OpenAIChatCompletionsMessage,
   OpenAIChatCompletionsToolCall,
+  OpenAIChatCompletionsTool,
   OpenAIChatCompletionsUserContentPart,
 } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -184,6 +190,73 @@ export const openaiChatCompletionsTurnFromIR = (turn: IRInputConversation['turns
  *
  * https://github.com/openai/openai-openapi/blob/master/openapi.yaml (max_tokens)
  */
+// OpenAI's strict-mode validators reject an object schema without `properties`,
+// which is a target-side constraint rather than something the IR states.
+const normalizeParameters = (schema: Readonly<Record<string, unknown>> | undefined): Record<string, unknown> | undefined => {
+  if (schema === undefined) return undefined;
+  const target = { ...schema };
+  return target.type === 'object' && target.properties === undefined ? { ...target, properties: {} } : target;
+};
+
+const toolFromIR = (tool: IRInputTool): OpenAIChatCompletionsTool => {
+  if (tool.type === 'custom') {
+    // Chat accepts a freeform declaration natively, but not every upstream that
+    // speaks the Chat wire accepts one, so a freeform tool is projected onto the
+    // function shape that states its single raw string. The caller records the
+    // name so returned function calls can be restored to freeform calls.
+    return {
+      type: 'function',
+      function: {
+        name: tool.name,
+        ...(tool.description === undefined ? {} : { description: tool.description }),
+        parameters: buildCustomToolInputSchema(tool.format),
+        strict: false,
+      },
+    };
+  }
+  return {
+    type: 'function',
+    function: {
+      name: tool.name,
+      ...(tool.description === undefined ? {} : { description: tool.description }),
+      ...(tool.parameters === undefined ? {} : { parameters: normalizeParameters(tool.parameters) }),
+      // Chat defaults a function tool to non-strict, so an omitted value states
+      // that default rather than letting the field go missing.
+      ...(tool.strict === undefined ? {} : { strict: tool.strict }),
+    },
+  };
+};
+
+const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<OpenAIChatCompletionsPayload['tool_choice']> => {
+  if (typeof choice === 'string') return choice;
+  // A narrowed declaration list is understood by every upstream on this wire,
+  // while the `allowed_tools` selector is not, so the selection is applied to
+  // the declarations and only the mode is stated here.
+  if (choice.type === 'allowed_tools') return choice.mode === 'required' ? 'required' : 'auto';
+  // A freeform declaration is written as a function tool, so a selector naming
+  // it must name the same function.
+  return { type: 'function', function: { name: choice.name } };
+};
+
+/**
+ * The whole Chat Completions payload comes from the IR, so a route has nothing
+ * to patch onto the result.
+ */
+export const openaiChatCompletionsRequestFromIR = (request: IRInputRequest): OpenAIChatCompletionsPayload => {
+  const tools = irInputToolsForChoice(request.tools, request.tool_choice);
+  const choice = irInputToolChoiceForTools(request.tool_choice, tools);
+  return {
+    ...openaiChatCompletionsSettingsFromIR(request.settings),
+    model: request.settings.model,
+    messages: openaiChatCompletionsFromIR(request.conversation),
+    // The gateway always translates a stream; the source flag only says how
+    // the client wants its own response framed.
+    stream: true,
+    ...(tools === undefined || tools.length === 0 ? {} : { tools: tools.map(toolFromIR) }),
+    ...(choice === undefined ? {} : { tool_choice: toolChoiceFromIR(choice) }),
+  };
+};
+
 export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): Partial<OpenAIChatCompletionsPayload> => {
   const ceiling = settings.max_output_tokens;
   const format = settings.output_format;
@@ -194,6 +267,17 @@ export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): 
     ...(settings.top_p === undefined ? {} : { top_p: settings.top_p }),
     ...(settings.stop === undefined ? {} : { stop: [...settings.stop] }),
     ...(settings.seed === undefined ? {} : { seed: settings.seed }),
+    ...(settings.metadata === undefined ? {} : { metadata: { ...settings.metadata } }),
+    ...(settings.store === undefined ? {} : { store: settings.store }),
+    ...(settings.service_tier === undefined ? {} : { service_tier: settings.service_tier }),
+    ...(settings.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: settings.parallel_tool_calls }),
+    ...(settings.reasoning_effort === undefined ? {} : { reasoning_effort: settings.reasoning_effort }),
+    ...(settings.prompt_cache_key === undefined ? {} : { prompt_cache_key: settings.prompt_cache_key }),
+    ...(settings.safety_identifier === undefined ? {} : { safety_identifier: settings.safety_identifier }),
+    ...(settings.verbosity === undefined ? {} : { verbosity: settings.verbosity }),
+    ...(settings.candidate_count === undefined ? {} : { n: settings.candidate_count }),
+    ...(settings.presence_penalty === undefined ? {} : { presence_penalty: settings.presence_penalty }),
+    ...(settings.frequency_penalty === undefined ? {} : { frequency_penalty: settings.frequency_penalty }),
     ...(format === undefined
       ? {}
       : format.type === 'json_schema'

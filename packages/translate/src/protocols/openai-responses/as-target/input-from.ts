@@ -1,6 +1,10 @@
+import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
 import type {
   IRInputAssistantItem,
+  IRInputRequest,
   IRInputSettings,
+  IRInputTool,
+  IRInputToolChoice,
   IRInputOutputFormat,
   IRInputConversation,
   IRInputMedia,
@@ -13,6 +17,7 @@ import type {
   CanonicalOpenAIResponsesPayload,
   OpenAIResponsesInputContent,
   OpenAIResponsesToolOutputContent,
+  OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
 
 const inputContent = (media: IRInputMedia, detail?: string | null): OpenAIResponsesInputContent => {
@@ -104,14 +109,17 @@ const assistantItems = (items: readonly IRInputAssistantItem[]): CanonicalOpenAI
 const userItems = (items: readonly IRInputUserItem[]): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
   switch (item.type) {
   case 'message': {
-    if (item.role === 'user') return { type: 'message', role: 'user', content: userContent(item) };
-    // Responses accepts a bare string for a text-only message. A single text
-    // part collapses to it so the common case stays on the compact spelling;
-    // several parts keep the array so their boundaries survive.
-    const content = item.content.length === 1
-      ? item.content[0].text
-      : item.content.map(part => ({ type: 'input_text' as const, text: part.text }));
-    return { type: 'message', role: item.role, content };
+    if (item.role !== 'user') {
+      // A prompt boundary states its text plainly: one part is that string, and
+      // several keep their array so the boundaries between them survive.
+      const content = item.content.length === 1
+        ? item.content[0].text
+        : item.content.map(part => ({ type: 'input_text' as const, text: part.text }));
+      return { type: 'message', role: item.role, content };
+    }
+    // A user message keeps its part array; an empty one is spelled as a bare
+    // string.
+    return { type: 'message', role: 'user', content: item.content.length === 0 ? '' : userContent(item) };
   }
   case 'tool_result': {
     const output = toolResultOutput(item.output);
@@ -165,6 +173,99 @@ const requireSchema = (format: IRInputOutputFormat): Readonly<Record<string, unk
  * is flat. `strict` stays absent when the source did not say, because an
  * omitted Responses tool/format strictness is not the same as `false`.
  */
+// OpenAI's strict-mode validators reject an object schema that states no
+// `properties`, which is a target-side constraint rather than something the IR
+// states.
+const normalizeParameters = (schema: Readonly<Record<string, unknown>> | undefined): Record<string, unknown> => {
+  const target: Record<string, unknown> = schema === undefined ? { type: 'object' } : { ...schema };
+  return target.type === 'object' && target.properties === undefined ? { ...target, properties: {} } : target;
+};
+
+const toolFromIR = (tool: IRInputTool): OpenAIResponsesTool => {
+  if (tool.type === 'custom') {
+    return {
+      type: 'custom',
+      name: tool.name,
+      ...(tool.description === undefined ? {} : { description: tool.description }),
+      ...(tool.format === undefined ? {} : {
+        format: tool.format.type === 'grammar'
+          ? { type: 'grammar', definition: tool.format.definition, syntax: tool.format.syntax }
+          : { type: 'text' },
+      }),
+    };
+  }
+  return {
+    type: 'function',
+    name: tool.name,
+    ...(tool.description === undefined ? {} : { description: tool.description }),
+    parameters: normalizeParameters(tool.parameters),
+    // A Responses function tool requires `strict`; an omitted value states the
+    // schema is not enforced rather than letting the field go missing.
+    strict: tool.strict ?? false,
+  };
+};
+
+const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<CanonicalOpenAIResponsesPayload['tool_choice']> => {
+  if (typeof choice === 'string') return choice;
+  // Responses states a narrowed declaration set natively, which is how the IR's
+  // `allowed_tools` is expressed on this wire.
+  if (choice.type === 'allowed_tools') {
+    return {
+      type: 'allowed_tools',
+      mode: choice.mode,
+      tools: choice.tools.map(selection => selection.type === 'custom'
+        ? { type: 'custom' as const, name: selection.name }
+        : { type: 'function' as const, name: selection.name }),
+    };
+  }
+  return { type: choice.type, name: choice.name };
+};
+
+/**
+ * The whole Responses payload comes from the IR. `hoistSystem` says whether this
+ * conversation segment may lift its leading system run into `instructions`;
+ * only the first segment of a conversation may.
+ */
+export const openaiResponsesRequestFromIR = (
+  request: IRInputRequest,
+  hoistSystem: boolean,
+): CanonicalOpenAIResponsesPayload => {
+  const { conversation, settings } = request;
+  const instructions: string[] = [];
+  let hoisting = hoistSystem;
+
+  const input = conversation.turns.flatMap(item => {
+    if (item.role === 'assistant') {
+      hoisting = false;
+      return assistantItems(item.items);
+    }
+    return item.items.flatMap((entry): CanonicalOpenAIResponsesInputItem[] => {
+      if (hoisting && entry.type === 'message' && entry.role === 'system') {
+        const text = entry.content.map(part => part.text).join('');
+        if (text !== '') instructions.push(text);
+        return [];
+      }
+      hoisting = false;
+      return userItems([entry]);
+    });
+  });
+
+  const tools = irInputToolsForChoice(request.tools, request.tool_choice);
+  const choice = irInputToolChoiceForTools(request.tool_choice, tools);
+
+  return {
+    ...openaiResponsesSettingsFromIR(settings),
+    model: settings.model,
+    input,
+    // The gateway always translates a stream; the source flag only says how
+    // the client wants its own response framed.
+    stream: true,
+    ...(instructions.length === 0 ? {} : { instructions: instructions.join('\n\n') }),
+    ...(tools === undefined || tools.length === 0 ? {} : { tools: tools.map(toolFromIR) }),
+    ...(choice === undefined ? {} : { tool_choice: toolChoiceFromIR(choice) }),
+  };
+};
+
 export const openaiResponsesSettingsFromIR = (settings: IRInputSettings): Partial<CanonicalOpenAIResponsesPayload> => {
   const ceiling = settings.max_output_tokens;
   const format = settings.output_format;
@@ -173,22 +274,37 @@ export const openaiResponsesSettingsFromIR = (settings: IRInputSettings): Partia
     ...(ceiling === undefined ? {} : { max_output_tokens: ceiling }),
     ...(settings.temperature === undefined ? {} : { temperature: settings.temperature }),
     ...(settings.top_p === undefined ? {} : { top_p: settings.top_p }),
-    ...(format === undefined
+    ...(settings.metadata === undefined ? {} : { metadata: { ...settings.metadata } }),
+    ...(settings.store === undefined ? {} : { store: settings.store }),
+    ...(settings.service_tier === undefined ? {} : { service_tier: settings.service_tier }),
+    ...(settings.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: settings.parallel_tool_calls }),
+    ...(settings.reasoning_effort === undefined && settings.reasoning_summary === undefined ? {} : {
+      reasoning: {
+        ...(settings.reasoning_effort === undefined ? {} : { effort: settings.reasoning_effort }),
+        ...(settings.reasoning_summary === undefined ? {} : { summary: settings.reasoning_summary }),
+      },
+    }),
+    ...(settings.prompt_cache_key === undefined ? {} : { prompt_cache_key: settings.prompt_cache_key }),
+    ...(settings.safety_identifier === undefined ? {} : { safety_identifier: settings.safety_identifier }),
+    ...(format === undefined && settings.verbosity === undefined
       ? {}
       : {
           text: {
-            format: format.type === 'json_schema'
-              ? {
-                  type: 'json_schema' as const,
-                  // Responses requires both a name and a schema; the IR makes them
-                  // optional because Chat and Messages spell them differently. A
-                  // source without a schema cannot be expressed here at all.
-                  name: format.name ?? 'response',
-                  schema: requireSchema(format),
-                  ...(format.description === undefined ? {} : { description: format.description }),
-                  ...(format.strict === undefined ? {} : { strict: format.strict }),
-                }
-              : { type: format.type },
+            ...(settings.verbosity === undefined ? {} : { verbosity: settings.verbosity }),
+            ...(format === undefined ? {} : {
+              format: format.type === 'json_schema'
+                ? {
+                    type: 'json_schema' as const,
+                    // Responses requires both a name and a schema; the IR makes them
+                    // optional because Chat and Messages spell them differently. A
+                    // source without a schema cannot be expressed here at all.
+                    name: format.name ?? 'response',
+                    schema: requireSchema(format),
+                    ...(format.description === undefined ? {} : { description: format.description }),
+                    ...(format.strict === undefined ? {} : { strict: format.strict }),
+                  }
+                : { type: format.type },
+            }),
           },
         }),
   };

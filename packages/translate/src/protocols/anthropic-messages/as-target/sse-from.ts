@@ -4,8 +4,8 @@ import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRRecord } 
 import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
 import { appendField, createFieldState, type FieldState, type FieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
+import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';
-import { unwrapCustomToolInput } from '../../openai-responses/common/custom-tool-wrap.ts';
 import {
   type AnthropicMessagesAssistantContentBlock,
   type AnthropicMessagesStreamEventEx,

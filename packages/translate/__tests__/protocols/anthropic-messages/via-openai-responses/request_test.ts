@@ -82,7 +82,9 @@ test('buildTargetRequest drops filtered-native tool_choice and rewrites assistan
     ],
   });
 
-  assertEquals(result.tools, []);
+  // A hosted Messages tool has no declaration on this wire, so the request
+  // offers none and states no selector.
+  assertEquals(result.tools, undefined);
   assertEquals(result.tool_choice, undefined);
   assertEquals(result.input, [
     {

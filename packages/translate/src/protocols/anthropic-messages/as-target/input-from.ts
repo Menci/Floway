@@ -1,16 +1,21 @@
+import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
-  IRInputConversation,
+  IRInputRequest,
   IRInputSettings,
+  IRInputTool,
+  IRInputToolChoice,
   IRInputMedia,
   IRInputTextPart,
   IRInputToolResultContentPart,
   IRInputUserItem,
 } from '../../../ir/input/types.ts';
+import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type {
   AnthropicMessagesAssistantInputContentBlock,
+  AnthropicMessagesClientTool,
   AnthropicMessagesImageBlock,
   AnthropicMessagesImageSource,
   AnthropicMessagesMessage,
@@ -19,7 +24,8 @@ import type {
   AnthropicMessagesToolResultContentBlock,
   AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
-import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
+import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/anthropic-messages';
+import { isFastServiceTier, parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
 const imageSource = (media: IRInputMedia): AnthropicMessagesImageSource => {
   switch (media.source_kind) {
@@ -67,7 +73,7 @@ const systemContent = (content: readonly IRInputTextPart[]): AnthropicMessagesTe
 
 const userContent = async (
   item: Extract<IRInputUserItem, { type: 'message' }>,
-  options: AnthropicMessagesFromIROptions,
+  options: AnthropicMessagesRequestFromIROptions,
 ): Promise<AnthropicMessagesUserContentBlock[]> => {
   const blocks: AnthropicMessagesUserContentBlock[] = [];
   for (const part of item.content) {
@@ -92,7 +98,7 @@ const userContent = async (
 
 const toolResultContent = async (
   output: string | readonly IRInputToolResultContentPart[],
-  options: AnthropicMessagesFromIROptions,
+  options: AnthropicMessagesRequestFromIROptions,
 ): Promise<string | AnthropicMessagesToolResultContentBlock[]> => {
   if (typeof output === 'string') return output;
   const blocks: AnthropicMessagesToolResultContentBlock[] = [];
@@ -163,29 +169,58 @@ const parseArguments = (argumentsJson: string): Record<string, unknown> | null =
   }
 };
 
-export interface AnthropicMessagesRequestFromIR {
-  readonly system: AnthropicMessagesTextBlockParam[] | undefined;
-  readonly messages: AnthropicMessagesMessage[];
+// A neutral declaration becomes a Messages client tool: its JSON Schema moves
+// under `input_schema`, and a freeform tool keeps the same shape because
+// Messages has one declaration form for both callable kinds.
+const toolFromIR = (tool: IRInputTool): AnthropicMessagesClientTool => {
+  const schema = tool.type === 'function'
+    ? tool.parameters ?? { type: 'object', properties: {} }
+    : buildCustomToolInputSchema(tool.format);
+  // Messages states a declaration's schema as an object; anything else cannot be
+  // expressed as a tool here.
+  if (schema.type !== 'object') throw new TranslatorInputError('Anthropic Messages function tools require an object input schema.');
+  return {
+    name: tool.name,
+    ...(tool.description === undefined ? {} : { description: tool.description }),
+    input_schema: schema as AnthropicMessagesClientTool['input_schema'],
+    ...(tool.type === 'function' && tool.strict !== undefined ? { strict: tool.strict } : {}),
+  };
+};
+
+const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<AnthropicMessagesPayload['tool_choice']> => {
+  if (choice === 'auto') return { type: 'auto' };
+  if (choice === 'none') return { type: 'none' };
+  if (choice === 'required') return { type: 'any' };
+  // Messages has no declaration-level restriction: `allowed_tools` becomes the
+  // matching mode, and the narrowed declaration list is applied by the caller.
+  if (choice.type === 'allowed_tools') return choice.mode === 'required' ? { type: 'any' } : { type: 'auto' };
+  return { type: 'tool', name: choice.name };
+};
+
+export interface AnthropicMessagesRequestFromIROptions {
+  // Injected by the caller, not derived from the request: Messages sometimes has
+  // to fetch a remote image before it can state one.
+  readonly resolveImage?: AnthropicMessagesImageResolver;
+  // The upstream's own output limit, when the operator knows it. Messages
+  // requires a ceiling and the source may not have stated one.
+  readonly fallbackMaxOutputTokens?: number;
 }
 
 /**
- * Messages keeps the system prompt in its own top-level field. `hoistSystem`
- * lifts the leading system run there, one block per source text part so the
- * boundaries survive; later system messages stay inline at their position.
+ * Messages keeps the system prompt in its own top-level field. A leading system
+ * run is lifted there, one block per source text part so the boundaries
+ * survive; later system messages stay inline at their position.
+ *
+ * The whole request comes from the IR, so this writer states every field the
+ * payload carries and a route has nothing to patch onto its result.
  */
-export interface AnthropicMessagesFromIROptions {
-  // Injected by the caller's runtime, not by the route: Messages sometimes has
-  // to fetch a remote image before it can state one.
-  readonly resolveImage?: AnthropicMessagesImageResolver;
-}
-
-export const anthropicMessagesFromIR = async (
-  conversation: IRInputConversation,
-  hoistSystem: boolean,
-  options: AnthropicMessagesFromIROptions = {},
-): Promise<AnthropicMessagesRequestFromIR> => {
+export const anthropicMessagesRequestFromIR = async (
+  request: IRInputRequest,
+  options: AnthropicMessagesRequestFromIROptions = {},
+): Promise<AnthropicMessagesPayload> => {
+  const { conversation } = request;
   const system: AnthropicMessagesTextBlockParam[] = [];
-  let hoisting = hoistSystem;
+  let hoisting = true;
   const messages: AnthropicMessagesMessage[] = [];
   // Messages spells a single text block as a bare string, which is the shape a
   // client sees for a plain user turn.
@@ -234,7 +269,24 @@ export const anthropicMessagesFromIR = async (
     }
     append(turnBlocks);
   }
-  return { system: system.length === 0 ? undefined : system, messages };
+  // Messages has no declaration-level selector: a narrowed declaration list is
+  // how this wire states which callables the model may pick from, and the
+  // choice itself carries only the mode.
+  const selectedTools = irInputToolsForChoice(request.tools, request.tool_choice);
+  const choice = irInputToolChoiceForTools(request.tool_choice, selectedTools);
+
+  return {
+    ...anthropicMessagesSettingsFromIR(request.settings),
+    model: request.settings.model,
+    max_tokens: request.settings.max_output_tokens ?? options.fallbackMaxOutputTokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
+    messages,
+    ...(system.length === 0 ? {} : { system }),
+    // The gateway always translates a stream; the source flag only says how
+    // the client wants its own response framed.
+    stream: true,
+    ...(selectedTools === undefined || selectedTools.length === 0 ? {} : { tools: selectedTools.map(toolFromIR) }),
+    ...(choice === undefined ? {} : { tool_choice: toolChoiceFromIR(choice) }),
+  };
 };
 
 export type { IRInputAssistantContentPart };
@@ -247,6 +299,20 @@ export type { IRInputAssistantContentPart };
 export const anthropicMessagesSettingsFromIR = (settings: IRInputSettings): Omit<Partial<AnthropicMessagesPayload>, 'model'> => {
   const ceiling = settings.max_output_tokens;
   const format = settings.output_format;
+  const formatConfig = format?.type === 'json_schema' && format.schema !== undefined
+    ? { format: { type: 'json_schema' as const, schema: format.schema } }
+    : undefined;
+
+  // Anthropic splits the single effort axis across two slots: `thinking.type:
+  // 'disabled'` is the off switch, and every other level is `output_config.effort`.
+  // Its scale has no `none`, so that one value changes slot rather than passing
+  // through. Whether the target honours the off switch is the target's business.
+  // https://platform.claude.com/docs/en/build-with-claude/effort
+  const thinking = settings.reasoning_effort === 'none' ? { type: 'disabled' as const } : undefined;
+  const effort = settings.reasoning_effort === undefined || settings.reasoning_effort === 'none' ? undefined : settings.reasoning_effort;
+  const outputConfig = effort === undefined && formatConfig === undefined
+    ? undefined
+    : { ...(effort === undefined ? {} : { effort }), ...(formatConfig ?? {}) };
 
   return {
     ...(ceiling === undefined ? {} : { max_tokens: ceiling }),
@@ -254,8 +320,11 @@ export const anthropicMessagesSettingsFromIR = (settings: IRInputSettings): Omit
     ...(settings.top_p === undefined ? {} : { top_p: settings.top_p }),
     ...(settings.top_k === undefined ? {} : { top_k: settings.top_k }),
     ...(settings.stop === undefined ? {} : { stop_sequences: [...settings.stop] }),
-    ...(format?.type === 'json_schema' && format.schema !== undefined
-      ? { output_config: { format: { type: 'json_schema' as const, schema: format.schema } } }
-      : {}),
+    ...(thinking === undefined ? {} : { thinking }),
+    ...(outputConfig === undefined ? {} : { output_config: outputConfig }),
+    // Anthropic spells the accelerated lane as `speed: 'fast'`; every other tier
+    // stays an open string on `service_tier`.
+    // https://docs.claude.com/en/build-with-claude/fast-mode
+    ...(settings.service_tier === undefined ? {} : isFastServiceTier(settings.service_tier) ? { speed: 'fast' as const } : { service_tier: settings.service_tier }),
   };
 };

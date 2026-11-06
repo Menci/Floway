@@ -2,11 +2,15 @@ import { klona } from 'klona/json';
 
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from './content.ts';
 import { partitionGeminiGenerateContentTurns, type GeminiGenerateContentConversationTurn as GeminiGenerateContentTurn } from './conversation-turns.ts';
-import { geminiResponseSchema } from './schema.ts';
+import { geminiGenerateContentReasoningEffort } from './reasoning.ts';
+import { geminiFunctionParameters, geminiResponseSchema } from './schema.ts';
 import { geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from './tools.ts';
 import type {
   IRInputAssistantContentPart,
+  IRInputRequest,
   IRInputSettings,
+  IRInputTool,
+  IRInputToolChoice,
   IRInputOutputFormat,
   IRInputAssistantItem,
   IRInputConversation,
@@ -17,7 +21,6 @@ import type {
   IRInputUserContentPart,
   IRInputUserItem,
 } from '../../../ir/input/types.ts';
-import { warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 
@@ -205,7 +208,6 @@ export const geminiGenerateContentInputToIR = (payload: GeminiGenerateContentPay
       if (turn.role === 'assistant') {
         // A thought signature is a vendor-signed value with no cross-vendor
         // meaning, so it never reaches the input IR.
-        void warnDroppedUnrecognizedAssistantReasoning;
         const items = assistantItems(content, contentIndex + index, ids);
         turns.push({ role: 'assistant', items });
         continue;
@@ -220,12 +222,63 @@ export const geminiGenerateContentInputToIR = (payload: GeminiGenerateContentPay
   return { turns };
 };
 
+// GenerateContent declares functions in groups and narrows them through
+// `toolConfig.functionCallingConfig`. A target has no declaration-level
+// selector arm it can reach here, so the narrowed set is what the model sees:
+// the declarations the request permits, plus the mode that says how freely the
+// model may choose among them.
+// https://github.com/googleapis/googleapis/blob/master/google/ai/generativelanguage/v1beta/content.proto
+// (FunctionCallingConfig: `allowed_function_names` only applies to ANY and
+// VALIDATED, and limits which functions the model calls.)
+const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequest, 'tools' | 'tool_choice'> => {
+  const declarations = payload.tools?.flatMap(group => group.functionDeclarations ?? []) ?? [];
+  const config = payload.toolConfig?.functionCallingConfig;
+  const allowedNames = config?.allowedFunctionNames;
+  const restrictable = config?.mode === 'ANY' || config?.mode === 'VALIDATED';
+  const permitted = restrictable && allowedNames !== undefined && allowedNames.length > 0 ? new Set(allowedNames) : undefined;
+
+  const tools: IRInputTool[] = declarations
+    .filter(declaration => permitted === undefined || permitted.has(declaration.name))
+    .map(declaration => {
+      const parameters = geminiFunctionParameters(declaration) as Readonly<Record<string, unknown>> | undefined;
+      return {
+        type: 'function' as const,
+        name: declaration.name,
+        ...(declaration.description === undefined ? {} : { description: declaration.description }),
+        // GenerateContent states a declaration's schema either as its own dialect or
+        // as JSON Schema; both become the same neutral object here.
+        ...(parameters === undefined ? {} : { parameters }),
+      };
+    });
+
+  let toolChoice: IRInputToolChoice | undefined;
+  if (config?.mode === 'NONE') toolChoice = 'none';
+  else if (config?.mode === 'AUTO' || config?.mode === 'VALIDATED') toolChoice = 'auto';
+  else if (config?.mode === 'ANY') {
+    // A single permitted function is the one the model must call; several leave
+    // the choice to the model among them.
+    toolChoice = permitted?.size === 1 ? { type: 'function', name: [...permitted][0] } : 'required';
+  }
+
+  return {
+    ...(tools.length === 0 ? {} : { tools }),
+    ...(toolChoice === undefined ? {} : { tool_choice: toolChoice }),
+  };
+};
+
+export const geminiGenerateContentRequestToIR = (payload: GeminiGenerateContentPayload, model: string): IRInputRequest => ({
+  conversation: geminiGenerateContentInputToIR(payload),
+  settings: geminiGenerateContentSettingsToIR(payload, model),
+  ...toolsToIR(payload),
+});
+
 /** GenerateContent keeps every sampling knob inside `generationConfig`. */
 export const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentPayload, model: string): IRInputSettings => {
   const config = payload.generationConfig;
+  const reasoningEffort = geminiGenerateContentReasoningEffort(config?.thinkingConfig);
   const schema = config === undefined ? undefined : geminiResponseSchema(config);
   const outputFormat: IRInputOutputFormat | undefined = schema !== undefined
-    ? { type: 'json_schema', schema: klona(schema) }
+    ? { type: 'json_schema', schema: klona(schema), name: 'gemini_response' }
     : config?.responseMimeType === 'application/json' ? { type: 'json_object' } : undefined;
 
   return {
@@ -238,5 +291,12 @@ export const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContent
     ...(config?.seed == null ? {} : { seed: config.seed }),
     ...(config?.maxOutputTokens == null ? {} : { max_output_tokens: config.maxOutputTokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
+    ...(config?.candidateCount === undefined ? {} : { candidate_count: config.candidateCount }),
+    ...(config?.presencePenalty === undefined ? {} : { presence_penalty: config.presencePenalty }),
+    ...(config?.frequencyPenalty === undefined ? {} : { frequency_penalty: config.frequencyPenalty }),
+    ...(reasoningEffort === null ? {} : { reasoning_effort: reasoningEffort }),
+    // GenerateContent states readable reasoning as a boolean; the neutral
+    // spelling names how much of it the caller wants.
+    ...(reasoningEffort !== null && reasoningEffort !== 'none' && config?.thinkingConfig?.includeThoughts === true ? { reasoning_summary: 'detailed' } : {}),
   };
 };

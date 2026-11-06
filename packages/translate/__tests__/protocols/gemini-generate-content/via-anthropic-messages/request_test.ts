@@ -288,7 +288,6 @@ test('buildTargetRequest maps tool declarations and tool choice modes', async ()
     max_tokens: ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
     tools: [
       {
-        type: 'custom',
         name: 'lookup',
         description: 'Look up facts',
         input_schema: {
@@ -304,7 +303,8 @@ test('buildTargetRequest maps tool declarations and tool choice modes', async ()
   assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'NONE' } } }, 'claude-test', noOptions)).tool_choice, { type: 'none' });
   assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'AUTO' } } }, 'claude-test', noOptions)).tool_choice, { type: 'auto' });
   assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'VALIDATED' } } }, 'claude-test', noOptions)).tool_choice, { type: 'auto' });
-  assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'claude-test', noOptions)).tool_choice, { type: 'any' });
+  // ANY demands a call the request offers no declaration for.
+  assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'claude-test', noOptions)).tool_choice, undefined);
 });
 
 test('buildTargetRequest filters tools to multiple allowed names for ANY mode', async () => {
@@ -330,12 +330,10 @@ test('buildTargetRequest filters tools to multiple allowed names for ANY mode', 
     max_tokens: ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
     tools: [
       {
-        type: 'custom',
         name: 'lookup',
         input_schema: { type: 'object', properties: {} },
       },
       {
-        type: 'custom',
         name: 'ping',
         input_schema: { type: 'object', properties: {} },
         cache_control: { type: 'ephemeral' },

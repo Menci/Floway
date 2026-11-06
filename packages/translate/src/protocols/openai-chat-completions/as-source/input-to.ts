@@ -6,7 +6,11 @@ import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
   IRInputConversation,
+  IRInputRequest,
   IRInputSettings,
+  IRInputTool,
+  IRInputToolChoice,
+  IRInputToolSelection,
   IRInputOutputFormat,
   IRInputMedia,
   IRInputTextPart,
@@ -18,7 +22,12 @@ import type {
 
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsUserContentPart } from '@floway-dev/protocols/openai-chat-completions';
+import type {
+  OpenAIChatCompletionsNamedToolChoice,
+  OpenAIChatCompletionsPayload,
+  OpenAIChatCompletionsTool,
+  OpenAIChatCompletionsUserContentPart,
+} from '@floway-dev/protocols/openai-chat-completions';
 
 const DATA_URL = /^data:([^;,]+)?;base64,(.*)$/s;
 
@@ -223,6 +232,58 @@ export const openaiChatCompletionsInputToIR = (payload: OpenAIChatCompletionsPay
  * https://help.openai.com/en/articles/5072518-controlling-the-length-of-openai-model-responses
  * https://community.openai.com/t/why-was-max-tokens-changed-to-max-completion-tokens/938077
  */
+// A Chat declaration states a function with a nested definition, a freeform
+// custom tool, or a hosted tool this IR does not carry (an interceptor rewrites
+// those before translation). Only the two callable arms are representable.
+const toolToIR = (tool: OpenAIChatCompletionsTool): IRInputTool | undefined => {
+  if (tool.type === 'custom') {
+    const format = tool.custom.format;
+    return {
+      type: 'custom',
+      name: tool.custom.name,
+      ...(tool.custom.description === undefined ? {} : { description: tool.custom.description }),
+      ...(format === undefined ? {} : {
+        format: format.type === 'grammar'
+          ? { type: 'grammar', definition: format.grammar.definition, syntax: format.grammar.syntax }
+          : { type: 'text' },
+      }),
+    };
+  }
+  return {
+    type: 'function',
+    name: tool.function.name,
+    ...(tool.function.description === undefined ? {} : { description: tool.function.description }),
+    ...(tool.function.parameters === undefined ? {} : { parameters: klona(tool.function.parameters) }),
+    ...(tool.function.strict == null ? {} : { strict: tool.function.strict }),
+  };
+};
+
+const selectionToIR = (selection: OpenAIChatCompletionsNamedToolChoice): IRInputToolSelection => selection.type === 'custom'
+  ? { type: 'custom', name: selection.custom.name }
+  : { type: 'function', name: selection.function.name };
+
+const toolChoiceToIR = (choice: NonNullable<OpenAIChatCompletionsPayload['tool_choice']>): IRInputToolChoice => {
+  if (typeof choice === 'string') return choice;
+  if (choice.type === 'allowed_tools') {
+    return { type: 'allowed_tools', mode: choice.allowed_tools.mode, tools: choice.allowed_tools.tools.map(selectionToIR) };
+  }
+  return selectionToIR(choice);
+};
+
+export const openaiChatCompletionsToolsToIR = (payload: OpenAIChatCompletionsPayload): Pick<IRInputRequest, 'tools' | 'tool_choice'> => {
+  const tools = payload.tools?.map(toolToIR).filter((tool): tool is IRInputTool => tool !== undefined);
+  return {
+    ...(tools === undefined || tools.length === 0 ? {} : { tools }),
+    ...(payload.tool_choice == null ? {} : { tool_choice: toolChoiceToIR(payload.tool_choice) }),
+  };
+};
+
+export const openaiChatCompletionsRequestToIR = (payload: OpenAIChatCompletionsPayload): IRInputRequest => ({
+  conversation: openaiChatCompletionsInputToIR(payload),
+  settings: openaiChatCompletionsSettingsToIR(payload),
+  ...openaiChatCompletionsToolsToIR(payload),
+});
+
 export const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload): IRInputSettings => {
   const ceiling = payload.max_completion_tokens ?? payload.max_tokens;
 
@@ -249,5 +310,16 @@ export const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletions
     ...(payload.seed == null ? {} : { seed: payload.seed }),
     ...(ceiling == null ? {} : { max_output_tokens: ceiling }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
+    ...(payload.metadata == null ? {} : { metadata: payload.metadata }),
+    ...(payload.store == null ? {} : { store: payload.store }),
+    ...(payload.service_tier == null ? {} : { service_tier: payload.service_tier }),
+    ...(payload.parallel_tool_calls == null ? {} : { parallel_tool_calls: payload.parallel_tool_calls }),
+    ...(payload.reasoning_effort == null ? {} : { reasoning_effort: payload.reasoning_effort }),
+    ...(payload.prompt_cache_key === undefined ? {} : { prompt_cache_key: payload.prompt_cache_key }),
+    ...(payload.safety_identifier === undefined ? {} : { safety_identifier: payload.safety_identifier }),
+    ...(payload.verbosity == null ? {} : { verbosity: payload.verbosity }),
+    ...(payload.n == null ? {} : { candidate_count: payload.n }),
+    ...(payload.presence_penalty == null ? {} : { presence_penalty: payload.presence_penalty }),
+    ...(payload.frequency_penalty == null ? {} : { frequency_penalty: payload.frequency_penalty }),
   };
 };

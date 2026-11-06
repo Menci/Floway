@@ -2,62 +2,23 @@ import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segm
 import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
-import { openaiResponsesSettingsFromIR, openaiResponsesFromIR } from '../../openai-responses/as-target/input-from.ts';
+import { openaiResponsesRequestFromIR } from '../../openai-responses/as-target/input-from.ts';
 import { geminiGenerateContentText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
-import { geminiGenerateContentDropsReasoning, geminiGenerateContentSettingsToIR, geminiGenerateContentTurnToIR } from '../as-source/input-to.ts';
-import { geminiGenerateContentReasoningEffort } from '../as-source/reasoning.ts';
+import { geminiGenerateContentDropsReasoning, geminiGenerateContentRequestToIR, geminiGenerateContentTurnToIR } from '../as-source/input-to.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
-import { geminiFunctionParameters } from '../as-source/schema.ts';
-import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionDeclarations, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
+import type { GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
-import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
-
-const applyGenerationConfig = (request: CanonicalOpenAIResponsesPayload, payload: GeminiGenerateContentPayload, model: string): void => {
-  const source = geminiGenerateContentSettingsToIR(payload, model);
-  Object.assign(request, openaiResponsesSettingsFromIR({
-    ...source,
-    // Responses requires a name for a json_schema format; this is the
-    // established spelling for a GenerateContent source.
-    ...(source.output_format === undefined ? {} : { output_format: { ...source.output_format, name: 'gemini_response' } }),
-  }));
-
-  const config = payload.generationConfig;
-  const effort = config === undefined ? null : geminiGenerateContentReasoningEffort(config.thinkingConfig);
-  if (effort === null) return;
-  request.reasoning = {
-    effort,
-    ...(effort !== 'none' && config?.thinkingConfig?.includeThoughts === true ? { summary: 'detailed' as const } : {}),
-  };
-};
-
-const buildTools = (payload: GeminiGenerateContentPayload): OpenAIResponsesTool[] | undefined => {
-  const tools = geminiGenerateContentFunctionDeclarations(payload, 'any').map(declaration => ({
-    type: 'function' as const,
-    name: declaration.name,
-    ...(declaration.description !== undefined ? { description: declaration.description } : {}),
-    parameters: geminiFunctionParameters(declaration) ?? { type: 'object', properties: {} },
-    strict: false,
-  }));
-
-  return tools.length ? tools : undefined;
-};
+import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 
 export const buildTargetRequest = async (
   payload: GeminiGenerateContentPayload,
   model: string,
   codec: SidecarCodec,
 ): Promise<CanonicalOpenAIResponsesPayload> => {
-  const input: CanonicalOpenAIResponsesInputItem[] = [];
-  const request: CanonicalOpenAIResponsesPayload = {
-    model,
-    stream: true,
-    input,
-  };
   const unmatchedToolCallIds: GeminiGenerateContentToolCallIds = Object.create(null);
-
+  const ir = geminiGenerateContentRequestToIR(payload, model);
   const instructions = geminiGenerateContentText(payload.systemInstruction);
-  if (instructions !== null) request.instructions = instructions;
 
   let contentIndex = 0;
   const pieces: (IRInputTurn | IRInputResolvedTurn<CanonicalOpenAIResponsesInputItem[]>)[] = [];
@@ -80,33 +41,20 @@ export const buildTargetRequest = async (
     contentIndex += turn.items.length;
   }
 
+  const input: CanonicalOpenAIResponsesInputItem[] = [];
+  let base: CanonicalOpenAIResponsesPayload | undefined;
   for (const piece of segmentIRInput(pieces)) {
     if (piece.kind === 'resolved') { input.push(...piece.turn); continue; }
-    input.push(...openaiResponsesFromIR({ turns: piece.turns }, false).input);
+    const translated = openaiResponsesRequestFromIR({ ...ir, conversation: { turns: piece.turns } }, false);
+    base ??= translated;
+    input.push(...translated.input);
   }
+  base ??= openaiResponsesRequestFromIR({ ...ir, conversation: { turns: [] } }, false);
 
-  applyGenerationConfig(request, payload, model);
-
-  const tools = buildTools(payload);
-  if (tools) {
-    request.tools = tools;
-
-    const intent = geminiGenerateContentFunctionCallingIntent(payload.toolConfig?.functionCallingConfig);
-    switch (intent?.type) {
-    case 'none':
-      request.tool_choice = 'none';
-      break;
-    case 'auto':
-      request.tool_choice = 'auto';
-      break;
-    case 'any':
-      request.tool_choice = 'required';
-      break;
-    case 'named':
-      request.tool_choice = { type: 'function', name: intent.name };
-      break;
-    }
-  }
-
-  return request;
+  // A GenerateContent system instruction is a Responses `instructions` string.
+  return {
+    ...base,
+    input,
+    ...(instructions === null ? {} : { instructions }),
+  };
 };

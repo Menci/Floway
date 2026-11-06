@@ -1,33 +1,22 @@
-import { klona } from 'klona/json';
-
 import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
-import type { IRInputTurn } from '../../../ir/input/types.ts';
+import type { IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
-import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
-import { openaiChatCompletionsSettingsFromIR, openaiChatCompletionsFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
-import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
+import { openaiChatCompletionsRequestFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
-import { anthropicMessagesDropsReasoning, anthropicMessagesSettingsToIR, anthropicMessagesTurnToIR } from '../as-source/input-to.ts';
+import { anthropicMessagesDropsReasoning, anthropicMessagesSettingsToIR, anthropicMessagesToolsToIR, anthropicMessagesTurnToIR } from '../as-source/input-to.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from '../as-source/round-trip.ts';
 import type {
-  AnthropicMessagesClientTool,
   AnthropicMessagesPayload,
   AnthropicMessagesTextBlockParam,
 } from '@floway-dev/protocols/anthropic-messages';
 import { FAST_SERVICE_TIER } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamOptionsEx, OpenAIChatCompletionsTextPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsStreamOptionsEx, OpenAIChatCompletionsTextPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 
 // OpenAI strict-mode JSON Schema validators reject an object schema without an
 // explicit `properties` field. Preserve the source schema while satisfying that
 // target requirement.
 // https://github.com/caozhiyuan/copilot-api/commit/ad57069826843c5d17d7b0e5ef2f75050128893c
-const normalizeToolInputSchema = (schema: Record<string, unknown>): Record<string, unknown> => {
-  const target = klona(schema);
-  if (target.type !== 'object' || target.properties !== undefined) return target;
-  return { ...target, properties: {} };
-};
-
 // The Chat Completions effort axis combines Anthropic's separate effort and
 // thinking controls; token budgets remain a separate quantity.
 const resolveReasoningEffort = (payload: AnthropicMessagesPayload): string | undefined => {
@@ -46,61 +35,26 @@ const systemContentFromBlocks = (system: string | AnthropicMessagesTextBlockPara
     ? system
     : system.map(block => ({ type: 'text', text: block.text }));
 
-const translateAnthropicMessagesTools = (tools?: AnthropicMessagesClientTool[]): OpenAIChatCompletionsTool[] | undefined =>
-  // Do not hide target-side function-name constraints by renaming tools here;
-  // the Anthropic Messages source contract has no reverse mapping surface for that.
-  tools?.map(tool => ({
-    type: 'function',
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: normalizeToolInputSchema(tool.input_schema),
-      ...(tool.strict !== undefined ? { strict: tool.strict } : {}),
-    },
-  }));
-
-const translateAnthropicMessagesToolChoice = (toolChoice?: AnthropicMessagesPayload['tool_choice'], tools?: AnthropicMessagesClientTool[]): OpenAIChatCompletionsPayload['tool_choice'] => {
-  if (!toolChoice) return undefined;
-  if (!tools || tools.length === 0) {
-    if (toolChoice.type === 'tool') throw new TranslatorInputError(`Anthropic Messages tool_choice names an undeclared tool: ${String(toolChoice.name)}`);
-    return undefined;
-  }
-
-  switch (toolChoice.type) {
-  case 'auto':
-    return 'auto';
-  case 'any':
-    return 'required';
-  case 'tool': {
-    if (!toolChoice.name || !tools.some(tool => tool.name === toolChoice.name)) throw new TranslatorInputError(`Anthropic Messages tool_choice names an undeclared tool: ${String(toolChoice.name)}`);
-    return { type: 'function', function: { name: toolChoice.name } };
-  }
-  case 'none':
-    return 'none';
-  }
-};
-
 export const buildTargetRequest = async (
   payload: AnthropicMessagesPayload,
   codec: SidecarCodec,
 ): Promise<OpenAIChatCompletionsPayload> => {
-  const clientTools = filterAnthropicMessagesClientTools(payload.tools);
   // Pass effort through verbatim; per-upstream enum acceptance (e.g. some
   // backends rejecting `xhigh`/`max`) is the target interceptor's concern.
   const reasoningEffort = resolveReasoningEffort(payload);
-  const sourceSettings = anthropicMessagesSettingsToIR(payload);
-  const settings = openaiChatCompletionsSettingsFromIR({
-    ...sourceSettings,
-    // Messages has no name for its structured-output schema; the Chat wire
-    // requires one and this is the established spelling.
-    ...(sourceSettings.output_format === undefined ? {} : { output_format: { ...sourceSettings.output_format, name: 'messages_response' } }),
-  });
-
-  // Anthropic `speed: 'fast'` selects OpenAI's priority lane. Without an
-  // explicit speed, preserve Anthropic's service tier as an open string.
-  // https://docs.claude.com/en/build-with-claude/fast-mode
-  // https://platform.openai.com/docs/guides/fast-mode
-  const serviceTier = payload.speed === 'fast' ? FAST_SERVICE_TIER : payload.speed === undefined ? payload.service_tier : undefined;
+  const ir: IRInputRequest = {
+    conversation: { turns: [] },
+    settings: {
+      ...anthropicMessagesSettingsToIR(payload),
+      // Anthropic `speed: 'fast'` selects OpenAI's priority lane. Without an
+      // explicit speed, preserve Anthropic's service tier as an open string.
+      // https://docs.claude.com/en/build-with-claude/fast-mode
+      // https://platform.openai.com/docs/guides/fast-mode
+      ...(payload.speed === 'fast' ? { service_tier: FAST_SERVICE_TIER } : {}),
+      ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
+    },
+    ...anthropicMessagesToolsToIR(payload),
+  };
   const messages: OpenAIChatCompletionsMessage[] = payload.system == null || (typeof payload.system === 'string' ? payload.system === '' : payload.system.length === 0)
     ? []
     : [{ role: 'system', content: systemContentFromBlocks(payload.system) }];
@@ -120,17 +74,18 @@ export const buildTargetRequest = async (
     messageIndex += turn.items.length;
   }
 
+  let base: OpenAIChatCompletionsPayload | undefined;
   for (const piece of segmentIRInput(pieces)) {
     if (piece.kind === 'resolved') { messages.push(piece.turn); continue; }
-    messages.push(...openaiChatCompletionsFromIR({ turns: piece.turns }));
+    const translated = openaiChatCompletionsRequestFromIR({ ...ir, conversation: { turns: piece.turns } });
+    base ??= translated;
+    messages.push(...translated.messages);
   }
+  base ??= openaiChatCompletionsRequestFromIR({ ...ir, conversation: { turns: [] } });
 
   return {
-    model: payload.model,
+    ...base,
     messages,
-    ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
-    stop: klona(payload.stop_sequences),
-    stream: true,
     // Ask the upstream for usage on every streaming chunk, not just the final
     // one. `include_usage` is the OpenAI-standard flag; `continuous_usage_stats`
     // is the vLLM/SGLang extension that lets this translation emit the real
@@ -141,9 +96,5 @@ export const buildTargetRequest = async (
     // to the final usage-only chunk. Ref:
     // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/generate/base/protocol.py#L241-L243
     stream_options: { include_usage: true, continuous_usage_stats: true } as OpenAIChatCompletionsStreamOptionsEx,
-    ...settings,
-    tools: translateAnthropicMessagesTools(clientTools),
-    tool_choice: translateAnthropicMessagesToolChoice(payload.tool_choice, clientTools),
-    ...(serviceTier !== undefined ? { service_tier: serviceTier } : {}),
   };
 };

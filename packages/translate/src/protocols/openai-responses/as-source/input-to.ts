@@ -4,7 +4,10 @@ import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
   IRInputConversation,
+  IRInputRequest,
   IRInputSettings,
+  IRInputTool,
+  IRInputToolChoice,
   IRInputOutputFormat,
   IRInputMedia,
   IRInputTextPart,
@@ -26,6 +29,7 @@ import type {
   OpenAIResponsesInputContent,
   OpenAIResponsesInputMessageEx,
   OpenAIResponsesRequestPayloadEx,
+  OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
 
 const DATA_URL = /^data:([^;,]+)?;base64,(.*)$/s;
@@ -225,6 +229,74 @@ export const openaiResponsesInputToIR = (source: OpenAIResponsesRequestPayloadEx
  * Responses states the ceiling once, as `max_output_tokens`. Its `text.format`
  * carries the structured-output schema flat, unlike Chat's nested spelling.
  */
+// Responses declares flat function and custom tools beside the hosted kinds.
+// A hosted tool runs on the vendor's own infrastructure and has no meaning in
+// another protocol, so a request that carries one cannot enter this IR.
+const toolToIR = (tool: OpenAIResponsesTool): IRInputTool => {
+  if (tool.type === 'custom') {
+    const format = tool.format as { type?: unknown; definition?: unknown; syntax?: unknown } | undefined;
+    return {
+      type: 'custom',
+      name: tool.name,
+      ...(tool.description == null ? {} : { description: tool.description }),
+      ...(format === undefined || typeof format.type !== 'string' ? {} : {
+        format: format.type === 'grammar' && typeof format.definition === 'string'
+          ? { type: 'grammar', definition: format.definition, syntax: String(format.syntax ?? '') }
+          : { type: 'text' },
+      }),
+    };
+  }
+  if (tool.type !== 'function') throw new TranslatorInputError(`Cannot translate OpenAI Responses tool type '${tool.type}'.`);
+  return {
+    type: 'function',
+    name: tool.name,
+    ...(tool.description == null ? {} : { description: tool.description }),
+    ...(tool.parameters == null ? {} : { parameters: klona(tool.parameters) }),
+    ...(tool.strict == null ? {} : { strict: tool.strict }),
+  };
+};
+
+const toolChoiceToIR = (choice: NonNullable<CanonicalOpenAIResponsesPayload['tool_choice']>): IRInputToolChoice => {
+  if (typeof choice === 'string') {
+    if (choice === 'auto' || choice === 'none' || choice === 'required') return choice;
+    // A hosted selector spells its arm as a bare string, and names a tool this
+    // IR does not carry.
+    throw new TranslatorInputError(`Cannot translate OpenAI Responses tool choice '${choice}'.`);
+  }
+  if (choice.type === 'allowed_tools') {
+    return {
+      type: 'allowed_tools',
+      mode: choice.mode,
+      tools: choice.tools.map(selection => {
+        const named = selection as { type: string; name?: unknown };
+        return { type: named.type === 'custom' ? 'custom' as const : 'function' as const, name: String(named.name ?? '') };
+      }),
+    };
+  }
+  if (choice.type === 'function' || choice.type === 'custom') return { type: choice.type, name: choice.name };
+  // A hosted selector names a tool this IR does not carry.
+  throw new TranslatorInputError(`Cannot translate OpenAI Responses tool choice type '${choice.type}'.`);
+};
+
+export const openaiResponsesToolsToIR = (payload: CanonicalOpenAIResponsesPayload): Pick<IRInputRequest, 'tools' | 'tool_choice'> => {
+  const tools = payload.tools?.map(toolToIR);
+  const toolChoice = payload.tool_choice == null ? undefined : toolChoiceToIR(payload.tool_choice);
+  return {
+    ...(tools === undefined || tools.length === 0 ? {} : { tools }),
+    ...(toolChoice === undefined ? {} : { tool_choice: toolChoice }),
+  };
+};
+
+export const openaiResponsesRequestToIR = (source: OpenAIResponsesRequestPayloadEx): IRInputRequest => {
+  const { conversation } = openaiResponsesInputToIR(source);
+  const payload = canonicalizeOpenAIResponsesPayload(source);
+  return {
+    conversation,
+    settings: openaiResponsesSettingsToIR(payload),
+    ...openaiResponsesToolsToIR(payload),
+  };
+};
+
 export const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputSettings => {
   const format = payload.text?.format;
   const outputFormat: IRInputOutputFormat | undefined = format === undefined || format === null ? undefined
@@ -252,5 +324,13 @@ export const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPay
     ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
     ...(payload.max_output_tokens == null ? {} : { max_output_tokens: payload.max_output_tokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
+    ...(payload.metadata == null ? {} : { metadata: payload.metadata }),
+    ...(payload.store == null ? {} : { store: payload.store }),
+    ...(payload.service_tier == null ? {} : { service_tier: payload.service_tier }),
+    ...(payload.parallel_tool_calls == null ? {} : { parallel_tool_calls: payload.parallel_tool_calls }),
+    ...(payload.reasoning?.effort == null ? {} : { reasoning_effort: payload.reasoning.effort }),
+    ...(payload.prompt_cache_key === undefined ? {} : { prompt_cache_key: payload.prompt_cache_key }),
+    ...(payload.safety_identifier === undefined ? {} : { safety_identifier: payload.safety_identifier }),
+    ...(payload.text?.verbosity == null ? {} : { verbosity: payload.text.verbosity }),
   };
 };

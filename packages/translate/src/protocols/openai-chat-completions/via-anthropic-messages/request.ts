@@ -1,21 +1,17 @@
-import { klona } from 'klona/json';
-
 import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
-import type { IRInputTurn } from '../../../ir/input/types.ts';
+import type { IRInputMedia, IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
-import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec, RemoteImageLoader } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
-import { anthropicMessagesSettingsFromIR, anthropicMessagesFromIR } from '../../anthropic-messages/as-target/input-from.ts';
+import { anthropicMessagesRequestFromIR } from '../../anthropic-messages/as-target/input-from.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-messages/as-target/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
-import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
-import { openaiChatCompletionsSettingsToIR, openaiChatCompletionsInputContext, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/input-to.ts';
+import { openaiChatCompletionsSettingsToIR, openaiChatCompletionsInputContext, openaiChatCompletionsToolsToIR, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/input-to.ts';
 import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
-import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesMessage, type AnthropicMessagesPayload, type AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
+import { type AnthropicMessagesMessage, type AnthropicMessagesPayload, type AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
 import { isFastServiceTier } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 
 interface BuildTargetRequestOptions {
   loadRemoteImage: RemoteImageLoader;
@@ -35,30 +31,13 @@ const anthropicServiceTierFieldsFromOpenAI = (serviceTier: string | null | undef
       ? { service_tier: serviceTier }
       : {};
 
-const translateOpenAIChatCompletionsTools = (tools: OpenAIChatCompletionsTool[]): AnthropicMessagesPayload['tools'] =>
-  tools.map(tool => {
-    if (tool.type !== 'function') throw new TranslatorInputError('Cannot translate custom Chat tools to Anthropic Messages.');
-    return {
-      name: tool.function.name,
-      description: tool.function.description,
-      input_schema: anthropicMessagesToolInputSchema(klona(tool.function.parameters) ?? { type: 'object', properties: {} }),
-      ...(tool.function.strict != null ? { strict: tool.function.strict } : {}),
-    };
-  });
-
-const translateOpenAIChatCompletionsToolChoice = (toolChoice: NonNullable<OpenAIChatCompletionsPayload['tool_choice']>): AnthropicMessagesPayload['tool_choice'] => {
-  if (typeof toolChoice === 'string') return klona(CHAT_TOOL_CHOICES[toolChoice]);
-
-  if (toolChoice.type === 'allowed_tools') return { type: toolChoice.allowed_tools.mode === 'required' ? 'any' : 'auto' };
-  if (toolChoice.type !== 'function') throw new TranslatorInputError(`Cannot translate ${toolChoice.type} Chat tool choice to Anthropic Messages.`);
-  return { type: 'tool', name: toolChoice.function.name };
+const chatImageResolver = (loadRemoteImage: RemoteImageLoader) => async (media: IRInputMedia) => {
+  if (media.source_kind === 'url') return await resolveImageUrlToAnthropicMessagesImage(media.url, loadRemoteImage);
+  if (media.source_kind === 'file') return { type: 'image' as const, source: { type: 'file' as const, file_id: media.file_id } };
+  // A base64 image is validated through the same data-URL path the source used,
+  // so unsupported media types are dropped exactly as before.
+  return await resolveImageUrlToAnthropicMessagesImage(`data:${media.media_type ?? ''};base64,${media.data}`, loadRemoteImage);
 };
-
-const CHAT_TOOL_CHOICES = {
-  auto: { type: 'auto' },
-  none: { type: 'none' },
-  required: { type: 'any' },
-} satisfies Record<Extract<OpenAIChatCompletionsPayload['tool_choice'], string>, AnthropicMessagesPayload['tool_choice']>;
 
 export const buildTargetRequest = async (
   payload: OpenAIChatCompletionsPayload,
@@ -66,6 +45,11 @@ export const buildTargetRequest = async (
   options: BuildTargetRequestOptions,
 ): Promise<AnthropicMessagesPayload> => {
   const context = openaiChatCompletionsInputContext(payload);
+  const request: IRInputRequest = {
+    conversation: { turns: [] },
+    settings: openaiChatCompletionsSettingsToIR(payload),
+    ...openaiChatCompletionsToolsToIR(payload),
+  };
   const pieces: (IRInputTurn | IRInputResolvedTurn<AnthropicMessagesMessage>)[] = [];
   for (const turn of partitionOpenAIChatCompletionsTurns(payload.messages)) {
     const roundTrip = turn.role === 'assistant'
@@ -82,23 +66,21 @@ export const buildTargetRequest = async (
   const systemBlocks: AnthropicMessagesTextBlockParam[] = [];
   const messages: AnthropicMessagesMessage[] = [];
   const restoredMessages = new Set<AnthropicMessagesMessage>();
+  let base: AnthropicMessagesPayload | undefined;
   for (const piece of segmentIRInput(pieces)) {
     if (piece.kind === 'resolved') {
       messages.push(piece.turn);
       restoredMessages.add(piece.turn);
       continue;
     }
-    const translated = await anthropicMessagesFromIR({ turns: piece.turns }, piece.leading, {
-      resolveImage: async media => {
-        if (media.source_kind === 'url') return await resolveImageUrlToAnthropicMessagesImage(media.url, options.loadRemoteImage);
-        if (media.source_kind === 'file') return { type: 'image', source: { type: 'file', file_id: media.file_id } };
-        // A base64 image is validated through the same data-URL path the source
-        // used, so unsupported media types are dropped exactly as before.
-        const url = `data:${media.media_type ?? ''};base64,${media.data}`;
-        return await resolveImageUrlToAnthropicMessagesImage(url, options.loadRemoteImage);
-      },
-    });
-    if (translated.system !== undefined) systemBlocks.push(...translated.system);
+    const translated = await anthropicMessagesRequestFromIR(
+      { ...request, conversation: { turns: piece.turns } },
+      { resolveImage: chatImageResolver(options.loadRemoteImage), fallbackMaxOutputTokens: options.fallbackMaxOutputTokens },
+    );
+    // Every segment states the same request-wide fields; the first one supplies
+    // them and each segment contributes only its conversation.
+    base ??= translated;
+    if (translated.system !== undefined) systemBlocks.push(...(translated.system as AnthropicMessagesTextBlockParam[]));
     // Messages requires a non-empty content array; an image that could not be
     // resolved leaves an empty text block, matching the previous behaviour.
     messages.push(...translated.messages.map(message => message.role === 'user' && Array.isArray(message.content) && message.content.length === 0
@@ -106,57 +88,28 @@ export const buildTargetRequest = async (
       : message));
   }
 
-  const maxTokens = payload.max_tokens ?? options.fallbackMaxOutputTokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS;
-  const allowedTools = typeof payload.tool_choice === 'object' && payload.tool_choice?.type === 'allowed_tools'
-    ? new Set(payload.tool_choice.allowed_tools.tools.map(tool => {
-        if (tool.type !== 'function') throw new TranslatorInputError('Cannot translate custom Chat tools to Anthropic Messages.');
-        return tool.function.name;
-      }))
-    : undefined;
-  const selectedTools = allowedTools === undefined ? payload.tools : payload.tools?.filter(tool => tool.type === 'function' && allowedTools.has(tool.function.name));
-  const tools = selectedTools?.length ? translateOpenAIChatCompletionsTools(selectedTools) : undefined;
+  // The conversation came from the segments; a request with no IR segment at all
+  // still states its settings and tools.
+  base ??= await anthropicMessagesRequestFromIR({ ...request, conversation: { turns: [] } }, {
+    resolveImage: chatImageResolver(options.loadRemoteImage),
+    fallbackMaxOutputTokens: options.fallbackMaxOutputTokens,
+  });
+
   applyLastSystemCacheBreakpoint(systemBlocks);
-  applyLastToolCacheBreakpoint(tools);
+  applyLastToolCacheBreakpoint(base.tools);
   applyLastMessageCacheBreakpoint(messages.filter(message => !restoredMessages.has(message)));
 
-  // Merge OpenAI Chat Completions `reasoning_effort` + `response_format` into a single Anthropic Messages
-  // `output_config` so a chat-source structured-output request survives
-  // routing through an Anthropic Messages target. `reasoning_effort: 'none'` lands on
-  // `thinking` instead of `output_config`, and `format` still rides along.
-  //
-  // OpenAI Chat Completions nests json_schema details (`response_format = { type: 'json_schema',
-  // json_schema: { schema } }`); `json_object` / `text` / absent have no
-  // Anthropic Messages equivalent and drop.
   const { thinking, effort: reasoningEffort } = anthropicMessagesReasoningFieldsFromEffort(payload.reasoning_effort);
-  const settings = anthropicMessagesSettingsFromIR(openaiChatCompletionsSettingsToIR(payload));
-  // `output_config` merges the structured-output format with the reasoning
-  // effort, which the settings do not carry.
-  const outputConfig: NonNullable<AnthropicMessagesPayload['output_config']> = {
-    ...(reasoningEffort === undefined ? {} : { effort: reasoningEffort }),
-    ...settings.output_config,
-  };
-  const hasOutputConfig = Object.keys(outputConfig).length > 0;
+  const hasOutputConfig = reasoningEffort !== undefined || base.output_config !== undefined;
 
-  // OpenAI's accelerated request lane maps to Anthropic's `speed: 'fast'`;
-  // other service-tier values remain open strings.
-  // https://docs.claude.com/en/build-with-claude/fast-mode
-  // https://platform.openai.com/docs/guides/fast-mode
-  const serviceTierFields = anthropicServiceTierFieldsFromOpenAI(payload.service_tier);
-
-  // OpenAI user and generic metadata are not interpreted as Messages user_id.
   return {
-    ...settings,
-    model: payload.model,
-    // Messages requires a ceiling and a fallback may supply it; the settings
-    // state one only when the source did.
-    max_tokens: settings.max_tokens ?? maxTokens,
+    ...base,
     messages,
     ...(systemBlocks.length > 0 ? { system: systemBlocks } : {}),
-    stream: true,
-    ...(tools ? { tools } : {}),
-    ...(payload.tool_choice != null ? { tool_choice: translateOpenAIChatCompletionsToolChoice(payload.tool_choice) } : {}),
     ...(thinking ? { thinking } : {}),
-    ...(hasOutputConfig ? { output_config: outputConfig } : {}),
-    ...serviceTierFields,
+    ...(hasOutputConfig
+      ? { output_config: { ...(reasoningEffort === undefined ? {} : { effort: reasoningEffort }), ...base.output_config } }
+      : {}),
+    ...anthropicServiceTierFieldsFromOpenAI(payload.service_tier),
   };
 };

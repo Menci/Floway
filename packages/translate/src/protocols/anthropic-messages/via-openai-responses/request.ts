@@ -1,34 +1,24 @@
-import { klona } from 'klona/json';
-
 import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
-import type { IRInputTurn } from '../../../ir/input/types.ts';
+import type { IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
-import { openaiResponsesSettingsFromIR, openaiResponsesFromIR } from '../../openai-responses/as-target/input-from.ts';
-import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
+import { openaiResponsesRequestFromIR } from '../../openai-responses/as-target/input-from.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
-import { anthropicMessagesDropsReasoning, anthropicMessagesSettingsToIR, anthropicMessagesTurnToIR } from '../as-source/input-to.ts';
+import { anthropicMessagesDropsReasoning, anthropicMessagesSettingsToIR, anthropicMessagesToolsToIR, anthropicMessagesTurnToIR } from '../as-source/input-to.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from '../as-source/round-trip.ts';
 import type {
-  AnthropicMessagesClientTool,
   AnthropicMessagesMetadataEx,
   AnthropicMessagesPayload,
   AnthropicMessagesTextBlockParam,
 } from '@floway-dev/protocols/anthropic-messages';
 import { FAST_SERVICE_TIER } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 
 // OpenAI strict-mode JSON Schema validators reject an object schema without an
 // explicit `properties` field. Preserve the source schema while satisfying that
 // target requirement.
 // https://github.com/caozhiyuan/copilot-api/commit/ad57069826843c5d17d7b0e5ef2f75050128893c
-const normalizeToolInputSchema = (schema: Record<string, unknown>): Record<string, unknown> => {
-  const target = klona(schema);
-  if (target.type !== 'object' || target.properties !== undefined) return target;
-  return { ...target, properties: {} };
-};
-
 // The Responses effort axis combines Anthropic's separate effort and thinking
 // controls; token budgets remain a separate quantity.
 const resolveReasoningEffort = (payload: AnthropicMessagesPayload): string | undefined => {
@@ -68,52 +58,9 @@ const placeAnthropicMessagesSystem = (system: string | AnthropicMessagesTextBloc
   };
 };
 
-const translateTools = (tools: AnthropicMessagesClientTool[] | undefined): OpenAIResponsesTool[] => {
-  if (!tools || tools.length === 0) return [];
-
-  return tools.map(tool => ({
-    type: 'function',
-    name: tool.name,
-    parameters: normalizeToolInputSchema(tool.input_schema),
-    // A Responses function tool requires `strict`, so an omitted source value is
-    // stated; Anthropic validates against the declared schema without the
-    // Structured Outputs subset restriction.
-    // https://github.com/openai/openai-openapi/blob/master/openapi.yaml (Function)
-    strict: tool.strict ?? false,
-    ...(tool.description ? { description: tool.description } : {}),
-  }));
-};
-
-// OpenAI Responses upstreams disagree on an orphaned `tool_choice` — one sent without
-// tools: OpenAI-backed models ignore it, while xAI-backed ones reject the
-// request with `invalid-argument: A tool_choice was set on the request but no
-// tools were specified`. Other gateways hit the same wall on both the native
-// OpenAI Responses path and the OpenAI Responses → OpenAI Chat Completions path:
-// https://github.com/Wei-Shaw/sub2api/issues/4819
-// https://github.com/jlcodes99/cockpit-tools/issues/1727
-const translateToolChoice = (toolChoice: AnthropicMessagesPayload['tool_choice'], tools?: AnthropicMessagesClientTool[]): OpenAIResponsesToolChoice | undefined => {
-  if (!toolChoice) return undefined;
-  if (!tools || tools.length === 0) {
-    if (toolChoice.type === 'tool') throw new TranslatorInputError(`Anthropic Messages tool_choice names an undeclared tool: ${String(toolChoice.name)}`);
-    return undefined;
-  }
-
-  const toolNames = new Set(tools.map(tool => tool.name));
-
-  switch (toolChoice.type) {
-  case 'auto':
-    return 'auto';
-  case 'any':
-    return 'required';
-  case 'tool': {
-    if (!toolChoice.name || !toolNames.has(toolChoice.name)) throw new TranslatorInputError(`Anthropic Messages tool_choice names an undeclared tool: ${String(toolChoice.name)}`);
-    return { type: 'function', name: toolChoice.name };
-  }
-  case 'none':
-    return 'none';
-  }
-};
-
+// Responses metadata values are strings; a Messages caller may attach anything,
+// so a value that cannot be stated as one is a caller error rather than a
+// silent drop.
 const translateMetadata = (metadata: AnthropicMessagesMetadataEx): Record<string, string> => Object.fromEntries(Object.entries(metadata).flatMap(([key, value]) => {
   if (key === 'user_id' && value == null) return [];
   if (typeof value !== 'string') throw new TranslatorInputError(`Cannot translate Anthropic Messages metadata field '${key}' to a Responses string metadata value.`);
@@ -128,26 +75,22 @@ export const buildTargetRequest = async (
   // OpenAI Responses upstream may reject it. Translation stays pairwise and leaves
   // target-side validation to the selected upstream endpoint.
   const effort = resolveReasoningEffort(payload);
-  const reasoning = effort !== undefined ? { effort } : undefined;
-  const clientTools = filterAnthropicMessagesClientTools(payload.tools);
   const { instructions, prependItems } = placeAnthropicMessagesSystem(payload.system);
-  const sourceSettings = anthropicMessagesSettingsToIR(payload);
-  const settings = openaiResponsesSettingsFromIR({
-    ...sourceSettings,
-    // Messages has no name for its structured-output schema; the Responses wire
-    // requires one and this is the established spelling.
-    ...(sourceSettings.output_format === undefined ? {} : { output_format: { ...sourceSettings.output_format, name: 'messages_response' } }),
-  });
+  const ir: IRInputRequest = {
+    conversation: { turns: [] },
+    settings: {
+      ...anthropicMessagesSettingsToIR(payload),
+      // Anthropic `speed: 'fast'` selects OpenAI's priority lane. Without an
+      // explicit speed, preserve Anthropic's service tier as an open string.
+      // https://docs.claude.com/en/build-with-claude/fast-mode
+      // https://platform.openai.com/docs/guides/fast-mode
+      ...(payload.speed === 'fast' ? { service_tier: FAST_SERVICE_TIER } : {}),
+      ...(effort === undefined ? {} : { reasoning_effort: effort }),
+      ...(payload.metadata === undefined ? {} : { metadata: translateMetadata(payload.metadata as AnthropicMessagesMetadataEx) }),
+    },
+    ...anthropicMessagesToolsToIR(payload),
+  };
 
-  // Anthropic `speed: 'fast'` selects OpenAI's priority lane. Without an
-  // explicit speed, preserve Anthropic's service tier as an open string.
-  // https://docs.claude.com/en/build-with-claude/fast-mode
-  // https://platform.openai.com/docs/guides/fast-mode
-  const serviceTier = payload.speed === 'fast' ? FAST_SERVICE_TIER : payload.speed === undefined ? payload.service_tier : undefined;
-  const toolChoice = translateToolChoice(payload.tool_choice, clientTools);
-  // `placeAnthropicMessagesSystem` owns the single-block/multi-block decision:
-  // one block fits the string-valued `instructions` slot, several become a
-  // leading input message that keeps their boundaries.
   const pieces: (IRInputTurn | IRInputResolvedTurn<CanonicalOpenAIResponsesInputItem[]>)[] = [];
   let messageIndex = 0;
   for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
@@ -165,26 +108,21 @@ export const buildTargetRequest = async (
   }
 
   const input: CanonicalOpenAIResponsesInputItem[] = [...prependItems];
+  let base: CanonicalOpenAIResponsesPayload | undefined;
   for (const piece of segmentIRInput(pieces)) {
     if (piece.kind === 'resolved') { input.push(...piece.turn); continue; }
-    input.push(...openaiResponsesFromIR({ turns: piece.turns }, false).input);
+    const translated = openaiResponsesRequestFromIR({ ...ir, conversation: { turns: piece.turns } }, false);
+    base ??= translated;
+    input.push(...translated.input);
   }
+  base ??= openaiResponsesRequestFromIR({ ...ir, conversation: { turns: [] } }, false);
 
   // Keep fallback semantics strict: do not synthesize `temperature: 1`,
   // `store: false`, `parallel_tool_calls: true`, `reasoning.summary`, or
-  // `reasoning.context` when the Anthropic Messages source did not express those knobs.
-  // The source thinking block carries no reasoning-context mode, so we never
-  // invent `all_turns` (or any other value) on the target reasoning object.
+  // `reasoning.context` when the Messages source did not express those knobs.
   return {
-    model: payload.model,
+    ...base,
     input,
     ...(instructions !== null ? { instructions } : {}),
-    ...settings,
-    ...(payload.tools !== undefined ? { tools: translateTools(clientTools) } : {}),
-    ...(toolChoice !== undefined ? { tool_choice: toolChoice } : {}),
-    ...(payload.metadata ? { metadata: translateMetadata(payload.metadata as AnthropicMessagesMetadataEx) } : {}),
-    stream: true,
-    ...(reasoning ? { reasoning } : {}),
-    ...(serviceTier !== undefined ? { service_tier: serviceTier } : {}),
   };
 };

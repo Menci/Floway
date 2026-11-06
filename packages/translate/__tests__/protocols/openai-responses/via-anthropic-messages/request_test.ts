@@ -563,7 +563,7 @@ test.each(['web_search', 'file_search'])('buildTargetRequest rejects unsupported
   await assertRejects(
     () => buildWithTestSidecar({ ...minimalPayload, tools: [{ type } as unknown as OpenAIResponsesTool] }),
     Error,
-    `Cannot translate OpenAI Responses tool type '${type}' to Anthropic Messages.`,
+    `Cannot translate OpenAI Responses tool type '${type}'.`,
   );
 });
 
@@ -571,7 +571,7 @@ test.each(['web_search', 'file_search'])('buildTargetRequest rejects unsupported
   await assertRejects(
     () => buildWithTestSidecar({ ...minimalPayload, tool_choice: toolChoice as unknown as typeof minimalPayload.tool_choice }),
     Error,
-    `Cannot translate OpenAI Responses tool choice '${toolChoice}' to Anthropic Messages.`,
+    `Cannot translate OpenAI Responses tool choice '${toolChoice}'.`,
   );
 });
 
@@ -579,7 +579,7 @@ test.each(['web_search', 'file_search'])('buildTargetRequest rejects unsupported
   await assertRejects(
     () => buildWithTestSidecar({ ...minimalPayload, tool_choice: { type } as unknown as typeof minimalPayload.tool_choice }),
     Error,
-    `Cannot translate OpenAI Responses tool choice type '${type}' to Anthropic Messages.`,
+    `Cannot translate OpenAI Responses tool choice type '${type}'.`,
   );
 });
 

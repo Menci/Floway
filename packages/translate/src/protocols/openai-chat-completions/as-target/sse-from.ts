@@ -11,8 +11,8 @@ import {
 import { IRAbsent, type IRErrorPayload, type IROutputSourceCitation } from '../../../ir/output/types.ts';
 import { appendField, createFieldState, type FieldStates, type FieldState, type ReferencePieceId } from '../../../round-trip/reference/reference-builder.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
+import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
-import { unwrapCustomToolInput } from '../../openai-responses/common/custom-tool-wrap.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   createOpenAIChatCompletionsEventAccumulator,
