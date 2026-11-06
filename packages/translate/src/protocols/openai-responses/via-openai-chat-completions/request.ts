@@ -1,5 +1,5 @@
 import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
-import { irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
+import { irInputCustomToolNames } from '../../../ir/input/select-tools.ts';
 import type { IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
@@ -23,7 +23,7 @@ export interface TargetRequestResult {
    * the trip's events translator can project wrapped function calls back into
    * `custom_tool_call` outputs.
    */
-  customToolNames: Set<string>;
+  readonly customToolNames: ReadonlySet<string>;
 }
 
 export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec): Promise<TargetRequestResult> => {
@@ -34,7 +34,6 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
   // names something this translation cannot carry.
   validateAllowedTools(payload.tools, payload.tool_choice, payload.input);
   rejectProgrammaticOpenAIResponsesPayload(payload, 'OpenAI Chat Completions');
-  const customToolNames = new Set<string>();
   const ir: IRInputRequest = {
     conversation: { turns: [] },
     settings: openaiResponsesSettingsToIR(payload),
@@ -66,11 +65,10 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
   }
   base ??= openaiChatCompletionsRequestFromIR({ ...ir, conversation: { turns: [] } });
 
-  // Chat cannot express a freeform tool declaration on every upstream, so this
-  // target states it as a function whose single argument is the raw input, and
-  // records the names so response events can restore the freeform shape.
-  for (const tool of irInputToolsForChoice(ir.tools, ir.tool_choice) ?? []) if (tool.type === 'custom') customToolNames.add(tool.name);
   const target: OpenAIChatCompletionsPayload = { ...base, messages };
 
-  return { target, customToolNames, namespaceToolNames };
+  // Chat cannot express a freeform declaration on every upstream, so the writer
+  // states one as a single-string function; the names let its returned calls be
+  // recognised as freeform again.
+  return { target, customToolNames: irInputCustomToolNames(ir), namespaceToolNames };
 };

@@ -1,5 +1,5 @@
 import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
-import { irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
+import { irInputCustomToolNames } from '../../../ir/input/select-tools.ts';
 import type { IRInputMedia, IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
@@ -42,7 +42,7 @@ export interface TargetRequestResult {
    * the trip's events translator can project wrapped function calls back into
    * `custom_tool_call` outputs.
    */
-  customToolNames: Set<string>;
+  readonly customToolNames: ReadonlySet<string>;
   namespaceToolNames: NamespaceToolNames;
 }
 
@@ -67,7 +67,6 @@ export const buildTargetRequest = async (
   // names something this translation cannot carry.
   validateAllowedTools(payload.tools, payload.tool_choice, payload.input);
   rejectProgrammaticOpenAIResponsesPayload(payload, 'Anthropic Messages');
-  const customToolNames = new Set<string>();
   const systemBlocks: AnthropicMessagesTextBlockParam[] = [];
 
   const restoredMessages = new Set<AnthropicMessagesMessage>();
@@ -124,12 +123,8 @@ export const buildTargetRequest = async (
 
   // The system blocks are complete only after the writer hoisted them.
   //
-  // A freeform tool is declared here as a single-string function, so its
-  // returned calls must be projected back into `custom_tool_call` items; the
-  // names are recorded for the events translator.
-  for (const tool of irInputToolsForChoice(request.tools, request.tool_choice) ?? []) if (tool.type === 'custom') customToolNames.add(tool.name);
   applyLastSystemCacheBreakpoint(systemBlocks);
   applyLastToolCacheBreakpoint(target.tools);
   applyLastMessageCacheBreakpoint(target.messages.filter(message => !restoredMessages.has(message)));
-  return { target, customToolNames, namespaceToolNames };
+  return { target, customToolNames: irInputCustomToolNames(request), namespaceToolNames };
 };
