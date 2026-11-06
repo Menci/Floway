@@ -45,6 +45,7 @@ test('buildTargetRequest maps system instruction and multimodal user content', a
   assertEquals(await buildWithTestSidecar(payload, 'gpt-test'), {
     model: 'gpt-test',
     stream: true,
+    stream_options: { include_usage: true, continuous_usage_stats: true },
     messages: [
       { role: 'system', content: 'Be precise.\n\nUse markdown.' },
       {
@@ -274,6 +275,7 @@ test('buildTargetRequest maps generation config and reasoning effort', async () 
   assertEquals(await buildWithTestSidecar(payload, 'gpt-test'), {
     model: 'gpt-test',
     stream: true,
+    stream_options: { include_usage: true, continuous_usage_stats: true },
     messages: [],
     max_completion_tokens: 512,
     temperature: 0.25,
@@ -310,6 +312,7 @@ test('buildTargetRequest maps structured output schema and zero thinking budget'
     {
       model: 'gpt-test',
       stream: true,
+      stream_options: { include_usage: true, continuous_usage_stats: true },
       messages: [],
       reasoning_effort: 'none',
       response_format: {
@@ -351,6 +354,7 @@ test('buildTargetRequest maps tool declarations and tool choice modes', async ()
   assertEquals(await buildWithTestSidecar(payload, 'gpt-test'), {
     model: 'gpt-test',
     stream: true,
+    stream_options: { include_usage: true, continuous_usage_stats: true },
     messages: [],
     tools: [
       {

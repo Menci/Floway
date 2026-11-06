@@ -7,7 +7,7 @@ import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns
 import { anthropicMessagesDropsReasoning, anthropicMessagesSettingsToIR, anthropicMessagesSystemToIR, anthropicMessagesToolsToIR, anthropicMessagesTurnToIR } from '../as-source/input-to.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from '../as-source/round-trip.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIChatCompletionsStreamOptionsEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 
 export const buildTargetRequest = async (
   payload: AnthropicMessagesPayload,
@@ -51,15 +51,5 @@ export const buildTargetRequest = async (
   return {
     ...base,
     messages,
-    // Ask the upstream for usage on every streaming chunk, not just the final
-    // one. `include_usage` is the OpenAI-standard flag; `continuous_usage_stats`
-    // is the vLLM/SGLang extension that lets this translation emit the real
-    // `input_tokens` in `message_start` (before any output exists) and
-    // cumulative `output_tokens` on intermediate `message_delta` events, which
-    // is the shape the Anthropic Messages SSE contract promises. Upstreams that
-    // do not implement the extension ignore it, and the translator falls back
-    // to the final usage-only chunk. Ref:
-    // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/generate/base/protocol.py#L241-L243
-    stream_options: { include_usage: true, continuous_usage_stats: true } as OpenAIChatCompletionsStreamOptionsEx,
   };
 };
