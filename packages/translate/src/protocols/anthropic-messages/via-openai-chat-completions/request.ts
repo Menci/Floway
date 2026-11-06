@@ -10,21 +10,7 @@ import type {
   AnthropicMessagesPayload,
   AnthropicMessagesTextBlockParam,
 } from '@floway-dev/protocols/anthropic-messages';
-import { FAST_SERVICE_TIER } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamOptionsEx, OpenAIChatCompletionsTextPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
-
-// OpenAI strict-mode JSON Schema validators reject an object schema without an
-// explicit `properties` field. Preserve the source schema while satisfying that
-// target requirement.
-// https://github.com/caozhiyuan/copilot-api/commit/ad57069826843c5d17d7b0e5ef2f75050128893c
-// The Chat Completions effort axis combines Anthropic's separate effort and
-// thinking controls; token budgets remain a separate quantity.
-const resolveReasoningEffort = (payload: AnthropicMessagesPayload): string | undefined => {
-  if (payload.output_config?.effort != null) return payload.output_config.effort;
-  if (payload.thinking?.type === 'disabled') return 'none';
-  if (payload.thinking?.type === 'enabled' || payload.thinking?.type === 'adaptive') return 'medium';
-  return undefined;
-};
 
 // Anthropic Messages system blocks are prompt boundaries; preserve each one
 // as a separate OpenAI Chat Completions text part so a CC→Anthropic Messages→CC round trip
@@ -39,20 +25,9 @@ export const buildTargetRequest = async (
   payload: AnthropicMessagesPayload,
   codec: SidecarCodec,
 ): Promise<OpenAIChatCompletionsPayload> => {
-  // Pass effort through verbatim; per-upstream enum acceptance (e.g. some
-  // backends rejecting `xhigh`/`max`) is the target interceptor's concern.
-  const reasoningEffort = resolveReasoningEffort(payload);
   const ir: IRInputRequest = {
     conversation: { turns: [] },
-    settings: {
-      ...anthropicMessagesSettingsToIR(payload),
-      // Anthropic `speed: 'fast'` selects OpenAI's priority lane. Without an
-      // explicit speed, preserve Anthropic's service tier as an open string.
-      // https://docs.claude.com/en/build-with-claude/fast-mode
-      // https://platform.openai.com/docs/guides/fast-mode
-      ...(payload.speed === 'fast' ? { service_tier: FAST_SERVICE_TIER } : {}),
-      ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
-    },
+    settings: anthropicMessagesSettingsToIR(payload),
     ...anthropicMessagesToolsToIR(payload),
   };
   const messages: OpenAIChatCompletionsMessage[] = payload.system == null || (typeof payload.system === 'string' ? payload.system === '' : payload.system.length === 0)

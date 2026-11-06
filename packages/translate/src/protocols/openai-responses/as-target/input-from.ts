@@ -155,8 +155,19 @@ const conversationFromIR = (
     }
     return item.items.flatMap((entry): CanonicalOpenAIResponsesInputItem[] => {
       if (hoisting && isHoistablePrompt(entry)) {
-        const text = entry.content.map(part => part.text).join('');
-        if (text !== '') instructions.push(text);
+        // Responses states the slot as one string. A single text part is one
+        // string; several parts cannot be merged without losing the boundaries
+        // the source drew, so the run stays inline with each part its own
+        // `input_text` block.
+        const parts = entry.content.filter(part => part.text !== '');
+        if (parts.length === 1) {
+          instructions.push(parts[0].text);
+          return [];
+        }
+        if (parts.length > 1) {
+          hoisting = false;
+          return [{ type: 'message', role: entry.role, content: parts.map(part => ({ type: 'input_text' as const, text: part.text })) }];
+        }
         return [];
       }
       hoisting = false;

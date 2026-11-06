@@ -23,12 +23,14 @@ import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type {
   AnthropicMessagesClientTool,
   AnthropicMessagesImageBlock,
+  AnthropicMessagesMetadataEx,
   AnthropicMessagesMessage,
   AnthropicMessagesPayload,
   AnthropicMessagesTextBlockParam,
   AnthropicMessagesToolResultBlock,
   AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
+import { FAST_SERVICE_TIER } from '@floway-dev/protocols/common';
 
 const DATA_URL = /^data:([^;,]+)?;base64,(.*)$/s;
 
@@ -347,6 +349,8 @@ export const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload)
     : undefined;
 
   const reasoningEffort = reasoningEffortFromAnthropicMessages(payload);
+  const serviceTier = serviceTierFromAnthropicMessages(payload);
+  const metadata = metadataFromAnthropicMessages(payload.metadata as AnthropicMessagesMetadataEx | undefined);
   return {
     model: payload.model,
     stream: payload.stream === true,
@@ -356,7 +360,8 @@ export const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload)
     ...(payload.stop_sequences == null ? {} : { stop: [...payload.stop_sequences] }),
     ...(payload.max_tokens == null ? {} : { max_output_tokens: payload.max_tokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
-    ...(payload.service_tier == null ? {} : { service_tier: payload.service_tier }),
+    ...(serviceTier === undefined ? {} : { service_tier: serviceTier }),
+    ...(metadata === undefined ? {} : { metadata }),
     // Messages splits one reasoning axis across three controls: a level, an off
     // switch, and a token budget. The level and the off switch are the same axis
     // every other protocol states as an effort, and the budget is its own
@@ -365,6 +370,30 @@ export const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload)
     ...(payload.thinking?.type === 'enabled' ? { reasoning_budget: payload.thinking.budget_tokens } : {}),
     ...(payload.thinking?.type === 'adaptive' ? { reasoning_dynamic: true } : {}),
   };
+};
+
+// Messages admits any JSON value as a metadata tag while the IR states string
+// pairs, so a value with no string spelling is a caller error rather than a
+// silent drop. `user_id: null` is Messages' way of stating no value at all.
+const metadataFromAnthropicMessages = (metadata: AnthropicMessagesMetadataEx | undefined): Record<string, string> | undefined => {
+  if (metadata === undefined) return undefined;
+  const entries = Object.entries(metadata).flatMap(([key, value]): [string, string][] => {
+    if (value == null) return [];
+    if (typeof value !== 'string') throw new TranslatorInputError(`Cannot translate Anthropic Messages metadata field '${key}' to a string metadata value.`);
+    return [[key, value]];
+  });
+  return entries.length === 0 ? undefined : Object.fromEntries(entries);
+};
+
+// Messages states the accelerated lane as `speed` and the general lane as
+// `service_tier`; every other protocol names both with the one tier string, so
+// `speed` wins when a request states both.
+// https://docs.claude.com/en/build-with-claude/fast-mode
+const serviceTierFromAnthropicMessages = (payload: AnthropicMessagesPayload): string | undefined => {
+  if (payload.speed === 'fast') return FAST_SERVICE_TIER;
+  // `standard` is the default lane, which a target already assumes.
+  if (payload.speed === 'standard') return undefined;
+  return payload.service_tier ?? undefined;
 };
 
 // A level stated outright wins over the one a thinking mode implies, because the

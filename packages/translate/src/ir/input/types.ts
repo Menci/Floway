@@ -52,9 +52,10 @@ export interface IRInputSettings {
   // carries two.
   readonly max_output_tokens?: number; // All
   readonly output_format?: IRInputOutputFormat; // ChatCompletions, Responses, Messages, GenerateContent
-  // Key/value tags a caller attaches for its own bookkeeping. Both OpenAI
-  // protocols carry the same shape, so it survives their translation verbatim.
-  readonly metadata?: Readonly<Record<string, string>>; // ChatCompletions, Responses
+  // Key/value tags a caller attaches for its own bookkeeping. Every protocol
+  // states them as string pairs, so a source whose own metadata admits other
+  // value types converts at its reader rather than here.
+  readonly metadata?: Readonly<Record<string, string>>; // ChatCompletions, Responses, Messages
   // Whether the upstream keeps the response for later retrieval.
   readonly store?: boolean; // ChatCompletions, Responses
   // The service tier the caller asks for, forwarded as the open string every
