@@ -4,13 +4,11 @@ import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } fro
 import type { SidecarCodec, RemoteImageLoader } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
 import { anthropicMessagesRequestFromIR } from '../../anthropic-messages/as-target/input-from.ts';
-import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-messages/as-target/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
 import { openaiChatCompletionsSettingsToIR, openaiChatCompletionsInputContext, openaiChatCompletionsToolsToIR, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/input-to.ts';
 import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
 import { type AnthropicMessagesMessage, type AnthropicMessagesPayload, type AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
-import { isFastServiceTier } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 
 interface BuildTargetRequestOptions {
@@ -23,13 +21,6 @@ interface BuildTargetRequestOptions {
    */
   fallbackMaxOutputTokens: number | undefined;
 }
-
-const anthropicServiceTierFieldsFromOpenAI = (serviceTier: string | null | undefined): Partial<AnthropicMessagesPayload> =>
-  isFastServiceTier(serviceTier)
-    ? { speed: 'fast' }
-    : serviceTier != null
-      ? { service_tier: serviceTier }
-      : {};
 
 const chatImageResolver = (loadRemoteImage: RemoteImageLoader) => async (media: IRInputMedia) => {
   if (media.source_kind === 'url') return await resolveImageUrlToAnthropicMessagesImage(media.url, loadRemoteImage);
@@ -99,17 +90,9 @@ export const buildTargetRequest = async (
   applyLastToolCacheBreakpoint(base.tools);
   applyLastMessageCacheBreakpoint(messages.filter(message => !restoredMessages.has(message)));
 
-  const { thinking, effort: reasoningEffort } = anthropicMessagesReasoningFieldsFromEffort(payload.reasoning_effort);
-  const hasOutputConfig = reasoningEffort !== undefined || base.output_config !== undefined;
-
   return {
     ...base,
     messages,
     ...(systemBlocks.length > 0 ? { system: systemBlocks } : {}),
-    ...(thinking ? { thinking } : {}),
-    ...(hasOutputConfig
-      ? { output_config: { ...(reasoningEffort === undefined ? {} : { effort: reasoningEffort }), ...base.output_config } }
-      : {}),
-    ...anthropicServiceTierFieldsFromOpenAI(payload.service_tier),
   };
 };

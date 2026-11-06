@@ -16,13 +16,13 @@ const buildWithTestSidecar = (
   options: Parameters<typeof buildTargetRequestWithSidecar>[3],
 ) => buildTargetRequestWithSidecar(payload, model, createTestSidecarCodec(), options);
 
-test('buildTargetRequest forwards an empty thinkingLevel verbatim', async () => {
+test('buildTargetRequest treats an empty thinkingLevel as unstated', async () => {
   const request = await buildWithTestSidecar({
     contents: [],
     generationConfig: { thinkingConfig: { thinkingLevel: '' } },
   }, 'claude-test', noOptions);
 
-  assertEquals(request.output_config, { effort: '' });
+  assertEquals(request.output_config, undefined);
 });
 
 test('buildTargetRequest preserves native thinkingBudget beside an empty thinkingLevel', async () => {
@@ -32,7 +32,8 @@ test('buildTargetRequest preserves native thinkingBudget beside an empty thinkin
   }, 'claude-test', noOptions);
 
   assertEquals(request.thinking, { type: 'enabled', budget_tokens: 2048 });
-  assertEquals(request.output_config, { effort: '' });
+  // The budget is the only stated quantity, so it supplies the level.
+  assertEquals(request.output_config, { effort: 'low' });
 });
 
 test('buildTargetRequest maps system, default max tokens, and multimodal user content', async () => {

@@ -13,34 +13,7 @@ import {
   type AnthropicMessagesPayload,
   type AnthropicMessagesTextBlockParam,
 } from '@floway-dev/protocols/anthropic-messages';
-import type { GeminiGenerateContentPayload, GeminiGenerateContentThinkingConfig } from '@floway-dev/protocols/gemini-generate-content';
-
-interface ThinkingConfigFields {
-  thinking?: NonNullable<AnthropicMessagesPayload['thinking']>;
-  outputConfig: NonNullable<AnthropicMessagesPayload['output_config']>;
-}
-
-const applyThinkingConfig = (thinkingConfig?: GeminiGenerateContentThinkingConfig): ThinkingConfigFields => {
-  if (!thinkingConfig) return { outputConfig: {} };
-
-  let thinking: ThinkingConfigFields['thinking'];
-  if (thinkingConfig.thinkingBudget === -1) {
-    thinking = { type: 'adaptive' };
-  } else if (thinkingConfig.thinkingBudget !== undefined && thinkingConfig.thinkingBudget > 0) {
-    thinking = {
-      type: 'enabled',
-      budget_tokens: thinkingConfig.thinkingBudget,
-    };
-  } else if (thinkingConfig.thinkingBudget === 0) {
-    thinking = { type: 'disabled' };
-  }
-
-  const effort = thinkingConfig?.thinkingLevel;
-  return {
-    ...(thinking !== undefined ? { thinking } : {}),
-    outputConfig: effort !== undefined ? { effort } : {},
-  };
-};
+import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 
 export const buildTargetRequest = async (
   payload: GeminiGenerateContentPayload,
@@ -101,11 +74,6 @@ export const buildTargetRequest = async (
     messages,
     ...(systemBlocks.length === 0 ? {} : { system: systemBlocks }),
   };
-
-  const { thinking, outputConfig: thinkingOutputConfig } = applyThinkingConfig(payload.generationConfig?.thinkingConfig);
-  if (thinking !== undefined) request.thinking = thinking;
-  const outputConfig = { ...(request.output_config ?? {}), ...thinkingOutputConfig };
-  if (Object.keys(outputConfig).length > 0) request.output_config = outputConfig;
 
   if (systemBlocks.length > 0) applyLastSystemCacheBreakpoint(systemBlocks);
   applyLastToolCacheBreakpoint(request.tools);

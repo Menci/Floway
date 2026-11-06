@@ -11,13 +11,13 @@ const buildWithTestSidecar = (
   model: Parameters<typeof buildTargetRequestWithSidecar>[1],
 ) => buildTargetRequestWithSidecar(payload, model, createTestSidecarCodec());
 
-test('buildTargetRequest forwards an empty thinkingLevel verbatim', async () => {
+test('buildTargetRequest treats an empty thinkingLevel as unstated', async () => {
   const request = await buildWithTestSidecar({
     contents: [],
     generationConfig: { thinkingConfig: { thinkingLevel: '' } },
   }, 'gpt-test');
 
-  assertEquals(request.reasoning_effort, '');
+  assertEquals(request.reasoning_effort, undefined);
 });
 
 test('buildTargetRequest gives thinkingBudget precedence over an empty thinkingLevel', async () => {

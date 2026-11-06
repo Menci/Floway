@@ -308,7 +308,15 @@ export const anthropicMessagesSettingsFromIR = (settings: IRInputSettings): Omit
   // Its scale has no `none`, so that one value changes slot rather than passing
   // through. Whether the target honours the off switch is the target's business.
   // https://platform.claude.com/docs/en/build-with-claude/effort
-  const thinking = settings.reasoning_effort === 'none' ? { type: 'disabled' as const } : undefined;
+  const thinking = settings.reasoning_effort === 'none'
+    ? { type: 'disabled' as const }
+    : settings.reasoning_dynamic === true
+      ? { type: 'adaptive' as const }
+      : settings.reasoning_budget === undefined
+        ? undefined
+        // A token budget is the other half of the same axis: Messages states it
+        // on an enabled thinking mode.
+        : { type: 'enabled' as const, budget_tokens: settings.reasoning_budget };
   const effort = settings.reasoning_effort === undefined || settings.reasoning_effort === 'none' ? undefined : settings.reasoning_effort;
   const outputConfig = effort === undefined && formatConfig === undefined
     ? undefined

@@ -295,6 +295,14 @@ export const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContent
     ...(config?.presencePenalty === undefined ? {} : { presence_penalty: config.presencePenalty }),
     ...(config?.frequencyPenalty === undefined ? {} : { frequency_penalty: config.frequencyPenalty }),
     ...(reasoningEffort === null ? {} : { reasoning_effort: reasoningEffort }),
+    // A level and a token budget are different quantities, and a caller that
+    // writes both means both: the level bounds how hard the model thinks and the
+    // budget bounds what it may spend. A level stated outright replaces the one
+    // inferred from the budget rather than adding a second axis.
+    ...(config?.thinkingConfig?.thinkingLevel == null || config.thinkingConfig.thinkingLevel === 'THINKING_LEVEL_UNSPECIFIED' || config.thinkingConfig.thinkingLevel === '' ? {} : { reasoning_effort: config.thinkingConfig.thinkingLevel }),
+    ...(config?.thinkingConfig?.thinkingBudget === undefined || config.thinkingConfig.thinkingBudget <= 0 ? {} : { reasoning_budget: config.thinkingConfig.thinkingBudget }),
+    // A negative budget is GenerateContent's way of saying the target chooses it.
+    ...(config?.thinkingConfig?.thinkingBudget === undefined || config.thinkingConfig.thinkingBudget >= 0 ? {} : { reasoning_dynamic: true }),
     // GenerateContent states readable reasoning as a boolean; the neutral
     // spelling names how much of it the caller wants.
     ...(reasoningEffort !== null && reasoningEffort !== 'none' && config?.thinkingConfig?.includeThoughts === true ? { reasoning_summary: 'detailed' } : {}),

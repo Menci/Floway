@@ -66,6 +66,14 @@ export interface IRInputSettings {
   // combines its own effort and thinking controls into the same axis, so the
   // writer there derives both.
   readonly reasoning_effort?: string; // ChatCompletions, Responses
+  // How many tokens the model may spend on internal reasoning. This is a
+  // separate quantity from the effort level: Messages states both, and a source
+  // that caps the budget without naming a level still asked for that cap.
+  readonly reasoning_budget?: number; // Messages, GenerateContent
+  // The source asks the target to pick the budget itself rather than state one.
+  // GenerateContent spells it as a negative budget, Messages as an adaptive
+  // thinking mode; both mean "let the model decide", which no number states.
+  readonly reasoning_dynamic?: boolean; // Messages, GenerateContent
   // Whether the caller asks for readable reasoning, and how much of it. An open
   // string because Responses defines an enumerated scale while GenerateContent
   // states a boolean.

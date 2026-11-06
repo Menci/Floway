@@ -319,6 +319,7 @@ export const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload)
     ? { type: 'json_schema', name: 'messages_response', schema: klona(format.schema), strict: true }
     : undefined;
 
+  const reasoningEffort = reasoningEffortFromAnthropicMessages(payload);
   return {
     model: payload.model,
     stream: payload.stream === true,
@@ -329,5 +330,21 @@ export const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload)
     ...(payload.max_tokens == null ? {} : { max_output_tokens: payload.max_tokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
     ...(payload.service_tier == null ? {} : { service_tier: payload.service_tier }),
+    // Messages splits one reasoning axis across three controls: a level, an off
+    // switch, and a token budget. The level and the off switch are the same axis
+    // every other protocol states as an effort, and the budget is its own
+    // quantity that a source may state without a level.
+    ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
+    ...(payload.thinking?.type === 'enabled' ? { reasoning_budget: payload.thinking.budget_tokens } : {}),
+    ...(payload.thinking?.type === 'adaptive' ? { reasoning_dynamic: true } : {}),
   };
+};
+
+// A level stated outright wins over the one a thinking mode implies, because the
+// caller wrote it explicitly while the mode only bounds it.
+const reasoningEffortFromAnthropicMessages = (payload: AnthropicMessagesPayload): string | undefined => {
+  if (payload.output_config?.effort != null) return payload.output_config.effort;
+  if (payload.thinking?.type === 'disabled') return 'none';
+  if (payload.thinking?.type === 'enabled' || payload.thinking?.type === 'adaptive') return 'medium';
+  return undefined;
 };

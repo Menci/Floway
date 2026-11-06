@@ -32,5 +32,7 @@ export const geminiGenerateContentReasoningEffort = (thinkingConfig?: GeminiGene
     return 'high';
   }
 
-  return thinkingConfig.thinkingLevel ?? null;
+  // An unset or unspecified level is the absence of a level, not a level.
+  const level = thinkingConfig.thinkingLevel;
+  return level === undefined || level === '' || level === 'THINKING_LEVEL_UNSPECIFIED' ? null : level;
 };
