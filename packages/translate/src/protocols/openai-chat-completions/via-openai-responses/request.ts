@@ -12,7 +12,6 @@ export const buildTargetRequest = async (
   payload: OpenAIChatCompletionsPayload,
   codec: SidecarCodec,
 ): Promise<CanonicalOpenAIResponsesPayload> => {
-  const customToolCallIds = new Set<string>();
   const source = openaiChatCompletionsSource(payload);
 
   // A resolved assistant turn is already native Responses structure, so it
@@ -30,8 +29,5 @@ export const buildTargetRequest = async (
     pieces.push(source.turnToIR(turn));
   }
 
-  return openaiResponsesPayloadFromSegments(source.request, pieces, turn => {
-    for (const item of turn) if (item.type === 'custom_tool_call') customToolCallIds.add(item.call_id);
-    return turn;
-  });
+  return openaiResponsesPayloadFromSegments(source.request, pieces, turn => turn);
 };

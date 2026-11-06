@@ -13,7 +13,6 @@ import type {
   IRInputToolChoice,
   IRInputOutputFormat,
   IRInputAssistantItem,
-  IRInputConversation,
   IRInputMedia,
   IRInputTextPart,
   IRInputToolResultItem,
@@ -80,6 +79,10 @@ const userParts = (content: GeminiGenerateContentContent, turnIndex: number, ids
   return items;
 };
 
+// A thought part states no id of its own, so its IR identity comes from the
+// position it occupies in the request.
+const reasoningId = (turnIndex: number, partIndex: number): string => `gemini_reasoning_${turnIndex}_${partIndex}`;
+
 const assistantItems = (content: GeminiGenerateContentContent, turnIndex: number, ids: GeminiGenerateContentToolCallIds): IRInputAssistantItem[] => {
   const items: IRInputAssistantItem[] = [];
   const pending: IRInputAssistantContentPart[] = [];
@@ -108,7 +111,7 @@ const assistantItems = (content: GeminiGenerateContentContent, turnIndex: number
       const thoughtText = geminiGenerateContentThoughtText(part);
       if (thoughtText !== null) {
         flush();
-        items.push({ type: 'reasoning', id: geminiGenerateContentReasoningId(turnIndex, partIndex), summary: [thoughtText] });
+        items.push({ type: 'reasoning', id: reasoningId(turnIndex, partIndex), summary: [thoughtText] });
         return;
       }
       const visible = geminiGenerateContentVisibleText(part);
@@ -132,12 +135,10 @@ const systemParts = (content: GeminiGenerateContentContent | undefined): IRInput
   return text === null ? [] : [{ type: 'text', text }];
 };
 
-/**
- * One input IR turn per source content. A target that keeps its own message
- * boundaries (Messages) uses this so two adjacent GenerateContent contents do
- * not merge into one message.
- */
-export const geminiGenerateContentContentsToIRTurns = (
+// One IR turn per source content: GenerateContent states each entry of
+// `contents` as a turn of its own, so two adjacent contents stay two turns and a
+// target that keeps message boundaries reproduces the ones the caller drew.
+const contentsToIRTurns = (
   turn: GeminiGenerateContentTurn,
   contentIndex: number,
   ids: GeminiGenerateContentToolCallIds,
@@ -161,39 +162,9 @@ export const geminiGenerateContentContentsToIRTurns = (
   };
 });
 
-/** Turn-level entry point so a pair can splice a resolved assistant turn. */
 /** Whether a turn carries a vendor-signed thought signature the input IR cannot hold. */
-export const geminiGenerateContentReasoningId = (turnIndex: number, partIndex: number): string => `gemini_reasoning_${turnIndex}_${partIndex}`;
-
 export const geminiGenerateContentDropsReasoning = (turn: GeminiGenerateContentTurn): boolean => turn.role === 'assistant'
   && turn.items.some(content => content.parts?.some(part => part.thoughtSignature !== undefined) ?? false);
-
-export const geminiGenerateContentTurnToIR = (
-  turn: GeminiGenerateContentTurn,
-  contentIndex: number,
-  ids?: GeminiGenerateContentToolCallIds,
-): IRInputTurn => {
-  const toolIds = ids ?? Object.create(null);
-  if (turn.role === 'assistant') {
-    return {
-      kind: 'assistant',
-      items: turn.items.flatMap((content, index) => (content.parts?.length ?? 0) === 0
-        ? [{ type: 'message' as const, content: [{ type: 'text' as const, text: '' }] }]
-        : assistantItems(content, contentIndex + index, toolIds)),
-    };
-  }
-  return {
-    kind: 'client',
-    items: turn.items.flatMap((content, index) => {
-      if (content.role !== 'user' && content.role !== undefined) {
-        throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
-      }
-      return (content.parts?.length ?? 0) === 0
-        ? [{ type: 'message' as const, content: [] }]
-        : userParts(content, contentIndex + index, toolIds);
-    }),
-  };
-};
 
 /** A GenerateContent system instruction is the conversation's leading prompt. */
 export const geminiGenerateContentSystemToIR = (content: GeminiGenerateContentContent | undefined): IRInputTurn | undefined => {
@@ -201,32 +172,7 @@ export const geminiGenerateContentSystemToIR = (content: GeminiGenerateContentCo
   return parts.length === 0 ? undefined : { kind: 'client', items: [{ type: 'prompt', role: 'system', content: parts }] };
 };
 
-export const geminiGenerateContentInputToIR = (payload: GeminiGenerateContentPayload): IRInputConversation => {
-  const ids: GeminiGenerateContentToolCallIds = Object.create(null);
-  const turns: IRInputTurn[] = [];
-
-  const system = geminiGenerateContentSystemToIR(payload.systemInstruction);
-  if (system !== undefined) turns.push(system);
-
-  let contentIndex = 0;
-  for (const turn of partitionGeminiGenerateContentTurns(payload.contents ?? [])) {
-    for (const [index, content] of turn.items.entries()) {
-      if (turn.role === 'assistant') {
-        // A thought signature is a vendor-signed value with no cross-vendor
-        // meaning, so it never reaches the input IR.
-        const items = assistantItems(content, contentIndex + index, ids);
-        turns.push({ kind: 'assistant', items });
-        continue;
-      }
-      if (content.role !== 'user' && content.role !== undefined) {
-        throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
-      }
-      turns.push({ kind: 'client', items: (content.parts?.length ?? 0) === 0 ? [{ type: 'message', content: [] }] : userParts(content, contentIndex + index, ids) });
-    }
-    contentIndex += turn.items.length;
-  }
-  return { turns };
-};
+const partitionContents = (payload: GeminiGenerateContentPayload): GeminiGenerateContentTurn[] => partitionGeminiGenerateContentTurns(payload.contents ?? []);
 
 // GenerateContent declares functions in groups and narrows them through
 // `toolConfig.functionCallingConfig`. A target has no declaration-level
@@ -272,11 +218,63 @@ const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequest, 
   };
 };
 
-export const geminiGenerateContentRequestToIR = (payload: GeminiGenerateContentPayload, model: string): IRInputRequest => ({
-  conversation: geminiGenerateContentInputToIR(payload),
-  settings: geminiGenerateContentSettingsToIR(payload, model),
-  ...toolsToIR(payload),
-});
+/**
+ * A GenerateContent request prepared for translation.
+ *
+ * Reading a GenerateContent conversation is stateful in two ways. A
+ * `functionResponse` part states a call id only when the caller has one and
+ * otherwise answers the oldest call of that name, so the reader tracks which
+ * calls it has already matched. A call id the source omitted is invented from
+ * the position of the content and the part, which the reader counts across the
+ * whole request.
+ *
+ * A sidecar-resolved assistant turn never passes through this reader, but it
+ * did consume source contents, and the calls it states are keyed by ids the
+ * reader would otherwise not know. Presenting the request, the conversation,
+ * and the reader that owns both counters together keeps that state where it
+ * belongs rather than in every route.
+ */
+export interface GeminiGenerateContentSource {
+  readonly request: IRInputRequest;
+  readonly prompt: IRInputTurn | undefined;
+  readonly conversation: readonly GeminiGenerateContentTurn[];
+  turnToIR: (turn: GeminiGenerateContentTurn) => IRInputTurn[];
+  // A resolved turn is written natively by the target, so it yields no IR, but
+  // it did consume source contents: the counter must move past them and the
+  // calls it states must be remembered as already answered.
+  observeResolvedTurn: (turn: GeminiGenerateContentTurn, calls: readonly GeminiGenerateContentResolvedCall[]) => void;
+}
+
+export interface GeminiGenerateContentResolvedCall {
+  readonly callId: string;
+  readonly name: string;
+}
+
+export const geminiGenerateContentSource = (payload: GeminiGenerateContentPayload, model: string): GeminiGenerateContentSource => {
+  const ids: GeminiGenerateContentToolCallIds = Object.create(null);
+  let contentIndex = 0;
+  return {
+    request: {
+      conversation: { turns: [] },
+      settings: geminiGenerateContentSettingsToIR(payload, model),
+      ...toolsToIR(payload),
+    },
+    prompt: geminiGenerateContentSystemToIR(payload.systemInstruction),
+    conversation: partitionContents(payload),
+    turnToIR: turn => {
+      const turns = contentsToIRTurns(turn, contentIndex, ids);
+      contentIndex += turn.items.length;
+      return turns;
+    },
+    observeResolvedTurn: (turn, calls) => {
+      contentIndex += turn.items.length;
+      for (const { callId, name } of calls) {
+        ids[name] ??= [];
+        ids[name].push(callId);
+      }
+    },
+  };
+};
 
 /** GenerateContent keeps every sampling knob inside `generationConfig`. */
 export const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentPayload, model: string): IRInputSettings => {

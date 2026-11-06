@@ -23,19 +23,17 @@ export const buildTargetRequest = async (
     ? undefined
     : openaiResponsesRequestFromIR({ ...source.request, conversation: { turns: [source.prompt] } }, true);
   if (prompt !== undefined) pieces.push({ kind: 'resolved', turn: prompt.input });
-  let messageIndex = 0;
   for (const turn of source.conversation) {
     if (turn.role === 'assistant') {
       const roundTrip = await roundTripAssistantTurn('anthropicMessages', 'openaiResponses', turn.items, codec, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest, collectAnthropicMessagesReplayContents);
       if (roundTrip !== undefined) {
         pieces.push({ kind: 'resolved', turn: roundTrip.turn });
-        messageIndex += turn.items.length;
+        source.observeResolvedTurn(turn);
         continue;
       }
       if (anthropicMessagesDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('anthropicMessages', 'openaiResponses');
     }
-    pieces.push(...source.turnToIR(turn, messageIndex));
-    messageIndex += turn.items.length;
+    pieces.push(...source.turnToIR(turn));
   }
 
   // Keep fallback semantics strict: do not synthesize `temperature: 1`,

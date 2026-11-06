@@ -3,10 +3,8 @@ import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
 import { openaiResponsesPayloadFromSegments } from '../../openai-responses/as-target/segmented-request.ts';
-import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
-import { geminiGenerateContentDropsReasoning, geminiGenerateContentRequestToIR, geminiGenerateContentSystemToIR, geminiGenerateContentTurnToIR } from '../as-source/input-to.ts';
+import { geminiGenerateContentDropsReasoning, geminiGenerateContentSource, type GeminiGenerateContentResolvedCall } from '../as-source/input-to.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
-import type { GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 
@@ -15,34 +13,29 @@ export const buildTargetRequest = async (
   model: string,
   codec: SidecarCodec,
 ): Promise<CanonicalOpenAIResponsesPayload> => {
-  const unmatchedToolCallIds: GeminiGenerateContentToolCallIds = Object.create(null);
-  const ir = geminiGenerateContentRequestToIR(payload, model);
-
-  let contentIndex = 0;
+  const source = geminiGenerateContentSource(payload, model);
   const pieces: (IRInputTurn | IRInputResolvedTurn<CanonicalOpenAIResponsesInputItem[]>)[] = [];
-  for (const turn of partitionGeminiGenerateContentTurns(payload.contents ?? [])) {
+  for (const turn of source.conversation) {
     if (turn.role === 'assistant') {
       const roundTrip = await roundTripAssistantTurn('geminiGenerateContent', 'openaiResponses', turn.items, codec, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest, collectGeminiGenerateContentReplayContents);
       if (roundTrip !== undefined) {
         pieces.push({ kind: 'resolved', turn: roundTrip.turn });
-        for (const item of roundTrip.turn) {
-          if (item.type !== 'function_call' && item.type !== 'custom_tool_call') continue;
-          unmatchedToolCallIds[item.name] ??= [];
-          unmatchedToolCallIds[item.name].push(item.call_id);
-        }
-        contentIndex += turn.items.length;
+        source.observeResolvedTurn(turn, roundTripCalls(roundTrip.turn));
         continue;
       }
       if (geminiGenerateContentDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('geminiGenerateContent', 'openaiResponses');
     }
-    pieces.push(geminiGenerateContentTurnToIR(turn, contentIndex, unmatchedToolCallIds));
-    contentIndex += turn.items.length;
+    pieces.push(...source.turnToIR(turn));
   }
 
   // The system instruction is the conversation's leading prompt and joins the
   // pieces as its own segment, so the writer states it in its own slot.
-  const system = geminiGenerateContentSystemToIR(payload.systemInstruction);
-  if (system !== undefined) pieces.unshift(system);
+  if (source.prompt !== undefined) pieces.unshift(source.prompt);
 
-  return openaiResponsesPayloadFromSegments(ir, pieces, turn => turn);
+  return openaiResponsesPayloadFromSegments(source.request, pieces, turn => turn);
 };
+
+const roundTripCalls = (items: readonly CanonicalOpenAIResponsesInputItem[]): GeminiGenerateContentResolvedCall[] =>
+  items.flatMap(item => item.type === 'function_call' || item.type === 'custom_tool_call'
+    ? [{ callId: item.call_id, name: item.name }]
+    : []);

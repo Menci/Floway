@@ -415,16 +415,29 @@ export interface AnthropicMessagesSource {
   readonly request: IRInputRequest;
   readonly prompt: IRInputTurn | undefined;
   readonly conversation: AnthropicMessagesConversationTurn[];
-  turnToIR: (turn: AnthropicMessagesConversationTurn, firstMessageIndex: number) => IRInputTurn[];
+  turnToIR: (turn: AnthropicMessagesConversationTurn) => IRInputTurn[];
+  // A resolved turn is written natively by the target, so it yields no IR, but
+  // it still occupies source messages that later diagnostics count past.
+  observeResolvedTurn: (turn: AnthropicMessagesConversationTurn) => void;
 }
 
-export const anthropicMessagesSource = (payload: AnthropicMessagesPayload): AnthropicMessagesSource => ({
-  request: {
-    conversation: { turns: [] },
-    settings: anthropicMessagesSettingsToIR(payload),
-    ...anthropicMessagesToolsToIR(payload),
-  },
-  prompt: anthropicMessagesSystemToIR(payload.system),
-  conversation: partitionAnthropicMessagesTurns(payload.messages),
-  turnToIR: anthropicMessagesTurnToIR,
-});
+export const anthropicMessagesSource = (payload: AnthropicMessagesPayload): AnthropicMessagesSource => {
+  let messageIndex = 0;
+  return {
+    request: {
+      conversation: { turns: [] },
+      settings: anthropicMessagesSettingsToIR(payload),
+      ...anthropicMessagesToolsToIR(payload),
+    },
+    prompt: anthropicMessagesSystemToIR(payload.system),
+    conversation: partitionAnthropicMessagesTurns(payload.messages),
+    turnToIR: turn => {
+      const turns = anthropicMessagesTurnToIR(turn, messageIndex);
+      messageIndex += turn.items.length;
+      return turns;
+    },
+    observeResolvedTurn: turn => {
+      messageIndex += turn.items.length;
+    },
+  };
+};
