@@ -399,3 +399,32 @@ const reasoningEffortFromAnthropicMessages = (payload: AnthropicMessagesPayload)
   if (payload.thinking?.type === 'enabled' || payload.thinking?.type === 'adaptive') return 'medium';
   return undefined;
 };
+
+/**
+ * A Messages request prepared for translation.
+ *
+ * Messages states its prompt in a top-level field and its conversation in
+ * `messages`; both enter the IR, and the request-wide fields come from the same
+ * payload. Presenting them together keeps a route from assembling the request
+ * itself and then having to add the prompt separately.
+ *
+ * The conversation is returned unsegmented so a route can splice a
+ * sidecar-resolved assistant turn into it.
+ */
+export interface AnthropicMessagesSource {
+  readonly request: IRInputRequest;
+  readonly prompt: IRInputTurn | undefined;
+  readonly conversation: AnthropicMessagesConversationTurn[];
+  turnToIR: (turn: AnthropicMessagesConversationTurn, firstMessageIndex: number) => IRInputTurn[];
+}
+
+export const anthropicMessagesSource = (payload: AnthropicMessagesPayload): AnthropicMessagesSource => ({
+  request: {
+    conversation: { turns: [] },
+    settings: anthropicMessagesSettingsToIR(payload),
+    ...anthropicMessagesToolsToIR(payload),
+  },
+  prompt: anthropicMessagesSystemToIR(payload.system),
+  conversation: partitionAnthropicMessagesTurns(payload.messages),
+  turnToIR: anthropicMessagesTurnToIR,
+});

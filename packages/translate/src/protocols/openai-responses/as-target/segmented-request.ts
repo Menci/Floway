@@ -19,6 +19,9 @@ export const openaiResponsesPayloadFromSegments = <Restored extends readonly Can
   request: IRInputRequest,
   pieces: readonly (IRInputTurn | IRInputResolvedTurn<Restored>)[],
   resolvedInput: (turn: Restored) => readonly CanonicalOpenAIResponsesInputItem[],
+  // Only a conversation's first segment holds the request's leading prompt; a
+  // later segment continues an exchange that already started.
+  hoistFirstSegment = true,
 ): CanonicalOpenAIResponsesPayload => {
   const input: CanonicalOpenAIResponsesInputItem[] = [];
   const instructions: string[] = [];
@@ -27,7 +30,7 @@ export const openaiResponsesPayloadFromSegments = <Restored extends readonly Can
     if (piece.kind === 'resolved') { input.push(...resolvedInput(piece.turn)); continue; }
     // Only a conversation's first segment holds the request's leading prompt; a
     // later segment continues an exchange that already started.
-    const translated = openaiResponsesRequestFromIR({ ...request, conversation: { turns: piece.turns } }, piece.leading);
+    const translated = openaiResponsesRequestFromIR({ ...request, conversation: { turns: piece.turns } }, piece.leading && hoistFirstSegment);
     base ??= translated;
     if (translated.instructions != null) instructions.push(translated.instructions);
     input.push(...translated.input);

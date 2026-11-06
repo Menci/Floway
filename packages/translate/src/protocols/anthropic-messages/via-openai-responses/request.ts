@@ -1,10 +1,10 @@
-import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
-import type { IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
+import type { IRInputResolvedTurn } from '../../../ir/input/segments.ts';
+import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
 import { openaiResponsesRequestFromIR } from '../../openai-responses/as-target/input-from.ts';
-import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
-import { anthropicMessagesDropsReasoning, anthropicMessagesSettingsToIR, anthropicMessagesSystemToIR, anthropicMessagesToolsToIR, anthropicMessagesTurnToIR } from '../as-source/input-to.ts';
+import { openaiResponsesPayloadFromSegments } from '../../openai-responses/as-target/segmented-request.ts';
+import { anthropicMessagesDropsReasoning, anthropicMessagesSource } from '../as-source/input-to.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from '../as-source/round-trip.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
@@ -13,29 +13,18 @@ export const buildTargetRequest = async (
   payload: AnthropicMessagesPayload,
   codec: SidecarCodec,
 ): Promise<CanonicalOpenAIResponsesPayload> => {
-  const ir: IRInputRequest = {
-    conversation: { turns: [] },
-    settings: anthropicMessagesSettingsToIR(payload),
-    ...anthropicMessagesToolsToIR(payload),
-  };
-
+  const source = anthropicMessagesSource(payload);
   const pieces: (IRInputTurn | IRInputResolvedTurn<CanonicalOpenAIResponsesInputItem[]>)[] = [];
-  let leadingInstructions: string | undefined;
-  // The top-level `system` field is the request's prompt, so it opens the
-  // conversation. A system message inside `messages` is one the caller placed
-  // there and keeps its own position.
-  const system = anthropicMessagesSystemToIR(payload.system);
-  if (system !== undefined) {
-    // The prompt is stated by the request's own `system` field, not by a
-    // message the caller placed in the conversation, so it is what a target's
-    // dedicated prompt slot carries. Every message inside `messages` keeps its
-    // position, including a system one.
-    const hoisted = openaiResponsesRequestFromIR({ ...ir, conversation: { turns: [system] } }, true);
-    leadingInstructions = hoisted.instructions ?? undefined;
-    pieces.push({ kind: 'resolved', turn: hoisted.input });
-  }
+  // The top-level `system` field is the request's prompt, which the target's
+  // dedicated slot carries. Stating it as its own leading segment keeps it apart
+  // from the conversation: a system message inside `messages` is one the caller
+  // placed there, so it must not be lifted along with the prompt.
+  const prompt = source.prompt === undefined
+    ? undefined
+    : openaiResponsesRequestFromIR({ ...source.request, conversation: { turns: [source.prompt] } }, true);
+  if (prompt !== undefined) pieces.push({ kind: 'resolved', turn: prompt.input });
   let messageIndex = 0;
-  for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
+  for (const turn of source.conversation) {
     if (turn.role === 'assistant') {
       const roundTrip = await roundTripAssistantTurn('anthropicMessages', 'openaiResponses', turn.items, codec, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest, collectAnthropicMessagesReplayContents);
       if (roundTrip !== undefined) {
@@ -45,22 +34,15 @@ export const buildTargetRequest = async (
       }
       if (anthropicMessagesDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('anthropicMessages', 'openaiResponses');
     }
-    pieces.push(...anthropicMessagesTurnToIR(turn, messageIndex));
+    pieces.push(...source.turnToIR(turn, messageIndex));
     messageIndex += turn.items.length;
   }
-
-  const input: CanonicalOpenAIResponsesInputItem[] = [];
-  let base: CanonicalOpenAIResponsesPayload | undefined;
-  for (const piece of segmentIRInput(pieces)) {
-    if (piece.kind === 'resolved') { input.push(...piece.turn); continue; }
-    const translated = openaiResponsesRequestFromIR({ ...ir, conversation: { turns: piece.turns } }, false);
-    base ??= translated;
-    input.push(...translated.input);
-  }
-  base ??= openaiResponsesRequestFromIR({ ...ir, conversation: { turns: [] } });
 
   // Keep fallback semantics strict: do not synthesize `temperature: 1`,
   // `store: false`, `parallel_tool_calls: true`, `reasoning.summary`, or
   // `reasoning.context` when the Messages source did not express those knobs.
-  return { ...base, input, ...(leadingInstructions === undefined ? {} : { instructions: leadingInstructions }) };
+  // The prompt already occupies the target's slot, so the conversation must
+  // not lift a leading system message into it as well.
+  const base = openaiResponsesPayloadFromSegments(source.request, pieces, turn => turn, false);
+  return { ...base, ...(prompt?.instructions == null ? {} : { instructions: prompt.instructions }) };
 };
