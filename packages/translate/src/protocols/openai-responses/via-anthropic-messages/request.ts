@@ -1,12 +1,11 @@
-import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
+import type { IRInputResolvedTurn } from '../../../ir/input/segments.ts';
 import { irInputCustomToolNames } from '../../../ir/input/select-tools.ts';
 import type { IRInputMedia, IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec, RemoteImageLoader } from '../../../types.ts';
-import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
-import { anthropicMessagesRequestFromIR } from '../../anthropic-messages/as-target/input-from.ts';
 import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
+import { anthropicMessagesPayloadFromSegments } from '../../anthropic-messages/as-target/segmented-request.ts';
 import { validateAllowedTools } from '../as-source/allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
 import { openaiResponsesSettingsToIR, openaiResponsesToolsToIR, openaiResponsesDropsReasoning, openaiResponsesInstructionsToIR, openaiResponsesTurnToIR } from '../as-source/input-to.ts';
@@ -14,11 +13,7 @@ import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/nam
 import { rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
-import {
-  type AnthropicMessagesMessage,
-  type AnthropicMessagesPayload,
-  type AnthropicMessagesTextBlockParam,
-} from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesMessage, AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type {
   OpenAIResponsesRequestPayloadEx,
 } from '@floway-dev/protocols/openai-responses';
@@ -67,9 +62,11 @@ export const buildTargetRequest = async (
   // names something this translation cannot carry.
   validateAllowedTools(payload.tools, payload.tool_choice, payload.input);
   rejectProgrammaticOpenAIResponsesPayload(payload, 'Anthropic Messages');
-  const systemBlocks: AnthropicMessagesTextBlockParam[] = [];
-
-  const restoredMessages = new Set<AnthropicMessagesMessage>();
+  const request: IRInputRequest = {
+    conversation: { turns: [] },
+    settings: openaiResponsesSettingsToIR(payload),
+    ...openaiResponsesToolsToIR(payload),
+  };
   const pieces: (IRInputTurn | IRInputResolvedTurn<AnthropicMessagesMessage>)[] = [];
   // `instructions` and a leading system input are separate prompt blocks, so
   // each becomes its own output IR system item and the writer hoists both.
@@ -80,7 +77,6 @@ export const buildTargetRequest = async (
       const roundTrip = await roundTripAssistantTurn('openaiResponses', 'anthropicMessages', turn.items, codec, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest, collectOpenAIResponsesReplayContents);
       if (roundTrip !== undefined) {
         pieces.push({ kind: 'resolved', turn: roundTrip.turn });
-        restoredMessages.add(roundTrip.turn);
         continue;
       }
       if (openaiResponsesDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiResponses', 'anthropicMessages');
@@ -88,43 +84,13 @@ export const buildTargetRequest = async (
     pieces.push(...openaiResponsesTurnToIR(turn, flattenInput));
   }
 
-  const irMessages: AnthropicMessagesMessage[] = [];
-  const request: IRInputRequest = {
-    conversation: { turns: [] },
-    settings: openaiResponsesSettingsToIR(payload),
-    ...openaiResponsesToolsToIR(payload),
-  };
-  let base: AnthropicMessagesPayload | undefined;
-  for (const piece of segmentIRInput(pieces)) {
-    if (piece.kind === 'resolved') { irMessages.push(piece.turn); continue; }
-    const translated = await anthropicMessagesRequestFromIR(
-      { ...request, conversation: { turns: piece.turns } },
-      {
-        // Messages carries files as `document` blocks, so a Responses
-        // `input_file` is representable without loss.
-        resolveImage: responsesImageResolver(options.loadRemoteImage),
-        fallbackMaxOutputTokens: options.fallbackMaxOutputTokens,
-      },
-    );
-    base ??= translated;
-    if (translated.system !== undefined) systemBlocks.push(...(typeof translated.system === 'string' ? [{ type: 'text' as const, text: translated.system }] : translated.system));
-    irMessages.push(...translated.messages);
-  }
-  base ??= await anthropicMessagesRequestFromIR({ ...request, conversation: { turns: [] } }, {
-    resolveImage: responsesImageResolver(options.loadRemoteImage),
-    fallbackMaxOutputTokens: options.fallbackMaxOutputTokens,
-  });
-
-  const target: AnthropicMessagesPayload = {
-    ...base,
-    messages: irMessages,
-    ...(systemBlocks.length > 0 ? { system: systemBlocks } : {}),
-  };
-
-  // The system blocks are complete only after the writer hoisted them.
-  //
-  applyLastSystemCacheBreakpoint(systemBlocks);
-  applyLastToolCacheBreakpoint(target.tools);
-  applyLastMessageCacheBreakpoint(target.messages.filter(message => !restoredMessages.has(message)));
+  const target = await anthropicMessagesPayloadFromSegments(
+    request,
+    pieces,
+    turn => turn,
+    // Messages carries files as `document` blocks, so a Responses `input_file`
+    // is representable without loss.
+    { resolveImage: responsesImageResolver(options.loadRemoteImage), fallbackMaxOutputTokens: options.fallbackMaxOutputTokens },
+  );
   return { target, customToolNames: irInputCustomToolNames(request), namespaceToolNames };
 };
