@@ -322,3 +322,27 @@ export const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletions
     ...(payload.frequency_penalty == null ? {} : { frequency_penalty: payload.frequency_penalty }),
   };
 };
+
+/**
+ * A Chat Completions request prepared for translation.
+ *
+ * Reading a Chat conversation is stateful: a `tool` message does not state the
+ * kind of call it answers, so the reader tracks which calls it has already
+ * seen, and the legacy `function` role correlates by name and occurrence.
+ * Presenting the request, the conversation, and the reader that carries that
+ * state together keeps the state with the code that needs it.
+ */
+export interface OpenAIChatCompletionsSource {
+  readonly request: IRInputRequest;
+  readonly conversation: OpenAIChatCompletionsConversationTurn[];
+  turnToIR: (turn: OpenAIChatCompletionsConversationTurn) => IRInputTurn;
+}
+
+export const openaiChatCompletionsSource = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsSource => {
+  const context = openaiChatCompletionsInputContext(payload);
+  return {
+    request: openaiChatCompletionsRequestToIR(payload),
+    conversation: partitionOpenAIChatCompletionsTurns(payload.messages),
+    turnToIR: turn => openaiChatCompletionsTurnToIR(turn, context),
+  };
+};

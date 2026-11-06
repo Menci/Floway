@@ -1,11 +1,10 @@
 import type { IRInputResolvedTurn } from '../../../ir/input/segments.ts';
-import type { IRInputMedia, IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
+import type { IRInputMedia, IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec, RemoteImageLoader } from '../../../types.ts';
 import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
 import { anthropicMessagesPayloadFromSegments } from '../../anthropic-messages/as-target/segmented-request.ts';
-import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
-import { openaiChatCompletionsSettingsToIR, openaiChatCompletionsInputContext, openaiChatCompletionsToolsToIR, openaiChatCompletionsDropsReasoning, openaiChatCompletionsTurnToIR } from '../as-source/input-to.ts';
+import { openaiChatCompletionsDropsReasoning, openaiChatCompletionsSource } from '../as-source/input-to.ts';
 import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
 import type { AnthropicMessagesMessage, AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
@@ -34,14 +33,9 @@ export const buildTargetRequest = async (
   codec: SidecarCodec,
   options: BuildTargetRequestOptions,
 ): Promise<AnthropicMessagesPayload> => {
-  const context = openaiChatCompletionsInputContext(payload);
-  const request: IRInputRequest = {
-    conversation: { turns: [] },
-    settings: openaiChatCompletionsSettingsToIR(payload),
-    ...openaiChatCompletionsToolsToIR(payload),
-  };
+  const source = openaiChatCompletionsSource(payload);
   const pieces: (IRInputTurn | IRInputResolvedTurn<AnthropicMessagesMessage>)[] = [];
-  for (const turn of partitionOpenAIChatCompletionsTurns(payload.messages)) {
+  for (const turn of source.conversation) {
     const roundTrip = turn.role === 'assistant'
       ? await roundTripAssistantTurn(
           'openaiChatCompletions', 'anthropicMessages', turn.items[0], codec,
@@ -50,11 +44,11 @@ export const buildTargetRequest = async (
       : undefined;
     if (roundTrip !== undefined) { pieces.push({ kind: 'resolved', turn: roundTrip.turn }); continue; }
     if (openaiChatCompletionsDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiChatCompletions', 'anthropicMessages');
-    pieces.push(openaiChatCompletionsTurnToIR(turn, context));
+    pieces.push(source.turnToIR(turn));
   }
 
   return await anthropicMessagesPayloadFromSegments(
-    request,
+    source.request,
     pieces,
     turn => turn,
     { resolveImage: chatImageResolver(options.loadRemoteImage), fallbackMaxOutputTokens: options.fallbackMaxOutputTokens },
