@@ -169,9 +169,9 @@ test('buildTargetRequest hoists only the initial contiguous system prefix', asyn
 
   assertEquals(result.instructions, 'sys-1\n\nsys-2');
   assertEquals(result.input, [
-    // A user message keeps its parts: Responses accepts both spellings, and the
-    // array is the one that states each part the IR carried.
-    { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'u1' }] },
+    // One text part is what a plain prompt states, and Responses spells that as
+    // a bare string.
+    { type: 'message', role: 'user', content: 'u1' },
     { type: 'message', role: 'developer', content: 'dev-late' },
     { type: 'message', role: 'system', content: 'sys-late' },
     {

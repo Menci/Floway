@@ -117,8 +117,12 @@ const userItems = (items: readonly IRInputUserItem[]): CanonicalOpenAIResponsesI
         : item.content.map(part => ({ type: 'input_text' as const, text: part.text }));
       return { type: 'message', role: item.role, content };
     }
-    // A user message keeps its part array; an empty one is spelled as a bare
-    // string.
+    // One text part is what a plain prompt states, and Responses spells a
+    // text message as a bare string; several parts keep their array so the
+    // boundaries between them survive.
+    if (item.content.length === 1 && item.content[0].type === 'text') {
+      return { type: 'message', role: 'user', content: item.content[0].text };
+    }
     return { type: 'message', role: 'user', content: item.content.length === 0 ? '' : userContent(item) };
   }
   case 'tool_result': {

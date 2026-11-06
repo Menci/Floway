@@ -43,7 +43,7 @@ test.each(['lookup', '__proto__'])('Gemini via Responses uses restored call IDs 
   const carrier = await encodeRoundTripSidecar(codec, { v: 1, source: 'geminiGenerateContent', target: 'openaiResponses', targetTurn: native, sourceTurnDigest: await computeGeminiGenerateContentTurnDigest(targetTurn(name)) });
   const { target: request } = await routeGeminiGenerateContent({ contents: replayedContents(name, carrier) }).viaOpenAIResponses({ model: 'test', sidecarCodec: createTestSidecarCodec('test-codec-scope') });
   expect(request.input).toEqual([
-    { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'question' }] },
+    { type: 'message', role: 'user', content: 'question' },
     ...native,
     { type: 'function_call_output', call_id: 'native-responses-call', output: '{"answer":42}', status: 'completed' },
     { type: 'function_call', call_id: 'gemini_call_3_0', name: 'other', arguments: '{}', status: 'completed' },
