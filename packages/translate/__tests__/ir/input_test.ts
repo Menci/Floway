@@ -28,7 +28,7 @@ describe('input IR shape', () => {
     const userItems: IRInputClientItem[] = [
       { type: 'prompt', role: 'system', content: [{ type: 'text', text: 'be brief' }] },
       { type: 'prompt', role: 'developer', content: [{ type: 'text', text: 'tools are strict' }] },
-      { type: 'message', role: 'user', content: userParts },
+      { type: 'message', content: userParts },
       { type: 'tool_result', call_id: 'call_1', output: 'ok' },
       { type: 'tool_result', call_id: 'call_2', output: [{ type: 'text', text: 'see' }, { type: 'image', image: { source_kind: 'url', url: 'https://example.com/b.png' } }], is_error: true },
     ];

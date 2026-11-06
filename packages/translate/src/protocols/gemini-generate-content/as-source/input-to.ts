@@ -49,7 +49,7 @@ const userParts = (content: GeminiGenerateContentContent, turnIndex: number, ids
   const pending: IRInputUserContentPart[] = [];
   const flush = (): void => {
     if (pending.length === 0) return;
-    items.push({ type: 'message', role: 'user', content: pending.splice(0) });
+    items.push({ type: 'message', content: pending.splice(0) });
   };
 
   (content.parts ?? []).forEach((part, partIndex) => {
@@ -156,7 +156,7 @@ export const geminiGenerateContentContentsToIRTurns = (
   return {
     kind: 'client' as const,
     items: (content.parts?.length ?? 0) === 0
-      ? [{ type: 'message' as const, role: 'user' as const, content: [] }]
+      ? [{ type: 'message' as const, content: [] }]
       : userParts(content, contentIndex + index, ids),
   };
 });
@@ -189,7 +189,7 @@ export const geminiGenerateContentTurnToIR = (
         throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
       }
       return (content.parts?.length ?? 0) === 0
-        ? [{ type: 'message' as const, role: 'user' as const, content: [] }]
+        ? [{ type: 'message' as const, content: [] }]
         : userParts(content, contentIndex + index, toolIds);
     }),
   };
@@ -221,7 +221,7 @@ export const geminiGenerateContentInputToIR = (payload: GeminiGenerateContentPay
       if (content.role !== 'user' && content.role !== undefined) {
         throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
       }
-      turns.push({ kind: 'client', items: (content.parts?.length ?? 0) === 0 ? [{ type: 'message', role: 'user', content: [] }] : userParts(content, contentIndex + index, ids) });
+      turns.push({ kind: 'client', items: (content.parts?.length ?? 0) === 0 ? [{ type: 'message', content: [] }] : userParts(content, contentIndex + index, ids) });
     }
     contentIndex += turn.items.length;
   }

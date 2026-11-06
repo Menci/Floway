@@ -195,7 +195,6 @@ const userItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, { 
   case 'user':
     return [{
       type: 'message',
-      role: 'user',
       content: message.content == null ? [{ type: 'text', text: '' }] : typeof message.content === 'string' ? textParts(message.content) : message.content.map(userContentPart),
     }];
   case 'tool': {

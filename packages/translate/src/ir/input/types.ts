@@ -213,16 +213,14 @@ export type IRInputAssistantItem =
   | IRInputFunctionCallItem
   | IRInputCustomToolCallItem;
 
-// A leading system run represents both Responses `instructions` and
-// GenerateContent `systemInstruction`, so no placement field is needed:
-// position carries the placement and each writer applies its own hoisting rule.
-// Readers lift those envelope fields into the leading item; Messages' top-level
-// `system` becomes a leading item the same way. Responses keeps later
-// system/developer messages inline, Chat Completions forwards them as
-// developer/system messages, and Messages has an inline system role.
-// A prompt boundary carries its own discriminant: it restricts its content to
-// text and every writer treats it differently from user content, so a reader of
-// the union has to tell them apart without re-reading `role`.
+// A prompt boundary: text the caller sets rather than a turn it takes. It
+// represents a top-level prompt field (`instructions`, `systemInstruction`, or
+// Messages' `system`) as well as a system or developer message inside the
+// conversation, so no placement field is needed — position carries the
+// placement and each writer applies its own hoisting rule.
+//
+// Its own discriminant keeps a prompt distinct from user content, whose parts
+// may carry media; a reader of the union must not have to re-read `role`.
 export interface IRInputSystemMessageItem {
   readonly type: 'prompt'; // ChatCompletions, Responses, Messages
   readonly role: 'system' | 'developer'; // ChatCompletions, Responses; Messages has `system` only
@@ -234,7 +232,6 @@ export interface IRInputSystemMessageItem {
 
 export interface IRInputUserMessageItem {
   readonly type: 'message'; // All
-  readonly role: 'user'; // All
   readonly content: readonly IRInputUserContentPart[]; // All
 }
 

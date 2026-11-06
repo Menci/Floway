@@ -110,14 +110,14 @@ const userItems = (
     return [{ type: 'prompt', role: 'system', content: textBlocks(message.content as string | readonly AnthropicMessagesTextBlockParam[]) }];
   }
   if (typeof message.content === 'string') {
-    return [{ type: 'message', role: 'user', content: message.content === '' ? [] : [{ type: 'text', text: message.content }] }];
+    return [{ type: 'message', content: message.content === '' ? [] : [{ type: 'text', text: message.content }] }];
   }
 
   const items: IRInputClientItem[] = [];
   const pending: IRInputUserContentPart[] = [];
   const flush = (): void => {
     if (pending.length === 0) return;
-    items.push({ type: 'message', role: 'user', content: [...pending] });
+    items.push({ type: 'message', content: [...pending] });
     pending.length = 0;
   };
 

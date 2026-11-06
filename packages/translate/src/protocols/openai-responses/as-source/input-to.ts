@@ -146,7 +146,7 @@ const userItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInput
   switch (item.type) {
   case 'message':
     switch (item.role) {
-    case 'user': return [{ type: 'message' as const, role: 'user' as const, content: userContent(item.content) }];
+    case 'user': return [{ type: 'message' as const, content: userContent(item.content) }];
     case 'system':
     case 'developer': return [{ type: 'prompt' as const, role: item.role, content: systemContent(item) }];
     default: throw new TranslatorInputError(`Invalid role '${item.role}' in input message.`);
