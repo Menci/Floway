@@ -169,11 +169,6 @@ test('buildTargetRequest keeps readable thinking and tool calls while dropping t
           name: 'lookup',
           input: { q: 'docs' },
         },
-      ],
-    },
-    {
-      role: 'assistant',
-      content: [
         {
           type: 'tool_use',
           id: 'gemini_call_1_0',
@@ -238,11 +233,6 @@ test('buildTargetRequest correlates omitted function response ids in call order'
           tool_use_id: 'gemini_call_0_0',
           content: '{"answer":"first"}',
         },
-      ],
-    },
-    {
-      role: 'user',
-      content: [
         {
           type: 'tool_result',
           tool_use_id: 'gemini_call_0_1',

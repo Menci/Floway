@@ -1,33 +1,30 @@
-import type { IRInputResolvedTurn } from '../../../ir/input/segments.ts';
-import type { IRInputTurn } from '../../../ir/input/types.ts';
+import { readIRInput } from '../../../ir/input/source.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
 import { openaiResponsesPayloadFromSegments } from '../../openai-responses/as-target/segmented-request.ts';
 import { openaiChatCompletionsDropsReasoning, openaiChatCompletionsSource } from '../as-source/input-to.ts';
 import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
-import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 export const buildTargetRequest = async (
   payload: OpenAIChatCompletionsPayload,
   codec: SidecarCodec,
 ): Promise<CanonicalOpenAIResponsesPayload> => {
   const source = openaiChatCompletionsSource(payload);
-
   // A resolved assistant turn is already native Responses structure, so it
   // splits the conversation into output IR segments around itself.
-  const pieces: (IRInputTurn | IRInputResolvedTurn<readonly CanonicalOpenAIResponsesInputItem[]>)[] = [];
-  for (const turn of source.conversation) {
-    const roundTrip = turn.role === 'assistant'
-      ? await roundTripAssistantTurn(
-          'openaiChatCompletions', 'openaiResponses', turn.items[0], codec,
-          findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest, collectOpenAIChatCompletionsReplayContents,
-        )
-      : undefined;
-    if (roundTrip !== undefined) { pieces.push({ kind: 'resolved', turn: roundTrip.turn }); continue; }
+  const pieces = await readIRInput(source, async turn => {
+    if (turn.role === 'assistant') {
+      const roundTrip = await roundTripAssistantTurn(
+        'openaiChatCompletions', 'openaiResponses', turn.items[0], codec,
+        findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest, collectOpenAIChatCompletionsReplayContents,
+      );
+      if (roundTrip !== undefined) return { resolved: roundTrip.turn, calls: [] };
+    }
     if (openaiChatCompletionsDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiChatCompletions', 'openaiResponses');
-    pieces.push(source.turnToIR(turn));
-  }
+    return undefined;
+  });
 
-  return openaiResponsesPayloadFromSegments(source.request, pieces, turn => turn);
+  return openaiResponsesPayloadFromSegments(source.request, pieces, turn => [...turn]);
 };

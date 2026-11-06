@@ -4,8 +4,8 @@ import { validateAllowedTools } from './allowed-tools.ts';
 import { partitionOpenAIResponsesTurns, type OpenAIResponsesConversationTurn } from './conversation-turns.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from './namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from './programmatic-tooling.ts';
-import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import { isOpenAIResponsesEncryptedReasoning } from './round-trip.ts';
+import type { IRInputSource } from '../../../ir/input/source.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -23,6 +23,7 @@ import type {
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
+import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import type {
   CanonicalOpenAIResponsesInputItem,
   CanonicalOpenAIResponsesPayload,
@@ -308,14 +309,9 @@ export const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPay
  * together keeps that mapping with the reader that built it instead of handing
  * a closure to each route.
  */
-export interface OpenAIResponsesSource {
+export interface OpenAIResponsesSource extends IRInputSource<OpenAIResponsesConversationTurn> {
   readonly request: IRInputRequest;
-  // Responses states its prompt in a top-level `instructions` field, which the
-  // input IR represents as a leading prompt turn like every other protocol's.
-  readonly prompt: IRInputTurn | undefined;
   readonly namespaceToolNames: NamespaceToolNames;
-  readonly conversation: readonly OpenAIResponsesConversationTurn[];
-  turnToIR: (turn: OpenAIResponsesConversationTurn) => IRInputTurn[];
 }
 
 export const openaiResponsesSource = (source: OpenAIResponsesRequestPayloadEx): OpenAIResponsesSource => {
@@ -333,5 +329,9 @@ export const openaiResponsesSource = (source: OpenAIResponsesRequestPayloadEx): 
     namespaceToolNames: names,
     conversation: partitionOpenAIResponsesTurns(canonical.input),
     turnToIR: turn => openaiResponsesTurnToIR(turn, flattenInput),
+    // Reading is stateless here: a Responses result states the call it answers,
+    // so nothing has to be correlated against calls seen earlier.
+    observeResolvedTurn: () => [],
+    flush: () => [],
   };
 };

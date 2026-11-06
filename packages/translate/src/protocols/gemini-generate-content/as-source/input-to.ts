@@ -5,6 +5,7 @@ import { partitionGeminiGenerateContentTurns, type GeminiGenerateContentConversa
 import { geminiGenerateContentReasoningEffort } from './reasoning.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from './schema.ts';
 import { geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from './tools.ts';
+import type { IRInputSource } from '../../../ir/input/source.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputRequest,
@@ -135,32 +136,31 @@ const systemParts = (content: GeminiGenerateContentContent | undefined): IRInput
   return text === null ? [] : [{ type: 'text', text }];
 };
 
-// One IR turn per source content: GenerateContent states each entry of
-// `contents` as a turn of its own, so two adjacent contents stay two turns and a
-// target that keeps message boundaries reproduces the ones the caller drew.
-const contentsToIRTurns = (
+// One IR turn per source turn: `partitionGeminiGenerateContentTurns` already
+// folds consecutive same-role contents into one turn, which is the grouping
+// every other protocol's reader produces and what keeps the IR alternating.
+const turnToIRTurns = (
   turn: GeminiGenerateContentTurn,
   contentIndex: number,
   ids: GeminiGenerateContentToolCallIds,
-): IRInputTurn[] => turn.items.map((content, index) => {
-  if (turn.role === 'assistant') {
-    return {
-      kind: 'assistant' as const,
-      items: (content.parts?.length ?? 0) === 0
+): IRInputTurn[] => turn.role === 'assistant'
+  ? [{
+      kind: 'assistant',
+      items: turn.items.flatMap((content, index) => (content.parts?.length ?? 0) === 0
         ? [{ type: 'message' as const, content: [{ type: 'text' as const, text: '' }] }]
-        : assistantItems(content, contentIndex + index, ids),
-    };
-  }
-  if (content.role !== 'user' && content.role !== undefined) {
-    throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
-  }
-  return {
-    kind: 'client' as const,
-    items: (content.parts?.length ?? 0) === 0
-      ? [{ type: 'message' as const, content: [] }]
-      : userParts(content, contentIndex + index, ids),
-  };
-});
+        : assistantItems(content, contentIndex + index, ids)),
+    }]
+  : [{
+      kind: 'client',
+      items: turn.items.flatMap((content, index) => {
+        if (content.role !== 'user' && content.role !== undefined) {
+          throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
+        }
+        return (content.parts?.length ?? 0) === 0
+          ? [{ type: 'message' as const, content: [] }]
+          : userParts(content, contentIndex + index, ids);
+      }),
+    }];
 
 /** Whether a turn carries a vendor-signed thought signature the input IR cannot hold. */
 export const geminiGenerateContentDropsReasoning = (turn: GeminiGenerateContentTurn): boolean => turn.role === 'assistant'
@@ -234,20 +234,8 @@ const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequest, 
  * and the reader that owns both counters together keeps that state where it
  * belongs rather than in every route.
  */
-export interface GeminiGenerateContentSource {
+export interface GeminiGenerateContentSource extends IRInputSource<GeminiGenerateContentTurn> {
   readonly request: IRInputRequest;
-  readonly prompt: IRInputTurn | undefined;
-  readonly conversation: readonly GeminiGenerateContentTurn[];
-  turnToIR: (turn: GeminiGenerateContentTurn) => IRInputTurn[];
-  // A resolved turn is written natively by the target, so it yields no IR, but
-  // it did consume source contents: the counter must move past them and the
-  // calls it states must be remembered as already answered.
-  observeResolvedTurn: (turn: GeminiGenerateContentTurn, calls: readonly GeminiGenerateContentResolvedCall[]) => void;
-}
-
-export interface GeminiGenerateContentResolvedCall {
-  readonly callId: string;
-  readonly name: string;
 }
 
 export const geminiGenerateContentSource = (payload: GeminiGenerateContentPayload, model: string): GeminiGenerateContentSource => {
@@ -262,17 +250,21 @@ export const geminiGenerateContentSource = (payload: GeminiGenerateContentPayloa
     prompt: geminiGenerateContentSystemToIR(payload.systemInstruction),
     conversation: partitionContents(payload),
     turnToIR: turn => {
-      const turns = contentsToIRTurns(turn, contentIndex, ids);
+      const turns = turnToIRTurns(turn, contentIndex, ids);
       contentIndex += turn.items.length;
       return turns;
     },
+    // The counter must move past the contents a resolved turn consumed, and the
+    // calls it states are already answered by it.
     observeResolvedTurn: (turn, calls) => {
       contentIndex += turn.items.length;
       for (const { callId, name } of calls) {
         ids[name] ??= [];
         ids[name].push(callId);
       }
+      return [];
     },
+    flush: () => [],
   };
 };
 

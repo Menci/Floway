@@ -2,6 +2,7 @@ import { klona } from 'klona/json';
 
 import { filterAnthropicMessagesClientTools } from './client-tools.ts';
 import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn } from './conversation-turns.ts';
+import type { IRInputSource } from '../../../ir/input/source.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputRequest,
@@ -397,19 +398,12 @@ const reasoningEffortFromAnthropicMessages = (payload: AnthropicMessagesPayload)
  * API wrote into the assistant message — and the caller's next message is
  * usually a client turn too. The IR is strictly alternating, so the trailing
  * client turn is held back until the next source turn settles whether the two
- * state the same turn. `finish` releases what is still held once the
- * conversation ends, and a resolved turn releases it first because that turn is
- * written natively and sits between the two.
+ * state the same turn. `flush` releases what is still held once the conversation
+ * ends, and a resolved turn releases it first because that turn is written
+ * natively and sits between the two.
  */
-export interface AnthropicMessagesSource {
+export interface AnthropicMessagesSource extends IRInputSource<AnthropicMessagesConversationTurn> {
   readonly request: IRInputRequest;
-  readonly prompt: IRInputTurn | undefined;
-  readonly conversation: AnthropicMessagesConversationTurn[];
-  turnToIR: (turn: AnthropicMessagesConversationTurn) => IRInputTurn[];
-  // A resolved turn is written natively by the target, so it yields no IR, but
-  // it still occupies source messages that later diagnostics count past.
-  observeResolvedTurn: (turn: AnthropicMessagesConversationTurn) => IRInputTurn[];
-  finish: () => IRInputTurn[];
 }
 
 export const anthropicMessagesSource = (payload: AnthropicMessagesPayload): AnthropicMessagesSource => {
@@ -451,10 +445,12 @@ export const anthropicMessagesSource = (payload: AnthropicMessagesPayload): Anth
       messageIndex += turn.items.length;
       return settle(turns);
     },
+    // A resolved turn still occupies source messages, which later diagnostics
+    // count past; the held turn precedes it in the source, so it is released.
     observeResolvedTurn: turn => {
       messageIndex += turn.items.length;
       return release();
     },
-    finish: release,
+    flush: release,
   };
 };

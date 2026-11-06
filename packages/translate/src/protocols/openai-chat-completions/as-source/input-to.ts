@@ -2,6 +2,7 @@ import { klona } from 'klona/json';
 
 import { partitionOpenAIChatCompletionsTurns, type OpenAIChatCompletionsConversationMessage, type OpenAIChatCompletionsConversationTurn } from './conversation-turns.ts';
 import { hasOpenAIChatCompletionsReasoning } from './round-trip.ts';
+import type { IRInputSource } from '../../../ir/input/source.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -326,17 +327,21 @@ export const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletions
  * Presenting the request, the conversation, and the reader that carries that
  * state together keeps the state with the code that needs it.
  */
-export interface OpenAIChatCompletionsSource {
+export interface OpenAIChatCompletionsSource extends IRInputSource<OpenAIChatCompletionsConversationTurn> {
   readonly request: IRInputRequest;
-  readonly conversation: OpenAIChatCompletionsConversationTurn[];
-  turnToIR: (turn: OpenAIChatCompletionsConversationTurn) => IRInputTurn;
 }
 
 export const openaiChatCompletionsSource = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsSource => {
   const context = openaiChatCompletionsInputContext(payload);
   return {
     request: openaiChatCompletionsRequestToIR(payload),
+    prompt: undefined,
     conversation: partitionOpenAIChatCompletionsTurns(payload.messages),
-    turnToIR: turn => openaiChatCompletionsTurnToIR(turn, context),
+    turnToIR: turn => [openaiChatCompletionsTurnToIR(turn, context)],
+    // Chat names the kind of every declared call before the conversation is
+    // read, so a resolved turn needs no separate observation; reading it would
+    // only consume the correlation slot a later result depends on.
+    observeResolvedTurn: () => [],
+    flush: () => [],
   };
 };
