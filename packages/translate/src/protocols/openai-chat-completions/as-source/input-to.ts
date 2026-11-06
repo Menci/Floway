@@ -5,7 +5,6 @@ import { hasOpenAIChatCompletionsReasoning } from './round-trip.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
-  IRInputConversation,
   IRInputRequest,
   IRInputSettings,
   IRInputTool,
@@ -217,11 +216,6 @@ const userItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, { 
   }
 };
 
-export const openaiChatCompletionsInputToIR = (payload: OpenAIChatCompletionsPayload): IRInputConversation => {
-  const context = openaiChatCompletionsInputContext(payload);
-  return { turns: partitionOpenAIChatCompletionsTurns(payload.messages).map(turn => openaiChatCompletionsTurnToIR(turn, context)) };
-};
-
 /**
  * Chat Completions states one ceiling under two names. `max_tokens` predates
  * reasoning models; `max_completion_tokens` is its replacement and counts hidden
@@ -278,7 +272,7 @@ export const openaiChatCompletionsToolsToIR = (payload: OpenAIChatCompletionsPay
 };
 
 export const openaiChatCompletionsRequestToIR = (payload: OpenAIChatCompletionsPayload): IRInputRequest => ({
-  conversation: openaiChatCompletionsInputToIR(payload),
+  conversation: { turns: [] },
   settings: openaiChatCompletionsSettingsToIR(payload),
   ...openaiChatCompletionsToolsToIR(payload),
 });
