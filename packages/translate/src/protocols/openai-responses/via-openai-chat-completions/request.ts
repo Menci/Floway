@@ -6,7 +6,7 @@ import type { SidecarCodec } from '../../../types.ts';
 import { openaiChatCompletionsRequestFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
 import { validateAllowedTools } from '../as-source/allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
-import { openaiResponsesSettingsToIR, openaiResponsesToolsToIR, openaiResponsesDropsReasoning, openaiResponsesTurnToIR } from '../as-source/input-to.ts';
+import { openaiResponsesSettingsToIR, openaiResponsesToolsToIR, openaiResponsesDropsReasoning, openaiResponsesInstructionsToIR, openaiResponsesTurnToIR } from '../as-source/input-to.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
@@ -42,9 +42,10 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
   };
 
   const pieces: (IRInputTurn | IRInputResolvedTurn<OpenAIChatCompletionsMessage>)[] = [];
-  if (payload.instructions) {
-    pieces.push({ role: 'user', items: [{ type: 'message', role: 'system', content: [{ type: 'text', text: payload.instructions }] }] });
-  }
+  // `instructions` is the request's own prompt field, so it opens the
+  // conversation ahead of the messages the caller wrote.
+  const instructions = openaiResponsesInstructionsToIR(payload.instructions);
+  if (instructions !== undefined) pieces.push(instructions);
   for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
     const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('openaiResponses', 'openaiChatCompletions', turn.items, codec, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest, collectOpenAIResponsesReplayContents);
     if (roundTrip) {
