@@ -27,7 +27,7 @@ export const buildTargetRequest = async (input: OpenAIResponsesRequestPayloadEx,
   const pieces = await readIRInput(source, async turn => {
     if (turn.role === 'assistant') {
       const roundTrip = await roundTripAssistantTurn('openaiResponses', 'openaiChatCompletions', turn.items, codec, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest, collectOpenAIResponsesReplayContents);
-      if (roundTrip !== undefined) return { resolved: roundTrip.turn, calls: [] };
+      if (roundTrip !== undefined) return { resolved: roundTrip.turn };
     }
     if (openaiResponsesDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiResponses', 'openaiChatCompletions');
     return undefined;

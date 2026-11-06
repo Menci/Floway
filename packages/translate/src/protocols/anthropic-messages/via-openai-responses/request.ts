@@ -15,7 +15,7 @@ export const buildTargetRequest = async (
   const pieces = await readIRInput(source, async turn => {
     if (turn.role === 'assistant') {
       const roundTrip = await roundTripAssistantTurn('anthropicMessages', 'openaiResponses', turn.items, codec, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest, collectAnthropicMessagesReplayContents);
-      if (roundTrip !== undefined) return { resolved: roundTrip.turn, calls: [] };
+      if (roundTrip !== undefined) return { resolved: roundTrip.turn };
       if (anthropicMessagesDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('anthropicMessages', 'openaiResponses');
     }
     return undefined;

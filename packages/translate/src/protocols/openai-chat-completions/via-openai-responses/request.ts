@@ -20,7 +20,7 @@ export const buildTargetRequest = async (
         'openaiChatCompletions', 'openaiResponses', turn.items[0], codec,
         findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest, collectOpenAIChatCompletionsReplayContents,
       );
-      if (roundTrip !== undefined) return { resolved: roundTrip.turn, calls: [] };
+      if (roundTrip !== undefined) return { resolved: roundTrip.turn };
     }
     if (openaiChatCompletionsDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiChatCompletions', 'openaiResponses');
     return undefined;

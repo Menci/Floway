@@ -40,11 +40,12 @@ export interface IRInputSource<Turn> {
  *
  * `resolve` answers whether a source turn can be written natively in the target
  * protocol. Only a route can answer that, and only a route can say which calls
- * the resulting native turn states.
+ * the resulting native turn states — a reader that correlates results against
+ * calls needs them, and a reader that does not ignores them.
  */
 export const readIRInput = async <Turn, Resolved>(
   source: IRInputSource<Turn>,
-  resolve: (turn: Turn) => Promise<{ readonly resolved: Resolved; readonly calls: readonly IRInputResolvedCall[] } | undefined>,
+  resolve: (turn: Turn) => Promise<{ readonly resolved: Resolved; readonly calls?: readonly IRInputResolvedCall[] } | undefined>,
 ): Promise<(IRInputTurn | IRInputResolvedTurn<Resolved>)[]> => {
   const pieces: (IRInputTurn | IRInputResolvedTurn<Resolved>)[] = [];
   if (source.prompt !== undefined) pieces.push(source.prompt);
@@ -54,7 +55,7 @@ export const readIRInput = async <Turn, Resolved>(
       pieces.push(...source.turnToIR(turn));
       continue;
     }
-    pieces.push(...source.observeResolvedTurn(turn, result.calls));
+    pieces.push(...source.observeResolvedTurn(turn, result.calls ?? []));
     pieces.push({ kind: 'resolved', turn: result.resolved });
   }
   pieces.push(...source.flush());

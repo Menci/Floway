@@ -396,11 +396,13 @@ const reasoningEffortFromAnthropicMessages = (payload: AnthropicMessagesPayload)
  *
  * Downgrading a server tool leaves a client turn of its own — the result the
  * API wrote into the assistant message — and the caller's next message is
- * usually a client turn too. The IR is strictly alternating, so the trailing
- * client turn is held back until the next source turn settles whether the two
- * state the same turn. `flush` releases what is still held once the conversation
- * ends, and a resolved turn releases it first because that turn is written
- * natively and sits between the two.
+ * usually a client turn too. Those two are one turn: everything from the
+ * server's answer up to the caller's next statement is the same speaking turn,
+ * and a writer that answers one turn with one message must see them together.
+ * So the trailing client turn is held back until the next source turn settles
+ * whether the two state the same turn. `flush` releases what is still held once
+ * the conversation ends, and a resolved turn releases it first because that turn
+ * is written natively and sits between the two.
  */
 export interface AnthropicMessagesSource extends IRInputSource<AnthropicMessagesConversationTurn> {
   readonly request: IRInputRequest;

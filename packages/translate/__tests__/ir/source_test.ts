@@ -7,7 +7,7 @@ import { assertEquals } from '@floway-dev/test-utils';
 // A reader that turns each source string into a client turn and buffers the
 // last one until it learns whether the next source turn pairs with it.
 const buffering = (turns: readonly string[], prompt?: IRInputTurn): IRInputSource<string> & { held: () => string | undefined } => {
-  let held: IRInputTurn | undefined;
+  let held: Extract<IRInputTurn, { kind: 'client' }> | undefined;
   return {
     prompt,
     conversation: turns,

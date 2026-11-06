@@ -10,9 +10,7 @@ import { openaiResponsesDropsReasoning, openaiResponsesSource } from '../as-sour
 import type { NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
-import type {
-  OpenAIResponsesRequestPayloadEx,
-} from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 
 interface BuildTargetRequestOptions {
   loadRemoteImage: RemoteImageLoader;
@@ -55,7 +53,7 @@ export const buildTargetRequest = async (
   const pieces = await readIRInput(source, async turn => {
     if (turn.role === 'assistant') {
       const roundTrip = await roundTripAssistantTurn('openaiResponses', 'anthropicMessages', turn.items, codec, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest, collectOpenAIResponsesReplayContents);
-      if (roundTrip !== undefined) return { resolved: roundTrip.turn, calls: [] };
+      if (roundTrip !== undefined) return { resolved: roundTrip.turn };
     }
     if (openaiResponsesDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiResponses', 'anthropicMessages');
     return undefined;

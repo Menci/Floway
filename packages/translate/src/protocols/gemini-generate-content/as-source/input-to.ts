@@ -136,9 +136,10 @@ const systemParts = (content: GeminiGenerateContentContent | undefined): IRInput
   return text === null ? [] : [{ type: 'text', text }];
 };
 
-// One IR turn per source turn: `partitionGeminiGenerateContentTurns` already
-// folds consecutive same-role contents into one turn, which is the grouping
-// every other protocol's reader produces and what keeps the IR alternating.
+// One IR turn per source turn. `partitionGeminiGenerateContentTurns` already
+// folds consecutive same-role contents into one turn, so handing back one turn
+// per content would re-split a grouping this reader had just made — the turn
+// boundary the partition draws is the boundary the IR keeps.
 const turnToIRTurns = (
   turn: GeminiGenerateContentTurn,
   contentIndex: number,
