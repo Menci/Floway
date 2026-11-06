@@ -4,22 +4,10 @@ import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } fro
 import type { SidecarCodec } from '../../../types.ts';
 import { openaiChatCompletionsRequestFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
-import { anthropicMessagesDropsReasoning, anthropicMessagesSettingsToIR, anthropicMessagesToolsToIR, anthropicMessagesTurnToIR } from '../as-source/input-to.ts';
+import { anthropicMessagesDropsReasoning, anthropicMessagesSettingsToIR, anthropicMessagesSystemToIR, anthropicMessagesToolsToIR, anthropicMessagesTurnToIR } from '../as-source/input-to.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from '../as-source/round-trip.ts';
-import type {
-  AnthropicMessagesPayload,
-  AnthropicMessagesTextBlockParam,
-} from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIChatCompletionsStreamOptionsEx, OpenAIChatCompletionsTextPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
-
-// Anthropic Messages system blocks are prompt boundaries; preserve each one
-// as a separate OpenAI Chat Completions text part so a CC→Anthropic Messages→CC round trip
-// does not silently merge them. Falls back to the simple string form when
-// the source is already a single-string field.
-const systemContentFromBlocks = (system: string | AnthropicMessagesTextBlockParam[]): string | OpenAIChatCompletionsTextPart[] =>
-  typeof system === 'string'
-    ? system
-    : system.map(block => ({ type: 'text', text: block.text }));
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import type { OpenAIChatCompletionsStreamOptionsEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 
 export const buildTargetRequest = async (
   payload: AnthropicMessagesPayload,
@@ -30,10 +18,12 @@ export const buildTargetRequest = async (
     settings: anthropicMessagesSettingsToIR(payload),
     ...anthropicMessagesToolsToIR(payload),
   };
-  const messages: OpenAIChatCompletionsMessage[] = payload.system == null || (typeof payload.system === 'string' ? payload.system === '' : payload.system.length === 0)
-    ? []
-    : [{ role: 'system', content: systemContentFromBlocks(payload.system) }];
+  const messages: OpenAIChatCompletionsMessage[] = [];
   const pieces: (IRInputTurn | IRInputResolvedTurn<OpenAIChatCompletionsMessage>)[] = [];
+  // The top-level `system` field is the request's prompt, so it opens the
+  // conversation; the writer places it like any other turn.
+  const system = anthropicMessagesSystemToIR(payload.system);
+  if (system !== undefined) pieces.push(system);
   let messageIndex = 0;
   for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
     if (turn.role === 'assistant') {
