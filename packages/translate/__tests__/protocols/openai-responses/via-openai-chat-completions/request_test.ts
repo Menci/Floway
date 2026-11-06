@@ -32,7 +32,7 @@ test('buildTargetRequest rejects an agent_message that no interceptor lowered', 
       }],
     }),
     Error,
-    "Invalid input item type 'agent_message'.",
+    'Invalid input item: {"type":"agent_message"',
   );
 });
 
@@ -439,7 +439,7 @@ test.each([
   await assertRejects(
     () => buildWithTestSidecar({ model: 'gpt-test', input: [...input] }),
     Error,
-    `Invalid input item type '${name}'`,
+    `Invalid input item: {"type":"${name}"`,
   );
 });
 
@@ -598,7 +598,7 @@ test('buildTargetRequest throws on a stray web_search_call input item (shim owns
       parallel_tool_calls: true,
     }),
     Error,
-    "Invalid input item type 'web_search_call'",
+    'Invalid input item: {"type":"web_search_call"',
   );
 });
 
@@ -626,7 +626,7 @@ test('buildTargetRequest throws on a stray compaction_trigger input item (compac
       parallel_tool_calls: true,
     }),
     Error,
-    "Invalid input item type 'compaction_trigger'",
+    'Invalid input item: {"type":"compaction_trigger"',
   );
 });
 
@@ -654,7 +654,7 @@ test('buildTargetRequest throws on a stray compaction input item (compact-shim o
       parallel_tool_calls: true,
     }),
     Error,
-    "Invalid input item type 'compaction'",
+    'Invalid input item: {"type":"compaction"',
   );
 });
 

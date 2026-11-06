@@ -4,9 +4,8 @@ import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } fro
 import type { SidecarCodec } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
 import { anthropicMessagesRequestFromIR } from '../../anthropic-messages/as-target/input-from.ts';
-import { geminiGenerateContentText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
-import { geminiGenerateContentContentsToIRTurns, geminiGenerateContentDropsReasoning, geminiGenerateContentRequestToIR } from '../as-source/input-to.ts';
+import { geminiGenerateContentContentsToIRTurns, geminiGenerateContentDropsReasoning, geminiGenerateContentRequestToIR, geminiGenerateContentSystemToIR } from '../as-source/input-to.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
 import type { GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
 import {
@@ -47,13 +46,10 @@ export const buildTargetRequest = async (
   }
 
   const ir = geminiGenerateContentRequestToIR(payload, model);
-  // A GenerateContent system instruction is the conversation model's leading
-  // turn; the pieces above were built from `contents` alone, so it joins them
-  // here and each writer hoists it.
-  if (geminiGenerateContentText(payload.systemInstruction) !== null) {
-    const leading = ir.conversation.turns[0];
-    if (leading !== undefined) pieces.unshift(leading);
-  }
+  // The pieces above were built from `contents` alone; the system instruction is
+  // the conversation's leading prompt and joins them as its own segment.
+  const system = geminiGenerateContentSystemToIR(payload.systemInstruction);
+  if (system !== undefined) pieces.unshift(system);
   const messages: AnthropicMessagesPayload['messages'] = [];
   const systemBlocks: AnthropicMessagesTextBlockParam[] = [];
   let base: AnthropicMessagesPayload | undefined;

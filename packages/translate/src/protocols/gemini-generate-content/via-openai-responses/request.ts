@@ -3,9 +3,8 @@ import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
 import { openaiResponsesRequestFromIR } from '../../openai-responses/as-target/input-from.ts';
-import { geminiGenerateContentText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
-import { geminiGenerateContentDropsReasoning, geminiGenerateContentRequestToIR, geminiGenerateContentTurnToIR } from '../as-source/input-to.ts';
+import { geminiGenerateContentDropsReasoning, geminiGenerateContentRequestToIR, geminiGenerateContentSystemToIR, geminiGenerateContentTurnToIR } from '../as-source/input-to.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
 import type { GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
@@ -18,7 +17,6 @@ export const buildTargetRequest = async (
 ): Promise<CanonicalOpenAIResponsesPayload> => {
   const unmatchedToolCallIds: GeminiGenerateContentToolCallIds = Object.create(null);
   const ir = geminiGenerateContentRequestToIR(payload, model);
-  const instructions = geminiGenerateContentText(payload.systemInstruction);
 
   let contentIndex = 0;
   const pieces: (IRInputTurn | IRInputResolvedTurn<CanonicalOpenAIResponsesInputItem[]>)[] = [];
@@ -41,20 +39,20 @@ export const buildTargetRequest = async (
     contentIndex += turn.items.length;
   }
 
+  // The system instruction is the conversation's leading prompt and joins the
+  // pieces as its own segment, so the writer states it in its own slot.
+  const system = geminiGenerateContentSystemToIR(payload.systemInstruction);
+  if (system !== undefined) pieces.unshift(system);
+
   const input: CanonicalOpenAIResponsesInputItem[] = [];
   let base: CanonicalOpenAIResponsesPayload | undefined;
   for (const piece of segmentIRInput(pieces)) {
     if (piece.kind === 'resolved') { input.push(...piece.turn); continue; }
-    const translated = openaiResponsesRequestFromIR({ ...ir, conversation: { turns: piece.turns } }, false);
+    const translated = openaiResponsesRequestFromIR({ ...ir, conversation: { turns: piece.turns } }, piece.leading);
     base ??= translated;
     input.push(...translated.input);
   }
-  base ??= openaiResponsesRequestFromIR({ ...ir, conversation: { turns: [] } }, false);
+  base ??= openaiResponsesRequestFromIR({ ...ir, conversation: { turns: [] } });
 
-  // A GenerateContent system instruction is a Responses `instructions` string.
-  return {
-    ...base,
-    input,
-    ...(instructions === null ? {} : { instructions }),
-  };
+  return { ...base, input };
 };

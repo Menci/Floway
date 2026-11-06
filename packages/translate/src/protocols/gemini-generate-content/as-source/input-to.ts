@@ -195,12 +195,18 @@ export const geminiGenerateContentTurnToIR = (
   };
 };
 
+/** A GenerateContent system instruction is the conversation's leading prompt. */
+export const geminiGenerateContentSystemToIR = (content: GeminiGenerateContentContent | undefined): IRInputTurn | undefined => {
+  const parts = systemParts(content);
+  return parts.length === 0 ? undefined : { role: 'user', items: [{ type: 'message', role: 'system', content: parts }] };
+};
+
 export const geminiGenerateContentInputToIR = (payload: GeminiGenerateContentPayload): IRInputConversation => {
   const ids: GeminiGenerateContentToolCallIds = Object.create(null);
   const turns: IRInputTurn[] = [];
 
-  const system = systemParts(payload.systemInstruction);
-  if (system.length > 0) turns.push({ role: 'user', items: [{ type: 'message', role: 'system', content: system }] });
+  const system = geminiGenerateContentSystemToIR(payload.systemInstruction);
+  if (system !== undefined) turns.push(system);
 
   let contentIndex = 0;
   for (const turn of partitionGeminiGenerateContentTurns(payload.contents ?? [])) {

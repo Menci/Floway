@@ -484,7 +484,7 @@ test('buildTargetRequest rejects an unknown user content block type', async () =
         messages: [{ role: 'user', content: [{ type: 'audio' } as unknown as AnthropicMessagesUserContentBlock] }],
       }),
     Error,
-    "messages.0.content.0.type: 'audio' user content blocks are not supported",
+    "messages.0.content.0.type: 'audio' content blocks are not supported in user content.",
   );
 });
 

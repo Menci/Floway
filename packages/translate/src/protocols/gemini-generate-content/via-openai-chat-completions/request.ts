@@ -3,9 +3,8 @@ import type { IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec } from '../../../types.ts';
 import { openaiChatCompletionsRequestFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
-import { geminiGenerateContentText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
-import { geminiGenerateContentDropsReasoning, geminiGenerateContentRequestToIR, geminiGenerateContentTurnToIR } from '../as-source/input-to.ts';
+import { geminiGenerateContentDropsReasoning, geminiGenerateContentRequestToIR, geminiGenerateContentSystemToIR, geminiGenerateContentTurnToIR } from '../as-source/input-to.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
 import type { GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
@@ -19,7 +18,6 @@ export const buildTargetRequest = async (
   const unmatchedToolCallIds: GeminiGenerateContentToolCallIds = Object.create(null);
   const ir = geminiGenerateContentRequestToIR(payload, model);
   const messages: OpenAIChatCompletionsMessage[] = [];
-  const systemText = geminiGenerateContentText(payload.systemInstruction);
 
   let contentIndex = 0;
   const pieces: (IRInputTurn | IRInputResolvedTurn<OpenAIChatCompletionsMessage>)[] = [];
@@ -44,6 +42,11 @@ export const buildTargetRequest = async (
     contentIndex += turn.items.length;
   }
 
+  // The system instruction is the conversation's leading prompt and joins the
+  // pieces as its own segment, so the writer places it like any other turn.
+  const system = geminiGenerateContentSystemToIR(payload.systemInstruction);
+  if (system !== undefined) pieces.unshift(system);
+
   let base: OpenAIChatCompletionsPayload | undefined;
   for (const piece of segmentIRInput(pieces)) {
     if (piece.kind === 'resolved') { messages.push(piece.turn); continue; }
@@ -53,14 +56,5 @@ export const buildTargetRequest = async (
   }
   base ??= openaiChatCompletionsRequestFromIR({ ...ir, conversation: { turns: [] } });
 
-  // A GenerateContent system instruction is a leading system message, which the
-  // IR states as the first item of the first turn.
-  const request: OpenAIChatCompletionsPayload = {
-    ...base,
-    messages: [
-      ...(systemText === null ? [] : [{ role: 'system' as const, content: systemText }]),
-      ...messages,
-    ],
-  };
-  return request;
+  return { ...base, messages };
 };

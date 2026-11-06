@@ -20,6 +20,20 @@ export const buildTargetRequest = async (
   };
 
   const pieces: (IRInputTurn | IRInputResolvedTurn<CanonicalOpenAIResponsesInputItem[]>)[] = [];
+  let leadingInstructions: string | undefined;
+  // The top-level `system` field is the request's prompt, so it opens the
+  // conversation. A system message inside `messages` is one the caller placed
+  // there and keeps its own position.
+  const system = anthropicMessagesSystemToIR(payload.system);
+  if (system !== undefined) {
+    // The prompt is stated by the request's own `system` field, not by a
+    // message the caller placed in the conversation, so it is what a target's
+    // dedicated prompt slot carries. Every message inside `messages` keeps its
+    // position, including a system one.
+    const hoisted = openaiResponsesRequestFromIR({ ...ir, conversation: { turns: [system] } }, true);
+    leadingInstructions = hoisted.instructions ?? undefined;
+    pieces.push({ kind: 'resolved', turn: hoisted.input });
+  }
   let messageIndex = 0;
   for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
     if (turn.role === 'assistant') {
@@ -31,31 +45,22 @@ export const buildTargetRequest = async (
       }
       if (anthropicMessagesDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('anthropicMessages', 'openaiResponses');
     }
-    pieces.push(...anthropicMessagesTurnToIR(turn, messageIndex, ' user content blocks are not supported on this model'));
+    pieces.push(...anthropicMessagesTurnToIR(turn, messageIndex));
     messageIndex += turn.items.length;
   }
 
   const input: CanonicalOpenAIResponsesInputItem[] = [];
   let base: CanonicalOpenAIResponsesPayload | undefined;
-  // The top-level `system` field is the request's prompt, which a target with a
-  // dedicated slot states there. A system message inside `messages` is one the
-  // caller placed in the conversation, so it keeps its position.
-  const system = anthropicMessagesSystemToIR(payload.system);
-  if (system !== undefined) {
-    const hoisted = openaiResponsesRequestFromIR({ ...ir, conversation: { turns: [system] } }, true);
-    base = hoisted;
-    input.push(...hoisted.input);
-  }
   for (const piece of segmentIRInput(pieces)) {
     if (piece.kind === 'resolved') { input.push(...piece.turn); continue; }
     const translated = openaiResponsesRequestFromIR({ ...ir, conversation: { turns: piece.turns } }, false);
     base ??= translated;
     input.push(...translated.input);
   }
-  base ??= openaiResponsesRequestFromIR({ ...ir, conversation: { turns: [] } }, false);
+  base ??= openaiResponsesRequestFromIR({ ...ir, conversation: { turns: [] } });
 
   // Keep fallback semantics strict: do not synthesize `temperature: 1`,
   // `store: false`, `parallel_tool_calls: true`, `reasoning.summary`, or
   // `reasoning.context` when the Messages source did not express those knobs.
-  return { ...base, input };
+  return { ...base, input, ...(leadingInstructions === undefined ? {} : { instructions: leadingInstructions }) };
 };

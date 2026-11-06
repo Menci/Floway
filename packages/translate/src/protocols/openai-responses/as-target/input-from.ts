@@ -146,6 +146,9 @@ const conversationFromIR = (
   hoistSystem: boolean,
 ): Pick<CanonicalOpenAIResponsesPayload, 'instructions' | 'input'> => {
   const instructions: string[] = [];
+  // A conversation's own leading prompt is the first turn of the first segment.
+  // Later segments continue an exchange that already started, so their leading
+  // prompt (if any) stays inline where the caller placed it.
   let hoisting = hoistSystem;
 
   const input = conversation.turns.flatMap(item => {
@@ -179,16 +182,12 @@ const conversationFromIR = (
 };
 
 /**
- * `hoistSystem` lifts the leading system/developer run into the Responses
- * `instructions` slot. Only the first segment of a conversation may do so.
- *
- * Responses spells the slot as one string, so a multi-block run is joined with
- * blank lines. A multi-message run collapses the same way.
+ * Lifts the leading system/developer run into the Responses `instructions` slot,
+ * which Responses spells as one string.
  */
 export const openaiResponsesFromIR = (
   conversation: IRInputConversation,
-  hoistSystem: boolean,
-): Pick<CanonicalOpenAIResponsesPayload, 'instructions' | 'input'> => conversationFromIR(conversation, hoistSystem);
+): Pick<CanonicalOpenAIResponsesPayload, 'instructions' | 'input'> => conversationFromIR(conversation, true);
 
 const requireSchema = (format: IRInputOutputFormat): Readonly<Record<string, unknown>> => {
   if (format.schema === undefined) throw new TranslatorInputError('Cannot translate json_schema response format without a schema.');
@@ -255,10 +254,13 @@ const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<CanonicalOpenA
  */
 export const openaiResponsesRequestFromIR = (
   request: IRInputRequest,
-  hoistSystem: boolean,
+  // Only the conversation's first segment holds the request's leading prompt. A
+  // later segment continues an exchange that already started, so its own
+  // leading system message stays where the caller placed it.
+  leading = true,
 ): CanonicalOpenAIResponsesPayload => {
   const { conversation, settings } = request;
-  const { instructions, input } = conversationFromIR(conversation, hoistSystem);
+  const { instructions, input } = conversationFromIR(conversation, leading);
 
   const tools = irInputToolsForChoice(request.tools, request.tool_choice);
   const choice = irInputToolChoiceForTools(request.tool_choice, tools);

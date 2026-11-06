@@ -74,9 +74,6 @@ const documentMedia = (block: Extract<AnthropicMessagesUserContentBlock, { type:
 interface MessagePosition {
   readonly messageIdx: number;
   readonly blockIdx: number;
-  // Each pair spells an unsupported user block differently; the reader supplies
-  // the neutral suffix and the caller's line stays stable.
-  readonly unsupportedSuffix?: string;
 }
 
 const userContentPart = (
@@ -87,7 +84,7 @@ const userContentPart = (
   case 'text': return { type: 'text', text: block.text };
   case 'image': return { type: 'image', image: imageMedia(block.source) };
   case 'document': return { type: 'file', file: documentMedia(block) };
-  default: throw new TranslatorInputError(`messages.${at.messageIdx}.content.${at.blockIdx}.type: '${(block as { type: string }).type}'${at.unsupportedSuffix ?? ' content blocks are not supported on this model'}`);
+  default: throw new TranslatorInputError(`messages.${at.messageIdx}.content.${at.blockIdx}.type: '${(block as { type: string }).type}' content blocks are not supported in user content.`);
   }
 };
 
@@ -105,7 +102,6 @@ const toolResultPart = (block: AnthropicMessagesToolResultBlock['content'] exten
 const userItems = (
   message: Exclude<AnthropicMessagesMessage, { role: 'assistant' }>,
   messageIdx: number,
-  unsupportedSuffix?: string,
 ): IRInputClientItem[] => {
   if (message.role === 'system') {
     if (typeof message.content !== 'string' && message.content.some(block => block.type !== 'text')) {
@@ -139,7 +135,7 @@ const userItems = (
       });
       continue;
     }
-    pending.push(userContentPart(block, { messageIdx, blockIdx, unsupportedSuffix }));
+    pending.push(userContentPart(block, { messageIdx, blockIdx }));
   }
   flush();
   return items;
@@ -249,7 +245,6 @@ export const anthropicMessagesDropsReasoning = (turn: AnthropicMessagesConversat
 export const anthropicMessagesTurnToIR = (
   turn: AnthropicMessagesConversationTurn,
   firstMessageIndex = 0,
-  unsupportedSuffix?: string,
 ): IRInputTurn[] => {
   if (turn.role === 'assistant') {
     const turns: IRInputTurn[] = [];
@@ -270,7 +265,7 @@ export const anthropicMessagesTurnToIR = (
       if (message.role !== 'user' && message.role !== 'system') {
         throw new TranslatorInputError(`messages.${firstMessageIndex + index}.role: role '${(message as { role: string }).role}' is not supported on this model`);
       }
-      return userItems(message, firstMessageIndex + index, unsupportedSuffix);
+      return userItems(message, firstMessageIndex + index);
     }),
   }];
 };

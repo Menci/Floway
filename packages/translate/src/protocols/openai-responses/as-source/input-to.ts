@@ -104,7 +104,11 @@ const toolResultContent = (output: string | readonly OpenAIResponsesInputContent
       return { type: 'text' as const, text: part.text };
     });
 
-const assistantItems = (items: readonly CanonicalOpenAIResponsesInputItem[], unknownItem: (item: CanonicalOpenAIResponsesInputItem) => never): IRInputAssistantItem[] => items.map((item): IRInputAssistantItem | undefined => {
+const unsupportedItem = (item: CanonicalOpenAIResponsesInputItem): never => {
+  throw new TranslatorInputError(`Invalid input item: ${JSON.stringify(item)}`);
+};
+
+const assistantItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInputAssistantItem[] => items.map((item): IRInputAssistantItem | undefined => {
   rejectProgramCaller(item);
   switch (item.type) {
   case 'message': {
@@ -131,20 +135,20 @@ const assistantItems = (items: readonly CanonicalOpenAIResponsesInputItem[], unk
   case 'item_reference':
   case 'web_search_call':
   case 'image_generation_call':
-    throw new TranslatorInputError(`Invalid input item type '${item.type}'.`);
+    return unsupportedItem(item);
   default:
-    unknownItem(item);
+    unsupportedItem(item);
   }
 }).filter((item): item is IRInputAssistantItem => item !== undefined);
 
-const userItems = (items: readonly CanonicalOpenAIResponsesInputItem[], unknownItem: (item: CanonicalOpenAIResponsesInputItem) => never): IRInputClientItem[] => items.map(item => {
+const userItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInputClientItem[] => items.flatMap((item): IRInputClientItem[] => {
   rejectProgramCaller(item);
   switch (item.type) {
   case 'message':
     switch (item.role) {
-    case 'user': return { type: 'message' as const, role: 'user' as const, content: userContent(item.content) };
+    case 'user': return [{ type: 'message' as const, role: 'user' as const, content: userContent(item.content) }];
     case 'system':
-    case 'developer': return { type: 'message' as const, role: item.role, content: systemContent(item) };
+    case 'developer': return [{ type: 'message' as const, role: item.role, content: systemContent(item) }];
     default: throw new TranslatorInputError(`Invalid role '${item.role}' in input message.`);
     }
   case 'function_call_output': {
@@ -155,17 +159,17 @@ const userItems = (items: readonly CanonicalOpenAIResponsesInputItem[], unknownI
       tool_kind: 'function',
       ...(item.status === 'incomplete' ? { is_error: true } : {}),
     };
-    return result;
+    return [result];
   }
   case 'custom_tool_call_output':
-    return {
+    return [{
       type: 'tool_result' as const,
       call_id: item.call_id,
       output: toolResultContent(item.output),
       tool_kind: 'custom' as const,
-    };
+    }];
   default:
-    unknownItem(item);
+    return unsupportedItem(item);
   }
 });
 
@@ -181,16 +185,13 @@ export const openaiResponsesInstructionsToIR = (instructions: string | null | un
 export const openaiResponsesTurnToIR = (
   turn: { readonly role: 'assistant' | 'bare'; readonly items: readonly CanonicalOpenAIResponsesInputItem[] },
   flattenInput: (input: readonly CanonicalOpenAIResponsesInputItem[]) => CanonicalOpenAIResponsesInputItem[],
-  unknownItem: (item: CanonicalOpenAIResponsesInputItem) => never = item => {
-    throw new TranslatorInputError(`Invalid input item: ${JSON.stringify(item)}`);
-  },
 ): IRInputTurn[] => {
   const items = flattenInput(turn.items);
-  if (turn.role !== 'assistant') return [{ role: 'user', items: userItems(items, unknownItem) }];
+  if (turn.role !== 'assistant') return [{ role: 'user', items: userItems(items) }];
   // Every assistant item was dropped (an opaque reasoning carrier, say). The
   // turn carried a boundary that must survive, so writers still see it as a
   // separator but emit no message for it.
-  return [{ role: 'assistant', items: assistantItems(items, unknownItem) }];
+  return [{ role: 'assistant', items: assistantItems(items) }];
 };
 
 /**

@@ -2,7 +2,6 @@ import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segm
 import { irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
 import type { IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
-import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
 import { openaiChatCompletionsRequestFromIR } from '../../openai-chat-completions/as-target/input-from.ts';
 import { validateAllowedTools } from '../as-source/allowed-tools.ts';
@@ -53,7 +52,7 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
       continue;
     }
     if (openaiResponsesDropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning('openaiResponses', 'openaiChatCompletions');
-    pieces.push(...openaiResponsesTurnToIR(turn, flattenInput, item => { throw new TranslatorInputError(`Invalid input item type '${(item as { type: string }).type}'.`); }));
+    pieces.push(...openaiResponsesTurnToIR(turn, flattenInput));
   }
 
   const messages: OpenAIChatCompletionsMessage[] = [];

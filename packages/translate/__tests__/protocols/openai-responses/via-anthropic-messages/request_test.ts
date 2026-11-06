@@ -892,7 +892,7 @@ test('buildTargetRequest throws on a stray web_search_call input item (shim owns
       parallel_tool_calls: true,
     }),
     Error,
-    "Invalid input item type 'web_search_call'",
+    'Invalid input item: {"type":"web_search_call"',
   );
 });
 

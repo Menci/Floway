@@ -50,7 +50,7 @@ export const buildTargetRequest = async (
 
   // The conversation came from the segments; a request without one still states
   // its settings and tools.
-  base ??= openaiResponsesRequestFromIR({ ...ir, conversation: { turns: [] } }, true);
+  base ??= openaiResponsesRequestFromIR({ ...ir, conversation: { turns: [] } });
 
   return {
     ...base,
