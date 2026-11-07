@@ -30,12 +30,12 @@ export const roundTripAssistantTurn = async <Source extends keyof AssistantTurnB
 ): Promise<RoundTripAssistantTurn<Target> | undefined> => {
   let selected: { candidate: EncodedRoundTripSidecar<SourceTurn>; sidecar: AnyRoundTripSidecar } | undefined;
   for (const candidate of inspect(turn)) {
-    const sidecar = await decodeRoundTripSidecar(codec, source, candidate.data);
-    if (sidecar === undefined) continue;
+    const sidecar = await decodeRoundTripSidecar(codec, candidate.data);
+    if (sidecar?.source !== source) continue;
     if (selected !== undefined) throw new Error('Assistant turn has multiple recognized round-trip sidecars');
     selected = { candidate, sidecar };
   }
-  if (selected === undefined || !hasRoundTripTarget(selected.sidecar, target)) return undefined;
+  if (!hasRoundTripTarget(selected?.sidecar, target)) return undefined;
   const sourceTurn = selected.candidate.withoutSidecar();
   if (!(await verify(sourceTurn, selected.sidecar.sourceTurnDigest, selected.sidecar.v))) return undefined;
   const resolved = await restoreAssistantTurn(target, collectCandidates(sourceTurn), selected.sidecar.targetTurn, selected.sidecar.referencedContentHashes);

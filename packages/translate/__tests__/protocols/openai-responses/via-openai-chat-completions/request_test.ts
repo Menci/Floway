@@ -32,7 +32,7 @@ test('buildTargetRequest rejects an agent_message that no interceptor lowered', 
       }],
     }),
     Error,
-    "Invalid input item type 'agent_message'.",
+    'Invalid input item: {"type":"agent_message"',
   );
 });
 
@@ -88,7 +88,7 @@ test('buildTargetRequest merges adjacent assistant reasoning text and tool calls
   });
 
   assertEquals(result.target.model, 'gpt-test');
-  assertEquals(result.target.max_tokens, 256);
+  assertEquals(result.target.max_completion_tokens, 256);
   assertEquals(result.target.metadata, { trace_id: 'trace_123' });
   assertEquals(result.target.store, false);
   assertEquals(result.target.parallel_tool_calls, true);
@@ -228,7 +228,7 @@ test.each(['web_search_preview', 'file_search', 'image_generation', 'local_shell
       tools: [{ type } as unknown as OpenAIResponsesTool],
     }),
     Error,
-    `Cannot translate OpenAI Responses tool type '${type}' to OpenAI Chat Completions.`,
+    `Cannot translate OpenAI Responses tool type '${type}'.`,
   );
 });
 
@@ -248,7 +248,7 @@ test.each(['web_search', 'file_search'])('buildTargetRequest rejects unsupported
   await assertRejects(
     () => buildWithTestSidecar({ model: 'gpt-test', input: 'Hi', tool_choice: toolChoice as OpenAIResponsesToolChoice }),
     Error,
-    `Cannot translate OpenAI Responses tool choice '${toolChoice}' to OpenAI Chat Completions.`,
+    `Cannot translate OpenAI Responses tool choice '${toolChoice}'.`,
   );
 });
 
@@ -256,7 +256,7 @@ test.each(['web_search_preview', 'file_search'])('buildTargetRequest rejects uns
   await assertRejects(
     () => buildWithTestSidecar({ model: 'gpt-test', input: 'Hi', tool_choice: { type } as unknown as OpenAIResponsesToolChoice }),
     Error,
-    `Cannot translate OpenAI Responses tool choice type '${type}' to OpenAI Chat Completions.`,
+    `Cannot translate OpenAI Responses tool choice type '${type}'.`,
   );
 });
 
@@ -268,7 +268,7 @@ test('buildTargetRequest keeps function tool_choice', async () => {
     temperature: null,
     top_p: null,
     max_output_tokens: null,
-    tools: null,
+    tools: [{ type: 'function', name: 'get_weather', parameters: { type: 'object', properties: {} } }],
     tool_choice: {
       type: 'function' as const,
       name: 'get_weather',
@@ -286,7 +286,7 @@ test('buildTargetRequest keeps function tool_choice', async () => {
   });
 });
 
-test.each(['auto', 'required', 'none'] as const)('buildTargetRequest keeps supported string tool choice %s', async toolChoice => {
+test.each(['auto', 'none'] as const)('buildTargetRequest keeps supported string tool choice %s', async toolChoice => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'Hi' }],
@@ -304,6 +304,26 @@ test.each(['auto', 'required', 'none'] as const)('buildTargetRequest keeps suppo
   });
 
   assertEquals(result.target.tool_choice, toolChoice);
+});
+
+test('buildTargetRequest omits a required tool choice that has no declaration to demand', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'user', content: 'Hi' }],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: null,
+    tools: null,
+    tool_choice: 'required',
+    metadata: null,
+    stream: null,
+    store: null,
+    parallel_tool_calls: null,
+    text: null,
+  });
+
+  assertEquals(result.target.tool_choice, undefined);
 });
 
 test('buildTargetRequest wraps custom tools as single-string function tools and records their names', async () => {
@@ -419,7 +439,7 @@ test.each([
   await assertRejects(
     () => buildWithTestSidecar({ model: 'gpt-test', input: [...input] }),
     Error,
-    `Invalid input item type '${name}'`,
+    `Invalid input item: {"type":"${name}"`,
   );
 });
 
@@ -451,7 +471,7 @@ test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTa
       input: [{ type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
     }),
     Error,
-    'input_file tool output',
+    'file tool output',
   );
 });
 
@@ -578,7 +598,7 @@ test('buildTargetRequest throws on a stray web_search_call input item (shim owns
       parallel_tool_calls: true,
     }),
     Error,
-    "Invalid input item type 'web_search_call'",
+    'Invalid input item: {"type":"web_search_call"',
   );
 });
 
@@ -606,7 +626,7 @@ test('buildTargetRequest throws on a stray compaction_trigger input item (compac
       parallel_tool_calls: true,
     }),
     Error,
-    "Invalid input item type 'compaction_trigger'",
+    'Invalid input item: {"type":"compaction_trigger"',
   );
 });
 
@@ -634,7 +654,7 @@ test('buildTargetRequest throws on a stray compaction input item (compact-shim o
       parallel_tool_calls: true,
     }),
     Error,
-    "Invalid input item type 'compaction'",
+    'Invalid input item: {"type":"compaction"',
   );
 });
 

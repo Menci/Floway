@@ -16,13 +16,13 @@ const buildWithTestSidecar = (
   options: Parameters<typeof buildTargetRequestWithSidecar>[3],
 ) => buildTargetRequestWithSidecar(payload, model, createTestSidecarCodec(), options);
 
-test('buildTargetRequest forwards an empty thinkingLevel verbatim', async () => {
+test('buildTargetRequest treats an empty thinkingLevel as unstated', async () => {
   const request = await buildWithTestSidecar({
     contents: [],
     generationConfig: { thinkingConfig: { thinkingLevel: '' } },
   }, 'claude-test', noOptions);
 
-  assertEquals(request.output_config, { effort: '' });
+  assertEquals(request.output_config, undefined);
 });
 
 test('buildTargetRequest preserves native thinkingBudget beside an empty thinkingLevel', async () => {
@@ -32,7 +32,8 @@ test('buildTargetRequest preserves native thinkingBudget beside an empty thinkin
   }, 'claude-test', noOptions);
 
   assertEquals(request.thinking, { type: 'enabled', budget_tokens: 2048 });
-  assertEquals(request.output_config, { effort: '' });
+  // The budget is the only stated quantity, so it supplies the level.
+  assertEquals(request.output_config, { effort: 'low' });
 });
 
 test('buildTargetRequest maps system, default max tokens, and multimodal user content', async () => {
@@ -80,12 +81,19 @@ test('buildTargetRequest maps system, default max tokens, and multimodal user co
   });
 });
 
-test.each(['audio/wav', 'audio/mp3', 'audio/mpeg', 'text/plain'])('buildTargetRequest rejects Gemini inline data MIME type %s for Anthropic Messages', async mimeType => {
+test.each(['audio/wav', 'audio/mp3', 'audio/mpeg'])('buildTargetRequest rejects Gemini inline audio MIME type %s for Anthropic Messages', async mimeType => {
   await assertRejects(
     () => buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: 'ZGF0YQ==' } }] }] }, 'claude-test', noOptions),
     Error,
-    `Cannot translate Gemini generateContent inlineData MIME type '${mimeType}' to Anthropic Messages.`,
+    `Cannot translate an audio part of MIME type '${mimeType}' to Anthropic Messages.`,
   );
+});
+
+test('buildTargetRequest forwards a non-audio inline MIME type from Gemini as a Messages document', async () => {
+  // GenerateContent states any MIME type inline; the document's media type
+  // travels verbatim so the selected upstream decides whether it accepts it.
+  const request = await buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'text/plain', data: 'ZGF0YQ==' } }] }] }, 'claude-test', noOptions);
+  assertEquals(request.messages, [{ role: 'user', content: [{ type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'ZGF0YQ==' } }] }]);
 });
 
 test('buildTargetRequest prefers limits.max_output_tokens over the gateway default when payload omits maxOutputTokens', async () => {
@@ -161,11 +169,6 @@ test('buildTargetRequest keeps readable thinking and tool calls while dropping t
           name: 'lookup',
           input: { q: 'docs' },
         },
-      ],
-    },
-    {
-      role: 'assistant',
-      content: [
         {
           type: 'tool_use',
           id: 'gemini_call_1_0',
@@ -230,11 +233,6 @@ test('buildTargetRequest correlates omitted function response ids in call order'
           tool_use_id: 'gemini_call_0_0',
           content: '{"answer":"first"}',
         },
-      ],
-    },
-    {
-      role: 'user',
-      content: [
         {
           type: 'tool_result',
           tool_use_id: 'gemini_call_0_1',
@@ -281,7 +279,6 @@ test('buildTargetRequest maps tool declarations and tool choice modes', async ()
     max_tokens: ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
     tools: [
       {
-        type: 'custom',
         name: 'lookup',
         description: 'Look up facts',
         input_schema: {
@@ -297,7 +294,8 @@ test('buildTargetRequest maps tool declarations and tool choice modes', async ()
   assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'NONE' } } }, 'claude-test', noOptions)).tool_choice, { type: 'none' });
   assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'AUTO' } } }, 'claude-test', noOptions)).tool_choice, { type: 'auto' });
   assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'VALIDATED' } } }, 'claude-test', noOptions)).tool_choice, { type: 'auto' });
-  assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'claude-test', noOptions)).tool_choice, { type: 'any' });
+  // ANY demands a call the request offers no declaration for.
+  assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'claude-test', noOptions)).tool_choice, undefined);
 });
 
 test('buildTargetRequest filters tools to multiple allowed names for ANY mode', async () => {
@@ -323,12 +321,10 @@ test('buildTargetRequest filters tools to multiple allowed names for ANY mode', 
     max_tokens: ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
     tools: [
       {
-        type: 'custom',
         name: 'lookup',
         input_schema: { type: 'object', properties: {} },
       },
       {
-        type: 'custom',
         name: 'ping',
         input_schema: { type: 'object', properties: {} },
         cache_control: { type: 'ephemeral' },

@@ -2,7 +2,7 @@ import { irPathKey, irRecordOwnerPaths } from './operation-paths.ts';
 import type { IRPath, IRRecord } from './stream.ts';
 
 // Finds the unit that a record belongs to. A writer registers each unit at the path
-// where its IR structure was initialized.
+// where its output IR structure was initialized.
 export const createIRUnitRegistry = <T>() => {
   const units = new Map<string, T>();
   return {
@@ -20,7 +20,7 @@ export const createIRUnitRegistry = <T>() => {
   };
 };
 
-// Units wait here until the writer can open them, and are opened in IR order.
+// Units wait here until the writer can open them, and are opened in output IR order.
 export interface IRQueuedUnit<T> { nextPending?: T }
 
 export const createIRUnitQueue = <T extends IRQueuedUnit<T>>() => {

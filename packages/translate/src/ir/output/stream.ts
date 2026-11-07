@@ -1,6 +1,6 @@
 import { createIRCollector, type IRCollector } from './collector.ts';
 import { irItemPath, irPartPath, irPathKey, irUnitPath } from './operation-paths.ts';
-import type { IRErrorPayload, IRUsage, IRValue } from './types.ts';
+import type { IRErrorPayload, IROutputUsage, IRValue } from './types.ts';
 
 export type IRPath = readonly (string | number)[];
 export type IRWrite = Readonly<
@@ -49,8 +49,16 @@ export interface IRChoiceHandle extends IRWriteHandle {
   textParts: () => readonly { item: IRItemHandle; part: IRPartHandle; text: string }[];
 }
 
-export const createIRBuilder = (maxChoices = 1) => {
-  if (!Number.isSafeInteger(maxChoices) || maxChoices <= 0) throw new RangeError(`IR maxChoices must be a positive safe integer: ${maxChoices}`);
+/**
+ * Builds the output IR as a target protocol reports it.
+ *
+ * A choice's index is its position in the request's candidate list, and a
+ * stream that starts at index 1 states a choice 0 it never mentioned. The
+ * builder therefore admits only the next index it has not yet opened: the
+ * upstream's own count is what decides how many there are, and a protocol that
+ * reports an index out of order is malformed rather than merely large.
+ */
+export const createIRBuilder = () => {
   const collector = createIRCollector();
   const { state } = collector;
   let records: IRRecord[] = [];
@@ -100,12 +108,12 @@ export const createIRBuilder = (maxChoices = 1) => {
     current: subpath => collector.value(relativePath(path, subpath)),
   });
   // Usage arrives as cumulative snapshots, so each reported field replaces the previous one.
-  const usage = (fields: IRUsage): void => {
+  const usage = (fields: IROutputUsage): void => {
     if (state.usage === undefined) initialize(['usage'], {});
     for (const [key, value] of Object.entries(fields)) assign(['usage', key], value);
   };
   const choice = (index: number): IRChoiceHandle => {
-    if (!Number.isSafeInteger(index) || index < 0 || index >= maxChoices) throw new RangeError(`IR choice index exceeds the configured choice count: ${index}`);
+    if (!Number.isSafeInteger(index) || index < 0 || index > choices.size) throw new RangeError(`output IR choice index is out of sequence: ${index}`);
     while (choices.size <= index) {
       const choiceIndex = choices.size;
       const path = irUnitPath('choice', choiceIndex);
@@ -183,15 +191,15 @@ export const consumeIRRecords = async function* (records: AsyncIterable<IRRecord
   let started = false;
   let finished = false;
   for await (const record of records) {
-    if (finished) throw new Error('IR record arrived after finish');
+    if (finished) throw new Error('output IR record arrived after finish');
     if (record.type === 'write') {
       collector.apply(record);
     } else {
       if (record.type === 'start') {
-        if (started) throw new Error('Duplicate IR start');
+        if (started) throw new Error('Duplicate output IR start');
         started = true;
       } else if (record.type === 'finish') {
-        if (!started) throw new Error('IR finish arrived before start');
+        if (!started) throw new Error('output IR finish arrived before start');
         finished = true;
       } else if (record.type === 'error') {
         finished = true;
@@ -200,5 +208,5 @@ export const consumeIRRecords = async function* (records: AsyncIterable<IRRecord
     }
     yield { record, collector };
   }
-  if (!finished) throw new Error('IR stream ended without finish');
+  if (!finished) throw new Error('output IR stream ended without finish');
 };

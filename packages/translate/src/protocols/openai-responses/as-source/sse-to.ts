@@ -2,12 +2,12 @@ import { restoreNamespaceOutputItem, type NamespaceToolNames } from './namespace
 import { createRandomOpenAIResponsesResponseId } from './response-id.ts';
 import { collectOpenAIResponsesTextViews, computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
-import type { IRCollector } from '../../../ir/collector.ts';
-import { irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/operation-paths.ts';
-import { createIROrdinalMapper } from '../../../ir/ordinal-mapper.ts';
-import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/stream.ts';
-import { IRAbsent, type IR, type IRItem, type IRMessageItem, type IRSourceCitation, type IRTokenLogprob } from '../../../ir/types.ts';
-import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/unit-queue.ts';
+import type { IRCollector } from '../../../ir/output/collector.ts';
+import { irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/output/operation-paths.ts';
+import { createIROrdinalMapper } from '../../../ir/output/ordinal-mapper.ts';
+import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/output/stream.ts';
+import { IRAbsent, type IR, type IROutputItem, type IROutputMessageItem, type IROutputSourceCitation, type IROutputTokenLogprob } from '../../../ir/output/types.ts';
+import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/output/unit-queue.ts';
 import { appendContent, createContentState, type ContentState, type ContentStates } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
@@ -53,15 +53,15 @@ type OpenAIResponsesSSEOutputOptions = RoundTripOutputOptions<'openaiResponses'>
 const IMAGE_OUTPUT_FORMATS = { 'image/png': 'png', 'image/jpeg': 'jpeg', 'image/webp': 'webp' } as const;
 
 type IRWriteRecord = Extract<IRRecord, { type: 'write' }>;
-type IRToolCallItem = Extract<IRItem, { type: 'function_call' | 'custom_tool_call' }>;
-// The item an opened unit announces, and the events that bring it up to the content IR already holds.
+type IRToolCallItem = Extract<IROutputItem, { type: 'function_call' | 'custom_tool_call' }>;
+// The item an opened unit announces, and the events that bring it up to the content output IR already holds.
 interface OpenedUnit {
   readonly added: OpenAIResponsesOutputItemEx;
   readonly followUps: OpenAIResponsesStreamEventEx[];
 }
 
 type ReasoningField = 'summary' | 'content';
-type MessagePart = IRMessageItem['content'][number];
+type MessagePart = IROutputMessageItem['content'][number];
 
 type ResponsesMessageState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>, ContentStates>;
 type ResponsesReasoningState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'reasoning' }>, ContentStates>;
@@ -69,7 +69,7 @@ type ResponsesReasoningState = OpenAIResponsesItemState<Extract<OpenAIResponsesO
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const initializedType = (value: unknown): IRItem['type'] | MessagePart['type'] | undefined => {
+const initializedType = (value: unknown): IROutputItem['type'] | MessagePart['type'] | undefined => {
   if (!isRecord(value)) return undefined;
   return value.type === 'message'
     || value.type === 'reasoning'
@@ -92,7 +92,7 @@ const textPartLogprobMetadata = (value: unknown): TextPartLogprobMetadata | unde
     : undefined;
 };
 
-const isIRTokenLogprob = (value: unknown): value is IRTokenLogprob =>
+const isIRTokenLogprob = (value: unknown): value is IROutputTokenLogprob =>
   isRecord(value) && typeof value.token === 'string' && typeof value.logprob === 'number';
 
 const reasoningPartAdded = (field: ReasoningField, itemId: string, outputIndex: number, index: number): OpenAIResponsesStreamEventEx =>
@@ -249,7 +249,7 @@ export const openaiResponsesFromIR = async function* (
     return index;
   };
 
-  const convertAnnotation = (coordinateIndex: () => TextCoordinateIndex, annotation: IRSourceCitation): OpenAIResponsesAnnotation | undefined => {
+  const convertAnnotation = (coordinateIndex: () => TextCoordinateIndex, annotation: IROutputSourceCitation): OpenAIResponsesAnnotation | undefined => {
     if ((annotation.source_kind === 'url' || annotation.source_kind === 'search_result') && annotation.source != null) {
       if (annotation.output_text_range === undefined) return undefined;
       const range = coordinateIndex().irRangeToCodePoints(annotation.output_text_range);
@@ -288,7 +288,7 @@ export const openaiResponsesFromIR = async function* (
     const part = textOrRefusalPart(state, path);
     if (part.type === 'refusal') return { type: 'refusal', refusal: part.refusal };
     const logprobGroup = logprobGroups.get(irPathKey(path));
-    let logprobs: readonly IRTokenLogprob[] = [];
+    let logprobs: readonly IROutputTokenLogprob[] = [];
     if (logprobGroup !== undefined) {
       const group = state.choices[0].logprobs?.[logprobGroup];
       if (group === undefined) throw new TypeError(`Responses logprob group ${logprobGroup} is missing`);
@@ -323,10 +323,10 @@ export const openaiResponsesFromIR = async function* (
     }
     if (unit.callId === undefined) throw new TypeError('Responses tool unit has no call ID');
     if (unit.kind === 'custom_tool_call') {
-      if (item.type !== 'custom_tool_call') throw new TypeError('Responses tool unit has the wrong IR item');
+      if (item.type !== 'custom_tool_call') throw new TypeError('Responses tool unit has the wrong output IR item');
       return { type: 'custom_tool_call', id, call_id: unit.callId, name: item.name, input: item.input, status };
     }
-    if (item.type !== 'function_call') throw new TypeError('Responses tool unit has the wrong IR item');
+    if (item.type !== 'function_call') throw new TypeError('Responses tool unit has the wrong output IR item');
     return { type: 'function_call', id, call_id: unit.callId, name: item.name, arguments: item.arguments, status };
   };
 
@@ -343,7 +343,7 @@ export const openaiResponsesFromIR = async function* (
     ...(state.service_tier === undefined ? {} : { service_tier: state.service_tier }),
   });
 
-  // Creates the output units that the IR structures initialized by a record will become.
+  // Creates the output units that the output IR structures initialized by a record will become.
   const registerUnits = (record: IRRecord, state: IR): void => {
     if (record.type === 'write' && record.kind === 'initialize') {
       if (record.path[0] === 'choices' && record.path[1] !== 0) throw new Error('Responses cannot represent multiple choices');
@@ -464,7 +464,7 @@ export const openaiResponsesFromIR = async function* (
     return { added: { type: 'image_generation_call', id, status: 'in_progress', result: null }, followUps: [] };
   };
 
-  const openReasoningUnit = (unit: ResponsesOutputUnit, item: IRItem, outputIndex: number): OpenedUnit => {
+  const openReasoningUnit = (unit: ResponsesOutputUnit, item: IROutputItem, outputIndex: number): OpenedUnit => {
     const reasoning = item.type === 'reasoning' ? item : undefined;
     const id = createRandomOpenAIResponsesItemId('reasoning');
     unit.id = id;
@@ -501,7 +501,7 @@ export const openaiResponsesFromIR = async function* (
     return { added, followUps };
   };
 
-  // Opens the waiting units in IR order, until one still lacks what its opening event needs.
+  // Opens the waiting units in output IR order, until one still lacks what its opening event needs.
   const openPendingUnits = (state: IR, collector: IRCollector): { events: OpenAIResponsesStreamEventEx[]; justOpened: Set<string> } => {
     const justOpened = new Set<string>();
     const pendingEvents: OpenAIResponsesStreamEventEx[] = [];
@@ -624,7 +624,7 @@ export const openaiResponsesFromIR = async function* (
     }
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;
     if (record.type === 'start') {
-      if (state.model === undefined) throw new TypeError('Responses output requires an IR model before start');
+      if (state.model === undefined) throw new TypeError('Responses output requires an output IR model before start');
       const id = options.id ?? record.id;
       metadata = {
         id: id?.startsWith('resp_') ? id : createRandomOpenAIResponsesResponseId(),
@@ -765,7 +765,7 @@ export const openaiResponsesFromIR = async function* (
             yield emit(reasoningPartDone(field, requireId(current), outputIndex, contentIndex, text));
           }
         } else if (current.kind === 'custom_tool_call') {
-          if (item.type !== 'custom_tool_call') throw new TypeError('Responses tool unit has the wrong IR item');
+          if (item.type !== 'custom_tool_call') throw new TypeError('Responses tool unit has the wrong output IR item');
           yield emit({
             type: 'response.custom_tool_call_input.done',
             item_id: requireId(current),
@@ -773,7 +773,7 @@ export const openaiResponsesFromIR = async function* (
             input: item.input,
           });
         } else if (current.kind === 'function_call') {
-          if (item.type !== 'function_call') throw new TypeError('Responses tool unit has the wrong IR item');
+          if (item.type !== 'function_call') throw new TypeError('Responses tool unit has the wrong output IR item');
           yield emit({
             type: 'response.function_call_arguments.done',
             item_id: requireId(current),

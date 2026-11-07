@@ -61,6 +61,21 @@ test('buildTargetRequest preserves OpenAI Responses assistant refusal history as
   assertEquals(message.content[0], { type: 'text', text: 'Cannot help.', cache_control: { type: 'ephemeral' } });
 });
 
+test('buildTargetRequest keeps an explicitly empty assistant message', async () => {
+  // An empty string is a stated assistant turn, not an absent one: the source
+  // chose to record it, so the target receives a message of its own.
+  const result = await buildWithTestSidecar({
+    ...minimalPayload,
+    input: [
+      { type: 'message', role: 'assistant', content: '' },
+      { type: 'message', role: 'user', content: 'hi' },
+    ],
+  });
+
+  assertEquals(result.target.messages.map(message => message.role), ['assistant', 'user']);
+  assertEquals(result.target.messages[0], { role: 'assistant', content: '' });
+});
+
 test('buildTargetRequest accepts an implicit message discriminator', async () => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
@@ -134,19 +149,20 @@ test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTa
       input: [{ type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
     }),
     Error,
-    'input_file tool output',
+    'file tool output',
   );
 });
 
-test('buildTargetRequest rejects file message content', async () => {
-  await assertRejects(
-    () => buildWithTestSidecar({
-      ...minimalPayload,
-      input: [{ type: 'message', role: 'user', content: [{ type: 'input_file', file_id: 'file_1' }] }],
-    }),
-    Error,
-    'input_file message content',
-  );
+test.each([
+  { name: 'file_id', part: { type: 'input_file' as const, file_id: 'file_1' }, source: { type: 'file', file_id: 'file_1' } },
+  { name: 'file_url', part: { type: 'input_file' as const, file_url: 'https://example.com/a.pdf' }, source: { type: 'url', url: 'https://example.com/a.pdf' } },
+  { name: 'file_data data URL', part: { type: 'input_file' as const, file_data: 'data:application/pdf;base64,JVBERi0=' }, source: { type: 'base64', media_type: 'application/pdf', data: 'JVBERi0=' } },
+])('buildTargetRequest maps input_file $name to a Messages document', async ({ part, source }) => {
+  const result = await buildWithTestSidecar({
+    ...minimalPayload,
+    input: [{ type: 'message', role: 'user', content: [part] }],
+  });
+  assertEquals(result.target.messages.at(-1), { role: 'user', content: [{ type: 'document', source }] });
 });
 
 test('buildTargetRequest rejects file assistant content', async () => {
@@ -182,26 +198,28 @@ test('buildTargetRequest rejects assistant images', async () => {
   );
 });
 
-test('buildTargetRequest rejects file_id-only images', async () => {
-  await assertRejects(
-    () => buildWithTestSidecar({
-      ...minimalPayload,
-      input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
-    }),
-    Error,
-    'file_id-only image content',
-  );
+test('buildTargetRequest passes a file_id-only image through to the Messages target', async () => {
+  const result = await buildWithTestSidecar({
+    ...minimalPayload,
+    input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
+  });
+  // Messages accepts a file ID, and whether the upstream behind this Messages
+  // endpoint knows that ID is the upstream's question.
+  assertEquals(result.target.messages, [{
+    role: 'user',
+    content: [{ type: 'image', source: { type: 'file', file_id: 'file_1' }, cache_control: { type: 'ephemeral' } }],
+  }]);
 });
 
-test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest rejects file_id-only images in %s', async type => {
-  await assertRejects(
-    () => buildWithTestSidecar({
-      ...minimalPayload,
-      input: [{ type, call_id: 'call_1', output: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
-    }),
-    Error,
-    'file_id-only image tool output',
-  );
+test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest passes file_id-only images through in %s', async type => {
+  const result = await buildWithTestSidecar({
+    ...minimalPayload,
+    input: [{ type, call_id: 'call_1', output: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
+  });
+  assertEquals(result.target.messages, [{
+    role: 'user',
+    content: [{ type: 'tool_result', tool_use_id: 'call_1', content: [{ type: 'image', source: { type: 'file', file_id: 'file_1' } }], cache_control: { type: 'ephemeral' } }],
+  }]);
 });
 
 test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest rejects unavailable images in %s', async type => {
@@ -529,7 +547,7 @@ test.each(['web_search', 'file_search'])('buildTargetRequest rejects unsupported
   await assertRejects(
     () => buildWithTestSidecar({ ...minimalPayload, tools: [{ type } as unknown as OpenAIResponsesTool] }),
     Error,
-    `Cannot translate OpenAI Responses tool type '${type}' to Anthropic Messages.`,
+    `Cannot translate OpenAI Responses tool type '${type}'.`,
   );
 });
 
@@ -537,7 +555,7 @@ test.each(['web_search', 'file_search'])('buildTargetRequest rejects unsupported
   await assertRejects(
     () => buildWithTestSidecar({ ...minimalPayload, tool_choice: toolChoice as unknown as typeof minimalPayload.tool_choice }),
     Error,
-    `Cannot translate OpenAI Responses tool choice '${toolChoice}' to Anthropic Messages.`,
+    `Cannot translate OpenAI Responses tool choice '${toolChoice}'.`,
   );
 });
 
@@ -545,7 +563,7 @@ test.each(['web_search', 'file_search'])('buildTargetRequest rejects unsupported
   await assertRejects(
     () => buildWithTestSidecar({ ...minimalPayload, tool_choice: { type } as unknown as typeof minimalPayload.tool_choice }),
     Error,
-    `Cannot translate OpenAI Responses tool choice type '${type}' to Anthropic Messages.`,
+    `Cannot translate OpenAI Responses tool choice type '${type}'.`,
   );
 });
 
@@ -858,7 +876,7 @@ test('buildTargetRequest throws on a stray web_search_call input item (shim owns
       parallel_tool_calls: true,
     }),
     Error,
-    "Invalid input item type 'web_search_call'",
+    'Invalid input item: {"type":"web_search_call"',
   );
 });
 

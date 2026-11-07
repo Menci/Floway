@@ -1,11 +1,11 @@
 import { collectAnthropicMessagesTextViews, computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
-import type { IRCollector } from '../../../ir/collector.ts';
-import { isIRItemPath, isIRPartPath, irPathKey } from '../../../ir/operation-paths.ts';
-import { createIROrdinalMapper } from '../../../ir/ordinal-mapper.ts';
-import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/stream.ts';
-import { IRAbsent, type IR, type IRErrorPayload, type IRJSONObject } from '../../../ir/types.ts';
-import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/unit-queue.ts';
+import type { IRCollector } from '../../../ir/output/collector.ts';
+import { isIRItemPath, isIRPartPath, irPathKey } from '../../../ir/output/operation-paths.ts';
+import { createIROrdinalMapper } from '../../../ir/output/ordinal-mapper.ts';
+import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/output/stream.ts';
+import { IRAbsent, type IR, type IRErrorPayload, type IRJSONObject } from '../../../ir/output/types.ts';
+import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/output/unit-queue.ts';
 import { appendContent, createContentState, type ContentState, type ContentStates } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
@@ -35,9 +35,34 @@ const MESSAGES_ERROR_TYPES = [
   'overloaded_error',
 ];
 
-const irMessagesError = (error: IRErrorPayload): AnthropicMessagesErrorEventEx['error'] => isContextExceededError(error)
+/**
+ * How Messages spells an error: the stream reports it as an event, and a
+ * non-2xx answer carries the same object inside a body envelope.
+ *
+ * A context overflow is restated rather than forwarded because Claude Code
+ * recognizes the prompt-too-long wording and re-runs with a smaller prompt; an
+ * upstream that never heard of it would otherwise report the overflow in its
+ * own words and the client would treat it as an ordinary failure.
+ */
+export const irMessagesError = (error: IRErrorPayload): AnthropicMessagesErrorEventEx['error'] => isContextExceededError(error)
   ? { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE }
   : { type: error.type !== undefined && MESSAGES_ERROR_TYPES.includes(error.type) ? error.type : 'api_error', message: error.message };
+
+export const anthropicMessagesErrorBody = (error: IRErrorPayload): Uint8Array =>
+  new TextEncoder().encode(JSON.stringify({ type: 'error', error: irMessagesError(error) }));
+
+/** The status Messages reports for each error kind it can state. */
+export const anthropicMessagesErrorStatus = (error: IRErrorPayload): number => {
+  switch (irMessagesError(error).type) {
+  case 'invalid_request_error': return 400;
+  case 'authentication_error': return 401;
+  case 'permission_error': return 403;
+  case 'not_found_error': return 404;
+  case 'rate_limit_error': return 429;
+  case 'overloaded_error': return 529;
+  default: return 500;
+  }
+};
 
 interface MessagesUnit {
   readonly path: IRPath;
@@ -118,7 +143,7 @@ export const anthropicMessagesFromIR = async function* (
     return value;
   };
 
-  // Queues the content blocks that the IR structures initialized by a record will become.
+  // Queues the content blocks that the output IR structures initialized by a record will become.
   const registerUnits = (record: IRRecord, state: IR): void => {
     if (record.type === 'write' && record.kind === 'initialize') {
       let path: IRPath | undefined;
@@ -154,7 +179,7 @@ export const anthropicMessagesFromIR = async function* (
     unit.pendingText?.delete(key);
   };
 
-  // Opens the waiting units in IR order, until one still lacks what its start event needs.
+  // Opens the waiting units in output IR order, until one still lacks what its start event needs.
   const openPendingUnits = (state: IR, collector: IRCollector): AnthropicMessagesStreamEventEx[] => {
     const pendingEvents: AnthropicMessagesStreamEventEx[] = [];
     while (pending.head !== undefined) {
@@ -223,7 +248,7 @@ export const anthropicMessagesFromIR = async function* (
     if (record.type === 'error') { yield emit({ type: 'error', error: irMessagesError(record.error) }); return; }
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;
     if (record.type === 'start') {
-      if (state.model === undefined) throw new TypeError('Messages output requires an IR model before start');
+      if (state.model === undefined) throw new TypeError('Messages output requires an output IR model before start');
       const id = options.id ?? record.id;
       metadata = { id: id === undefined || id === '' ? generateAnthropicId('msg') : id, model: state.model };
       yield emit({

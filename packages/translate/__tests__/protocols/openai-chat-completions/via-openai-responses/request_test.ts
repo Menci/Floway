@@ -169,6 +169,8 @@ test('buildTargetRequest hoists only the initial contiguous system prefix', asyn
 
   assertEquals(result.instructions, 'sys-1\n\nsys-2');
   assertEquals(result.input, [
+    // One text part is what a plain prompt states, and Responses spells that as
+    // a bare string.
     { type: 'message', role: 'user', content: 'u1' },
     { type: 'message', role: 'developer', content: 'dev-late' },
     { type: 'message', role: 'system', content: 'sys-late' },
@@ -178,6 +180,22 @@ test('buildTargetRequest hoists only the initial contiguous system prefix', asyn
       content: [{ type: 'output_text', text: 'a1' }],
     },
   ]);
+});
+
+test('buildTargetRequest hoists a leading developer prefix beside a system one', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'gpt-test',
+    messages: [
+      { role: 'developer', content: 'dev-1' },
+      { role: 'system', content: 'sys-1' },
+      { role: 'user', content: 'u1' },
+    ],
+  });
+
+  // A developer message is the same prompt boundary a system message is, so a
+  // leading run of either kind is what `instructions` states.
+  assertEquals(result.instructions, 'dev-1\n\nsys-1');
+  assertEquals(result.input, [{ type: 'message', role: 'user', content: 'u1' }]);
 });
 
 test('buildTargetRequest preserves explicit tool strict and defaults omission to false', async () => {
@@ -207,27 +225,31 @@ test('buildTargetRequest preserves explicit tool strict and defaults omission to
     {
       type: 'function',
       name: 'explicit_strict',
-      parameters: { type: 'object' },
+      // An object schema states its property list explicitly: OpenAI's
+      // strict-mode validators reject one that omits it.
+      parameters: { type: 'object', properties: {} },
       strict: true,
     },
     {
       type: 'function',
       name: 'implicit_non_strict',
-      parameters: { type: 'object' },
+      parameters: { type: 'object', properties: {} },
       strict: false,
     },
   ]);
 });
 
 test('buildTargetRequest rejects an unknown message role', async () => {
+  // `function` is a legacy role the reader accepts; only a role no Chat wire
+  // defines reaches this rejection.
   await assertRejects(
     () =>
       buildWithTestSidecar({
         model: 'gpt-test',
-        messages: [{ role: 'function', content: 'hi' } as unknown as OpenAIChatCompletionsMessage],
+        messages: [{ role: 'critic', content: 'hi' } as unknown as OpenAIChatCompletionsMessage],
       }),
     Error,
-    "Invalid role 'function'",
+    "Invalid role 'critic'",
   );
 });
 
@@ -275,4 +297,13 @@ test('allowed_tools retains both native callable kinds', async () => {
     },
   });
   assertEquals(result.tool_choice, { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: 'lookup' }, { type: 'custom', name: 'edit' }] });
+});
+
+test.each([
+  { name: 'max_completion_tokens only', input: { max_completion_tokens: 64 }, expected: 64 },
+  { name: 'max_tokens only', input: { max_tokens: 32 }, expected: 32 },
+  { name: 'both, newer spelling wins', input: { max_tokens: 32, max_completion_tokens: 64 }, expected: 64 },
+])('buildTargetRequest forwards $name as max_output_tokens', async ({ input, expected }) => {
+  const result = await buildWithTestSidecar({ model: 'gpt-test', messages: [{ role: 'user', content: 'hi' }], ...input });
+  assertEquals(result.max_output_tokens, expected);
 });

@@ -1,4 +1,4 @@
-import type { IRUTF16TextRange } from '../ir/types.ts';
+import type { IRTextRange } from '../ir/output/types.ts';
 
 type TextCoordinateMode = 'code-point-to-utf16' | 'utf16-to-code-point' | 'utf16-to-utf8';
 
@@ -118,34 +118,34 @@ export class TextCoordinateIndex {
     this.#trailingHighSurrogate = isHighSurrogate(delta.charCodeAt(delta.length - 1));
   }
 
-  codePointRangeToIR(start: number, end: number): IRUTF16TextRange {
+  codePointRangeToIR(start: number, end: number): IRTextRange {
     if (this.#mode !== 'code-point-to-utf16') throw new TypeError('Text coordinate index does not map code points to UTF-16');
     if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start) throw new RangeError('Invalid code-point range');
     if (end >= this.#boundaries.length) throw new RangeError('Code-point range exceeds text');
     return { start: this.#boundaries.get(start), end_exclusive: this.#boundaries.get(end) };
   }
 
-  irRangeToCodePoints(range: IRUTF16TextRange): { start: number; end: number } {
+  irRangeToCodePoints(range: IRTextRange): { start: number; end: number } {
     if (this.#mode !== 'utf16-to-code-point') throw new TypeError('Text coordinate index does not map UTF-16 to code points');
     const [start, end] = this.#utf16Range(range);
     return { start, end };
   }
 
-  irRangeToUTF8(range: IRUTF16TextRange): { start: number; end: number } {
+  irRangeToUTF8(range: IRTextRange): { start: number; end: number } {
     if (this.#mode !== 'utf16-to-utf8') throw new TypeError('Text coordinate index does not map UTF-16 to UTF-8');
     if (this.#unpairedSurrogates !== 0) throw new TypeError('GenerateContent byte coordinates require well-formed Unicode');
     const [start, end] = this.#utf16Range(range);
     return { start, end };
   }
 
-  #utf16Range(range: IRUTF16TextRange): readonly [number, number] {
+  #utf16Range(range: IRTextRange): readonly [number, number] {
     if (!Number.isInteger(range.start) || !Number.isInteger(range.end_exclusive)
       || range.start < 0 || range.end_exclusive < range.start || range.end_exclusive > this.#utf16Length) {
-      throw new RangeError('IR range is outside text or splits a surrogate pair');
+      throw new RangeError('output IR range is outside text or splits a surrogate pair');
     }
     const start = this.#boundaries.get(range.start);
     const end = this.#boundaries.get(range.end_exclusive);
-    if (start === INVALID_BOUNDARY || end === INVALID_BOUNDARY) throw new RangeError('IR range is outside text or splits a surrogate pair');
+    if (start === INVALID_BOUNDARY || end === INVALID_BOUNDARY) throw new RangeError('output IR range is outside text or splits a surrogate pair');
     return [start, end];
   }
 }

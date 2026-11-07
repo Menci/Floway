@@ -1,4 +1,4 @@
-import type { IRJSONObject } from '../../ir/types.ts';
+import type { IRJSONObject } from '../../ir/output/types.ts';
 import type { AnthropicMessagesAssistantState, AnthropicMessagesReferenceableAssistantTurn } from '../../protocols/anthropic-messages/as-target/assistant-turn.ts';
 import type { GeminiGenerateContentAssistantState, GeminiGenerateContentReferenceableAssistantTurn } from '../../protocols/gemini-generate-content/as-target/assistant-turn.ts';
 import type { OpenAIChatCompletionsAssistantState, OpenAIChatCompletionsReferenceableAssistantTurn } from '../../protocols/openai-chat-completions/as-target/assistant-turn.ts';

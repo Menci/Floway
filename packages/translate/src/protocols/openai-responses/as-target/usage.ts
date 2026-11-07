@@ -1,4 +1,4 @@
-import type { IRUsage } from '../../../ir/types.ts';
+import type { IROutputUsage } from '../../../ir/output/types.ts';
 import { requireTokenCount } from '../../../shared/token-count.ts';
 import { splitInclusiveInputTokens } from '@floway-dev/protocols/common';
 
@@ -18,9 +18,9 @@ interface OpenAIResponsesUsageFields {
   output_tokens_details?: { reasoning_tokens?: number; audio_tokens?: number; text_tokens?: number };
 }
 
-export const usageToIR = (usage: OpenAIResponsesUsageFields): IRUsage => {
-  const result: Partial<Record<keyof IRUsage, number>> = {};
-  const put = (key: keyof IRUsage, value: number | undefined | null): void => { if (value != null) result[key] = requireTokenCount(key, value); };
+export const usageToIR = (usage: OpenAIResponsesUsageFields): IROutputUsage => {
+  const result: Partial<Record<keyof IROutputUsage, number>> = {};
+  const put = (key: keyof IROutputUsage, value: number | undefined | null): void => { if (value != null) result[key] = requireTokenCount(key, value); };
   put('input_tokens_inclusive', usage.input_tokens);
   put('output_tokens_inclusive', usage.output_tokens);
   put('total_tokens', usage.total_tokens);

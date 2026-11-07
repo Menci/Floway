@@ -2,7 +2,7 @@ import { expect, test, vi } from 'vitest';
 
 import { anthropicMessagesFromIR, collectIR, collect, completeIR, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
 import { fixtureFrames, nativeResult } from './translation-cases.ts';
-import { createIRBuilder } from '../../src/ir/stream.ts';
+import { createIRBuilder } from '../../src/ir/output/stream.ts';
 import { translateToSourceEvents as messagesViaChat } from '../../src/protocols/anthropic-messages/via-openai-chat-completions/events.ts';
 import { buildTargetRequest as messagesRequestViaChat } from '../../src/protocols/anthropic-messages/via-openai-chat-completions/request.ts';
 import { translateToSourceEvents as messagesViaResponses } from '../../src/protocols/anthropic-messages/via-openai-responses/events.ts';
@@ -63,7 +63,7 @@ test('ChatCompletions rejects generated content before any non-empty model', asy
   ])))).rejects.toThrow('before a non-empty model');
 });
 
-test('ChatCompletions role-only choices still require finish_reason without creating IR records', async () => {
+test('ChatCompletions role-only choices still require finish_reason without creating output IR records', async () => {
   const role = eventFrame({ id: 'chat_role', model: 'served', choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }] } as any);
   await expect(collectIR(irFromOpenAIChatCompletions(iterate([role])))).rejects.toThrow('ended without finish_reason');
 
@@ -116,10 +116,12 @@ test('ChatCompletions ignores late identity changes and accepts later model upda
   expect((await collectIR(irFromOpenAIChatCompletions(iterate(input)))).model).toBe('fallback');
 });
 
-test('ChatCompletions choice indexes must fit the request choice count', async () => {
+test('ChatCompletions choice indexes must stay in sequence', async () => {
+  // A stream that opens choice 1 without ever stating choice 0 describes a
+  // candidate the request never had; the IR cannot represent the gap.
   await expect(collectIR(irFromOpenAIChatCompletions(iterate([
     eventFrame({ id: 'chat_choices', model: 'served', choices: [{ index: 1, delta: {}, finish_reason: 'stop' }] } as any),
-  ]), { maxChoices: 1 }))).rejects.toThrow('configured choice count');
+  ])))).rejects.toThrow('out of sequence');
 });
 
 test('Responses rejects output events before the initial envelope', async () => {
@@ -153,9 +155,10 @@ test('writers omit output they cannot represent', async () => {
 });
 
 test('single-choice writers reject a second choice when it is initialized', async () => {
-  const b = createIRBuilder(2);
+  const b = createIRBuilder();
   b.assign(['model'], 'model');
   b.event({ type: 'start', id: 'source' });
+  b.choice(0);
   b.choice(1);
   const frames = [...b.drain()];
   await expect(collect(anthropicMessagesFromIR(iterate(frames)))).rejects.toThrow('cannot represent multiple choices');

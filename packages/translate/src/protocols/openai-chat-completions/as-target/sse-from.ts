@@ -7,12 +7,12 @@ import {
   type IRPartHandle,
   type IRWriteHandle,
   type IRRelativePath,
-} from '../../../ir/stream.ts';
-import { IRAbsent, type IRErrorPayload, type IRSourceCitation } from '../../../ir/types.ts';
+} from '../../../ir/output/stream.ts';
+import { IRAbsent, type IRErrorPayload, type IROutputSourceCitation } from '../../../ir/output/types.ts';
 import { appendField, createFieldState, type FieldStates, type FieldState, type ReferencePieceId } from '../../../round-trip/reference/reference-builder.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
+import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
-import { unwrapCustomToolInput } from '../../openai-responses/common/custom-tool-wrap.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   createOpenAIChatCompletionsEventAccumulator,
@@ -123,9 +123,9 @@ interface ChatChoiceState {
 
 export const irFromOpenAIChatCompletions = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
-  options: { customToolNames?: ReadonlySet<string>; maxChoices?: number; roundTrip: RoundTripReader<'openaiChatCompletions'> },
+  options: { customToolNames?: ReadonlySet<string>; roundTrip: RoundTripReader<'openaiChatCompletions'> },
 ): AsyncGenerator<IRRecord> {
-  const ir = createIRBuilder(options.maxChoices ?? 1);
+  const ir = createIRBuilder();
   const choices = new Map<number, ChatChoiceState>();
   const nativeAccumulators = new Map<number, ReturnType<typeof createOpenAIChatCompletionsEventAccumulator>>();
   const nativeAccumulator = (choice: number): ReturnType<typeof createOpenAIChatCompletionsEventAccumulator> => {
@@ -231,7 +231,7 @@ export const irFromOpenAIChatCompletions = async function* (
     // Only the message that is still open can receive citations; earlier parts already ended.
     const openSegments = state.message?.isOpen === true ? state.textSegments.filter(segment => segment.item === state.message) : [];
     for (const segment of openSegments) {
-      const converted: IRSourceCitation[] = citations.flatMap(({ annotation, range }) => {
+      const converted: IROutputSourceCitation[] = citations.flatMap(({ annotation, range }) => {
         const start = Math.max(range.start, segment.start);
         const end = Math.min(range.end_exclusive, segment.end);
         if (start >= end) return [];

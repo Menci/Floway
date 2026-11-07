@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
-import type { IRRecord } from '../../src/ir/stream.ts';
-import { createIRUnitQueue, createIRUnitRegistry, type IRQueuedUnit } from '../../src/ir/unit-queue.ts';
+import type { IRRecord } from '../../src/ir/output/stream.ts';
+import { createIRUnitQueue, createIRUnitRegistry, type IRQueuedUnit } from '../../src/ir/output/unit-queue.ts';
 
 interface Unit extends IRQueuedUnit<Unit> { readonly name: string }
 

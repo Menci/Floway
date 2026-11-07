@@ -140,17 +140,24 @@ export type CanonicalOpenAIResponsesInputItem =
 
 export type OpenAIResponsesMessagePhase = 'commentary' | 'final_answer' | (string & {}) | null;
 
-export interface OpenAIResponsesInputMessageEx {
+// `content` is conditioned on `role`: client roles state what the caller sent,
+// while an assistant turn replays model output and may therefore carry a
+// refusal. A refusal in client-produced content is not expressible.
+// https://github.com/openai/openai-node/blob/master/src/resources/responses/responses.ts (ResponseInputItem)
+interface OpenAIResponsesInputMessageFields {
   type: 'message';
   id?: string;
   status?: string;
-  role: 'user' | 'assistant' | 'system' | 'developer';
-  content: string | OpenAIResponsesInputContent[];
   phase?: OpenAIResponsesMessagePhase;
   // Codex marks base-instruction fragments on ordinary developer messages.
   // https://github.com/openai/codex/blob/0462dcc062b822bb8fff16cc31ce6eeab69823b9/codex-rs/core/tests/suite/responses_lite.rs#L136-L155
   internal_chat_message_metadata_passthrough?: Record<string, unknown>;
 }
+
+export type OpenAIResponsesInputMessageEx = OpenAIResponsesInputMessageFields & (
+  | { role: 'user' | 'system' | 'developer'; content: string | OpenAIResponsesInputContent[] }
+  | { role: 'assistant'; content: string | (OpenAIResponsesInputContent | OpenAIResponsesOutputRefusal)[] }
+);
 
 // The OpenAI Responses request schema's EasyInputMessage makes the constant
 // `type: "message"` discriminator optional. Wire-facing payloads accept that
@@ -178,7 +185,12 @@ export type CanonicalOpenAIResponsesPayload = Omit<OpenAIResponsesPayloadEx, 'in
   input: CanonicalOpenAIResponsesInputItem[];
 };
 
-export type OpenAIResponsesInputContent = CanonicalOpenAIResponsesText | OpenAIResponsesInputImage | OpenAIResponsesInputFile | OpenAIResponsesOutputRefusal;
+// A refusal is model output: the request schema carries it only when replaying an
+// assistant turn, never in client-produced content.
+// https://github.com/openai/openai-node/blob/master/src/resources/responses/responses.ts (ResponseOutputRefusal)
+export type OpenAIResponsesInputContent = CanonicalOpenAIResponsesText | OpenAIResponsesInputImage | OpenAIResponsesInputFile;
+
+export type OpenAIResponsesAssistantInputContent = OpenAIResponsesInputContent | OpenAIResponsesOutputRefusal;
 
 // Explicit content breakpoints inherit their lifetime from
 // `prompt_cache_options.ttl`. The mode stays open-string for forward

@@ -7,8 +7,8 @@ import {
   type IRPartHandle,
   type IRRelativePath,
   type IRWriteHandle,
-} from '../../../ir/stream.ts';
-import type { IRSourceCitation } from '../../../ir/types.ts';
+} from '../../../ir/output/stream.ts';
+import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
 import { appendField, createFieldState, invalidateField, type FieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
@@ -98,7 +98,7 @@ const closedSnapshotEqual = (left: OpenAIResponsesOutputItemEx, right: OpenAIRes
   return deepEqual(leftSnapshot, rightSnapshot);
 };
 
-const annotationToIR = (coordinateIndex: () => TextCoordinateIndex, annotation: OpenAIResponsesAnnotation): IRSourceCitation | undefined => {
+const annotationToIR = (coordinateIndex: () => TextCoordinateIndex, annotation: OpenAIResponsesAnnotation): IROutputSourceCitation | undefined => {
   if (annotation.type === 'url_citation') {
     return {
       type: 'source_citation',
@@ -124,7 +124,7 @@ const annotationToIR = (coordinateIndex: () => TextCoordinateIndex, annotation: 
   return undefined;
 };
 
-// The IR item an output item opens as; other item types have no IR counterpart.
+// The output IR item an output item opens as; other item types have no output IR counterpart.
 const irItemSeed = (item: OpenAIResponsesOutputItemEx): Record<string, unknown> | undefined => {
   switch (item.type) {
   case 'message':

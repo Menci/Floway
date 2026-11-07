@@ -1,4 +1,4 @@
-import type { IRJSONObject, IRJSONValue } from '../ir/types.ts';
+import type { IRJSONObject, IRJSONValue } from '../ir/output/types.ts';
 
 export type RoundTripTurnDigest = Uint8Array;
 

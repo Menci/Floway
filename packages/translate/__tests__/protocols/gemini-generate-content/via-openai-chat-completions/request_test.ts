@@ -11,13 +11,13 @@ const buildWithTestSidecar = (
   model: Parameters<typeof buildTargetRequestWithSidecar>[1],
 ) => buildTargetRequestWithSidecar(payload, model, createTestSidecarCodec());
 
-test('buildTargetRequest forwards an empty thinkingLevel verbatim', async () => {
+test('buildTargetRequest treats an empty thinkingLevel as unstated', async () => {
   const request = await buildWithTestSidecar({
     contents: [],
     generationConfig: { thinkingConfig: { thinkingLevel: '' } },
   }, 'gpt-test');
 
-  assertEquals(request.reasoning_effort, '');
+  assertEquals(request.reasoning_effort, undefined);
 });
 
 test('buildTargetRequest gives thinkingBudget precedence over an empty thinkingLevel', async () => {
@@ -45,6 +45,7 @@ test('buildTargetRequest maps system instruction and multimodal user content', a
   assertEquals(await buildWithTestSidecar(payload, 'gpt-test'), {
     model: 'gpt-test',
     stream: true,
+    stream_options: { include_usage: true, continuous_usage_stats: true },
     messages: [
       { role: 'system', content: 'Be precise.\n\nUse markdown.' },
       {
@@ -89,12 +90,11 @@ test('buildTargetRequest maps Gemini inline audio to Chat Completions input audi
   }]);
 });
 
-test('buildTargetRequest rejects unsupported Gemini inline data MIME types for Chat Completions', async () => {
-  await assertRejects(
-    () => buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'text/plain', data: 'dGV4dA==' } }] }] }, 'gpt-test'),
-    Error,
-    "Cannot translate Gemini generateContent inlineData MIME type 'text/plain' to OpenAI Chat Completions.",
-  );
+test('buildTargetRequest forwards a non-audio inline MIME type from Gemini as a Chat file part', async () => {
+  // Chat carries the media type in the data URL, so it travels verbatim and the
+  // selected upstream decides whether it accepts it.
+  const request = await buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'text/plain', data: 'dGV4dA==' } }] }] }, 'gpt-test');
+  assertEquals(request.messages, [{ role: 'user', content: [{ type: 'file', file: { file_data: 'data:text/plain;base64,dGV4dA==' } }] }]);
 });
 
 test('buildTargetRequest maps function calls, tool responses, and readable reasoning history', async () => {
@@ -275,8 +275,9 @@ test('buildTargetRequest maps generation config and reasoning effort', async () 
   assertEquals(await buildWithTestSidecar(payload, 'gpt-test'), {
     model: 'gpt-test',
     stream: true,
+    stream_options: { include_usage: true, continuous_usage_stats: true },
     messages: [],
-    max_tokens: 512,
+    max_completion_tokens: 512,
     temperature: 0.25,
     top_p: 0.8,
     stop: ['END'],
@@ -311,6 +312,7 @@ test('buildTargetRequest maps structured output schema and zero thinking budget'
     {
       model: 'gpt-test',
       stream: true,
+      stream_options: { include_usage: true, continuous_usage_stats: true },
       messages: [],
       reasoning_effort: 'none',
       response_format: {
@@ -352,6 +354,7 @@ test('buildTargetRequest maps tool declarations and tool choice modes', async ()
   assertEquals(await buildWithTestSidecar(payload, 'gpt-test'), {
     model: 'gpt-test',
     stream: true,
+    stream_options: { include_usage: true, continuous_usage_stats: true },
     messages: [],
     tools: [
       {

@@ -61,17 +61,14 @@ export const traverseTranslation = async <SP, TP, SE, TE>(
       : teeUpstreamFrames(inner.events, capture.upstreamFrame);
     return { ...inner, events: trip.events(events) };
   }
-  // Capture the ORIGINAL upstream api-error envelope before the optional
-  // `trip.apiError` rewrite. Fires for EVERY upstream api-error — even when no
-  // rewrite happens (trip.apiError undefined or returns undefined), because the
-  // verbatim target-protocol body is still the pre-translation view operators
-  // need to diagnose upstream behavior.
+  // Capture the ORIGINAL upstream api-error envelope before the source
+  // protocol restates it. Fires for EVERY upstream api-error — even when the
+  // trip states none — because the verbatim target-protocol body is still the
+  // pre-translation view operators need to diagnose upstream behavior.
   if (inner.type === 'api-error' && inner.source === 'upstream') {
     capture?.upstreamApiError({ status: inner.status, headers: inner.headers, body: inner.body });
-    if (trip.apiError !== undefined) {
-      const rewritten = trip.apiError({ status: inner.status, headers: inner.headers, body: inner.body });
-      if (rewritten !== undefined) return { ...inner, status: rewritten.status, headers: rewritten.headers, body: rewritten.body };
-    }
+    const rewritten = trip.errorBody?.({ status: inner.status, headers: inner.headers, body: inner.body });
+    if (rewritten !== undefined) return { ...inner, status: rewritten.status, headers: rewritten.headers, body: rewritten.body };
   }
   return inner;
 };
