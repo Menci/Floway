@@ -116,10 +116,12 @@ test('ChatCompletions ignores late identity changes and accepts later model upda
   expect((await collectIR(irFromOpenAIChatCompletions(iterate(input)))).model).toBe('fallback');
 });
 
-test('ChatCompletions choice indexes must fit the request choice count', async () => {
+test('ChatCompletions choice indexes must stay in sequence', async () => {
+  // A stream that opens choice 1 without ever stating choice 0 describes a
+  // candidate the request never had; the IR cannot represent the gap.
   await expect(collectIR(irFromOpenAIChatCompletions(iterate([
     eventFrame({ id: 'chat_choices', model: 'served', choices: [{ index: 1, delta: {}, finish_reason: 'stop' }] } as any),
-  ]), { maxChoices: 1 }))).rejects.toThrow('configured choice count');
+  ])))).rejects.toThrow('out of sequence');
 });
 
 test('Responses rejects output events before the initial envelope', async () => {
@@ -153,9 +155,10 @@ test('writers omit output they cannot represent', async () => {
 });
 
 test('single-choice writers reject a second choice when it is initialized', async () => {
-  const b = createIRBuilder(2);
+  const b = createIRBuilder();
   b.assign(['model'], 'model');
   b.event({ type: 'start', id: 'source' });
+  b.choice(0);
   b.choice(1);
   const frames = [...b.drain()];
   await expect(collect(anthropicMessagesFromIR(iterate(frames)))).rejects.toThrow('cannot represent multiple choices');

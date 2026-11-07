@@ -49,8 +49,16 @@ export interface IRChoiceHandle extends IRWriteHandle {
   textParts: () => readonly { item: IRItemHandle; part: IRPartHandle; text: string }[];
 }
 
-export const createIRBuilder = (maxChoices = 1) => {
-  if (!Number.isSafeInteger(maxChoices) || maxChoices <= 0) throw new RangeError(`output IR maxChoices must be a positive safe integer: ${maxChoices}`);
+/**
+ * Builds the output IR as a target protocol reports it.
+ *
+ * A choice's index is its position in the request's candidate list, and a
+ * stream that starts at index 1 states a choice 0 it never mentioned. The
+ * builder therefore admits only the next index it has not yet opened: the
+ * upstream's own count is what decides how many there are, and a protocol that
+ * reports an index out of order is malformed rather than merely large.
+ */
+export const createIRBuilder = () => {
   const collector = createIRCollector();
   const { state } = collector;
   let records: IRRecord[] = [];
@@ -105,7 +113,7 @@ export const createIRBuilder = (maxChoices = 1) => {
     for (const [key, value] of Object.entries(fields)) assign(['usage', key], value);
   };
   const choice = (index: number): IRChoiceHandle => {
-    if (!Number.isSafeInteger(index) || index < 0 || index >= maxChoices) throw new RangeError(`output IR choice index exceeds the configured choice count: ${index}`);
+    if (!Number.isSafeInteger(index) || index < 0 || index > choices.size) throw new RangeError(`output IR choice index is out of sequence: ${index}`);
     while (choices.size <= index) {
       const choiceIndex = choices.size;
       const path = irUnitPath('choice', choiceIndex);

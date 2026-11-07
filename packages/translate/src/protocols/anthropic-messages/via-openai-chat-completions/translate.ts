@@ -11,7 +11,7 @@ export const translate: TranslateTrip<
   const target = await buildTargetRequest(src, ctx.sidecarCodec);
   return {
     target,
-    events: frames => translateToSourceEvents(frames, ctx.sidecarCodec, target.n ?? 1),
+    events: frames => translateToSourceEvents(frames, ctx.sidecarCodec),
     errorBody: anthropicMessagesErrorWriter,
   };
 };

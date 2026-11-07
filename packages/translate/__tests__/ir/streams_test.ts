@@ -236,7 +236,7 @@ describe('output IR streaming', () => {
   });
 
   it('emits each candidate end before pulling the next choice or late final usage', async () => {
-    const b = createIRBuilder(2);
+    const b = createIRBuilder();
     b.choice(0); b.choice(1); b.assign(['model'], 'm'); b.event({ type: 'start', id: 's' });
     let nextChoicePulled = false;
     let usagePulled = false;
@@ -298,7 +298,8 @@ describe('output IR streaming', () => {
   });
 
   it('does not apply one choice termination to another choice tool', async () => {
-    const b = createIRBuilder(2);
+    const b = createIRBuilder();
+    b.choice(0);
     b.choice(1);
     b.assign(['model'], 'm');
     b.event({ type: 'start', id: 's' });

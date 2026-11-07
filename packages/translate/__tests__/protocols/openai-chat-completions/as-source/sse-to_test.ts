@@ -6,7 +6,7 @@ import { createReferenceBuilder, collectContentViews, createFieldState, createRe
 import { type RoundTripWriter } from '../../../../src/round-trip/stream.ts';
 
 test('prepares each Chat choice independently while another choice has partial audio', async () => {
-  const source = createIRBuilder(2);
+  const source = createIRBuilder();
   source.choice(0);
   source.choice(1);
   source.assign(['model'], 'model');
