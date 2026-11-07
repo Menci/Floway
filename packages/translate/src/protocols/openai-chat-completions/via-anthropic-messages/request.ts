@@ -1,8 +1,7 @@
 import { readIRInput } from '../../../ir/input/source.ts';
-import type { IRInputMedia } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import type { SidecarCodec, RemoteImageLoader } from '../../../types.ts';
-import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
+import { resolveAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
 import { anthropicMessagesPayloadFromSegments } from '../../anthropic-messages/as-target/segmented-request.ts';
 import { openaiChatCompletionsDropsReasoning, openaiChatCompletionsSource } from '../as-source/input-to.ts';
 import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
@@ -19,14 +18,6 @@ interface BuildTargetRequestOptions {
    */
   fallbackMaxOutputTokens: number | undefined;
 }
-
-const chatImageResolver = (loadRemoteImage: RemoteImageLoader) => async (media: IRInputMedia) => {
-  if (media.source_kind === 'url') return await resolveImageUrlToAnthropicMessagesImage(media.url, loadRemoteImage);
-  if (media.source_kind === 'file') return { type: 'image' as const, source: { type: 'file' as const, file_id: media.file_id } };
-  // A base64 image is validated through the same data-URL path the source used,
-  // so unsupported media types are dropped exactly as before.
-  return await resolveImageUrlToAnthropicMessagesImage(`data:${media.media_type ?? ''};base64,${media.data}`, loadRemoteImage);
-};
 
 export const buildTargetRequest = async (
   payload: OpenAIChatCompletionsPayload,
@@ -50,6 +41,6 @@ export const buildTargetRequest = async (
     source.request,
     pieces,
     turn => turn,
-    { resolveImage: chatImageResolver(options.loadRemoteImage), fallbackMaxOutputTokens: options.fallbackMaxOutputTokens },
+    { resolveImage: resolveAnthropicMessagesImage(options.loadRemoteImage), fallbackMaxOutputTokens: options.fallbackMaxOutputTokens },
   );
 };

@@ -35,9 +35,34 @@ const MESSAGES_ERROR_TYPES = [
   'overloaded_error',
 ];
 
-const irMessagesError = (error: IRErrorPayload): AnthropicMessagesErrorEventEx['error'] => isContextExceededError(error)
+/**
+ * How Messages spells an error: the stream reports it as an event, and a
+ * non-2xx answer carries the same object inside a body envelope.
+ *
+ * A context overflow is restated rather than forwarded because Claude Code
+ * recognizes the prompt-too-long wording and re-runs with a smaller prompt; an
+ * upstream that never heard of it would otherwise report the overflow in its
+ * own words and the client would treat it as an ordinary failure.
+ */
+export const irMessagesError = (error: IRErrorPayload): AnthropicMessagesErrorEventEx['error'] => isContextExceededError(error)
   ? { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE }
   : { type: error.type !== undefined && MESSAGES_ERROR_TYPES.includes(error.type) ? error.type : 'api_error', message: error.message };
+
+export const anthropicMessagesErrorBody = (error: IRErrorPayload): Uint8Array =>
+  new TextEncoder().encode(JSON.stringify({ type: 'error', error: irMessagesError(error) }));
+
+/** The status Messages reports for each error kind it can state. */
+export const anthropicMessagesErrorStatus = (error: IRErrorPayload): number => {
+  switch (irMessagesError(error).type) {
+  case 'invalid_request_error': return 400;
+  case 'authentication_error': return 401;
+  case 'permission_error': return 403;
+  case 'not_found_error': return 404;
+  case 'rate_limit_error': return 429;
+  case 'overloaded_error': return 529;
+  default: return 500;
+  }
+};
 
 interface MessagesUnit {
   readonly path: IRPath;

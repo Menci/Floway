@@ -87,7 +87,7 @@ describe('traverseTranslation', () => {
     expect(result).toBe(inner);
   });
 
-  test('upstream api-error with trip.apiError rewrite — outer returns the rewritten envelope', async () => {
+  test('upstream api-error with trip.errorBody — outer returns the restated envelope', async () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
       type: 'api-error',
       source: 'upstream',
@@ -98,10 +98,10 @@ describe('traverseTranslation', () => {
     const translateWithRewrite = async (payload: string): Promise<{
       target: string;
       events: (e: AsyncIterable<ProtocolFrame<TgtEvent>>) => AsyncIterable<ProtocolFrame<SrcEvent>>;
-      apiError: (upstream: { status: number; headers: Headers; body: Uint8Array }) => { status: number; headers: Headers; body: Uint8Array };
+      errorBody: (upstream: { status: number; headers: Headers; body: Uint8Array }) => { status: number; headers: Headers; body: Uint8Array };
     }> => ({
       ...(await translate(payload)),
-      apiError: () => ({ status: 400, headers: new Headers({ 'content-type': 'application/json' }), body: new TextEncoder().encode('rewritten') }),
+      errorBody: () => ({ status: 400, headers: new Headers({ 'content-type': 'application/json' }), body: new TextEncoder().encode('rewritten') }),
     });
 
     const result = await traverseTranslation('payload', translateWithRewrite, async () => inner);
@@ -114,7 +114,7 @@ describe('traverseTranslation', () => {
     expect(result.source).toBe('upstream');
   });
 
-  test('upstream api-error with trip.apiError returning undefined — outer passes the envelope through', async () => {
+  test('upstream api-error with trip.errorBody returning undefined — outer passes the envelope through', async () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
       type: 'api-error',
       source: 'upstream',
@@ -125,14 +125,14 @@ describe('traverseTranslation', () => {
     const translateWithRewrite = async (payload: string): Promise<{
       target: string;
       events: (e: AsyncIterable<ProtocolFrame<TgtEvent>>) => AsyncIterable<ProtocolFrame<SrcEvent>>;
-      apiError: () => undefined;
-    }> => ({ ...(await translate(payload)), apiError: () => undefined });
+      errorBody: () => undefined;
+    }> => ({ ...(await translate(payload)), errorBody: () => undefined });
 
     const result = await traverseTranslation('payload', translateWithRewrite, async () => inner);
     expect(result).toBe(inner);
   });
 
-  test('gateway-sourced api-error — trip.apiError is NOT invoked', async () => {
+  test('gateway-sourced api-error — trip.errorBody is NOT invoked', async () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
       type: 'api-error',
       source: 'gateway',
@@ -144,10 +144,10 @@ describe('traverseTranslation', () => {
     const translateWithRewrite = async (payload: string): Promise<{
       target: string;
       events: (e: AsyncIterable<ProtocolFrame<TgtEvent>>) => AsyncIterable<ProtocolFrame<SrcEvent>>;
-      apiError: () => { status: number; headers: Headers; body: Uint8Array };
+      errorBody: () => { status: number; headers: Headers; body: Uint8Array };
     }> => ({
       ...(await translate(payload)),
-      apiError: () => {
+      errorBody: () => {
         called = true;
         return { status: 999, headers: new Headers(), body: new Uint8Array() };
       },
@@ -161,7 +161,7 @@ describe('traverseTranslation', () => {
 
 // The pre-translation capture hook sees the ORIGINAL target-protocol frames
 // (events path) and the verbatim upstream api-error envelope (api-error path),
-// before `trip.events` / `trip.apiError` rewrite them. `capture === undefined`
+// before `trip.events` / `trip.errorBody` restate them. `capture === undefined`
 // (api key opts out of dumps) skips all capture work.
 describe('traverseTranslation upstream capture', () => {
   test('events path — capture receives each original target frame, in order, before translation', async () => {
@@ -223,10 +223,10 @@ describe('traverseTranslation upstream capture', () => {
     const translateWithRewrite = async (payload: string): Promise<{
       target: string;
       events: (e: AsyncIterable<ProtocolFrame<TgtEvent>>) => AsyncIterable<ProtocolFrame<SrcEvent>>;
-      apiError: () => { status: number; headers: Headers; body: Uint8Array };
+      errorBody: () => { status: number; headers: Headers; body: Uint8Array };
     }> => ({
       ...(await translate(payload)),
-      apiError: () => ({ status: 400, headers: new Headers(), body: new TextEncoder().encode('rewritten') }),
+      errorBody: () => ({ status: 400, headers: new Headers(), body: new TextEncoder().encode('rewritten') }),
     });
 
     const result = await traverseTranslation('payload', translateWithRewrite, async () => inner, capture);
@@ -241,7 +241,7 @@ describe('traverseTranslation upstream capture', () => {
     expect(new TextDecoder().decode(result.body)).toBe('rewritten');
   });
 
-  test('api-error path — capture fires even when trip.apiError is undefined (no rewrite)', async () => {
+  test('api-error path — capture fires even when trip.errorBody is undefined (no restatement)', async () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
       type: 'api-error',
       source: 'upstream',

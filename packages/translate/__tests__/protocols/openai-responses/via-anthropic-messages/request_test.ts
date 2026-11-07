@@ -216,26 +216,28 @@ test('buildTargetRequest rejects assistant images', async () => {
   );
 });
 
-test('buildTargetRequest rejects file_id-only images', async () => {
-  await assertRejects(
-    () => buildWithTestSidecar({
-      ...minimalPayload,
-      input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
-    }),
-    Error,
-    'file_id-only image content',
-  );
+test('buildTargetRequest passes a file_id-only image through to the Messages target', async () => {
+  const result = await buildWithTestSidecar({
+    ...minimalPayload,
+    input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
+  });
+  // Messages accepts a file ID, and whether the upstream behind this Messages
+  // endpoint knows that ID is the upstream's question.
+  assertEquals(result.target.messages, [{
+    role: 'user',
+    content: [{ type: 'image', source: { type: 'file', file_id: 'file_1' }, cache_control: { type: 'ephemeral' } }],
+  }]);
 });
 
-test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest rejects file_id-only images in %s', async type => {
-  await assertRejects(
-    () => buildWithTestSidecar({
-      ...minimalPayload,
-      input: [{ type, call_id: 'call_1', output: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
-    }),
-    Error,
-    'file_id-only image tool output',
-  );
+test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest passes file_id-only images through in %s', async type => {
+  const result = await buildWithTestSidecar({
+    ...minimalPayload,
+    input: [{ type, call_id: 'call_1', output: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
+  });
+  assertEquals(result.target.messages, [{
+    role: 'user',
+    content: [{ type: 'tool_result', tool_use_id: 'call_1', content: [{ type: 'image', source: { type: 'file', file_id: 'file_1' } }], cache_control: { type: 'ephemeral' } }],
+  }]);
 });
 
 test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest rejects unavailable images in %s', async type => {

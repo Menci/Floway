@@ -1,10 +1,8 @@
 import { irInputCustomToolNames } from '../../../ir/input/select-tools.ts';
 import { readIRInput } from '../../../ir/input/source.ts';
-import type { IRInputMedia } from '../../../ir/input/types.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
-import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { SidecarCodec, RemoteImageLoader } from '../../../types.ts';
-import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
+import { resolveAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
 import { anthropicMessagesPayloadFromSegments } from '../../anthropic-messages/as-target/segmented-request.ts';
 import { openaiResponsesDropsReasoning, openaiResponsesSource } from '../as-source/input-to.ts';
 import type { NamespaceToolNames } from '../as-source/namespace-tools.ts';
@@ -35,15 +33,6 @@ export interface TargetRequestResult {
   namespaceToolNames: NamespaceToolNames;
 }
 
-const responsesImageResolver = (loadRemoteImage: RemoteImageLoader) => async (media: IRInputMedia) => {
-  // Messages cannot reference a foreign file ID: the bytes must be fetched, so a
-  // caller that supplied only an ID is an error.
-  if (media.source_kind === 'file') throw new TranslatorInputError('Cannot translate file_id-only image content to Anthropic Messages.');
-  return media.source_kind === 'url'
-    ? await resolveImageUrlToAnthropicMessagesImage(media.url, loadRemoteImage)
-    : await resolveImageUrlToAnthropicMessagesImage(`data:${media.media_type ?? ''};base64,${media.data}`, loadRemoteImage);
-};
-
 export const buildTargetRequest = async (
   input: OpenAIResponsesRequestPayloadEx,
   codec: SidecarCodec,
@@ -65,7 +54,7 @@ export const buildTargetRequest = async (
     turn => turn,
     // Messages carries files as `document` blocks, so a Responses `input_file`
     // is representable without loss.
-    { resolveImage: responsesImageResolver(options.loadRemoteImage), fallbackMaxOutputTokens: options.fallbackMaxOutputTokens },
+    { resolveImage: resolveAnthropicMessagesImage(options.loadRemoteImage), fallbackMaxOutputTokens: options.fallbackMaxOutputTokens },
   );
   return { target, customToolNames: irInputCustomToolNames(source.request), namespaceToolNames: source.namespaceToolNames };
 };

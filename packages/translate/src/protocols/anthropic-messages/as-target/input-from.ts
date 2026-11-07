@@ -105,9 +105,6 @@ const toolResultContent = async (
   for (const part of output) {
     if (part.type === 'text') { blocks.push({ type: 'text', text: part.text }); continue; }
     if (part.type === 'file') throw new TranslatorInputError('Cannot translate file tool output to Anthropic Messages.');
-    if (options.resolveImage !== undefined && part.image.source_kind === 'file') {
-      throw new TranslatorInputError('Cannot translate file_id-only image tool output to Anthropic Messages.');
-    }
     const image = options.resolveImage === undefined ? imageBlock(part.image) : await options.resolveImage(part.image);
     // Unlike user content, an unresolvable tool-result image is a caller error:
     // the tool returned bytes the target cannot represent.

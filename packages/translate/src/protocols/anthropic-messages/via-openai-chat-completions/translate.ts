@@ -1,7 +1,7 @@
 import { translateToSourceEvents } from './events.ts';
 import { buildTargetRequest } from './request.ts';
 import type { TranslateTrip } from '../../../types.ts';
-import { rewriteContextExceededToPromptTooLong } from '../as-source/context-window-error.ts';
+import { anthropicMessagesErrorWriter } from '../as-source/error-body.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -12,6 +12,6 @@ export const translate: TranslateTrip<
   return {
     target,
     events: frames => translateToSourceEvents(frames, ctx.sidecarCodec, target.n ?? 1),
-    apiError: rewriteContextExceededToPromptTooLong,
+    errorBody: anthropicMessagesErrorWriter,
   };
 };

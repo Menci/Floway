@@ -1,6 +1,7 @@
 import { translateToSourceEvents } from './events.ts';
 import { buildTargetRequest } from './request.ts';
 import type { RemoteImageLoader, TranslateTrip } from '../../../types.ts';
+import { openaiChatCompletionsErrorWriter } from '../as-source/error-body.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -14,6 +15,7 @@ export const translate: TranslateTrip<
       fallbackMaxOutputTokens: ctx.fallbackMaxOutputTokens,
       loadRemoteImage: ctx.loadRemoteImage,
     }),
+    errorBody: openaiChatCompletionsErrorWriter,
     events: frames => translateToSourceEvents(frames, streamOptions, ctx.sidecarCodec),
   };
 };

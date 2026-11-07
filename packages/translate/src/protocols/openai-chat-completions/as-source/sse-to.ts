@@ -19,7 +19,7 @@ import {
   createOpenAIChatCompletionsEventAccumulator,
 } from '@floway-dev/protocols/openai-chat-completions';
 
-const irChatError = (error: IRErrorPayload): IRErrorPayload => ({
+export const irChatError = (error: IRErrorPayload): IRErrorPayload => ({
   message: error.message,
   type: typeof error.type === 'string' && error.type !== 'error' ? error.type : error.code ?? 'server_error',
   ...(error.code === undefined ? {} : { code: error.code }),

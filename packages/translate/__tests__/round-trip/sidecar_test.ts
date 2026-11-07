@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import { createTestSidecarCodec } from './sidecar-codec.ts';
 import { decodeRoundTripSidecar, encodeRoundTripSidecar, type RoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import { rawJSON } from '../../src/shared/json/raw-json.ts';
+import { assertEquals } from '@floway-dev/test-utils';
 
 const envelope: RoundTripSidecar<'openaiChatCompletions'> = {
   v: 1,
@@ -14,8 +15,7 @@ const envelope: RoundTripSidecar<'openaiChatCompletions'> = {
 test('restores a round-trip payload recognized by the injected decoder', async () => {
   const codec = createTestSidecarCodec();
   const encoded = await encodeRoundTripSidecar(codec, envelope);
-  expect(await decodeRoundTripSidecar(codec, 'openaiResponses', encoded)).toEqual(envelope);
-  expect(await decodeRoundTripSidecar(codec, 'anthropicMessages', encoded)).toBeUndefined();
+  expect(await decodeRoundTripSidecar(codec, encoded)).toEqual(envelope);
 });
 
 test('rejects a payload whose top-level wire version this build does not know', async () => {
@@ -23,25 +23,30 @@ test('rejects a payload whose top-level wire version this build does not know', 
   // One wire version covers every subsystem; an unknown value must fail here
   // rather than reach a turn-digest mapping that happens to accept it.
   const future = await codec.encode({ ...envelope, v: 2 });
-  await expect(decodeRoundTripSidecar(codec, 'openaiResponses', future)).rejects.toThrow('sidecar version is unsupported');
+  await expect(decodeRoundTripSidecar(codec, future)).rejects.toThrow('sidecar version is unsupported');
 });
 
 test('does not claim an opaque value unrecognized by the injected decoder', async () => {
-  expect(await decodeRoundTripSidecar(createTestSidecarCodec(), 'openaiResponses', 'native opaque value')).toBeUndefined();
+  expect(await decodeRoundTripSidecar(createTestSidecarCodec(), 'native opaque value')).toBeUndefined();
 });
 
 test('rejects a malformed payload recognized by the injected decoder', async () => {
   const codec = createTestSidecarCodec();
   const malformed = await codec.encode({ v: 1, source: 'openaiResponses', target: 'openaiChatCompletions' });
-  await expect(decodeRoundTripSidecar(codec, 'openaiResponses', malformed)).rejects.toThrow('assistant turn is invalid');
+  await expect(decodeRoundTripSidecar(codec, malformed)).rejects.toThrow('assistant turn is invalid');
   const nonObject = await codec.encode(null);
-  await expect(decodeRoundTripSidecar(codec, 'openaiResponses', nonObject)).rejects.toThrow('sidecar envelope is invalid');
+  await expect(decodeRoundTripSidecar(codec, nonObject)).rejects.toThrow('sidecar envelope is invalid');
 });
 
-test('does not validate a payload belonging to another source protocol', async () => {
+test('validates an envelope regardless of which protocol it names', async () => {
   const codec = createTestSidecarCodec();
-  const otherSource = await codec.encode({ v: 1, source: 'anthropicMessages', target: 'invalid' });
-  expect(await decodeRoundTripSidecar(codec, 'openaiResponses', otherSource)).toBeUndefined();
+  // Decoding states the envelope's format, not whether it belongs to the trip
+  // reading it: an envelope naming another source is still well formed.
+  const otherSource = await codec.encode({ v: 1, source: 'anthropicMessages', target: 'openaiChatCompletions', targetTurn: { role: 'assistant', content: [] }, sourceTurnDigest: new Uint8Array(8) });
+  assertEquals((await decodeRoundTripSidecar(codec, otherSource))?.source, 'anthropicMessages');
+  // A target that is not a protocol at all is malformed, whoever asks.
+  const badTarget = await codec.encode({ v: 1, source: 'anthropicMessages', target: 'invalid' });
+  await expect(decodeRoundTripSidecar(codec, badTarget)).rejects.toThrow('sidecar target is invalid');
 });
 
 test('the opaque fixture codec isolates scopes and changed handles', async () => {
@@ -69,14 +74,14 @@ test('the opaque fixture codec independently snapshots JSON values, raw numbers,
   const encoded = await encodeRoundTripSidecar(codec, payload);
   payload.targetTurn.content = 'edited input';
   payload.sourceTurnDigest[0] = 9;
-  const decoded = await decodeRoundTripSidecar(codec, 'openaiResponses', encoded);
+  const decoded = await decodeRoundTripSidecar(codec, encoded);
   if (decoded?.target !== 'openaiChatCompletions') throw new Error('Expected Chat history');
   expect(decoded.targetTurn.content).toBe('original');
   expect(decoded.sourceTurnDigest[0]).toBe(1);
   expect(JSON.stringify(decoded.targetTurn.provider_specific_fields)).toBe('{"amount":1e400}');
   decoded.targetTurn.content = 'edited output';
   decoded.sourceTurnDigest[0] = 10;
-  const second = await decodeRoundTripSidecar(codec, 'openaiResponses', encoded);
+  const second = await decodeRoundTripSidecar(codec, encoded);
   if (second?.target !== 'openaiChatCompletions') throw new Error('Expected Chat history');
   expect(second.targetTurn.content).toBe('original');
   expect(second.sourceTurnDigest[0]).toBe(1);

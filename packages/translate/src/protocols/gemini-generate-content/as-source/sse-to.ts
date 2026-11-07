@@ -23,7 +23,7 @@ import {
   createGeminiGenerateContentEventAccumulator,
 } from '@floway-dev/protocols/gemini-generate-content';
 
-const irGenerateContentError = (error: IRErrorPayload): GeminiGenerateContentErrorResponse['error'] => {
+export const irGenerateContentError = (error: IRErrorPayload): GeminiGenerateContentErrorResponse['error'] => {
   const code = error.code ?? error.type;
   const [status, statusCode] = code === 'rate_limit_exceeded' || code === 'rate_limit_error' ? ['RESOURCE_EXHAUSTED', 429]
     : code === 'invalid_prompt' || code === 'invalid_request_error' || isContextExceededError(error) ? ['INVALID_ARGUMENT', 400]

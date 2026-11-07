@@ -53,11 +53,10 @@ function assertRoundTripSidecar(value: Record<string, unknown>): asserts value i
   if (!(value.sourceTurnDigest instanceof Uint8Array)) throw new TypeError('Assistant-turn sidecar turn digest is invalid');
 }
 
-export const decodeRoundTripSidecar = async (codec: SidecarCodec, source: RoundTripProtocol, data: string): Promise<AnyRoundTripSidecar | undefined> => {
+export const decodeRoundTripSidecar = async (codec: SidecarCodec, data: string): Promise<AnyRoundTripSidecar | undefined> => {
   const sidecar = restoreSidecarTaggedValues(await codec.decode(data));
   if (sidecar === undefined) return undefined;
   if (!isRecord(sidecar) || typeof sidecar.source !== 'string') throw new TypeError('Authenticated assistant-turn sidecar envelope is invalid');
-  if (sidecar.source !== source) return undefined;
   assertRoundTripSidecar(sidecar);
   return sidecar;
 };
@@ -73,4 +72,6 @@ const encodedRoundTripSidecar = <Target extends RoundTripProtocol>(sidecar: Roun
   return encoded;
 };
 
-export const hasRoundTripTarget = <Target extends RoundTripProtocol>(sidecar: AnyRoundTripSidecar, target: Target): sidecar is RoundTripSidecarByTarget[Target] => sidecar.target === target;
+// An absent envelope is not this target's: a caller that found no sidecar in a
+// turn asks the same question as one whose sidecar names another target.
+export const hasRoundTripTarget = <Target extends RoundTripProtocol>(sidecar: AnyRoundTripSidecar | undefined, target: Target): sidecar is RoundTripSidecarByTarget[Target] => sidecar?.target === target;

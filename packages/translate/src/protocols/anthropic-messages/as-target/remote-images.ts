@@ -1,3 +1,4 @@
+import type { IRInputMedia } from '../../../ir/input/types.ts';
 import type { RemoteImageLoader } from '../../../types.ts';
 import type { AnthropicMessagesImageBlock } from '@floway-dev/protocols/anthropic-messages';
 import { encodeBase64, mediaTypeEssence } from '@floway-dev/protocols/common';
@@ -63,4 +64,20 @@ export const resolveImageUrlToAnthropicMessagesImage = async (url: string, loadR
 
   if (!url.startsWith('http://') && !url.startsWith('https://')) return null;
   return await resolveRemoteImage(url, loadRemoteImage);
+};
+
+/**
+ * Resolves an input IR image into a Messages image block.
+ *
+ * A base64 image is validated through the same data-URL path the source used,
+ * so an unsupported media type is dropped exactly as it was there. A file ID is
+ * passed through: Messages accepts one, and whether the upstream behind this
+ * Messages endpoint knows that ID is the upstream's question, not ours.
+ */
+export const resolveAnthropicMessagesImage = (loadRemoteImage: RemoteImageLoader) => async (media: IRInputMedia): Promise<AnthropicMessagesImageBlock | null> => {
+  switch (media.source_kind) {
+  case 'file': return { type: 'image', source: { type: 'file', file_id: media.file_id } };
+  case 'url': return await resolveImageUrlToAnthropicMessagesImage(media.url, loadRemoteImage);
+  case 'base64': return await resolveImageUrlToAnthropicMessagesImage(`data:${media.media_type ?? ''};base64,${media.data}`, loadRemoteImage);
+  }
 };
