@@ -386,7 +386,10 @@ export const irFromOpenAIChatCompletions = async function* (
     }
     const fn: ToolFragment | undefined = call.custom ?? call.function;
     if (call.id !== undefined) tool.id = call.id;
-    if (fn?.name !== undefined) tool.name = fn.name;
+    // A later fragment may repeat `name: ""`; the official SDK only adopts a non-empty name, so an
+    // empty one never renames a call that is already open.
+    // https://github.com/openai/openai-node/blob/7423ac3e9351c46300cd094479cded5551a72eb4/src/lib/ChatCompletionStream.ts#L2104-L2106
+    if (fn?.name !== undefined && fn.name !== '') tool.name = fn.name;
     const fragment = fn?.arguments ?? fn?.input;
     let fragmentReferencePieceId: ReferencePieceId | undefined;
     if (typeof fragment === 'string' && fragment !== '') {
