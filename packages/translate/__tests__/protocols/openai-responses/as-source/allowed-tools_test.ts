@@ -1,11 +1,29 @@
 import { test } from 'vitest';
 
-import { buildTargetRequest as buildMessages } from '../../../../src/protocols/openai-responses/via-anthropic-messages/request.ts';
-import { buildTargetRequest as buildChat } from '../../../../src/protocols/openai-responses/via-openai-chat-completions/request.ts';
+import { irInputCustomToolNames } from '../../../../src/ir/input/select-tools.ts';
+import { buildTargetRequestFor } from '../../../../src/protocols/composition.ts';
+import { openaiResponsesSourceProtocol } from '../../../../src/protocols/openai-responses/source.ts';
 import { TranslatorInputError } from '../../../../src/translator-input-error.ts';
+import type { SidecarCodec } from '../../../../src/types.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
+import { pairs } from '../../composition-helpers.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
+
+// Reading a Responses request is what produces the flattened namespace map, so
+// the reading a test builds from must be the same one whose map it asserts.
+const reading = (payload: OpenAIResponsesRequestPayloadEx) => openaiResponsesSourceProtocol.read(payload, { model: 'm' });
+const extrasOf = (r: ReturnType<typeof reading>, codec: SidecarCodec) =>
+  ({ model: 'm', sidecarCodec: codec, customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra });
+
+const buildChat = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec) => {
+  const r = reading(payload);
+  return { target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], payload, extrasOf(r, codec), r), customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra! };
+};
+const buildMessages = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec, options: { fallbackMaxOutputTokens?: number; loadRemoteImage?: (url: string) => Promise<{ mediaType: string | null; data: Uint8Array } | null> } = {}) => {
+  const r = reading(payload);
+  return { target: await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { ...extrasOf(r, codec), ...options }, r), customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra! };
+};
 
 const source = (tool_choice: OpenAIResponsesToolChoice): OpenAIResponsesRequestPayloadEx => ({
   model: 'model', input: 'Read only.',

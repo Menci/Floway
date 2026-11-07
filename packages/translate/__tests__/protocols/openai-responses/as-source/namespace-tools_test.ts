@@ -1,14 +1,34 @@
 import { expect, test } from 'vitest';
 
+import { irInputCustomToolNames } from '../../../../src/ir/input/select-tools.ts';
+import { buildTargetRequestFor } from '../../../../src/protocols/composition.ts';
 import { flattenNamespaceTools, restoreNamespaceEvents, restoreNamespaceOutputItem } from '../../../../src/protocols/openai-responses/as-source/namespace-tools.ts';
-import { buildTargetRequest as buildMessagesRequest } from '../../../../src/protocols/openai-responses/via-anthropic-messages/request.ts';
-import { buildTargetRequest as buildChatRequest } from '../../../../src/protocols/openai-responses/via-openai-chat-completions/request.ts';
+import { openaiResponsesSourceProtocol } from '../../../../src/protocols/openai-responses/source.ts';
+import type { SidecarCodec } from '../../../../src/types.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
+import { pairs } from '../../composition-helpers.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesOutputItemEx, OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { routeOpenAIResponses, canonicalizeOpenAIResponsesPayload } from '@floway-dev/translate/openai-responses';
+
+// Reading a Responses request is what produces the flattened namespace map, so
+// the reading a test builds from must be the same one whose map it asserts.
+const reading = (payload: OpenAIResponsesRequestPayloadEx) => openaiResponsesSourceProtocol.read(payload, { model: 'm' });
+const extrasOf = (r: ReturnType<typeof reading>, codec: SidecarCodec) =>
+  ({ model: 'm', sidecarCodec: codec, customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra });
+
+const buildChatRequest = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec) => {
+  const r = reading(payload);
+  const target = await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], payload, extrasOf(r, codec), r);
+  return { target, customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra! };
+};
+const buildMessagesRequest = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec, options: { fallbackMaxOutputTokens?: number; loadRemoteImage?: (url: string) => Promise<{ mediaType: string | null; data: Uint8Array } | null> } = {}) => {
+  const r = reading(payload);
+  const target = await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { ...extrasOf(r, codec), ...options }, r);
+  return { target, customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra! };
+};
 
 const payload = (): OpenAIResponsesRequestPayloadEx => ({
   model: 'm',

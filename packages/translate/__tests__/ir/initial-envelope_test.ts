@@ -1,14 +1,14 @@
 import { expect, test } from 'vitest';
 
-import { translateToSourceEvents as messagesViaResponses } from '../../src/protocols/anthropic-messages/via-openai-responses/events.ts';
-import { translateToSourceEvents as chatViaResponses } from '../../src/protocols/openai-chat-completions/via-openai-responses/events.ts';
+import { translateSourceEventsFor } from '../../src/protocols/composition.ts';
+import { emptyPayload, pairs } from '../protocols/composition-helpers.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 test.each([
-  ['ChatCompletions', (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>) => chatViaResponses(frames, {}, createTestSidecarCodec())],
-  ['Messages', (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>) => messagesViaResponses(frames, createTestSidecarCodec())],
+  ['ChatCompletions', (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>) => translateSourceEventsFor(pairs.chatToResponses[0], pairs.chatToResponses[1], emptyPayload.chat, { model: 'm', sidecarCodec: createTestSidecarCodec() }, frames)],
+  ['Messages', (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>) => translateSourceEventsFor(pairs.messagesToResponses[0], pairs.messagesToResponses[1], emptyPayload.messages, { model: 'm', sidecarCodec: createTestSidecarCodec() }, frames)],
 ] as const)('%s returns its initial envelope before pulling beyond Responses creation', async (protocol, convert) => {
   const response = { id: 'resp_initial', object: 'response', model: 'served', created_at: 7, status: 'in_progress', output: [], usage: null, service_tier: 'fast', error: null, incomplete_details: null };
   let reached!: () => void;

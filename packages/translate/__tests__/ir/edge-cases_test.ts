@@ -3,17 +3,32 @@ import { expect, test, vi } from 'vitest';
 import { anthropicMessagesFromIR, collectIR, collect, completeIR, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
 import { fixtureFrames, nativeResult } from './translation-cases.ts';
 import { createIRBuilder } from '../../src/ir/output/stream.ts';
-import { translateToSourceEvents as messagesViaChat } from '../../src/protocols/anthropic-messages/via-openai-chat-completions/events.ts';
-import { buildTargetRequest as messagesRequestViaChat } from '../../src/protocols/anthropic-messages/via-openai-chat-completions/request.ts';
-import { translateToSourceEvents as messagesViaResponses } from '../../src/protocols/anthropic-messages/via-openai-responses/events.ts';
-import { translateToSourceEvents as generateContentViaChat } from '../../src/protocols/gemini-generate-content/via-openai-chat-completions/events.ts';
-import { translateToSourceEvents as generateContentViaResponses } from '../../src/protocols/gemini-generate-content/via-openai-responses/events.ts';
+import { translateSourceEventsFor, buildTargetRequestFor } from '../../src/protocols/composition.ts';
 import { irFromOpenAIChatCompletions as irFromOpenAIChatCompletionsProduction } from '../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
-import { translateToSourceEvents as responsesViaMessages } from '../../src/protocols/openai-responses/via-anthropic-messages/events.ts';
-import { translateToSourceEvents as responsesViaChat } from '../../src/protocols/openai-responses/via-openai-chat-completions/events.ts';
+import { emptyPayload, pairs } from '../protocols/composition-helpers.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { createRoundTripReaderCapture, emptyNamespaceToolNames } from '../round-trip/test-helpers.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
+
+const events = (pair: readonly [any, any], payload: any, codec: any) =>
+  (frames: AsyncIterable<any>) => translateSourceEventsFor(pair[0], pair[1], payload, { model: 'model', sidecarCodec: codec }, frames);
+const messagesViaChat = (frames: AsyncIterable<any>, codec: any) => events(pairs.messagesToChat, emptyPayload.messages, codec)(frames);
+const messagesViaResponses = (frames: AsyncIterable<any>, codec: any) => events(pairs.messagesToResponses, emptyPayload.messages, codec)(frames);
+const generateContentViaChat = (frames: AsyncIterable<any>, codec: any) => events(pairs.geminiToChat, emptyPayload.gemini, codec)(frames);
+const generateContentViaResponses = (frames: AsyncIterable<any>, codec: any) => events(pairs.geminiToResponses, emptyPayload.gemini, codec)(frames);
+// The freeform tool names these cases restore come from the request's own
+// declarations, so a case that expects one states it there.
+const responsesViaMessages = (frames: AsyncIterable<any>, _id: string, names: ReadonlySet<string>, codec: any, _ns: unknown) =>
+  translateSourceEventsFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], responsesPayload(names), { model: 'model', sidecarCodec: codec }, frames);
+const responsesViaChat = (frames: AsyncIterable<any>, names: ReadonlySet<string>, codec: any, _ns: unknown) =>
+  translateSourceEventsFor(pairs.responsesToChat[0], pairs.responsesToChat[1], responsesPayload(names), { model: 'model', sidecarCodec: codec }, frames);
+const responsesPayload = (names: ReadonlySet<string>) => ({
+  ...emptyPayload.responses,
+  tools: [...names].map(name => ({ type: 'custom' as const, name, description: '', format: { type: 'text' as const } })),
+  tool_choice: 'auto' as const,
+});
+const messagesRequestViaChat = (payload: any, codec: any) =>
+  buildTargetRequestFor(pairs.messagesToChat[0], pairs.messagesToChat[1], payload, { model: 'model', sidecarCodec: codec });
 
 for (const [code, category] of [['bio_policy', 'bio'], ['cyber_policy', 'cyber']] as const) {
   test(`${code} becomes a structured Messages classifier refusal without invented body text`, async () => {

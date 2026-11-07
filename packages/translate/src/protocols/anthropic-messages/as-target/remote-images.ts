@@ -69,15 +69,22 @@ export const resolveImageUrlToAnthropicMessagesImage = async (url: string, loadR
 /**
  * Resolves an input IR image into a Messages image block.
  *
- * A base64 image is validated through the same data-URL path the source used,
- * so an unsupported media type is dropped exactly as it was there. A file ID is
- * passed through: Messages accepts one, and whether the upstream behind this
- * Messages endpoint knows that ID is the upstream's question, not ours.
+ * A file ID is passed through: Messages accepts one, and whether the upstream
+ * behind this Messages endpoint knows that ID is the upstream's question, not
+ * ours. A base64 image is validated through the same data-URL path the source
+ * used, so an unsupported media type is dropped exactly as it was there.
+ *
+ * A URL needs a loader only when the caller supplies one. Without it the block
+ * states the URL as Messages allows, which is what a caller that never fetched
+ * remote images expects; the loader exists for upstreams that reject fetching.
  */
-export const resolveAnthropicMessagesImage = (loadRemoteImage: RemoteImageLoader) => async (media: IRInputMedia): Promise<AnthropicMessagesImageBlock | null> => {
+export const resolveAnthropicMessagesImage = (loadRemoteImage?: RemoteImageLoader) => async (media: IRInputMedia): Promise<AnthropicMessagesImageBlock | null> => {
   switch (media.source_kind) {
   case 'file': return { type: 'image', source: { type: 'file', file_id: media.file_id } };
-  case 'url': return await resolveImageUrlToAnthropicMessagesImage(media.url, loadRemoteImage);
-  case 'base64': return await resolveImageUrlToAnthropicMessagesImage(`data:${media.media_type ?? ''};base64,${media.data}`, loadRemoteImage);
+  case 'url':
+    return loadRemoteImage === undefined
+      ? { type: 'image', source: { type: 'url', url: media.url } }
+      : await resolveImageUrlToAnthropicMessagesImage(media.url, loadRemoteImage);
+  case 'base64': return await resolveImageUrlToAnthropicMessagesImage(`data:${media.media_type ?? ''};base64,${media.data}`, loadRemoteImage ?? (async () => null));
   }
 };

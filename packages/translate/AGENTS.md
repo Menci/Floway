@@ -7,16 +7,16 @@ import the source protocol's subpath and call
 
 ## Categories
 
-1. **Single-pair helper** — keep it in
-   `protocols/<source>/via-<target>/`, beside its request and event translators.
+1. **Composition** — a route pairs a source and a target and states nothing else.
+   Anything a pair alone needs belongs to one of its sides; if it truly needs
+   both, it belongs in `protocols/composition.ts`.
 2. **Source-only helper** — keep it in `protocols/<protocol>/as-source/`.
    Only routes whose source is that protocol may import it.
 3. **Target-only helper** — keep it in `protocols/<protocol>/as-target/`.
    Only routes whose target is that protocol may import it.
 4. **Both directions** — keep it in `protocols/<protocol>/common/`.
-   Routes using that protocol as source or target may import it. Keep another
-   protocol's wire mapping in the matching `via-*` route. Retained files use
-   functional names without another protocol name.
+   A side using that protocol as source or target may import it. Retained files
+   use functional names without another protocol name.
 5. **Output IR** — keep private types, its path schema, stream operations,
    validation, accumulation, operation paths, and native ordinal mapping under
    `ir/output/`, and the input model under `ir/input/`. Native SSE adapters
@@ -47,13 +47,15 @@ import the source protocol's subpath and call
 - `protocols/openai-responses/as-source/` — interprets Responses tools, restores event identities, and emits Responses SSE.
 - `protocols/openai-responses/as-target/` — consumes Responses SSE.
 - `protocols/openai-responses/common/` — owns wrapper formats used in both translation directions.
-- `protocols/<source>/via-<target>/` — owns request translation and composes native SSE adapters for one protocol pair.
+- `protocols/composition.ts` — pairs one source protocol with one target protocol into a trip; the only file that names two protocols.
+- `protocols/<protocol>/source.ts` — states that protocol as the side a request comes from.
+- `protocols/<protocol>/target.ts` — states that protocol as the side a request goes to.
 - `shared/` — cross-route coordinate conversion, error classification, JSON handling, and token validation.
 
 ## Rules
 
-- Inspect helpers by content and consumers. Keep most translation logic in the
-  owning `via-*` route; extract only cohesive logic shared by multiple routes.
+- Inspect helpers by content and consumers. Keep protocol behaviour on the side
+  that owns it; `composition.ts` holds only what needs both sides.
 
 - Shallow wrappers that only rename or stringify must be inlined at every call
   site, not extracted. A helper that defines a format two or more routes must
