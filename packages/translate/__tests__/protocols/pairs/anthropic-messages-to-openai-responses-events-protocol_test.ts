@@ -11,7 +11,7 @@ import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const codec = createTestSidecarCodec();
 const translate = (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>) => translateSourceEventsFor(
-  pairs.messagesToResponses[0], pairs.messagesToResponses[1], emptyPayload.messages, { model: 'm', sidecarCodec: codec }, frames,
+  pairs.messagesToResponses[0], pairs.messagesToResponses[1], emptyPayload.messages, { sidecarCodec: codec }, frames,
 );
 
 const makeResponse = (status: OpenAIResponsesResultEx['status']): OpenAIResponsesResultEx => ({

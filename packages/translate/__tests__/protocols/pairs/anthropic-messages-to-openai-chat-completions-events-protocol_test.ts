@@ -9,7 +9,7 @@ import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/ope
 
 const codec = createTestSidecarCodec();
 const translate = (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>) => translateSourceEventsFor(
-  pairs.messagesToChat[0], pairs.messagesToChat[1], emptyPayload.messages, { model: 'm', sidecarCodec: codec }, frames,
+  pairs.messagesToChat[0], pairs.messagesToChat[1], emptyPayload.messages, { sidecarCodec: codec }, frames,
 );
 
 const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {

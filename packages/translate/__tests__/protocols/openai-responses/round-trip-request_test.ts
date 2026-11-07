@@ -13,10 +13,10 @@ import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesRequestPayloadEx }
 // A restored turn's own request is what these cases assert on, so each build
 // states the pair it walks and hands back the payload alone.
 const buildChatRequest = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec) => ({
-  target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], payload, { model: 'm', sidecarCodec: codec }),
+  target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], payload, { sidecarCodec: codec }),
 });
 const buildMessagesRequest = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec, options: { fallbackMaxOutputTokens?: number; loadRemoteImage?: (url: string) => Promise<{ mediaType: string | null; data: Uint8Array } | null> } = {}) => ({
-  target: await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { model: 'm', sidecarCodec: codec, ...options }),
+  target: await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { sidecarCodec: codec, ...options }),
 });
 
 const replayedTurn: OpenAIResponsesAssistantTurn = [
@@ -108,8 +108,8 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('bypasses ordin
       { type: 'function_call', namespace: 'x', name: 'y.f', call_id: 'bare', arguments: '{}', status: 'completed' },
     ],
   };
-  const reading = openaiResponsesSourceProtocol.read(source, { model: 'm' });
-  const ctx = { model: 'm', sidecarCodec: codec, loadRemoteImage: async () => null, fallbackMaxOutputTokens: undefined };
+  const reading = openaiResponsesSourceProtocol.read(source);
+  const ctx = { sidecarCodec: codec, loadRemoteImage: async () => null, fallbackMaxOutputTokens: undefined };
   const result = target === 'openaiChatCompletions'
     ? { target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, ctx, reading), namespaceToolNames: reading.extra! }
     : { target: await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], source, ctx, reading), namespaceToolNames: reading.extra! };
@@ -138,8 +138,8 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('allocates bare
       { type: 'function_call', namespace: 'a_b', name: 'run', call_id: 'second', arguments: '{}' },
     ],
   };
-  const reading = openaiResponsesSourceProtocol.read(source, { model: 'm' });
-  const ctx = { model: 'm', sidecarCodec: codec, loadRemoteImage: async () => null, fallbackMaxOutputTokens: undefined };
+  const reading = openaiResponsesSourceProtocol.read(source);
+  const ctx = { sidecarCodec: codec, loadRemoteImage: async () => null, fallbackMaxOutputTokens: undefined };
   const result = target === 'openaiChatCompletions'
     ? { target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, ctx, reading), namespaceToolNames: reading.extra! }
     : { target: await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], source, ctx, reading), namespaceToolNames: reading.extra! };
@@ -170,7 +170,7 @@ it.each(['additional_tools', 'tool_search_output'] as const)('restores assistant
     };
     const original = structuredClone(source);
     const result = target === 'openaiChatCompletions'
-      ? { target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, { model: 'm', sidecarCodec: codec }) }
+      ? { target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, { sidecarCodec: codec }) }
       : await buildMessagesRequest(source, codec, { loadRemoteImage: async () => null, fallbackMaxOutputTokens: undefined });
 
     expect(result.target.messages).toEqual(nativeTurns);

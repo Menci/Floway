@@ -7,7 +7,7 @@ import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAI
 import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
 const buildWithTestSidecar = (payload: OpenAIChatCompletionsPayloadEx) =>
-  buildTargetRequestFor(pairs.chatToResponses[0], pairs.chatToResponses[1], payload, { model: 'm', sidecarCodec: createTestSidecarCodec() });
+  buildTargetRequestFor(pairs.chatToResponses[0], pairs.chatToResponses[1], payload, { sidecarCodec: createTestSidecarCodec() });
 
 test('buildTargetRequest preserves scalar and content-part assistant refusals', async () => {
   const result = await buildWithTestSidecar({

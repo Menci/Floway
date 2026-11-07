@@ -7,7 +7,7 @@ import type { OpenAIResponsesFunctionTool, OpenAIResponsesInputReasoning } from 
 import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
 const buildWithTestSidecar = (payload: AnthropicMessagesPayload) =>
-  buildTargetRequestFor(pairs.messagesToResponses[0], pairs.messagesToResponses[1], payload, { model: 'm', sidecarCodec: createTestSidecarCodec() });
+  buildTargetRequestFor(pairs.messagesToResponses[0], pairs.messagesToResponses[1], payload, { sidecarCodec: createTestSidecarCodec() });
 
 test('buildTargetRequest omits tool_choice when Anthropic Messages omits it', async () => {
   const result = await buildWithTestSidecar({

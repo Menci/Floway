@@ -14,7 +14,7 @@ const buildWithTestSidecar = (
   payload: GeminiGenerateContentPayload,
   model: string,
   options: { fallbackMaxOutputTokens?: number },
-) => buildTargetRequestFor(pairs.geminiToMessages[0], pairs.geminiToMessages[1], payload, { model, sidecarCodec: createTestSidecarCodec(), ...options });
+) => buildTargetRequestFor(pairs.geminiToMessages[0], pairs.geminiToMessages[1], { ...payload, model }, { sidecarCodec: createTestSidecarCodec(), ...options });
 
 test('buildTargetRequest treats an empty thinkingLevel as unstated', async () => {
   const request = await buildWithTestSidecar({

@@ -6,7 +6,7 @@ import { geminiGenerateContentErrorWriter } from './as-source/error-body.ts';
 import { geminiGenerateContentDropsReasoning, geminiGenerateContentSource, type GeminiGenerateContentSource } from './as-source/input-to.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest, type GeminiGenerateContentAssistantTurn } from './as-source/round-trip.ts';
 import { geminiGenerateContentFromIR } from './as-source/sse-to.ts';
-import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentRequest, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 
 /**
  * GenerateContent read as the side a request comes from.
@@ -15,11 +15,11 @@ import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } f
  * assistant part a sidecar describes is that run as it stands.
  */
 export const geminiGenerateContentSourceProtocol: SourceProtocol<
-  'geminiGenerateContent', GeminiGenerateContentPayload, GeminiGenerateContentConversationTurn, GeminiGenerateContentAssistantTurn, GeminiGenerateContentStreamEvent
+  'geminiGenerateContent', GeminiGenerateContentRequest, GeminiGenerateContentConversationTurn, GeminiGenerateContentAssistantTurn, GeminiGenerateContentStreamEvent
 > = {
   name: 'geminiGenerateContent',
-  read: (payload, ctx): SourceReading<'geminiGenerateContent', GeminiGenerateContentConversationTurn, GeminiGenerateContentAssistantTurn, GeminiGenerateContentStreamEvent> => {
-    const source: GeminiGenerateContentSource = geminiGenerateContentSource(payload, ctx.model);
+  read: (payload): SourceReading<'geminiGenerateContent', GeminiGenerateContentConversationTurn, GeminiGenerateContentAssistantTurn, GeminiGenerateContentStreamEvent> => {
+    const source: GeminiGenerateContentSource = geminiGenerateContentSource(payload);
     return {
       request: source.request,
       input: source,

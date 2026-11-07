@@ -34,8 +34,8 @@ test.each([2, 32])('reads only the ending candidate for %i interleaved choices',
   vi.mocked(createGeminiGenerateContentEventAccumulator).mockClear();
   const codec = createTestSidecarCodec();
   const trip = await routeGeminiGenerateContent({
-    contents: [{ role: 'user', parts: [{ text: 'question' }] }], generationConfig: { candidateCount: count },
-  }).viaOpenAIChatCompletions({ model: 'target', sidecarCodec: codec });
+    model: 'model', contents: [{ role: 'user', parts: [{ text: 'question' }] }], generationConfig: { candidateCount: count },
+  }).viaOpenAIChatCompletions({ sidecarCodec: codec });
   const events = async function* () {
     for await (const frame of trip.events(chatFrames(count))) if (frame.type === 'event') yield frame.event;
   };

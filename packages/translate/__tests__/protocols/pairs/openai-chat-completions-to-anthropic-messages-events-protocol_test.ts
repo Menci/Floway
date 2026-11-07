@@ -9,7 +9,7 @@ import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const codec = createTestSidecarCodec();
 const translate = (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>) => translateSourceEventsFor(
-  pairs.chatToMessages[0], pairs.chatToMessages[1], emptyPayload.chat, { model: 'm', sidecarCodec: codec }, frames,
+  pairs.chatToMessages[0], pairs.chatToMessages[1], emptyPayload.chat, { sidecarCodec: codec }, frames,
 );
 
 const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {

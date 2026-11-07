@@ -14,12 +14,17 @@ export interface RemoteImageData {
 export type RemoteImageLoader = (url: string) => Promise<RemoteImageData | null>;
 
 /**
- * Per-trip context. Carries the model name, the codec used by private sidecars,
- * and a per-pair-declared `TExtras`
- * shape that lists exactly the capability fields and runtime adapters the trip
- * reads. Pairs that need no extra fields use the default `unknown`. Callers
- * construct the context at the protocol boundary and inject runtime-owned
- * dependencies without making this package import their implementation.
+ * What a translation trip needs from the data plane.
+ *
+ * Every field here comes from outside this package: the codec that carries
+ * private sidecars, the model the caller resolved, and the runtime adapters a
+ * protocol may need to state a request. A protocol reads the ones it needs and
+ * ignores the rest, so there is one context rather than one per pair — a caller
+ * passes the same object to every trip it starts.
+ *
+ * No model travels here: every translated request states its own, and a
+ * protocol whose wire keeps it out of the body (GenerateContent names it in the
+ * URL) is handed it as part of the request the caller built.
  *
  * The client's stream preference is intentionally not in this context.
  * Translation always emits `stream: true` on the target payload; the LLM
@@ -27,10 +32,15 @@ export type RemoteImageLoader = (url: string) => Promise<RemoteImageData | null>
  * collect a non-streamed downstream response when the client did not ask
  * for SSE.
  */
-export type TranslationContext<TExtras = unknown> = {
-  readonly model: string;
+export interface TranslateContext {
   readonly sidecarCodec: SidecarCodec;
-} & TExtras;
+  // The upstream's own output limit, when the operator knows it. A target that
+  // requires a ceiling uses it when the source stated none.
+  readonly fallbackMaxOutputTokens?: number;
+  // How a target fetches a remote image the source only named by URL. Absent
+  // means the target states the URL itself.
+  readonly loadRemoteImage?: RemoteImageLoader;
+}
 
 /**
  * A wire-shaped upstream error body handed to `TranslateTrip.apiError`. The
@@ -78,17 +88,14 @@ export interface TranslateTripResult<TgtPayload, SrcEvent, TgtEvent> {
 }
 
 /**
- * One internal target-specific translation trip. The function body owns the trip: it builds
- * the target payload and returns an events translator closure that maps
- * target-protocol events back into source-protocol events. Trip-scoped state
- * (synthetic ids, custom-tool name sets, etc.) lives as locals captured by
- * the returned closure — the source route never exposes them.
+ * One translation trip: a source request in, a target request and a return
+ * path out.
  *
- * `TExtras` is the pair-declared context surface: each pair lists exactly the
- * capabilities and injected runtime adapters it reads. Pairs that need no
- * extra context leave it as `unknown` (default).
+ * The function body owns the trip. Everything it derives from the request — a
+ * namespace map, a custom-tool name set — is a local captured by the returned
+ * closures, so a caller sees only the payload and a way to translate events.
  */
-export type TranslateTrip<SrcPayload, SrcEvent, TgtPayload extends { model: string }, TgtEvent, TExtras = unknown> = (
+export type TranslateTrip<SrcPayload, SrcEvent, TgtPayload extends { model: string }, TgtEvent> = (
   src: SrcPayload,
-  ctx: TranslationContext<TExtras>,
+  ctx: TranslateContext,
 ) => Promise<TranslateTripResult<TgtPayload, SrcEvent, TgtEvent>>;

@@ -11,7 +11,7 @@ import { createRoundTripReaderCapture, emptyNamespaceToolNames } from '../round-
 import { eventFrame } from '@floway-dev/protocols/common';
 
 const events = (pair: readonly [any, any], payload: any, codec: any) =>
-  (frames: AsyncIterable<any>) => translateSourceEventsFor(pair[0], pair[1], payload, { model: 'model', sidecarCodec: codec }, frames);
+  (frames: AsyncIterable<any>) => translateSourceEventsFor(pair[0], pair[1], payload, { sidecarCodec: codec }, frames);
 const messagesViaChat = (frames: AsyncIterable<any>, codec: any) => events(pairs.messagesToChat, emptyPayload.messages, codec)(frames);
 const messagesViaResponses = (frames: AsyncIterable<any>, codec: any) => events(pairs.messagesToResponses, emptyPayload.messages, codec)(frames);
 const generateContentViaChat = (frames: AsyncIterable<any>, codec: any) => events(pairs.geminiToChat, emptyPayload.gemini, codec)(frames);
@@ -19,16 +19,16 @@ const generateContentViaResponses = (frames: AsyncIterable<any>, codec: any) => 
 // The freeform tool names these cases restore come from the request's own
 // declarations, so a case that expects one states it there.
 const responsesViaMessages = (frames: AsyncIterable<any>, _id: string, names: ReadonlySet<string>, codec: any, _ns: unknown) =>
-  translateSourceEventsFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], responsesPayload(names), { model: 'model', sidecarCodec: codec }, frames);
+  translateSourceEventsFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], responsesPayload(names), { sidecarCodec: codec }, frames);
 const responsesViaChat = (frames: AsyncIterable<any>, names: ReadonlySet<string>, codec: any, _ns: unknown) =>
-  translateSourceEventsFor(pairs.responsesToChat[0], pairs.responsesToChat[1], responsesPayload(names), { model: 'model', sidecarCodec: codec }, frames);
+  translateSourceEventsFor(pairs.responsesToChat[0], pairs.responsesToChat[1], responsesPayload(names), { sidecarCodec: codec }, frames);
 const responsesPayload = (names: ReadonlySet<string>) => ({
   ...emptyPayload.responses,
   tools: [...names].map(name => ({ type: 'custom' as const, name, description: '', format: { type: 'text' as const } })),
   tool_choice: 'auto' as const,
 });
 const messagesRequestViaChat = (payload: any, codec: any) =>
-  buildTargetRequestFor(pairs.messagesToChat[0], pairs.messagesToChat[1], payload, { model: 'model', sidecarCodec: codec });
+  buildTargetRequestFor(pairs.messagesToChat[0], pairs.messagesToChat[1], payload, { sidecarCodec: codec });
 
 for (const [code, category] of [['bio_policy', 'bio'], ['cyber_policy', 'cyber']] as const) {
   test(`${code} becomes a structured Messages classifier refusal without invented body text`, async () => {

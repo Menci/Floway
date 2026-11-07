@@ -10,7 +10,7 @@ import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } fro
 import type { RoundTripReader, RoundTripWriter } from '../round-trip/stream.ts';
 import { createRoundTripStream } from '../round-trip/stream.ts';
 import type { RoundTripTurnDigest } from '../round-trip/turn-digest.ts';
-import type { SourceProtocolErrorWriter, TranslateTrip, TranslationContext } from '../types.ts';
+import type { SourceProtocolErrorWriter, TranslateContext, TranslateTrip } from '../types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 type AssistantTurnKey = keyof AssistantTurnByProtocol;
@@ -65,19 +65,19 @@ export interface SourceProtocol<Name extends AssistantTurnKey, Payload, Turn, As
   readonly name: Name;
   // The context carries the model the caller resolved; a protocol that states
   // it in its request reads it from there rather than from the payload.
-  readonly read: (payload: Payload, ctx: { readonly model: string }) => SourceReading<Name, Turn, AssistantTurn, Event, Extra>;
+  readonly read: (payload: Payload) => SourceReading<Name, Turn, AssistantTurn, Event, Extra>;
   readonly writeError: SourceProtocolErrorWriter;
 }
 
 /** One protocol as the side a request goes to. */
-export interface TargetProtocol<Name extends AssistantTurnKey, Payload, Event, TExtras> {
+export interface TargetProtocol<Name extends AssistantTurnKey, Payload, Event> {
   readonly name: Name;
   /** Which calls a native turn in this protocol states, so a reader can correlate. */
   readonly resolvedCalls: (turn: AssistantTurnFor<Name>) => readonly ResolvedCall[];
   readonly write: (
     request: IRInputRequest,
     pieces: readonly (IRInputTurn | IRInputResolvedTurn<AssistantTurnFor<Name>>)[],
-    ctx: TranslationContext<TExtras>,
+    ctx: TranslateContext,
   ) => Promise<Payload>;
   readonly readStream: (frames: AsyncIterable<ProtocolFrame<Event>>, reader: RoundTripReader<Name>, request: IRInputRequest) => AsyncIterable<IRRecord>;
 }
@@ -91,12 +91,12 @@ export interface TargetProtocol<Name extends AssistantTurnKey, Payload, Event, T
  */
 export const composeTranslation = <
   SrcName extends AssistantTurnKey, SrcPayload, SrcTurn, SrcAssistantTurn, SrcEvent,
-  TgtName extends AssistantTurnKey, TgtPayload extends { model: string }, TgtEvent, TExtras = unknown,
+  TgtName extends AssistantTurnKey, TgtPayload extends { model: string }, TgtEvent,
 >(
   source: SourceProtocol<SrcName, SrcPayload, SrcTurn, SrcAssistantTurn, SrcEvent>,
-  target: TargetProtocol<TgtName, TgtPayload, TgtEvent, TExtras>,
-): TranslateTrip<SrcPayload, SrcEvent, TgtPayload, TgtEvent, TExtras> => async (payload, ctx) => {
-  const reading = source.read(payload, ctx);
+  target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
+): TranslateTrip<SrcPayload, SrcEvent, TgtPayload, TgtEvent> => async (payload, ctx) => {
+  const reading = source.read(payload);
   const pieces = await readIRInput(reading.input, async turn => {
     const assistantTurn = reading.assistantTurn(turn);
     if (assistantTurn === undefined) return undefined;
@@ -129,17 +129,17 @@ export const composeTranslation = <
  */
 export const buildTargetRequestFor = async <
   SrcName extends AssistantTurnKey, SrcPayload, SrcTurn, SrcAssistantTurn, SrcEvent, Extra,
-  TgtName extends AssistantTurnKey, TgtPayload, TgtEvent, TExtras,
+  TgtName extends AssistantTurnKey, TgtPayload, TgtEvent,
 >(
   source: SourceProtocol<SrcName, SrcPayload, SrcTurn, SrcAssistantTurn, SrcEvent, Extra>,
-  target: TargetProtocol<TgtName, TgtPayload, TgtEvent, TExtras>,
+  target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
   payload: SrcPayload,
-  ctx: TranslationContext<TExtras>,
+  ctx: TranslateContext,
   // Reusing a reading is how a caller observes what reading produced (a
   // namespace map, say) beside the request built from it.
   reuse?: SourceReading<SrcName, SrcTurn, SrcAssistantTurn, SrcEvent, Extra>,
 ): Promise<TgtPayload> => {
-  const reading = reuse ?? source.read(payload, ctx);
+  const reading = reuse ?? source.read(payload);
   const pieces = await readIRInput(reading.input, async turn => {
     const assistantTurn = reading.assistantTurn(turn);
     if (assistantTurn === undefined) return undefined;
@@ -164,15 +164,15 @@ export const buildTargetRequestFor = async <
  */
 export const translateSourceEventsFor = <
   SrcName extends AssistantTurnKey, SrcPayload, SrcTurn, SrcAssistantTurn, SrcEvent,
-  TgtName extends AssistantTurnKey, TgtPayload, TgtEvent, TExtras,
+  TgtName extends AssistantTurnKey, TgtPayload, TgtEvent,
 >(
   source: SourceProtocol<SrcName, SrcPayload, SrcTurn, SrcAssistantTurn, SrcEvent>,
-  target: TargetProtocol<TgtName, TgtPayload, TgtEvent, TExtras>,
+  target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
   payload: SrcPayload,
-  ctx: TranslationContext<TExtras>,
+  ctx: TranslateContext,
   frames: AsyncIterable<ProtocolFrame<TgtEvent>>,
 ): AsyncIterable<ProtocolFrame<SrcEvent>> => {
-  const reading = source.read(payload, ctx);
+  const reading = source.read(payload);
   const stream = createRoundTripStream(source.name, target.name, ctx.sidecarCodec);
   return reading.output(target.readStream(frames, stream.reader, reading.request), stream.writer, reading.request);
 };

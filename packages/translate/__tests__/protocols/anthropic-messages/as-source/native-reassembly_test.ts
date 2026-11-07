@@ -23,7 +23,7 @@ test.each(['complete', 'truncated'] as const)('reads only the current native blo
   const codec = createTestSidecarCodec();
   const trip = await routeAnthropicMessages({
     model: 'source', max_tokens: 4096, messages: [{ role: 'user', content: 'question' }],
-  }).viaOpenAIResponses({ model: 'target', sidecarCodec: codec });
+  }).viaOpenAIResponses({ sidecarCodec: codec });
   const frames = async function* () {
     yield* openaiResponsesResultToEvents({
       id: 'response', object: 'response', model: 'target',

@@ -7,7 +7,7 @@ import { openaiChatCompletionsTargetProtocol } from '../../src/protocols/openai-
 import { openaiResponsesSourceProtocol } from '../../src/protocols/openai-responses/source.ts';
 import { openaiResponsesTargetProtocol } from '../../src/protocols/openai-responses/target.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
-import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 
@@ -33,7 +33,7 @@ export const emptyPayload = {
   messages: { model: 'm', max_tokens: 16, messages: [] } as AnthropicMessagesPayload,
   chat: { model: 'm', messages: [] } as OpenAIChatCompletionsPayloadEx,
   responses: { model: 'm', input: [] } as OpenAIResponsesRequestPayloadEx,
-  gemini: { contents: [] } as GeminiGenerateContentPayload,
+  gemini: { model: 'model', contents: [] } as GeminiGenerateContentRequest,
 };
 
 export { buildTargetRequestFor, translateSourceEventsFor };

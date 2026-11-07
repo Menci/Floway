@@ -50,7 +50,7 @@ const testBuildOptions: { fallbackMaxOutputTokens?: number; loadRemoteImage: Par
 const buildWithTestSidecar = (
   payload: OpenAIChatCompletionsPayloadEx,
   options: Partial<typeof testBuildOptions> = {},
-) => buildTargetRequestFor(pairs.chatToMessages[0], pairs.chatToMessages[1], payload, { model: 'm', sidecarCodec: createTestSidecarCodec(), ...testBuildOptions, ...options });
+) => buildTargetRequestFor(pairs.chatToMessages[0], pairs.chatToMessages[1], payload, { sidecarCodec: createTestSidecarCodec(), ...testBuildOptions, ...options });
 
 test('buildTargetRequest preserves scalar and content-part assistant refusals as history text', async () => {
   const result = await buildWithTestSidecar(mkPayload({

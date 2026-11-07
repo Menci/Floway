@@ -46,15 +46,15 @@ const cases = [
   },
   {
     source: 'geminiGenerateContent', target: 'anthropicMessages',
-    translate: (c: SidecarCodec) => buildTargetRequestFor(pairs.geminiToMessages[0], pairs.geminiToMessages[1], { contents: [{ role: 'model', parts: [{ thoughtSignature: 'foreign' }] }] }, { ...extras, sidecarCodec: c }),
+    translate: (c: SidecarCodec) => buildTargetRequestFor(pairs.geminiToMessages[0], pairs.geminiToMessages[1], { model: 'model', contents: [{ role: 'model', parts: [{ thoughtSignature: 'foreign' }] }] }, { ...extras, sidecarCodec: c }),
   },
   {
     source: 'geminiGenerateContent', target: 'openaiChatCompletions',
-    translate: (c: SidecarCodec) => buildTargetRequestFor(pairs.geminiToChat[0], pairs.geminiToChat[1], { contents: [{ role: 'model', parts: [{ thoughtSignature: 'foreign' }] }] }, { ...extras, sidecarCodec: c }),
+    translate: (c: SidecarCodec) => buildTargetRequestFor(pairs.geminiToChat[0], pairs.geminiToChat[1], { model: 'model', contents: [{ role: 'model', parts: [{ thoughtSignature: 'foreign' }] }] }, { ...extras, sidecarCodec: c }),
   },
   {
     source: 'geminiGenerateContent', target: 'openaiResponses',
-    translate: (c: SidecarCodec) => buildTargetRequestFor(pairs.geminiToResponses[0], pairs.geminiToResponses[1], { contents: [{ role: 'model', parts: [{ thoughtSignature: 'foreign' }] }] }, { ...extras, sidecarCodec: c }),
+    translate: (c: SidecarCodec) => buildTargetRequestFor(pairs.geminiToResponses[0], pairs.geminiToResponses[1], { model: 'model', contents: [{ role: 'model', parts: [{ thoughtSignature: 'foreign' }] }] }, { ...extras, sidecarCodec: c }),
   },
 ] as const;
 
@@ -73,7 +73,7 @@ const ordinaryCases = [
   },
   {
     name: 'GenerateContent unsigned text',
-    translate: (c: SidecarCodec) => buildTargetRequestFor(pairs.geminiToChat[0], pairs.geminiToChat[1], { contents: [{ role: 'model', parts: [{ text: 'answer' }] }] }, { ...extras, sidecarCodec: c }),
+    translate: (c: SidecarCodec) => buildTargetRequestFor(pairs.geminiToChat[0], pairs.geminiToChat[1], { model: 'model', contents: [{ role: 'model', parts: [{ text: 'answer' }] }] }, { ...extras, sidecarCodec: c }),
   },
 ] as const;
 

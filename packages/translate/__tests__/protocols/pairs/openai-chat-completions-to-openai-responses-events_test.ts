@@ -53,7 +53,7 @@ const includeUsageChunk = { includeUsageChunk: true };
 
 const translate = (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>) => translateSourceEventsFor(
   pairs.chatToResponses[0], pairs.chatToResponses[1], emptyPayload.chat,
-  { model: 'm', sidecarCodec: createTestSidecarCodec() },
+  { sidecarCodec: createTestSidecarCodec() },
   structuredResponsesFixture(frames),
 );
 
@@ -492,12 +492,12 @@ test.each([false, true].flatMap(mixed => [
   }
   const client = await collectOpenAIChatCompletionsProtocolEventsToResult(parseOpenAIChatCompletionsStream(new Response(clientSSE).body!));
   expect(client.choices[0].finish_reason).toBe('tool_calls');
-  const replay = await buildTargetRequestFor(openaiChatCompletionsSourceProtocol, openaiResponsesTargetProtocol, { model: response.model, messages: [client.choices[0].message, { role: 'tool', tool_call_id: custom.call_id, content: 'edited' }] }, { model: 'm', sidecarCodec: createTestSidecarCodec() });
+  const replay = await buildTargetRequestFor(openaiChatCompletionsSourceProtocol, openaiResponsesTargetProtocol, { model: response.model, messages: [client.choices[0].message, { role: 'tool', tool_call_id: custom.call_id, content: 'edited' }] }, { sidecarCodec: createTestSidecarCodec() });
   expect(replay.input.slice(0, -1)).toEqual(upstream.output);
   expect(replay.input.at(-1)).toEqual({ type: 'custom_tool_call_output', call_id: custom.call_id, output: 'edited' });
 });
 
 testOutputTranslation('openai-chat-completions', 'openai-responses', (frames, codec) => {
   const [source, target] = pairs.chatToResponses;
-  return translateSourceEventsFor(source, target, emptyPayload.chat, { model: 'm', sidecarCodec: codec }, structuredResponsesFixture(frames));
+  return translateSourceEventsFor(source, target, emptyPayload.chat, { sidecarCodec: codec }, structuredResponsesFixture(frames));
 });

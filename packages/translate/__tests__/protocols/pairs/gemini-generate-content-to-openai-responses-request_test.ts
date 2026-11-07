@@ -8,7 +8,7 @@ import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils
 const buildWithTestSidecar = (
   payload: GeminiGenerateContentPayload,
   model: string,
-) => buildTargetRequestFor(pairs.geminiToResponses[0], pairs.geminiToResponses[1], payload, { model, sidecarCodec: createTestSidecarCodec() });
+) => buildTargetRequestFor(pairs.geminiToResponses[0], pairs.geminiToResponses[1], { ...payload, model }, { sidecarCodec: createTestSidecarCodec() });
 
 test('buildTargetRequest treats an empty thinkingLevel as unstated', async () => {
   const request = await buildWithTestSidecar({

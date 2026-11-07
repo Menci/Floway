@@ -12,7 +12,7 @@ const chunk = (delta: OpenAIChatCompletionsAssistantDeltaEx, finish_reason: 'sto
 });
 
 test('round-trips native Chat reasoning fragments through Responses without corrupting detail identity', async () => {
-  const context = { model: 'target', sidecarCodec: createTestSidecarCodec() };
+  const context = { sidecarCodec: createTestSidecarCodec() };
   const trip = await routeOpenAIResponses({ model: 'source', input: [{ role: 'user', content: 'question' }] }).viaOpenAIChatCompletions(context);
   const upstream = async function* () {
     yield chunk({ role: 'assistant', reasoning_details: [{ type: 'reasoning.summary', summary: ' reading', id: 'summary', index: 0, format: 'openai-responses-v1' }] });

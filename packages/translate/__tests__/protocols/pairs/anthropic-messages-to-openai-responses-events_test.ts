@@ -4,5 +4,5 @@ import { emptyPayload, pairs } from '../composition-helpers.ts';
 
 testOutputTranslation('anthropic-messages', 'openai-responses', (frames, codec) => {
   const [source, target] = pairs.messagesToResponses;
-  return translateSourceEventsFor(source, target, emptyPayload.messages, { model: 'm', sidecarCodec: codec }, frames);
+  return translateSourceEventsFor(source, target, emptyPayload.messages, { sidecarCodec: codec }, frames);
 });

@@ -38,9 +38,9 @@ const buildWithTestSidecar = async (
   payload: OpenAIResponsesRequestPayloadEx,
   options: Partial<typeof testBuildOptions> = {},
 ) => {
-  const target = await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { model: 'm', sidecarCodec: createTestSidecarCodec(), ...testBuildOptions, ...options });
-  const request = openaiResponsesSourceProtocol.read(payload, { model: 'm' }).request;
-  return { target, customToolNames: irInputCustomToolNames(request), namespaceToolNames: openaiResponsesSourceProtocol.read(payload, { model: 'm' }).extra! };
+  const target = await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { sidecarCodec: createTestSidecarCodec(), ...testBuildOptions, ...options });
+  const request = openaiResponsesSourceProtocol.read(payload).request;
+  return { target, customToolNames: irInputCustomToolNames(request), namespaceToolNames: openaiResponsesSourceProtocol.read(payload).extra! };
 };
 
 test('buildTargetRequest preserves an empty open-string reasoning effort', async () => {

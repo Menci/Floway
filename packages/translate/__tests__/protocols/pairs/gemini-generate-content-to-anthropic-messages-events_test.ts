@@ -4,5 +4,5 @@ import { emptyPayload, pairs } from '../composition-helpers.ts';
 
 testOutputTranslation('gemini-generate-content', 'anthropic-messages', (frames, codec) => {
   const [source, target] = pairs.geminiToMessages;
-  return translateSourceEventsFor(source, target, emptyPayload.gemini, { model: 'm', sidecarCodec: codec }, frames);
+  return translateSourceEventsFor(source, target, emptyPayload.gemini, { sidecarCodec: codec }, frames);
 });

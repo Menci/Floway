@@ -12,9 +12,9 @@ import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 // Reading a Responses request is what produces the flattened namespace map, so
 // the reading a test builds from must be the same one whose map it asserts.
-const reading = (payload: OpenAIResponsesRequestPayloadEx) => openaiResponsesSourceProtocol.read(payload, { model: 'm' });
+const reading = (payload: OpenAIResponsesRequestPayloadEx) => openaiResponsesSourceProtocol.read(payload);
 const extrasOf = (r: ReturnType<typeof reading>, codec: SidecarCodec) =>
-  ({ model: 'm', sidecarCodec: codec, customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra });
+  ({ sidecarCodec: codec, customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra });
 
 const buildChat = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec) => {
   const r = reading(payload);

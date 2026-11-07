@@ -18,7 +18,7 @@ const callsOf = (turn: ResponsesResolvedTurn): readonly { callId: string; name: 
  * result itself, so reading a stream needs nothing from the request.
  */
 export const openaiResponsesTargetProtocol: TargetProtocol<
-  'openaiResponses', CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx, unknown
+  'openaiResponses', CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx
 > = {
   name: 'openaiResponses',
   resolvedCalls: callsOf,

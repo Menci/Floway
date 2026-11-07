@@ -22,7 +22,7 @@ import type {
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
-import type { GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentPayload, GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 
 const inlineMedia = (part: GeminiGenerateContentPart): IRInputMedia | null => {
   const inlineData = geminiGenerateContentInlineData(part);
@@ -239,13 +239,13 @@ export interface GeminiGenerateContentSource extends IRInputSource<GeminiGenerat
   readonly request: IRInputRequest;
 }
 
-export const geminiGenerateContentSource = (payload: GeminiGenerateContentPayload, model: string): GeminiGenerateContentSource => {
+export const geminiGenerateContentSource = (payload: GeminiGenerateContentRequest): GeminiGenerateContentSource => {
   const ids: GeminiGenerateContentToolCallIds = Object.create(null);
   let contentIndex = 0;
   return {
     request: {
       conversation: { turns: [] },
-      settings: geminiGenerateContentSettingsToIR(payload, model),
+      settings: geminiGenerateContentSettingsToIR(payload),
       ...toolsToIR(payload),
     },
     prompt: geminiGenerateContentSystemToIR(payload.systemInstruction),
@@ -270,7 +270,7 @@ export const geminiGenerateContentSource = (payload: GeminiGenerateContentPayloa
 };
 
 /** GenerateContent keeps every sampling knob inside `generationConfig`. */
-const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentPayload, model: string): IRInputSettings => {
+const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest): IRInputSettings => {
   const config = payload.generationConfig;
   const reasoningEffort = geminiGenerateContentReasoningEffort(config?.thinkingConfig);
   const schema = config === undefined ? undefined : geminiResponseSchema(config);
@@ -279,7 +279,7 @@ const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentPayload
     : config?.responseMimeType === 'application/json' ? { type: 'json_object' } : undefined;
 
   return {
-    model,
+    model: payload.model,
     stream: true,
     ...(config?.temperature == null ? {} : { temperature: config.temperature }),
     ...(config?.topP == null ? {} : { top_p: config.topP }),

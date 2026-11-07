@@ -5,7 +5,7 @@ import { iterate } from '../ir/helpers.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { collectOpenAIResponsesProtocolEventsToResult, type OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { routeAnthropicMessages } from '@floway-dev/translate/anthropic-messages';
@@ -45,7 +45,7 @@ const assertNativeHistory = (target: OpenAIChatCompletionsPayload, name: string,
 };
 
 test('Messages returns matching legacy function results while modern calls remain tool messages across turns', async () => {
-  const context = { model: 'native-model', sidecarCodec: createTestSidecarCodec() };
+  const context = { sidecarCodec: createTestSidecarCodec() };
   const payload: AnthropicMessagesPayload = {
     model: 'public-model', max_tokens: 64,
     messages: [{ role: 'user', content: 'Call lookup' }],
@@ -63,7 +63,7 @@ test('Messages returns matching legacy function results while modern calls remai
 });
 
 test('Responses binds public namespaced call IDs to the native legacy function name', async () => {
-  const context = { model: 'native-model', sidecarCodec: createTestSidecarCodec() };
+  const context = { sidecarCodec: createTestSidecarCodec() };
   const payload: OpenAIResponsesRequestPayloadEx = {
     model: 'public-model', input: [{ type: 'message', role: 'user', content: 'Call lookup' }],
     tools: [{ type: 'namespace', name: 'public', description: 'Public lookup tools', tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object', properties: { x: { type: 'integer' } } } }] }],
@@ -88,8 +88,9 @@ test('Responses binds public namespaced call IDs to the native legacy function n
 });
 
 test('Gemini matches ID-less legacy responses by public name and explicit modern responses by ID', async () => {
-  const context = { model: 'native-model', sidecarCodec: createTestSidecarCodec() };
-  const payload: GeminiGenerateContentPayload = {
+  const context = { sidecarCodec: createTestSidecarCodec() };
+  const payload: GeminiGenerateContentRequest = {
+    model: 'model',
     contents: [{ role: 'user', parts: [{ text: 'Call lookup' }] }],
     tools: [{ functionDeclarations: [{ name: 'lookup', parameters: { type: 'OBJECT', properties: { x: { type: 'INTEGER' } } } }] }],
   };
@@ -107,8 +108,8 @@ test('Gemini matches ID-less legacy responses by public name and explicit modern
 });
 
 test('Gemini keeps modern IDs separate when a vendor stream includes both call formats', async () => {
-  const context = { model: 'native-model', sidecarCodec: createTestSidecarCodec() };
-  const source: GeminiGenerateContentPayload = { contents: [{ role: 'user', parts: [{ text: 'Call lookup' }] }] };
+  const context = { sidecarCodec: createTestSidecarCodec() };
+  const source: GeminiGenerateContentRequest = { model: 'model', contents: [{ role: 'user', parts: [{ text: 'Call lookup' }] }] };
   const trip = await routeGeminiGenerateContent(source).viaOpenAIChatCompletions(context);
   const result = await collectGeminiGenerateContentProtocolEventsToResult(trip.events(iterate(nativeFrames('mixed', 'lookup'))));
   const content = result.candidates?.[0]?.content;
@@ -116,6 +117,7 @@ test('Gemini keeps modern IDs separate when a vendor stream includes both call f
   const calls = content.parts?.flatMap(part => part.functionCall === undefined ? [] : [part.functionCall]);
   expect(calls).toHaveLength(2);
   const replay = await routeGeminiGenerateContent({
+    model: 'model',
     contents: [
       ...source.contents ?? [], content,
       {
@@ -138,7 +140,7 @@ test('Gemini keeps modern IDs separate when a vendor stream includes both call f
 });
 
 test('restored legacy results retain the ordinary Responses input_file rejection', async () => {
-  const context = { model: 'native-model', sidecarCodec: createTestSidecarCodec() };
+  const context = { sidecarCodec: createTestSidecarCodec() };
   const trip = await routeOpenAIResponses({ model: 'public-model', input: 'Call lookup' }).viaOpenAIChatCompletions(context);
   const result = await collectOpenAIResponsesProtocolEventsToResult(trip.events(iterate(nativeFrames('legacy', 'lookup'))));
   const call = result.output.find(item => item.type === 'function_call');

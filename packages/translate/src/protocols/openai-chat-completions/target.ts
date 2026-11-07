@@ -21,7 +21,7 @@ const callsOf = (turn: ChatResolvedTurn): readonly { callId: string; name: strin
  * handed to `readStream` as well as to `write`.
  */
 export const openaiChatCompletionsTargetProtocol: TargetProtocol<
-  'openaiChatCompletions', OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent, unknown
+  'openaiChatCompletions', OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent
 > = {
   name: 'openaiChatCompletions',
   resolvedCalls: callsOf,

@@ -47,14 +47,16 @@ export const geminiGenerateContentAttempt = {
       // pick is reached via translation. The dispatch threads each branch
       // through `traverseTranslation` so each inner attempt owns its own
       // interceptor chain and rewrite.
+      // The model travels in the URL rather than the body, so the request this
+      // trip reads is the payload with the resolved model folded in.
+      const request = { ...invocation.payload, model: candidate.model.id };
       const transCtx = {
-        model: candidate.model.id,
         sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       };
       if (targetApi === 'anthropicMessages') {
         return await traverseTranslation(
-          invocation.payload,
+          request,
           p => routeGeminiGenerateContent(p).viaAnthropicMessages(transCtx),
           translated => anthropicMessagesAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
@@ -64,7 +66,7 @@ export const geminiGenerateContentAttempt = {
       }
       if (targetApi === 'openaiResponses') {
         return await traverseTranslation(
-          invocation.payload,
+          request,
           p => routeGeminiGenerateContent(p).viaOpenAIResponses(transCtx),
           translated => openaiResponsesAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers,
@@ -74,7 +76,7 @@ export const geminiGenerateContentAttempt = {
       }
       if (targetApi === 'openaiChatCompletions') {
         return await traverseTranslation(
-          invocation.payload,
+          request,
           p => routeGeminiGenerateContent(p).viaOpenAIChatCompletions(transCtx),
           translated => openaiChatCompletionsAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers,
@@ -102,7 +104,6 @@ export const geminiGenerateContentAttempt = {
       // payload-mutators are applied inline here before translation; the
       // attempt-owned payload clone keeps the caller's source intact.
       const transCtx = {
-        model: candidate.model.id,
         sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       };
@@ -110,7 +111,9 @@ export const geminiGenerateContentAttempt = {
       stripUnsupportedPartFieldsFromPayload(cleaned);
       stripUnsupportedToolsFromPayload(cleaned);
       delete cleaned.safetySettings;
-      const trip = await routeGeminiGenerateContent(cleaned).viaAnthropicMessages(transCtx);
+      // The model travels in the URL rather than the body, so the request this
+      // trip reads is the cleaned payload with the resolved model folded in.
+      const trip = await routeGeminiGenerateContent({ ...cleaned, model: candidate.model.id }).viaAnthropicMessages(transCtx);
       const { stream: _stream, ...target } = trip.target;
       const anthropicMessagesResult = await anthropicMessagesAttempt.countTokens({
         payload: target, ctx, candidate, headers: invocation.headers, anthropicBeta: [],

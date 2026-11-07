@@ -7,7 +7,7 @@ import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsFunc
 import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
 const buildWithTestSidecar = (payload: AnthropicMessagesPayload) =>
-  buildTargetRequestFor(pairs.messagesToChat[0], pairs.messagesToChat[1], payload, { model: 'm', sidecarCodec: createTestSidecarCodec() });
+  buildTargetRequestFor(pairs.messagesToChat[0], pairs.messagesToChat[1], payload, { sidecarCodec: createTestSidecarCodec() });
 
 test('buildTargetRequest maps thinking.disabled to reasoning_effort none', async () => {
   const result = await buildWithTestSidecar({

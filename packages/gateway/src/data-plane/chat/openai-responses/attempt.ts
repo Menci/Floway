@@ -171,7 +171,6 @@ const dispatchOpenAIResponses = async (
     return await traverseTranslation(
       invocation.payload,
       p => routeOpenAIResponses(p).viaAnthropicMessages({
-        model: candidate.model.id,
         sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
         loadRemoteImage: createExternalImageLoader(ctx.abortSignal),
@@ -187,7 +186,7 @@ const dispatchOpenAIResponses = async (
     }
     return await traverseTranslation(
       invocation.payload,
-      p => routeOpenAIResponses(p).viaOpenAIChatCompletions({ model: candidate.model.id, sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
+      p => routeOpenAIResponses(p).viaOpenAIChatCompletions({ sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
       translated => openaiChatCompletionsAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
       }),

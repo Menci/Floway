@@ -9,8 +9,8 @@ import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesInputMultiAgentCal
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const buildWithTestSidecar = async (payload: OpenAIResponsesRequestPayloadEx) => ({
-  target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], payload, { model: 'm', sidecarCodec: createTestSidecarCodec() }),
-  customToolNames: irInputCustomToolNames(openaiResponsesSourceProtocol.read(payload, { model: 'm' }).request),
+  target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], payload, { sidecarCodec: createTestSidecarCodec() }),
+  customToolNames: irInputCustomToolNames(openaiResponsesSourceProtocol.read(payload).request),
 });
 
 test('buildTargetRequest accepts an implicit message discriminator', async () => {

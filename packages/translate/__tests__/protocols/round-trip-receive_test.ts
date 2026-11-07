@@ -13,7 +13,7 @@ import { encodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import { hashRoundTripContent, replayMaterialsByType } from '../../src/round-trip/turn-digest.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
-import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { routeAnthropicMessages } from '@floway-dev/translate/anthropic-messages';
@@ -21,14 +21,14 @@ import { routeGeminiGenerateContent } from '@floway-dev/translate/gemini-generat
 import { routeOpenAIChatCompletions } from '@floway-dev/translate/openai-chat-completions';
 import { routeOpenAIResponses } from '@floway-dev/translate/openai-responses';
 
-const context = { model: 'target', sidecarCodec: createTestSidecarCodec('test-codec-scope'), loadRemoteImage: async () => null, fallbackMaxOutputTokens: undefined };
+const context = { sidecarCodec: createTestSidecarCodec('test-codec-scope'), loadRemoteImage: async () => null, fallbackMaxOutputTokens: undefined };
 const chat = (carrier: string, text = 'answer'): OpenAIChatCompletionsPayloadEx => {
   const message: OpenAIChatCompletionsAssistantMessageEx = { role: 'assistant', content: text, reasoning_details: [{ type: 'reasoning.encrypted', data: carrier }] };
   return { model: 'source', messages: [message] };
 };
 const messages = (carrier: string): AnthropicMessagesPayload => ({ model: 'source', max_tokens: 16, messages: [{ role: 'assistant', content: [{ type: 'text', text: 'answer' }, { type: 'redacted_thinking', data: carrier }] }] });
 const responses = (carrier: string): OpenAIResponsesRequestPayloadEx => ({ model: 'source', input: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'answer' }] }, { type: 'reasoning', id: 'carrier', summary: [], encrypted_content: carrier }] });
-const gemini = (carrier: string): GeminiGenerateContentPayload => ({ contents: [{ role: 'model', parts: [{ text: 'answer', thoughtSignature: carrier }] }] });
+const gemini = (carrier: string): GeminiGenerateContentRequest => ({ model: 'model', contents: [{ role: 'model', parts: [{ text: 'answer', thoughtSignature: carrier }] }] });
 
 const turnDigest = async (source: RoundTripProtocol) => source === 'openaiChatCompletions'
   ? await computeOpenAIChatCompletionsTurnDigest({ role: 'assistant', content: 'answer' })
@@ -91,7 +91,7 @@ test('hydrates a native JSON field from a replayed GenerateContent argument cand
     referencedContentHashes: [await hashRoundTripContent(JSON.stringify(args))],
     sourceTurnDigest: await hashRoundTripContent(JSON.stringify(checkMaterial)),
   });
-  const trip = await routeGeminiGenerateContent({ contents: [{ role: 'model', parts: [{ functionCall: { name: 'lookup', args }, thoughtSignature: carrier }] }] }).viaAnthropicMessages(context);
+  const trip = await routeGeminiGenerateContent({ model: 'model', contents: [{ role: 'model', parts: [{ functionCall: { name: 'lookup', args }, thoughtSignature: carrier }] }] }).viaAnthropicMessages(context);
   expect(trip.target.messages).toEqual([{ role: 'assistant', content: [{ type: 'tool_use', id: 'native-call', name: 'native-tool', input: args }] }]);
 });
 
@@ -139,7 +139,7 @@ test.each([{ input: 'text' }, { input: null }, { input: [1] }])('preserves ordin
 });
 
 test('preserves ordinary GenerateContent null-argument handling', async () => {
-  const payload: GeminiGenerateContentPayload = JSON.parse('{"contents":[{"role":"model","parts":[{"functionCall":{"name":"lookup","args":null}}]}]}');
+  const payload: GeminiGenerateContentRequest = { ...JSON.parse('{"contents":[{"role":"model","parts":[{"functionCall":{"name":"lookup","args":null}}]}]}'), model: 'model' };
   const chatTrip = await routeGeminiGenerateContent(payload).viaOpenAIChatCompletions(context);
   expect(chatTrip.target.messages).toMatchObject([
     { role: 'assistant', tool_calls: [{ function: { name: 'lookup', arguments: 'null' } }] },
