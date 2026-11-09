@@ -30,7 +30,7 @@ export interface RemoteImageData {
  * collect a non-streamed downstream response when the client did not ask
  * for SSE.
  */
-export interface TranslateContext {
+export interface TranslateOptions {
   readonly sidecarCodec: SidecarCodec;
   // The upstream's own output limit, when the operator knows it. A target that
   // requires a ceiling uses it when the source stated none.
@@ -94,7 +94,7 @@ export interface TranslateTripResult<TgtPayload, SrcEvent, TgtEvent> {
  */
 export type TranslateTrip<SrcPayload, SrcEvent, TgtPayload extends { model: string }, TgtEvent> = (
   src: SrcPayload,
-  ctx: TranslateContext,
+  options: TranslateOptions,
 ) => Promise<TranslateTripResult<TgtPayload, SrcEvent, TgtEvent>>;
 
 // A caller-input validation failure surfaced by a translator: the caller

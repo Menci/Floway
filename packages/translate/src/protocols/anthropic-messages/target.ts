@@ -4,20 +4,13 @@ import type { IRInputRequest, IRInputTurn } from '../../ir/input/types.ts';
 import type { AssistantTurnFor } from '../../round-trip/assistant-turn.ts';
 import { assignCallIds, type PendingCall } from '../../shared/call-ids.ts';
 import { callIdentitiesOf, flattenRequestNames } from '../../shared/flatten-request.ts';
-import type { TranslateContext } from '../../types.ts';
+import type { TranslateOptions } from '../../types.ts';
 import type { TargetProtocol } from '../composition.ts';
 import { anthropicMessagesPayloadFromSegments } from './as-target/segmented-request.ts';
 import { irFromAnthropicMessages } from './as-target/sse-from.ts';
 import type { AnthropicMessagesMessage, AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 
-/**
- * The names this target wrote as functions because it cannot state a freeform
- * declaration directly.
- *
- * Reading the stream back has to recognise those calls as freeform, and the
- * request is the only place that says which declarations were freeform.
- */
-const wrappedFreeformNames = (request: IRInputRequest): ReadonlySet<string> =>
+const freeformNames = (request: IRInputRequest): ReadonlySet<string> =>
   new Set((irInputToolsForChoice(request.tools, request.tool_choice) ?? [])
     .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
 
@@ -37,21 +30,22 @@ export const anthropicMessagesTargetProtocol: TargetProtocol<
   'anthropicMessages', AnthropicMessagesPayload, AnthropicMessagesStreamEventEx
 > = {
   name: 'anthropicMessages',
-  write: (request: IRInputRequest, pieces: readonly (IRInputTurn | IRInputResolvedTurn<AssistantTurnFor<'anthropicMessages'>>)[], ctx: TranslateContext) => {
+  write: async (request: IRInputRequest, pieces: readonly (IRInputTurn | IRInputResolvedTurn<AssistantTurnFor<'anthropicMessages'>>)[], options: TranslateOptions) => {
     // This wire addresses a callable by one bare name, so every grouped
     // declaration and call is stated under the flat spelling it computes.
     const flattened = flattenRequestNames(request, pieces);
-    return anthropicMessagesPayloadFromSegments(flattened.request, assignCallIds(flattened.pieces, callsOf), turn => turn, {
-      fallbackMaxOutputTokens: ctx.fallbackMaxOutputTokens,
-    });
+    return {
+      payload: await anthropicMessagesPayloadFromSegments(flattened.request, assignCallIds(flattened.pieces, callsOf), turn => turn, {
+        fallbackMaxOutputTokens: options.fallbackMaxOutputTokens,
+      }),
+      context: {
+        // A freeform declaration reaches this wire as a function, so the reader
+        // has to recognise the call that answers it as freeform again.
+        customToolNames: freeformNames(request),
+        // The upstream answers under the flat name it was asked with.
+        callIdentities: callIdentitiesOf(request, pieces),
+      },
+    };
   },
-  // A source may declare freeform tools the target could not state natively;
-  // reading this stream has to recognise the calls it wrapped them into.
-  readStream: (frames, reader, request) => irFromAnthropicMessages(frames, {
-    customToolNames: wrappedFreeformNames(request),
-    // The upstream answers under the flat name it was asked with, so the pair a
-    // name stands for is recovered from the same request mapping.
-    callIdentities: callIdentitiesOf(request, request.conversation.turns),
-    roundTrip: reader,
-  }),
+  readStream: (frames, context, roundTripReader) => irFromAnthropicMessages(frames, { ...context, roundTrip: roundTripReader }),
 };

@@ -85,11 +85,11 @@ export const flattenRequestNames = <Restored>(
  * has to state the call the way its client wrote it, so it needs this inversion
  * of the same assignment.
  */
-export const callIdentitiesOf = (
+export const callIdentitiesOf = <Restored>(
   request: IRInputRequest,
-  turns: readonly IRInputTurn[],
+  pieces: readonly (IRInputTurn | IRInputResolvedTurn<Restored>)[],
 ): Map<string, { readonly namespace: string; readonly name: string }> => {
-  const flat = flatNameMapping(request.tools ?? [], turns);
+  const flat = flatNameMapping(request.tools ?? [], pieces.flatMap(piece => piece.kind === 'resolved' ? [] : [piece]));
   const identities = new Map<string, { readonly namespace: string; readonly name: string }>();
   for (const [key, flatName] of flat) {
     const dot = key.indexOf('.');

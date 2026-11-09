@@ -11,7 +11,7 @@ import type { SourceAssistantTurnFor } from '../round-trip/source-assistant-turn
 import type { RoundTripReader, RoundTripWriter } from '../round-trip/stream.ts';
 import { createRoundTripStream } from '../round-trip/stream.ts';
 import type { RoundTripTurnDigest } from '../round-trip/turn-digest.ts';
-import type { SourceProtocolErrorWriter, TranslateContext, TranslateTrip } from '../types.ts';
+import type { SourceProtocolErrorWriter, TranslateOptions, TranslateTrip } from '../types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 type AssistantTurnKey = keyof AssistantTurnByProtocol;
@@ -49,6 +49,37 @@ export interface SourceProtocol<Name extends AssistantTurnKey, Payload, Event> {
   ) => AsyncIterable<ProtocolFrame<Event>>;
 }
 
+/** What a target recorded while writing, for the reader of its own stream. */
+export type TargetContext<Name extends keyof TargetContextByProtocol> = TargetContextByProtocol[Name];
+
+/** Each target's own context shape; a protocol that needs none states `void`. */
+export interface TargetContextByProtocol {
+  readonly anthropicMessages: SmallCallContext;
+  readonly openaiChatCompletions: SmallCallContext;
+  readonly openaiResponses: void;
+  // GenerateContent is a source only, so it never states a target context.
+  readonly geminiGenerateContent: void;
+}
+
+/** What the two protocols without namespaces record while writing. */
+export interface SmallCallContext {
+  /** The declarations written as function tools though the client wrote them freeform. */
+  readonly customToolNames: ReadonlySet<string>;
+  /** The pair each flat name stands for. */
+  readonly callIdentities: ReadonlyMap<string, { readonly namespace: string; readonly name: string }>;
+}
+
+/**
+ * What writing a request produced.
+ *
+ * The payload is what the upstream is asked; the context is what reading its
+ * answer needs, and only this target knows what that is.
+ */
+export interface TargetRequest<Payload, Name extends keyof TargetContextByProtocol> {
+  readonly payload: Payload;
+  readonly context: TargetContext<Name>;
+}
+
 /** One protocol as the side a request goes to. */
 export interface TargetProtocol<Name extends AssistantTurnKey, Payload, Event> {
   readonly name: Name;
@@ -62,19 +93,21 @@ export interface TargetProtocol<Name extends AssistantTurnKey, Payload, Event> {
   readonly write: (
     request: IRInputRequest,
     pieces: readonly (IRInputTurn | IRInputResolvedTurn<AssistantTurnFor<Name>>)[],
-    ctx: TranslateContext,
-  ) => Promise<Payload>;
+    options: TranslateOptions,
+  ) => Promise<TargetRequest<Payload, Name>>;
   /**
    * Reads this protocol's upstream events into the output IR.
    *
-   * It is handed the request the target was written from because reading a
-   * stream may need a fact derived from it — which declared tools are freeform,
-   * say — and that fact belongs to the request, not to the reader.
+   * It is handed what `write` recorded beside the payload — the names it asked
+   * the upstream with, say — because reading a stream has to state those back
+   * the way this protocol's client wrote them, and only the writing side knows
+   * what it sent. Neither the input IR nor this target's own reader is here:
+   * what comes back is the payload's own answer.
    */
   readonly readStream: (
     frames: AsyncIterable<ProtocolFrame<Event>>,
-    reader: RoundTripReader<Name>,
-    request: IRInputRequest,
+    context: TargetContext<Name>,
+    roundTripReader: RoundTripReader<Name>,
   ) => AsyncIterable<IRRecord>;
 }
 
@@ -90,14 +123,17 @@ export const composeTranslation = <
 >(
   source: SourceProtocol<SrcName, SrcPayload, SrcEvent>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
-): TranslateTrip<SrcPayload, SrcEvent, TgtPayload, TgtEvent> => async (payload, ctx) => {
+): TranslateTrip<SrcPayload, SrcEvent, TgtPayload, TgtEvent> => async (payload, options) => {
   const reading = source.read(payload);
+  const { payload: targetPayload, context } = await target.write(
+    reading.request, await settleTurns(source, target, reading, options), options,
+  );
   return {
-    target: await target.write(reading.request, await settleTurns(source, target, reading, ctx), ctx),
+    target: targetPayload,
     errorBody: source.writeError,
     events: frames => {
-      const stream = createRoundTripStream(source.name, target.name, ctx.sidecarCodec);
-      return source.writeStream(reading, target.readStream(frames, stream.reader, reading.request), stream.writer);
+      const stream = createRoundTripStream(source.name, target.name, options.sidecarCodec);
+      return source.writeStream(reading, target.readStream(frames, context, stream.reader), stream.writer);
     },
   };
 };
@@ -117,13 +153,13 @@ const settleTurns = async <
   source: SourceProtocol<SrcName, SrcPayload, SrcEvent>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
   reading: IRInputReading<SourceAssistantTurnFor<SrcName>>,
-  ctx: TranslateContext,
+  options: TranslateOptions,
 ): Promise<(IRInputTurn | IRInputResolvedTurn<AssistantTurnFor<TgtName>>)[]> =>
   await readTurns(reading, async (turn): Promise<
     { readonly resolved: AssistantTurnFor<TgtName> } | undefined
   > => {
     const roundTrip = await roundTripAssistantTurn(
-      source.name, target.name, turn.assistantTurn, ctx.sidecarCodec,
+      source.name, target.name, turn.assistantTurn, options.sidecarCodec,
       source.roundTrip.inspect, source.roundTrip.verify, source.roundTrip.collectCandidates,
     );
     if (roundTrip === undefined) return undefined;
@@ -143,12 +179,12 @@ export const buildTargetRequestFor = async <
   source: SourceProtocol<SrcName, SrcPayload, SrcEvent>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
   payload: SrcPayload,
-  ctx: TranslateContext,
+  options: TranslateOptions,
   // Reading is stateful, so a caller that also inspects what it recorded passes
   // the same reading rather than opening a second one.
   reading: IRInputReading<SourceAssistantTurnFor<SrcName>> = source.read(payload),
 ): Promise<TgtPayload> =>
-  await target.write(reading.request, await settleTurns(source, target, reading, ctx), ctx);
+  (await target.write(reading.request, await settleTurns(source, target, reading, options), options)).payload;
 
 /**
  * The event half of a composed trip, stated on its own.
@@ -163,10 +199,15 @@ export const translateSourceEventsFor = <
   source: SourceProtocol<SrcName, SrcPayload, SrcEvent>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
   payload: SrcPayload,
-  ctx: TranslateContext,
+  options: TranslateOptions,
   frames: AsyncIterable<ProtocolFrame<TgtEvent>>,
 ): AsyncIterable<ProtocolFrame<SrcEvent>> => {
   const reading = source.read(payload);
-  const stream = createRoundTripStream(source.name, target.name, ctx.sidecarCodec);
-  return source.writeStream(reading, target.readStream(frames, stream.reader, reading.request), stream.writer);
+  const stream = createRoundTripStream(source.name, target.name, options.sidecarCodec);
+  // Stating the answer needs what writing the request recorded, so this walks
+  // the same writing step the composed trip does.
+  return (async function* () {
+    const { context } = await target.write(reading.request, await settleTurns(source, target, reading, options), options);
+    yield* source.writeStream(reading, target.readStream(frames, context, stream.reader), stream.writer);
+  })();
 };

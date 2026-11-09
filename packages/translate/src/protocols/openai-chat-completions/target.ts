@@ -8,14 +8,7 @@ import { openaiChatCompletionsPayloadFromSegments } from './as-target/segmented-
 import { irFromOpenAIChatCompletions } from './as-target/sse-from.ts';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
-/**
- * The names this target wrote as functions because it cannot state a freeform
- * declaration directly.
- *
- * Reading the stream back has to recognise those calls as freeform, and the
- * request is the only place that says which declarations were freeform.
- */
-const wrappedFreeformNames = (request: IRInputRequest): ReadonlySet<string> =>
+const freeformNames = (request: IRInputRequest): ReadonlySet<string> =>
   new Set((irInputToolsForChoice(request.tools, request.tool_choice) ?? [])
     .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
 
@@ -37,10 +30,9 @@ const callsOf = (turn: ChatResolvedTurn): readonly PendingCall[] => {
 /**
  * Chat Completions written as the side a request goes to.
  *
- * Reading a Chat stream needs the names of the request's freeform tools,
- * because Chat states one as a function and the reader has to recognise it
- * coming back. That is derived from the request, which is why the request is
- * handed to `readStream` as well as to `write`.
+ * Two facts only this side knows are needed to read its answer back: which
+ * declarations it had to spell out, and which pair each flat name stands for.
+ * Writing records both.
  */
 export const openaiChatCompletionsTargetProtocol: TargetProtocol<
   'openaiChatCompletions', OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent
@@ -50,14 +42,17 @@ export const openaiChatCompletionsTargetProtocol: TargetProtocol<
   // declaration and call is stated under the flat spelling it computes.
   write: (request, pieces) => {
     const flattened = flattenRequestNames(request, pieces);
-    return Promise.resolve(openaiChatCompletionsPayloadFromSegments(flattened.request, assignCallIds(flattened.pieces, callsOf), turn => turn));
+    return Promise.resolve({
+      payload: openaiChatCompletionsPayloadFromSegments(flattened.request, assignCallIds(flattened.pieces, callsOf), turn => turn),
+      context: {
+        // A freeform declaration reaches this wire as a function, so the reader
+        // has to recognise the call that answers it as freeform again.
+        customToolNames: freeformNames(request),
+        // The upstream answers under the flat name it was asked with.
+        callIdentities: callIdentitiesOf(request, pieces),
+      },
+    });
   },
-  readStream: (frames, reader, request) =>
-    irFromOpenAIChatCompletions(frames, {
-      customToolNames: wrappedFreeformNames(request),
-      // The upstream answers under the flat name it was asked with, so the pair
-      // a name stands for is recovered from the same request mapping.
-      callIdentities: callIdentitiesOf(request, request.conversation.turns),
-      roundTrip: reader,
-    }),
+  readStream: (frames, context, roundTripReader) =>
+    irFromOpenAIChatCompletions(frames, { ...context, roundTrip: roundTripReader }),
 };
