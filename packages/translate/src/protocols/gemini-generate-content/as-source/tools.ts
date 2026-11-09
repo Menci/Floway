@@ -1,6 +1,6 @@
-const geminiGenerateContentToolCallId = (turnIndex: number, partIndex: number): string => `gemini_call_${turnIndex}_${partIndex}`;
+import type { GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
 
-import type { GeminiGenerateContentFunctionCallingConfig, GeminiGenerateContentFunctionDeclaration, GeminiGenerateContentPayload, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
+const geminiGenerateContentToolCallId = (turnIndex: number, partIndex: number): string => `gemini_call_${turnIndex}_${partIndex}`;
 
 export type GeminiGenerateContentToolCallIds = Record<string, string[]>;
 
@@ -49,30 +49,4 @@ export const geminiGenerateContentFunctionResponsePart = (part: GeminiGenerateCo
   // restored, so the result states no id and the target pairs it by position.
   const paired = unmatched?.shift();
   return { response, id: paired };
-};
-
-export const geminiGenerateContentFunctionDeclarations = (payload: GeminiGenerateContentPayload, allowedNameMode: 'any' | 'all' | 'none'): GeminiGenerateContentFunctionDeclaration[] => {
-  const config = payload.toolConfig?.functionCallingConfig;
-  const allowedFunctionNames = config?.allowedFunctionNames;
-  const allowedNames = allowedFunctionNames?.length && (allowedNameMode === 'all' || (allowedNameMode === 'any' && config?.mode === 'ANY')) ? new Set(allowedFunctionNames) : null;
-
-  return payload.tools?.flatMap(toolGroup => toolGroup.functionDeclarations?.filter(declaration => allowedNames?.has(declaration.name) ?? true) ?? []) ?? [];
-};
-
-const geminiGenerateContentSingleAllowedFunctionName = (config?: GeminiGenerateContentFunctionCallingConfig): string | undefined => (config?.allowedFunctionNames?.length === 1 ? config.allowedFunctionNames[0] : undefined);
-
-export const geminiGenerateContentFunctionCallingIntent = (config?: GeminiGenerateContentFunctionCallingConfig): GeminiGenerateContentFunctionCallingIntent | undefined => {
-  switch (config?.mode) {
-  case 'NONE':
-    return { type: 'none' };
-  case 'AUTO':
-  case 'VALIDATED':
-    return { type: 'auto' };
-  case 'ANY': {
-    const name = geminiGenerateContentSingleAllowedFunctionName(config);
-    return name !== undefined ? { type: 'named', name } : { type: 'any' };
-  }
-  default:
-    return undefined;
-  }
 };

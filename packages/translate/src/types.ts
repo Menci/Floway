@@ -6,11 +6,6 @@ export interface SidecarCodec {
   decode: (encoded: string) => Promise<unknown>;
 }
 
-export interface RemoteImageData {
-  mediaType: string | null;
-  data: Uint8Array;
-}
-
 /**
  * What a translation trip needs from the data plane.
  *

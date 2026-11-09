@@ -13,9 +13,6 @@ const geminiVisibleTextGroup = (part: GeminiGenerateContentPart): TextContributi
 export type GeminiGenerateContentAssistantTurn = GeminiGenerateContentContent[];
 export type GeminiGenerateContentSidecarCarrier = GeminiGenerateContentPart & { thoughtSignature: string };
 
-export const hasGeminiGenerateContentThoughtSignature = (content: GeminiGenerateContentContent): boolean =>
-  content.parts?.some(part => part.thoughtSignature !== undefined) ?? false;
-
 const geminiTurnDigestMaterialV1 = (turn: GeminiGenerateContentAssistantTurn): IRJSONObject => {
   const contents = turn.map(content => {
     const visible = collectTextGroups(content.parts ?? [], geminiVisibleTextGroup).get('visible');
