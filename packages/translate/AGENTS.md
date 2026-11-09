@@ -2,8 +2,8 @@
 
 `src/protocols/<protocol>/` owns translation entrypoints and protocol-specific
 code. `__tests__/protocols/` mirrors production ownership. Package callers
-import the source protocol's subpath and call
-`route<Protocol>(input).via<Target>(context)` to create an independent trip.
+import the pair's named export from the package root and call it with a source
+payload and `TranslateOptions` to create an independent trip.
 
 ## Categories
 
@@ -14,21 +14,18 @@ import the source protocol's subpath and call
    Only routes whose source is that protocol may import it.
 3. **Target-only helper** — keep it in `protocols/<protocol>/as-target/`.
    Only routes whose target is that protocol may import it.
-4. **Both directions** — keep it in `protocols/<protocol>/common/`.
-   A side using that protocol as source or target may import it. Retained files
-   use functional names without another protocol name.
-5. **Output IR** — keep private types, its path schema, stream operations,
+4. **Output IR** — keep private types, its path schema, stream operations,
    validation, accumulation, operation paths, and native ordinal mapping under
    `ir/output/`, and the input model under `ir/input/`. Native SSE adapters
    belong to their protocol: `as-target/sse-from.ts` consumes upstream SSE and
    `as-source/sse-to.ts` emits client SSE with its sidecar. The return path is
    upstream SSE → IR SSE → client SSE with sidecar. IR stays internal to translate.
-6. **Assistant-turn round trips** — keep owner-specific sidecar validation, replay
+5. **Assistant-turn round trips** — keep owner-specific sidecar validation, replay
    validation, and native stream coordination under `round-trip/`. Source replay
    inspection and carriers belong in `as-source/round-trip.ts`; native assistant-turn
    shapes and output-to-input converters belong in `as-target/assistant-turn.ts`.
-   Transport encoding is injected through `TranslationContext.sidecarCodec`.
-7. **Protocol-independent utility** — keep it in `shared/`, with tests under
+   Transport encoding is injected through `TranslateOptions.sidecarCodec`.
+6. **Protocol-independent utility** — keep it in `shared/`, with tests under
    `__tests__/shared/`. Protocol behavior belongs in its owning protocol directory.
 
 ## Current Production Subdirectories
@@ -43,10 +40,8 @@ import the source protocol's subpath and call
 - `protocols/gemini-generate-content/as-source/` — interprets GenerateContent parts and schemas and emits GenerateContent SSE.
 - `protocols/openai-chat-completions/as-source/` — emits ChatCompletions SSE.
 - `protocols/openai-chat-completions/as-target/` — consumes ChatCompletions SSE.
-- `protocols/openai-chat-completions/common/` — reads scalar reasoning aliases and summary content.
 - `protocols/openai-responses/as-source/` — interprets Responses tools, restores event identities, and emits Responses SSE.
 - `protocols/openai-responses/as-target/` — consumes Responses SSE.
-- `protocols/openai-responses/common/` — owns wrapper formats used in both translation directions.
 - `protocols/composition.ts` — pairs one source protocol with one target protocol into a trip; the only file that names two protocols.
 - `protocols/<protocol>/as-source.ts` — states that protocol as the side a request comes from.
 - `protocols/<protocol>/as-target.ts` — states that protocol as the side a request goes to.

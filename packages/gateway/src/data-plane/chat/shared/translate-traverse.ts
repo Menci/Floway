@@ -30,17 +30,16 @@ export const captureFromDump = (
   return { upstreamFrame, upstreamApiError };
 };
 
-// Threads a translate trip around an inner attempt. The trip itself is async
-// (the real `@floway-dev/translate` route methods resolve a `Promise`), so
-// `translate` returns the trip object behind a promise. This helper's
-// `translate` parameter stays unary so each caller closes over its own
-// `ctx` (`p => routeSource(p).viaTarget(ctx)`).
+// Threads a translate trip around an inner attempt. A route resolves its trip
+// behind a promise, so `translate` returns the trip object behind one. This
+// helper's `translate` parameter stays unary so each caller closes over its own
+// options (`p => routeSourceViaTarget(p, options)`).
 //
-// On an upstream api-error the trip's optional `apiError` hook is invoked so
+// On an upstream api-error the trip's optional `errorBody` hook is invoked so
 // the pair can rewrite the body into the source protocol's envelope — the
 // canonical case is `anthropic-messages-via-*` translating an upstream context-window
 // error into the Anthropic `prompt is too long:` shape Claude Code recognizes
-// for auto-compaction. Pairs that don't set `apiError` (or return `undefined`)
+// for auto-compaction. Pairs that don't set `errorBody` (or return `undefined`)
 // pass the upstream body through verbatim.
 //
 // When `capture` is provided, the ORIGINAL target-protocol frames (events

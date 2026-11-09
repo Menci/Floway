@@ -323,8 +323,8 @@ test('buildTargetRequest drops redacted opaque blocks while keeping readable thi
 
 // OpenAI strict-mode JSON Schema validators reject {type: 'object'} without a
 // `properties` field. Anthropic accepts that shape, so the input_schema must
-// be normalized before forwarding. The reverse direction at
-// packages/translate/src/protocols/openai-chat-completions/via-anthropic-messages/request.ts already
+// be normalized before forwarding. The reverse direction in
+// `translate/src/protocols/openai-chat-completions/as-source/input-to.ts` already
 // defaults `parameters` to {type: 'object', properties: {}}. Ref:
 // https://github.com/caozhiyuan/copilot-api/commit/ad57069826843c5d17d7b0e5ef2f75050128893c
 test('buildTargetRequest defaults missing input_schema.properties to {} for object tools', async () => {
