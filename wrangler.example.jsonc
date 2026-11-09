@@ -3,8 +3,8 @@
 // stay local. This example defines the Worker topology used by guarded dev,
 // deploy, and migration commands. The real config must mirror it in both
 // directions, replace every <YOUR_*> placeholder, and may additionally carry
-// account_id. The deployment-local observability section may differ or be
-// absent. Any other topology change belongs here first.
+// account_id. The deployment-local observability and placement sections may
+// differ or be absent. Any other topology change belongs here first.
 //
 // 1. Optionally set CLOUDFLARE_ACCOUNT_ID in the environment, or run
 //    `pnpm wrangler login`. If neither is in place, add an `account_id`
