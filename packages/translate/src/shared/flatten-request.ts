@@ -2,6 +2,7 @@ import { assignFlatNames } from './flat-names.ts';
 import type { IRInputResolvedTurn } from '../ir/input/segments.ts';
 import { irInputToolsForChoice } from '../ir/input/select-tools.ts';
 import type { IRInputRequest, IRInputTool, IRInputToolChoice, IRInputToolSelection, IRInputTurn } from '../ir/input/types.ts';
+import { TranslatorInputError } from '../types.ts';
 
 /** What a target that writes flat names records for the reader of its answer. */
 export interface FlatCallContext {
@@ -69,7 +70,7 @@ export const flattenRequestNames = <Restored>(
   const nameOf = (namespace: string | undefined, name: string): string => {
     if (namespace === undefined) return name;
     const flatName = flat.get(`${namespace}.${name}`);
-    if (flatName === undefined) throw new Error(`No flat name was assigned for '${namespace}.${name}'.`);
+    if (flatName === undefined) throw new TranslatorInputError(`Cannot translate a selector for undeclared grouped tool '${namespace}.${name}'.`);
     return flatName;
   };
   const flattenTool = (tool: IRInputTool): IRInputTool => {

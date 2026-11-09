@@ -11,7 +11,6 @@ import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts'
 import { anthropicMessagesAttempt } from '../anthropic-messages/attempt.ts';
 import { openaiChatCompletionsAttempt } from '../openai-chat-completions/attempt.ts';
 import { applyRulesToUpstreamOpenAIResponses } from '../shared/alias-rules.ts';
-import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { providerStreamResultToExecuteResult } from '../shared/provider-stream-result.ts';
 import { SidecarDomain } from '../shared/sidecar-codec.ts';

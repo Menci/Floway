@@ -2,7 +2,8 @@ import { test } from 'vitest';
 
 import type { IRInputRequest, IRInputTool, IRInputTurn } from '../../src/ir/input/types.ts';
 import { flattenRequestNames } from '../../src/shared/flatten-request.ts';
-import { assertEquals } from '@floway-dev/test-utils';
+import { TranslatorInputError } from '../../src/types.ts';
+import { assertThrows, assertEquals } from '@floway-dev/test-utils';
 
 const request = (tools: readonly IRInputTool[]): IRInputRequest => ({ settings: { model: 'm', stream: true }, tools });
 
@@ -47,4 +48,18 @@ test('a call naming an undeclared group still gets a flat spelling and its pair'
   const flatName = item?.type === 'function_call' ? item.name : undefined;
   assertEquals(typeof flatName, 'string');
   assertEquals(flattened.context.callIdentities.get(flatName!), { namespace: 'ghost', name: 'run' });
+});
+
+test('a selector naming a group the request never declared is a caller error', () => {
+  // The mapping is built from the request's own declarations, so a selector that
+  // misses names something the caller wrote wrongly — not an internal failure.
+  assertThrows(
+    () => flattenRequestNames({
+      settings: { model: 'm', stream: true },
+      tools: [{ type: 'function', namespace: 'files', name: 'read', parameters: { type: 'object' } }],
+      tool_choice: { type: 'function', namespace: 'ghost', name: 'run' },
+    }, []),
+    TranslatorInputError,
+    'undeclared grouped tool',
+  );
 });
