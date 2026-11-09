@@ -5,7 +5,8 @@ import { partitionOpenAIResponsesTurns, type OpenAIResponsesConversationTurn } f
 import { flattenNamespaceTools, type NamespaceToolNames } from './namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from './programmatic-tooling.ts';
 import { isOpenAIResponsesEncryptedReasoning } from './round-trip.ts';
-import type { IRInputSource } from '../../../ir/input/source.ts';
+import type { IRInputLayout } from '../../../ir/input/layout.ts';
+import type { OpenAIResponsesAssistantTurn } from './round-trip.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -180,8 +181,8 @@ const userItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInput
 });
 
 /** Whether a turn carries an encrypted reasoning carrier the input IR cannot hold. */
-export const openaiResponsesDropsReasoning = (turn: { readonly role: 'assistant' | 'bare'; readonly items: readonly CanonicalOpenAIResponsesInputItem[] }): boolean =>
-  turn.items.some(item => item.type === 'reasoning' && isOpenAIResponsesEncryptedReasoning(item));
+export const openaiResponsesDropsReasoning = (turn: OpenAIResponsesAssistantTurn): boolean =>
+  turn.some(item => item.type === 'reasoning' && isOpenAIResponsesEncryptedReasoning(item));
 
 /** The top-level `instructions` field as its own leading system item. */
 const openaiResponsesInstructionsToIR = (instructions: string | null | undefined): IRInputTurn | undefined => instructions
@@ -309,29 +310,33 @@ const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): 
  * together keeps that mapping with the reader that built it instead of handing
  * a closure to each route.
  */
-export interface OpenAIResponsesSource extends IRInputSource<OpenAIResponsesConversationTurn> {
-  readonly request: IRInputRequest;
+export interface OpenAIResponsesExtra {
   readonly namespaceToolNames: NamespaceToolNames;
 }
 
-export const openaiResponsesSource = (source: OpenAIResponsesRequestPayloadEx): OpenAIResponsesSource => {
+export const openaiResponsesOpen = (source: OpenAIResponsesRequestPayloadEx): IRInputLayout<OpenAIResponsesAssistantTurn, OpenAIResponsesExtra> => {
   const canonical = canonicalizeOpenAIResponsesPayload(source);
   const { payload, names, flattenInput } = flattenNamespaceTools(canonical);
   validateAllowedTools(payload.tools, payload.tool_choice, payload.input);
   rejectProgrammaticOpenAIResponsesPayload(payload, 'translation');
+
+  const prompt = openaiResponsesInstructionsToIR(payload.instructions);
   return {
     request: {
       conversation: { turns: [] },
       settings: openaiResponsesSettingsToIR(payload),
       ...openaiResponsesToolsToIR(payload),
     },
-    prompt: openaiResponsesInstructionsToIR(payload.instructions),
-    namespaceToolNames: names,
-    conversation: partitionOpenAIResponsesTurns(canonical.input),
-    turnToIR: turn => openaiResponsesTurnToIR(turn, flattenInput),
-    // Reading is stateless here: a Responses result states the call it answers,
-    // so nothing has to be correlated against calls seen earlier.
-    observeResolvedTurn: () => [],
-    flush: () => [],
+    slots: [
+      ...(prompt === undefined ? [] : [{ kind: 'client' as const, toIRTurn: () => [prompt] }]),
+      ...partitionOpenAIResponsesTurns(canonical.input).map(turn => turn.role === 'assistant'
+        ? {
+            kind: 'assistant' as const,
+            assistantTurn: turn.items,
+            toIRTurn: () => openaiResponsesTurnToIR(turn, flattenInput),
+          }
+        : { kind: 'client' as const, toIRTurn: () => openaiResponsesTurnToIR(turn, flattenInput) }),
+    ],
+    extra: { namespaceToolNames: names },
   };
 };

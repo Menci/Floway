@@ -1,5 +1,4 @@
 import { getExternalResourceFetcher } from '@floway-dev/platform';
-import type { RemoteImageLoader } from '@floway-dev/translate';
 
 const MAX_REDIRECTS = 5;
 const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
@@ -133,7 +132,10 @@ export const createExternalImageFetcher = (downstreamSignal?: AbortSignal): Exte
   };
 };
 
-export const createExternalImageLoader = (downstreamSignal?: AbortSignal): RemoteImageLoader => {
+/** Fetches a remote image, or reports that it could not be fetched. */
+type ExternalImageLoader = (url: string) => Promise<{ mediaType: string | null; data: Uint8Array } | null>;
+
+export const createExternalImageLoader = (downstreamSignal?: AbortSignal): ExternalImageLoader => {
   const fetchImage = createExternalImageFetcher(downstreamSignal);
   return async url => {
     const result = await fetchImage(url);

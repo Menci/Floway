@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { irInputCustomToolNames } from '../../../src/ir/input/select-tools.ts';
-import { openaiResponsesSourceProtocol } from '../../../src/protocols/openai-responses/source.ts';
+import { openaiResponsesOpen } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import { buildTargetRequestFor, pairs } from '../composition-helpers.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesClientTool, type AnthropicMessagesToolResultBlock, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
@@ -25,9 +25,8 @@ const minimalPayload = {
   parallel_tool_calls: true,
 };
 
-const testBuildOptions: { fallbackMaxOutputTokens?: number; loadRemoteImage: Parameters<typeof createTestSidecarCodec> extends never ? never : (url: string) => Promise<{ mediaType: string | null; data: Uint8Array } | null> } = {
+const testBuildOptions: { fallbackMaxOutputTokens?: number } = {
   fallbackMaxOutputTokens: undefined,
-  loadRemoteImage: async () => null,
 };
 
 // A Responses request carries two plain rewrites — which tools are freeform and
@@ -38,9 +37,9 @@ const buildWithTestSidecar = async (
   payload: OpenAIResponsesRequestPayloadEx,
   options: Partial<typeof testBuildOptions> = {},
 ) => {
-  const target = await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { sidecarCodec: createTestSidecarCodec(), ...testBuildOptions, ...options });
-  const request = openaiResponsesSourceProtocol.read(payload).request;
-  return { target, customToolNames: irInputCustomToolNames(request), namespaceToolNames: openaiResponsesSourceProtocol.read(payload).extra! };
+  const layout = openaiResponsesOpen(payload);
+  const built = await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { sidecarCodec: createTestSidecarCodec(), ...testBuildOptions, ...options }, layout);
+  return { target: built, customToolNames: irInputCustomToolNames(layout.request), namespaceToolNames: layout.extra.namespaceToolNames };
 };
 
 test('buildTargetRequest preserves unsafe JSON number tokens in function history', async () => {
@@ -232,20 +231,6 @@ test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTa
   }]);
 });
 
-test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest rejects unavailable images in %s', async type => {
-  await assertRejects(
-    () => buildWithTestSidecar({
-      ...minimalPayload,
-      input: [{
-        type,
-        call_id: 'call_1',
-        output: [{ type: 'input_image', image_url: 'https://example.com/unavailable.png' }],
-      }],
-    }, { loadRemoteImage: stubRemoteImageLoader(null) }),
-    Error,
-    'unavailable or unsupported image tool output',
-  );
-});
 
 // ── service_tier → speed mapping ──
 
@@ -447,12 +432,6 @@ test('buildTargetRequest resolves remote input images through the shared loader'
       store: false,
       parallel_tool_calls: true,
     },
-    {
-      loadRemoteImage: stubRemoteImageLoader({
-        mediaType: 'IMAGE/PNG; charset=binary',
-        data: new Uint8Array([1, 2, 3]),
-      }),
-    },
   );
 
   const message = result.target.messages[0];
@@ -463,11 +442,7 @@ test('buildTargetRequest resolves remote input images through the shared loader'
   assertEquals(message.content, [
     {
       type: 'image',
-      source: {
-        type: 'base64',
-        media_type: 'image/png',
-        data: 'AQID',
-      },
+      source: { type: 'url', url: 'https://example.com/image.png' },
       cache_control: { type: 'ephemeral' },
     },
   ]);
@@ -819,8 +794,7 @@ test('buildTargetRequest maps incomplete function output to an Anthropic tool er
   });
 });
 
-test('buildTargetRequest loads custom tool result images without interpreting its open status', async () => {
-  const loaded: string[] = [];
+test('buildTargetRequest states a custom tool result image as the URL it is', async () => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
     input: [
@@ -834,21 +808,15 @@ test('buildTargetRequest loads custom tool result images without interpreting it
         ],
       },
     ],
-  }, {
-    loadRemoteImage: url => {
-      loaded.push(url);
-      return Promise.resolve({ mediaType: 'image/png', data: new Uint8Array([1, 2, 3]) });
-    },
   });
 
-  assertEquals(loaded, ['https://example.com/capture.png']);
   assertEquals(result.target.messages[1], {
     role: 'user',
     content: [{
       type: 'tool_result', tool_use_id: 'call_exec',
       content: [
         { type: 'text', text: 'partial capture' },
-        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AQID' } },
+        { type: 'image', source: { type: 'url', url: 'https://example.com/capture.png' } },
         { type: 'text', text: 'capture failed' },
       ],
       cache_control: { type: 'ephemeral' },
@@ -1063,7 +1031,6 @@ test('buildTargetRequest hoists leading role:"system" to top-level system field'
       store: false,
       parallel_tool_calls: true,
     },
-    { loadRemoteImage: stubRemoteImageLoader(null) },
   );
 
   assertEquals(result.target.system, [{ type: 'text', text: 'be terse', cache_control: { type: 'ephemeral' } }]);
@@ -1091,7 +1058,6 @@ test('buildTargetRequest keeps non-leading role:"system" inline', async () => {
       store: false,
       parallel_tool_calls: true,
     },
-    { loadRemoteImage: stubRemoteImageLoader(null) },
   );
 
   assertEquals(result.target.messages.length, 3);
@@ -1120,7 +1086,6 @@ test('buildTargetRequest hoists leading role:"developer" to top-level system fie
       store: false,
       parallel_tool_calls: true,
     },
-    { loadRemoteImage: stubRemoteImageLoader(null) },
   );
 
   assertEquals(result.target.messages.length, 1);
@@ -1149,7 +1114,6 @@ test('buildTargetRequest preserves payload.instructions and leading system as se
       store: false,
       parallel_tool_calls: true,
     },
-    { loadRemoteImage: stubRemoteImageLoader(null) },
   );
 
   assertEquals(result.target.system, [
@@ -1190,7 +1154,6 @@ test('buildTargetRequest throws when a system input message contains an image pa
           store: false,
           parallel_tool_calls: true,
         },
-        { loadRemoteImage: stubRemoteImageLoader(null) },
       ),
     Error,
     "Invalid 'input_image' content part in system message",
@@ -1225,7 +1188,6 @@ test('buildTargetRequest throws when a non-leading developer input message conta
           store: false,
           parallel_tool_calls: true,
         },
-        { loadRemoteImage: stubRemoteImageLoader(null) },
       ),
     Error,
     "Invalid 'input_image' content part in developer message",

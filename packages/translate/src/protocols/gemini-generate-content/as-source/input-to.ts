@@ -5,7 +5,8 @@ import { partitionGeminiGenerateContentTurns, type GeminiGenerateContentConversa
 import { geminiGenerateContentReasoningEffort, geminiGenerateContentThinkingLevelEffort } from './reasoning.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from './schema.ts';
 import { geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from './tools.ts';
-import type { IRInputSource } from '../../../ir/input/source.ts';
+import type { IRInputLayout, IRInputSlot } from '../../../ir/input/layout.ts';
+import type { GeminiGenerateContentAssistantTurn } from './round-trip.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputRequest,
@@ -164,8 +165,8 @@ const turnToIRTurns = (
     }];
 
 /** Whether a turn carries a vendor-signed thought signature the input IR cannot hold. */
-export const geminiGenerateContentDropsReasoning = (turn: GeminiGenerateContentTurn): boolean => turn.role === 'assistant'
-  && turn.items.some(content => content.parts?.some(part => part.thoughtSignature !== undefined) ?? false);
+export const geminiGenerateContentDropsReasoning = (turn: GeminiGenerateContentAssistantTurn): boolean =>
+  turn.some(content => content.parts?.some(part => part.thoughtSignature !== undefined) ?? false);
 
 /** A GenerateContent system instruction is the conversation's leading prompt. */
 const geminiGenerateContentSystemToIR = (content: GeminiGenerateContentContent | undefined): IRInputTurn | undefined => {
@@ -235,37 +236,47 @@ const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequest, 
  * and the reader that owns both counters together keeps that state where it
  * belongs rather than in every route.
  */
-export interface GeminiGenerateContentSource extends IRInputSource<GeminiGenerateContentTurn> {
-  readonly request: IRInputRequest;
-}
-
-export const geminiGenerateContentSource = (payload: GeminiGenerateContentRequest): GeminiGenerateContentSource => {
+export const geminiGenerateContentOpen = (payload: GeminiGenerateContentRequest): IRInputLayout<GeminiGenerateContentAssistantTurn> => {
   const ids: GeminiGenerateContentToolCallIds = Object.create(null);
   let contentIndex = 0;
+  const prompt = geminiGenerateContentSystemToIR(payload.systemInstruction);
+
+  // Reading is stateful: an id-less `functionResponse` answers the oldest call
+  // of its name, and an omitted id is invented from the position the content
+  // and part occupy. Both have to advance over every turn, which is why the
+  // thunks close over the position they were created at.
+  const slotFor = (turn: GeminiGenerateContentTurn): IRInputSlot<GeminiGenerateContentAssistantTurn> => {
+    const at = contentIndex;
+    contentIndex += turn.items.length;
+    if (turn.role !== 'assistant') {
+      return { kind: 'client', toIRTurn: () => turnToIRTurns(turn, at, ids) };
+    }
+    return {
+      kind: 'assistant',
+      assistantTurn: turn.items,
+      toIRTurn: () => turnToIRTurns(turn, at, ids),
+    };
+  };
+
   return {
     request: {
       conversation: { turns: [] },
       settings: geminiGenerateContentSettingsToIR(payload),
       ...toolsToIR(payload),
     },
-    prompt: geminiGenerateContentSystemToIR(payload.systemInstruction),
-    conversation: partitionContents(payload),
-    turnToIR: turn => {
-      const turns = turnToIRTurns(turn, contentIndex, ids);
-      contentIndex += turn.items.length;
-      return turns;
-    },
-    // The counter must move past the contents a resolved turn consumed, and the
-    // calls it states are already answered by it.
-    observeResolvedTurn: (turn, calls) => {
-      contentIndex += turn.items.length;
-      for (const { callId, name } of calls) {
+    slots: [
+      ...(prompt === undefined ? [] : [{ kind: 'client' as const, toIRTurn: () => [prompt] }]),
+      ...partitionContents(payload).map(slotFor),
+    ],
+    // A restored turn never passed through `turnToIRTurns`, so its calls are
+    // registered here — with the ids the target states, which is what a later
+    // id-less result has to name.
+    observePendingCalls: pending => {
+      for (const { callId, name } of pending) {
         ids[name] ??= [];
         ids[name].push(callId);
       }
-      return [];
     },
-    flush: () => [],
   };
 };
 

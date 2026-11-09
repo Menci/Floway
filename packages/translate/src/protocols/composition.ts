@@ -1,11 +1,13 @@
 import type { IRInputResolvedTurn } from '../ir/input/segments.ts';
-import type { IRInputSource } from '../ir/input/source.ts';
-import { readIRInput } from '../ir/input/source.ts';
+import type { IRInputLayout, IRInputSlot } from '../ir/input/layout.ts';
 import type { IRInputRequest, IRInputTurn } from '../ir/input/types.ts';
+import { irInputCustomToolNames } from '../ir/input/select-tools.ts';
+import { readIRInput } from '../ir/input/read.ts';
 import type { IRRecord } from '../ir/output/stream.ts';
 import type { AssistantTurnByProtocol, AssistantTurnFor } from '../round-trip/assistant-turn.ts';
+import type { SourceAssistantTurnFor } from '../round-trip/source-assistant-turn.ts';
 import type { ReplayContent } from '../round-trip/reference/assistant-turn.ts';
-import type { EncodedRoundTripSidecar } from '../round-trip/resolve.ts';
+import type { EncodedRoundTripSidecar, PendingCall } from '../round-trip/resolve.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../round-trip/resolve.ts';
 import type { RoundTripReader, RoundTripWriter } from '../round-trip/stream.ts';
 import { createRoundTripStream } from '../round-trip/stream.ts';
@@ -16,163 +18,185 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 type AssistantTurnKey = keyof AssistantTurnByProtocol;
 
 /**
- * A call a native assistant turn states, in terms every protocol shares.
+ * How one protocol carries a sidecar on its own assistant turns.
  *
- * A source reader that correlates a result against the calls it has seen needs
- * to know which of them already have answers. Only the target knows what its
- * own native turn looks like, so it states them here instead of letting the
- * reader parse another protocol's structure.
+ * These take the structure the source wrote, because that is what a sidecar is
+ * computed over: the turn digest hashes it and the references are cut from it,
+ * so none of this can work from an IR turn.
  */
-export interface ResolvedCall {
-  readonly callId: string;
-  readonly name: string;
-}
-
-/**
- * One protocol read as the side a request comes from, for one request.
- *
- * `assistantTurn` is what a source states about its own conversation: the
- * assistant part of a turn, or nothing when the turn is not the model's. The
- * sidecar functions beside it all take that assistant part, which is the unit a
- * native turn round-trips as.
- *
- * `output` is bound to this reading because stating the output IR may need
- * something reading the request produced — a namespace map, a stream
- * preference — and both halves therefore belong to the same request.
- */
-export interface SourceReading<Name extends AssistantTurnKey, Turn, AssistantTurn, Event, Extra = unknown> {
-  readonly request: IRInputRequest;
-  readonly input: IRInputSource<Turn>;
-  // Values this protocol derives while reading its request and needs again to
-  // state the returned stream — a namespace map, say. Their shape is the
-  // protocol's own, so nothing outside its source reads them.
-  readonly extra?: Extra;
-  readonly assistantTurn: (turn: Turn) => AssistantTurn | undefined;
-  /** Whether this turn carries reasoning only a sidecar could restore. */
-  readonly dropsReasoning: (turn: Turn) => boolean;
-  readonly roundTrip: {
-    readonly inspect: (turn: AssistantTurn) => EncodedRoundTripSidecar<AssistantTurn>[];
-    readonly verify: (turn: AssistantTurn, digest: RoundTripTurnDigest, version: number) => Promise<boolean>;
-    readonly collectCandidates: (turn: AssistantTurn) => ReplayContent[];
-  };
-  // The request is handed in because stating the output IR may need a fact
-  // derived from it, such as which declared tools are freeform.
-  readonly output: (records: AsyncIterable<IRRecord>, writer: RoundTripWriter<Name>, request: IRInputRequest) => AsyncIterable<ProtocolFrame<Event>>;
+export interface SourceRoundTrip<Name extends AssistantTurnKey> {
+  readonly inspect: (turn: SourceAssistantTurnFor<Name>) => EncodedRoundTripSidecar<SourceAssistantTurnFor<Name>>[];
+  readonly verify: (turn: SourceAssistantTurnFor<Name>, digest: RoundTripTurnDigest, version: number) => Promise<boolean>;
+  readonly collectCandidates: (turn: SourceAssistantTurnFor<Name>) => ReplayContent[];
 }
 
 /** One protocol as the side a request comes from. */
-export interface SourceProtocol<Name extends AssistantTurnKey, Payload, Turn, AssistantTurn, Event, Extra = unknown> {
+export interface SourceProtocol<Name extends AssistantTurnKey, Payload, Event, Extra = undefined> {
   readonly name: Name;
-  // The context carries the model the caller resolved; a protocol that states
-  // it in its request reads it from there rather than from the payload.
-  readonly read: (payload: Payload) => SourceReading<Name, Turn, AssistantTurn, Event, Extra>;
+  /** Opens the request into the turns it states, each turn's side already decided. */
+  readonly open: (payload: Payload) => IRInputLayout<SourceAssistantTurnFor<Name>, Extra>;
+  readonly roundTrip: SourceRoundTrip<Name>;
+  /**
+   * Whether this turn carries reasoning that only a sidecar could restore.
+   *
+   * A turn whose sidecar is missing has lost it: the reader states no reasoning
+   * item, because which alias a vendor used is not something a target can read.
+   */
+  readonly dropsReasoning: (turn: SourceAssistantTurnFor<Name>) => boolean;
   readonly writeError: SourceProtocolErrorWriter;
+  /**
+   * States the returned stream to this protocol's client.
+   *
+   * It is handed the same layout the request came from, because stating a
+   * stream may need a fact the reading produced.
+   */
+  readonly writeStream: (
+    layout: IRInputLayout<SourceAssistantTurnFor<Name>, Extra>,
+    records: AsyncIterable<IRRecord>,
+    writer: RoundTripWriter<Name>,
+  ) => AsyncIterable<ProtocolFrame<Event>>;
 }
 
 /** One protocol as the side a request goes to. */
 export interface TargetProtocol<Name extends AssistantTurnKey, Payload, Event> {
   readonly name: Name;
-  /** Which calls a native turn in this protocol states, so a reader can correlate. */
-  readonly resolvedCalls: (turn: AssistantTurnFor<Name>) => readonly ResolvedCall[];
+  /**
+   * Writes the input IR as this protocol's request.
+   *
+   * A resolved turn arrives as the structure this protocol states natively, so
+   * whatever the writer needs to know about it — which calls it answers, say —
+   * it reads from there rather than being told separately.
+   */
   readonly write: (
     request: IRInputRequest,
     pieces: readonly (IRInputTurn | IRInputResolvedTurn<AssistantTurnFor<Name>>)[],
     ctx: TranslateContext,
   ) => Promise<Payload>;
-  readonly readStream: (frames: AsyncIterable<ProtocolFrame<Event>>, reader: RoundTripReader<Name>, request: IRInputRequest) => AsyncIterable<IRRecord>;
+  /**
+   * Names the calls a restored turn leaves awaiting answers.
+   *
+   * The restored turn never passed through the source reader, so nothing
+   * registered its calls; a later id-less result has to name them, and only
+   * this protocol knows where it put them.
+   */
+  readonly pendingCallIds: (turn: AssistantTurnFor<Name>) => readonly PendingCall[];
+  /**
+   * Reads this protocol's upstream events into the output IR.
+   *
+   * It is handed the request the target was written from because reading a
+   * stream may need a fact derived from it — which declared tools are freeform,
+   * say — and that fact belongs to the request, not to the reader.
+   */
+  readonly readStream: (
+    frames: AsyncIterable<ProtocolFrame<Event>>,
+    reader: RoundTripReader<Name>,
+    request: IRInputRequest,
+    /**
+     * The names the source declared as freeform.
+     *
+     * A target that cannot state a freeform declaration writes one as a plain
+     * function, so reading its stream has to know which functions were really
+     * freeform. That is a fact about the source request, handed across because
+     * the reader is the one that sees the calls come back.
+     */
+    customToolNames: ReadonlySet<string>,
+  ) => AsyncIterable<IRRecord>;
 }
 
 /**
  * Composes one source protocol and one target protocol into a translation trip.
  *
  * This is the only place that names both sides. Everything it calls belongs to
- * one of them, so a route states a pair as two values — the n² paths cost one
- * line each rather than a directory apiece.
+ * one of them, so a route states a pair as two values.
  */
 export const composeTranslation = <
-  SrcName extends AssistantTurnKey, SrcPayload, SrcTurn, SrcAssistantTurn, SrcEvent,
+  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent, SrcExtra,
   TgtName extends AssistantTurnKey, TgtPayload extends { model: string }, TgtEvent,
 >(
-  source: SourceProtocol<SrcName, SrcPayload, SrcTurn, SrcAssistantTurn, SrcEvent>,
+  source: SourceProtocol<SrcName, SrcPayload, SrcEvent, SrcExtra>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
 ): TranslateTrip<SrcPayload, SrcEvent, TgtPayload, TgtEvent> => async (payload, ctx) => {
-  const reading = source.read(payload);
-  const pieces = await readIRInput(reading.input, async turn => {
-    const assistantTurn = reading.assistantTurn(turn);
-    if (assistantTurn === undefined) return undefined;
-    const roundTrip = await roundTripAssistantTurn(
-      source.name, target.name, assistantTurn, ctx.sidecarCodec,
-      reading.roundTrip.inspect, reading.roundTrip.verify, reading.roundTrip.collectCandidates,
-    );
-    if (roundTrip !== undefined) return { resolved: roundTrip.turn, calls: target.resolvedCalls(roundTrip.turn) };
-    if (reading.dropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning(source.name, target.name);
-    return undefined;
-  });
-
+  const layout = source.open(payload);
   return {
-    target: await target.write(reading.request, pieces, ctx),
+    target: await target.write(layout.request, await settleTurns(source, target, layout, ctx), ctx),
     errorBody: source.writeError,
     events: frames => {
       const stream = createRoundTripStream(source.name, target.name, ctx.sidecarCodec);
-      const request = reading.request;
-      return reading.output(target.readStream(frames, stream.reader, request), stream.writer, request);
+      return source.writeStream(layout, target.readStream(frames, stream.reader, layout.request, irInputCustomToolNames(layout.request)), stream.writer);
     },
   };
 };
 
 /**
+ * Settles every assistant slot that carries a sidecar this target can restore.
+ *
+ * A slot whose sidecar was recognised is written natively by the target; one
+ * that carries no sidecar for this target falls back to the IR its own thunk
+ * builds. The two paths are exclusive, which is why the thunk is only called on
+ * the second.
+ */
+const settleTurns = async <
+  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent, SrcExtra,
+  TgtName extends AssistantTurnKey, TgtPayload, TgtEvent,
+>(
+  source: SourceProtocol<SrcName, SrcPayload, SrcEvent, SrcExtra>,
+  target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
+  layout: IRInputLayout<SourceAssistantTurnFor<SrcName>, SrcExtra>,
+  ctx: TranslateContext,
+): Promise<(IRInputTurn | IRInputResolvedTurn<AssistantTurnFor<TgtName>>)[]> =>
+  await readIRInput(layout, async (slot): Promise<{ readonly resolved: AssistantTurnFor<TgtName> } | undefined> => {
+    const roundTrip = await roundTripAssistantTurn(
+      source.name, target.name, slot.assistantTurn, ctx.sidecarCodec,
+      source.roundTrip.inspect, source.roundTrip.verify, source.roundTrip.collectCandidates,
+      target.pendingCallIds,
+    );
+    if (roundTrip === undefined) {
+      if (source.dropsReasoning(slot.assistantTurn)) {
+        warnDroppedUnrecognizedAssistantReasoning(source.name, target.name);
+      }
+      return undefined;
+    }
+    layout.observePendingCalls?.(roundTrip.pendingCallIds(roundTrip.turn));
+    return { resolved: roundTrip.turn };
+  });
+
+/**
  * The request half of a composed trip, stated on its own.
  *
  * A pair's request translation is worth testing without the event side, and
- * this states exactly that step: read the source, settle each turn, write the
- * target. It is the same code `composeTranslation` runs.
+ * this states exactly that step. It is the same code `composeTranslation` runs.
  */
 export const buildTargetRequestFor = async <
-  SrcName extends AssistantTurnKey, SrcPayload, SrcTurn, SrcAssistantTurn, SrcEvent, Extra,
+  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent, SrcExtra,
   TgtName extends AssistantTurnKey, TgtPayload, TgtEvent,
 >(
-  source: SourceProtocol<SrcName, SrcPayload, SrcTurn, SrcAssistantTurn, SrcEvent, Extra>,
+  source: SourceProtocol<SrcName, SrcPayload, SrcEvent, SrcExtra>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
   payload: SrcPayload,
   ctx: TranslateContext,
-  // Reusing a reading is how a caller observes what reading produced (a
-  // namespace map, say) beside the request built from it.
-  reuse?: SourceReading<SrcName, SrcTurn, SrcAssistantTurn, SrcEvent, Extra>,
-): Promise<TgtPayload> => {
-  const reading = reuse ?? source.read(payload);
-  const pieces = await readIRInput(reading.input, async turn => {
-    const assistantTurn = reading.assistantTurn(turn);
-    if (assistantTurn === undefined) return undefined;
-    const roundTrip = await roundTripAssistantTurn(
-      source.name, target.name, assistantTurn, ctx.sidecarCodec,
-      reading.roundTrip.inspect, reading.roundTrip.verify, reading.roundTrip.collectCandidates,
-    );
-    if (roundTrip !== undefined) return { resolved: roundTrip.turn, calls: target.resolvedCalls(roundTrip.turn) };
-    if (reading.dropsReasoning(turn)) warnDroppedUnrecognizedAssistantReasoning(source.name, target.name);
-    return undefined;
-  });
-  return await target.write(reading.request, pieces, ctx);
-};
+  // Reading a request is stateful, so a caller that also inspects what the
+  // reading produced passes the same layout rather than opening a second time.
+  layout: IRInputLayout<SourceAssistantTurnFor<SrcName>, SrcExtra> = source.open(payload),
+): Promise<TgtPayload> =>
+  await target.write(layout.request, await settleTurns(source, target, layout, ctx), ctx);
 
 /**
  * The event half of a composed trip, stated on its own.
  *
- * A pair's stream translation is worth testing without the request side, and
- * this states exactly that step: read the target's upstream events into the
- * output IR, then state them to the source's client. It is the same code
- * `composeTranslation` runs.
+ * It is the same code `composeTranslation` runs, including the reading that the
+ * client-side writer may need.
  */
 export const translateSourceEventsFor = <
-  SrcName extends AssistantTurnKey, SrcPayload, SrcTurn, SrcAssistantTurn, SrcEvent,
+  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent, SrcExtra,
   TgtName extends AssistantTurnKey, TgtPayload, TgtEvent,
 >(
-  source: SourceProtocol<SrcName, SrcPayload, SrcTurn, SrcAssistantTurn, SrcEvent>,
+  source: SourceProtocol<SrcName, SrcPayload, SrcEvent, SrcExtra>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
   payload: SrcPayload,
   ctx: TranslateContext,
   frames: AsyncIterable<ProtocolFrame<TgtEvent>>,
 ): AsyncIterable<ProtocolFrame<SrcEvent>> => {
-  const reading = source.read(payload);
+  const layout = source.open(payload);
   const stream = createRoundTripStream(source.name, target.name, ctx.sidecarCodec);
-  return reading.output(target.readStream(frames, stream.reader, reading.request), stream.writer, reading.request);
+  return source.writeStream(layout, target.readStream(frames, stream.reader, layout.request, irInputCustomToolNames(layout.request)), stream.writer);
 };

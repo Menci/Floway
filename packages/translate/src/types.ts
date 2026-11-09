@@ -11,8 +11,6 @@ export interface RemoteImageData {
   data: Uint8Array;
 }
 
-export type RemoteImageLoader = (url: string) => Promise<RemoteImageData | null>;
-
 /**
  * What a translation trip needs from the data plane.
  *
@@ -37,9 +35,6 @@ export interface TranslateContext {
   // The upstream's own output limit, when the operator knows it. A target that
   // requires a ceiling uses it when the source stated none.
   readonly fallbackMaxOutputTokens?: number;
-  // How a target fetches a remote image the source only named by URL. Absent
-  // means the target states the URL itself.
-  readonly loadRemoteImage?: RemoteImageLoader;
 }
 
 /**

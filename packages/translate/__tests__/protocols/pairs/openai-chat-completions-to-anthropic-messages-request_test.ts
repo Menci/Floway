@@ -1,6 +1,5 @@
 import { test } from 'vitest';
 
-import type { RemoteImageLoader } from '../../../src/types.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import { buildTargetRequestFor, pairs } from '../composition-helpers.ts';
 import {
@@ -11,7 +10,7 @@ import {
   type AnthropicMessagesTextBlock,
   type AnthropicMessagesToolResultBlock,
   type AnthropicMessagesToolUseBlock,
-  type AnthropicMessagesUserContentBlock,
+  type AnthropicMessagesUserContentBlock
 } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertExists, assertFalse, assertRejects } from '@floway-dev/test-utils';
@@ -38,13 +37,8 @@ function userBlocks(result: AnthropicMessagesPayload, msgIndex = 0): AnthropicMe
   return Array.isArray(msg.content) ? (msg.content as AnthropicMessagesUserContentBlock[]) : [{ type: 'text', text: msg.content as string }];
 }
 
-function stubRemoteImageLoader(result: Awaited<ReturnType<RemoteImageLoader>>): RemoteImageLoader {
-  return () => Promise.resolve(result);
-}
-
-const testBuildOptions: { fallbackMaxOutputTokens?: number; loadRemoteImage: Parameters<typeof createTestSidecarCodec> extends never ? never : (url: string) => Promise<{ mediaType: string | null; data: Uint8Array } | null> } = {
+const testBuildOptions: { fallbackMaxOutputTokens?: number } = {
   fallbackMaxOutputTokens: undefined,
-  loadRemoteImage: async () => null,
 };
 
 const buildWithTestSidecar = (
@@ -57,7 +51,7 @@ test('buildTargetRequest preserves scalar and content-part assistant refusals as
     messages: [
       { role: 'assistant', content: null, refusal: 'Scalar refusal.' },
       { role: 'assistant', content: [{ type: 'refusal', refusal: 'Part refusal.' }] },
-    ],
+    ]
   }));
 
   assertEquals(result.messages, [
@@ -74,7 +68,7 @@ test.each(['fast', 'priority'])('buildTargetRequest maps service_tier:%s to spee
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'hi' }],
-      service_tier: serviceTier,
+      service_tier: serviceTier
     }),
   );
 
@@ -86,7 +80,7 @@ test('buildTargetRequest passes service_tier:auto through as service_tier', asyn
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'hi' }],
-      service_tier: 'auto',
+      service_tier: 'auto'
     }),
   );
 
@@ -97,7 +91,7 @@ test('buildTargetRequest passes service_tier:auto through as service_tier', asyn
 test('buildTargetRequest omits both speed and service_tier when service_tier is absent', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
-      messages: [{ role: 'user', content: 'hi' }],
+      messages: [{ role: 'user', content: 'hi' }]
     }),
   );
 
@@ -111,7 +105,7 @@ test('leading system message hoisted to top-level system field', async () => {
       messages: [
         { role: 'system', content: 'You are helpful.' },
         { role: 'user', content: 'Hi' },
-      ],
+      ]
     }),
   );
   assertEquals(result.system, [{ type: 'text', text: 'You are helpful.', cache_control: { type: 'ephemeral' } }]);
@@ -125,7 +119,7 @@ test('leading developer message hoisted as system', async () => {
       messages: [
         { role: 'developer', content: 'Dev instructions' },
         { role: 'user', content: 'Hi' },
-      ],
+      ]
     }),
   );
   assertEquals(result.system, [{ type: 'text', text: 'Dev instructions', cache_control: { type: 'ephemeral' } }]);
@@ -140,7 +134,7 @@ test('non-leading system stays inline, leading is hoisted', async () => {
         { role: 'user', content: 'Hi' },
         { role: 'developer', content: 'Second' },
         { role: 'user', content: 'Bye' },
-      ],
+      ]
     }),
   );
   assertEquals(result.system, [{ type: 'text', text: 'First', cache_control: { type: 'ephemeral' } }]);
@@ -156,7 +150,7 @@ test('empty leading system content is not hoisted', async () => {
       messages: [
         { role: 'system', content: '' },
         { role: 'user', content: 'Hi' },
-      ],
+      ]
     }),
   );
   assertEquals(result.system, undefined);
@@ -170,7 +164,7 @@ test('leading empty system is skipped, leading non-empty is still hoisted', asyn
         { role: 'system', content: '' },
         { role: 'developer', content: 'Be terse.' },
         { role: 'user', content: 'Hi' },
-      ],
+      ]
     }),
   );
   assertEquals(result.system, [{ type: 'text', text: 'Be terse.', cache_control: { type: 'ephemeral' } }]);
@@ -187,10 +181,10 @@ test('leading system with ContentPart array preserves text parts as separate blo
           content: [
             { type: 'text', text: 'A' },
             { type: 'text', text: 'B' },
-          ],
+          ]
         },
         { role: 'user', content: 'Hi' },
-      ],
+      ]
     }),
   );
   assertEquals(result.system, [
@@ -207,7 +201,7 @@ test('multiple consecutive leading system messages accumulate as separate blocks
         { role: 'system', content: 'First' },
         { role: 'developer', content: 'Second' },
         { role: 'user', content: 'Hi' },
-      ],
+      ]
     }),
   );
   assertEquals(result.system, [
@@ -228,10 +222,10 @@ test('image content part in leading system message throws', async () => {
               content: [
                 { type: 'text', text: 'You are helpful.' },
                 { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' } },
-              ],
+              ]
             } as unknown as OpenAIChatCompletionsMessage,
             { role: 'user', content: 'Hi' },
-          ],
+          ]
         }),
       ),
     Error,
@@ -250,10 +244,10 @@ test('image content part in non-leading system message throws', async () => {
               role: 'system',
               content: [
                 { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' } },
-              ],
+              ]
             } as unknown as OpenAIChatCompletionsMessage,
             { role: 'user', content: 'Bye' },
-          ],
+          ]
         }),
       ),
     Error,
@@ -266,7 +260,7 @@ test('image content part in non-leading system message throws', async () => {
 test('simple user message → string content', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
-      messages: [{ role: 'user', content: 'Hello' }],
+      messages: [{ role: 'user', content: 'Hello' }]
     }),
   );
   assertEquals(result.messages.length, 1);
@@ -282,7 +276,7 @@ test('simple assistant message → text block', async () => {
       messages: [
         { role: 'user', content: 'Hi' },
         { role: 'assistant', content: 'Hello!' },
-      ],
+      ]
     }),
   );
   const blocks = assistantBlocks(result, 1);
@@ -297,7 +291,7 @@ test('assistant with null content → empty text block', async () => {
       messages: [
         { role: 'user', content: 'Hi' },
         { role: 'assistant', content: null },
-      ],
+      ]
     }),
   );
   const blocks = assistantBlocks(result, 1);
@@ -309,7 +303,7 @@ test('assistant with null content → empty text block', async () => {
 test('user with null content → empty text block', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
-      messages: [{ role: 'user', content: null } as unknown as OpenAIChatCompletionsMessage],
+      messages: [{ role: 'user', content: null } as unknown as OpenAIChatCompletionsMessage]
     }),
   );
   const blocks = userBlocks(result, 0);
@@ -325,7 +319,7 @@ test('consecutive user messages merged', async () => {
       messages: [
         { role: 'user', content: 'First' },
         { role: 'user', content: 'Second' },
-      ],
+      ]
     }),
   );
   assertEquals(result.messages.length, 1);
@@ -343,7 +337,7 @@ test('three consecutive users all merged into one', async () => {
         { role: 'user', content: 'A' },
         { role: 'user', content: 'B' },
         { role: 'user', content: 'C' },
-      ],
+      ]
     }),
   );
   assertEquals(result.messages.length, 1);
@@ -365,12 +359,12 @@ test('tool message creates user with tool_result block', async () => {
             {
               id: 'tc1',
               type: 'function',
-              function: { name: 'f', arguments: '{}' },
+              function: { name: 'f', arguments: '{}' }
             },
-          ],
+          ]
         },
         { role: 'tool', content: 'result', tool_call_id: 'tc1' },
-      ],
+      ]
     }),
   );
   assertEquals(result.messages.length, 3);
@@ -394,18 +388,18 @@ test('multiple tool messages after assistant merged into one user', async () => 
             {
               id: 'tc1',
               type: 'function',
-              function: { name: 'f1', arguments: '{}' },
+              function: { name: 'f1', arguments: '{}' }
             },
             {
               id: 'tc2',
               type: 'function',
-              function: { name: 'f2', arguments: '{}' },
+              function: { name: 'f2', arguments: '{}' }
             },
-          ],
+          ]
         },
         { role: 'tool', content: 'r1', tool_call_id: 'tc1' },
         { role: 'tool', content: 'r2', tool_call_id: 'tc2' },
-      ],
+      ]
     }),
   );
   assertEquals(result.messages.length, 3);
@@ -428,13 +422,13 @@ test('tool + user merged: tool_results + text in same user msg', async () => {
             {
               id: 'tc1',
               type: 'function',
-              function: { name: 'f', arguments: '{}' },
+              function: { name: 'f', arguments: '{}' }
             },
-          ],
+          ]
         },
         { role: 'tool', content: 'result', tool_call_id: 'tc1' },
         { role: 'user', content: 'thanks' },
-      ],
+      ]
     }),
   );
   assertEquals(result.messages.length, 3);
@@ -459,12 +453,12 @@ test('tool message without tool_call_id is rejected', async () => {
                 {
                   id: 'tc1',
                   type: 'function',
-                  function: { name: 'f', arguments: '{}' },
+                  function: { name: 'f', arguments: '{}' }
                 },
-              ],
+              ]
             },
             { role: 'tool', content: 'result' } as unknown as OpenAIChatCompletionsMessage,
-          ],
+          ]
         }),
       ),
     Error,
@@ -486,11 +480,11 @@ test('assistant text precedes tool use', async () => {
             {
               id: 'tc1',
               type: 'function',
-              function: { name: 'search', arguments: '{"q":"x"}' },
+              function: { name: 'search', arguments: '{"q":"x"}' }
             },
-          ],
+          ]
         } as OpenAIChatCompletionsAssistantMessageEx,
-      ],
+      ]
     }),
   );
   const blocks = assistantBlocks(result, 1);
@@ -511,11 +505,11 @@ test('assistant with only tool_calls, no content', async () => {
             {
               id: 'tc1',
               type: 'function',
-              function: { name: 'f', arguments: '{"a":1}' },
+              function: { name: 'f', arguments: '{"a":1}' }
             },
-          ],
+          ]
         },
-      ],
+      ]
     }),
   );
   const blocks = assistantBlocks(result, 1);
@@ -537,16 +531,16 @@ test('assistant with multiple tool_calls', async () => {
             {
               id: 'tc1',
               type: 'function',
-              function: { name: 'f1', arguments: '{"x":1}' },
+              function: { name: 'f1', arguments: '{"x":1}' }
             },
             {
               id: 'tc2',
               type: 'function',
-              function: { name: 'f2', arguments: '{"y":2}' },
+              function: { name: 'f2', arguments: '{"y":2}' }
             },
-          ],
+          ]
         },
-      ],
+      ]
     }),
   );
   const blocks = assistantBlocks(result, 1);
@@ -569,16 +563,16 @@ test('assistant tool_calls with invalid JSON arguments → raw_arguments fallbac
             {
               id: 'tc1',
               type: 'function',
-              function: { name: 'f', arguments: 'not json' },
+              function: { name: 'f', arguments: 'not json' }
             },
-          ],
+          ]
         },
-      ],
+      ]
     }),
   );
   const blocks = assistantBlocks(result, 1);
   assertEquals((blocks[0] as AnthropicMessagesToolUseBlock).input, {
-    raw_arguments: 'not json',
+    raw_arguments: 'not json'
   });
 });
 
@@ -596,11 +590,11 @@ test('image_url with data URL → base64 image block', async () => {
             { type: 'text', text: 'What is this?' },
             {
               type: 'image_url',
-              image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' },
+              image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' }
             },
-          ],
+          ]
         },
-      ],
+      ]
     }),
   );
   const blocks = userBlocks(result, 0);
@@ -616,65 +610,22 @@ test('image_url with data URL → base64 image block', async () => {
   assertEquals(img.source.data, 'iVBORw0KGgo=');
 });
 
-test('image_url with remote image loader → base64 image block', async () => {
-  const result = await buildWithTestSidecar(
-    mkPayload({
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: 'What is this?' },
-            {
-              type: 'image_url',
-              image_url: { url: 'https://example.com/image.png' },
-            },
-          ],
-        },
+test('a remote image URL is stated as the URL Messages accepts', async () => {
+  const result = await buildWithTestSidecar(mkPayload({
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: 'What is this?' },
+        { type: 'image_url', image_url: { url: 'https://example.com/image.png' } },
       ],
-    }),
-    {
-      loadRemoteImage: stubRemoteImageLoader({
-        mediaType: 'image/png',
-        data: new Uint8Array([1, 2, 3]),
-      }),
-    },
-  );
+    }],
+  }));
+
+  // Messages expresses a URL itself, so nothing is fetched or dropped on the
+  // way; an upstream that rejects fetching is the gateway's concern.
   const blocks = userBlocks(result, 0);
   assertEquals(blocks.length, 2);
-  assertEquals(blocks[0].type, 'text');
-  assertEquals(blocks[1].type, 'image');
-  const img = blocks[1] as {
-    type: 'image';
-    source: { type: string; media_type: string; data: string };
-  };
-  assertEquals(img.source.type, 'base64');
-  assertEquals(img.source.media_type, 'image/png');
-  assertEquals(img.source.data, 'AQID');
-});
-
-test('image_url with remote image loader failure → gracefully skipped', async () => {
-  const result = await buildWithTestSidecar(
-    mkPayload({
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: 'What?' },
-            {
-              type: 'image_url',
-              image_url: { url: 'https://example.com/nonexistent.png' },
-            },
-          ],
-        },
-      ],
-    }),
-    {
-      loadRemoteImage: stubRemoteImageLoader(null),
-    },
-  );
-  const blocks = userBlocks(result, 0);
-  assertEquals(blocks.length, 1);
-  assertEquals(blocks[0].type, 'text');
+  assertEquals(blocks[1], { type: 'image', source: { type: 'url', url: 'https://example.com/image.png' }, cache_control: { type: 'ephemeral' } });
 });
 
 test('image with jpeg media type', async () => {
@@ -686,11 +637,11 @@ test('image with jpeg media type', async () => {
           content: [
             {
               type: 'image_url',
-              image_url: { url: 'data:image/jpeg;base64,/9j/4AAQ=' },
+              image_url: { url: 'data:image/jpeg;base64,/9j/4AAQ=' }
             },
-          ],
+          ]
         },
-      ],
+      ]
     }),
   );
   const blocks = userBlocks(result, 0);
@@ -699,38 +650,37 @@ test('image with jpeg media type', async () => {
   assertEquals(img.source.media_type, 'image/jpeg');
 });
 
-test('data URL with unsupported media type → skipped', async () => {
+test('a data URL is stated with the media type it declares', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [
         {
           role: 'user',
-          content: [{ type: 'image_url', image_url: { url: 'data:image/bmp;base64,Qk0=' } }],
+          content: [{ type: 'image_url', image_url: { url: 'data:image/bmp;base64,Qk0=' } }]
         },
-      ],
+      ]
     }),
   );
+  // Messages cannot name a media type its wire leaves open, so the caller's own
+  // declaration travels and the upstream decides whether it accepts it.
   const blocks = userBlocks(result, 0);
   assertEquals(blocks.length, 1);
-  assertEquals(blocks[0].type, 'text');
-  assertEquals((blocks[0] as AnthropicMessagesTextBlock).text, '');
+  assertEquals(blocks[0], { type: 'image', source: { type: 'base64', media_type: 'image/bmp', data: 'Qk0=' }, cache_control: { type: 'ephemeral' } });
 });
 
-test('content with only non-parseable image → empty text fallback', async () => {
-  const result = await buildWithTestSidecar(
-    mkPayload({
-      messages: [
-        {
-          role: 'user',
-          content: [{ type: 'image_url', image_url: { url: 'not-a-url-at-all' } }],
-        },
-      ],
-    }),
+test('content with a value that is not a URL is rejected rather than written', async () => {
+  // Messages states a URL as a URL, so a caller that named neither a URL nor
+  // inline bytes has stated something the target cannot carry.
+  await assertRejects(
+    () => buildWithTestSidecar(mkPayload({
+      messages: [{
+        role: 'user',
+        content: [{ type: 'image_url', image_url: { url: 'not-a-url-at-all' } }],
+      }],
+    })),
+    Error,
+    'requires an http or https URL',
   );
-  const blocks = userBlocks(result, 0);
-  assertEquals(blocks.length, 1);
-  assertEquals(blocks[0].type, 'text');
-  assertEquals((blocks[0] as AnthropicMessagesTextBlock).text, '');
 });
 
 // ── Field mapping ──
@@ -738,7 +688,7 @@ test('content with only non-parseable image → empty text fallback', async () =
 test('max_tokens defaults to ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS when neither payload nor fallbackMaxOutputTokens supply one', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
-      messages: [{ role: 'user', content: 'Hi' }],
+      messages: [{ role: 'user', content: 'Hi' }]
     }),
   );
   assertEquals(result.max_tokens, ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS);
@@ -753,7 +703,7 @@ test('max_tokens passed through when provided, overriding fallbackMaxOutputToken
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      max_tokens: 1024,
+      max_tokens: 1024
     }),
     { fallbackMaxOutputTokens: 6144 },
   );
@@ -764,7 +714,7 @@ test('temperature mapped', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      temperature: 0.7,
+      temperature: 0.7
     }),
   );
   assertEquals(result.temperature, 0.7);
@@ -774,7 +724,7 @@ test('temperature 0 is mapped (not treated as falsy)', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      temperature: 0,
+      temperature: 0
     }),
   );
   assertEquals(result.temperature, 0);
@@ -784,7 +734,7 @@ test('top_p mapped', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      top_p: 0.9,
+      top_p: 0.9
     }),
   );
   assertEquals(result.top_p, 0.9);
@@ -795,7 +745,7 @@ test('null temperature/top_p not included', async () => {
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
       temperature: null,
-      top_p: null,
+      top_p: null
     }),
   );
   assertEquals(result.temperature, undefined);
@@ -806,7 +756,7 @@ test('stop string → stop_sequences array', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      stop: 'END',
+      stop: 'END'
     }),
   );
   assertEquals(result.stop_sequences, ['END']);
@@ -816,7 +766,7 @@ test('stop array → stop_sequences array', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      stop: ['END', 'STOP'],
+      stop: ['END', 'STOP']
     }),
   );
   assertEquals(result.stop_sequences, ['END', 'STOP']);
@@ -826,7 +776,7 @@ test('states the source stream flag on the target', async () => {
   const streamed = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      stream: true,
+      stream: true
     }),
   );
   assertEquals(streamed.stream, true);
@@ -834,7 +784,7 @@ test('states the source stream flag on the target', async () => {
   const nonStreamed = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      stream: false,
+      stream: false
     }),
   );
   assertEquals(nonStreamed.stream, false);
@@ -851,7 +801,7 @@ test.each([
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
       tools: [{ type: 'function', function: { name: 'f', parameters: { type: 'object' } } }],
-      tool_choice: choice,
+      tool_choice: choice
     }),
   );
   assertEquals(result.tool_choice, expected);
@@ -864,10 +814,10 @@ test('tool_choice specific function → { type: tool, name }', async () => {
       tools: [
         {
           type: 'function',
-          function: { name: 'get_weather', parameters: { type: 'object' } },
+          function: { name: 'get_weather', parameters: { type: 'object' } }
         },
       ],
-      tool_choice: { type: 'function', function: { name: 'get_weather' } },
+      tool_choice: { type: 'function', function: { name: 'get_weather' } }
     }),
   );
   assertEquals(result.tool_choice, { type: 'tool', name: 'get_weather' });
@@ -877,7 +827,7 @@ test('null tool_choice → not set', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      tool_choice: null as unknown as OpenAIChatCompletionsPayload['tool_choice'],
+      tool_choice: null as unknown as OpenAIChatCompletionsPayload['tool_choice']
     }),
   );
   assertEquals(result.tool_choice, undefined);
@@ -897,11 +847,11 @@ test('tools translated correctly', async () => {
             description: 'Get weather',
             parameters: {
               type: 'object',
-              properties: { city: { type: 'string' } },
-            },
-          },
+              properties: { city: { type: 'string' } }
+            }
+          }
         },
-      ],
+      ]
     }),
   );
   assertExists(result.tools);
@@ -914,7 +864,7 @@ test('tools translated correctly', async () => {
   assertEquals(tool.description, 'Get weather');
   assertEquals(tool.input_schema, {
     type: 'object',
-    properties: { city: { type: 'string' } },
+    properties: { city: { type: 'string' } }
   });
 });
 
@@ -928,18 +878,18 @@ test('tools preserve explicit strict values', async () => {
           function: {
             name: 'strict_tool',
             parameters: { type: 'object' },
-            strict: true,
-          },
+            strict: true
+          }
         },
         {
           type: 'function',
           function: {
             name: 'non_strict_tool',
             parameters: { type: 'object' },
-            strict: false,
-          },
+            strict: false
+          }
         },
-      ],
+      ]
     }),
   );
 
@@ -958,10 +908,10 @@ test('tools omit strict when OpenAI Chat Completions omitted strict', async () =
           type: 'function',
           function: {
             name: 'default_tool',
-            parameters: { type: 'object' },
-          },
+            parameters: { type: 'object' }
+          }
         },
-      ],
+      ]
     }),
   );
 
@@ -974,7 +924,7 @@ test('empty tools array → not set', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      tools: [],
+      tools: []
     }),
   );
   assertEquals(result.tools, undefined);
@@ -986,7 +936,7 @@ test('model name passed through', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
       model: 'claude-opus-4',
-      messages: [{ role: 'user', content: 'Hi' }],
+      messages: [{ role: 'user', content: 'Hi' }]
     }),
   );
   assertEquals(result.model, 'claude-opus-4');
@@ -1007,13 +957,13 @@ test('full tool use round-trip conversation', async () => {
             {
               id: 'tc1',
               type: 'function',
-              function: { name: 'get_weather', arguments: '{"city":"Tokyo"}' },
+              function: { name: 'get_weather', arguments: '{"city":"Tokyo"}' }
             },
-          ],
+          ]
         },
         { role: 'tool', content: '{"temp":20}', tool_call_id: 'tc1' },
         { role: 'assistant', content: "It's 20 degrees in Tokyo." },
-      ],
+      ]
     }),
   );
   assertEquals(result.system, [{ type: 'text', text: 'You are helpful.', cache_control: { type: 'ephemeral' } }]);
@@ -1037,14 +987,14 @@ test('attaches ephemeral cache breakpoints to last function tool and last messag
         {
           role: 'assistant',
           content: null,
-          tool_calls: [{ id: 'tc1', type: 'function', function: { name: 'get_weather', arguments: '{"city":"Tokyo"}' } }],
+          tool_calls: [{ id: 'tc1', type: 'function', function: { name: 'get_weather', arguments: '{"city":"Tokyo"}' } }]
         },
         { role: 'tool', content: '{"temp":20}', tool_call_id: 'tc1' },
       ],
       tools: [
         { type: 'function', function: { name: 'get_time', parameters: { type: 'object', properties: {} } } },
         { type: 'function', function: { name: 'get_weather', parameters: { type: 'object', properties: {} } } },
-      ],
+      ]
     }),
   );
 
@@ -1069,7 +1019,7 @@ test('attaches ephemeral cache breakpoint to the promoted text block when last m
       messages: [
         { role: 'user', content: 'Hi' },
         { role: 'assistant', content: 'Hello!' },
-      ],
+      ]
     }),
   );
 
@@ -1090,16 +1040,16 @@ test('interleaved tool and text turns preserve chronology', async () => {
             {
               id: 'tc1',
               type: 'function',
-              function: { name: 'calc', arguments: '{"x":1}' },
+              function: { name: 'calc', arguments: '{"x":1}' }
             },
-          ],
+          ]
         } as OpenAIChatCompletionsAssistantMessageEx,
         { role: 'tool', content: '42', tool_call_id: 'tc1' },
         {
           role: 'assistant',
-          content: 'The answer is 42.',
+          content: 'The answer is 42.'
         } as OpenAIChatCompletionsAssistantMessageEx,
-      ],
+      ]
     }),
   );
   assertEquals(result.messages.length, 4);
@@ -1118,7 +1068,7 @@ test('buildTargetRequest extracts nested response_format json_schema into output
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      response_format: { type: 'json_schema', json_schema: { name: 'whatever', strict: true, schema } },
+      response_format: { type: 'json_schema', json_schema: { name: 'whatever', strict: true, schema } }
     }),
   );
 
@@ -1131,7 +1081,7 @@ test('buildTargetRequest merges reasoning_effort with structured-output format o
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
       reasoning_effort: 'high',
-      response_format: { type: 'json_schema', json_schema: { name: 'shape', schema } },
+      response_format: { type: 'json_schema', json_schema: { name: 'shape', schema } }
     }),
   );
 
@@ -1142,7 +1092,7 @@ test('buildTargetRequest forwards empty reasoning_effort verbatim', async () => 
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      reasoning_effort: '',
+      reasoning_effort: ''
     }),
   );
 
@@ -1153,7 +1103,7 @@ test('buildTargetRequest drops response_format json_object (no Anthropic equival
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      response_format: { type: 'json_object' },
+      response_format: { type: 'json_object' }
     }),
   );
 
@@ -1165,7 +1115,7 @@ test('buildTargetRequest rejects an unknown message role', async () => {
     () =>
       buildWithTestSidecar({
         model: 'claude-test',
-        messages: [{ role: 'critic', content: 'hi' } as unknown as OpenAIChatCompletionsMessage],
+        messages: [{ role: 'critic', content: 'hi' } as unknown as OpenAIChatCompletionsMessage]
       }),
     Error,
     "Invalid role 'critic'",
@@ -1177,7 +1127,7 @@ test('buildTargetRequest rejects an unknown user content part type', async () =>
     () =>
       buildWithTestSidecar({
         model: 'claude-test',
-        messages: [{ role: 'user', content: [{ type: 'video_url' }] } as unknown as OpenAIChatCompletionsMessage],
+        messages: [{ role: 'user', content: [{ type: 'video_url' }] } as unknown as OpenAIChatCompletionsMessage]
       }),
     Error,
     "Invalid 'video_url' content part",
@@ -1190,7 +1140,7 @@ test('buildTargetRequest forwards a non-accelerated service_tier verbatim', asyn
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'hi' }],
-      service_tier: 'flex',
+      service_tier: 'flex'
     }),
   );
 
@@ -1201,7 +1151,7 @@ test('buildTargetRequest maps reasoning_effort none to thinking.disabled', async
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      reasoning_effort: 'none',
+      reasoning_effort: 'none'
     }),
   );
 
@@ -1215,7 +1165,7 @@ test('buildTargetRequest keeps a structured-output format alongside thinking.dis
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
       reasoning_effort: 'none',
-      response_format: { type: 'json_schema', json_schema: { name: 'shape', schema } },
+      response_format: { type: 'json_schema', json_schema: { name: 'shape', schema } }
     }),
   );
 
@@ -1227,7 +1177,7 @@ test('buildTargetRequest leaves thinking absent when reasoning_effort is not non
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      reasoning_effort: 'high',
+      reasoning_effort: 'high'
     }),
   );
 
@@ -1239,7 +1189,7 @@ test.each(['auto', 'required'] as const)('allowed_tools %s restricts native Mess
   const result = await buildWithTestSidecar({
     model: 'claude-test', messages: [{ role: 'user', content: 'hello' }], tools: [
       { type: 'function', function: { name: 'allowed' } }, { type: 'function', function: { name: 'excluded' } },
-    ], tool_choice: { type: 'allowed_tools', allowed_tools: { mode, tools: [{ type: 'function', function: { name: 'allowed' } }] } },
+    ], tool_choice: { type: 'allowed_tools', allowed_tools: { mode, tools: [{ type: 'function', function: { name: 'allowed' } }] } }
   });
   assertEquals(result.tools?.map(tool => 'name' in tool ? tool.name : undefined), ['allowed']);
   assertEquals(result.tool_choice, { type: mode === 'required' ? 'any' : 'auto' });

@@ -2,6 +2,8 @@ import { klona } from 'klona/json';
 
 import { filterAnthropicMessagesClientTools } from './client-tools.ts';
 import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn } from './conversation-turns.ts';
+import type { AnthropicMessagesAssistantTurn } from './round-trip.ts';
+import type { IRInputLayout, IRInputSlot } from '../../../ir/input/layout.ts';
 import type { IRInputSource } from '../../../ir/input/source.ts';
 import type {
   IRInputAssistantContentPart,
@@ -238,8 +240,8 @@ const anthropicMessagesSystemToIR = (system: AnthropicMessagesPayload['system'])
 };
 
 /** Whether a turn carries reasoning only the sidecar can restore. */
-export const anthropicMessagesDropsReasoning = (turn: AnthropicMessagesConversationTurn): boolean => turn.role === 'assistant'
-  && turn.items.some(message => Array.isArray(message.content) && message.content.some(block => block.type === 'redacted_thinking'));
+export const anthropicMessagesDropsReasoning = (turn: AnthropicMessagesAssistantTurn): boolean =>
+  turn.some(message => Array.isArray(message.content) && message.content.some(block => block.type === 'redacted_thinking'));
 
 const anthropicMessagesTurnToIR = (
   turn: AnthropicMessagesConversationTurn,
@@ -404,55 +406,51 @@ const reasoningEffortFromAnthropicMessages = (payload: AnthropicMessagesPayload)
  * the conversation ends, and a resolved turn releases it first because that turn
  * is written natively and sits between the two.
  */
-export interface AnthropicMessagesSource extends IRInputSource<AnthropicMessagesConversationTurn> {
-  readonly request: IRInputRequest;
-}
+export const anthropicMessagesOpen = (payload: AnthropicMessagesPayload): IRInputLayout<AnthropicMessagesAssistantTurn> => {
+  const request: IRInputRequest = {
+    conversation: { turns: [] },
+    settings: anthropicMessagesSettingsToIR(payload),
+    ...anthropicMessagesToolsToIR(payload),
+  };
 
-export const anthropicMessagesSource = (payload: AnthropicMessagesPayload): AnthropicMessagesSource => {
+  // Messages keeps a server tool's result inside the assistant message that
+  // called it, while the caller's next message is usually a client turn too.
+  // The result and that message are one speaking turn, so a client slot that
+  // ends the conversation is not emitted until the next source turn says
+  // whether it continues.
+  const slots: IRInputSlot<AnthropicMessagesAssistantTurn>[] = [];
   let messageIndex = 0;
-  // The trailing client turn, kept back because the next source turn may state
-  // the same client turn.
-  let held: Extract<IRInputTurn, { kind: 'client' }> | undefined;
+  let pendingClient: (() => IRInputTurn[]) | undefined;
 
-  const release = (): IRInputTurn[] => {
-    if (held === undefined) return [];
-    const turns: IRInputTurn[] = [held];
-    held = undefined;
-    return turns;
+  const appendClient = (produce: () => IRInputTurn[]): void => {
+    if (pendingClient !== undefined) slots.push({ kind: 'client', toIRTurn: pendingClient });
+    pendingClient = produce;
   };
 
-  const settle = (turns: IRInputTurn[]): IRInputTurn[] => {
-    const first = turns[0];
-    if (held !== undefined && first?.kind === 'client') {
-      turns[0] = { kind: 'client', items: [...held.items, ...first.items] };
-      held = undefined;
-    } else {
-      turns.unshift(...release());
+  const prompt = anthropicMessagesSystemToIR(payload.system);
+  if (prompt !== undefined) slots.push({ kind: 'client', toIRTurn: () => [prompt] });
+
+  for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
+    const firstMessageIndex = messageIndex;
+    messageIndex += turn.items.length;
+    if (turn.role === 'assistant') {
+      // An assistant turn always separates: whatever was held before it is a
+      // turn of its own, and its own output may interleave assistant and
+      // server-result client turns.
+      if (pendingClient !== undefined) {
+        slots.push({ kind: 'client', toIRTurn: pendingClient });
+        pendingClient = undefined;
+      }
+      slots.push({
+        kind: 'assistant',
+        assistantTurn: turn.items,
+        toIRTurn: () => anthropicMessagesTurnToIR(turn, firstMessageIndex),
+      });
+      continue;
     }
-    const last = turns.at(-1);
-    if (last?.kind === 'client') held = turns.pop() as Extract<IRInputTurn, { kind: 'client' }>;
-    return turns;
-  };
+    appendClient(() => anthropicMessagesTurnToIR(turn, firstMessageIndex));
+  }
+  if (pendingClient !== undefined) slots.push({ kind: 'client', toIRTurn: pendingClient });
 
-  return {
-    request: {
-      conversation: { turns: [] },
-      settings: anthropicMessagesSettingsToIR(payload),
-      ...anthropicMessagesToolsToIR(payload),
-    },
-    prompt: anthropicMessagesSystemToIR(payload.system),
-    conversation: partitionAnthropicMessagesTurns(payload.messages),
-    turnToIR: turn => {
-      const turns = anthropicMessagesTurnToIR(turn, messageIndex);
-      messageIndex += turn.items.length;
-      return settle(turns);
-    },
-    // A resolved turn still occupies source messages, which later diagnostics
-    // count past; the held turn precedes it in the source, so it is released.
-    observeResolvedTurn: turn => {
-      messageIndex += turn.items.length;
-      return release();
-    },
-    flush: release,
-  };
+  return { request, slots };
 };

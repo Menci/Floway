@@ -58,7 +58,6 @@ export const openaiChatCompletionsAttempt = {
           p => routeOpenAIChatCompletions(p).viaAnthropicMessages({
             sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
             fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
-            loadRemoteImage: createExternalImageLoader(ctx.abortSignal),
           }),
           translated => anthropicMessagesAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],

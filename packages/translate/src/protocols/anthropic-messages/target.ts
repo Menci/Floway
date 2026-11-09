@@ -4,7 +4,6 @@ import type { IRInputRequest, IRInputTurn } from '../../ir/input/types.ts';
 import type { AssistantTurnFor } from '../../round-trip/assistant-turn.ts';
 import type { TranslateContext } from '../../types.ts';
 import type { TargetProtocol } from '../composition.ts';
-import { resolveAnthropicMessagesImage } from './as-target/remote-images.ts';
 import { anthropicMessagesPayloadFromSegments } from './as-target/segmented-request.ts';
 import { irFromAnthropicMessages } from './as-target/sse-from.ts';
 import type { AnthropicMessagesMessage, AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
@@ -25,14 +24,12 @@ export const anthropicMessagesTargetProtocol: TargetProtocol<
   'anthropicMessages', AnthropicMessagesPayload, AnthropicMessagesStreamEventEx
 > = {
   name: 'anthropicMessages',
-  resolvedCalls: turn => callsOf(turn),
+  pendingCallIds: turn => callsOf(turn),
   write: (request: IRInputRequest, pieces: readonly (IRInputTurn | IRInputResolvedTurn<AssistantTurnFor<'anthropicMessages'>>)[], ctx: TranslateContext) =>
     anthropicMessagesPayloadFromSegments(request, pieces, turn => turn, {
-      resolveImage: resolveAnthropicMessagesImage(ctx.loadRemoteImage),
       fallbackMaxOutputTokens: ctx.fallbackMaxOutputTokens,
     }),
   // A source may declare freeform tools the target could not state natively;
   // reading this stream has to recognise the calls it wrapped them into.
-  readStream: (frames, reader, request: IRInputRequest) =>
-    irFromAnthropicMessages(frames, { customToolNames: irInputCustomToolNames(request), roundTrip: reader }),
+  readStream: (frames, reader, _request, customToolNames) => irFromAnthropicMessages(frames, { customToolNames, roundTrip: reader }),
 };

@@ -21,7 +21,7 @@ import { routeGeminiGenerateContent } from '@floway-dev/translate/gemini-generat
 import { routeOpenAIChatCompletions } from '@floway-dev/translate/openai-chat-completions';
 import { routeOpenAIResponses } from '@floway-dev/translate/openai-responses';
 
-const context = { sidecarCodec: createTestSidecarCodec('test-codec-scope'), loadRemoteImage: async () => null, fallbackMaxOutputTokens: undefined };
+const context = { sidecarCodec: createTestSidecarCodec('test-codec-scope'), fallbackMaxOutputTokens: undefined };
 const chat = (carrier: string, text = 'answer'): OpenAIChatCompletionsPayloadEx => {
   const message: OpenAIChatCompletionsAssistantMessageEx = { role: 'assistant', content: text, reasoning_details: [{ type: 'reasoning.encrypted', data: carrier }] };
   return { model: 'source', messages: [message] };

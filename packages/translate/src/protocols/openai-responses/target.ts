@@ -21,7 +21,7 @@ export const openaiResponsesTargetProtocol: TargetProtocol<
   'openaiResponses', CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx
 > = {
   name: 'openaiResponses',
-  resolvedCalls: callsOf,
+  pendingCallIds: callsOf,
   write: (request, pieces) => Promise.resolve(openaiResponsesPayloadFromSegments(request, pieces, turn => turn)),
   readStream: (frames, reader) => irFromOpenAIResponses(frames, { roundTrip: reader }),
 };

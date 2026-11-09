@@ -1,8 +1,6 @@
-import { irInputCustomToolNames } from '../../ir/input/select-tools.ts';
 import type { TargetProtocol } from '../composition.ts';
 import { openaiChatCompletionsPayloadFromSegments } from './as-target/segmented-request.ts';
 import { irFromOpenAIChatCompletions } from './as-target/sse-from.ts';
-import type { IRInputRequest } from '../../ir/input/types.ts';
 import type { AssistantTurnFor } from '../../round-trip/assistant-turn.ts';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -24,8 +22,8 @@ export const openaiChatCompletionsTargetProtocol: TargetProtocol<
   'openaiChatCompletions', OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent
 > = {
   name: 'openaiChatCompletions',
-  resolvedCalls: callsOf,
+  pendingCallIds: callsOf,
   write: (request, pieces) => Promise.resolve(openaiChatCompletionsPayloadFromSegments(request, pieces, turn => turn)),
-  readStream: (frames, reader, request: IRInputRequest) =>
-    irFromOpenAIChatCompletions(frames, { customToolNames: irInputCustomToolNames(request), roundTrip: reader }),
+  readStream: (frames, reader, _request, customToolNames) =>
+    irFromOpenAIChatCompletions(frames, { customToolNames, roundTrip: reader }),
 };

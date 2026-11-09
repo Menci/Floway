@@ -29,7 +29,15 @@ import { isFastServiceTier, parseJSONWithRawNumbers } from '@floway-dev/protocol
 
 const imageSource = (media: IRInputMedia): AnthropicMessagesImageSource => {
   switch (media.source_kind) {
-  case 'url': return { type: 'url', url: media.url };
+  case 'url': {
+    // Messages states a URL as a URL. Anything else here is a caller error
+    // rather than an upstream preference, so it fails instead of being written.
+    const scheme = media.url.slice(0, media.url.indexOf(':'));
+    if (scheme !== 'http' && scheme !== 'https') {
+      throw new TranslatorInputError(`Messages image input requires an http or https URL, got '${media.url}'.`);
+    }
+    return { type: 'url', url: media.url };
+  }
   case 'file': return { type: 'file', file_id: media.file_id };
   case 'base64':
     if (media.media_type === undefined) throw new TranslatorInputError('Anthropic Messages image input requires a media type.');
@@ -38,17 +46,6 @@ const imageSource = (media: IRInputMedia): AnthropicMessagesImageSource => {
 };
 
 const imageBlock = (media: IRInputMedia): AnthropicMessagesImageBlock => ({ type: 'image', source: imageSource(media) });
-
-/**
- * Messages accepts only base64, URL, or file IDs for an image source, but a
- * remote URL must sometimes be inlined because an upstream rejects fetching it.
- * The loader is target-owned, exactly like the output path's remote-image
- * adapter, so it stays out of the input IR value.
- *
- * A URL the loader cannot resolve is dropped instead of failing the request:
- * the prompt remains usable and the caller sees no image rather than an error.
- */
-export type AnthropicMessagesImageResolver = (media: IRInputMedia) => Promise<AnthropicMessagesImageBlock | null>;
 
 /**
  * The wire distinguishes a plain-text document from a binary one and carries the
@@ -79,12 +76,7 @@ const userContent = async (
   for (const part of item.content) {
     switch (part.type) {
     case 'text': blocks.push({ type: 'text', text: part.text }); break;
-    case 'image': {
-      if (options.resolveImage === undefined) { blocks.push(imageBlock(part.image)); break; }
-      const image = await options.resolveImage(part.image);
-      if (image !== null) blocks.push(image);
-      break;
-    }
+    case 'image': blocks.push(imageBlock(part.image)); break;
     case 'file':
       blocks.push(documentBlock(part.file));
       break;
@@ -105,11 +97,7 @@ const toolResultContent = async (
   for (const part of output) {
     if (part.type === 'text') { blocks.push({ type: 'text', text: part.text }); continue; }
     if (part.type === 'file') throw new TranslatorInputError('Cannot translate file tool output to Anthropic Messages.');
-    const image = options.resolveImage === undefined ? imageBlock(part.image) : await options.resolveImage(part.image);
-    // Unlike user content, an unresolvable tool-result image is a caller error:
-    // the tool returned bytes the target cannot represent.
-    if (image === null) throw new TranslatorInputError('Cannot translate unavailable or unsupported image tool output to Anthropic Messages.');
-    blocks.push(image);
+    blocks.push(imageBlock(part.image));
   }
   // Messages spells an empty tool result as the empty string.
   return blocks.length === 0 ? '' : blocks;
@@ -195,9 +183,6 @@ const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<AnthropicMessa
 };
 
 export interface AnthropicMessagesRequestFromIROptions {
-  // Injected by the caller, not derived from the request: Messages sometimes has
-  // to fetch a remote image before it can state one.
-  readonly resolveImage?: AnthropicMessagesImageResolver;
   // The upstream's own output limit, when the operator knows it. Messages
   // requires a ceiling and the source may not have stated one.
   readonly fallbackMaxOutputTokens?: number;

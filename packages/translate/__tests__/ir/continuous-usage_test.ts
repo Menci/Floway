@@ -13,7 +13,7 @@ test.each(protocols)('ChatCompletions via %s captures continuous usage preferenc
   for (const include_usage of flags) for (const continuous_usage_stats of flags) {
     const src: OpenAIChatCompletionsPayloadEx = { model: 'model', messages: [], stream: true, stream_options: { include_usage, continuous_usage_stats } };
     const trip = protocol === 'anthropic-messages'
-      ? await routeOpenAIChatCompletions(src).viaAnthropicMessages({ sidecarCodec: createTestSidecarCodec('test-codec-scope'), fallbackMaxOutputTokens: 100, loadRemoteImage: async () => { throw new Error('Unexpected image'); } })
+      ? await routeOpenAIChatCompletions(src).viaAnthropicMessages({ sidecarCodec: createTestSidecarCodec('test-codec-scope'), fallbackMaxOutputTokens: 100 })
       : await routeOpenAIChatCompletions(src).viaOpenAIResponses({ sidecarCodec: createTestSidecarCodec('test-codec-scope') });
     src.stream_options!.include_usage = include_usage !== true;
     src.stream_options!.continuous_usage_stats = continuous_usage_stats !== true;

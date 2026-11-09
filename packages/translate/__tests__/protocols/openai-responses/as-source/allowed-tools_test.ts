@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { irInputCustomToolNames } from '../../../../src/ir/input/select-tools.ts';
 import { buildTargetRequestFor } from '../../../../src/protocols/composition.ts';
-import { openaiResponsesSourceProtocol } from '../../../../src/protocols/openai-responses/source.ts';
+import { openaiResponsesOpen } from '../../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { TranslatorInputError } from '../../../../src/translator-input-error.ts';
 import type { SidecarCodec } from '../../../../src/types.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
@@ -12,17 +12,17 @@ import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 // Reading a Responses request is what produces the flattened namespace map, so
 // the reading a test builds from must be the same one whose map it asserts.
-const reading = (payload: OpenAIResponsesRequestPayloadEx) => openaiResponsesSourceProtocol.read(payload);
+const reading = (payload: OpenAIResponsesRequestPayloadEx) => openaiResponsesOpen(payload);
 const extrasOf = (r: ReturnType<typeof reading>, codec: SidecarCodec) =>
-  ({ sidecarCodec: codec, customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra });
+  ({ sidecarCodec: codec, customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra.namespaceToolNames });
 
 const buildChat = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec) => {
   const r = reading(payload);
-  return { target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], payload, extrasOf(r, codec), r), customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra! };
+  return { target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], payload, extrasOf(r, codec), r), customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra.namespaceToolNames };
 };
 const buildMessages = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec, options: { fallbackMaxOutputTokens?: number; loadRemoteImage?: (url: string) => Promise<{ mediaType: string | null; data: Uint8Array } | null> } = {}) => {
   const r = reading(payload);
-  return { target: await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { ...extrasOf(r, codec), ...options }, r), customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra! };
+  return { target: await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { ...extrasOf(r, codec), ...options }, r), customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra.namespaceToolNames };
 };
 
 const source = (tool_choice: OpenAIResponsesToolChoice): OpenAIResponsesRequestPayloadEx => ({
@@ -40,7 +40,6 @@ for (const target of ['chat', 'messages'] as const) {
     ? await buildChat(payload, createTestSidecarCodec())
     : await buildMessages(payload, createTestSidecarCodec(), {
         fallbackMaxOutputTokens: undefined,
-        loadRemoteImage: async () => null,
       });
   for (const mode of ['auto', 'required'] as const) {
     test(`${target} request serializes only the allowed function/custom subset and ${mode} mode`, async () => {

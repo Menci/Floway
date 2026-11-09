@@ -2,7 +2,8 @@ import { klona } from 'klona/json';
 
 import { partitionOpenAIChatCompletionsTurns, type OpenAIChatCompletionsConversationMessage, type OpenAIChatCompletionsConversationTurn } from './conversation-turns.ts';
 import { hasOpenAIChatCompletionsReasoning } from './round-trip.ts';
-import type { IRInputSource } from '../../../ir/input/source.ts';
+import type { IRInputLayout } from '../../../ir/input/layout.ts';
+import type { OpenAIChatCompletionsAssistantTurn } from './round-trip.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -149,8 +150,8 @@ const assistantItems = (turn: Extract<OpenAIChatCompletionsConversationTurn, { r
  * extension aliases with no wire contract. A reader cannot tell which alias a
  * provider meant, so it emits no reasoning item; the route reports the loss.
  */
-export const openaiChatCompletionsDropsReasoning = (turn: OpenAIChatCompletionsConversationTurn): boolean =>
-  turn.role === 'assistant' && hasOpenAIChatCompletionsReasoning(turn.items[0]);
+export const openaiChatCompletionsDropsReasoning = (turn: OpenAIChatCompletionsAssistantTurn): boolean =>
+  hasOpenAIChatCompletionsReasoning(turn);
 
 /**
  * Call kinds keyed by call ID. A Chat `tool` message does not state which kind
@@ -327,21 +328,16 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
  * Presenting the request, the conversation, and the reader that carries that
  * state together keeps the state with the code that needs it.
  */
-export interface OpenAIChatCompletionsSource extends IRInputSource<OpenAIChatCompletionsConversationTurn> {
-  readonly request: IRInputRequest;
-}
-
-export const openaiChatCompletionsSource = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsSource => {
+export const openaiChatCompletionsOpen = (payload: OpenAIChatCompletionsPayload): IRInputLayout<OpenAIChatCompletionsAssistantTurn> => {
   const context = openaiChatCompletionsInputContext(payload);
   return {
     request: openaiChatCompletionsRequestToIR(payload),
-    prompt: undefined,
-    conversation: partitionOpenAIChatCompletionsTurns(payload.messages),
-    turnToIR: turn => [openaiChatCompletionsTurnToIR(turn, context)],
-    // Chat names the kind of every declared call before the conversation is
-    // read, so a resolved turn needs no separate observation; reading it would
-    // only consume the correlation slot a later result depends on.
-    observeResolvedTurn: () => [],
-    flush: () => [],
+    slots: partitionOpenAIChatCompletionsTurns(payload.messages).map(turn => turn.role === 'assistant'
+      ? {
+          kind: 'assistant' as const,
+          assistantTurn: turn.items[0],
+          toIRTurn: () => [openaiChatCompletionsTurnToIR(turn, context)],
+        }
+      : { kind: 'client' as const, toIRTurn: () => [openaiChatCompletionsTurnToIR(turn, context)] }),
   };
 };

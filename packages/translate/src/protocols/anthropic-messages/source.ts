@@ -1,42 +1,29 @@
-import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn } from './as-source/conversation-turns.ts';
 import { anthropicMessagesErrorWriter } from './as-source/error-body.ts';
-import type { IRInputRequest } from '../../ir/input/types.ts';
-import type { IRRecord } from '../../ir/output/stream.ts';
-import type { RoundTripWriter } from '../../round-trip/stream.ts';
-import type { SourceProtocol, SourceReading } from '../composition.ts';
-import { anthropicMessagesDropsReasoning, anthropicMessagesSource, type AnthropicMessagesSource } from './as-source/input-to.ts';
-import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest, type AnthropicMessagesAssistantTurn } from './as-source/round-trip.ts';
+import { anthropicMessagesDropsReasoning, anthropicMessagesOpen } from './as-source/input-to.ts';
 import { anthropicMessagesFromIR } from './as-source/sse-to.ts';
+import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from './as-source/round-trip.ts';
+import type { SourceProtocol } from '../composition.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 
 /**
  * Messages read as the side a request comes from.
  *
- * The assistant part of a conversation turn is the unit a native turn
- * round-trips as: Messages states an assistant message, or a run of them, and
- * that run is what a sidecar describes.
+ * A sidecar on a Messages assistant turn rides in a `redacted_thinking` block
+ * inside the message, so the structure it is computed over is the run of
+ * assistant messages the conversation stated.
  */
 export const anthropicMessagesSourceProtocol: SourceProtocol<
-  'anthropicMessages', AnthropicMessagesPayload, AnthropicMessagesConversationTurn, AnthropicMessagesAssistantTurn, AnthropicMessagesStreamEventEx
+  'anthropicMessages', AnthropicMessagesPayload, AnthropicMessagesStreamEventEx
 > = {
   name: 'anthropicMessages',
-  read: (payload): SourceReading<'anthropicMessages', AnthropicMessagesConversationTurn, AnthropicMessagesAssistantTurn, AnthropicMessagesStreamEventEx> => {
-    const source: AnthropicMessagesSource = anthropicMessagesSource(payload);
-    return {
-      request: source.request,
-      input: source,
-      assistantTurn: turn => turn.role === 'assistant' ? turn.items : undefined,
-      dropsReasoning: anthropicMessagesDropsReasoning,
-      roundTrip: {
-        inspect: findAnthropicMessagesSidecarCarriers,
-        verify: verifyAnthropicMessagesTurnDigest,
-        collectCandidates: collectAnthropicMessagesReplayContents,
-      },
-      output: (records: AsyncIterable<IRRecord>, writer: RoundTripWriter<'anthropicMessages'>, _request: IRInputRequest) =>
-        anthropicMessagesFromIR(records, { roundTrip: writer }),
-    };
+  open: anthropicMessagesOpen,
+  dropsReasoning: anthropicMessagesDropsReasoning,
+  roundTrip: {
+    inspect: findAnthropicMessagesSidecarCarriers,
+    verify: verifyAnthropicMessagesTurnDigest,
+    collectCandidates: collectAnthropicMessagesReplayContents,
   },
   writeError: anthropicMessagesErrorWriter,
+  // Stating a Messages stream needs nothing the request produced.
+  writeStream: (_layout, records, writer) => anthropicMessagesFromIR(records, { roundTrip: writer }),
 };
-
-export { partitionAnthropicMessagesTurns };

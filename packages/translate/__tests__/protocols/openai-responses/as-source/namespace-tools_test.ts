@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import { irInputCustomToolNames } from '../../../../src/ir/input/select-tools.ts';
 import { buildTargetRequestFor } from '../../../../src/protocols/composition.ts';
 import { flattenNamespaceTools, restoreNamespaceEvents, restoreNamespaceOutputItem } from '../../../../src/protocols/openai-responses/as-source/namespace-tools.ts';
-import { openaiResponsesSourceProtocol } from '../../../../src/protocols/openai-responses/source.ts';
+import { openaiResponsesOpen } from '../../../../src/protocols/openai-responses/as-source/input-to.ts';
 import type { SidecarCodec } from '../../../../src/types.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import { pairs } from '../../composition-helpers.ts';
@@ -15,19 +15,19 @@ import { routeOpenAIResponses, canonicalizeOpenAIResponsesPayload } from '@flowa
 
 // Reading a Responses request is what produces the flattened namespace map, so
 // the reading a test builds from must be the same one whose map it asserts.
-const reading = (payload: OpenAIResponsesRequestPayloadEx) => openaiResponsesSourceProtocol.read(payload);
+const reading = (payload: OpenAIResponsesRequestPayloadEx) => openaiResponsesOpen(payload);
 const extrasOf = (r: ReturnType<typeof reading>, codec: SidecarCodec) =>
-  ({ sidecarCodec: codec, customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra });
+  ({ sidecarCodec: codec, customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra.namespaceToolNames });
 
 const buildChatRequest = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec) => {
   const r = reading(payload);
   const target = await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], payload, extrasOf(r, codec), r);
-  return { target, customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra! };
+  return { target, customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra.namespaceToolNames };
 };
 const buildMessagesRequest = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec, options: { fallbackMaxOutputTokens?: number; loadRemoteImage?: (url: string) => Promise<{ mediaType: string | null; data: Uint8Array } | null> } = {}) => {
   const r = reading(payload);
   const target = await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { ...extrasOf(r, codec), ...options }, r);
-  return { target, customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra! };
+  return { target, customToolNames: irInputCustomToolNames(r.request), namespaceToolNames: r.extra.namespaceToolNames };
 };
 
 const payload = (): OpenAIResponsesRequestPayloadEx => ({
@@ -39,14 +39,14 @@ const payload = (): OpenAIResponsesRequestPayloadEx => ({
         { type: 'function', name: 'spawn', parameters: { type: 'object' } },
         { type: 'function', name: 'wait', parameters: { type: 'object' } },
         { type: 'custom', name: 'audit' },
-      ],
+      ]
     },
   ],
   input: [{ type: 'function_call', namespace: 'agents', name: 'wait', call_id: 'old', arguments: '{}', status: 'completed' }],
-  tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', namespace: 'agents', name: 'spawn' }] },
+  tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', namespace: 'agents', name: 'spawn' }] }
 });
 
-const messagesRequestOptions = { fallbackMaxOutputTokens: undefined, loadRemoteImage: async () => null };
+const messagesRequestOptions = { fallbackMaxOutputTokens: undefined};
 
 test.each(['additional_tools', 'tool_search_output'] as const)('keeps %s as a user-side boundary between ordinary assistant turns', async type => {
   const source: CanonicalOpenAIResponsesPayload = {
@@ -55,7 +55,7 @@ test.each(['additional_tools', 'tool_search_output'] as const)('keeps %s as a us
       { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'A' }] },
       type === 'additional_tools' ? { type, role: 'developer', tools: [] } : { type, tools: [] },
       { type: 'function_call', call_id: 'c', name: 'lookup', arguments: '{}' },
-    ],
+    ]
   };
   expect((await buildChatRequest(source, createTestSidecarCodec())).target.messages).toEqual([
     { role: 'assistant', content: 'A' },
@@ -73,7 +73,7 @@ test('namespace setup preserves the original input and allocates historical name
     input: [
       { type: 'function_call', namespace: 'x.y', name: 'f', call_id: 'first', arguments: '{}' },
       { type: 'function_call', namespace: 'x', name: 'y.f', call_id: 'second', arguments: '{}' },
-    ],
+    ]
   };
   const prepared = flattenNamespaceTools(request);
 
@@ -141,8 +141,8 @@ test('restores function and custom calls across item events and terminal snapsho
     response: {
       output: [
         { namespace: 'agents', name: 'spawn' }, { namespace: 'agents', name: 'audit', input: 'agents_audit' },
-      ],
-    },
+      ]
+    }
   });
 });
 
@@ -153,25 +153,25 @@ test('restores all function/custom output item type combinations without retaini
   if (functionName === undefined || customName === undefined) throw new Error('Expected flattened namespace tool names');
 
   const sameFunction = {
-    type: 'function_call', name: functionName, call_id: 'same-function', arguments: '{}', status: 'completed', trace: 'kept',
+    type: 'function_call', name: functionName, call_id: 'same-function', arguments: '{}', status: 'completed', trace: 'kept'
   } satisfies OpenAIResponsesOutputItemEx & { trace: string };
   const sameCustom = {
-    type: 'custom_tool_call', name: customName, call_id: 'same-custom', input: 'input', trace: 'kept',
+    type: 'custom_tool_call', name: customName, call_id: 'same-custom', input: 'input', trace: 'kept'
   } satisfies OpenAIResponsesOutputItemEx & { trace: string };
   const customAsFunction = {
-    type: 'custom_tool_call', name: functionName, call_id: 'custom-as-function', input: '{"q":1}', trace: 'kept',
+    type: 'custom_tool_call', name: functionName, call_id: 'custom-as-function', input: '{"q":1}', trace: 'kept'
   } satisfies OpenAIResponsesOutputItemEx & { trace: string };
   const functionAsCustom = {
-    type: 'function_call', name: customName, call_id: 'function-as-custom', arguments: 'plain', status: 'completed', trace: 'kept',
+    type: 'function_call', name: customName, call_id: 'function-as-custom', arguments: 'plain', status: 'completed', trace: 'kept'
   } satisfies OpenAIResponsesOutputItemEx & { trace: string };
 
   expect(restoreNamespaceOutputItem(sameFunction, names, 'in_progress')).toEqual({ ...sameFunction, name: 'spawn', namespace: 'agents' });
   expect(restoreNamespaceOutputItem(sameCustom, names, 'in_progress')).toEqual({ ...sameCustom, name: 'audit', namespace: 'agents' });
   expect(restoreNamespaceOutputItem(customAsFunction, names, 'in_progress')).toEqual({
-    type: 'function_call', name: 'spawn', namespace: 'agents', call_id: 'custom-as-function', arguments: '{"q":1}', status: 'in_progress', trace: 'kept',
+    type: 'function_call', name: 'spawn', namespace: 'agents', call_id: 'custom-as-function', arguments: '{"q":1}', status: 'in_progress', trace: 'kept'
   });
   expect(restoreNamespaceOutputItem(functionAsCustom, names, 'in_progress')).toEqual({
-    type: 'custom_tool_call', name: 'audit', namespace: 'agents', call_id: 'function-as-custom', input: 'plain', status: 'completed', trace: 'kept',
+    type: 'custom_tool_call', name: 'audit', namespace: 'agents', call_id: 'function-as-custom', input: 'plain', status: 'completed', trace: 'kept'
   });
 });
 
@@ -205,7 +205,7 @@ test('the complete Chat Completions trip restores the namespace after target too
 });
 
 test('the complete Anthropic Messages trip restores the namespace after target tool calls', async () => {
-  const trip = await routeOpenAIResponses(payload()).viaAnthropicMessages({ sidecarCodec: createTestSidecarCodec('test-codec-scope'), loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } });
+  const trip = await routeOpenAIResponses(payload()).viaAnthropicMessages({ sidecarCodec: createTestSidecarCodec('test-codec-scope') });
   const frames = (async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
     yield eventFrame({ type: 'message_start', message: { container: null, diagnostics: null, stop_details: null, id: 'msg1', type: 'message', model: 'm', role: 'assistant', content: [], stop_reason: null, stop_sequence: null, usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 } } });
     yield eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'call1', name: 'agents_spawn_2', input: {} } });
