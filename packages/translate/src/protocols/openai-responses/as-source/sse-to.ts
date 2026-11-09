@@ -493,13 +493,22 @@ export const openaiResponsesFromIR = async function* (
     const resolvedCallId = callId === IRAbsent ? createRandomOpenAIResponsesItemId('function_call') : callId;
     unit.id = id;
     unit.callId = resolvedCallId;
+    // The announcement states the same pair the terminal snapshot does: a call
+    // the request declared grouped is named by its group here too.
     const added: OpenAIResponsesOutputItemEx = custom
-      ? { type: 'custom_tool_call', id, call_id: resolvedCallId, name: item.name, input: '', status: 'in_progress' }
-      : { type: 'function_call', id, call_id: resolvedCallId, name: item.name, arguments: '', status: 'in_progress' };
-    const restored = added;
+      ? {
+          type: 'custom_tool_call', id, call_id: resolvedCallId, name: item.name,
+          ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+          input: '', status: 'in_progress',
+        }
+      : {
+          type: 'function_call', id, call_id: resolvedCallId, name: item.name,
+          ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+          arguments: '', status: 'in_progress',
+        };
     const content = createContentState(options.roundTrip.builder, 'text');
     unit.toolContentState = content;
-    nativeState[outputIndex] = restored.type === 'custom_tool_call' ? { input: content } : { arguments: content };
+    nativeState[outputIndex] = added.type === 'custom_tool_call' ? { input: content } : { arguments: content };
     const followUps: OpenAIResponsesStreamEventEx[] = [];
     appendPendingText(unit, [...unit.path, item.type === 'custom_tool_call' ? 'input' : 'arguments'], item.type === 'custom_tool_call' ? item.input : item.arguments);
     if (item.type === 'custom_tool_call') {
@@ -507,7 +516,7 @@ export const openaiResponsesFromIR = async function* (
     } else if (item.arguments !== '') {
       followUps.push({ type: 'response.function_call_arguments.delta', item_id: id, output_index: outputIndex, delta: item.arguments });
     }
-    return { added: restored, followUps };
+    return { added, followUps };
   };
 
   // Opens the waiting units in output IR order, until one still lacks what its opening event needs.

@@ -52,7 +52,8 @@ const statusNameOf = (status: number): string => {
  *
  * A stream failure has no HTTP status of its own, so the error kind decides
  * one. A failed request does have one, and it is what actually happened, so it
- * is passed in and the kind only supplies a name for it.
+ * is passed in and decides both the emitted `code` and the status name; the
+ * error kind is used only when there is no HTTP status.
  */
 export const irGenerateContentError = (error: IRErrorPayload, httpStatus?: number): GeminiGenerateContentErrorResponse['error'] => {
   const code = error.code ?? error.type;

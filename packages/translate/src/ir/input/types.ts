@@ -26,14 +26,12 @@
 // it: a reader normalizes what its wire stated and a writer spells it again for
 // its own target. A knob a target cannot express is dropped there.
 export interface IRInputSettings {
-  // The source's model id. A route that must override it (because the operator
-  // chose a target model) starts from a conversation and settings it built
-  // itself, so this field always states the model the request asks for.
+  // The source's model id. A route that resolves a target model folds it into
+  // the source payload before the trip, so this field always states the model
+  // the request asks for.
   readonly model: string;
-  // Every route this IR serves translates a stream, so a request states
-  // `true` and a target writer never varies the field. The boundary that
-  // accepts requests requires streaming before a trip is composed, and a trip
-  // rejects an IR that says otherwise.
+  // The return path is a stream, so the request path asks the upstream for one
+  // and a target writer rejects an IR that does not say `true`.
   readonly stream: boolean;
   readonly temperature?: number; // All
   readonly top_p?: number; // All
@@ -51,9 +49,9 @@ export interface IRInputSettings {
   // rule, not this IR's.
   readonly max_output_tokens?: number; // All
   readonly output_format?: IRInputOutputFormat; // ChatCompletions, Responses, Messages, GenerateContent
-  // Key/value tags a caller attaches for its own bookkeeping. Every protocol
-  // states them as string pairs, so a source whose own metadata admits other
-  // value types converts at its reader rather than here.
+  // Key/value tags a caller attaches for its own bookkeeping. The IR holds
+  // string pairs; a wire that admits other value types converts at its reader
+  // rather than here.
   readonly metadata?: Readonly<Record<string, string>>; // ChatCompletions, Responses, Messages
   // Whether the upstream keeps the response for later retrieval.
   readonly store?: boolean; // ChatCompletions, Responses
@@ -62,9 +60,9 @@ export interface IRInputSettings {
   readonly service_tier?: string; // ChatCompletions, Responses, Messages
   // Whether the model may issue several calls in one turn.
   readonly parallel_tool_calls?: boolean; // ChatCompletions, Responses
-  // The reasoning effort an OpenAI protocol states as an open string. Messages
-  // combines its own effort and thinking controls into the same axis, so the
-  // writer there derives both.
+  // The reasoning effort, an open string on every wire that has one. Messages
+  // splits the axis across `output_config.effort` and `thinking`, so its reader
+  // and writer each derive one from the other.
   readonly reasoning_effort?: string; // ChatCompletions, Responses, Messages
   // How many tokens the model may spend on internal reasoning. This is a
   // separate quantity from the effort level: Messages states both, and a source
@@ -163,9 +161,9 @@ export type IRInputCustomToolFormat =
   | { readonly type: 'text' }
   | { readonly type: 'grammar'; readonly definition: string; readonly syntax: string };
 
-// What the model may call, and how freely. `allowed_tools` is `auto` but with a
+// What the model may call, and how freely. `allowed_tools` states a mode with a
 // narrowed visible set, so it stays a distinct arm rather than being flattened
-// into `auto` plus a filtered declaration list: widening or narrowing the
+// into that mode plus a filtered declaration list: widening or narrowing the
 // declaration list changes what the model can see, not what it may choose.
 export type IRInputToolChoice =
   | 'auto'
@@ -182,11 +180,11 @@ export type IRInputToolSelection =
   | { readonly type: 'custom'; readonly name: string; readonly namespace?: string };
 
 // A turn is a maximal run of one branch class, not a protocol's message
-// grouping. An assistant message is always its own turn; a run of client
-// messages is one turn, because a writer that folds adjacent client turns into
-// one native message gets the same result either way. Writers regroup the flat
-// item list into whatever boundaries their protocol uses, so the source
-// grouping never constrains them.
+// grouping. An assistant message is always its own turn; a prompt is a turn of
+// its own, and a run of other client messages is one turn, because a writer
+// that folds adjacent client turns into one native message gets the same result
+// either way. Writers regroup the flat item list into whatever boundaries their
+// protocol uses, so the source grouping never constrains them.
 export type IRInputTurn = IRInputClientTurn | IRInputAssistantTurn;
 
 // Everything the client stated. The branch is named `client` rather than `user`
@@ -256,9 +254,8 @@ export type IRInputAddressedAssistantItem =
 export interface IRInputSystemMessageItem {
   readonly type: 'prompt'; // ChatCompletions, Responses, Messages
   readonly role: 'system' | 'developer'; // ChatCompletions, Responses; Messages has `system` only
-  // Text only: no pair carries media in system or developer content. Messages
-  // and Chat Completions accept text there, and every route rejects anything
-  // else at the target boundary rather than silently dropping it.
+  // Text only: no pair carries media in system or developer content, and each
+  // reader rejects a non-text part rather than silently dropping it.
   readonly content: readonly IRInputTextPart[]; // ChatCompletions, Responses, Messages
 }
 
@@ -324,8 +321,8 @@ export interface IRInputAudio {
 
 // A vendor file reference stays a reference because each vendor shares one file
 // namespace across its own protocols (Chat Completions and Responses use the
-// same OpenAI file IDs; Messages has its own). A pair that crosses vendors must
-// not treat the ID as portable, and that policy stays with the pair.
+// same OpenAI file IDs; Messages has its own). The IR keeps the reference as
+// stated and leaves portability to each pair.
 //
 // `media_type` is absent exactly when the source does not state one: OpenAI
 // `file_data` is bare base64, while images always arrive with a type (a data
@@ -352,7 +349,7 @@ export type IRInputMedia =
 export interface IRInputReasoningItem {
   readonly type: 'reasoning'; // Responses, Messages, GenerateContent; ChatCompletions as target
   // GenerateContent names its reasoning parts; Responses does not carry an id
-  // through its reader, and a writer allocates one where its wire needs it.
+  // through its reader, and no target requires one.
   readonly id?: string; // GenerateContent
   readonly summary?: readonly string[]; // Responses, GenerateContent, ChatCompletions; Messages as target
   readonly content?: readonly string[]; // Responses
@@ -360,9 +357,8 @@ export interface IRInputReasoningItem {
 
 export interface IRInputFunctionCallItem {
   readonly type: 'function_call'; // All
-  // A source that omits the id leaves it absent. Only a target whose wire
-  // correlates results by id has to state one, and it does so while writing:
-  // the reader is not the side that decides what an id looks like.
+  // A source that omits the id leaves it absent. A target whose wire correlates
+  // results by id states the missing ones while writing.
   readonly call_id?: string; // All
   // The name inside the declaration group, or the whole name when the source
   // has no groups, plus the group when the source grouped this call.
@@ -387,9 +383,9 @@ export interface IRInputCustomToolCallItem {
 
 export interface IRInputToolResultItem {
   readonly type: 'tool_result'; // All
-  // A result follows the call it answers: absent means the call it answers is
-  // the one still awaiting a result, which only a target that correlates by
-  // position has to work out.
+  // A result follows the call it answers: an absent id means it answers the
+  // call still awaiting one, which the target's id filling resolves before
+  // writing.
   readonly call_id?: string; // All
   // The function this result answers. A source whose wire correlates results
   // by name (GenerateContent) states it; a source that correlates by id does

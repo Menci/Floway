@@ -64,8 +64,14 @@ export const flattenRequestNames = <Restored>(
   // Nothing is grouped, so the wire names are the client's own.
   if (flat.size === 0) return { request, pieces, context: { customToolNames: customNamesOf(request), callIdentities } };
 
-  const nameOf = (namespace: string | undefined, name: string): string =>
-    namespace === undefined ? name : flat.get(`${namespace}.${name}`) ?? name;
+  // Every grouped callable was assigned a flat name by the pass above, so a
+  // lookup that misses means this request states a group the mapping never saw.
+  const nameOf = (namespace: string | undefined, name: string): string => {
+    if (namespace === undefined) return name;
+    const flatName = flat.get(`${namespace}.${name}`);
+    if (flatName === undefined) throw new Error(`No flat name was assigned for '${namespace}.${name}'.`);
+    return flatName;
+  };
   const flattenTool = (tool: IRInputTool): IRInputTool => {
     const { namespace: _namespace, ...rest } = tool;
     return { ...rest, name: nameOf(tool.namespace, tool.name) };

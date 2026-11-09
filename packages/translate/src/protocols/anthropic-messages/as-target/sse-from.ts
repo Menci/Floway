@@ -64,8 +64,8 @@ export const irFromAnthropicMessages = async function* (
   frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
   options: {
     customToolNames?: ReadonlySet<string>;
-    // The pair each flat name stands for, so a call this source wrote grouped
-    // is stated back as that pair.
+    // The pair each flat name in the request stands for, so the group the
+    // client declared is stated back on the IR.
     callIdentities?: ReadonlyMap<string, { readonly namespace: string; readonly name: string }>;
     roundTrip: RoundTripReader<'anthropicMessages'>;
   },

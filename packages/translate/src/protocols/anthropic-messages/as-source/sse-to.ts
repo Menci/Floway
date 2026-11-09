@@ -55,9 +55,10 @@ export const irMessagesError = (error: IRErrorPayload): AnthropicMessagesErrorEv
  * The body and status a failed request is restated with.
  *
  * Whether the failure is a context overflow decides both the wording and the
- * status, and the two must agree: Claude Code recognizes the overflow only as a
- * 400 carrying the prompt-too-long wording, so a body in those words behind any
- * other status would read as an ordinary failure. One judgement produces both.
+ * status, and the two are produced from one judgement so they cannot disagree.
+ * The 400 is the status Anthropic-direct answers that condition with, so the
+ * restated failure keeps the shape a client already sees from this vendor.
+ * Detection reads only `error.message`; the status is not part of it.
  */
 export const anthropicMessagesErrorResponse = (error: IRErrorPayload): { readonly body: Uint8Array; readonly status: number | undefined } => {
   const contextExceeded = isContextExceededError(error);
