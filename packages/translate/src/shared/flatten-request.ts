@@ -3,18 +3,28 @@ import type { IRInputResolvedTurn } from '../ir/input/segments.ts';
 import { irInputToolsForChoice } from '../ir/input/select-tools.ts';
 import type { IRInputRequest, IRInputTool, IRInputToolChoice, IRInputToolSelection, IRInputTurn } from '../ir/input/types.ts';
 
+/** What a target that writes flat names records for the reader of its answer. */
+export interface FlatCallContext {
+  readonly customToolNames: ReadonlySet<string>;
+  readonly callIdentities: ReadonlyMap<string, { readonly namespace: string; readonly name: string }>;
+}
+
+/** The declarations a request offers once its selector is applied, under the names this wire writes. */
+const customNamesOf = (request: IRInputRequest): ReadonlySet<string> =>
+  new Set((irInputToolsForChoice(request.tools, request.tool_choice) ?? [])
+    .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
+
 /**
- * The flat name each grouped callable gets on a protocol without namespaces.
+ * The pair each grouped callable stands for, keyed by the flat name it got.
  *
- * A protocol that addresses a callable by one bare name has to spell a grouped
- * declaration out, and the spelling must avoid every name the request already
- * uses. That is a fact about the whole conversation, so the mapping is computed
- * once over the declarations and the calls together — not per declaration.
+ * Both halves come out of one `assignFlatNames` pass, so the inversion is read
+ * off the pairs that were assigned rather than parsed back out of their key: a
+ * namespace or a name may itself contain the separator.
  */
-const flatNameMapping = (
+const flatNamesOf = (
   tools: readonly IRInputTool[],
   turns: readonly IRInputTurn[],
-): Map<string, string> => {
+): { readonly flat: ReadonlyMap<string, string>; readonly identities: Map<string, { readonly namespace: string; readonly name: string }> } => {
   const calls = turns.flatMap(turn => turn.items.flatMap(item =>
     item.type === 'function_call' || item.type === 'custom_tool_call' ? [item] : []));
   const reserved = new Set([
@@ -27,35 +37,14 @@ const flatNameMapping = (
     // spelling so the result that answers it lines up.
     ...calls.flatMap(call => call.namespace === undefined ? [] : [{ namespace: call.namespace, name: call.name }]),
   ];
-  return assignFlatNames(grouped, reserved);
-};
-
-/** What a target that writes flat names records for the reader of its answer. */
-export interface FlatCallContext {
-  readonly customToolNames: ReadonlySet<string>;
-  readonly callIdentities: ReadonlyMap<string, { readonly namespace: string; readonly name: string }>;
-}
-
-/** The declarations a request offers once its selector is applied, under the names this wire writes. */
-const customNamesOf = (request: IRInputRequest): ReadonlySet<string> =>
-  new Set((irInputToolsForChoice(request.tools, request.tool_choice) ?? [])
-    .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
-
-/** The pair each flat name stands for, read off the same assignment. */
-const identitiesFrom = (flat: ReadonlyMap<string, string>): Map<string, { readonly namespace: string; readonly name: string }> => {
+  const flat = assignFlatNames(grouped, reserved);
   const identities = new Map<string, { readonly namespace: string; readonly name: string }>();
-  for (const [key, flatName] of flat) {
-    const dot = key.indexOf('.');
-    identities.set(flatName, { namespace: key.slice(0, dot), name: key.slice(dot + 1) });
+  for (const { namespace, name } of grouped) {
+    const flatName = flat.get(`${namespace}.${name}`);
+    if (flatName !== undefined) identities.set(flatName, { namespace, name });
   }
-  return identities;
+  return { flat, identities };
 };
-
-/** What a target that writes flat names records for the reader of its answer. */
-export interface FlatCallContext {
-  readonly customToolNames: ReadonlySet<string>;
-  readonly callIdentities: ReadonlyMap<string, { readonly namespace: string; readonly name: string }>;
-}
 
 /**
  * States this target's request and conversation with flat callable names.
@@ -71,8 +60,7 @@ export const flattenRequestNames = <Restored>(
   pieces: readonly (IRInputTurn | IRInputResolvedTurn<Restored>)[],
 ): { readonly request: IRInputRequest; readonly pieces: readonly (IRInputTurn | IRInputResolvedTurn<Restored>)[]; readonly context: FlatCallContext } => {
   const turns = pieces.flatMap(piece => piece.kind === 'resolved' ? [] : [piece]);
-  const flat = flatNameMapping(request.tools ?? [], turns);
-  const callIdentities = identitiesFrom(flat);
+  const { flat, identities: callIdentities } = flatNamesOf(request.tools ?? [], turns);
   // Nothing is grouped, so the wire names are the client's own.
   if (flat.size === 0) return { request, pieces, context: { customToolNames: customNamesOf(request), callIdentities } };
 
