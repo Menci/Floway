@@ -1,19 +1,10 @@
 import { openaiChatCompletionsErrorWriter } from './as-source/error-body.ts';
+import type { OpenAIChatCompletionsExtra } from './as-source/input-to.ts';
 import { openaiChatCompletionsOpen } from './as-source/input-to.ts';
 import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from './as-source/round-trip.ts';
 import { openaiChatCompletionsFromIR } from './as-source/sse-to.ts';
 import type { SourceProtocol } from '../composition.ts';
-import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsStreamOptionsEx } from '@floway-dev/protocols/openai-chat-completions';
-
-/**
- * Whether the caller asked for a usage report on every chunk.
- *
- * Read once while opening, because the caller may keep mutating its own request
- * and this trip has already decided what to emit.
- */
-interface OpenAIChatCompletionsExtra {
-  readonly continuousUsageStats: boolean;
-}
+import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 /**
  * Chat Completions read as the side a request comes from.
@@ -25,16 +16,7 @@ export const openaiChatCompletionsSourceProtocol: SourceProtocol<
   'openaiChatCompletions', OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsExtra
 > = {
   name: 'openaiChatCompletions',
-  open: payload => {
-    const layout = openaiChatCompletionsOpen(payload);
-    const streamOptions: OpenAIChatCompletionsStreamOptionsEx | undefined = payload.stream_options == null
-      ? undefined
-      : { ...payload.stream_options };
-    const extra: OpenAIChatCompletionsExtra = {
-      continuousUsageStats: streamOptions?.include_usage === true && streamOptions.continuous_usage_stats === true,
-    };
-    return { ...layout, extra };
-  },
+  open: openaiChatCompletionsOpen,
   roundTrip: {
     inspect: findOpenAIChatCompletionsSidecarCarriers,
     verify: verifyOpenAIChatCompletionsTurnDigest,

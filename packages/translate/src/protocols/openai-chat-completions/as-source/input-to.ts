@@ -27,6 +27,7 @@ import type {
   OpenAIChatCompletionsPayload,
   OpenAIChatCompletionsTool,
   OpenAIChatCompletionsUserContentPart,
+  OpenAIChatCompletionsStreamOptionsEx,
 } from '@floway-dev/protocols/openai-chat-completions';
 
 const DATA_URL = /^data:([^;,]+)?;base64,(.*)$/s;
@@ -319,8 +320,27 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
  * Presenting the request, the conversation, and the reader that carries that
  * state together keeps the state with the code that needs it.
  */
-export const openaiChatCompletionsOpen = (payload: OpenAIChatCompletionsPayload): IRInputLayout<OpenAIChatCompletionsAssistantTurn> => {
+/**
+ * What the reading derived for the writer, which the request itself no longer
+ * carries.
+ *
+ * A Chat request states whether it wants a usage report on every chunk rather
+ * than only the last one. That is a rendering decision for this client, not a
+ * setting the target receives — the translation always asks its upstream for
+ * the fullest report it can get — so it stays with the reading instead of
+ * entering the IR.
+ */
+export interface OpenAIChatCompletionsExtra {
+  readonly continuousUsageStats: boolean;
+}
+
+export const openaiChatCompletionsOpen = (payload: OpenAIChatCompletionsPayload): IRInputLayout<OpenAIChatCompletionsAssistantTurn, OpenAIChatCompletionsExtra> => {
   const context = openaiChatCompletionsInputContext(payload);
+  // `continuous_usage_stats` is the vLLM/SGLang extension this pair reads:
+  // `include_usage` alone asks for the final report only, and the extension
+  // asks for one on every chunk.
+  // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/openai/serving_engine.py#L112-L121
+  const streamOptions = payload.stream_options as OpenAIChatCompletionsStreamOptionsEx | undefined;
   return {
     request: openaiChatCompletionsRequestToIR(payload),
     slots: partitionOpenAIChatCompletionsTurns(payload.messages).map(turn => turn.role === 'assistant'
@@ -330,5 +350,8 @@ export const openaiChatCompletionsOpen = (payload: OpenAIChatCompletionsPayload)
           toIRTurn: () => [openaiChatCompletionsTurnToIR(turn, context)],
         }
       : { kind: 'client' as const, toIRTurn: () => [openaiChatCompletionsTurnToIR(turn, context)] }),
+    extra: {
+      continuousUsageStats: streamOptions?.include_usage === true && streamOptions.continuous_usage_stats === true,
+    },
   };
 };
