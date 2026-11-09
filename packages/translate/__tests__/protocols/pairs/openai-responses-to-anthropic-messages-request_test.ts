@@ -2,7 +2,9 @@ import { test } from 'vitest';
 
 import { irInputToolsForChoice } from '../../../src/ir/input/select-tools.ts';
 import type { IRInputRequest } from '../../../src/ir/input/types.ts';
-import { openaiResponsesOpen } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
+import { openaiResponsesRead } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
+import { flattenNamespaceTools } from '../../../src/protocols/openai-responses/as-source/namespace-tools.ts';
+import { canonicalizeOpenAIResponsesPayload } from '../../../src/protocols/openai-responses/canonicalize-payload.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import { buildTargetRequestFor, pairs } from '../composition-helpers.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesClientTool, type AnthropicMessagesToolResultBlock, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
@@ -42,9 +44,9 @@ const buildWithTestSidecar = async (
   options: Partial<typeof testBuildOptions> = {},
 ) => {
   const streamed = { ...payload, stream: true };
-  const layout = openaiResponsesOpen(streamed);
-  const built = await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], streamed, { sidecarCodec: createTestSidecarCodec(), ...testBuildOptions, ...options }, layout);
-  return { target: built, customToolNames: customToolNamesOf(layout.request), namespaceToolNames: layout.extra.namespaceToolNames };
+  const reading = openaiResponsesRead(streamed);
+  const built = await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], streamed, { sidecarCodec: createTestSidecarCodec(), ...testBuildOptions, ...options });
+  return { target: built, customToolNames: customToolNamesOf(reading.request) };
 };
 
 test('buildTargetRequest preserves unsafe JSON number tokens in function history', async () => {
@@ -629,7 +631,7 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
       strict: false,
     }],
   };
-  const result = await buildWithTestSidecar({
+  const payload: OpenAIResponsesRequestPayloadEx = {
     ...minimalPayload,
     input: [
       { type: 'message', role: 'user', content: 'search' },
@@ -640,10 +642,12 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
       namespaceTool,
     ],
     tool_choice: { type: 'function', name: 'web.run' },
-  });
+  };
+  const result = await buildWithTestSidecar(payload);
 
-  assertEquals(result.namespaceToolNames.sourceToTarget, new Map([['web.run', 'web_run_2']]));
-  assertEquals(result.namespaceToolNames.targetToSource, new Map([['web_run_2', { namespace: 'web', name: 'run', type: 'function_call' }]]));
+  const names = flattenNamespaceTools(canonicalizeOpenAIResponsesPayload({ ...payload, stream: true })).names;
+  assertEquals(names.sourceToTarget, new Map([['web.run', 'web_run_2']]));
+  assertEquals(names.targetToSource, new Map([['web_run_2', { namespace: 'web', name: 'run', type: 'function_call' }]]));
   assertEquals(result.target.tools, [
     {
       name: 'web_run',

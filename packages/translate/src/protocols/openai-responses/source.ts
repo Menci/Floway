@@ -1,10 +1,10 @@
+import type { SourceProtocol } from '../composition.ts';
 import { openaiResponsesErrorWriter } from './as-source/error-body.ts';
-import { openaiResponsesOpen, type OpenAIResponsesExtra } from './as-source/input-to.ts';
+import { openaiResponsesRead, type OpenAIResponsesDerived } from './as-source/input-to.ts';
 import { restoreNamespaceEvents } from './as-source/namespace-tools.ts';
 import { createRandomOpenAIResponsesResponseId } from './as-source/response-id.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from './as-source/round-trip.ts';
 import { openaiResponsesFromIR } from './as-source/sse-to.ts';
-import type { SourceProtocol } from '../composition.ts';
 import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 /**
@@ -15,26 +15,22 @@ import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx } fr
  * to be stated again the way the caller wrote it.
  */
 export const openaiResponsesSourceProtocol: SourceProtocol<
-  'openaiResponses', OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx, OpenAIResponsesExtra
+  'openaiResponses', OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx, OpenAIResponsesDerived
 > = {
   name: 'openaiResponses',
-  open: openaiResponsesOpen,
+  read: openaiResponsesRead,
   roundTrip: {
     inspect: findOpenAIResponsesSidecarCarriers,
     verify: verifyOpenAIResponsesTurnDigest,
     collectCandidates: collectOpenAIResponsesReplayContents,
   },
   writeError: openaiResponsesErrorWriter,
-  writeStream: (layout, records, writer) => {
+  writeStream: (derived, records, writer) => {
     // A response id names the upstream response, so one is minted per trip.
     const responseId = createRandomOpenAIResponsesResponseId();
     return restoreNamespaceEvents(
-      openaiResponsesFromIR(records, {
-        id: responseId,
-        namespaceToolNames: layout.extra.namespaceToolNames,
-        roundTrip: writer,
-      }),
-      layout.extra.namespaceToolNames,
+      openaiResponsesFromIR(records, { id: responseId, namespaceToolNames: derived.namespaceToolNames, roundTrip: writer }),
+      derived.namespaceToolNames,
     );
   },
 };

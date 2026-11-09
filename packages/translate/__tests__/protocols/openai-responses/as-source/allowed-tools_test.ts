@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { irInputToolsForChoice } from '../../../../src/ir/input/select-tools.ts';
 import type { IRInputRequest } from '../../../../src/ir/input/types.ts';
 import { buildTargetRequestFor } from '../../../../src/protocols/composition.ts';
-import { openaiResponsesOpen } from '../../../../src/protocols/openai-responses/as-source/input-to.ts';
+import { openaiResponsesRead } from '../../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { TranslatorInputError } from '../../../../src/types.ts';
 import type { SidecarCodec } from '../../../../src/types.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
@@ -14,19 +14,13 @@ const customToolNamesOf = (request: IRInputRequest): ReadonlySet<string> =>
   new Set((irInputToolsForChoice(request.tools, request.tool_choice) ?? [])
     .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
 
-// Reading a Responses request is what produces the flattened namespace map, so
-// the reading a test builds from must be the same one whose map it asserts.
-const reading = (payload: OpenAIResponsesRequestPayloadEx) => openaiResponsesOpen(payload);
-const extrasOf = (r: ReturnType<typeof reading>, codec: SidecarCodec) =>
-  ({ sidecarCodec: codec, customToolNames: customToolNamesOf(r.request), namespaceToolNames: r.extra.namespaceToolNames });
-
 const buildChat = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec) => {
-  const r = reading(payload);
-  return { target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], payload, extrasOf(r, codec), r), customToolNames: customToolNamesOf(r.request), namespaceToolNames: r.extra.namespaceToolNames };
+  const r = openaiResponsesRead(payload);
+  return { target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], payload, { sidecarCodec: codec }), customToolNames: customToolNamesOf(r.request) };
 };
-const buildMessages = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec, options: { fallbackMaxOutputTokens?: number; loadRemoteImage?: (url: string) => Promise<{ mediaType: string | null; data: Uint8Array } | null> } = {}) => {
-  const r = reading(payload);
-  return { target: await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { ...extrasOf(r, codec), ...options }, r), customToolNames: customToolNamesOf(r.request), namespaceToolNames: r.extra.namespaceToolNames };
+const buildMessages = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec, options: { fallbackMaxOutputTokens?: number } = {}) => {
+  const r = openaiResponsesRead(payload);
+  return { target: await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { sidecarCodec: codec, ...options }), customToolNames: customToolNamesOf(r.request) };
 };
 
 const source = (tool_choice: OpenAIResponsesToolChoice): OpenAIResponsesRequestPayloadEx => ({

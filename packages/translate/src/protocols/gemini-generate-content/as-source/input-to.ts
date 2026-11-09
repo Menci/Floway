@@ -3,11 +3,10 @@ import { klona } from 'klona/json';
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from './content.ts';
 import { partitionGeminiGenerateContentTurns, type GeminiGenerateContentConversationTurn as GeminiGenerateContentTurn } from './conversation-turns.ts';
 import { geminiGenerateContentThinkingLevelEffort } from './reasoning.ts';
-import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
+import type { GeminiGenerateContentAssistantTurn } from './round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from './schema.ts';
 import { geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from './tools.ts';
-import type { IRInputLayout, IRInputSlot } from '../../../ir/input/layout.ts';
-import type { GeminiGenerateContentAssistantTurn } from './round-trip.ts';
+import type { IRInputPendingCall, IRInputReading, IRInputTurnSlot } from '../../../ir/input/reading.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputRequest,
@@ -146,24 +145,34 @@ const turnToIRTurns = (
   turn: GeminiGenerateContentTurn,
   contentIndex: number,
   ids: GeminiGenerateContentToolCallIds,
-): IRInputTurn[] => turn.role === 'assistant'
-  ? [{
-      kind: 'assistant',
-      items: turn.items.flatMap((content, index) => (content.parts?.length ?? 0) === 0
-        ? [{ type: 'message' as const, content: [{ type: 'text' as const, text: '' }] }]
-        : assistantItems(content, contentIndex + index, ids)),
-    }]
-  : [{
-      kind: 'client',
-      items: turn.items.flatMap((content, index) => {
-        if (content.role !== 'user' && content.role !== undefined) {
-          throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
-        }
-        return (content.parts?.length ?? 0) === 0
-          ? [{ type: 'message' as const, content: [] }]
-          : userParts(content, contentIndex + index, ids);
-      }),
-    }];
+  restored: readonly IRInputPendingCall[],
+): IRInputTurn[] => {
+  // A restored turn never passed through this reader, so the calls it states are
+  // ones a later id-less result may answer. Registering them here keeps the
+  // correlation state with the code that owns it.
+  for (const { callId, name } of restored) {
+    ids[name] ??= [];
+    if (!ids[name].includes(callId)) ids[name].push(callId);
+  }
+  return turn.role === 'assistant'
+    ? [{
+        kind: 'assistant',
+        items: turn.items.flatMap((content, index) => (content.parts?.length ?? 0) === 0
+          ? [{ type: 'message' as const, content: [{ type: 'text' as const, text: '' }] }]
+          : assistantItems(content, contentIndex + index, ids)),
+      }]
+    : [{
+        kind: 'client',
+        items: turn.items.flatMap((content, index) => {
+          if (content.role !== 'user' && content.role !== undefined) {
+            throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
+          }
+          return (content.parts?.length ?? 0) === 0
+            ? [{ type: 'message' as const, content: [] }]
+            : userParts(content, contentIndex + index, ids);
+        }),
+      }];
+};
 
 /** Whether a turn carries a vendor-signed thought signature the input IR cannot hold. */
 /** A GenerateContent system instruction is the conversation's leading prompt. */
@@ -234,7 +243,7 @@ const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequest, 
  * and the reader that owns both counters together keeps that state where it
  * belongs rather than in every route.
  */
-export const geminiGenerateContentOpen = (payload: GeminiGenerateContentRequest): IRInputLayout<GeminiGenerateContentAssistantTurn> => {
+export const geminiGenerateContentRead = (payload: GeminiGenerateContentRequest): IRInputReading<GeminiGenerateContentAssistantTurn> => {
   const ids: GeminiGenerateContentToolCallIds = Object.create(null);
   let contentIndex = 0;
   const prompt = geminiGenerateContentSystemToIR(payload.systemInstruction);
@@ -243,17 +252,12 @@ export const geminiGenerateContentOpen = (payload: GeminiGenerateContentRequest)
   // of its name, and an omitted id is invented from the position the content
   // and part occupy. Both have to advance over every turn, which is why the
   // thunks close over the position they were created at.
-  const slotFor = (turn: GeminiGenerateContentTurn): IRInputSlot<GeminiGenerateContentAssistantTurn> => {
+  const turnSlotFor = (turn: GeminiGenerateContentTurn): IRInputTurnSlot<GeminiGenerateContentAssistantTurn> => {
     const at = contentIndex;
     contentIndex += turn.items.length;
-    if (turn.role !== 'assistant') {
-      return { kind: 'client', toIRTurn: () => turnToIRTurns(turn, at, ids) };
-    }
-    return {
-      kind: 'assistant',
-      assistantTurn: turn.items,
-      toIRTurn: () => turnToIRTurns(turn, at, ids),
-    };
+    const toIRTurn = (restored: readonly IRInputPendingCall[]) => turnToIRTurns(turn, at, ids, restored);
+    if (turn.role !== 'assistant') return { kind: 'client', toIRTurn };
+    return { kind: 'assistant', assistantTurn: turn.items, toIRTurn };
   };
 
   return {
@@ -262,19 +266,11 @@ export const geminiGenerateContentOpen = (payload: GeminiGenerateContentRequest)
       settings: geminiGenerateContentSettingsToIR(payload),
       ...toolsToIR(payload),
     },
-    slots: [
+    turns: [
       ...(prompt === undefined ? [] : [{ kind: 'client' as const, toIRTurn: () => [prompt] }]),
-      ...partitionContents(payload).map(slotFor),
+      ...partitionContents(payload).map(turnSlotFor),
     ],
-    // A restored turn never passed through `turnToIRTurns`, so its calls are
-    // registered here — with the ids the target states, which is what a later
-    // id-less result has to name.
-    observePendingCalls: pending => {
-      for (const { callId, name } of pending) {
-        ids[name] ??= [];
-        ids[name].push(callId);
-      }
-    },
+    derived: undefined,
   };
 };
 

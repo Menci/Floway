@@ -1,8 +1,8 @@
+import type { SourceProtocol } from '../composition.ts';
 import { geminiGenerateContentErrorWriter } from './as-source/error-body.ts';
-import { geminiGenerateContentOpen } from './as-source/input-to.ts';
+import { geminiGenerateContentRead } from './as-source/input-to.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from './as-source/round-trip.ts';
 import { geminiGenerateContentFromIR } from './as-source/sse-to.ts';
-import type { SourceProtocol } from '../composition.ts';
 import type { GeminiGenerateContentRequest, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 
 /**
@@ -15,7 +15,7 @@ export const geminiGenerateContentSourceProtocol: SourceProtocol<
   'geminiGenerateContent', GeminiGenerateContentRequest, GeminiGenerateContentStreamEvent
 > = {
   name: 'geminiGenerateContent',
-  open: geminiGenerateContentOpen,
+  read: geminiGenerateContentRead,
   roundTrip: {
     inspect: findGeminiGenerateContentSidecarCarriers,
     verify: verifyGeminiGenerateContentTurnDigest,
@@ -23,5 +23,5 @@ export const geminiGenerateContentSourceProtocol: SourceProtocol<
   },
   writeError: geminiGenerateContentErrorWriter,
   // Stating a GenerateContent stream needs nothing the request produced.
-  writeStream: (_layout, records, writer) => geminiGenerateContentFromIR(records, { roundTrip: writer }),
+  writeStream: (_payload, records, writer) => geminiGenerateContentFromIR(records, { roundTrip: writer }),
 };

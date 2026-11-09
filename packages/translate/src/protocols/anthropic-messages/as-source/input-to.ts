@@ -3,8 +3,7 @@ import { klona } from 'klona/json';
 import { filterAnthropicMessagesClientTools } from './client-tools.ts';
 import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn } from './conversation-turns.ts';
 import type { AnthropicMessagesAssistantTurn } from './round-trip.ts';
-import type { IRInputLayout, IRInputSlot } from '../../../ir/input/layout.ts';
-import type { IRInputSource } from '../../../ir/input/source.ts';
+import type { IRInputReading, IRInputTurnSlot } from '../../../ir/input/reading.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputRequest,
@@ -403,7 +402,7 @@ const reasoningEffortFromAnthropicMessages = (payload: AnthropicMessagesPayload)
  * the conversation ends, and a resolved turn releases it first because that turn
  * is written natively and sits between the two.
  */
-export const anthropicMessagesOpen = (payload: AnthropicMessagesPayload): IRInputLayout<AnthropicMessagesAssistantTurn> => {
+export const anthropicMessagesRead = (payload: AnthropicMessagesPayload): IRInputReading<AnthropicMessagesAssistantTurn> => {
   const request: IRInputRequest = {
     conversation: { turns: [] },
     settings: anthropicMessagesSettingsToIR(payload),
@@ -415,17 +414,17 @@ export const anthropicMessagesOpen = (payload: AnthropicMessagesPayload): IRInpu
   // The result and that message are one speaking turn, so a client slot that
   // ends the conversation is not emitted until the next source turn says
   // whether it continues.
-  const slots: IRInputSlot<AnthropicMessagesAssistantTurn>[] = [];
+  const turns: IRInputTurnSlot<AnthropicMessagesAssistantTurn>[] = [];
   let messageIndex = 0;
   let pendingClient: (() => IRInputTurn[]) | undefined;
 
   const appendClient = (produce: () => IRInputTurn[]): void => {
-    if (pendingClient !== undefined) slots.push({ kind: 'client', toIRTurn: pendingClient });
+    if (pendingClient !== undefined) turns.push({ kind: 'client', toIRTurn: pendingClient });
     pendingClient = produce;
   };
 
   const prompt = anthropicMessagesSystemToIR(payload.system);
-  if (prompt !== undefined) slots.push({ kind: 'client', toIRTurn: () => [prompt] });
+  if (prompt !== undefined) turns.push({ kind: 'client', toIRTurn: () => [prompt] });
 
   for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
     const firstMessageIndex = messageIndex;
@@ -435,10 +434,10 @@ export const anthropicMessagesOpen = (payload: AnthropicMessagesPayload): IRInpu
       // turn of its own, and its own output may interleave assistant and
       // server-result client turns.
       if (pendingClient !== undefined) {
-        slots.push({ kind: 'client', toIRTurn: pendingClient });
+        turns.push({ kind: 'client', toIRTurn: pendingClient });
         pendingClient = undefined;
       }
-      slots.push({
+      turns.push({
         kind: 'assistant',
         assistantTurn: turn.items,
         toIRTurn: () => anthropicMessagesTurnToIR(turn, firstMessageIndex),
@@ -447,7 +446,7 @@ export const anthropicMessagesOpen = (payload: AnthropicMessagesPayload): IRInpu
     }
     appendClient(() => anthropicMessagesTurnToIR(turn, firstMessageIndex));
   }
-  if (pendingClient !== undefined) slots.push({ kind: 'client', toIRTurn: pendingClient });
+  if (pendingClient !== undefined) turns.push({ kind: 'client', toIRTurn: pendingClient });
 
-  return { request, slots };
+  return { request, turns, derived: undefined };
 };

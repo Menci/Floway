@@ -1,12 +1,12 @@
 import { klona } from 'klona/json';
 
 import { validateAllowedTools } from './allowed-tools.ts';
-import { partitionOpenAIResponsesTurns, type OpenAIResponsesConversationTurn } from './conversation-turns.ts';
+import { partitionOpenAIResponsesTurns } from './conversation-turns.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from './namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from './programmatic-tooling.ts';
 import { isOpenAIResponsesEncryptedReasoning } from './round-trip.ts';
-import type { IRInputLayout } from '../../../ir/input/layout.ts';
 import type { OpenAIResponsesAssistantTurn } from './round-trip.ts';
+import type { IRInputReading } from '../../../ir/input/reading.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -299,19 +299,18 @@ const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): 
 };
 
 /**
- * A Responses request prepared for translation, with the source's own rewrites
- * applied.
+ * What reading a Responses request accumulated for the client-side writer.
  *
- * Namespace flattening changes names inside the conversation, so every turn has
- * to be read through the same mapping that produced `request`. Presenting them
- * together keeps that mapping with the reader that built it instead of handing
- * a closure to each route.
+ * Flattening assigns a flat name per namespaced callable, and it keeps
+ * assigning as history is read, so the final map depends on how many turns the
+ * reading walked. Deriving it again from the request afterwards would stop at
+ * the declarations and miss every name history allocated.
  */
-export interface OpenAIResponsesExtra {
+export interface OpenAIResponsesDerived {
   readonly namespaceToolNames: NamespaceToolNames;
 }
 
-export const openaiResponsesOpen = (source: OpenAIResponsesRequestPayloadEx): IRInputLayout<OpenAIResponsesAssistantTurn, OpenAIResponsesExtra> => {
+export const openaiResponsesRead = (source: OpenAIResponsesRequestPayloadEx): IRInputReading<OpenAIResponsesAssistantTurn, OpenAIResponsesDerived> => {
   const canonical = canonicalizeOpenAIResponsesPayload(source);
   const { payload, names, flattenInput } = flattenNamespaceTools(canonical);
   validateAllowedTools(payload.tools, payload.tool_choice, payload.input);
@@ -324,7 +323,7 @@ export const openaiResponsesOpen = (source: OpenAIResponsesRequestPayloadEx): IR
       settings: openaiResponsesSettingsToIR(payload),
       ...openaiResponsesToolsToIR(payload),
     },
-    slots: [
+    turns: [
       ...(prompt === undefined ? [] : [{ kind: 'client' as const, toIRTurn: () => [prompt] }]),
       ...partitionOpenAIResponsesTurns(canonical.input).map(turn => turn.role === 'assistant'
         ? {
@@ -334,6 +333,6 @@ export const openaiResponsesOpen = (source: OpenAIResponsesRequestPayloadEx): IR
           }
         : { kind: 'client' as const, toIRTurn: () => openaiResponsesTurnToIR(turn, flattenInput) }),
     ],
-    extra: { namespaceToolNames: names },
+    derived: { namespaceToolNames: names },
   };
 };

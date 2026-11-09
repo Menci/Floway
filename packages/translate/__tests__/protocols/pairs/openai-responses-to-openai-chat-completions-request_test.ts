@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { irInputToolsForChoice } from '../../../src/ir/input/select-tools.ts';
 import type { IRInputRequest } from '../../../src/ir/input/types.ts';
-import { openaiResponsesOpen } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
+import { openaiResponsesRead } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import { buildTargetRequestFor, pairs } from '../composition-helpers.ts';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsFunctionTool, OpenAIChatCompletionsToolMessage } from '@floway-dev/protocols/openai-chat-completions';
@@ -14,10 +14,10 @@ const customToolNamesOf = (request: IRInputRequest): ReadonlySet<string> =>
 
 const buildWithTestSidecar = async (payload: OpenAIResponsesRequestPayloadEx) => {
   const streamed = { ...payload, stream: true };
-  const layout = openaiResponsesOpen(streamed);
+  const reading = openaiResponsesRead(streamed);
   return {
-    target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], streamed, { sidecarCodec: createTestSidecarCodec() }, layout),
-    customToolNames: customToolNamesOf(layout.request),
+    target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], streamed, { sidecarCodec: createTestSidecarCodec() }),
+    customToolNames: customToolNamesOf(reading.request),
   };
 };
 

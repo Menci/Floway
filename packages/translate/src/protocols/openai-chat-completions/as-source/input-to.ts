@@ -1,8 +1,8 @@
 import { klona } from 'klona/json';
 
 import { partitionOpenAIChatCompletionsTurns, type OpenAIChatCompletionsConversationMessage, type OpenAIChatCompletionsConversationTurn } from './conversation-turns.ts';
-import type { IRInputLayout } from '../../../ir/input/layout.ts';
 import type { OpenAIChatCompletionsAssistantTurn } from './round-trip.ts';
+import type { IRInputReading } from '../../../ir/input/reading.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -312,6 +312,16 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
 };
 
 /**
+ * What reading a Chat request recorded for the client-side writer.
+ *
+ * Whether usage repeats on every chunk is the client's own rendering choice, so
+ * it decides what this side states back rather than what the target receives.
+ */
+export interface OpenAIChatCompletionsDerived {
+  readonly continuousUsageStats: boolean;
+}
+
+/**
  * A Chat Completions request prepared for translation.
  *
  * Reading a Chat conversation is stateful: a `tool` message does not state the
@@ -320,38 +330,22 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
  * Presenting the request, the conversation, and the reader that carries that
  * state together keeps the state with the code that needs it.
  */
-/**
- * What the reading derived for the writer, which the request itself no longer
- * carries.
- *
- * A Chat request states whether it wants a usage report on every chunk rather
- * than only the last one. That is a rendering decision for this client, not a
- * setting the target receives — the translation always asks its upstream for
- * the fullest report it can get — so it stays with the reading instead of
- * entering the IR.
- */
-export interface OpenAIChatCompletionsExtra {
-  readonly continuousUsageStats: boolean;
-}
-
-export const openaiChatCompletionsOpen = (payload: OpenAIChatCompletionsPayload): IRInputLayout<OpenAIChatCompletionsAssistantTurn, OpenAIChatCompletionsExtra> => {
+export const openaiChatCompletionsRead = (payload: OpenAIChatCompletionsPayload): IRInputReading<OpenAIChatCompletionsAssistantTurn, OpenAIChatCompletionsDerived> => {
   const context = openaiChatCompletionsInputContext(payload);
-  // `continuous_usage_stats` is the vLLM/SGLang extension this pair reads:
-  // `include_usage` alone asks for the final report only, and the extension
-  // asks for one on every chunk.
+  // `include_usage` alone asks for the final report; the vLLM/SGLang extension
+  // asks for one on every chunk, which is what lets this client see usage as
+  // the translation produces it.
   // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/openai/serving_engine.py#L112-L121
   const streamOptions = payload.stream_options as OpenAIChatCompletionsStreamOptionsEx | undefined;
   return {
     request: openaiChatCompletionsRequestToIR(payload),
-    slots: partitionOpenAIChatCompletionsTurns(payload.messages).map(turn => turn.role === 'assistant'
+    turns: partitionOpenAIChatCompletionsTurns(payload.messages).map(turn => turn.role === 'assistant'
       ? {
           kind: 'assistant' as const,
           assistantTurn: turn.items[0],
           toIRTurn: () => [openaiChatCompletionsTurnToIR(turn, context)],
         }
       : { kind: 'client' as const, toIRTurn: () => [openaiChatCompletionsTurnToIR(turn, context)] }),
-    extra: {
-      continuousUsageStats: streamOptions?.include_usage === true && streamOptions.continuous_usage_stats === true,
-    },
+    derived: { continuousUsageStats: streamOptions?.include_usage === true && streamOptions.continuous_usage_stats === true },
   };
 };

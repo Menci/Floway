@@ -1,13 +1,13 @@
+import type { IRInputPendingCall, IRInputReading } from '../ir/input/reading.ts';
+import { readTurns } from '../ir/input/reading.ts';
 import type { IRInputResolvedTurn } from '../ir/input/segments.ts';
-import type { IRInputLayout, IRInputSlot } from '../ir/input/layout.ts';
 import type { IRInputRequest, IRInputTurn } from '../ir/input/types.ts';
-import { readIRInput } from '../ir/input/read.ts';
 import type { IRRecord } from '../ir/output/stream.ts';
 import type { AssistantTurnByProtocol, AssistantTurnFor } from '../round-trip/assistant-turn.ts';
-import type { SourceAssistantTurnFor } from '../round-trip/source-assistant-turn.ts';
 import type { ReplayContent } from '../round-trip/reference/assistant-turn.ts';
 import type { EncodedRoundTripSidecar, PendingCall } from '../round-trip/resolve.ts';
 import { roundTripAssistantTurn } from '../round-trip/resolve.ts';
+import type { SourceAssistantTurnFor } from '../round-trip/source-assistant-turn.ts';
 import type { RoundTripReader, RoundTripWriter } from '../round-trip/stream.ts';
 import { createRoundTripStream } from '../round-trip/stream.ts';
 import type { RoundTripTurnDigest } from '../round-trip/turn-digest.ts';
@@ -30,20 +30,20 @@ export interface SourceRoundTrip<Name extends AssistantTurnKey> {
 }
 
 /** One protocol as the side a request comes from. */
-export interface SourceProtocol<Name extends AssistantTurnKey, Payload, Event, Extra = undefined> {
+export interface SourceProtocol<Name extends AssistantTurnKey, Payload, Event, Derived = undefined> {
   readonly name: Name;
-  /** Opens the request into the turns it states, each turn's side already decided. */
-  readonly open: (payload: Payload) => IRInputLayout<SourceAssistantTurnFor<Name>, Extra>;
+  /** Reads the request into the turns it states, each turn's side already decided. */
+  readonly read: (payload: Payload) => IRInputReading<SourceAssistantTurnFor<Name>, Derived>;
   readonly roundTrip: SourceRoundTrip<Name>;
   readonly writeError: SourceProtocolErrorWriter;
   /**
    * States the returned stream to this protocol's client.
    *
-   * It is handed the same layout the request came from, because stating a
-   * stream may need a fact the reading produced.
+   * It is handed what the reading accumulated for it, because stating a stream
+   * may need a value that reading built up and cannot be derived again.
    */
   readonly writeStream: (
-    layout: IRInputLayout<SourceAssistantTurnFor<Name>, Extra>,
+    derived: Derived,
     records: AsyncIterable<IRRecord>,
     writer: RoundTripWriter<Name>,
   ) => AsyncIterable<ProtocolFrame<Event>>;
@@ -93,19 +93,19 @@ export interface TargetProtocol<Name extends AssistantTurnKey, Payload, Event> {
  * one of them, so a route states a pair as two values.
  */
 export const composeTranslation = <
-  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent, SrcExtra,
+  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent, SrcDerived,
   TgtName extends AssistantTurnKey, TgtPayload extends { model: string }, TgtEvent,
 >(
-  source: SourceProtocol<SrcName, SrcPayload, SrcEvent, SrcExtra>,
+  source: SourceProtocol<SrcName, SrcPayload, SrcEvent, SrcDerived>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
 ): TranslateTrip<SrcPayload, SrcEvent, TgtPayload, TgtEvent> => async (payload, ctx) => {
-  const layout = source.open(payload);
+  const reading = source.read(payload);
   return {
-    target: await target.write(layout.request, await settleTurns(source, target, layout, ctx), ctx),
+    target: await target.write(reading.request, await settleTurns(source, target, reading, ctx), ctx),
     errorBody: source.writeError,
     events: frames => {
       const stream = createRoundTripStream(source.name, target.name, ctx.sidecarCodec);
-      return source.writeStream(layout, target.readStream(frames, stream.reader, layout.request), stream.writer);
+      return source.writeStream(reading.derived, target.readStream(frames, stream.reader, reading.request), stream.writer);
     },
   };
 };
@@ -119,23 +119,24 @@ export const composeTranslation = <
  * the second.
  */
 const settleTurns = async <
-  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent, SrcExtra,
+  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent, SrcDerived,
   TgtName extends AssistantTurnKey, TgtPayload, TgtEvent,
 >(
-  source: SourceProtocol<SrcName, SrcPayload, SrcEvent, SrcExtra>,
+  source: SourceProtocol<SrcName, SrcPayload, SrcEvent, SrcDerived>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
-  layout: IRInputLayout<SourceAssistantTurnFor<SrcName>, SrcExtra>,
+  reading: IRInputReading<SourceAssistantTurnFor<SrcName>, SrcDerived>,
   ctx: TranslateContext,
 ): Promise<(IRInputTurn | IRInputResolvedTurn<AssistantTurnFor<TgtName>>)[]> =>
-  await readIRInput(layout, async (slot): Promise<{ readonly resolved: AssistantTurnFor<TgtName> } | undefined> => {
+  await readTurns(reading, async (turn): Promise<
+    { readonly resolved: AssistantTurnFor<TgtName>; readonly pendingCalls: readonly IRInputPendingCall[] } | undefined
+  > => {
     const roundTrip = await roundTripAssistantTurn(
-      source.name, target.name, slot.assistantTurn, ctx.sidecarCodec,
+      source.name, target.name, turn.assistantTurn, ctx.sidecarCodec,
       source.roundTrip.inspect, source.roundTrip.verify, source.roundTrip.collectCandidates,
       target.pendingCallIds,
     );
     if (roundTrip === undefined) return undefined;
-    layout.observePendingCalls?.(roundTrip.pendingCallIds(roundTrip.turn));
-    return { resolved: roundTrip.turn };
+    return { resolved: roundTrip.turn, pendingCalls: roundTrip.pendingCallIds(roundTrip.turn) };
   });
 
 /**
@@ -145,18 +146,19 @@ const settleTurns = async <
  * this states exactly that step. It is the same code `composeTranslation` runs.
  */
 export const buildTargetRequestFor = async <
-  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent, SrcExtra,
+  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent, SrcDerived,
   TgtName extends AssistantTurnKey, TgtPayload, TgtEvent,
 >(
-  source: SourceProtocol<SrcName, SrcPayload, SrcEvent, SrcExtra>,
+  source: SourceProtocol<SrcName, SrcPayload, SrcEvent, SrcDerived>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
   payload: SrcPayload,
   ctx: TranslateContext,
-  // Reading a request is stateful, so a caller that also inspects what the
-  // reading produced passes the same layout rather than opening a second time.
-  layout: IRInputLayout<SourceAssistantTurnFor<SrcName>, SrcExtra> = source.open(payload),
+  // Reading is stateful and its derived values only become complete once every
+  // turn has settled, so a caller that also asserts on them passes the same
+  // reading it then inspects rather than opening a second, unread one.
+  reading: IRInputReading<SourceAssistantTurnFor<SrcName>, SrcDerived> = source.read(payload),
 ): Promise<TgtPayload> =>
-  await target.write(layout.request, await settleTurns(source, target, layout, ctx), ctx);
+  await target.write(reading.request, await settleTurns(source, target, reading, ctx), ctx);
 
 /**
  * The event half of a composed trip, stated on its own.
@@ -165,16 +167,16 @@ export const buildTargetRequestFor = async <
  * client-side writer may need.
  */
 export const translateSourceEventsFor = <
-  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent, SrcExtra,
+  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent, SrcDerived,
   TgtName extends AssistantTurnKey, TgtPayload, TgtEvent,
 >(
-  source: SourceProtocol<SrcName, SrcPayload, SrcEvent, SrcExtra>,
+  source: SourceProtocol<SrcName, SrcPayload, SrcEvent, SrcDerived>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
   payload: SrcPayload,
   ctx: TranslateContext,
   frames: AsyncIterable<ProtocolFrame<TgtEvent>>,
 ): AsyncIterable<ProtocolFrame<SrcEvent>> => {
-  const layout = source.open(payload);
+  const reading = source.read(payload);
   const stream = createRoundTripStream(source.name, target.name, ctx.sidecarCodec);
-  return source.writeStream(layout, target.readStream(frames, stream.reader, layout.request), stream.writer);
+  return source.writeStream(reading.derived, target.readStream(frames, stream.reader, reading.request), stream.writer);
 };

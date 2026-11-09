@@ -1,9 +1,8 @@
+import type { SourceProtocol } from '../composition.ts';
 import { openaiChatCompletionsErrorWriter } from './as-source/error-body.ts';
-import type { OpenAIChatCompletionsExtra } from './as-source/input-to.ts';
-import { openaiChatCompletionsOpen } from './as-source/input-to.ts';
+import { openaiChatCompletionsRead, type OpenAIChatCompletionsDerived } from './as-source/input-to.ts';
 import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from './as-source/round-trip.ts';
 import { openaiChatCompletionsFromIR } from './as-source/sse-to.ts';
-import type { SourceProtocol } from '../composition.ts';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 /**
@@ -13,18 +12,18 @@ import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent }
  * describes is that message.
  */
 export const openaiChatCompletionsSourceProtocol: SourceProtocol<
-  'openaiChatCompletions', OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsExtra
+  'openaiChatCompletions', OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsDerived
 > = {
   name: 'openaiChatCompletions',
-  open: openaiChatCompletionsOpen,
+  read: openaiChatCompletionsRead,
   roundTrip: {
     inspect: findOpenAIChatCompletionsSidecarCarriers,
     verify: verifyOpenAIChatCompletionsTurnDigest,
     collectCandidates: collectOpenAIChatCompletionsReplayContents,
   },
   writeError: openaiChatCompletionsErrorWriter,
-  writeStream: (layout, records, writer) => openaiChatCompletionsFromIR(records, {
-    continuousUsageStats: layout.extra.continuousUsageStats,
+  writeStream: (derived, records, writer) => openaiChatCompletionsFromIR(records, {
+    continuousUsageStats: derived.continuousUsageStats,
     roundTrip: writer,
   }),
 };

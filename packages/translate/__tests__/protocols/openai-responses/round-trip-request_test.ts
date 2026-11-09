@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import { buildTargetRequestFor } from '../../../src/protocols/composition.ts';
 import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
 import type { OpenAIResponsesAssistantTurn } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
-import { openaiResponsesOpen } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
+import { openaiResponsesRead } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { encodeRoundTripSidecar } from '../../../src/round-trip/sidecar.ts';
 import type { SidecarCodec } from '../../../src/types.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
@@ -15,7 +15,7 @@ import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesRequestPayloadEx }
 const buildChatRequest = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec) => ({
   target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], { ...payload, stream: true }, { sidecarCodec: codec }),
 });
-const buildMessagesRequest = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec, options: { fallbackMaxOutputTokens?: number; loadRemoteImage?: (url: string) => Promise<{ mediaType: string | null; data: Uint8Array } | null> } = {}) => ({
+const buildMessagesRequest = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec, options: { fallbackMaxOutputTokens?: number } = {}) => ({
   target: await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], { ...payload, stream: true }, { sidecarCodec: codec, ...options }),
 });
 
@@ -109,11 +109,12 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('bypasses ordin
       { type: 'function_call', namespace: 'x', name: 'y.f', call_id: 'bare', arguments: '{}', status: 'completed' },
     ],
   };
-  const reading = openaiResponsesOpen(source);
   const ctx = { sidecarCodec: codec, fallbackMaxOutputTokens: undefined };
-  const result = target === 'openaiChatCompletions'
-    ? { target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, ctx, reading), namespaceToolNames: reading.extra.namespaceToolNames }
-    : { target: await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], source, ctx, reading), namespaceToolNames: reading.extra.namespaceToolNames };
+  const reading = openaiResponsesRead(source);
+  const target_ = target === 'openaiChatCompletions'
+    ? await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, ctx, reading)
+    : await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], source, ctx, reading);
+  const result = { target: target_, namespaceToolNames: reading.derived.namespaceToolNames };
 
   expect(result.target.messages[0]).toEqual(native);
   expect([...result.namespaceToolNames.sourceToTarget]).toEqual([['x.y.f', 'x_y_f']]);
@@ -140,11 +141,12 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('allocates bare
       { type: 'function_call', namespace: 'a_b', name: 'run', call_id: 'second', arguments: '{}' },
     ],
   };
-  const reading = openaiResponsesOpen(source);
   const ctx = { sidecarCodec: codec, fallbackMaxOutputTokens: undefined };
-  const result = target === 'openaiChatCompletions'
-    ? { target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, ctx, reading), namespaceToolNames: reading.extra.namespaceToolNames }
-    : { target: await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], source, ctx, reading), namespaceToolNames: reading.extra.namespaceToolNames };
+  const reading = openaiResponsesRead(source);
+  const target_ = target === 'openaiChatCompletions'
+    ? await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, ctx, reading)
+    : await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], source, ctx, reading);
+  const result = { target: target_, namespaceToolNames: reading.derived.namespaceToolNames };
 
   expect([...result.namespaceToolNames.sourceToTarget]).toEqual([['a.b.run', 'a_b_run'], ['a_b.run', 'a_b_run_2']]);
   expect(result.target.messages).toHaveLength(3);
