@@ -70,9 +70,9 @@ const documentBlock = (media: IRInputMedia): AnthropicMessagesUserContentBlock =
 
 const systemContent = (content: readonly IRInputTextPart[]): AnthropicMessagesTextBlockParam[] => content.map(part => ({ type: 'text', text: part.text }));
 
-const userContent = async (
+const userContent = (
   item: Extract<IRInputClientItem, { type: 'message' }>,
-): Promise<AnthropicMessagesUserContentBlock[]> => {
+): AnthropicMessagesUserContentBlock[] => {
   const blocks: AnthropicMessagesUserContentBlock[] = [];
   for (const part of item.content) {
     switch (part.type) {
@@ -89,9 +89,9 @@ const userContent = async (
   return blocks.length === 0 ? [{ type: 'text', text: '' }] : blocks;
 };
 
-const toolResultContent = async (
+const toolResultContent = (
   output: string | readonly IRInputToolResultContentPart[],
-): Promise<string | AnthropicMessagesToolResultContentBlock[]> => {
+): string | AnthropicMessagesToolResultContentBlock[] => {
   if (typeof output === 'string') return output;
   const blocks: AnthropicMessagesToolResultContentBlock[] = [];
   for (const part of output) {
@@ -205,10 +205,10 @@ export interface AnthropicMessagesConversation {
   readonly system: AnthropicMessagesTextBlockParam[];
 }
 
-export const anthropicMessagesConversationFromIR = async (
+export const anthropicMessagesConversationFromIR = (
   turns: readonly IRInputAddressedTurn[],
   leading: boolean,
-): Promise<AnthropicMessagesConversation> => {
+): AnthropicMessagesConversation => {
   const system: AnthropicMessagesTextBlockParam[] = [];
   let hoisting = leading;
   const messages: AnthropicMessagesMessage[] = [];
@@ -254,8 +254,8 @@ export const anthropicMessagesConversationFromIR = async (
       }
       hoisting = false;
       turnBlocks.push(...(item.type === 'tool_result'
-        ? [{ type: 'tool_result' as const, tool_use_id: item.call_id, content: await toolResultContent(item.output), ...(item.is_error === true ? { is_error: true } : {}) }]
-        : await userContent(item)));
+        ? [{ type: 'tool_result' as const, tool_use_id: item.call_id, content: toolResultContent(item.output), ...(item.is_error === true ? { is_error: true } : {}) }]
+        : userContent(item)));
     }
     append(turnBlocks);
   }

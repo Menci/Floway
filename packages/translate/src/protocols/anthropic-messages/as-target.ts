@@ -25,18 +25,18 @@ export const anthropicMessagesTargetProtocol: TargetProtocol<
   'anthropicMessages', AnthropicMessagesPayload, AnthropicMessagesStreamEventEx
 > = {
   name: 'anthropicMessages',
-  write: async (request: IRInputRequest, pieces: readonly (IRInputTurn | IRInputResolvedTurn<AssistantTurnFor<'anthropicMessages'>>)[], options: TranslateOptions) => {
+  write: (request: IRInputRequest, pieces: readonly (IRInputTurn | IRInputResolvedTurn<AssistantTurnFor<'anthropicMessages'>>)[], options: TranslateOptions) => {
     // This wire addresses a callable by one bare name, so every grouped
     // declaration and call is stated under the flat spelling it computes.
     const flattened = flattenRequestNames(request, pieces);
-    return {
-      payload: await anthropicMessagesPayloadFromSegments(flattened.request, assignCallIds(flattened.pieces, callsOf), turn => turn, {
+    return Promise.resolve({
+      payload: anthropicMessagesPayloadFromSegments(flattened.request, assignCallIds(flattened.pieces, callsOf), turn => turn, {
         fallbackMaxOutputTokens: options.fallbackMaxOutputTokens,
       }),
       // Both facts come from the same flattening that produced the request, so
       // the reader sees exactly the names the upstream was asked with.
       context: flattened.context,
-    };
+    });
   },
   readStream: (frames, context, roundTripReader) => irFromAnthropicMessages(frames, { ...context, roundTrip: roundTripReader }),
 };
