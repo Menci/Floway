@@ -16,6 +16,15 @@ const buildWithTestSidecar = (
   options: Parameters<typeof buildTargetRequestWithSidecar>[3],
 ) => buildTargetRequestWithSidecar(payload, model, createTestSidecarCodec(), options);
 
+test('buildTargetRequest translates LOW to output_config.effort', async () => {
+  const request = await buildWithTestSidecar({
+    contents: [],
+    generationConfig: { thinkingConfig: { thinkingLevel: 'LOW' } },
+  }, 'claude-test', noOptions);
+
+  assertEquals(request.output_config, { effort: 'low' });
+});
+
 test('buildTargetRequest forwards an empty thinkingLevel verbatim', async () => {
   const request = await buildWithTestSidecar({
     contents: [],
