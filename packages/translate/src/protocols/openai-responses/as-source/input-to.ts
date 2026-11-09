@@ -1,6 +1,6 @@
 import { klona } from 'klona/json';
 
-import { validateAllowedTools } from './allowed-tools.ts';
+import { callableSelector, validateAllowedTools } from './allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from './conversation-turns.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from './programmatic-tooling.ts';
 import { isOpenAIResponsesEncryptedReasoning } from './round-trip.ts';
@@ -239,22 +239,22 @@ const toolToIR = (tool: Extract<OpenAIResponsesTool, { type: 'function' | 'custo
 
 // A selector names a grouped callable either with a `namespace` field or with a
 // dotted name, and both mean the same pair.
-const selectedCallable = (selection: Record<string, unknown>): IRInputToolSelection => {
-  const kind = selection.type === 'custom' ? 'custom' as const : 'function' as const;
-  if (typeof selection.namespace === 'string') return { type: kind, name: String(selection.name ?? ''), namespace: selection.namespace };
-  const name = String(selection.name ?? '');
-  const dot = name.indexOf('.');
-  return dot < 0 ? { type: kind, name } : { type: kind, name: name.slice(dot + 1), namespace: name.slice(0, dot) };
+const selectedCallable = (selection: { readonly type: 'function' | 'custom'; readonly name: string; readonly namespace?: string }): IRInputToolSelection => {
+  if (selection.namespace !== undefined) return { type: selection.type, name: selection.name, namespace: selection.namespace };
+  const dot = selection.name.indexOf('.');
+  return dot < 0
+    ? { type: selection.type, name: selection.name }
+    : { type: selection.type, name: selection.name.slice(dot + 1), namespace: selection.name.slice(0, dot) };
 };
 
 // A selector may name a whole group, which selects each callable it holds.
-const selectorOf = (payload: CanonicalOpenAIResponsesPayload, selection: Record<string, unknown>): IRInputToolSelection[] => {
-  if (selection.type !== 'namespace') return [selectedCallable(selection)];
+const selectorOf = (payload: CanonicalOpenAIResponsesPayload, selector: Record<string, unknown>): IRInputToolSelection[] => {
+  if (selector.type !== 'namespace') return [selectedCallable(callableSelector(selector))];
   const groups = [
     ...(payload.tools ?? []),
     ...payload.input.flatMap(item => item.type === 'additional_tools' || item.type === 'tool_search_output' ? item.tools : []),
-  ].flatMap(tool => tool.type === 'namespace' && tool.name === selection.name ? [tool] : []);
-  if (groups.length === 0) throw new TranslatorInputError(`Cannot translate group selector '${String(selection.name)}' without a matching declaration.`);
+  ].flatMap(tool => tool.type === 'namespace' && tool.name === selector.name ? [tool] : []);
+  if (groups.length === 0) throw new TranslatorInputError(`Cannot translate group selector '${String(selector.name)}' without a matching declaration.`);
   return groups.flatMap(group => group.tools.flatMap(child => child.type === 'function' || child.type === 'custom'
     ? [{ type: child.type, name: child.name, namespace: group.name } as IRInputToolSelection]
     : []));
@@ -273,10 +273,10 @@ const toolChoiceToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputToolCh
     return {
       type: 'allowed_tools',
       mode: choice.mode,
-      tools: choice.tools.flatMap(selection => selectorOf(payload, selection as Record<string, unknown>)),
+      tools: choice.tools.flatMap(selector => selectorOf(payload, selector)),
     };
   }
-  if (choice.type === 'function' || choice.type === 'custom') return selectedCallable(choice as unknown as Record<string, unknown>);
+  if (choice.type === 'function' || choice.type === 'custom') return selectedCallable(choice);
   // A hosted selector names a tool this IR does not carry.
   throw new TranslatorInputError(`Cannot translate OpenAI Responses tool choice type '${choice.type}'.`);
 };

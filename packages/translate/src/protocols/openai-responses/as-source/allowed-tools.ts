@@ -39,6 +39,23 @@ const validateCallableKinds = (declarations: readonly { type: 'function' | 'cust
   }
 };
 
+/**
+ * The callable a selector names.
+ *
+ * `allowed_tools.tools` is the wire's own `Record<string, unknown>` array, so
+ * this is where a member becomes a typed selector. A member that carries
+ * anything beyond the three fields a selector may state is not one.
+ */
+export const callableSelector = (selector: unknown): { readonly type: 'function' | 'custom'; readonly name: string; readonly namespace?: string } => {
+  if (typeof selector !== 'object' || selector === null
+    || ((selector as { type?: unknown }).type !== 'function' && (selector as { type?: unknown }).type !== 'custom')
+    || typeof (selector as { name?: unknown }).name !== 'string'
+    || Object.keys(selector).some(key => key !== 'type' && key !== 'name' && key !== 'namespace')) {
+    throw new TranslatorInputError('Cannot translate an allowed_tools selector that is not a function or custom tool.');
+  }
+  return selector as { readonly type: 'function' | 'custom'; readonly name: string; readonly namespace?: string };
+};
+
 export const validateAllowedTools = (
   tools: readonly OpenAIResponsesTool[] | null | undefined,
   choice: OpenAIResponsesToolChoice | null | undefined,
@@ -73,13 +90,7 @@ export const validateAllowedTools = (
       : []));
   });
   for (const selector of expanded) {
-    if (typeof selector !== 'object' || selector === null
-      || (selector.type !== 'function' && selector.type !== 'custom')
-      || typeof (selector as { name?: unknown }).name !== 'string'
-      || Object.keys(selector).some(key => key !== 'type' && key !== 'name' && key !== 'namespace')) {
-      throw new TranslatorInputError('Cannot translate an allowed_tools selector that is not a function or custom tool.');
-    }
-    const selected_ = selector as { type: 'function' | 'custom'; name: string; namespace?: string };
+    const selected_ = callableSelector(selector);
     const type = selected_.type;
     // A selector may name the group separately or spell the pair out.
     const name = selected_.namespace === undefined || selected_.name.includes('.')
