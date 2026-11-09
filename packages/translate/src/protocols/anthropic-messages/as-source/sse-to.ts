@@ -44,12 +44,28 @@ const MESSAGES_ERROR_TYPES = [
  * upstream that never heard of it would otherwise report the overflow in its
  * own words and the client would treat it as an ordinary failure.
  */
-export const irMessagesError = (error: IRErrorPayload): AnthropicMessagesErrorEventEx['error'] => isContextExceededError(error)
+const messagesError = (error: IRErrorPayload, contextExceeded: boolean): AnthropicMessagesErrorEventEx['error'] => contextExceeded
   ? { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE }
   : { type: error.type !== undefined && MESSAGES_ERROR_TYPES.includes(error.type) ? error.type : 'api_error', message: error.message };
 
-export const anthropicMessagesErrorBody = (error: IRErrorPayload): Uint8Array =>
-  new TextEncoder().encode(JSON.stringify({ type: 'error', error: irMessagesError(error) }));
+export const irMessagesError = (error: IRErrorPayload): AnthropicMessagesErrorEventEx['error'] =>
+  messagesError(error, isContextExceededError(error));
+
+/**
+ * The body and status a failed request is restated with.
+ *
+ * Whether the failure is a context overflow decides both the wording and the
+ * status, and the two must agree: Claude Code recognizes the overflow only as a
+ * 400 carrying the prompt-too-long wording, so a body in those words behind any
+ * other status would read as an ordinary failure. One judgement produces both.
+ */
+export const anthropicMessagesErrorResponse = (error: IRErrorPayload): { readonly body: Uint8Array; readonly status: number | undefined } => {
+  const contextExceeded = isContextExceededError(error);
+  return {
+    body: new TextEncoder().encode(JSON.stringify({ type: 'error', error: messagesError(error, contextExceeded) })),
+    status: contextExceeded ? 400 : undefined,
+  };
+};
 
 interface MessagesUnit {
   readonly path: IRPath;

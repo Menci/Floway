@@ -1,6 +1,5 @@
-import { anthropicMessagesErrorBody } from './sse-to.ts';
+import { anthropicMessagesErrorResponse } from './sse-to.ts';
 import { irErrorPayloadFromBody, restateError } from '../../../shared/api-error.ts';
-import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import type { SourceProtocolErrorWriter } from '../../../types.ts';
 
 /**
@@ -16,9 +15,8 @@ import type { SourceProtocolErrorWriter } from '../../../types.ts';
 export const anthropicMessagesErrorWriter: SourceProtocolErrorWriter = upstream => {
   const error = irErrorPayloadFromBody(upstream);
   if (error === undefined) return undefined;
-  // The restatement keeps the upstream's status, with one exception: Claude Code
-  // recognizes an overflow only as a 400 carrying the prompt-too-long wording,
-  // and it is that recognition that makes the client retry with a smaller
-  // prompt. Any other status would read as an ordinary failure.
-  return restateError(upstream, anthropicMessagesErrorBody(error), isContextExceededError(error) ? 400 : undefined);
+  // The restatement keeps the upstream's status with one exception, which the
+  // shared statement decides alongside the wording so the two cannot drift.
+  const { body, status } = anthropicMessagesErrorResponse(error);
+  return restateError(upstream, body, status);
 };
