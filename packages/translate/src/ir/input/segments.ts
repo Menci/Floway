@@ -22,7 +22,7 @@ export interface IRInputResolvedTurn<Turn> {
   readonly turn: Turn;
 }
 
-export const segmentIRInput = <Turn, InputTurn extends object = IRInputTurn>(pieces: readonly (InputTurn | IRInputResolvedTurn<Turn>)[]): readonly IRInputPiece<Turn, InputTurn>[] => {
+export const segmentIRInput = <Turn, InputTurn extends { readonly kind: 'client' | 'assistant' } = IRInputTurn>(pieces: readonly (InputTurn | IRInputResolvedTurn<Turn>)[]): readonly IRInputPiece<Turn, InputTurn>[] => {
   const segments: (IRInputSegment<InputTurn> | IRInputResolvedTurn<Turn>)[] = [];
   let current: InputTurn[] = [];
   let leading = true;
@@ -33,13 +33,13 @@ export const segmentIRInput = <Turn, InputTurn extends object = IRInputTurn>(pie
     leading = false;
   };
   for (const piece of pieces) {
-    if ('kind' in piece && piece.kind === 'resolved') {
+    if (piece.kind === 'resolved') {
       flush();
       leading = false;
       segments.push(piece);
       continue;
     }
-    current.push(piece as InputTurn);
+    current.push(piece);
   }
   flush();
   return segments;
