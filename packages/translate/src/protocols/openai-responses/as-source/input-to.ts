@@ -90,9 +90,9 @@ const systemContent = (message: OpenAIResponsesInputMessageEx): IRInputTextPart[
       return { type: 'text', text: part.text };
     });
 
-// An explicitly empty assistant message still occupies a message of its own, so
-// it keeps one empty text part; only a message with no content field at all has
-// nothing to replay.
+// A string content is stated as one text part, even `''`, because that is a
+// message the wire spelled out. An array content keeps exactly the parts it
+// lists, so an empty array yields no part and the caller drops the message.
 const assistantContent = (message: Extract<OpenAIResponsesInputMessageEx, { role: 'assistant' }>): IRInputAssistantContentPart[] => typeof message.content === 'string'
   ? [{ type: 'text', text: message.content }]
   : message.content.map(part => {
@@ -185,7 +185,6 @@ const userItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInput
   }
 });
 
-/** Whether a turn carries an encrypted reasoning carrier the input IR cannot hold. */
 /** The top-level `instructions` field as its own leading system item. */
 const openaiResponsesInstructionsToIR = (instructions: string | null | undefined): IRInputTurn | undefined => instructions
   ? { kind: 'client', items: [{ type: 'prompt', role: 'system', content: [{ type: 'text', text: instructions }] }] }
@@ -202,10 +201,6 @@ const openaiResponsesTurnToIR = (
   return [{ kind: 'assistant', items: assistantItems(items) }];
 };
 
-/**
- * Responses states the ceiling once, as `max_output_tokens`. Its `text.format`
- * carries the structured-output schema flat, unlike Chat's nested spelling.
- */
 // Responses declares flat function and custom tools beside the hosted kinds.
 // A hosted tool runs on the vendor's own infrastructure and has no meaning in
 // another protocol, so a request that carries one cannot enter this IR.
@@ -265,7 +260,7 @@ const toolChoiceToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputToolCh
   if (choice == null) throw new TranslatorInputError('Cannot translate a missing tool choice.');
   if (typeof choice === 'string') {
     if (choice === 'auto' || choice === 'none' || choice === 'required') return choice;
-    // A hosted selector spells its arm as a bare string, and names a tool this
+    // Any other bare string is a hosted selector, which names a callable this
     // IR does not carry.
     throw new TranslatorInputError(`Cannot translate OpenAI Responses tool choice '${choice}'.`);
   }
@@ -321,6 +316,10 @@ const openaiResponsesToolsToIR = (payload: CanonicalOpenAIResponsesPayload): Pic
   };
 };
 
+/**
+ * Responses states the ceiling once, as `max_output_tokens`. Its `text.format`
+ * carries the structured-output schema flat, unlike Chat's nested spelling.
+ */
 const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputSettings => {
   const format = payload.text?.format;
   const outputFormat: IRInputOutputFormat | undefined = format === undefined || format === null ? undefined

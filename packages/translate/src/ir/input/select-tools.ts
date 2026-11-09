@@ -8,9 +8,10 @@ import type { IRInputTool, IRInputToolChoice } from './types.ts';
  * a named tool say which callable the model must choose, not which ones it may
  * know about.
  *
- * A writer narrows the list because that is the one spelling every upstream
- * understands, while a selector arm of its own may be unimplemented. The
- * written choice then carries only the mode.
+ * A writer that has no selector arm of its own narrows the list instead,
+ * because a filtered declaration list is the spelling every upstream
+ * understands. Such a writer states only the mode; one that can express the
+ * arm keeps it.
  *
  * The selection names a kind as well as a name because a request may declare a
  * function and a custom tool that share a name; only the matching kind is

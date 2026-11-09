@@ -6,7 +6,7 @@ export type { IRErrorPayload } from '../common/error.ts';
 export type { IRTextRange } from '../common/text-range.ts';
 export { IRAbsent } from '../common/absent.ts';
 
-// The value shape of the output output IR: JSON plus `IRAbsent` at any leaf that may be
+// The value shape of the output IR: JSON plus `IRAbsent` at any leaf that may be
 // determined-never-to-arrive.
 type IRValueOf<Extra> = Extra | null | boolean | number | string | readonly IRValueOf<Extra>[] | { readonly [key: string]: IRValueOf<Extra> };
 
@@ -75,17 +75,19 @@ interface IROutputFunctionCallItem {
   // without namespaces states a flat name here; the source-side writer states
   // the pair back the way its client wrote it.
   readonly name: string; // All
-  readonly namespace?: string; // Responses
+  // Stated by any target whose request declared groups, so the source-side
+  // writer can put the pair back the way its client wrote it.
+  readonly namespace?: string; // ChatCompletions, Responses, Messages
   readonly arguments: string; // All
 }
 
-// ChatCompletions, Responses
+// ChatCompletions, Responses, Messages
 interface IROutputCustomToolCallItem {
-  readonly type: 'custom_tool_call'; // ChatCompletions, Responses
-  readonly call_id?: string | IRAbsent; // ChatCompletions, Responses
-  readonly name: string; // ChatCompletions, Responses
-  readonly namespace?: string; // Responses
-  readonly input: string; // ChatCompletions, Responses
+  readonly type: 'custom_tool_call'; // ChatCompletions, Responses, Messages
+  readonly call_id?: string | IRAbsent; // ChatCompletions, Responses, Messages
+  readonly name: string; // ChatCompletions, Responses, Messages
+  readonly namespace?: string; // ChatCompletions, Responses, Messages
+  readonly input: string; // ChatCompletions, Responses, Messages
 }
 
 // Responses, GenerateContent

@@ -5,9 +5,8 @@ import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResp
 // the declaration list, so a selector must resolve to declarations the request
 // actually makes; otherwise the permitted set would silently widen.
 //
-// Namespace and hosted selectors are rewritten into flat callables before this
-// point. One that survives names something this IR cannot carry, and is
-// rejected rather than dropped for the same reason.
+// A namespace selector is expanded here into the callables its group holds, and
+// a hosted selector is rejected here: this IR carries no hosted callable.
 // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L8246-L8279
 // A declaration is identified by the pair a grouped one states, so a selector
 // that names either spelling resolves to the same callable.

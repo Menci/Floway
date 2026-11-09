@@ -238,7 +238,6 @@ const anthropicMessagesSystemToIR = (system: AnthropicMessagesPayload['system'])
   return content.length === 0 ? undefined : { kind: 'client', items: [{ type: 'prompt', role: 'system', content }] };
 };
 
-/** Whether a turn carries reasoning only the sidecar can restore. */
 const anthropicMessagesTurnToIR = (
   turn: AnthropicMessagesConversationTurn,
   firstMessageIndex = 0,
@@ -267,10 +266,6 @@ const anthropicMessagesTurnToIR = (
   }];
 };
 
-/**
- * Messages states one ceiling, `max_tokens`, and its structured-output schema
- * lives in `output_config.format`. `top_k` is a Messages-only sampling knob.
- */
 // A Messages client declaration carries a JSON Schema under `input_schema` and
 // states both callable kinds with the same shape, so the arm is the neutral one
 // every target can express.
@@ -314,6 +309,11 @@ const anthropicMessagesToolsToIR = (payload: AnthropicMessagesPayload): Pick<IRI
   };
 };
 
+/**
+ * Messages states one ceiling, `max_tokens`, and its structured-output schema
+ * lives in `output_config.format`. `top_k` is also a GenerateContent sampling
+ * knob.
+ */
 const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload): IRInputSettings => {
   const format = payload.output_config?.format;
   // Messages' structured-output schema is already strict by contract, so the
@@ -340,9 +340,9 @@ const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload): IRInp
     ...(metadata === undefined ? {} : { metadata }),
     // Messages splits one reasoning axis across three controls: a level, an off
     // switch, and a token budget. The level and the off switch are the same axis
-    // every other protocol states as an effort. Messages is a source here and
-    // its targets state effort only, so the budget is reported as the tier it
-    // lands on rather than as a number no target can spend.
+    // every other protocol states as an effort. A budget does not reach the IR
+    // here: an enabled or adaptive mode is reported as the tier that mode
+    // implies, and no target spends a number the caller never bounded.
     ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
     ...(payload.thinking?.type === 'adaptive' ? { reasoning_dynamic: true } : {}),
   };
@@ -382,25 +382,17 @@ const reasoningEffortFromAnthropicMessages = (payload: AnthropicMessagesPayload)
 };
 
 /**
- * A Messages request prepared for translation.
+ * A Messages request read into the turns a writer consumes.
  *
  * Messages states its prompt in a top-level field and its conversation in
  * `messages`; both enter the IR, and the request-wide fields come from the same
- * payload. Presenting them together keeps a route from assembling the request
- * itself and then having to add the prompt separately.
+ * payload.
  *
- * The conversation is returned unsegmented so a route can splice a
- * sidecar-resolved assistant turn into it.
- *
- * Downgrading a server tool leaves a client turn of its own — the result the
- * API wrote into the assistant message — and the caller's next message is
- * usually a client turn too. Those two are one turn: everything from the
- * server's answer up to the caller's next statement is the same speaking turn,
- * and a writer that answers one turn with one message must see them together.
- * So the trailing client turn is held back until the next source turn settles
- * whether the two state the same turn. `flush` releases what is still held once
- * the conversation ends, and a resolved turn releases it first because that turn
- * is written natively and sits between the two.
+ * A server tool's result sits inside the assistant message that called it, and
+ * an assistant turn can therefore yield both assistant and client pieces. The
+ * reader holds one client slot back so an assistant turn can be opened before
+ * the client piece that follows it, which is what keeps the assistant and its
+ * own server-result pieces adjacent in the reading.
  */
 export const anthropicMessagesRead = (payload: AnthropicMessagesPayload): IRInputReading<AnthropicMessagesAssistantTurn> => {
   const request: IRInputRequest = {

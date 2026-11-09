@@ -169,7 +169,6 @@ const turnToIRTurns = (
       }),
     }];
 
-/** Whether a turn carries a vendor-signed thought signature the input IR cannot hold. */
 /** A GenerateContent system instruction is the conversation's leading prompt. */
 const geminiGenerateContentSystemToIR = (content: GeminiGenerateContentContent | undefined): IRInputTurn | undefined => {
   const parts = systemParts(content);
@@ -179,10 +178,9 @@ const geminiGenerateContentSystemToIR = (content: GeminiGenerateContentContent |
 const partitionContents = (payload: GeminiGenerateContentPayload): GeminiGenerateContentTurn[] => partitionGeminiGenerateContentTurns(payload.contents ?? []);
 
 // GenerateContent declares functions in groups and narrows them through
-// `toolConfig.functionCallingConfig`. A target has no declaration-level
-// selector arm it can reach here, so the narrowed set is what the model sees:
-// the declarations the request permits, plus the mode that says how freely the
-// model may choose among them.
+// `toolConfig.functionCallingConfig`. The IR states that narrowing as
+// `allowed_tools`, so a target keeps the permitted declarations visible and the
+// choice arm says only how freely the model may choose among them.
 // https://github.com/googleapis/googleapis/blob/master/google/ai/generativelanguage/v1beta/content.proto
 // (FunctionCallingConfig: `allowed_function_names` only applies to ANY and
 // VALIDATED, and limits which functions the model calls.)

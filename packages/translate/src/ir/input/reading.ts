@@ -39,9 +39,8 @@ export interface IRInputReading<AssistantTurn> {
  * Reads a conversation into the pieces a writer consumes.
  *
  * The reading has already classified every turn, so this asks one question per
- * turn: can a sidecar state this one natively? If so its IR is never built — the
- * two paths are exclusive — and the reader is told what the native turn answered
- * so its later turns still correlate.
+ * turn: can a sidecar state this one natively? If so its IR is never built —
+ * the two paths are exclusive.
  */
 export const readTurns = async <AssistantTurn, Resolved>(
   reading: IRInputReading<AssistantTurn>,

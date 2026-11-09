@@ -9,9 +9,8 @@ import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx } fr
 /**
  * OpenAI Responses read as the side a request comes from.
  *
- * Namespaces are flattened out of tool names on the way in, and that mapping
- * decides what the client sees on the way out: a name the upstream invented has
- * to be stated again the way the caller wrote it.
+ * This wire groups callables, so the reader keeps a call's group as
+ * `namespace`. The client-side writer states the pair back from the output IR.
  */
 export const openaiResponsesSourceProtocol: SourceProtocol<
   'openaiResponses', OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx
