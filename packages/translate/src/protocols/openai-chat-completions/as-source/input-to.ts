@@ -266,7 +266,6 @@ const openaiChatCompletionsToolsToIR = (payload: OpenAIChatCompletionsPayload): 
 };
 
 const openaiChatCompletionsRequestToIR = (payload: OpenAIChatCompletionsPayload): IRInputRequest => ({
-  conversation: { turns: [] },
   settings: openaiChatCompletionsSettingsToIR(payload),
   ...openaiChatCompletionsToolsToIR(payload),
 });

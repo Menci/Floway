@@ -1,16 +1,10 @@
-import { irInputToolsForChoice } from '../../ir/input/select-tools.ts';
-import type { IRInputRequest } from '../../ir/input/types.ts';
 import type { AssistantTurnFor } from '../../round-trip/assistant-turn.ts';
 import { assignCallIds, type PendingCall } from '../../shared/call-ids.ts';
-import { callIdentitiesOf, flattenRequestNames } from '../../shared/flatten-request.ts';
+import { flattenRequestNames } from '../../shared/flatten-request.ts';
 import type { TargetProtocol } from '../composition.ts';
 import { openaiChatCompletionsPayloadFromSegments } from './as-target/segmented-request.ts';
 import { irFromOpenAIChatCompletions } from './as-target/sse-from.ts';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-
-const freeformNames = (request: IRInputRequest): ReadonlySet<string> =>
-  new Set((irInputToolsForChoice(request.tools, request.tool_choice) ?? [])
-    .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
 
 type ChatResolvedTurn = AssistantTurnFor<'openaiChatCompletions'>;
 
@@ -44,13 +38,9 @@ export const openaiChatCompletionsTargetProtocol: TargetProtocol<
     const flattened = flattenRequestNames(request, pieces);
     return Promise.resolve({
       payload: openaiChatCompletionsPayloadFromSegments(flattened.request, assignCallIds(flattened.pieces, callsOf), turn => turn),
-      context: {
-        // A freeform declaration reaches this wire as a function, so the reader
-        // has to recognise the call that answers it as freeform again.
-        customToolNames: freeformNames(request),
-        // The upstream answers under the flat name it was asked with.
-        callIdentities: callIdentitiesOf(request, pieces),
-      },
+      // Both facts come from the same flattening that produced the request, so
+      // the reader sees exactly the names the upstream was asked with.
+      context: flattened.context,
     });
   },
   readStream: (frames, context, roundTripReader) =>

@@ -367,7 +367,6 @@ export const openaiResponsesRead = (source: OpenAIResponsesRequestPayloadEx): IR
   const prompt = openaiResponsesInstructionsToIR(canonical.instructions);
   return {
     request: {
-      conversation: { turns: [] },
       settings: openaiResponsesSettingsToIR(canonical),
       ...openaiResponsesToolsToIR(canonical),
     },

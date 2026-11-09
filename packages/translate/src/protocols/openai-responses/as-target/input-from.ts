@@ -8,7 +8,6 @@ import type {
   IRInputTool,
   IRInputToolChoice,
   IRInputOutputFormat,
-  IRInputConversation,
   IRInputMedia,
   IRInputToolResultContentPart,
   IRInputAddressedClientItem,
@@ -145,8 +144,8 @@ const userItems = (items: readonly IRInputAddressedClientItem[]): CanonicalOpenA
 const isHoistablePrompt = (entry: IRInputClientItem): entry is IRInputSystemMessageItem =>
   entry.type === 'prompt';
 
-const conversationFromIR = (
-  conversation: IRInputConversation<IRInputAddressedTurn>,
+export const openaiResponsesConversationFromIR = (
+  turns: readonly IRInputAddressedTurn[],
   hoistSystem: boolean,
 ): Pick<CanonicalOpenAIResponsesPayload, 'instructions' | 'input'> => {
   const instructions: string[] = [];
@@ -155,7 +154,7 @@ const conversationFromIR = (
   // prompt (if any) stays inline where the caller placed it.
   let hoisting = hoistSystem;
 
-  const input = conversation.turns.flatMap(item => {
+  const input = turns.flatMap(item => {
     if (item.kind === 'assistant') {
       hoisting = false;
       return assistantItems(item.items);
@@ -184,14 +183,6 @@ const conversationFromIR = (
 
   return { instructions: instructions.length === 0 ? undefined : instructions.join('\n\n'), input };
 };
-
-/**
- * Lifts the leading system/developer run into the Responses `instructions` slot,
- * which Responses spells as one string.
- */
-export const openaiResponsesFromIR = (
-  conversation: IRInputConversation<IRInputAddressedTurn>,
-): Pick<CanonicalOpenAIResponsesPayload, 'instructions' | 'input'> => conversationFromIR(conversation, true);
 
 const requireSchema = (format: IRInputOutputFormat): Readonly<Record<string, unknown>> => {
   if (format.schema === undefined) throw new TranslatorInputError('Cannot translate json_schema response format without a schema.');
@@ -252,31 +243,22 @@ const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<CanonicalOpenA
 };
 
 /**
- * The whole Responses payload comes from the IR. `hoistSystem` says whether this
- * conversation segment may lift its leading system run into `instructions`;
- * only the first segment of a conversation may.
+ * Everything a Responses request states except its conversation.
+ *
+ * The conversation is written separately because a trip interleaves it with the
+ * assistant turns a sidecar already resolved, so only this half is computed once
+ * per payload.
  */
-export const openaiResponsesRequestFromIR = (
-  request: IRInputRequest,
-  // Only the conversation's first segment holds the request's leading prompt. A
-  // later segment continues an exchange that already started, so its own
-  // leading system message stays where the caller placed it.
-  leading = true,
-): CanonicalOpenAIResponsesPayload => {
-  const { conversation, settings } = request;
-  const { instructions, input } = conversationFromIR(conversation as IRInputConversation<IRInputAddressedTurn>, leading);
-
+export const openaiResponsesHeaderFromIR = (request: IRInputRequest): Omit<CanonicalOpenAIResponsesPayload, 'input' | 'instructions'> => {
+  const { settings } = request;
   const tools = irInputToolsForChoice(request.tools, request.tool_choice);
   const choice = irInputToolChoiceForTools(request.tool_choice, tools);
-
   return {
     ...openaiResponsesSettingsFromIR(settings),
     model: settings.model,
-    input,
     // A trip guarantees a streaming request; a request that says otherwise
     // cannot be carried by this side at all.
     stream: streamingFlag(settings),
-    ...(instructions === undefined ? {} : { instructions }),
     ...(tools === undefined || tools.length === 0 ? {} : { tools: tools.map(toolFromIR) }),
     ...(choice === undefined ? {} : { tool_choice: toolChoiceFromIR(choice) }),
   };

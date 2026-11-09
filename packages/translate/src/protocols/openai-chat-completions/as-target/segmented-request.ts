@@ -1,6 +1,6 @@
-import { openaiChatCompletionsRequestFromIR } from './input-from.ts';
+import { openaiChatCompletionsFromIR, openaiChatCompletionsHeaderFromIR } from './input-from.ts';
 import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
-import type { IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
+import type { IRInputAddressedTurn, IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
 import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 
 /**
@@ -8,8 +8,8 @@ import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from 
  *
  * A conversation splits at the assistant turns a sidecar already resolved:
  * those are native Chat messages, so they are placed verbatim while every other
- * segment is written from the IR. The request-wide fields come from the first
- * translated segment; later segments contribute only their messages.
+ * segment is written from the IR. The request-wide fields are one answer for
+ * the whole conversation, so they are computed once beside it.
  *
  * Chat states no top-level prompt slot, so a leading prompt stays an ordinary
  * message wherever the caller put it.
@@ -20,13 +20,11 @@ export const openaiChatCompletionsPayloadFromSegments = <Restored extends OpenAI
   resolvedMessage: (turn: Restored) => OpenAIChatCompletionsMessage,
 ): OpenAIChatCompletionsPayload => {
   const messages: OpenAIChatCompletionsMessage[] = [];
-  let base: OpenAIChatCompletionsPayload | undefined;
   for (const piece of segmentIRInput(pieces)) {
     if (piece.kind === 'resolved') { messages.push(resolvedMessage(piece.turn)); continue; }
-    const translated = openaiChatCompletionsRequestFromIR({ ...request, conversation: { turns: piece.turns } });
-    base ??= translated;
-    messages.push(...translated.messages);
+    messages.push(...openaiChatCompletionsFromIR(piece.turns as readonly IRInputAddressedTurn[]));
   }
-  base ??= openaiChatCompletionsRequestFromIR({ ...request, conversation: { turns: [] } });
-  return { ...base, messages };
+  // The request-level fields are one answer for the whole conversation, so they
+  // are computed once rather than per segment.
+  return { ...openaiChatCompletionsHeaderFromIR(request), messages };
 };

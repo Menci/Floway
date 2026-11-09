@@ -100,6 +100,10 @@ export const openaiChatCompletionsFromIR = async function* (
     }
     return accumulator;
   };
+  // The accumulator sees every frame this writer emits, so this reassembles what
+  // has gone out so far. A caller that digests the answer must read it after the
+  // last delta it intends the client to see.
+  const emittedChoice = (choice: number) => nativeAccumulator(choice).result().choices.find(candidate => candidate.index === choice);
   const outputStates = new Map<number, OpenAIChatCompletionsOutputAssistantState<ContentStates>>();
   const pendingTranscripts = new Map<string, TextProvenanceSpan[]>();
   let usage: OpenAIChatCompletionsUsageEx | undefined;
@@ -390,11 +394,11 @@ export const openaiChatCompletionsFromIR = async function* (
         appendContent(options.roundTrip.builder, textState(record.choice, 'refusal'), choice.refusal.explanation);
         yield deltaFrame(record.choice, { refusal: choice.refusal.explanation }, tier);
       }
-      const summary = nativeAccumulator(record.choice).result().choices.find(choice => choice.index === record.choice)?.message.reasoning_text;
+      const summary = emittedChoice(record.choice)?.message.reasoning_text;
       if (typeof summary === 'string' && summary !== '') {
         yield deltaFrame(record.choice, { reasoning_details: [{ type: 'reasoning.summary', summary, format: 'unknown', index: 0 }] }, tier);
       }
-      const nativeChoice = nativeAccumulator(record.choice).result().choices.find(choice => choice.index === record.choice);
+      const nativeChoice = emittedChoice(record.choice);
       if (nativeChoice === undefined) throw new Error(`Missing Chat Completions choice ${record.choice} at choice_end`);
       const sourceTurnDigest = await computeOpenAIChatCompletionsTurnDigest(nativeChoice.message);
       const input = toOpenAIChatCompletionsInputAssistantTurn<ContentStates>(nativeChoice.message, outputState(record.choice));

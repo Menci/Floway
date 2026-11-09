@@ -3,7 +3,6 @@ import { describe, expect, test } from 'vitest';
 import type {
   IRInputAssistantItem,
   IRInputAssistantTurn,
-  IRInputConversation,
   IRInputToolResultContentPart,
   IRInputToolResultItem,
   IRInputUserContentPart,
@@ -40,9 +39,9 @@ describe('input IR shape', () => {
     ];
     const user: IRInputClientTurn = { kind: 'client', items: userItems };
     const assistant: IRInputAssistantTurn = { kind: 'assistant', items: assistantItems };
-    const conversation: IRInputConversation = { turns: [user, assistant] };
+    const turns = [user, assistant];
 
-    expect(conversation.turns.map(turn => turn.kind)).toEqual(['client', 'assistant']);
+    expect(turns.map(turn => turn.kind)).toEqual(['client', 'assistant']);
     expect(user.items.map(item => item.type)).toEqual(['prompt', 'prompt', 'message', 'tool_result', 'tool_result']);
     expect(assistant.items.map(item => item.type)).toEqual(['reasoning', 'message', 'function_call', 'custom_tool_call']);
   });

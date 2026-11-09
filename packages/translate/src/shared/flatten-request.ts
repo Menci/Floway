@@ -1,5 +1,6 @@
 import { assignFlatNames } from './flat-names.ts';
 import type { IRInputResolvedTurn } from '../ir/input/segments.ts';
+import { irInputToolsForChoice } from '../ir/input/select-tools.ts';
 import type { IRInputRequest, IRInputTool, IRInputToolChoice, IRInputToolSelection, IRInputTurn } from '../ir/input/types.ts';
 
 /**
@@ -29,20 +30,51 @@ const flatNameMapping = (
   return assignFlatNames(grouped, reserved);
 };
 
+/** What a target that writes flat names records for the reader of its answer. */
+export interface FlatCallContext {
+  readonly customToolNames: ReadonlySet<string>;
+  readonly callIdentities: ReadonlyMap<string, { readonly namespace: string; readonly name: string }>;
+}
+
+/** The declarations a request offers once its selector is applied, under the names this wire writes. */
+const customNamesOf = (request: IRInputRequest): ReadonlySet<string> =>
+  new Set((irInputToolsForChoice(request.tools, request.tool_choice) ?? [])
+    .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
+
+/** The pair each flat name stands for, read off the same assignment. */
+const identitiesFrom = (flat: ReadonlyMap<string, string>): Map<string, { readonly namespace: string; readonly name: string }> => {
+  const identities = new Map<string, { readonly namespace: string; readonly name: string }>();
+  for (const [key, flatName] of flat) {
+    const dot = key.indexOf('.');
+    identities.set(flatName, { namespace: key.slice(0, dot), name: key.slice(dot + 1) });
+  }
+  return identities;
+};
+
+/** What a target that writes flat names records for the reader of its answer. */
+export interface FlatCallContext {
+  readonly customToolNames: ReadonlySet<string>;
+  readonly callIdentities: ReadonlyMap<string, { readonly namespace: string; readonly name: string }>;
+}
+
 /**
  * States this target's request and conversation with flat callable names.
  *
  * Grouped declarations and the calls that answer them are spelled the way this
  * target writes them; everything already flat keeps its name. The grouping
- * itself is dropped, because this wire has nowhere to state it.
+ * itself is dropped, because this wire has nowhere to state it. What the
+ * returned context carries is what the same spelling decided: which
+ * declarations were freeform, and which pair each flat name came from.
  */
 export const flattenRequestNames = <Restored>(
   request: IRInputRequest,
   pieces: readonly (IRInputTurn | IRInputResolvedTurn<Restored>)[],
-): { readonly request: IRInputRequest; readonly pieces: readonly (IRInputTurn | IRInputResolvedTurn<Restored>)[] } => {
+): { readonly request: IRInputRequest; readonly pieces: readonly (IRInputTurn | IRInputResolvedTurn<Restored>)[]; readonly context: FlatCallContext } => {
   const turns = pieces.flatMap(piece => piece.kind === 'resolved' ? [] : [piece]);
   const flat = flatNameMapping(request.tools ?? [], turns);
-  if (flat.size === 0) return { request, pieces };
+  const callIdentities = identitiesFrom(flat);
+  // Nothing is grouped, so the wire names are the client's own.
+  if (flat.size === 0) return { request, pieces, context: { customToolNames: customNamesOf(request), callIdentities } };
 
   const nameOf = (namespace: string | undefined, name: string): string =>
     namespace === undefined ? name : flat.get(`${namespace}.${name}`) ?? name;
@@ -57,12 +89,14 @@ export const flattenRequestNames = <Restored>(
   const flattenChoice = (choice: IRInputToolChoice): IRInputToolChoice => typeof choice === 'string' || choice.type === 'allowed_tools'
     ? typeof choice === 'string' ? choice : { ...choice, tools: choice.tools.map(flattenSelection) }
     : flattenSelection(choice);
+  const flattenedRequest: IRInputRequest = {
+    ...request,
+    ...(request.tools === undefined ? {} : { tools: request.tools.map(flattenTool) }),
+    ...(request.tool_choice === undefined ? {} : { tool_choice: flattenChoice(request.tool_choice) }),
+  };
   return {
-    request: {
-      ...request,
-      ...(request.tools === undefined ? {} : { tools: request.tools.map(flattenTool) }),
-      ...(request.tool_choice === undefined ? {} : { tool_choice: flattenChoice(request.tool_choice) }),
-    },
+    request: flattenedRequest,
+    context: { customToolNames: customNamesOf(flattenedRequest), callIdentities },
     pieces: pieces.map((piece): IRInputTurn | IRInputResolvedTurn<Restored> => {
       if (piece.kind === 'resolved') return piece;
       if (piece.kind === 'assistant') {
@@ -73,27 +107,7 @@ export const flattenRequestNames = <Restored>(
             : item),
         };
       }
-      return { kind: 'client', items: piece.items };
+      return piece;
     }),
   };
-};
-
-/**
- * The pair each flat name stands for.
- *
- * A target that reads a returned stream gets the flat name it asked with and
- * has to state the call the way its client wrote it, so it needs this inversion
- * of the same assignment.
- */
-export const callIdentitiesOf = <Restored>(
-  request: IRInputRequest,
-  pieces: readonly (IRInputTurn | IRInputResolvedTurn<Restored>)[],
-): Map<string, { readonly namespace: string; readonly name: string }> => {
-  const flat = flatNameMapping(request.tools ?? [], pieces.flatMap(piece => piece.kind === 'resolved' ? [] : [piece]));
-  const identities = new Map<string, { readonly namespace: string; readonly name: string }>();
-  for (const [key, flatName] of flat) {
-    const dot = key.indexOf('.');
-    identities.set(flatName, { namespace: key.slice(0, dot), name: key.slice(dot + 1) });
-  }
-  return identities;
 };

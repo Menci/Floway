@@ -404,7 +404,6 @@ const reasoningEffortFromAnthropicMessages = (payload: AnthropicMessagesPayload)
  */
 export const anthropicMessagesRead = (payload: AnthropicMessagesPayload): IRInputReading<AnthropicMessagesAssistantTurn> => {
   const request: IRInputRequest = {
-    conversation: { turns: [] },
     settings: anthropicMessagesSettingsToIR(payload),
     ...anthropicMessagesToolsToIR(payload),
   };

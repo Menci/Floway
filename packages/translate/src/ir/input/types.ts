@@ -113,11 +113,10 @@ export interface IRInputOutputFormat {
   readonly strict?: boolean; // ChatCompletions, Responses, Messages
 }
 
-// One request, from the source's wire to the target's. A writer produces the
-// target payload from this alone: everything a caller can state about a request
-// is here, so no route has to patch a field onto a writer's result.
+// One request's own fields, from the source's wire to the target's. The
+// conversation is not part of it: turns travel separately as pieces, because a
+// writer needs them interleaved with the assistant turns a sidecar restored.
 export interface IRInputRequest {
-  readonly conversation: IRInputConversation;
   readonly settings: IRInputSettings;
   // Absent and empty are the same thing: a request that declares no tool.
   readonly tools?: readonly IRInputTool[];
@@ -183,10 +182,6 @@ export type IRInputToolChoice =
 export type IRInputToolSelection =
   | { readonly type: 'function'; readonly name: string; readonly namespace?: string }
   | { readonly type: 'custom'; readonly name: string; readonly namespace?: string };
-
-export interface IRInputConversation<InputTurn = IRInputTurn> {
-  readonly turns: readonly InputTurn[];
-}
 
 // A turn is a maximal run of one branch class, not a protocol's message
 // grouping. Chat Completions makes every message its own turn; the others

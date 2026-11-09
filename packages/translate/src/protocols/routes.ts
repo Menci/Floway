@@ -1,11 +1,11 @@
+import { anthropicMessagesSourceProtocol } from './anthropic-messages/as-source.ts';
+import { anthropicMessagesTargetProtocol } from './anthropic-messages/as-target.ts';
 import { composeTranslation } from './composition.ts';
-import { anthropicMessagesSourceProtocol } from './anthropic-messages/source.ts';
-import { anthropicMessagesTargetProtocol } from './anthropic-messages/target.ts';
-import { geminiGenerateContentSourceProtocol } from './gemini-generate-content/source.ts';
-import { openaiChatCompletionsSourceProtocol } from './openai-chat-completions/source.ts';
-import { openaiChatCompletionsTargetProtocol } from './openai-chat-completions/target.ts';
-import { openaiResponsesSourceProtocol } from './openai-responses/source.ts';
-import { openaiResponsesTargetProtocol } from './openai-responses/target.ts';
+import { geminiGenerateContentSourceProtocol } from './gemini-generate-content/as-source.ts';
+import { openaiChatCompletionsSourceProtocol } from './openai-chat-completions/as-source.ts';
+import { openaiChatCompletionsTargetProtocol } from './openai-chat-completions/as-target.ts';
+import { openaiResponsesSourceProtocol } from './openai-responses/as-source.ts';
+import { openaiResponsesTargetProtocol } from './openai-responses/as-target.ts';
 
 /**
  * Every translation this package can perform, named for the pair it performs.

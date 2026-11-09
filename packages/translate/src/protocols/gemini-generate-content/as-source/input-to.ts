@@ -257,7 +257,6 @@ export const geminiGenerateContentRead = (payload: GeminiGenerateContentRequest)
 
   return {
     request: {
-      conversation: { turns: [] },
       settings: geminiGenerateContentSettingsToIR(payload),
       ...toolsToIR(payload),
     },

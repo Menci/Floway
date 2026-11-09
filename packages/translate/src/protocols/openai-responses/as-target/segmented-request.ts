@@ -1,6 +1,6 @@
-import { openaiResponsesRequestFromIR } from './input-from.ts';
+import { openaiResponsesConversationFromIR, openaiResponsesHeaderFromIR } from './input-from.ts';
 import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
-import type { IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
+import type { IRInputAddressedTurn, IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
 import type { CanonicalOpenAIResponsesInputItem, CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 /**
@@ -8,12 +8,11 @@ import type { CanonicalOpenAIResponsesInputItem, CanonicalOpenAIResponsesPayload
  *
  * A conversation splits at the assistant turns a sidecar already resolved:
  * those are native Responses items, so they are placed verbatim while every
- * other segment is written from the IR. The request-wide fields come from the
- * first translated segment; later segments contribute only their input items.
+ * other segment is written from the IR. The request-wide fields are one answer
+ * for the whole conversation, so they are computed once beside it.
  *
- * Responses spells the prompt slot as one string, so a conversation that states
- * a prompt in more than one segment joins those statements the same way a
- * multi-message prompt run does.
+ * This wire states the prompt slot as one string, which only a conversation's
+ * first segment may fill.
  */
 export const openaiResponsesPayloadFromSegments = <Restored extends readonly CanonicalOpenAIResponsesInputItem[]>(
   request: IRInputRequest,
@@ -21,22 +20,21 @@ export const openaiResponsesPayloadFromSegments = <Restored extends readonly Can
   resolvedInput: (turn: Restored) => readonly CanonicalOpenAIResponsesInputItem[],
 ): CanonicalOpenAIResponsesPayload => {
   const input: CanonicalOpenAIResponsesInputItem[] = [];
-  const instructions: string[] = [];
-  let base: CanonicalOpenAIResponsesPayload | undefined;
+  // The prompt slot is stated once for the conversation, and segmentation is
+  // what says which segment may state it.
+  let instructions: string | undefined;
   for (const piece of segmentIRInput(pieces)) {
     if (piece.kind === 'resolved') { input.push(...resolvedInput(piece.turn)); continue; }
-    // Only a conversation's first segment holds the request's leading prompt; a
-    // later segment continues an exchange that already started.
-    const translated = openaiResponsesRequestFromIR({ ...request, conversation: { turns: piece.turns } }, piece.leading);
-    base ??= translated;
-    if (translated.instructions != null) instructions.push(translated.instructions);
-    input.push(...translated.input);
+    const segment = openaiResponsesConversationFromIR(piece.turns as readonly IRInputAddressedTurn[], piece.leading);
+    if (segment.instructions != null) instructions ??= segment.instructions;
+    input.push(...segment.input);
   }
-  base ??= openaiResponsesRequestFromIR({ ...request, conversation: { turns: [] } });
 
+  // The request-level fields are one answer for the whole conversation, so they
+  // are computed once rather than per segment.
   return {
-    ...base,
+    ...openaiResponsesHeaderFromIR(request),
     input,
-    ...(instructions.length === 0 ? {} : { instructions: instructions.join('\n\n') }),
+    ...(instructions === undefined ? {} : { instructions }),
   };
 };

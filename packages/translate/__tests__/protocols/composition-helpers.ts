@@ -1,11 +1,11 @@
-import { anthropicMessagesSourceProtocol } from '../../src/protocols/anthropic-messages/source.ts';
-import { anthropicMessagesTargetProtocol } from '../../src/protocols/anthropic-messages/target.ts';
+import { anthropicMessagesSourceProtocol } from '../../src/protocols/anthropic-messages/as-source.ts';
+import { anthropicMessagesTargetProtocol } from '../../src/protocols/anthropic-messages/as-target.ts';
 import { buildTargetRequestFor, translateSourceEventsFor } from '../../src/protocols/composition.ts';
-import { geminiGenerateContentSourceProtocol } from '../../src/protocols/gemini-generate-content/source.ts';
-import { openaiChatCompletionsSourceProtocol } from '../../src/protocols/openai-chat-completions/source.ts';
-import { openaiChatCompletionsTargetProtocol } from '../../src/protocols/openai-chat-completions/target.ts';
-import { openaiResponsesSourceProtocol } from '../../src/protocols/openai-responses/source.ts';
-import { openaiResponsesTargetProtocol } from '../../src/protocols/openai-responses/target.ts';
+import { geminiGenerateContentSourceProtocol } from '../../src/protocols/gemini-generate-content/as-source.ts';
+import { openaiChatCompletionsSourceProtocol } from '../../src/protocols/openai-chat-completions/as-source.ts';
+import { openaiChatCompletionsTargetProtocol } from '../../src/protocols/openai-chat-completions/as-target.ts';
+import { openaiResponsesSourceProtocol } from '../../src/protocols/openai-responses/as-source.ts';
+import { openaiResponsesTargetProtocol } from '../../src/protocols/openai-responses/as-target.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';

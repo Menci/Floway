@@ -4,7 +4,6 @@ import type {
   IRInputAssistantContentPart,
   IRInputAddressedAssistantItem,
   IRInputAddressedTurn,
-  IRInputConversation,
   IRInputRequest,
   IRInputSettings,
   IRInputTool,
@@ -190,20 +189,28 @@ export interface AnthropicMessagesRequestFromIROptions {
 }
 
 /**
+ * One segment's messages and the system blocks a leading prompt run lifts.
+ *
  * Messages keeps the system prompt in its own top-level field. A leading system
  * run is lifted there, one block per source text part so the boundaries
  * survive; later system messages stay inline at their position.
  *
- * The whole request comes from the IR, so this writer states every field the
- * payload carries and a route has nothing to patch onto its result.
+ * Reading holds `hoisting` across a whole conversation — once anything but a
+ * leading prompt is reached, later prompts stay inline. A segment therefore
+ * states whether it may still hoist, which is what keeps a split conversation
+ * reading the same as an unsplit one.
  */
-export const anthropicMessagesRequestFromIR = async (
-  request: IRInputRequest,
-  options: AnthropicMessagesRequestFromIROptions = {},
-): Promise<AnthropicMessagesPayload> => {
-  const conversation = request.conversation as IRInputConversation<IRInputAddressedTurn>;
+export interface AnthropicMessagesConversation {
+  readonly messages: AnthropicMessagesMessage[];
+  readonly system: AnthropicMessagesTextBlockParam[];
+}
+
+export const anthropicMessagesConversationFromIR = async (
+  turns: readonly IRInputAddressedTurn[],
+  leading: boolean,
+): Promise<AnthropicMessagesConversation> => {
   const system: AnthropicMessagesTextBlockParam[] = [];
-  let hoisting = true;
+  let hoisting = leading;
   const messages: AnthropicMessagesMessage[] = [];
   // Messages spells a single text block as a bare string, which is the shape a
   // client sees for a plain user turn.
@@ -217,7 +224,7 @@ export const anthropicMessagesRequestFromIR = async (
   const append = (blocks: AnthropicMessagesUserContentBlock[]): void => {
     if (blocks.length > 0) messages.push(userMessage(blocks));
   };
-  for (const turn of conversation.turns) {
+  for (const turn of turns) {
     if (turn.kind === 'assistant') {
       hoisting = false;
       const blocks = assistantBlocks(turn.items);
@@ -252,18 +259,29 @@ export const anthropicMessagesRequestFromIR = async (
     }
     append(turnBlocks);
   }
+  return { messages, system };
+};
+
+/**
+ * Everything a Messages request states except its conversation.
+ *
+ * The conversation is written separately because a trip interleaves it with the
+ * assistant turns a sidecar already resolved, so only this half is computed once
+ * per payload.
+ */
+export const anthropicMessagesHeaderFromIR = (
+  request: IRInputRequest,
+  options: AnthropicMessagesRequestFromIROptions = {},
+): Omit<AnthropicMessagesPayload, 'messages' | 'system'> => {
   // Messages has no declaration-level selector: a narrowed declaration list is
   // how this wire states which callables the model may pick from, and the
   // choice itself carries only the mode.
   const selectedTools = irInputToolsForChoice(request.tools, request.tool_choice);
   const choice = irInputToolChoiceForTools(request.tool_choice, selectedTools);
-
   return {
     ...anthropicMessagesSettingsFromIR(request.settings),
     model: request.settings.model,
     max_tokens: request.settings.max_output_tokens ?? options.fallbackMaxOutputTokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
-    messages,
-    ...(system.length === 0 ? {} : { system }),
     // A trip guarantees a streaming request; a request that says otherwise
     // cannot be carried by this side at all.
     stream: streamingFlag(request.settings),

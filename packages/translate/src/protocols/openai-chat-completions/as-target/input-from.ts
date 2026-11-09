@@ -7,7 +7,6 @@ import type {
   IRInputSettings,
   IRInputTool,
   IRInputToolChoice,
-  IRInputConversation,
   IRInputMedia,
   IRInputToolResultContentPart,
   IRInputAddressedClientItem,
@@ -175,15 +174,11 @@ const openaiChatCompletionsUserItem = (
 });
 
 export const openaiChatCompletionsFromIR = (
-  conversation: IRInputConversation<IRInputAddressedTurn>,
-): OpenAIChatCompletionsMessage[] => conversation.turns.flatMap(turn => turn.kind === 'assistant'
+  turns: readonly IRInputAddressedTurn[],
+): OpenAIChatCompletionsMessage[] => turns.flatMap(turn => turn.kind === 'assistant'
   ? assistantMessage(turn.items)
   : userMessages(turn.items));
 
-/**
- * Chat Completions has no top-level instructions slot, so a leading system run
- * stays an ordinary message there.
- */
 /**
  * Writes the settings onto a Chat Completions payload. `max_tokens` is
  * deprecated and incompatible with the o-series models, so the ceiling is
@@ -240,16 +235,18 @@ const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<OpenAIChatComp
 };
 
 /**
- * The whole Chat Completions payload comes from the IR, so a route has nothing
- * to patch onto the result.
+ * Everything a Chat Completions request states except its messages.
+ *
+ * The conversation is written separately because a trip interleaves it with the
+ * assistant turns a sidecar already resolved, so only this half is computed once
+ * per payload.
  */
-export const openaiChatCompletionsRequestFromIR = (request: IRInputRequest): OpenAIChatCompletionsPayload => {
+export const openaiChatCompletionsHeaderFromIR = (request: IRInputRequest): Omit<OpenAIChatCompletionsPayload, 'messages'> => {
   const tools = irInputToolsForChoice(request.tools, request.tool_choice);
   const choice = irInputToolChoiceForTools(request.tool_choice, tools);
   return {
     ...openaiChatCompletionsSettingsFromIR(request.settings),
     model: request.settings.model,
-    messages: openaiChatCompletionsFromIR(request.conversation as IRInputConversation<IRInputAddressedTurn>),
     // A trip guarantees a streaming request; a request that says otherwise
     // cannot be carried by this side at all.
     stream: streamingFlag(request.settings),

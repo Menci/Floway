@@ -48,8 +48,8 @@ import the source protocol's subpath and call
 - `protocols/openai-responses/as-target/` — consumes Responses SSE.
 - `protocols/openai-responses/common/` — owns wrapper formats used in both translation directions.
 - `protocols/composition.ts` — pairs one source protocol with one target protocol into a trip; the only file that names two protocols.
-- `protocols/<protocol>/source.ts` — states that protocol as the side a request comes from.
-- `protocols/<protocol>/target.ts` — states that protocol as the side a request goes to.
+- `protocols/<protocol>/as-source.ts` — states that protocol as the side a request comes from.
+- `protocols/<protocol>/as-target.ts` — states that protocol as the side a request goes to.
 - `shared/` — cross-route coordinate conversion, error classification, JSON handling, and token validation.
 
 ## Rules

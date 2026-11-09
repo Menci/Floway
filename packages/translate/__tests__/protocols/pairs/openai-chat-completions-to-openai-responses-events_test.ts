@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
 
 import { translateSourceEventsFor, buildTargetRequestFor } from '../../../src/protocols/composition.ts';
-import { openaiChatCompletionsSourceProtocol } from '../../../src/protocols/openai-chat-completions/source.ts';
-import { openaiResponsesTargetProtocol } from '../../../src/protocols/openai-responses/target.ts';
+import { openaiChatCompletionsSourceProtocol } from '../../../src/protocols/openai-chat-completions/as-source.ts';
+import { openaiResponsesTargetProtocol } from '../../../src/protocols/openai-responses/as-target.ts';
 import { structuredResponsesFixture } from '../../ir/responses-fixture.ts';
 import { testOutputTranslation } from '../../ir/translation-cases.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
