@@ -1,0 +1,66 @@
+import type { IRInputResolvedTurn } from '../ir/input/segments.ts';
+import type { IRInputAddressedAssistantItem, IRInputAddressedClientItem, IRInputAddressedTurn, IRInputTurn } from '../ir/input/types.ts';
+
+/** A call that has been stated and is still waiting for its result. */
+export interface PendingCall {
+  readonly name: string;
+  readonly callId: string;
+}
+
+/**
+ * States the call ids a target's wire requires.
+ *
+ * The input IR lets a source omit a call id: GenerateContent only states one
+ * when the caller had it, and a conversation restored from a sidecar never
+ * passed through the reading that would have seen it. Every translated target
+ * nevertheless correlates a result to its call by id, so the ids are filled in
+ * here — walking the conversation in order, which is what makes a result
+ * without an id answer the call still awaiting one.
+ *
+ * This is a target's own concern: the ids it invents are its wire's spelling of
+ * a call, and nothing outside this step reads them.
+ */
+export const assignCallIds = <Restored>(
+  pieces: readonly (IRInputTurn | IRInputResolvedTurn<Restored>)[],
+  restoredCalls: (turn: Restored) => readonly PendingCall[],
+): readonly (IRInputAddressedTurn | IRInputResolvedTurn<Restored>)[] => {
+  const pending: PendingCall[] = [];
+  let allocated = 0;
+  const allocate = (name: string): string => {
+    allocated += 1;
+    return `${name}_call_${allocated}`;
+  };
+  // A result without an id answers the oldest call of its name, or the oldest
+  // call at all when the source stated no name either.
+  const takePending = (name: string | undefined): PendingCall => {
+    const index = name === undefined ? 0 : pending.findIndex(call => call.name === name);
+    const [matched] = pending.splice(index >= 0 ? index : 0, 1);
+    if (matched === undefined) throw new Error(`A tool result answers no call (name: ${name ?? 'unstated'}).`);
+    return matched;
+  };
+
+  return pieces.map(piece => {
+    if (piece.kind === 'resolved') {
+      pending.push(...restoredCalls(piece.turn));
+      return piece;
+    }
+    const items = piece.items.map((item): IRInputAddressedTurn['items'][number] => {
+      if (item.type === 'function_call' || item.type === 'custom_tool_call') {
+        const callId = item.call_id ?? allocate(item.name);
+        pending.push({ name: item.name, callId });
+        return { ...item, call_id: callId };
+      }
+      if (item.type !== 'tool_result') return item;
+      // A stated answer releases its call so a later id-less result cannot
+      // take it.
+      const stated = item.call_id;
+      if (stated !== undefined) {
+        const index = pending.findIndex(call => call.callId === stated);
+        if (index >= 0) pending.splice(index, 1);
+        return { ...item, call_id: stated };
+      }
+      return { ...item, call_id: takePending(item.name).callId };
+    });
+    return piece.kind === 'client' ? { kind: 'client', items: items as readonly IRInputAddressedClientItem[] } : { kind: 'assistant', items: items as readonly IRInputAddressedAssistantItem[] };
+  });
+};

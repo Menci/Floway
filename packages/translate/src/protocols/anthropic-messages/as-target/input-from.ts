@@ -2,7 +2,9 @@ import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/in
 import { streamingFlag } from '../../../ir/input/stream.ts';
 import type {
   IRInputAssistantContentPart,
-  IRInputAssistantItem,
+  IRInputAddressedAssistantItem,
+  IRInputAddressedTurn,
+  IRInputConversation,
   IRInputRequest,
   IRInputSettings,
   IRInputTool,
@@ -71,7 +73,6 @@ const systemContent = (content: readonly IRInputTextPart[]): AnthropicMessagesTe
 
 const userContent = async (
   item: Extract<IRInputClientItem, { type: 'message' }>,
-  options: AnthropicMessagesRequestFromIROptions,
 ): Promise<AnthropicMessagesUserContentBlock[]> => {
   const blocks: AnthropicMessagesUserContentBlock[] = [];
   for (const part of item.content) {
@@ -91,7 +92,6 @@ const userContent = async (
 
 const toolResultContent = async (
   output: string | readonly IRInputToolResultContentPart[],
-  options: AnthropicMessagesRequestFromIROptions,
 ): Promise<string | AnthropicMessagesToolResultContentBlock[]> => {
   if (typeof output === 'string') return output;
   const blocks: AnthropicMessagesToolResultContentBlock[] = [];
@@ -104,7 +104,7 @@ const toolResultContent = async (
   return blocks.length === 0 ? '' : blocks;
 };
 
-const assistantBlocks = (items: readonly IRInputAssistantItem[]): AnthropicMessagesAssistantInputContentBlock[] => {
+const assistantBlocks = (items: readonly IRInputAddressedAssistantItem[]): AnthropicMessagesAssistantInputContentBlock[] => {
   const blocks = items.flatMap<AnthropicMessagesAssistantInputContentBlock>(item => {
     switch (item.type) {
     case 'message':
@@ -201,7 +201,7 @@ export const anthropicMessagesRequestFromIR = async (
   request: IRInputRequest,
   options: AnthropicMessagesRequestFromIROptions = {},
 ): Promise<AnthropicMessagesPayload> => {
-  const { conversation } = request;
+  const conversation = request.conversation as IRInputConversation<IRInputAddressedTurn>;
   const system: AnthropicMessagesTextBlockParam[] = [];
   let hoisting = true;
   const messages: AnthropicMessagesMessage[] = [];
@@ -247,8 +247,8 @@ export const anthropicMessagesRequestFromIR = async (
       }
       hoisting = false;
       turnBlocks.push(...(item.type === 'tool_result'
-        ? [{ type: 'tool_result' as const, tool_use_id: item.call_id, content: await toolResultContent(item.output, options), ...(item.is_error === true ? { is_error: true } : {}) }]
-        : await userContent(item, options)));
+        ? [{ type: 'tool_result' as const, tool_use_id: item.call_id, content: await toolResultContent(item.output), ...(item.is_error === true ? { is_error: true } : {}) }]
+        : await userContent(item)));
     }
     append(turnBlocks);
   }

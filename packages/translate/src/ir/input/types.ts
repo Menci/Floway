@@ -96,6 +96,11 @@ export interface IRInputSettings {
   // Repetition penalties. Chat and GenerateContent state the same pair.
   readonly presence_penalty?: number; // ChatCompletions, GenerateContent
   readonly frequency_penalty?: number; // ChatCompletions, GenerateContent
+  // Whether the client wants a usage report on every chunk it receives rather
+  // than only the final one. A source protocol states it in its own stream
+  // options; a target always asks its upstream for the fullest report it can
+  // get, so this is stated back to the client rather than sent upstream.
+  readonly continuous_usage?: boolean; // ChatCompletions
 }
 
 // Structured output. `strict` is three-state: absent means the source did not
@@ -129,7 +134,13 @@ export type IRInputTool = IRInputFunctionTool | IRInputCustomTool;
 
 export interface IRInputFunctionTool {
   readonly type: 'function';
+  // The name inside the declaration group, or the whole name when the source
+  // has no groups.
   readonly name: string;
+  // The declaration group this tool belongs to. A protocol whose wire has no
+  // namespaces states nothing here and a protocol that does states the pair
+  // back the way its client wrote it.
+  readonly namespace?: string; // Responses
   readonly description?: string;
   // A JSON Schema object. Responses and Chat Completions require one, Messages
   // always states one, so the reader forwards what the source declared.
@@ -145,6 +156,7 @@ export interface IRInputFunctionTool {
 export interface IRInputCustomTool {
   readonly type: 'custom';
   readonly name: string;
+  readonly namespace?: string; // Responses
   readonly description?: string;
   // The constrained grammar a target uses to validate the model's string.
   readonly format?: IRInputCustomToolFormat;
@@ -162,16 +174,18 @@ export type IRInputToolChoice =
   | 'auto'
   | 'none'
   | 'required'
-  | { readonly type: 'function'; readonly name: string }
-  | { readonly type: 'custom'; readonly name: string }
+  | IRInputToolSelection
   | { readonly type: 'allowed_tools'; readonly mode: 'auto' | 'required'; readonly tools: readonly IRInputToolSelection[] };
 
-// A selector names one declared callable by kind and name, which is what every
-// protocol's selector arm states.
-export type IRInputToolSelection = { readonly type: 'function'; readonly name: string } | { readonly type: 'custom'; readonly name: string };
+// A selector names one declared callable by kind and its logical identity, which
+// is what every protocol's selector arm states. A protocol that groups its
+// declarations states the group here too.
+export type IRInputToolSelection =
+  | { readonly type: 'function'; readonly name: string; readonly namespace?: string }
+  | { readonly type: 'custom'; readonly name: string; readonly namespace?: string };
 
-export interface IRInputConversation {
-  readonly turns: readonly IRInputTurn[];
+export interface IRInputConversation<InputTurn = IRInputTurn> {
+  readonly turns: readonly InputTurn[];
 }
 
 // A turn is a maximal run of one branch class, not a protocol's message
@@ -214,6 +228,28 @@ export type IRInputAssistantItem =
   | IRInputReasoningItem
   | IRInputFunctionCallItem
   | IRInputCustomToolCallItem;
+
+// A conversation whose calls and results all state their ids.
+//
+// The input model leaves `call_id` optional because a source may not state one,
+// but a target's wire correlates every result by id. A target fills the missing
+// ones before writing, and this is the shape it holds afterwards — so a writer
+// reads the id without re-checking what the filling already established.
+export type IRInputAddressedTurn = IRInputAddressedClientTurn | IRInputAddressedAssistantTurn;
+export interface IRInputAddressedClientTurn {
+  readonly kind: 'client';
+  readonly items: readonly IRInputAddressedClientItem[];
+}
+export interface IRInputAddressedAssistantTurn {
+  readonly kind: 'assistant';
+  readonly items: readonly IRInputAddressedAssistantItem[];
+}
+export type IRInputAddressedClientItem = IRInputSystemMessageItem | IRInputUserMessageItem | IRInputAddressedToolResultItem;
+export type IRInputAddressedToolResultItem = IRInputToolResultItem & { readonly call_id: string };
+export type IRInputAddressedAssistantItem =
+  | Exclude<IRInputAssistantItem, IRInputFunctionCallItem | IRInputCustomToolCallItem>
+  | (IRInputFunctionCallItem & { readonly call_id: string })
+  | (IRInputCustomToolCallItem & { readonly call_id: string });
 
 // A prompt boundary: text the caller sets rather than a turn it takes. It
 // represents a top-level prompt field (`instructions`, `systemInstruction`, or
@@ -332,11 +368,14 @@ export interface IRInputReasoningItem {
 
 export interface IRInputFunctionCallItem {
   readonly type: 'function_call'; // All
-  // Required even though GenerateContent may omit `functionCall.id`: a reader
-  // synthesizes a deterministic ID so a tool result can correlate, which is
-  // what the routes already do.
-  readonly call_id: string; // All
+  // A source that omits the id leaves it absent. Only a target whose wire
+  // correlates results by id has to state one, and it does so while writing:
+  // the reader is not the side that decides what an id looks like.
+  readonly call_id?: string; // All
+  // The name inside the declaration group, or the whole name when the source
+  // has no groups, plus the group when the source grouped this call.
   readonly name: string; // All
+  readonly namespace?: string; // Responses
   // JSON text, never a parsed object. Chat Completions and Responses carry
   // arguments as strings that may be malformed, and a reader that parsed them
   // would have to invent a wrapper for invalid JSON. Each target parses at its
@@ -348,8 +387,9 @@ export interface IRInputFunctionCallItem {
 
 export interface IRInputCustomToolCallItem {
   readonly type: 'custom_tool_call'; // ChatCompletions, Responses
-  readonly call_id: string; // ChatCompletions, Responses
+  readonly call_id?: string; // ChatCompletions, Responses
   readonly name: string; // ChatCompletions, Responses
+  readonly namespace?: string; // Responses
   readonly input: string; // ChatCompletions, Responses
 }
 
@@ -359,7 +399,14 @@ export interface IRInputCustomToolCallItem {
 // carrying the same ID; an orphan result then fails loudly instead of guessing.
 export interface IRInputToolResultItem {
   readonly type: 'tool_result'; // All
-  readonly call_id: string; // All
+  // A result follows the call it answers: absent means the call it answers is
+  // the one still awaiting a result, which only a target that correlates by
+  // position has to work out.
+  readonly call_id?: string; // All
+  // The function this result answers. A source whose wire correlates results
+  // by name (GenerateContent) states it; a source that correlates by id does
+  // not, because the id already names the call.
+  readonly name?: string; // GenerateContent
   // A string is an opaque payload: a source string, or a structured result
   // that no protocol expresses as content parts (GenerateContent's
   // `functionResponse.response` object). Parts are used when the source itself

@@ -1,11 +1,11 @@
-import type { IRInputPendingCall, IRInputReading } from '../ir/input/reading.ts';
+import type { IRInputReading } from '../ir/input/reading.ts';
 import { readTurns } from '../ir/input/reading.ts';
 import type { IRInputResolvedTurn } from '../ir/input/segments.ts';
 import type { IRInputRequest, IRInputTurn } from '../ir/input/types.ts';
 import type { IRRecord } from '../ir/output/stream.ts';
 import type { AssistantTurnByProtocol, AssistantTurnFor } from '../round-trip/assistant-turn.ts';
 import type { ReplayContent } from '../round-trip/reference/assistant-turn.ts';
-import type { EncodedRoundTripSidecar, PendingCall } from '../round-trip/resolve.ts';
+import type { EncodedRoundTripSidecar } from '../round-trip/resolve.ts';
 import { roundTripAssistantTurn } from '../round-trip/resolve.ts';
 import type { SourceAssistantTurnFor } from '../round-trip/source-assistant-turn.ts';
 import type { RoundTripReader, RoundTripWriter } from '../round-trip/stream.ts';
@@ -30,20 +30,20 @@ export interface SourceRoundTrip<Name extends AssistantTurnKey> {
 }
 
 /** One protocol as the side a request comes from. */
-export interface SourceProtocol<Name extends AssistantTurnKey, Payload, Event, Derived = undefined> {
+export interface SourceProtocol<Name extends AssistantTurnKey, Payload, Event> {
   readonly name: Name;
   /** Reads the request into the turns it states, each turn's side already decided. */
-  readonly read: (payload: Payload) => IRInputReading<SourceAssistantTurnFor<Name>, Derived>;
+  readonly read: (payload: Payload) => IRInputReading<SourceAssistantTurnFor<Name>>;
   readonly roundTrip: SourceRoundTrip<Name>;
   readonly writeError: SourceProtocolErrorWriter;
   /**
    * States the returned stream to this protocol's client.
    *
-   * It is handed what the reading accumulated for it, because stating a stream
-   * may need a value that reading built up and cannot be derived again.
+   * It is handed the reading's request, because what the client sees stated
+   * back can depend on what it asked for, and the request is where that lives.
    */
   readonly writeStream: (
-    derived: Derived,
+    reading: IRInputReading<SourceAssistantTurnFor<Name>>,
     records: AsyncIterable<IRRecord>,
     writer: RoundTripWriter<Name>,
   ) => AsyncIterable<ProtocolFrame<Event>>;
@@ -65,14 +65,6 @@ export interface TargetProtocol<Name extends AssistantTurnKey, Payload, Event> {
     ctx: TranslateContext,
   ) => Promise<Payload>;
   /**
-   * Names the calls a restored turn leaves awaiting answers.
-   *
-   * The restored turn never passed through the source reader, so nothing
-   * registered its calls; a later id-less result has to name them, and only
-   * this protocol knows where it put them.
-   */
-  readonly pendingCallIds: (turn: AssistantTurnFor<Name>) => readonly PendingCall[];
-  /**
    * Reads this protocol's upstream events into the output IR.
    *
    * It is handed the request the target was written from because reading a
@@ -93,10 +85,10 @@ export interface TargetProtocol<Name extends AssistantTurnKey, Payload, Event> {
  * one of them, so a route states a pair as two values.
  */
 export const composeTranslation = <
-  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent, SrcDerived,
+  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent,
   TgtName extends AssistantTurnKey, TgtPayload extends { model: string }, TgtEvent,
 >(
-  source: SourceProtocol<SrcName, SrcPayload, SrcEvent, SrcDerived>,
+  source: SourceProtocol<SrcName, SrcPayload, SrcEvent>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
 ): TranslateTrip<SrcPayload, SrcEvent, TgtPayload, TgtEvent> => async (payload, ctx) => {
   const reading = source.read(payload);
@@ -105,7 +97,7 @@ export const composeTranslation = <
     errorBody: source.writeError,
     events: frames => {
       const stream = createRoundTripStream(source.name, target.name, ctx.sidecarCodec);
-      return source.writeStream(reading.derived, target.readStream(frames, stream.reader, reading.request), stream.writer);
+      return source.writeStream(reading, target.readStream(frames, stream.reader, reading.request), stream.writer);
     },
   };
 };
@@ -119,24 +111,23 @@ export const composeTranslation = <
  * the second.
  */
 const settleTurns = async <
-  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent, SrcDerived,
+  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent,
   TgtName extends AssistantTurnKey, TgtPayload, TgtEvent,
 >(
-  source: SourceProtocol<SrcName, SrcPayload, SrcEvent, SrcDerived>,
+  source: SourceProtocol<SrcName, SrcPayload, SrcEvent>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
-  reading: IRInputReading<SourceAssistantTurnFor<SrcName>, SrcDerived>,
+  reading: IRInputReading<SourceAssistantTurnFor<SrcName>>,
   ctx: TranslateContext,
 ): Promise<(IRInputTurn | IRInputResolvedTurn<AssistantTurnFor<TgtName>>)[]> =>
   await readTurns(reading, async (turn): Promise<
-    { readonly resolved: AssistantTurnFor<TgtName>; readonly pendingCalls: readonly IRInputPendingCall[] } | undefined
+    { readonly resolved: AssistantTurnFor<TgtName> } | undefined
   > => {
     const roundTrip = await roundTripAssistantTurn(
       source.name, target.name, turn.assistantTurn, ctx.sidecarCodec,
       source.roundTrip.inspect, source.roundTrip.verify, source.roundTrip.collectCandidates,
-      target.pendingCallIds,
     );
     if (roundTrip === undefined) return undefined;
-    return { resolved: roundTrip.turn, pendingCalls: roundTrip.pendingCallIds(roundTrip.turn) };
+    return { resolved: roundTrip.turn };
   });
 
 /**
@@ -146,17 +137,16 @@ const settleTurns = async <
  * this states exactly that step. It is the same code `composeTranslation` runs.
  */
 export const buildTargetRequestFor = async <
-  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent, SrcDerived,
+  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent,
   TgtName extends AssistantTurnKey, TgtPayload, TgtEvent,
 >(
-  source: SourceProtocol<SrcName, SrcPayload, SrcEvent, SrcDerived>,
+  source: SourceProtocol<SrcName, SrcPayload, SrcEvent>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
   payload: SrcPayload,
   ctx: TranslateContext,
-  // Reading is stateful and its derived values only become complete once every
-  // turn has settled, so a caller that also asserts on them passes the same
-  // reading it then inspects rather than opening a second, unread one.
-  reading: IRInputReading<SourceAssistantTurnFor<SrcName>, SrcDerived> = source.read(payload),
+  // Reading is stateful, so a caller that also inspects what it recorded passes
+  // the same reading rather than opening a second one.
+  reading: IRInputReading<SourceAssistantTurnFor<SrcName>> = source.read(payload),
 ): Promise<TgtPayload> =>
   await target.write(reading.request, await settleTurns(source, target, reading, ctx), ctx);
 
@@ -167,10 +157,10 @@ export const buildTargetRequestFor = async <
  * client-side writer may need.
  */
 export const translateSourceEventsFor = <
-  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent, SrcDerived,
+  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent,
   TgtName extends AssistantTurnKey, TgtPayload, TgtEvent,
 >(
-  source: SourceProtocol<SrcName, SrcPayload, SrcEvent, SrcDerived>,
+  source: SourceProtocol<SrcName, SrcPayload, SrcEvent>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
   payload: SrcPayload,
   ctx: TranslateContext,
@@ -178,5 +168,5 @@ export const translateSourceEventsFor = <
 ): AsyncIterable<ProtocolFrame<SrcEvent>> => {
   const reading = source.read(payload);
   const stream = createRoundTripStream(source.name, target.name, ctx.sidecarCodec);
-  return source.writeStream(reading.derived, target.readStream(frames, stream.reader, reading.request), stream.writer);
+  return source.writeStream(reading, target.readStream(frames, stream.reader, reading.request), stream.writer);
 };

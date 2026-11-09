@@ -3,8 +3,6 @@ import { test } from 'vitest';
 import { irInputToolsForChoice } from '../../../src/ir/input/select-tools.ts';
 import type { IRInputRequest } from '../../../src/ir/input/types.ts';
 import { openaiResponsesRead } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
-import { flattenNamespaceTools } from '../../../src/protocols/openai-responses/as-source/namespace-tools.ts';
-import { canonicalizeOpenAIResponsesPayload } from '../../../src/protocols/openai-responses/canonicalize-payload.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import { buildTargetRequestFor, pairs } from '../composition-helpers.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesClientTool, type AnthropicMessagesToolResultBlock, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
@@ -13,8 +11,6 @@ import { assert, assertEquals, assertFalse, assertRejects } from '@floway-dev/te
 const customToolNamesOf = (request: IRInputRequest): ReadonlySet<string> =>
   new Set((irInputToolsForChoice(request.tools, request.tool_choice) ?? [])
     .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
-
-const stubRemoteImageLoader = (result: { mediaType: string | null; data: Uint8Array } | null) => () => Promise.resolve(result);
 
 const minimalPayload = {
   model: 'claude-test',
@@ -237,7 +233,6 @@ test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTa
     content: [{ type: 'tool_result', tool_use_id: 'call_1', content: [{ type: 'image', source: { type: 'file', file_id: 'file_1' } }], cache_control: { type: 'ephemeral' } }],
   }]);
 });
-
 
 // ── service_tier → speed mapping ──
 
@@ -645,13 +640,12 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
   };
   const result = await buildWithTestSidecar(payload);
 
-  const names = flattenNamespaceTools(canonicalizeOpenAIResponsesPayload({ ...payload, stream: true })).names;
-  assertEquals(names.sourceToTarget, new Map([['web.run', 'web_run_2']]));
-  assertEquals(names.targetToSource, new Map([['web_run_2', { namespace: 'web', name: 'run', type: 'function_call' }]]));
+  // A grouped declaration and the flat one it would collide with both reach
+  // this wire, so the group's spelling has to avoid the name already in use.
+  assertEquals(result.target.tools?.map(tool => 'name' in tool ? tool.name : undefined), ['web_run', 'web_run_2']);
   assertEquals(result.target.tools, [
     {
       name: 'web_run',
-      description: undefined,
       input_schema: { type: 'object' },
       strict: false,
     },

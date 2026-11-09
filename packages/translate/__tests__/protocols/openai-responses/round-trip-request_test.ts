@@ -1,9 +1,9 @@
 import { expect, it } from 'vitest';
 
 import { buildTargetRequestFor } from '../../../src/protocols/composition.ts';
+import { openaiResponsesRead } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
 import type { OpenAIResponsesAssistantTurn } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
-import { openaiResponsesRead } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { encodeRoundTripSidecar } from '../../../src/round-trip/sidecar.ts';
 import type { SidecarCodec } from '../../../src/types.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
@@ -111,14 +111,17 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('bypasses ordin
   };
   const ctx = { sidecarCodec: codec, fallbackMaxOutputTokens: undefined };
   const reading = openaiResponsesRead(source);
+  const irCall = (r: typeof reading, callId: string): { namespace?: string; name: string } | undefined => r.turns
+    .flatMap(turn => turn.toIRTurn())
+    .flatMap(turn => turn.items as readonly { type: string; call_id?: string; name: string; namespace?: string }[])
+    .find(item => (item.type === 'function_call' || item.type === 'custom_tool_call') && item.call_id === callId);
   const target_ = target === 'openaiChatCompletions'
     ? await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, ctx, reading)
     : await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], source, ctx, reading);
-  const result = { target: target_, namespaceToolNames: reading.derived.namespaceToolNames };
-
-  expect(result.target.messages[0]).toEqual(native);
-  expect([...result.namespaceToolNames.sourceToTarget]).toEqual([['x.y.f', 'x_y_f']]);
-  expect([...result.namespaceToolNames.targetToSource]).toEqual([['x_y_f', { namespace: 'x', name: 'y.f', type: 'function_call' }]]);
+  // The reading keeps a grouped call's logical identity; flattening it into the
+  // single name this target's wire uses is the target's own step.
+  expect(irCall(reading, 'bare')).toMatchObject({ namespace: 'x', name: 'y.f' });
+  expect(target_.messages[0]).toEqual(native);
   expect(source.input[0]).toEqual(calls[0]);
   expect(source.input[1]).toEqual(calls[1]);
 });
@@ -146,10 +149,16 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('allocates bare
   const target_ = target === 'openaiChatCompletions'
     ? await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, ctx, reading)
     : await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], source, ctx, reading);
-  const result = { target: target_, namespaceToolNames: reading.derived.namespaceToolNames };
-
-  expect([...result.namespaceToolNames.sourceToTarget]).toEqual([['a.b.run', 'a_b_run'], ['a_b.run', 'a_b_run_2']]);
-  expect(result.target.messages).toHaveLength(3);
+  // Two groups spelling the same flat name must not collide on the wire, and
+  // which one takes the suffix follows the order the conversation states them.
+  const callNames = target === 'openaiChatCompletions'
+    ? (target_.messages as Array<{ tool_calls?: Array<{ function: { name: string } }> }>)
+        .flatMap(message => message.tool_calls?.map(call => call.function.name) ?? [])
+    : (target_.messages as Array<{ content: unknown }>).flatMap(message => Array.isArray(message.content)
+        ? message.content.flatMap(block => (block as { type: string; name?: string }).type === 'tool_use' ? [(block as { name: string }).name] : [])
+        : []);
+  expect(callNames).toEqual(['a_b_run', 'a_b_run_2']);
+  expect(target_.messages).toHaveLength(3);
 });
 
 it.each(['additional_tools', 'tool_search_output'] as const)('restores assistant turns independently across a user-side %s boundary', async type => {

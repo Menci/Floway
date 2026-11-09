@@ -7,7 +7,7 @@ import { translateSourceEventsFor, buildTargetRequestFor } from '../../src/proto
 import { irFromOpenAIChatCompletions as irFromOpenAIChatCompletionsProduction } from '../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
 import { emptyPayload, pairs } from '../protocols/composition-helpers.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
-import { createRoundTripReaderCapture, emptyNamespaceToolNames } from '../round-trip/test-helpers.ts';
+import { createRoundTripReaderCapture } from '../round-trip/test-helpers.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 
 const events = (pair: readonly [any, any], payload: any, codec: any) =>
@@ -18,9 +18,9 @@ const generateContentViaChat = (frames: AsyncIterable<any>, codec: any) => event
 const generateContentViaResponses = (frames: AsyncIterable<any>, codec: any) => events(pairs.geminiToResponses, emptyPayload.gemini, codec)(frames);
 // The freeform tool names these cases restore come from the request's own
 // declarations, so a case that expects one states it there.
-const responsesViaMessages = (frames: AsyncIterable<any>, _id: string, names: ReadonlySet<string>, codec: any, _ns: unknown) =>
+const responsesViaMessages = (frames: AsyncIterable<any>, names: ReadonlySet<string>, codec: any) =>
   translateSourceEventsFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], responsesPayload(names), { sidecarCodec: codec }, frames);
-const responsesViaChat = (frames: AsyncIterable<any>, names: ReadonlySet<string>, codec: any, _ns: unknown) =>
+const responsesViaChat = (frames: AsyncIterable<any>, names: ReadonlySet<string>, codec: any) =>
   translateSourceEventsFor(pairs.responsesToChat[0], pairs.responsesToChat[1], responsesPayload(names), { sidecarCodec: codec }, frames);
 const responsesPayload = (names: ReadonlySet<string>) => ({
   ...emptyPayload.responses,
@@ -197,7 +197,7 @@ for (const source of ['openai-chat-completions', 'anthropic-messages'] as const)
       const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
       try {
         const frames = fixtureFrames(source, { tools: [{ name: 'run_code', id: 'call_custom', args: wrapped }] });
-        const output = source === 'openai-chat-completions' ? responsesViaChat(iterate(frames), new Set(['run_code']), createTestSidecarCodec(), emptyNamespaceToolNames()) : responsesViaMessages(iterate(frames), 'resp_custom', new Set(['run_code']), createTestSidecarCodec(), emptyNamespaceToolNames());
+        const output = source === 'openai-chat-completions' ? responsesViaChat(iterate(frames), new Set(['run_code']), createTestSidecarCodec()) : responsesViaMessages(iterate(frames), new Set(['run_code']), createTestSidecarCodec());
         const result = await nativeResult('openai-responses', await collect(output));
         expect(result.output.slice(0, -1)).toEqual([expect.objectContaining({ type: 'custom_tool_call', call_id: 'call_custom', name: 'run_code', input: 'input' in wrapped ? wrapped.input : JSON.stringify(wrapped) })]);
         expect(warning).toHaveBeenCalledTimes('input' in wrapped ? 0 : 1);
@@ -244,7 +244,7 @@ test('ignores vendor object arrays and retains scalar reasoning items', async ()
   frames.splice(-1, 0, eventFrame({ id: 'chatcmpl_test', model: 'served-model', created: 100, choices: [{ index: 0, delta: { vendor_records: records }, finish_reason: null }] }));
   const ir = await collectIR(irFromOpenAIChatCompletionsProduction(iterate(frames), { roundTrip: createRoundTripReaderCapture().roundTrip }));
   expect(ir.choices[0].items.filter(item => item.type === 'reasoning')).toEqual([{ type: 'reasoning', summary: ['ab'] }]);
-  const result = await nativeResult('openai-responses', await collect(responsesViaChat(iterate(frames), new Set(), createTestSidecarCodec(), emptyNamespaceToolNames())));
+  const result = await nativeResult('openai-responses', await collect(responsesViaChat(iterate(frames), new Set(), createTestSidecarCodec())));
   expect(result.output.filter((item: any) => item.type === 'reasoning' && item.encrypted_content === undefined)).toMatchObject([{ summary: [{ text: 'ab' }] }]);
   expect(result.output.some((item: any) => ['record_a', 'record_b'].includes(item.id))).toBe(false);
   expect(result.output.filter((item: any) => item.type === 'message')[0].content[0].text).toBe('answer');
@@ -261,7 +261,7 @@ for (const category of ['bio', 'cyber']) {
   test.each([null, '', ' \t\n', 'Upstream explanation.', '  Original spacing.  '])(`Responses via Messages preserves nonblank ${category} explanations and supplies a native error message when absent: %j`, async explanation => {
     const frames = fixtureFrames('anthropic-messages', { stop: 'content_filter' });
     for (const frame of frames) if (frame.type === 'event' && frame.event.type === 'message_delta') frame.event.delta.stop_details = { type: 'refusal', category, explanation };
-    const output = await collect(responsesViaMessages(iterate(frames), 'resp_policy', new Set(), createTestSidecarCodec(), emptyNamespaceToolNames()));
+    const output = await collect(responsesViaMessages(iterate(frames), new Set(), createTestSidecarCodec()));
     expect(output.at(-1)).toMatchObject({
       event: {
         type: 'response.failed',

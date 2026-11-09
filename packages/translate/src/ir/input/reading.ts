@@ -1,11 +1,5 @@
 import type { IRInputRequest, IRInputTurn } from './types.ts';
 
-/** A call a restored turn states, named the way the target named it. */
-export interface IRInputPendingCall {
-  readonly callId: string;
-  readonly name: string;
-}
-
 /**
  * One turn of a source conversation, classified by the reader that produced it.
  *
@@ -22,24 +16,12 @@ export interface IRInputPendingCall {
  * resolves is written natively, and its IR is never built.
  */
 export type IRInputTurnSlot<AssistantTurn> =
-  | { readonly kind: 'client'; readonly toIRTurn: RestoredCallsToIRTurn }
+  | { readonly kind: 'client'; readonly toIRTurn: () => IRInputTurn[] }
   | {
     readonly kind: 'assistant';
     readonly assistantTurn: AssistantTurn;
-    readonly toIRTurn: RestoredCallsToIRTurn;
+    readonly toIRTurn: () => IRInputTurn[];
   };
-
-/**
- * Builds a turn's IR, told which calls earlier turns left awaiting answers.
- *
- * A turn a sidecar restored is written natively and never passes through this
- * reader, but the calls it states are ones a later id-less result may answer.
- * Those calls reach the conversion as an argument rather than by the caller
- * reaching back into the reader's state: the reader that correlates them is
- * still the only code that knows how to, and the caller only reports what the
- * resolved turns stated.
- */
-type RestoredCallsToIRTurn = (restored: readonly IRInputPendingCall[]) => IRInputTurn[];
 
 /**
  * A request read into what a writer consumes.
@@ -48,18 +30,9 @@ type RestoredCallsToIRTurn = (restored: readonly IRInputPendingCall[]) => IRInpu
  * a client turn rather than a field of its own, which is what lets a writer
  * place it by position the same way it places every other turn.
  */
-export interface IRInputReading<AssistantTurn, Derived = undefined> {
+export interface IRInputReading<AssistantTurn> {
   readonly request: IRInputRequest;
   readonly turns: readonly IRInputTurnSlot<AssistantTurn>[];
-  /**
-   * What reading had to accumulate for the client-side writer.
-   *
-   * Reading a request can produce values the writer still needs, and those are
-   * built up as turns are read — a namespace map assigned in the order the
-   * names appear, say — so they cannot be derived again from the request
-   * afterwards. A protocol whose writer needs nothing states `undefined`.
-   */
-  readonly derived: Derived;
 }
 
 /**
@@ -70,28 +43,24 @@ export interface IRInputReading<AssistantTurn, Derived = undefined> {
  * two paths are exclusive — and the reader is told what the native turn answered
  * so its later turns still correlate.
  */
-export const readTurns = async <AssistantTurn, Derived, Resolved>(
-  reading: IRInputReading<AssistantTurn, Derived>,
+export const readTurns = async <AssistantTurn, Resolved>(
+  reading: IRInputReading<AssistantTurn>,
   resolve: (turn: Extract<IRInputTurnSlot<AssistantTurn>, { kind: 'assistant' }>) => Promise<
-    { readonly resolved: Resolved; readonly pendingCalls: readonly IRInputPendingCall[] } | undefined
+    { readonly resolved: Resolved } | undefined
   >,
 ): Promise<(IRInputTurn | { readonly kind: 'resolved'; readonly turn: Resolved })[]> => {
   const pieces: (IRInputTurn | { readonly kind: 'resolved'; readonly turn: Resolved })[] = [];
-  // What earlier resolved turns stated, in the order they were written. A
-  // reader that correlates id-less results needs it and nothing else does.
-  const restored: IRInputPendingCall[] = [];
   for (const turn of reading.turns) {
     if (turn.kind === 'client') {
-      pieces.push(...turn.toIRTurn(restored));
+      pieces.push(...turn.toIRTurn());
       continue;
     }
     const result = await resolve(turn);
     if (result === undefined) {
-      pieces.push(...turn.toIRTurn(restored));
+      pieces.push(...turn.toIRTurn());
       continue;
     }
     pieces.push({ kind: 'resolved', turn: result.resolved });
-    restored.push(...result.pendingCalls);
   }
   return pieces;
 };

@@ -2,7 +2,6 @@ import { klona } from 'klona/json';
 
 import { validateAllowedTools } from './allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from './conversation-turns.ts';
-import { flattenNamespaceTools, type NamespaceToolNames } from './namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from './programmatic-tooling.ts';
 import { isOpenAIResponsesEncryptedReasoning } from './round-trip.ts';
 import type { OpenAIResponsesAssistantTurn } from './round-trip.ts';
@@ -14,6 +13,7 @@ import type {
   IRInputSettings,
   IRInputTool,
   IRInputToolChoice,
+  IRInputToolSelection,
   IRInputOutputFormat,
   IRInputMedia,
   IRInputTextPart,
@@ -136,9 +136,9 @@ const assistantItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IR
       return { type: 'reasoning' as const, ...(summary.length === 0 ? {} : { summary }), ...(content.length === 0 ? {} : { content }) };
     }
   case 'function_call':
-    return { type: 'function_call' as const, call_id: item.call_id, name: item.name, arguments: item.arguments };
+    return { type: 'function_call' as const, call_id: item.call_id, name: item.name, ...('namespace' in item && typeof item.namespace === 'string' ? { namespace: item.namespace } : {}), arguments: item.arguments };
   case 'custom_tool_call':
-    return { type: 'custom_tool_call' as const, call_id: item.call_id, name: item.name, input: item.input };
+    return { type: 'custom_tool_call' as const, call_id: item.call_id, name: item.name, ...('namespace' in item && typeof item.namespace === 'string' ? { namespace: item.namespace } : {}), input: item.input };
   case 'item_reference':
   case 'web_search_call':
   case 'image_generation_call':
@@ -175,6 +175,11 @@ const userItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInput
       output: toolResultContent(item.output),
       tool_kind: 'custom' as const,
     }];
+  // A deferred inventory states declarations, which the request's tool list
+  // already carries; it is not something the model said.
+  case 'additional_tools':
+  case 'tool_search_output':
+    return [];
   default:
     return unsupportedItem(item);
   }
@@ -188,9 +193,8 @@ const openaiResponsesInstructionsToIR = (instructions: string | null | undefined
 
 const openaiResponsesTurnToIR = (
   turn: { readonly role: 'assistant' | 'bare'; readonly items: readonly CanonicalOpenAIResponsesInputItem[] },
-  flattenInput: (input: readonly CanonicalOpenAIResponsesInputItem[]) => CanonicalOpenAIResponsesInputItem[],
 ): IRInputTurn[] => {
-  const items = flattenInput(turn.items);
+  const items = turn.items;
   if (turn.role !== 'assistant') return [{ kind: 'client', items: userItems(items) }];
   // Every assistant item was dropped (an opaque reasoning carrier, say). The
   // turn carried a boundary that must survive, so writers still see it as a
@@ -205,12 +209,16 @@ const openaiResponsesTurnToIR = (
 // Responses declares flat function and custom tools beside the hosted kinds.
 // A hosted tool runs on the vendor's own infrastructure and has no meaning in
 // another protocol, so a request that carries one cannot enter this IR.
-const toolToIR = (tool: OpenAIResponsesTool): IRInputTool => {
+const toolToIR = (tool: Extract<OpenAIResponsesTool, { type: 'function' | 'custom' }>, namespace?: string): IRInputTool => {
+  // A declaration this protocol groups states its group beside the name inside
+  // it, and every other protocol reads that pair as the callable's identity.
+  const identity = namespace === undefined ? {} : { namespace };
   if (tool.type === 'custom') {
     const format = tool.format as { type?: unknown; definition?: unknown; syntax?: unknown } | undefined;
     return {
       type: 'custom',
       name: tool.name,
+      ...identity,
       ...(tool.description == null ? {} : { description: tool.description }),
       ...(format === undefined || typeof format.type !== 'string' ? {} : {
         format: format.type === 'grammar' && typeof format.definition === 'string'
@@ -219,17 +227,42 @@ const toolToIR = (tool: OpenAIResponsesTool): IRInputTool => {
       }),
     };
   }
-  if (tool.type !== 'function') throw new TranslatorInputError(`Cannot translate OpenAI Responses tool type '${tool.type}'.`);
   return {
     type: 'function',
     name: tool.name,
+    ...identity,
     ...(tool.description == null ? {} : { description: tool.description }),
     ...(tool.parameters == null ? {} : { parameters: klona(tool.parameters) }),
     ...(tool.strict == null ? {} : { strict: tool.strict }),
   };
 };
 
-const toolChoiceToIR = (choice: NonNullable<CanonicalOpenAIResponsesPayload['tool_choice']>): IRInputToolChoice => {
+// A selector names a grouped callable either with a `namespace` field or with a
+// dotted name, and both mean the same pair.
+const selectedCallable = (selection: Record<string, unknown>): IRInputToolSelection => {
+  const kind = selection.type === 'custom' ? 'custom' as const : 'function' as const;
+  if (typeof selection.namespace === 'string') return { type: kind, name: String(selection.name ?? ''), namespace: selection.namespace };
+  const name = String(selection.name ?? '');
+  const dot = name.indexOf('.');
+  return dot < 0 ? { type: kind, name } : { type: kind, name: name.slice(dot + 1), namespace: name.slice(0, dot) };
+};
+
+// A selector may name a whole group, which selects each callable it holds.
+const selectorOf = (payload: CanonicalOpenAIResponsesPayload, selection: Record<string, unknown>): IRInputToolSelection[] => {
+  if (selection.type !== 'namespace') return [selectedCallable(selection)];
+  const groups = [
+    ...(payload.tools ?? []),
+    ...payload.input.flatMap(item => item.type === 'additional_tools' || item.type === 'tool_search_output' ? item.tools : []),
+  ].flatMap(tool => tool.type === 'namespace' && tool.name === selection.name ? [tool] : []);
+  if (groups.length === 0) throw new TranslatorInputError(`Cannot translate group selector '${String(selection.name)}' without a matching declaration.`);
+  return groups.flatMap(group => group.tools.flatMap(child => child.type === 'function' || child.type === 'custom'
+    ? [{ type: child.type, name: child.name, namespace: group.name } as IRInputToolSelection]
+    : []));
+};
+
+const toolChoiceToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputToolChoice => {
+  const choice = payload.tool_choice;
+  if (choice == null) throw new TranslatorInputError('Cannot translate a missing tool choice.');
   if (typeof choice === 'string') {
     if (choice === 'auto' || choice === 'none' || choice === 'required') return choice;
     // A hosted selector spells its arm as a bare string, and names a tool this
@@ -240,22 +273,50 @@ const toolChoiceToIR = (choice: NonNullable<CanonicalOpenAIResponsesPayload['too
     return {
       type: 'allowed_tools',
       mode: choice.mode,
-      tools: choice.tools.map(selection => {
-        const named = selection as { type: string; name?: unknown };
-        return { type: named.type === 'custom' ? 'custom' as const : 'function' as const, name: String(named.name ?? '') };
-      }),
+      tools: choice.tools.flatMap(selection => selectorOf(payload, selection as Record<string, unknown>)),
     };
   }
-  if (choice.type === 'function' || choice.type === 'custom') return { type: choice.type, name: choice.name };
+  if (choice.type === 'function' || choice.type === 'custom') return selectedCallable(choice as unknown as Record<string, unknown>);
   // A hosted selector names a tool this IR does not carry.
   throw new TranslatorInputError(`Cannot translate OpenAI Responses tool choice type '${choice.type}'.`);
 };
 
+// A group is a declaration container, not a callable: this IR carries the
+// callables it holds, each stating the group it belongs to, so a target that
+// has no groups can still spell it out.
+const toolGroupToIR = (tool: OpenAIResponsesTool): IRInputTool[] => {
+  if (tool.type === 'namespace') {
+    return tool.tools.flatMap(child => {
+      if (child.type !== 'function' && child.type !== 'custom') {
+        throw new TranslatorInputError(`Cannot translate non-callable child in namespace '${tool.name}'.`);
+      }
+      // A group's own description qualifies each child's, the way one merged
+      // declaration states it.
+      const childDescription = child.description ?? undefined;
+      return [toolToIR(
+        tool.description === undefined
+          ? child
+          : { ...child, description: childDescription === undefined ? tool.description : `${tool.description}\n\n${childDescription}` },
+        tool.name,
+      )];
+    });
+  }
+  if (tool.type === 'function' || tool.type === 'custom') return [toolToIR(tool)];
+  throw new TranslatorInputError(`Cannot translate OpenAI Responses tool type '${tool.type}'.`);
+};
+
+// A request can defer declarations to an inventory item inside the
+// conversation; those are tools like any other, not things the model said.
+const deferredInventories = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesTool[] =>
+  payload.input.flatMap(item => item.type === 'additional_tools' || item.type === 'tool_search_output' ? item.tools : []);
+
 const openaiResponsesToolsToIR = (payload: CanonicalOpenAIResponsesPayload): Pick<IRInputRequest, 'tools' | 'tool_choice'> => {
-  const tools = payload.tools?.map(toolToIR);
-  const toolChoice = payload.tool_choice == null ? undefined : toolChoiceToIR(payload.tool_choice);
+  const declared = payload.tools?.flatMap(toolGroupToIR) ?? [];
+  const deferred = deferredInventories(payload).flatMap(toolGroupToIR);
+  const tools = declared.length === 0 && deferred.length === 0 ? undefined : [...declared, ...deferred];
+  const toolChoice = payload.tool_choice == null ? undefined : toolChoiceToIR(payload);
   return {
-    ...(tools === undefined || tools.length === 0 ? {} : { tools }),
+    ...(tools === undefined ? {} : { tools }),
     ...(toolChoice === undefined ? {} : { tool_choice: toolChoice }),
   };
 };
@@ -298,30 +359,17 @@ const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): 
   };
 };
 
-/**
- * What reading a Responses request accumulated for the client-side writer.
- *
- * Flattening assigns a flat name per namespaced callable, and it keeps
- * assigning as history is read, so the final map depends on how many turns the
- * reading walked. Deriving it again from the request afterwards would stop at
- * the declarations and miss every name history allocated.
- */
-export interface OpenAIResponsesDerived {
-  readonly namespaceToolNames: NamespaceToolNames;
-}
-
-export const openaiResponsesRead = (source: OpenAIResponsesRequestPayloadEx): IRInputReading<OpenAIResponsesAssistantTurn, OpenAIResponsesDerived> => {
+export const openaiResponsesRead = (source: OpenAIResponsesRequestPayloadEx): IRInputReading<OpenAIResponsesAssistantTurn> => {
   const canonical = canonicalizeOpenAIResponsesPayload(source);
-  const { payload, names, flattenInput } = flattenNamespaceTools(canonical);
-  validateAllowedTools(payload.tools, payload.tool_choice, payload.input);
-  rejectProgrammaticOpenAIResponsesPayload(payload, 'translation');
+  validateAllowedTools(canonical.tools, canonical.tool_choice, canonical.input);
+  rejectProgrammaticOpenAIResponsesPayload(canonical, 'translation');
 
-  const prompt = openaiResponsesInstructionsToIR(payload.instructions);
+  const prompt = openaiResponsesInstructionsToIR(canonical.instructions);
   return {
     request: {
       conversation: { turns: [] },
-      settings: openaiResponsesSettingsToIR(payload),
-      ...openaiResponsesToolsToIR(payload),
+      settings: openaiResponsesSettingsToIR(canonical),
+      ...openaiResponsesToolsToIR(canonical),
     },
     turns: [
       ...(prompt === undefined ? [] : [{ kind: 'client' as const, toIRTurn: () => [prompt] }]),
@@ -329,10 +377,9 @@ export const openaiResponsesRead = (source: OpenAIResponsesRequestPayloadEx): IR
         ? {
             kind: 'assistant' as const,
             assistantTurn: turn.items,
-            toIRTurn: () => openaiResponsesTurnToIR(turn, flattenInput),
+            toIRTurn: () => openaiResponsesTurnToIR(turn),
           }
-        : { kind: 'client' as const, toIRTurn: () => openaiResponsesTurnToIR(turn, flattenInput) }),
+        : { kind: 'client' as const, toIRTurn: () => openaiResponsesTurnToIR(turn) }),
     ],
-    derived: { namespaceToolNames: names },
   };
 };

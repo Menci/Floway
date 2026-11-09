@@ -19,7 +19,7 @@ test('a tool result keeps the call kind even when a sidecar states the turn that
   // The target writes the assistant slot natively, so its `toIRTurn` never
   // runs. The kind of its call is still needed by the result that answers it,
   // which is why opening names every declared call before reading.
-  const turns = reading.turns.flatMap(turn => (turn.kind === 'assistant' ? [] : turn.toIRTurn([])));
+  const turns = reading.turns.flatMap(turn => (turn.kind === 'assistant' ? [] : turn.toIRTurn()));
 
   const result = itemsOf(turns).find(item => item.type === 'tool_result');
   assertEquals(result?.type === 'tool_result' ? result.tool_kind : undefined, 'custom');

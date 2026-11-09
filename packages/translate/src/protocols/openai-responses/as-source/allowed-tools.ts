@@ -9,11 +9,16 @@ import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResp
 // point. One that survives names something this IR cannot carry, and is
 // rejected rather than dropped for the same reason.
 // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L8246-L8279
+// A declaration is identified by the pair a grouped one states, so a selector
+// that names either spelling resolves to the same callable.
 const callableDeclarations = (tools: readonly OpenAIResponsesTool[]): { type: 'function' | 'custom'; name: string }[] =>
   tools.flatMap(tool => {
+    if (tool.type === 'namespace') return tool.tools.flatMap(child => child.type === 'function' || child.type === 'custom'
+      ? [{ type: child.type, name: `${tool.name}.${child.name}` }]
+      : []);
     if (tool.type !== 'function' && tool.type !== 'custom') return [];
-    if ('namespace' in tool && tool.namespace !== undefined) return [];
-    return [{ type: tool.type, name: tool.name }];
+    const namespace = 'namespace' in tool && typeof tool.namespace === 'string' ? `${tool.namespace}.` : '';
+    return [{ type: tool.type, name: `${namespace}${tool.name}` }];
   });
 
 // A deferred inventory states declarations the request may still use, so a
@@ -39,9 +44,10 @@ export const validateAllowedTools = (
   choice: OpenAIResponsesToolChoice | null | undefined,
   input?: readonly CanonicalOpenAIResponsesInputItem[],
 ): void => {
-  const declarations = callableDeclarations(tools ?? []);
+  // A deferred inventory declares callables too, so a selector may name one.
+  const declarations = [...callableDeclarations(tools ?? []), ...inventoryDeclarations(input)];
   if (typeof choice !== 'object' || choice?.type !== 'allowed_tools') {
-    validateCallableKinds([...declarations, ...inventoryDeclarations(input)]);
+    validateCallableKinds(declarations);
     return;
   }
 
@@ -52,15 +58,33 @@ export const validateAllowedTools = (
   const declared = new Set(declarations.map(({ type, name }) => `${type}:${name}`));
   const selectedKinds = new Map<string, 'function' | 'custom'>();
   const selected = new Set<string>();
-  for (const selector of choice.tools) {
+  // A selector that names a whole group stands for every callable it holds.
+  const allGroups = [
+    ...(tools ?? []),
+    ...(input ?? []).flatMap(item => item.type === 'additional_tools' || item.type === 'tool_search_output' ? item.tools : []),
+  ];
+  const expanded = choice.tools.flatMap(selector => {
+    if (typeof selector !== 'object' || selector === null) return [selector];
+    if ((selector as { type?: unknown }).type !== 'namespace') return [selector];
+    const group = allGroups.flatMap(tool => tool.type === 'namespace' && tool.name === (selector as { name?: unknown }).name ? [tool] : []);
+    if (group.length === 0) throw new TranslatorInputError(`Cannot translate group selector '${String((selector as { name?: unknown }).name)}' without a matching declaration.`);
+    return group.flatMap(entry => entry.tools.flatMap(child => child.type === 'function' || child.type === 'custom'
+      ? [{ type: child.type, namespace: entry.name, name: child.name }]
+      : []));
+  });
+  for (const selector of expanded) {
     if (typeof selector !== 'object' || selector === null
       || (selector.type !== 'function' && selector.type !== 'custom')
       || typeof (selector as { name?: unknown }).name !== 'string'
-      || (selector as { namespace?: unknown }).namespace !== undefined
       || Object.keys(selector).some(key => key !== 'type' && key !== 'name' && key !== 'namespace')) {
-      throw new TranslatorInputError('Cannot translate an allowed_tools selector that is not a flat function or custom tool.');
+      throw new TranslatorInputError('Cannot translate an allowed_tools selector that is not a function or custom tool.');
     }
-    const { type, name } = selector as { type: 'function' | 'custom'; name: string };
+    const selected_ = selector as { type: 'function' | 'custom'; name: string; namespace?: string };
+    const type = selected_.type;
+    // A selector may name the group separately or spell the pair out.
+    const name = selected_.namespace === undefined || selected_.name.includes('.')
+      ? selected_.name
+      : `${selected_.namespace}.${selected_.name}`;
     // A selector names a callable by kind, so a function and a custom tool that
     // share a name stay distinguishable.
     if (!declared.has(`${type}:${name}`)) {

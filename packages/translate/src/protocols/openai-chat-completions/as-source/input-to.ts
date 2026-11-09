@@ -271,6 +271,11 @@ const openaiChatCompletionsRequestToIR = (payload: OpenAIChatCompletionsPayload)
   ...openaiChatCompletionsToolsToIR(payload),
 });
 
+const continuousUsageOf = (payload: OpenAIChatCompletionsPayload): boolean => {
+  const streamOptions = payload.stream_options as OpenAIChatCompletionsStreamOptionsEx | undefined;
+  return streamOptions?.include_usage === true && streamOptions.continuous_usage_stats === true;
+};
+
 const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload): IRInputSettings => {
   const ceiling = payload.max_completion_tokens ?? payload.max_tokens;
 
@@ -308,18 +313,13 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
     ...(payload.n == null ? {} : { candidate_count: payload.n }),
     ...(payload.presence_penalty == null ? {} : { presence_penalty: payload.presence_penalty }),
     ...(payload.frequency_penalty == null ? {} : { frequency_penalty: payload.frequency_penalty }),
+    // `include_usage` alone asks for the final report; the vLLM/SGLang extension
+    // asks for one on every chunk. Both are the client's own rendering choice,
+    // so the field states what it asked for and a target never receives it.
+    // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/openai/serving_engine.py#L112-L121
+    ...(continuousUsageOf(payload) === false ? {} : { continuous_usage: true }),
   };
 };
-
-/**
- * What reading a Chat request recorded for the client-side writer.
- *
- * Whether usage repeats on every chunk is the client's own rendering choice, so
- * it decides what this side states back rather than what the target receives.
- */
-export interface OpenAIChatCompletionsDerived {
-  readonly continuousUsageStats: boolean;
-}
 
 /**
  * A Chat Completions request prepared for translation.
@@ -330,13 +330,8 @@ export interface OpenAIChatCompletionsDerived {
  * Presenting the request, the conversation, and the reader that carries that
  * state together keeps the state with the code that needs it.
  */
-export const openaiChatCompletionsRead = (payload: OpenAIChatCompletionsPayload): IRInputReading<OpenAIChatCompletionsAssistantTurn, OpenAIChatCompletionsDerived> => {
+export const openaiChatCompletionsRead = (payload: OpenAIChatCompletionsPayload): IRInputReading<OpenAIChatCompletionsAssistantTurn> => {
   const context = openaiChatCompletionsInputContext(payload);
-  // `include_usage` alone asks for the final report; the vLLM/SGLang extension
-  // asks for one on every chunk, which is what lets this client see usage as
-  // the translation produces it.
-  // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/openai/serving_engine.py#L112-L121
-  const streamOptions = payload.stream_options as OpenAIChatCompletionsStreamOptionsEx | undefined;
   return {
     request: openaiChatCompletionsRequestToIR(payload),
     turns: partitionOpenAIChatCompletionsTurns(payload.messages).map(turn => turn.role === 'assistant'
@@ -346,6 +341,5 @@ export const openaiChatCompletionsRead = (payload: OpenAIChatCompletionsPayload)
           toIRTurn: () => [openaiChatCompletionsTurnToIR(turn, context)],
         }
       : { kind: 'client' as const, toIRTurn: () => [openaiChatCompletionsTurnToIR(turn, context)] }),
-    derived: { continuousUsageStats: streamOptions?.include_usage === true && streamOptions.continuous_usage_stats === true },
   };
 };

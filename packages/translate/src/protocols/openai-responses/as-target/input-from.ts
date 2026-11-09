@@ -1,8 +1,8 @@
 import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
-import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import { streamingFlag } from '../../../ir/input/stream.ts';
 import type {
-  IRInputAssistantItem,
+  IRInputAddressedAssistantItem,
+  IRInputAddressedTurn,
   IRInputRequest,
   IRInputSettings,
   IRInputTool,
@@ -11,9 +11,11 @@ import type {
   IRInputConversation,
   IRInputMedia,
   IRInputToolResultContentPart,
+  IRInputAddressedClientItem,
   IRInputClientItem,
   IRInputSystemMessageItem,
 } from '../../../ir/input/types.ts';
+import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import { TranslatorInputError } from '../../../types.ts';
 import type {
   CanonicalOpenAIResponsesInputItem,
@@ -74,7 +76,7 @@ const userContent = (item: Extract<IRInputClientItem, { type: 'message' }>): Ope
   }
 });
 
-const assistantItems = (items: readonly IRInputAssistantItem[]): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
+const assistantItems = (items: readonly IRInputAddressedAssistantItem[]): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
   switch (item.type) {
   case 'message':
     return {
@@ -109,7 +111,7 @@ const assistantItems = (items: readonly IRInputAssistantItem[]): CanonicalOpenAI
   }
 });
 
-const userItems = (items: readonly IRInputClientItem[]): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
+const userItems = (items: readonly IRInputAddressedClientItem[]): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
   switch (item.type) {
   case 'prompt': {
     // A prompt boundary states its text plainly: one part is that string, and
@@ -144,7 +146,7 @@ const isHoistablePrompt = (entry: IRInputClientItem): entry is IRInputSystemMess
   entry.type === 'prompt';
 
 const conversationFromIR = (
-  conversation: IRInputConversation,
+  conversation: IRInputConversation<IRInputAddressedTurn>,
   hoistSystem: boolean,
 ): Pick<CanonicalOpenAIResponsesPayload, 'instructions' | 'input'> => {
   const instructions: string[] = [];
@@ -188,7 +190,7 @@ const conversationFromIR = (
  * which Responses spells as one string.
  */
 export const openaiResponsesFromIR = (
-  conversation: IRInputConversation,
+  conversation: IRInputConversation<IRInputAddressedTurn>,
 ): Pick<CanonicalOpenAIResponsesPayload, 'instructions' | 'input'> => conversationFromIR(conversation, true);
 
 const requireSchema = (format: IRInputOutputFormat): Readonly<Record<string, unknown>> => {
@@ -262,7 +264,7 @@ export const openaiResponsesRequestFromIR = (
   leading = true,
 ): CanonicalOpenAIResponsesPayload => {
   const { conversation, settings } = request;
-  const { instructions, input } = conversationFromIR(conversation, leading);
+  const { instructions, input } = conversationFromIR(conversation as IRInputConversation<IRInputAddressedTurn>, leading);
 
   const tools = irInputToolsForChoice(request.tools, request.tool_choice);
   const choice = irInputToolChoiceForTools(request.tool_choice, tools);

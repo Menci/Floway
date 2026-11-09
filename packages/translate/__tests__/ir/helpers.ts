@@ -5,7 +5,6 @@ import { irFromAnthropicMessages as irFromAnthropicMessagesProduction } from '..
 import { geminiGenerateContentFromIR as geminiGenerateContentFromIRProduction } from '../../src/protocols/gemini-generate-content/as-source/sse-to.ts';
 import { openaiChatCompletionsFromIR as openaiChatCompletionsFromIRProduction } from '../../src/protocols/openai-chat-completions/as-source/sse-to.ts';
 import { irFromOpenAIChatCompletions as irFromOpenAIChatCompletionsProduction } from '../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
-import { flattenNamespaceTools } from '../../src/protocols/openai-responses/as-source/namespace-tools.ts';
 import { openaiResponsesFromIR as openaiResponsesFromIRProduction } from '../../src/protocols/openai-responses/as-source/sse-to.ts';
 import { irFromOpenAIResponses as irFromOpenAIResponsesProduction } from '../../src/protocols/openai-responses/as-target/sse-from.ts';
 import { createReferenceBuilder } from '../../src/round-trip/reference/reference-builder.ts';
@@ -24,7 +23,6 @@ const writer = <Protocol extends 'anthropicMessages' | 'geminiGenerateContent' |
   builder: createReferenceBuilder(),
   prepareSidecar: async () => 'test-sidecar',
 });
-const namespaceToolNames = flattenNamespaceTools({ model: 'test', input: [], tools: [] }).names;
 
 // These ordinary output IR fixtures use independent mock participants. Provenance is
 // exercised by the native-reader and public-route tests sharing one coordinator.
@@ -49,8 +47,8 @@ export const anthropicMessagesFromIR = (records: Parameters<typeof anthropicMess
   anthropicMessagesFromIRProduction(records, { ...options, roundTrip: writer<'anthropicMessages'>() });
 export const openaiChatCompletionsFromIR = (records: Parameters<typeof openaiChatCompletionsFromIRProduction>[0], options: Omit<Parameters<typeof openaiChatCompletionsFromIRProduction>[1], 'roundTrip'> = {}) =>
   openaiChatCompletionsFromIRProduction(records, { ...options, roundTrip: writer<'openaiChatCompletions'>() });
-export const openaiResponsesFromIR = (records: Parameters<typeof openaiResponsesFromIRProduction>[0], options: Omit<Parameters<typeof openaiResponsesFromIRProduction>[1], 'roundTrip' | 'namespaceToolNames'> = {}) =>
-  openaiResponsesFromIRProduction(records, { ...options, roundTrip: writer<'openaiResponses'>(), namespaceToolNames });
+export const openaiResponsesFromIR = (records: Parameters<typeof openaiResponsesFromIRProduction>[0], options: Omit<Parameters<typeof openaiResponsesFromIRProduction>[1], 'roundTrip'> = {}) =>
+  openaiResponsesFromIRProduction(records, { ...options, roundTrip: writer<'openaiResponses'>() });
 export const geminiGenerateContentFromIR = (records: Parameters<typeof geminiGenerateContentFromIRProduction>[0], options: Omit<Parameters<typeof geminiGenerateContentFromIRProduction>[1], 'roundTrip'> = {}) =>
   geminiGenerateContentFromIRProduction(records, { ...options, roundTrip: writer<'geminiGenerateContent'>() });
 export const completeIR = (value: readonly IROutputItem[]): IRRecord[] => {

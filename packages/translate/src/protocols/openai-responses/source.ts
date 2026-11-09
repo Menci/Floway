@@ -1,7 +1,7 @@
 import type { SourceProtocol } from '../composition.ts';
 import { openaiResponsesErrorWriter } from './as-source/error-body.ts';
-import { openaiResponsesRead, type OpenAIResponsesDerived } from './as-source/input-to.ts';
-import { restoreNamespaceEvents } from './as-source/namespace-tools.ts';
+import { groupedCallNamesFromIR } from './as-source/grouped-calls.ts';
+import { openaiResponsesRead } from './as-source/input-to.ts';
 import { createRandomOpenAIResponsesResponseId } from './as-source/response-id.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from './as-source/round-trip.ts';
 import { openaiResponsesFromIR } from './as-source/sse-to.ts';
@@ -15,7 +15,7 @@ import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx } fr
  * to be stated again the way the caller wrote it.
  */
 export const openaiResponsesSourceProtocol: SourceProtocol<
-  'openaiResponses', OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx, OpenAIResponsesDerived
+  'openaiResponses', OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx
 > = {
   name: 'openaiResponses',
   read: openaiResponsesRead,
@@ -25,12 +25,12 @@ export const openaiResponsesSourceProtocol: SourceProtocol<
     collectCandidates: collectOpenAIResponsesReplayContents,
   },
   writeError: openaiResponsesErrorWriter,
-  writeStream: (derived, records, writer) => {
+  writeStream: (reading, records, writer) => {
+    // A name the upstream invented has to be stated again the way this client
+    // wrote it, so the mapping back to the pair is recovered from the request.
+    const grouped = groupedCallNamesFromIR(reading.request, reading.turns.flatMap(turn => turn.toIRTurn()));
     // A response id names the upstream response, so one is minted per trip.
     const responseId = createRandomOpenAIResponsesResponseId();
-    return restoreNamespaceEvents(
-      openaiResponsesFromIR(records, { id: responseId, namespaceToolNames: derived.namespaceToolNames, roundTrip: writer }),
-      derived.namespaceToolNames,
-    );
+    return openaiResponsesFromIR(records, { id: responseId, groupedCallNames: grouped, roundTrip: writer });
   },
 };

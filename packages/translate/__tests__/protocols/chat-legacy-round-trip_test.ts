@@ -129,12 +129,18 @@ test('Gemini keeps modern IDs separate when a vendor stream includes both call f
   const native = replay.target.messages.find(message => message.role === 'assistant');
   expect(native?.function_call).toEqual({ name: 'lookup', arguments: '{"x":1}' });
   expect(native?.tool_calls).toEqual([{ id: 'native-modern', type: 'function', function: { name: 'lookup', arguments: '{"x":1}' } }]);
-  // The id-less legacy response correlates through the deterministic id the
-  // reader assigned to its call, and is written in the modern spelling.
-  expect(replay.target.messages.slice(-2)).toEqual([
-    { role: 'tool', tool_call_id: 'native-modern', content: '{"modern":true}' },
-    { role: 'tool', tool_call_id: 'gemini_call_2_1', content: '{"legacy":true}' },
-  ]);
+  // The id-less legacy response answers the call still awaiting a result, so it
+  // takes whatever id that call was stated under — an id this wire never saw
+  // from the client. What matters is that each result names a distinct call and
+  // both are written in the modern spelling.
+  const results = replay.target.messages.slice(-2) as { role: string; tool_call_id: string; content: string }[];
+  expect(results.map(message => message.content)).toEqual(['{"modern":true}', '{"legacy":true}']);
+  expect(results[0].tool_call_id).toBe('native-modern');
+  expect(results[1].tool_call_id).not.toBe('native-modern');
+  const statedCalls = replay.target.messages.flatMap(message => message.role === 'assistant'
+    ? [...(message.tool_calls ?? []).map(call => call.id), ...(message.function_call == null ? [] : [`legacy_${message.function_call.name}`])]
+    : []);
+  expect(statedCalls).toContain(results[1].tool_call_id);
 });
 
 test('restored legacy results retain the ordinary Responses input_file rejection', async () => {

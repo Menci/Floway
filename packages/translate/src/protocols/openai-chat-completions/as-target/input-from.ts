@@ -1,8 +1,8 @@
 import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
-import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import { streamingFlag } from '../../../ir/input/stream.ts';
 import type {
-  IRInputAssistantItem,
+  IRInputAddressedAssistantItem,
+  IRInputAddressedTurn,
   IRInputRequest,
   IRInputSettings,
   IRInputTool,
@@ -10,9 +10,11 @@ import type {
   IRInputConversation,
   IRInputMedia,
   IRInputToolResultContentPart,
+  IRInputAddressedClientItem,
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
 import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
+import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import { TranslatorInputError } from '../../../types.ts';
 import type {
   OpenAIChatCompletionsPayload,
@@ -85,7 +87,7 @@ export const openaiChatCompletionsToolResultContent = (
       };
 };
 
-const assistantMessage = (items: readonly IRInputAssistantItem[]): OpenAIChatCompletionsMessage[] => {
+const assistantMessage = (items: readonly IRInputAddressedAssistantItem[]): OpenAIChatCompletionsMessage[] => {
   const text: string[] = [];
   const refusals: string[] = [];
   const reasoning: string[] = [];
@@ -132,7 +134,7 @@ const assistantMessage = (items: readonly IRInputAssistantItem[]): OpenAIChatCom
   }];
 };
 
-const userMessages = (items: readonly IRInputClientItem[]): OpenAIChatCompletionsMessage[] => {
+const userMessages = (items: readonly IRInputAddressedClientItem[]): OpenAIChatCompletionsMessage[] => {
   // Images lifted out of consecutive tool results gather into one user message
   // after the run, so a tool-call group stays contiguous.
   const messages: OpenAIChatCompletionsMessage[] = [];
@@ -151,7 +153,7 @@ const userMessages = (items: readonly IRInputClientItem[]): OpenAIChatCompletion
 };
 
 const openaiChatCompletionsUserItem = (
-  item: IRInputClientItem,
+  item: IRInputAddressedClientItem,
   lift: (parts: readonly OpenAIChatCompletionsUserContentPart[]) => void,
 ): OpenAIChatCompletionsMessage[] => [item].flatMap<OpenAIChatCompletionsMessage>(item => {
   switch (item.type) {
@@ -173,7 +175,7 @@ const openaiChatCompletionsUserItem = (
 });
 
 export const openaiChatCompletionsFromIR = (
-  conversation: IRInputConversation,
+  conversation: IRInputConversation<IRInputAddressedTurn>,
 ): OpenAIChatCompletionsMessage[] => conversation.turns.flatMap(turn => turn.kind === 'assistant'
   ? assistantMessage(turn.items)
   : userMessages(turn.items));
@@ -247,7 +249,7 @@ export const openaiChatCompletionsRequestFromIR = (request: IRInputRequest): Ope
   return {
     ...openaiChatCompletionsSettingsFromIR(request.settings),
     model: request.settings.model,
-    messages: openaiChatCompletionsFromIR(request.conversation),
+    messages: openaiChatCompletionsFromIR(request.conversation as IRInputConversation<IRInputAddressedTurn>),
     // A trip guarantees a streaming request; a request that says otherwise
     // cannot be carried by this side at all.
     stream: streamingFlag(request.settings),

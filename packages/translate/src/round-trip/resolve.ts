@@ -10,7 +10,6 @@ export interface EncodedRoundTripSidecar<Turn> {
   readonly withoutSidecar: () => Turn;
 }
 
-
 /**
  * A turn a sidecar restored, and the calls it leaves waiting for answers.
  *
@@ -22,15 +21,7 @@ export interface EncodedRoundTripSidecar<Turn> {
  */
 export interface RoundTripAssistantTurn<Target extends keyof AssistantTurnByProtocol> {
   readonly turn: AssistantTurnFor<Target>;
-  readonly pendingCallIds: (turn: AssistantTurnFor<Target>) => readonly PendingCall[];
 }
-
-/** A call awaiting its result, named the way the target names it. */
-export interface PendingCall {
-  readonly callId: string;
-  readonly name: string;
-}
-
 
 export const roundTripAssistantTurn = async <Source extends keyof AssistantTurnByProtocol, Target extends keyof AssistantTurnByProtocol, SourceTurn>(
   source: Source,
@@ -40,9 +31,6 @@ export const roundTripAssistantTurn = async <Source extends keyof AssistantTurnB
   inspect: (turn: SourceTurn) => EncodedRoundTripSidecar<SourceTurn>[],
   verify: (turn: SourceTurn, sourceTurnDigest: RoundTripTurnDigest, version: number) => Promise<boolean>,
   collectCandidates: (turn: SourceTurn) => ReplayContent[],
-  // How to name the calls the restored turn leaves awaiting answers. Only the
-  // target can answer this, and only once the turn exists.
-  pendingCallIds: (turn: AssistantTurnFor<Target>) => readonly PendingCall[],
 ): Promise<RoundTripAssistantTurn<Target> | undefined> => {
   let selected: { candidate: EncodedRoundTripSidecar<SourceTurn>; sidecar: AnyRoundTripSidecar } | undefined;
   for (const candidate of inspect(turn)) {
@@ -56,5 +44,5 @@ export const roundTripAssistantTurn = async <Source extends keyof AssistantTurnB
   if (!(await verify(sourceTurn, selected.sidecar.sourceTurnDigest, selected.sidecar.v))) return undefined;
   const resolved = await restoreAssistantTurn(target, collectCandidates(sourceTurn), selected.sidecar.targetTurn, selected.sidecar.referencedContentHashes);
   if (!resolved.ok) throw new Error(`Authenticated assistant-turn sidecar restoration failed: ${resolved.reason}`);
-  return { turn: resolved.turn, pendingCallIds };
+  return { turn: resolved.turn };
 };

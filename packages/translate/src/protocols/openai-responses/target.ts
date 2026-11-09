@@ -1,3 +1,4 @@
+import { assignCallIds, type PendingCall } from '../../shared/call-ids.ts';
 import type { TargetProtocol } from '../composition.ts';
 import { openaiResponsesPayloadFromSegments } from './as-target/segmented-request.ts';
 import { irFromOpenAIResponses } from './as-target/sse-from.ts';
@@ -5,7 +6,7 @@ import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem
 
 type ResponsesResolvedTurn = readonly CanonicalOpenAIResponsesInputItem[];
 
-const callsOf = (turn: ResponsesResolvedTurn): readonly { callId: string; name: string }[] =>
+const callsOf = (turn: ResponsesResolvedTurn): readonly PendingCall[] =>
   turn.flatMap(item => item.type === 'function_call' || item.type === 'custom_tool_call'
     ? [{ callId: item.call_id, name: item.name }]
     : []);
@@ -21,7 +22,6 @@ export const openaiResponsesTargetProtocol: TargetProtocol<
   'openaiResponses', CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx
 > = {
   name: 'openaiResponses',
-  pendingCallIds: callsOf,
-  write: (request, pieces) => Promise.resolve(openaiResponsesPayloadFromSegments(request, pieces, turn => turn)),
+  write: (request, pieces) => Promise.resolve(openaiResponsesPayloadFromSegments(request, assignCallIds(pieces, callsOf), turn => turn)),
   readStream: (frames, reader) => irFromOpenAIResponses(frames, { roundTrip: reader }),
 };

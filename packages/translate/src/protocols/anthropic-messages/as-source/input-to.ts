@@ -448,5 +448,5 @@ export const anthropicMessagesRead = (payload: AnthropicMessagesPayload): IRInpu
   }
   if (pendingClient !== undefined) turns.push({ kind: 'client', toIRTurn: pendingClient });
 
-  return { request, turns, derived: undefined };
+  return { request, turns };
 };

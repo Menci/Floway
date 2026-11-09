@@ -1,4 +1,3 @@
-import { flattenNamespaceTools } from '../../src/protocols/openai-responses/as-source/namespace-tools.ts';
 import type { AssistantTurnByProtocol, AssistantTurnFor } from '../../src/round-trip/assistant-turn.ts';
 import type { AssistantTurnStateFor } from '../../src/round-trip/reference/assistant-turn.ts';
 import { createReferenceBuilder, type ContentStates, type FieldStates } from '../../src/round-trip/reference/reference-builder.ts';
@@ -35,5 +34,3 @@ export const captureRoundTripWriter = <Protocol extends keyof AssistantTurnByPro
   };
   return { builder, prepared, roundTrip };
 };
-
-export const emptyNamespaceToolNames = () => flattenNamespaceTools({ model: 'test', input: [], tools: [] }).names;

@@ -6,7 +6,7 @@ import { geminiGenerateContentThinkingLevelEffort } from './reasoning.ts';
 import type { GeminiGenerateContentAssistantTurn } from './round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from './schema.ts';
 import { geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from './tools.ts';
-import type { IRInputPendingCall, IRInputReading, IRInputTurnSlot } from '../../../ir/input/reading.ts';
+import type { IRInputReading, IRInputTurnSlot } from '../../../ir/input/reading.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputRequest,
@@ -17,7 +17,6 @@ import type {
   IRInputAssistantItem,
   IRInputMedia,
   IRInputTextPart,
-  IRInputToolResultItem,
   IRInputTurn,
   IRInputUserContentPart,
   IRInputClientItem,
@@ -61,8 +60,14 @@ const userParts = (content: GeminiGenerateContentContent, turnIndex: number, ids
     case 'function_response': {
       const { response, id } = geminiGenerateContentFunctionResponsePart(part, ids, turnIndex, partIndex)!;
       flush();
-      const result: IRInputToolResultItem = { type: 'tool_result', call_id: id, output: JSON.stringify(response.response) };
-      items.push(result);
+      items.push({
+        type: 'tool_result',
+        // The name is what lets a target pair a result this reader could not:
+        // GenerateContent correlates by name, and the id may be unstated.
+        name: response.name,
+        ...(id === undefined ? {} : { call_id: id }),
+        output: JSON.stringify(response.response),
+      });
       return;
     }
     case 'text': {
@@ -145,34 +150,24 @@ const turnToIRTurns = (
   turn: GeminiGenerateContentTurn,
   contentIndex: number,
   ids: GeminiGenerateContentToolCallIds,
-  restored: readonly IRInputPendingCall[],
-): IRInputTurn[] => {
-  // A restored turn never passed through this reader, so the calls it states are
-  // ones a later id-less result may answer. Registering them here keeps the
-  // correlation state with the code that owns it.
-  for (const { callId, name } of restored) {
-    ids[name] ??= [];
-    if (!ids[name].includes(callId)) ids[name].push(callId);
-  }
-  return turn.role === 'assistant'
-    ? [{
-        kind: 'assistant',
-        items: turn.items.flatMap((content, index) => (content.parts?.length ?? 0) === 0
-          ? [{ type: 'message' as const, content: [{ type: 'text' as const, text: '' }] }]
-          : assistantItems(content, contentIndex + index, ids)),
-      }]
-    : [{
-        kind: 'client',
-        items: turn.items.flatMap((content, index) => {
-          if (content.role !== 'user' && content.role !== undefined) {
-            throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
-          }
-          return (content.parts?.length ?? 0) === 0
-            ? [{ type: 'message' as const, content: [] }]
-            : userParts(content, contentIndex + index, ids);
-        }),
-      }];
-};
+): IRInputTurn[] => turn.role === 'assistant'
+  ? [{
+      kind: 'assistant',
+      items: turn.items.flatMap((content, index) => (content.parts?.length ?? 0) === 0
+        ? [{ type: 'message' as const, content: [{ type: 'text' as const, text: '' }] }]
+        : assistantItems(content, contentIndex + index, ids)),
+    }]
+  : [{
+      kind: 'client',
+      items: turn.items.flatMap((content, index) => {
+        if (content.role !== 'user' && content.role !== undefined) {
+          throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
+        }
+        return (content.parts?.length ?? 0) === 0
+          ? [{ type: 'message' as const, content: [] }]
+          : userParts(content, contentIndex + index, ids);
+      }),
+    }];
 
 /** Whether a turn carries a vendor-signed thought signature the input IR cannot hold. */
 /** A GenerateContent system instruction is the conversation's leading prompt. */
@@ -255,7 +250,7 @@ export const geminiGenerateContentRead = (payload: GeminiGenerateContentRequest)
   const turnSlotFor = (turn: GeminiGenerateContentTurn): IRInputTurnSlot<GeminiGenerateContentAssistantTurn> => {
     const at = contentIndex;
     contentIndex += turn.items.length;
-    const toIRTurn = (restored: readonly IRInputPendingCall[]) => turnToIRTurns(turn, at, ids, restored);
+    const toIRTurn = () => turnToIRTurns(turn, at, ids);
     if (turn.role !== 'assistant') return { kind: 'client', toIRTurn };
     return { kind: 'assistant', assistantTurn: turn.items, toIRTurn };
   };
@@ -270,7 +265,6 @@ export const geminiGenerateContentRead = (payload: GeminiGenerateContentRequest)
       ...(prompt === undefined ? [] : [{ kind: 'client' as const, toIRTurn: () => [prompt] }]),
       ...partitionContents(payload).map(turnSlotFor),
     ],
-    derived: undefined,
   };
 };
 
