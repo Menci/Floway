@@ -21,10 +21,8 @@ import type { BackgroundScheduler } from '@floway-dev/platform';
 import { eventFrame, isJsonMediaType, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/openai-responses';
 import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesOutputItemEx, type OpenAIResponsesRequestPayloadEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import type { ExecuteResult } from '@floway-dev/provider';
-import { internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
-import { TranslatorInputError } from '@floway-dev/translate';
-import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/translate';
+import { type ExecuteResult, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
+import { TranslatorInputError, canonicalizeOpenAIResponsesPayload } from '@floway-dev/translate';
 
 interface WorkerWebSocket extends WebSocket {
   accept(): void;
