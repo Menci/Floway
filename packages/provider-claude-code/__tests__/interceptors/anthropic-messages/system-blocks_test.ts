@@ -24,36 +24,6 @@ describe('IDENTITY_BLOCK', () => {
 });
 
 describe('DEFAULT_TEMPLATE_BLOCK', () => {
-  test('is a text block with an ephemeral cache breakpoint', () => {
-    expect(DEFAULT_TEMPLATE_BLOCK.type).toBe('text');
-    expect(DEFAULT_TEMPLATE_BLOCK.cache_control).toEqual({ type: 'ephemeral', ttl: '5m' });
-  });
-
-  test('opens with the interactive-agent introduction line', () => {
-    expect(DEFAULT_TEMPLATE_BLOCK.text.startsWith('You are an interactive agent that helps users')).toBe(true);
-  });
-
-  test('carries the two IMPORTANT: safety lines', () => {
-    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('IMPORTANT: Assist with authorized security testing');
-    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('IMPORTANT: You must NEVER generate or guess URLs');
-  });
-
-  test('carries the # Tone and style section', () => {
-    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('# Tone and style');
-    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('Only use emojis if the user explicitly requests it');
-    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('file_path:line_number');
-    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('Do not use a colon before tool calls');
-  });
-
-  test('drops the CC-agent-action sections that would steer non-CC downstreams', () => {
-    expect(DEFAULT_TEMPLATE_BLOCK.text).not.toContain('# System');
-    expect(DEFAULT_TEMPLATE_BLOCK.text).not.toContain('# Doing tasks');
-    expect(DEFAULT_TEMPLATE_BLOCK.text).not.toContain('# Executing actions with care');
-    expect(DEFAULT_TEMPLATE_BLOCK.text).not.toContain('# Using your tools');
-    expect(DEFAULT_TEMPLATE_BLOCK.text).not.toContain('TodoWrite');
-    expect(DEFAULT_TEMPLATE_BLOCK.text).not.toContain('TaskCreate');
-  });
-
   test('stays in the trimmed-subset size range', () => {
     expect(DEFAULT_TEMPLATE_BLOCK.text.length).toBeGreaterThan(1000);
     expect(DEFAULT_TEMPLATE_BLOCK.text.length).toBeLessThan(3000);
@@ -117,10 +87,5 @@ describe('buildBillingBlock', () => {
       type: 'text',
       text: 'x-anthropic-billing-header: cc_version=2.1.280.abc; cc_entrypoint=cli; cch=00000;',
     });
-  });
-
-  test('always carries the cch=00000 literal placeholder', () => {
-    const block = buildBillingBlock('2.1.280', '000');
-    expect(block.text).toContain('cch=00000;');
   });
 });

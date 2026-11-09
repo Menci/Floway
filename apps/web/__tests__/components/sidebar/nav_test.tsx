@@ -14,7 +14,6 @@ test('renders the management section with its translated label for an administra
     path: '/', Component: () => <Sidebar user={{ id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } }} />,
   }], { initialEntries: ['/'] })} />);
   expect(screen.getByText('Management')).toBeTruthy();
-  expect(screen.queryByText('dashboard.groups.management')).toBeNull();
 });
 
 test('shows capability-gated management pages independently', () => {

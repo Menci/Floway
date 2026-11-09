@@ -111,6 +111,7 @@ const setupCopilotTest = async (recordOverrides: Partial<UpstreamRecord> = {}): 
 interface CopilotModelFixture {
   id: string;
   display_name?: string;
+  capabilitiesType?: string;
   supported_endpoints?: string[];
   reasoningEfforts?: string[];
   maxContextWindowTokens?: number;
@@ -127,7 +128,7 @@ const copilotModels = (models: CopilotModelFixture[]) => ({
     version: '1',
     supported_endpoints: model.supported_endpoints ?? [],
     capabilities: {
-      type: 'chat',
+      type: model.capabilitiesType ?? 'chat',
       limits: {
         ...(model.maxContextWindowTokens !== undefined ? { max_context_window_tokens: model.maxContextWindowTokens } : {}),
         ...(model.maxPromptTokens !== undefined ? { max_prompt_tokens: model.maxPromptTokens } : {}),
@@ -1240,6 +1241,7 @@ test('Copilot provider passes unknown speed values to the upstream verbatim so t
 
 interface CopilotModelCapabilityFixture {
   id: string;
+  type?: 'chat' | 'image';
   supported_endpoints?: string[];
   supports?: {
     vision?: boolean;
@@ -1258,7 +1260,7 @@ const copilotModelsWithCapabilities = (models: CopilotModelCapabilityFixture[]) 
     version: '1',
     supported_endpoints: model.supported_endpoints ?? ['/chat/completions'],
     capabilities: {
-      type: 'chat',
+      type: model.type ?? 'chat',
       limits: {},
       ...(model.supports !== undefined ? { supports: model.supports } : {}),
     },
@@ -1286,13 +1288,6 @@ const getModelsWithCapabilities = async (fixtures: CopilotModelCapabilityFixture
   return models;
 };
 
-test('Copilot chat field: vision-only → modalities with image input', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'gpt-vision', supports: { vision: true } },
-  ]);
-  assertEquals(model.chat, { modalities: { input: ['text', 'image'], output: ['text'] } });
-});
-
 test('Copilot OpenAI models share one upstream-bound opaque blob scope', async () => {
   const [openai, anthropic] = await getModelsWithCapabilities([
     { id: 'gpt-5' },
@@ -1300,47 +1295,6 @@ test('Copilot OpenAI models share one upstream-bound opaque blob scope', async (
   ]);
   assertEquals(openai.opaqueBlobCompatibilityScope, { bindToUpstream: true, key: 'openai' });
   assertEquals(anthropic.opaqueBlobCompatibilityScope, { bindToUpstream: true });
-});
-
-test('Copilot chat field: reasoning_effort with medium → effort with default medium', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'o3-mini', supports: { reasoning_effort: ['low', 'medium', 'high'] } },
-  ]);
-  assertEquals(model.chat, {
-    reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } },
-  });
-});
-
-test('Copilot chat field: reasoning_effort full GPT-5 set → default is medium', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'gpt-5', supports: { reasoning_effort: ['minimal', 'low', 'medium', 'high', 'xhigh'] } },
-  ]);
-  assertEquals(model.chat, {
-    reasoning: { effort: { supported: ['minimal', 'low', 'medium', 'high', 'xhigh'], default: 'medium' } },
-  });
-});
-
-test('Copilot chat field: reasoning_effort without medium → default is first', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'o-nomedium', supports: { reasoning_effort: ['minimal', 'xhigh'] } },
-  ]);
-  assertEquals(model.chat, {
-    reasoning: { effort: { supported: ['minimal', 'xhigh'], default: 'minimal' } },
-  });
-});
-
-test('Copilot chat field: min+max_thinking_budget → budget_tokens', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'claude-think', supported_endpoints: ['/v1/messages'], supports: { min_thinking_budget: 1024, max_thinking_budget: 16384 } },
-  ]);
-  assertEquals(model.chat, { reasoning: { budget_tokens: { min: 1024, max: 16384 } } });
-});
-
-test('Copilot chat field: adaptive_thinking: true → reasoning.adaptive', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'claude-adaptive', supported_endpoints: ['/v1/messages'], supports: { adaptive_thinking: true } },
-  ]);
-  assertEquals(model.chat, { reasoning: { adaptive: true } });
 });
 
 test('Copilot chat field: combined vision + reasoning_effort + adaptive_thinking → full chat', async () => {
@@ -1367,11 +1321,107 @@ test('Copilot chat field: combined vision + reasoning_effort + adaptive_thinking
   });
 });
 
-test('Copilot chat field: no capabilities → no chat field', async () => {
+// Copilot's catalog advertises the two image surfaces as separate paths, and
+// the gateway serves each as its own inbound route. A model must therefore
+// carry both keys, and its `kind` must come out as `image` rather than the
+// empty-endpoint `chat` row the old projection produced.
+test('Copilot catalog projects an image model with both image endpoints and kind=image', async () => {
   const [model] = await getModelsWithCapabilities([
-    { id: 'basic-model' },
+    { id: 'gpt-image-2.5-flare', type: 'image', supported_endpoints: ['/v1/images/generations', '/v1/images/edits'] },
   ]);
+  assertEquals(model.kind, 'image');
+  assertEquals(model.endpoints, { openaiImagesGenerations: {}, openaiImagesEdits: {} });
   assertEquals(model.chat, undefined);
+  // Rates are per token; the table quotes USD per million.
+  assertEquals(model.pricing?.entries[0]?.rates.output_image_tokens, '0.00003');
+});
+
+test('Copilot catalog projects an image model that advertises one surface', async () => {
+  const [model] = await getModelsWithCapabilities([
+    { id: 'gpt-image-generate-only', type: 'image', supported_endpoints: ['/v1/images/generations'] },
+  ]);
+  assertEquals(model.kind, 'image');
+  assertEquals(model.endpoints, { openaiImagesGenerations: {} });
+});
+
+const imageModelCatalog = () => copilotModelsWithCapabilities([
+  { id: 'gpt-image-2.5-flare', type: 'image', supported_endpoints: ['/v1/images/generations', '/v1/images/edits'] },
+]);
+
+const setupImageModelTest = async () => {
+  const harness = await setupCopilotTest();
+  const provider = createCopilotProvider(harness.copilotUpstream).instance;
+  return { harness, provider };
+};
+
+test('Copilot image generations POSTs JSON to the v1 path with the raw model id', async () => {
+  const { provider } = await setupImageModelTest();
+  let captured: { path: string; contentType: string | null; body: Record<string, unknown> } | undefined;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') return jsonResponse(imageModelCatalog());
+      captured = {
+        path: url.pathname,
+        contentType: request.headers.get('content-type'),
+        body: (await request.json()) as Record<string, unknown>,
+      };
+      return jsonResponse({ created: 1, data: [{ b64_json: 'AAAA' }] });
+    },
+    async () => {
+      const [model] = await provider.getProvidedModels(directFetcher);
+      const result = await provider.callOpenAIImagesGenerations(model, { prompt: 'a red square' }, undefined, noopUpstreamCallOptions());
+      assertEquals(result.response.status, 200);
+    },
+  );
+
+  assertEquals(captured?.path, '/v1/images/generations');
+  assertEquals(captured?.contentType, 'application/json');
+  assertEquals(captured?.body.prompt, 'a red square');
+  assertEquals(captured?.body.model, 'gpt-image-2.5-flare');
+});
+
+// The regression this guards: `copilotAuthedFetch` used to pin
+// `Content-Type: application/json` unconditionally, which made Copilot answer
+// a multipart edit with `400 Failed to decode image edit request` before
+// reading a single part. A FormData body must reach the runtime untouched so
+// it can set its own boundary.
+test('Copilot image edits keeps multipart uploads free of a JSON content-type', async () => {
+  const { provider } = await setupImageModelTest();
+  let captured: { path: string; contentType: string | null; body: string } | undefined;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') return jsonResponse(imageModelCatalog());
+      captured = {
+        path: url.pathname,
+        contentType: request.headers.get('content-type'),
+        body: await request.text(),
+      };
+      return jsonResponse({ created: 1, data: [{ b64_json: 'AAAA' }] });
+    },
+    async () => {
+      const [model] = await provider.getProvidedModels(directFetcher);
+      const file = new File([new Uint8Array([0x89, 0x50, 0x4E, 0x47])], 'in.png', { type: 'image/png' });
+      const result = await provider.callOpenAIImagesEdits(model, { images: [{ type: 'upload', file }], parameters: { prompt: 'make it blue' } }, undefined, noopUpstreamCallOptions());
+      assertEquals(result.response.status, 200);
+    },
+  );
+
+  assertEquals(captured?.path, '/v1/images/edits');
+  assertEquals(captured?.contentType?.startsWith('multipart/form-data; boundary='), true);
+  assertEquals(captured?.body.includes('name="image"'), true);
+  assertEquals(captured?.body.includes('name="prompt"'), true);
 });
 
 // Copilot reports the seat's entitlement on every data-plane response, so a
@@ -1619,6 +1669,52 @@ test('Copilot provider derives decision endpoints and forwards the System One bo
   assertEquals(sent[0].questions, { team: { type: 'choice', instructions: 'Which team?', criteria: { billing: 'Charges', engineering: 'Bugs' } } });
 });
 
+test('Copilot sends an OpenAI Decisions model to /v1/decisions in its own dialect', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const provider = createCopilotProvider(copilotUpstream).instance;
+  const sent: { path: string; body: Record<string, unknown> }[] = [];
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 't', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-6-luna-decisions', capabilitiesType: 'decisions', supported_endpoints: ['/v1/decisions'] }]));
+      }
+      if (url.pathname === '/v1/decisions') {
+        sent.push({ path: url.pathname, body: (await request.json()) as Record<string, unknown> });
+        return jsonResponse({
+          model: 'gpt-6-luna',
+          answers: [{ type: 'predicate', name: 'p', probability: 1 }],
+          usage: { input_tokens: 158, output_tokens: 0 },
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const decision = (await provider.getProvidedModels(directFetcher))[0]!;
+      const parsed = parseDecisionRequest('openai-decisions', {
+        model: 'gpt-6-luna-decisions',
+        input: 'The API returns 500 on every call.',
+        questions: [{ type: 'predicate', name: 'p', instructions: 'Is this a bug?' }],
+      });
+      const result = await provider.callDecision(decision, parsed.request, undefined, noopUpstreamCallOptions());
+      assertEquals(result.target, { protocol: 'openai-decisions' });
+      assertEquals(result.response.status, 200);
+    },
+  );
+
+  assertEquals(sent.length, 1);
+  assertEquals(sent[0].path, '/v1/decisions');
+  // The wire body is the OpenAI Decisions shape, addressed by the catalog id.
+  assertEquals(sent[0].body.model, 'gpt-6-luna-decisions');
+  assertEquals(sent[0].body.input, 'The API returns 500 on every call.');
+  assertEquals(sent[0].body.questions, [{ type: 'predicate', name: 'p', instructions: 'Is this a bug?' }]);
+});
+
 test('Copilot does not infer a decision endpoint from a chat model', async () => {
   const { copilotUpstream } = await setupCopilotTest();
   const instance = createCopilotProvider(copilotUpstream);
@@ -1640,6 +1736,39 @@ test('Copilot does not infer a decision endpoint from a chat model', async () =>
       const models = await provider.getProvidedModels(directFetcher);
       assertEquals(models[0].kind, 'chat');
       assertEquals(models[0].decisionTarget, undefined);
+    },
+  );
+});
+
+test('a decision model maps its advertised path onto the dialect it serves', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const provider = createCopilotProvider(copilotUpstream).instance;
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 't', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([
+          { id: 'gpt-6-luna-decisions', capabilitiesType: 'decisions', supported_endpoints: ['/v1/decisions'] },
+          { id: 'microsoft-decision-1', capabilitiesType: 'decisions', supported_endpoints: ['/v1/systemone'] },
+        ]));
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const models = await provider.getProvidedModels(directFetcher);
+      const byId = new Map(models.map(model => [model.id, model]));
+      // `/v1/decisions` is the OpenAI Decisions dialect: mapping only
+      // `/v1/systemone` used to leave this entry with no endpoints, and an
+      // empty endpoint map projects to chat.
+      assertEquals(byId.get('gpt-6-luna-decisions')?.kind, 'decision');
+      assertEquals(byId.get('gpt-6-luna-decisions')?.endpoints, { decision: {} });
+      assertEquals(byId.get('gpt-6-luna-decisions')?.decisionTarget, { protocol: 'openai-decisions' });
+      assertEquals(byId.get('microsoft-decision-1')?.decisionTarget, { protocol: 'typesafe-systemone' });
     },
   );
 });

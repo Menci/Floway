@@ -2,7 +2,7 @@ import { klona } from 'klona/json';
 
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from './content.ts';
 import { partitionGeminiGenerateContentTurns, type GeminiGenerateContentConversationTurn as GeminiGenerateContentTurn } from './conversation-turns.ts';
-import { geminiGenerateContentReasoningEffort } from './reasoning.ts';
+import { geminiGenerateContentReasoningEffort, geminiGenerateContentThinkingLevelEffort } from './reasoning.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from './schema.ts';
 import { geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from './tools.ts';
 import type { IRInputSource } from '../../../ir/input/source.ts';
@@ -273,6 +273,10 @@ export const geminiGenerateContentSource = (payload: GeminiGenerateContentReques
 const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest): IRInputSettings => {
   const config = payload.generationConfig;
   const reasoningEffort = geminiGenerateContentReasoningEffort(config?.thinkingConfig);
+  // A level stated outright replaces the one inferred from a budget; an empty
+  // string states no level, so the budget's answer stands.
+  const statedLevel = geminiGenerateContentThinkingLevelEffort(config?.thinkingConfig);
+  const levelEffort = statedLevel === '' ? undefined : statedLevel;
   const schema = config === undefined ? undefined : geminiResponseSchema(config);
   const outputFormat: IRInputOutputFormat | undefined = schema !== undefined
     ? { type: 'json_schema', schema: klona(schema), name: 'gemini_response' }
@@ -295,8 +299,9 @@ const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest
     // A level and a token budget are different quantities, and a caller that
     // writes both means both: the level bounds how hard the model thinks and the
     // budget bounds what it may spend. A level stated outright replaces the one
-    // inferred from the budget rather than adding a second axis.
-    ...(config?.thinkingConfig?.thinkingLevel == null || config.thinkingConfig.thinkingLevel === 'THINKING_LEVEL_UNSPECIFIED' || config.thinkingConfig.thinkingLevel === '' ? {} : { reasoning_effort: config.thinkingConfig.thinkingLevel }),
+    // inferred from the budget rather than adding a second axis — and a named
+    // level is translated to the effort name the targets share.
+    ...(levelEffort === undefined ? {} : { reasoning_effort: levelEffort }),
     ...(config?.thinkingConfig?.thinkingBudget === undefined || config.thinkingConfig.thinkingBudget <= 0 ? {} : { reasoning_budget: config.thinkingConfig.thinkingBudget }),
     // A negative budget is GenerateContent's way of saying the target chooses it.
     ...(config?.thinkingConfig?.thinkingBudget === undefined || config.thinkingConfig.thinkingBudget >= 0 ? {} : { reasoning_dynamic: true }),

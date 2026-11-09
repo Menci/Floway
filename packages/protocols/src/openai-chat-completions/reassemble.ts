@@ -56,9 +56,10 @@ const accumulateToolCalls = (choice: ChoiceAccumulator, value: OpenAIChatComplet
     const custom = toolCall.custom;
     const current: ToolCallAccumulator = choice.toolCalls.get(toolCall.index) ?? { id: '', name: '', arguments: '', type: 'function', extras: {} };
     if (toolCall.id !== undefined) current.id = toolCall.id;
-    if (fn?.name !== undefined) current.name = fn.name;
+    // A later fragment may repeat `name: ""`; an empty name never renames an open call.
+    if (fn?.name !== undefined && fn.name !== '') current.name = fn.name;
     if (fn?.arguments !== undefined) current.arguments += fn.arguments;
-    if (custom?.name !== undefined) current.name = custom.name;
+    if (custom?.name !== undefined && custom.name !== '') current.name = custom.name;
     if (custom?.input !== undefined) current.arguments += custom.input;
     if (toolCall.type !== undefined) current.type = toolCall.type;
     const previousProviderFields = current.extras.provider_specific_fields;

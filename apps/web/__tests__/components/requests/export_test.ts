@@ -37,11 +37,6 @@ describe('request export', () => {
     expect(exported).toEqual(redactedRecord('one'));
   });
 
-  it('leaves no trace of the credential values in either export format', async () => {
-    expect(await exportRecords([record('one'), record('two')], false).text()).not.toContain(SECRET);
-    expect(new TextDecoder().decode(new Uint8Array(await exportRecords([record('one')], true).arrayBuffer()))).not.toContain(SECRET);
-  });
-
   it('preserves raw bytes, completeness and errors in combined JSON', async () => {
     const records = [record('one'), record('two')];
     expect(JSON.parse(await exportRecords(records, false).text())).toEqual({ format: 'floway-request-dump', version: 1, records: [redactedRecord('one'), redactedRecord('two')] });

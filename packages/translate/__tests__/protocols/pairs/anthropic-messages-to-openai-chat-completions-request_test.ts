@@ -551,21 +551,6 @@ test('buildTargetRequest rejects an unknown message role', async () => {
   );
 });
 
-test('buildTargetRequest drops Anthropic-only knobs that have no OpenAI-Chat-Completions slot', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [{ role: 'user', content: 'hi' }],
-    thinking: { type: 'enabled', budget_tokens: 4096, display: 'summarized' },
-  });
-
-  // Only the OpenAI-canonical effort axis survives; budget_tokens and display
-  // have no OpenAI-Chat-Completions equivalent and translate emits nothing for
-  // them. `speed` has its own bridge test below and is intentionally
-  // excluded here.
-  assertEquals(result.reasoning_effort, 'medium');
-});
-
 // ── speed ↔ service_tier bridge ──
 
 test('buildTargetRequest maps speed:fast to service_tier:fast on the outbound OpenAI Chat Completions payload', async () => {

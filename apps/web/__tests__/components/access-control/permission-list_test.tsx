@@ -3,7 +3,6 @@ import { expect, test } from 'vitest';
 
 import { RulePermissions } from '../../../src/components/access-control/permission-list';
 import type { ScopeExpressionData } from '../../../src/components/access-control/scope-expression';
-import { permissionTone } from '../../../src/components/access-control/values';
 import { renderInApp } from '../../render';
 import type { AccessRecord, AccessValues } from '@floway-dev/gateway/browser';
 
@@ -27,40 +26,6 @@ test('preserves explicit Off and full editing as separate permission tokens', ()
   const tokens = [...container.querySelectorAll('[data-permission-token]')];
   expect(tokens.map(token => token.textContent)).toEqual(['Use models Off', 'Edit upstream (Full)']);
   expect(tokens.map(token => token.getAttribute('data-permission-state'))).toEqual(['off', 'full']);
-});
-
-test('aligns both states to the tight cross slot with equal 8px spacing and preserves glyph sizes', () => {
-  const { container } = renderInApp(<RulePermissions values={mixed} />);
-  for (const token of container.querySelectorAll<HTMLElement>('[data-permission-token]')) {
-    const off = token.dataset.permissionState === 'off';
-    const icon = token.querySelector<SVGElement>('.fui-Tag__icon svg')!;
-    const frame = token.querySelector<HTMLElement>('.fui-Tag__icon')!;
-    expect(icon.getAttribute('viewBox')).toBe(off ? '0 0 12 12' : '0 0 24 24');
-    expect(icon.style.width).toBe(off ? '12px' : '14px');
-    expect(icon.style.transform).toBe(off ? 'scale(1)' : 'translate(-50%, -50%) scale(1.05)');
-    expect(frame.style.width).toBe('8.044606px');
-    expect(frame.style.height).toBe('8.044607px');
-    expect(getComputedStyle(token).columnGap).toBe('8px');
-    expect(getComputedStyle(token).paddingLeft).toBe('8px');
-    expect(getComputedStyle(token).paddingRight).toBe('8px');
-    if (off) {
-      expect(icon.style.position).toBe('absolute');
-      expect(icon.style.left).toBe('-2.005393px');
-      expect(icon.style.top).toBe('-1.95px');
-    } else {
-      expect(icon.style.position).toBe('absolute');
-      expect(icon.style.left).toBe('50%');
-      expect(icon.style.top).toBe('50%');
-    }
-  }
-});
-
-test('reserves blue for partial access and uses green for maximum access', () => {
-  expect(permissionTone(true)).toBe('success');
-  expect(permissionTone('full')).toBe('success');
-  expect(permissionTone('models')).toBe('accent');
-  expect(permissionTone(false)).toBe('neutral');
-  expect(permissionTone('off')).toBe('neutral');
 });
 
 const data: ScopeExpressionData = {

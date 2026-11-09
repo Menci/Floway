@@ -16,13 +16,22 @@ const buildWithTestSidecar = (
   options: { fallbackMaxOutputTokens?: number },
 ) => buildTargetRequestFor(pairs.geminiToMessages[0], pairs.geminiToMessages[1], { ...payload, model }, { sidecarCodec: createTestSidecarCodec(), ...options });
 
-test('buildTargetRequest treats an empty thinkingLevel as unstated', async () => {
+test('buildTargetRequest translates a named thinking level to the effort name', async () => {
+  const request = await buildWithTestSidecar({
+    contents: [],
+    generationConfig: { thinkingConfig: { thinkingLevel: 'LOW' } },
+  }, 'claude-test', noOptions);
+
+  assertEquals(request.output_config, { effort: 'low' });
+});
+
+test('buildTargetRequest forwards an empty thinkingLevel verbatim', async () => {
   const request = await buildWithTestSidecar({
     contents: [],
     generationConfig: { thinkingConfig: { thinkingLevel: '' } },
   }, 'claude-test', noOptions);
 
-  assertEquals(request.output_config, undefined);
+  assertEquals(request.output_config, { effort: '' });
 });
 
 test('buildTargetRequest preserves native thinkingBudget beside an empty thinkingLevel', async () => {

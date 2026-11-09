@@ -77,11 +77,13 @@ const traceTools = async (frames: ReturnType<typeof chunk>[], options: { prefix?
   appendContent(builder, content, text);
   let captured: Parameters<RoundTripReader<'openaiChatCompletions'>['onAssistantTurn']> | undefined;
   const appends: Extract<IRRecord, { type: 'write'; kind: 'append' }>[] = [];
+  const assigns: Extract<IRRecord, { type: 'write'; kind: 'assign' }>[] = [];
   const roundTrip: RoundTripReader<'openaiChatCompletions'> = {
     builder,
     onAssistantTurn: (...args) => { captured = args; },
   };
   for await (const record of irFromOpenAIChatCompletions((async function* () { yield* frames; yield doneFrame(); })(), { roundTrip, customToolNames: options.customToolNames })) {
+    if (record.type === 'write' && record.kind === 'assign') assigns.push(record);
     if (record.type !== 'write' || record.kind !== 'append') continue;
     const field = record.path.at(-1);
     if (field !== 'arguments' && field !== 'input') continue;
@@ -94,7 +96,7 @@ const traceTools = async (frames: ReturnType<typeof chunk>[], options: { prefix?
   const finalized = await finalizeAssistantTurnReferences(turn, fieldState, builder, collectContentViews(text, content));
   const hydrated = await restoreAssistantTurn('openaiChatCompletions', [text], finalized.targetTurn, finalized.referencedContentHashes);
   expect(hydrated).toEqual({ ok: true, turn });
-  return { turn, fieldState, appends, finalized };
+  return { turn, fieldState, appends, assigns, finalized };
 };
 
 test('keeps merged pre-name arguments in one output IR append with every original atom ID', async () => {
@@ -153,4 +155,15 @@ test('keeps a transformed wrapped tool field literal', async () => {
   expect(result.appends.map(record => ({ text: record.value, referencePieceIds: record.referencePieceIds }))).toEqual([{ text: 'hello', referencePieceIds: undefined }]);
   expect(result.finalized.targetTurn).toEqual(result.turn);
   expect(result.finalized).not.toHaveProperty('referencedContentHashes');
+});
+
+test('keeps the name of an open tool call when later fragments repeat an empty name', async () => {
+  const result = await traceTools([
+    chunk([{ index: 0, delta: { tool_calls: [{ index: 0, id: 'call_bash', type: 'function', function: { name: 'bash', arguments: '' } }] }, finish_reason: null }]),
+    chunk([{ index: 0, delta: { tool_calls: [{ index: 0, function: { name: '', arguments: '{"command"' } }] }, finish_reason: null }]),
+    chunk([{ index: 0, delta: { tool_calls: [{ index: 0, function: { name: '', arguments: ':"ls"}' } }] }, finish_reason: 'tool_calls' }]),
+  ]);
+
+  expect(result.assigns.filter(record => record.path.at(-1) === 'name').map(record => record.value)).not.toContain('');
+  expect(result.finalized.targetTurn).toMatchObject({ tool_calls: [{ function: { name: 'bash', arguments: '{"command":"ls"}' } }] });
 });

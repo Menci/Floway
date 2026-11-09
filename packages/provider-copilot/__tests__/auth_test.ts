@@ -270,6 +270,49 @@ test('copilotAuthedFetch deletes a base header when the interceptor passes an em
   });
 });
 
+// Copilot's `/v1/images/edits` reads the body as multipart when the request
+// says so. Pinning `application/json` over a `FormData` makes the runtime skip
+// the boundary it would have generated and Copilot answers
+// `400 Failed to decode image edit request`; live probing confirmed the same
+// multipart request succeeds once the header is left to the runtime.
+test('copilotAuthedFetch leaves a FormData body without a JSON content-type', async () => {
+  await installRepoAndClearCache();
+  const captured: Headers[] = [];
+  const form = new FormData();
+  form.set('model', 'gpt-image-2.5-flare');
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'tok-test', expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_in: 1800, endpoints: { api: TOKEN_BASE_URL } });
+      }
+      captured.push(new Headers(request.headers));
+      return jsonResponse({});
+    },
+    async () => {
+      await copilotAuthedFetch(
+        '/v1/images/edits',
+        { method: 'POST', body: form },
+        { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
+        { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
+      );
+    },
+  );
+
+  const observed = captured[0];
+  if (!observed) throw new Error('upstream call never observed');
+  // The runtime supplies the multipart type plus its own boundary; what matters
+  // is that this layer did not pin JSON over it.
+  assertEquals(observed.get('content-type')?.startsWith('multipart/form-data; boundary='), true);
+});
+
+test('copilotAuthedFetch marks a JSON body with a JSON content-type', async () => {
+  await mockTokenAndCapture(undefined, headers => {
+    assertEquals(headers.get('content-type'), 'application/json');
+  });
+});
+
 test('copilotAuthedFetch persists the minted Copilot token (with baseUrl) into state_json.copilotToken', async () => {
   const harness = await installRepoAndClearCache();
   const expiresAt = Math.floor(Date.now() / 1000) + 3600;

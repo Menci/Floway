@@ -10,15 +10,22 @@ const buildWithTestSidecar = (
   model: string,
 ) => buildTargetRequestFor(pairs.geminiToResponses[0], pairs.geminiToResponses[1], { ...payload, model }, { sidecarCodec: createTestSidecarCodec() });
 
-test('buildTargetRequest treats an empty thinkingLevel as unstated', async () => {
+test('buildTargetRequest translates LOW to reasoning.effort', async () => {
+  const request = await buildWithTestSidecar({
+    contents: [],
+    generationConfig: { thinkingConfig: { thinkingLevel: 'LOW', includeThoughts: true } },
+  }, 'gpt-test');
+
+  assertEquals(request.reasoning, { effort: 'low', summary: 'detailed' });
+});
+
+test('buildTargetRequest forwards an empty thinkingLevel verbatim', async () => {
   const request = await buildWithTestSidecar({
     contents: [],
     generationConfig: { thinkingConfig: { thinkingLevel: '', includeThoughts: true } },
   }, 'gpt-test');
 
-  // A stated level is what makes readable reasoning meaningful; without one the
-  // request asks for no summary.
-  assertEquals(request.reasoning, undefined);
+  assertEquals(request.reasoning, { effort: '', summary: 'detailed' });
 });
 
 test('buildTargetRequest gives thinkingBudget precedence over an empty thinkingLevel', async () => {

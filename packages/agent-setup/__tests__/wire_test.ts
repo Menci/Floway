@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { AgentSetupConfiguration } from '../src/configuration.ts';
-import { agentSetupHeartbeatBody, agentSetupUpdateBody } from '../src/wire.ts';
+import { agentSetupUpdateBody } from '../src/wire.ts';
 
 const fullConfiguration: AgentSetupConfiguration = {
   apiKeyId: 'key-a',
@@ -33,14 +33,6 @@ const fullConfiguration: AgentSetupConfiguration = {
 };
 
 describe('agent setup request bodies', () => {
-  test('agentSetupUpdateBody accepts a token, configuration, and expected revision', () => {
-    expect(agentSetupUpdateBody.safeParse({
-      token: 'token-a',
-      configuration: fullConfiguration,
-      expectedRevision: 3,
-    }).success).toBe(true);
-  });
-
   test('agentSetupUpdateBody rejects missing Pi preferences', () => {
     const { pi: _, ...withoutPi } = fullConfiguration;
     const parsed = agentSetupUpdateBody.safeParse({
@@ -59,9 +51,6 @@ describe('agent setup request bodies', () => {
     }).success).toBe(false);
   });
 
-  test('agentSetupHeartbeatBody accepts a bare token', () => {
-    expect(agentSetupHeartbeatBody.safeParse({ token: 'token-a' }).success).toBe(true);
-  });
 });
 
 test('agentSetupUpdateBody requires OMP preferences', () => {

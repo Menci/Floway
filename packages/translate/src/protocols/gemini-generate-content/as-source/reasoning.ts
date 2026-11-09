@@ -1,9 +1,18 @@
 import type { GeminiGenerateContentThinkingConfig } from '@floway-dev/protocols/gemini-generate-content';
 
-// Reasoning effort is freeform on the inbound IRs — the gateway never
-// enum-gates these values at the wire boundary — so the translate-side
-// mappers below return whatever Gemini generateContent surfaced for `thinkingLevel` /
-// derived from `thinkingBudget` verbatim.
+// Translate Google's named thinking levels to target effort names; the default
+// sentinel leaves effort unset. Preserve all other open-string values verbatim.
+// Reference: https://ai.google.dev/api/generate-content#ThinkingLevel
+export const geminiGenerateContentThinkingLevelEffort = (thinkingConfig?: GeminiGenerateContentThinkingConfig): string | undefined => {
+  switch (thinkingConfig?.thinkingLevel) {
+  case 'LOW': return 'low';
+  case 'MEDIUM': return 'medium';
+  case 'HIGH': return 'high';
+  case 'MINIMAL': return 'minimal';
+  case 'THINKING_LEVEL_UNSPECIFIED': return undefined;
+  default: return thinkingConfig?.thinkingLevel;
+  }
+};
 
 // Bucket Gemini generateContent's numeric `thinkingBudget` back onto the discrete
 // `reasoning_effort` axis when the target protocol has no numeric budget
@@ -32,7 +41,5 @@ export const geminiGenerateContentReasoningEffort = (thinkingConfig?: GeminiGene
     return 'high';
   }
 
-  // An unset or unspecified level is the absence of a level, not a level.
-  const level = thinkingConfig.thinkingLevel;
-  return level === undefined || level === '' || level === 'THINKING_LEVEL_UNSPECIFIED' ? null : level;
+  return geminiGenerateContentThinkingLevelEffort(thinkingConfig) ?? null;
 };

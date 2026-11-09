@@ -11,13 +11,22 @@ const buildWithTestSidecar = (
   model: string,
 ) => buildTargetRequestFor(pairs.geminiToChat[0], pairs.geminiToChat[1], { ...payload, model }, { sidecarCodec: createTestSidecarCodec() });
 
-test('buildTargetRequest treats an empty thinkingLevel as unstated', async () => {
+test('buildTargetRequest translates LOW to reasoning_effort', async () => {
+  const request = await buildWithTestSidecar({
+    contents: [],
+    generationConfig: { thinkingConfig: { thinkingLevel: 'LOW' } },
+  }, 'gpt-test');
+
+  assertEquals(request.reasoning_effort, 'low');
+});
+
+test('buildTargetRequest forwards an empty thinkingLevel verbatim', async () => {
   const request = await buildWithTestSidecar({
     contents: [],
     generationConfig: { thinkingConfig: { thinkingLevel: '' } },
   }, 'gpt-test');
 
-  assertEquals(request.reasoning_effort, undefined);
+  assertEquals(request.reasoning_effort, '');
 });
 
 test('buildTargetRequest gives thinkingBudget precedence over an empty thinkingLevel', async () => {
