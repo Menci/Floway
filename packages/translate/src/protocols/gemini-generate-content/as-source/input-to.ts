@@ -223,7 +223,7 @@ const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequest, 
 };
 
 /**
- * A GenerateContent request prepared for translation.
+ * A GenerateContent request read into the turns a writer consumes.
  *
  * Reading a GenerateContent conversation is stateful in two ways. A
  * `functionResponse` part states a call id only when the caller has one and
@@ -234,9 +234,8 @@ const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequest, 
  *
  * A sidecar-resolved assistant turn never passes through this reader, but it
  * did consume source contents, and the calls it states are keyed by ids the
- * reader would otherwise not know. Presenting the request, the conversation,
- * and the reader that owns both counters together keeps that state where it
- * belongs rather than in every route.
+ * reader would otherwise not know. Both counters live in a closure each turn's
+ * `toIRTurn` captures, so the reading stays a plain value.
  */
 export const geminiGenerateContentRead = (payload: GeminiGenerateContentRequest): IRInputReading<GeminiGenerateContentAssistantTurn> => {
   const ids: GeminiGenerateContentToolCallIds = Object.create(null);

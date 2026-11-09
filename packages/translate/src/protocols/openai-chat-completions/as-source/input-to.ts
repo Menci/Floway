@@ -213,8 +213,8 @@ const userItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, { 
 /**
  * Chat Completions states one ceiling under two names. `max_tokens` predates
  * reasoning models; `max_completion_tokens` is its replacement and counts hidden
- * reasoning tokens as well. A request that states both is collapsed to the wider
- * bound, which is the ceiling the caller asked for.
+ * reasoning tokens as well. A request that states both is read from
+ * `max_completion_tokens`, the newer of the two.
  *
  * https://help.openai.com/en/articles/5072518-controlling-the-length-of-openai-model-responses
  * https://community.openai.com/t/why-was-max-tokens-changed-to-max-completion-tokens/938077
@@ -321,13 +321,13 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
 };
 
 /**
- * A Chat Completions request prepared for translation.
+ * A Chat Completions request read into the turns a writer consumes.
  *
  * Reading a Chat conversation is stateful: a `tool` message does not state the
  * kind of call it answers, so the reader tracks which calls it has already
- * seen, and the legacy `function` role correlates by name and occurrence.
- * Presenting the request, the conversation, and the reader that carries that
- * state together keeps the state with the code that needs it.
+ * seen, and the legacy `function` role correlates by name and occurrence. That
+ * state lives in a closure each turn's `toIRTurn` captures, so the reading is a
+ * plain value and the state never outlives the turns that need it.
  */
 export const openaiChatCompletionsRead = (payload: OpenAIChatCompletionsPayload): IRInputReading<OpenAIChatCompletionsAssistantTurn> => {
   const context = openaiChatCompletionsInputContext(payload);

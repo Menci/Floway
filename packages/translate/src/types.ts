@@ -9,21 +9,18 @@ export interface SidecarCodec {
 /**
  * What a translation trip needs from the data plane.
  *
- * Every field here comes from outside this package: the codec that carries
- * private sidecars, the model the caller resolved, and the runtime adapters a
- * protocol may need to state a request. A protocol reads the ones it needs and
- * ignores the rest, so there is one context rather than one per pair — a caller
- * passes the same object to every trip it starts.
+ * Every field comes from outside this package: the codec that carries private
+ * sidecars, and the operator's own output limit. A caller passes the same
+ * object to every trip it starts.
  *
  * No model travels here: every translated request states its own, and a
  * protocol whose wire keeps it out of the body (GenerateContent names it in the
  * URL) is handed it as part of the request the caller built.
  *
- * The client's stream preference is intentionally not in this context.
- * Translation always emits `stream: true` on the target payload; the LLM
- * upstream layer enforces SSE streaming and source `respond.ts` boundaries
- * collect a non-streamed downstream response when the client did not ask
- * for SSE.
+ * The client's stream preference is intentionally not here. Translation always
+ * emits `stream: true` on the target payload; the LLM upstream layer enforces
+ * SSE streaming and source `respond.ts` boundaries collect a non-streamed
+ * downstream response when the client did not ask for SSE.
  */
 export interface TranslateOptions {
   readonly sidecarCodec: SidecarCodec;
@@ -33,8 +30,8 @@ export interface TranslateOptions {
 }
 
 /**
- * A wire-shaped upstream error body handed to `TranslateTrip.apiError`. The
- * pair returns a same-shaped object to rewrite the outbound envelope, or
+ * A wire-shaped upstream error body handed to `TranslateTripResult.errorBody`.
+ * The pair returns a same-shaped object to rewrite the outbound envelope, or
  * `undefined` to pass it through unchanged. The provider layer's
  * `ApiErrorResult` shape is intentionally not imported here — translate is a
  * leaf below provider, so we express the contract in bare HTTP-response

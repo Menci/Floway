@@ -79,13 +79,13 @@ interface IROutputFunctionCallItem {
   readonly arguments: string; // All
 }
 
-// ChatCompletions, Responses, Messages
+// ChatCompletions, Responses
 interface IROutputCustomToolCallItem {
-  readonly type: 'custom_tool_call'; // ChatCompletions, Responses, Messages
-  readonly call_id?: string | IRAbsent; // ChatCompletions, Responses, Messages
-  readonly name: string; // ChatCompletions, Responses, Messages
+  readonly type: 'custom_tool_call'; // ChatCompletions, Responses
+  readonly call_id?: string | IRAbsent; // ChatCompletions, Responses
+  readonly name: string; // ChatCompletions, Responses
   readonly namespace?: string; // Responses
-  readonly input: string; // ChatCompletions, Responses, Messages
+  readonly input: string; // ChatCompletions, Responses
 }
 
 // Responses, GenerateContent

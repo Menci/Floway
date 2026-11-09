@@ -294,8 +294,9 @@ export type { IRInputAssistantContentPart };
 
 /**
  * Messages states one ceiling, `max_tokens`, and its structured-output schema
- * lives in `output_config.format`. It has no `seed` and no `max_tokens` alias,
- * so a source that only stated `max_completion_tokens` still lands here.
+ * lives in `output_config.format`. It accepts neither `seed` nor Chat's
+ * `max_completion_tokens` spelling, so a source that only stated the latter
+ * still lands here as `max_tokens`.
  */
 export const anthropicMessagesSettingsFromIR = (settings: IRInputSettings): Omit<Partial<AnthropicMessagesPayload>, 'model'> => {
   const ceiling = settings.max_output_tokens;

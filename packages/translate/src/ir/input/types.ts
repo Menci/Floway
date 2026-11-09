@@ -22,9 +22,6 @@
 // are the request-wide settings every protocol names, normalized once so a
 // writer can respell them for its own target.
 //
-// Tool declarations are not here yet, because `allowed_tools` selectors
-// reference them and the two must enter together.
-//
 // Every field names one request-wide concept, never a protocol's spelling of
 // it: a reader normalizes what its wire stated and a writer spells it again for
 // its own target. A knob a target cannot express is dropped there.
@@ -48,10 +45,10 @@ export interface IRInputSettings {
   // tokens; Responses states it as `max_output_tokens`, Messages and
   // GenerateContent as their single spelling.
   //
-  // A source that states several names keeps the widest ceiling it stated,
-  // because that is the bound the caller asked for. Collapsing to one value here
-  // is what lets a writer emit a single field: upstreams reject a request that
-  // carries two.
+  // Collapsing to one value here is what lets a writer emit a single field:
+  // upstreams reject a request that carries two. A source that states both
+  // Chat names resolves that itself, because which one wins is that wire's
+  // rule, not this IR's.
   readonly max_output_tokens?: number; // All
   readonly output_format?: IRInputOutputFormat; // ChatCompletions, Responses, Messages, GenerateContent
   // Key/value tags a caller attaches for its own bookkeeping. Every protocol
@@ -346,12 +343,11 @@ export type IRInputMedia =
 // enter the IR. `summary` and `content` stay separate even though most targets
 // concatenate them, matching the output IR's decision.
 //
-// Chat Completions is a target here but not a source: its reasoning text
-// aliases are provider extensions with no wire contract, so its reader cannot
-// identify one and produces no reasoning item, matching the current
-// bare-translation behavior. Its writer emits `reasoning_text`, the alias the
-// gateway already chose for translated output, so reasoning is not lost on that
-// path. GenerateContent, conversely, is a source only: no route targets it.
+// Chat Completions states reasoning only through provider-extension aliases
+// with no wire contract, so its reader cannot identify one and yields no
+// reasoning item. Its writer still emits `reasoning_text`, so reasoning
+// produced by another protocol is not lost on that path. GenerateContent is
+// the same in reverse: a source only, with no route targeting it.
 export interface IRInputReasoningItem {
   readonly type: 'reasoning'; // Responses, Messages, GenerateContent; ChatCompletions as target
   // A source that names its reasoning items keeps the name; a source that does
@@ -388,10 +384,6 @@ export interface IRInputCustomToolCallItem {
   readonly input: string; // ChatCompletions, Responses
 }
 
-// No `name` field: Chat Completions, Responses, and Messages all correlate a
-// result to its call by ID, and GenerateContent is not a translation target.
-// A future GenerateContent writer derives `functionResponse.name` from the call
-// carrying the same ID; an orphan result then fails loudly instead of guessing.
 export interface IRInputToolResultItem {
   readonly type: 'tool_result'; // All
   // A result follows the call it answers: absent means the call it answers is
