@@ -33,8 +33,10 @@ export interface IRInputSettings {
   // chose a target model) starts from a conversation and settings it built
   // itself, so this field always states the model the request asks for.
   readonly model: string;
-  // The request is a streaming one. Every route this IR serves translates a
-  // stream, so the field carries the caller's value rather than a constant.
+  // Every route this IR serves translates a stream, so a request states
+  // `true` and a target writer never varies the field. The boundary that
+  // accepts requests requires streaming before a trip is composed, and a trip
+  // rejects an IR that says otherwise.
   readonly stream: boolean;
   readonly temperature?: number; // All
   readonly top_p?: number; // All

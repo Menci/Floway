@@ -53,7 +53,12 @@ export const traverseTranslation = async <SP, TP, SE, TE>(
   innerAttempt: (translated: TP) => Promise<ExecuteResult<ProtocolFrame<TE>>>,
   capture?: TranslationUpstreamCapture,
 ): Promise<ExecuteResult<ProtocolFrame<SE>>> => {
-  const trip = await translate(payload);
+  // A translation trip only produces a stream, so the upstream is always asked
+  // for one. Whether the caller wanted a stream is a rendering decision made
+  // after the trip returns; asking the upstream for a single body here would
+  // leave the trip with an answer it has no path for. A source protocol whose
+  // request states no stream field ignores the added key.
+  const trip = await translate(Object.assign({}, payload, { stream: true }));
   const inner = await innerAttempt(trip.target);
   if (inner.type === 'events') {
     const events = capture === undefined

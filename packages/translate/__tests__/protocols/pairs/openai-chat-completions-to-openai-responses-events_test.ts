@@ -492,7 +492,7 @@ test.each([false, true].flatMap(mixed => [
   }
   const client = await collectOpenAIChatCompletionsProtocolEventsToResult(parseOpenAIChatCompletionsStream(new Response(clientSSE).body!));
   expect(client.choices[0].finish_reason).toBe('tool_calls');
-  const replay = await buildTargetRequestFor(openaiChatCompletionsSourceProtocol, openaiResponsesTargetProtocol, { model: response.model, messages: [client.choices[0].message, { role: 'tool', tool_call_id: custom.call_id, content: 'edited' }] }, { sidecarCodec: createTestSidecarCodec() });
+  const replay = await buildTargetRequestFor(openaiChatCompletionsSourceProtocol, openaiResponsesTargetProtocol, { model: response.model, stream: true, messages: [client.choices[0].message, { role: 'tool', tool_call_id: custom.call_id, content: 'edited' }] }, { sidecarCodec: createTestSidecarCodec() });
   expect(replay.input.slice(0, -1)).toEqual(upstream.output);
   expect(replay.input.at(-1)).toEqual({ type: 'custom_tool_call_output', call_id: custom.call_id, output: 'edited' });
 });

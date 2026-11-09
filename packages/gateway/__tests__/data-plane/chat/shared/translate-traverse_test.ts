@@ -38,6 +38,28 @@ const collectFrames = async (iterable: AsyncIterable<ProtocolFrame<SrcEvent>>): 
 const fakeModelIdentity = { modelId: 'fake' } as never;
 
 describe('traverseTranslation', () => {
+  test('asks the upstream for a stream whatever the caller requested', async () => {
+    const innerAttempt = async (_translated: string): Promise<ExecuteResult<ProtocolFrame<TgtEvent>>> => ({
+      type: 'events',
+      events: makeTgtFrames([]),
+      modelIdentity: fakeModelIdentity,
+    });
+
+    // A client that asked for a single body still reaches a trip, whose only
+    // output is a stream. The caller's preference is a rendering decision made
+    // from the returned events, so it never reaches the source protocol.
+    const source = { model: 'm', stream: false };
+    let seen: unknown;
+    await traverseTranslation(source, async (payload: typeof source) => {
+      seen = payload;
+      return await translate(payload as never);
+    }, innerAttempt);
+
+    expect(seen).toEqual({ model: 'm', stream: true });
+    // The caller's own payload is not mutated.
+    expect(source).toEqual({ model: 'm', stream: false });
+  });
+
   test('events inner — outer wraps with trip.events', async () => {
     const innerAttempt = async (_translated: string): Promise<ExecuteResult<ProtocolFrame<TgtEvent>>> => ({
       type: 'events',

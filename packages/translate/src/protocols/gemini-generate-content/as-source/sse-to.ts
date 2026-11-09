@@ -23,12 +23,44 @@ import {
   createGeminiGenerateContentEventAccumulator,
 } from '@floway-dev/protocols/gemini-generate-content';
 
-export const irGenerateContentError = (error: IRErrorPayload): GeminiGenerateContentErrorResponse['error'] => {
+/**
+ * Names the GenerateContent wire status for an HTTP status.
+ *
+ * A failed request states its status twice — on the response and inside the
+ * error object — and the protocol requires the two to agree.
+ * https://ai.google.dev/api/rest/v1beta/Status
+ */
+const statusNameOf = (status: number): string => {
+  switch (status) {
+  case 400: return 'INVALID_ARGUMENT';
+  case 401: return 'UNAUTHENTICATED';
+  case 403: return 'PERMISSION_DENIED';
+  case 404: return 'NOT_FOUND';
+  case 408: return 'DEADLINE_EXCEEDED';
+  case 409: return 'ABORTED';
+  case 429: return 'RESOURCE_EXHAUSTED';
+  case 500: return 'INTERNAL';
+  case 501: return 'UNIMPLEMENTED';
+  case 503: return 'UNAVAILABLE';
+  case 504: return 'DEADLINE_EXCEEDED';
+  default: return 'UNKNOWN';
+  }
+};
+
+/**
+ * States an error in the GenerateContent envelope.
+ *
+ * A stream failure has no HTTP status of its own, so the error kind decides
+ * one. A failed request does have one, and it is what actually happened, so it
+ * is passed in and the kind only supplies a name for it.
+ */
+export const irGenerateContentError = (error: IRErrorPayload, httpStatus?: number): GeminiGenerateContentErrorResponse['error'] => {
   const code = error.code ?? error.type;
-  const [status, statusCode] = code === 'rate_limit_exceeded' || code === 'rate_limit_error' ? ['RESOURCE_EXHAUSTED', 429]
+  const [status, inferred] = code === 'rate_limit_exceeded' || code === 'rate_limit_error' ? ['RESOURCE_EXHAUSTED', 429]
     : code === 'invalid_prompt' || code === 'invalid_request_error' || isContextExceededError(error) ? ['INVALID_ARGUMENT', 400]
       : code === 'overloaded_error' ? ['UNAVAILABLE', 503] : ['INTERNAL', 500];
-  return { code: statusCode, status, message: error.message };
+  if (httpStatus === undefined) return { code: inferred, status, message: error.message };
+  return { code: httpStatus, status: statusNameOf(httpStatus), message: error.message };
 };
 
 interface GenerateContentUnit {

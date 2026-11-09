@@ -776,6 +776,7 @@ const makeInvocation = (overrides: InvocationOverrides = {}): OpenAIResponsesInv
   targetApi: overrides.targetApi ?? 'openaiChatCompletions',
   payload: {
     model: 'claude-x',
+    stream: true,
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     tools: [{ type: 'web_search' }],
     // Opt the wire item into `results` so most tests can inspect them

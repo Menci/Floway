@@ -227,7 +227,7 @@ test.each([
   const result = await nativeResult('anthropic-messages', await collect(messagesViaChat(iterate(frames), codec)));
   expect(result.content[0]).toMatchObject({ type: 'tool_use', input });
   expect(result.stop_reason).toBe(stop === 'length' ? 'max_tokens' : 'tool_use');
-  const request = await messagesRequestViaChat({ model: 'model', max_tokens: 100, messages: [{ role: 'assistant', content: result.content }] }, codec);
+  const request = await messagesRequestViaChat({ model: 'model', max_tokens: 100, stream: true, messages: [{ role: 'assistant', content: result.content }] }, codec);
   expect(request.messages).toMatchObject([{ role: 'assistant', tool_calls: [{ id: 'call_partial', function: { name: 'lookup', arguments: arguments_ } }] }]);
 });
 

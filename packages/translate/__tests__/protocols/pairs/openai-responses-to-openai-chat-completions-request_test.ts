@@ -13,9 +13,10 @@ const customToolNamesOf = (request: IRInputRequest): ReadonlySet<string> =>
     .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
 
 const buildWithTestSidecar = async (payload: OpenAIResponsesRequestPayloadEx) => {
-  const layout = openaiResponsesOpen(payload);
+  const streamed = { ...payload, stream: true };
+  const layout = openaiResponsesOpen(streamed);
   return {
-    target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], payload, { sidecarCodec: createTestSidecarCodec() }, layout),
+    target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], streamed, { sidecarCodec: createTestSidecarCodec() }, layout),
     customToolNames: customToolNamesOf(layout.request),
   };
 };

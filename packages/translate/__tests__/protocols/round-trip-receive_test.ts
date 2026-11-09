@@ -21,10 +21,10 @@ import { routeAnthropicMessagesViaOpenAIChatCompletions, routeAnthropicMessagesV
 const context = { sidecarCodec: createTestSidecarCodec('test-codec-scope'), fallbackMaxOutputTokens: undefined };
 const chat = (carrier: string, text = 'answer'): OpenAIChatCompletionsPayloadEx => {
   const message: OpenAIChatCompletionsAssistantMessageEx = { role: 'assistant', content: text, reasoning_details: [{ type: 'reasoning.encrypted', data: carrier }] };
-  return { model: 'source', messages: [message] };
+  return { model: 'source', stream: true, messages: [message] };
 };
-const messages = (carrier: string): AnthropicMessagesPayload => ({ model: 'source', max_tokens: 16, messages: [{ role: 'assistant', content: [{ type: 'text', text: 'answer' }, { type: 'redacted_thinking', data: carrier }] }] });
-const responses = (carrier: string): OpenAIResponsesRequestPayloadEx => ({ model: 'source', input: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'answer' }] }, { type: 'reasoning', id: 'carrier', summary: [], encrypted_content: carrier }] });
+const messages = (carrier: string): AnthropicMessagesPayload => ({ model: 'source', max_tokens: 16, stream: true, messages: [{ role: 'assistant', content: [{ type: 'text', text: 'answer' }, { type: 'redacted_thinking', data: carrier }] }] });
+const responses = (carrier: string): OpenAIResponsesRequestPayloadEx => ({ model: 'source', stream: true, input: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'answer' }] }, { type: 'reasoning', id: 'carrier', summary: [], encrypted_content: carrier }] });
 const gemini = (carrier: string): GeminiGenerateContentRequest => ({ model: 'model', contents: [{ role: 'model', parts: [{ text: 'answer', thoughtSignature: carrier }] }] });
 
 const turnDigest = async (source: RoundTripProtocol) => source === 'openaiChatCompletions'
@@ -122,7 +122,7 @@ test.each(['different codec scope', 'changed sidecar handle', 'changed replay'] 
 
 test.each([{ input: 'text' }, { input: null }, { input: [1] }])('preserves ordinary Messages tool input $input', async ({ input }) => {
   const payload: AnthropicMessagesPayload = {
-    model: 'source', max_tokens: 16,
+    model: 'source', max_tokens: 16, stream: true,
     messages: [{ role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'echo', input }] }],
   };
   const chatTrip = await routeAnthropicMessagesViaOpenAIChatCompletions(payload, context);
@@ -176,9 +176,9 @@ test('accepts incomplete Responses call history and requires its replayed status
     sourceTurnDigest: await hashRoundTripContent(JSON.stringify(expected)),
   });
   const reasoning = { type: 'reasoning' as const, id: 'carrier', summary: [], encrypted_content: carrier };
-  const replayed = await routeOpenAIResponsesViaAnthropicMessages({ model: 'source', input: [call, reasoning] }, context);
+  const replayed = await routeOpenAIResponsesViaAnthropicMessages({ model: 'source', stream: true, input: [call, reasoning] }, context);
   expect(replayed.target.messages).toEqual([native]);
-  const changed = await routeOpenAIResponsesViaAnthropicMessages({ model: 'source', input: [{ ...call, status: 'completed' }, reasoning] }, context);
+  const changed = await routeOpenAIResponsesViaAnthropicMessages({ model: 'source', stream: true, input: [{ ...call, status: 'completed' }, reasoning] }, context);
   expect(changed.target.messages).not.toEqual([native]);
   expect(changed.target.messages).toEqual(expect.arrayContaining([
     expect.objectContaining({ content: expect.arrayContaining([expect.objectContaining({ type: 'tool_use', id: 'call', name: 'lookup', input: { x: 1 } })]) }),

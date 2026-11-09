@@ -54,11 +54,12 @@ export interface TranslatedApiError {
 /**
  * Restates a failed upstream answer in the source protocol's own words.
  *
- * The caller hands over whatever the target upstream answered. This reads it
- * into the IR error payload, applies the source protocol's own rules, and
- * writes the envelope that protocol defines — the same wording and status its
- * stream would have produced. Returning `undefined` passes the upstream answer
- * through verbatim.
+ * A client speaks one protocol, so a failure raised by a different one has to
+ * be stated in the client's envelope. That is only honest when the body is an
+ * error structure this package recognizes; an answer it cannot read is more
+ * faithfully delivered as the upstream wrote it. Returning `undefined` does
+ * exactly that: the caller relays the upstream's own status, headers, and
+ * bytes untouched.
  */
 export type SourceProtocolErrorWriter = (upstream: TranslatedApiError) => TranslatedApiError | undefined;
 
@@ -71,10 +72,11 @@ export type SourceProtocolErrorWriter = (upstream: TranslatedApiError) => Transl
  * providers can mutate it while the source request and other trips remain
  * live, so pair builders clone values borrowed from their source.
  *
- * A failed upstream never reaches this result as bytes to rewrite: the caller
- * reads those bytes into the IR error payload first, and `errorBody` states the
- * result in the source protocol's envelope. That is the same model a
- * mid-stream error travels on, so both failures reach the client the same way.
+ * A failed upstream never reaches this result as an already-translated body:
+ * the caller hands the writer the upstream's own answer, which either restates
+ * a recognized failure in the client's envelope or declines and lets it
+ * through. That is the same model a mid-stream error travels on, so both
+ * failures reach the client the same way.
  */
 export interface TranslateTripResult<TgtPayload, SrcEvent, TgtEvent> {
   target: TgtPayload;

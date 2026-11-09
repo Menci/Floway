@@ -26,6 +26,7 @@ const formatSchema = { type: 'object', properties: { y: { type: 'string' } } };
 
 const responses: CanonicalOpenAIResponsesPayload = {
   model: 'm',
+  stream: true,
   input: [
     { type: 'reasoning', id: 'rs1', summary: [{ type: 'summary_text', text: 'thought' }] },
     { type: 'message', role: 'user', content: 'hi' },
@@ -36,6 +37,7 @@ const responses: CanonicalOpenAIResponsesPayload = {
 };
 const chat: OpenAIChatCompletionsPayload = {
   model: 'm',
+  stream: true,
   messages: [
     { role: 'assistant', content: 'hello', reasoning_text: 'thought' } as OpenAIChatCompletionsAssistantMessageEx,
     { role: 'user', content: 'hi' },
@@ -47,7 +49,7 @@ const chat: OpenAIChatCompletionsPayload = {
   tool_choice: 'auto'
 };
 const anthropic: AnthropicMessagesPayload = {
-  model: 'm', max_tokens: 16,
+  model: 'm', max_tokens: 16, stream: true,
   messages: [{ role: 'user', content: 'hi' }],
   tools: [{ name: 'f', input_schema: schema }],
   output_config: { format: { type: 'json_schema', schema: formatSchema } },

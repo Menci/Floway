@@ -31,7 +31,7 @@ test.each(protocols)('ChatCompletions via %s captures continuous usage preferenc
 });
 
 test('ChatCompletions continuous usage reflects reported Responses counters without extra progress chunks', async () => {
-  const trip = await routeOpenAIChatCompletionsViaOpenAIResponses({ model: 'model', messages: [], stream_options: { include_usage: true, continuous_usage_stats: true } }, { sidecarCodec: createTestSidecarCodec('test-codec-scope') });
+  const trip = await routeOpenAIChatCompletionsViaOpenAIResponses({ model: 'model', messages: [], stream: true, stream_options: { include_usage: true, continuous_usage_stats: true } }, { sidecarCodec: createTestSidecarCodec('test-codec-scope') });
   const response = { id: 'resp', model: 'model', created_at: 1, status: 'in_progress', output: [], usage: null };
   const frames = [
     { type: 'response.created', response },

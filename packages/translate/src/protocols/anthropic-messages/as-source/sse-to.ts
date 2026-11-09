@@ -51,19 +51,6 @@ export const irMessagesError = (error: IRErrorPayload): AnthropicMessagesErrorEv
 export const anthropicMessagesErrorBody = (error: IRErrorPayload): Uint8Array =>
   new TextEncoder().encode(JSON.stringify({ type: 'error', error: irMessagesError(error) }));
 
-/** The status Messages reports for each error kind it can state. */
-export const anthropicMessagesErrorStatus = (error: IRErrorPayload): number => {
-  switch (irMessagesError(error).type) {
-  case 'invalid_request_error': return 400;
-  case 'authentication_error': return 401;
-  case 'permission_error': return 403;
-  case 'not_found_error': return 404;
-  case 'rate_limit_error': return 429;
-  case 'overloaded_error': return 529;
-  default: return 500;
-  }
-};
-
 interface MessagesUnit {
   readonly path: IRPath;
   readonly kind: 'text' | 'refusal' | 'audio' | 'image' | 'reasoning' | 'function_call';

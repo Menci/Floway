@@ -36,6 +36,7 @@ const buildMessagesRequest = async (payload: OpenAIResponsesRequestPayloadEx, co
 
 const payload = (): OpenAIResponsesRequestPayloadEx => ({
   model: 'm',
+  stream: true,
   tools: [
     { type: 'function', name: 'agents_spawn' },
     {
@@ -55,6 +56,7 @@ const messagesRequestOptions = { fallbackMaxOutputTokens: undefined};
 test.each(['additional_tools', 'tool_search_output'] as const)('keeps %s as a user-side boundary between ordinary assistant turns', async type => {
   const source: CanonicalOpenAIResponsesPayload = {
     model: 'm',
+    stream: true,
     input: [
       { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'A' }] },
       type === 'additional_tools' ? { type, role: 'developer', tools: [] } : { type, tools: [] },
@@ -74,6 +76,7 @@ test.each(['additional_tools', 'tool_search_output'] as const)('keeps %s as a us
 test('namespace setup preserves the original input and allocates historical names only when explicitly flattened', () => {
   const request: CanonicalOpenAIResponsesPayload = {
     model: 'm',
+    stream: true,
     input: [
       { type: 'function_call', namespace: 'x.y', name: 'f', call_id: 'first', arguments: '{}' },
       { type: 'function_call', namespace: 'x', name: 'y.f', call_id: 'second', arguments: '{}' },

@@ -1,4 +1,5 @@
 import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
+import { streamingFlag } from '../../../ir/input/stream.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -263,7 +264,9 @@ export const anthropicMessagesRequestFromIR = async (
     max_tokens: request.settings.max_output_tokens ?? options.fallbackMaxOutputTokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
     messages,
     ...(system.length === 0 ? {} : { system }),
-    stream: request.settings.stream,
+    // A trip guarantees a streaming request; a request that says otherwise
+    // cannot be carried by this side at all.
+    stream: streamingFlag(request.settings),
     ...(selectedTools === undefined || selectedTools.length === 0 ? {} : { tools: selectedTools.map(toolFromIR) }),
     ...(choice === undefined ? {} : { tool_choice: toolChoiceFromIR(choice) }),
   };

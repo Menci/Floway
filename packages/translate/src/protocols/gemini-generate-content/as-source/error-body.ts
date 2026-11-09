@@ -1,18 +1,17 @@
-import { irErrorPayloadFromBody } from '../../../shared/api-error.ts';
-import type { SourceProtocolErrorWriter } from '../../../types.ts';
 import { irGenerateContentError } from './sse-to.ts';
+import { irErrorPayloadFromBody, restateError } from '../../../shared/api-error.ts';
+import type { SourceProtocolErrorWriter } from '../../../types.ts';
 
 /**
  * States a failed request in the GenerateContent envelope.
  *
- * The same wording and status the stream uses, so a client sees one shape
- * whether the upstream failed before the stream opened or during it.
+ * The upstream's own status is the failure that actually happened, and the
+ * envelope states it in both places the protocol requires. A body that is not
+ * an error envelope this package recognizes is left alone.
  */
 export const geminiGenerateContentErrorWriter: SourceProtocolErrorWriter = upstream => {
-  const body = irGenerateContentError(irErrorPayloadFromBody(upstream));
-  return {
-    status: body.code,
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: new TextEncoder().encode(JSON.stringify({ error: body })),
-  };
+  const error = irErrorPayloadFromBody(upstream);
+  if (error === undefined) return undefined;
+  const body = irGenerateContentError(error, upstream.status);
+  return restateError(upstream, new TextEncoder().encode(JSON.stringify({ error: body })));
 };

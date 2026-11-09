@@ -30,9 +30,9 @@ export const pairs = {
 
 /** A request that states nothing, which reading a returned stream only needs to exist. */
 export const emptyPayload = {
-  messages: { model: 'm', max_tokens: 16, messages: [] } as AnthropicMessagesPayload,
-  chat: { model: 'm', messages: [] } as OpenAIChatCompletionsPayloadEx,
-  responses: { model: 'm', input: [] } as OpenAIResponsesRequestPayloadEx,
+  messages: { model: 'm', max_tokens: 16, stream: true, messages: [] } as AnthropicMessagesPayload,
+  chat: { model: 'm', stream: true, messages: [] } as OpenAIChatCompletionsPayloadEx,
+  responses: { model: 'm', stream: true, input: [] } as OpenAIResponsesRequestPayloadEx,
   gemini: { model: 'model', contents: [] } as GeminiGenerateContentRequest,
 };
 

@@ -41,8 +41,9 @@ const buildWithTestSidecar = async (
   payload: OpenAIResponsesRequestPayloadEx,
   options: Partial<typeof testBuildOptions> = {},
 ) => {
-  const layout = openaiResponsesOpen(payload);
-  const built = await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { sidecarCodec: createTestSidecarCodec(), ...testBuildOptions, ...options }, layout);
+  const streamed = { ...payload, stream: true };
+  const layout = openaiResponsesOpen(streamed);
+  const built = await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], streamed, { sidecarCodec: createTestSidecarCodec(), ...testBuildOptions, ...options }, layout);
   return { target: built, customToolNames: customToolNamesOf(layout.request), namespaceToolNames: layout.extra.namespaceToolNames };
 };
 

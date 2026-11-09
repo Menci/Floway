@@ -1,4 +1,5 @@
 import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
+import { streamingFlag } from '../../../ir/input/stream.ts';
 import type {
   IRInputAssistantItem,
   IRInputRequest,
@@ -269,7 +270,9 @@ export const openaiResponsesRequestFromIR = (
     ...openaiResponsesSettingsFromIR(settings),
     model: settings.model,
     input,
-    stream: settings.stream,
+    // A trip guarantees a streaming request; a request that says otherwise
+    // cannot be carried by this side at all.
+    stream: streamingFlag(settings),
     ...(instructions === undefined ? {} : { instructions }),
     ...(tools === undefined || tools.length === 0 ? {} : { tools: tools.map(toolFromIR) }),
     ...(choice === undefined ? {} : { tool_choice: toolChoiceFromIR(choice) }),

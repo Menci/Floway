@@ -45,7 +45,7 @@ const assertNativeHistory = (target: OpenAIChatCompletionsPayload, name: string,
 test('Messages returns matching legacy function results while modern calls remain tool messages across turns', async () => {
   const context = { sidecarCodec: createTestSidecarCodec() };
   const payload: AnthropicMessagesPayload = {
-    model: 'public-model', max_tokens: 64,
+    model: 'public-model', max_tokens: 64, stream: true,
     messages: [{ role: 'user', content: 'Call lookup' }],
     tools: [{ name: 'lookup', input_schema: { type: 'object', properties: { x: { type: 'integer' } } } }],
   };
@@ -63,7 +63,7 @@ test('Messages returns matching legacy function results while modern calls remai
 test('Responses binds public namespaced call IDs to the native legacy function name', async () => {
   const context = { sidecarCodec: createTestSidecarCodec() };
   const payload: OpenAIResponsesRequestPayloadEx = {
-    model: 'public-model', input: [{ type: 'message', role: 'user', content: 'Call lookup' }],
+    model: 'public-model', stream: true, input: [{ type: 'message', role: 'user', content: 'Call lookup' }],
     tools: [{ type: 'namespace', name: 'public', description: 'Public lookup tools', tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object', properties: { x: { type: 'integer' } } } }] }],
   };
   let nativeName = '';
@@ -139,13 +139,13 @@ test('Gemini keeps modern IDs separate when a vendor stream includes both call f
 
 test('restored legacy results retain the ordinary Responses input_file rejection', async () => {
   const context = { sidecarCodec: createTestSidecarCodec() };
-  const trip = await routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'public-model', input: 'Call lookup' }, context);
+  const trip = await routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'public-model', stream: true, input: 'Call lookup' }, context);
   const result = await collectOpenAIResponsesProtocolEventsToResult(trip.events(iterate(nativeFrames('legacy', 'lookup'))));
   const call = result.output.find(item => item.type === 'function_call');
   if (call === undefined) throw new Error('Expected a public Responses invocation');
   const output = { type: 'function_call_output' as const, call_id: call.call_id, output: [{ type: 'input_file' as const, file_id: 'unsupported-file' }] };
   const input = toOpenAIResponsesInputAssistantTurn(result.output);
   for (const history of [input, input.filter(item => item.type !== 'reasoning')]) {
-    await expect(routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'public-model', input: [...history, output] }, context)).rejects.toThrow('Cannot translate file tool output to OpenAI Chat Completions.');
+    await expect(routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'public-model', stream: true, input: [...history, output] }, context)).rejects.toThrow('Cannot translate file tool output to OpenAI Chat Completions.');
   }
 });

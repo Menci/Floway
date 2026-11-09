@@ -1,4 +1,5 @@
 import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
+import { streamingFlag } from '../../../ir/input/stream.ts';
 import type {
   IRInputAssistantItem,
   IRInputRequest,
@@ -246,14 +247,16 @@ export const openaiChatCompletionsRequestFromIR = (request: IRInputRequest): Ope
     ...openaiChatCompletionsSettingsFromIR(request.settings),
     model: request.settings.model,
     messages: openaiChatCompletionsFromIR(request.conversation),
-    stream: request.settings.stream,
+    // A trip guarantees a streaming request; a request that says otherwise
+    // cannot be carried by this side at all.
+    stream: streamingFlag(request.settings),
     // A streamed request asks the upstream for usage on every chunk, not only
     // the last one. `include_usage` is the OpenAI-standard flag;
     // `continuous_usage_stats` is the vLLM/SGLang extension that lets a
     // translation state input tokens before any output exists. Upstreams that
     // do not implement the extension ignore it.
     // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/generate/base/protocol.py#L241-L243
-    ...(request.settings.stream ? { stream_options: { include_usage: true, continuous_usage_stats: true } as OpenAIChatCompletionsStreamOptionsEx } : {}),
+    stream_options: { include_usage: true, continuous_usage_stats: true } as OpenAIChatCompletionsStreamOptionsEx,
     ...(tools === undefined || tools.length === 0 ? {} : { tools: tools.map(toolFromIR) }),
     ...(choice === undefined ? {} : { tool_choice: toolChoiceFromIR(choice) }),
   };

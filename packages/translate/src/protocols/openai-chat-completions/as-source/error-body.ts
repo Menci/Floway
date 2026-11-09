@@ -1,30 +1,20 @@
-import { irErrorPayloadFromBody } from '../../../shared/api-error.ts';
-import type { IRErrorPayload } from '../../../ir/common/error.ts';
-import type { SourceProtocolErrorWriter } from '../../../types.ts';
 import { irChatError } from './sse-to.ts';
-
-/** The status Chat reports for each error type it states. */
-const statusOf = (error: IRErrorPayload): number => {
-  switch (irChatError(error).type) {
-  case 'invalid_request_error': return 400;
-  case 'authentication_error': return 401;
-  case 'insufficient_quota':
-  case 'rate_limit_exceeded': return 429;
-  default: return 500;
-  }
-};
+import { irErrorPayloadFromBody, restateError } from '../../../shared/api-error.ts';
+import type { SourceProtocolErrorWriter } from '../../../types.ts';
 
 /**
  * States a failed request in the Chat Completions envelope.
  *
  * The same wording the stream uses, so a client sees one shape whether the
- * upstream failed before the stream opened or during it.
+ * upstream failed before the stream opened or during it. The upstream's status
+ * stands, because the failure it reports is the same one whatever envelope
+ * carries it — flattening a `402` to `500` would lose what the client needs to
+ * decide whether to retry.
+ *
+ * A body that is not an error envelope this package recognizes is left alone.
  */
 export const openaiChatCompletionsErrorWriter: SourceProtocolErrorWriter = upstream => {
   const error = irErrorPayloadFromBody(upstream);
-  return {
-    status: statusOf(error),
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: new TextEncoder().encode(JSON.stringify({ error: irChatError(error) })),
-  };
+  if (error === undefined) return undefined;
+  return restateError(upstream, new TextEncoder().encode(JSON.stringify({ error: irChatError(error) })));
 };

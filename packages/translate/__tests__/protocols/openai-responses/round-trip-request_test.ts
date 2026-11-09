@@ -13,10 +13,10 @@ import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesRequestPayloadEx }
 // A restored turn's own request is what these cases assert on, so each build
 // states the pair it walks and hands back the payload alone.
 const buildChatRequest = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec) => ({
-  target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], payload, { sidecarCodec: codec }),
+  target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], { ...payload, stream: true }, { sidecarCodec: codec }),
 });
 const buildMessagesRequest = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec, options: { fallbackMaxOutputTokens?: number; loadRemoteImage?: (url: string) => Promise<{ mediaType: string | null; data: Uint8Array } | null> } = {}) => ({
-  target: await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { sidecarCodec: codec, ...options }),
+  target: await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], { ...payload, stream: true }, { sidecarCodec: codec, ...options }),
 });
 
 const replayedTurn: OpenAIResponsesAssistantTurn = [
@@ -102,6 +102,7 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('bypasses ordin
   });
   const source: CanonicalOpenAIResponsesPayload = {
     model: 'test',
+    stream: true,
     input: [
       ...calls, createOpenAIResponsesSidecarCarrier('carrier', sidecar),
       { type: 'message', role: 'user', content: 'next' },
@@ -131,6 +132,7 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('allocates bare
   });
   const source: CanonicalOpenAIResponsesPayload = {
     model: 'test',
+    stream: true,
     input: [
       { type: 'function_call', namespace: 'a.b', name: 'run', call_id: 'first', arguments: '{}' },
       createOpenAIResponsesSidecarCarrier('carrier', sidecar),
@@ -166,7 +168,7 @@ it.each(['additional_tools', 'tool_search_output'] as const)('restores assistant
       ? { type, role: 'developer' as const, tools: [{ type: 'function' as const, name: 'lookup' }] }
       : { type, call_id: 'load', execution: 'client' as const, tools: [{ type: 'function' as const, name: 'lookup' }] };
     const source: CanonicalOpenAIResponsesPayload = {
-      model: 'test', input: [...turns[0], carriers[0], inventory, ...turns[1], carriers[1]],
+      model: 'test', stream: true, input: [...turns[0], carriers[0], inventory, ...turns[1], carriers[1]],
     };
     const original = structuredClone(source);
     const result = target === 'openaiChatCompletions'

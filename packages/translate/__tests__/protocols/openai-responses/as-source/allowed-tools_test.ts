@@ -30,7 +30,7 @@ const buildMessages = async (payload: OpenAIResponsesRequestPayloadEx, codec: Si
 };
 
 const source = (tool_choice: OpenAIResponsesToolChoice): OpenAIResponsesRequestPayloadEx => ({
-  model: 'model', input: 'Read only.',
+  model: 'model', stream: true, input: 'Read only.',
   tools: [
     { type: 'function', name: 'read', parameters: { type: 'object', properties: {} } },
     { type: 'function', name: 'charge', parameters: { type: 'object', properties: {} } },

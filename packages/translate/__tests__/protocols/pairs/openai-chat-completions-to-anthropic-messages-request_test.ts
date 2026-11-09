@@ -22,7 +22,7 @@ function mkPayload(
     messages: OpenAIChatCompletionsPayload['messages'];
   },
 ): OpenAIChatCompletionsPayload {
-  return { model: 'claude-sonnet-4', ...overrides };
+  return { model: 'claude-sonnet-4', stream: true, ...overrides };
 }
 
 function assistantBlocks(result: AnthropicMessagesPayload, msgIndex = 0): AnthropicMessagesAssistantContentBlock[] {
@@ -772,22 +772,20 @@ test('stop array → stop_sequences array', async () => {
   assertEquals(result.stop_sequences, ['END', 'STOP']);
 });
 
-test('states the source stream flag on the target', async () => {
-  const streamed = await buildWithTestSidecar(
-    mkPayload({
-      messages: [{ role: 'user', content: 'Hi' }],
-      stream: true
-    }),
-  );
-  assertEquals(streamed.stream, true);
+test('states the streaming flag the trip requires', async () => {
+  const result = await buildWithTestSidecar(mkPayload({ messages: [{ role: 'user', content: 'Hi' }] }));
+  assertEquals(result.stream, true);
+});
 
-  const nonStreamed = await buildWithTestSidecar(
-    mkPayload({
-      messages: [{ role: 'user', content: 'Hi' }],
-      stream: false
-    }),
+test('rejects a request the trip cannot carry because it states no stream', () => {
+  // A trip's answer arrives as a stream, so an IR that says otherwise has no
+  // translation. The boundary above a trip guarantees streaming, so this is a
+  // broken contract rather than an unsupported request.
+  return assertRejects(
+    () => buildWithTestSidecar(mkPayload({ messages: [{ role: 'user', content: 'Hi' }], stream: false })),
+    Error,
+    'streaming',
   );
-  assertEquals(nonStreamed.stream, false);
 });
 
 // ── Tool choice mapping ──
@@ -1187,7 +1185,7 @@ test('buildTargetRequest leaves thinking absent when reasoning_effort is not non
 
 test.each(['auto', 'required'] as const)('allowed_tools %s restricts native Messages declarations', async mode => {
   const result = await buildWithTestSidecar({
-    model: 'claude-test', messages: [{ role: 'user', content: 'hello' }], tools: [
+    model: 'claude-test', stream: true, messages: [{ role: 'user', content: 'hello' }], tools: [
       { type: 'function', function: { name: 'allowed' } }, { type: 'function', function: { name: 'excluded' } },
     ], tool_choice: { type: 'allowed_tools', allowed_tools: { mode, tools: [{ type: 'function', function: { name: 'allowed' } }] } }
   });
