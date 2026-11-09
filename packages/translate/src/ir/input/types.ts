@@ -38,7 +38,7 @@ export interface IRInputSettings {
   readonly temperature?: number; // All
   readonly top_p?: number; // All
   readonly top_k?: number; // Messages, GenerateContent
-  readonly stop?: readonly string[]; // All
+  readonly stop?: readonly string[]; // ChatCompletions, Messages, GenerateContent
   readonly seed?: number; // ChatCompletions, GenerateContent
   // One ceiling. Chat Completions states it as `max_tokens` or
   // `max_completion_tokens`, and only the latter counts hidden reasoning
@@ -65,7 +65,7 @@ export interface IRInputSettings {
   // The reasoning effort an OpenAI protocol states as an open string. Messages
   // combines its own effort and thinking controls into the same axis, so the
   // writer there derives both.
-  readonly reasoning_effort?: string; // ChatCompletions, Responses
+  readonly reasoning_effort?: string; // ChatCompletions, Responses, Messages
   // How many tokens the model may spend on internal reasoning. This is a
   // separate quantity from the effort level: Messages states both, and a source
   // that caps the budget without naming a level still asked for that cap.
@@ -138,17 +138,18 @@ export interface IRInputFunctionTool {
   // back the way its client wrote it.
   readonly namespace?: string; // Responses
   readonly description?: string;
-  // A JSON Schema object. Responses and Chat Completions require one, Messages
-  // always states one, so the reader forwards what the source declared.
+  // A JSON Schema object. Both OpenAI wires accept one optionally and omit it
+  // when the source declared none; Messages always states one, so the reader
+  // forwards what the source declared.
   readonly parameters?: Readonly<Record<string, unknown>>;
   // Three-state: absent means the source did not say. Chat defaults to false,
   // Responses requires the field, so a writer states its target's requirement.
   readonly strict?: boolean;
 }
 
-// A freeform tool: the model returns the string the declaration describes, and
-// the target either has a native arm (Chat, Responses) or wraps it in a
-// single-`input`-string function schema (Messages).
+// A freeform tool: the model returns the string the declaration describes.
+// Responses has a native arm for it; Chat Completions and Messages wrap it in a
+// single-`input`-string function schema.
 export interface IRInputCustomTool {
   readonly type: 'custom';
   readonly name: string;
@@ -181,10 +182,11 @@ export type IRInputToolSelection =
   | { readonly type: 'custom'; readonly name: string; readonly namespace?: string };
 
 // A turn is a maximal run of one branch class, not a protocol's message
-// grouping. Chat Completions makes every message its own turn; the others
-// merge adjacent messages of the same class. Writers regroup the flat item
-// list into whatever boundaries their protocol uses, so the source grouping
-// never constrains them.
+// grouping. An assistant message is always its own turn; a run of client
+// messages is one turn, because a writer that folds adjacent client turns into
+// one native message gets the same result either way. Writers regroup the flat
+// item list into whatever boundaries their protocol uses, so the source
+// grouping never constrains them.
 export type IRInputTurn = IRInputClientTurn | IRInputAssistantTurn;
 
 // Everything the client stated. The branch is named `client` rather than `user`
@@ -296,9 +298,8 @@ export interface IRInputRefusalPart {
 export interface IRInputImagePart {
   readonly type: 'image'; // All
   readonly image: IRInputMedia; // All
-  // Chat Completions and Responses share the `auto | low | high | original`
-  // axis; Messages has no per-image detail. Open string because both wire
-  // contracts already forward unknown values verbatim.
+  // Chat Completions forwards the `auto | low | high` axis as an open string;
+  // Responses adds `original`. Messages has no per-image detail.
   readonly detail?: string | null; // ChatCompletions, Responses
 }
 
@@ -329,9 +330,9 @@ export interface IRInputAudio {
 // `media_type` is absent exactly when the source does not state one: OpenAI
 // `file_data` is bare base64, while images always arrive with a type (a data
 // URL upstream, or a typed base64 block in Messages and GenerateContent).
-// A reader decodes a `data:` URL into the base64 arm: inline bytes are one
-// concept regardless of how a protocol spells them, and the `url` arm means a
-// reference a target may fetch or forward.
+// Responses decodes a `data:` URL into the base64 arm; Chat Completions carries
+// `file_data` verbatim. The `url` arm means a reference a target may fetch or
+// forward.
 export type IRInputMedia =
   | { readonly source_kind: 'url'; readonly url: string } // All
   | { readonly source_kind: 'base64'; readonly media_type?: string; readonly data: string } // All
@@ -350,9 +351,9 @@ export type IRInputMedia =
 // the same in reverse: a source only, with no route targeting it.
 export interface IRInputReasoningItem {
   readonly type: 'reasoning'; // Responses, Messages, GenerateContent; ChatCompletions as target
-  // A source that names its reasoning items keeps the name; a source that does
-  // not leaves it absent and each writer allocates one.
-  readonly id?: string; // Responses, GenerateContent
+  // GenerateContent names its reasoning parts; Responses does not carry an id
+  // through its reader, and a writer allocates one where its wire needs it.
+  readonly id?: string; // GenerateContent
   readonly summary?: readonly string[]; // Responses, GenerateContent, ChatCompletions; Messages as target
   readonly content?: readonly string[]; // Responses
 }
@@ -397,8 +398,9 @@ export interface IRInputToolResultItem {
   // A string is an opaque payload: a source string, or a structured result
   // that no protocol expresses as content parts (GenerateContent's
   // `functionResponse.response` object). Parts are used when the source itself
-  // carries structured content, so Responses and Messages outputs keep their
-  // images and files until the target decides how to flatten them.
+  // carries structured content, so Responses keeps images and files until the
+  // target decides how to flatten them; Messages keeps images only and rejects
+  // a file.
   readonly output: string | readonly IRInputToolResultContentPart[]; // All
   // A Chat Completions `tool` message does not say which call kind it answers;
   // only the preceding assistant message's `tool_calls` do. Readers record the
