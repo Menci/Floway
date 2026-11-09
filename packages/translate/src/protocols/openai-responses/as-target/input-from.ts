@@ -100,9 +100,10 @@ const assistantItems = (items: readonly IRInputAddressedAssistantItem[]): Canoni
       type: 'function_call',
       call_id: item.call_id,
       name: item.name,
-      // Responses states `arguments` as a string; an absent argument object is
-      // serialized to `undefined` and dropped by the wire encoder.
-      arguments: item.arguments as string,
+      // Responses requires `arguments`, and the IR states an absent value for a
+      // call that takes no argument object at all; the empty object is that
+      // call's argument list written out.
+      arguments: item.arguments ?? '{}',
       status: 'completed',
     };
   case 'custom_tool_call':

@@ -489,3 +489,13 @@ test.each([undefined, []])('preserves an empty model turn with parts %j', async 
   const result = await buildWithTestSidecar(payload, 'target-model');
   assertEquals((result.input as Array<{ role?: string; content?: unknown }>).filter(item => item.role === 'assistant'), [{ type: 'message', role: 'assistant', content: '' }]);
 });
+
+test('a call with no argument object is written with an empty one', async () => {
+  // GenerateContent states no `args` for a call that takes none, and the IR
+  // keeps it absent. This wire requires `arguments`, so the empty object is how
+  // that call's argument list is spelled on the wire.
+  const request = await buildWithTestSidecar({ contents: [{ role: 'model', parts: [{ functionCall: { name: 'f' } }] }] }, 'gpt-test');
+
+  const call = request.input.find(item => item.type === 'function_call');
+  assertEquals(call?.type === 'function_call' ? call.arguments : undefined, '{}');
+});

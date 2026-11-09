@@ -618,3 +618,13 @@ test('VALIDATED narrows the declarations it may call while leaving the choice fr
   assertEquals(result.tools?.map(tool => tool.type === 'function' ? tool.function.name : undefined), ['allowed']);
   assertEquals(result.tool_choice, 'auto');
 });
+
+test('a call with no argument object is written with an empty one', async () => {
+  // GenerateContent states no `args` for a call that takes none, and the IR
+  // keeps it absent. Chat requires `arguments`, so the empty object is how that
+  // call's argument list is spelled on the wire.
+  const request = await buildWithTestSidecar({ contents: [{ role: 'model', parts: [{ functionCall: { name: 'f' } }] }] }, 'gpt-test');
+
+  const call = request.messages.flatMap(message => message.role === 'assistant' && message.tool_calls !== undefined ? message.tool_calls : [])[0];
+  assertEquals(call?.type === 'function' ? call.function.arguments : undefined, '{}');
+});

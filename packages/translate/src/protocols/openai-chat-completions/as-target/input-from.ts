@@ -107,9 +107,10 @@ const assistantMessage = (items: readonly IRInputAddressedAssistantItem[]): Open
       toolCalls.push({
         id: item.call_id,
         type: 'function',
-        // Chat requires an `arguments` string; an absent argument object is
-        // spelled `undefined` on the wire as before.
-        function: { name: item.name, arguments: item.arguments as string },
+        // Chat requires `arguments`, and the IR states an absent value for a
+        // call that takes no argument object at all; the empty object is that
+        // call's argument list written out.
+        function: { name: item.name, arguments: item.arguments ?? '{}' },
       });
       break;
     case 'custom_tool_call':
