@@ -2,9 +2,9 @@ import { expect, test } from 'vitest';
 
 import { collect, iterate } from './helpers.ts';
 import { fixtureFrames } from './translation-cases.ts';
-import { routeOpenAIChatCompletionsViaAnthropicMessages, routeOpenAIChatCompletionsViaOpenAIResponses } from '@floway-dev/translate';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
+import { routeOpenAIChatCompletionsViaAnthropicMessages, routeOpenAIChatCompletionsViaOpenAIResponses } from '@floway-dev/translate';
 
 const protocols = ['anthropic-messages', 'openai-responses'] as const;
 const flags = [undefined, false, true];

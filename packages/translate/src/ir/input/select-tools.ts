@@ -1,4 +1,4 @@
-import type { IRInputRequest, IRInputTool, IRInputToolChoice } from './types.ts';
+import type { IRInputTool, IRInputToolChoice } from './types.ts';
 
 /**
  * The declarations a request may offer once its selector is applied.
