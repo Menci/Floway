@@ -1,7 +1,7 @@
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from './cache-breakpoints.ts';
 import { anthropicMessagesConversationFromIR, anthropicMessagesHeaderFromIR, type AnthropicMessagesRequestFromIROptions } from './input-from.ts';
 import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
-import type { IRInputAddressedTurn, IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
+import type { IRInputAddressedTurn, IRInputRequest } from '../../../ir/input/types.ts';
 import type { AnthropicMessagesMessage, AnthropicMessagesPayload, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
 
 /**
@@ -19,7 +19,7 @@ import type { AnthropicMessagesMessage, AnthropicMessagesPayload, AnthropicMessa
  */
 export const anthropicMessagesPayloadFromSegments = async <Restored>(
   request: IRInputRequest,
-  pieces: readonly (IRInputTurn | IRInputResolvedTurn<Restored>)[],
+  pieces: readonly (IRInputAddressedTurn | IRInputResolvedTurn<Restored>)[],
   resolvedMessage: (turn: Restored) => AnthropicMessagesMessage,
   options: AnthropicMessagesRequestFromIROptions = {},
 ): Promise<AnthropicMessagesPayload> => {
@@ -35,7 +35,7 @@ export const anthropicMessagesPayloadFromSegments = async <Restored>(
     }
     // Only a conversation's first segment may lift its leading prompt into the
     // top-level `system` slot, and segmentation is what says which that is.
-    const segment = await anthropicMessagesConversationFromIR(piece.turns as readonly IRInputAddressedTurn[], piece.leading);
+    const segment = await anthropicMessagesConversationFromIR(piece.turns, piece.leading);
     system.push(...segment.system);
     messages.push(...segment.messages);
   }

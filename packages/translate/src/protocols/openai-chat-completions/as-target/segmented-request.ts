@@ -1,6 +1,6 @@
 import { openaiChatCompletionsFromIR, openaiChatCompletionsHeaderFromIR } from './input-from.ts';
 import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
-import type { IRInputAddressedTurn, IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
+import type { IRInputAddressedTurn, IRInputRequest } from '../../../ir/input/types.ts';
 import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 
 /**
@@ -16,13 +16,13 @@ import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from 
  */
 export const openaiChatCompletionsPayloadFromSegments = <Restored extends OpenAIChatCompletionsMessage>(
   request: IRInputRequest,
-  pieces: readonly (IRInputTurn | IRInputResolvedTurn<Restored>)[],
+  pieces: readonly (IRInputAddressedTurn | IRInputResolvedTurn<Restored>)[],
   resolvedMessage: (turn: Restored) => OpenAIChatCompletionsMessage,
 ): OpenAIChatCompletionsPayload => {
   const messages: OpenAIChatCompletionsMessage[] = [];
   for (const piece of segmentIRInput(pieces)) {
     if (piece.kind === 'resolved') { messages.push(resolvedMessage(piece.turn)); continue; }
-    messages.push(...openaiChatCompletionsFromIR(piece.turns as readonly IRInputAddressedTurn[]));
+    messages.push(...openaiChatCompletionsFromIR(piece.turns));
   }
   // The request-level fields are one answer for the whole conversation, so they
   // are computed once rather than per segment.

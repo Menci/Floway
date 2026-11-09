@@ -1,6 +1,6 @@
 import { openaiResponsesConversationFromIR, openaiResponsesHeaderFromIR } from './input-from.ts';
 import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
-import type { IRInputAddressedTurn, IRInputRequest, IRInputTurn } from '../../../ir/input/types.ts';
+import type { IRInputAddressedTurn, IRInputRequest } from '../../../ir/input/types.ts';
 import type { CanonicalOpenAIResponsesInputItem, CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 /**
@@ -16,7 +16,7 @@ import type { CanonicalOpenAIResponsesInputItem, CanonicalOpenAIResponsesPayload
  */
 export const openaiResponsesPayloadFromSegments = <Restored extends readonly CanonicalOpenAIResponsesInputItem[]>(
   request: IRInputRequest,
-  pieces: readonly (IRInputTurn | IRInputResolvedTurn<Restored>)[],
+  pieces: readonly (IRInputAddressedTurn | IRInputResolvedTurn<Restored>)[],
   resolvedInput: (turn: Restored) => readonly CanonicalOpenAIResponsesInputItem[],
 ): CanonicalOpenAIResponsesPayload => {
   const input: CanonicalOpenAIResponsesInputItem[] = [];
@@ -25,7 +25,7 @@ export const openaiResponsesPayloadFromSegments = <Restored extends readonly Can
   let instructions: string | undefined;
   for (const piece of segmentIRInput(pieces)) {
     if (piece.kind === 'resolved') { input.push(...resolvedInput(piece.turn)); continue; }
-    const segment = openaiResponsesConversationFromIR(piece.turns as readonly IRInputAddressedTurn[], piece.leading);
+    const segment = openaiResponsesConversationFromIR(piece.turns, piece.leading);
     if (segment.instructions != null) instructions ??= segment.instructions;
     input.push(...segment.input);
   }
