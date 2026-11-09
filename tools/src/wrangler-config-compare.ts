@@ -1,6 +1,9 @@
 const PLACEHOLDER_RE = /^<YOUR_[A-Z0-9_]+>$/;
 const REAL_ONLY_OPTIONAL_KEYS = new Set(['account_id']);
-const DEPLOYMENT_SPECIFIC_KEYS = new Set(['observability']);
+// Placement decides where the Worker's fetch handler runs, which an operator
+// chooses against its own upstreams and D1 location:
+// https://developers.cloudflare.com/workers/configuration/placement/
+const DEPLOYMENT_SPECIFIC_KEYS = new Set(['observability', 'placement']);
 
 export interface WranglerConfigMismatch {
   path: string;

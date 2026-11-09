@@ -26,6 +26,14 @@ test('a real Wrangler config may replace deployment-specific observability compl
   })).toEqual([]);
 });
 
+test('a real Wrangler config may pin a deployment-specific placement', () => {
+  expect(findWranglerConfigMismatches(example, {
+    name: 'floway',
+    placement: { region: 'aws:ap-southeast-1' },
+    triggers: { crons: ['* * * * *'] },
+  })).toEqual([]);
+});
+
 test('shared Wrangler topology still rejects unrelated drift', () => {
   expect(findWranglerConfigMismatches(example, {
     name: 'floway',

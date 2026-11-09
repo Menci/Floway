@@ -1,6 +1,6 @@
 // wrangler.jsonc is contributor-owned and gitignored. The checked-in example
 // defines the shared Worker topology, while concrete placeholder replacements,
-// account selection, and observability policy remain deployment-local.
+// account selection, observability policy, and placement remain deployment-local.
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
