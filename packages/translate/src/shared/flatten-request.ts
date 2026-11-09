@@ -78,4 +78,22 @@ export const flattenRequestNames = <Restored>(
   };
 };
 
-export { flatNameMapping };
+/**
+ * The pair each flat name stands for.
+ *
+ * A target that reads a returned stream gets the flat name it asked with and
+ * has to state the call the way its client wrote it, so it needs this inversion
+ * of the same assignment.
+ */
+export const callIdentitiesOf = (
+  request: IRInputRequest,
+  turns: readonly IRInputTurn[],
+): Map<string, { readonly namespace: string; readonly name: string }> => {
+  const flat = flatNameMapping(request.tools ?? [], turns);
+  const identities = new Map<string, { readonly namespace: string; readonly name: string }>();
+  for (const [key, flatName] of flat) {
+    const dot = key.indexOf('.');
+    identities.set(flatName, { namespace: key.slice(0, dot), name: key.slice(dot + 1) });
+  }
+  return identities;
+};

@@ -1,4 +1,3 @@
-import { restoreGroupedCall, type CallableIdentity } from './grouped-calls.ts';
 import { createRandomOpenAIResponsesResponseId } from './response-id.ts';
 import { collectOpenAIResponsesTextViews, computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
@@ -48,11 +47,7 @@ type ResponsesOutputUnit = ResponsesOutputUnitBase & (
   | { readonly kind: 'function_call' | 'custom_tool_call'; toolContentState?: ContentState<'text'> }
 );
 
-type OpenAIResponsesSSEOutputOptions = RoundTripOutputOptions<'openaiResponses'> & {
-  // The pair each flat name stands for, so a call this client wrote grouped is
-  // stated back as that pair. A request with no groups states nothing.
-  groupedCallNames?: ReadonlyMap<string, CallableIdentity>;
-};
+type OpenAIResponsesSSEOutputOptions = RoundTripOutputOptions<'openaiResponses'>;
 
 const IMAGE_OUTPUT_FORMATS = { 'image/png': 'png', 'image/jpeg': 'jpeg', 'image/webp': 'webp' } as const;
 
@@ -326,18 +321,23 @@ export const openaiResponsesFromIR = async function* (
       };
     }
     if (unit.callId === undefined) throw new TypeError('Responses tool unit has no call ID');
+    // A call the request stated grouped is written as that pair; one without a
+    // group keeps its single name.
     if (unit.kind === 'custom_tool_call') {
       if (item.type !== 'custom_tool_call') throw new TypeError('Responses tool unit has the wrong output IR item');
-      return { type: 'custom_tool_call', id, call_id: unit.callId, name: item.name, input: item.input, status };
+      return {
+        type: 'custom_tool_call', id, call_id: unit.callId, name: item.name,
+        ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+        input: item.input, status,
+      };
     }
     if (item.type !== 'function_call') throw new TypeError('Responses tool unit has the wrong output IR item');
-    return { type: 'function_call', id, call_id: unit.callId, name: item.name, arguments: item.arguments, status };
+    return {
+      type: 'function_call', id, call_id: unit.callId, name: item.name,
+      ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+      arguments: item.arguments, status,
+    };
   };
-
-  // A call the upstream produced is addressed by the flat name the request was
-  // made with; a call this client wrote grouped is restated as that pair.
-  const restore = (item: OpenAIResponsesOutputItemEx, status: 'in_progress' | 'completed'): OpenAIResponsesOutputItemEx =>
-    options.groupedCallNames === undefined ? item : restoreGroupedCall(item, options.groupedCallNames, status);
 
   const response = (state: IR, status: OpenAIResponsesResultEx['status'], usage: OpenAIResponsesResultEx['usage']): OpenAIResponsesResultEx => ({
     id: metadata.id,
@@ -345,7 +345,7 @@ export const openaiResponsesFromIR = async function* (
     created_at: metadata.created,
     model: metadata.model,
     status,
-    output: [...outputUnits.map(unit => restore(outputItem(state, unit), 'completed')), ...(sidecar === undefined ? [] : [sidecar])],
+    output: [...outputUnits.map(unit => outputItem(state, unit)), ...(sidecar === undefined ? [] : [sidecar])],
     usage,
     error: null,
     incomplete_details: status === 'incomplete' ? { reason: finishReason === 'content_filter' ? 'content_filter' : 'max_output_tokens' } : null,
@@ -496,7 +496,7 @@ export const openaiResponsesFromIR = async function* (
     const added: OpenAIResponsesOutputItemEx = custom
       ? { type: 'custom_tool_call', id, call_id: resolvedCallId, name: item.name, input: '', status: 'in_progress' }
       : { type: 'function_call', id, call_id: resolvedCallId, name: item.name, arguments: '', status: 'in_progress' };
-    const restored = options.groupedCallNames === undefined ? added : restoreGroupedCall(added, options.groupedCallNames, 'in_progress');
+    const restored = added;
     const content = createContentState(options.roundTrip.builder, 'text');
     unit.toolContentState = content;
     nativeState[outputIndex] = restored.type === 'custom_tool_call' ? { input: content } : { arguments: content };
@@ -663,7 +663,7 @@ export const openaiResponsesFromIR = async function* (
           name: item.name,
         });
         current.status = finishReason === 'length' ? 'incomplete' : 'completed';
-        yield emit({ type: 'response.output_item.done', output_index: outputIndex, item: restore(outputItem(state, current), 'in_progress') });
+        yield emit({ type: 'response.output_item.done', output_index: outputIndex, item: outputItem(state, current) });
         units.delete(current.path);
         pendingEnds.delete(current);
       }
@@ -751,7 +751,7 @@ export const openaiResponsesFromIR = async function* (
         const outputIndex = requireOutputIndex(unit);
         if (part?.type !== 'image') throw new TypeError('Responses image unit requires an image part');
         unit.status = 'completed';
-        yield emit({ type: 'response.output_item.done', output_index: outputIndex, item: restore(outputItem(state, unit), 'completed') });
+        yield emit({ type: 'response.output_item.done', output_index: outputIndex, item: outputItem(state, unit) });
         units.delete(unit.path);
       }
     }
@@ -792,7 +792,7 @@ export const openaiResponsesFromIR = async function* (
           });
         }
         current.status = record.status === 'incomplete' ? 'incomplete' : 'completed';
-        yield emit({ type: 'response.output_item.done', output_index: outputIndex, item: restore(outputItem(state, current), 'in_progress') });
+        yield emit({ type: 'response.output_item.done', output_index: outputIndex, item: outputItem(state, current) });
         units.delete(current.path);
         for (const part of current.parts) units.delete(part);
       }
@@ -817,7 +817,7 @@ export const openaiResponsesFromIR = async function* (
         return;
       }
       const status = record.status === 'completed' && finishReason === 'content_filter' ? 'incomplete' : record.status;
-      const nativeOutput = outputUnits.map(unit => restore(outputItem(state, unit), 'completed'));
+      const nativeOutput = outputUnits.map(unit => outputItem(state, unit));
       nativeState.length = nativeOutput.length;
       const sourceTurnDigest = await computeOpenAIResponsesTurnDigest(nativeOutput);
       const input = toOpenAIResponsesInputAssistantTurn<ContentStates>(nativeOutput, nativeState);

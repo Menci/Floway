@@ -133,9 +133,9 @@ const irItemSeed = (item: OpenAIResponsesOutputItemEx): Record<string, unknown> 
   case 'reasoning':
     return undefined;
   case 'function_call':
-    return { type: 'function_call', ...(item.call_id === undefined ? {} : { call_id: item.call_id }), name: item.name, arguments: '' };
+    return { type: 'function_call', ...(item.call_id === undefined ? {} : { call_id: item.call_id }), name: item.name, ...(item.namespace === undefined ? {} : { namespace: item.namespace }), arguments: '' };
   case 'custom_tool_call':
-    return { type: 'custom_tool_call', ...(item.call_id === undefined ? {} : { call_id: item.call_id }), name: item.name, input: '' };
+    return { type: 'custom_tool_call', ...(item.call_id === undefined ? {} : { call_id: item.call_id }), name: item.name, ...(item.namespace === undefined ? {} : { namespace: item.namespace }), input: '' };
   default:
     return undefined;
   }

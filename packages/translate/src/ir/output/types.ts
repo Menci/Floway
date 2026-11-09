@@ -70,7 +70,12 @@ export interface IROutputReasoningItem {
 interface IROutputFunctionCallItem {
   readonly type: 'function_call'; // All
   readonly call_id?: string | IRAbsent; // All
+  // The name inside the declaration group, or the whole name when the call has
+  // no group, plus the group itself when the upstream stated one. An upstream
+  // without namespaces states a flat name here; the source-side writer states
+  // the pair back the way its client wrote it.
   readonly name: string; // All
+  readonly namespace?: string; // Responses
   readonly arguments: string; // All
 }
 
@@ -79,6 +84,7 @@ interface IROutputCustomToolCallItem {
   readonly type: 'custom_tool_call'; // ChatCompletions, Responses, Messages
   readonly call_id?: string | IRAbsent; // ChatCompletions, Responses, Messages
   readonly name: string; // ChatCompletions, Responses, Messages
+  readonly namespace?: string; // Responses
   readonly input: string; // ChatCompletions, Responses, Messages
 }
 

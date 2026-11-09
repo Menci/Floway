@@ -123,7 +123,13 @@ interface ChatChoiceState {
 
 export const irFromOpenAIChatCompletions = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
-  options: { customToolNames?: ReadonlySet<string>; roundTrip: RoundTripReader<'openaiChatCompletions'> },
+  options: {
+    customToolNames?: ReadonlySet<string>;
+    // The pair each flat name stands for, so a call this source wrote grouped
+    // is stated back as that pair.
+    callIdentities?: ReadonlyMap<string, { readonly namespace: string; readonly name: string }>;
+    roundTrip: RoundTripReader<'openaiChatCompletions'>;
+  },
 ): AsyncGenerator<IRRecord> {
   const ir = createIRBuilder();
   const choices = new Map<number, ChatChoiceState>();
@@ -429,9 +435,15 @@ export const irFromOpenAIChatCompletions = async function* (
       // https://github.com/vercel/ai/blob/ba05943b69ad070558bb5bc912da99ec66d7d263/packages/provider-utils/src/streaming-tool-call-tracker.ts#L356-L395
       const custom = tool.custom || tool.wrapped;
       const callId = call.index === -1 ? IRAbsent : tool.id;
+      // A name the request sent grouped comes back flat; stating the pair again
+      // here is what lets the source-side writer restore it.
+      const identity = options.callIdentities?.get(tool.name);
+      const naming = identity === undefined
+        ? { name: tool.name }
+        : { name: identity.name, namespace: identity.namespace };
       tool.item = createItem(index, choice, custom
-        ? { type: 'custom_tool_call', ...(callId === undefined ? {} : { call_id: callId }), name: tool.name, input: '' }
-        : { type: 'function_call', ...(callId === undefined ? {} : { call_id: callId }), name: tool.name, arguments: '' });
+        ? { type: 'custom_tool_call', ...(callId === undefined ? {} : { call_id: callId }), ...naming, input: '' }
+        : { type: 'function_call', ...(callId === undefined ? {} : { call_id: callId }), ...naming, arguments: '' });
       tool.callIdAssigned = callId !== undefined;
       tool.emittedName = tool.name;
       if (!tool.wrapped && tool.pendingInput !== '') {

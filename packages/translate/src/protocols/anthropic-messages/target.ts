@@ -3,7 +3,7 @@ import { irInputToolsForChoice } from '../../ir/input/select-tools.ts';
 import type { IRInputRequest, IRInputTurn } from '../../ir/input/types.ts';
 import type { AssistantTurnFor } from '../../round-trip/assistant-turn.ts';
 import { assignCallIds, type PendingCall } from '../../shared/call-ids.ts';
-import { flattenRequestNames } from '../../shared/flatten-request.ts';
+import { callIdentitiesOf, flattenRequestNames } from '../../shared/flatten-request.ts';
 import type { TranslateContext } from '../../types.ts';
 import type { TargetProtocol } from '../composition.ts';
 import { anthropicMessagesPayloadFromSegments } from './as-target/segmented-request.ts';
@@ -47,5 +47,11 @@ export const anthropicMessagesTargetProtocol: TargetProtocol<
   },
   // A source may declare freeform tools the target could not state natively;
   // reading this stream has to recognise the calls it wrapped them into.
-  readStream: (frames, reader, request) => irFromAnthropicMessages(frames, { customToolNames: wrappedFreeformNames(request), roundTrip: reader }),
+  readStream: (frames, reader, request) => irFromAnthropicMessages(frames, {
+    customToolNames: wrappedFreeformNames(request),
+    // The upstream answers under the flat name it was asked with, so the pair a
+    // name stands for is recovered from the same request mapping.
+    callIdentities: callIdentitiesOf(request, request.conversation.turns),
+    roundTrip: reader,
+  }),
 };

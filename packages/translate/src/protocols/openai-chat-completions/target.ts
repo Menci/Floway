@@ -2,7 +2,7 @@ import { irInputToolsForChoice } from '../../ir/input/select-tools.ts';
 import type { IRInputRequest } from '../../ir/input/types.ts';
 import type { AssistantTurnFor } from '../../round-trip/assistant-turn.ts';
 import { assignCallIds, type PendingCall } from '../../shared/call-ids.ts';
-import { flattenRequestNames } from '../../shared/flatten-request.ts';
+import { callIdentitiesOf, flattenRequestNames } from '../../shared/flatten-request.ts';
 import type { TargetProtocol } from '../composition.ts';
 import { openaiChatCompletionsPayloadFromSegments } from './as-target/segmented-request.ts';
 import { irFromOpenAIChatCompletions } from './as-target/sse-from.ts';
@@ -53,5 +53,11 @@ export const openaiChatCompletionsTargetProtocol: TargetProtocol<
     return Promise.resolve(openaiChatCompletionsPayloadFromSegments(flattened.request, assignCallIds(flattened.pieces, callsOf), turn => turn));
   },
   readStream: (frames, reader, request) =>
-    irFromOpenAIChatCompletions(frames, { customToolNames: wrappedFreeformNames(request), roundTrip: reader }),
+    irFromOpenAIChatCompletions(frames, {
+      customToolNames: wrappedFreeformNames(request),
+      // The upstream answers under the flat name it was asked with, so the pair
+      // a name stands for is recovered from the same request mapping.
+      callIdentities: callIdentitiesOf(request, request.conversation.turns),
+      roundTrip: reader,
+    }),
 };

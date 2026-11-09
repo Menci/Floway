@@ -62,7 +62,13 @@ interface MessagesBlockState {
 
 export const irFromAnthropicMessages = async function* (
   frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
-  options: { customToolNames?: ReadonlySet<string>; roundTrip: RoundTripReader<'anthropicMessages'> },
+  options: {
+    customToolNames?: ReadonlySet<string>;
+    // The pair each flat name stands for, so a call this source wrote grouped
+    // is stated back as that pair.
+    callIdentities?: ReadonlyMap<string, { readonly namespace: string; readonly name: string }>;
+    roundTrip: RoundTripReader<'anthropicMessages'>;
+  },
 ): AsyncGenerator<IRRecord> {
   const ir = createIRBuilder();
   const blocks = new Map<number, MessagesBlockState>();
@@ -108,9 +114,15 @@ export const irFromAnthropicMessages = async function* (
       }
     } else if (block.type === 'tool_use') {
       custom = options.customToolNames?.has(block.name) === true;
+      // A name the request sent grouped comes back flat; stating the pair again
+      // here is what lets the source-side writer restore it.
+      const identity = options.callIdentities?.get(block.name);
+      const naming = identity === undefined
+        ? { name: block.name }
+        : { name: identity.name, namespace: identity.namespace };
       item = ir.item(0, custom
-        ? { type: 'custom_tool_call', call_id: block.id, name: block.name, input: '' }
-        : { type: 'function_call', call_id: block.id, name: block.name, arguments: '' });
+        ? { type: 'custom_tool_call', call_id: block.id, ...naming, input: '' }
+        : { type: 'function_call', call_id: block.id, ...naming, arguments: '' });
     } else if (!UNTRANSLATED_BLOCK_TYPES.includes(block.type)) {
       throw new TypeError(`Cannot translate Messages content block ${block.type}`);
     }
