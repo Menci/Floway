@@ -41,8 +41,9 @@ test('buildTargetRequest preserves native thinkingBudget beside an empty thinkin
   }, 'claude-test', noOptions);
 
   assertEquals(request.thinking, { type: 'enabled', budget_tokens: 2048 });
-  // The budget is the only stated quantity, so it supplies the level.
-  assertEquals(request.output_config, { effort: 'low' });
+  // Messages states a level and a budget on different slots, so an empty level
+  // travels verbatim beside the budget rather than being replaced by it.
+  assertEquals(request.output_config, { effort: '' });
 });
 
 test('buildTargetRequest maps system, default max tokens, and multimodal user content', async () => {

@@ -5,6 +5,7 @@ import { buildTargetRequestFor, pairs } from '../composition-helpers.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesAssistantContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsFunctionTool } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
+import { TranslatorInputError } from '@floway-dev/translate';
 
 const buildWithTestSidecar = (payload: AnthropicMessagesPayload) =>
   buildTargetRequestFor(pairs.messagesToChat[0], pairs.messagesToChat[1], { ...payload, stream: true }, { sidecarCodec: createTestSidecarCodec() });
@@ -617,4 +618,21 @@ test('buildTargetRequest asks upstream for continuous streaming usage stats', as
 
   assertEquals(result.stream, true);
   assertEquals(result.stream_options, { include_usage: true, continuous_usage_stats: true });
+});
+
+test('rejects a metadata value the neutral model cannot state as a string pair', async () => {
+  // Messages admits any JSON value as a tag while every metadata-carrying
+  // target states string pairs, so a value with no string spelling fails at the
+  // reader rather than being dropped or coerced on the way to a target.
+  await assertRejects(
+    () => buildWithTestSidecar({
+      model: 'gpt-test',
+      stream: true,
+      max_tokens: 16,
+      messages: [{ role: 'user', content: 'hi' }],
+      metadata: { user_id: 'u', nested: { depth: 1 } } as never,
+    }),
+    TranslatorInputError,
+    'nested',
+  );
 });

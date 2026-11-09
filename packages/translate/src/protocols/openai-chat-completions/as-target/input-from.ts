@@ -1,4 +1,5 @@
 import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
+import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import { streamingFlag } from '../../../ir/input/stream.ts';
 import type {
   IRInputAssistantItem,
@@ -262,9 +263,23 @@ export const openaiChatCompletionsRequestFromIR = (request: IRInputRequest): Ope
   };
 };
 
+/**
+ * The effort this wire states for the IR's reasoning settings.
+ *
+ * This wire accepts effort names only, so a token budget has to be reported at
+ * the nearest tier it can express, and a stated budget is the more specific of
+ * the two quantities. An empty effort names no tier at all — it is an open
+ * string the caller sent, and it only stands when no budget governs the answer.
+ */
+const chatReasoningEffort = (settings: IRInputSettings): string | undefined =>
+  settings.reasoning_budget !== undefined
+    ? reasoningEffortForBudget(settings.reasoning_budget)
+    : settings.reasoning_effort;
+
 export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): Partial<OpenAIChatCompletionsPayload> => {
   const ceiling = settings.max_output_tokens;
   const format = settings.output_format;
+  const reasoningEffort = chatReasoningEffort(settings);
 
   return {
     ...(ceiling === undefined ? {} : { max_completion_tokens: ceiling }),
@@ -276,7 +291,7 @@ export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): 
     ...(settings.store === undefined ? {} : { store: settings.store }),
     ...(settings.service_tier === undefined ? {} : { service_tier: settings.service_tier }),
     ...(settings.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: settings.parallel_tool_calls }),
-    ...(settings.reasoning_effort === undefined ? {} : { reasoning_effort: settings.reasoning_effort }),
+    ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
     ...(settings.prompt_cache_key === undefined ? {} : { prompt_cache_key: settings.prompt_cache_key }),
     ...(settings.safety_identifier === undefined ? {} : { safety_identifier: settings.safety_identifier }),
     ...(settings.verbosity === undefined ? {} : { verbosity: settings.verbosity }),

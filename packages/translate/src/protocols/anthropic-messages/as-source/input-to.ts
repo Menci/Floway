@@ -341,10 +341,10 @@ const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload): IRInp
     ...(metadata === undefined ? {} : { metadata }),
     // Messages splits one reasoning axis across three controls: a level, an off
     // switch, and a token budget. The level and the off switch are the same axis
-    // every other protocol states as an effort, and the budget is its own
-    // quantity that a source may state without a level.
+    // every other protocol states as an effort. Messages is a source here and
+    // its targets state effort only, so the budget is reported as the tier it
+    // lands on rather than as a number no target can spend.
     ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
-    ...(payload.thinking?.type === 'enabled' ? { reasoning_budget: payload.thinking.budget_tokens } : {}),
     ...(payload.thinking?.type === 'adaptive' ? { reasoning_dynamic: true } : {}),
   };
 };

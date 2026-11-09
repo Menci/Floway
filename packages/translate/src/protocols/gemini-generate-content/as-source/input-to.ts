@@ -2,7 +2,8 @@ import { klona } from 'klona/json';
 
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from './content.ts';
 import { partitionGeminiGenerateContentTurns, type GeminiGenerateContentConversationTurn as GeminiGenerateContentTurn } from './conversation-turns.ts';
-import { geminiGenerateContentReasoningEffort, geminiGenerateContentThinkingLevelEffort } from './reasoning.ts';
+import { geminiGenerateContentThinkingLevelEffort } from './reasoning.ts';
+import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from './schema.ts';
 import { geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from './tools.ts';
 import type { IRInputLayout, IRInputSlot } from '../../../ir/input/layout.ts';
@@ -280,11 +281,15 @@ export const geminiGenerateContentOpen = (payload: GeminiGenerateContentRequest)
 /** GenerateContent keeps every sampling knob inside `generationConfig`. */
 const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest): IRInputSettings => {
   const config = payload.generationConfig;
-  const reasoningEffort = geminiGenerateContentReasoningEffort(config?.thinkingConfig);
-  // A level stated outright replaces the one inferred from a budget; an empty
-  // string states no level, so the budget's answer stands.
+  const budget = config?.thinkingConfig?.thinkingBudget;
+  // A level is what the caller stated, including an empty one: it is an open
+  // string, and a target that accepts it forwards it verbatim. A budget is a
+  // different quantity the caller may state instead, so it travels on its own
+  // field and each target decides what it can do with it.
   const statedLevel = geminiGenerateContentThinkingLevelEffort(config?.thinkingConfig);
-  const levelEffort = statedLevel === '' ? undefined : statedLevel;
+  // A budget of zero is GenerateContent's off switch, which every target spells
+  // on the effort axis.
+  const effort = statedLevel ?? (budget === 0 ? 'none' : undefined);
   const schema = config === undefined ? undefined : geminiResponseSchema(config);
   const outputFormat: IRInputOutputFormat | undefined = schema !== undefined
     ? { type: 'json_schema', schema: klona(schema), name: 'gemini_response' }
@@ -303,18 +308,13 @@ const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest
     ...(config?.candidateCount === undefined ? {} : { candidate_count: config.candidateCount }),
     ...(config?.presencePenalty === undefined ? {} : { presence_penalty: config.presencePenalty }),
     ...(config?.frequencyPenalty === undefined ? {} : { frequency_penalty: config.frequencyPenalty }),
-    ...(reasoningEffort === null ? {} : { reasoning_effort: reasoningEffort }),
-    // A level and a token budget are different quantities, and a caller that
-    // writes both means both: the level bounds how hard the model thinks and the
-    // budget bounds what it may spend. A level stated outright replaces the one
-    // inferred from the budget rather than adding a second axis — and a named
-    // level is translated to the effort name the targets share.
-    ...(levelEffort === undefined ? {} : { reasoning_effort: levelEffort }),
-    ...(config?.thinkingConfig?.thinkingBudget === undefined || config.thinkingConfig.thinkingBudget <= 0 ? {} : { reasoning_budget: config.thinkingConfig.thinkingBudget }),
-    // A negative budget is GenerateContent's way of saying the target chooses it.
-    ...(config?.thinkingConfig?.thinkingBudget === undefined || config.thinkingConfig.thinkingBudget >= 0 ? {} : { reasoning_dynamic: true }),
+    ...(effort === undefined ? {} : { reasoning_effort: effort }),
+    // A negative budget asks the model to choose its own and states no number.
+    ...(budget === undefined || budget <= 0 ? {} : { reasoning_budget: budget }),
+    ...(budget === undefined || budget >= 0 ? {} : { reasoning_dynamic: true }),
     // GenerateContent states readable reasoning as a boolean; the neutral
-    // spelling names how much of it the caller wants.
-    ...(reasoningEffort !== null && reasoningEffort !== 'none' && config?.thinkingConfig?.includeThoughts === true ? { reasoning_summary: 'detailed' } : {}),
+    // spelling names how much of it the caller wants. A request that asked for
+    // no reasoning at all has nothing to summarize.
+    ...(effort !== undefined && effort !== 'none' && config?.thinkingConfig?.includeThoughts === true ? { reasoning_summary: 'detailed' } : {}),
   };
 };

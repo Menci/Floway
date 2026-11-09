@@ -604,3 +604,17 @@ test.each([undefined, []])('preserves an empty model turn with parts %j', async 
   const result = await buildWithTestSidecar(payload, 'target-model');
   assertEquals((result.messages as Array<{ role?: string; content?: unknown }>).filter(item => item.role === 'assistant'), [{ role: 'assistant', content: '' }]);
 });
+
+test('VALIDATED narrows the declarations it may call while leaving the choice free', async () => {
+  // `allowed_function_names` applies to ANY and VALIDATED but not AUTO: the
+  // model still decides whether to call a function, over a smaller set.
+  // https://github.com/googleapis/googleapis/blob/master/google/ai/generativelanguage/v1beta/content.proto
+  const result = await buildWithTestSidecar({
+    contents: [],
+    tools: [{ functionDeclarations: [{ name: 'allowed' }, { name: 'excluded' }] }],
+    toolConfig: { functionCallingConfig: { mode: 'VALIDATED', allowedFunctionNames: ['allowed'] } },
+  }, 'gpt-test');
+
+  assertEquals(result.tools?.map(tool => tool.type === 'function' ? tool.function.name : undefined), ['allowed']);
+  assertEquals(result.tool_choice, 'auto');
+});

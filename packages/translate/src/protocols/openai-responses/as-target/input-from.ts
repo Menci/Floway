@@ -1,4 +1,5 @@
 import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
+import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import { streamingFlag } from '../../../ir/input/stream.ts';
 import type {
   IRInputAssistantItem,
@@ -282,6 +283,12 @@ export const openaiResponsesRequestFromIR = (
 export const openaiResponsesSettingsFromIR = (settings: IRInputSettings): Partial<CanonicalOpenAIResponsesPayload> => {
   const ceiling = settings.max_output_tokens;
   const format = settings.output_format;
+  // This wire accepts effort names only, so a token budget is reported at the
+  // nearest tier it can express, and a stated budget is the more specific of the
+  // two quantities. An empty effort names no tier at all.
+  const reasoningEffort = settings.reasoning_budget !== undefined
+    ? reasoningEffortForBudget(settings.reasoning_budget)
+    : settings.reasoning_effort;
 
   return {
     ...(ceiling === undefined ? {} : { max_output_tokens: ceiling }),
@@ -291,9 +298,9 @@ export const openaiResponsesSettingsFromIR = (settings: IRInputSettings): Partia
     ...(settings.store === undefined ? {} : { store: settings.store }),
     ...(settings.service_tier === undefined ? {} : { service_tier: settings.service_tier }),
     ...(settings.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: settings.parallel_tool_calls }),
-    ...(settings.reasoning_effort === undefined && settings.reasoning_summary === undefined ? {} : {
+    ...(reasoningEffort === undefined && settings.reasoning_summary === undefined ? {} : {
       reasoning: {
-        ...(settings.reasoning_effort === undefined ? {} : { effort: settings.reasoning_effort }),
+        ...(reasoningEffort === undefined ? {} : { effort: reasoningEffort }),
         ...(settings.reasoning_summary === undefined ? {} : { summary: settings.reasoning_summary }),
       },
     }),

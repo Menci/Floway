@@ -297,9 +297,11 @@ export const anthropicMessagesSettingsFromIR = (settings: IRInputSettings): Omit
       ? { type: 'adaptive' as const }
       : settings.reasoning_budget === undefined
         ? undefined
-        // A token budget is the other half of the same axis: Messages states it
-        // on an enabled thinking mode.
-        : { type: 'enabled' as const, budget_tokens: settings.reasoning_budget };
+        // A budget of zero is this axis's off switch. Messages states any other
+        // token budget on an enabled thinking mode.
+        : settings.reasoning_budget === 0
+          ? { type: 'disabled' as const }
+          : { type: 'enabled' as const, budget_tokens: settings.reasoning_budget };
   const effort = settings.reasoning_effort === undefined || settings.reasoning_effort === 'none' ? undefined : settings.reasoning_effort;
   const outputConfig = effort === undefined && formatConfig === undefined
     ? undefined
