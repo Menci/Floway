@@ -24,7 +24,7 @@ import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, t
 import type { ExecuteResult } from '@floway-dev/provider';
 import { internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
 import { TranslatorInputError } from '@floway-dev/translate';
-import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/translate/openai-responses';
+import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/translate';
 
 interface WorkerWebSocket extends WebSocket {
   accept(): void;

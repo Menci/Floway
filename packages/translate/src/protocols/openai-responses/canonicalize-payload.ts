@@ -1,4 +1,4 @@
-import { TranslatorInputError } from '../../translator-input-error.ts';
+import { TranslatorInputError } from '../../types.ts';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesEasyInputMessageEx, CanonicalOpenAIResponsesInputItem, OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 
 // Wire `OpenAIResponsesRequestPayload.input` accepts a bare string and EasyInputMessage

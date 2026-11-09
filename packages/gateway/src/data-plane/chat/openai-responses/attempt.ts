@@ -21,7 +21,7 @@ import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type ModelCandidate, eventResult, readUpstreamApiError, providerModelOf, type ChatTargetApi, type ExecuteResult, type ProviderOpenAIResponsesResult, type OpenAIResponsesAction } from '@floway-dev/provider';
-import { routeOpenAIResponses } from '@floway-dev/translate/openai-responses';
+import { routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
 // `/v1/responses` generate prefers the native OpenAI Responses target, then the
 // translated Anthropic Messages path, then the translated OpenAI Chat Completions path. The
@@ -170,7 +170,7 @@ const dispatchOpenAIResponses = async (
     }
     return await traverseTranslation(
       invocation.payload,
-      p => routeOpenAIResponses(p).viaAnthropicMessages({
+      p => routeOpenAIResponsesViaAnthropicMessages(p, {
         sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       }),
@@ -185,7 +185,7 @@ const dispatchOpenAIResponses = async (
     }
     return await traverseTranslation(
       invocation.payload,
-      p => routeOpenAIResponses(p).viaOpenAIChatCompletions({ sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
+      p => routeOpenAIResponsesViaOpenAIChatCompletions(p, { sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
       translated => openaiChatCompletionsAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
       }),

@@ -5,7 +5,7 @@ import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { reassembleOpenAIResponsesEvents } from '@floway-dev/protocols/openai-responses';
-import { routeOpenAIResponses } from '@floway-dev/translate/openai-responses';
+import { routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
 const chunk = (delta: OpenAIChatCompletionsAssistantDeltaEx, finish_reason: 'stop' | null = null) => eventFrame<OpenAIChatCompletionsStreamEvent>({
   id: 'native', model: 'target', object: 'chat.completion.chunk', created: 1, choices: [{ index: 0, delta, finish_reason }],
@@ -13,7 +13,7 @@ const chunk = (delta: OpenAIChatCompletionsAssistantDeltaEx, finish_reason: 'sto
 
 test('round-trips native Chat reasoning fragments through Responses without corrupting detail identity', async () => {
   const context = { sidecarCodec: createTestSidecarCodec() };
-  const trip = await routeOpenAIResponses({ model: 'source', input: [{ role: 'user', content: 'question' }] }).viaOpenAIChatCompletions(context);
+  const trip = await routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'source', input: [{ role: 'user', content: 'question' }] }, context);
   const upstream = async function* () {
     yield chunk({ role: 'assistant', reasoning_details: [{ type: 'reasoning.summary', summary: ' reading', id: 'summary', index: 0, format: 'openai-responses-v1' }] });
     yield chunk({ reasoning_details: [{ type: 'reasoning.summary', summary: ' it.', id: 'summary', index: 0, format: 'openai-responses-v1' }] });
@@ -25,7 +25,7 @@ test('round-trips native Chat reasoning fragments through Responses without corr
     for await (const frame of trip.events(upstream())) if (frame.type === 'event') yield frame.event;
   };
   const result = await reassembleOpenAIResponsesEvents(responseEvents());
-  const restored = await routeOpenAIResponses({ model: 'source', input: toOpenAIResponsesInputAssistantTurn(result.output) }).viaOpenAIChatCompletions(context);
+  const restored = await routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'source', input: toOpenAIResponsesInputAssistantTurn(result.output) }, context);
   expect(restored.target.messages).toEqual([{
     role: 'assistant', content: 'answer', refusal: null, provider_specific_fields: { trace: 'native' },
     reasoning_details: [

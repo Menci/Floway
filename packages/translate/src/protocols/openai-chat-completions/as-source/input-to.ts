@@ -21,7 +21,7 @@ import type {
   IRInputClientItem,
 
 } from '../../../ir/input/types.ts';
-import { TranslatorInputError } from '../../../translator-input-error.ts';
+import { TranslatorInputError } from '../../../types.ts';
 import type {
   OpenAIChatCompletionsNamedToolChoice,
   OpenAIChatCompletionsPayload,

@@ -13,7 +13,7 @@ import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { type ModelCandidate, plainResult, toInternalDebugError, type ExecuteResult, type GeminiGenerateContentInvocation, type PlainResult } from '@floway-dev/provider';
-import { routeGeminiGenerateContent } from '@floway-dev/translate/gemini-generate-content';
+import { routeGeminiGenerateContentViaAnthropicMessages, routeGeminiGenerateContentViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIResponses } from '@floway-dev/translate';
 
 // Gemini generateContent has no native upstream target in the provider API; prefer OpenAI Chat Completions
 // Completions, then Anthropic Messages, then OpenAI Responses for generate. countTokens has
@@ -57,7 +57,7 @@ export const geminiGenerateContentAttempt = {
       if (targetApi === 'anthropicMessages') {
         return await traverseTranslation(
           request,
-          p => routeGeminiGenerateContent(p).viaAnthropicMessages(transCtx),
+          p => routeGeminiGenerateContentViaAnthropicMessages(p, transCtx),
           translated => anthropicMessagesAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
           }),
@@ -67,7 +67,7 @@ export const geminiGenerateContentAttempt = {
       if (targetApi === 'openaiResponses') {
         return await traverseTranslation(
           request,
-          p => routeGeminiGenerateContent(p).viaOpenAIResponses(transCtx),
+          p => routeGeminiGenerateContentViaOpenAIResponses(p, transCtx),
           translated => openaiResponsesAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers,
           }),
@@ -77,7 +77,7 @@ export const geminiGenerateContentAttempt = {
       if (targetApi === 'openaiChatCompletions') {
         return await traverseTranslation(
           request,
-          p => routeGeminiGenerateContent(p).viaOpenAIChatCompletions(transCtx),
+          p => routeGeminiGenerateContentViaOpenAIChatCompletions(p, transCtx),
           translated => openaiChatCompletionsAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers,
           }),
@@ -113,7 +113,7 @@ export const geminiGenerateContentAttempt = {
       delete cleaned.safetySettings;
       // The model travels in the URL rather than the body, so the request this
       // trip reads is the cleaned payload with the resolved model folded in.
-      const trip = await routeGeminiGenerateContent({ ...cleaned, model: candidate.model.id }).viaAnthropicMessages(transCtx);
+      const trip = await routeGeminiGenerateContentViaAnthropicMessages({ ...cleaned, model: candidate.model.id }, transCtx);
       const { stream: _stream, ...target } = trip.target;
       const anthropicMessagesResult = await anthropicMessagesAttempt.countTokens({
         payload: target, ctx, candidate, headers: invocation.headers, anthropicBeta: [],

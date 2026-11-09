@@ -1,4 +1,4 @@
-import { TranslatorInputError } from '../../../translator-input-error.ts';
+import { TranslatorInputError } from '../../../types.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 // Chat Completions and Anthropic Messages state a permitted subset by narrowing

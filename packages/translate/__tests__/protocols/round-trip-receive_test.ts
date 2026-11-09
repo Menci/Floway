@@ -16,10 +16,7 @@ import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-m
 import type { GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
-import { routeAnthropicMessages } from '@floway-dev/translate/anthropic-messages';
-import { routeGeminiGenerateContent } from '@floway-dev/translate/gemini-generate-content';
-import { routeOpenAIChatCompletions } from '@floway-dev/translate/openai-chat-completions';
-import { routeOpenAIResponses } from '@floway-dev/translate/openai-responses';
+import { routeAnthropicMessagesViaOpenAIChatCompletions, routeAnthropicMessagesViaOpenAIResponses, routeGeminiGenerateContentViaAnthropicMessages, routeGeminiGenerateContentViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIResponses, routeOpenAIChatCompletionsViaAnthropicMessages, routeOpenAIChatCompletionsViaOpenAIResponses, routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
 const context = { sidecarCodec: createTestSidecarCodec('test-codec-scope'), fallbackMaxOutputTokens: undefined };
 const chat = (carrier: string, text = 'answer'): OpenAIChatCompletionsPayloadEx => {
@@ -46,15 +43,15 @@ const nativeTurn = (target: NativeProtocol, text = 'restored'): AssistantTurnFor
     : [{ type: 'message', role: 'assistant', content: text }];
 
 const cases = [
-  { source: 'openaiChatCompletions', target: 'anthropicMessages', run: (carrier: string) => routeOpenAIChatCompletions(chat(carrier)).viaAnthropicMessages(context) },
-  { source: 'openaiChatCompletions', target: 'openaiResponses', run: (carrier: string) => routeOpenAIChatCompletions(chat(carrier)).viaOpenAIResponses(context) },
-  { source: 'anthropicMessages', target: 'openaiChatCompletions', run: (carrier: string) => routeAnthropicMessages(messages(carrier)).viaOpenAIChatCompletions(context) },
-  { source: 'anthropicMessages', target: 'openaiResponses', run: (carrier: string) => routeAnthropicMessages(messages(carrier)).viaOpenAIResponses(context) },
-  { source: 'openaiResponses', target: 'anthropicMessages', run: (carrier: string) => routeOpenAIResponses(responses(carrier)).viaAnthropicMessages(context) },
-  { source: 'openaiResponses', target: 'openaiChatCompletions', run: (carrier: string) => routeOpenAIResponses(responses(carrier)).viaOpenAIChatCompletions(context) },
-  { source: 'geminiGenerateContent', target: 'anthropicMessages', run: (carrier: string) => routeGeminiGenerateContent(gemini(carrier)).viaAnthropicMessages(context) },
-  { source: 'geminiGenerateContent', target: 'openaiChatCompletions', run: (carrier: string) => routeGeminiGenerateContent(gemini(carrier)).viaOpenAIChatCompletions(context) },
-  { source: 'geminiGenerateContent', target: 'openaiResponses', run: (carrier: string) => routeGeminiGenerateContent(gemini(carrier)).viaOpenAIResponses(context) },
+  { source: 'openaiChatCompletions', target: 'anthropicMessages', run: (carrier: string) => routeOpenAIChatCompletionsViaAnthropicMessages(chat(carrier), context) },
+  { source: 'openaiChatCompletions', target: 'openaiResponses', run: (carrier: string) => routeOpenAIChatCompletionsViaOpenAIResponses(chat(carrier), context) },
+  { source: 'anthropicMessages', target: 'openaiChatCompletions', run: (carrier: string) => routeAnthropicMessagesViaOpenAIChatCompletions(messages(carrier), context) },
+  { source: 'anthropicMessages', target: 'openaiResponses', run: (carrier: string) => routeAnthropicMessagesViaOpenAIResponses(messages(carrier), context) },
+  { source: 'openaiResponses', target: 'anthropicMessages', run: (carrier: string) => routeOpenAIResponsesViaAnthropicMessages(responses(carrier), context) },
+  { source: 'openaiResponses', target: 'openaiChatCompletions', run: (carrier: string) => routeOpenAIResponsesViaOpenAIChatCompletions(responses(carrier), context) },
+  { source: 'geminiGenerateContent', target: 'anthropicMessages', run: (carrier: string) => routeGeminiGenerateContentViaAnthropicMessages(gemini(carrier), context) },
+  { source: 'geminiGenerateContent', target: 'openaiChatCompletions', run: (carrier: string) => routeGeminiGenerateContentViaOpenAIChatCompletions(gemini(carrier), context) },
+  { source: 'geminiGenerateContent', target: 'openaiResponses', run: (carrier: string) => routeGeminiGenerateContentViaOpenAIResponses(gemini(carrier), context) },
 ] as const;
 
 test.each(cases)('receives recognized $source history via $target', async ({ source, target, run }) => {
@@ -91,7 +88,7 @@ test('hydrates a native JSON field from a replayed GenerateContent argument cand
     referencedContentHashes: [await hashRoundTripContent(JSON.stringify(args))],
     sourceTurnDigest: await hashRoundTripContent(JSON.stringify(checkMaterial)),
   });
-  const trip = await routeGeminiGenerateContent({ model: 'model', contents: [{ role: 'model', parts: [{ functionCall: { name: 'lookup', args }, thoughtSignature: carrier }] }] }).viaAnthropicMessages(context);
+  const trip = await routeGeminiGenerateContentViaAnthropicMessages({ model: 'model', contents: [{ role: 'model', parts: [{ functionCall: { name: 'lookup', args }, thoughtSignature: carrier }] }] }, context);
   expect(trip.target.messages).toEqual([{ role: 'assistant', content: [{ type: 'tool_use', id: 'native-call', name: 'native-tool', input: args }] }]);
 });
 
@@ -119,7 +116,7 @@ test.each(['different codec scope', 'changed sidecar handle', 'changed replay'] 
   const encoded = await encodeRoundTripSidecar(codec, { v: 1, source: 'openaiChatCompletions', target: 'anthropicMessages', targetTurn: native, sourceTurnDigest: await turnDigest('openaiChatCompletions') });
   const carrier = failure === 'changed sidecar handle' ? `${encoded.startsWith('A') ? 'B' : 'A'}${encoded.slice(1)}` : encoded;
   const text = failure === 'changed replay' ? 'edited' : 'answer';
-  const trip = await routeOpenAIChatCompletions(chat(carrier, text)).viaAnthropicMessages(context);
+  const trip = await routeOpenAIChatCompletionsViaAnthropicMessages(chat(carrier, text), context);
   expect(trip.target.messages).toEqual([{ role: 'assistant', content: [{ type: 'text', text, cache_control: { type: 'ephemeral' } }] }]);
 });
 
@@ -128,11 +125,11 @@ test.each([{ input: 'text' }, { input: null }, { input: [1] }])('preserves ordin
     model: 'source', max_tokens: 16,
     messages: [{ role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'echo', input }] }],
   };
-  const chatTrip = await routeAnthropicMessages(payload).viaOpenAIChatCompletions(context);
+  const chatTrip = await routeAnthropicMessagesViaOpenAIChatCompletions(payload, context);
   expect(chatTrip.target.messages).toMatchObject([
     { role: 'assistant', tool_calls: [{ id: 'call', function: { name: 'echo', arguments: JSON.stringify(input) } }] },
   ]);
-  const responsesTrip = await routeAnthropicMessages(payload).viaOpenAIResponses(context);
+  const responsesTrip = await routeAnthropicMessagesViaOpenAIResponses(payload, context);
   expect(responsesTrip.target.input).toMatchObject([
     { type: 'function_call', call_id: 'call', name: 'echo', arguments: JSON.stringify(input) },
   ]);
@@ -140,15 +137,15 @@ test.each([{ input: 'text' }, { input: null }, { input: [1] }])('preserves ordin
 
 test('preserves ordinary GenerateContent null-argument handling', async () => {
   const payload: GeminiGenerateContentRequest = { ...JSON.parse('{"contents":[{"role":"model","parts":[{"functionCall":{"name":"lookup","args":null}}]}]}'), model: 'model' };
-  const chatTrip = await routeGeminiGenerateContent(payload).viaOpenAIChatCompletions(context);
+  const chatTrip = await routeGeminiGenerateContentViaOpenAIChatCompletions(payload, context);
   expect(chatTrip.target.messages).toMatchObject([
     { role: 'assistant', tool_calls: [{ function: { name: 'lookup', arguments: 'null' } }] },
   ]);
-  const responsesTrip = await routeGeminiGenerateContent(payload).viaOpenAIResponses(context);
+  const responsesTrip = await routeGeminiGenerateContentViaOpenAIResponses(payload, context);
   expect(responsesTrip.target.input).toMatchObject([
     { type: 'function_call', name: 'lookup', arguments: 'null' },
   ]);
-  const messagesTrip = await routeGeminiGenerateContent(payload).viaAnthropicMessages(context);
+  const messagesTrip = await routeGeminiGenerateContentViaAnthropicMessages(payload, context);
   expect(messagesTrip.target.messages).toMatchObject([
     { role: 'assistant', content: [{ type: 'tool_use', name: 'lookup', input: null }] },
   ]);
@@ -163,7 +160,7 @@ test('exposes a recognized malformed assistant envelope as an internal error', a
     targetTurn: { role: 'user', content: [] },
     sourceTurnDigest: await turnDigest('openaiChatCompletions'),
   });
-  await expect(routeOpenAIChatCompletions(chat(carrier)).viaAnthropicMessages(context)).rejects.toThrow('Messages assistant turn is invalid');
+  await expect(routeOpenAIChatCompletionsViaAnthropicMessages(chat(carrier), context)).rejects.toThrow('Messages assistant turn is invalid');
 });
 
 test('accepts incomplete Responses call history and requires its replayed status to match', async () => {
@@ -179,9 +176,9 @@ test('accepts incomplete Responses call history and requires its replayed status
     sourceTurnDigest: await hashRoundTripContent(JSON.stringify(expected)),
   });
   const reasoning = { type: 'reasoning' as const, id: 'carrier', summary: [], encrypted_content: carrier };
-  const replayed = await routeOpenAIResponses({ model: 'source', input: [call, reasoning] }).viaAnthropicMessages(context);
+  const replayed = await routeOpenAIResponsesViaAnthropicMessages({ model: 'source', input: [call, reasoning] }, context);
   expect(replayed.target.messages).toEqual([native]);
-  const changed = await routeOpenAIResponses({ model: 'source', input: [{ ...call, status: 'completed' }, reasoning] }).viaAnthropicMessages(context);
+  const changed = await routeOpenAIResponsesViaAnthropicMessages({ model: 'source', input: [{ ...call, status: 'completed' }, reasoning] }, context);
   expect(changed.target.messages).not.toEqual([native]);
   expect(changed.target.messages).toEqual(expect.arrayContaining([
     expect.objectContaining({ content: expect.arrayContaining([expect.objectContaining({ type: 'tool_use', id: 'call', name: 'lookup', input: { x: 1 } })]) }),

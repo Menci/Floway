@@ -22,7 +22,7 @@ import type {
   IRInputUserContentPart,
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
-import { TranslatorInputError } from '../../../translator-input-error.ts';
+import { TranslatorInputError } from '../../../types.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentPayload, GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 
 const inlineMedia = (part: GeminiGenerateContentPart): IRInputMedia | null => {

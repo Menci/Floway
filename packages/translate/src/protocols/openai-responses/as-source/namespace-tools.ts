@@ -1,4 +1,4 @@
-import { TranslatorInputError } from '../../../translator-input-error.ts';
+import { TranslatorInputError } from '../../../types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx, type OpenAIResponsesTool, type OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 

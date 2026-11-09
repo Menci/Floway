@@ -4,7 +4,7 @@ import { irInputToolsForChoice } from '../../../../src/ir/input/select-tools.ts'
 import type { IRInputRequest } from '../../../../src/ir/input/types.ts';
 import { buildTargetRequestFor } from '../../../../src/protocols/composition.ts';
 import { openaiResponsesOpen } from '../../../../src/protocols/openai-responses/as-source/input-to.ts';
-import { TranslatorInputError } from '../../../../src/translator-input-error.ts';
+import { TranslatorInputError } from '../../../../src/types.ts';
 import type { SidecarCodec } from '../../../../src/types.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import { pairs } from '../../composition-helpers.ts';

@@ -16,7 +16,7 @@ import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ModelCandidate, ExecuteResult, AnthropicMessagesUpstreamCallOptions, PlainResult } from '@floway-dev/provider';
 import { providerModelOf } from '@floway-dev/provider';
-import { routeAnthropicMessages } from '@floway-dev/translate/anthropic-messages';
+import { routeAnthropicMessagesViaOpenAIChatCompletions, routeAnthropicMessagesViaOpenAIResponses } from '@floway-dev/translate';
 
 // `/v1/messages` generate prefers a native Anthropic Messages target, then the
 // translated OpenAI Responses path, then the translated OpenAI Chat Completions path.
@@ -73,7 +73,7 @@ export const anthropicMessagesAttempt = {
       if (targetApi === 'openaiResponses') {
         return await traverseTranslation(
           invocation.payload,
-          p => routeAnthropicMessages(p).viaOpenAIResponses({ sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
+          p => routeAnthropicMessagesViaOpenAIResponses(p, { sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
           translated => openaiResponsesAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers,
           }),
@@ -83,7 +83,7 @@ export const anthropicMessagesAttempt = {
       if (targetApi === 'openaiChatCompletions') {
         return await traverseTranslation(
           invocation.payload,
-          p => routeAnthropicMessages(p).viaOpenAIChatCompletions({ sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
+          p => routeAnthropicMessagesViaOpenAIChatCompletions(p, { sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
           translated => openaiChatCompletionsAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers,
           }),

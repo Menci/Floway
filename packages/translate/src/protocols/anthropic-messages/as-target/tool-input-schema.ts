@@ -1,4 +1,4 @@
-import { TranslatorInputError } from '../../../translator-input-error.ts';
+import { TranslatorInputError } from '../../../types.ts';
 import type { AnthropicMessagesClientTool } from '@floway-dev/protocols/anthropic-messages';
 
 export const anthropicMessagesToolInputSchema = (schema: Record<string, unknown>): AnthropicMessagesClientTool['input_schema'] => {

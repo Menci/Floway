@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { TranslatorInputError } from '../../../src/translator-input-error.ts';
+import { TranslatorInputError } from '../../../src/types.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import { buildTargetRequestFor, pairs } from '../composition-helpers.ts';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';

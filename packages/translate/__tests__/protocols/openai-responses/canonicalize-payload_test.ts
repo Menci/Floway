@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 
-import { TranslatorInputError } from '../../../src/translator-input-error.ts';
+import { TranslatorInputError } from '../../../src/types.ts';
 import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
-import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/translate/openai-responses';
+import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/translate';
 
 test('canonicalizes string and implicit-message wire inputs', () => {
   assertEquals(canonicalizeOpenAIResponsesPayload({ model: 'gpt-test', input: 'hello' }), {
