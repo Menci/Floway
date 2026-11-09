@@ -34,33 +34,43 @@ export const assignCallIds = <Restored>(
   // call at all when the source stated no name either.
   const takePending = (name: string | undefined): PendingCall => {
     const index = name === undefined ? 0 : pending.findIndex(call => call.name === name);
-    const [matched] = pending.splice(index >= 0 ? index : 0, 1);
+    if (index < 0) throw new Error(`A tool result names '${name}', which no awaiting call states.`);
+    const [matched] = pending.splice(index, 1);
     if (matched === undefined) throw new Error(`A tool result answers no call (name: ${name ?? 'unstated'}).`);
     return matched;
   };
 
-  return pieces.map(piece => {
+  return pieces.map((piece): IRInputAddressedTurn | IRInputResolvedTurn<Restored> => {
     if (piece.kind === 'resolved') {
       pending.push(...restoredCalls(piece.turn));
       return piece;
     }
-    const items = piece.items.map((item): IRInputAddressedTurn['items'][number] => {
-      if (item.type === 'function_call' || item.type === 'custom_tool_call') {
-        const callId = item.call_id ?? allocate(item.name);
-        pending.push({ name: item.name, callId });
-        return { ...item, call_id: callId };
+    if (piece.kind === 'client') {
+      const items: IRInputAddressedClientItem[] = [];
+      for (const item of piece.items) {
+        if (item.type !== 'tool_result') {
+          items.push(item);
+          continue;
+        }
+        // A stated answer releases its call so a later id-less result cannot
+        // take it.
+        const stated = item.call_id;
+        if (stated !== undefined) {
+          const index = pending.findIndex(call => call.callId === stated);
+          if (index >= 0) pending.splice(index, 1);
+          items.push({ ...item, call_id: stated });
+          continue;
+        }
+        items.push({ ...item, call_id: takePending(item.name).callId });
       }
-      if (item.type !== 'tool_result') return item;
-      // A stated answer releases its call so a later id-less result cannot
-      // take it.
-      const stated = item.call_id;
-      if (stated !== undefined) {
-        const index = pending.findIndex(call => call.callId === stated);
-        if (index >= 0) pending.splice(index, 1);
-        return { ...item, call_id: stated };
-      }
-      return { ...item, call_id: takePending(item.name).callId };
+      return { kind: 'client', items };
+    }
+    const items: IRInputAddressedAssistantItem[] = piece.items.map(item => {
+      if (item.type !== 'function_call' && item.type !== 'custom_tool_call') return item;
+      const callId = item.call_id ?? allocate(item.name);
+      pending.push({ name: item.name, callId });
+      return { ...item, call_id: callId };
     });
-    return piece.kind === 'client' ? { kind: 'client', items: items as readonly IRInputAddressedClientItem[] } : { kind: 'assistant', items: items as readonly IRInputAddressedAssistantItem[] };
+    return { kind: 'assistant', items };
   });
 };
