@@ -61,9 +61,6 @@ const reasoningTextMaterial = (turn: OpenAIChatCompletionsAssistantTurn): IRJSON
   return materials;
 };
 
-export const hasOpenAIChatCompletionsReasoning = (turn: OpenAIChatCompletionsAssistantTurn): boolean =>
-  reasoningFields.some(field => turn[field] != null) || reasoningDetails(turn).length > 0;
-
 const chatTurnDigestMaterialV1 = (turn: OpenAIChatCompletionsAssistantTurn): IRJSONObject => ({
   ...(Object.hasOwn(turn, 'content') && turn.content !== undefined ? { content: messageContentMaterial(turn) } : {}),
   ...(Object.hasOwn(turn, 'refusal') && turn.refusal !== undefined ? { refusal: turn.refusal } : {}),

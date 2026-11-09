@@ -1,12 +1,16 @@
 import { test } from 'vitest';
 
-import { irInputCustomToolNames } from '../../../src/ir/input/select-tools.ts';
+import { irInputToolsForChoice } from '../../../src/ir/input/select-tools.ts';
+import type { IRInputRequest } from '../../../src/ir/input/types.ts';
 import { openaiResponsesOpen } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import { buildTargetRequestFor, pairs } from '../composition-helpers.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesClientTool, type AnthropicMessagesToolResultBlock, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIResponsesInputMultiAgentCallOutputItem, OpenAIResponsesTool, OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
+const customToolNamesOf = (request: IRInputRequest): ReadonlySet<string> =>
+  new Set((irInputToolsForChoice(request.tools, request.tool_choice) ?? [])
+    .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
 
 const stubRemoteImageLoader = (result: { mediaType: string | null; data: Uint8Array } | null) => () => Promise.resolve(result);
 
@@ -39,7 +43,7 @@ const buildWithTestSidecar = async (
 ) => {
   const layout = openaiResponsesOpen(payload);
   const built = await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { sidecarCodec: createTestSidecarCodec(), ...testBuildOptions, ...options }, layout);
-  return { target: built, customToolNames: irInputCustomToolNames(layout.request), namespaceToolNames: layout.extra.namespaceToolNames };
+  return { target: built, customToolNames: customToolNamesOf(layout.request), namespaceToolNames: layout.extra.namespaceToolNames };
 };
 
 test('buildTargetRequest preserves unsafe JSON number tokens in function history', async () => {

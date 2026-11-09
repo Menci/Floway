@@ -1,8 +1,20 @@
 import type { IRInputResolvedTurn } from '../../ir/input/segments.ts';
-import { irInputCustomToolNames } from '../../ir/input/select-tools.ts';
+import { irInputToolsForChoice } from '../../ir/input/select-tools.ts';
 import type { IRInputRequest, IRInputTurn } from '../../ir/input/types.ts';
 import type { AssistantTurnFor } from '../../round-trip/assistant-turn.ts';
 import type { TranslateContext } from '../../types.ts';
+
+/**
+ * The names this target wrote as functions because it cannot state a freeform
+ * declaration directly.
+ *
+ * Reading the stream back has to recognise those calls as freeform, and the
+ * request is the only place that says which declarations were freeform.
+ */
+const wrappedFreeformNames = (request: IRInputRequest): ReadonlySet<string> =>
+  new Set((irInputToolsForChoice(request.tools, request.tool_choice) ?? [])
+    .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
+
 import type { TargetProtocol } from '../composition.ts';
 import { anthropicMessagesPayloadFromSegments } from './as-target/segmented-request.ts';
 import { irFromAnthropicMessages } from './as-target/sse-from.ts';
@@ -31,5 +43,5 @@ export const anthropicMessagesTargetProtocol: TargetProtocol<
     }),
   // A source may declare freeform tools the target could not state natively;
   // reading this stream has to recognise the calls it wrapped them into.
-  readStream: (frames, reader, _request, customToolNames) => irFromAnthropicMessages(frames, { customToolNames, roundTrip: reader }),
+  readStream: (frames, reader, request) => irFromAnthropicMessages(frames, { customToolNames: wrappedFreeformNames(request), roundTrip: reader }),
 };

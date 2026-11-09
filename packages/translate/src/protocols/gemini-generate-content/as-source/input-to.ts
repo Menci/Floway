@@ -165,9 +165,6 @@ const turnToIRTurns = (
     }];
 
 /** Whether a turn carries a vendor-signed thought signature the input IR cannot hold. */
-export const geminiGenerateContentDropsReasoning = (turn: GeminiGenerateContentAssistantTurn): boolean =>
-  turn.some(content => content.parts?.some(part => part.thoughtSignature !== undefined) ?? false);
-
 /** A GenerateContent system instruction is the conversation's leading prompt. */
 const geminiGenerateContentSystemToIR = (content: GeminiGenerateContentContent | undefined): IRInputTurn | undefined => {
   const parts = systemParts(content);

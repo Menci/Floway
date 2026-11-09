@@ -44,15 +44,3 @@ export const irInputToolChoiceForTools = (
   if (typeof choice === 'object' && choice.type === 'allowed_tools' && choice.mode === 'auto') return 'none';
   return undefined;
 };
-
-/**
- * The names a request declares as freeform tools.
- *
- * A target that cannot state a freeform declaration has to write one as a
- * function whose single argument is the raw input, and the returned call then
- * has to be recognised as freeform again. The names are what carries that
- * recognition, so they name only the declarations the selector left visible.
- */
-export const irInputCustomToolNames = (request: Pick<IRInputRequest, 'tools' | 'tool_choice'>): ReadonlySet<string> =>
-  new Set((irInputToolsForChoice(request.tools, request.tool_choice) ?? [])
-    .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));

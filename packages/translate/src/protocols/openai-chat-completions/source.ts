@@ -1,5 +1,5 @@
 import { openaiChatCompletionsErrorWriter } from './as-source/error-body.ts';
-import { openaiChatCompletionsDropsReasoning, openaiChatCompletionsOpen } from './as-source/input-to.ts';
+import { openaiChatCompletionsOpen } from './as-source/input-to.ts';
 import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from './as-source/round-trip.ts';
 import { openaiChatCompletionsFromIR } from './as-source/sse-to.ts';
 import type { SourceProtocol } from '../composition.ts';
@@ -35,7 +35,6 @@ export const openaiChatCompletionsSourceProtocol: SourceProtocol<
     };
     return { ...layout, extra };
   },
-  dropsReasoning: openaiChatCompletionsDropsReasoning,
   roundTrip: {
     inspect: findOpenAIChatCompletionsSidecarCarriers,
     verify: verifyOpenAIChatCompletionsTurnDigest,

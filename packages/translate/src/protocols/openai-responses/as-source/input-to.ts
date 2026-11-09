@@ -181,9 +181,6 @@ const userItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInput
 });
 
 /** Whether a turn carries an encrypted reasoning carrier the input IR cannot hold. */
-export const openaiResponsesDropsReasoning = (turn: OpenAIResponsesAssistantTurn): boolean =>
-  turn.some(item => item.type === 'reasoning' && isOpenAIResponsesEncryptedReasoning(item));
-
 /** The top-level `instructions` field as its own leading system item. */
 const openaiResponsesInstructionsToIR = (instructions: string | null | undefined): IRInputTurn | undefined => instructions
   ? { kind: 'client', items: [{ type: 'prompt', role: 'system', content: [{ type: 'text', text: instructions }] }] }

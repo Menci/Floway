@@ -1,5 +1,5 @@
 import { anthropicMessagesErrorWriter } from './as-source/error-body.ts';
-import { anthropicMessagesDropsReasoning, anthropicMessagesOpen } from './as-source/input-to.ts';
+import { anthropicMessagesOpen } from './as-source/input-to.ts';
 import { anthropicMessagesFromIR } from './as-source/sse-to.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from './as-source/round-trip.ts';
 import type { SourceProtocol } from '../composition.ts';
@@ -17,7 +17,6 @@ export const anthropicMessagesSourceProtocol: SourceProtocol<
 > = {
   name: 'anthropicMessages',
   open: anthropicMessagesOpen,
-  dropsReasoning: anthropicMessagesDropsReasoning,
   roundTrip: {
     inspect: findAnthropicMessagesSidecarCarriers,
     verify: verifyAnthropicMessagesTurnDigest,

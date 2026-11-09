@@ -1,5 +1,5 @@
 import { geminiGenerateContentErrorWriter } from './as-source/error-body.ts';
-import { geminiGenerateContentDropsReasoning, geminiGenerateContentOpen } from './as-source/input-to.ts';
+import { geminiGenerateContentOpen } from './as-source/input-to.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from './as-source/round-trip.ts';
 import { geminiGenerateContentFromIR } from './as-source/sse-to.ts';
 import type { SourceProtocol } from '../composition.ts';
@@ -16,7 +16,6 @@ export const geminiGenerateContentSourceProtocol: SourceProtocol<
 > = {
   name: 'geminiGenerateContent',
   open: geminiGenerateContentOpen,
-  dropsReasoning: geminiGenerateContentDropsReasoning,
   roundTrip: {
     inspect: findGeminiGenerateContentSidecarCarriers,
     verify: verifyGeminiGenerateContentTurnDigest,

@@ -1,14 +1,13 @@
 import type { IRInputResolvedTurn } from '../ir/input/segments.ts';
 import type { IRInputLayout, IRInputSlot } from '../ir/input/layout.ts';
 import type { IRInputRequest, IRInputTurn } from '../ir/input/types.ts';
-import { irInputCustomToolNames } from '../ir/input/select-tools.ts';
 import { readIRInput } from '../ir/input/read.ts';
 import type { IRRecord } from '../ir/output/stream.ts';
 import type { AssistantTurnByProtocol, AssistantTurnFor } from '../round-trip/assistant-turn.ts';
 import type { SourceAssistantTurnFor } from '../round-trip/source-assistant-turn.ts';
 import type { ReplayContent } from '../round-trip/reference/assistant-turn.ts';
 import type { EncodedRoundTripSidecar, PendingCall } from '../round-trip/resolve.ts';
-import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../round-trip/resolve.ts';
+import { roundTripAssistantTurn } from '../round-trip/resolve.ts';
 import type { RoundTripReader, RoundTripWriter } from '../round-trip/stream.ts';
 import { createRoundTripStream } from '../round-trip/stream.ts';
 import type { RoundTripTurnDigest } from '../round-trip/turn-digest.ts';
@@ -36,13 +35,6 @@ export interface SourceProtocol<Name extends AssistantTurnKey, Payload, Event, E
   /** Opens the request into the turns it states, each turn's side already decided. */
   readonly open: (payload: Payload) => IRInputLayout<SourceAssistantTurnFor<Name>, Extra>;
   readonly roundTrip: SourceRoundTrip<Name>;
-  /**
-   * Whether this turn carries reasoning that only a sidecar could restore.
-   *
-   * A turn whose sidecar is missing has lost it: the reader states no reasoning
-   * item, because which alias a vendor used is not something a target can read.
-   */
-  readonly dropsReasoning: (turn: SourceAssistantTurnFor<Name>) => boolean;
   readonly writeError: SourceProtocolErrorWriter;
   /**
    * States the returned stream to this protocol's client.
@@ -91,15 +83,6 @@ export interface TargetProtocol<Name extends AssistantTurnKey, Payload, Event> {
     frames: AsyncIterable<ProtocolFrame<Event>>,
     reader: RoundTripReader<Name>,
     request: IRInputRequest,
-    /**
-     * The names the source declared as freeform.
-     *
-     * A target that cannot state a freeform declaration writes one as a plain
-     * function, so reading its stream has to know which functions were really
-     * freeform. That is a fact about the source request, handed across because
-     * the reader is the one that sees the calls come back.
-     */
-    customToolNames: ReadonlySet<string>,
   ) => AsyncIterable<IRRecord>;
 }
 
@@ -122,7 +105,7 @@ export const composeTranslation = <
     errorBody: source.writeError,
     events: frames => {
       const stream = createRoundTripStream(source.name, target.name, ctx.sidecarCodec);
-      return source.writeStream(layout, target.readStream(frames, stream.reader, layout.request, irInputCustomToolNames(layout.request)), stream.writer);
+      return source.writeStream(layout, target.readStream(frames, stream.reader, layout.request), stream.writer);
     },
   };
 };
@@ -150,12 +133,7 @@ const settleTurns = async <
       source.roundTrip.inspect, source.roundTrip.verify, source.roundTrip.collectCandidates,
       target.pendingCallIds,
     );
-    if (roundTrip === undefined) {
-      if (source.dropsReasoning(slot.assistantTurn)) {
-        warnDroppedUnrecognizedAssistantReasoning(source.name, target.name);
-      }
-      return undefined;
-    }
+    if (roundTrip === undefined) return undefined;
     layout.observePendingCalls?.(roundTrip.pendingCallIds(roundTrip.turn));
     return { resolved: roundTrip.turn };
   });
@@ -198,5 +176,5 @@ export const translateSourceEventsFor = <
 ): AsyncIterable<ProtocolFrame<SrcEvent>> => {
   const layout = source.open(payload);
   const stream = createRoundTripStream(source.name, target.name, ctx.sidecarCodec);
-  return source.writeStream(layout, target.readStream(frames, stream.reader, layout.request, irInputCustomToolNames(layout.request)), stream.writer);
+  return source.writeStream(layout, target.readStream(frames, stream.reader, layout.request), stream.writer);
 };

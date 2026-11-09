@@ -1,7 +1,6 @@
 import { klona } from 'klona/json';
 
 import { partitionOpenAIChatCompletionsTurns, type OpenAIChatCompletionsConversationMessage, type OpenAIChatCompletionsConversationTurn } from './conversation-turns.ts';
-import { hasOpenAIChatCompletionsReasoning } from './round-trip.ts';
 import type { IRInputLayout } from '../../../ir/input/layout.ts';
 import type { OpenAIChatCompletionsAssistantTurn } from './round-trip.ts';
 import type {
@@ -144,14 +143,6 @@ const assistantItems = (turn: Extract<OpenAIChatCompletionsConversationTurn, { r
   }
   return items;
 };
-
-/**
- * Chat Completions assistant history may carry reasoning under provider
- * extension aliases with no wire contract. A reader cannot tell which alias a
- * provider meant, so it emits no reasoning item; the route reports the loss.
- */
-export const openaiChatCompletionsDropsReasoning = (turn: OpenAIChatCompletionsAssistantTurn): boolean =>
-  hasOpenAIChatCompletionsReasoning(turn);
 
 /**
  * Call kinds keyed by call ID. A Chat `tool` message does not state which kind

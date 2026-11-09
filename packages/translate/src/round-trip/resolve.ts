@@ -10,6 +10,7 @@ export interface EncodedRoundTripSidecar<Turn> {
   readonly withoutSidecar: () => Turn;
 }
 
+
 /**
  * A turn a sidecar restored, and the calls it leaves waiting for answers.
  *
@@ -20,8 +21,8 @@ export interface EncodedRoundTripSidecar<Turn> {
  * exists.
  */
 export interface RoundTripAssistantTurn<Target extends keyof AssistantTurnByProtocol> {
-  turn: AssistantTurnFor<Target>;
-  pendingCallIds: (turn: AssistantTurnFor<Target>) => readonly PendingCall[];
+  readonly turn: AssistantTurnFor<Target>;
+  readonly pendingCallIds: (turn: AssistantTurnFor<Target>) => readonly PendingCall[];
 }
 
 /** A call awaiting its result, named the way the target names it. */
@@ -30,10 +31,6 @@ export interface PendingCall {
   readonly name: string;
 }
 
-export const warnDroppedUnrecognizedAssistantReasoning = (
-  source: keyof AssistantTurnByProtocol,
-  target: keyof AssistantTurnByProtocol,
-): void => { console.warn('Dropping reasoning from an unidentifiable foreign assistant turn', { source, target }); };
 
 export const roundTripAssistantTurn = async <Source extends keyof AssistantTurnByProtocol, Target extends keyof AssistantTurnByProtocol, SourceTurn>(
   source: Source,

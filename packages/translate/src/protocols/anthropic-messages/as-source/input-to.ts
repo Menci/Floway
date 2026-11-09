@@ -240,9 +240,6 @@ const anthropicMessagesSystemToIR = (system: AnthropicMessagesPayload['system'])
 };
 
 /** Whether a turn carries reasoning only the sidecar can restore. */
-export const anthropicMessagesDropsReasoning = (turn: AnthropicMessagesAssistantTurn): boolean =>
-  turn.some(message => Array.isArray(message.content) && message.content.some(block => block.type === 'redacted_thinking'));
-
 const anthropicMessagesTurnToIR = (
   turn: AnthropicMessagesConversationTurn,
   firstMessageIndex = 0,

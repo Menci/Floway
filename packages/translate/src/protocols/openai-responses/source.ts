@@ -1,5 +1,5 @@
 import { openaiResponsesErrorWriter } from './as-source/error-body.ts';
-import { openaiResponsesDropsReasoning, openaiResponsesOpen, type OpenAIResponsesExtra } from './as-source/input-to.ts';
+import { openaiResponsesOpen, type OpenAIResponsesExtra } from './as-source/input-to.ts';
 import { restoreNamespaceEvents } from './as-source/namespace-tools.ts';
 import { createRandomOpenAIResponsesResponseId } from './as-source/response-id.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from './as-source/round-trip.ts';
@@ -19,7 +19,6 @@ export const openaiResponsesSourceProtocol: SourceProtocol<
 > = {
   name: 'openaiResponses',
   open: openaiResponsesOpen,
-  dropsReasoning: openaiResponsesDropsReasoning,
   roundTrip: {
     inspect: findOpenAIResponsesSidecarCarriers,
     verify: verifyOpenAIResponsesTurnDigest,
