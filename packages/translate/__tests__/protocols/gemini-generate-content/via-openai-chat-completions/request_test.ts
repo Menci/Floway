@@ -11,6 +11,15 @@ const buildWithTestSidecar = (
   model: Parameters<typeof buildTargetRequestWithSidecar>[1],
 ) => buildTargetRequestWithSidecar(payload, model, createTestSidecarCodec());
 
+test('buildTargetRequest translates LOW to reasoning_effort', async () => {
+  const request = await buildWithTestSidecar({
+    contents: [],
+    generationConfig: { thinkingConfig: { thinkingLevel: 'LOW' } },
+  }, 'gpt-test');
+
+  assertEquals(request.reasoning_effort, 'low');
+});
+
 test('buildTargetRequest forwards an empty thinkingLevel verbatim', async () => {
   const request = await buildWithTestSidecar({
     contents: [],
