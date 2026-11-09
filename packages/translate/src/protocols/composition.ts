@@ -11,6 +11,7 @@ import type { SourceAssistantTurnFor } from '../round-trip/source-assistant-turn
 import type { RoundTripReader, RoundTripWriter } from '../round-trip/stream.ts';
 import { createRoundTripStream } from '../round-trip/stream.ts';
 import type { RoundTripTurnDigest } from '../round-trip/turn-digest.ts';
+import type { FlatCallContext } from '../shared/flatten-request.ts';
 import type { SourceProtocolErrorWriter, TranslateOptions, TranslateTrip } from '../types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
@@ -54,19 +55,11 @@ export type TargetContext<Name extends keyof TargetContextByProtocol> = TargetCo
 
 /** Each target's own context shape; a protocol that needs none states `void`. */
 export interface TargetContextByProtocol {
-  readonly anthropicMessages: SmallCallContext;
-  readonly openaiChatCompletions: SmallCallContext;
+  readonly anthropicMessages: FlatCallContext;
+  readonly openaiChatCompletions: FlatCallContext;
   readonly openaiResponses: void;
   // GenerateContent is a source only, so it never states a target context.
   readonly geminiGenerateContent: void;
-}
-
-/** What the two protocols without namespaces record while writing. */
-export interface SmallCallContext {
-  /** The declarations written as function tools though the client wrote them freeform. */
-  readonly customToolNames: ReadonlySet<string>;
-  /** The pair each flat name stands for. */
-  readonly callIdentities: ReadonlyMap<string, { readonly namespace: string; readonly name: string }>;
 }
 
 /**
@@ -94,7 +87,7 @@ export interface TargetProtocol<Name extends AssistantTurnKey, Payload, Event> {
     request: IRInputRequest,
     pieces: readonly (IRInputTurn | IRInputResolvedTurn<AssistantTurnFor<Name>>)[],
     options: TranslateOptions,
-  ) => Promise<TargetRequest<Payload, Name>>;
+  ) => TargetRequest<Payload, Name>;
   /**
    * Reads this protocol's upstream events into the output IR.
    *
@@ -125,7 +118,7 @@ export const composeTranslation = <
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
 ): TranslateTrip<SrcPayload, SrcEvent, TgtPayload, TgtEvent> => async (payload, options) => {
   const reading = source.read(payload);
-  const { payload: targetPayload, context } = await target.write(
+  const { payload: targetPayload, context } = target.write(
     reading.request, await settleTurns(source, target, reading, options), options,
   );
   return {
@@ -158,12 +151,10 @@ const settleTurns = async <
   await readTurns(reading, async (turn): Promise<
     { readonly resolved: AssistantTurnFor<TgtName> } | undefined
   > => {
-    const roundTrip = await roundTripAssistantTurn(
-      source.name, target.name, turn.assistantTurn, options.sidecarCodec,
-      source.roundTrip.inspect, source.roundTrip.verify, source.roundTrip.collectCandidates,
+    const resolved = await roundTripAssistantTurn(
+      source.name, target.name, turn.assistantTurn, options.sidecarCodec, source.roundTrip,
     );
-    if (roundTrip === undefined) return undefined;
-    return { resolved: roundTrip.turn };
+    return resolved === undefined ? undefined : { resolved };
   });
 
 /**
@@ -184,7 +175,7 @@ export const buildTargetRequestFor = async <
   // the same reading rather than opening a second one.
   reading: IRInputReading<SourceAssistantTurnFor<SrcName>> = source.read(payload),
 ): Promise<TgtPayload> =>
-  (await target.write(reading.request, await settleTurns(source, target, reading, options), options)).payload;
+  target.write(reading.request, await settleTurns(source, target, reading, options), options).payload;
 
 /**
  * The event half of a composed trip, stated on its own.
@@ -207,7 +198,7 @@ export const translateSourceEventsFor = <
   // Stating the answer needs what writing the request recorded, so this walks
   // the same writing step the composed trip does.
   return (async function* () {
-    const { context } = await target.write(reading.request, await settleTurns(source, target, reading, options), options);
+    const { context } = target.write(reading.request, await settleTurns(source, target, reading, options), options);
     yield* source.writeStream(reading, target.readStream(frames, context, stream.reader), stream.writer);
   })();
 };

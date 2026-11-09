@@ -13,9 +13,7 @@ describe('assistant-turn replay boundary', () => {
       'anthropicMessages',
       { role: 'assistant', content: 'answer' },
       createTestSidecarCodec(),
-      findOpenAIChatCompletionsSidecarCarriers,
-      verifyOpenAIChatCompletionsTurnDigest,
-      () => [],
+      { inspect: findOpenAIChatCompletionsSidecarCarriers, verify: verifyOpenAIChatCompletionsTurnDigest, collectCandidates: () => [] },
     )).resolves.toBeUndefined();
   });
 
@@ -44,10 +42,8 @@ describe('assistant-turn replay boundary', () => {
       'anthropicMessages',
       sourceTurn,
       codec,
-      findOpenAIChatCompletionsSidecarCarriers,
-      verify,
-      () => [],
-    )).resolves.toMatchObject({ turn: targetTurn });
+      { inspect: findOpenAIChatCompletionsSidecarCarriers, verify, collectCandidates: () => [] },
+    )).resolves.toEqual(targetTurn);
     expect(verify).toHaveBeenCalledExactlyOnceWith({ role: 'assistant', content: 'answer', reasoning_details: [] }, expect.any(Object), 1);
   });
 
@@ -65,7 +61,7 @@ describe('assistant-turn replay boundary', () => {
     });
     const turn = { ...source, reasoning_details: [...earlier, ...createOpenAIChatCompletionsSidecarCarrier(data)] };
     const verify = vi.fn(verifyOpenAIChatCompletionsTurnDigest);
-    await expect(roundTripAssistantTurn('openaiChatCompletions', 'openaiChatCompletions', turn, codec, findOpenAIChatCompletionsSidecarCarriers, verify, () => [])).resolves.toMatchObject({ turn: targetTurn });
+    await expect(roundTripAssistantTurn('openaiChatCompletions', 'openaiChatCompletions', turn, codec, { inspect: findOpenAIChatCompletionsSidecarCarriers, verify, collectCandidates: () => [] })).resolves.toEqual(targetTurn);
     expect(verify).toHaveBeenCalledExactlyOnceWith(source, expect.any(Object), 1);
     expect(turn.reasoning_details[0].data).toBe(foreign);
   });
@@ -82,7 +78,7 @@ describe('assistant-turn replay boundary', () => {
     });
     const turn = { ...source, reasoning_details: [...createOpenAIChatCompletionsSidecarCarrier(data), ...createOpenAIChatCompletionsSidecarCarrier(foreign)] };
     const verify = vi.fn(verifyOpenAIChatCompletionsTurnDigest);
-    await expect(roundTripAssistantTurn('openaiChatCompletions', 'openaiChatCompletions', turn, codec, findOpenAIChatCompletionsSidecarCarriers, verify, () => [])).resolves.toMatchObject({ turn: source });
+    await expect(roundTripAssistantTurn('openaiChatCompletions', 'openaiChatCompletions', turn, codec, { inspect: findOpenAIChatCompletionsSidecarCarriers, verify, collectCandidates: () => [] })).resolves.toEqual(source);
     expect(verify).toHaveBeenCalledExactlyOnceWith(source, expect.any(Object), 1);
   });
 });

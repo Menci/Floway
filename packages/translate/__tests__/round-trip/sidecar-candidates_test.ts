@@ -24,7 +24,7 @@ const sourceCase = <Turn>(
     const restored = { role: 'assistant' as const, content: 'native target answer' };
     const owned = await encodeRoundTripSidecar(codec, { v: 1, source, target: 'openaiChatCompletions', targetTurn: restored, sourceTurnDigest: check });
     const checked = vi.fn(verify);
-    const run = (turn: Turn) => roundTripAssistantTurn(source, 'openaiChatCompletions', turn, codec, inspect, checked, () => []);
+    const run = (turn: Turn) => roundTripAssistantTurn(source, 'openaiChatCompletions', turn, codec, { inspect, verify: checked, collectCandidates: () => [] });
     if (scenario === 'foreign') {
       const before = structuredClone(ordinary);
       await expect(run(ordinary)).resolves.toBeUndefined();
@@ -33,7 +33,7 @@ const sourceCase = <Turn>(
     } else if (scenario === 'middle') {
       const turn = makeTurn(['foreign-before', owned, 'foreign-after']);
       const before = structuredClone(turn);
-      await expect(run(turn)).resolves.toMatchObject({ turn: restored });
+      await expect(run(turn)).resolves.toEqual(restored);
       expect(checked).toHaveBeenCalledExactlyOnceWith(ordinary, check, 1);
       expect(turn).toEqual(before);
     } else if (scenario === 'wrong-direction') {
@@ -41,7 +41,7 @@ const sourceCase = <Turn>(
       const foreign = await encodeRoundTripSidecar(codec, { v: 1, source: wrongSource, target: 'openaiChatCompletions', targetTurn: restored, sourceTurnDigest: check });
       const history = makeTurn([foreign]);
       const own = await encodeRoundTripSidecar(codec, { v: 1, source, target: 'openaiChatCompletions', targetTurn: restored, sourceTurnDigest: await compute(history) });
-      await expect(run(makeTurn([own, foreign]))).resolves.toMatchObject({ turn: restored });
+      await expect(run(makeTurn([own, foreign]))).resolves.toEqual(restored);
       expect(checked).toHaveBeenCalledExactlyOnceWith(history, expect.any(Object), 1);
     } else if (scenario === 'malformed') {
       // Deliberately bypass the typed encoder to exercise authenticated envelope validation.

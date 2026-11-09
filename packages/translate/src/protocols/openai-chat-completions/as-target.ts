@@ -36,12 +36,12 @@ export const openaiChatCompletionsTargetProtocol: TargetProtocol<
   // declaration and call is stated under the flat spelling it computes.
   write: (request, pieces) => {
     const flattened = flattenRequestNames(request, pieces);
-    return Promise.resolve({
+    return {
       payload: openaiChatCompletionsPayloadFromSegments(flattened.request, assignCallIds(flattened.pieces, callsOf), turn => turn),
       // Both facts come from the same flattening that produced the request, so
       // the reader sees exactly the names the upstream was asked with.
       context: flattened.context,
-    });
+    };
   },
   readStream: (frames, context, roundTripReader) =>
     irFromOpenAIChatCompletions(frames, { ...context, roundTrip: roundTripReader }),
