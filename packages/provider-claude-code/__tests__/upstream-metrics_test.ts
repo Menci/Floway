@@ -55,3 +55,11 @@ it('converts canonical utilization percent into the direction the preference nam
 it('leaves labels outside the Claude utilization metric schema undecoded', () => {
   expect(resolveUpstreamMetricDisplay({ name: 'quota.utilization', labels: { quota: 'five_hour', region: 'us' } }, { quotaDisplay: 'used' })).toBeNull();
 });
+
+it('preserves unnamed observed utilization quotas as selectable reset metrics', () => {
+  const observations = claudeCodeProbeMetrics({ unlisted_quota: { utilization: 40 } });
+  expect(observations).toHaveLength(1);
+  const display = resolveUpstreamMetricDisplay(observations[0]!, { quotaDisplay: 'remaining' })!;
+  expect(display).toMatchObject({ name: 'quota.utilization{quota="unlisted_quota"}', labelKey: null, windowSeconds: null, resetValue: 0 });
+  expect(display.toDisplayValue(observations[0]!.value)).toBe(60);
+});

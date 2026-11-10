@@ -70,6 +70,7 @@ const stubGateway = (
   const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
   if (url.pathname === '/api/upstreams') return Response.json(pageData.upstreams);
   if (url.pathname === '/api/models') return Response.json({ data: [] });
+  if (url.pathname === '/api/upstream-reset-cycles') return Response.json({ upstreamId: url.searchParams.get('upstream_id'), available: true, metrics: [] });
   return await handler(url, init?.signal as AbortSignal | undefined);
 }));
 

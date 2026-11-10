@@ -9,6 +9,7 @@ import type {
 } from './types';
 import { api, callApi, type ApiResult } from '../../api/client';
 import { dashboardRangeQuery } from '../charts/dashboard-time';
+import { loadTelemetryResetCycles, singleTelemetryUpstream } from '../telemetry/reset-cycles';
 import type {
   SearchUsageByKeyResponse,
   SearchUsageByUserResponse,
@@ -73,7 +74,10 @@ export const loadUsagePageData = async (
   signal?: AbortSignal,
   knownAuditableUserIds?: readonly number[],
 ) => {
-  const { start, end } = dashboardRangeQuery(range, loadedAt);
+  const cycles = await loadTelemetryResetCycles(singleTelemetryUpstream(filters.upstream, 'usage'), range, loadedAt, signal);
+  if (cycles.error) return { usage: null, search: null, upstreams: [], error: cycles.error, range, resetCycles: null };
+  const activeRange = cycles.data.range;
+  const { start, end } = dashboardRangeQuery(activeRange, loadedAt);
   const searchViewFor = (ids: readonly number[] | undefined): SearchUsageView => ids?.some(id => String(id) !== currentUserId)
     ? 'all-by-user'
     : 'self-by-key';
@@ -86,12 +90,12 @@ export const loadUsagePageData = async (
   let usageResult;
   let searchResult;
   if (knownAuditableUserIds === undefined) {
-    usageResult = await loadUsageOverview(range, groupBy, filters, loadedAt, signal);
+    usageResult = await loadUsageOverview(activeRange, groupBy, filters, loadedAt, signal);
     searchView = searchViewFor(usageResult.data?.auditableUserIds);
     searchResult = await loadSearch(searchView);
   } else {
     [usageResult, searchResult] = await Promise.all([
-      loadUsageOverview(range, groupBy, filters, loadedAt, signal),
+      loadUsageOverview(activeRange, groupBy, filters, loadedAt, signal),
       loadSearch(searchView),
     ]);
     const currentSearchView = usageResult.data === undefined ? searchView : searchViewFor(usageResult.data.auditableUserIds);
@@ -109,5 +113,7 @@ export const loadUsagePageData = async (
     search: searchData ? searchUsageForDisplay(searchData) : null,
     upstreams: usageResult.data?.upstreams ?? [],
     error: usageResult.error ?? searchResult.error ?? null,
+    range: activeRange,
+    resetCycles: cycles.data.resetCycles,
   };
 };

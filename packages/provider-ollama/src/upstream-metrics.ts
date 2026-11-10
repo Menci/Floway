@@ -1,6 +1,6 @@
 import { readOllamaAccountUsage } from './account-usage.ts';
 import type { UpstreamMetrics } from '@floway-dev/provider';
-import { quotaPercentDisplay, resolveUpstreamMetricDisplaySeries as resolveDisplaySeries, upstreamMetricAxisPriority, type UpstreamMetricDisplay, type UpstreamMetricDisplayOptions, type UpstreamMetricDisplaySeries, type UpstreamMetricIdentity, type UpstreamMetricSample } from '@floway-dev/provider/browser';
+import { formatUpstreamMetricIdentity, quotaPercentDisplay, resolveUpstreamMetricDisplaySeries as resolveDisplaySeries, upstreamMetricAxisPriority, type UpstreamMetricDisplay, type UpstreamMetricDisplayOptions, type UpstreamMetricDisplaySeries, type UpstreamMetricIdentity, type UpstreamMetricSample } from '@floway-dev/provider/browser';
 
 export const ollamaMetrics = (body: unknown): UpstreamMetrics => {
   const { included, purchasedBalanceUsd, activity } = readOllamaAccountUsage(body);
@@ -18,6 +18,10 @@ export const ollamaMetrics = (body: unknown): UpstreamMetrics => {
 
 export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIdentity, options: UpstreamMetricDisplayOptions): UpstreamMetricDisplay | null => {
   if (name === 'quota.remaining_percent' && typeof labels.window === 'string') {
+    if (labels.window !== 'session' && labels.window !== 'weekly') return quotaPercentDisplay(options, 'remaining', {
+      name: formatUpstreamMetricIdentity({ name, labels }), labelKey: null,
+      axisPriority: upstreamMetricAxisPriority.subscriptionQuota, windowSeconds: null, emptyValue: null, form: 'area',
+    });
     const session = labels.window === 'session';
     return quotaPercentDisplay(options, 'remaining', {
       name: labels.window,

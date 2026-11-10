@@ -1,7 +1,7 @@
 import type { ClaudeCodeQuotaSnapshot } from './quota.ts';
 import { decimalStringToNumber, multiplyDecimalStrings } from '@floway-dev/protocols/common';
 import type { UpstreamMetrics } from '@floway-dev/provider';
-import { quotaPercentDisplay, resolveUpstreamMetricDisplaySeries as resolveDisplaySeries, upstreamMetricAxisPriority, type UpstreamMetricDisplay, type UpstreamMetricDisplayOptions, type UpstreamMetricDisplaySeries, type UpstreamMetricIdentity, type UpstreamMetricSample } from '@floway-dev/provider/browser';
+import { formatUpstreamMetricIdentity, quotaPercentDisplay, resolveUpstreamMetricDisplaySeries as resolveDisplaySeries, upstreamMetricAxisPriority, type UpstreamMetricDisplay, type UpstreamMetricDisplayOptions, type UpstreamMetricDisplaySeries, type UpstreamMetricIdentity, type UpstreamMetricSample } from '@floway-dev/provider/browser';
 
 // Headers report fractions while OAuth usage reports percentages; both are stored as percentages.
 // https://registry.npmjs.org/@anthropic-ai/claude-code-darwin-arm64/-/claude-code-darwin-arm64-2.1.288.tgz
@@ -51,6 +51,10 @@ export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIde
     };
   }
   const named = quota === 'seven_day_sonnet' ? 'Sonnet' : quota === 'seven_day_opus' ? 'Opus' : null;
+  if (quota !== 'five_hour' && quota !== 'seven_day' && named === null) return quotaPercentDisplay(options, 'used', {
+    name: formatUpstreamMetricIdentity({ name, labels }), labelKey: null,
+    axisPriority: upstreamMetricAxisPriority.subscriptionQuota, windowSeconds: null, emptyValue: null, form: 'area',
+  });
   return quotaPercentDisplay(options, 'used', {
     name: quota,
     labelKey: named === null

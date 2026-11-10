@@ -10,6 +10,18 @@ it('lets each provider own the full-quota representation for reset detection', (
   expect(resetMetricForKind('copilot', { name: 'quota.remaining', labels: { quota: 'premium_interactions' } })?.resetValue).toEqual({ name: 'quota.entitlement', labels: { quota: 'premium_interactions' } });
 });
 
+it('includes observed quota identities without predefined names or durations', () => {
+  expect(resetMetricForKind('claude-code', { name: 'quota.utilization', labels: { quota: 'unlisted_quota' } })).toMatchObject({
+    name: 'quota.utilization{quota="unlisted_quota"}', labelKey: null, windowSeconds: null, resetValue: 0,
+  });
+  expect(resetMetricForKind('ollama', { name: 'quota.remaining_percent', labels: { window: 'unlisted_window' } })).toMatchObject({
+    name: 'quota.remaining_percent{window="unlisted_window"}', labelKey: null, windowSeconds: null, resetValue: 100,
+  });
+  expect(resetMetricForKind('codex', { name: 'quota.window.used_percent', labels: { limit: 'unlisted_family', window_seconds: 125 } })).toMatchObject({
+    name: 'unlisted_family', labelValues: { name: 'unlisted_family' }, windowSeconds: 125, resetValue: 0,
+  });
+});
+
 it('excludes purchased balances, allowance totals, overage, and unknown telemetry from reset metrics', () => {
   expect(resetMetricForKind('codex', { name: 'credits.balance', labels: {} })).toBeNull();
   expect(resetMetricForKind('claude-code', { name: 'quota.utilization', labels: { quota: 'extra_usage' } })).toBeNull();

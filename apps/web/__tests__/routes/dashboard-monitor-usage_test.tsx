@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dashboardBucketFrames } from '../../src/components/charts/dashboard-time';
 import DashboardMonitorUsage, { clientLoader } from '../../src/routes/dashboard-monitor-usage';
 import { useAuthStore } from '../../src/stores/auth-store';
+import { resetCycles, resetLoadedAt } from '../components/telemetry/reset-fixture';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
 
@@ -13,12 +14,15 @@ stubLocalStorage();
 afterEach(() => {
   useAuthStore.getState().clear();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 const loadedAt = Date.UTC(2026, 7, 5, 12);
 const bucket = dashboardBucketFrames('today', loadedAt).at(-2)!.key;
 const usageRecord = { bucket, group: 'gpt-5', requests: 1, metrics: { input_tokens: '10' as const }, cost: null };
 const loaderData = {
+  range: 'today' as const,
+  resetCycles: null,
   currentUserId: '1',
   error: null,
   loadedAt,
@@ -78,6 +82,41 @@ const stubUsageGateway = () => {
     throw new Error(`Unexpected request to ${path}`);
   }));
 };
+
+it('offers reset cycles only after selecting one upstream and applies the chosen metric to statistics', async () => {
+  vi.spyOn(Date, 'now').mockReturnValue(resetLoadedAt);
+  const requests: URL[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = new URL(String(input), 'http://localhost');
+    if (url.pathname === '/api/upstream-reset-cycles') return Response.json(resetCycles);
+    if (url.pathname === '/api/search-usage') return Response.json({ view: 'all-by-user', records: [], users: [] });
+    if (url.pathname === '/api/token-usage/overview') {
+      requests.push(url);
+      return Response.json({ ...loaderData.usage, series: [], axes: { none: [], model: [], upstream: [], userId: [], keyId: [] } });
+    }
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  }));
+  renderPage(loaderData);
+  expect(screen.queryByRole('radio', { name: 'Current reset cycle' })).toBeNull();
+  fireEvent.click(screen.getByRole('combobox', { name: 'Upstream' }));
+  fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Copilot seat' }));
+  await waitFor(() => expect(screen.getByRole('radio', { name: 'Previous reset cycle' })).toBeTruthy());
+  expect(screen.queryByRole('combobox', { name: 'Reset metric' })).toBeNull();
+  fireEvent.click(screen.getByRole('radio', { name: 'Previous reset cycle' }));
+  await waitFor(() => expect(requests.at(-1)?.searchParams.get('start')).toBe('2026-11-11T05'));
+  expect(requests.at(-1)?.searchParams.get('end')).toBe('2026-11-11T10');
+  expect(requests.at(-1)?.searchParams.getAll('filter_upstream')).toEqual(['upstream:up-1']);
+  await waitFor(() => expect(screen.getByRole('radio', { name: 'Previous reset cycle' }).getAttribute('aria-checked')).toBe('true'));
+  fireEvent.click(screen.getByRole('combobox', { name: 'Reset metric' }));
+  fireEvent.click(screen.getByRole('option', { name: '7-day remaining' }));
+  await waitFor(() => expect(requests.at(-1)?.searchParams.get('start')).toBe('2026-11-02T09'));
+  expect(requests.at(-1)?.searchParams.get('end')).toBe('2026-11-09T09');
+  fireEvent.click(screen.getByRole('combobox', { name: 'Group by' }));
+  fireEvent.click(screen.getByRole('option', { name: 'By Upstream' }));
+  await waitFor(() => expect(screen.queryByRole('combobox', { name: 'Reset metric' })).toBeNull());
+  expect(screen.queryByRole('radio', { name: 'Previous reset cycle' })).toBeNull();
+  expect(screen.getByRole('radio', { name: 'Last Day' }).getAttribute('aria-checked')).toBe('true');
+});
 
 describe('usage dimension controls', () => {
   it('shows auditable users even when they have no usage in the selected window', () => {

@@ -1222,6 +1222,12 @@ const en = {
         currentUserOnly: 'Only me',
         range: {
           oneDay: 'Last Day', sevenDays: '7 Days', thirtyDays: '30 Days', custom: 'Custom', choose: 'Choose date range',
+          currentReset: 'Current reset cycle', previousReset: 'Previous reset cycle',
+        },
+        resetMetric: {
+          label: 'Reset metric',
+          hint: 'A new cycle starts when the selected metric returns to 100% remaining from any other value. Statistics are aggregated hourly; the reset hour belongs to the new cycle.',
+          waiting: 'No reset recorded for this metric yet. A cycle starts when remaining quota returns to 100% from another value. Two resets in different hours are needed for a previous cycle.',
         },
       },
       usage: {
