@@ -79,8 +79,8 @@ export const appendContent = (builder: ReferenceBuilder, content: EmittedFieldSt
   if (textFragmentIds === undefined || textFragmentIds.length === 0) return;
   for (const fragmentId of textFragmentIds) {
     const piece = builder.fragments[fragmentId];
-    if (piece === undefined) throw new Error(`Unknown ReferenceBuilder part ${fragmentId}`);
-    if (builder.resolutions.has(fragmentId)) throw new Error(`ReferenceBuilder part ${fragmentId} has multiple output occurrences`);
+    if (piece === undefined) throw new Error(`Unknown ReferenceBuilder fragment ${fragmentId}`);
+    if (builder.resolutions.has(fragmentId)) throw new Error(`ReferenceBuilder fragment ${fragmentId} has multiple output occurrences`);
     builder.resolutions.set(fragmentId, { contentId: content.contentId, start: offset, endExclusive: offset + piece.length });
     offset += piece.length;
   }

@@ -235,7 +235,7 @@ describe('ReferenceBuilder', () => {
     const second = createEmittedFieldState(builder, 'text');
     appendContent(builder, first, 'same', [partId]);
 
-    expect(() => appendContent(builder, second, 'same', [partId])).toThrowError('ReferenceBuilder part 0 has multiple output occurrences');
+    expect(() => appendContent(builder, second, 'same', [partId])).toThrowError('ReferenceBuilder fragment 0 has multiple output occurrences');
   });
 
   it('deduplicates equal final content hashes', async () => {

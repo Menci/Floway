@@ -240,7 +240,7 @@ export const irFromAnthropicMessages = async function* (
       break;
     case 'message_stop': {
       if (!started) throw new Error('Messages message_stop arrived before message_start');
-      if (openBlocks.size > 0) throw new Error('Messages message_stop arrived with open content openBlocks');
+      if (openBlocks.size > 0) throw new Error('Messages message_stop arrived with open content blocks');
       const nativeResult = nativeAccumulator.result();
       const contentFields: NonNullable<AnthropicMessagesAssistantState<ReadFieldStates>['content']> = [];
       contentFields.length = nativeResult.content.length;
