@@ -290,6 +290,13 @@ it('SQL Performance overview matches the in-memory oracle across every grouping 
           { metric: 'tpot_us', lower: 2_500_000, upper: 10_000_000, count: 2 },
         ],
       }),
+      repo.performance.set({
+        hour: '2026-11-01T06', keyId: 'key-1', model: 'model-a', upstream: 'up-a',
+        operation: 'chat', runtimeLocation: 'SJC', requests: 2,
+        ttftSamplesOk: 2, errorsWithOutput: 0, errorsNoOutput: 0, neutral: 0,
+        tpotSamples: 0, ttftMsSum: 300, tpotUsSum: 0,
+        buckets: [{ metric: 'ttft_ms', lower: 100, upper: 200, count: 2 }],
+      }),
     ]);
   }
   const options: PerformanceOverviewQueryOptions = {
@@ -306,18 +313,31 @@ it('SQL Performance overview matches the in-memory oracle across every grouping 
     bucketForHour: () => '2026-11-01T01',
   };
 
-  for (const groupBy of ['model', 'upstream', 'operation', 'runtimeLocation', 'userId', 'keyId'] as const) {
-    expect(await sql.performance.queryOverview({ ...options, groupBy }))
-      .toEqual(await memory.performance.queryOverview({ ...options, groupBy }));
-  }
-  for (const filters of [
-    { ...options.filters, models: ['model-a', 'model-b'], upstreams: ['up-b'] },
-    { ...options.filters, userIds: [1], keyIds: ['key-1'] },
-    { ...options.filters, operations: ['chat'], runtimeLocations: ['LOCAL'] },
-    { ...options.filters, models: ['missing'] },
-  ]) {
-    expect(await sql.performance.queryOverview({ ...options, filters }))
-      .toEqual(await memory.performance.queryOverview({ ...options, filters }));
+  for (const bucketForHour of [options.bucketForHour, (hour: string) => hour, (hour: string) => hour.slice(0, 10)]) {
+    for (const actor of [
+      { actorUserId: 1, isAdmin: true, visibleUserIds: [], visibleUpstreams: [] },
+      { actorUserId: 2, isAdmin: false, visibleUserIds: [2], visibleUpstreams: [] },
+      { actorUserId: 2, isAdmin: false, visibleUserIds: [1, 2], visibleUpstreams: [] },
+      { actorUserId: 2, isAdmin: false, visibleUserIds: [], visibleUpstreams: ['up-b'] },
+    ]) {
+      for (const groupBy of ['model', 'upstream', 'operation', 'runtimeLocation', 'userId', 'keyId'] as const) {
+        for (const filters of [
+          options.filters,
+          { ...options.filters, models: ['model-a', 'model-b'], upstreams: ['up-b'] },
+          { ...options.filters, userIds: [1], keyIds: ['key-1'] },
+          { ...options.filters, operations: ['chat'], runtimeLocations: ['LOCAL'] },
+          { ...options.filters, models: ['missing'] },
+          {
+            models: ['model-a'], upstreams: ['up-a'], userIds: [1], keyIds: ['key-1'],
+            operations: ['chat'], runtimeLocations: ['SJC'],
+          },
+        ]) {
+          const queryOptions = { ...options, ...actor, groupBy, bucketForHour, filters };
+          expect(await sql.performance.queryOverview(queryOptions))
+            .toEqual(await memory.performance.queryOverview(queryOptions));
+        }
+      }
+    }
   }
   expect(await sql.performance.queryOverview({ ...options, actorUserId: 2, isAdmin: false }))
     .toEqual(await memory.performance.queryOverview({ ...options, actorUserId: 2, isAdmin: false }));
