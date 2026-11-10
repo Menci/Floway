@@ -413,19 +413,8 @@ export const anthropicMessagesRead = (payload: AnthropicMessagesPayload): Readin
     ...anthropicMessagesToolsToIR(payload),
   };
 
-  // Messages keeps a server tool's result inside the assistant message that
-  // called it, while the caller's next message is usually a client turn too.
-  // The result and that message are one speaking turn, so a client slot that
-  // ends the conversation is not emitted until the next source turn says
-  // whether it continues.
   const turns: TurnSlot<AnthropicMessagesAssistantTurn>[] = [];
   let messageIndex = 0;
-  let pendingClient: (() => IRInputTurn[]) | undefined;
-
-  const appendClient = (produce: () => IRInputTurn[]): void => {
-    if (pendingClient !== undefined) turns.push({ kind: 'client', toIRInputTurns: pendingClient });
-    pendingClient = produce;
-  };
 
   const prompt = anthropicMessagesSystemToIR(payload.system);
   if (prompt !== undefined) turns.push({ kind: 'client', toIRInputTurns: () => [prompt] });
@@ -434,13 +423,6 @@ export const anthropicMessagesRead = (payload: AnthropicMessagesPayload): Readin
     const firstMessageIndex = messageIndex;
     messageIndex += turn.items.length;
     if (turn.role === 'assistant') {
-      // An assistant turn always separates: whatever was held before it is a
-      // turn of its own, and its own output may interleave assistant and
-      // server-result client turns.
-      if (pendingClient !== undefined) {
-        turns.push({ kind: 'client', toIRInputTurns: pendingClient });
-        pendingClient = undefined;
-      }
       turns.push({
         kind: 'assistant',
         assistantTurn: turn.items,
@@ -448,9 +430,8 @@ export const anthropicMessagesRead = (payload: AnthropicMessagesPayload): Readin
       });
       continue;
     }
-    appendClient(() => anthropicMessagesTurnToIR(turn, firstMessageIndex));
+    turns.push({ kind: 'client', toIRInputTurns: () => anthropicMessagesTurnToIR(turn, firstMessageIndex) });
   }
-  if (pendingClient !== undefined) turns.push({ kind: 'client', toIRInputTurns: pendingClient });
 
   return { request, turns };
 };

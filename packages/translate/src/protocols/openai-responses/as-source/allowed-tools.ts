@@ -49,6 +49,7 @@ export const requireCallableSelector = (selector: unknown): { readonly type: 'fu
   if (typeof selector !== 'object' || selector === null
     || ((selector as { type?: unknown }).type !== 'function' && (selector as { type?: unknown }).type !== 'custom')
     || typeof (selector as { name?: unknown }).name !== 'string'
+    || ('namespace' in selector && selector.namespace !== undefined && typeof selector.namespace !== 'string')
     || Object.keys(selector).some(key => key !== 'type' && key !== 'name' && key !== 'namespace')) {
     throw new TranslatorInputError('Cannot translate an allowed_tools selector that is not a function or custom tool.');
   }

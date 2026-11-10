@@ -12,7 +12,6 @@ import type {
   IRInputToolChoice,
   IRInputOutputFormat,
   IRInputAssistantItem,
-  IRInputMedia,
   IRInputTextPart,
   IRInputTurn,
   IRInputUserContentPart,
@@ -22,27 +21,23 @@ import { TranslatorInputError } from '../../../types.ts';
 import type { Reading, TurnSlot } from '../../composition/reading.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentPartData, GeminiGenerateContentPayload, GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 
-const inlineMedia = (part: GeminiGenerateContentPart): IRInputMedia | null => {
-  const inlineData = geminiGenerateContentInlineData(part);
-  return inlineData === null ? null : { source_kind: 'base64', media_type: inlineData.mimeType, data: inlineData.data };
-};
-
 const inlinePart = (part: GeminiGenerateContentPart): IRInputUserContentPart => {
   const inlineData = geminiGenerateContentInlineData(part);
   if (inlineData === null) throw new TranslatorInputError('Expected inline data.');
+  const media = { source_kind: 'base64' as const, media_type: inlineData.mimeType, data: inlineData.data };
   switch (inlineData.kind) {
-  case 'image': return { type: 'image', image: inlineMedia(part)! };
-  case 'pdf': return { type: 'file', file: inlineMedia(part)! };
+  case 'image': return { type: 'image', image: media };
+  case 'pdf': return { type: 'file', file: media };
   case 'audio': return { type: 'audio', audio: { media_type: inlineData.mimeType, data: inlineData.data } };
   // GenerateContent states any MIME type inline, and every target that carries a
   // file part carries its media type verbatim. A type this snapshot does not
   // recognize is forwarded as a file so the selected upstream decides whether it
   // accepts it.
-  case 'other': return { type: 'file', file: inlineMedia(part)! };
+  case 'other': return { type: 'file', file: media };
   }
 };
 
-const userParts = (content: GeminiGenerateContentContent, turnIndex: number, ids: GeminiGenerateContentUnmatchedCallIds): IRInputClientItem[] => {
+const userParts = (content: GeminiGenerateContentContent, ids: GeminiGenerateContentUnmatchedCallIds): IRInputClientItem[] => {
   const items: IRInputClientItem[] = [];
   const pending: IRInputUserContentPart[] = [];
   const flush = (): void => {
@@ -50,13 +45,13 @@ const userParts = (content: GeminiGenerateContentContent, turnIndex: number, ids
     items.push({ type: 'message', content: pending.splice(0) });
   };
 
-  (content.parts ?? []).forEach((part, partIndex) => {
+  (content.parts ?? []).forEach(part => {
     const kind = geminiGenerateContentPartKind(part);
     switch (kind) {
     case null:
       return;
     case 'function_response': {
-      const { response, id } = geminiGenerateContentFunctionResponseMatch(part, ids, turnIndex, partIndex)!;
+      const { response, id } = geminiGenerateContentFunctionResponseMatch(part, ids)!;
       flush();
       items.push({
         type: 'tool_result',
@@ -157,13 +152,13 @@ const turnToIRTurns = (
     }]
   : [{
       kind: 'client',
-      items: turn.items.flatMap((content, index) => {
+      items: turn.items.flatMap(content => {
         if (content.role !== 'user' && content.role !== undefined) {
           throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
         }
         return (content.parts?.length ?? 0) === 0
           ? [{ type: 'message' as const, content: [] }]
-          : userParts(content, contentIndex + index, ids);
+          : userParts(content, ids);
       }),
     }];
 
@@ -305,17 +300,17 @@ const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest
 
 const geminiGenerateContentToolCallId = (turnIndex: number, partIndex: number): string => `gemini_call_${turnIndex}_${partIndex}`;
 
-export type GeminiGenerateContentUnmatchedCallIds = Record<string, string[]>;
+type GeminiGenerateContentUnmatchedCallIds = Record<string, string[]>;
 
-export type GeminiGenerateContentFunctionCall = NonNullable<GeminiGenerateContentPart['functionCall']>;
-export type GeminiGenerateContentFunctionResponse = NonNullable<GeminiGenerateContentPart['functionResponse']>;
+type GeminiGenerateContentFunctionCall = NonNullable<GeminiGenerateContentPart['functionCall']>;
+type GeminiGenerateContentFunctionResponse = NonNullable<GeminiGenerateContentPart['functionResponse']>;
 
-export interface GeminiGenerateContentFunctionCallMatch {
+interface GeminiGenerateContentFunctionCallMatch {
   call: GeminiGenerateContentFunctionCall;
   id: string;
 }
 
-export interface GeminiGenerateContentFunctionResponseMatch {
+interface GeminiGenerateContentFunctionResponseMatch {
   response: GeminiGenerateContentFunctionResponse;
   // Absent when the source stated no id and no call this reader saw is still
   // awaiting this answer: a target then pairs the result by order, which is
@@ -323,7 +318,7 @@ export interface GeminiGenerateContentFunctionResponseMatch {
   id: string | undefined;
 }
 
-export const geminiGenerateContentFunctionCallMatch = (part: GeminiGenerateContentPart, ids: GeminiGenerateContentUnmatchedCallIds, turnIndex: number, partIndex: number): GeminiGenerateContentFunctionCallMatch | null => {
+const geminiGenerateContentFunctionCallMatch = (part: GeminiGenerateContentPart, ids: GeminiGenerateContentUnmatchedCallIds, turnIndex: number, partIndex: number): GeminiGenerateContentFunctionCallMatch | null => {
   const call = part.functionCall;
   if (!call) return null;
 
@@ -334,13 +329,13 @@ export const geminiGenerateContentFunctionCallMatch = (part: GeminiGenerateConte
   return { call, id };
 };
 
-export const geminiGenerateContentFunctionResponseMatch = (part: GeminiGenerateContentPart, ids: GeminiGenerateContentUnmatchedCallIds, turnIndex: number, partIndex: number, remove: 'first' | 'last' = 'first'): GeminiGenerateContentFunctionResponseMatch | null => {
+const geminiGenerateContentFunctionResponseMatch = (part: GeminiGenerateContentPart, ids: GeminiGenerateContentUnmatchedCallIds): GeminiGenerateContentFunctionResponseMatch | null => {
   const response = part.functionResponse;
   if (!response) return null;
 
   const unmatched = ids[response.name];
   if (response.id !== undefined) {
-    const index = remove === 'first' ? unmatched?.indexOf(response.id) ?? -1 : unmatched?.lastIndexOf(response.id) ?? -1;
+    const index = unmatched?.indexOf(response.id) ?? -1;
     if (index >= 0) unmatched?.splice(index, 1);
     return { response, id: response.id };
   }
@@ -360,16 +355,16 @@ type GeminiGenerateContentAudioMimeType = (typeof GEMINI_GENERATE_CONTENT_AUDIO_
 const isAudioMimeType = (value: string): value is GeminiGenerateContentAudioMimeType =>
   (GEMINI_GENERATE_CONTENT_AUDIO_MIME_TYPES as readonly string[]).includes(value);
 
-export type GeminiGenerateContentSupportedImageMimeType = (typeof GEMINI_GENERATE_CONTENT_SUPPORTED_IMAGE_MIME_TYPES)[number];
+type GeminiGenerateContentSupportedImageMimeType = (typeof GEMINI_GENERATE_CONTENT_SUPPORTED_IMAGE_MIME_TYPES)[number];
 
-export type GeminiGenerateContentInlineData =
+type GeminiGenerateContentInlineData =
   | { kind: 'image'; mimeType: GeminiGenerateContentSupportedImageMimeType; data: string }
   | { kind: 'pdf'; mimeType: 'application/pdf'; data: string }
   | { kind: 'audio'; mimeType: GeminiGenerateContentAudioMimeType; data: string }
   // Any other MIME type: carried as a file and left for the target to judge.
   | { kind: 'other'; mimeType: string; data: string };
 
-export type GeminiGenerateContentPartKind = 'text' | 'inline_data' | 'function_call' | 'function_response' | 'file_data' | 'executable_code' | 'code_execution_result' | 'tool_call' | 'tool_response';
+type GeminiGenerateContentPartKind = 'text' | 'inline_data' | 'function_call' | 'function_response' | 'file_data' | 'executable_code' | 'code_execution_result' | 'tool_call' | 'tool_response';
 
 type GeminiGenerateContentPartDataField = keyof GeminiGenerateContentPartData;
 
@@ -396,7 +391,7 @@ const GEMINI_GENERATE_CONTENT_PART_DATA_FIELDS = Object.keys(GEMINI_GENERATE_CON
 // no body). Throws when the part sets zero or multiple content fields —
 // both are silent-data-loss shapes the request translators must refuse
 // rather than coerce.
-export const geminiGenerateContentPartKind = (part: GeminiGenerateContentPart): GeminiGenerateContentPartKind | null => {
+const geminiGenerateContentPartKind = (part: GeminiGenerateContentPart): GeminiGenerateContentPartKind | null => {
   const presentFields = GEMINI_GENERATE_CONTENT_PART_DATA_FIELDS.filter(field => part[field] !== undefined);
   if (presentFields.length === 1) return GEMINI_GENERATE_CONTENT_PART_FIELD_TO_KIND[presentFields[0]];
   if (presentFields.length > 1) {
@@ -407,19 +402,19 @@ export const geminiGenerateContentPartKind = (part: GeminiGenerateContentPart): 
   throw new Error(`Gemini generateContent part has no recognized content. Keys present: ${keys.length ? keys.join(', ') : '(none)'}.`);
 };
 
-export const geminiGenerateContentPartText = (part: GeminiGenerateContentPart): string | null => (typeof part.text === 'string' ? part.text : null);
+const geminiGenerateContentPartText = (part: GeminiGenerateContentPart): string | null => (typeof part.text === 'string' ? part.text : null);
 
-export const geminiGenerateContentThoughtText = (part: GeminiGenerateContentPart): string | null => (part.thought === true && typeof part.text === 'string' ? part.text : null);
+const geminiGenerateContentThoughtText = (part: GeminiGenerateContentPart): string | null => (part.thought === true && typeof part.text === 'string' ? part.text : null);
 
-export const geminiGenerateContentVisibleText = (part: GeminiGenerateContentPart): string | null => (part.thought === true ? null : geminiGenerateContentPartText(part));
+const geminiGenerateContentVisibleText = (part: GeminiGenerateContentPart): string | null => (part.thought === true ? null : geminiGenerateContentPartText(part));
 
-export const geminiGenerateContentText = (content?: GeminiGenerateContentContent): string | null => {
+const geminiGenerateContentText = (content?: GeminiGenerateContentContent): string | null => {
   const texts = content?.parts?.map(geminiGenerateContentPartText).filter((text): text is string => text !== null);
 
   return texts?.length ? texts.join('\n\n') : null;
 };
 
-export const geminiGenerateContentInlineData = (part: GeminiGenerateContentPart): GeminiGenerateContentInlineData | null => {
+const geminiGenerateContentInlineData = (part: GeminiGenerateContentPart): GeminiGenerateContentInlineData | null => {
   const inlineData = part.inlineData;
   if (!inlineData) return null;
 

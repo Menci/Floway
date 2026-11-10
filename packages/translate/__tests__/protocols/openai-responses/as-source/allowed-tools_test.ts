@@ -3,13 +3,14 @@ import { test } from 'vitest';
 import { irInputToolsForChoice } from '../../../../src/ir/input/select-tools.ts';
 import type { IRInputRequestHeader } from '../../../../src/ir/input/types.ts';
 import { buildTargetPayloadFor } from '../../../../src/protocols/composition.ts';
+import { requireCallableSelector } from '../../../../src/protocols/openai-responses/as-source/allowed-tools.ts';
 import { openaiResponsesRead } from '../../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { TranslatorInputError } from '../../../../src/types.ts';
 import type { SidecarCodec } from '../../../../src/types.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import { pairs } from '../../composition-helpers.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
-import { assertEquals, assertRejects } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
 const customToolNamesOf = (request: IRInputRequestHeader): ReadonlySet<string> =>
   new Set((irInputToolsForChoice(request.tools, request.tool_choice) ?? [])
     .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
@@ -106,3 +107,10 @@ for (const target of ['chat', 'messages'] as const) {
     });
   }
 }
+
+test('requireCallableSelector rejects a namespace that is not a string', () => {
+  // The selector's namespace is carried into the IR as a string, so a member
+  // stating anything else is malformed rather than something to pass through.
+  assertEquals(requireCallableSelector({ type: 'function', name: 'read', namespace: 'files' }).namespace, 'files');
+  assertThrows(() => requireCallableSelector({ type: 'function', name: 'read', namespace: 42 }), TranslatorInputError);
+});

@@ -65,12 +65,11 @@ export const chatLegacyCallsOf = <Restored extends ChatResolvedTurn>(
     if (piece.kind !== 'resolved') continue;
     const name = piece.turn.role === 'assistant' ? piece.turn.function_call?.name : undefined;
     if (name === undefined) continue;
-    const modern = new Set((piece.turn.tool_calls ?? []).map(call => call.id));
     const next = turns[index + 1];
     const results = next?.kind === 'client'
       ? next.items.flatMap(item => item.type === 'tool_result' ? [item] : [])
       : [];
-    const unnamed = results.filter(item => item.call_id === undefined || (!stated.has(item.call_id) && !modern.has(item.call_id)));
+    const unnamed = results.filter(item => item.call_id === undefined || !stated.has(item.call_id));
     if (unnamed.length > 1) {
       throw new TranslatorInputError(`Cannot translate the answer to the legacy call '${name}': the turn after it states ${unnamed.length} results that name no call of this conversation, so nothing says which one answers it.`);
     }

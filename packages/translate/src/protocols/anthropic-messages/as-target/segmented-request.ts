@@ -39,13 +39,6 @@ export const anthropicMessagesPayloadFromSegments = (
     messages.push(...segment.messages);
   }
 
-  // Messages requires a non-empty user content array. An item whose parts were
-  // all dropped — an image the resolver could not fetch — leaves one empty text
-  // block rather than a payload the wire rejects.
-  const complete = messages.map(message => message.role === 'user' && Array.isArray(message.content) && message.content.length === 0
-    ? { ...message, content: [{ type: 'text' as const, text: '' }] }
-    : message);
-
   // The request-level fields are one answer for the whole conversation, so they
   // are computed once rather than per segment. The writer can only place a cache
   // breakpoint once it has the complete payload, so those are applied here. A
@@ -53,11 +46,11 @@ export const anthropicMessagesPayloadFromSegments = (
   // takes a breakpoint this translation invents.
   const target: AnthropicMessagesPayload = {
     ...anthropicMessagesHeaderFromIR(request, options),
-    messages: complete,
+    messages,
     ...(system.length === 0 ? {} : { system }),
   };
   applyLastSystemCacheBreakpoint(system);
   applyLastToolCacheBreakpoint(target.tools);
-  applyLastMessageCacheBreakpoint(complete.filter(message => !restored.has(message)));
+  applyLastMessageCacheBreakpoint(messages.filter(message => !restored.has(message)));
   return target;
 };
