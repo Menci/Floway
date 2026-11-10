@@ -1,4 +1,4 @@
-import type { IRInputMedia } from '../ir/input/types.ts';
+import type { IRInputMedia } from './types.ts';
 
 const DATA_URL = /^data:([^;,]+)?;base64,(.*)$/s;
 

@@ -2,6 +2,7 @@ import { klona } from 'klona/json';
 
 import { partitionOpenAIChatCompletionsTurns, type OpenAIChatCompletionsConversationMessage, type OpenAIChatCompletionsConversationTurn } from './conversation-turns.ts';
 import type { OpenAIChatCompletionsAssistantTurn } from './round-trip.ts';
+import { mediaFromURL } from '../../../ir/input/media.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -19,7 +20,6 @@ import type {
   IRInputClientItem,
 
 } from '../../../ir/input/types.ts';
-import { mediaFromURL } from '../../../shared/media.ts';
 import { TranslatorInputError } from '../../../types.ts';
 import type { Reading } from '../../composition/reading.ts';
 import type {

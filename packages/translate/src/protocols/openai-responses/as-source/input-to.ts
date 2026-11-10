@@ -5,6 +5,7 @@ import { partitionOpenAIResponsesTurns } from './conversation-turns.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from './programmatic-tooling.ts';
 import { isOpenAIResponsesEncryptedReasoning } from './round-trip.ts';
 import type { OpenAIResponsesAssistantTurn } from './round-trip.ts';
+import { mediaFromURL } from '../../../ir/input/media.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -22,7 +23,6 @@ import type {
   IRInputUserContentPart,
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
-import { mediaFromURL } from '../../../shared/media.ts';
 import { TranslatorInputError } from '../../../types.ts';
 import type { Reading } from '../../composition/reading.ts';
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
