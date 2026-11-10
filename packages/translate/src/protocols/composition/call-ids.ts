@@ -109,7 +109,10 @@ export const assignCallIds = <Restored>(
           }
           call = release(index);
         }
-        return call.callId === undefined ? { ...item, call_id: undefined, name: call.name } : { ...item, call_id: call.callId };
+        // The id stated here is the client's own: either it named the call with
+        // it, or it is the one the client invented because the call had none.
+        const callId = item.call_id ?? call.callId ?? allocate(call.name);
+        return call.callId === undefined ? { ...item, call_id: callId, legacy_call_name: call.name } : { ...item, call_id: callId };
       });
       addressed.push({ kind: 'client', items });
     }

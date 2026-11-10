@@ -48,10 +48,11 @@ test('a result naming a call nothing awaits is refused rather than answered with
 
 test('a result naming no held call answers the one call stated without an id', () => {
   // A restored legacy call carries no id, so the id the client answers with is
-  // one it invented and this conversation never states.
+  // one it invented and this conversation never states. The answer records the
+  // call's name, which is what the wire pairs the two by.
   const answered = lastResult(assignCallIds([call('read', 'a'), restored([['lookup']]), result(undefined, 'client-invented')], restoredCalls));
-  assertEquals(answered.call_id, undefined);
-  assertEquals(answered.name, 'lookup');
+  assertEquals(answered.call_id, 'client-invented');
+  assertEquals(answered.legacy_call_name, 'lookup');
 });
 
 test('two calls awaiting an answer without an id is refused as ambiguous', () => {

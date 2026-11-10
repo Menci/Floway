@@ -120,9 +120,6 @@ const clientItems = (items: readonly IRInputAddressedClientItem[]): CanonicalOpe
   }
   case 'tool_result': {
     const output = toolResultOutput(item.output);
-    // Responses states the id on the result itself, so a call it cannot name is
-    // one this wire cannot answer at all.
-    if (item.call_id === undefined) throw new TranslatorInputError(`Cannot translate a tool result answering '${item.name}' to OpenAI Responses: this wire pairs a result to its call by id, and the call states none.`);
     return item.tool_kind === 'custom'
       ? { type: 'custom_tool_call_output', call_id: item.call_id, output }
       : { type: 'function_call_output', call_id: item.call_id, output, ...(item.is_error === true ? { status: 'incomplete' as const } : { status: 'completed' as const }) };

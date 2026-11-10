@@ -251,14 +251,9 @@ export const anthropicMessagesConversationFromIR = (
         continue;
       }
       hoisting = false;
-      if (item.type === 'tool_result') {
-        // Messages states the id on the result itself, so a call it cannot name
-        // is one this wire cannot answer at all.
-        if (item.call_id === undefined) throw new TranslatorInputError(`Cannot translate a tool result answering '${item.name}' to Anthropic Messages: this wire pairs a result to its call by id, and the call states none.`);
-        turnBlocks.push({ type: 'tool_result', tool_use_id: item.call_id, content: toolResultContent(item.output), ...(item.is_error === true ? { is_error: true } : {}) });
-        continue;
-      }
-      turnBlocks.push(...userContent(item));
+      turnBlocks.push(...(item.type === 'tool_result'
+        ? [{ type: 'tool_result' as const, tool_use_id: item.call_id, content: toolResultContent(item.output), ...(item.is_error === true ? { is_error: true } : {}) }]
+        : userContent(item)));
     }
     append(turnBlocks);
   }

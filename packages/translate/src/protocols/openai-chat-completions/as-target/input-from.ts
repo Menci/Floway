@@ -161,15 +161,15 @@ const openaiChatCompletionsClientItem = (
   case 'tool_result': {
     // The lifted images carry the call id, which is the one thing this answer
     // still names when the call itself states no id.
-    const projected = openaiChatCompletionsToolResultContent(item.call_id ?? item.name, item.output);
+    const projected = openaiChatCompletionsToolResultContent(item.legacy_call_name ?? item.call_id, item.output);
     lift(projected.lifted);
     // This wire pairs a legacy `function_call` with a `function` message by
     // name, and a call that states an id with a `tool` message by that id.
     // Answering an id-less call with a `tool` message would name an id no
     // assistant turn ever stated.
-    return [item.call_id === undefined
-      ? { role: 'function', name: item.name, content: projected.content }
-      : { role: 'tool', tool_call_id: item.call_id, content: projected.content }];
+    return [item.legacy_call_name === undefined
+      ? { role: 'tool', tool_call_id: item.call_id, content: projected.content }
+      : { role: 'function', name: item.legacy_call_name, content: projected.content }];
   }
   }
 });
