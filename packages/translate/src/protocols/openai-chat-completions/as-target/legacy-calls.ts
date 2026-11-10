@@ -63,7 +63,7 @@ export const chatLegacyCallsOf = <Restored extends ChatResolvedTurn>(
   let allocated = 0;
   for (const [index, piece] of turns.entries()) {
     if (piece.kind !== 'resolved') continue;
-    const name = piece.turn.role === 'assistant' ? piece.turn.function_call?.name : undefined;
+    const name = piece.turn.function_call?.name;
     if (name === undefined) continue;
     const next = turns[index + 1];
     const results = next?.kind === 'client'

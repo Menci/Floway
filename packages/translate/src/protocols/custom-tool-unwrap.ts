@@ -11,7 +11,7 @@ export const unwrapCustomToolInput = (wrappedArguments: string): string => {
   } catch {
     return wrappedArguments;
   }
-  if (typeof parsed === 'object' && parsed !== null && typeof (parsed as { input?: unknown }).input === 'string') return (parsed as { input: string }).input;
+  if (typeof parsed === 'object' && parsed !== null && 'input' in parsed && typeof parsed.input === 'string') return parsed.input;
   console.warn('Custom tool wrapper has no string input; returning the entire JSON value as freeform input.');
   return wrappedArguments;
 };

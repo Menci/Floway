@@ -162,7 +162,7 @@ const toolFromIR = (tool: IRInputTool): AnthropicMessagesClientTool => {
     type: 'custom',
     name: tool.name,
     ...(tool.description === undefined ? {} : { description: tool.description }),
-    input_schema: schema as AnthropicMessagesClientTool['input_schema'],
+    input_schema: { ...schema, type: 'object' },
     ...(tool.type === 'function' && tool.strict !== undefined ? { strict: tool.strict } : {}),
   };
 };
@@ -235,11 +235,6 @@ export const anthropicMessagesConversationFromIR = (
     const turnBlocks: AnthropicMessagesUserContentBlock[] = [];
     for (const item of turn.items) {
       if (item.type === 'prompt') {
-        // Messages system content is text-only, so an image there is a caller
-        // error rather than something to drop.
-        if (item.content.some(part => part.type !== 'text')) {
-          throw new TranslatorInputError(`Invalid '${(item.content.find(part => part.type !== 'text') as { type: string }).type}' content part in ${item.role} message. Only 'text' content parts are supported in ${item.role} messages on this model.`);
-        }
         if (hoisting) {
           system.push(...systemContent(item.content));
           continue;

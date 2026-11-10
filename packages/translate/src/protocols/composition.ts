@@ -148,14 +148,9 @@ const resolveReadingTurns = async <
   reading: Reading<SourceAssistantTurnFor<SrcName>>,
   options: TranslateOptions,
 ): Promise<(IRInputTurn | ResolvedTurn<InputAssistantTurnFor<TgtName>>)[]> =>
-  await resolveReading(reading, async (turn): Promise<
-    { readonly resolved: InputAssistantTurnFor<TgtName> } | undefined
-  > => {
-    const resolved = await roundTripAssistantTurn(
-      source.name, target.name, turn.assistantTurn, options.sidecarCodec, source.sidecarRecognition,
-    );
-    return resolved === undefined ? undefined : { resolved };
-  });
+  await resolveReading(reading, turn => roundTripAssistantTurn(
+    source.name, target.name, turn.assistantTurn, options.sidecarCodec, source.sidecarRecognition,
+  ));
 
 /**
  * The request half of a composed trip, stated on its own.

@@ -21,6 +21,7 @@ import type {
 import { TranslatorInputError } from '../../../types.ts';
 import type { Reading, TurnSlot } from '../../composition/reading.ts';
 import type {
+  AnthropicMessagesAssistantInputContentBlock,
   AnthropicMessagesClientTool,
   AnthropicMessagesImageBlock,
   AnthropicMessagesMetadataEx,
@@ -156,7 +157,11 @@ const clientItems = (
 // turn boundary here.
 //
 // https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool
-const SERVER_TOOL_RESULT_TYPES: ReadonlySet<string> = new Set([
+type ServerToolResultBlock = Extract<AnthropicMessagesAssistantInputContentBlock, {
+  type: 'web_search_tool_result' | 'web_fetch_tool_result' | 'code_execution_tool_result'
+  | 'bash_code_execution_tool_result' | 'text_editor_code_execution_tool_result' | 'tool_search_tool_result';
+}>;
+const SERVER_TOOL_RESULT_TYPES: ReadonlySet<AnthropicMessagesAssistantInputContentBlock['type']> = new Set([
   'web_search_tool_result',
   'web_fetch_tool_result',
   'code_execution_tool_result',
@@ -164,6 +169,9 @@ const SERVER_TOOL_RESULT_TYPES: ReadonlySet<string> = new Set([
   'text_editor_code_execution_tool_result',
   'tool_search_tool_result',
 ]);
+
+const isServerToolResult = (block: AnthropicMessagesAssistantInputContentBlock): block is ServerToolResultBlock =>
+  SERVER_TOOL_RESULT_TYPES.has(block.type);
 
 interface AnthropicMessagesAssistantSegments {
   // One entry per run of assistant items, each followed by the tool results the
@@ -201,9 +209,9 @@ const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'a
   };
 
   for (const [blockIdx, block] of message.content.entries()) {
-    if (SERVER_TOOL_RESULT_TYPES.has(block.type)) {
+    if (isServerToolResult(block)) {
       flushText();
-      const result = block as { tool_use_id: string; content: unknown };
+      const result = block;
       serverResults.push({
         type: 'tool_result',
         call_id: result.tool_use_id,
@@ -280,12 +288,11 @@ const anthropicMessagesTurnToIR = (
 // states both callable kinds with the same shape, so the arm is the neutral one
 // every target can express.
 const toolToIR = (tool: AnthropicMessagesClientTool): IRInputTool => {
-  const format = tool.input_schema as { type?: unknown } & Record<string, unknown>;
   return {
     type: 'function',
     name: tool.name,
     ...(tool.description === undefined ? {} : { description: tool.description }),
-    ...(format === undefined ? {} : { parameters: klona(tool.input_schema) as unknown as Readonly<Record<string, unknown>> }),
+    parameters: klona(tool.input_schema),
     ...(tool.strict === undefined ? {} : { strict: tool.strict }),
   };
 };
@@ -298,7 +305,7 @@ const toolChoiceToIR = (choice: NonNullable<AnthropicMessagesPayload['tool_choic
   default: {
     // A selector names a declaration the same request supplies; a request that
     // points at nothing cannot be translated into any target's vocabulary.
-    const name = (choice as { name: string }).name;
+    const name = choice.name;
     if (!declarations.some(tool => tool.name === name)) {
       throw new TranslatorInputError(`Anthropic Messages tool_choice names an undeclared tool: ${String(name)}`);
     }
@@ -339,7 +346,7 @@ const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload): IRInp
 
   const reasoningEffort = reasoningEffortFromAnthropicMessages(payload);
   const serviceTier = serviceTierFromAnthropicMessages(payload);
-  const metadata = metadataFromAnthropicMessages(payload.metadata as AnthropicMessagesMetadataEx | undefined);
+  const metadata = metadataFromAnthropicMessages(payload.metadata);
   return {
     model: payload.model,
     stream: payload.stream === true,

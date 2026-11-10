@@ -1,9 +1,9 @@
-import { parseJSONObject } from './json/object.ts';
+import { isJSONRecord, parseJSONObject } from './json/object.ts';
 import type { IRErrorPayload } from '../ir/common/error.ts';
 import type { TranslatedApiError } from '../types.ts';
 
 const recordOf = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
-  typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Readonly<Record<string, unknown>> : undefined;
+  isJSONRecord(value) ? value : undefined;
 
 const stringOf = (value: unknown): string | undefined => typeof value === 'string' ? value : undefined;
 

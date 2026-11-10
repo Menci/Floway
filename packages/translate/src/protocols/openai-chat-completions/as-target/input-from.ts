@@ -191,8 +191,7 @@ export const openaiChatCompletionsConversationFromIR = (
  */
 // OpenAI's strict-mode validators reject an object schema without `properties`,
 // which is a target-side constraint rather than something the IR states.
-const normalizeParameters = (schema: Readonly<Record<string, unknown>> | undefined): Record<string, unknown> | undefined => {
-  if (schema === undefined) return undefined;
+const normalizeParameters = (schema: Readonly<Record<string, unknown>>): Record<string, unknown> => {
   const target = { ...schema };
   return target.type === 'object' && target.properties === undefined ? { ...target, properties: {} } : target;
 };

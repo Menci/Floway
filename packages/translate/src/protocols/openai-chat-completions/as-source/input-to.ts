@@ -27,7 +27,7 @@ import type {
   OpenAIChatCompletionsPayload,
   OpenAIChatCompletionsTool,
   OpenAIChatCompletionsUserContentPart,
-  OpenAIChatCompletionsStreamOptionsEx,
+  OpenAIChatCompletionsPayloadEx,
 } from '@floway-dev/protocols/openai-chat-completions';
 
 // Chat Completions names an audio container while the other protocols name a
@@ -262,10 +262,8 @@ const openaiChatCompletionsRequestToIR = (payload: OpenAIChatCompletionsPayload)
   ...openaiChatCompletionsToolsToIR(payload),
 });
 
-export const continuousUsageOf = (payload: OpenAIChatCompletionsPayload): boolean => {
-  const streamOptions = payload.stream_options as OpenAIChatCompletionsStreamOptionsEx | undefined;
-  return streamOptions?.include_usage === true && streamOptions.continuous_usage_stats === true;
-};
+export const continuousUsageOf = (payload: OpenAIChatCompletionsPayloadEx): boolean =>
+  payload.stream_options?.include_usage === true && payload.stream_options?.continuous_usage_stats === true;
 
 const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload): IRInputSettings => {
   const ceiling = payload.max_completion_tokens ?? payload.max_tokens;

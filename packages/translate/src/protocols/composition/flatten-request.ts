@@ -80,9 +80,11 @@ export const flattenRequestNames = <Restored>(
     ...selection,
     name: nameOf(selection.namespace, selection.name),
   });
-  const flattenChoice = (choice: IRInputToolChoice): IRInputToolChoice => typeof choice === 'string' || choice.type === 'allowed_tools'
-    ? typeof choice === 'string' ? choice : { ...choice, tools: choice.tools.map(flattenSelection) }
-    : flattenSelection(choice);
+  const flattenChoice = (choice: IRInputToolChoice): IRInputToolChoice => {
+    if (typeof choice === 'string') return choice;
+    if (choice.type === 'allowed_tools') return { ...choice, tools: choice.tools.map(flattenSelection) };
+    return flattenSelection(choice);
+  };
   const flattenedRequest: IRInputRequestHeader = {
     ...request,
     ...(request.tools === undefined ? {} : { tools: request.tools.map(flattenTool) }),
@@ -122,7 +124,7 @@ export const flattenRequestNames = <Restored>(
  * was allocated before it. That is why the caller walks the whole conversation
  * in one pass rather than mapping each declaration alone.
  */
-export interface GroupedCallable {
+interface GroupedCallable {
   readonly namespace: string;
   readonly name: string;
 }
@@ -134,7 +136,7 @@ export interface GroupedCallable {
  * grouped callable must not take one of them, and must not take a name this
  * pass has already handed out.
  */
-export const assignFlatNames = <T extends GroupedCallable>(
+const assignFlatNames = <T extends GroupedCallable>(
   callables: readonly T[],
   reserved: ReadonlySet<string>,
 ): Map<string, string> => {

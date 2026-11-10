@@ -47,8 +47,8 @@ const toolResultOutput = (output: string | readonly IRInputToolResultContentPart
   ? output
   : [...output].map(part => {
       if (part.type === 'text') return { type: 'input_text' as const, text: part.text };
-      if (part.type === 'image') return inputContent(part.image, part.detail) as OpenAIResponsesToolOutputContent;
-      return fileContent(part.file, part.filename) as OpenAIResponsesToolOutputContent;
+      if (part.type === 'image') return inputContent(part.image, part.detail);
+      return fileContent(part.file, part.filename);
     });
 
 // Responses accepts a bare string or a part array. The array is the general

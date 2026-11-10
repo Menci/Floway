@@ -13,7 +13,6 @@ const callsOf = (
   turn: ChatResolvedTurn,
   legacyCallIds: ReadonlyMap<ChatResolvedTurn, string>,
 ): readonly PendingCall[] => {
-  if (turn.role !== 'assistant') return [];
   // The legacy `function_call` field is a call too. This wire states no id for
   // it, so the only id it has is the one the client's own history answers it
   // with — which is also the id the answer is written back under.

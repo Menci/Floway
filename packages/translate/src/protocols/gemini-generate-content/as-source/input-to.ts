@@ -187,7 +187,7 @@ const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequestHe
   const tools: IRInputTool[] = declarations
     .filter(declaration => permitted === undefined || permitted.has(declaration.name))
     .map(declaration => {
-      const parameters = geminiFunctionParameters(declaration) as Readonly<Record<string, unknown>> | undefined;
+      const parameters = geminiFunctionParameters(declaration);
       return {
         type: 'function' as const,
         name: declaration.name,

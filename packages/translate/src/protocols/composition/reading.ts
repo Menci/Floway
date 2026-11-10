@@ -44,9 +44,7 @@ export interface Reading<AssistantTurn> {
  */
 export const resolveReading = async <AssistantTurn, Resolved>(
   reading: Reading<AssistantTurn>,
-  resolve: (turn: Extract<TurnSlot<AssistantTurn>, { kind: 'assistant' }>) => Promise<
-    { readonly resolved: Resolved } | undefined
-  >,
+  resolve: (turn: Extract<TurnSlot<AssistantTurn>, { kind: 'assistant' }>) => Promise<Resolved | undefined>,
 ): Promise<(IRInputTurn | { readonly kind: 'resolved'; readonly turn: Resolved })[]> => {
   const turns: (IRInputTurn | { readonly kind: 'resolved'; readonly turn: Resolved })[] = [];
   for (const turn of reading.turns) {
@@ -59,7 +57,7 @@ export const resolveReading = async <AssistantTurn, Resolved>(
       turns.push(...turn.toIRInputTurns());
       continue;
     }
-    turns.push({ kind: 'resolved', turn: result.resolved });
+    turns.push({ kind: 'resolved', turn: result });
   }
   return turns;
 };
