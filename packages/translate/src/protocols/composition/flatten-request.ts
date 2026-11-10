@@ -9,10 +9,20 @@ export interface FlatCallContext {
   readonly flatIdentities: ReadonlyMap<string, { readonly namespace: string; readonly name: string }>;
 }
 
-/** The declarations a request offers once its selector is applied, under the names this wire writes. */
-const customNamesOf = (request: IRInputRequestHeader): ReadonlySet<string> =>
-  new Set((irInputToolsForChoice(request.tools, request.tool_choice) ?? [])
-    .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
+/**
+ * The names this wire reports as freeform calls.
+ *
+ * A target reading its answer back sees a call's name and nothing else, so a
+ * name that is both a function and a custom tool cannot be classified: the
+ * answer would be reported in whichever shape this set picks. Such a name is
+ * left out, which reports the answer as the function call it most likely is,
+ * and the wire's own declarations keep the two kinds distinct.
+ */
+const customNamesOf = (request: IRInputRequestHeader): ReadonlySet<string> => {
+  const tools = irInputToolsForChoice(request.tools, request.tool_choice) ?? [];
+  const functionNames = new Set(tools.flatMap(tool => tool.type === 'function' ? [tool.name] : []));
+  return new Set(tools.flatMap(tool => tool.type === 'custom' && !functionNames.has(tool.name) ? [tool.name] : []));
+};
 
 /**
  * The pair each grouped callable stands for, keyed by the flat name it got.
@@ -61,34 +71,45 @@ export const flattenRequestNames = <Restored>(
 ): { readonly request: IRInputRequestHeader; readonly turns: readonly (IRInputTurn | ResolvedTurn<Restored>)[]; readonly context: FlatCallContext } => {
   const irTurns = inputTurns.flatMap(turn => turn.kind === 'resolved' ? [] : [turn]);
   const { flat, identities: flatIdentities } = flatNamesOf(request.tools ?? [], irTurns);
-  // Nothing is grouped, so the wire names are the client's own.
-  if (flat.size === 0) return { request, turns: inputTurns, context: { customToolNames: customNamesOf(request), flatIdentities } };
 
   // Every grouped callable was assigned a flat name by the pass above, so a
   // lookup that misses means this request states a group the mapping never saw.
+  // This runs even when nothing is grouped: a selector that names a group
+  // cannot be carried by a wire that has no grouped declarations to spell.
   const nameOf = (namespace: string | undefined, name: string): string => {
     if (namespace === undefined) return name;
     const flatName = flat.get(`${namespace}.${name}`);
     if (flatName === undefined) throw new TranslatorInputError(`Cannot translate a selector for undeclared grouped tool '${namespace}.${name}'.`);
     return flatName;
   };
-  const flattenTool = (tool: IRInputTool): IRInputTool => {
-    const { namespace: _namespace, ...rest } = tool;
-    return { ...rest, name: nameOf(tool.namespace, tool.name) };
-  };
-  const flattenSelection = (selection: IRInputToolSelector): IRInputToolSelector => ({
-    ...selection,
-    name: nameOf(selection.namespace, selection.name),
-  });
   const flattenChoice = (choice: IRInputToolChoice): IRInputToolChoice => {
     if (typeof choice === 'string') return choice;
     if (choice.type === 'allowed_tools') return { ...choice, tools: choice.tools.map(flattenSelection) };
     return flattenSelection(choice);
   };
+  const flattenSelection = (selection: IRInputToolSelector): IRInputToolSelector => ({
+    ...selection,
+    name: nameOf(selection.namespace, selection.name),
+  });
+  const toolChoice = request.tool_choice === undefined ? undefined : flattenChoice(request.tool_choice);
+
+  // Nothing is grouped, so every remaining wire name is the client's own.
+  if (flat.size === 0) {
+    return {
+      request: toolChoice === request.tool_choice ? request : { ...request, tool_choice: toolChoice },
+      turns: inputTurns,
+      context: { customToolNames: customNamesOf(request), flatIdentities },
+    };
+  }
+
+  const flattenTool = (tool: IRInputTool): IRInputTool => {
+    const { namespace: _namespace, ...rest } = tool;
+    return { ...rest, name: nameOf(tool.namespace, tool.name) };
+  };
   const flattenedRequest: IRInputRequestHeader = {
     ...request,
     ...(request.tools === undefined ? {} : { tools: request.tools.map(flattenTool) }),
-    ...(request.tool_choice === undefined ? {} : { tool_choice: flattenChoice(request.tool_choice) }),
+    ...(toolChoice === undefined ? {} : { tool_choice: toolChoice }),
   };
   return {
     request: flattenedRequest,

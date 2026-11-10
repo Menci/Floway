@@ -76,3 +76,28 @@ test('two different groups spelling the same dotted key are refused rather than 
     'ambiguous grouped callables',
   );
 });
+
+test('a selector naming a group this request does not declare is refused', () => {
+  // The wire has no grouped declarations to spell, so a dotted selector cannot
+  // be resolved; passing it through would force a name the upstream never got.
+  assertThrows(
+    () => flattenRequestNames({ settings: { model: 'm', stream: true }, tools: [{ type: 'function', name: 'web.run', parameters: { type: 'object' } }], tool_choice: { type: 'function', name: 'run', namespace: 'web' } }, []),
+    TranslatorInputError,
+  );
+});
+
+test('a plain selector passes through untouched', () => {
+  const flattened = flattenRequestNames({ settings: { model: 'm', stream: true }, tools: [{ type: 'function', name: 'plain', parameters: { type: 'object' } }], tool_choice: { type: 'function', name: 'plain' } }, []);
+  assertEquals(flattened.request.tool_choice, { type: 'function', name: 'plain' });
+});
+
+test('a name shared by a function and a custom tool is not reported as freeform', () => {
+  // The answer names the call and nothing else, so an ambiguous name cannot be
+  // classified; only names that are exclusively freeform are reported.
+  const flattened = flattenRequestNames(request([
+    { type: 'function', name: 'edit', parameters: { type: 'object' } },
+    { type: 'custom', name: 'edit' },
+    { type: 'custom', name: 'run' },
+  ]), []);
+  assertEquals([...flattened.context.customToolNames], ['run']);
+});
