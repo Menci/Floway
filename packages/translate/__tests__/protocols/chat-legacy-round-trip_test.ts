@@ -183,7 +183,7 @@ test('a legacy call answered after another assistant turn is refused', async () 
     { role: 'assistant', content: 'meanwhile' },
     { role: 'user', content: [{ type: 'tool_result', tool_use_id: call.id, content: 'late' }] },
   );
-  await expect(routeAnthropicMessagesViaOpenAIChatCompletions(payload, context)).rejects.toThrow('stated without an id');
+  await expect(routeAnthropicMessagesViaOpenAIChatCompletions(payload, context)).rejects.toThrow('does not answer it');
 });
 
 test('a legacy call and its answer share one client turn without being refused', async () => {

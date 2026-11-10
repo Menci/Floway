@@ -19,11 +19,15 @@ export const openaiChatCompletionsPayloadFromSegments = <Restored extends OpenAI
   request: IRInputRequestHeader,
   turns: readonly (IRInputAddressedTurn | ResolvedTurn<Restored>)[],
   resolvedMessage: (turn: Restored) => OpenAIChatCompletionsMessage,
+  // The legacy call each result answers, by the id that result carries. Only
+  // this writer reads it: a legacy call has no id to answer with, so its answer
+  // is stated in the `function` form this wire pairs with the field.
+  legacyCallNames: ReadonlyMap<string, string>,
 ): OpenAIChatCompletionsPayload => {
   const messages: OpenAIChatCompletionsMessage[] = [];
   for (const piece of segmentTurns(turns)) {
     if (piece.kind === 'resolved') { messages.push(resolvedMessage(piece.turn)); continue; }
-    messages.push(...openaiChatCompletionsConversationFromIR(piece.turns));
+    messages.push(...openaiChatCompletionsConversationFromIR(piece.turns, legacyCallNames));
   }
   // The request-level fields are one answer for the whole conversation, so they
   // are computed once rather than per segment.

@@ -23,15 +23,7 @@ export interface IRInputAddressedAssistantTurn {
   readonly items: readonly IRInputAddressedAssistantItem[];
 }
 export type IRInputAddressedClientItem = IRInputPromptItem | IRInputUserMessageItem | IRInputAddressedToolResultItem;
-export type IRInputAddressedToolResultItem = IRInputToolResultItem & {
-  readonly call_id: string;
-  // The name of the call this answers, recorded only when that call states no
-  // id of its own. Chat Completions' legacy `function_call` is the only call
-  // that can lack one, and only that writer reads this: it answers such a call
-  // in the `function` form the field belongs with, which names the call instead
-  // of naming an id.
-  readonly legacy_call_name?: string;
-};
+export type IRInputAddressedToolResultItem = IRInputToolResultItem & { readonly call_id: string };
 export type IRInputAddressedAssistantItem =
   | Exclude<IRInputAssistantItem, IRInputFunctionCallItem | IRInputCustomToolCallItem>
   | (IRInputFunctionCallItem & { readonly call_id: string })
