@@ -23,7 +23,7 @@ export const openaiResponsesSourceProtocol: SourceProtocol<
     collectCandidates: collectOpenAIResponsesReplayContents,
   },
   writeError: openaiResponsesErrorWriter,
-  writeStream: (reading, payload, records, writer) => {
+  writeStream: (_reading, payload, records, roundTrip) => {
     // A response id names the upstream response, so one is minted per trip.
     const responseId = createRandomOpenAIResponsesResponseId();
     // The response objects echo the client's own declarations, which only the
@@ -32,7 +32,7 @@ export const openaiResponsesSourceProtocol: SourceProtocol<
     const { tools, tool_choice: toolChoice } = payload;
     return openaiResponsesFromIR(records, {
       id: responseId,
-      roundTrip: writer,
+      roundTrip,
       ...(tools == null || tools.length === 0 ? {} : { echoedTools: tools }),
       ...(toolChoice == null ? {} : { echoedToolChoice: toolChoice }),
     });

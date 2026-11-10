@@ -40,17 +40,17 @@ export interface SourceProtocol<Name extends AssistantTurnKey, Payload, Event> {
   /**
    * States the returned stream to this protocol's client.
    *
-   * It is handed the reading's request, because what the client sees stated
-   * back can depend on what it asked for, and the request is where that lives.
+   * Two facts about the request are here, and neither substitutes for the
+   * other. `reading` holds what the reader derived when the trip was built, so
+   * a preference it normalized is stated back as it was then. `payload` is the
+   * client's own request, which is the only place a spelling the reader
+   * normalized away — a declaration group, say — survives.
    */
   readonly writeStream: (
     reading: IRInputReading<SourceAssistantTurnFor<Name>>,
-    // The payload the client sent. A response object echoes the declarations the
-    // client asked with, and only the payload states them as the client wrote
-    // them — the IR holds the normalized form.
     payload: Payload,
     records: AsyncIterable<IRRecord>,
-    writer: RoundTripWriter<Name>,
+    roundTrip: RoundTripWriter<Name>,
   ) => AsyncIterable<ProtocolFrame<Event>>;
 }
 

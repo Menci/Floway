@@ -22,8 +22,10 @@ export const openaiChatCompletionsSourceProtocol: SourceProtocol<
     collectCandidates: collectOpenAIChatCompletionsReplayContents,
   },
   writeError: openaiChatCompletionsErrorWriter,
-  writeStream: (reading, _payload, records, writer) => openaiChatCompletionsFromIR(records, {
+  // The preference the reader recorded when the trip was built, so a payload
+  // the caller mutates afterwards cannot change what this trip states back.
+  writeStream: (reading, _payload, records, roundTrip) => openaiChatCompletionsFromIR(records, {
     continuousUsageStats: reading.request.settings.continuous_usage === true,
-    roundTrip: writer,
+    roundTrip,
   }),
 };
