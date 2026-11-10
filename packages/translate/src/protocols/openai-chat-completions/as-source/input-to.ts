@@ -262,7 +262,7 @@ const openaiChatCompletionsRequestToIR = (payload: OpenAIChatCompletionsPayload)
   ...openaiChatCompletionsToolsToIR(payload),
 });
 
-const continuousUsageOf = (payload: OpenAIChatCompletionsPayload): boolean => {
+export const continuousUsageOf = (payload: OpenAIChatCompletionsPayload): boolean => {
   const streamOptions = payload.stream_options as OpenAIChatCompletionsStreamOptionsEx | undefined;
   return streamOptions?.include_usage === true && streamOptions.continuous_usage_stats === true;
 };
@@ -308,7 +308,6 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
     // asks for one on every chunk. Both are the client's own rendering choice,
     // so the field states what it asked for and a target never receives it.
     // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/openai/serving_engine.py#L112-L121
-    ...(continuousUsageOf(payload) === false ? {} : { continuous_usage: true }),
   };
 };
 

@@ -91,11 +91,6 @@ export interface IRInputSettings {
   // Repetition penalties. Chat and GenerateContent state the same pair.
   readonly presence_penalty?: number; // ChatCompletions, GenerateContent
   readonly frequency_penalty?: number; // ChatCompletions, GenerateContent
-  // Whether the client wants a usage report on every chunk it receives rather
-  // than only the final one. A source protocol states it in its own stream
-  // options; a target always asks its upstream for the fullest report it can
-  // get, so this is stated back to the client rather than sent upstream.
-  readonly continuous_usage?: boolean; // ChatCompletions
 }
 
 // Structured output. `strict` is three-state: absent means the source did not

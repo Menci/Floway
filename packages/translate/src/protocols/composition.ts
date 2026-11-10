@@ -39,13 +39,11 @@ export interface SourceProtocol<Name extends AssistantTurnProtocol, Payload, Eve
   /**
    * States the returned stream to this protocol's client.
    *
-   * It is handed the request its own reader produced, because what the client
-   * sees stated back is what it asked for and the IR is where that lived. The
-   * payload comes too, for the spellings a reader normalizes away — a
-   * declaration group, say — which the IR cannot hold.
+   * It is handed the payload the client sent, because what the client sees
+   * stated back is what it asked for, and the payload is the only place a
+   * spelling the reader normalized away — a declaration group, say — survives.
    */
   readonly writeStream: (
-    request: IRInputRequestHeader,
     payload: Payload,
     records: AsyncIterable<IRRecord>,
     roundTrip: RoundTripWriter<Name>,
@@ -128,7 +126,7 @@ export const composeTranslation = <
     restateUpstreamError: source.restateUpstreamError,
     events: frames => {
       const stream = createRoundTripStream(source.name, target.name, options.sidecarCodec);
-      return source.writeStream(reading.request, payload, target.readStream(frames, context, stream.reader), stream.writer);
+      return source.writeStream(payload, target.readStream(frames, context, stream.reader), stream.writer);
     },
   };
 };
@@ -201,6 +199,6 @@ export const buildSourceEventsFor = <
   // the same writing step the composed trip does.
   return (async function* () {
     const { context } = target.write(reading.request, await resolveReadingTurns(source, target, reading, options), options);
-    yield* source.writeStream(reading.request, payload, target.readStream(frames, context, stream.reader), stream.writer);
+    yield* source.writeStream(payload, target.readStream(frames, context, stream.reader), stream.writer);
   })();
 };
