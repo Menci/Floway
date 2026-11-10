@@ -12,8 +12,8 @@ import type {
   IRInputToolResultContentPart,
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
-import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
 import { TranslatorInputError } from '../../../types.ts';
+import { buildCustomToolInputSchema } from '../../custom-tool.ts';
 import type {
   AnthropicMessagesAssistantInputContentBlock,
   AnthropicMessagesClientTool,

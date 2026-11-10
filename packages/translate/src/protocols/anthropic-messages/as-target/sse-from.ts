@@ -4,8 +4,8 @@ import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRRecord } 
 import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendField, createFieldState, type ReadFieldState, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
-import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';
+import { unwrapCustomToolInput } from '../../custom-tool.ts';
 import {
   type AnthropicMessagesAssistantContentBlock,
   type AnthropicMessagesStreamEventEx,

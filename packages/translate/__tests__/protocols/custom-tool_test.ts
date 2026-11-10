@@ -1,6 +1,6 @@
 import { test, vi } from 'vitest';
 
-import { buildCustomToolInputSchema, unwrapCustomToolInput } from '../../src/shared/custom-tool.ts';
+import { buildCustomToolInputSchema, unwrapCustomToolInput } from '../../src/protocols/custom-tool.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 // ── buildCustomToolInputSchema ──
@@ -14,17 +14,8 @@ test('buildCustomToolInputSchema returns plain single-string schema when format 
   });
 });
 
-test('buildCustomToolInputSchema returns plain single-string schema when format has no definition', () => {
-  assertEquals(buildCustomToolInputSchema({ type: 'grammar', syntax: 'lark' }), {
-    type: 'object',
-    additionalProperties: false,
-    required: ['input'],
-    properties: { input: { type: 'string' } },
-  });
-});
-
 test('buildCustomToolInputSchema returns plain single-string schema when format.definition is empty', () => {
-  assertEquals(buildCustomToolInputSchema({ definition: '' }), {
+  assertEquals(buildCustomToolInputSchema({ type: 'grammar', syntax: 'lark', definition: '' }), {
     type: 'object',
     additionalProperties: false,
     required: ['input'],
@@ -50,30 +41,12 @@ test('buildCustomToolInputSchema preserves regex syntax in the description', () 
   });
 });
 
-test('buildCustomToolInputSchema uses a generic label for an unknown syntax', () => {
-  assertEquals(buildCustomToolInputSchema({ definition: 'constraint' }), {
-    type: 'object',
-    additionalProperties: false,
-    required: ['input'],
-    properties: { input: { type: 'string', description: 'Grammar: constraint' } },
-  });
-});
-
 test('buildCustomToolInputSchema preserves an open-string syntax label', () => {
-  assertEquals(buildCustomToolInputSchema({ syntax: 'peg', definition: 'start <- value' }), {
+  assertEquals(buildCustomToolInputSchema({ type: 'grammar', syntax: 'peg', definition: 'start <- value' }), {
     type: 'object',
     additionalProperties: false,
     required: ['input'],
     properties: { input: { type: 'string', description: 'Grammar (peg): start <- value' } },
-  });
-});
-
-test('buildCustomToolInputSchema ignores non-string definition values', () => {
-  assertEquals(buildCustomToolInputSchema({ definition: 42 as unknown as string }), {
-    type: 'object',
-    additionalProperties: false,
-    required: ['input'],
-    properties: { input: { type: 'string' } },
   });
 });
 

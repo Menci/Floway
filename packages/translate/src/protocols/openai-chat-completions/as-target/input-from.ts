@@ -12,9 +12,9 @@ import type {
   IRInputAddressedClientItem,
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
-import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
-import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import { TranslatorInputError } from '../../../types.ts';
+import { buildCustomToolInputSchema } from '../../custom-tool.ts';
+import { reasoningEffortForBudget } from '../../openai-reasoning.ts';
 import type {
   OpenAIChatCompletionsPayload,
   OpenAIChatCompletionsMessage,

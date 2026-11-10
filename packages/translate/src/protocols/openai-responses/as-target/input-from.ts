@@ -14,8 +14,8 @@ import type {
   IRInputClientItem,
   IRInputPromptItem,
 } from '../../../ir/input/types.ts';
-import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import { TranslatorInputError } from '../../../types.ts';
+import { reasoningEffortForBudget } from '../../openai-reasoning.ts';
 import type {
   CanonicalOpenAIResponsesInputItem,
   CanonicalOpenAIResponsesPayload,
