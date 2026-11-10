@@ -8,7 +8,7 @@ type IRValueVisitor = (path: IRPath, node: IRSchemaNode, value: IROutputValue) =
 const isPlainObject = (value: unknown): value is Record<string, IROutputValue> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 // Opaque values are replaced as a whole, so only what no output IR value may contain is rejected.
-export const assertPlainValue = (path: IRPath, value: unknown): void => {
+const assertPlainValue = (path: IRPath, value: unknown): void => {
   if (value === undefined) throw new TypeError(`output IR values cannot contain undefined: ${irPathKey(path)}`);
   if (value === IRAbsent) throw new TypeError(`IRAbsent is not allowed at ${irPathKey(path)}`);
   if (typeof value !== 'object' || value === null) return;

@@ -6,8 +6,6 @@ import type { ContentReference } from './reference/reference-type.ts';
 import type { ReferenceableInputAssistantTurnFor } from './reference/registry.ts';
 import { isJSONRecord } from '../shared/json/object.ts';
 
-export type { AssistantTurnProtocol };
-
 const ROUND_TRIP_SIDECAR_VERSION = 1;
 
 // One wire version covers every translation subsystem. A field whose format can

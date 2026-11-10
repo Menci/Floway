@@ -5,8 +5,9 @@ import { computeAnthropicMessagesTurnDigest, findAnthropicMessagesSidecarCarrier
 import { computeGeminiGenerateContentTurnDigest, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest, type GeminiGenerateContentAssistantTurn } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
 import { computeOpenAIChatCompletionsTurnDigest, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest, type OpenAIChatCompletionsAssistantTurn } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
 import { computeOpenAIResponsesTurnDigest, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest, type OpenAIResponsesAssistantTurn } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
+import type { AssistantTurnProtocol } from '../../src/round-trip/assistant-turn.ts';
 import { roundTripAssistantTurn, type SidecarCarrier } from '../../src/round-trip/resolve.ts';
-import { encodeRoundTripSidecar, type AssistantTurnProtocol } from '../../src/round-trip/sidecar.ts';
+import { encodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import type { RoundTripTurnDigest } from '../../src/round-trip/turn-digest.ts';
 
 const sourceCase = <Turn>(

@@ -5,7 +5,7 @@ import type { ResolvedTurn } from '../../composition/segments.ts';
 
 type ChatResolvedTurn = InputAssistantTurnFor<'openaiChatCompletions'>;
 
-export interface ChatLegacyCalls {
+interface ChatLegacyCalls {
   /**
    * The id the answer to each restored legacy call is written under, keyed by
    * that restored turn. Two calls may share a name, so the turn identifies one.

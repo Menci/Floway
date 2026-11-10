@@ -2,7 +2,7 @@ import { irPathKey } from './operation-paths.ts';
 import type { IRUnit } from './operation-paths.ts';
 import type { IRPath } from './records.ts';
 
-export const createCounter = <K>() => {
+const createCounter = <K>() => {
   const counts = new Map<K, number>();
   return {
     get: (key: K): number => counts.get(key) ?? 0,

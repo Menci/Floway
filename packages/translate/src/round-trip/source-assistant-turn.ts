@@ -10,7 +10,7 @@ import type { OpenAIResponsesAssistantTurn } from '../protocols/openai-responses
  * `InputAssistantTurnFor`, and it belongs to the target. This is what the source
  * wrote, which is the only thing its sidecar can be computed over.
  */
-export interface SourceAssistantTurnByProtocol {
+interface SourceAssistantTurnByProtocol {
   openaiChatCompletions: OpenAIChatCompletionsAssistantTurn;
   openaiResponses: OpenAIResponsesAssistantTurn;
   anthropicMessages: AnthropicMessagesAssistantTurn;

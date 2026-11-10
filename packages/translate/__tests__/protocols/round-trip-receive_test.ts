@@ -5,10 +5,9 @@ import { computeAnthropicMessagesTurnDigest } from '../../src/protocols/anthropi
 import { computeGeminiGenerateContentTurnDigest } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
 import { computeOpenAIChatCompletionsTurnDigest } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
 import { computeOpenAIResponsesTurnDigest } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
-import type { InputAssistantTurnFor } from '../../src/round-trip/assistant-turn.ts';
+import type { AssistantTurnProtocol, InputAssistantTurnFor } from '../../src/round-trip/assistant-turn.ts';
 import { ContentReference } from '../../src/round-trip/reference/reference-type.ts';
 import type { ReferenceableInputAssistantTurnFor } from '../../src/round-trip/reference/registry.ts';
-import type { AssistantTurnProtocol } from '../../src/round-trip/sidecar.ts';
 import { encodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import { hashRoundTripContent, replayMaterialsByType } from '../../src/round-trip/turn-digest.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';

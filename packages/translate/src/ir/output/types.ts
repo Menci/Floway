@@ -1,15 +1,12 @@
 import type { IRAbsent } from '../common/absent.ts';
+import type { JSONValueOf } from '../common/json.ts';
 import type { IRTextRange } from '../common/text-range.ts';
 
 export type { IRErrorPayload } from '../common/error.ts';
 export { IRAbsent } from '../common/absent.ts';
 
-// The value shape of the output IR: JSON plus `IRAbsent` at any leaf that may be
-// determined-never-to-arrive.
-type IRValueOf<Extra> = Extra | null | boolean | number | string | readonly IRValueOf<Extra>[] | { readonly [key: string]: IRValueOf<Extra> };
-
 // All
-export type IROutputValue = IRValueOf<IRAbsent>;
+export type IROutputValue = JSONValueOf<IRAbsent>;
 
 // All
 export interface IROutput {
