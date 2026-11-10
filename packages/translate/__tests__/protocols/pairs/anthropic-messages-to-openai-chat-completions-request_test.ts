@@ -636,3 +636,17 @@ test('rejects a metadata value the neutral model cannot state as a string pair',
     'nested',
   );
 });
+
+test('buildTargetPayload encodes a plain-text document source as base64', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [{
+      role: 'user',
+      content: [{ type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'hello world' } }],
+    }],
+  });
+  const part = result.messages[0].content;
+  if (!Array.isArray(part)) throw new Error('expected a content array');
+  assertEquals(part[0], { type: 'file', file: { file_data: 'data:text/plain;base64,aGVsbG8gd29ybGQ=' } });
+});

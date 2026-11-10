@@ -50,13 +50,23 @@ const textBlocks = (content: string | readonly AnthropicMessagesTextBlockParam[]
 // Messages carries file content as a `document` block whose source is a PDF,
 // plain text, a URL, or an embedded content array. The input IR keeps the same two
 // payload kinds it uses everywhere else.
+const base64Of = (text: string): string => {
+  const bytes = new TextEncoder().encode(text);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+};
+
 const documentMedia = (block: Extract<AnthropicMessagesUserContentBlock, { type: 'document' }>): IRInputMedia => {
   const source = block.source;
   switch (source.type) {
   case 'base64': return { source_kind: 'base64', media_type: source.media_type, data: source.data };
   case 'url': return { source_kind: 'url', url: source.url };
   case 'file': return { source_kind: 'file', file_id: source.file_id };
-  case 'text': return { source_kind: 'base64', media_type: source.media_type, data: source.data };
+  // A `text` document source carries the document's bytes as plain text, while
+  // every target that accepts a file expects base64. Encoding here keeps the
+  // IR's media arms uniform.
+  case 'text': return { source_kind: 'base64', media_type: source.media_type, data: base64Of(source.data) };
   case 'content':
     throw new TranslatorInputError('Cannot translate an inline content document; supply a base64, URL, text, or file source.');
   }
