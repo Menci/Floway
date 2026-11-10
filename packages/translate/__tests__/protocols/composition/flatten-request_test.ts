@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
-import type { IRInputRequestHeader, IRInputTool, IRInputTurn } from '../../src/ir/input/types.ts';
-import { flattenRequestNames } from '../../src/shared/flatten-request.ts';
-import { TranslatorInputError } from '../../src/types.ts';
+import type { IRInputRequestHeader, IRInputTool, IRInputTurn } from '../../../src/ir/input/types.ts';
+import { flattenRequestNames } from '../../../src/protocols/composition/flatten-request.ts';
+import { TranslatorInputError } from '../../../src/types.ts';
 import { assertThrows, assertEquals } from '@floway-dev/test-utils';
 
 const request = (tools: readonly IRInputTool[]): IRInputRequestHeader => ({ settings: { model: 'm', stream: true }, tools });

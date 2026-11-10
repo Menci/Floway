@@ -1,6 +1,6 @@
-import type { IRInputAddressedAssistantItem, IRInputAddressedClientItem, IRInputAddressedTurn, IRInputTurn } from '../ir/input/types.ts';
-import type { ResolvedTurn } from '../protocols/composition/segments.ts';
-import { TranslatorInputError } from '../types.ts';
+import type { IRInputAddressedAssistantItem, IRInputAddressedClientItem, IRInputAddressedTurn, IRInputTurn } from '../../ir/input/types.ts';
+import type { ResolvedTurn } from './segments.ts';
+import { TranslatorInputError } from '../../types.ts';
 
 /** A call that has been stated and is still waiting for its result. */
 export interface PendingCall {

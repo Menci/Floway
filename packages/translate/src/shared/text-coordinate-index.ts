@@ -1,4 +1,4 @@
-import type { IRTextRange } from '../ir/output/types.ts';
+import type { IRTextRange } from '../ir/common/text-range.ts';
 
 type TextCoordinateMode = 'code-point-to-utf16' | 'utf16-to-code-point' | 'utf16-to-utf8';
 

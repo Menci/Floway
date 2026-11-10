@@ -1,4 +1,3 @@
-import { createRandomOpenAIResponsesResponseId } from './response-id.ts';
 import { collectOpenAIResponsesTextViews, computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import type { IRCollector } from '../../../ir/output/collector.ts';
@@ -10,7 +9,7 @@ import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/output/unit
 import { appendContent, createEmittedFieldState, type EmittedFieldState, type EmittedFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { SourceStreamOutputOptions } from '../../../round-trip/stream.ts';
-import { isCompleteJSONObject, parseJSONObjectAtCompletion } from '../../../shared/json/object.ts';
+import { isCompleteJSONObject, parseJSONObjectAtCompletion, isJSONRecord } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantState } from '../as-target/assistant-turn.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -25,6 +24,8 @@ import {
   type OpenAIResponsesResultEx,
   type OpenAIResponsesStreamEventEx,
 } from '@floway-dev/protocols/openai-responses';
+
+export const createRandomOpenAIResponsesResponseId = (): string => `resp_${crypto.randomUUID().replaceAll('-', '').slice(0, 24)}`;
 
 interface ResponsesOutputUnitBase {
   readonly path: IRPath;
@@ -70,11 +71,8 @@ type MessagePart = IROutputMessageItem['content'][number];
 type ResponsesMessageState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>, EmittedFieldStates>;
 type ResponsesReasoningState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'reasoning' }>, EmittedFieldStates>;
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const initializedType = (value: unknown): IROutputItem['type'] | MessagePart['type'] | undefined => {
-  if (!isRecord(value)) return undefined;
+  if (!isJSONRecord(value)) return undefined;
   return value.type === 'message'
     || value.type === 'reasoning'
     || value.type === 'function_call'
@@ -90,14 +88,14 @@ const initializedType = (value: unknown): IROutputItem['type'] | MessagePart['ty
 type TextPartLogprobMetadata = { readonly item_index: number; readonly content_index: number };
 
 const textPartLogprobMetadata = (value: unknown): TextPartLogprobMetadata | undefined => {
-  if (!isRecord(value) || value.scope !== 'text_part') return undefined;
+  if (!isJSONRecord(value) || value.scope !== 'text_part') return undefined;
   return typeof value.item_index === 'number' && typeof value.content_index === 'number'
     ? { item_index: value.item_index, content_index: value.content_index }
     : undefined;
 };
 
 const isIRTokenLogprob = (value: unknown): value is IROutputTokenLogprob =>
-  isRecord(value) && typeof value.token === 'string' && typeof value.logprob === 'number';
+  isJSONRecord(value) && typeof value.token === 'string' && typeof value.logprob === 'number';
 
 const reasoningPartAdded = (field: ReasoningField, itemId: string, outputIndex: number, index: number): OpenAIResponsesStreamEventEx =>
   field === 'summary'

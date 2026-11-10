@@ -1,16 +1,17 @@
 import { collectAnthropicMessagesTextViews, computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
+import type { IRJSONObject } from '../../../ir/common/json.ts';
 import type { IRCollector } from '../../../ir/output/collector.ts';
 import { isIRItemPath, isIRPartPath, irPathKey } from '../../../ir/output/operation-paths.ts';
 import { createIROrdinalMapper } from '../../../ir/output/ordinal-mapper.ts';
 import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/output/stream.ts';
-import { IRAbsent, type IROutput, type IRErrorPayload, type IRJSONObject } from '../../../ir/output/types.ts';
+import { IRAbsent, type IROutput, type IRErrorPayload } from '../../../ir/output/types.ts';
 import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/output/unit-queue.ts';
 import { appendContent, createEmittedFieldState, type EmittedFieldState, type EmittedFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { SourceStreamOutputOptions } from '../../../round-trip/stream.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
-import { parseJSONObject, parseJSONObjectAtCompletion, requireJSONObject } from '../../../shared/json/object.ts';
+import { parseJSONObject, parseJSONObjectAtCompletion, requireJSONObject, isJSONRecord } from '../../../shared/json/object.ts';
 import type { AnthropicMessagesAssistantState, AnthropicMessagesInputAssistantTurn } from '../as-target/assistant-turn.ts';
 import {
   generateAnthropicId,
@@ -78,11 +79,8 @@ interface MessagesUnit {
   nextPending?: MessagesUnit;
 }
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const unitKind = (value: unknown): MessagesUnit['kind'] | 'custom_tool_call' | undefined => {
-  if (!isRecord(value)) return undefined;
+  if (!isJSONRecord(value)) return undefined;
   return value.type === 'text'
     || value.type === 'refusal'
     || value.type === 'audio'

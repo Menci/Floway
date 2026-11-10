@@ -11,7 +11,6 @@ import type {
   IRInputToolChoice,
   IRInputToolSelector,
   IRInputOutputFormat,
-  IRInputMedia,
   IRInputTextPart,
   IRInputToolResultContentPart,
   IRInputToolResultItem,
@@ -20,6 +19,7 @@ import type {
   IRInputClientItem,
 
 } from '../../../ir/input/types.ts';
+import { mediaFromURL } from '../../../shared/media.ts';
 import { TranslatorInputError } from '../../../types.ts';
 import type { Reading } from '../../composition/reading.ts';
 import type {
@@ -30,18 +30,9 @@ import type {
   OpenAIChatCompletionsStreamOptionsEx,
 } from '@floway-dev/protocols/openai-chat-completions';
 
-const DATA_URL = /^data:([^;,]+)?;base64,(.*)$/s;
-
 // Chat Completions names an audio container while the other protocols name a
 // MIME type. The input IR keeps the MIME type so a Chat source can reach GenerateContent.
 const AUDIO_MEDIA_TYPES: Readonly<Record<string, string>> = { wav: 'audio/wav', mp3: 'audio/mp3' };
-
-const mediaFromUrl = (url: string): IRInputMedia => {
-  const dataUrl = DATA_URL.exec(url);
-  if (dataUrl === null) return { source_kind: 'url', url };
-  const mediaType = dataUrl[1]?.trim();
-  return { source_kind: 'base64', ...(mediaType === undefined || mediaType === '' ? {} : { media_type: mediaType }), data: dataUrl[2] };
-};
 
 // An explicitly empty user or assistant message still occupies a native
 // message of its own, so those keep one empty text part. An empty system run
@@ -84,7 +75,7 @@ const userContentPart = (part: OpenAIChatCompletionsUserContentPart): IRInputUse
   case 'image_url':
     return {
       type: 'image',
-      image: mediaFromUrl(part.image_url.url),
+      image: mediaFromURL(part.image_url.url),
       ...(part.image_url.detail === undefined ? {} : { detail: part.image_url.detail }),
     };
   case 'input_audio':

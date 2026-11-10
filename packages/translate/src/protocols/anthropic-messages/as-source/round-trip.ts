@@ -1,9 +1,8 @@
-import type { IRJSONObject, IRJSONValue } from '../../../ir/output/types.ts';
+import type { IRJSONObject, IRJSONValue } from '../../../ir/common/json.ts';
 import type { ReplayContent } from '../../../round-trip/reference/assistant-turn.ts';
 import type { SidecarCarrier } from '../../../round-trip/resolve.ts';
 import { collectTextGroups, collectTextPlacementIndex, type TextContribution, type TextPlacementIndex } from '../../../round-trip/text-groups.ts';
-import { computeRoundTripTurnDigest, replayMaterialsByType, verifyRoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
-import type { RoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
+import { replayMaterialsByType, turnDigestComputer, turnDigestVerifier } from '../../../round-trip/turn-digest.ts';
 import { isPlainJSONObject, requireJSONObject } from '../../../shared/json/object.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesAssistantMessage, AnthropicMessagesRedactedThinkingBlock } from '@floway-dev/protocols/anthropic-messages';
 
@@ -50,8 +49,7 @@ export const findAnthropicMessagesSidecarCarriers = (turn: AnthropicMessagesAssi
     }]);
   });
 
-export const computeAnthropicMessagesTurnDigest = (turn: AnthropicMessagesAssistantTurn): Promise<RoundTripTurnDigest> =>
-  computeRoundTripTurnDigest(messagesTurnDigestMaterialV1(turn));
+export const computeAnthropicMessagesTurnDigest = turnDigestComputer(messagesTurnDigestMaterialV1);
 
 export const collectAnthropicMessagesReplayContents = (turn: AnthropicMessagesAssistantTurn): ReplayContent[] => {
   const candidates: ReplayContent[] = [];
@@ -68,16 +66,7 @@ export const collectAnthropicMessagesReplayContents = (turn: AnthropicMessagesAs
   return candidates;
 };
 
-export const verifyAnthropicMessagesTurnDigest = (
-  turn: AnthropicMessagesAssistantTurn,
-  sourceTurnDigest: RoundTripTurnDigest,
-  version: number,
-): Promise<boolean> => {
-  switch (version) {
-  case 1: return verifyRoundTripTurnDigest(messagesTurnDigestMaterialV1(turn), sourceTurnDigest);
-  default: return Promise.resolve(false);
-  }
-};
+export const verifyAnthropicMessagesTurnDigest = turnDigestVerifier(messagesTurnDigestMaterialV1);
 
 export const createAnthropicMessagesSidecarCarrier = (data: string): AnthropicMessagesRedactedThinkingBlock => ({ type: 'redacted_thinking', data });
 

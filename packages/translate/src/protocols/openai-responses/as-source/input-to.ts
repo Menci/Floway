@@ -22,6 +22,7 @@ import type {
   IRInputUserContentPart,
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
+import { mediaFromURL } from '../../../shared/media.ts';
 import { TranslatorInputError } from '../../../types.ts';
 import type { Reading } from '../../composition/reading.ts';
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
@@ -34,17 +35,8 @@ import type {
   OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
 
-const DATA_URL = /^data:([^;,]+)?;base64,(.*)$/s;
-
-const mediaFromUrl = (url: string): IRInputMedia => {
-  const dataUrl = DATA_URL.exec(url);
-  if (dataUrl === null) return { source_kind: 'url', url };
-  const mediaType = dataUrl[1]?.trim();
-  return { source_kind: 'base64', ...(mediaType === undefined || mediaType === '' ? {} : { media_type: mediaType }), data: dataUrl[2] };
-};
-
 const imageMedia = (part: Extract<OpenAIResponsesInputContent, { type: 'input_image' }>): IRInputMedia => {
-  if (typeof part.image_url === 'string') return mediaFromUrl(part.image_url);
+  if (typeof part.image_url === 'string') return mediaFromURL(part.image_url);
   if (typeof part.file_id === 'string') return { source_kind: 'file', file_id: part.file_id };
   throw new TranslatorInputError('An OpenAI Responses input_image requires image_url or file_id.');
 };
@@ -55,10 +47,8 @@ const fileMedia = (part: Extract<OpenAIResponsesInputContent, { type: 'input_fil
   if (typeof part.file_data === 'string') {
     // `file_data` is either raw base64 or a data URL; a data URL also states the
     // media type a target may need.
-    const dataUrl = DATA_URL.exec(part.file_data);
-    if (dataUrl === null) return { source_kind: 'base64', data: part.file_data };
-    const mediaType = dataUrl[1]?.trim();
-    return { source_kind: 'base64', ...(mediaType === undefined || mediaType === '' ? {} : { media_type: mediaType }), data: dataUrl[2] };
+    const media = mediaFromURL(part.file_data);
+    return media.source_kind === 'base64' ? media : { source_kind: 'base64', data: part.file_data };
   }
   throw new TranslatorInputError('An OpenAI Responses input_file requires file_id, file_url, or file_data.');
 };

@@ -3,6 +3,7 @@ import type { RoundTripTurnDigest } from './turn-digest.ts';
 import type { SidecarCodec } from '../types.ts';
 import type { ReferenceableInputAssistantTurnFor, ContentReference } from './reference/assistant-turn.ts';
 import { tagContentReferences, untagContentReferences } from './reference/content-reference-tag.ts';
+import { isJSONRecord } from '../shared/json/object.ts';
 
 export type { AssistantTurnProtocol };
 
@@ -24,18 +25,16 @@ export type RoundTripSidecar<Target extends AssistantTurnProtocol> = {
 type RoundTripSidecarByTarget = { [Target in AssistantTurnProtocol]: RoundTripSidecar<Target> };
 export type AnyRoundTripSidecar = RoundTripSidecarByTarget[AssistantTurnProtocol];
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const isAssistantTurnProtocol = (value: unknown): value is AssistantTurnProtocol =>
   value === 'openaiChatCompletions' || value === 'openaiResponses' || value === 'anthropicMessages' || value === 'geminiGenerateContent';
 
 const assertTargetTurn = (target: AssistantTurnProtocol, value: unknown): void => {
   if (target === 'openaiChatCompletions') {
-    if (!isRecord(value) || value.role !== 'assistant') throw new TypeError('Chat Completions assistant turn is invalid');
+    if (!isJSONRecord(value) || value.role !== 'assistant') throw new TypeError('Chat Completions assistant turn is invalid');
     return;
   }
   if (target === 'anthropicMessages') {
-    if (!isRecord(value) || value.role !== 'assistant' || !Array.isArray(value.content)) throw new TypeError('Messages assistant turn is invalid');
+    if (!isJSONRecord(value) || value.role !== 'assistant' || !Array.isArray(value.content)) throw new TypeError('Messages assistant turn is invalid');
     return;
   }
   if (!Array.isArray(value)) throw new TypeError(`${target} assistant turn is invalid`);
@@ -56,7 +55,7 @@ function assertRoundTripSidecar(value: Record<string, unknown>): asserts value i
 export const decodeRoundTripSidecar = async (codec: SidecarCodec, data: string): Promise<AnyRoundTripSidecar | undefined> => {
   const sidecar = untagContentReferences(await codec.decode(data));
   if (sidecar === undefined) return undefined;
-  if (!isRecord(sidecar) || typeof sidecar.source !== 'string') throw new TypeError('Authenticated assistant-turn sidecar envelope is invalid');
+  if (!isJSONRecord(sidecar) || typeof sidecar.source !== 'string') throw new TypeError('Authenticated assistant-turn sidecar envelope is invalid');
   assertRoundTripSidecar(sidecar);
   return sidecar;
 };

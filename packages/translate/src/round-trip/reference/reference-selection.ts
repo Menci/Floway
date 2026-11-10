@@ -1,6 +1,6 @@
 import { ContentReference, type InputAssistantTurnStateFor, type ContentReferenceSegment, type ReferenceableInputAssistantTurnFor } from './assistant-turn.ts';
 import { createFieldReferencer, isFieldState, pairedChildren, type ReadFieldState, type ReadFieldStates, type ReferenceBuilder } from './reference-builder.ts';
-import type { IRJSONObject } from '../../ir/output/types.ts';
+import type { IRJSONObject } from '../../ir/common/json.ts';
 import { requireJSONObject } from '../../shared/json/object.ts';
 import { rawJSON } from '../../shared/json/raw-json.ts';
 import type { InputAssistantTurnByProtocol, InputAssistantTurnFor } from '../assistant-turn.ts';

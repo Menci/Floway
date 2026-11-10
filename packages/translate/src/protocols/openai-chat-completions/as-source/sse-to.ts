@@ -7,6 +7,7 @@ import { IRAbsent, type IRErrorPayload, type IROutputItem, type IROutputMessageI
 import { appendContent, createEmittedFieldState, type EmittedFieldStates, type EmittedFieldState } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { SourceStreamOutputOptions } from '../../../round-trip/stream.ts';
+import { isJSONRecord } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantState } from '../as-target/assistant-turn.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -37,11 +38,8 @@ const tierFields = (tier?: string): { service_tier?: string } => tier === undefi
 
 type IRToolCallItem = Extract<IROutputItem, { type: 'function_call' | 'custom_tool_call' }>;
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const isIRItem = (value: unknown): value is IROutputItem => {
-  if (!isRecord(value)) return false;
+  if (!isJSONRecord(value)) return false;
   switch (value.type) {
   case 'message': return Array.isArray(value.content);
   case 'reasoning': return true;
@@ -52,7 +50,7 @@ const isIRItem = (value: unknown): value is IROutputItem => {
 };
 
 const partType = (value: unknown): IROutputMessageItem['content'][number]['type'] | undefined => {
-  if (!isRecord(value)) return undefined;
+  if (!isJSONRecord(value)) return undefined;
   return value.type === 'text' || value.type === 'refusal' || value.type === 'image' || value.type === 'audio' ? value.type : undefined;
 };
 
@@ -63,7 +61,7 @@ type LogprobMetadata = { readonly scope: 'choice' } | {
 };
 
 const logprobMetadata = (value: unknown): LogprobMetadata | undefined => {
-  if (!isRecord(value)) return undefined;
+  if (!isJSONRecord(value)) return undefined;
   if (value.scope === 'choice') return { scope: 'choice' };
   if (value.scope === 'text_part' && typeof value.item_index === 'number' && typeof value.content_index === 'number') {
     return { scope: 'text_part', item_index: value.item_index, content_index: value.content_index };
@@ -72,7 +70,7 @@ const logprobMetadata = (value: unknown): LogprobMetadata | undefined => {
 };
 
 const isIRTokenLogprob = (value: unknown): value is IROutputTokenLogprob =>
-  isRecord(value) && typeof value.token === 'string' && typeof value.logprob === 'number';
+  isJSONRecord(value) && typeof value.token === 'string' && typeof value.logprob === 'number';
 
 // Emitted deltas carry the assistant extension fields (reasoning, annotations) beside the standard ones.
 type ChatChoiceChunk = Omit<OpenAIChatCompletionsStreamEvent['choices'][number], 'delta'> & { delta: OpenAIChatCompletionsAssistantDeltaEx };

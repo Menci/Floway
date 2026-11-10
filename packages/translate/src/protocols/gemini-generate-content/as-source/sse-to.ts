@@ -1,9 +1,10 @@
 import { collectGeminiGenerateContentTextViews, computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
+import type { IRJSONObject } from '../../../ir/common/json.ts';
 import type { IRCollector } from '../../../ir/output/collector.ts';
 import { irItemPath, irPartPath, irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/output/operation-paths.ts';
 import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/output/stream.ts';
-import { IRAbsent, type IROutput, type IRErrorPayload, type IRJSONObject, type IROutputSourceCitation, type IROutputTokenLogprob } from '../../../ir/output/types.ts';
+import { IRAbsent, type IROutput, type IRErrorPayload, type IROutputSourceCitation, type IROutputTokenLogprob } from '../../../ir/output/types.ts';
 import { createIRUnitQueue, createIRUnitRegistry, type IRUnitQueue } from '../../../ir/output/unit-queue.ts';
 import { appendContent, createEmittedFieldState, type EmittedFieldStates, type EmittedFieldState as EmittedFieldState } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';

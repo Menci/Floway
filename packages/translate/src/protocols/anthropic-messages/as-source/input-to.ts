@@ -1,6 +1,5 @@
 import { klona } from 'klona/json';
 
-import { filterAnthropicMessagesClientTools } from './client-tools.ts';
 import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn } from './conversation-turns.ts';
 import type { AnthropicMessagesAssistantTurn } from './round-trip.ts';
 import type {
@@ -18,6 +17,7 @@ import type {
   IRInputUserContentPart,
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
+import { mediaFromURL } from '../../../shared/media.ts';
 import { TranslatorInputError } from '../../../types.ts';
 import type { Reading, TurnSlot } from '../../composition/reading.ts';
 import type {
@@ -32,19 +32,10 @@ import type {
 } from '@floway-dev/protocols/anthropic-messages';
 import { FAST_SERVICE_TIER } from '@floway-dev/protocols/common';
 
-const DATA_URL = /^data:([^;,]+)?;base64,(.*)$/s;
-
-const mediaFromUrl = (url: string): IRInputMedia => {
-  const dataUrl = DATA_URL.exec(url);
-  if (dataUrl === null) return { source_kind: 'url', url };
-  const mediaType = dataUrl[1]?.trim();
-  return { source_kind: 'base64', ...(mediaType === undefined || mediaType === '' ? {} : { media_type: mediaType }), data: dataUrl[2] };
-};
-
 const imageMedia = (source: AnthropicMessagesImageBlock['source']): IRInputMedia => {
   switch (source.type) {
   case 'base64': return { source_kind: 'base64', media_type: source.media_type, data: source.data };
-  case 'url': return mediaFromUrl(source.url);
+  case 'url': return mediaFromURL(source.url);
   case 'file': return { source_kind: 'file', file_id: source.file_id };
   }
 };
@@ -305,8 +296,11 @@ const toolChoiceToIR = (choice: NonNullable<AnthropicMessagesPayload['tool_choic
 };
 
 const anthropicMessagesToolsToIR = (payload: AnthropicMessagesPayload): Pick<IRInputRequestHeader, 'tools' | 'tool_choice'> => {
-  const clientTools = filterAnthropicMessagesClientTools(payload.tools);
-  const declarations = clientTools === undefined ? [] : clientTools.map(toolToIR);
+  // A hosted declaration runs on the vendor's own infrastructure and has no
+  // meaning in another protocol, so only the callable arms are read.
+  const declarations = (payload.tools ?? [])
+    .filter((tool): tool is AnthropicMessagesClientTool => tool.type === undefined || tool.type === 'custom')
+    .map(toolToIR);
   // A selector is validated against the declarations either way: dropping one
   // that names nothing would widen what the model may call.
   const toolChoice = payload.tool_choice == null ? undefined : toolChoiceToIR(payload.tool_choice, declarations);

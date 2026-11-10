@@ -1,4 +1,4 @@
-import { assignCallIds, type PendingCall } from '../../shared/call-ids.ts';
+import { assignCallIds, type PendingCall } from '../composition/call-ids.ts';
 import type { TargetProtocol } from '../composition.ts';
 import { openaiResponsesPayloadFromSegments } from './as-target/segmented-request.ts';
 import { irFromOpenAIResponses } from './as-target/sse-from.ts';

@@ -1,4 +1,4 @@
-import type { IRJSONObject, IRJSONValue } from '../ir/output/types.ts';
+import type { IRJSONObject, IRJSONValue } from '../ir/common/json.ts';
 
 export type RoundTripTurnDigest = Uint8Array;
 
@@ -34,4 +34,24 @@ export const computeRoundTripTurnDigest = async (material: IRJSONValue): Promise
 export const verifyRoundTripTurnDigest = async (material: IRJSONValue, sourceTurnDigest: RoundTripTurnDigest): Promise<boolean> => {
   const digest = await hashRoundTripContent(stringifyReplayMaterial(material));
   return digest.length === sourceTurnDigest.length && digest.every((byte, index) => byte === sourceTurnDigest[index]);
+};
+
+/**
+ * The digest a source computes over one assistant turn, at its current version.
+ *
+ * Every protocol hashes its own material; only the version switch is the same,
+ * so this holds the switch and the caller supplies the material.
+ */
+export const turnDigestComputer = <Turn>(
+  materialOf: (turn: Turn) => IRJSONValue,
+): (turn: Turn) => Promise<RoundTripTurnDigest> => async turn => await computeRoundTripTurnDigest(materialOf(turn));
+
+/** The verifier half of {@link turnDigestComputer}. */
+export const turnDigestVerifier = <Turn>(
+  materialOf: (turn: Turn) => IRJSONValue,
+): (turn: Turn, sourceTurnDigest: RoundTripTurnDigest, version: number) => Promise<boolean> => (turn, sourceTurnDigest, version) => {
+  switch (version) {
+  case 1: return verifyRoundTripTurnDigest(materialOf(turn), sourceTurnDigest);
+  default: return Promise.resolve(false);
+  }
 };

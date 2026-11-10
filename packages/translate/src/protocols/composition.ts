@@ -11,8 +11,8 @@ import type { SourceAssistantTurnFor } from '../round-trip/source-assistant-turn
 import type { RoundTripReader, RoundTripWriter } from '../round-trip/stream.ts';
 import { createRoundTripStream } from '../round-trip/stream.ts';
 import type { RoundTripTurnDigest } from '../round-trip/turn-digest.ts';
-import type { FlatCallContext } from '../shared/flatten-request.ts';
 import type { RestateSourceError, TranslateOptions, TranslateTrip } from '../types.ts';
+import type { FlatCallContext } from './composition/flatten-request.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 /**

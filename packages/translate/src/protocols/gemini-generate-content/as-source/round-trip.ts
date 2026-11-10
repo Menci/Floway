@@ -1,9 +1,8 @@
-import type { IRJSONObject } from '../../../ir/output/types.ts';
+import type { IRJSONObject } from '../../../ir/common/json.ts';
 import type { ReplayContent } from '../../../round-trip/reference/assistant-turn.ts';
 import type { SidecarCarrier } from '../../../round-trip/resolve.ts';
 import { collectTextGroups, collectTextPlacementIndex, type TextContribution, type TextPlacementIndex } from '../../../round-trip/text-groups.ts';
-import { computeRoundTripTurnDigest, verifyRoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
-import type { RoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
+import { turnDigestComputer, turnDigestVerifier } from '../../../round-trip/turn-digest.ts';
 import { isPlainJSONObject, requireJSONObject } from '../../../shared/json/object.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
 
@@ -49,8 +48,7 @@ export const findGeminiGenerateContentSidecarCarriers = (turn: GeminiGenerateCon
     }]) ?? [];
   });
 
-export const computeGeminiGenerateContentTurnDigest = (turn: GeminiGenerateContentAssistantTurn): Promise<RoundTripTurnDigest> =>
-  computeRoundTripTurnDigest(geminiTurnDigestMaterialV1(turn));
+export const computeGeminiGenerateContentTurnDigest = turnDigestComputer(geminiTurnDigestMaterialV1);
 
 export const collectGeminiGenerateContentReplayContents = (turn: GeminiGenerateContentAssistantTurn): ReplayContent[] => {
   const candidates: ReplayContent[] = [];
@@ -67,16 +65,7 @@ export const collectGeminiGenerateContentReplayContents = (turn: GeminiGenerateC
   return candidates;
 };
 
-export const verifyGeminiGenerateContentTurnDigest = (
-  turn: GeminiGenerateContentAssistantTurn,
-  sourceTurnDigest: RoundTripTurnDigest,
-  version: number,
-): Promise<boolean> => {
-  switch (version) {
-  case 1: return verifyRoundTripTurnDigest(geminiTurnDigestMaterialV1(turn), sourceTurnDigest);
-  default: return Promise.resolve(false);
-  }
-};
+export const verifyGeminiGenerateContentTurnDigest = turnDigestVerifier(geminiTurnDigestMaterialV1);
 
 // Gemini returns model-side thought signatures as Part metadata.
 // https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures

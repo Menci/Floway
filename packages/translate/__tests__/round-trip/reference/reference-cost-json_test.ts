@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import type { IRJSONObject } from '../../../src/ir/output/types.ts';
+import type { IRJSONObject } from '../../../src/ir/common/json.ts';
 import type { AnthropicMessagesInputAssistantTurn } from '../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
 import { ContentReference } from '../../../src/round-trip/reference/assistant-turn.ts';
 import { appendContent, appendField, collectEmittedFieldPlacements, createEmittedFieldState, createFieldState, createReferenceBuilder } from '../../../src/round-trip/reference/reference-builder.ts';

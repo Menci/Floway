@@ -1,8 +1,8 @@
 import type { IRInputRequestHeader, IRInputTurn } from '../../ir/input/types.ts';
 import type { InputAssistantTurnFor } from '../../round-trip/assistant-turn.ts';
-import { assignCallIds, type PendingCall } from '../../shared/call-ids.ts';
-import { flattenRequestNames } from '../../shared/flatten-request.ts';
 import type { TranslateOptions } from '../../types.ts';
+import { assignCallIds, type PendingCall } from '../composition/call-ids.ts';
+import { flattenRequestNames } from '../composition/flatten-request.ts';
 import type { ResolvedTurn } from '../composition/segments.ts';
 import type { TargetProtocol } from '../composition.ts';
 import { anthropicMessagesPayloadFromSegments } from './as-target/segmented-request.ts';

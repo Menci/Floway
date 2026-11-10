@@ -1,9 +1,7 @@
 import type { IRAbsent } from '../common/absent.ts';
 import type { IRTextRange } from '../common/text-range.ts';
 
-export type { IRJSONObject, IRJSONValue } from '../common/json.ts';
 export type { IRErrorPayload } from '../common/error.ts';
-export type { IRTextRange } from '../common/text-range.ts';
 export { IRAbsent } from '../common/absent.ts';
 
 // The value shape of the output IR: JSON plus `IRAbsent` at any leaf that may be

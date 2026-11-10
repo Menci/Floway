@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
-import type { IRInputTurn } from '../../src/ir/input/types.ts';
-import { assignCallIds } from '../../src/shared/call-ids.ts';
-import { TranslatorInputError } from '../../src/types.ts';
+import type { IRInputTurn } from '../../../src/ir/input/types.ts';
+import { assignCallIds } from '../../../src/protocols/composition/call-ids.ts';
+import { TranslatorInputError } from '../../../src/types.ts';
 import { assertThrows, assertEquals } from '@floway-dev/test-utils';
 
 const call = (name: string, callId?: string): IRInputTurn => ({

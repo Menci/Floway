@@ -1,7 +1,6 @@
 import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
 import { requireStreaming } from '../../../ir/input/stream.ts';
 import type {
-  IRInputAssistantContentPart,
   IRInputAddressedAssistantItem,
   IRInputAddressedTurn,
   IRInputRequestHeader,
@@ -298,8 +297,6 @@ export const anthropicMessagesHeaderFromIR = (
     ...(choice === undefined ? {} : { tool_choice: toolChoiceFromIR(choice) }),
   };
 };
-
-export type { IRInputAssistantContentPart };
 
 /**
  * Messages states one ceiling, `max_tokens`, and its structured-output schema
