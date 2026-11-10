@@ -102,8 +102,9 @@ test.each(['audio/wav', 'audio/mp3', 'audio/mpeg'])('buildTargetPayload rejects 
 test('buildTargetPayload forwards a non-audio inline MIME type from Gemini as a Messages document', async () => {
   // GenerateContent states any MIME type inline; the document's media type
   // travels verbatim so the selected upstream decides whether it accepts it.
+  // A `text` source states characters, not the base64 the IR carries.
   const request = await buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'text/plain', data: 'ZGF0YQ==' } }] }] }, 'claude-test', noOptions);
-  assertEquals(request.messages, [{ role: 'user', content: [{ type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'ZGF0YQ==' } }] }]);
+  assertEquals(request.messages, [{ role: 'user', content: [{ type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'data' } }] }]);
 });
 
 test('buildTargetPayload prefers limits.max_output_tokens over the gateway default when payload omits maxOutputTokens', async () => {

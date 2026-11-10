@@ -93,10 +93,11 @@ export const flattenRequestNames = <Restored>(
   });
   const toolChoice = request.tool_choice === undefined ? undefined : flattenChoice(request.tool_choice);
 
-  // Nothing is grouped, so every remaining wire name is the client's own.
+  // Nothing is grouped, so every remaining wire name is the client's own. The
+  // selector is still the resolved one: a group it names has to be refused.
   if (flat.size === 0) {
     return {
-      request: toolChoice === request.tool_choice ? request : { ...request, tool_choice: toolChoice },
+      request: toolChoice === undefined ? request : { ...request, tool_choice: toolChoice },
       turns: inputTurns,
       context: { customToolNames: customNamesOf(request), flatIdentities },
     };

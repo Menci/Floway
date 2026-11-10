@@ -39,6 +39,19 @@ const imageSource = (media: IRInputMedia): AnthropicMessagesImageSource => {
 const imageBlock = (media: IRInputMedia): AnthropicMessagesImageBlock => ({ type: 'image', source: imageSource(media) });
 
 /**
+ * The text a base64 payload decodes to.
+ *
+ * The IR keeps every media payload base64-encoded, while a Messages `text`
+ * document source states the document's characters directly. Writing the
+ * encoded bytes there would send the encoding itself as the document.
+ */
+const textOfBase64 = (data: string): string => {
+  const binary = atob(data);
+  const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+};
+
+/**
  * The wire distinguishes a plain-text document from a binary one and carries the
  * binary MIME type as a string, so the caller's media type travels verbatim and
  * the selected upstream decides whether it accepts it. Rewriting an unknown type
@@ -51,7 +64,7 @@ const documentBlock = (media: IRInputMedia): AnthropicMessagesUserContentBlock =
   case 'base64': {
     if (media.media_type === undefined) throw new TranslatorInputError('Anthropic Messages document input requires a media type.');
     return media.media_type === 'text/plain'
-      ? { type: 'document', source: { type: 'text', media_type: 'text/plain', data: media.data } }
+      ? { type: 'document', source: { type: 'text', media_type: 'text/plain', data: textOfBase64(media.data) } }
       : { type: 'document', source: { type: 'base64', media_type: media.media_type, data: media.data } };
   }
   }
