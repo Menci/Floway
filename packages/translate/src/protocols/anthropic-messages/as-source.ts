@@ -24,5 +24,5 @@ export const anthropicMessagesSourceProtocol: SourceProtocol<
   },
   restateUpstreamError: restateAnthropicMessagesError,
   // Stating a Messages stream needs nothing the request produced.
-  writeStream: (_payload, records, roundTrip) => anthropicMessagesFromIR(records, { roundTrip }),
+  writeStream: (_request, _payload, records, roundTrip) => anthropicMessagesFromIR(records, { roundTrip }),
 };

@@ -38,7 +38,7 @@ const inlinePart = (part: GeminiGenerateContentPart): IRInputUserContentPart => 
   // file part carries its media type verbatim. A type this snapshot does not
   // recognize is forwarded as a file so the selected upstream decides whether it
   // accepts it.
-  case 'unsupported': return { type: 'file', file: inlineMedia(part)! };
+  case 'other': return { type: 'file', file: inlineMedia(part)! };
   }
 };
 
@@ -353,21 +353,21 @@ export const geminiGenerateContentFunctionResponseMatch = (part: GeminiGenerateC
 
 const GEMINI_GENERATE_CONTENT_SUPPORTED_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] as const;
 
-// OpenAI Chat Completions accepts only WAV and MP3 input audio.
-// https://github.com/openai/openai-node/blob/3f8753e0fc60f22c10c925b391810f45c3904af8/src/resources/chat/completions/completions.ts#L1591-L1621
-const GEMINI_GENERATE_CONTENT_AUDIO_FORMATS = {
-  'audio/wav': 'wav',
-  'audio/mp3': 'mp3',
-  'audio/mpeg': 'mp3',
-} as const;
+const GEMINI_GENERATE_CONTENT_AUDIO_MIME_TYPES = ['audio/wav', 'audio/mp3', 'audio/mpeg'] as const;
+
+type GeminiGenerateContentAudioMimeType = (typeof GEMINI_GENERATE_CONTENT_AUDIO_MIME_TYPES)[number];
+
+const isAudioMimeType = (value: string): value is GeminiGenerateContentAudioMimeType =>
+  (GEMINI_GENERATE_CONTENT_AUDIO_MIME_TYPES as readonly string[]).includes(value);
 
 export type GeminiGenerateContentSupportedImageMimeType = (typeof GEMINI_GENERATE_CONTENT_SUPPORTED_IMAGE_MIME_TYPES)[number];
 
 export type GeminiGenerateContentInlineData =
   | { kind: 'image'; mimeType: GeminiGenerateContentSupportedImageMimeType; data: string }
   | { kind: 'pdf'; mimeType: 'application/pdf'; data: string }
-  | { kind: 'audio'; mimeType: keyof typeof GEMINI_GENERATE_CONTENT_AUDIO_FORMATS; format: (typeof GEMINI_GENERATE_CONTENT_AUDIO_FORMATS)[keyof typeof GEMINI_GENERATE_CONTENT_AUDIO_FORMATS]; data: string }
-  | { kind: 'unsupported'; mimeType: string; data: string };
+  | { kind: 'audio'; mimeType: GeminiGenerateContentAudioMimeType; data: string }
+  // Any other MIME type: carried as a file and left for the target to judge.
+  | { kind: 'other'; mimeType: string; data: string };
 
 export type GeminiGenerateContentPartKind = 'text' | 'inline_data' | 'function_call' | 'function_response' | 'file_data' | 'executable_code' | 'code_execution_result' | 'tool_call' | 'tool_response';
 
@@ -435,18 +435,12 @@ export const geminiGenerateContentInlineData = (part: GeminiGenerateContentPart)
     return { kind: 'pdf', mimeType: inlineData.mimeType, data: inlineData.data };
   }
 
-  const audioFormat = GEMINI_GENERATE_CONTENT_AUDIO_FORMATS[inlineData.mimeType as keyof typeof GEMINI_GENERATE_CONTENT_AUDIO_FORMATS];
-  if (audioFormat !== undefined) {
-    return {
-      kind: 'audio',
-      mimeType: inlineData.mimeType as keyof typeof GEMINI_GENERATE_CONTENT_AUDIO_FORMATS,
-      format: audioFormat,
-      data: inlineData.data,
-    };
+  if (isAudioMimeType(inlineData.mimeType)) {
+    return { kind: 'audio', mimeType: inlineData.mimeType, data: inlineData.data };
   }
 
   return {
-    kind: 'unsupported',
+    kind: 'other',
     mimeType: inlineData.mimeType,
     data: inlineData.data,
   };

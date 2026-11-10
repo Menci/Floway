@@ -262,7 +262,7 @@ const openaiChatCompletionsRequestToIR = (payload: OpenAIChatCompletionsPayload)
   ...openaiChatCompletionsToolsToIR(payload),
 });
 
-export const continuousUsageOf = (payload: OpenAIChatCompletionsPayload): boolean => {
+const continuousUsageOf = (payload: OpenAIChatCompletionsPayload): boolean => {
   const streamOptions = payload.stream_options as OpenAIChatCompletionsStreamOptionsEx | undefined;
   return streamOptions?.include_usage === true && streamOptions.continuous_usage_stats === true;
 };

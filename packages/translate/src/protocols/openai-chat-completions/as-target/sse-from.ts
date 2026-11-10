@@ -425,11 +425,9 @@ export const irFromOpenAIChatCompletions = async function* (
     }
 
     if (tool.item === undefined && tool.name !== '') {
-      // Waiting here delays no supported target: Messages and Responses need the name when
-      // the structure opens, while GenerateContent emits only complete calls. Planned
-      // Interactions support has the same step.start requirement:
-      // https://ai.google.dev/gemini-api/docs/streaming
-      // The official ChatCompletions SDK tolerates a late name:
+      // The name must precede any delta a client can act on, so it waits for the
+      // field that carries it. The official ChatCompletions SDK tolerates a late
+      // name:
       // https://github.com/openai/openai-node/blob/7423ac3e9351c46300cd094479cded5551a72eb4/src/lib/ChatCompletionStream.ts#L2059-L2107
       // Clients such as the Vercel AI SDK reject a first tool delta without one:
       // https://github.com/vercel/ai/blob/ba05943b69ad070558bb5bc912da99ec66d7d263/packages/provider-utils/src/streaming-tool-call-tracker.ts#L356-L395

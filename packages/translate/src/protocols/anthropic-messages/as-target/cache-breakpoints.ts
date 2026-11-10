@@ -1,14 +1,11 @@
 // Anthropic's prompt cache is opt-in: a request with no cache_control
-// breakpoint anywhere returns cache_read_input_tokens=0 regardless of how
-// stable the prompt prefix is. Source APIs without an explicit cache_control
-// concept — Codex on the OpenAI Responses wire (opaque prompt_cache_key) and plain
-// OpenAI Chat Completions (no caching field) — silently drop the field through
-// translation, so every codex-through-anthropic-messages or chat-through-anthropic-messages turn
-// is a cache miss while native Anthropic Messages clients hit cache fine because they
-// inject breakpoints themselves.
+// breakpoint anywhere reports no cache reads regardless of how stable its
+// prefix is. A client of this wire injects its own breakpoints; a request
+// written from the input IR carries none, so it would never cache. The IR's
+// `prompt_cache_key` is a different mechanism and does not travel here.
 //
-// Place breakpoints in the translated payload. Up to 4 are allowed per
-// request; we use 3 and leave one for downstream additions:
+// Place breakpoints in the written payload. Up to 4 are allowed per request;
+// we use 3 and leave one for downstream additions:
 //
 // - system block when system text is non-empty
 // - last function-tool definition (caches the system+tools prefix, the most

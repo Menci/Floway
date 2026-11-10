@@ -23,5 +23,5 @@ export const geminiGenerateContentSourceProtocol: SourceProtocol<
   },
   restateUpstreamError: restateGeminiGenerateContentError,
   // Stating a GenerateContent stream needs nothing the request produced.
-  writeStream: (_payload, records, roundTrip) => geminiGenerateContentFromIR(records, { roundTrip }),
+  writeStream: (_request, _payload, records, roundTrip) => geminiGenerateContentFromIR(records, { roundTrip }),
 };

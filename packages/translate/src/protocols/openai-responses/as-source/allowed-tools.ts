@@ -1,9 +1,9 @@
 import { TranslatorInputError } from '../../../types.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
-// Chat Completions and Anthropic Messages state a permitted subset by narrowing
-// the declaration list, so a selector must resolve to declarations the request
-// actually makes; otherwise the permitted set would silently widen.
+// A writer that states a permitted subset by narrowing its declaration list
+// needs every selector to name a declaration the request actually makes;
+// otherwise the permitted set would silently widen there.
 //
 // A namespace selector is expanded here into the callables its group holds, and
 // a hosted selector is rejected here: this IR carries no hosted callable.
