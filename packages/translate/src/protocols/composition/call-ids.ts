@@ -1,5 +1,6 @@
-import type { IRInputAddressedAssistantItem, IRInputAddressedClientItem, IRInputAddressedTurn, IRInputTurn } from '../../ir/input/types.ts';
 import type { ResolvedTurn } from './segments.ts';
+import type { IRInputAddressedAssistantItem, IRInputAddressedClientItem, IRInputAddressedTurn } from '../../ir/input/addressed.ts';
+import type { IRInputTurn } from '../../ir/input/types.ts';
 import { TranslatorInputError } from '../../types.ts';
 
 /** A call that has been stated and is still waiting for its result. */

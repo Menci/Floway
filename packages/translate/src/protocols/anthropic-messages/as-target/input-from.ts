@@ -1,17 +1,7 @@
+import type { IRInputAddressedAssistantItem, IRInputAddressedTurn } from '../../../ir/input/addressed.ts';
 import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
 import { requireStreaming } from '../../../ir/input/stream.ts';
-import type {
-  IRInputAddressedAssistantItem,
-  IRInputAddressedTurn,
-  IRInputRequestHeader,
-  IRInputSettings,
-  IRInputTool,
-  IRInputToolChoice,
-  IRInputMedia,
-  IRInputTextPart,
-  IRInputToolResultContentPart,
-  IRInputClientItem,
-} from '../../../ir/input/types.ts';
+import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputMedia, IRInputTextPart, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../types.ts';
 import { buildCustomToolInputSchema } from '../../custom-tool.ts';
 import type {

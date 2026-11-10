@@ -1,17 +1,7 @@
+import type { IRInputAddressedAssistantItem, IRInputAddressedTurn, IRInputAddressedClientItem } from '../../../ir/input/addressed.ts';
 import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
 import { requireStreaming } from '../../../ir/input/stream.ts';
-import type {
-  IRInputAddressedAssistantItem,
-  IRInputAddressedTurn,
-  IRInputRequestHeader,
-  IRInputSettings,
-  IRInputTool,
-  IRInputToolChoice,
-  IRInputMedia,
-  IRInputToolResultContentPart,
-  IRInputAddressedClientItem,
-  IRInputClientItem,
-} from '../../../ir/input/types.ts';
+import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../types.ts';
 import { buildCustomToolInputSchema } from '../../custom-tool.ts';
 import { reasoningEffortForBudget } from '../../openai-reasoning.ts';

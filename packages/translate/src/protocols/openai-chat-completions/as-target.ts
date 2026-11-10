@@ -1,4 +1,4 @@
-import type { IRInputAddressedTurn } from '../../ir/input/types.ts';
+import type { IRInputAddressedTurn } from '../../ir/input/addressed.ts';
 import type { InputAssistantTurnFor } from '../../round-trip/assistant-turn.ts';
 import { assignCallIds, type PendingCall } from '../composition/call-ids.ts';
 import { flattenRequestNames } from '../composition/flatten-request.ts';

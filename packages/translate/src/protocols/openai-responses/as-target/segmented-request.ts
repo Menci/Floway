@@ -1,5 +1,6 @@
 import { openaiResponsesConversationFromIR, openaiResponsesHeaderFromIR } from './input-from.ts';
-import type { IRInputAddressedTurn, IRInputRequestHeader } from '../../../ir/input/types.ts';
+import type { IRInputAddressedTurn } from '../../../ir/input/addressed.ts';
+import type { IRInputRequestHeader } from '../../../ir/input/types.ts';
 import { segmentTurns, type ResolvedTurn } from '../../composition/segments.ts';
 import type { CanonicalOpenAIResponsesInputItem, CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 

@@ -1,5 +1,6 @@
 import { openaiChatCompletionsConversationFromIR, openaiChatCompletionsHeaderFromIR } from './input-from.ts';
-import type { IRInputAddressedTurn, IRInputRequestHeader } from '../../../ir/input/types.ts';
+import type { IRInputAddressedTurn } from '../../../ir/input/addressed.ts';
+import type { IRInputRequestHeader } from '../../../ir/input/types.ts';
 import { segmentTurns, type ResolvedTurn } from '../../composition/segments.ts';
 import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 
