@@ -2,7 +2,6 @@ import { klona } from 'klona/json';
 
 import { partitionOpenAIChatCompletionsTurns, type OpenAIChatCompletionsConversationMessage, type OpenAIChatCompletionsConversationTurn } from './conversation-turns.ts';
 import type { OpenAIChatCompletionsAssistantTurn } from './round-trip.ts';
-import type { IRInputReading } from '../../../ir/input/reading.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -22,6 +21,7 @@ import type {
 
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../types.ts';
+import type { Reading } from '../../composition/reading.ts';
 import type {
   OpenAIChatCompletionsNamedToolChoice,
   OpenAIChatCompletionsPayload,
@@ -329,7 +329,7 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
  * state lives in a closure each turn's `toIRTurn` captures, so the reading is a
  * plain value and the state never outlives the turns that need it.
  */
-export const openaiChatCompletionsRead = (payload: OpenAIChatCompletionsPayload): IRInputReading<OpenAIChatCompletionsAssistantTurn> => {
+export const openaiChatCompletionsRead = (payload: OpenAIChatCompletionsPayload): Reading<OpenAIChatCompletionsAssistantTurn> => {
   const context = openaiChatCompletionsInputContext(payload);
   return {
     request: openaiChatCompletionsRequestToIR(payload),

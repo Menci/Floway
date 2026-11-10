@@ -16,7 +16,9 @@ payload and `TranslateOptions` to create an independent trip.
    Only routes whose target is that protocol may import it.
 4. **Output IR** — keep private types, its path schema, stream operations,
    validation, accumulation, operation paths, and native ordinal mapping under
-   `ir/output/`, and the input model under `ir/input/`. Native SSE adapters
+   `ir/output/`, and the input model under `ir/input/`. A reading holds the
+   source's native assistant turns beside the IR it would produce, so it belongs
+   to composition rather than to the IR. Native SSE adapters
    belong to their protocol: `as-target/sse-from.ts` consumes upstream SSE and
    `as-source/sse-to.ts` emits client SSE with its sidecar. The return path is
    upstream SSE → IR SSE → client SSE with sidecar. IR stays internal to translate.
@@ -31,8 +33,11 @@ payload and `TranslateOptions` to create an independent trip.
 ## Current Production Subdirectories
 
 - `ir/common/` — values both directions share: the JSON shape, `IRAbsent`, the error payload, text ranges.
-- `ir/input/` — the request conversation model, its segmentation, and the
-  protocol-independent reader that walks a source conversation into it.
+- `ir/input/` — the request conversation model, its types, and the target-side
+  selection helpers.
+- `protocols/composition/` — what a trip needs before the IR is written: a
+  source conversation read into turn slots, and the segmentation that splits a
+  writer's input at the turns a sidecar restored.
 - `ir/output/` — the returned-stream model, its path schema, and protocol-independent streaming state.
 - `round-trip/` — authenticated assistant-turn sidecars, replay validation, and native stream coordination.
 - `protocols/anthropic-messages/as-source/` — interprets Messages requests and emits Messages SSE.

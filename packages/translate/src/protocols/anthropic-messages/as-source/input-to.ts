@@ -3,7 +3,6 @@ import { klona } from 'klona/json';
 import { filterAnthropicMessagesClientTools } from './client-tools.ts';
 import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn } from './conversation-turns.ts';
 import type { AnthropicMessagesAssistantTurn } from './round-trip.ts';
-import type { IRInputReading, IRInputTurnSlot } from '../../../ir/input/reading.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputRequest,
@@ -20,6 +19,7 @@ import type {
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../types.ts';
+import type { Reading, TurnSlot } from '../../composition/reading.ts';
 import type {
   AnthropicMessagesClientTool,
   AnthropicMessagesImageBlock,
@@ -401,7 +401,7 @@ const reasoningEffortFromAnthropicMessages = (payload: AnthropicMessagesPayload)
  * the client piece that follows it, which is what keeps the assistant and its
  * own server-result pieces adjacent in the reading.
  */
-export const anthropicMessagesRead = (payload: AnthropicMessagesPayload): IRInputReading<AnthropicMessagesAssistantTurn> => {
+export const anthropicMessagesRead = (payload: AnthropicMessagesPayload): Reading<AnthropicMessagesAssistantTurn> => {
   const request: IRInputRequest = {
     settings: anthropicMessagesSettingsToIR(payload),
     ...anthropicMessagesToolsToIR(payload),
@@ -412,7 +412,7 @@ export const anthropicMessagesRead = (payload: AnthropicMessagesPayload): IRInpu
   // The result and that message are one speaking turn, so a client slot that
   // ends the conversation is not emitted until the next source turn says
   // whether it continues.
-  const turns: IRInputTurnSlot<AnthropicMessagesAssistantTurn>[] = [];
+  const turns: TurnSlot<AnthropicMessagesAssistantTurn>[] = [];
   let messageIndex = 0;
   let pendingClient: (() => IRInputTurn[]) | undefined;
 

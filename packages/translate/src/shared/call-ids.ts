@@ -1,5 +1,5 @@
-import type { IRInputResolvedTurn } from '../ir/input/segments.ts';
 import type { IRInputAddressedAssistantItem, IRInputAddressedClientItem, IRInputAddressedTurn, IRInputTurn } from '../ir/input/types.ts';
+import type { ResolvedTurn } from '../protocols/composition/segments.ts';
 import { TranslatorInputError } from '../types.ts';
 
 /** A call that has been stated and is still waiting for its result. */
@@ -22,9 +22,9 @@ export interface PendingCall {
  * a call, and nothing outside this step reads them.
  */
 export const assignCallIds = <Restored>(
-  pieces: readonly (IRInputTurn | IRInputResolvedTurn<Restored>)[],
+  pieces: readonly (IRInputTurn | ResolvedTurn<Restored>)[],
   restoredCalls: (turn: Restored) => readonly PendingCall[],
-): readonly (IRInputAddressedTurn | IRInputResolvedTurn<Restored>)[] => {
+): readonly (IRInputAddressedTurn | ResolvedTurn<Restored>)[] => {
   const pending: PendingCall[] = [];
   let allocated = 0;
   const allocate = (name: string): string => {
@@ -41,7 +41,7 @@ export const assignCallIds = <Restored>(
     return matched;
   };
 
-  return pieces.map((piece): IRInputAddressedTurn | IRInputResolvedTurn<Restored> => {
+  return pieces.map((piece): IRInputAddressedTurn | ResolvedTurn<Restored> => {
     if (piece.kind === 'resolved') {
       pending.push(...restoredCalls(piece.turn));
       return piece;

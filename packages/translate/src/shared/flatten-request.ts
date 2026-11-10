@@ -1,7 +1,7 @@
 import { assignFlatNames } from './flat-names.ts';
-import type { IRInputResolvedTurn } from '../ir/input/segments.ts';
 import { irInputToolsForChoice } from '../ir/input/select-tools.ts';
 import type { IRInputRequest, IRInputTool, IRInputToolChoice, IRInputToolSelection, IRInputTurn } from '../ir/input/types.ts';
+import type { ResolvedTurn } from '../protocols/composition/segments.ts';
 import { TranslatorInputError } from '../types.ts';
 
 /** What a target that writes flat names records for the reader of its answer. */
@@ -58,8 +58,8 @@ const flatNamesOf = (
  */
 export const flattenRequestNames = <Restored>(
   request: IRInputRequest,
-  pieces: readonly (IRInputTurn | IRInputResolvedTurn<Restored>)[],
-): { readonly request: IRInputRequest; readonly pieces: readonly (IRInputTurn | IRInputResolvedTurn<Restored>)[]; readonly context: FlatCallContext } => {
+  pieces: readonly (IRInputTurn | ResolvedTurn<Restored>)[],
+): { readonly request: IRInputRequest; readonly pieces: readonly (IRInputTurn | ResolvedTurn<Restored>)[]; readonly context: FlatCallContext } => {
   const turns = pieces.flatMap(piece => piece.kind === 'resolved' ? [] : [piece]);
   const { flat, identities: callIdentities } = flatNamesOf(request.tools ?? [], turns);
   // Nothing is grouped, so the wire names are the client's own.
@@ -92,7 +92,7 @@ export const flattenRequestNames = <Restored>(
   return {
     request: flattenedRequest,
     context: { customToolNames: customNamesOf(flattenedRequest), callIdentities },
-    pieces: pieces.map((piece): IRInputTurn | IRInputResolvedTurn<Restored> => {
+    pieces: pieces.map((piece): IRInputTurn | ResolvedTurn<Restored> => {
       if (piece.kind === 'resolved') return piece;
       if (piece.kind === 'assistant') {
         return {

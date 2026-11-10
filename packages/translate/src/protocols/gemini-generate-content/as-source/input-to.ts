@@ -6,7 +6,6 @@ import { geminiGenerateContentThinkingLevelEffort } from './reasoning.ts';
 import type { GeminiGenerateContentAssistantTurn } from './round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from './schema.ts';
 import { geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from './tools.ts';
-import type { IRInputReading, IRInputTurnSlot } from '../../../ir/input/reading.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputRequest,
@@ -22,6 +21,7 @@ import type {
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../types.ts';
+import type { Reading, TurnSlot } from '../../composition/reading.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentPayload, GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 
 const inlineMedia = (part: GeminiGenerateContentPart): IRInputMedia | null => {
@@ -235,7 +235,7 @@ const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequest, 
  * reader would otherwise not know. Both counters live in a closure each turn's
  * `toIRTurn` captures, so the reading stays a plain value.
  */
-export const geminiGenerateContentRead = (payload: GeminiGenerateContentRequest): IRInputReading<GeminiGenerateContentAssistantTurn> => {
+export const geminiGenerateContentRead = (payload: GeminiGenerateContentRequest): Reading<GeminiGenerateContentAssistantTurn> => {
   const ids: GeminiGenerateContentToolCallIds = Object.create(null);
   let contentIndex = 0;
   const prompt = geminiGenerateContentSystemToIR(payload.systemInstruction);
@@ -244,7 +244,7 @@ export const geminiGenerateContentRead = (payload: GeminiGenerateContentRequest)
   // of its name, and an omitted id is invented from the position the content
   // and part occupy. Both have to advance over every turn, which is why the
   // thunks close over the position they were created at.
-  const turnSlotFor = (turn: GeminiGenerateContentTurn): IRInputTurnSlot<GeminiGenerateContentAssistantTurn> => {
+  const turnSlotFor = (turn: GeminiGenerateContentTurn): TurnSlot<GeminiGenerateContentAssistantTurn> => {
     const at = contentIndex;
     contentIndex += turn.items.length;
     const toIRTurn = () => turnToIRTurns(turn, at, ids);

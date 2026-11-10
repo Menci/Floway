@@ -1,6 +1,6 @@
-import type { IRInputReading } from '../ir/input/reading.ts';
-import { readTurns } from '../ir/input/reading.ts';
-import type { IRInputResolvedTurn } from '../ir/input/segments.ts';
+import type { Reading } from './composition/reading.ts';
+import { settleReading } from './composition/reading.ts';
+import type { ResolvedTurn } from './composition/segments.ts';
 import type { IRInputRequest, IRInputTurn } from '../ir/input/types.ts';
 import type { IRRecord } from '../ir/output/stream.ts';
 import type { AssistantTurnByProtocol, AssistantTurnFor } from '../round-trip/assistant-turn.ts';
@@ -34,7 +34,7 @@ export interface SourceRoundTrip<Name extends AssistantTurnKey> {
 export interface SourceProtocol<Name extends AssistantTurnKey, Payload, Event> {
   readonly name: Name;
   /** Reads the request into the turns it states, each turn's side already decided. */
-  readonly read: (payload: Payload) => IRInputReading<SourceAssistantTurnFor<Name>>;
+  readonly read: (payload: Payload) => Reading<SourceAssistantTurnFor<Name>>;
   readonly roundTrip: SourceRoundTrip<Name>;
   readonly writeError: SourceProtocolErrorWriter;
   /**
@@ -47,7 +47,7 @@ export interface SourceProtocol<Name extends AssistantTurnKey, Payload, Event> {
    * normalized away — a declaration group, say — survives.
    */
   readonly writeStream: (
-    reading: IRInputReading<SourceAssistantTurnFor<Name>>,
+    reading: Reading<SourceAssistantTurnFor<Name>>,
     payload: Payload,
     records: AsyncIterable<IRRecord>,
     roundTrip: RoundTripWriter<Name>,
@@ -89,7 +89,7 @@ export interface TargetProtocol<Name extends AssistantTurnKey, Payload, Event> {
    */
   readonly write: (
     request: IRInputRequest,
-    pieces: readonly (IRInputTurn | IRInputResolvedTurn<AssistantTurnFor<Name>>)[],
+    pieces: readonly (IRInputTurn | ResolvedTurn<AssistantTurnFor<Name>>)[],
     options: TranslateOptions,
   ) => TargetRequest<Payload, Name>;
   /**
@@ -149,10 +149,10 @@ const settleTurns = async <
 >(
   source: SourceProtocol<SrcName, SrcPayload, SrcEvent>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
-  reading: IRInputReading<SourceAssistantTurnFor<SrcName>>,
+  reading: Reading<SourceAssistantTurnFor<SrcName>>,
   options: TranslateOptions,
-): Promise<(IRInputTurn | IRInputResolvedTurn<AssistantTurnFor<TgtName>>)[]> =>
-  await readTurns(reading, async (turn): Promise<
+): Promise<(IRInputTurn | ResolvedTurn<AssistantTurnFor<TgtName>>)[]> =>
+  await settleReading(reading, async (turn): Promise<
     { readonly resolved: AssistantTurnFor<TgtName> } | undefined
   > => {
     const resolved = await roundTripAssistantTurn(
@@ -177,7 +177,7 @@ export const buildTargetRequestFor = async <
   options: TranslateOptions,
   // Reading is stateful, so a caller that also inspects what it recorded passes
   // the same reading rather than opening a second one.
-  reading: IRInputReading<SourceAssistantTurnFor<SrcName>> = source.read(payload),
+  reading: Reading<SourceAssistantTurnFor<SrcName>> = source.read(payload),
 ): Promise<TgtPayload> =>
   target.write(reading.request, await settleTurns(source, target, reading, options), options).payload;
 

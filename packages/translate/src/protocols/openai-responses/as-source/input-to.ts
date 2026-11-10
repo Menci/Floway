@@ -5,7 +5,6 @@ import { partitionOpenAIResponsesTurns } from './conversation-turns.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from './programmatic-tooling.ts';
 import { isOpenAIResponsesEncryptedReasoning } from './round-trip.ts';
 import type { OpenAIResponsesAssistantTurn } from './round-trip.ts';
-import type { IRInputReading } from '../../../ir/input/reading.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -24,6 +23,7 @@ import type {
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../types.ts';
+import type { Reading } from '../../composition/reading.ts';
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import type {
   CanonicalOpenAIResponsesInputItem,
@@ -358,7 +358,7 @@ const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): 
   };
 };
 
-export const openaiResponsesRead = (source: OpenAIResponsesRequestPayloadEx): IRInputReading<OpenAIResponsesAssistantTurn> => {
+export const openaiResponsesRead = (source: OpenAIResponsesRequestPayloadEx): Reading<OpenAIResponsesAssistantTurn> => {
   const canonical = canonicalizeOpenAIResponsesPayload(source);
   validateAllowedTools(canonical.tools, canonical.tool_choice, canonical.input);
   rejectProgrammaticOpenAIResponsesPayload(canonical, 'translation');

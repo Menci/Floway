@@ -1,4 +1,4 @@
-import type { IRInputRequest, IRInputTurn } from './types.ts';
+import type { IRInputRequest, IRInputTurn } from '../../ir/input/types.ts';
 
 /**
  * One turn of a source conversation, classified by the reader that produced it.
@@ -15,7 +15,7 @@ import type { IRInputRequest, IRInputTurn } from './types.ts';
  * `toIRTurn` is a thunk because the two paths are exclusive: a turn a sidecar
  * resolves is written natively, and its IR is never built.
  */
-export type IRInputTurnSlot<AssistantTurn> =
+export type TurnSlot<AssistantTurn> =
   | { readonly kind: 'client'; readonly toIRTurn: () => IRInputTurn[] }
   | {
     readonly kind: 'assistant';
@@ -30,9 +30,9 @@ export type IRInputTurnSlot<AssistantTurn> =
  * a client turn rather than a field of its own, which is what lets a writer
  * place it by position the same way it places every other turn.
  */
-export interface IRInputReading<AssistantTurn> {
+export interface Reading<AssistantTurn> {
   readonly request: IRInputRequest;
-  readonly turns: readonly IRInputTurnSlot<AssistantTurn>[];
+  readonly turns: readonly TurnSlot<AssistantTurn>[];
 }
 
 /**
@@ -42,9 +42,9 @@ export interface IRInputReading<AssistantTurn> {
  * turn: can a sidecar state this one natively? If so its IR is never built —
  * the two paths are exclusive.
  */
-export const readTurns = async <AssistantTurn, Resolved>(
-  reading: IRInputReading<AssistantTurn>,
-  resolve: (turn: Extract<IRInputTurnSlot<AssistantTurn>, { kind: 'assistant' }>) => Promise<
+export const settleReading = async <AssistantTurn, Resolved>(
+  reading: Reading<AssistantTurn>,
+  resolve: (turn: Extract<TurnSlot<AssistantTurn>, { kind: 'assistant' }>) => Promise<
     { readonly resolved: Resolved } | undefined
   >,
 ): Promise<(IRInputTurn | { readonly kind: 'resolved'; readonly turn: Resolved })[]> => {

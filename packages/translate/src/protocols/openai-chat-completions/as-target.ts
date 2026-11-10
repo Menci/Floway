@@ -1,8 +1,8 @@
-import type { IRInputResolvedTurn } from '../../ir/input/segments.ts';
 import type { IRInputAddressedTurn } from '../../ir/input/types.ts';
 import type { AssistantTurnFor } from '../../round-trip/assistant-turn.ts';
 import { assignCallIds, type PendingCall } from '../../shared/call-ids.ts';
 import { flattenRequestNames } from '../../shared/flatten-request.ts';
+import type { ResolvedTurn } from '../composition/segments.ts';
 import type { TargetProtocol } from '../composition.ts';
 import { openaiChatCompletionsPayloadFromSegments } from './as-target/segmented-request.ts';
 import { irFromOpenAIChatCompletions } from './as-target/sse-from.ts';
@@ -34,7 +34,7 @@ const callsOf = (turn: ChatResolvedTurn): readonly PendingCall[] => {
 const legacyCallId = (name: string): string => `legacy_call:${name}`;
 
 /** Every legacy call this payload states, by the id the writer invented for it. */
-const legacyCallsOf = (pieces: readonly (IRInputAddressedTurn | IRInputResolvedTurn<ChatResolvedTurn>)[]): ReadonlyMap<string, string> => {
+const legacyCallsOf = (pieces: readonly (IRInputAddressedTurn | ResolvedTurn<ChatResolvedTurn>)[]): ReadonlyMap<string, string> => {
   const legacy = new Map<string, string>();
   for (const piece of pieces) {
     if (piece.kind !== 'resolved') continue;
@@ -64,7 +64,7 @@ export const openaiChatCompletionsTargetProtocol: TargetProtocol<
         flattened.request,
         assignCallIds(flattened.pieces, callsOf),
         turn => turn,
-        legacyCallsOf(flattened.pieces as readonly (IRInputAddressedTurn | IRInputResolvedTurn<ChatResolvedTurn>)[]),
+        legacyCallsOf(flattened.pieces as readonly (IRInputAddressedTurn | ResolvedTurn<ChatResolvedTurn>)[]),
       ),
       // Both facts come from the same flattening that produced the request, so
       // the reader sees exactly the names the upstream was asked with.

@@ -1,6 +1,6 @@
 import { openaiChatCompletionsFromIR, openaiChatCompletionsHeaderFromIR } from './input-from.ts';
-import { segmentIRInput, type IRInputResolvedTurn } from '../../../ir/input/segments.ts';
 import type { IRInputAddressedTurn, IRInputRequest } from '../../../ir/input/types.ts';
+import { segmentTurns, type ResolvedTurn } from '../../composition/segments.ts';
 import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 
 /**
@@ -16,14 +16,14 @@ import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from 
  */
 export const openaiChatCompletionsPayloadFromSegments = <Restored extends OpenAIChatCompletionsMessage>(
   request: IRInputRequest,
-  pieces: readonly (IRInputAddressedTurn | IRInputResolvedTurn<Restored>)[],
+  pieces: readonly (IRInputAddressedTurn | ResolvedTurn<Restored>)[],
   resolvedMessage: (turn: Restored) => OpenAIChatCompletionsMessage,
   // Results that answer a legacy `function_call` are written as the legacy
   // `function` message, which is the only one this wire pairs with that field.
   legacyCalls: ReadonlyMap<string, string>,
 ): OpenAIChatCompletionsPayload => {
   const messages: OpenAIChatCompletionsMessage[] = [];
-  for (const piece of segmentIRInput(pieces)) {
+  for (const piece of segmentTurns(pieces)) {
     if (piece.kind === 'resolved') { messages.push(resolvedMessage(piece.turn)); continue; }
     messages.push(...openaiChatCompletionsFromIR(piece.turns, legacyCalls));
   }

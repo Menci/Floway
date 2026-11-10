@@ -1,9 +1,9 @@
-import type { IRInputResolvedTurn } from '../../ir/input/segments.ts';
 import type { IRInputRequest, IRInputTurn } from '../../ir/input/types.ts';
 import type { AssistantTurnFor } from '../../round-trip/assistant-turn.ts';
 import { assignCallIds, type PendingCall } from '../../shared/call-ids.ts';
 import { flattenRequestNames } from '../../shared/flatten-request.ts';
 import type { TranslateOptions } from '../../types.ts';
+import type { ResolvedTurn } from '../composition/segments.ts';
 import type { TargetProtocol } from '../composition.ts';
 import { anthropicMessagesPayloadFromSegments } from './as-target/segmented-request.ts';
 import { irFromAnthropicMessages } from './as-target/sse-from.ts';
@@ -25,7 +25,7 @@ export const anthropicMessagesTargetProtocol: TargetProtocol<
   'anthropicMessages', AnthropicMessagesPayload, AnthropicMessagesStreamEventEx
 > = {
   name: 'anthropicMessages',
-  write: (request: IRInputRequest, pieces: readonly (IRInputTurn | IRInputResolvedTurn<AssistantTurnFor<'anthropicMessages'>>)[], options: TranslateOptions) => {
+  write: (request: IRInputRequest, pieces: readonly (IRInputTurn | ResolvedTurn<AssistantTurnFor<'anthropicMessages'>>)[], options: TranslateOptions) => {
     // This wire addresses a callable by one bare name, so every grouped
     // declaration and call is stated under the flat spelling it computes.
     const flattened = flattenRequestNames(request, pieces);

@@ -1,4 +1,4 @@
-import type { IRInputTurn } from './types.ts';
+import type { IRInputTurn } from '../../ir/input/types.ts';
 
 // A conversation translates in segments split at sidecar-resolved assistant
 // turns. Those turns are already native target structure, so a writer emits
@@ -7,9 +7,9 @@ import type { IRInputTurn } from './types.ts';
 // Segmentation is what preserves cross-turn behaviour: a writer that folds
 // adjacent user turns into one native message must not fold across a resolved
 // assistant turn, because that turn sits between them in the output.
-export type IRInputPiece<Turn, InputTurn = IRInputTurn> = IRInputSegment<InputTurn> | IRInputResolvedTurn<Turn>;
+export type Piece<Turn, InputTurn = IRInputTurn> = Segment<InputTurn> | ResolvedTurn<Turn>;
 
-export interface IRInputSegment<InputTurn = IRInputTurn> {
+export interface Segment<InputTurn = IRInputTurn> {
   readonly kind: 'ir';
   readonly turns: readonly InputTurn[];
   // Only the first piece of a conversation may hoist a leading system run into
@@ -17,13 +17,13 @@ export interface IRInputSegment<InputTurn = IRInputTurn> {
   readonly leading: boolean;
 }
 
-export interface IRInputResolvedTurn<Turn> {
+export interface ResolvedTurn<Turn> {
   readonly kind: 'resolved';
   readonly turn: Turn;
 }
 
-export const segmentIRInput = <Turn, InputTurn extends { readonly kind: 'client' | 'assistant' } = IRInputTurn>(pieces: readonly (InputTurn | IRInputResolvedTurn<Turn>)[]): readonly IRInputPiece<Turn, InputTurn>[] => {
-  const segments: (IRInputSegment<InputTurn> | IRInputResolvedTurn<Turn>)[] = [];
+export const segmentTurns = <Turn, InputTurn extends { readonly kind: 'client' | 'assistant' } = IRInputTurn>(pieces: readonly (InputTurn | ResolvedTurn<Turn>)[]): readonly Piece<Turn, InputTurn>[] => {
+  const segments: (Segment<InputTurn> | ResolvedTurn<Turn>)[] = [];
   let current: InputTurn[] = [];
   let leading = true;
   const flush = (): void => {
