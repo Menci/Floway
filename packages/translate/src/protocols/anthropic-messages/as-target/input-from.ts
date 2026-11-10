@@ -168,6 +168,9 @@ const toolFromIR = (tool: IRInputTool): AnthropicMessagesClientTool => {
   // expressed as a tool here.
   if (schema.type !== 'object') throw new TranslatorInputError('Anthropic Messages function tools require an object input schema.');
   return {
+    // Messages states this kind for a declaration that is not one of its own
+    // native tool types, which is every declaration this IR carries.
+    type: 'custom',
     name: tool.name,
     ...(tool.description === undefined ? {} : { description: tool.description }),
     input_schema: schema as AnthropicMessagesClientTool['input_schema'],

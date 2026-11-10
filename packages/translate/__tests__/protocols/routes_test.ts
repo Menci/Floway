@@ -297,3 +297,27 @@ test.each(returnedTrips)('$a via $b returns generated content and a decodable si
   assertEquals(assistant, before);
   assertEquals(targetAssistantTurn(await replayAssistantTurn(moved, b)), sidecar.targetTurn);
 });
+
+test('a Responses client sees its own declarations echoed on the response object', async () => {
+  // The upstream states no tools of its own, so the response objects carry the
+  // declarations the client asked with. A client that reads this field expects
+  // its groups back, not the flattened names the request was written with.
+  const declaration = { type: 'namespace' as const, name: 'public', description: '', tools: [{ type: 'function' as const, name: 'lookup', parameters: schema }] };
+  const payload: CanonicalOpenAIResponsesPayload = {
+    model: 'm',
+    stream: true,
+    input: [{ type: 'message', role: 'user', content: 'hi' }],
+    tools: [declaration],
+    tool_choice: 'auto',
+  };
+  const trip = await routeOpenAIResponsesViaOpenAIChatCompletions(payload, { sidecarCodec: createTestSidecarCodec('test-codec-scope') });
+  const frames = await collect(trip.events(iterate(fixtureFrames('openai-chat-completions', {
+    text: ['ok'], thinking: [], signature: '', tools: [],
+  }))));
+
+  const created = frames.find(frame => frame.type === 'event' && frame.event.type === 'response.created');
+  assert(created?.type === 'event');
+  const createdResponse = 'response' in created.event ? created.event.response : undefined;
+  assertEquals(createdResponse?.tools, [declaration]);
+  assertEquals(createdResponse?.tool_choice, 'auto');
+});

@@ -45,6 +45,10 @@ export interface SourceProtocol<Name extends AssistantTurnKey, Payload, Event> {
    */
   readonly writeStream: (
     reading: IRInputReading<SourceAssistantTurnFor<Name>>,
+    // The payload the client sent. A response object echoes the declarations the
+    // client asked with, and only the payload states them as the client wrote
+    // them — the IR holds the normalized form.
+    payload: Payload,
     records: AsyncIterable<IRRecord>,
     writer: RoundTripWriter<Name>,
   ) => AsyncIterable<ProtocolFrame<Event>>;
@@ -126,7 +130,7 @@ export const composeTranslation = <
     errorBody: source.writeError,
     events: frames => {
       const stream = createRoundTripStream(source.name, target.name, options.sidecarCodec);
-      return source.writeStream(reading, target.readStream(frames, context, stream.reader), stream.writer);
+      return source.writeStream(reading, payload, target.readStream(frames, context, stream.reader), stream.writer);
     },
   };
 };
@@ -199,6 +203,6 @@ export const translateSourceEventsFor = <
   // the same writing step the composed trip does.
   return (async function* () {
     const { context } = target.write(reading.request, await settleTurns(source, target, reading, options), options);
-    yield* source.writeStream(reading, target.readStream(frames, context, stream.reader), stream.writer);
+    yield* source.writeStream(reading, payload, target.readStream(frames, context, stream.reader), stream.writer);
   })();
 };

@@ -26,12 +26,28 @@ const nativeFrames = (mode: 'legacy' | 'modern' | 'mixed', name: string, argumen
   ];
 };
 
-const assertNativeHistory = (target: OpenAIChatCompletionsPayload, name: string, contents: string[]): void => {
-  // Every result is written in the modern spelling; a legacy source call was
-  // normalized into the IR, so no result restates the legacy `function` role.
-  const results = target.messages.filter(message => message.role === 'tool');
+/**
+ * What this wire states for three alternating legacy/modern calls.
+ *
+ * A result answers the shape its assistant turn stated: a call the turn named by
+ * id gets a `tool` message, and a legacy `function_call` — which states no id —
+ * gets the `function` message this wire pairs with it by name. A history whose
+ * calls all came through the IR states ids for all of them, so every result is
+ * a `tool` message.
+ */
+const assertNativeHistory = (
+  target: OpenAIChatCompletionsPayload,
+  name: string,
+  contents: string[],
+  legacyResults: boolean,
+): void => {
+  const results = target.messages.filter(message => message.role === 'tool' || message.role === 'function');
   expect(results.map(message => message.content)).toEqual(contents);
   expect(results[1]).toEqual({ role: 'tool', tool_call_id: 'native-modern', content: contents[1] });
+  if (legacyResults) {
+    expect(results[0]).toEqual({ role: 'function', name, content: contents[0] });
+    expect(results[2]).toEqual({ role: 'function', name, content: contents[2] });
+  }
   const assistants = target.messages.filter(message => message.role === 'assistant');
   expect(assistants).toHaveLength(3);
   expect(assistants[0].function_call).toEqual({ name, arguments: '{"x":1}' });
@@ -57,7 +73,7 @@ test('Messages returns matching legacy function results while modern calls remai
     payload.messages.push({ role: 'assistant', content: result.content }, { role: 'user', content: [{ type: 'tool_result', tool_use_id: call.id, content: `result-${index}` }] });
   }
   const replay = await routeAnthropicMessagesViaOpenAIChatCompletions(payload, context);
-  assertNativeHistory(replay.target, 'lookup', ['result-0', 'result-1', 'result-2']);
+  assertNativeHistory(replay.target, 'lookup', ['result-0', 'result-1', 'result-2'], false);
 });
 
 test('Responses binds public namespaced call IDs to the native legacy function name', async () => {
@@ -82,7 +98,7 @@ test('Responses binds public namespaced call IDs to the native legacy function n
     payload.input.push(...toOpenAIResponsesInputAssistantTurn(result.output), { type: 'function_call_output', call_id: call.call_id, output: `result-${index}` });
   }
   const replay = await routeOpenAIResponsesViaOpenAIChatCompletions(payload, context);
-  assertNativeHistory(replay.target, nativeName, ['result-0', 'result-1', 'result-2']);
+  assertNativeHistory(replay.target, nativeName, ['result-0', 'result-1', 'result-2'], false);
 });
 
 test('Gemini matches ID-less legacy responses by public name and explicit modern responses by ID', async () => {
@@ -102,7 +118,7 @@ test('Gemini matches ID-less legacy responses by public name and explicit modern
     payload.contents.push(content, { role: 'user', parts: [{ functionResponse: { name: call.name, ...(call.id === undefined ? {} : { id: call.id }), response: { result: index } } }] });
   }
   const replay = await routeGeminiGenerateContentViaOpenAIChatCompletions(payload, context);
-  assertNativeHistory(replay.target, 'lookup', ['{"result":0}', '{"result":1}', '{"result":2}']);
+  assertNativeHistory(replay.target, 'lookup', ['{"result":0}', '{"result":1}', '{"result":2}'], true);
 });
 
 test('Gemini keeps modern IDs separate when a vendor stream includes both call formats', async () => {
@@ -129,18 +145,13 @@ test('Gemini keeps modern IDs separate when a vendor stream includes both call f
   const native = replay.target.messages.find(message => message.role === 'assistant');
   expect(native?.function_call).toEqual({ name: 'lookup', arguments: '{"x":1}' });
   expect(native?.tool_calls).toEqual([{ id: 'native-modern', type: 'function', function: { name: 'lookup', arguments: '{"x":1}' } }]);
-  // The id-less legacy response answers the call still awaiting a result, so it
-  // takes whatever id that call was stated under — an id this wire never saw
-  // from the client. What matters is that each result names a distinct call and
-  // both are written in the modern spelling.
-  const results = replay.target.messages.slice(-2) as { role: string; tool_call_id: string; content: string }[];
+  // The id-less legacy response answers the call still awaiting a result. That
+  // call is stated as a legacy `function_call`, which carries no id, so the
+  // answer is written as the matching `function` message and named by the call.
+  const results = replay.target.messages.slice(-2);
   expect(results.map(message => message.content)).toEqual(['{"modern":true}', '{"legacy":true}']);
-  expect(results[0].tool_call_id).toBe('native-modern');
-  expect(results[1].tool_call_id).not.toBe('native-modern');
-  const statedCalls = replay.target.messages.flatMap(message => message.role === 'assistant'
-    ? [...(message.tool_calls ?? []).map(call => call.id), ...(message.function_call == null ? [] : [`legacy_${message.function_call.name}`])]
-    : []);
-  expect(statedCalls).toContain(results[1].tool_call_id);
+  expect(results[0]).toMatchObject({ role: 'tool', tool_call_id: 'native-modern' });
+  expect(results[1]).toMatchObject({ role: 'function', name: 'lookup' });
 });
 
 test('restored legacy results retain the ordinary Responses input_file rejection', async () => {

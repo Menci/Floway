@@ -509,6 +509,7 @@ test('buildTargetRequest wraps custom tools as single-string function tools and 
   assertEquals(result.customToolNames.has('apply_patch'), true);
   assertEquals(result.target.tools, [
     {
+      type: 'custom',
       name: 'apply_patch',
       description: 'apply a patch',
       input_schema: {
@@ -645,11 +646,13 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
   assertEquals(result.target.tools?.map(tool => 'name' in tool ? tool.name : undefined), ['web_run', 'web_run_2']);
   assertEquals(result.target.tools, [
     {
+      type: 'custom',
       name: 'web_run',
       input_schema: { type: 'object' },
       strict: false,
     },
     {
+      type: 'custom',
       name: 'web_run_2',
       description: 'Web tools.\n\nAccess the web.',
       input_schema: { type: 'object', properties: { search_query: { type: 'array' } } },
@@ -678,6 +681,7 @@ test('buildTargetRequest gives a schema-less function tool the empty object sche
 
   assertEquals(result.target.tools, [
     {
+      type: 'custom',
       name: 'ping',
       input_schema: { type: 'object', properties: {} },
       cache_control: { type: 'ephemeral' },

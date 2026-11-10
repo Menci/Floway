@@ -136,7 +136,10 @@ const assistantMessage = (items: readonly IRInputAddressedAssistantItem[]): Open
   }];
 };
 
-const userMessages = (items: readonly IRInputAddressedClientItem[]): OpenAIChatCompletionsMessage[] => {
+const userMessages = (
+  items: readonly IRInputAddressedClientItem[],
+  legacyCalls: ReadonlyMap<string, string>,
+): OpenAIChatCompletionsMessage[] => {
   // Images lifted out of consecutive tool results gather into one user message
   // after the run, so a tool-call group stays contiguous.
   const messages: OpenAIChatCompletionsMessage[] = [];
@@ -148,7 +151,7 @@ const userMessages = (items: readonly IRInputAddressedClientItem[]): OpenAIChatC
   };
   for (const item of items) {
     if (item.type !== 'tool_result') flushImages();
-    messages.push(...openaiChatCompletionsUserItem(item, lifted => pendingImages.push(...lifted)));
+    messages.push(...openaiChatCompletionsUserItem(item, lifted => pendingImages.push(...lifted), legacyCalls));
   }
   flushImages();
   return messages;
@@ -157,6 +160,7 @@ const userMessages = (items: readonly IRInputAddressedClientItem[]): OpenAIChatC
 const openaiChatCompletionsUserItem = (
   item: IRInputAddressedClientItem,
   lift: (parts: readonly OpenAIChatCompletionsUserContentPart[]) => void,
+  legacyCalls: ReadonlyMap<string, string>,
 ): OpenAIChatCompletionsMessage[] => [item].flatMap<OpenAIChatCompletionsMessage>(item => {
   switch (item.type) {
   case 'message':
@@ -169,18 +173,24 @@ const openaiChatCompletionsUserItem = (
   case 'tool_result': {
     const projected = openaiChatCompletionsToolResultContent(item.call_id, item.output);
     lift(projected.lifted);
-    // Results are always written in the modern spelling; a legacy source call is
-    // normalized when it enters the IR, so no target has to restate that form.
-    return [{ role: 'tool', tool_call_id: item.call_id, content: projected.content }];
+    // This wire pairs a legacy `function_call` with a `function` message by
+    // name, and a modern call with a `tool` message by id. Answering a legacy
+    // call with a `tool` message would name an id the assistant turn never
+    // stated.
+    const legacyName = legacyCalls.get(item.call_id);
+    return [legacyName === undefined
+      ? { role: 'tool', tool_call_id: item.call_id, content: projected.content }
+      : { role: 'function', name: legacyName, content: projected.content }];
   }
   }
 });
 
 export const openaiChatCompletionsFromIR = (
   turns: readonly IRInputAddressedTurn[],
+  legacyCalls: ReadonlyMap<string, string> = new Map(),
 ): OpenAIChatCompletionsMessage[] => turns.flatMap(turn => turn.kind === 'assistant'
   ? assistantMessage(turn.items)
-  : userMessages(turn.items));
+  : userMessages(turn.items, legacyCalls));
 
 /**
  * Writes the settings onto a Chat Completions payload. `max_tokens` is

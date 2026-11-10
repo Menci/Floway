@@ -289,6 +289,7 @@ test('buildTargetRequest maps tool declarations and tool choice modes', async ()
     max_tokens: ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
     tools: [
       {
+        type: 'custom',
         name: 'lookup',
         description: 'Look up facts',
         input_schema: {
@@ -331,10 +332,12 @@ test('buildTargetRequest filters tools to multiple allowed names for ANY mode', 
     max_tokens: ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
     tools: [
       {
+        type: 'custom',
         name: 'lookup',
         input_schema: { type: 'object', properties: {} },
       },
       {
+        type: 'custom',
         name: 'ping',
         input_schema: { type: 'object', properties: {} },
         cache_control: { type: 'ephemeral' },

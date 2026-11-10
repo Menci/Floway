@@ -24,5 +24,5 @@ export const anthropicMessagesSourceProtocol: SourceProtocol<
   },
   writeError: anthropicMessagesErrorWriter,
   // Stating a Messages stream needs nothing the request produced.
-  writeStream: (_payload, records, writer) => anthropicMessagesFromIR(records, { roundTrip: writer }),
+  writeStream: (_reading, _payload, records, writer) => anthropicMessagesFromIR(records, { roundTrip: writer }),
 };

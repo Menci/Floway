@@ -16,6 +16,7 @@ import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, typ
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   createRandomOpenAIResponsesItemId,
+  type CanonicalOpenAIResponsesPayload,
   type OpenAIResponsesAnnotation,
   type OpenAIResponsesOutputContentBlock,
   type OpenAIResponsesOutputItemEx,
@@ -47,7 +48,11 @@ type ResponsesOutputUnit = ResponsesOutputUnitBase & (
   | { readonly kind: 'function_call' | 'custom_tool_call'; toolContentState?: ContentState<'text'> }
 );
 
-type OpenAIResponsesSSEOutputOptions = RoundTripOutputOptions<'openaiResponses'>;
+interface OpenAIResponsesSSEOutputOptions extends RoundTripOutputOptions<'openaiResponses'> {
+  /** The declarations the client asked with, echoed back on every response object. */
+  echoedTools?: NonNullable<CanonicalOpenAIResponsesPayload['tools']>;
+  echoedToolChoice?: NonNullable<CanonicalOpenAIResponsesPayload['tool_choice']>;
+}
 
 const IMAGE_OUTPUT_FORMATS = { 'image/png': 'png', 'image/jpeg': 'jpeg', 'image/webp': 'webp' } as const;
 
@@ -179,6 +184,7 @@ export const openaiResponsesFromIR = async function* (
   records: AsyncIterable<IRRecord>,
   options: OpenAIResponsesSSEOutputOptions,
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+  const { echoedTools, echoedToolChoice } = options;
   let metadata = { id: '', model: '', created: 0 };
   let started = false;
   let sequence = 0;
@@ -350,6 +356,12 @@ export const openaiResponsesFromIR = async function* (
     error: null,
     incomplete_details: status === 'incomplete' ? { reason: finishReason === 'content_filter' ? 'content_filter' : 'max_output_tokens' } : null,
     ...(state.service_tier === undefined ? {} : { service_tier: state.service_tier }),
+    // The response echoes the declarations the client asked with, because a
+    // client that reads this field expects to see its own groups rather than
+    // the flattened names the request placed on the wire. The upstream states
+    // none of this, so it comes from the request this trip was built from.
+    ...(echoedTools === undefined ? {} : { tools: echoedTools }),
+    ...(echoedToolChoice === undefined ? {} : { tool_choice: echoedToolChoice }),
   });
 
   // Creates the output units that the output IR structures initialized by a record will become.

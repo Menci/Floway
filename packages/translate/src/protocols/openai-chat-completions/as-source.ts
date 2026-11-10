@@ -22,7 +22,7 @@ export const openaiChatCompletionsSourceProtocol: SourceProtocol<
     collectCandidates: collectOpenAIChatCompletionsReplayContents,
   },
   writeError: openaiChatCompletionsErrorWriter,
-  writeStream: (reading, records, writer) => openaiChatCompletionsFromIR(records, {
+  writeStream: (reading, _payload, records, writer) => openaiChatCompletionsFromIR(records, {
     continuousUsageStats: reading.request.settings.continuous_usage === true,
     roundTrip: writer,
   }),

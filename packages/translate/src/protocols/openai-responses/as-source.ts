@@ -23,9 +23,18 @@ export const openaiResponsesSourceProtocol: SourceProtocol<
     collectCandidates: collectOpenAIResponsesReplayContents,
   },
   writeError: openaiResponsesErrorWriter,
-  writeStream: (reading, records, writer) => {
+  writeStream: (reading, payload, records, writer) => {
     // A response id names the upstream response, so one is minted per trip.
     const responseId = createRandomOpenAIResponsesResponseId();
-    return openaiResponsesFromIR(records, { id: responseId, roundTrip: writer });
+    // The response objects echo the client's own declarations, which only the
+    // payload states as the client wrote them: the IR holds a normalized form
+    // and the upstream states none of this at all.
+    const { tools, tool_choice: toolChoice } = payload;
+    return openaiResponsesFromIR(records, {
+      id: responseId,
+      roundTrip: writer,
+      ...(tools == null || tools.length === 0 ? {} : { echoedTools: tools }),
+      ...(toolChoice == null ? {} : { echoedToolChoice: toolChoice }),
+    });
   },
 };
