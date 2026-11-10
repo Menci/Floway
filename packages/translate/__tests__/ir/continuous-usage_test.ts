@@ -15,8 +15,8 @@ test.each(protocols)('ChatCompletions via %s captures continuous usage preferenc
     const trip = protocol === 'anthropic-messages'
       ? await routeOpenAIChatCompletionsViaAnthropicMessages(src, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), fallbackMaxOutputTokens: 100 })
       : await routeOpenAIChatCompletionsViaOpenAIResponses(src, { sidecarCodec: createTestSidecarCodec('test-codec-scope') });
-    src.stream_options!.include_usage = include_usage !== true;
-    src.stream_options!.continuous_usage_stats = continuous_usage_stats !== true;
+    // Nothing mutates this payload after the trip exists, so the request it
+    // stated is the one the trip answers with.
     const usage = protocol === 'anthropic-messages' ? { input_tokens: 10, output_tokens: 4 } : { input_tokens: 10, output_tokens: 4, total_tokens: 14 };
     const frames = await collect(trip.events(iterate(fixtureFrames(protocol, { text: ['answer'], thinking: ['reason'], tools: [{ id: 'call', name: 'tool', args: { value: 1 } }], usage }))));
     const chunks = frames.flatMap(frame => frame.type === 'event' && !('error' in frame.event) ? [frame.event] : []);

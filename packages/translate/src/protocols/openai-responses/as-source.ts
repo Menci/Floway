@@ -23,7 +23,7 @@ export const openaiResponsesSourceProtocol: SourceProtocol<
     collectCandidates: collectOpenAIResponsesReplayContents,
   },
   writeError: openaiResponsesErrorWriter,
-  writeStream: (_reading, payload, records, roundTrip) => {
+  writeStream: (payload, records, roundTrip) => {
     // A response id names the upstream response, so one is minted per trip.
     const responseId = createRandomOpenAIResponsesResponseId();
     // The response objects echo the client's own declarations, which only the

@@ -40,14 +40,11 @@ export interface SourceProtocol<Name extends AssistantTurnKey, Payload, Event> {
   /**
    * States the returned stream to this protocol's client.
    *
-   * Two facts about the request are here, and neither substitutes for the
-   * other. `reading` holds what the reader derived when the trip was built, so
-   * a preference it normalized is stated back as it was then. `payload` is the
-   * client's own request, which is the only place a spelling the reader
-   * normalized away — a declaration group, say — survives.
+   * It is handed the payload the client sent, because what the client sees
+   * stated back is what it asked for, and the payload is the only place a
+   * spelling the reader normalized away — a declaration group, say — survives.
    */
   readonly writeStream: (
-    reading: Reading<SourceAssistantTurnFor<Name>>,
     payload: Payload,
     records: AsyncIterable<IRRecord>,
     roundTrip: RoundTripWriter<Name>,
@@ -130,7 +127,7 @@ export const composeTranslation = <
     errorBody: source.writeError,
     events: frames => {
       const stream = createRoundTripStream(source.name, target.name, options.sidecarCodec);
-      return source.writeStream(reading, payload, target.readStream(frames, context, stream.reader), stream.writer);
+      return source.writeStream(payload, target.readStream(frames, context, stream.reader), stream.writer);
     },
   };
 };
@@ -203,6 +200,6 @@ export const translateSourceEventsFor = <
   // the same writing step the composed trip does.
   return (async function* () {
     const { context } = target.write(reading.request, await settleTurns(source, target, reading, options), options);
-    yield* source.writeStream(reading, payload, target.readStream(frames, context, stream.reader), stream.writer);
+    yield* source.writeStream(payload, target.readStream(frames, context, stream.reader), stream.writer);
   })();
 };
