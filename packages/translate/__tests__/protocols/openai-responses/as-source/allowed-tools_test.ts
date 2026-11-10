@@ -114,3 +114,11 @@ test('requireCallableSelector rejects a namespace that is not a string', () => {
   assertEquals(requireCallableSelector({ type: 'function', name: 'read', namespace: 'files' }).namespace, 'files');
   assertThrows(() => requireCallableSelector({ type: 'function', name: 'read', namespace: 42 }), TranslatorInputError);
 });
+
+test('a dotted selector is only read as a pair when that group is declared', async () => {
+  // A flat declaration may spell its name with a dot; that dot is not a group
+  // separator, and reading it as one bound the selector to a different callable
+  // — or refused a legal request.
+  const flat = await buildChat(source({ type: 'function', name: 'a.b' }), createTestSidecarCodec());
+  assertEquals(flat.target.tool_choice, { type: 'function', function: { name: 'a.b' } });
+});

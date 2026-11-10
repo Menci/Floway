@@ -226,19 +226,35 @@ const toolToIR = (tool: Extract<OpenAIResponsesTool, { type: 'function' | 'custo
   };
 };
 
-// A selector names a grouped callable either with a `namespace` field or with a
-// dotted name, and both mean the same pair.
-const selectionToIR = (selection: { readonly type: 'function' | 'custom'; readonly name: string; readonly namespace?: string }): IRInputToolSelector => {
+/**
+ * A selector names a grouped callable either with a `namespace` field or with a
+ * dotted spelling of the pair. A dotted name is only read that way when the
+ * declarations contain the group it names — otherwise the dot is part of a flat
+ * name, which this wire allows.
+ */
+const selectionToIR = (
+  selection: { readonly type: 'function' | 'custom'; readonly name: string; readonly namespace?: string },
+  declaredGroups: ReadonlySet<string>,
+): IRInputToolSelector => {
   if (selection.namespace !== undefined) return { type: selection.type, name: selection.name, namespace: selection.namespace };
   const dot = selection.name.indexOf('.');
-  return dot < 0
-    ? { type: selection.type, name: selection.name }
-    : { type: selection.type, name: selection.name.slice(dot + 1), namespace: selection.name.slice(0, dot) };
+  if (dot < 0) return { type: selection.type, name: selection.name };
+  const namespace = selection.name.slice(0, dot);
+  return declaredGroups.has(namespace)
+    ? { type: selection.type, name: selection.name.slice(dot + 1), namespace }
+    : { type: selection.type, name: selection.name };
 };
+
+/** The group names this payload declares, wherever its inventories state them. */
+const declaredGroupsOf = (payload: CanonicalOpenAIResponsesPayload): ReadonlySet<string> =>
+  new Set([
+    ...(payload.tools ?? []),
+    ...payload.input.flatMap(item => item.type === 'additional_tools' || item.type === 'tool_search_output' ? item.tools : []),
+  ].flatMap(tool => tool.type === 'namespace' ? [tool.name] : []));
 
 // A selector may name a whole group, which selects each callable it holds.
 const selectorOf = (payload: CanonicalOpenAIResponsesPayload, selector: Record<string, unknown>): IRInputToolSelector[] => {
-  if (selector.type !== 'namespace') return [selectionToIR(requireCallableSelector(selector))];
+  if (selector.type !== 'namespace') return [selectionToIR(requireCallableSelector(selector), declaredGroupsOf(payload))];
   const groups = [
     ...(payload.tools ?? []),
     ...payload.input.flatMap(item => item.type === 'additional_tools' || item.type === 'tool_search_output' ? item.tools : []),
@@ -265,7 +281,7 @@ const toolChoiceToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputToolCh
       tools: choice.tools.flatMap(selector => selectorOf(payload, selector)),
     };
   }
-  if (choice.type === 'function' || choice.type === 'custom') return selectionToIR(choice);
+  if (choice.type === 'function' || choice.type === 'custom') return selectionToIR(choice, declaredGroupsOf(payload));
   // A hosted selector names a tool this IR does not carry.
   throw new TranslatorInputError(`Cannot translate OpenAI Responses tool choice type '${choice.type}'.`);
 };
