@@ -2,7 +2,7 @@ import { klona } from 'klona/json';
 
 import { partitionOpenAIChatCompletionsTurns, type OpenAIChatCompletionsConversationMessage, type OpenAIChatCompletionsConversationTurn } from './conversation-turns.ts';
 import type { OpenAIChatCompletionsAssistantTurn } from './round-trip.ts';
-import { mediaFromURL } from '../../../ir/input/media.ts';
+import { mediaFromURL, mediaOrThrow } from '../../../ir/input/media.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -75,7 +75,7 @@ const userContentPart = (part: OpenAIChatCompletionsUserContentPart): IRInputUse
   case 'image_url':
     return {
       type: 'image',
-      image: mediaFromURL(part.image_url.url),
+      image: mediaOrThrow(mediaFromURL(part.image_url.url), part.image_url.url),
       ...(part.image_url.detail === undefined ? {} : { detail: part.image_url.detail }),
     };
   case 'input_audio':

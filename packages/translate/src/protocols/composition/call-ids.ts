@@ -33,9 +33,27 @@ export const assignCallIds = <Restored>(
 ): readonly (IRInputAddressedTurn | ResolvedTurn<Restored>)[] => {
   const pending: PendingCall[] = [];
   let allocated = 0;
+  // Every id this conversation states, read before allocating anything: an id
+  // this step invents must not collide with one stated later in the same
+  // conversation, or two calls would share it.
+  const claimed = new Set<string>();
+  for (const piece of turns) {
+    if (piece.kind === 'resolved') {
+      for (const call of restoredCalls(piece.turn)) if (call.callId !== undefined) claimed.add(call.callId);
+    } else if (piece.kind === 'assistant') {
+      for (const item of piece.items) {
+        if ((item.type === 'function_call' || item.type === 'custom_tool_call') && item.call_id !== undefined) claimed.add(item.call_id);
+      }
+    }
+  }
   const allocate = (name: string): string => {
-    allocated += 1;
-    return `${name}_call_${allocated}`;
+    let candidate: string;
+    do {
+      allocated += 1;
+      candidate = `${name}_call_${allocated}`;
+    } while (claimed.has(candidate));
+    claimed.add(candidate);
+    return candidate;
   };
   // A stated answer releases the call it names; an unstated one takes the
   // oldest call of its name, or the oldest call at all when the source stated

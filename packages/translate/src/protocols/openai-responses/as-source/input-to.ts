@@ -5,7 +5,7 @@ import { partitionOpenAIResponsesTurns } from './conversation-turns.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from './programmatic-tooling.ts';
 import { isOpenAIResponsesEncryptedReasoning } from './round-trip.ts';
 import type { OpenAIResponsesAssistantTurn } from './round-trip.ts';
-import { mediaFromURL } from '../../../ir/input/media.ts';
+import { mediaFromURL, mediaOrThrow } from '../../../ir/input/media.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -36,7 +36,7 @@ import type {
 } from '@floway-dev/protocols/openai-responses';
 
 const imageMedia = (part: Extract<OpenAIResponsesInputContent, { type: 'input_image' }>): IRInputMedia => {
-  if (typeof part.image_url === 'string') return mediaFromURL(part.image_url);
+  if (typeof part.image_url === 'string') return mediaOrThrow(mediaFromURL(part.image_url), part.image_url);
   if (typeof part.file_id === 'string') return { source_kind: 'file', file_id: part.file_id };
   throw new TranslatorInputError('An OpenAI Responses input_image requires image_url or file_id.');
 };
@@ -46,8 +46,10 @@ const fileMedia = (part: Extract<OpenAIResponsesInputContent, { type: 'input_fil
   if (typeof part.file_url === 'string') return { source_kind: 'url', url: part.file_url };
   if (typeof part.file_data === 'string') {
     // `file_data` is either raw base64 or a data URL; a data URL also states the
-    // media type a target may need.
+    // media type a target may need. A data URL this cannot decode is not raw
+    // base64 — labelling it so would send the URL text itself as the payload.
     const media = mediaFromURL(part.file_data);
+    if (media === undefined) throw new TranslatorInputError('An OpenAI Responses input_file states a data URL this translation cannot decode.');
     return media.source_kind === 'base64' ? media : { source_kind: 'base64', data: part.file_data };
   }
   throw new TranslatorInputError('An OpenAI Responses input_file requires file_id, file_url, or file_data.');

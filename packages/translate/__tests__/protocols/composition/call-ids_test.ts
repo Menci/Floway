@@ -50,3 +50,11 @@ test('a result naming a call nothing awaits is refused rather than answered with
 test('a stated result releases its call so a later id-less result cannot take it', () => {
   assertEquals(lastResult(assignCallIds([call('read', 'a'), call('read', 'b'), result(undefined, 'a'), result('read')], () => [])).call_id, 'b');
 });
+
+test('an invented id does not collide with one the conversation states', () => {
+  // A source may state any string as a real id, including one this step would
+  // otherwise invent, and two calls sharing an id cannot be told apart.
+  const ids = assignCallIds([call('read'), call('read', 'read_call_1')], () => [])
+    .flatMap(turn => turn.kind === 'assistant' ? turn.items.flatMap(item => item.type === 'function_call' ? [item.call_id] : []) : []);
+  assertEquals(new Set(ids).size, ids.length);
+});

@@ -2,7 +2,7 @@ import { klona } from 'klona/json';
 
 import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn } from './conversation-turns.ts';
 import type { AnthropicMessagesAssistantTurn } from './round-trip.ts';
-import { mediaFromURL } from '../../../ir/input/media.ts';
+import { mediaFromURL, mediaOrThrow } from '../../../ir/input/media.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputRequestHeader,
@@ -36,7 +36,7 @@ import { FAST_SERVICE_TIER } from '@floway-dev/protocols/common';
 const imageMedia = (source: AnthropicMessagesImageBlock['source']): IRInputMedia => {
   switch (source.type) {
   case 'base64': return { source_kind: 'base64', media_type: source.media_type, data: source.data };
-  case 'url': return mediaFromURL(source.url);
+  case 'url': return mediaOrThrow(mediaFromURL(source.url), source.url);
   case 'file': return { source_kind: 'file', file_id: source.file_id };
   }
 };
