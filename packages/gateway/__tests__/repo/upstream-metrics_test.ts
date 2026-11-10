@@ -13,6 +13,44 @@ for (const [name, create] of [
   ['memory', async () => new InMemoryRepo()],
 ] as const) {
   describe(`${name} upstream metrics gauges`, () => {
+    it('detects only observed returns to full quota and keeps the last two starts per identity', async () => {
+      const repo = (await create()).upstreamMetrics;
+      const identity = { name: 'quota.remaining_percent', labels: { window: 'weekly' } };
+      const session = { name: 'quota.remaining_percent', labels: { window: 'session' } };
+      for (const [minute, value] of [[0, 100], [1, 100], [2, 80], [3, 100], [4, 100], [5, 90], [6, 99.99], [7, 100], [8, 100], [9, 50], [10, 100]] as const) {
+        await repo.record(point(minute * 60_000, value, identity));
+      }
+      await repo.record(point(60_000, 10, session));
+      await repo.record(point(120_000, 100, session));
+      await repo.record({ ...point(60_000, 50, identity), upstreamId: 'up-2' });
+      expect(await repo.queryResetStarts('up-1', identity, 100, 10 * 60_000)).toEqual([7 * 60_000, 3 * 60_000]);
+      expect(await repo.queryResetStarts('up-1', identity, 100, 11 * 60_000)).toEqual([10 * 60_000, 7 * 60_000]);
+      expect(await repo.queryResetStarts('up-1', session, 100, 11 * 60_000)).toEqual([120_000]);
+      expect(await repo.queryResetStarts('up-2', identity, 100, 11 * 60_000)).toEqual([]);
+      expect(await repo.listIdentities('up-1', 60_000)).toEqual([identity]);
+    });
+
+    it('uses zero used percent as full quota and observes old resets outside chart sampling windows', async () => {
+      const repo = (await create()).upstreamMetrics;
+      const identity = { name: 'quota.utilization', labels: { quota: 'five_hour' } };
+      await repo.record(point(0, 30, identity));
+      await repo.record(point(60_000, 0, identity));
+      await repo.record(point(120_000, 5, identity));
+      expect(await repo.query('up-1', 0, 180_000, 180_000)).toEqual([point(120_000, 5, identity)]);
+      expect(await repo.queryResetStarts('up-1', identity, 0, 180_000)).toEqual([60_000]);
+    });
+
+    it('compares absolute remaining quota against the allowance captured with each observation', async () => {
+      const repo = (await create()).upstreamMetrics;
+      const remaining = { name: 'quota.remaining', labels: { quota: 'chat' } };
+      const allowance = { name: 'quota.entitlement', labels: { quota: 'chat' } };
+      for (const [minute, value, full] of [[0, 100, 100], [1, 40, 100], [2, 200, 200], [3, 100, 200], [4, 100, 100], [5, 20, 100], [6, 0, 0], [7, 100, 100]] as const) {
+        await repo.record(point(minute * 60_000, value, remaining));
+        await repo.record(point(minute * 60_000, full, allowance));
+      }
+      expect(await repo.queryResetStarts('up-1', remaining, allowance, 8 * 60_000)).toEqual([4 * 60_000, 2 * 60_000]);
+    });
+
     it('restores complete gauge snapshots and clears them for replacement imports', async () => {
       const repo = (await create()).upstreamMetrics;
       await repo.set(point(70_000, 20));

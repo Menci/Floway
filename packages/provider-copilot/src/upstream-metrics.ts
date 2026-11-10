@@ -24,7 +24,7 @@ export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIde
   const keyed = quota === 'premium_interactions' ? 'premiumInteractions' : quota === 'chat' ? 'chat' : quota === 'completions' ? 'completions' : 'other';
   const labelKey = `dashboard.upstreams.copilotQuota.${keyed}.${quantity === 'entitlement' ? 'allowance' : quantity === 'used' ? 'usage' : 'remaining'}` as const;
   const labelValues = keyed === 'other' ? { name: quota } : undefined;
-  return { name: `${quantity}_${quota}`, labelKey, labelValues, unit: credits ? 'usd' : 'count', axisPriority: quantity === 'entitlement' ? upstreamMetricAxisPriority.entitlement : upstreamMetricAxisPriority.remainingQuota, windowSeconds: null, emptyValue: null, form: quantity === 'entitlement' ? 'line' : 'area', toDisplayValue: credits ? copilotCreditsToUsd : value => value };
+  return { name: `${quantity}_${quota}`, labelKey, labelValues, unit: credits ? 'usd' : 'count', axisPriority: quantity === 'entitlement' ? upstreamMetricAxisPriority.entitlement : upstreamMetricAxisPriority.remainingQuota, windowSeconds: null, emptyValue: null, form: quantity === 'entitlement' ? 'line' : 'area', ...(quantity === 'remaining' ? { resetValue: { name: 'quota.entitlement', labels: { quota } } } : {}), toDisplayValue: credits ? copilotCreditsToUsd : value => value };
 };
 
 export const resolveUpstreamMetricDisplays = (samples: readonly UpstreamMetricSample[], options: UpstreamMetricDisplayOptions): UpstreamMetricDisplaySeries[] => {

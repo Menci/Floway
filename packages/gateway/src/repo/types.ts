@@ -644,6 +644,8 @@ export interface UpstreamMetricRecord extends UpstreamMetricIdentity {
 }
 
 export interface UpstreamMetricsRepo {
+  listIdentities(upstreamId: string, end: number): Promise<UpstreamMetricIdentity[]>;
+  queryResetStarts(upstreamId: string, identity: UpstreamMetricIdentity, resetValue: number | UpstreamMetricIdentity, end: number): Promise<number[]>;
   listAll(): Promise<UpstreamMetricRecord[]>;
   set(record: UpstreamMetricRecord): Promise<void>;
   deleteAll(): Promise<void>;

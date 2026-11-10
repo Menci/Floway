@@ -56,6 +56,8 @@ export interface UpstreamMetricDisplay {
   windowSeconds: number | null;
   emptyValue: number | null;
   form: 'line' | 'area';
+  /** The stored value (or allowance series) that represents 100% remaining. */
+  resetValue?: number | UpstreamMetricIdentity;
   toDisplayValue: (storedValue: number) => number;
 }
 
@@ -96,6 +98,7 @@ export const quotaPercentDisplay = (
 ): UpstreamMetricDisplay => ({
   ...display,
   unit: 'percent',
+  resetValue: storedDirection === 'remaining' ? 100 : 0,
   toDisplayValue: value => options.quotaDisplay === storedDirection ? value : 100 - value,
 });
 
