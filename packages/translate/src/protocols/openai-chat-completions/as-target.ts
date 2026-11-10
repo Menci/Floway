@@ -1,10 +1,8 @@
-import type { IRInputAddressedTurn } from '../../ir/input/addressed.ts';
 import type { InputAssistantTurnFor } from '../../round-trip/assistant-turn.ts';
 import { assignCallIds, type PendingCall } from '../composition/call-ids.ts';
 import { flattenRequestNames } from '../composition/flatten-request.ts';
-import type { ResolvedTurn } from '../composition/segments.ts';
 import type { TargetProtocol } from '../composition.ts';
-import { legacyFunctionCallId, legacyFunctionCallNamesOf, openaiChatCompletionsPayloadFromSegments } from './as-target/segmented-request.ts';
+import { openaiChatCompletionsPayloadFromSegments } from './as-target/segmented-request.ts';
 import { irFromOpenAIChatCompletions } from './as-target/sse-from.ts';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -13,10 +11,10 @@ type ChatResolvedTurn = InputAssistantTurnFor<'openaiChatCompletions'>;
 const callsOf = (turn: ChatResolvedTurn): readonly PendingCall[] => {
   if (turn.role !== 'assistant') return [];
   // The legacy `function_call` field is a call too, and a restored turn may
-  // state it; it carries no id, so the result that answers it is matched by
-  // name and a later id-less result takes whatever this turn allocated.
+  // state it. It carries no id, so it stays that way: the answer to it is
+  // written back as the `function` message this wire pairs with the field.
   const legacyCall = turn.function_call;
-  const legacy = legacyCall == null ? [] : [{ callId: legacyFunctionCallId(legacyCall.name), name: legacyCall.name }];
+  const legacy = legacyCall == null ? [] : [{ name: legacyCall.name }];
   return [
     ...legacy,
     ...(turn.tool_calls ?? []).map(call => ({ callId: call.id, name: call.type === 'function' ? call.function.name : call.custom.name })),
@@ -39,12 +37,7 @@ export const openaiChatCompletionsTargetProtocol: TargetProtocol<
   write: (request, turns) => {
     const flattened = flattenRequestNames(request, turns);
     return {
-      payload: openaiChatCompletionsPayloadFromSegments(
-        flattened.request,
-        assignCallIds(flattened.turns, callsOf),
-        turn => turn,
-        legacyFunctionCallNamesOf(flattened.turns as readonly (IRInputAddressedTurn | ResolvedTurn<ChatResolvedTurn>)[]),
-      ),
+      payload: openaiChatCompletionsPayloadFromSegments(flattened.request, assignCallIds(flattened.turns, callsOf), turn => turn),
       // Both facts come from the same flattening that produced the request, so
       // the reader sees exactly the names the upstream was asked with.
       context: flattened.context,

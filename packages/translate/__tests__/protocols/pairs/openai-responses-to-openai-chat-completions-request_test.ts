@@ -480,7 +480,12 @@ test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTa
   await assertRejects(
     () => buildWithTestSidecar({
       model: 'gpt-test',
-      input: [{ type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
+      input: [
+        ...(type === 'function_call_output'
+          ? [{ type: 'function_call' as const, call_id: 'call_1', name: 'lookup', arguments: '{}' }]
+          : [{ type: 'custom_tool_call' as const, call_id: 'call_1', name: 'lookup', input: '{}' }]),
+        { type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] },
+      ],
     }),
     Error,
     'file tool output',

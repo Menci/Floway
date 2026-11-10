@@ -86,6 +86,7 @@ test('buildTargetPayload keeps tool_result and user text as separate chat messag
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_1', name: 'lookup', input: {} }] },
       {
         role: 'user',
         content: [
@@ -97,6 +98,7 @@ test('buildTargetPayload keeps tool_result and user text as separate chat messag
   });
 
   assertEquals(result.messages, [
+    { role: 'assistant', content: null, tool_calls: [{ id: 'toolu_1', type: 'function', function: { name: 'lookup', arguments: '{}' } }] },
     { role: 'tool', tool_call_id: 'toolu_1', content: 'result' },
     { role: 'user', content: 'Please continue.' },
   ]);
@@ -217,6 +219,13 @@ test('buildTargetPayload flattens text-block tool_result content but serializes 
     max_tokens: 256,
     messages: [
       {
+        role: 'assistant',
+        content: [
+          { type: 'tool_use', id: 'toolu_text', name: 'read_text', input: {} },
+          { type: 'tool_use', id: 'toolu_search', name: 'search_docs', input: {} },
+        ],
+      },
+      {
         role: 'user',
         content: [
           {
@@ -242,6 +251,13 @@ test('buildTargetPayload flattens text-block tool_result content but serializes 
   });
 
   assertEquals(result.messages, [
+    {
+      role: 'assistant', content: null,
+      tool_calls: [
+        { id: 'toolu_text', type: 'function', function: { name: 'read_text', arguments: '{}' } },
+        { id: 'toolu_search', type: 'function', function: { name: 'search_docs', arguments: '{}' } },
+      ],
+    },
     { role: 'tool', tool_call_id: 'toolu_text', content: 'hello' },
     {
       role: 'tool',
@@ -257,6 +273,13 @@ test('buildTargetPayload preserves mixed user/tool_result chronology', async () 
     max_tokens: 256,
     messages: [
       {
+        role: 'assistant',
+        content: [
+          { type: 'tool_use', id: 'toolu_1', name: 'first_lookup', input: {} },
+          { type: 'tool_use', id: 'toolu_2', name: 'second_lookup', input: {} },
+        ],
+      },
+      {
         role: 'user',
         content: [
           { type: 'text', text: 'First question.' },
@@ -269,6 +292,13 @@ test('buildTargetPayload preserves mixed user/tool_result chronology', async () 
   });
 
   assertEquals(result.messages, [
+    {
+      role: 'assistant', content: null,
+      tool_calls: [
+        { id: 'toolu_1', type: 'function', function: { name: 'first_lookup', arguments: '{}' } },
+        { id: 'toolu_2', type: 'function', function: { name: 'second_lookup', arguments: '{}' } },
+      ],
+    },
     { role: 'user', content: 'First question.' },
     { role: 'tool', tool_call_id: 'toolu_1', content: 'first' },
     { role: 'user', content: 'Follow-up.' },
