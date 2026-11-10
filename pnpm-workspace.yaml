@@ -88,7 +88,9 @@ packageExtensions:
 overrides:
   # Require correct cancellation and error propagation through the Node/Web stream bridge.
   # https://developers.cloudflare.com/workers/runtime-apis/nodejs/streams/
-  'workerd@1.20260405.1': 1.20261006.1
+  # Exercise D1's cursor expansion guard in local statistics regression tests.
+  # https://github.com/sqlite/sqlite/blob/version-3.54.1/src/select.c#L5672-L5682
+  'workerd@1.20260405.1': 1.20261108.1
   '@react-router/dev>@react-router/serve': '-'
   # monaco-editor 0.54.0 pins dompurify at exactly 3.1.7, which is behind every
   # advisory published since. 3.4.12 is the first release no advisory still
