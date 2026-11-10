@@ -12,7 +12,7 @@ import { IRAbsent, type IRErrorPayload, type IROutputSourceCitation } from '../.
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendField, createFieldState, type ReadFieldStates, type ReadFieldState, type TextFragmentId } from '../../../round-trip/reference/reference-builder.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
-import { unwrapCustomToolInput } from '../../custom-tool.ts';
+import { unwrapCustomToolInput } from '../../custom-tool-unwrap.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   createOpenAIChatCompletionsEventAccumulator,
