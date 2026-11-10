@@ -167,7 +167,9 @@ interface AnthropicMessagesAssistantSegments {
 
 const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'assistant' }>, messageIdx: number): AnthropicMessagesAssistantSegments => {
   if (typeof message.content === 'string') {
-    return { segments: [{ assistant: message.content === '' ? [] : [{ type: 'message', content: [{ type: 'text', text: message.content }] }], serverResults: [] }] };
+    // An explicitly empty assistant message still occupies a turn of its own;
+    // dropping it would let two client turns merge across where it stood.
+    return { segments: [{ assistant: [{ type: 'message', content: [{ type: 'text', text: message.content }] }], serverResults: [] }] };
   }
 
   const segments: { assistant: IRInputAssistantItem[]; serverResults: IRInputClientItem[] }[] = [];

@@ -1,5 +1,5 @@
 import type { IRInputAddressedAssistantItem, IRInputAddressedTurn, IRInputAddressedClientItem } from '../../../ir/input/addressed.ts';
-import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
+import { irInputToolChoiceForTools } from '../../../ir/input/select-tools.ts';
 import { requireStreaming } from '../../../ir/input/stream.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem, IRInputPromptItem } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../types.ts';
@@ -240,7 +240,9 @@ const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<CanonicalOpenA
  */
 export const openaiResponsesHeaderFromIR = (request: IRInputRequestHeader): Omit<CanonicalOpenAIResponsesPayload, 'input' | 'instructions'> => {
   const { settings } = request;
-  const tools = irInputToolsForChoice(request.tools, request.tool_choice);
+  // This wire states a permitted subset natively, so the declarations stay
+  // whole: narrowing them as well would also narrow what the model may see.
+  const tools = request.tools;
   const choice = irInputToolChoiceForTools(request.tool_choice, tools);
   return {
     ...openaiResponsesSettingsFromIR(settings),
