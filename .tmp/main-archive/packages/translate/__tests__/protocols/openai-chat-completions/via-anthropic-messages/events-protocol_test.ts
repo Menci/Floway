@@ -1,0 +1,50 @@
+import { test } from 'vitest';
+
+import { translateToSourceEvents } from '../../../../src/protocols/openai-chat-completions/via-anthropic-messages/events.ts';
+import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
+
+const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
+  for await (const _frame of frames) {
+    // Exhaust the stream so async translator errors surface to the caller.
+  }
+};
+
+test('translateToSourceEvents emits native ChatCompletions errors for Messages failures', async () => {
+  async function* stream(): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
+    yield eventFrame({
+      type: 'error',
+      error: {
+        type: 'overloaded_error',
+        message: 'upstream overloaded',
+      },
+    });
+  }
+
+  const frames = [];
+  for await (const frame of translateToSourceEvents(stream(), {}, createTestSidecarCodec())) frames.push(frame);
+  assertEquals(frames, [eventFrame({ error: { type: 'overloaded_error', message: 'upstream overloaded' } })]);
+});
+
+test('translateToSourceEvents rejects truncated Anthropic Messages streams without message_stop', async () => {
+  async function* stream(): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
+    yield eventFrame({
+      type: 'message_start',
+      message: {
+        container: null, diagnostics: null, stop_details: null,
+        id: 'msg_truncated',
+        type: 'message',
+        role: 'assistant',
+        content: [],
+        model: 'claude-test',
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 },
+      },
+    });
+  }
+
+  await assertRejects(async () => await drain(translateToSourceEvents(stream(), {}, createTestSidecarCodec())), Error, 'Messages stream ended without message_stop');
+});

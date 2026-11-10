@@ -34,9 +34,17 @@ export const assignCallIds = <Restored>(
   };
   // A result without an id answers the oldest call of its name, or the oldest
   // call at all when the source stated no name either.
+  //
+  // A named result that matches nothing is a history this side never saw the
+  // call for — a client that trimmed an assistant turn, say. Discarding it
+  // would drop what the model did, so it keeps its own id instead: a hanging
+  // result is recoverable where a missing one is not.
   const takePending = (name: string | undefined): PendingCall => {
     const index = name === undefined ? 0 : pending.findIndex(call => call.name === name);
-    if (index < 0) throw new TranslatorInputError(`Cannot translate a tool result naming '${name}': no call awaits it.`);
+    if (index < 0) {
+      if (name === undefined) throw new TranslatorInputError('Cannot translate a tool result that answers no call (name: unstated).');
+      return { name, callId: allocate(name) };
+    }
     const [matched] = pending.splice(index, 1);
     if (matched === undefined) throw new TranslatorInputError(`Cannot translate a tool result that answers no call (name: ${name ?? 'unstated'}).`);
     return matched;

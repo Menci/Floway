@@ -63,3 +63,16 @@ test('a selector naming a group the request never declared is a caller error', (
     'undeclared grouped tool',
   );
 });
+
+test('two different groups spelling the same dotted key are refused rather than merged', () => {
+  // `a` + `b.c` and `a.b` + `c` both read `a.b.c`; merging them would hand two
+  // declarations one wire name and restore a returned call under the wrong pair.
+  assertThrows(
+    () => flattenRequestNames(request([
+      { type: 'function', namespace: 'a', name: 'b.c', parameters: { type: 'object' } },
+      { type: 'function', namespace: 'a.b', name: 'c', parameters: { type: 'object' } },
+    ]), []),
+    TranslatorInputError,
+    'ambiguous grouped callables',
+  );
+});

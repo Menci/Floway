@@ -1,6 +1,6 @@
+import type { ResolvedTurn } from './segments.ts';
 import { irInputToolsForChoice } from '../../ir/input/select-tools.ts';
 import type { IRInputRequestHeader, IRInputTool, IRInputToolChoice, IRInputToolSelector, IRInputTurn } from '../../ir/input/types.ts';
-import type { ResolvedTurn } from './segments.ts';
 import { TranslatorInputError } from '../../types.ts';
 
 /** What a target that writes flat names records for the reader of its answer. */
@@ -141,9 +141,18 @@ export const assignFlatNames = <T extends GroupedCallable>(
   const taken = new Set(reserved);
   const nextSuffixes = new Map<string, number>();
   const assigned = new Map<string, string>();
+  // A pair identifies one callable; its dotted spelling does not. Two different
+  // groups can spell the same key — `a` + `b.c` and `a.b` + `c` both read
+  // `a.b.c` — and merging those would hand two declarations one wire name.
+  const assignedPairs = new Map<string, { readonly namespace: string; readonly name: string }>();
   for (const { namespace, name } of callables) {
     const key = `${namespace}.${name}`;
-    if (assigned.has(key)) continue;
+    const prior = assignedPairs.get(key);
+    if (prior !== undefined) {
+      if (prior.namespace === namespace && prior.name === name) continue;
+      throw new TranslatorInputError(`Cannot translate ambiguous grouped callables both spelling '${key}'.`);
+    }
+    assignedPairs.set(key, { namespace, name });
     const scope = `${namespace.slice(0, 64)}_`.slice(0, 64);
     const base = `${scope}${name.slice(0, 64 - scope.length)}`.replaceAll(/[^a-zA-Z0-9_-]/g, '_');
     for (let suffix = 1; ; suffix++) {

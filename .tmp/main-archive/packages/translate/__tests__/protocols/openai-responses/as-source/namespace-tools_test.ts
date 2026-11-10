@@ -1,0 +1,201 @@
+import { expect, test } from 'vitest';
+
+import { flattenNamespaceTools, restoreNamespaceEvents, restoreNamespaceOutputItem } from '../../../../src/protocols/openai-responses/as-source/namespace-tools.ts';
+import { buildTargetRequest as buildMessagesRequest } from '../../../../src/protocols/openai-responses/via-anthropic-messages/request.ts';
+import { buildTargetRequest as buildChatRequest } from '../../../../src/protocols/openai-responses/via-openai-chat-completions/request.ts';
+import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesOutputItemEx, OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import { routeOpenAIResponses, canonicalizeOpenAIResponsesPayload } from '@floway-dev/translate/openai-responses';
+
+const payload = (): OpenAIResponsesRequestPayloadEx => ({
+  model: 'm',
+  tools: [
+    { type: 'function', name: 'agents_spawn' },
+    {
+      type: 'namespace', name: 'agents', description: '', tools: [
+        { type: 'function', name: 'spawn', parameters: { type: 'object' } },
+        { type: 'function', name: 'wait', parameters: { type: 'object' } },
+        { type: 'custom', name: 'audit' },
+      ],
+    },
+  ],
+  input: [{ type: 'function_call', namespace: 'agents', name: 'wait', call_id: 'old', arguments: '{}', status: 'completed' }],
+  tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', namespace: 'agents', name: 'spawn' }] },
+});
+
+const messagesRequestOptions = { fallbackMaxOutputTokens: undefined, loadRemoteImage: async () => null };
+
+test.each(['additional_tools', 'tool_search_output'] as const)('keeps %s as a user-side boundary between ordinary assistant turns', async type => {
+  const source: CanonicalOpenAIResponsesPayload = {
+    model: 'm',
+    input: [
+      { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'A' }] },
+      type === 'additional_tools' ? { type, role: 'developer', tools: [] } : { type, tools: [] },
+      { type: 'function_call', call_id: 'c', name: 'lookup', arguments: '{}' },
+    ],
+  };
+  expect((await buildChatRequest(source, createTestSidecarCodec())).target.messages).toEqual([
+    { role: 'assistant', content: 'A' },
+    { role: 'assistant', content: null, tool_calls: [{ type: 'function', id: 'c', function: { name: 'lookup', arguments: '{}' } }] },
+  ]);
+  expect((await buildMessagesRequest(source, createTestSidecarCodec(), messagesRequestOptions)).target.messages).toEqual([
+    { role: 'assistant', content: [{ type: 'text', text: 'A' }] },
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'lookup', input: {}, cache_control: { type: 'ephemeral' } }] },
+  ]);
+});
+
+test('namespace setup preserves the original input and allocates historical names only when explicitly flattened', () => {
+  const request: CanonicalOpenAIResponsesPayload = {
+    model: 'm',
+    input: [
+      { type: 'function_call', namespace: 'x.y', name: 'f', call_id: 'first', arguments: '{}' },
+      { type: 'function_call', namespace: 'x', name: 'y.f', call_id: 'second', arguments: '{}' },
+    ],
+  };
+  const prepared = flattenNamespaceTools(request);
+
+  expect(prepared.payload.input).toBe(request.input);
+  expect(prepared.names.sourceToTarget.size).toBe(0);
+  expect(prepared.names.targetToSource.size).toBe(0);
+  expect(prepared.flattenInput([request.input[0]])).toEqual([{ type: 'function_call', name: 'x_y_f', call_id: 'first', arguments: '{}' }]);
+  expect(() => prepared.flattenInput([request.input[1]])).toThrow('ambiguous');
+});
+
+test('both targets preserve namespace subsets and excluded replay identities', async () => {
+  const source = payload();
+  const chat = await buildChatRequest(source, createTestSidecarCodec());
+  const messages = await buildMessagesRequest(source, createTestSidecarCodec(), messagesRequestOptions);
+  expect(chat.target.tools?.map(tool => tool.type === 'function' ? tool.function.name : '')).toEqual(['agents_spawn_2']);
+  expect(messages.target.tools?.map(tool => 'name' in tool ? tool.name : undefined)).toEqual(['agents_spawn_2']);
+  expect((chat.target.messages[0] as OpenAIChatCompletionsAssistantMessageEx).tool_calls?.filter(call => call.type === 'function')[0].function.name).toBe('agents_wait');
+  expect(messages.target.messages[0].content).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'tool_use', name: 'agents_wait' })]));
+  expect(chat.target.tool_choice).toBe('required');
+  expect(messages.target.tool_choice).toEqual({ type: 'any' });
+});
+
+test('expands namespace selectors and includes deferred declarations on both targets', async () => {
+  const source = payload();
+  source.tool_choice = { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'namespace', name: 'agents' }] };
+  source.input = [{ type: 'additional_tools', role: 'developer', tools: source.tools! }];
+  source.tools = undefined;
+  expect((await buildChatRequest(source, createTestSidecarCodec())).target.tools).toHaveLength(3);
+  expect((await buildMessagesRequest(source, createTestSidecarCodec(), messagesRequestOptions)).target.tools).toHaveLength(3);
+});
+
+test('history-only namespace calls reserve names without inventing declarations', async () => {
+  const source = payload();
+  source.tools = undefined;
+  source.tool_choice = undefined;
+  const chat = await buildChatRequest(source, createTestSidecarCodec());
+  const messages = await buildMessagesRequest(source, createTestSidecarCodec(), messagesRequestOptions);
+  expect(chat.target.tools).toBeUndefined();
+  expect(messages.target.tools).toBeUndefined();
+  expect((chat.target.messages[0] as OpenAIChatCompletionsAssistantMessageEx).tool_calls?.filter(call => call.type === 'function')[0].function.name).toBe('agents_wait');
+  expect(chat.namespaceToolNames.targetToSource.get('agents_wait')).toEqual({ namespace: 'agents', name: 'wait', type: 'function_call' });
+});
+
+test('forced namespace choices use the declaration mapping', async () => {
+  const source = payload();
+  source.tool_choice = { type: 'function', namespace: 'agents', name: 'spawn' };
+  expect((await buildChatRequest(source, createTestSidecarCodec())).target.tool_choice).toEqual({ type: 'function', function: { name: 'agents_spawn_2' } });
+  expect((await buildMessagesRequest(source, createTestSidecarCodec(), messagesRequestOptions)).target.tool_choice).toEqual({ type: 'tool', name: 'agents_spawn_2' });
+});
+
+test('restores function and custom calls across item events and terminal snapshots', async () => {
+  const prepared = flattenNamespaceTools(canonicalizeOpenAIResponsesPayload(payload()));
+  const output = [
+    { type: 'function_call' as const, name: 'agents_spawn_2', call_id: 'spawn', arguments: '{"name":"agents_spawn_2"}', status: 'completed' },
+    { type: 'custom_tool_call' as const, name: 'agents_audit', call_id: 'audit', input: 'agents_audit' },
+  ];
+  const frames = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: output[0] });
+    yield eventFrame({ type: 'response.completed', response: { id: 'r', object: 'response', model: 'm', status: 'completed', error: null, incomplete_details: null, output } });
+  })();
+  const events: OpenAIResponsesStreamEventEx[] = [];
+  for await (const frame of restoreNamespaceEvents(frames, prepared.names)) if (frame.type === 'event') events.push(frame.event);
+  expect(events[0]).toMatchObject({ item: { namespace: 'agents', name: 'spawn', arguments: '{"name":"agents_spawn_2"}' } });
+  expect(events[1]).toMatchObject({
+    response: {
+      output: [
+        { namespace: 'agents', name: 'spawn' }, { namespace: 'agents', name: 'audit', input: 'agents_audit' },
+      ],
+    },
+  });
+});
+
+test('restores all function/custom output item type combinations without retaining the replaced payload field', () => {
+  const names = flattenNamespaceTools(canonicalizeOpenAIResponsesPayload(payload())).names;
+  const functionName = names.sourceToTarget.get('agents.spawn');
+  const customName = names.sourceToTarget.get('agents.audit');
+  if (functionName === undefined || customName === undefined) throw new Error('Expected flattened namespace tool names');
+
+  const sameFunction = {
+    type: 'function_call', name: functionName, call_id: 'same-function', arguments: '{}', status: 'completed', trace: 'kept',
+  } satisfies OpenAIResponsesOutputItemEx & { trace: string };
+  const sameCustom = {
+    type: 'custom_tool_call', name: customName, call_id: 'same-custom', input: 'input', trace: 'kept',
+  } satisfies OpenAIResponsesOutputItemEx & { trace: string };
+  const customAsFunction = {
+    type: 'custom_tool_call', name: functionName, call_id: 'custom-as-function', input: '{"q":1}', trace: 'kept',
+  } satisfies OpenAIResponsesOutputItemEx & { trace: string };
+  const functionAsCustom = {
+    type: 'function_call', name: customName, call_id: 'function-as-custom', arguments: 'plain', status: 'completed', trace: 'kept',
+  } satisfies OpenAIResponsesOutputItemEx & { trace: string };
+
+  expect(restoreNamespaceOutputItem(sameFunction, names, 'in_progress')).toEqual({ ...sameFunction, name: 'spawn', namespace: 'agents' });
+  expect(restoreNamespaceOutputItem(sameCustom, names, 'in_progress')).toEqual({ ...sameCustom, name: 'audit', namespace: 'agents' });
+  expect(restoreNamespaceOutputItem(customAsFunction, names, 'in_progress')).toEqual({
+    type: 'function_call', name: 'spawn', namespace: 'agents', call_id: 'custom-as-function', arguments: '{"q":1}', status: 'in_progress', trace: 'kept',
+  });
+  expect(restoreNamespaceOutputItem(functionAsCustom, names, 'in_progress')).toEqual({
+    type: 'custom_tool_call', name: 'audit', namespace: 'agents', call_id: 'function-as-custom', input: 'plain', status: 'completed', trace: 'kept',
+  });
+});
+
+test.each(['.', '__'])('lowers qualified forced selectors with %s', async separator => {
+  const source = payload();
+  source.tool_choice = { type: 'function', name: `agents${separator}spawn` };
+  expect((await buildChatRequest(source, createTestSidecarCodec())).target.tool_choice).toEqual({ type: 'function', function: { name: 'agents_spawn_2' } });
+  expect((await buildMessagesRequest(source, createTestSidecarCodec(), messagesRequestOptions)).target.tool_choice).toEqual({ type: 'tool', name: 'agents_spawn_2' });
+});
+
+test('rejects function/custom ambiguity and distinct tuples with the same qualified spelling', async () => {
+  for (const tools of [
+    [{ type: 'namespace' as const, name: 'x', description: '', tools: [{ type: 'function' as const, name: 'f' }, { type: 'custom' as const, name: 'f' }] }],
+    [{ type: 'namespace' as const, name: 'x.y', description: '', tools: [{ type: 'function' as const, name: 'f' }] }, { type: 'namespace' as const, name: 'x', description: '', tools: [{ type: 'function' as const, name: 'y.f' }] }],
+  ]) {
+    await expect(buildChatRequest({ model: 'm', input: [], tools }, createTestSidecarCodec())).rejects.toThrow('ambiguous');
+  }
+});
+
+test('the complete Chat Completions trip restores the namespace after target tool calls', async () => {
+  const trip = await routeOpenAIResponses(payload()).viaOpenAIChatCompletions({ sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'm' });
+  const frames = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
+    yield eventFrame({ id: 'chat1', object: 'chat.completion.chunk', model: 'm', created: 0, choices: [{  index: 0, delta: { tool_calls: [{ index: 0, id: 'call1', type: 'function', function: { name: 'agents_spawn_2', arguments: '{}' } }] }, finish_reason: null }] });
+    yield eventFrame({ id: 'chat1', object: 'chat.completion.chunk', model: 'm', created: 0, choices: [{  index: 0, delta: {}, finish_reason: 'tool_calls' }] });
+    yield doneFrame();
+  })();
+  const events: OpenAIResponsesStreamEventEx[] = [];
+  for await (const frame of trip.events(frames)) if (frame.type === 'event') events.push(frame.event);
+  expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'response.output_item.done', item: expect.objectContaining({ namespace: 'agents', name: 'spawn', arguments: '{}' }) })]));
+  expect(events.at(-1)).toMatchObject({ type: 'response.completed', response: { output: [expect.objectContaining({ namespace: 'agents', name: 'spawn' }), expect.objectContaining({ type: 'reasoning', summary: [], encrypted_content: expect.any(String) })] } });
+});
+
+test('the complete Anthropic Messages trip restores the namespace after target tool calls', async () => {
+  const trip = await routeOpenAIResponses(payload()).viaAnthropicMessages({ sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } });
+  const frames = (async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
+    yield eventFrame({ type: 'message_start', message: { container: null, diagnostics: null, stop_details: null, id: 'msg1', type: 'message', model: 'm', role: 'assistant', content: [], stop_reason: null, stop_sequence: null, usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 } } });
+    yield eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'call1', name: 'agents_spawn_2', input: {} } });
+    yield eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{}' } });
+    yield eventFrame({ type: 'content_block_stop', index: 0 });
+    yield eventFrame({ type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'tool_use', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } });
+    yield eventFrame({ type: 'message_stop' });
+  })();
+  const events: OpenAIResponsesStreamEventEx[] = [];
+  for await (const frame of trip.events(frames)) if (frame.type === 'event') events.push(frame.event);
+  expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'response.output_item.done', item: expect.objectContaining({ namespace: 'agents', name: 'spawn', arguments: '{}' }) })]));
+  expect(events.at(-1)).toMatchObject({ type: 'response.completed', response: { output: [expect.objectContaining({ namespace: 'agents', name: 'spawn' }), expect.objectContaining({ type: 'reasoning', summary: [], encrypted_content: expect.any(String) })] } });
+});

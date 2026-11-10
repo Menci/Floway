@@ -1,0 +1,217 @@
+import { test } from 'vitest';
+
+import { translateToSourceEvents } from '../../../../src/protocols/anthropic-messages/via-openai-responses/events.ts';
+import { structuredResponsesFixture } from '../../../ir/responses-fixture.ts';
+import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { openaiResponsesResultToEvents, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
+
+const makeResponse = (status: OpenAIResponsesResultEx['status']): OpenAIResponsesResultEx => ({
+  id: 'resp_123',
+  object: 'response',
+  model: 'gpt-test',
+  status,
+  output: [
+    {
+      type: 'message',
+      id: 'msg_123',
+      status: 'completed',
+      role: 'assistant',
+      content: [{ type: 'output_text', text: 'hello', annotations: [] }],
+    },
+  ],
+  error: null,
+  incomplete_details: null,
+  usage: {
+    input_tokens: 3,
+    output_tokens: 2,
+    total_tokens: 5,
+  },
+});
+
+const toProtocolFrame = (event: OpenAIResponsesStreamEventEx): ProtocolFrame<OpenAIResponsesStreamEventEx> => eventFrame({ ...event, sequence_number: 0 });
+
+const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
+  for await (const _frame of frames) {
+    // Exhaust the stream so async translator errors surface to the caller.
+  }
+};
+
+test('translateToSourceEvents emits structured Anthropic Messages events from the target-expanded sequence', async () => {
+  async function* stream() {
+    for (const frame of openaiResponsesResultToEvents(makeResponse('completed'))) {
+      yield frame;
+    }
+  }
+
+  const frames = [];
+
+  for await (const frame of translateToSourceEvents(structuredResponsesFixture(stream()), createTestSidecarCodec())) {
+    frames.push(frame);
+  }
+
+  assertEquals(
+    frames.filter(frame => frame.type !== 'event' || frame.event.type !== 'message_delta' || frame.event.delta.stop_reason !== null).map(frame => frame.type),
+    ['event', 'event', 'event', 'event', 'event', 'event', 'event', 'event'],
+  );
+  assertEquals(
+    frames.filter(frame => frame.type !== 'event' || frame.event.type !== 'message_delta' || frame.event.delta.stop_reason !== null).map(frame => (frame.type === 'event' ? frame.event.type : frame.type)),
+    ['message_start', 'content_block_start', 'content_block_delta', 'content_block_start', 'content_block_stop', 'content_block_stop', 'message_delta', 'message_stop'],
+  );
+});
+
+test('translateToSourceEvents stops after OpenAI Responses terminal', async () => {
+  // Once the target-expanded sequence ends in response.completed, translate
+  // must stop and ignore any extra upstream frames that arrive afterwards.
+  async function* stream() {
+    for (const frame of openaiResponsesResultToEvents(makeResponse('completed'))) {
+      yield frame;
+    }
+    yield toProtocolFrame({
+      type: 'response.output_text.delta',
+      item_id: 'msg_1',
+      output_index: 0,
+      content_index: 0,
+      delta: 'ignored',
+    });
+  }
+
+  const frames = [];
+
+  for await (const frame of translateToSourceEvents(structuredResponsesFixture(stream()), createTestSidecarCodec())) {
+    frames.push(frame);
+  }
+
+  assertEquals(
+    frames.filter(frame => frame.type !== 'event' || frame.event.type !== 'message_delta' || frame.event.delta.stop_reason !== null).map(frame => (frame.type === 'event' ? frame.event.type : frame.type)),
+    ['message_start', 'content_block_start', 'content_block_delta', 'content_block_start', 'content_block_stop', 'content_block_stop', 'message_delta', 'message_stop'],
+  );
+});
+
+test('translateToSourceEvents preserves refusal semantics from JSON fallback', async () => {
+  async function* stream() {
+    yield* openaiResponsesResultToEvents({
+      id: 'resp_refusal',
+      object: 'response',
+      model: 'gpt-test',
+      status: 'completed',
+      output: [
+        {
+          type: 'message',
+          id: 'msg_refusal',
+          status: 'completed',
+          role: 'assistant',
+          content: [{ type: 'refusal', refusal: 'No.' }],
+        },
+      ],
+      error: null,
+      incomplete_details: null,
+      usage: {
+        input_tokens: 3,
+        output_tokens: 1,
+        total_tokens: 4,
+      },
+    });
+  }
+
+  let refusalDelta: Extract<AnthropicMessagesStreamEventEx, { type: 'message_delta' }> | undefined;
+
+  for await (const frame of translateToSourceEvents(structuredResponsesFixture(stream()), createTestSidecarCodec())) {
+    if (frame.type !== 'event') continue;
+    if (frame.event.type === 'message_delta') refusalDelta = frame.event;
+  }
+
+  assertEquals(refusalDelta?.delta, {
+    container: null,
+    stop_reason: 'end_turn',
+    stop_details: null,
+    stop_sequence: null,
+  });
+});
+
+test('translateToSourceEvents translates OpenAI Responses failed terminal to Anthropic Messages error', async () => {
+  async function* stream() {
+    yield toProtocolFrame({
+      type: 'response.failed',
+      response: {
+        ...makeResponse('failed'),
+        output: [],
+        error: {
+          type: 'server_error',
+          code: 'server_error',
+          message: 'upstream failed',
+        },
+      },
+    });
+    yield toProtocolFrame({
+      type: 'response.completed',
+      response: makeResponse('completed'),
+    });
+  }
+
+  const frames = [];
+
+  for await (const frame of translateToSourceEvents(structuredResponsesFixture(stream()), createTestSidecarCodec())) {
+    frames.push(frame);
+  }
+
+  assertEquals(frames, [
+    eventFrame({
+      type: 'error',
+      error: {
+        type: 'api_error',
+        message: 'upstream failed',
+      },
+    } satisfies AnthropicMessagesStreamEventEx),
+  ]);
+});
+
+test('translateToSourceEvents translates OpenAI Responses error terminal to Anthropic Messages error', async () => {
+  async function* stream() {
+    yield toProtocolFrame({
+      type: 'error',
+      code: 'overloaded_error',
+      message: 'upstream overloaded',
+    });
+    yield toProtocolFrame({
+      type: 'response.completed',
+      response: makeResponse('completed'),
+    });
+  }
+
+  const frames = [];
+
+  for await (const frame of translateToSourceEvents(structuredResponsesFixture(stream()), createTestSidecarCodec())) {
+    frames.push(frame);
+  }
+
+  assertEquals(frames, [
+    eventFrame({
+      type: 'error',
+      error: {
+        type: 'api_error',
+        message: 'upstream overloaded',
+      },
+    } satisfies AnthropicMessagesStreamEventEx),
+  ]);
+});
+
+test('translateToSourceEvents rejects truncated OpenAI Responses streams without terminal events', async () => {
+  async function* stream() {
+    yield toProtocolFrame({
+      type: 'response.output_text.delta',
+      item_id: 'msg_1',
+      output_index: 0,
+      content_index: 0,
+      delta: 'partial',
+    });
+  }
+
+  await assertRejects(
+    async () => await drain(translateToSourceEvents(structuredResponsesFixture(stream()), createTestSidecarCodec())),
+    Error,
+    'before the initial response envelope',
+  );
+});

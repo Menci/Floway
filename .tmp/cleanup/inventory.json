@@ -1,0 +1,4579 @@
+{
+"packages/translate/src/index.ts": {
+"comments": [],
+"decls": [
+[
+1,
+"export type { SidecarCodec, TranslatedApiError, TranslateTripResult, TranslateOptions } fr"
+]
+],
+"defenses": []
+},
+"packages/translate/src/ir/common/absent.ts": {
+"comments": [
+1,
+2,
+3
+],
+"decls": [
+[
+4,
+"export const IRAbsent: unique symbol = Symbol('IRAbsent');"
+],
+[
+6,
+"export type IRAbsent = typeof IRAbsent;"
+]
+],
+"defenses": []
+},
+"packages/translate/src/ir/common/error.ts": {
+"comments": [
+1,
+2,
+3,
+4,
+5,
+6
+],
+"decls": [
+[
+7,
+"export interface IRErrorPayload {"
+]
+],
+"defenses": []
+},
+"packages/translate/src/ir/common/json.ts": {
+"comments": [
+1,
+2
+],
+"decls": [
+[
+3,
+"type JSONValueOf<Extra> = Extra | null | boolean | number | string | readonly JSONValueOf<"
+],
+[
+5,
+"export type IRJSONValue = JSONValueOf<never>;"
+],
+[
+7,
+"export type IRJSONObject = { readonly [key: string]: IRJSONValue };"
+]
+],
+"defenses": []
+},
+"packages/translate/src/ir/common/text-range.ts": {
+"comments": [
+1,
+2,
+3
+],
+"decls": [
+[
+4,
+"export interface IRTextRange {"
+]
+],
+"defenses": []
+},
+"packages/translate/src/ir/input/reading.ts": {
+"comments": [
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+26,
+27,
+28,
+29,
+30,
+31,
+32,
+38,
+39,
+40,
+41,
+42,
+43,
+44,
+45
+],
+"decls": [
+[
+18,
+"export type IRInputTurnSlot<AssistantTurn> ="
+],
+[
+33,
+"export interface IRInputReading<AssistantTurn> {"
+],
+[
+46,
+"export const readTurns = async <AssistantTurn, Resolved>("
+],
+[
+52,
+"const pieces: (IRInputTurn | { readonly kind: 'resolved'; readonly turn: Resolved })[] = ["
+],
+[
+58,
+"const result = await resolve(turn);"
+]
+],
+"defenses": [
+59
+]
+},
+"packages/translate/src/ir/input/segments.ts": {
+"comments": [
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+15,
+16
+],
+"decls": [
+[
+10,
+"export type IRInputPiece<Turn, InputTurn = IRInputTurn> = IRInputSegment<InputTurn> | IRIn"
+],
+[
+12,
+"export interface IRInputSegment<InputTurn = IRInputTurn> {"
+],
+[
+20,
+"export interface IRInputResolvedTurn<Turn> {"
+],
+[
+25,
+"export const segmentIRInput = <Turn, InputTurn extends { readonly kind: 'client' | 'assist"
+],
+[
+26,
+"const segments: (IRInputSegment<InputTurn> | IRInputResolvedTurn<Turn>)[] = [];"
+],
+[
+29,
+"const flush = (): void => {"
+]
+],
+"defenses": []
+},
+"packages/translate/src/ir/input/select-tools.ts": {
+"comments": [
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+28,
+29,
+30,
+31,
+32,
+33,
+34,
+35,
+36
+],
+"decls": [
+[
+19,
+"export const irInputToolsForChoice = ("
+],
+[
+24,
+"const permitted = new Set(choice.tools.map(selection => `${selection.type}:${selection.nam"
+],
+[
+37,
+"export const irInputToolChoiceForTools = ("
+]
+],
+"defenses": [
+23,
+41,
+42,
+43
+]
+},
+"packages/translate/src/ir/input/stream.ts": {
+"comments": [
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13
+],
+"decls": [
+[
+14,
+"export const streamingFlag = (settings: IRInputSettings): true => {"
+]
+],
+"defenses": [
+15
+]
+},
+"packages/translate/src/ir/input/types.ts": {
+"comments": [
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+23,
+24,
+25,
+26,
+27,
+28,
+29,
+30,
+32,
+33,
+34,
+36,
+37,
+38,
+39,
+46,
+47,
+48,
+49,
+50,
+51,
+52,
+53,
+54,
+57,
+58,
+59,
+61,
+63,
+64,
+66,
+68,
+69,
+70,
+72,
+73,
+74,
+76,
+77,
+78,
+80,
+81,
+82,
+84,
+85,
+87,
+88,
+89,
+91,
+92,
+94,
+96,
+99,
+100,
+101,
+102,
+106,
+107,
+116,
+117,
+118,
+121,
+126,
+127,
+128,
+129,
+130,
+131,
+136,
+137,
+139,
+140,
+141,
+144,
+145,
+147,
+148,
+152,
+153,
+154,
+160,
+168,
+169,
+170,
+171,
+179,
+180,
+181,
+186,
+187,
+188,
+189,
+190,
+193,
+194,
+195,
+196,
+197,
+198,
+199,
+200,
+201,
+212,
+213,
+214,
+215,
+216,
+217,
+218,
+227,
+228,
+229,
+230,
+231,
+232,
+249,
+250,
+251,
+252,
+253,
+254,
+255,
+256,
+260,
+261,
+262,
+271,
+272,
+273,
+292,
+293,
+302,
+303,
+304,
+319,
+320,
+321,
+327,
+328,
+329,
+330,
+331,
+332,
+333,
+334,
+335,
+336,
+337,
+343,
+344,
+345,
+346,
+347,
+348,
+349,
+350,
+351,
+352,
+353,
+354,
+357,
+358,
+366,
+367,
+368,
+370,
+371,
+374,
+375,
+376,
+377,
+378,
+379,
+391,
+392,
+393,
+394,
+397,
+398,
+399,
+401,
+402,
+403,
+405,
+406,
+407,
+408,
+409,
+411,
+412,
+413,
+414,
+416,
+417
+],
+"decls": [
+[
+31,
+"export interface IRInputSettings {"
+],
+[
+108,
+"export interface IRInputOutputFormat {"
+],
+[
+119,
+"export interface IRInputRequest {"
+],
+[
+132,
+"export type IRInputTool = IRInputFunctionTool | IRInputCustomTool;"
+],
+[
+134,
+"export interface IRInputFunctionTool {"
+],
+[
+155,
+"export interface IRInputCustomTool {"
+],
+[
+164,
+"export type IRInputCustomToolFormat ="
+],
+[
+172,
+"export type IRInputToolChoice ="
+],
+[
+182,
+"export type IRInputToolSelection ="
+],
+[
+191,
+"export type IRInputTurn = IRInputClientTurn | IRInputAssistantTurn;"
+],
+[
+202,
+"export interface IRInputClientTurn {"
+],
+[
+207,
+"export interface IRInputAssistantTurn {"
+],
+[
+219,
+"export type IRInputClientItem = IRInputSystemMessageItem | IRInputUserMessageItem | IRInpu"
+],
+[
+221,
+"export type IRInputAssistantItem ="
+],
+[
+233,
+"export type IRInputAddressedTurn = IRInputAddressedClientTurn | IRInputAddressedAssistantT"
+],
+[
+234,
+"export interface IRInputAddressedClientTurn {"
+],
+[
+238,
+"export interface IRInputAddressedAssistantTurn {"
+],
+[
+242,
+"export type IRInputAddressedClientItem = IRInputSystemMessageItem | IRInputUserMessageItem"
+],
+[
+243,
+"export type IRInputAddressedToolResultItem = IRInputToolResultItem & { readonly call_id: s"
+],
+[
+244,
+"export type IRInputAddressedAssistantItem ="
+],
+[
+257,
+"export interface IRInputSystemMessageItem {"
+],
+[
+266,
+"export interface IRInputUserMessageItem {"
+],
+[
+274,
+"export interface IRInputAssistantMessageItem {"
+],
+[
+279,
+"export type IRInputUserContentPart ="
+],
+[
+285,
+"export type IRInputAssistantContentPart = IRInputTextPart | IRInputRefusalPart;"
+],
+[
+287,
+"export interface IRInputTextPart {"
+],
+[
+294,
+"export interface IRInputRefusalPart {"
+],
+[
+299,
+"export interface IRInputImagePart {"
+],
+[
+308,
+"export interface IRInputFilePart {"
+],
+[
+314,
+"export interface IRInputAudioPart {"
+],
+[
+322,
+"export interface IRInputAudio {"
+],
+[
+338,
+"export type IRInputMedia ="
+],
+[
+355,
+"export interface IRInputReasoningItem {"
+],
+[
+364,
+"export interface IRInputFunctionCallItem {"
+],
+[
+383,
+"export interface IRInputCustomToolCallItem {"
+],
+[
+395,
+"export interface IRInputToolResultItem {"
+],
+[
+421,
+"export type IRInputToolResultContentPart = IRInputTextPart | IRInputImagePart | IRInputFil"
+]
+],
+"defenses": []
+},
+"packages/translate/src/ir/output/collector.ts": {
+"comments": [
+10
+],
+"decls": [],
+"defenses": [
+12,
+21,
+32,
+35,
+38,
+43,
+45,
+48,
+68,
+72,
+87,
+101,
+113,
+114,
+120,
+149,
+154,
+157,
+158,
+160,
+162,
+163,
+164,
+170,
+171,
+172,
+175,
+178,
+185,
+205
+]
+},
+"packages/translate/src/ir/output/operation-paths.ts": {
+"comments": [
+6
+],
+"decls": [],
+"defenses": [
+155,
+160
+]
+},
+"packages/translate/src/ir/output/ordinal-mapper.ts": {
+"comments": [],
+"decls": [],
+"defenses": [
+11,
+19
+]
+},
+"packages/translate/src/ir/output/schema.ts": {
+"comments": [
+6,
+120,
+121
+],
+"decls": [],
+"defenses": []
+},
+"packages/translate/src/ir/output/stream.ts": {
+"comments": [
+52,
+53,
+54,
+55,
+56,
+57,
+58,
+59,
+60
+],
+"decls": [
+[
+61,
+"export const createIRBuilder = () => {"
+],
+[
+111,
+"const usage = (fields: IROutputUsage): void => {"
+]
+],
+"defenses": [
+116,
+194,
+199,
+202,
+211
+]
+},
+"packages/translate/src/ir/output/types.ts": {
+"comments": [
+9,
+10,
+73,
+74,
+75,
+76
+],
+"decls": [
+[
+4,
+"export type { IRJSONObject, IRJSONValue } from '../common/json.ts';"
+],
+[
+5,
+"export type { IRErrorPayload } from '../common/error.ts';"
+],
+[
+6,
+"export type { IRTextRange } from '../common/text-range.ts';"
+],
+[
+11,
+"type IRValueOf<Extra> = Extra | null | boolean | number | string | readonly IRValueOf<Extr"
+],
+[
+25,
+"interface IROutputChoice {"
+],
+[
+32,
+"interface IROutputClassifierRefusal {"
+],
+[
+38,
+"export type IROutputItem = IROutputMessageItem | IROutputReasoningItem | IROutputFunctionC"
+],
+[
+41,
+"export interface IROutputMessageItem {"
+],
+[
+47,
+"type IROutputContentPart = IROutputTextPart | IROutputRefusalPart | IROutputImagePart | IR"
+],
+[
+50,
+"interface IROutputTextPart {"
+],
+[
+57,
+"interface IROutputRefusalPart {"
+],
+[
+63,
+"export interface IROutputReasoningItem {"
+],
+[
+70,
+"interface IROutputFunctionCallItem {"
+],
+[
+83,
+"interface IROutputCustomToolCallItem {"
+],
+[
+92,
+"interface IROutputImagePart {"
+],
+[
+98,
+"interface IROutputImage {"
+],
+[
+104,
+"export interface IROutputAudioPart {"
+],
+[
+110,
+"interface IROutputAudio {"
+],
+[
+118,
+"export type IROutputSourceCitation = {"
+],
+[
+137,
+"interface IROutputSourcePageRange {"
+],
+[
+143,
+"type IROutputLogprobGroup = IROutputChoiceLogprobs | IROutputTextPartLogprobs;"
+],
+[
+147,
+"interface IROutputChoiceLogprobs {"
+],
+[
+153,
+"interface IROutputTextPartLogprobs {"
+],
+[
+161,
+"export interface IROutputTokenLogprob {"
+],
+[
+169,
+"interface IROutputTokenLogprobAlternative {"
+],
+[
+176,
+"export interface IROutputUsage {"
+]
+],
+"defenses": []
+},
+"packages/translate/src/ir/output/unit-queue.ts": {
+"comments": [
+5,
+23
+],
+"decls": [],
+"defenses": []
+},
+"packages/translate/src/protocols/anthropic-messages/as-source.ts": {
+"comments": [
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+26
+],
+"decls": [
+[
+15,
+"export const anthropicMessagesSourceProtocol: SourceProtocol<"
+]
+],
+"defenses": []
+},
+"packages/translate/src/protocols/anthropic-messages/as-source/error-body.ts": {
+"comments": [
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+18,
+19
+],
+"decls": [
+[
+15,
+"export const anthropicMessagesErrorWriter: SourceProtocolErrorWriter = upstream => {"
+],
+[
+16,
+"const error = irErrorPayloadFromBody(upstream);"
+]
+],
+"defenses": [
+17
+]
+},
+"packages/translate/src/protocols/anthropic-messages/as-source/input-to.ts": {
+"comments": [
+59,
+60,
+61,
+124,
+125,
+144,
+145,
+146,
+147,
+148,
+149,
+150,
+161,
+162,
+163,
+184,
+214,
+215,
+217,
+218,
+219,
+225,
+226,
+241,
+250,
+251,
+252,
+270,
+271,
+272,
+273,
+274,
+275,
+276,
+294,
+295,
+308,
+309,
+319,
+320,
+321,
+322,
+341,
+342,
+343,
+344,
+345,
+351,
+352,
+353,
+364,
+365,
+366,
+367,
+370,
+375,
+376,
+384,
+385,
+386,
+387,
+388,
+389,
+390,
+391,
+392,
+393,
+394,
+395,
+396,
+397,
+398,
+399,
+400,
+401,
+402,
+403,
+404,
+411,
+412,
+413,
+414,
+415,
+432,
+433,
+434
+],
+"decls": [
+[
+35,
+"const DATA_URL = /^data:([^;,]+)?;base64,(.*)$/s;"
+],
+[
+37,
+"const mediaFromUrl = (url: string): IRInputMedia => {"
+],
+[
+38,
+"const dataUrl = DATA_URL.exec(url);"
+],
+[
+40,
+"const mediaType = dataUrl[1]?.trim();"
+],
+[
+44,
+"const imageMedia = (source: AnthropicMessagesImageBlock['source']): IRInputMedia => {"
+],
+[
+52,
+"const textBlocks = (content: string | readonly AnthropicMessagesTextBlockParam[]): IRInput"
+],
+[
+62,
+"const documentMedia = (block: Extract<AnthropicMessagesUserContentBlock, { type: 'document"
+],
+[
+63,
+"const source = block.source;"
+],
+[
+74,
+"interface MessagePosition {"
+],
+[
+79,
+"const userContentPart = ("
+],
+[
+91,
+"const toolResultPart = (block: AnthropicMessagesToolResultBlock['content'] extends string "
+],
+[
+102,
+"const userItems = ("
+],
+[
+116,
+"const items: IRInputClientItem[] = [];"
+],
+[
+117,
+"const pending: IRInputUserContentPart[] = [];"
+],
+[
+118,
+"const flush = (): void => {"
+],
+[
+129,
+"const output = toolResultPart(block.content);"
+],
+[
+151,
+"const SERVER_TOOL_RESULT_TYPES: ReadonlySet<string> = new Set(["
+],
+[
+160,
+"interface AnthropicMessagesAssistantSegments {"
+],
+[
+170,
+"const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'assistant' "
+],
+[
+175,
+"const segments: { assistant: IRInputAssistantItem[]; serverResults: IRInputClientItem[] }["
+],
+[
+178,
+"const pending: IRInputAssistantContentPart[] = [];"
+],
+[
+179,
+"const flushText = (): void => {"
+],
+[
+185,
+"const flushSegment = (): void => {"
+],
+[
+196,
+"const result = block as { tool_use_id: string; content: unknown };"
+],
+[
+235,
+"const anthropicMessagesSystemToIR = (system: AnthropicMessagesPayload['system']): IRInputT"
+],
+[
+237,
+"const content = textBlocks(system);"
+],
+[
+242,
+"const anthropicMessagesTurnToIR = ("
+],
+[
+247,
+"const turns: IRInputTurn[] = [];"
+],
+[
+277,
+"const toolToIR = (tool: AnthropicMessagesClientTool): IRInputTool => {"
+],
+[
+278,
+"const format = tool.input_schema as { type?: unknown } & Record<string, unknown>;"
+],
+[
+288,
+"const toolChoiceToIR = (choice: NonNullable<AnthropicMessagesPayload['tool_choice']>, decl"
+],
+[
+296,
+"const name = (choice as { name: string }).name;"
+],
+[
+305,
+"const anthropicMessagesToolsToIR = (payload: AnthropicMessagesPayload): Pick<IRInputReques"
+],
+[
+306,
+"const clientTools = filterAnthropicMessagesClientTools(payload.tools);"
+],
+[
+307,
+"const declarations = clientTools === undefined ? [] : clientTools.map(toolToIR);"
+],
+[
+310,
+"const toolChoice = payload.tool_choice == null ? undefined : toolChoiceToIR(payload.tool_c"
+],
+[
+317,
+"const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload): IRInputSettings"
+],
+[
+318,
+"const format = payload.output_config?.format;"
+],
+[
+323,
+"const outputFormat: IRInputOutputFormat | undefined = format?.type === 'json_schema'"
+],
+[
+327,
+"const reasoningEffort = reasoningEffortFromAnthropicMessages(payload);"
+],
+[
+328,
+"const serviceTier = serviceTierFromAnthropicMessages(payload);"
+],
+[
+329,
+"const metadata = metadataFromAnthropicMessages(payload.metadata as AnthropicMessagesMetada"
+],
+[
+354,
+"const metadataFromAnthropicMessages = (metadata: AnthropicMessagesMetadataEx | undefined):"
+],
+[
+356,
+"const entries = Object.entries(metadata).flatMap(([key, value]): [string, string][] => {"
+],
+[
+368,
+"const serviceTierFromAnthropicMessages = (payload: AnthropicMessagesPayload): string | und"
+],
+[
+377,
+"const reasoningEffortFromAnthropicMessages = (payload: AnthropicMessagesPayload): string |"
+],
+[
+405,
+"export const anthropicMessagesRead = (payload: AnthropicMessagesPayload): IRInputReading<A"
+],
+[
+406,
+"const request: IRInputRequest = {"
+],
+[
+416,
+"const turns: IRInputTurnSlot<AnthropicMessagesAssistantTurn>[] = [];"
+],
+[
+420,
+"const appendClient = (produce: () => IRInputTurn[]): void => {"
+],
+[
+425,
+"const prompt = anthropicMessagesSystemToIR(payload.system);"
+],
+[
+429,
+"const firstMessageIndex = messageIndex;"
+]
+],
+"defenses": [
+40,
+41,
+55,
+70,
+87,
+91,
+99,
+108,
+228,
+236,
+263,
+282,
+283,
+284,
+298,
+307,
+313,
+318,
+323,
+338,
+339,
+340,
+346,
+347,
+355,
+358,
+372,
+378,
+379,
+380,
+421,
+426,
+435,
+448
+]
+},
+"packages/translate/src/protocols/anthropic-messages/as-source/round-trip.ts": {
+"comments": [],
+"decls": [],
+"defenses": []
+},
+"packages/translate/src/protocols/anthropic-messages/as-source/sse-to.ts": {
+"comments": [
+38,
+39,
+40,
+41,
+42,
+43,
+44,
+45,
+46,
+54,
+55,
+56,
+57,
+58,
+59,
+60,
+61,
+149,
+185
+],
+"decls": [
+[
+47,
+"const messagesError = (error: IRErrorPayload, contextExceeded: boolean): AnthropicMessages"
+],
+[
+51,
+"export const irMessagesError = (error: IRErrorPayload): AnthropicMessagesErrorEventEx['err"
+],
+[
+62,
+"export const anthropicMessagesErrorResponse = (error: IRErrorPayload): { readonly body: Ui"
+],
+[
+63,
+"const contextExceeded = isContextExceededError(error);"
+]
+],
+"defenses": [
+254
+]
+},
+"packages/translate/src/protocols/anthropic-messages/as-source/usage.ts": {
+"comments": [],
+"decls": [
+[
+5,
+"export const usageFromIR = (usage: IROutputUsage): AnthropicMessagesUsage => {"
+],
+[
+6,
+"const count = (key: keyof IROutputUsage): number | undefined => usage[key] === undefined ?"
+]
+],
+"defenses": [
+6
+]
+},
+"packages/translate/src/protocols/anthropic-messages/as-target.ts": {
+"comments": [
+17,
+18,
+19,
+20,
+21,
+22,
+23,
+29,
+30,
+36,
+37
+],
+"decls": [
+[
+12,
+"const callsOf = (turn: Extract<AnthropicMessagesMessage, { role: 'assistant' }>): readonly"
+],
+[
+24,
+"export const anthropicMessagesTargetProtocol: TargetProtocol<"
+],
+[
+31,
+"const flattened = flattenRequestNames(request, pieces);"
+]
+],
+"defenses": [
+13,
+14
+]
+},
+"packages/translate/src/protocols/anthropic-messages/as-target/assistant-turn.ts": {
+"comments": [],
+"decls": [],
+"defenses": []
+},
+"packages/translate/src/protocols/anthropic-messages/as-target/input-from.ts": {
+"comments": [
+35,
+36,
+52,
+53,
+54,
+55,
+56,
+57,
+88,
+102,
+110,
+111,
+117,
+118,
+127,
+128,
+132,
+133,
+137,
+138,
+142,
+143,
+145,
+146,
+147,
+157,
+158,
+159,
+164,
+165,
+179,
+180,
+186,
+187,
+191,
+192,
+193,
+194,
+195,
+196,
+197,
+198,
+199,
+200,
+201,
+202,
+215,
+216,
+221,
+222,
+223,
+231,
+232,
+233,
+234,
+243,
+244,
+265,
+266,
+267,
+268,
+269,
+270,
+271,
+276,
+277,
+278,
+285,
+286,
+295,
+296,
+297,
+298,
+299,
+307,
+308,
+309,
+310,
+311,
+318,
+319,
+336,
+337,
+338
+],
+"decls": [
+[
+32,
+"const imageSource = (media: IRInputMedia): AnthropicMessagesImageSource => {"
+],
+[
+37,
+"const scheme = media.url.slice(0, media.url.indexOf(':'));"
+],
+[
+50,
+"const imageBlock = (media: IRInputMedia): AnthropicMessagesImageBlock => ({ type: 'image',"
+],
+[
+58,
+"const documentBlock = (media: IRInputMedia): AnthropicMessagesUserContentBlock => {"
+],
+[
+71,
+"const systemContent = (content: readonly IRInputTextPart[]): AnthropicMessagesTextBlockPar"
+],
+[
+73,
+"const userContent = ("
+],
+[
+76,
+"const blocks: AnthropicMessagesUserContentBlock[] = [];"
+],
+[
+92,
+"const toolResultContent = ("
+],
+[
+96,
+"const blocks: AnthropicMessagesToolResultContentBlock[] = [];"
+],
+[
+106,
+"const assistantBlocks = (items: readonly IRInputAddressedAssistantItem[]): AnthropicMessag"
+],
+[
+107,
+"const blocks = items.flatMap<AnthropicMessagesAssistantInputContentBlock>(item => {"
+],
+[
+119,
+"const thinking = (item.summary ?? []).join('');"
+],
+[
+144,
+"const parseArguments = (argumentsJson: string): Record<string, unknown> | null => {"
+],
+[
+149,
+"const parsed = parseJSONWithRawNumbers(argumentsJson);"
+],
+[
+160,
+"const toolFromIR = (tool: IRInputTool): AnthropicMessagesClientTool => {"
+],
+[
+161,
+"const schema = tool.type === 'function'"
+],
+[
+175,
+"const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<AnthropicMessagesPayload"
+],
+[
+185,
+"export interface AnthropicMessagesRequestFromIROptions {"
+],
+[
+203,
+"export interface AnthropicMessagesConversation {"
+],
+[
+208,
+"export const anthropicMessagesConversationFromIR = ("
+],
+[
+212,
+"const system: AnthropicMessagesTextBlockParam[] = [];"
+],
+[
+214,
+"const messages: AnthropicMessagesMessage[] = [];"
+],
+[
+217,
+"const userMessage = (blocks: AnthropicMessagesUserContentBlock[]): AnthropicMessagesMessag"
+],
+[
+224,
+"const append = (blocks: AnthropicMessagesUserContentBlock[]): void => {"
+],
+[
+230,
+"const blocks = assistantBlocks(turn.items);"
+],
+[
+236,
+"const content = blocks.length === 1 && blocks[0].type === 'text' && blocks[0].text === '' "
+],
+[
+240,
+"const turnBlocks: AnthropicMessagesUserContentBlock[] = [];"
+],
+[
+272,
+"export const anthropicMessagesHeaderFromIR = ("
+],
+[
+279,
+"const selectedTools = irInputToolsForChoice(request.tools, request.tool_choice);"
+],
+[
+280,
+"const choice = irInputToolChoiceForTools(request.tool_choice, selectedTools);"
+],
+[
+293,
+"export type { IRInputAssistantContentPart };"
+],
+[
+300,
+"export const anthropicMessagesSettingsFromIR = (settings: IRInputSettings): Omit<Partial<A"
+],
+[
+301,
+"const ceiling = settings.max_output_tokens;"
+],
+[
+302,
+"const format = settings.output_format;"
+],
+[
+303,
+"const formatConfig = format?.type === 'json_schema' && format.schema !== undefined"
+],
+[
+312,
+"const thinking = settings.reasoning_effort === 'none'"
+],
+[
+323,
+"const effort = settings.reasoning_effort === undefined || settings.reasoning_effort === 'n"
+],
+[
+324,
+"const outputConfig = effort === undefined && formatConfig === undefined"
+]
+],
+"defenses": [
+39,
+45,
+63,
+84,
+85,
+99,
+119,
+129,
+151,
+152,
+162,
+166,
+169,
+171,
+246,
+284,
+288,
+289,
+303,
+316,
+323,
+324,
+326,
+329,
+330,
+331,
+332,
+333,
+334,
+335,
+339
+]
+},
+"packages/translate/src/protocols/anthropic-messages/as-target/segmented-request.ts": {
+"comments": [
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+36,
+37,
+43,
+44,
+45,
+50,
+51,
+52,
+53,
+54
+],
+"decls": [
+[
+20,
+"export const anthropicMessagesPayloadFromSegments = <Restored>("
+],
+[
+26,
+"const system: AnthropicMessagesTextBlockParam[] = [];"
+],
+[
+27,
+"const messages: AnthropicMessagesMessage[] = [];"
+],
+[
+28,
+"const restored = new Set<AnthropicMessagesMessage>();"
+],
+[
+31,
+"const message = resolvedMessage(piece.turn);"
+],
+[
+38,
+"const segment = anthropicMessagesConversationFromIR(piece.turns, piece.leading);"
+],
+[
+46,
+"const complete = messages.map(message => message.role === 'user' && Array.isArray(message."
+],
+[
+55,
+"const target: AnthropicMessagesPayload = {"
+]
+],
+"defenses": [
+46
+]
+},
+"packages/translate/src/protocols/anthropic-messages/as-target/sse-from.ts": {
+"comments": [
+37,
+67,
+68,
+117,
+118
+],
+"decls": [
+[
+18,
+"const messagesCitationToIR = (citation: AnthropicMessagesTextCitation): IROutputSourceCita"
+],
+[
+119,
+"const identity = options.callIdentities?.get(block.name);"
+],
+[
+120,
+"const naming = identity === undefined"
+]
+],
+"defenses": [
+119,
+120
+]
+},
+"packages/translate/src/protocols/anthropic-messages/as-target/usage.ts": {
+"comments": [
+7
+],
+"decls": [
+[
+14,
+"export const usageToIR = (usage: Partial<AnthropicMessagesUsageDeltaEx> | null | undefined"
+],
+[
+15,
+"const result: Partial<Record<keyof IROutputUsage, number>> = {};"
+],
+[
+17,
+"const put = (key: keyof IROutputUsage, value: number | undefined | null): void => { if (va"
+]
+],
+"defenses": []
+},
+"packages/translate/src/protocols/composition.ts": {
+"comments": [
+19,
+20,
+21,
+22,
+23,
+24,
+25,
+32,
+35,
+39,
+40,
+41,
+42,
+43,
+44,
+52,
+55,
+60,
+64,
+66,
+68,
+72,
+73,
+74,
+75,
+76,
+77,
+83,
+86,
+87,
+88,
+89,
+90,
+91,
+92,
+98,
+99,
+100,
+101,
+102,
+103,
+104,
+105,
+106,
+114,
+115,
+116,
+117,
+118,
+119,
+141,
+142,
+143,
+144,
+145,
+146,
+147,
+148,
+169,
+170,
+171,
+172,
+173,
+174,
+183,
+184,
+189,
+190,
+191,
+192,
+193,
+194,
+207,
+208
+],
+"decls": [
+[
+17,
+"type AssistantTurnKey = keyof AssistantTurnByProtocol;"
+],
+[
+26,
+"export interface SourceRoundTrip<Name extends AssistantTurnKey> {"
+],
+[
+33,
+"export interface SourceProtocol<Name extends AssistantTurnKey, Payload, Event> {"
+],
+[
+53,
+"export type TargetContext<Name extends keyof TargetContextByProtocol> = TargetContextByPro"
+],
+[
+56,
+"export interface TargetContextByProtocol {"
+],
+[
+65,
+"export interface SmallCallContext {"
+],
+[
+78,
+"export interface TargetRequest<Payload, Name extends keyof TargetContextByProtocol> {"
+],
+[
+84,
+"export interface TargetProtocol<Name extends AssistantTurnKey, Payload, Event> {"
+],
+[
+120,
+"export const composeTranslation = <"
+],
+[
+127,
+"const reading = source.read(payload);"
+],
+[
+135,
+"const stream = createRoundTripStream(source.name, target.name, options.sidecarCodec);"
+],
+[
+149,
+"const settleTurns = async <"
+],
+[
+161,
+"const roundTrip = await roundTripAssistantTurn("
+],
+[
+175,
+"export const buildTargetRequestFor = async <"
+],
+[
+195,
+"export const translateSourceEventsFor = <"
+],
+[
+205,
+"const reading = source.read(payload);"
+],
+[
+206,
+"const stream = createRoundTripStream(source.name, target.name, options.sidecarCodec);"
+]
+],
+"defenses": [
+165
+]
+},
+"packages/translate/src/protocols/gemini-generate-content/as-source.ts": {
+"comments": [
+8,
+9,
+10,
+11,
+12,
+13,
+25
+],
+"decls": [
+[
+14,
+"export const geminiGenerateContentSourceProtocol: SourceProtocol<"
+]
+],
+"defenses": []
+},
+"packages/translate/src/protocols/gemini-generate-content/as-source/error-body.ts": {
+"comments": [
+5,
+6,
+7,
+8,
+9,
+10,
+11
+],
+"decls": [
+[
+12,
+"export const geminiGenerateContentErrorWriter: SourceProtocolErrorWriter = upstream => {"
+],
+[
+13,
+"const error = irErrorPayloadFromBody(upstream);"
+],
+[
+15,
+"const body = irGenerateContentError(error, upstream.status);"
+]
+],
+"defenses": [
+14
+]
+},
+"packages/translate/src/protocols/gemini-generate-content/as-source/input-to.ts": {
+"comments": [
+39,
+40,
+41,
+42,
+65,
+66,
+89,
+90,
+111,
+112,
+113,
+129,
+130,
+145,
+146,
+147,
+148,
+172,
+173,
+181,
+182,
+183,
+184,
+185,
+186,
+187,
+188,
+204,
+205,
+214,
+215,
+225,
+226,
+227,
+228,
+229,
+230,
+231,
+232,
+233,
+234,
+235,
+236,
+237,
+238,
+239,
+240,
+246,
+247,
+248,
+249,
+270,
+274,
+275,
+276,
+277,
+279,
+280,
+301,
+304,
+305,
+306
+],
+"decls": [
+[
+27,
+"const inlineMedia = (part: GeminiGenerateContentPart): IRInputMedia | null => {"
+],
+[
+28,
+"const inlineData = geminiGenerateContentInlineData(part);"
+],
+[
+32,
+"const inlinePart = (part: GeminiGenerateContentPart): IRInputUserContentPart => {"
+],
+[
+33,
+"const inlineData = geminiGenerateContentInlineData(part);"
+],
+[
+47,
+"const userParts = (content: GeminiGenerateContentContent, turnIndex: number, ids: GeminiGe"
+],
+[
+48,
+"const items: IRInputClientItem[] = [];"
+],
+[
+49,
+"const pending: IRInputUserContentPart[] = [];"
+],
+[
+50,
+"const flush = (): void => {"
+],
+[
+56,
+"const kind = geminiGenerateContentPartKind(part);"
+],
+[
+74,
+"const text = geminiGenerateContentPartText(part);"
+],
+[
+91,
+"const reasoningId = (turnIndex: number, partIndex: number): string => `gemini_reasoning_${"
+],
+[
+93,
+"const assistantItems = (content: GeminiGenerateContentContent, turnIndex: number, ids: Gem"
+],
+[
+94,
+"const items: IRInputAssistantItem[] = [];"
+],
+[
+95,
+"const pending: IRInputAssistantContentPart[] = [];"
+],
+[
+96,
+"const flush = (): void => {"
+],
+[
+101,
+"const parts = (content.parts ?? []).flatMap(part => {"
+],
+[
+102,
+"const kind = geminiGenerateContentPartKind(part);"
+],
+[
+118,
+"const thoughtText = geminiGenerateContentThoughtText(part);"
+],
+[
+124,
+"const visible = geminiGenerateContentVisibleText(part);"
+],
+[
+140,
+"const systemParts = (content: GeminiGenerateContentContent | undefined): IRInputTextPart[]"
+],
+[
+141,
+"const text = geminiGenerateContentText(content);"
+],
+[
+149,
+"const turnToIRTurns = ("
+],
+[
+174,
+"const geminiGenerateContentSystemToIR = (content: GeminiGenerateContentContent | undefined"
+],
+[
+175,
+"const parts = systemParts(content);"
+],
+[
+179,
+"const partitionContents = (payload: GeminiGenerateContentPayload): GeminiGenerateContentTu"
+],
+[
+189,
+"const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequest, 'tools' | "
+],
+[
+190,
+"const declarations = payload.tools?.flatMap(group => group.functionDeclarations ?? []) ?? "
+],
+[
+191,
+"const config = payload.toolConfig?.functionCallingConfig;"
+],
+[
+192,
+"const allowedNames = config?.allowedFunctionNames;"
+],
+[
+193,
+"const restrictable = config?.mode === 'ANY' || config?.mode === 'VALIDATED';"
+],
+[
+194,
+"const permitted = restrictable && allowedNames !== undefined && allowedNames.length > 0 ? "
+],
+[
+196,
+"const tools: IRInputTool[] = declarations"
+],
+[
+199,
+"const parameters = geminiFunctionParameters(declaration) as Readonly<Record<string, unknow"
+],
+[
+241,
+"export const geminiGenerateContentRead = (payload: GeminiGenerateContentRequest): IRInputR"
+],
+[
+242,
+"const ids: GeminiGenerateContentToolCallIds = Object.create(null);"
+],
+[
+244,
+"const prompt = geminiGenerateContentSystemToIR(payload.systemInstruction);"
+],
+[
+250,
+"const turnSlotFor = (turn: GeminiGenerateContentTurn): IRInputTurnSlot<GeminiGenerateConte"
+],
+[
+251,
+"const at = contentIndex;"
+],
+[
+253,
+"const toIRTurn = () => turnToIRTurns(turn, at, ids);"
+],
+[
+271,
+"const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest): IRInput"
+],
+[
+272,
+"const config = payload.generationConfig;"
+],
+[
+273,
+"const budget = config?.thinkingConfig?.thinkingBudget;"
+],
+[
+278,
+"const statedLevel = geminiGenerateContentThinkingLevelEffort(config?.thinkingConfig);"
+],
+[
+281,
+"const effort = statedLevel ?? (budget === 0 ? 'none' : undefined);"
+],
+[
+282,
+"const schema = config === undefined ? undefined : geminiResponseSchema(config);"
+],
+[
+283,
+"const outputFormat: IRInputOutputFormat | undefined = schema !== undefined"
+]
+],
+"defenses": [
+34,
+55,
+68,
+82,
+101,
+131,
+133,
+156,
+163,
+164,
+166,
+179,
+190,
+191,
+192,
+193,
+194,
+197,
+203,
+206,
+211,
+212,
+213,
+216,
+221,
+264,
+273,
+278,
+281,
+282,
+283,
+285,
+290,
+291,
+292,
+293,
+294,
+295,
+296,
+297,
+298,
+299,
+300,
+302,
+303,
+307
+]
+},
+"packages/translate/src/protocols/gemini-generate-content/as-source/reasoning.ts": {
+"comments": [],
+"decls": [],
+"defenses": []
+},
+"packages/translate/src/protocols/gemini-generate-content/as-source/round-trip.ts": {
+"comments": [],
+"decls": [],
+"defenses": []
+},
+"packages/translate/src/protocols/gemini-generate-content/as-source/schema.ts": {
+"comments": [],
+"decls": [],
+"defenses": []
+},
+"packages/translate/src/protocols/gemini-generate-content/as-source/sse-to.ts": {
+"comments": [
+26,
+27,
+28,
+29,
+30,
+31,
+32,
+50,
+51,
+52,
+53,
+54,
+55,
+56,
+220,
+240
+],
+"decls": [
+[
+33,
+"const statusNameOf = (status: number): string => {"
+],
+[
+57,
+"export const irGenerateContentError = (error: IRErrorPayload, httpStatus?: number): Gemini"
+],
+[
+465,
+"const logprobsResult = (tokens: readonly IROutputTokenLogprob[]): NonNullable<GeminiGenera"
+],
+[
+472,
+"const groundingChunk = (citation: IROutputSourceCitation): GeminiGenerateContentGroundingC"
+]
+],
+"defenses": [
+59,
+62,
+390
+]
+},
+"packages/translate/src/protocols/gemini-generate-content/as-source/tools.ts": {
+"comments": [
+19,
+20,
+21,
+47,
+48,
+49
+],
+"decls": [
+[
+3,
+"const geminiGenerateContentToolCallId = (turnIndex: number, partIndex: number): string => "
+],
+[
+50,
+"const paired = unmatched?.shift();"
+]
+],
+"defenses": [
+50
+]
+},
+"packages/translate/src/protocols/gemini-generate-content/as-source/usage.ts": {
+"comments": [],
+"decls": [
+[
+6,
+"export const usageFromIR = (usage: IROutputUsage): GeminiGenerateContentUsageMetadata => {"
+],
+[
+7,
+"const count = (key: keyof IROutputUsage): number | undefined => usage[key] === undefined ?"
+],
+[
+12,
+"const modalityTokens = (keys: readonly (readonly [modality: string, key: keyof IROutputUsa"
+]
+],
+"defenses": [
+7
+]
+},
+"packages/translate/src/protocols/openai-chat-completions/as-source.ts": {
+"comments": [
+8,
+9,
+10,
+11,
+12,
+13
+],
+"decls": [
+[
+14,
+"export const openaiChatCompletionsSourceProtocol: SourceProtocol<"
+]
+],
+"defenses": []
+},
+"packages/translate/src/protocols/openai-chat-completions/as-source/conversation-turns.ts": {
+"comments": [
+7,
+9,
+10,
+11,
+16,
+17,
+18
+],
+"decls": [
+[
+12,
+"export const partitionOpenAIChatCompletionsTurns = (messages: readonly OpenAIChatCompletio"
+],
+[
+13,
+"const turns: OpenAIChatCompletionsConversationTurn[] = [];"
+],
+[
+15,
+"const previous = turns.at(-1);"
+]
+],
+"defenses": [
+23,
+27
+]
+},
+"packages/translate/src/protocols/openai-chat-completions/as-source/error-body.ts": {
+"comments": [
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15
+],
+"decls": [
+[
+16,
+"export const openaiChatCompletionsErrorWriter: SourceProtocolErrorWriter = upstream => {"
+],
+[
+17,
+"const error = irErrorPayloadFromBody(upstream);"
+]
+],
+"defenses": [
+18
+]
+},
+"packages/translate/src/protocols/openai-chat-completions/as-source/input-to.ts": {
+"comments": [
+35,
+36,
+46,
+47,
+48,
+51,
+52,
+53,
+56,
+57,
+58,
+61,
+62,
+102,
+103,
+104,
+121,
+122,
+128,
+129,
+130,
+131,
+148,
+149,
+150,
+151,
+167,
+168,
+179,
+180,
+204,
+205,
+213,
+214,
+215,
+216,
+217,
+218,
+219,
+220,
+221,
+222,
+223,
+224,
+289,
+290,
+315,
+316,
+317,
+318,
+323,
+324,
+325,
+326,
+327,
+328,
+329,
+330,
+331
+],
+"decls": [
+[
+33,
+"const DATA_URL = /^data:([^;,]+)?;base64,(.*)$/s;"
+],
+[
+37,
+"const AUDIO_MEDIA_TYPES: Readonly<Record<string, string>> = { wav: 'audio/wav', mp3: 'audi"
+],
+[
+39,
+"const mediaFromUrl = (url: string): IRInputMedia => {"
+],
+[
+40,
+"const dataUrl = DATA_URL.exec(url);"
+],
+[
+42,
+"const mediaType = dataUrl[1]?.trim();"
+],
+[
+49,
+"const textParts = (value: string, keepEmpty = true): IRInputTextPart[] => value === '' && "
+],
+[
+54,
+"const legacyCallId = (name: string, occurrence: number): string => `legacy__${name}__${occ"
+],
+[
+59,
+"interface OpenAIChatCompletionsInputContext {"
+],
+[
+67,
+"const openaiChatCompletionsInputContext = (payload: OpenAIChatCompletionsPayload): OpenAIC"
+],
+[
+73,
+"const takeOccurrence = (counts: Map<string, number>, name: string): number => {"
+],
+[
+74,
+"const occurrence = counts.get(name) ?? 0;"
+],
+[
+79,
+"const userContentPart = (part: OpenAIChatCompletionsUserContentPart): IRInputUserContentPa"
+],
+[
+92,
+"const filename = part.file.filename === undefined ? {} : { filename: part.file.filename };"
+],
+[
+105,
+"const toolResultContent = (content: string | readonly { text: string }[]): string | readon"
+],
+[
+109,
+"const assistantItems = (turn: Extract<OpenAIChatCompletionsConversationTurn, { role: 'assi"
+],
+[
+110,
+"const message = turn.items[0];"
+],
+[
+112,
+"const content: IRInputAssistantContentPart[] = typeof message.content === 'string'"
+],
+[
+123,
+"const legacyCall = message.function_call ?? undefined;"
+],
+[
+124,
+"const emptyMessage = message.content == null && message.refusal == null && (message.tool_c"
+],
+[
+125,
+"const items: IRInputAssistantItem[] = emptyMessage"
+],
+[
+152,
+"const openaiChatCompletionsCallKinds = (payload: OpenAIChatCompletionsPayload): ReadonlyMa"
+],
+[
+153,
+"const kinds = new Map<string, 'function' | 'custom'>();"
+],
+[
+161,
+"const openaiChatCompletionsTurnToIR = ("
+],
+[
+172,
+"const userItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, { role: 'ass"
+],
+[
+195,
+"const toolKind = context.callKinds.get(message.tool_call_id);"
+],
+[
+196,
+"const result: IRInputToolResultItem = {"
+],
+[
+225,
+"const toolToIR = (tool: OpenAIChatCompletionsTool): IRInputTool | undefined => {"
+],
+[
+227,
+"const format = tool.custom.format;"
+],
+[
+248,
+"const selectionToIR = (selection: OpenAIChatCompletionsNamedToolChoice): IRInputToolSelect"
+],
+[
+252,
+"const toolChoiceToIR = (choice: NonNullable<OpenAIChatCompletionsPayload['tool_choice']>):"
+],
+[
+260,
+"const openaiChatCompletionsToolsToIR = (payload: OpenAIChatCompletionsPayload): Pick<IRInp"
+],
+[
+261,
+"const tools = payload.tools?.map(toolToIR).filter((tool): tool is IRInputTool => tool !== "
+],
+[
+268,
+"const openaiChatCompletionsRequestToIR = (payload: OpenAIChatCompletionsPayload): IRInputR"
+],
+[
+273,
+"const continuousUsageOf = (payload: OpenAIChatCompletionsPayload): boolean => {"
+],
+[
+274,
+"const streamOptions = payload.stream_options as OpenAIChatCompletionsStreamOptionsEx | und"
+],
+[
+278,
+"const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload): IRInput"
+],
+[
+279,
+"const ceiling = payload.max_completion_tokens ?? payload.max_tokens;"
+],
+[
+281,
+"const format = payload.response_format;"
+],
+[
+282,
+"const outputFormat: IRInputOutputFormat | undefined = format === undefined ? undefined"
+],
+[
+332,
+"export const openaiChatCompletionsRead = (payload: OpenAIChatCompletionsPayload): IRInputR"
+],
+[
+333,
+"const context = openaiChatCompletionsInputContext(payload);"
+]
+],
+"defenses": [
+42,
+43,
+74,
+87,
+90,
+92,
+93,
+94,
+95,
+98,
+114,
+117,
+123,
+124,
+132,
+140,
+156,
+183,
+184,
+194,
+200,
+209,
+231,
+232,
+242,
+243,
+261,
+263,
+275,
+279,
+282,
+286,
+287,
+288,
+303,
+309,
+310
+]
+},
+"packages/translate/src/protocols/openai-chat-completions/as-source/round-trip.ts": {
+"comments": [],
+"decls": [],
+"defenses": []
+},
+"packages/translate/src/protocols/openai-chat-completions/as-source/sse-to.ts": {
+"comments": [
+31,
+103,
+104,
+105
+],
+"decls": [
+[
+22,
+"export const irChatError = (error: IRErrorPayload): IRErrorPayload => ({"
+],
+[
+38,
+"type IRToolCallItem = Extract<IROutputItem, { type: 'function_call' | 'custom_tool_call' }"
+],
+[
+43,
+"const isIRItem = (value: unknown): value is IROutputItem => {"
+],
+[
+54,
+"const partType = (value: unknown): IROutputMessageItem['content'][number]['type'] | undefi"
+],
+[
+74,
+"const isIRTokenLogprob = (value: unknown): value is IROutputTokenLogprob =>"
+],
+[
+91,
+"const itemTypes = new Map<string, IROutputItem['type']>();"
+],
+[
+92,
+"const partTypes = new Map<string, IROutputMessageItem['content'][number]['type']>();"
+],
+[
+106,
+"const emittedChoice = (choice: number) => nativeAccumulator(choice).result().choices.find("
+],
+[
+397,
+"const summary = emittedChoice(record.choice)?.message.reasoning_text;"
+],
+[
+401,
+"const nativeChoice = emittedChoice(record.choice);"
+]
+],
+"defenses": [
+188,
+397
+]
+},
+"packages/translate/src/protocols/openai-chat-completions/as-source/usage.ts": {
+"comments": [],
+"decls": [
+[
+5,
+"export const usageFromIR = (usage: IROutputUsage): OpenAIChatCompletionsUsageEx => {"
+],
+[
+6,
+"const count = (key: keyof IROutputUsage): number | undefined => usage[key] === undefined ?"
+]
+],
+"defenses": [
+6
+]
+},
+"packages/translate/src/protocols/openai-chat-completions/as-target.ts": {
+"comments": [
+13,
+14,
+15,
+24,
+25,
+26,
+27,
+28,
+29,
+30,
+35,
+36,
+41,
+42
+],
+"decls": [
+[
+9,
+"type ChatResolvedTurn = AssistantTurnFor<'openaiChatCompletions'>;"
+],
+[
+11,
+"const callsOf = (turn: ChatResolvedTurn): readonly PendingCall[] => {"
+],
+[
+16,
+"const legacyCall = turn.function_call;"
+],
+[
+17,
+"const legacy = legacyCall == null ? [] : [{ callId: `legacy_${legacyCall.name}`, name: leg"
+],
+[
+31,
+"export const openaiChatCompletionsTargetProtocol: TargetProtocol<"
+],
+[
+38,
+"const flattened = flattenRequestNames(request, pieces);"
+]
+],
+"defenses": [
+20
+]
+},
+"packages/translate/src/protocols/openai-chat-completions/as-target/input-from.ts": {
+"comments": [
+27,
+65,
+66,
+67,
+68,
+69,
+70,
+71,
+72,
+100,
+101,
+102,
+110,
+111,
+112,
+117,
+118,
+119,
+124,
+126,
+127,
+138,
+139,
+163,
+164,
+165,
+170,
+171,
+183,
+184,
+185,
+186,
+187,
+188,
+189,
+190,
+191,
+200,
+201,
+202,
+203,
+220,
+221,
+229,
+230,
+231,
+233,
+234,
+238,
+239,
+240,
+241,
+242,
+243,
+244,
+251,
+252,
+254,
+255,
+256,
+257,
+258,
+259,
+266,
+267,
+268,
+269,
+270,
+271,
+272,
+273
+],
+"decls": [
+[
+28,
+"const audioFormat = (mediaType: string): string => {"
+],
+[
+34,
+"const dataUrl = (media: Extract<IRInputMedia, { source_kind: 'base64' }>): string => `data"
+],
+[
+36,
+"const imageUrlPart = (media: IRInputMedia, detail?: string | null): OpenAIChatCompletionsU"
+],
+[
+44,
+"const filePart = (media: IRInputMedia, filename?: string | null): OpenAIChatCompletionsUse"
+],
+[
+45,
+"const name = filename == null ? {} : { filename };"
+],
+[
+53,
+"const userContent = (item: Extract<IRInputClientItem, { type: 'message' }>): string | Open"
+],
+[
+73,
+"export const openaiChatCompletionsToolResultContent = ("
+],
+[
+79,
+"const text = output.flatMap(part => part.type === 'text' ? [part.text] : []).join('');"
+],
+[
+80,
+"const images = output.flatMap(part => part.type === 'image' ? [imageUrlPart(part.image, pa"
+],
+[
+89,
+"const assistantMessage = (items: readonly IRInputAddressedAssistantItem[]): OpenAIChatComp"
+],
+[
+90,
+"const text: string[] = [];"
+],
+[
+91,
+"const refusals: string[] = [];"
+],
+[
+92,
+"const reasoning: string[] = [];"
+],
+[
+93,
+"const toolCalls: OpenAIChatCompletionsToolCall[] = [];"
+],
+[
+137,
+"const userMessages = (items: readonly IRInputAddressedClientItem[]): OpenAIChatCompletions"
+],
+[
+140,
+"const messages: OpenAIChatCompletionsMessage[] = [];"
+],
+[
+142,
+"const flushImages = (): void => {"
+],
+[
+155,
+"const openaiChatCompletionsUserItem = ("
+],
+[
+168,
+"const projected = openaiChatCompletionsToolResultContent(item.call_id, item.output);"
+],
+[
+177,
+"export const openaiChatCompletionsFromIR = ("
+],
+[
+192,
+"const normalizeParameters = (schema: Readonly<Record<string, unknown>> | undefined): Recor"
+],
+[
+194,
+"const target = { ...schema };"
+],
+[
+198,
+"const toolFromIR = (tool: IRInputTool): OpenAIChatCompletionsTool => {"
+],
+[
+227,
+"const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<OpenAIChatCompletionsPay"
+],
+[
+245,
+"export const openaiChatCompletionsHeaderFromIR = (request: IRInputRequest): Omit<OpenAICha"
+],
+[
+246,
+"const tools = irInputToolsForChoice(request.tools, request.tool_choice);"
+],
+[
+247,
+"const choice = irInputToolChoiceForTools(request.tool_choice, tools);"
+],
+[
+274,
+"const chatReasoningEffort = (settings: IRInputSettings): string | undefined =>"
+],
+[
+279,
+"export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): Partial<Op"
+],
+[
+280,
+"const ceiling = settings.max_output_tokens;"
+],
+[
+281,
+"const format = settings.output_format;"
+],
+[
+282,
+"const reasoningEffort = chatReasoningEffort(settings);"
+]
+],
+"defenses": [
+30,
+31,
+34,
+39,
+49,
+78,
+103,
+104,
+113,
+130,
+193,
+195,
+208,
+218,
+219,
+222,
+261,
+262,
+275,
+285,
+286,
+287,
+288,
+289,
+290,
+291,
+292,
+293,
+294,
+295,
+296,
+297,
+298,
+299,
+300,
+301,
+308,
+309,
+310,
+311
+]
+},
+"packages/translate/src/protocols/openai-chat-completions/as-target/segmented-request.ts": {
+"comments": [
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+27,
+28
+],
+"decls": [
+[
+17,
+"export const openaiChatCompletionsPayloadFromSegments = <Restored extends OpenAIChatComple"
+],
+[
+22,
+"const messages: OpenAIChatCompletionsMessage[] = [];"
+]
+],
+"defenses": []
+},
+"packages/translate/src/protocols/openai-chat-completions/as-target/sse-from.ts": {
+"comments": [
+128,
+129,
+438,
+439
+],
+"decls": [
+[
+134,
+"const ir = createIRBuilder();"
+],
+[
+240,
+"const converted: IROutputSourceCitation[] = citations.flatMap(({ annotation, range }) => {"
+],
+[
+440,
+"const identity = options.callIdentities?.get(tool.name);"
+],
+[
+441,
+"const naming = identity === undefined"
+]
+],
+"defenses": [
+440,
+441,
+445,
+446
+]
+},
+"packages/translate/src/protocols/openai-chat-completions/as-target/usage.ts": {
+"comments": [],
+"decls": [
+[
+6,
+"export const usageToIR = (usage: Partial<OpenAIChatCompletionsUsageEx>): IROutputUsage => "
+],
+[
+7,
+"const result: Partial<Record<keyof IROutputUsage, number>> = {};"
+],
+[
+8,
+"const put = (key: keyof IROutputUsage, value: number | undefined | null): void => { if (va"
+]
+],
+"defenses": []
+},
+"packages/translate/src/protocols/openai-responses/as-source.ts": {
+"comments": [
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+28
+],
+"decls": [
+[
+16,
+"export const openaiResponsesSourceProtocol: SourceProtocol<"
+],
+[
+29,
+"const responseId = createRandomOpenAIResponsesResponseId();"
+]
+],
+"defenses": []
+},
+"packages/translate/src/protocols/openai-responses/as-source/allowed-tools.ts": {
+"comments": [
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+24,
+25,
+42,
+43,
+44,
+45,
+46,
+47,
+48,
+64,
+78,
+95,
+99,
+100,
+114,
+115
+],
+"decls": [
+[
+14,
+"const callableDeclarations = (tools: readonly OpenAIResponsesTool[]): { type: 'function' |"
+],
+[
+20,
+"const namespace = 'namespace' in tool && typeof tool.namespace === 'string' ? `${tool.name"
+],
+[
+26,
+"const inventoryDeclarations = (input: readonly CanonicalOpenAIResponsesInputItem[] | undef"
+],
+[
+31,
+"const validateCallableKinds = (declarations: readonly { type: 'function' | 'custom'; name:"
+],
+[
+34,
+"const prior = kinds.get(name);"
+],
+[
+49,
+"export const callableSelector = (selector: unknown): { readonly type: 'function' | 'custom"
+],
+[
+59,
+"export const validateAllowedTools = ("
+],
+[
+65,
+"const declarations = [...callableDeclarations(tools ?? []), ...inventoryDeclarations(input"
+],
+[
+75,
+"const declared = new Set(declarations.map(({ type, name }) => `${type}:${name}`));"
+],
+[
+76,
+"const selectedKinds = new Map<string, 'function' | 'custom'>();"
+],
+[
+77,
+"const selected = new Set<string>();"
+],
+[
+79,
+"const allGroups = ["
+],
+[
+83,
+"const expanded = choice.tools.flatMap(selector => {"
+],
+[
+86,
+"const group = allGroups.flatMap(tool => tool.type === 'namespace' && tool.name === (select"
+],
+[
+93,
+"const selected_ = callableSelector(selector);"
+],
+[
+94,
+"const type = selected_.type;"
+],
+[
+96,
+"const name = selected_.namespace === undefined || selected_.name.includes('.')"
+],
+[
+104,
+"const kind = selectedKinds.get(name);"
+]
+],
+"defenses": [
+16,
+27,
+35,
+36,
+50,
+51,
+52,
+53,
+54,
+65,
+80,
+81,
+84,
+87,
+88,
+96,
+102,
+105,
+106
+]
+},
+"packages/translate/src/protocols/openai-responses/as-source/conversation-turns.ts": {
+"comments": [
+5,
+6,
+7
+],
+"decls": [
+[
+8,
+"const isPromptBoundary = (item: CanonicalOpenAIResponsesInputItem): boolean =>"
+]
+],
+"defenses": [
+9,
+16
+]
+},
+"packages/translate/src/protocols/openai-responses/as-source/error-body.ts": {
+"comments": [
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13
+],
+"decls": [
+[
+14,
+"export const openaiResponsesErrorWriter: SourceProtocolErrorWriter = upstream => {"
+],
+[
+15,
+"const error = irErrorPayloadFromBody(upstream);"
+],
+[
+17,
+"const body = new TextEncoder().encode(JSON.stringify({"
+]
+],
+"defenses": [
+16,
+20,
+21
+]
+},
+"packages/translate/src/protocols/openai-responses/as-source/input-to.ts": {
+"comments": [
+56,
+57,
+93,
+94,
+95,
+100,
+101,
+124,
+128,
+129,
+134,
+178,
+179,
+188,
+189,
+199,
+200,
+201,
+205,
+206,
+207,
+208,
+209,
+210,
+211,
+213,
+214,
+240,
+241,
+250,
+268,
+269,
+280,
+284,
+285,
+286,
+293,
+294,
+308,
+309,
+329,
+330
+],
+"decls": [
+[
+37,
+"const DATA_URL = /^data:([^;,]+)?;base64,(.*)$/s;"
+],
+[
+39,
+"const mediaFromUrl = (url: string): IRInputMedia => {"
+],
+[
+40,
+"const dataUrl = DATA_URL.exec(url);"
+],
+[
+42,
+"const mediaType = dataUrl[1]?.trim();"
+],
+[
+46,
+"const imageMedia = (part: Extract<OpenAIResponsesInputContent, { type: 'input_image' }>): "
+],
+[
+52,
+"const fileMedia = (part: Extract<OpenAIResponsesInputContent, { type: 'input_file' }>): IR"
+],
+[
+58,
+"const dataUrl = DATA_URL.exec(part.file_data);"
+],
+[
+60,
+"const mediaType = dataUrl[1]?.trim();"
+],
+[
+66,
+"const userContentPart = (part: OpenAIResponsesInputContent): IRInputUserContentPart => {"
+],
+[
+72,
+"const image = imageMedia(part);"
+],
+[
+80,
+"const userContent = (content: string | OpenAIResponsesInputContent[]): IRInputUserContentP"
+],
+[
+84,
+"const systemContent = (message: OpenAIResponsesInputMessageEx): IRInputTextPart[] => typeo"
+],
+[
+96,
+"const assistantContent = (message: Extract<OpenAIResponsesInputMessageEx, { role: 'assista"
+],
+[
+106,
+"const toolResultContent = (output: string | readonly OpenAIResponsesInputContent[]): strin"
+],
+[
+114,
+"const unsupportedItem = (item: CanonicalOpenAIResponsesInputItem): never => {"
+],
+[
+118,
+"const assistantItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInputAssis"
+],
+[
+123,
+"const content = assistantContent(item);"
+],
+[
+132,
+"const summary = item.summary.map(part => part.text);"
+],
+[
+133,
+"const content = (item.content ?? []).map(part => part.text);"
+],
+[
+151,
+"const userItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInputClientItem"
+],
+[
+162,
+"const result: IRInputToolResultItem = {"
+],
+[
+190,
+"const openaiResponsesInstructionsToIR = (instructions: string | null | undefined): IRInput"
+],
+[
+194,
+"const openaiResponsesTurnToIR = ("
+],
+[
+197,
+"const items = turn.items;"
+],
+[
+212,
+"const toolToIR = (tool: Extract<OpenAIResponsesTool, { type: 'function' | 'custom' }>, nam"
+],
+[
+215,
+"const identity = namespace === undefined ? {} : { namespace };"
+],
+[
+217,
+"const format = tool.format as { type?: unknown; definition?: unknown; syntax?: unknown } |"
+],
+[
+242,
+"const selectedCallable = (selection: { readonly type: 'function' | 'custom'; readonly name"
+],
+[
+244,
+"const dot = selection.name.indexOf('.');"
+],
+[
+251,
+"const selectorOf = (payload: CanonicalOpenAIResponsesPayload, selector: Record<string, unk"
+],
+[
+253,
+"const groups = ["
+],
+[
+263,
+"const toolChoiceToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputToolChoice => {"
+],
+[
+264,
+"const choice = payload.tool_choice;"
+],
+[
+287,
+"const toolGroupToIR = (tool: OpenAIResponsesTool): IRInputTool[] => {"
+],
+[
+295,
+"const childDescription = child.description ?? undefined;"
+],
+[
+310,
+"const deferredInventories = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesToo"
+],
+[
+313,
+"const openaiResponsesToolsToIR = (payload: CanonicalOpenAIResponsesPayload): Pick<IRInputR"
+],
+[
+314,
+"const declared = payload.tools?.flatMap(toolGroupToIR) ?? [];"
+],
+[
+315,
+"const deferred = deferredInventories(payload).flatMap(toolGroupToIR);"
+],
+[
+316,
+"const tools = declared.length === 0 && deferred.length === 0 ? undefined : [...declared, ."
+],
+[
+317,
+"const toolChoice = payload.tool_choice == null ? undefined : toolChoiceToIR(payload);"
+],
+[
+324,
+"const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputSet"
+],
+[
+325,
+"const format = payload.text?.format;"
+],
+[
+326,
+"const outputFormat: IRInputOutputFormat | undefined = format === undefined || format === n"
+],
+[
+362,
+"export const openaiResponsesRead = (source: OpenAIResponsesRequestPayloadEx): IRInputReadi"
+],
+[
+363,
+"const canonical = canonicalizeOpenAIResponsesPayload(source);"
+],
+[
+367,
+"const prompt = openaiResponsesInstructionsToIR(canonical.instructions);"
+]
+],
+"defenses": [
+42,
+43,
+49,
+60,
+61,
+63,
+88,
+99,
+103,
+115,
+122,
+133,
+149,
+159,
+215,
+223,
+225,
+243,
+254,
+255,
+257,
+258,
+265,
+267,
+270,
+279,
+281,
+291,
+295,
+297,
+299,
+304,
+305,
+311,
+314,
+319,
+320,
+325,
+326,
+337,
+350,
+355,
+356,
+357,
+358,
+374
+]
+},
+"packages/translate/src/protocols/openai-responses/as-source/programmatic-tooling.ts": {
+"comments": [],
+"decls": [],
+"defenses": []
+},
+"packages/translate/src/protocols/openai-responses/as-source/round-trip.ts": {
+"comments": [],
+"decls": [],
+"defenses": []
+},
+"packages/translate/src/protocols/openai-responses/as-source/sse-to.ts": {
+"comments": [
+56,
+324,
+325,
+355,
+513
+],
+"decls": [
+[
+50,
+"type OpenAIResponsesSSEOutputOptions = RoundTripOutputOptions<'openaiResponses'>;"
+],
+[
+55,
+"type IRToolCallItem = Extract<IROutputItem, { type: 'function_call' | 'custom_tool_call' }"
+],
+[
+63,
+"type MessagePart = IROutputMessageItem['content'][number];"
+],
+[
+71,
+"const initializedType = (value: unknown): IROutputItem['type'] | MessagePart['type'] | und"
+],
+[
+94,
+"const isIRTokenLogprob = (value: unknown): value is IROutputTokenLogprob =>"
+],
+[
+251,
+"const convertAnnotation = (coordinateIndex: () => TextCoordinateIndex, annotation: IROutpu"
+],
+[
+476,
+"const openReasoningUnit = (unit: ResponsesOutputUnit, item: IROutputItem, outputIndex: num"
+],
+[
+499,
+"const restored = added;"
+],
+[
+820,
+"const nativeOutput = outputUnits.map(unit => outputItem(state, unit));"
+]
+],
+"defenses": [
+327,
+330,
+334,
+337,
+636,
+777,
+785
+]
+},
+"packages/translate/src/protocols/openai-responses/as-source/usage.ts": {
+"comments": [],
+"decls": [
+[
+8,
+"export const usageFromIR = (usage: IROutputUsage): OpenAIResponsesUsage => {"
+],
+[
+9,
+"const count = (key: keyof IROutputUsage): number | undefined => usage[key] === undefined ?"
+]
+],
+"defenses": [
+9
+]
+},
+"packages/translate/src/protocols/openai-responses/as-target.ts": {
+"comments": [
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+27,
+28
+],
+"decls": [
+[
+7,
+"type ResponsesResolvedTurn = readonly CanonicalOpenAIResponsesInputItem[];"
+],
+[
+9,
+"const callsOf = (turn: ResponsesResolvedTurn): readonly PendingCall[] =>"
+],
+[
+21,
+"export const openaiResponsesTargetProtocol: TargetProtocol<"
+]
+],
+"defenses": [
+10
+]
+},
+"packages/translate/src/protocols/openai-responses/as-target/input-from.ts": {
+"comments": [
+46,
+47,
+56,
+57,
+66,
+67,
+68,
+84,
+103,
+104,
+105,
+117,
+118,
+125,
+126,
+127,
+142,
+143,
+144,
+153,
+154,
+155,
+165,
+166,
+167,
+168,
+193,
+194,
+195,
+196,
+197,
+198,
+199,
+200,
+224,
+225,
+232,
+233,
+246,
+247,
+248,
+249,
+250,
+251,
+252,
+260,
+261,
+271,
+272,
+273,
+303,
+304,
+305
+],
+"decls": [
+[
+27,
+"const inputContent = (media: IRInputMedia, detail?: string | null): OpenAIResponsesInputCo"
+],
+[
+38,
+"const fileContent = (media: IRInputMedia, filename?: string | null): OpenAIResponsesInputC"
+],
+[
+39,
+"const name = filename == null ? {} : { filename };"
+],
+[
+58,
+"const toolResultOutput = (output: string | readonly IRInputToolResultContentPart[]): strin"
+],
+[
+69,
+"const userContent = (item: Extract<IRInputClientItem, { type: 'message' }>): OpenAIRespons"
+],
+[
+78,
+"const assistantItems = (items: readonly IRInputAddressedAssistantItem[]): CanonicalOpenAIR"
+],
+[
+114,
+"const userItems = (items: readonly IRInputAddressedClientItem[]): CanonicalOpenAIResponses"
+],
+[
+119,
+"const content = item.content.length === 1"
+],
+[
+134,
+"const output = toolResultOutput(item.output);"
+],
+[
+145,
+"const isHoistablePrompt = (entry: IRInputClientItem): entry is IRInputSystemMessageItem =>"
+],
+[
+148,
+"export const openaiResponsesConversationFromIR = ("
+],
+[
+152,
+"const instructions: string[] = [];"
+],
+[
+158,
+"const input = turns.flatMap(item => {"
+],
+[
+169,
+"const parts = entry.content.filter(part => part.text !== '');"
+],
+[
+188,
+"const requireSchema = (format: IRInputOutputFormat): Readonly<Record<string, unknown>> => "
+],
+[
+201,
+"const normalizeParameters = (schema: Readonly<Record<string, unknown>> | undefined): Recor"
+],
+[
+202,
+"const target: Record<string, unknown> = schema === undefined ? { type: 'object' } : { ...s"
+],
+[
+206,
+"const toolFromIR = (tool: IRInputTool): OpenAIResponsesTool => {"
+],
+[
+230,
+"const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<CanonicalOpenAIResponses"
+],
+[
+253,
+"export const openaiResponsesHeaderFromIR = (request: IRInputRequest): Omit<CanonicalOpenAI"
+],
+[
+255,
+"const tools = irInputToolsForChoice(request.tools, request.tool_choice);"
+],
+[
+256,
+"const choice = irInputToolChoiceForTools(request.tool_choice, tools);"
+],
+[
+268,
+"export const openaiResponsesSettingsFromIR = (settings: IRInputSettings): Partial<Canonica"
+],
+[
+269,
+"const ceiling = settings.max_output_tokens;"
+],
+[
+270,
+"const format = settings.output_format;"
+],
+[
+274,
+"const reasoningEffort = settings.reasoning_budget !== undefined"
+]
+],
+"defenses": [
+34,
+50,
+74,
+85,
+94,
+95,
+96,
+106,
+189,
+202,
+203,
+211,
+212,
+222,
+226,
+263,
+264,
+274,
+279,
+280,
+281,
+282,
+283,
+284,
+285,
+286,
+288,
+289,
+292,
+293,
+294,
+298,
+299,
+306,
+308,
+309
+]
+},
+"packages/translate/src/protocols/openai-responses/as-target/segmented-request.ts": {
+"comments": [
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+23,
+24,
+33,
+34
+],
+"decls": [
+[
+17,
+"export const openaiResponsesPayloadFromSegments = <Restored extends readonly CanonicalOpen"
+],
+[
+22,
+"const input: CanonicalOpenAIResponsesInputItem[] = [];"
+],
+[
+28,
+"const segment = openaiResponsesConversationFromIR(piece.turns, piece.leading);"
+]
+],
+"defenses": [
+29,
+38
+]
+},
+"packages/translate/src/protocols/openai-responses/as-target/sse-from.ts": {
+"comments": [
+127
+],
+"decls": [
+[
+101,
+"const annotationToIR = (coordinateIndex: () => TextCoordinateIndex, annotation: OpenAIResp"
+]
+],
+"defenses": [
+136,
+138
+]
+},
+"packages/translate/src/protocols/openai-responses/as-target/usage.ts": {
+"comments": [],
+"decls": [
+[
+21,
+"export const usageToIR = (usage: OpenAIResponsesUsageFields): IROutputUsage => {"
+],
+[
+22,
+"const result: Partial<Record<keyof IROutputUsage, number>> = {};"
+],
+[
+23,
+"const put = (key: keyof IROutputUsage, value: number | undefined | null): void => { if (va"
+]
+],
+"defenses": []
+},
+"packages/translate/src/protocols/openai-responses/canonicalize-payload.ts": {
+"comments": [],
+"decls": [],
+"defenses": []
+},
+"packages/translate/src/protocols/routes.ts": {
+"comments": [
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17
+],
+"decls": [
+[
+19,
+"export const routeAnthropicMessagesViaOpenAIChatCompletions ="
+],
+[
+22,
+"export const routeAnthropicMessagesViaOpenAIResponses ="
+],
+[
+25,
+"export const routeGeminiGenerateContentViaAnthropicMessages ="
+],
+[
+28,
+"export const routeGeminiGenerateContentViaOpenAIChatCompletions ="
+],
+[
+31,
+"export const routeGeminiGenerateContentViaOpenAIResponses ="
+],
+[
+34,
+"export const routeOpenAIChatCompletionsViaAnthropicMessages ="
+],
+[
+37,
+"export const routeOpenAIChatCompletionsViaOpenAIResponses ="
+],
+[
+40,
+"export const routeOpenAIResponsesViaAnthropicMessages ="
+],
+[
+43,
+"export const routeOpenAIResponsesViaOpenAIChatCompletions ="
+]
+],
+"defenses": []
+},
+"packages/translate/src/round-trip/reference/assistant-turn.ts": {
+"comments": [],
+"decls": [],
+"defenses": []
+},
+"packages/translate/src/round-trip/reference/reference-builder.ts": {
+"comments": [],
+"decls": [],
+"defenses": [
+86
+]
+},
+"packages/translate/src/round-trip/reference/reference-selection.ts": {
+"comments": [],
+"decls": [],
+"defenses": []
+},
+"packages/translate/src/round-trip/resolve.ts": {
+"comments": [
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21
+],
+"decls": [
+[
+37,
+"const sidecar = await decodeRoundTripSidecar(codec, candidate.data);"
+]
+],
+"defenses": [
+38,
+42
+]
+},
+"packages/translate/src/round-trip/sidecar.ts": {
+"comments": [
+75,
+76
+],
+"decls": [
+[
+56,
+"export const decodeRoundTripSidecar = async (codec: SidecarCodec, data: string): Promise<A"
+],
+[
+77,
+"export const hasRoundTripTarget = <Target extends RoundTripProtocol>(sidecar: AnyRoundTrip"
+]
+],
+"defenses": [
+77
+]
+},
+"packages/translate/src/round-trip/source-assistant-turn.ts": {
+"comments": [
+6,
+7,
+8,
+9,
+10,
+11,
+12
+],
+"decls": [
+[
+13,
+"export interface SourceAssistantTurnByProtocol {"
+],
+[
+20,
+"export type SourceAssistantTurnFor<Protocol extends keyof SourceAssistantTurnByProtocol> ="
+]
+],
+"defenses": []
+},
+"packages/translate/src/round-trip/turn-digest.ts": {
+"comments": [],
+"decls": [],
+"defenses": []
+},
+"packages/translate/src/shared/api-error.ts": {
+"comments": [
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+45,
+46,
+47,
+48,
+49,
+50,
+51,
+52,
+65,
+67
+],
+"decls": [
+[
+5,
+"const recordOf = (value: unknown): Readonly<Record<string, unknown>> | undefined =>"
+],
+[
+8,
+"const stringOf = (value: unknown): string | undefined => typeof value === 'string' ? value"
+],
+[
+22,
+"export const irErrorPayloadFromBody = (upstream: TranslatedApiError): IRErrorPayload | und"
+],
+[
+23,
+"const text = new TextDecoder().decode(upstream.body);"
+],
+[
+31,
+"const nested = recordOf(parsed.error);"
+],
+[
+32,
+"const error = nested ?? parsed;"
+],
+[
+33,
+"const message = stringOf(error.message) ?? stringOf(error.msg);"
+],
+[
+35,
+"const type = stringOf(error.type);"
+],
+[
+36,
+"const code = stringOf(error.code) ?? stringOf(error.status);"
+],
+[
+53,
+"export const restateError = ("
+],
+[
+63,
+"const restatedHeaders = (headers: Headers): Headers => {"
+],
+[
+64,
+"const kept = new Headers(headers);"
+]
+],
+"defenses": [
+6,
+27,
+32,
+33,
+34,
+36,
+40,
+41,
+58
+]
+},
+"packages/translate/src/shared/call-ids.ts": {
+"comments": [
+4,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+33,
+34,
+55,
+56
+],
+"decls": [
+[
+5,
+"export interface PendingCall {"
+],
+[
+23,
+"export const assignCallIds = <Restored>("
+],
+[
+27,
+"const pending: PendingCall[] = [];"
+],
+[
+29,
+"const allocate = (name: string): string => {"
+],
+[
+35,
+"const takePending = (name: string | undefined): PendingCall => {"
+],
+[
+36,
+"const index = name === undefined ? 0 : pending.findIndex(call => call.name === name);"
+],
+[
+49,
+"const items: IRInputAddressedClientItem[] = [];"
+],
+[
+57,
+"const stated = item.call_id;"
+],
+[
+59,
+"const index = pending.findIndex(call => call.callId === stated);"
+],
+[
+68,
+"const items: IRInputAddressedAssistantItem[] = piece.items.map(item => {"
+],
+[
+70,
+"const callId = item.call_id ?? allocate(item.name);"
+]
+],
+"defenses": [
+36,
+37,
+39,
+58,
+70
+]
+},
+"packages/translate/src/shared/flat-names.ts": {
+"comments": [
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+22,
+23,
+24,
+25,
+26,
+27,
+28,
+45
+],
+"decls": [
+[
+17,
+"export interface FlatNameRequest {"
+],
+[
+29,
+"export const assignFlatNames = <T extends FlatNameRequest>("
+],
+[
+33,
+"const taken = new Set(reserved);"
+],
+[
+34,
+"const nextSuffixes = new Map<string, number>();"
+],
+[
+35,
+"const assigned = new Map<string, string>();"
+],
+[
+37,
+"const key = `${namespace}.${name}`;"
+],
+[
+39,
+"const scope = `${namespace.slice(0, 64)}_`.slice(0, 64);"
+],
+[
+40,
+"const base = `${scope}${name.slice(0, 64 - scope.length)}`.replaceAll(/[^a-zA-Z0-9_-]/g, '"
+],
+[
+42,
+"const ending = suffix === 1 ? '' : `_${suffix}`;"
+],
+[
+43,
+"const prefix = base.slice(0, 64 - ending.length);"
+],
+[
+46,
+"const cursor = `${ending.length}:${prefix}`;"
+],
+[
+47,
+"const next = nextSuffixes.get(cursor);"
+],
+[
+51,
+"const candidate = `${prefix}${ending}`;"
+]
+],
+"defenses": [
+48
+]
+},
+"packages/translate/src/shared/flatten-request.ts": {
+"comments": [
+6,
+12,
+17,
+18,
+19,
+20,
+21,
+22,
+23,
+36,
+37,
+49,
+50,
+51,
+52,
+53,
+54,
+55,
+56,
+57,
+64
+],
+"decls": [
+[
+7,
+"export interface FlatCallContext {"
+],
+[
+13,
+"const customNamesOf = (request: IRInputRequest): ReadonlySet<string> =>"
+],
+[
+24,
+"const flatNamesOf = ("
+],
+[
+28,
+"const calls = turns.flatMap(turn => turn.items.flatMap(item =>"
+],
+[
+30,
+"const reserved = new Set(["
+],
+[
+34,
+"const grouped = ["
+],
+[
+40,
+"const flat = assignFlatNames(grouped, reserved);"
+],
+[
+41,
+"const identities = new Map<string, { readonly namespace: string; readonly name: string }>("
+],
+[
+43,
+"const flatName = flat.get(`${namespace}.${name}`);"
+],
+[
+58,
+"export const flattenRequestNames = <Restored>("
+],
+[
+62,
+"const turns = pieces.flatMap(piece => piece.kind === 'resolved' ? [] : [piece]);"
+],
+[
+67,
+"const nameOf = (namespace: string | undefined, name: string): string =>"
+],
+[
+69,
+"const flattenTool = (tool: IRInputTool): IRInputTool => {"
+],
+[
+73,
+"const flattenSelection = (selection: IRInputToolSelection): IRInputToolSelection => ({"
+],
+[
+77,
+"const flattenChoice = (choice: IRInputToolChoice): IRInputToolChoice => typeof choice === "
+],
+[
+80,
+"const flattenedRequest: IRInputRequest = {"
+]
+],
+"defenses": [
+14,
+29,
+31,
+32,
+35,
+38,
+44,
+63,
+68,
+77,
+82,
+83,
+93
+]
+},
+"packages/translate/src/shared/json/object.ts": {
+"comments": [],
+"decls": [],
+"defenses": []
+},
+"packages/translate/src/shared/reasoning-budget.ts": {
+"comments": [
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22
+],
+"decls": [
+[
+23,
+"export const reasoningEffortForBudget = (budget: number): string => {"
+]
+],
+"defenses": []
+},
+"packages/translate/src/shared/text-coordinate-index.ts": {
+"comments": [],
+"decls": [],
+"defenses": [
+144,
+148
+]
+},
+"packages/translate/src/types.ts": {
+"comments": [
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+30,
+31,
+49,
+50,
+51,
+52,
+53,
+54,
+55,
+56,
+57,
+58,
+64,
+70,
+71,
+72,
+73,
+74,
+83,
+84,
+86,
+87,
+88,
+95,
+96,
+97,
+98,
+99,
+100,
+101,
+102
+],
+"decls": [
+[
+28,
+"export interface TranslateOptions {"
+],
+[
+59,
+"export type SourceProtocolErrorWriter = (upstream: TranslatedApiError) => TranslatedApiErr"
+],
+[
+90,
+"export type TranslateTrip<SrcPayload, SrcEvent, TgtPayload extends { model: string }, TgtE"
+],
+[
+103,
+"export class TranslatorInputError extends Error {"
+]
+],
+"defenses": [
+110,
+111
+]
+}
+}

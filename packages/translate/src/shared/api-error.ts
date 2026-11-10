@@ -34,11 +34,16 @@ export const irErrorPayloadFromBody = (upstream: TranslatedApiError): IRErrorPay
   if (message === undefined) return undefined;
   const type = stringOf(error.type);
   const code = stringOf(error.code) ?? stringOf(error.status);
+  // `param` names the request field the failure is about, and a client that
+  // retries reads it. It is stated here so the pre-stream envelope and the
+  // mid-stream one agree.
+  const param = stringOf(error.param);
 
   return {
     message,
     ...(type === undefined ? {} : { type }),
     ...(code === undefined ? {} : { code }),
+    ...(param === undefined ? {} : { param }),
   };
 };
 
