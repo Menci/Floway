@@ -1,12 +1,12 @@
 import { createIRCollector, type IRCollector } from './collector.ts';
 import { irItemPath, irPartPath, irPathKey, irUnitPath } from './operation-paths.ts';
-import type { IRErrorPayload, IROutputUsage, IRValue } from './types.ts';
+import type { IRErrorPayload, IROutputUsage, IROutputValue } from './types.ts';
 
 export type IRPath = readonly (string | number)[];
 export type IRWrite = Readonly<
-  | { type: 'write'; kind: 'initialize'; path: IRPath; value: IRValue }
-  | { type: 'write'; kind: 'assign'; path: IRPath; value: IRValue }
-  | { type: 'write'; kind: 'append'; path: IRPath; value: string; referencePieceIds?: readonly number[] }>;
+  | { type: 'write'; kind: 'initialize'; path: IRPath; value: IROutputValue }
+  | { type: 'write'; kind: 'assign'; path: IRPath; value: IROutputValue }
+  | { type: 'write'; kind: 'append'; path: IRPath; value: string; textFragmentIds?: readonly number[] }>;
 export type IREvent = Readonly<
   | { type: 'start'; id?: string; created?: number }
   | { type: 'item_end'; choice: number; item: number; status?: 'completed' | 'incomplete' }
@@ -22,11 +22,11 @@ export type IRRelativePath = string | number | IRPath;
 export interface IRWriteHandle {
   readonly path: IRPath;
   readonly index: number;
-  append: (path: IRRelativePath, value: string, referencePieceIds?: readonly number[]) => void;
+  append: (path: IRRelativePath, value: string, textFragmentIds?: readonly number[]) => void;
   assign: (path: IRRelativePath, value: unknown) => void;
   initialize: (path: IRRelativePath, value: unknown) => void;
   ensure: (path: IRRelativePath, initialValue: unknown) => void;
-  resolve: (path: IRRelativePath) => IRPath;
+  absolutePath: (path: IRRelativePath) => IRPath;
   // Snapshot reconciliation needs the value accumulated from earlier upstream events.
   current: <T = unknown>(path: IRRelativePath) => T | undefined;
 }
@@ -74,21 +74,21 @@ export const createIRBuilder = () => {
     if (typeof value !== 'object' || value === null) return;
     for (const [key, child] of Object.entries(value)) remember([...path, Array.isArray(value) ? Number(key) : key], child);
   };
-  const write = (value: IRWrite): void => { if (collector.apply(value)) records.push(value); };
+  const write = (value: IRWrite): void => { if (collector.applyWrite(value)) records.push(value); };
   const assign = (path: IRPath, value: unknown): void => {
-    write({ type: 'write', kind: 'assign', path, value: value as IRValue });
+    write({ type: 'write', kind: 'assign', path, value: value as IROutputValue });
     remember(path, value);
   };
   const initialize = (path: IRPath, value: unknown): void => {
-    write({ type: 'write', kind: 'initialize', path, value: value as IRValue });
+    write({ type: 'write', kind: 'initialize', path, value: value as IROutputValue });
     remember(path, value);
   };
-  const append = (path: IRPath, value: string, referencePieceIds?: readonly number[]): void => write({
+  const append = (path: IRPath, value: string, textFragmentIds?: readonly number[]): void => write({
     type: 'write',
     kind: 'append',
     path,
     value,
-    ...(referencePieceIds === undefined ? {} : { referencePieceIds: [...referencePieceIds] }),
+    ...(textFragmentIds === undefined ? {} : { textFragmentIds: [...textFragmentIds] }),
   });
   const event = (value: IREvent): void => { collector.applyEvent(value); records.push(value); };
   const drain = (): readonly IRRecord[] => { const drained = records; records = []; return drained; };
@@ -96,7 +96,7 @@ export const createIRBuilder = () => {
   const writeHandle = (path: IRPath, index: number): IRWriteHandle => ({
     path,
     index,
-    append: (subpath, value, referencePieceIds) => append(relativePath(path, subpath), value, referencePieceIds),
+    append: (subpath, value, textFragmentIds) => append(relativePath(path, subpath), value, textFragmentIds),
     assign: (subpath, value) => assign(relativePath(path, subpath), value),
     initialize: (subpath, value) => initialize(relativePath(path, subpath), value),
     ensure: (subpath, initialValue) => {
@@ -104,7 +104,7 @@ export const createIRBuilder = () => {
       if (initialized.has(irPathKey(target))) return;
       initialize(target, initialValue);
     },
-    resolve: subpath => relativePath(path, subpath),
+    absolutePath: subpath => relativePath(path, subpath),
     current: subpath => collector.value(relativePath(path, subpath)),
   });
   // Usage arrives as cumulative snapshots, so each reported field replaces the previous one.
@@ -193,7 +193,7 @@ export const consumeIRRecords = async function* (records: AsyncIterable<IRRecord
   for await (const record of records) {
     if (finished) throw new Error('output IR record arrived after finish');
     if (record.type === 'write') {
-      collector.apply(record);
+      collector.applyWrite(record);
     } else {
       if (record.type === 'start') {
         if (started) throw new Error('Duplicate output IR start');

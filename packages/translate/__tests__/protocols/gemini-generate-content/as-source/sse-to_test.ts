@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import { createIRBuilder } from '../../../../src/ir/output/stream.ts';
 import { geminiGenerateContentFromIR } from '../../../../src/protocols/gemini-generate-content/as-source/sse-to.ts';
-import { appendField, collectContentViews, createReferenceBuilder, createFieldState, createReferenceFinalizer } from '../../../../src/round-trip/reference/reference-builder.ts';
+import { appendField, collectEmittedFieldPlacements, createReferenceBuilder, createFieldState, createFieldReferencer } from '../../../../src/round-trip/reference/reference-builder.ts';
 import { type RoundTripWriter } from '../../../../src/round-trip/stream.ts';
 
 test('resolves delayed Gemini audio atoms within the complete emitted data field', async () => {
@@ -14,7 +14,7 @@ test('resolves delayed Gemini audio atoms within the complete emitted data field
   source.assign(['model'], 'model');
   source.event({ type: 'start', id: 'response' });
   const message = source.item(0, { type: 'message', content: [] });
-  const audio = message.part({ type: 'audio', audio: { data: '', mime_type: 'audio/wav' } });
+  const audio = message.part({ type: 'audio', audio: { data: '', media_type: 'audio/wav' } });
   audio.append(['audio', 'data'], 'Y');
   audio.append(['audio', 'data'], 'Q==', [partId]);
   audio.end();
@@ -24,11 +24,11 @@ test('resolves delayed Gemini audio atoms within the complete emitted data field
   let prepared = false;
   const roundTrip: RoundTripWriter<'geminiGenerateContent'> = {
     builder: references,
-    prepareSidecar: async (_choice, _check, turn, state, textViews) => {
-      const views = collectContentViews(turn, state, textViews);
-      expect([...views.values()]).toEqual([{ text: 'YQ==', offset: 0 }]);
-      const finalizer = createReferenceFinalizer(references, views);
-      expect(await finalizer.finalizeField('Q==', field)).toMatchObject({ parts: [[0, 1, 4]] });
+    prepareSidecar: async (_choice, _check, turn, state, textPlacements) => {
+      const views = collectEmittedFieldPlacements(turn, state, textPlacements);
+      expect([...views.values()]).toEqual([{ enclosingText: 'YQ==', offset: 0 }]);
+      const finalizer = createFieldReferencer(references, views);
+      expect(await finalizer.referenceField('Q==', field)).toMatchObject({ parts: [[0, 1, 4]] });
       prepared = true;
       return 'sidecar';
     },
@@ -53,11 +53,11 @@ test.each(['{"x":1,}', '{"x": 1}'])('tracks the emitted canonical JSON view with
   let prepared = false;
   const roundTrip: RoundTripWriter<'geminiGenerateContent'> = {
     builder: references,
-    prepareSidecar: async (_choice, _check, turn, state, textViews) => {
-      const views = collectContentViews(turn, state, textViews);
-      expect([...views.values()]).toContainEqual({ text: '{"x":1}', offset: 0 });
-      const finalizer = createReferenceFinalizer(references, views);
-      expect(await finalizer.finalizeField(original, field)).toBe(original);
+    prepareSidecar: async (_choice, _check, turn, state, textPlacements) => {
+      const views = collectEmittedFieldPlacements(turn, state, textPlacements);
+      expect([...views.values()]).toContainEqual({ enclosingText: '{"x":1}', offset: 0 });
+      const finalizer = createFieldReferencer(references, views);
+      expect(await finalizer.referenceField(original, field)).toBe(original);
       prepared = true;
       return 'sidecar';
     },

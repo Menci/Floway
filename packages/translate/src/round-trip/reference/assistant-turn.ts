@@ -60,7 +60,7 @@ interface AssistantTurnStateByProtocol<States extends ReferenceStateLeaves> {
   geminiGenerateContent: GeminiGenerateContentAssistantState<States>;
 }
 
-export type ReferenceableAssistantTurnFor<Protocol extends keyof ReferenceableAssistantTurnByProtocol<Reference>, Reference> = ReferenceableAssistantTurnByProtocol<Reference>[Protocol];
-export type AssistantTurnStateFor<Protocol extends keyof AssistantTurnStateByProtocol<States>, States extends ReferenceStateLeaves> = AssistantTurnStateByProtocol<States>[Protocol];
+export type ReferenceableInputAssistantTurnFor<Protocol extends keyof ReferenceableAssistantTurnByProtocol<Reference>, Reference> = ReferenceableAssistantTurnByProtocol<Reference>[Protocol];
+export type InputAssistantTurnStateFor<Protocol extends keyof AssistantTurnStateByProtocol<States>, States extends ReferenceStateLeaves> = AssistantTurnStateByProtocol<States>[Protocol];
 
 export type ReplayContent = string | IRJSONObject;

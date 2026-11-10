@@ -1,5 +1,5 @@
 import { consumeIRRecords, createIRBuilder, type IRRecord } from '../../src/ir/output/stream.ts';
-import type { IR, IROutputItem } from '../../src/ir/output/types.ts';
+import type { IROutput, IROutputItem } from '../../src/ir/output/types.ts';
 import { anthropicMessagesFromIR as anthropicMessagesFromIRProduction } from '../../src/protocols/anthropic-messages/as-source/sse-to.ts';
 import { irFromAnthropicMessages as irFromAnthropicMessagesProduction } from '../../src/protocols/anthropic-messages/as-target/sse-from.ts';
 import { geminiGenerateContentFromIR as geminiGenerateContentFromIRProduction } from '../../src/protocols/gemini-generate-content/as-source/sse-to.ts';
@@ -29,7 +29,7 @@ const writer = <Protocol extends 'anthropicMessages' | 'geminiGenerateContent' |
 const withoutProvenance = async function* (records: AsyncIterable<IRRecord>): AsyncGenerator<IRRecord> {
   for await (const record of records) {
     if (record.type === 'write' && record.kind === 'append') {
-      const { referencePieceIds: _referencePieceIds, ...operation } = record;
+      const { textFragmentIds: _referencePieceIds, ...operation } = record;
       yield operation;
     } else yield record;
   }
@@ -71,7 +71,7 @@ export const completeIR = (value: readonly IROutputItem[]): IRRecord[] => {
           b.append([...partPath, 'refusal'], part.refusal);
         } else if (part.type === 'image') b.initialize(partPath, part);
         else {
-          b.initialize(partPath, { type: 'audio', audio: { ...(part.audio.mime_type === undefined ? {} : { mime_type: part.audio.mime_type }) } });
+          b.initialize(partPath, { type: 'audio', audio: { ...(part.audio.media_type === undefined ? {} : { media_type: part.audio.media_type }) } });
           for (const field of ['data', 'transcript'] as const) if (part.audio[field] !== undefined) {
             const value = part.audio[field];
             if (value === undefined) continue;
@@ -99,8 +99,8 @@ export const completeIR = (value: readonly IROutputItem[]): IRRecord[] => {
   return [...b.drain()];
 };
 
-export const collectIR = async (records: AsyncIterable<IRRecord>): Promise<IR> => {
-  let state: IR = { choices: [] };
+export const collectIR = async (records: AsyncIterable<IRRecord>): Promise<IROutput> => {
+  let state: IROutput = { choices: [] };
   for await (const value of consumeIRRecords(records)) {
     state = value.collector.state;
     if (value.record.type === 'error') throw new Error('output IR generation failed', { cause: value.record.error });

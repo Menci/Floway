@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { translateSourceEventsFor } from '../../../src/protocols/composition.ts';
+import { buildSourceEventsFor } from '../../../src/protocols/composition.ts';
 import { structuredResponsesFixture } from '../../ir/responses-fixture.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import { emptyPayload, pairs } from '../composition-helpers.ts';
@@ -10,7 +10,7 @@ import { openaiResponsesResultToEvents, type OpenAIResponsesResultEx, type OpenA
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const codec = createTestSidecarCodec();
-const translate = (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>) => translateSourceEventsFor(
+const translate = (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>) => buildSourceEventsFor(
   pairs.messagesToResponses[0], pairs.messagesToResponses[1], emptyPayload.messages, { sidecarCodec: codec }, frames,
 );
 

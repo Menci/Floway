@@ -34,7 +34,7 @@ export const createIRUnitQueue = <T extends IRQueuedUnit<T>>() => {
       tail = unit;
     },
     // Removes the head unit, which the caller has just opened or discarded.
-    dequeue: (): void => {
+    dropHead: (): void => {
       const unit = head!;
       head = unit.nextPending;
       unit.nextPending = undefined;

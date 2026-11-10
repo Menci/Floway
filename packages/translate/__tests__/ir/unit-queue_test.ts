@@ -11,9 +11,9 @@ test('unit queue dequeues units in the order they were enqueued', () => {
   queue.enqueue(a);
   queue.enqueue(b);
   expect(queue.head).toBe(a);
-  queue.dequeue();
+  queue.dropHead();
   expect(queue.head).toBe(b);
-  queue.dequeue();
+  queue.dropHead();
   expect(queue.head).toBeUndefined();
   const c = { name: 'c' };
   queue.enqueue(c);

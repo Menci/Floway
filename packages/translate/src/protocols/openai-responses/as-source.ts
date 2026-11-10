@@ -1,5 +1,5 @@
 import type { SourceProtocol } from '../composition.ts';
-import { openaiResponsesErrorWriter } from './as-source/error-body.ts';
+import { restateOpenAIResponsesError } from './as-source/error-body.ts';
 import { openaiResponsesRead } from './as-source/input-to.ts';
 import { createRandomOpenAIResponsesResponseId } from './as-source/response-id.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from './as-source/round-trip.ts';
@@ -17,12 +17,12 @@ export const openaiResponsesSourceProtocol: SourceProtocol<
 > = {
   name: 'openaiResponses',
   read: openaiResponsesRead,
-  roundTrip: {
+  sidecarRecognition: {
     inspect: findOpenAIResponsesSidecarCarriers,
     verify: verifyOpenAIResponsesTurnDigest,
     collectCandidates: collectOpenAIResponsesReplayContents,
   },
-  writeError: openaiResponsesErrorWriter,
+  restateUpstreamError: restateOpenAIResponsesError,
   writeStream: (payload, records, roundTrip) => {
     // A response id names the upstream response, so one is minted per trip.
     const responseId = createRandomOpenAIResponsesResponseId();

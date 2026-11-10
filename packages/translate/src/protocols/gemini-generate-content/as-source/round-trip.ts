@@ -1,6 +1,6 @@
 import type { IRJSONObject } from '../../../ir/output/types.ts';
 import type { ReplayContent } from '../../../round-trip/reference/assistant-turn.ts';
-import type { EncodedRoundTripSidecar } from '../../../round-trip/resolve.ts';
+import type { SidecarCarrier } from '../../../round-trip/resolve.ts';
 import { collectTextGroups, collectTextPlacementIndex, type TextContribution, type TextPlacementIndex } from '../../../round-trip/text-groups.ts';
 import { computeRoundTripTurnDigest, verifyRoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
 import type { RoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
@@ -36,7 +36,7 @@ const geminiTurnDigestMaterialV1 = (turn: GeminiGenerateContentAssistantTurn): I
   return { contents };
 };
 
-export const findGeminiGenerateContentSidecarCarriers = (turn: GeminiGenerateContentAssistantTurn): EncodedRoundTripSidecar<GeminiGenerateContentAssistantTurn>[] =>
+export const findGeminiGenerateContentSidecarCarriers = (turn: GeminiGenerateContentAssistantTurn): SidecarCarrier<GeminiGenerateContentAssistantTurn>[] =>
   turn.flatMap((content, contentIndex) => {
     const nativeParts = content.parts;
     return nativeParts?.flatMap((part, partIndex) => typeof part.thoughtSignature !== 'string' ? [] : [{

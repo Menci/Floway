@@ -1,20 +1,20 @@
-import { ContentReference, type AssistantTurnStateFor, type ContentReferenceSegment, type ReferenceableAssistantTurnFor } from './assistant-turn.ts';
-import { createReferenceFinalizer, isFieldState, pairedChildren, type FieldState, type FieldStates, type ReferenceBuilder } from './reference-builder.ts';
+import { ContentReference, type InputAssistantTurnStateFor, type ContentReferenceSegment, type ReferenceableInputAssistantTurnFor } from './assistant-turn.ts';
+import { createFieldReferencer, isFieldState, pairedChildren, type ReadFieldState, type ReadFieldStates, type ReferenceBuilder } from './reference-builder.ts';
 import type { IRJSONObject } from '../../ir/output/types.ts';
 import { requireJSONObject } from '../../shared/json/object.ts';
 import { rawJSON } from '../../shared/json/raw-json.ts';
-import type { AssistantTurnByProtocol, AssistantTurnFor } from '../assistant-turn.ts';
+import type { InputAssistantTurnByProtocol, InputAssistantTurnFor } from '../assistant-turn.ts';
 import type { TextPlacement } from '../text-groups.ts';
 
 type ContentId = number;
 
-interface FinalizedAssistantTurn<Turn> {
+interface ReferencedAssistantTurn<Turn> {
   readonly targetTurn: Turn;
   readonly referencedContentHashes?: Uint8Array[];
 }
 
 interface ReferenceChoice {
-  readonly field: FieldState;
+  readonly field: ReadFieldState;
   readonly reference: ContentReference;
   readonly hashes: number[];
   readonly savings: number;
@@ -43,13 +43,13 @@ const jsonLiteralBudget = (value: unknown, ancestors = new Set<object>()): numbe
   return budget;
 };
 
-export const finalizeAssistantTurnReferences = async <Protocol extends keyof AssistantTurnByProtocol>(
-  turn: AssistantTurnFor<Protocol>,
-  fieldState: AssistantTurnStateFor<Protocol, FieldStates>,
+export const referenceAssistantTurn = async <Protocol extends keyof InputAssistantTurnByProtocol>(
+  turn: InputAssistantTurnFor<Protocol>,
+  fieldState: InputAssistantTurnStateFor<Protocol, ReadFieldStates>,
   builder: ReferenceBuilder,
-  contentViews: ReadonlyMap<ContentId, TextPlacement>,
-): Promise<FinalizedAssistantTurn<ReferenceableAssistantTurnFor<Protocol, ContentReference>>> => {
-  const finalizer = createReferenceFinalizer(builder, contentViews);
+  emittedFieldPlacements: ReadonlyMap<ContentId, TextPlacement>,
+): Promise<ReferencedAssistantTurn<ReferenceableInputAssistantTurnFor<Protocol, ContentReference>>> => {
+  const finalizer = createFieldReferencer(builder, emittedFieldPlacements);
   const minimumReferenceBudget = REFERENCE_OVERHEAD + 4;
   const choices: ReferenceChoice[] = [];
   const collect = async (value: unknown, state: unknown): Promise<void> => {
@@ -61,7 +61,7 @@ export const finalizeAssistantTurnReferences = async <Protocol extends keyof Ass
       } else original = requireJSONObject(value);
       const literalBudget = typeof original === 'string' ? original.length : jsonLiteralBudget(original);
       if (literalBudget <= minimumReferenceBudget) return;
-      const reference = await finalizer.finalizeField(original, state);
+      const reference = await finalizer.referenceField(original, state);
       if (reference instanceof ContentReference) {
         const savings = literalBudget - referenceBudget(reference);
         if (savings > 0) choices.push({ field: state, reference, hashes: [...new Set(reference.parts.map(part => Array.isArray(part) ? part[0] : part))], savings });
@@ -75,7 +75,7 @@ export const finalizeAssistantTurnReferences = async <Protocol extends keyof Ass
 
   const savingsByHash = finalizer.referencedContentHashes.map(() => 0);
   for (const choice of choices) for (const hash of choice.hashes) savingsByHash[hash] += choice.savings / choice.hashes.length;
-  const selected = new Map<FieldState, ContentReference>();
+  const selected = new Map<ReadFieldState, ContentReference>();
   const selectedHashes = new Set<number>();
   let savings = 0;
   for (const choice of choices) {
@@ -116,7 +116,7 @@ export const finalizeAssistantTurnReferences = async <Protocol extends keyof Ass
     for (const [key, childState] of Object.entries(state)) Reflect.set(result, key, visit(Reflect.get(value, key), childState));
     return result;
   };
-  const targetTurn = visit(turn, fieldState) as ReferenceableAssistantTurnFor<Protocol, ContentReference>;
+  const targetTurn = visit(turn, fieldState) as ReferenceableInputAssistantTurnFor<Protocol, ContentReference>;
   return {
     targetTurn,
     referencedContentHashes,

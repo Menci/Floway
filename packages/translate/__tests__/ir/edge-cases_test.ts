@@ -3,7 +3,7 @@ import { expect, test, vi } from 'vitest';
 import { anthropicMessagesFromIR, collectIR, collect, completeIR, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
 import { fixtureFrames, nativeResult } from './translation-cases.ts';
 import { createIRBuilder } from '../../src/ir/output/stream.ts';
-import { translateSourceEventsFor, buildTargetRequestFor } from '../../src/protocols/composition.ts';
+import { buildSourceEventsFor, buildTargetPayloadFor } from '../../src/protocols/composition.ts';
 import { irFromOpenAIChatCompletions as irFromOpenAIChatCompletionsProduction } from '../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
 import { emptyPayload, pairs } from '../protocols/composition-helpers.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
@@ -11,7 +11,7 @@ import { createRoundTripReaderCapture } from '../round-trip/test-helpers.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 
 const events = (pair: readonly [any, any], payload: any, codec: any) =>
-  (frames: AsyncIterable<any>) => translateSourceEventsFor(pair[0], pair[1], payload, { sidecarCodec: codec }, frames);
+  (frames: AsyncIterable<any>) => buildSourceEventsFor(pair[0], pair[1], payload, { sidecarCodec: codec }, frames);
 const messagesViaChat = (frames: AsyncIterable<any>, codec: any) => events(pairs.messagesToChat, emptyPayload.messages, codec)(frames);
 const messagesViaResponses = (frames: AsyncIterable<any>, codec: any) => events(pairs.messagesToResponses, emptyPayload.messages, codec)(frames);
 const generateContentViaChat = (frames: AsyncIterable<any>, codec: any) => events(pairs.geminiToChat, emptyPayload.gemini, codec)(frames);
@@ -19,16 +19,16 @@ const generateContentViaResponses = (frames: AsyncIterable<any>, codec: any) => 
 // The freeform tool names these cases restore come from the request's own
 // declarations, so a case that expects one states it there.
 const responsesViaMessages = (frames: AsyncIterable<any>, names: ReadonlySet<string>, codec: any) =>
-  translateSourceEventsFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], responsesPayload(names), { sidecarCodec: codec }, frames);
+  buildSourceEventsFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], responsesPayload(names), { sidecarCodec: codec }, frames);
 const responsesViaChat = (frames: AsyncIterable<any>, names: ReadonlySet<string>, codec: any) =>
-  translateSourceEventsFor(pairs.responsesToChat[0], pairs.responsesToChat[1], responsesPayload(names), { sidecarCodec: codec }, frames);
+  buildSourceEventsFor(pairs.responsesToChat[0], pairs.responsesToChat[1], responsesPayload(names), { sidecarCodec: codec }, frames);
 const responsesPayload = (names: ReadonlySet<string>) => ({
   ...emptyPayload.responses,
   tools: [...names].map(name => ({ type: 'custom' as const, name, description: '', format: { type: 'text' as const } })),
   tool_choice: 'auto' as const,
 });
 const messagesRequestViaChat = (payload: any, codec: any) =>
-  buildTargetRequestFor(pairs.messagesToChat[0], pairs.messagesToChat[1], payload, { sidecarCodec: codec });
+  buildTargetPayloadFor(pairs.messagesToChat[0], pairs.messagesToChat[1], payload, { sidecarCodec: codec });
 
 for (const [code, category] of [['bio_policy', 'bio'], ['cyber_policy', 'cyber']] as const) {
   test(`${code} becomes a structured Messages classifier refusal without invented body text`, async () => {
@@ -152,7 +152,7 @@ test('Messages and GenerateContent reject custom tool calls they cannot represen
 });
 
 test('writers omit output they cannot represent', async () => {
-  const image = completeIR([{ type: 'message', content: [{ type: 'text', text: 'before' }, { type: 'image', image: { data: 'aW1n', mime_type: 'image/png' } }] }]);
+  const image = completeIR([{ type: 'message', content: [{ type: 'text', text: 'before' }, { type: 'image', image: { data: 'aW1n', media_type: 'image/png' } }] }]);
   expect(JSON.stringify(await collect(anthropicMessagesFromIR(iterate(image))))).toContain('before');
   expect(JSON.stringify(await collect(openaiChatCompletionsFromIR(iterate(image))))).toContain('before');
 

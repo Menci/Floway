@@ -5,11 +5,11 @@ import type { IRCollector } from '../../../ir/output/collector.ts';
 import { irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/output/operation-paths.ts';
 import { createIROrdinalMapper } from '../../../ir/output/ordinal-mapper.ts';
 import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/output/stream.ts';
-import { IRAbsent, type IR, type IROutputItem, type IROutputMessageItem, type IROutputSourceCitation, type IROutputTokenLogprob } from '../../../ir/output/types.ts';
+import { IRAbsent, type IROutput, type IROutputItem, type IROutputMessageItem, type IROutputSourceCitation, type IROutputTokenLogprob } from '../../../ir/output/types.ts';
 import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/output/unit-queue.ts';
-import { appendContent, createContentState, type ContentState, type ContentStates } from '../../../round-trip/reference/reference-builder.ts';
+import { appendContent, createEmittedFieldState, type EmittedFieldState, type EmittedFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
-import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
+import type { SourceStreamOutputOptions } from '../../../round-trip/stream.ts';
 import { isCompleteJSONObject, parseJSONObjectAtCompletion } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantState } from '../as-target/assistant-turn.ts';
@@ -45,10 +45,10 @@ type ResponsesOutputUnit = ResponsesOutputUnitBase & (
   | { readonly kind: 'image' }
   | { readonly kind: 'message'; readonly contentState: ResponsesMessageState }
   | { readonly kind: 'reasoning'; readonly contentState: ResponsesReasoningState }
-  | { readonly kind: 'function_call' | 'custom_tool_call'; toolContentState?: ContentState<'text'> }
+  | { readonly kind: 'function_call' | 'custom_tool_call'; toolContentState?: EmittedFieldState<'text'> }
 );
 
-interface OpenAIResponsesSSEOutputOptions extends RoundTripOutputOptions<'openaiResponses'> {
+interface OpenAIResponsesSSEOutputOptions extends SourceStreamOutputOptions<'openaiResponses'> {
   /** The declarations the client asked with, echoed back on every response object. */
   echoedTools?: NonNullable<CanonicalOpenAIResponsesPayload['tools']>;
   echoedToolChoice?: NonNullable<CanonicalOpenAIResponsesPayload['tool_choice']>;
@@ -67,8 +67,8 @@ interface OpenedUnit {
 type ReasoningField = 'summary' | 'content';
 type MessagePart = IROutputMessageItem['content'][number];
 
-type ResponsesMessageState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>, ContentStates>;
-type ResponsesReasoningState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'reasoning' }>, ContentStates>;
+type ResponsesMessageState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>, EmittedFieldStates>;
+type ResponsesReasoningState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'reasoning' }>, EmittedFieldStates>;
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -172,7 +172,7 @@ const emptyContentPart = (type: 'text' | 'refusal'): OpenAIResponsesOutputConten
   : { type: 'refusal', refusal: '' };
 
 // The text or refusal part a message unit covers; other part kinds never join a message unit.
-const textOrRefusalPart = (state: IR, path: IRPath): Extract<MessagePart, { type: 'text' | 'refusal' }> => {
+const textOrRefusalPart = (state: IROutput, path: IRPath): Extract<MessagePart, { type: 'text' | 'refusal' }> => {
   const item = state.choices[0].items[path[3] as number];
   if (item.type !== 'message') throw new TypeError('Responses content unit requires a message item');
   const part = item.content[path[5] as number];
@@ -190,7 +190,7 @@ export const openaiResponsesFromIR = async function* (
   let sequence = 0;
   let finishReason: Extract<IRRecord, { type: 'choice_end' }>['finish_reason'] = 'stop';
   const outputUnits: ResponsesOutputUnit[] = [];
-  const nativeState: OpenAIResponsesOutputAssistantState<ContentStates> = [];
+  const nativeState: OpenAIResponsesOutputAssistantState<EmittedFieldStates> = [];
   const units = createIRUnitRegistry<ResponsesOutputUnit>();
   const messageUnits = new Map<number, ResponsesOutputUnit[]>();
   const logprobGroups = new Map<string, number>();
@@ -206,15 +206,15 @@ export const openaiResponsesFromIR = async function* (
     units.set(unit.path, unit);
   };
 
-  const appendUnitText = (unit: ResponsesOutputUnit, path: IRPath, text: string, referencePieceIds?: readonly number[]): void => {
-    let content: ContentState<'text'>;
+  const appendUnitText = (unit: ResponsesOutputUnit, path: IRPath, text: string, textFragmentIds?: readonly number[]): void => {
+    let content: EmittedFieldState<'text'>;
     if (unit.kind === 'message') {
       const index = unit.contentOrdinals.get(path.slice(0, 6));
       const parts = unit.contentState.content ??= [];
       const part = parts[index];
       const refusal = path.at(-1) === 'refusal';
       if (part === undefined) {
-        content = createContentState(options.roundTrip.builder, 'text');
+        content = createEmittedFieldState(options.roundTrip.builder, 'text');
         parts[index] = refusal ? { refusal: content } : { text: content };
       } else if (refusal) {
         if (!('refusal' in part) || part.refusal === undefined) throw new Error('Responses refusal state has the wrong kind');
@@ -229,17 +229,17 @@ export const openaiResponsesFromIR = async function* (
       if ((field !== 'summary' && field !== 'content') || typeof index !== 'number') throw new Error('Responses reasoning text requires a native part');
       const parts = unit.contentState[field] ??= [];
       const part = parts[index] ??= {};
-      content = part.text ??= createContentState(options.roundTrip.builder, 'text');
+      content = part.text ??= createEmittedFieldState(options.roundTrip.builder, 'text');
     } else if (unit.kind === 'function_call' || unit.kind === 'custom_tool_call') {
       if (unit.toolContentState === undefined) throw new Error('Responses tool text requires an opened native field');
       content = unit.toolContentState;
     } else return;
-    appendContent(options.roundTrip.builder, content, text, referencePieceIds);
+    appendContent(options.roundTrip.builder, content, text, textFragmentIds);
   };
 
   const appendPendingText = (unit: ResponsesOutputUnit, path: IRPath, text: string): void => {
     const key = irPathKey(path);
-    replayTextProvenance(text, unit.pendingText?.get(key) ?? [], (value, referencePieceIds) => appendUnitText(unit, path, value, referencePieceIds));
+    replayTextProvenance(text, unit.pendingText?.get(key) ?? [], (value, textFragmentIds) => appendUnitText(unit, path, value, textFragmentIds));
     unit.pendingText?.delete(key);
   };
 
@@ -289,7 +289,7 @@ export const openaiResponsesFromIR = async function* (
     return unit.outputIndex;
   };
 
-  const contentPart = (state: IR, unit: ResponsesOutputUnit, path: IRPath): OpenAIResponsesOutputRefusal | Required<OpenAIResponsesOutputText> => {
+  const contentPart = (state: IROutput, unit: ResponsesOutputUnit, path: IRPath): OpenAIResponsesOutputRefusal | Required<OpenAIResponsesOutputText> => {
     const part = textOrRefusalPart(state, path);
     if (part.type === 'refusal') return { type: 'refusal', refusal: part.refusal };
     const logprobGroup = logprobGroups.get(irPathKey(path));
@@ -302,7 +302,7 @@ export const openaiResponsesFromIR = async function* (
     return { type: 'output_text', text: part.text, annotations: convertAnnotations(unit, path, part), logprobs: [...logprobs] };
   };
 
-  const outputItem = (state: IR, unit: ResponsesOutputUnit): OpenAIResponsesOutputItemEx => {
+  const outputItem = (state: IROutput, unit: ResponsesOutputUnit): OpenAIResponsesOutputItemEx => {
     const itemIndex = unit.path[3];
     if (typeof itemIndex !== 'number') throw new TypeError('Responses output unit has no item index');
     const item = state.choices[0].items[itemIndex];
@@ -315,7 +315,7 @@ export const openaiResponsesFromIR = async function* (
       const part = item.content[unit.path[5] as number];
       if (part.type !== 'image') throw new TypeError('Responses image unit requires an image part');
       if (status !== 'completed') throw new TypeError('Responses image unit can only complete');
-      const outputFormat = part.image.mime_type === undefined ? undefined : IMAGE_OUTPUT_FORMATS[part.image.mime_type as keyof typeof IMAGE_OUTPUT_FORMATS];
+      const outputFormat = part.image.media_type === undefined ? undefined : IMAGE_OUTPUT_FORMATS[part.image.media_type as keyof typeof IMAGE_OUTPUT_FORMATS];
       return { type: 'image_generation_call', id, status, result: part.image.data, ...(outputFormat === undefined ? {} : { output_format: outputFormat }) };
     }
     if (unit.kind === 'reasoning') {
@@ -345,7 +345,7 @@ export const openaiResponsesFromIR = async function* (
     };
   };
 
-  const response = (state: IR, status: OpenAIResponsesResultEx['status'], usage: OpenAIResponsesResultEx['usage']): OpenAIResponsesResultEx => ({
+  const response = (state: IROutput, status: OpenAIResponsesResultEx['status'], usage: OpenAIResponsesResultEx['usage']): OpenAIResponsesResultEx => ({
     id: metadata.id,
     object: 'response',
     created_at: metadata.created,
@@ -365,7 +365,7 @@ export const openaiResponsesFromIR = async function* (
   });
 
   // Creates the output units that the output IR structures initialized by a record will become.
-  const registerUnits = (record: IRRecord, state: IR): void => {
+  const registerUnits = (record: IRRecord, state: IROutput): void => {
     if (record.type === 'write' && record.kind === 'initialize') {
       if (record.path[0] === 'choices' && record.path[1] !== 0) throw new Error('Responses cannot represent multiple choices');
       if (record.path.length === 4 && record.path[0] === 'choices' && record.path[2] === 'logprobs') {
@@ -434,7 +434,7 @@ export const openaiResponsesFromIR = async function* (
     }
   };
 
-  const openMessageUnit = (unit: ResponsesOutputUnit, state: IR, outputIndex: number): OpenedUnit => {
+  const openMessageUnit = (unit: ResponsesOutputUnit, state: IROutput, outputIndex: number): OpenedUnit => {
     const id = createRandomOpenAIResponsesItemId('message');
     unit.id = id;
     const followUps: OpenAIResponsesStreamEventEx[] = [];
@@ -518,7 +518,7 @@ export const openaiResponsesFromIR = async function* (
           ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
           arguments: '', status: 'in_progress',
         };
-    const content = createContentState(options.roundTrip.builder, 'text');
+    const content = createEmittedFieldState(options.roundTrip.builder, 'text');
     unit.toolContentState = content;
     nativeState[outputIndex] = added.type === 'custom_tool_call' ? { input: content } : { arguments: content };
     const followUps: OpenAIResponsesStreamEventEx[] = [];
@@ -532,7 +532,7 @@ export const openaiResponsesFromIR = async function* (
   };
 
   // Opens the waiting units in output IR order, until one still lacks what its opening event needs.
-  const openPendingUnits = (state: IR, collector: IRCollector): { events: OpenAIResponsesStreamEventEx[]; justOpened: Set<string> } => {
+  const openPendingUnits = (state: IROutput, collector: IRCollector): { events: OpenAIResponsesStreamEventEx[]; justOpened: Set<string> } => {
     const justOpened = new Set<string>();
     const pendingEvents: OpenAIResponsesStreamEventEx[] = [];
     while (pending.head !== undefined) {
@@ -541,11 +541,11 @@ export const openaiResponsesFromIR = async function* (
       let tool: { item: IRToolCallItem; callId: string | typeof IRAbsent } | undefined;
       if (unit.kind === 'function_call' || unit.kind === 'custom_tool_call') {
         if ((item.type !== 'function_call' && item.type !== 'custom_tool_call') || item.name === '') throw new TypeError('Completed tool calls require a name');
-        const callId = collector.optional<string>([...unit.path, 'call_id']);
+        const callId = collector.valueOrAbsent<string>([...unit.path, 'call_id']);
         if (callId === undefined) break;
         tool = { item, callId };
       }
-      pending.dequeue();
+      pending.dropHead();
       const outputIndex = outputUnits.length;
       unit.outputIndex = outputIndex;
       if (unit.kind === 'message' || unit.kind === 'reasoning') nativeState[outputIndex] = unit.contentState;
@@ -561,7 +561,7 @@ export const openaiResponsesFromIR = async function* (
     return { events: pendingEvents, justOpened };
   };
 
-  const messageUnitEvents = (unit: ResponsesOutputUnit, outputIndex: number, record: IRWriteRecord, state: IR): OpenAIResponsesStreamEventEx[] => {
+  const messageUnitEvents = (unit: ResponsesOutputUnit, outputIndex: number, record: IRWriteRecord, state: IROutput): OpenAIResponsesStreamEventEx[] => {
     const itemId = requireId(unit);
     if (record.kind === 'initialize' && record.path.length === 6) {
       const type = initializedType(record.value);
@@ -630,7 +630,7 @@ export const openaiResponsesFromIR = async function* (
   };
 
   // The events for an operation on a unit that is already open.
-  const openedUnitEvents = (unit: ResponsesOutputUnit, record: IRWriteRecord, state: IR): OpenAIResponsesStreamEventEx[] => {
+  const openedUnitEvents = (unit: ResponsesOutputUnit, record: IRWriteRecord, state: IROutput): OpenAIResponsesStreamEventEx[] => {
     const outputIndex = requireOutputIndex(unit);
     switch (unit.kind) {
     case 'message': return messageUnitEvents(unit, outputIndex, record, state);
@@ -694,14 +694,14 @@ export const openaiResponsesFromIR = async function* (
     registerUnits(record, state);
     const unit = units.forRecord(record, state);
     if (unit !== undefined && unit.kind !== 'image' && record.type === 'write' && record.kind === 'append') {
-      if (unit.opened) appendUnitText(unit, record.path, record.value, record.referencePieceIds);
+      if (unit.opened) appendUnitText(unit, record.path, record.value, record.textFragmentIds);
       else {
         const text = collector.value<string>(record.path);
         if (text === undefined) throw new Error('Missing Responses pending text');
         const fields = unit.pendingText ??= new Map();
         const key = irPathKey(record.path);
         const atoms = fields.get(key) ?? [];
-        atoms.push(provenanceSpanForAppend(text, record.value, record.referencePieceIds));
+        atoms.push(provenanceSpanForAppend(text, record.value, record.textFragmentIds));
         fields.set(key, atoms);
       }
     }
@@ -829,7 +829,7 @@ export const openaiResponsesFromIR = async function* (
     }
 
     if (record.type === 'finish') {
-      const refusal = state.choices[0].refusal;
+      const refusal = state.choices[0].refusal_details;
       const finalUsage = state.usage === undefined ? null : usageFromIR(state.usage);
       if (refusal?.category === 'cyber' || refusal?.category === 'bio') {
         const declined = refusal.explanation == null || refusal.explanation.trim() === '';
@@ -841,7 +841,7 @@ export const openaiResponsesFromIR = async function* (
       const nativeOutput = outputUnits.map(unit => outputItem(state, unit));
       nativeState.length = nativeOutput.length;
       const sourceTurnDigest = await computeOpenAIResponsesTurnDigest(nativeOutput);
-      const input = toOpenAIResponsesInputAssistantTurn<ContentStates>(nativeOutput, nativeState);
+      const input = toOpenAIResponsesInputAssistantTurn<EmittedFieldStates>(nativeOutput, nativeState);
       const data = await options.roundTrip.prepareSidecar(0, sourceTurnDigest, input.turn, input.state, collectOpenAIResponsesTextViews(input.turn));
       sidecar = { ...createOpenAIResponsesSidecarCarrier(createRandomOpenAIResponsesItemId('reasoning'), data), status: 'completed' };
       const outputIndex = outputUnits.length;

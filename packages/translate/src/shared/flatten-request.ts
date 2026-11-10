@@ -1,17 +1,17 @@
 import { assignFlatNames } from './flat-names.ts';
 import { irInputToolsForChoice } from '../ir/input/select-tools.ts';
-import type { IRInputRequest, IRInputTool, IRInputToolChoice, IRInputToolSelection, IRInputTurn } from '../ir/input/types.ts';
+import type { IRInputRequestHeader, IRInputTool, IRInputToolChoice, IRInputToolSelector, IRInputTurn } from '../ir/input/types.ts';
 import type { ResolvedTurn } from '../protocols/composition/segments.ts';
 import { TranslatorInputError } from '../types.ts';
 
 /** What a target that writes flat names records for the reader of its answer. */
 export interface FlatCallContext {
   readonly customToolNames: ReadonlySet<string>;
-  readonly callIdentities: ReadonlyMap<string, { readonly namespace: string; readonly name: string }>;
+  readonly flatIdentities: ReadonlyMap<string, { readonly namespace: string; readonly name: string }>;
 }
 
 /** The declarations a request offers once its selector is applied, under the names this wire writes. */
-const customNamesOf = (request: IRInputRequest): ReadonlySet<string> =>
+const customNamesOf = (request: IRInputRequestHeader): ReadonlySet<string> =>
   new Set((irInputToolsForChoice(request.tools, request.tool_choice) ?? [])
     .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
 
@@ -57,13 +57,13 @@ const flatNamesOf = (
  * declarations were freeform, and which pair each flat name came from.
  */
 export const flattenRequestNames = <Restored>(
-  request: IRInputRequest,
-  pieces: readonly (IRInputTurn | ResolvedTurn<Restored>)[],
-): { readonly request: IRInputRequest; readonly pieces: readonly (IRInputTurn | ResolvedTurn<Restored>)[]; readonly context: FlatCallContext } => {
-  const turns = pieces.flatMap(piece => piece.kind === 'resolved' ? [] : [piece]);
-  const { flat, identities: callIdentities } = flatNamesOf(request.tools ?? [], turns);
+  request: IRInputRequestHeader,
+  inputTurns: readonly (IRInputTurn | ResolvedTurn<Restored>)[],
+): { readonly request: IRInputRequestHeader; readonly turns: readonly (IRInputTurn | ResolvedTurn<Restored>)[]; readonly context: FlatCallContext } => {
+  const irTurns = inputTurns.flatMap(turn => turn.kind === 'resolved' ? [] : [turn]);
+  const { flat, identities: flatIdentities } = flatNamesOf(request.tools ?? [], irTurns);
   // Nothing is grouped, so the wire names are the client's own.
-  if (flat.size === 0) return { request, pieces, context: { customToolNames: customNamesOf(request), callIdentities } };
+  if (flat.size === 0) return { request, turns: inputTurns, context: { customToolNames: customNamesOf(request), flatIdentities } };
 
   // Every grouped callable was assigned a flat name by the pass above, so a
   // lookup that misses means this request states a group the mapping never saw.
@@ -77,32 +77,32 @@ export const flattenRequestNames = <Restored>(
     const { namespace: _namespace, ...rest } = tool;
     return { ...rest, name: nameOf(tool.namespace, tool.name) };
   };
-  const flattenSelection = (selection: IRInputToolSelection): IRInputToolSelection => ({
+  const flattenSelection = (selection: IRInputToolSelector): IRInputToolSelector => ({
     ...selection,
     name: nameOf(selection.namespace, selection.name),
   });
   const flattenChoice = (choice: IRInputToolChoice): IRInputToolChoice => typeof choice === 'string' || choice.type === 'allowed_tools'
     ? typeof choice === 'string' ? choice : { ...choice, tools: choice.tools.map(flattenSelection) }
     : flattenSelection(choice);
-  const flattenedRequest: IRInputRequest = {
+  const flattenedRequest: IRInputRequestHeader = {
     ...request,
     ...(request.tools === undefined ? {} : { tools: request.tools.map(flattenTool) }),
     ...(request.tool_choice === undefined ? {} : { tool_choice: flattenChoice(request.tool_choice) }),
   };
   return {
     request: flattenedRequest,
-    context: { customToolNames: customNamesOf(flattenedRequest), callIdentities },
-    pieces: pieces.map((piece): IRInputTurn | ResolvedTurn<Restored> => {
-      if (piece.kind === 'resolved') return piece;
-      if (piece.kind === 'assistant') {
+    context: { customToolNames: customNamesOf(flattenedRequest), flatIdentities },
+    turns: inputTurns.map((turn): IRInputTurn | ResolvedTurn<Restored> => {
+      if (turn.kind === 'resolved') return turn;
+      if (turn.kind === 'assistant') {
         return {
           kind: 'assistant',
-          items: piece.items.map(item => item.type === 'function_call' || item.type === 'custom_tool_call'
+          items: turn.items.map(item => item.type === 'function_call' || item.type === 'custom_tool_call'
             ? { ...item, name: nameOf(item.namespace, item.name) }
             : item),
         };
       }
-      return piece;
+      return turn;
     }),
   };
 };

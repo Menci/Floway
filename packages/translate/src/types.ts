@@ -30,7 +30,7 @@ export interface TranslateOptions {
 }
 
 /**
- * A wire-shaped upstream error body handed to `TranslateTripResult.errorBody`.
+ * A wire-shaped upstream error body handed to `TranslateTripResult.restateUpstreamError`.
  * The pair returns a same-shaped object to rewrite the outbound envelope, or
  * `undefined` to pass it through unchanged. The provider layer's
  * `ApiErrorResult` shape is intentionally not imported here — translate is a
@@ -53,7 +53,7 @@ export interface TranslatedApiError {
  * exactly that: the caller relays the upstream's own status, headers, and
  * bytes untouched.
  */
-export type SourceProtocolErrorWriter = (upstream: TranslatedApiError) => TranslatedApiError | undefined;
+export type RestateSourceError = (upstream: TranslatedApiError) => TranslatedApiError | undefined;
 
 /**
  * What one translation trip hands back: the target payload, an events
@@ -73,7 +73,7 @@ export type SourceProtocolErrorWriter = (upstream: TranslatedApiError) => Transl
 export interface TranslateTripResult<TgtPayload, SrcEvent, TgtEvent> {
   target: TgtPayload;
   events: (frames: AsyncIterable<ProtocolFrame<TgtEvent>>) => AsyncIterable<ProtocolFrame<SrcEvent>>;
-  errorBody?: SourceProtocolErrorWriter;
+  restateUpstreamError?: RestateSourceError;
 }
 
 /**

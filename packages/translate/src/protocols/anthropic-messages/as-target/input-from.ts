@@ -1,10 +1,10 @@
 import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
-import { streamingFlag } from '../../../ir/input/stream.ts';
+import { requireStreaming } from '../../../ir/input/stream.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAddressedAssistantItem,
   IRInputAddressedTurn,
-  IRInputRequest,
+  IRInputRequestHeader,
   IRInputSettings,
   IRInputTool,
   IRInputToolChoice,
@@ -279,7 +279,7 @@ export const anthropicMessagesConversationFromIR = (
  * per payload.
  */
 export const anthropicMessagesHeaderFromIR = (
-  request: IRInputRequest,
+  request: IRInputRequestHeader,
   options: AnthropicMessagesRequestFromIROptions = {},
 ): Omit<AnthropicMessagesPayload, 'messages' | 'system'> => {
   // Messages has no declaration-level selector: a narrowed declaration list is
@@ -293,7 +293,7 @@ export const anthropicMessagesHeaderFromIR = (
     max_tokens: request.settings.max_output_tokens ?? options.fallbackMaxOutputTokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
     // A trip guarantees a streaming request; a request that says otherwise
     // cannot be carried by this side at all.
-    stream: streamingFlag(request.settings),
+    stream: requireStreaming(request.settings),
     ...(selectedTools === undefined || selectedTools.length === 0 ? {} : { tools: selectedTools.map(toolFromIR) }),
     ...(choice === undefined ? {} : { tool_choice: toolChoiceFromIR(choice) }),
   };
@@ -321,7 +321,7 @@ export const anthropicMessagesSettingsFromIR = (settings: IRInputSettings): Omit
   // off switch, because this scale has no `none` of its own. Whether the target
   // honours the off switch is the target's business.
   // https://platform.claude.com/docs/en/build-with-claude/effort
-  const thinking = settings.reasoning_dynamic === true
+  const thinking = settings.reasoning_budget_dynamic === true
     ? { type: 'adaptive' as const }
     : settings.reasoning_budget !== undefined
       ? settings.reasoning_budget === 0

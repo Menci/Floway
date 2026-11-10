@@ -1,5 +1,5 @@
 import type { SourceProtocol } from '../composition.ts';
-import { anthropicMessagesErrorWriter } from './as-source/error-body.ts';
+import { restateAnthropicMessagesError } from './as-source/error-body.ts';
 import { anthropicMessagesRead } from './as-source/input-to.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from './as-source/round-trip.ts';
 import { anthropicMessagesFromIR } from './as-source/sse-to.ts';
@@ -17,12 +17,12 @@ export const anthropicMessagesSourceProtocol: SourceProtocol<
 > = {
   name: 'anthropicMessages',
   read: anthropicMessagesRead,
-  roundTrip: {
+  sidecarRecognition: {
     inspect: findAnthropicMessagesSidecarCarriers,
     verify: verifyAnthropicMessagesTurnDigest,
     collectCandidates: collectAnthropicMessagesReplayContents,
   },
-  writeError: anthropicMessagesErrorWriter,
+  restateUpstreamError: restateAnthropicMessagesError,
   // Stating a Messages stream needs nothing the request produced.
   writeStream: (_payload, records, roundTrip) => anthropicMessagesFromIR(records, { roundTrip }),
 };

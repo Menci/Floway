@@ -19,7 +19,7 @@ describe('output IR schema queries', () => {
     [item(0, 'content', 0, 'text'), true],
     [item(0, 'content', 1, 'audio', 'data'), true],
     [item(0, 'content', 1, 'audio', 'transcript'), true],
-    [item(0, 'content', 1, 'audio', 'mime_type'), false],
+    [item(0, 'content', 1, 'audio', 'media_type'), false],
     [item(1, 'summary', 0), true],
     [item(1, 'content', 0), true],
     [item(2, 'arguments'), true],

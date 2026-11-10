@@ -1,6 +1,6 @@
 import type { IRJSONObject, IRJSONValue } from '../../../ir/output/types.ts';
 import type { ReplayContent } from '../../../round-trip/reference/assistant-turn.ts';
-import type { EncodedRoundTripSidecar } from '../../../round-trip/resolve.ts';
+import type { SidecarCarrier } from '../../../round-trip/resolve.ts';
 import { collectTextGroups, collectTextPlacementIndex, type TextContribution, type TextPlacementIndex } from '../../../round-trip/text-groups.ts';
 import { computeRoundTripTurnDigest, replayMaterialsByType, verifyRoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
 import type { RoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
@@ -39,7 +39,7 @@ const messageTurnDigestMaterialV1 = (message: AnthropicMessagesAssistantTurn[num
 
 const messagesTurnDigestMaterialV1 = (turn: AnthropicMessagesAssistantTurn): IRJSONValue => turn.map(messageTurnDigestMaterialV1);
 
-export const findAnthropicMessagesSidecarCarriers = (turn: AnthropicMessagesAssistantTurn): EncodedRoundTripSidecar<AnthropicMessagesAssistantTurn>[] =>
+export const findAnthropicMessagesSidecarCarriers = (turn: AnthropicMessagesAssistantTurn): SidecarCarrier<AnthropicMessagesAssistantTurn>[] =>
   turn.flatMap((message, messageIndex) => {
     const content = message.content;
     return typeof content === 'string' ? [] : content.flatMap((block, blockIndex) => block.type !== 'redacted_thinking' ? [] : [{

@@ -5,7 +5,7 @@ import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn
 import type { AnthropicMessagesAssistantTurn } from './round-trip.ts';
 import type {
   IRInputAssistantContentPart,
-  IRInputRequest,
+  IRInputRequestHeader,
   IRInputSettings,
   IRInputTool,
   IRInputToolChoice,
@@ -106,7 +106,7 @@ const toolResultPart = (block: AnthropicMessagesToolResultBlock['content'] exten
   ];
 };
 
-const userItems = (
+const clientItems = (
   message: Exclude<AnthropicMessagesMessage, { role: 'assistant' }>,
   messageIdx: number,
 ): IRInputClientItem[] => {
@@ -268,7 +268,7 @@ const anthropicMessagesTurnToIR = (
       if (message.role !== 'user' && message.role !== 'system') {
         throw new TranslatorInputError(`messages.${firstMessageIndex + index}.role: role '${(message as { role: string }).role}' is not supported on this model`);
       }
-      return userItems(message, firstMessageIndex + index);
+      return clientItems(message, firstMessageIndex + index);
     }),
   }];
 };
@@ -304,7 +304,7 @@ const toolChoiceToIR = (choice: NonNullable<AnthropicMessagesPayload['tool_choic
   }
 };
 
-const anthropicMessagesToolsToIR = (payload: AnthropicMessagesPayload): Pick<IRInputRequest, 'tools' | 'tool_choice'> => {
+const anthropicMessagesToolsToIR = (payload: AnthropicMessagesPayload): Pick<IRInputRequestHeader, 'tools' | 'tool_choice'> => {
   const clientTools = filterAnthropicMessagesClientTools(payload.tools);
   const declarations = clientTools === undefined ? [] : clientTools.map(toolToIR);
   // A selector is validated against the declarations either way: dropping one
@@ -351,7 +351,7 @@ const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload): IRInp
     // here: an enabled or adaptive mode is reported as the tier that mode
     // implies, and no target spends a number the caller never bounded.
     ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
-    ...(payload.thinking?.type === 'adaptive' ? { reasoning_dynamic: true } : {}),
+    ...(payload.thinking?.type === 'adaptive' ? { reasoning_budget_dynamic: true } : {}),
   };
 };
 
@@ -396,13 +396,13 @@ const reasoningEffortFromAnthropicMessages = (payload: AnthropicMessagesPayload)
  * payload.
  *
  * A server tool's result sits inside the assistant message that called it, and
- * an assistant turn can therefore yield both assistant and client pieces. The
+ * an assistant turn can therefore yield both assistant and client turns. The
  * reader holds one client slot back so an assistant turn can be opened before
  * the client piece that follows it, which is what keeps the assistant and its
- * own server-result pieces adjacent in the reading.
+ * own server-result turns adjacent in the reading.
  */
 export const anthropicMessagesRead = (payload: AnthropicMessagesPayload): Reading<AnthropicMessagesAssistantTurn> => {
-  const request: IRInputRequest = {
+  const request: IRInputRequestHeader = {
     settings: anthropicMessagesSettingsToIR(payload),
     ...anthropicMessagesToolsToIR(payload),
   };
@@ -417,12 +417,12 @@ export const anthropicMessagesRead = (payload: AnthropicMessagesPayload): Readin
   let pendingClient: (() => IRInputTurn[]) | undefined;
 
   const appendClient = (produce: () => IRInputTurn[]): void => {
-    if (pendingClient !== undefined) turns.push({ kind: 'client', toIRTurn: pendingClient });
+    if (pendingClient !== undefined) turns.push({ kind: 'client', toIRInputTurns: pendingClient });
     pendingClient = produce;
   };
 
   const prompt = anthropicMessagesSystemToIR(payload.system);
-  if (prompt !== undefined) turns.push({ kind: 'client', toIRTurn: () => [prompt] });
+  if (prompt !== undefined) turns.push({ kind: 'client', toIRInputTurns: () => [prompt] });
 
   for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
     const firstMessageIndex = messageIndex;
@@ -432,19 +432,19 @@ export const anthropicMessagesRead = (payload: AnthropicMessagesPayload): Readin
       // turn of its own, and its own output may interleave assistant and
       // server-result client turns.
       if (pendingClient !== undefined) {
-        turns.push({ kind: 'client', toIRTurn: pendingClient });
+        turns.push({ kind: 'client', toIRInputTurns: pendingClient });
         pendingClient = undefined;
       }
       turns.push({
         kind: 'assistant',
         assistantTurn: turn.items,
-        toIRTurn: () => anthropicMessagesTurnToIR(turn, firstMessageIndex),
+        toIRInputTurns: () => anthropicMessagesTurnToIR(turn, firstMessageIndex),
       });
       continue;
     }
     appendClient(() => anthropicMessagesTurnToIR(turn, firstMessageIndex));
   }
-  if (pendingClient !== undefined) turns.push({ kind: 'client', toIRTurn: pendingClient });
+  if (pendingClient !== undefined) turns.push({ kind: 'client', toIRInputTurns: pendingClient });
 
   return { request, turns };
 };

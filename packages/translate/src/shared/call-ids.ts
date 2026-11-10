@@ -22,7 +22,7 @@ export interface PendingCall {
  * a call, and nothing outside this step reads them.
  */
 export const assignCallIds = <Restored>(
-  pieces: readonly (IRInputTurn | ResolvedTurn<Restored>)[],
+  turns: readonly (IRInputTurn | ResolvedTurn<Restored>)[],
   restoredCalls: (turn: Restored) => readonly PendingCall[],
 ): readonly (IRInputAddressedTurn | ResolvedTurn<Restored>)[] => {
   const pending: PendingCall[] = [];
@@ -41,7 +41,7 @@ export const assignCallIds = <Restored>(
     return matched;
   };
 
-  return pieces.map((piece): IRInputAddressedTurn | ResolvedTurn<Restored> => {
+  return turns.map((piece): IRInputAddressedTurn | ResolvedTurn<Restored> => {
     if (piece.kind === 'resolved') {
       pending.push(...restoredCalls(piece.turn));
       return piece;

@@ -172,7 +172,7 @@ export class DumpAccumulator {
   }
 
   // Captures the verbatim upstream api-error envelope (status/headers/body)
-  // BEFORE the optional `trip.errorBody` rewrite. The bytes variant of the
+  // BEFORE the optional `trip.restateUpstreamError` rewrite. The bytes variant of the
   // upstream body; the dashboard renders it like any non-stream response body.
   upstreamApiError(error: { status: number; headers: Headers; body: Uint8Array }): void {
     this.upstreamApiErrorEnvelope = { status: error.status, headers: headerPairs(error.headers), body: error.body };

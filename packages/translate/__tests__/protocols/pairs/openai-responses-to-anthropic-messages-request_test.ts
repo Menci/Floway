@@ -1,14 +1,14 @@
 import { test } from 'vitest';
 
 import { irInputToolsForChoice } from '../../../src/ir/input/select-tools.ts';
-import type { IRInputRequest } from '../../../src/ir/input/types.ts';
+import type { IRInputRequestHeader } from '../../../src/ir/input/types.ts';
 import { openaiResponsesRead } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import { buildTargetRequestFor, pairs } from '../composition-helpers.ts';
+import { buildTargetPayloadFor, pairs } from '../composition-helpers.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesClientTool, type AnthropicMessagesToolResultBlock, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIResponsesInputMultiAgentCallOutputItem, OpenAIResponsesTool, OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
-const customToolNamesOf = (request: IRInputRequest): ReadonlySet<string> =>
+const customToolNamesOf = (request: IRInputRequestHeader): ReadonlySet<string> =>
   new Set((irInputToolsForChoice(request.tools, request.tool_choice) ?? [])
     .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
 
@@ -41,11 +41,11 @@ const buildWithTestSidecar = async (
 ) => {
   const streamed = { ...payload, stream: true };
   const reading = openaiResponsesRead(streamed);
-  const built = await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], streamed, { sidecarCodec: createTestSidecarCodec(), ...testBuildOptions, ...options });
+  const built = await buildTargetPayloadFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], streamed, { sidecarCodec: createTestSidecarCodec(), ...testBuildOptions, ...options });
   return { target: built, customToolNames: customToolNamesOf(reading.request) };
 };
 
-test('buildTargetRequest preserves unsafe JSON number tokens in function history', async () => {
+test('buildTargetPayload preserves unsafe JSON number tokens in function history', async () => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
     input: [{ type: 'function_call', call_id: 'call_1', name: 'tool', arguments: '{"n":1e400}', status: 'completed' }],
@@ -57,7 +57,7 @@ test('buildTargetRequest preserves unsafe JSON number tokens in function history
   assertEquals(JSON.stringify(tool.input), '{"n":1e400}');
 });
 
-test('buildTargetRequest preserves OpenAI Responses assistant refusal history as Anthropic Messages text', async () => {
+test('buildTargetPayload preserves OpenAI Responses assistant refusal history as Anthropic Messages text', async () => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
     input: [{
@@ -73,7 +73,7 @@ test('buildTargetRequest preserves OpenAI Responses assistant refusal history as
   assertEquals(message.content[0], { type: 'text', text: 'Cannot help.', cache_control: { type: 'ephemeral' } });
 });
 
-test('buildTargetRequest keeps an explicitly empty assistant message', async () => {
+test('buildTargetPayload keeps an explicitly empty assistant message', async () => {
   // An empty string is a stated assistant turn, not an absent one: the source
   // chose to record it, so the target receives a message of its own.
   const result = await buildWithTestSidecar({
@@ -88,7 +88,7 @@ test('buildTargetRequest keeps an explicitly empty assistant message', async () 
   assertEquals(result.target.messages[0], { role: 'assistant', content: '' });
 });
 
-test('buildTargetRequest accepts an implicit message discriminator', async () => {
+test('buildTargetPayload accepts an implicit message discriminator', async () => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
     input: [{ role: 'user', content: 'hello' }],
@@ -102,7 +102,7 @@ test('buildTargetRequest accepts an implicit message discriminator', async () =>
   ]);
 });
 
-test('buildTargetRequest rejects an agent_message that no interceptor lowered', async () => {
+test('buildTargetPayload rejects an agent_message that no interceptor lowered', async () => {
   await assertRejects(
     () => buildWithTestSidecar({
       ...minimalPayload,
@@ -125,7 +125,7 @@ test.each([
   { name: 'multi_agent_call_output', input: [{ type: 'multi_agent_call_output', action: 'spawn_agent', call_id: 'call_1', output: [] as OpenAIResponsesInputMultiAgentCallOutputItem['output'] }] },
   { name: 'context_compaction', input: [{ type: 'context_compaction', encrypted_content: 'opaque' }] },
   { name: 'item_reference', input: [{ type: 'item_reference', id: 'msg_1' }] },
-] as const)('buildTargetRequest rejects OpenAI-Responses-only $name input', async ({ name, input }) => {
+] as const)('buildTargetPayload rejects OpenAI-Responses-only $name input', async ({ name, input }) => {
   await assertRejects(
     () => buildWithTestSidecar({ ...minimalPayload, input: [...input] }),
     Error,
@@ -133,7 +133,7 @@ test.each([
   );
 });
 
-test('buildTargetRequest wires OpenAI Responses tooling guards', async () => {
+test('buildTargetPayload wires OpenAI Responses tooling guards', async () => {
   await assertRejects(
     () => buildWithTestSidecar({
       ...minimalPayload,
@@ -149,12 +149,12 @@ test('buildTargetRequest wires OpenAI Responses tooling guards', async () => {
   );
 });
 
-test('buildTargetRequest accepts null tool_choice', async () => {
+test('buildTargetPayload accepts null tool_choice', async () => {
   const result = await buildWithTestSidecar({ ...minimalPayload, tool_choice: null });
   assertEquals(result.target.tool_choice, undefined);
 });
 
-test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest rejects input_file in %s', async type => {
+test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetPayload rejects input_file in %s', async type => {
   await assertRejects(
     () => buildWithTestSidecar({
       ...minimalPayload,
@@ -169,7 +169,7 @@ test.each([
   { name: 'file_id', part: { type: 'input_file' as const, file_id: 'file_1' }, source: { type: 'file', file_id: 'file_1' } },
   { name: 'file_url', part: { type: 'input_file' as const, file_url: 'https://example.com/a.pdf' }, source: { type: 'url', url: 'https://example.com/a.pdf' } },
   { name: 'file_data data URL', part: { type: 'input_file' as const, file_data: 'data:application/pdf;base64,JVBERi0=' }, source: { type: 'base64', media_type: 'application/pdf', data: 'JVBERi0=' } },
-])('buildTargetRequest maps input_file $name to a Messages document', async ({ part, source }) => {
+])('buildTargetPayload maps input_file $name to a Messages document', async ({ part, source }) => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
     input: [{ type: 'message', role: 'user', content: [part] }],
@@ -177,7 +177,7 @@ test.each([
   assertEquals(result.target.messages.at(-1), { role: 'user', content: [{ type: 'document', source }] });
 });
 
-test('buildTargetRequest rejects file assistant content', async () => {
+test('buildTargetPayload rejects file assistant content', async () => {
   await assertRejects(
     () => buildWithTestSidecar({
       ...minimalPayload,
@@ -188,7 +188,7 @@ test('buildTargetRequest rejects file assistant content', async () => {
   );
 });
 
-test('buildTargetRequest preserves assistant input_text', async () => {
+test('buildTargetPayload preserves assistant input_text', async () => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
     input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_text', text: 'prior reply' }] }],
@@ -199,7 +199,7 @@ test('buildTargetRequest preserves assistant input_text', async () => {
   ]);
 });
 
-test('buildTargetRequest rejects assistant images', async () => {
+test('buildTargetPayload rejects assistant images', async () => {
   await assertRejects(
     () => buildWithTestSidecar({
       ...minimalPayload,
@@ -210,7 +210,7 @@ test('buildTargetRequest rejects assistant images', async () => {
   );
 });
 
-test('buildTargetRequest passes a file_id-only image through to the Messages target', async () => {
+test('buildTargetPayload passes a file_id-only image through to the Messages target', async () => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
     input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
@@ -223,7 +223,7 @@ test('buildTargetRequest passes a file_id-only image through to the Messages tar
   }]);
 });
 
-test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest passes file_id-only images through in %s', async type => {
+test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetPayload passes file_id-only images through in %s', async type => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
     input: [{ type, call_id: 'call_1', output: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
@@ -236,35 +236,35 @@ test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTa
 
 // ── service_tier → speed mapping ──
 
-test('buildTargetRequest maps service_tier:fast to speed:fast (no service_tier on target)', async () => {
+test('buildTargetPayload maps service_tier:fast to speed:fast (no service_tier on target)', async () => {
   const result = await buildWithTestSidecar({ ...minimalPayload, service_tier: 'fast' });
 
   assertEquals(result.target.speed, 'fast');
   assertFalse('service_tier' in result.target);
 });
 
-test('buildTargetRequest maps service_tier:priority to speed:fast (no service_tier on target)', async () => {
+test('buildTargetPayload maps service_tier:priority to speed:fast (no service_tier on target)', async () => {
   const result = await buildWithTestSidecar({ ...minimalPayload, service_tier: 'priority' });
 
   assertEquals(result.target.speed, 'fast');
   assertFalse('service_tier' in result.target);
 });
 
-test('buildTargetRequest passes service_tier:auto through as service_tier', async () => {
+test('buildTargetPayload passes service_tier:auto through as service_tier', async () => {
   const result = await buildWithTestSidecar({ ...minimalPayload, service_tier: 'auto' });
 
   assertEquals(result.target.service_tier, 'auto');
   assertFalse('speed' in result.target);
 });
 
-test('buildTargetRequest omits both speed and service_tier when service_tier is absent', async () => {
+test('buildTargetPayload omits both speed and service_tier when service_tier is absent', async () => {
   const result = await buildWithTestSidecar(minimalPayload);
 
   assertFalse('speed' in result.target);
   assertFalse('service_tier' in result.target);
 });
 
-test('buildTargetRequest maps reasoning.effort none to thinking.disabled (summary ignored when reasoning is disabled)', async () => {
+test('buildTargetPayload maps reasoning.effort none to thinking.disabled (summary ignored when reasoning is disabled)', async () => {
   const result = await buildWithTestSidecar({
     model: 'claude-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
@@ -285,7 +285,7 @@ test('buildTargetRequest maps reasoning.effort none to thinking.disabled (summar
   assertFalse('output_config' in result.target);
 });
 
-test('buildTargetRequest maps reasoning.effort directly to output_config.effort', async () => {
+test('buildTargetPayload maps reasoning.effort directly to output_config.effort', async () => {
   const result = await buildWithTestSidecar({
     model: 'claude-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
@@ -306,7 +306,7 @@ test('buildTargetRequest maps reasoning.effort directly to output_config.effort'
   assertFalse('thinking' in result.target);
 });
 
-test('buildTargetRequest forwards empty reasoning.effort verbatim', async () => {
+test('buildTargetPayload forwards empty reasoning.effort verbatim', async () => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
     reasoning: { effort: '' },
@@ -316,7 +316,7 @@ test('buildTargetRequest forwards empty reasoning.effort verbatim', async () => 
   assertFalse('thinking' in result.target);
 });
 
-test('buildTargetRequest defaults max_tokens to ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS when neither source nor fallbackMaxOutputTokens supplies one', async () => {
+test('buildTargetPayload defaults max_tokens to ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS when neither source nor fallbackMaxOutputTokens supplies one', async () => {
   const result = await buildWithTestSidecar({
     model: 'claude-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
@@ -335,7 +335,7 @@ test('buildTargetRequest defaults max_tokens to ANTHROPIC_MESSAGES_FALLBACK_MAX_
   assertEquals(result.target.max_tokens, ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS);
 });
 
-test('buildTargetRequest uses fallbackMaxOutputTokens over the gateway const when the source omitted max_output_tokens', async () => {
+test('buildTargetPayload uses fallbackMaxOutputTokens over the gateway const when the source omitted max_output_tokens', async () => {
   const result = await buildWithTestSidecar(
     {
       model: 'claude-test',
@@ -357,7 +357,7 @@ test('buildTargetRequest uses fallbackMaxOutputTokens over the gateway const whe
   assertEquals(result.target.max_tokens, 4096);
 });
 
-test('buildTargetRequest omits the signature for a reasoning with no encrypted_content', async () => {
+test('buildTargetPayload omits the signature for a reasoning with no encrypted_content', async () => {
   const result = await buildWithTestSidecar({
     model: 'claude-test',
     input: [
@@ -387,7 +387,7 @@ test('buildTargetRequest omits the signature for a reasoning with no encrypted_c
   assertEquals(assistant.content[0], { signature: '', type: 'thinking', thinking: 'trace' });
 });
 
-test('buildTargetRequest omits generic metadata instead of coercing it to metadata.user_id', async () => {
+test('buildTargetPayload omits generic metadata instead of coercing it to metadata.user_id', async () => {
   const result = await buildWithTestSidecar({
     model: 'claude-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
@@ -406,7 +406,7 @@ test('buildTargetRequest omits generic metadata instead of coercing it to metada
   assertFalse('metadata' in result.target);
 });
 
-test('buildTargetRequest resolves remote input images through the shared loader', async () => {
+test('buildTargetPayload resolves remote input images through the shared loader', async () => {
   const result = await buildWithTestSidecar(
     {
       model: 'claude-test',
@@ -450,7 +450,7 @@ test('buildTargetRequest resolves remote input images through the shared loader'
   ]);
 });
 
-test('buildTargetRequest drops reasoning input without readable summary', async () => {
+test('buildTargetPayload drops reasoning input without readable summary', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     input: [
@@ -483,7 +483,7 @@ test('buildTargetRequest drops reasoning input without readable summary', async 
   );
 });
 
-test('buildTargetRequest wraps custom tools as single-string function tools and records their names', async () => {
+test('buildTargetPayload wraps custom tools as single-string function tools and records their names', async () => {
   const result = await buildWithTestSidecar({
     model: 'claude-test',
     input: 'hi',
@@ -531,7 +531,7 @@ test('buildTargetRequest wraps custom tools as single-string function tools and 
   assertEquals(result.target.tool_choice, { type: 'tool', name: 'apply_patch' });
 });
 
-test.each(['web_search', 'file_search'])('buildTargetRequest rejects unsupported tool type %s', async type => {
+test.each(['web_search', 'file_search'])('buildTargetPayload rejects unsupported tool type %s', async type => {
   await assertRejects(
     () => buildWithTestSidecar({ ...minimalPayload, tools: [{ type } as unknown as OpenAIResponsesTool] }),
     Error,
@@ -539,7 +539,7 @@ test.each(['web_search', 'file_search'])('buildTargetRequest rejects unsupported
   );
 });
 
-test.each(['web_search', 'file_search'])('buildTargetRequest rejects unsupported string tool choice %s', async toolChoice => {
+test.each(['web_search', 'file_search'])('buildTargetPayload rejects unsupported string tool choice %s', async toolChoice => {
   await assertRejects(
     () => buildWithTestSidecar({ ...minimalPayload, tool_choice: toolChoice as unknown as typeof minimalPayload.tool_choice }),
     Error,
@@ -547,7 +547,7 @@ test.each(['web_search', 'file_search'])('buildTargetRequest rejects unsupported
   );
 });
 
-test.each(['web_search', 'file_search'])('buildTargetRequest rejects unsupported object tool choice type %s', async type => {
+test.each(['web_search', 'file_search'])('buildTargetPayload rejects unsupported object tool choice type %s', async type => {
   await assertRejects(
     () => buildWithTestSidecar({ ...minimalPayload, tool_choice: { type } as unknown as typeof minimalPayload.tool_choice }),
     Error,
@@ -559,7 +559,7 @@ test.each([
   { name: 'string', output: 'ok', expected: 'ok' },
   { name: 'text array', output: [{ type: 'input_text' as const, text: 'first\n' }, { type: 'input_text' as const, text: 'second' }], expected: [{ type: 'text', text: 'first\n' }, { type: 'text', text: 'second' }] },
   { name: 'empty array', output: [], expected: '' },
-])('buildTargetRequest projects custom_tool_call history with $name output into wrapped tool_use shape', async ({ output, expected }) => {
+])('buildTargetPayload projects custom_tool_call history with $name output into wrapped tool_use shape', async ({ output, expected }) => {
   const result = await buildWithTestSidecar({
     model: 'claude-test',
     input: [
@@ -614,7 +614,7 @@ test.each([
   });
 });
 
-test('buildTargetRequest flattens namespace functions collision-safely and maps replay history', async () => {
+test('buildTargetPayload flattens namespace functions collision-safely and maps replay history', async () => {
   const namespaceTool: OpenAIResponsesTool = {
     type: 'namespace',
     name: 'web',
@@ -673,7 +673,7 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
   assertEquals(result.target.tool_choice, { type: 'tool', name: 'web_run_2' });
 });
 
-test('buildTargetRequest gives a schema-less function tool the empty object schema', async () => {
+test('buildTargetPayload gives a schema-less function tool the empty object schema', async () => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
     tools: [{ type: 'function', name: 'ping' }],
@@ -689,7 +689,7 @@ test('buildTargetRequest gives a schema-less function tool the empty object sche
   ]);
 });
 
-test('buildTargetRequest keeps plain-text function_call_output as string content', async () => {
+test('buildTargetPayload keeps plain-text function_call_output as string content', async () => {
   const result = await buildWithTestSidecar({
     model: 'claude-test',
     input: [
@@ -716,7 +716,7 @@ test('buildTargetRequest keeps plain-text function_call_output as string content
   assertEquals(toolResult.content, 'plain text body');
 });
 
-test('buildTargetRequest preserves out-of-range numeric tool arguments as raw JSON', async () => {
+test('buildTargetPayload preserves out-of-range numeric tool arguments as raw JSON', async () => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
     input: [{ type: 'function_call', call_id: 'call_1', name: 'tool', arguments: '{"value":1e400}', status: 'completed' }],
@@ -730,7 +730,7 @@ test('buildTargetRequest preserves out-of-range numeric tool arguments as raw JS
   assertEquals(JSON.stringify(toolUse.input), '{"value":1e400}');
 });
 
-test.each(['not json', '[1,2,3]'])('buildTargetRequest keeps raw_arguments fallback for invalid or non-object tool arguments', async argumentsJson => {
+test.each(['not json', '[1,2,3]'])('buildTargetPayload keeps raw_arguments fallback for invalid or non-object tool arguments', async argumentsJson => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
     input: [{ type: 'function_call', call_id: 'call_1', name: 'tool', arguments: argumentsJson, status: 'completed' }],
@@ -744,7 +744,7 @@ test.each(['not json', '[1,2,3]'])('buildTargetRequest keeps raw_arguments fallb
   assertEquals(toolUse.input, { raw_arguments: argumentsJson });
 });
 
-test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest maps multimodal %s into tool_result image and text blocks', async type => {
+test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetPayload maps multimodal %s into tool_result image and text blocks', async type => {
   const result = await buildWithTestSidecar({
     model: 'claude-test',
     input: [
@@ -783,7 +783,7 @@ test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTa
   ]);
 });
 
-test('buildTargetRequest maps incomplete function output to an Anthropic tool error', async () => {
+test('buildTargetPayload maps incomplete function output to an Anthropic tool error', async () => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
     input: [
@@ -801,7 +801,7 @@ test('buildTargetRequest maps incomplete function output to an Anthropic tool er
   });
 });
 
-test('buildTargetRequest states a custom tool result image as the URL it is', async () => {
+test('buildTargetPayload states a custom tool result image as the URL it is', async () => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
     input: [
@@ -831,7 +831,7 @@ test('buildTargetRequest states a custom tool result image as the URL it is', as
   });
 });
 
-test('buildTargetRequest throws on a stray web_search_call input item (shim owns the reverse path)', async () => {
+test('buildTargetPayload throws on a stray web_search_call input item (shim owns the reverse path)', async () => {
   // The OpenAI Responses web-search shim rewrites web_search_call input items into
   // upstream function_call + function_call_output pairs before this
   // translator runs. Reaching the translator with a raw web_search_call
@@ -865,7 +865,7 @@ test('buildTargetRequest throws on a stray web_search_call input item (shim owns
   );
 });
 
-test('buildTargetRequest throws on a stray compaction_trigger input item (compact-shim owns the strip)', async () => {
+test('buildTargetPayload throws on a stray compaction_trigger input item (compact-shim owns the strip)', async () => {
   // The compact-shim is structurally required on non-openai-responses targets and
   // strips compaction_trigger items before reaching this translator.
   // Reaching here with one in input means the shim disengaged; the
@@ -893,7 +893,7 @@ test('buildTargetRequest throws on a stray compaction_trigger input item (compac
   );
 });
 
-test('buildTargetRequest throws on a stray compaction input item (compact-shim owns the expansion)', async () => {
+test('buildTargetPayload throws on a stray compaction input item (compact-shim owns the expansion)', async () => {
   // The compact-shim expands its own shim-encoded compaction items inline
   // before reaching this translator and round-trips foreign compactions
   // back to the upstream as raw items. Either way the translator should
@@ -921,7 +921,7 @@ test('buildTargetRequest throws on a stray compaction input item (compact-shim o
   );
 });
 
-test('buildTargetRequest attaches ephemeral cache breakpoints to system, last function tool, and last message block', async () => {
+test('buildTargetPayload attaches ephemeral cache breakpoints to system, last function tool, and last message block', async () => {
   const result = await buildWithTestSidecar({
     model: 'claude-test',
     input: [
@@ -956,7 +956,7 @@ test('buildTargetRequest attaches ephemeral cache breakpoints to system, last fu
   assertEquals(lastBlock.cache_control, { type: 'ephemeral' });
 });
 
-test('buildTargetRequest extracts flat text.format json_schema into output_config.format and drops OpenAI-only fields', async () => {
+test('buildTargetPayload extracts flat text.format json_schema into output_config.format and drops OpenAI-only fields', async () => {
   const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'], additionalProperties: false };
   const result = await buildWithTestSidecar({
     model: 'claude-test',
@@ -977,7 +977,7 @@ test('buildTargetRequest extracts flat text.format json_schema into output_confi
   assertEquals(result.target.output_config, { format: { type: 'json_schema', schema } });
 });
 
-test('buildTargetRequest merges reasoning.effort with structured-output format on a single output_config', async () => {
+test('buildTargetPayload merges reasoning.effort with structured-output format on a single output_config', async () => {
   const schema = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false };
   const result = await buildWithTestSidecar({
     model: 'claude-test',
@@ -999,7 +999,7 @@ test('buildTargetRequest merges reasoning.effort with structured-output format o
   assertEquals(result.target.output_config, { effort: 'high', format: { type: 'json_schema', schema } });
 });
 
-test('buildTargetRequest drops text.format json_object (no Anthropic equivalent)', async () => {
+test('buildTargetPayload drops text.format json_object (no Anthropic equivalent)', async () => {
   const result = await buildWithTestSidecar({
     model: 'claude-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
@@ -1019,7 +1019,7 @@ test('buildTargetRequest drops text.format json_object (no Anthropic equivalent)
   assertFalse('output_config' in result.target);
 });
 
-test('buildTargetRequest hoists leading role:"system" to top-level system field', async () => {
+test('buildTargetPayload hoists leading role:"system" to top-level system field', async () => {
   const result = await buildWithTestSidecar(
     {
       model: 'claude-test',
@@ -1045,7 +1045,7 @@ test('buildTargetRequest hoists leading role:"system" to top-level system field'
   assertEquals(result.target.messages[0].role, 'user');
 });
 
-test('buildTargetRequest keeps non-leading role:"system" inline', async () => {
+test('buildTargetPayload keeps non-leading role:"system" inline', async () => {
   const result = await buildWithTestSidecar(
     {
       model: 'claude-test',
@@ -1074,7 +1074,7 @@ test('buildTargetRequest keeps non-leading role:"system" inline', async () => {
   assertFalse('system' in result.target);
 });
 
-test('buildTargetRequest hoists leading role:"developer" to top-level system field', async () => {
+test('buildTargetPayload hoists leading role:"developer" to top-level system field', async () => {
   const result = await buildWithTestSidecar(
     {
       model: 'claude-test',
@@ -1100,7 +1100,7 @@ test('buildTargetRequest hoists leading role:"developer" to top-level system fie
   assertEquals(result.target.system, [{ type: 'text', text: 'dev rule', cache_control: { type: 'ephemeral' } }]);
 });
 
-test('buildTargetRequest preserves payload.instructions and leading system as separate blocks; non-leading stays inline', async () => {
+test('buildTargetPayload preserves payload.instructions and leading system as separate blocks; non-leading stays inline', async () => {
   const result = await buildWithTestSidecar(
     {
       model: 'claude-test',
@@ -1133,7 +1133,7 @@ test('buildTargetRequest preserves payload.instructions and leading system as se
   assertEquals(result.target.messages[2].role, 'user');
 });
 
-test('buildTargetRequest throws when a system input message contains an image part', async () => {
+test('buildTargetPayload throws when a system input message contains an image part', async () => {
   await assertRejects(
     () =>
       buildWithTestSidecar(
@@ -1167,7 +1167,7 @@ test('buildTargetRequest throws when a system input message contains an image pa
   );
 });
 
-test('buildTargetRequest throws when a non-leading developer input message contains an image part', async () => {
+test('buildTargetPayload throws when a non-leading developer input message contains an image part', async () => {
   await assertRejects(
     () =>
       buildWithTestSidecar(

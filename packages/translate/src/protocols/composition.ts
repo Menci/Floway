@@ -1,21 +1,19 @@
 import type { Reading } from './composition/reading.ts';
-import { settleReading } from './composition/reading.ts';
+import { resolveReading } from './composition/reading.ts';
 import type { ResolvedTurn } from './composition/segments.ts';
-import type { IRInputRequest, IRInputTurn } from '../ir/input/types.ts';
+import type { IRInputRequestHeader, IRInputTurn } from '../ir/input/types.ts';
 import type { IRRecord } from '../ir/output/stream.ts';
-import type { AssistantTurnByProtocol, AssistantTurnFor } from '../round-trip/assistant-turn.ts';
+import type { AssistantTurnProtocol, InputAssistantTurnFor } from '../round-trip/assistant-turn.ts';
 import type { ReplayContent } from '../round-trip/reference/assistant-turn.ts';
-import type { EncodedRoundTripSidecar } from '../round-trip/resolve.ts';
+import type { SidecarCarrier } from '../round-trip/resolve.ts';
 import { roundTripAssistantTurn } from '../round-trip/resolve.ts';
 import type { SourceAssistantTurnFor } from '../round-trip/source-assistant-turn.ts';
 import type { RoundTripReader, RoundTripWriter } from '../round-trip/stream.ts';
 import { createRoundTripStream } from '../round-trip/stream.ts';
 import type { RoundTripTurnDigest } from '../round-trip/turn-digest.ts';
 import type { FlatCallContext } from '../shared/flatten-request.ts';
-import type { SourceProtocolErrorWriter, TranslateOptions, TranslateTrip } from '../types.ts';
+import type { RestateSourceError, TranslateOptions, TranslateTrip } from '../types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-
-type AssistantTurnKey = keyof AssistantTurnByProtocol;
 
 /**
  * How one protocol carries a sidecar on its own assistant turns.
@@ -24,19 +22,19 @@ type AssistantTurnKey = keyof AssistantTurnByProtocol;
  * computed over: the turn digest hashes it and the references are cut from it,
  * so none of this can work from an IR turn.
  */
-export interface SourceRoundTrip<Name extends AssistantTurnKey> {
-  readonly inspect: (turn: SourceAssistantTurnFor<Name>) => EncodedRoundTripSidecar<SourceAssistantTurnFor<Name>>[];
+export interface SidecarRecognition<Name extends AssistantTurnProtocol> {
+  readonly inspect: (turn: SourceAssistantTurnFor<Name>) => SidecarCarrier<SourceAssistantTurnFor<Name>>[];
   readonly verify: (turn: SourceAssistantTurnFor<Name>, digest: RoundTripTurnDigest, version: number) => Promise<boolean>;
   readonly collectCandidates: (turn: SourceAssistantTurnFor<Name>) => ReplayContent[];
 }
 
 /** One protocol as the side a request comes from. */
-export interface SourceProtocol<Name extends AssistantTurnKey, Payload, Event> {
+export interface SourceProtocol<Name extends AssistantTurnProtocol, Payload, Event> {
   readonly name: Name;
   /** Reads the request into the turns it states, each turn's side already decided. */
   readonly read: (payload: Payload) => Reading<SourceAssistantTurnFor<Name>>;
-  readonly roundTrip: SourceRoundTrip<Name>;
-  readonly writeError: SourceProtocolErrorWriter;
+  readonly sidecarRecognition: SidecarRecognition<Name>;
+  readonly restateUpstreamError: RestateSourceError;
   /**
    * States the returned stream to this protocol's client.
    *
@@ -52,10 +50,10 @@ export interface SourceProtocol<Name extends AssistantTurnKey, Payload, Event> {
 }
 
 /** What a target recorded while writing, for the reader of its own stream. */
-export type TargetContext<Name extends keyof TargetContextByProtocol> = TargetContextByProtocol[Name];
+export type TargetReadState<Name extends keyof TargetReadStateByProtocol> = TargetReadStateByProtocol[Name];
 
 /** Each target's own context shape; a protocol that needs none states `void`. */
-export interface TargetContextByProtocol {
+export interface TargetReadStateByProtocol {
   readonly anthropicMessages: FlatCallContext;
   readonly openaiChatCompletions: FlatCallContext;
   readonly openaiResponses: void;
@@ -69,13 +67,13 @@ export interface TargetContextByProtocol {
  * The payload is what the upstream is asked; the context is what reading its
  * answer needs, and only this target knows what that is.
  */
-export interface TargetRequest<Payload, Name extends keyof TargetContextByProtocol> {
+export interface TargetWriteResult<Payload, Name extends keyof TargetReadStateByProtocol> {
   readonly payload: Payload;
-  readonly context: TargetContext<Name>;
+  readonly context: TargetReadState<Name>;
 }
 
 /** One protocol as the side a request goes to. */
-export interface TargetProtocol<Name extends AssistantTurnKey, Payload, Event> {
+export interface TargetProtocol<Name extends AssistantTurnProtocol, Payload, Event> {
   readonly name: Name;
   /**
    * Writes the input IR as this protocol's request.
@@ -85,10 +83,10 @@ export interface TargetProtocol<Name extends AssistantTurnKey, Payload, Event> {
    * it reads from there rather than being told separately.
    */
   readonly write: (
-    request: IRInputRequest,
-    pieces: readonly (IRInputTurn | ResolvedTurn<AssistantTurnFor<Name>>)[],
+    request: IRInputRequestHeader,
+    turns: readonly (IRInputTurn | ResolvedTurn<InputAssistantTurnFor<Name>>)[],
     options: TranslateOptions,
-  ) => TargetRequest<Payload, Name>;
+  ) => TargetWriteResult<Payload, Name>;
   /**
    * Reads this protocol's upstream events into the output IR.
    *
@@ -100,7 +98,7 @@ export interface TargetProtocol<Name extends AssistantTurnKey, Payload, Event> {
    */
   readonly readStream: (
     frames: AsyncIterable<ProtocolFrame<Event>>,
-    context: TargetContext<Name>,
+    context: TargetReadState<Name>,
     roundTripReader: RoundTripReader<Name>,
   ) => AsyncIterable<IRRecord>;
 }
@@ -112,19 +110,19 @@ export interface TargetProtocol<Name extends AssistantTurnKey, Payload, Event> {
  * one of them, so a route states a pair as two values.
  */
 export const composeTranslation = <
-  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent,
-  TgtName extends AssistantTurnKey, TgtPayload extends { model: string }, TgtEvent,
+  SrcName extends AssistantTurnProtocol, SrcPayload, SrcEvent,
+  TgtName extends AssistantTurnProtocol, TgtPayload extends { model: string }, TgtEvent,
 >(
   source: SourceProtocol<SrcName, SrcPayload, SrcEvent>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
 ): TranslateTrip<SrcPayload, SrcEvent, TgtPayload, TgtEvent> => async (payload, options) => {
   const reading = source.read(payload);
   const { payload: targetPayload, context } = target.write(
-    reading.request, await settleTurns(source, target, reading, options), options,
+    reading.request, await resolveReadingTurns(source, target, reading, options), options,
   );
   return {
     target: targetPayload,
-    errorBody: source.writeError,
+    restateUpstreamError: source.restateUpstreamError,
     events: frames => {
       const stream = createRoundTripStream(source.name, target.name, options.sidecarCodec);
       return source.writeStream(payload, target.readStream(frames, context, stream.reader), stream.writer);
@@ -140,20 +138,20 @@ export const composeTranslation = <
  * builds. The two paths are exclusive, which is why the thunk is only called on
  * the second.
  */
-const settleTurns = async <
-  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent,
-  TgtName extends AssistantTurnKey, TgtPayload, TgtEvent,
+const resolveReadingTurns = async <
+  SrcName extends AssistantTurnProtocol, SrcPayload, SrcEvent,
+  TgtName extends AssistantTurnProtocol, TgtPayload, TgtEvent,
 >(
   source: SourceProtocol<SrcName, SrcPayload, SrcEvent>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
   reading: Reading<SourceAssistantTurnFor<SrcName>>,
   options: TranslateOptions,
-): Promise<(IRInputTurn | ResolvedTurn<AssistantTurnFor<TgtName>>)[]> =>
-  await settleReading(reading, async (turn): Promise<
-    { readonly resolved: AssistantTurnFor<TgtName> } | undefined
+): Promise<(IRInputTurn | ResolvedTurn<InputAssistantTurnFor<TgtName>>)[]> =>
+  await resolveReading(reading, async (turn): Promise<
+    { readonly resolved: InputAssistantTurnFor<TgtName> } | undefined
   > => {
     const resolved = await roundTripAssistantTurn(
-      source.name, target.name, turn.assistantTurn, options.sidecarCodec, source.roundTrip,
+      source.name, target.name, turn.assistantTurn, options.sidecarCodec, source.sidecarRecognition,
     );
     return resolved === undefined ? undefined : { resolved };
   });
@@ -164,9 +162,9 @@ const settleTurns = async <
  * A pair's request translation is worth testing without the event side, and
  * this states exactly that step. It is the same code `composeTranslation` runs.
  */
-export const buildTargetRequestFor = async <
-  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent,
-  TgtName extends AssistantTurnKey, TgtPayload, TgtEvent,
+export const buildTargetPayloadFor = async <
+  SrcName extends AssistantTurnProtocol, SrcPayload, SrcEvent,
+  TgtName extends AssistantTurnProtocol, TgtPayload, TgtEvent,
 >(
   source: SourceProtocol<SrcName, SrcPayload, SrcEvent>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
@@ -176,7 +174,7 @@ export const buildTargetRequestFor = async <
   // the same reading rather than opening a second one.
   reading: Reading<SourceAssistantTurnFor<SrcName>> = source.read(payload),
 ): Promise<TgtPayload> =>
-  target.write(reading.request, await settleTurns(source, target, reading, options), options).payload;
+  target.write(reading.request, await resolveReadingTurns(source, target, reading, options), options).payload;
 
 /**
  * The event half of a composed trip, stated on its own.
@@ -184,9 +182,9 @@ export const buildTargetRequestFor = async <
  * It is the same code `composeTranslation` runs, including the reading that the
  * client-side writer may need.
  */
-export const translateSourceEventsFor = <
-  SrcName extends AssistantTurnKey, SrcPayload, SrcEvent,
-  TgtName extends AssistantTurnKey, TgtPayload, TgtEvent,
+export const buildSourceEventsFor = <
+  SrcName extends AssistantTurnProtocol, SrcPayload, SrcEvent,
+  TgtName extends AssistantTurnProtocol, TgtPayload, TgtEvent,
 >(
   source: SourceProtocol<SrcName, SrcPayload, SrcEvent>,
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
@@ -199,7 +197,7 @@ export const translateSourceEventsFor = <
   // Stating the answer needs what writing the request recorded, so this walks
   // the same writing step the composed trip does.
   return (async function* () {
-    const { context } = target.write(reading.request, await settleTurns(source, target, reading, options), options);
+    const { context } = target.write(reading.request, await resolveReadingTurns(source, target, reading, options), options);
     yield* source.writeStream(payload, target.readStream(frames, context, stream.reader), stream.writer);
   })();
 };

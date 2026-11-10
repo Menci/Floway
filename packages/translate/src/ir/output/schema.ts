@@ -1,6 +1,6 @@
-import type { IR, IRAbsent, IROutputSourceCitation, IROutputTokenLogprob } from './types.ts';
+import type { IROutput, IRAbsent, IROutputSourceCitation, IROutputTokenLogprob } from './types.ts';
 
-// The structure of the IR, declared once. Every question about a path (is it an append
+// The structure of the IROutput, declared once. Every question about a path (is it an append
 // target, may it hold `IRAbsent`, which lifecycle unit does it belong to) is answered by
 // walking this schema, never by matching path shapes. The value type inferred from the
 // schema is checked against the output IR types at the bottom of this file.
@@ -56,9 +56,9 @@ const union = <D extends string, C extends Readonly<Record<string, IRObjectNode>
 const contentPart = union('type', {
   text: object({ text: appendString, annotations: nullable(array(opaque<IROutputSourceCitation>())) }, { optional: ['annotations'] }),
   refusal: object({ refusal: appendString }),
-  image: object({ image: object({ data: string, mime_type: string }, { optional: ['mime_type'] }) }),
+  image: object({ image: object({ data: string, media_type: string }, { optional: ['media_type'] }) }),
   audio: object({
-    audio: object({ data: appendString, transcript: appendString, mime_type: string }, { optional: ['data', 'transcript', 'mime_type'], requiresAnyOf: ['data', 'transcript'] }),
+    audio: object({ data: appendString, transcript: appendString, media_type: string }, { optional: ['data', 'transcript', 'media_type'], requiresAnyOf: ['data', 'transcript'] }),
   }),
 }, 'part');
 
@@ -80,9 +80,9 @@ const logprobs = nullable(array(union('scope', {
 export const irSchema = object({
   choices: array(object({
     items: array(item),
-    refusal: object({ category: nullable(string), explanation: nullable(string) }),
+    refusal_details: object({ category: nullable(string), explanation: nullable(string) }),
     logprobs,
-  }, { optional: ['refusal', 'logprobs'], unit: 'choice' })),
+  }, { optional: ['refusal_details', 'logprobs'], unit: 'choice' })),
   model: string,
   service_tier: string,
   usage: allOptional({
@@ -120,4 +120,4 @@ type Mutual<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 // Compile-time proof that the schema and the output IR types describe the same values: a field the
 // schema declares optional, nullable, appendable or `IRAbsent`-capable differs from the output IR type
 // exactly when this stops being `true`.
-export const irSchemaMatchesIRTypes: Mutual<ValueOf<typeof irSchema>, IR> = true;
+export const irSchemaMatchesIRTypes: Mutual<ValueOf<typeof irSchema>, IROutput> = true;

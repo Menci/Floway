@@ -14,7 +14,7 @@
  * was allocated before it. That is why the caller walks the whole conversation
  * in one pass rather than mapping each declaration alone.
  */
-export interface FlatNameRequest {
+export interface GroupedCallable {
   readonly namespace: string;
   readonly name: string;
 }
@@ -26,7 +26,7 @@ export interface FlatNameRequest {
  * grouped callable must not take one of them, and must not take a name this
  * pass has already handed out.
  */
-export const assignFlatNames = <T extends FlatNameRequest>(
+export const assignFlatNames = <T extends GroupedCallable>(
   callables: readonly T[],
   reserved: ReadonlySet<string>,
 ): Map<string, string> => {

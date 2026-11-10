@@ -1,9 +1,9 @@
 import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
-import { streamingFlag } from '../../../ir/input/stream.ts';
+import { requireStreaming } from '../../../ir/input/stream.ts';
 import type {
   IRInputAddressedAssistantItem,
   IRInputAddressedTurn,
-  IRInputRequest,
+  IRInputRequestHeader,
   IRInputSettings,
   IRInputTool,
   IRInputToolChoice,
@@ -136,9 +136,9 @@ const assistantMessage = (items: readonly IRInputAddressedAssistantItem[]): Open
   }];
 };
 
-const userMessages = (
+const clientMessages = (
   items: readonly IRInputAddressedClientItem[],
-  legacyCalls: ReadonlyMap<string, string>,
+  legacyFunctionCallNames: ReadonlyMap<string, string>,
 ): OpenAIChatCompletionsMessage[] => {
   // Images lifted out of consecutive tool results gather into one user message
   // after the run, so a tool-call group stays contiguous.
@@ -151,16 +151,16 @@ const userMessages = (
   };
   for (const item of items) {
     if (item.type !== 'tool_result') flushImages();
-    messages.push(...openaiChatCompletionsUserItem(item, lifted => pendingImages.push(...lifted), legacyCalls));
+    messages.push(...openaiChatCompletionsClientItem(item, lifted => pendingImages.push(...lifted), legacyFunctionCallNames));
   }
   flushImages();
   return messages;
 };
 
-const openaiChatCompletionsUserItem = (
+const openaiChatCompletionsClientItem = (
   item: IRInputAddressedClientItem,
   lift: (parts: readonly OpenAIChatCompletionsUserContentPart[]) => void,
-  legacyCalls: ReadonlyMap<string, string>,
+  legacyFunctionCallNames: ReadonlyMap<string, string>,
 ): OpenAIChatCompletionsMessage[] => [item].flatMap<OpenAIChatCompletionsMessage>(item => {
   switch (item.type) {
   case 'message':
@@ -177,20 +177,20 @@ const openaiChatCompletionsUserItem = (
     // name, and a modern call with a `tool` message by id. Answering a legacy
     // call with a `tool` message would name an id the assistant turn never
     // stated.
-    const legacyName = legacyCalls.get(item.call_id);
-    return [legacyName === undefined
+    const legacyFunctionName = legacyFunctionCallNames.get(item.call_id);
+    return [legacyFunctionName === undefined
       ? { role: 'tool', tool_call_id: item.call_id, content: projected.content }
-      : { role: 'function', name: legacyName, content: projected.content }];
+      : { role: 'function', name: legacyFunctionName, content: projected.content }];
   }
   }
 });
 
-export const openaiChatCompletionsFromIR = (
+export const openaiChatCompletionsConversationFromIR = (
   turns: readonly IRInputAddressedTurn[],
-  legacyCalls: ReadonlyMap<string, string> = new Map(),
+  legacyFunctionCallNames: ReadonlyMap<string, string> = new Map(),
 ): OpenAIChatCompletionsMessage[] => turns.flatMap(turn => turn.kind === 'assistant'
   ? assistantMessage(turn.items)
-  : userMessages(turn.items, legacyCalls));
+  : clientMessages(turn.items, legacyFunctionCallNames));
 
 /**
  * Writes the settings onto a Chat Completions payload. `max_tokens` is
@@ -254,7 +254,7 @@ const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<OpenAIChatComp
  * assistant turns a sidecar already resolved, so only this half is computed once
  * per payload.
  */
-export const openaiChatCompletionsHeaderFromIR = (request: IRInputRequest): Omit<OpenAIChatCompletionsPayload, 'messages'> => {
+export const openaiChatCompletionsHeaderFromIR = (request: IRInputRequestHeader): Omit<OpenAIChatCompletionsPayload, 'messages'> => {
   const tools = irInputToolsForChoice(request.tools, request.tool_choice);
   const choice = irInputToolChoiceForTools(request.tool_choice, tools);
   return {
@@ -262,7 +262,7 @@ export const openaiChatCompletionsHeaderFromIR = (request: IRInputRequest): Omit
     model: request.settings.model,
     // A trip guarantees a streaming request; a request that says otherwise
     // cannot be carried by this side at all.
-    stream: streamingFlag(request.settings),
+    stream: requireStreaming(request.settings),
     // A streamed request asks the upstream for usage on every chunk, not only
     // the last one. `include_usage` is the OpenAI-standard flag;
     // `continuous_usage_stats` is the vLLM/SGLang extension that lets a
@@ -307,7 +307,7 @@ export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): 
     ...(settings.prompt_cache_key === undefined ? {} : { prompt_cache_key: settings.prompt_cache_key }),
     ...(settings.safety_identifier === undefined ? {} : { safety_identifier: settings.safety_identifier }),
     ...(settings.verbosity === undefined ? {} : { verbosity: settings.verbosity }),
-    ...(settings.candidate_count === undefined ? {} : { n: settings.candidate_count }),
+    ...(settings.choice_count === undefined ? {} : { n: settings.choice_count }),
     ...(settings.presence_penalty === undefined ? {} : { presence_penalty: settings.presence_penalty }),
     ...(settings.frequency_penalty === undefined ? {} : { frequency_penalty: settings.frequency_penalty }),
     ...(format === undefined

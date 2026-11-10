@@ -1,5 +1,5 @@
 import type { SourceProtocol } from '../composition.ts';
-import { openaiChatCompletionsErrorWriter } from './as-source/error-body.ts';
+import { restateOpenAIChatCompletionsError } from './as-source/error-body.ts';
 import { continuousUsageOf, openaiChatCompletionsRead } from './as-source/input-to.ts';
 import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from './as-source/round-trip.ts';
 import { openaiChatCompletionsFromIR } from './as-source/sse-to.ts';
@@ -16,12 +16,12 @@ export const openaiChatCompletionsSourceProtocol: SourceProtocol<
 > = {
   name: 'openaiChatCompletions',
   read: openaiChatCompletionsRead,
-  roundTrip: {
+  sidecarRecognition: {
     inspect: findOpenAIChatCompletionsSidecarCarriers,
     verify: verifyOpenAIChatCompletionsTurnDigest,
     collectCandidates: collectOpenAIChatCompletionsReplayContents,
   },
-  writeError: openaiChatCompletionsErrorWriter,
+  restateUpstreamError: restateOpenAIChatCompletionsError,
   // The client's own rendering choice, read off the request it sent.
   writeStream: (payload, records, roundTrip) => openaiChatCompletionsFromIR(records, {
     continuousUsageStats: continuousUsageOf(payload),

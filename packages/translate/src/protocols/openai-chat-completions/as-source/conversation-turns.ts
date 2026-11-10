@@ -3,7 +3,7 @@ import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsAssist
 export type OpenAIChatCompletionsConversationMessage = OpenAIChatCompletionsMessage | OpenAIChatCompletionsAssistantMessageEx;
 export type OpenAIChatCompletionsConversationTurn =
   | { role: 'assistant'; items: [OpenAIChatCompletionsAssistantMessage | OpenAIChatCompletionsAssistantMessageEx] }
-  | { role: 'bare'; items: Exclude<OpenAIChatCompletionsMessage, { role: 'assistant' }>[] };
+  | { role: 'client'; items: Exclude<OpenAIChatCompletionsMessage, { role: 'assistant' }>[] };
 // The assistant branch is a single message; a client run holds one or more.
 
 // A run of client messages is one turn, the same way every other protocol
@@ -21,11 +21,11 @@ export const partitionOpenAIChatCompletionsTurns = (messages: readonly OpenAICha
       continue;
     }
     if (message.role === 'system' || message.role === 'developer') {
-      turns.push({ role: 'bare', items: [message] });
+      turns.push({ role: 'client', items: [message] });
       continue;
     }
-    if (previous?.role === 'bare' && previous.items.every(item => item.role !== 'system' && item.role !== 'developer')) previous.items.push(message);
-    else turns.push({ role: 'bare', items: [message] });
+    if (previous?.role === 'client' && previous.items.every(item => item.role !== 'system' && item.role !== 'developer')) previous.items.push(message);
+    else turns.push({ role: 'client', items: [message] });
   }
   return turns;
 };

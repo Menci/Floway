@@ -1,5 +1,5 @@
 import { irErrorPayloadFromBody, restateError } from '../../../shared/api-error.ts';
-import type { SourceProtocolErrorWriter } from '../../../types.ts';
+import type { RestateSourceError } from '../../../types.ts';
 
 /**
  * States a failed request in the Responses envelope.
@@ -11,7 +11,7 @@ import type { SourceProtocolErrorWriter } from '../../../types.ts';
  *
  * A body that is not an error envelope this package recognizes is left alone.
  */
-export const openaiResponsesErrorWriter: SourceProtocolErrorWriter = upstream => {
+export const restateOpenAIResponsesError: RestateSourceError = upstream => {
   const error = irErrorPayloadFromBody(upstream);
   if (error === undefined) return undefined;
   const body = new TextEncoder().encode(JSON.stringify({

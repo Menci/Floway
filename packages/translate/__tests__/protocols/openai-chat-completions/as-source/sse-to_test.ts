@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import { createIRBuilder } from '../../../../src/ir/output/stream.ts';
 import { openaiChatCompletionsFromIR } from '../../../../src/protocols/openai-chat-completions/as-source/sse-to.ts';
-import { createReferenceBuilder, collectContentViews, createFieldState, createReferenceFinalizer, appendField } from '../../../../src/round-trip/reference/reference-builder.ts';
+import { createReferenceBuilder, collectEmittedFieldPlacements, createFieldState, createFieldReferencer, appendField } from '../../../../src/round-trip/reference/reference-builder.ts';
 import { type RoundTripWriter } from '../../../../src/round-trip/stream.ts';
 
 test('prepares each Chat choice independently while another choice has partial audio', async () => {
@@ -13,7 +13,7 @@ test('prepares each Chat choice independently while another choice has partial a
   source.event({ type: 'start', id: 'response' });
 
   source.initialize(['choices', 1, 'items', 0], { type: 'message', content: [] });
-  source.initialize(['choices', 1, 'items', 0, 'content', 0], { type: 'audio', audio: { mime_type: 'audio/wav' } });
+  source.initialize(['choices', 1, 'items', 0, 'content', 0], { type: 'audio', audio: { media_type: 'audio/wav' } });
   source.initialize(['choices', 1, 'items', 0, 'content', 0, 'audio', 'data'], '');
   source.append(['choices', 1, 'items', 0, 'content', 0, 'audio', 'data'], 'YQ==');
 
@@ -84,8 +84,8 @@ test.each([false, true])('resolves delayed transcript provenance at actual proje
   })) {}
   if (prepared === undefined) throw new Error('ChatCompletions sidecar was not prepared');
   const [, , turn, state] = prepared;
-  const finalizer = createReferenceFinalizer(references, collectContentViews(turn, state));
+  const finalizer = createFieldReferencer(references, collectEmittedFieldPlacements(turn, state));
   expect(turn.content).toBe(hasAudioData ? 'early ' : 'early late text');
-  expect(await finalizer.finalizeField('late text', transcript)).toEqual(hasAudioData ? 'late text' : expect.objectContaining({ parts: [[0, 6, 15]] }));
+  expect(await finalizer.referenceField('late text', transcript)).toEqual(hasAudioData ? 'late text' : expect.objectContaining({ parts: [[0, 6, 15]] }));
   if (hasAudioData) expect(turn.audio).toEqual({ id: 'audio' });
 });

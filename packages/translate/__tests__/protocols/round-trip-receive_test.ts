@@ -5,10 +5,10 @@ import { computeAnthropicMessagesTurnDigest } from '../../src/protocols/anthropi
 import { computeGeminiGenerateContentTurnDigest } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
 import { computeOpenAIChatCompletionsTurnDigest } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
 import { computeOpenAIResponsesTurnDigest } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
-import type { AssistantTurnFor } from '../../src/round-trip/assistant-turn.ts';
-import type { ReferenceableAssistantTurnFor } from '../../src/round-trip/reference/assistant-turn.ts';
+import type { InputAssistantTurnFor } from '../../src/round-trip/assistant-turn.ts';
+import type { ReferenceableInputAssistantTurnFor } from '../../src/round-trip/reference/assistant-turn.ts';
 import { ContentReference } from '../../src/round-trip/reference/assistant-turn.ts';
-import type { RoundTripProtocol } from '../../src/round-trip/sidecar.ts';
+import type { AssistantTurnProtocol } from '../../src/round-trip/sidecar.ts';
 import { encodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import { hashRoundTripContent, replayMaterialsByType } from '../../src/round-trip/turn-digest.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
@@ -27,7 +27,7 @@ const messages = (carrier: string): AnthropicMessagesPayload => ({ model: 'sourc
 const responses = (carrier: string): OpenAIResponsesRequestPayloadEx => ({ model: 'source', stream: true, input: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'answer' }] }, { type: 'reasoning', id: 'carrier', summary: [], encrypted_content: carrier }] });
 const gemini = (carrier: string): GeminiGenerateContentRequest => ({ model: 'model', contents: [{ role: 'model', parts: [{ text: 'answer', thoughtSignature: carrier }] }] });
 
-const turnDigest = async (source: RoundTripProtocol) => source === 'openaiChatCompletions'
+const turnDigest = async (source: AssistantTurnProtocol) => source === 'openaiChatCompletions'
   ? await computeOpenAIChatCompletionsTurnDigest({ role: 'assistant', content: 'answer' })
   : source === 'anthropicMessages'
     ? await computeAnthropicMessagesTurnDigest([{ role: 'assistant', content: [{ type: 'text', text: 'answer' }] }])
@@ -36,7 +36,7 @@ const turnDigest = async (source: RoundTripProtocol) => source === 'openaiChatCo
       : await computeGeminiGenerateContentTurnDigest([{ role: 'model', parts: [{ text: 'answer' }] }]);
 
 type NativeProtocol = 'anthropicMessages' | 'openaiChatCompletions' | 'openaiResponses';
-const nativeTurn = (target: NativeProtocol, text = 'restored'): AssistantTurnFor<NativeProtocol> => target === 'openaiChatCompletions'
+const nativeTurn = (target: NativeProtocol, text = 'restored'): InputAssistantTurnFor<NativeProtocol> => target === 'openaiChatCompletions'
   ? { role: 'assistant', content: text }
   : target === 'anthropicMessages'
     ? { role: 'assistant', content: [{ type: 'text', text, citations: [] }] }
@@ -63,7 +63,7 @@ test.each(cases)('receives recognized $source history via $target', async ({ sou
 
 test.each(cases)('hydrates $source text references before restoring $target history', async ({ source, target, run }) => {
   const reference = new ContentReference('text', [[0, 0, 3]]);
-  const targetTurn: ReferenceableAssistantTurnFor<NativeProtocol, ContentReference> = target === 'openaiChatCompletions'
+  const targetTurn: ReferenceableInputAssistantTurnFor<NativeProtocol, ContentReference> = target === 'openaiChatCompletions'
     ? { role: 'assistant', content: reference }
     : target === 'anthropicMessages'
       ? { role: 'assistant', content: [{ type: 'text', text: reference, citations: [] }] }
@@ -79,7 +79,7 @@ test.each(cases)('hydrates $source text references before restoring $target hist
 test('hydrates a native JSON field from a replayed GenerateContent argument candidate', async () => {
   const args = { x: 1 };
   const reference = new ContentReference('json', [0]);
-  const targetTurn: ReferenceableAssistantTurnFor<'anthropicMessages', ContentReference> = { role: 'assistant', content: [{ type: 'tool_use', id: 'native-call', name: 'native-tool', input: reference }] };
+  const targetTurn: ReferenceableInputAssistantTurnFor<'anthropicMessages', ContentReference> = { role: 'assistant', content: [{ type: 'tool_use', id: 'native-call', name: 'native-tool', input: reference }] };
   const checkMaterial = { contents: [{ inlineData: [], functionCall: [{ name: 'lookup', args }] }] };
   const carrier = await encodeRoundTripSidecar(createTestSidecarCodec(), {
     v: 1,
@@ -112,7 +112,7 @@ test.each(cases)('leaves a terminal sidecar unrecognized by the injected decoder
 
 test.each(['different codec scope', 'changed sidecar handle', 'changed replay'] as const)('uses ordinary translation for %s', async failure => {
   const codec = createTestSidecarCodec(failure === 'different codec scope' ? 'other-scope' : 'test-codec-scope');
-  const native: AssistantTurnFor<'anthropicMessages'> = { role: 'assistant', content: [{ type: 'text', text: 'restored', citations: [] }] };
+  const native: InputAssistantTurnFor<'anthropicMessages'> = { role: 'assistant', content: [{ type: 'text', text: 'restored', citations: [] }] };
   const encoded = await encodeRoundTripSidecar(codec, { v: 1, source: 'openaiChatCompletions', target: 'anthropicMessages', targetTurn: native, sourceTurnDigest: await turnDigest('openaiChatCompletions') });
   const carrier = failure === 'changed sidecar handle' ? `${encoded.startsWith('A') ? 'B' : 'A'}${encoded.slice(1)}` : encoded;
   const text = failure === 'changed replay' ? 'edited' : 'answer';
@@ -170,7 +170,7 @@ test('accepts incomplete Responses call history and requires its replayed status
   const expected = replayMaterialsByType<IRJSONObject & { type: string }>([
     { type: call.type, status: call.status, call_id: call.call_id, name: call.name, arguments: call.arguments },
   ]);
-  const native: AssistantTurnFor<'anthropicMessages'> = { role: 'assistant', content: [{ type: 'text', text: 'restored', citations: [] }] };
+  const native: InputAssistantTurnFor<'anthropicMessages'> = { role: 'assistant', content: [{ type: 'text', text: 'restored', citations: [] }] };
   const carrier = await encodeRoundTripSidecar(createTestSidecarCodec(), {
     v: 1,
     source: 'openaiResponses',

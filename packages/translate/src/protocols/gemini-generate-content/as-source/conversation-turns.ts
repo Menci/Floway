@@ -1,11 +1,11 @@
 import type { GeminiGenerateContentContent } from '@floway-dev/protocols/gemini-generate-content';
 
-export type GeminiGenerateContentConversationTurn = { role: 'assistant' | 'bare'; items: GeminiGenerateContentContent[] };
+export type GeminiGenerateContentConversationTurn = { role: 'assistant' | 'client'; items: GeminiGenerateContentContent[] };
 
 export const partitionGeminiGenerateContentTurns = (contents: readonly GeminiGenerateContentContent[]): GeminiGenerateContentConversationTurn[] => {
   const turns: GeminiGenerateContentConversationTurn[] = [];
   for (const content of contents) {
-    const role = content.role === 'model' ? 'assistant' : 'bare';
+    const role = content.role === 'model' ? 'assistant' : 'client';
     const previous = turns.at(-1);
     if (previous?.role === role) previous.items.push(content);
     else turns.push({ role, items: [content] });

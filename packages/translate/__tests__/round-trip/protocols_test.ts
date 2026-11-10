@@ -9,7 +9,7 @@ import { computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSide
 import { partitionOpenAIResponsesTurns } from '../../src/protocols/openai-responses/as-source/conversation-turns.ts';
 import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
 import { toOpenAIResponsesInputAssistantTurn } from '../../src/protocols/openai-responses/as-target/assistant-turn.ts';
-import type { EncodedRoundTripSidecar } from '../../src/round-trip/resolve.ts';
+import type { SidecarCarrier } from '../../src/round-trip/resolve.ts';
 import type { AnyRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesAssistantMessage, AnthropicMessagesMessage } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentContent } from '@floway-dev/protocols/gemini-generate-content';
@@ -61,7 +61,7 @@ const geminiTurn = (): GeminiGenerateContentContent[] => [
   { role: 'model', parts: [createGeminiGenerateContentSidecarCarrier('opaque-sidecar')] },
 ];
 
-const fixtureSidecar = <Turn>(candidates: EncodedRoundTripSidecar<Turn>[], data = 'opaque-sidecar') => {
+const fixtureSidecar = <Turn>(candidates: SidecarCarrier<Turn>[], data = 'opaque-sidecar') => {
   const candidate = candidates.find(candidate => candidate.data === data);
   if (candidate === undefined) throw new Error(`Missing fixture sidecar: ${data}`);
   return { sidecar: candidate.data, turn: candidate.withoutSidecar() };
@@ -205,7 +205,7 @@ describe('assistant-turn sidecar protocols', () => {
     ];
     const turns = partitionOpenAIChatCompletionsTurns(messages);
     expect(turns.map(({ role, items }) => [role, items.length])).toEqual([
-      ['bare', 1], ['assistant', 1], ['bare', 1], ['assistant', 1],
+      ['client', 1], ['assistant', 1], ['client', 1], ['assistant', 1],
     ]);
     expect(turns.map(({ items }) => items).flat()).toEqual(messages);
   });
@@ -260,7 +260,7 @@ describe('assistant-turn sidecar protocols', () => {
     ];
     const turns = partitionOpenAIResponsesTurns(input);
     expect(turns.map(({ role, items }) => [role, items.length])).toEqual([
-      ['assistant', 2], ['bare', 1], ['assistant', 1], ['bare', 1],
+      ['assistant', 2], ['client', 1], ['assistant', 1], ['client', 1],
     ]);
     expect(turns.flatMap(({ items }) => items)).toEqual(input);
   });
@@ -513,7 +513,7 @@ describe('assistant-turn sidecar protocols', () => {
       { role: 'user', parts: [{ text: 'question' }] },
       { role: 'model', parts: [{ text: 'next turn' }] },
     ]);
-    expect(turns.map(({ role, items }) => [role, items.length])).toEqual([['assistant', 2], ['bare', 1], ['assistant', 1]]);
+    expect(turns.map(({ role, items }) => [role, items.length])).toEqual([['assistant', 2], ['client', 1], ['assistant', 1]]);
     const check = await computeGeminiGenerateContentTurnDigest(fixtureSidecar(findGeminiGenerateContentSidecarCarriers(turn)).turn);
     expect(await verifyGeminiTurn([{ ...turn[0], parts: [turn[0].parts![1], turn[0].parts![0], turn[0].parts![3], turn[0].parts![2]] }, turn[1]], check)).toBe(true);
     const moved = [

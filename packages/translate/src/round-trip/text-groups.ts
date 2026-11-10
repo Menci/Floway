@@ -10,7 +10,8 @@ export interface TextGroup<Part extends object> {
 }
 
 export interface TextPlacement {
-  readonly text: string;
+  /** The whole channel this field belongs to. */
+  readonly enclosingText: string;
   readonly offset: number;
 }
 
@@ -39,7 +40,7 @@ export const collectTextPlacementIndex = <Part extends object>(
   for (const channel of channels.values()) {
     for (const { part, field, offset } of channel.segments) {
       const fields = views.get(part) ?? new Map();
-      fields.set(field, { text: channel.text, offset });
+      fields.set(field, { enclosingText: channel.text, offset });
       views.set(part, fields);
     }
   }

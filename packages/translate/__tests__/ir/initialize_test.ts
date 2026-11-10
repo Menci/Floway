@@ -23,20 +23,20 @@ test('initialize carries real required fields while append targets start empty',
 
 test('initialize arrays require the exact next index and never replace entries', () => {
   const collector = createIRCollector();
-  collector.apply({ type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } });
-  expect(() => collector.apply({ type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } })).toThrow('absent target');
-  for (const index of [-1, 0.5, 2]) expect(() => collector.apply({ type: 'write', kind: 'initialize', path: ['choices', index], value: { items: [] } })).toThrow();
-  collector.apply({ type: 'write', kind: 'initialize', path: ['choices', 1], value: { items: [] } });
+  collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } });
+  expect(() => collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } })).toThrow('absent target');
+  for (const index of [-1, 0.5, 2]) expect(() => collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', index], value: { items: [] } })).toThrow();
+  collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 1], value: { items: [] } });
   expect(collector.state.choices).toHaveLength(2);
 });
 
 test('append accepts only statically declared string fields', () => {
   const collector = createIRCollector();
-  collector.apply({ type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } });
-  collector.apply({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 0], value: { type: 'message', content: [] } });
-  collector.apply({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 0, 'content', 0], value: { type: 'text', text: '' } });
-  expect(() => collector.apply({ type: 'write', kind: 'append', path: ['model'], value: 'x' })).toThrow('append-target path');
-  collector.apply({ type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'x' });
+  collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } });
+  collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 0], value: { type: 'message', content: [] } });
+  collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 0, 'content', 0], value: { type: 'text', text: '' } });
+  expect(() => collector.applyWrite({ type: 'write', kind: 'append', path: ['model'], value: 'x' })).toThrow('append-target path');
+  collector.applyWrite({ type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'x' });
   expect(collector.value(['choices', 0, 'items', 0, 'content', 0, 'text'])).toBe('x');
 });
 

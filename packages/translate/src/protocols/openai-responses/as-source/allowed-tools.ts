@@ -45,7 +45,7 @@ const validateCallableKinds = (declarations: readonly { type: 'function' | 'cust
  * this is where a member becomes a typed selector. A member that carries
  * anything beyond the three fields a selector may state is not one.
  */
-export const callableSelector = (selector: unknown): { readonly type: 'function' | 'custom'; readonly name: string; readonly namespace?: string } => {
+export const requireCallableSelector = (selector: unknown): { readonly type: 'function' | 'custom'; readonly name: string; readonly namespace?: string } => {
   if (typeof selector !== 'object' || selector === null
     || ((selector as { type?: unknown }).type !== 'function' && (selector as { type?: unknown }).type !== 'custom')
     || typeof (selector as { name?: unknown }).name !== 'string'
@@ -55,7 +55,7 @@ export const callableSelector = (selector: unknown): { readonly type: 'function'
   return selector as { readonly type: 'function' | 'custom'; readonly name: string; readonly namespace?: string };
 };
 
-export const validateAllowedTools = (
+export const validateCallableDeclarations = (
   tools: readonly OpenAIResponsesTool[] | null | undefined,
   choice: OpenAIResponsesToolChoice | null | undefined,
   input?: readonly CanonicalOpenAIResponsesInputItem[],
@@ -89,12 +89,12 @@ export const validateAllowedTools = (
       : []));
   });
   for (const selector of expanded) {
-    const selected_ = callableSelector(selector);
-    const type = selected_.type;
+    const declaredSelector = requireCallableSelector(selector);
+    const type = declaredSelector.type;
     // A selector may name the group separately or spell the pair out.
-    const name = selected_.namespace === undefined || selected_.name.includes('.')
-      ? selected_.name
-      : `${selected_.namespace}.${selected_.name}`;
+    const name = declaredSelector.namespace === undefined || declaredSelector.name.includes('.')
+      ? declaredSelector.name
+      : `${declaredSelector.namespace}.${declaredSelector.name}`;
     // A selector names a callable by kind, so a function and a custom tool that
     // share a name stay distinguishable.
     if (!declared.has(`${type}:${name}`)) {

@@ -22,8 +22,8 @@ export const openaiResponsesTargetProtocol: TargetProtocol<
   'openaiResponses', CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx
 > = {
   name: 'openaiResponses',
-  write: (request, pieces) => ({
-    payload: openaiResponsesPayloadFromSegments(request, assignCallIds(pieces, callsOf), turn => turn),
+  write: (request, turns) => ({
+    payload: openaiResponsesPayloadFromSegments(request, assignCallIds(turns, callsOf), turn => turn),
     // This wire states the call id on the result itself, so reading an answer
     // needs nothing beside the payload.
     context: undefined,

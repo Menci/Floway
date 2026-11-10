@@ -15,8 +15,8 @@ const result = (name?: string, callId?: string): IRInputTurn => ({
 });
 
 /** The id the result in the last piece was answered with. */
-const answeredId = (pieces: ReturnType<typeof assignCallIds>): string | undefined => {
-  const piece = pieces[pieces.length - 1];
+const answeredId = (turns: ReturnType<typeof assignCallIds>): string | undefined => {
+  const piece = turns[turns.length - 1];
   if (piece.kind !== 'client') return undefined;
   const item = piece.items[0];
   return item?.type === 'tool_result' ? item.call_id : undefined;

@@ -71,7 +71,7 @@ export interface IRInputSettings {
   // The source asks the target to pick the budget itself rather than state one.
   // GenerateContent spells it as a negative budget, Messages as an adaptive
   // thinking mode; both mean "let the model decide", which no number states.
-  readonly reasoning_dynamic?: boolean; // Messages, GenerateContent
+  readonly reasoning_budget_dynamic?: boolean; // Messages, GenerateContent
   // Whether the caller asks for readable reasoning, and how much of it. An open
   // string because Responses defines an enumerated scale while GenerateContent
   // states a boolean.
@@ -87,7 +87,7 @@ export interface IRInputSettings {
   // the same reason as `prompt_cache_key`.
   readonly safety_identifier?: string | null; // ChatCompletions, Responses
   // How many independent completions the caller asks for.
-  readonly candidate_count?: number; // ChatCompletions, GenerateContent
+  readonly choice_count?: number; // ChatCompletions, GenerateContent
   // Repetition penalties. Chat and GenerateContent state the same pair.
   readonly presence_penalty?: number; // ChatCompletions, GenerateContent
   readonly frequency_penalty?: number; // ChatCompletions, GenerateContent
@@ -109,9 +109,9 @@ export interface IRInputOutputFormat {
 }
 
 // One request's own fields, from the source's wire to the target's. The
-// conversation is not part of it: turns travel separately as pieces, because a
+// conversation is not part of it: turns travel separately as turns, because a
 // writer needs them interleaved with the assistant turns a sidecar restored.
-export interface IRInputRequest {
+export interface IRInputRequestHeader {
   readonly settings: IRInputSettings;
   // Absent and empty are the same thing: a request that declares no tool.
   readonly tools?: readonly IRInputTool[];
@@ -169,13 +169,13 @@ export type IRInputToolChoice =
   | 'auto'
   | 'none'
   | 'required'
-  | IRInputToolSelection
-  | { readonly type: 'allowed_tools'; readonly mode: 'auto' | 'required'; readonly tools: readonly IRInputToolSelection[] };
+  | IRInputToolSelector
+  | { readonly type: 'allowed_tools'; readonly mode: 'auto' | 'required'; readonly tools: readonly IRInputToolSelector[] };
 
 // A selector names one declared callable by kind and its logical identity, which
 // is what every protocol's selector arm states. A protocol that groups its
 // declarations states the group here too.
-export type IRInputToolSelection =
+export type IRInputToolSelector =
   | { readonly type: 'function'; readonly name: string; readonly namespace?: string }
   | { readonly type: 'custom'; readonly name: string; readonly namespace?: string };
 
@@ -213,7 +213,7 @@ export interface IRInputAssistantTurn {
 // message's own parts together while tool results and tool calls remain
 // separate items lets every writer reproduce its own grouping without this IR
 // prejudging one protocol's shape.
-export type IRInputClientItem = IRInputSystemMessageItem | IRInputUserMessageItem | IRInputToolResultItem;
+export type IRInputClientItem = IRInputPromptItem | IRInputUserMessageItem | IRInputToolResultItem;
 
 export type IRInputAssistantItem =
   | IRInputAssistantMessageItem
@@ -236,7 +236,7 @@ export interface IRInputAddressedAssistantTurn {
   readonly kind: 'assistant';
   readonly items: readonly IRInputAddressedAssistantItem[];
 }
-export type IRInputAddressedClientItem = IRInputSystemMessageItem | IRInputUserMessageItem | IRInputAddressedToolResultItem;
+export type IRInputAddressedClientItem = IRInputPromptItem | IRInputUserMessageItem | IRInputAddressedToolResultItem;
 export type IRInputAddressedToolResultItem = IRInputToolResultItem & { readonly call_id: string };
 export type IRInputAddressedAssistantItem =
   | Exclude<IRInputAssistantItem, IRInputFunctionCallItem | IRInputCustomToolCallItem>
@@ -251,7 +251,7 @@ export type IRInputAddressedAssistantItem =
 //
 // Its own discriminant keeps a prompt distinct from user content, whose parts
 // may carry media; a reader of the union must not have to re-read `role`.
-export interface IRInputSystemMessageItem {
+export interface IRInputPromptItem {
   readonly type: 'prompt'; // ChatCompletions, Responses, Messages
   readonly role: 'system' | 'developer'; // ChatCompletions, Responses; Messages has `system` only
   // Text only: no pair carries media in system or developer content, and each

@@ -11,7 +11,7 @@ import type { IRInputSettings } from './types.ts';
  * streaming before a trip is composed, so reaching here with `false` means the
  * IR was built outside that boundary.
  */
-export const streamingFlag = (settings: IRInputSettings): true => {
+export const requireStreaming = (settings: IRInputSettings): true => {
   if (settings.stream !== true) throw new Error('A translation target requires a streaming request, but the IR states a non-streaming one.');
   return true;
 };

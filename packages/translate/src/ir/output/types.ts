@@ -11,10 +11,10 @@ export { IRAbsent } from '../common/absent.ts';
 type IRValueOf<Extra> = Extra | null | boolean | number | string | readonly IRValueOf<Extra>[] | { readonly [key: string]: IRValueOf<Extra> };
 
 // All
-export type IRValue = IRValueOf<IRAbsent>;
+export type IROutputValue = IRValueOf<IRAbsent>;
 
 // All
-export interface IR {
+export interface IROutput {
   readonly choices: readonly IROutputChoice[]; // All
   readonly model?: string; // All
   readonly service_tier?: string; // All
@@ -24,12 +24,12 @@ export interface IR {
 // All
 interface IROutputChoice {
   readonly items: readonly IROutputItem[]; // All
-  readonly refusal?: IROutputClassifierRefusal; // All
+  readonly refusal_details?: IROutputRefusalDetails; // All
   readonly logprobs?: readonly IROutputLogprobGroup[] | null; // ChatCompletions, Responses, GenerateContent
 }
 
 // All
-interface IROutputClassifierRefusal {
+interface IROutputRefusalDetails {
   readonly category: string | null; // Messages, Responses
   readonly explanation: string | null; // All
 }
@@ -99,7 +99,7 @@ interface IROutputImagePart {
 // Responses, GenerateContent
 interface IROutputImage {
   readonly data: string; // Responses, GenerateContent
-  readonly mime_type?: string; // Responses, GenerateContent
+  readonly media_type?: string; // Responses, GenerateContent
 }
 
 // ChatCompletions, Responses, GenerateContent
@@ -113,7 +113,7 @@ interface IROutputAudio {
   readonly data?: string; // ChatCompletions, Responses, GenerateContent
   readonly transcript?: string; // ChatCompletions, Responses, GenerateContent
   // No current upstream reader produces it; reserved for a GenerateContent upstream.
-  readonly mime_type?: string; // GenerateContent
+  readonly media_type?: string; // GenerateContent
 }
 
 // All

@@ -1,6 +1,6 @@
 import type { IRJSONObject, IRJSONValue } from '../../../ir/output/types.ts';
 import type { ReplayContent } from '../../../round-trip/reference/assistant-turn.ts';
-import type { EncodedRoundTripSidecar } from '../../../round-trip/resolve.ts';
+import type { SidecarCarrier } from '../../../round-trip/resolve.ts';
 import { collectTextGroups, collectTextPlacementIndex, type TextContribution, type TextPlacementIndex } from '../../../round-trip/text-groups.ts';
 import { computeRoundTripTurnDigest, verifyRoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
 import type { RoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
@@ -72,7 +72,7 @@ const chatTurnDigestMaterialV1 = (turn: OpenAIChatCompletionsAssistantTurn): IRJ
   reasoningDetails: reasoningDetailsMaterial(turn),
 });
 
-export const findOpenAIChatCompletionsSidecarCarriers = (turn: OpenAIChatCompletionsAssistantTurn): EncodedRoundTripSidecar<OpenAIChatCompletionsAssistantTurn>[] => {
+export const findOpenAIChatCompletionsSidecarCarriers = (turn: OpenAIChatCompletionsAssistantTurn): SidecarCarrier<OpenAIChatCompletionsAssistantTurn>[] => {
   const details = reasoningDetails(turn);
   return details.flatMap((detail, detailIndex) => !isRecord(detail) || detail.type !== 'reasoning.encrypted' || typeof detail.data !== 'string' ? [] : [{
     data: detail.data,

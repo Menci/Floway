@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { buildTargetRequestFor } from '../../../src/protocols/composition.ts';
+import { buildTargetPayloadFor } from '../../../src/protocols/composition.ts';
 import { openaiResponsesRead } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
 import type { OpenAIResponsesAssistantTurn } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
@@ -13,10 +13,10 @@ import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesRequestPayloadEx }
 // A restored turn's own request is what these cases assert on, so each build
 // states the pair it walks and hands back the payload alone.
 const buildChatRequest = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec) => ({
-  target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], { ...payload, stream: true }, { sidecarCodec: codec }),
+  target: await buildTargetPayloadFor(pairs.responsesToChat[0], pairs.responsesToChat[1], { ...payload, stream: true }, { sidecarCodec: codec }),
 });
 const buildMessagesRequest = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec, options: { fallbackMaxOutputTokens?: number } = {}) => ({
-  target: await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], { ...payload, stream: true }, { sidecarCodec: codec, ...options }),
+  target: await buildTargetPayloadFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], { ...payload, stream: true }, { sidecarCodec: codec, ...options }),
 });
 
 const replayedTurn: OpenAIResponsesAssistantTurn = [
@@ -112,12 +112,12 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('bypasses ordin
   const ctx = { sidecarCodec: codec, fallbackMaxOutputTokens: undefined };
   const reading = openaiResponsesRead(source);
   const irCall = (r: typeof reading, callId: string): { namespace?: string; name: string } | undefined => r.turns
-    .flatMap(turn => turn.toIRTurn())
+    .flatMap(turn => turn.toIRInputTurns())
     .flatMap(turn => turn.items as readonly { type: string; call_id?: string; name: string; namespace?: string }[])
     .find(item => (item.type === 'function_call' || item.type === 'custom_tool_call') && item.call_id === callId);
   const target_ = target === 'openaiChatCompletions'
-    ? await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, ctx, reading)
-    : await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], source, ctx, reading);
+    ? await buildTargetPayloadFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, ctx, reading)
+    : await buildTargetPayloadFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], source, ctx, reading);
   // The reading keeps a grouped call's logical identity; flattening it into the
   // single name this target's wire uses is the target's own step.
   expect(irCall(reading, 'bare')).toMatchObject({ namespace: 'x', name: 'y.f' });
@@ -147,8 +147,8 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('allocates bare
   const ctx = { sidecarCodec: codec, fallbackMaxOutputTokens: undefined };
   const reading = openaiResponsesRead(source);
   const target_ = target === 'openaiChatCompletions'
-    ? await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, ctx, reading)
-    : await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], source, ctx, reading);
+    ? await buildTargetPayloadFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, ctx, reading)
+    : await buildTargetPayloadFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], source, ctx, reading);
   // Two groups spelling the same flat name must not collide on the wire, and
   // which one takes the suffix follows the order the conversation states them.
   const callNames = target === 'openaiChatCompletions'
@@ -183,7 +183,7 @@ it.each(['additional_tools', 'tool_search_output'] as const)('restores assistant
     };
     const original = structuredClone(source);
     const result = target === 'openaiChatCompletions'
-      ? { target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, { sidecarCodec: codec }) }
+      ? { target: await buildTargetPayloadFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, { sidecarCodec: codec }) }
       : await buildMessagesRequest(source, codec, { fallbackMaxOutputTokens: undefined });
 
     expect(result.target.messages).toEqual(nativeTurns);

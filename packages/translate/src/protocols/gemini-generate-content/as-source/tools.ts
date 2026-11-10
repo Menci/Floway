@@ -2,19 +2,17 @@ import type { GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-gen
 
 const geminiGenerateContentToolCallId = (turnIndex: number, partIndex: number): string => `gemini_call_${turnIndex}_${partIndex}`;
 
-export type GeminiGenerateContentToolCallIds = Record<string, string[]>;
+export type GeminiGenerateContentUnmatchedCallIds = Record<string, string[]>;
 
 export type GeminiGenerateContentFunctionCall = NonNullable<GeminiGenerateContentPart['functionCall']>;
 export type GeminiGenerateContentFunctionResponse = NonNullable<GeminiGenerateContentPart['functionResponse']>;
 
-export type GeminiGenerateContentFunctionCallingIntent = { type: 'none' } | { type: 'auto' } | { type: 'any' } | { type: 'named'; name: string };
-
-export interface GeminiGenerateContentFunctionCallPart {
+export interface GeminiGenerateContentFunctionCallMatch {
   call: GeminiGenerateContentFunctionCall;
   id: string;
 }
 
-export interface GeminiGenerateContentFunctionResponsePart {
+export interface GeminiGenerateContentFunctionResponseMatch {
   response: GeminiGenerateContentFunctionResponse;
   // Absent when the source stated no id and no call this reader saw is still
   // awaiting this answer: a target then pairs the result by order, which is
@@ -22,7 +20,7 @@ export interface GeminiGenerateContentFunctionResponsePart {
   id: string | undefined;
 }
 
-export const geminiGenerateContentFunctionCallPart = (part: GeminiGenerateContentPart, ids: GeminiGenerateContentToolCallIds, turnIndex: number, partIndex: number): GeminiGenerateContentFunctionCallPart | null => {
+export const geminiGenerateContentFunctionCallMatch = (part: GeminiGenerateContentPart, ids: GeminiGenerateContentUnmatchedCallIds, turnIndex: number, partIndex: number): GeminiGenerateContentFunctionCallMatch | null => {
   const call = part.functionCall;
   if (!call) return null;
 
@@ -33,7 +31,7 @@ export const geminiGenerateContentFunctionCallPart = (part: GeminiGenerateConten
   return { call, id };
 };
 
-export const geminiGenerateContentFunctionResponsePart = (part: GeminiGenerateContentPart, ids: GeminiGenerateContentToolCallIds, turnIndex: number, partIndex: number, remove: 'first' | 'last' = 'first'): GeminiGenerateContentFunctionResponsePart | null => {
+export const geminiGenerateContentFunctionResponseMatch = (part: GeminiGenerateContentPart, ids: GeminiGenerateContentUnmatchedCallIds, turnIndex: number, partIndex: number, remove: 'first' | 'last' = 'first'): GeminiGenerateContentFunctionResponseMatch | null => {
   const response = part.functionResponse;
   if (!response) return null;
 

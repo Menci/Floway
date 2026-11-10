@@ -1,6 +1,6 @@
-import { irChatError } from './sse-to.ts';
+import { openaiChatCompletionsErrorFromIR } from './sse-to.ts';
 import { irErrorPayloadFromBody, restateError } from '../../../shared/api-error.ts';
-import type { SourceProtocolErrorWriter } from '../../../types.ts';
+import type { RestateSourceError } from '../../../types.ts';
 
 /**
  * States a failed request in the Chat Completions envelope.
@@ -13,8 +13,8 @@ import type { SourceProtocolErrorWriter } from '../../../types.ts';
  *
  * A body that is not an error envelope this package recognizes is left alone.
  */
-export const openaiChatCompletionsErrorWriter: SourceProtocolErrorWriter = upstream => {
+export const restateOpenAIChatCompletionsError: RestateSourceError = upstream => {
   const error = irErrorPayloadFromBody(upstream);
   if (error === undefined) return undefined;
-  return restateError(upstream, new TextEncoder().encode(JSON.stringify({ error: irChatError(error) })));
+  return restateError(upstream, new TextEncoder().encode(JSON.stringify({ error: openaiChatCompletionsErrorFromIR(error) })));
 };

@@ -1,15 +1,15 @@
 import { test } from 'vitest';
 
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import { buildTargetRequestFor, pairs } from '../composition-helpers.ts';
+import { buildTargetPayloadFor, pairs } from '../composition-helpers.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesAssistantContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIResponsesFunctionTool, OpenAIResponsesInputReasoning } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
 const buildWithTestSidecar = (payload: AnthropicMessagesPayload) =>
-  buildTargetRequestFor(pairs.messagesToResponses[0], pairs.messagesToResponses[1], { ...payload, stream: true }, { sidecarCodec: createTestSidecarCodec() });
+  buildTargetPayloadFor(pairs.messagesToResponses[0], pairs.messagesToResponses[1], { ...payload, stream: true }, { sidecarCodec: createTestSidecarCodec() });
 
-test('buildTargetRequest omits tool_choice when Anthropic Messages omits it', async () => {
+test('buildTargetPayload omits tool_choice when Anthropic Messages omits it', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -20,7 +20,7 @@ test('buildTargetRequest omits tool_choice when Anthropic Messages omits it', as
   assertFalse('tool_choice' in result);
 });
 
-test('buildTargetRequest omits tool_choice when Anthropic Messages carries no client tools to apply it to', async () => {
+test('buildTargetPayload omits tool_choice when Anthropic Messages carries no client tools to apply it to', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -34,7 +34,7 @@ test('buildTargetRequest omits tool_choice when Anthropic Messages carries no cl
 test.each([
   { tools: undefined, name: 'lookup' },
   { tools: [{ name: 'other', input_schema: { type: 'object' as const } }], name: 'lookup' },
-])('buildTargetRequest rejects named tool_choice for an undeclared tool', async ({ tools, name }) => {
+])('buildTargetPayload rejects named tool_choice for an undeclared tool', async ({ tools, name }) => {
   await assertRejects(
     () => buildWithTestSidecar({
       model: 'gpt-test',
@@ -48,7 +48,7 @@ test.each([
   );
 });
 
-test('buildTargetRequest drops filtered-native tool_choice and rewrites assistant native web-search history as function-call history', async () => {
+test('buildTargetPayload drops filtered-native tool_choice and rewrites assistant native web-search history as function-call history', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -103,7 +103,7 @@ test('buildTargetRequest drops filtered-native tool_choice and rewrites assistan
   ]);
 });
 
-test('buildTargetRequest pairs each server tool round with its own result', async () => {
+test('buildTargetPayload pairs each server tool round with its own result', async () => {
   const search = (id: string, query: string) => [
     { caller: { type: 'direct' as const }, type: 'server_tool_use' as const, id, name: 'web_search' as const, input: { query } },
     {
@@ -156,7 +156,7 @@ test('buildTargetRequest pairs each server tool round with its own result', asyn
   ]);
 });
 
-test('buildTargetRequest folds a trailing server result into the next client turn', async () => {
+test('buildTargetPayload folds a trailing server result into the next client turn', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -185,7 +185,7 @@ test('buildTargetRequest folds a trailing server result into the next client tur
   ]);
 });
 
-test('buildTargetRequest maps output_config.effort directly to reasoning.effort', async () => {
+test('buildTargetPayload maps output_config.effort directly to reasoning.effort', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -197,7 +197,7 @@ test('buildTargetRequest maps output_config.effort directly to reasoning.effort'
   assertFalse('include' in result);
 });
 
-test('buildTargetRequest forwards empty output_config.effort verbatim', async () => {
+test('buildTargetPayload forwards empty output_config.effort verbatim', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -209,7 +209,7 @@ test('buildTargetRequest forwards empty output_config.effort verbatim', async ()
   assertEquals(result.reasoning, { effort: '' });
 });
 
-test('buildTargetRequest prefers output_config.effort over thinking.disabled', async () => {
+test('buildTargetPayload prefers output_config.effort over thinking.disabled', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -221,7 +221,7 @@ test('buildTargetRequest prefers output_config.effort over thinking.disabled', a
   assertEquals(result.reasoning, { effort: 'high' });
 });
 
-test('buildTargetRequest preserves output_config.effort max at the translation boundary', async () => {
+test('buildTargetPayload preserves output_config.effort max at the translation boundary', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -232,7 +232,7 @@ test('buildTargetRequest preserves output_config.effort max at the translation b
   assertEquals(result.reasoning, { effort: 'max' });
 });
 
-test('buildTargetRequest maps thinking.enabled to reasoning.effort medium regardless of budget_tokens', async () => {
+test('buildTargetPayload maps thinking.enabled to reasoning.effort medium regardless of budget_tokens', async () => {
   for (const budget of [1024, 16384]) {
     const result = await buildWithTestSidecar({
       model: 'gpt-test',
@@ -245,7 +245,7 @@ test('buildTargetRequest maps thinking.enabled to reasoning.effort medium regard
   }
 });
 
-test('buildTargetRequest maps thinking.adaptive to reasoning.effort medium', async () => {
+test('buildTargetPayload maps thinking.adaptive to reasoning.effort medium', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 4096,
@@ -256,7 +256,7 @@ test('buildTargetRequest maps thinking.adaptive to reasoning.effort medium', asy
   assertEquals(result.reasoning, { effort: 'medium' });
 });
 
-test('buildTargetRequest never invents reasoning.context from a source thinking block', async () => {
+test('buildTargetPayload never invents reasoning.context from a source thinking block', async () => {
   // The Anthropic Messages thinking shape carries no reasoning-context mode, so the
   // target reasoning object must expose effort only — never a synthesized
   // `all_turns` (or any other) context value.
@@ -272,7 +272,7 @@ test('buildTargetRequest never invents reasoning.context from a source thinking 
   assertFalse('context' in (result.reasoning ?? {}));
 });
 
-test('buildTargetRequest preserves max_tokens at the translation boundary', async () => {
+test('buildTargetPayload preserves max_tokens at the translation boundary', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -282,7 +282,7 @@ test('buildTargetRequest preserves max_tokens at the translation boundary', asyn
   assertEquals(result.max_output_tokens, 256);
 });
 
-test('buildTargetRequest maps thinking.disabled to reasoning.effort none', async () => {
+test('buildTargetPayload maps thinking.disabled to reasoning.effort none', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -294,7 +294,7 @@ test('buildTargetRequest maps thinking.disabled to reasoning.effort none', async
   assertFalse('include' in result);
 });
 
-test('buildTargetRequest preserves explicit temperature and omits translated-path defaults', async () => {
+test('buildTargetPayload preserves explicit temperature and omits translated-path defaults', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -307,7 +307,7 @@ test('buildTargetRequest preserves explicit temperature and omits translated-pat
   assertFalse('parallel_tool_calls' in result);
 });
 
-test('buildTargetRequest omits temperature when the source omitted it', async () => {
+test('buildTargetPayload omits temperature when the source omitted it', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -317,7 +317,7 @@ test('buildTargetRequest omits temperature when the source omitted it', async ()
   assertFalse('temperature' in result);
 });
 
-test('buildTargetRequest prepends multi-block top-level system as a leading input system message preserving block boundaries', async () => {
+test('buildTargetPayload prepends multi-block top-level system as a leading input system message preserving block boundaries', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -340,7 +340,7 @@ test('buildTargetRequest prepends multi-block top-level system as a leading inpu
   });
 });
 
-test('buildTargetRequest keeps a single-block top-level system in canonical `instructions` slot', async () => {
+test('buildTargetPayload keeps a single-block top-level system in canonical `instructions` slot', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -353,7 +353,7 @@ test('buildTargetRequest keeps a single-block top-level system in canonical `ins
   assertEquals(input[0].role, 'user');
 });
 
-test('buildTargetRequest preserves text-only thinking input', async () => {
+test('buildTargetPayload preserves text-only thinking input', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -377,7 +377,7 @@ test('buildTargetRequest preserves text-only thinking input', async () => {
 // `properties` field. Anthropic accepts that shape, so the input_schema must
 // be normalized before forwarding to OpenAI Responses. Ref:
 // https://github.com/caozhiyuan/copilot-api/commit/ad57069826843c5d17d7b0e5ef2f75050128893c
-test('buildTargetRequest defaults missing input_schema.properties to {} for object tools', async () => {
+test('buildTargetPayload defaults missing input_schema.properties to {} for object tools', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -395,7 +395,7 @@ test('buildTargetRequest defaults missing input_schema.properties to {} for obje
   ]);
 });
 
-test('buildTargetRequest preserves declared input_schema.properties verbatim', async () => {
+test('buildTargetPayload preserves declared input_schema.properties verbatim', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -420,7 +420,7 @@ test('buildTargetRequest preserves declared input_schema.properties verbatim', a
   });
 });
 
-test('buildTargetRequest does not inject properties for non-object input_schema', async () => {
+test('buildTargetPayload does not inject properties for non-object input_schema', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -432,7 +432,7 @@ test('buildTargetRequest does not inject properties for non-object input_schema'
   assertEquals(tool.parameters, { type: 'string' });
 });
 
-test('buildTargetRequest wraps output_config.format json_schema as text.format with synthesised name and strict', async () => {
+test('buildTargetPayload wraps output_config.format json_schema as text.format with synthesised name and strict', async () => {
   const schema = {
     type: 'object',
     properties: { test: { type: 'string' } },
@@ -451,7 +451,7 @@ test('buildTargetRequest wraps output_config.format json_schema as text.format w
   });
 });
 
-test('buildTargetRequest omits text when output_config has no format', async () => {
+test('buildTargetPayload omits text when output_config has no format', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -462,7 +462,7 @@ test('buildTargetRequest omits text when output_config has no format', async () 
   assertFalse('text' in result);
 });
 
-test('buildTargetRequest rejects an unknown assistant content block type', async () => {
+test('buildTargetPayload rejects an unknown assistant content block type', async () => {
   await assertRejects(
     () =>
       buildWithTestSidecar({
@@ -475,7 +475,7 @@ test('buildTargetRequest rejects an unknown assistant content block type', async
   );
 });
 
-test('buildTargetRequest rejects an unknown user content block type', async () => {
+test('buildTargetPayload rejects an unknown user content block type', async () => {
   await assertRejects(
     () =>
       buildWithTestSidecar({
@@ -488,7 +488,7 @@ test('buildTargetRequest rejects an unknown user content block type', async () =
   );
 });
 
-test('buildTargetRequest emits in-array role:"system" inline as an OpenAI Responses message input item', async () => {
+test('buildTargetPayload emits in-array role:"system" inline as an OpenAI Responses message input item', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -506,7 +506,7 @@ test('buildTargetRequest emits in-array role:"system" inline as an OpenAI Respon
   assertEquals(input[2].role, 'user');
 });
 
-test('buildTargetRequest preserves in-array system text blocks as separate input_text parts', async () => {
+test('buildTargetPayload preserves in-array system text blocks as separate input_text parts', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -533,7 +533,7 @@ test('buildTargetRequest preserves in-array system text blocks as separate input
   });
 });
 
-test('buildTargetRequest hoists a leading in-array system message and keeps later ones in place', async () => {
+test('buildTargetPayload hoists a leading in-array system message and keeps later ones in place', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -557,7 +557,7 @@ test('buildTargetRequest hoists a leading in-array system message and keeps late
   assertEquals(input[3].role, 'user');
 });
 
-test('buildTargetRequest rejects an unknown message role', async () => {
+test('buildTargetPayload rejects an unknown message role', async () => {
   await assertRejects(
     () =>
       buildWithTestSidecar({
@@ -570,7 +570,7 @@ test('buildTargetRequest rejects an unknown message role', async () => {
   );
 });
 
-test('buildTargetRequest collapses Anthropic thinking mode onto reasoning.effort only', async () => {
+test('buildTargetPayload collapses Anthropic thinking mode onto reasoning.effort only', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -585,7 +585,7 @@ test('buildTargetRequest collapses Anthropic thinking mode onto reasoning.effort
 
 // ── speed ↔ service_tier bridge ──
 
-test('buildTargetRequest maps speed:fast to service_tier:fast on the outbound OpenAI Responses payload', async () => {
+test('buildTargetPayload maps speed:fast to service_tier:fast on the outbound OpenAI Responses payload', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -596,7 +596,7 @@ test('buildTargetRequest maps speed:fast to service_tier:fast on the outbound Op
   assertEquals(result.service_tier, 'priority');
 });
 
-test('buildTargetRequest omits service_tier when speed is absent', async () => {
+test('buildTargetPayload omits service_tier when speed is absent', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -606,7 +606,7 @@ test('buildTargetRequest omits service_tier when speed is absent', async () => {
   assertFalse('service_tier' in result);
 });
 
-test('buildTargetRequest drops speed values other than fast without emitting service_tier', async () => {
+test('buildTargetPayload drops speed values other than fast without emitting service_tier', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -617,7 +617,7 @@ test('buildTargetRequest drops speed values other than fast without emitting ser
   assertFalse('service_tier' in result);
 });
 
-test('buildTargetRequest forwards Anthropic service_tier to OpenAI Responses when speed is absent', async () => {
+test('buildTargetPayload forwards Anthropic service_tier to OpenAI Responses when speed is absent', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -628,7 +628,7 @@ test('buildTargetRequest forwards Anthropic service_tier to OpenAI Responses whe
   assertEquals(result.service_tier, 'auto');
 });
 
-test('buildTargetRequest forwards service_tier:standard_only to OpenAI Responses when speed is absent', async () => {
+test('buildTargetPayload forwards service_tier:standard_only to OpenAI Responses when speed is absent', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,

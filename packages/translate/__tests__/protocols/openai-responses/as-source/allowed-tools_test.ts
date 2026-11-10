@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { irInputToolsForChoice } from '../../../../src/ir/input/select-tools.ts';
-import type { IRInputRequest } from '../../../../src/ir/input/types.ts';
-import { buildTargetRequestFor } from '../../../../src/protocols/composition.ts';
+import type { IRInputRequestHeader } from '../../../../src/ir/input/types.ts';
+import { buildTargetPayloadFor } from '../../../../src/protocols/composition.ts';
 import { openaiResponsesRead } from '../../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { TranslatorInputError } from '../../../../src/types.ts';
 import type { SidecarCodec } from '../../../../src/types.ts';
@@ -10,17 +10,17 @@ import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import { pairs } from '../../composition-helpers.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
-const customToolNamesOf = (request: IRInputRequest): ReadonlySet<string> =>
+const customToolNamesOf = (request: IRInputRequestHeader): ReadonlySet<string> =>
   new Set((irInputToolsForChoice(request.tools, request.tool_choice) ?? [])
     .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
 
 const buildChat = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec) => {
   const r = openaiResponsesRead(payload);
-  return { target: await buildTargetRequestFor(pairs.responsesToChat[0], pairs.responsesToChat[1], payload, { sidecarCodec: codec }), customToolNames: customToolNamesOf(r.request) };
+  return { target: await buildTargetPayloadFor(pairs.responsesToChat[0], pairs.responsesToChat[1], payload, { sidecarCodec: codec }), customToolNames: customToolNamesOf(r.request) };
 };
 const buildMessages = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec, options: { fallbackMaxOutputTokens?: number } = {}) => {
   const r = openaiResponsesRead(payload);
-  return { target: await buildTargetRequestFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { sidecarCodec: codec, ...options }), customToolNames: customToolNamesOf(r.request) };
+  return { target: await buildTargetPayloadFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { sidecarCodec: codec, ...options }), customToolNames: customToolNamesOf(r.request) };
 };
 
 const source = (tool_choice: OpenAIResponsesToolChoice): OpenAIResponsesRequestPayloadEx => ({

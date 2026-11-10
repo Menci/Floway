@@ -1,9 +1,9 @@
 import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
-import { streamingFlag } from '../../../ir/input/stream.ts';
+import { requireStreaming } from '../../../ir/input/stream.ts';
 import type {
   IRInputAddressedAssistantItem,
   IRInputAddressedTurn,
-  IRInputRequest,
+  IRInputRequestHeader,
   IRInputSettings,
   IRInputTool,
   IRInputToolChoice,
@@ -12,7 +12,7 @@ import type {
   IRInputToolResultContentPart,
   IRInputAddressedClientItem,
   IRInputClientItem,
-  IRInputSystemMessageItem,
+  IRInputPromptItem,
 } from '../../../ir/input/types.ts';
 import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import { TranslatorInputError } from '../../../types.ts';
@@ -111,7 +111,7 @@ const assistantItems = (items: readonly IRInputAddressedAssistantItem[]): Canoni
   }
 });
 
-const userItems = (items: readonly IRInputAddressedClientItem[]): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
+const clientItems = (items: readonly IRInputAddressedClientItem[]): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
   switch (item.type) {
   case 'prompt': {
     // A prompt boundary states its text plainly: one part is that string, and
@@ -142,7 +142,7 @@ const userItems = (items: readonly IRInputAddressedClientItem[]): CanonicalOpenA
 // A leading system or developer run states the request's prompt, which
 // Responses keeps in its own top-level slot. Every later system message stays
 // inline as an ordinary input item.
-const isHoistablePrompt = (entry: IRInputClientItem): entry is IRInputSystemMessageItem =>
+const isHoistablePrompt = (entry: IRInputClientItem): entry is IRInputPromptItem =>
   entry.type === 'prompt';
 
 export const openaiResponsesConversationFromIR = (
@@ -178,7 +178,7 @@ export const openaiResponsesConversationFromIR = (
         return [];
       }
       hoisting = false;
-      return userItems([entry]);
+      return clientItems([entry]);
     });
   });
 
@@ -250,7 +250,7 @@ const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<CanonicalOpenA
  * assistant turns a sidecar already resolved, so only this half is computed once
  * per payload.
  */
-export const openaiResponsesHeaderFromIR = (request: IRInputRequest): Omit<CanonicalOpenAIResponsesPayload, 'input' | 'instructions'> => {
+export const openaiResponsesHeaderFromIR = (request: IRInputRequestHeader): Omit<CanonicalOpenAIResponsesPayload, 'input' | 'instructions'> => {
   const { settings } = request;
   const tools = irInputToolsForChoice(request.tools, request.tool_choice);
   const choice = irInputToolChoiceForTools(request.tool_choice, tools);
@@ -259,7 +259,7 @@ export const openaiResponsesHeaderFromIR = (request: IRInputRequest): Omit<Canon
     model: settings.model,
     // A trip guarantees a streaming request; a request that says otherwise
     // cannot be carried by this side at all.
-    stream: streamingFlag(settings),
+    stream: requireStreaming(settings),
     ...(tools === undefined || tools.length === 0 ? {} : { tools: tools.map(toolFromIR) }),
     // An orphaned `tool_choice` is not safe on this wire: xAI-backed upstreams
     // reject the request outright.

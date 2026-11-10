@@ -24,7 +24,7 @@ describe('input IR shape', () => {
   ];
 
   test('a conversation carries user and assistant turns in order', () => {
-    const userItems: IRInputClientItem[] = [
+    const clientItems: IRInputClientItem[] = [
       { type: 'prompt', role: 'system', content: [{ type: 'text', text: 'be brief' }] },
       { type: 'prompt', role: 'developer', content: [{ type: 'text', text: 'tools are strict' }] },
       { type: 'message', content: userParts },
@@ -37,7 +37,7 @@ describe('input IR shape', () => {
       { type: 'function_call', call_id: 'call_1', name: 'lookup', arguments: '{"q":1}' },
       { type: 'custom_tool_call', call_id: 'call_2', name: 'edit', input: 'raw' },
     ];
-    const user: IRInputClientTurn = { kind: 'client', items: userItems };
+    const user: IRInputClientTurn = { kind: 'client', items: clientItems };
     const assistant: IRInputAssistantTurn = { kind: 'assistant', items: assistantItems };
     const turns = [user, assistant];
 

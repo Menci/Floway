@@ -7,7 +7,7 @@ import type { OpenAIResponsesAssistantTurn } from '../protocols/openai-responses
  * The structure a protocol states an assistant turn in, on the way in.
  *
  * This is not the shape a sidecar restores a turn into — that is
- * `AssistantTurnFor`, and it belongs to the target. This is what the source
+ * `InputAssistantTurnFor`, and it belongs to the target. This is what the source
  * wrote, which is the only thing its sidecar can be computed over.
  */
 export interface SourceAssistantTurnByProtocol {

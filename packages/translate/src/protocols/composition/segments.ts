@@ -12,7 +12,7 @@ export type Piece<Turn, InputTurn = IRInputTurn> = Segment<InputTurn> | Resolved
 export interface Segment<InputTurn = IRInputTurn> {
   readonly kind: 'ir';
   readonly turns: readonly InputTurn[];
-  // Only the first piece of a conversation may hoist a leading system run into
+  // Only the first segment of a conversation may hoist a leading system run into
   // a protocol's top-level instructions slot.
   readonly leading: boolean;
 }
@@ -22,7 +22,7 @@ export interface ResolvedTurn<Turn> {
   readonly turn: Turn;
 }
 
-export const segmentTurns = <Turn, InputTurn extends { readonly kind: 'client' | 'assistant' } = IRInputTurn>(pieces: readonly (InputTurn | ResolvedTurn<Turn>)[]): readonly Piece<Turn, InputTurn>[] => {
+export const segmentTurns = <Turn, InputTurn extends { readonly kind: 'client' | 'assistant' } = IRInputTurn>(turns: readonly (InputTurn | ResolvedTurn<Turn>)[]): readonly Piece<Turn, InputTurn>[] => {
   const segments: (Segment<InputTurn> | ResolvedTurn<Turn>)[] = [];
   let current: InputTurn[] = [];
   let leading = true;
@@ -32,7 +32,7 @@ export const segmentTurns = <Turn, InputTurn extends { readonly kind: 'client' |
     current = [];
     leading = false;
   };
-  for (const piece of pieces) {
+  for (const piece of turns) {
     if (piece.kind === 'resolved') {
       flush();
       leading = false;

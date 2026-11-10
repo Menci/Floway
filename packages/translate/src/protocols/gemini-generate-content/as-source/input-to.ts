@@ -5,10 +5,10 @@ import { partitionGeminiGenerateContentTurns, type GeminiGenerateContentConversa
 import { geminiGenerateContentThinkingLevelEffort } from './reasoning.ts';
 import type { GeminiGenerateContentAssistantTurn } from './round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from './schema.ts';
-import { geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from './tools.ts';
+import { geminiGenerateContentFunctionCallMatch, geminiGenerateContentFunctionResponseMatch, type GeminiGenerateContentUnmatchedCallIds } from './tools.ts';
 import type {
   IRInputAssistantContentPart,
-  IRInputRequest,
+  IRInputRequestHeader,
   IRInputSettings,
   IRInputTool,
   IRInputToolChoice,
@@ -44,7 +44,7 @@ const inlinePart = (part: GeminiGenerateContentPart): IRInputUserContentPart => 
   }
 };
 
-const userParts = (content: GeminiGenerateContentContent, turnIndex: number, ids: GeminiGenerateContentToolCallIds): IRInputClientItem[] => {
+const userParts = (content: GeminiGenerateContentContent, turnIndex: number, ids: GeminiGenerateContentUnmatchedCallIds): IRInputClientItem[] => {
   const items: IRInputClientItem[] = [];
   const pending: IRInputUserContentPart[] = [];
   const flush = (): void => {
@@ -58,7 +58,7 @@ const userParts = (content: GeminiGenerateContentContent, turnIndex: number, ids
     case null:
       return;
     case 'function_response': {
-      const { response, id } = geminiGenerateContentFunctionResponsePart(part, ids, turnIndex, partIndex)!;
+      const { response, id } = geminiGenerateContentFunctionResponseMatch(part, ids, turnIndex, partIndex)!;
       flush();
       items.push({
         type: 'tool_result',
@@ -90,7 +90,7 @@ const userParts = (content: GeminiGenerateContentContent, turnIndex: number, ids
 // position it occupies in the request.
 const reasoningId = (turnIndex: number, partIndex: number): string => `gemini_reasoning_${turnIndex}_${partIndex}`;
 
-const assistantItems = (content: GeminiGenerateContentContent, turnIndex: number, ids: GeminiGenerateContentToolCallIds): IRInputAssistantItem[] => {
+const assistantItems = (content: GeminiGenerateContentContent, turnIndex: number, ids: GeminiGenerateContentUnmatchedCallIds): IRInputAssistantItem[] => {
   const items: IRInputAssistantItem[] = [];
   const pending: IRInputAssistantContentPart[] = [];
   const flush = (): void => {
@@ -106,7 +106,7 @@ const assistantItems = (content: GeminiGenerateContentContent, turnIndex: number
   parts.forEach(({ kind, part }, partIndex) => {
     switch (kind) {
     case 'function_call': {
-      const { call, id } = geminiGenerateContentFunctionCallPart(part, ids, turnIndex, partIndex)!;
+      const { call, id } = geminiGenerateContentFunctionCallMatch(part, ids, turnIndex, partIndex)!;
       flush();
       // An absent `functionCall.args` stays absent: `JSON.stringify(undefined)`
       // is `undefined`, so the field is omitted exactly as before. An explicit
@@ -149,7 +149,7 @@ const systemParts = (content: GeminiGenerateContentContent | undefined): IRInput
 const turnToIRTurns = (
   turn: GeminiGenerateContentTurn,
   contentIndex: number,
-  ids: GeminiGenerateContentToolCallIds,
+  ids: GeminiGenerateContentUnmatchedCallIds,
 ): IRInputTurn[] => turn.role === 'assistant'
   ? [{
       kind: 'assistant',
@@ -184,7 +184,7 @@ const partitionContents = (payload: GeminiGenerateContentPayload): GeminiGenerat
 // https://github.com/googleapis/googleapis/blob/master/google/ai/generativelanguage/v1beta/content.proto
 // (FunctionCallingConfig: `allowed_function_names` only applies to ANY and
 // VALIDATED, and limits which functions the model calls.)
-const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequest, 'tools' | 'tool_choice'> => {
+const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequestHeader, 'tools' | 'tool_choice'> => {
   const declarations = payload.tools?.flatMap(group => group.functionDeclarations ?? []) ?? [];
   const config = payload.toolConfig?.functionCallingConfig;
   const allowedNames = config?.allowedFunctionNames;
@@ -233,10 +233,10 @@ const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequest, 
  * A sidecar-resolved assistant turn never passes through this reader, but it
  * did consume source contents, and the calls it states are keyed by ids the
  * reader would otherwise not know. Both counters live in a closure each turn's
- * `toIRTurn` captures, so the reading stays a plain value.
+ * `toIRInputTurns` captures, so the reading stays a plain value.
  */
 export const geminiGenerateContentRead = (payload: GeminiGenerateContentRequest): Reading<GeminiGenerateContentAssistantTurn> => {
-  const ids: GeminiGenerateContentToolCallIds = Object.create(null);
+  const ids: GeminiGenerateContentUnmatchedCallIds = Object.create(null);
   let contentIndex = 0;
   const prompt = geminiGenerateContentSystemToIR(payload.systemInstruction);
 
@@ -247,9 +247,9 @@ export const geminiGenerateContentRead = (payload: GeminiGenerateContentRequest)
   const turnSlotFor = (turn: GeminiGenerateContentTurn): TurnSlot<GeminiGenerateContentAssistantTurn> => {
     const at = contentIndex;
     contentIndex += turn.items.length;
-    const toIRTurn = () => turnToIRTurns(turn, at, ids);
-    if (turn.role !== 'assistant') return { kind: 'client', toIRTurn };
-    return { kind: 'assistant', assistantTurn: turn.items, toIRTurn };
+    const toIRInputTurns = () => turnToIRTurns(turn, at, ids);
+    if (turn.role !== 'assistant') return { kind: 'client', toIRInputTurns };
+    return { kind: 'assistant', assistantTurn: turn.items, toIRInputTurns };
   };
 
   return {
@@ -258,7 +258,7 @@ export const geminiGenerateContentRead = (payload: GeminiGenerateContentRequest)
       ...toolsToIR(payload),
     },
     turns: [
-      ...(prompt === undefined ? [] : [{ kind: 'client' as const, toIRTurn: () => [prompt] }]),
+      ...(prompt === undefined ? [] : [{ kind: 'client' as const, toIRInputTurns: () => [prompt] }]),
       ...partitionContents(payload).map(turnSlotFor),
     ],
   };
@@ -291,13 +291,13 @@ const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest
     ...(config?.seed == null ? {} : { seed: config.seed }),
     ...(config?.maxOutputTokens == null ? {} : { max_output_tokens: config.maxOutputTokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
-    ...(config?.candidateCount === undefined ? {} : { candidate_count: config.candidateCount }),
+    ...(config?.candidateCount === undefined ? {} : { choice_count: config.candidateCount }),
     ...(config?.presencePenalty === undefined ? {} : { presence_penalty: config.presencePenalty }),
     ...(config?.frequencyPenalty === undefined ? {} : { frequency_penalty: config.frequencyPenalty }),
     ...(effort === undefined ? {} : { reasoning_effort: effort }),
     // A negative budget asks the model to choose its own and states no number.
     ...(budget === undefined || budget <= 0 ? {} : { reasoning_budget: budget }),
-    ...(budget === undefined || budget >= 0 ? {} : { reasoning_dynamic: true }),
+    ...(budget === undefined || budget >= 0 ? {} : { reasoning_budget_dynamic: true }),
     // GenerateContent states readable reasoning as a boolean; the neutral
     // spelling names how much of it the caller wants. A request that asked for
     // no reasoning at all has nothing to summarize.

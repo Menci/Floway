@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { geminiGenerateContentErrorWriter } from '../../../../src/protocols/gemini-generate-content/as-source/error-body.ts';
+import { restateGeminiGenerateContentError } from '../../../../src/protocols/gemini-generate-content/as-source/error-body.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const decoded = (result: { body: Uint8Array } | undefined) => JSON.parse(new TextDecoder().decode(result!.body)) as {
@@ -14,7 +14,7 @@ const upstreamOf = (status: number, body: unknown, headers: Record<string, strin
 });
 
 test('keeps the upstream status in both places GenerateContent states it', () => {
-  const result = geminiGenerateContentErrorWriter(upstreamOf(503, { error: { message: 'upstream overloaded' } }));
+  const result = restateGeminiGenerateContentError(upstreamOf(503, { error: { message: 'upstream overloaded' } }));
 
   // The protocol repeats the HTTP status inside the error object, so the two
   // must agree. Re-deriving the code from the message would report a different
@@ -26,7 +26,7 @@ test('keeps the upstream status in both places GenerateContent states it', () =>
 });
 
 test('keeps a status the inferred table would have flattened', () => {
-  const result = geminiGenerateContentErrorWriter(upstreamOf(402, { error: { message: 'payment required' } }));
+  const result = restateGeminiGenerateContentError(upstreamOf(402, { error: { message: 'payment required' } }));
 
   assertEquals(result!.status, 402);
   assertEquals(decoded(result).error.code, 402);
@@ -34,7 +34,7 @@ test('keeps a status the inferred table would have flattened', () => {
 });
 
 test('keeps the upstream headers a client reads', () => {
-  const result = geminiGenerateContentErrorWriter(upstreamOf(429, { error: { message: 'slow down' } }, { 'retry-after': '12', 'x-request-id': 'req_9' }));
+  const result = restateGeminiGenerateContentError(upstreamOf(429, { error: { message: 'slow down' } }, { 'retry-after': '12', 'x-request-id': 'req_9' }));
 
   assertEquals(result!.headers.get('retry-after'), '12');
   assertEquals(result!.headers.get('x-request-id'), 'req_9');
@@ -42,6 +42,6 @@ test('keeps the upstream headers a client reads', () => {
 });
 
 test('passes an unrecognized body through untouched', () => {
-  assertEquals(geminiGenerateContentErrorWriter(upstreamOf(500, 'internal blew up')), undefined);
-  assertEquals(geminiGenerateContentErrorWriter(upstreamOf(500, { detail: 'nope' })), undefined);
+  assertEquals(restateGeminiGenerateContentError(upstreamOf(500, 'internal blew up')), undefined);
+  assertEquals(restateGeminiGenerateContentError(upstreamOf(500, { detail: 'nope' })), undefined);
 });

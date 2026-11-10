@@ -325,7 +325,7 @@ describe('output IR streaming', () => {
     b.event({ type: 'part_end', choice: 0, item: 1, part: 0 });
     b.event({ type: 'item_end', choice: 0, item: 1 });
     b.initialize(['choices', 0, 'items', 2], { type: 'message', content: [] });
-    b.initialize(['choices', 0, 'items', 2, 'content', 0], { type: 'audio', audio: { mime_type: 'audio/wav' } });
+    b.initialize(['choices', 0, 'items', 2, 'content', 0], { type: 'audio', audio: { media_type: 'audio/wav' } });
     b.initialize(['choices', 0, 'items', 2, 'content', 0, 'audio', 'data'], '');
     b.append(['choices', 0, 'items', 2, 'content', 0, 'audio', 'data'], 'YQ==');
     b.event({ type: 'part_end', choice: 0, item: 2, part: 0 });
@@ -355,7 +355,7 @@ describe('output IR streaming', () => {
   });
 
   it('retains text-image-text order in Responses output', async () => {
-    const frames = openaiResponsesFromIR(iterate(completeIR([{ type: 'message', content: [{ type: 'text', text: 'before' }, { type: 'image', image: { data: 'YQ==', mime_type: 'image/png' } }, { type: 'text', text: 'after' }] }])), options);
+    const frames = openaiResponsesFromIR(iterate(completeIR([{ type: 'message', content: [{ type: 'text', text: 'before' }, { type: 'image', image: { data: 'YQ==', media_type: 'image/png' } }, { type: 'text', text: 'after' }] }])), options);
     const result = await reassembleOpenAIResponsesEvents(events(frames));
     expect(result.output.map(item => item.type)).toEqual(['message', 'image_generation_call', 'message', 'reasoning']);
   });
@@ -439,7 +439,7 @@ describe('output IR streaming', () => {
   });
 
   it('preserves Responses generated image format', async () => {
-    const result = await reassembleOpenAIResponsesEvents(events(openaiResponsesFromIR(iterate(completeIR([{ type: 'message', content: [{ type: 'image', image: { data: 'YQ==', mime_type: 'image/jpeg' } }] }])), options)));
+    const result = await reassembleOpenAIResponsesEvents(events(openaiResponsesFromIR(iterate(completeIR([{ type: 'message', content: [{ type: 'image', image: { data: 'YQ==', media_type: 'image/jpeg' } }] }])), options)));
     expect(result.output[0]).toMatchObject({ type: 'image_generation_call', output_format: 'jpeg' });
   });
 

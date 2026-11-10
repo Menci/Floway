@@ -22,7 +22,7 @@ const mapValue = (value: unknown, transform: (value: unknown) => unknown): unkno
 };
 
 /** Replaces translate-owned references with transport-owned tagged values. */
-export const encodeSidecarTaggedValues = (value: unknown): unknown => mapValue(value, value => {
+export const tagContentReferences = (value: unknown): unknown => mapValue(value, value => {
   if (!(value instanceof ContentReference)) return value;
   return new SidecarTaggedValue(
     value.kind === 'text' ? THIN_TEXT_TAG : THIN_JSON_TAG,
@@ -31,7 +31,7 @@ export const encodeSidecarTaggedValues = (value: unknown): unknown => mapValue(v
 });
 
 /** Restores translate-owned references from transport-owned tagged values in place. */
-export const restoreSidecarTaggedValues = (value: unknown): unknown => {
+export const untagContentReferences = (value: unknown): unknown => {
   if (value instanceof SidecarTaggedValue) {
     if (value.tag === THIN_TEXT_TAG || value.tag === THIN_JSON_TAG) {
       const parts: unknown = value.value;
@@ -42,11 +42,11 @@ export const restoreSidecarTaggedValues = (value: unknown): unknown => {
   }
   if (value instanceof Uint8Array || rawJSON.isRawJSON(value)) return value;
   if (Array.isArray(value)) {
-    for (let index = 0; index < value.length; index++) value[index] = restoreSidecarTaggedValues(value[index]);
+    for (let index = 0; index < value.length; index++) value[index] = untagContentReferences(value[index]);
     return value;
   }
   if (typeof value === 'object' && value !== null) {
-    for (const [key, child] of Object.entries(value)) Reflect.set(value, key, restoreSidecarTaggedValues(child));
+    for (const [key, child] of Object.entries(value)) Reflect.set(value, key, untagContentReferences(child));
   }
   return value;
 };

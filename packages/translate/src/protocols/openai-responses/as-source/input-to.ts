@@ -1,6 +1,6 @@
 import { klona } from 'klona/json';
 
-import { callableSelector, validateAllowedTools } from './allowed-tools.ts';
+import { requireCallableSelector, validateCallableDeclarations } from './allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from './conversation-turns.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from './programmatic-tooling.ts';
 import { isOpenAIResponsesEncryptedReasoning } from './round-trip.ts';
@@ -8,11 +8,11 @@ import type { OpenAIResponsesAssistantTurn } from './round-trip.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
-  IRInputRequest,
+  IRInputRequestHeader,
   IRInputSettings,
   IRInputTool,
   IRInputToolChoice,
-  IRInputToolSelection,
+  IRInputToolSelector,
   IRInputOutputFormat,
   IRInputMedia,
   IRInputTextPart,
@@ -148,7 +148,7 @@ const assistantItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IR
   }
 }).filter((item): item is IRInputAssistantItem => item !== undefined);
 
-const userItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInputClientItem[] => items.flatMap((item): IRInputClientItem[] => {
+const clientItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInputClientItem[] => items.flatMap((item): IRInputClientItem[] => {
   rejectProgramCaller(item);
   switch (item.type) {
   case 'message':
@@ -191,10 +191,10 @@ const openaiResponsesInstructionsToIR = (instructions: string | null | undefined
   : undefined;
 
 const openaiResponsesTurnToIR = (
-  turn: { readonly role: 'assistant' | 'bare'; readonly items: readonly CanonicalOpenAIResponsesInputItem[] },
+  turn: { readonly role: 'assistant' | 'client'; readonly items: readonly CanonicalOpenAIResponsesInputItem[] },
 ): IRInputTurn[] => {
   const items = turn.items;
-  if (turn.role !== 'assistant') return [{ kind: 'client', items: userItems(items) }];
+  if (turn.role !== 'assistant') return [{ kind: 'client', items: clientItems(items) }];
   // Every assistant item was dropped (an opaque reasoning carrier, say). The
   // turn carried a boundary that must survive, so writers still see it as a
   // separator but emit no message for it.
@@ -234,7 +234,7 @@ const toolToIR = (tool: Extract<OpenAIResponsesTool, { type: 'function' | 'custo
 
 // A selector names a grouped callable either with a `namespace` field or with a
 // dotted name, and both mean the same pair.
-const selectedCallable = (selection: { readonly type: 'function' | 'custom'; readonly name: string; readonly namespace?: string }): IRInputToolSelection => {
+const selectionToIR = (selection: { readonly type: 'function' | 'custom'; readonly name: string; readonly namespace?: string }): IRInputToolSelector => {
   if (selection.namespace !== undefined) return { type: selection.type, name: selection.name, namespace: selection.namespace };
   const dot = selection.name.indexOf('.');
   return dot < 0
@@ -243,15 +243,15 @@ const selectedCallable = (selection: { readonly type: 'function' | 'custom'; rea
 };
 
 // A selector may name a whole group, which selects each callable it holds.
-const selectorOf = (payload: CanonicalOpenAIResponsesPayload, selector: Record<string, unknown>): IRInputToolSelection[] => {
-  if (selector.type !== 'namespace') return [selectedCallable(callableSelector(selector))];
+const selectorOf = (payload: CanonicalOpenAIResponsesPayload, selector: Record<string, unknown>): IRInputToolSelector[] => {
+  if (selector.type !== 'namespace') return [selectionToIR(requireCallableSelector(selector))];
   const groups = [
     ...(payload.tools ?? []),
     ...payload.input.flatMap(item => item.type === 'additional_tools' || item.type === 'tool_search_output' ? item.tools : []),
   ].flatMap(tool => tool.type === 'namespace' && tool.name === selector.name ? [tool] : []);
   if (groups.length === 0) throw new TranslatorInputError(`Cannot translate group selector '${String(selector.name)}' without a matching declaration.`);
   return groups.flatMap(group => group.tools.flatMap(child => child.type === 'function' || child.type === 'custom'
-    ? [{ type: child.type, name: child.name, namespace: group.name } as IRInputToolSelection]
+    ? [{ type: child.type, name: child.name, namespace: group.name } as IRInputToolSelector]
     : []));
 };
 
@@ -271,7 +271,7 @@ const toolChoiceToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputToolCh
       tools: choice.tools.flatMap(selector => selectorOf(payload, selector)),
     };
   }
-  if (choice.type === 'function' || choice.type === 'custom') return selectedCallable(choice);
+  if (choice.type === 'function' || choice.type === 'custom') return selectionToIR(choice);
   // A hosted selector names a tool this IR does not carry.
   throw new TranslatorInputError(`Cannot translate OpenAI Responses tool choice type '${choice.type}'.`);
 };
@@ -305,7 +305,7 @@ const toolGroupToIR = (tool: OpenAIResponsesTool): IRInputTool[] => {
 const deferredInventories = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesTool[] =>
   payload.input.flatMap(item => item.type === 'additional_tools' || item.type === 'tool_search_output' ? item.tools : []);
 
-const openaiResponsesToolsToIR = (payload: CanonicalOpenAIResponsesPayload): Pick<IRInputRequest, 'tools' | 'tool_choice'> => {
+const openaiResponsesToolsToIR = (payload: CanonicalOpenAIResponsesPayload): Pick<IRInputRequestHeader, 'tools' | 'tool_choice'> => {
   const declared = payload.tools?.flatMap(toolGroupToIR) ?? [];
   const deferred = deferredInventories(payload).flatMap(toolGroupToIR);
   const tools = declared.length === 0 && deferred.length === 0 ? undefined : [...declared, ...deferred];
@@ -360,7 +360,7 @@ const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): 
 
 export const openaiResponsesRead = (source: OpenAIResponsesRequestPayloadEx): Reading<OpenAIResponsesAssistantTurn> => {
   const canonical = canonicalizeOpenAIResponsesPayload(source);
-  validateAllowedTools(canonical.tools, canonical.tool_choice, canonical.input);
+  validateCallableDeclarations(canonical.tools, canonical.tool_choice, canonical.input);
   rejectProgrammaticOpenAIResponsesPayload(canonical, 'translation');
 
   const prompt = openaiResponsesInstructionsToIR(canonical.instructions);
@@ -370,14 +370,14 @@ export const openaiResponsesRead = (source: OpenAIResponsesRequestPayloadEx): Re
       ...openaiResponsesToolsToIR(canonical),
     },
     turns: [
-      ...(prompt === undefined ? [] : [{ kind: 'client' as const, toIRTurn: () => [prompt] }]),
+      ...(prompt === undefined ? [] : [{ kind: 'client' as const, toIRInputTurns: () => [prompt] }]),
       ...partitionOpenAIResponsesTurns(canonical.input).map(turn => turn.role === 'assistant'
         ? {
             kind: 'assistant' as const,
             assistantTurn: turn.items,
-            toIRTurn: () => openaiResponsesTurnToIR(turn),
+            toIRInputTurns: () => openaiResponsesTurnToIR(turn),
           }
-        : { kind: 'client' as const, toIRTurn: () => openaiResponsesTurnToIR(turn) }),
+        : { kind: 'client' as const, toIRInputTurns: () => openaiResponsesTurnToIR(turn) }),
     ],
   };
 };

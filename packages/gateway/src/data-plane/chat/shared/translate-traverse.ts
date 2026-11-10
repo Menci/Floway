@@ -35,11 +35,11 @@ export const captureFromDump = (
 // helper's `translate` parameter stays unary so each caller closes over its own
 // options (`p => routeSourceViaTarget(p, options)`).
 //
-// On an upstream api-error the trip's optional `errorBody` hook is invoked so
+// On an upstream api-error the trip's optional `restateUpstreamError` hook is invoked so
 // the pair can rewrite the body into the source protocol's envelope — the
 // canonical case is `anthropic-messages-via-*` translating an upstream context-window
 // error into the Anthropic `prompt is too long:` shape Claude Code recognizes
-// for auto-compaction. Pairs that don't set `errorBody` (or return `undefined`)
+// for auto-compaction. Pairs that don't set `restateUpstreamError` (or return `undefined`)
 // pass the upstream body through verbatim.
 //
 // When `capture` is provided, the ORIGINAL target-protocol frames (events
@@ -71,7 +71,7 @@ export const traverseTranslation = async <SP, TP, SE, TE>(
   // pre-translation view operators need to diagnose upstream behavior.
   if (inner.type === 'api-error' && inner.source === 'upstream') {
     capture?.upstreamApiError({ status: inner.status, headers: inner.headers, body: inner.body });
-    const rewritten = trip.errorBody?.({ status: inner.status, headers: inner.headers, body: inner.body });
+    const rewritten = trip.restateUpstreamError?.({ status: inner.status, headers: inner.headers, body: inner.body });
     if (rewritten !== undefined) return { ...inner, status: rewritten.status, headers: rewritten.headers, body: rewritten.body };
   }
   return inner;

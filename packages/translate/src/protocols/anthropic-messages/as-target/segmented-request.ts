@@ -1,6 +1,6 @@
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from './cache-breakpoints.ts';
 import { anthropicMessagesConversationFromIR, anthropicMessagesHeaderFromIR, type AnthropicMessagesRequestFromIROptions } from './input-from.ts';
-import type { IRInputAddressedTurn, IRInputRequest } from '../../../ir/input/types.ts';
+import type { IRInputAddressedTurn, IRInputRequestHeader } from '../../../ir/input/types.ts';
 import { segmentTurns, type ResolvedTurn } from '../../composition/segments.ts';
 import type { AnthropicMessagesMessage, AnthropicMessagesPayload, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
 
@@ -18,15 +18,15 @@ import type { AnthropicMessagesMessage, AnthropicMessagesPayload, AnthropicMessa
  * takes a breakpoint this translation invents.
  */
 export const anthropicMessagesPayloadFromSegments = <Restored>(
-  request: IRInputRequest,
-  pieces: readonly (IRInputAddressedTurn | ResolvedTurn<Restored>)[],
+  request: IRInputRequestHeader,
+  turns: readonly (IRInputAddressedTurn | ResolvedTurn<Restored>)[],
   resolvedMessage: (turn: Restored) => AnthropicMessagesMessage,
   options: AnthropicMessagesRequestFromIROptions = {},
 ): AnthropicMessagesPayload => {
   const system: AnthropicMessagesTextBlockParam[] = [];
   const messages: AnthropicMessagesMessage[] = [];
   const restored = new Set<AnthropicMessagesMessage>();
-  for (const piece of segmentTurns(pieces)) {
+  for (const piece of segmentTurns(turns)) {
     if (piece.kind === 'resolved') {
       const message = resolvedMessage(piece.turn);
       messages.push(message);

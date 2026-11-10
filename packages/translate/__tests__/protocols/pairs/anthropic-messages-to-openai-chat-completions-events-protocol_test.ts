@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { translateSourceEventsFor } from '../../../src/protocols/composition.ts';
+import { buildSourceEventsFor } from '../../../src/protocols/composition.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import { emptyPayload, pairs } from '../composition-helpers.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -8,7 +8,7 @@ import { eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 const codec = createTestSidecarCodec();
-const translate = (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>) => translateSourceEventsFor(
+const translate = (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>) => buildSourceEventsFor(
   pairs.messagesToChat[0], pairs.messagesToChat[1], emptyPayload.messages, { sidecarCodec: codec }, frames,
 );
 

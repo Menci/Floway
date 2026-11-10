@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { translateSourceEventsFor } from '../../../src/protocols/composition.ts';
+import { buildSourceEventsFor } from '../../../src/protocols/composition.ts';
 import { fixtureFrames } from '../../ir/translation-cases.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import { emptyPayload, pairs } from '../composition-helpers.ts';
@@ -9,7 +9,7 @@ import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const codec = createTestSidecarCodec();
-const translate = (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>) => translateSourceEventsFor(
+const translate = (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>) => buildSourceEventsFor(
   pairs.responsesToMessages[0], pairs.responsesToMessages[1], emptyPayload.responses, { sidecarCodec: codec }, frames,
 );
 

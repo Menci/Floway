@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import { buildTargetRequestFor, pairs } from '../composition-helpers.ts';
+import { buildTargetPayloadFor, pairs } from '../composition-helpers.ts';
 import {
   ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
   type AnthropicMessagesAssistantContentBlock,
@@ -44,9 +44,9 @@ const testBuildOptions: { fallbackMaxOutputTokens?: number } = {
 const buildWithTestSidecar = (
   payload: OpenAIChatCompletionsPayloadEx,
   options: Partial<typeof testBuildOptions> = {},
-) => buildTargetRequestFor(pairs.chatToMessages[0], pairs.chatToMessages[1], payload, { sidecarCodec: createTestSidecarCodec(), ...testBuildOptions, ...options });
+) => buildTargetPayloadFor(pairs.chatToMessages[0], pairs.chatToMessages[1], payload, { sidecarCodec: createTestSidecarCodec(), ...testBuildOptions, ...options });
 
-test('buildTargetRequest preserves scalar and content-part assistant refusals as history text', async () => {
+test('buildTargetPayload preserves scalar and content-part assistant refusals as history text', async () => {
   const result = await buildWithTestSidecar(mkPayload({
     messages: [
       { role: 'assistant', content: null, refusal: 'Scalar refusal.' },
@@ -64,7 +64,7 @@ test('buildTargetRequest preserves scalar and content-part assistant refusals as
 
 // OpenAI renamed priority processing to Fast mode; both spellings ask for the
 // same lane, so both map onto Anthropic's `speed`.
-test.each(['fast', 'priority'])('buildTargetRequest maps service_tier:%s to speed:fast (no service_tier on target)', async serviceTier => {
+test.each(['fast', 'priority'])('buildTargetPayload maps service_tier:%s to speed:fast (no service_tier on target)', async serviceTier => {
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'hi' }],
@@ -76,7 +76,7 @@ test.each(['fast', 'priority'])('buildTargetRequest maps service_tier:%s to spee
   assertFalse('service_tier' in result);
 });
 
-test('buildTargetRequest passes service_tier:auto through as service_tier', async () => {
+test('buildTargetPayload passes service_tier:auto through as service_tier', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'hi' }],
@@ -88,7 +88,7 @@ test('buildTargetRequest passes service_tier:auto through as service_tier', asyn
   assertFalse('speed' in result);
 });
 
-test('buildTargetRequest omits both speed and service_tier when service_tier is absent', async () => {
+test('buildTargetPayload omits both speed and service_tier when service_tier is absent', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'hi' }],
@@ -1061,7 +1061,7 @@ test('interleaved tool and text turns preserve chronology', async () => {
   assertEquals(a2[0].type, 'text');
 });
 
-test('buildTargetRequest extracts nested response_format json_schema into output_config.format', async () => {
+test('buildTargetPayload extracts nested response_format json_schema into output_config.format', async () => {
   const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'], additionalProperties: false };
   const result = await buildWithTestSidecar(
     mkPayload({
@@ -1073,7 +1073,7 @@ test('buildTargetRequest extracts nested response_format json_schema into output
   assertEquals(result.output_config, { format: { type: 'json_schema', schema } });
 });
 
-test('buildTargetRequest merges reasoning_effort with structured-output format on a single output_config', async () => {
+test('buildTargetPayload merges reasoning_effort with structured-output format on a single output_config', async () => {
   const schema = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false };
   const result = await buildWithTestSidecar(
     mkPayload({
@@ -1086,7 +1086,7 @@ test('buildTargetRequest merges reasoning_effort with structured-output format o
   assertEquals(result.output_config, { effort: 'high', format: { type: 'json_schema', schema } });
 });
 
-test('buildTargetRequest forwards empty reasoning_effort verbatim', async () => {
+test('buildTargetPayload forwards empty reasoning_effort verbatim', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
@@ -1097,7 +1097,7 @@ test('buildTargetRequest forwards empty reasoning_effort verbatim', async () => 
   assertEquals(result.output_config, { effort: '' });
 });
 
-test('buildTargetRequest drops response_format json_object (no Anthropic equivalent)', async () => {
+test('buildTargetPayload drops response_format json_object (no Anthropic equivalent)', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
@@ -1108,7 +1108,7 @@ test('buildTargetRequest drops response_format json_object (no Anthropic equival
   assertEquals(result.output_config, undefined);
 });
 
-test('buildTargetRequest rejects an unknown message role', async () => {
+test('buildTargetPayload rejects an unknown message role', async () => {
   await assertRejects(
     () =>
       buildWithTestSidecar({
@@ -1120,7 +1120,7 @@ test('buildTargetRequest rejects an unknown message role', async () => {
   );
 });
 
-test('buildTargetRequest rejects an unknown user content part type', async () => {
+test('buildTargetPayload rejects an unknown user content part type', async () => {
   await assertRejects(
     () =>
       buildWithTestSidecar({
@@ -1134,7 +1134,7 @@ test('buildTargetRequest rejects an unknown user content part type', async () =>
 
 // ── service_tier forwarding ──
 
-test('buildTargetRequest forwards a non-accelerated service_tier verbatim', async () => {
+test('buildTargetPayload forwards a non-accelerated service_tier verbatim', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'hi' }],
@@ -1145,7 +1145,7 @@ test('buildTargetRequest forwards a non-accelerated service_tier verbatim', asyn
   assertEquals(result.service_tier, 'flex');
 });
 
-test('buildTargetRequest maps reasoning_effort none to thinking.disabled', async () => {
+test('buildTargetPayload maps reasoning_effort none to thinking.disabled', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
@@ -1157,7 +1157,7 @@ test('buildTargetRequest maps reasoning_effort none to thinking.disabled', async
   assertFalse('output_config' in result);
 });
 
-test('buildTargetRequest keeps a structured-output format alongside thinking.disabled', async () => {
+test('buildTargetPayload keeps a structured-output format alongside thinking.disabled', async () => {
   const schema = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false };
   const result = await buildWithTestSidecar(
     mkPayload({
@@ -1171,7 +1171,7 @@ test('buildTargetRequest keeps a structured-output format alongside thinking.dis
   assertEquals(result.output_config, { format: { type: 'json_schema', schema } });
 });
 
-test('buildTargetRequest leaves thinking absent when reasoning_effort is not none', async () => {
+test('buildTargetPayload leaves thinking absent when reasoning_effort is not none', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],

@@ -1,11 +1,11 @@
 import { irEndedUnit, irPathKey, resolveIRPath, unionVariantNode, valueAt, type IRUnit } from './operation-paths.ts';
 import type { IRSchemaNode } from './schema.ts';
 import type { IREvent, IRWrite, IRPath } from './stream.ts';
-import { IRAbsent, type IR, type IRValue } from './types.ts';
+import { IRAbsent, type IROutput, type IROutputValue } from './types.ts';
 
-type IRValueVisitor = (path: IRPath, node: IRSchemaNode, value: IRValue) => void;
+type IRValueVisitor = (path: IRPath, node: IRSchemaNode, value: IROutputValue) => void;
 
-const isPlainObject = (value: unknown): value is Record<string, IRValue> => typeof value === 'object' && value !== null && !Array.isArray(value);
+const isPlainObject = (value: unknown): value is Record<string, IROutputValue> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 // Opaque values are replaced as a whole, so only what no output IR value may contain is rejected.
 const assertPlainValue = (path: IRPath, value: unknown): void => {
@@ -16,8 +16,8 @@ const assertPlainValue = (path: IRPath, value: unknown): void => {
 };
 
 // Walks a value that is about to be written together with the schema node describing it.
-// `IRAbsent` is accepted where the schema allows it unless `allowNone` is off.
-const walkValue = (path: IRPath, node: IRSchemaNode, value: IRValue, visitor: IRValueVisitor, allowNone: boolean): void => {
+// `IRAbsent` is accepted where the schema allows it unless `allowAbsent` is off.
+const walkValue = (path: IRPath, node: IRSchemaNode, value: IROutputValue, visitor: IRValueVisitor, allowAbsent: boolean): void => {
   if (value === undefined) throw new TypeError(`output IR values cannot contain undefined: ${irPathKey(path)}`);
   if (node.kind === 'nullable') {
     if (value === null) return visitor(path, node, value);
@@ -27,7 +27,7 @@ const walkValue = (path: IRPath, node: IRSchemaNode, value: IRValue, visitor: IR
   switch (node.kind) {
   case 'string':
     if (value === IRAbsent) {
-      if (!allowNone) throw new TypeError('IRAbsent must be assigned directly to call_id');
+      if (!allowAbsent) throw new TypeError('IRAbsent must be assigned directly to call_id');
       if (node.absent !== true) throw new TypeError(`IRAbsent is not allowed at ${irPathKey(path)}`);
     } else if (typeof value !== 'string') throw new TypeError(`output IR value must be a string: ${irPathKey(path)}`);
     return;
@@ -36,7 +36,7 @@ const walkValue = (path: IRPath, node: IRSchemaNode, value: IRValue, visitor: IR
     return;
   case 'array':
     if (!Array.isArray(value)) throw new TypeError(`output IR value must be an array: ${irPathKey(path)}`);
-    value.forEach((child, index) => walkValue([...path, index], node.of, child, visitor, allowNone));
+    value.forEach((child, index) => walkValue([...path, index], node.of, child, visitor, allowAbsent));
     return;
   case 'object':
   case 'union': {
@@ -46,7 +46,7 @@ const walkValue = (path: IRPath, node: IRSchemaNode, value: IRValue, visitor: IR
     for (const [key, child] of Object.entries(value)) {
       const field = node.kind === 'union' && key === node.discriminant ? { kind: 'string' } as const : Object.hasOwn(variant.fields, key) ? variant.fields[key] : undefined;
       if (field === undefined) throw new TypeError(`output IR value has no field ${key}: ${irPathKey(path)}`);
-      walkValue([...path, key], field, child, visitor, allowNone);
+      walkValue([...path, key], field, child, visitor, allowAbsent);
     }
     return;
   }
@@ -102,12 +102,12 @@ const createLifecycle = () => {
   };
 
   // `units` ends with the unit that was initialized.
-  const begin = (units: readonly IRUnit[]): void => {
+  const openUnit = (units: readonly IRUnit[]): void => {
     open.add(irPathKey(units[units.length - 1].path));
     if (units.length > 1) openChildren.increment(irPathKey(units[units.length - 2].path));
   };
 
-  const end = (units: readonly IRUnit[]): void => {
+  const closeUnit = (units: readonly IRUnit[]): void => {
     const unit = units[units.length - 1];
     const key = irPathKey(unit.path);
     if (!open.delete(key)) throw new TypeError(`output IR ${unit.kind} is not open: ${key}`);
@@ -120,11 +120,11 @@ const createLifecycle = () => {
     if (open.size !== 0) throw new TypeError('output IR finish arrived with open units');
   };
 
-  return { assertWritable, begin, end, assertFinishable, isOpen: (path: IRPath): boolean => open.has(irPathKey(path)), isClosed: (path: IRPath): boolean => closed.has(irPathKey(path)) };
+  return { assertWritable, openUnit, closeUnit, assertFinishable, isOpen: (path: IRPath): boolean => open.has(irPathKey(path)), isClosed: (path: IRPath): boolean => closed.has(irPathKey(path)) };
 };
 
 export const createIRCollector = () => {
-  const state: IR = { choices: [] };
+  const state: IROutput = { choices: [] };
   // Containers created by this collector. Everything else is borrowed from a record and
   // is copied before its first write.
   const owned = new WeakSet<object>([state, state.choices]);
@@ -145,7 +145,7 @@ export const createIRCollector = () => {
   };
 
   // Returns whether the write changed the state.
-  const apply = (write: IRWrite): boolean => {
+  const applyWrite = (write: IRWrite): boolean => {
     if (write.value === undefined) throw new TypeError('output IR writes cannot carry undefined');
     const { path } = write;
     const resolution = resolveIRPath(path, state);
@@ -193,7 +193,7 @@ export const createIRCollector = () => {
     else Object.defineProperty(target, key, { value: write.value, writable: true, enumerable: true, configurable: true });
     if (write.kind === 'initialize' && resolution !== undefined) {
       const unit = resolution.units.at(-1);
-      if (unit !== undefined && unit.path.length === path.length) lifecycle.begin(resolution.units);
+      if (unit !== undefined && unit.path.length === path.length) lifecycle.openUnit(resolution.units);
     }
     return true;
   };
@@ -203,21 +203,21 @@ export const createIRCollector = () => {
     if (ended !== undefined) {
       const resolution = resolveIRPath(ended.path, state);
       if (resolution === undefined || valueAt(state, ended.path) === undefined) throw new TypeError(`output IR ${ended.kind} does not exist: ${irPathKey(ended.path)}`);
-      lifecycle.end(resolution.units);
+      lifecycle.closeUnit(resolution.units);
       assertComplete(ended.path, resolution.node, valueAt(state, ended.path));
     } else if (event.type === 'finish') lifecycle.assertFinishable();
   };
 
   const value = <T = unknown>(path: IRPath): T | undefined => valueAt(state, path) as T | undefined;
   // A tool call that closed without a call ID has none to wait for.
-  const optional = <T>(path: IRPath): T | typeof IRAbsent | undefined => {
+  const valueOrAbsent = <T>(path: IRPath): T | typeof IRAbsent | undefined => {
     const actual = value<T | typeof IRAbsent>(path);
     if (actual !== undefined) return actual;
     const resolution = resolveIRPath(path, state);
     const owner = resolution?.units.at(-1);
     return resolution?.node.kind === 'string' && resolution.node.absent === true && owner !== undefined && lifecycle.isClosed(owner.path) ? IRAbsent : undefined;
   };
-  return { state, apply, applyEvent, value, isOpen: lifecycle.isOpen, optional };
+  return { state, applyWrite, applyEvent, value, isOpen: lifecycle.isOpen, valueOrAbsent };
 };
 
 export type IRCollector = ReturnType<typeof createIRCollector>;

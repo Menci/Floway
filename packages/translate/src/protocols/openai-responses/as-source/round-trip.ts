@@ -1,6 +1,6 @@
 import type { IRJSONObject, IRJSONValue } from '../../../ir/output/types.ts';
 import type { ReplayContent } from '../../../round-trip/reference/assistant-turn.ts';
-import type { EncodedRoundTripSidecar } from '../../../round-trip/resolve.ts';
+import type { SidecarCarrier } from '../../../round-trip/resolve.ts';
 import { collectTextGroups, collectTextPlacementIndex, type TextContribution, type TextPlacementIndex } from '../../../round-trip/text-groups.ts';
 import { computeRoundTripTurnDigest, replayMaterialsByType, verifyRoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
 import type { RoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
@@ -81,7 +81,7 @@ const replayItemMaterial = (item: OpenAIResponsesAssistantTurnItem): TypedReplay
 
 const responsesTurnDigestMaterialV1 = (turn: OpenAIResponsesAssistantTurn): IRJSONValue => replayMaterialsByType(turn.map(replayItemMaterial));
 
-export const findOpenAIResponsesSidecarCarriers = (turn: OpenAIResponsesAssistantTurn): EncodedRoundTripSidecar<OpenAIResponsesAssistantTurn>[] =>
+export const findOpenAIResponsesSidecarCarriers = (turn: OpenAIResponsesAssistantTurn): SidecarCarrier<OpenAIResponsesAssistantTurn>[] =>
   turn.flatMap((item, itemIndex) => !isOpenAIResponsesEncryptedReasoning(item) ? [] : [{
     data: item.encrypted_content,
     withoutSidecar: () => {

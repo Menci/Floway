@@ -6,9 +6,9 @@ import { consumeIRRecords, createIRBuilder } from '../../src/ir/output/stream.ts
 import { eventFrame } from '@floway-dev/protocols/common';
 
 const initializeTextPart = (collector: ReturnType<typeof createIRCollector>, part: object): void => {
-  collector.apply({ type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } });
-  collector.apply({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 0], value: { type: 'message', content: [] } });
-  collector.apply({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 0, 'content', 0], value: part as any });
+  collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } });
+  collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 0], value: { type: 'message', content: [] } });
+  collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 0, 'content', 0], value: part as any });
 };
 
 test('collectors borrow record trees and copy only containers first written by that collector', () => {
@@ -21,13 +21,13 @@ test('collectors borrow record trees and copy only containers first written by t
   expect(first.state.choices[0].items[0].type === 'message' && first.state.choices[0].items[0].content[0]).toBe(part);
   expect(second.state.choices[0].items[0].type === 'message' && second.state.choices[0].items[0].content[0]).toBe(part);
 
-  first.apply({ type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'one' });
+  first.applyWrite({ type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'one' });
   const firstPart = first.state.choices[0].items[0].type === 'message' ? first.state.choices[0].items[0].content[0] : undefined;
   expect(firstPart).not.toBe(part);
   expect(firstPart?.type === 'text' && firstPart.annotations).toBe(annotations);
   expect(second.state.choices[0].items[0].type === 'message' && second.state.choices[0].items[0].content[0]).toBe(part);
 
-  second.apply({ type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'other' });
+  second.applyWrite({ type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'other' });
   expect(first.value(['choices', 0, 'items', 0, 'content', 0, 'text'])).toBe('one');
   expect(second.value(['choices', 0, 'items', 0, 'content', 0, 'text'])).toBe('other');
   expect(part.text).toBe('');
@@ -62,21 +62,21 @@ test('builder transfers payloads without copying and later operations never modi
 test('array writes copy the array while retaining immutable sibling values', () => {
   const sibling = Object.freeze({ items: Object.freeze([]) });
   const collector = createIRCollector();
-  collector.apply({ type: 'write', kind: 'initialize', path: ['choices', 0], value: sibling });
+  collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0], value: sibling });
   const preceding = collector.state.choices;
-  collector.apply({ type: 'write', kind: 'initialize', path: ['choices', 1], value: { items: [] } });
+  collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 1], value: { items: [] } });
   expect(collector.state.choices).toBe(preceding);
   expect(collector.state.choices[0]).toBe(sibling);
   const owned = collector.state.choices;
-  collector.apply({ type: 'write', kind: 'initialize', path: ['choices', 2], value: { items: [] } });
+  collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 2], value: { items: [] } });
   expect(collector.state.choices).toBe(owned);
 });
 
 test('value exposes the accumulator live readonly view', () => {
   const collector = createIRCollector();
-  collector.apply({ type: 'write', kind: 'initialize', path: ['usage'], value: {} });
+  collector.applyWrite({ type: 'write', kind: 'initialize', path: ['usage'], value: {} });
   const value = collector.value<Record<string, number>>(['usage'])!;
-  collector.apply({ type: 'write', kind: 'assign', path: ['usage', 'output_tokens_inclusive'], value: 1 });
+  collector.applyWrite({ type: 'write', kind: 'assign', path: ['usage', 'output_tokens_inclusive'], value: 1 });
   expect(value).toEqual({});
   expect(collector.value(['usage'])).toEqual({ output_tokens_inclusive: 1 });
 });

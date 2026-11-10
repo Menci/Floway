@@ -1,7 +1,7 @@
-import { ContentReference, type ReplayContent, type ContentReferenceSegment, type ReferenceableAssistantTurnFor } from './assistant-turn.ts';
+import { ContentReference, type ReplayContent, type ContentReferenceSegment, type ReferenceableInputAssistantTurnFor } from './assistant-turn.ts';
 import { parseJSONObject } from '../../shared/json/object.ts';
 import { rawJSON } from '../../shared/json/raw-json.ts';
-import type { AssistantTurnByProtocol, AssistantTurnFor } from '../assistant-turn.ts';
+import type { InputAssistantTurnByProtocol, InputAssistantTurnFor } from '../assistant-turn.ts';
 import { hashRoundTripContent } from '../turn-digest.ts';
 import { encodeHex } from '@floway-dev/protocols/common';
 
@@ -43,12 +43,12 @@ const restoreValue = (value: unknown, referencedContentHashes: readonly Uint8Arr
 };
 
 /** Consumes the exclusively owned turn decoded by the sidecar codec. */
-export const restoreAssistantTurn = async <Protocol extends keyof AssistantTurnByProtocol>(
+export const restoreAssistantTurn = async <Protocol extends keyof InputAssistantTurnByProtocol>(
   _protocol: Protocol,
   candidates: readonly ReplayContent[],
-  targetTurn: ReferenceableAssistantTurnFor<Protocol, ContentReference>,
+  targetTurn: ReferenceableInputAssistantTurnFor<Protocol, ContentReference>,
   referencedContentHashes?: readonly Uint8Array[],
-): Promise<RestoreResult<AssistantTurnFor<Protocol>>> => {
+): Promise<RestoreResult<InputAssistantTurnFor<Protocol>>> => {
   const textsByHash = new Map<string, string>();
   if (referencedContentHashes !== undefined) {
     for (const candidate of candidates) {
@@ -59,6 +59,6 @@ export const restoreAssistantTurn = async <Protocol extends keyof AssistantTurnB
   }
   const result = restoreValue(targetTurn, referencedContentHashes, textsByHash);
   return result.ok
-    ? { ok: true, turn: result.value as AssistantTurnFor<Protocol> }
+    ? { ok: true, turn: result.value as InputAssistantTurnFor<Protocol> }
     : result;
 };

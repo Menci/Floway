@@ -4,11 +4,11 @@ import type { IRCollector } from '../../../ir/output/collector.ts';
 import { isIRItemPath, isIRPartPath, irPathKey } from '../../../ir/output/operation-paths.ts';
 import { createIROrdinalMapper } from '../../../ir/output/ordinal-mapper.ts';
 import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/output/stream.ts';
-import { IRAbsent, type IR, type IRErrorPayload, type IRJSONObject } from '../../../ir/output/types.ts';
+import { IRAbsent, type IROutput, type IRErrorPayload, type IRJSONObject } from '../../../ir/output/types.ts';
 import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/output/unit-queue.ts';
-import { appendContent, createContentState, type ContentState, type ContentStates } from '../../../round-trip/reference/reference-builder.ts';
+import { appendContent, createEmittedFieldState, type EmittedFieldState, type EmittedFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
-import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
+import type { SourceStreamOutputOptions } from '../../../round-trip/stream.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import { parseJSONObject, parseJSONObjectAtCompletion, requireJSONObject } from '../../../shared/json/object.ts';
 import type { AnthropicMessagesAssistantState, AnthropicMessagesInputAssistantTurn } from '../as-target/assistant-turn.ts';
@@ -48,7 +48,7 @@ const messagesError = (error: IRErrorPayload, contextExceeded: boolean): Anthrop
   ? { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE }
   : { type: error.type !== undefined && MESSAGES_ERROR_TYPES.includes(error.type) ? error.type : 'api_error', message: error.message };
 
-export const irMessagesError = (error: IRErrorPayload): AnthropicMessagesErrorEventEx['error'] =>
+export const anthropicMessagesErrorFromIR = (error: IRErrorPayload): AnthropicMessagesErrorEventEx['error'] =>
   messagesError(error, isContextExceededError(error));
 
 /**
@@ -60,7 +60,7 @@ export const irMessagesError = (error: IRErrorPayload): AnthropicMessagesErrorEv
  * restated failure keeps the shape a client already sees from this vendor.
  * Detection reads only `error.message`; the status is not part of it.
  */
-export const anthropicMessagesErrorResponse = (error: IRErrorPayload): { readonly body: Uint8Array; readonly status: number | undefined } => {
+export const anthropicMessagesErrorEnvelope = (error: IRErrorPayload): { readonly body: Uint8Array; readonly status: number | undefined } => {
   const contextExceeded = isContextExceededError(error);
   return {
     body: new TextEncoder().encode(JSON.stringify({ type: 'error', error: messagesError(error, contextExceeded) })),
@@ -72,7 +72,7 @@ interface MessagesUnit {
   readonly path: IRPath;
   readonly kind: 'text' | 'refusal' | 'audio' | 'image' | 'reasoning' | 'function_call';
   opened: boolean;
-  textContentState?: ContentState<'text'>;
+  textContentState?: EmittedFieldState<'text'>;
   // Keep source intervals until their native field is emitted, including terminal JSON normalization.
   pendingText?: Map<string, TextProvenanceSpan[]>;
   nextPending?: MessagesUnit;
@@ -112,7 +112,7 @@ const outputTextKind = (unit: MessagesUnit, record: IRAppendRecord): 'text' | 't
   return undefined;
 };
 
-interface AnthropicMessagesSSEOutputOptions extends RoundTripOutputOptions<'anthropicMessages'> {
+interface AnthropicMessagesSSEOutputOptions extends SourceStreamOutputOptions<'anthropicMessages'> {
   parseToolArguments?: (text: string) => IRJSONObject;
 }
 
@@ -127,7 +127,7 @@ export const anthropicMessagesFromIR = async function* (
   const pending = createIRUnitQueue<MessagesUnit>();
   const ordinals = createIROrdinalMapper();
   const nativeAccumulator = createAnthropicMessagesEventAccumulator();
-  const contentState: NonNullable<AnthropicMessagesAssistantState<ContentStates>['content']> = [];
+  const contentState: NonNullable<AnthropicMessagesAssistantState<EmittedFieldStates>['content']> = [];
   let nextBlockIndex = 0;
   // Keep only the frontier block wire-open so the finish-time sidecar can close
   // before it. Clients that require serial blocks reorder this in the gateway.
@@ -140,7 +140,7 @@ export const anthropicMessagesFromIR = async function* (
   const blockDelta = (index: number, delta: AnthropicMessagesContentBlockDeltaEvent['delta']): EventFrame<AnthropicMessagesStreamEventEx> =>
     emit({ type: 'content_block_delta', index, delta });
 
-  const usage = (state: IR): AnthropicMessagesUsage => {
+  const usage = (state: IROutput): AnthropicMessagesUsage => {
     const value = usageFromIR(state.usage ?? {});
     if (state.service_tier === 'fast') value.speed = 'fast';
     else if (typeof state.service_tier === 'string') value.service_tier = state.service_tier;
@@ -148,7 +148,7 @@ export const anthropicMessagesFromIR = async function* (
   };
 
   // Queues the content blocks that the output IR structures initialized by a record will become.
-  const registerUnits = (record: IRRecord, state: IR): void => {
+  const registerUnits = (record: IRRecord, state: IROutput): void => {
     if (record.type === 'write' && record.kind === 'initialize') {
       let path: IRPath | undefined;
       let kind: MessagesUnit['kind'] | undefined;
@@ -175,16 +175,16 @@ export const anthropicMessagesFromIR = async function* (
     }
   };
 
-  const appendPendingText = (unit: MessagesUnit, path: IRPath, text: string, content: ContentState): void => {
+  const appendPendingText = (unit: MessagesUnit, path: IRPath, text: string, content: EmittedFieldState): void => {
     const key = irPathKey(path);
-    replayTextProvenance(text, unit.pendingText?.get(key) ?? [], (value, referencePieceIds) => {
-      appendContent(options.roundTrip.builder, content, value, referencePieceIds);
+    replayTextProvenance(text, unit.pendingText?.get(key) ?? [], (value, textFragmentIds) => {
+      appendContent(options.roundTrip.builder, content, value, textFragmentIds);
     });
     unit.pendingText?.delete(key);
   };
 
   // Opens the waiting units in output IR order, until one still lacks what its start event needs.
-  const openPendingUnits = (state: IR, collector: IRCollector): AnthropicMessagesStreamEventEx[] => {
+  const openPendingUnits = (state: IROutput, collector: IRCollector): AnthropicMessagesStreamEventEx[] => {
     const pendingEvents: AnthropicMessagesStreamEventEx[] = [];
     while (pending.head !== undefined) {
       const unit = pending.head;
@@ -208,17 +208,17 @@ export const anthropicMessagesFromIR = async function* (
         else wait = !closed;
       } else if (item.type === 'function_call') {
         if (item.name === '') throw new TypeError('Completed tool calls require a name');
-        const callId = collector.optional<string>([...unit.path, 'call_id']);
+        const callId = collector.valueOrAbsent<string>([...unit.path, 'call_id']);
         if (callId === undefined) wait = true;
         else block = { type: 'tool_use', id: callId === IRAbsent ? `${metadata.id}_${itemIndex}` : callId, name: item.name, input: {} };
       }
       if (wait) break;
-      pending.dequeue();
+      pending.dropHead();
       if (block === undefined) { units.delete(unit.path); continue; }
       unit.opened = true;
       const index = ordinals.open(unit.path);
       if (block.type === 'thinking' || block.type === 'text') {
-        unit.textContentState ??= createContentState(options.roundTrip.builder, 'text');
+        unit.textContentState ??= createEmittedFieldState(options.roundTrip.builder, 'text');
         contentState[index] = block.type === 'thinking' ? { thinking: unit.textContentState } : { text: unit.textContentState };
       }
       nextBlockIndex = Math.max(nextBlockIndex, index + 1);
@@ -249,7 +249,7 @@ export const anthropicMessagesFromIR = async function* (
 
   for await (const { record, collector } of consumeIRRecords(records)) {
     const { state } = collector;
-    if (record.type === 'error') { yield emit({ type: 'error', error: irMessagesError(record.error) }); return; }
+    if (record.type === 'error') { yield emit({ type: 'error', error: anthropicMessagesErrorFromIR(record.error) }); return; }
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;
     if (record.type === 'start') {
       if (state.model === undefined) throw new TypeError('Messages output requires an output IR model before start');
@@ -297,11 +297,11 @@ export const anthropicMessagesFromIR = async function* (
         const fields = pendingUnit.pendingText ??= new Map();
         const key = irPathKey(record.path);
         const atoms = fields.get(key) ?? [];
-        atoms.push(provenanceSpanForAppend(text, record.value, record.referencePieceIds));
+        atoms.push(provenanceSpanForAppend(text, record.value, record.textFragmentIds));
         fields.set(key, atoms);
       } else if (kind !== undefined) {
         if (pendingUnit.textContentState === undefined) throw new Error('Missing Messages text content state');
-        appendContent(options.roundTrip.builder, pendingUnit.textContentState, record.value, record.referencePieceIds);
+        appendContent(options.roundTrip.builder, pendingUnit.textContentState, record.value, record.textFragmentIds);
       }
     }
     for (const event of openPendingUnits(state, collector)) {
@@ -353,7 +353,7 @@ export const anthropicMessagesFromIR = async function* (
             if (block?.type !== 'tool_use') throw new Error('Messages function unit did not produce a native tool block');
             serializedInput = JSON.stringify(requireJSONObject(block.input));
           }
-          const content = createContentState(options.roundTrip.builder, 'json');
+          const content = createEmittedFieldState(options.roundTrip.builder, 'json');
           contentState[index] = { input: content };
           const item = state.choices[0].items[unit.path[3] as number];
           if (item.type !== 'function_call') throw new Error('Messages function unit requires a function item');
@@ -380,7 +380,7 @@ export const anthropicMessagesFromIR = async function* (
         role: 'assistant',
         content: nativeResult.content.map(block => block.type === 'tool_use' ? { ...block, input: requireJSONObject(block.input) } : block),
       };
-      const assistantState: AnthropicMessagesAssistantState<ContentStates> = { content: contentState };
+      const assistantState: AnthropicMessagesAssistantState<EmittedFieldStates> = { content: contentState };
       const sourceTurnDigest = await computeAnthropicMessagesTurnDigest([targetTurn]);
       const data = await options.roundTrip.prepareSidecar(0, sourceTurnDigest, targetTurn, assistantState, collectAnthropicMessagesTextViews([targetTurn]));
       const carrier = createAnthropicMessagesSidecarCarrier(data);
@@ -390,7 +390,7 @@ export const anthropicMessagesFromIR = async function* (
         yield pendingBlockStop;
         pendingBlockStop = undefined;
       }
-      const refusal = state.choices[0]?.refusal;
+      const refusal = state.choices[0]?.refusal_details;
       yield emit({
         type: 'message_delta',
         delta: {

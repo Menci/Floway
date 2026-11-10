@@ -5,11 +5,11 @@ import type { OpenAIChatCompletionsAssistantTurn } from './round-trip.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
-  IRInputRequest,
+  IRInputRequestHeader,
   IRInputSettings,
   IRInputTool,
   IRInputToolChoice,
-  IRInputToolSelection,
+  IRInputToolSelector,
   IRInputOutputFormat,
   IRInputMedia,
   IRInputTextPart,
@@ -46,12 +46,13 @@ const mediaFromUrl = (url: string): IRInputMedia => {
 // An explicitly empty user or assistant message still occupies a native
 // message of its own, so those keep one empty text part. An empty system run
 // contributes nothing to the system prompt and is dropped instead.
-const textParts = (value: string, keepEmpty = true): IRInputTextPart[] => value === '' && !keepEmpty ? [] : [{ type: 'text', text: value }];
+// `keepEmpty` is false for a prompt run, whose emptiness contributes nothing to the system prompt.
+const textOf = (value: string, keepEmpty = true): IRInputTextPart[] => value === '' && !keepEmpty ? [] : [{ type: 'text', text: value }];
 
 // A legacy call states only its name, so its identity is the name plus which
 // occurrence of that name it is. Both the call and its result take the id from
 // the same counter, so they correlate without a wire id.
-const legacyCallId = (name: string, occurrence: number): string => `legacy__${name}__${occurrence}`;
+const legacyOccurrenceCallId = (name: string, occurrence: number): string => `legacy__${name}__${occurrence}`;
 
 // Reader-side state over the whole payload: a Chat `tool` message does not say
 // which call kind it answers, and a legacy result names its call by function
@@ -60,14 +61,14 @@ interface OpenAIChatCompletionsInputContext {
   readonly callKinds: ReadonlyMap<string, 'function' | 'custom'>;
   // Occurrences of each legacy function name consumed so far, so a repeated
   // name yields a distinct id per call and a distinct id per result.
-  readonly legacyCalls: Map<string, number>;
-  readonly legacyResults: Map<string, number>;
+  readonly legacyCallOccurrences: Map<string, number>;
+  readonly legacyResultOccurrences: Map<string, number>;
 }
 
 const openaiChatCompletionsInputContext = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsInputContext => ({
   callKinds: openaiChatCompletionsCallKinds(payload),
-  legacyCalls: new Map<string, number>(),
-  legacyResults: new Map<string, number>(),
+  legacyCallOccurrences: new Map<string, number>(),
+  legacyResultOccurrences: new Map<string, number>(),
 });
 
 const takeOccurrence = (counts: Map<string, number>, name: string): number => {
@@ -110,7 +111,7 @@ const assistantItems = (turn: Extract<OpenAIChatCompletionsConversationTurn, { r
   const message = turn.items[0];
 
   const content: IRInputAssistantContentPart[] = typeof message.content === 'string'
-    ? textParts(message.content)
+    ? textOf(message.content)
     : (message.content ?? []).map(part => part.type === 'text'
         ? { type: 'text' as const, text: part.text }
         : { type: 'refusal' as const, refusal: part.refusal });
@@ -132,7 +133,7 @@ const assistantItems = (turn: Extract<OpenAIChatCompletionsConversationTurn, { r
   if (legacyCall !== undefined) {
     items.push({
       type: 'function_call',
-      call_id: legacyCallId(legacyCall.name, takeOccurrence(context.legacyCalls, legacyCall.name)),
+      call_id: legacyOccurrenceCallId(legacyCall.name, takeOccurrence(context.legacyCallOccurrences, legacyCall.name)),
       name: legacyCall.name,
       arguments: legacyCall.arguments,
     });
@@ -166,10 +167,10 @@ const openaiChatCompletionsTurnToIR = (
 
   // Every client message in one turn contributes its items, in order, to the
   // same IR turn; a target that groups them differently reads the item list.
-  return { kind: 'client', items: turn.items.flatMap(message => userItems(message, context)) };
+  return { kind: 'client', items: turn.items.flatMap(message => clientItems(message, context)) };
 };
 
-const userItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, { role: 'assistant' }>, context: OpenAIChatCompletionsInputContext): IRInputClientItem[] => {
+const clientItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, { role: 'assistant' }>, context: OpenAIChatCompletionsInputContext): IRInputClientItem[] => {
   switch (message.role) {
   case 'system':
   case 'developer':
@@ -179,7 +180,7 @@ const userItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, { 
       // A non-text part in system/developer content has no representation on
       // any target, so it is rejected here rather than dropped silently.
       content: typeof message.content === 'string'
-        ? textParts(message.content, false)
+        ? textOf(message.content, false)
         : (message.content ?? []).map(part => {
             if (part.type !== 'text') throw new TranslatorInputError(`Invalid '${part.type}' content part in system or developer message. Only 'text' content parts are supported in system messages on this model.`);
             return { type: 'text' as const, text: part.text };
@@ -188,7 +189,7 @@ const userItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, { 
   case 'user':
     return [{
       type: 'message',
-      content: message.content == null ? [{ type: 'text', text: '' }] : typeof message.content === 'string' ? textParts(message.content) : message.content.map(userContentPart),
+      content: message.content == null ? [{ type: 'text', text: '' }] : typeof message.content === 'string' ? textOf(message.content) : message.content.map(userContentPart),
     }];
   case 'tool': {
     if (!message.tool_call_id) throw new TranslatorInputError("Missing required field 'tool_call_id' on a 'tool' role message.");
@@ -204,7 +205,7 @@ const userItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, { 
   // A legacy result answers the legacy call of the same name; the id it
   // recomputes is the one the reader gave that call.
   case 'function':
-    return [{ type: 'tool_result', call_id: legacyCallId(message.name, takeOccurrence(context.legacyResults, message.name)), output: message.content == null ? '' : toolResultContent(message.content) }];
+    return [{ type: 'tool_result', call_id: legacyOccurrenceCallId(message.name, takeOccurrence(context.legacyResultOccurrences, message.name)), output: message.content == null ? '' : toolResultContent(message.content) }];
   default:
     throw new TranslatorInputError(`Invalid role '${(message as { role: string }).role}'.`);
   }
@@ -245,7 +246,7 @@ const toolToIR = (tool: OpenAIChatCompletionsTool): IRInputTool | undefined => {
   };
 };
 
-const selectionToIR = (selection: OpenAIChatCompletionsNamedToolChoice): IRInputToolSelection => selection.type === 'custom'
+const selectionToIR = (selection: OpenAIChatCompletionsNamedToolChoice): IRInputToolSelector => selection.type === 'custom'
   ? { type: 'custom', name: selection.custom.name }
   : { type: 'function', name: selection.function.name };
 
@@ -257,7 +258,7 @@ const toolChoiceToIR = (choice: NonNullable<OpenAIChatCompletionsPayload['tool_c
   return selectionToIR(choice);
 };
 
-const openaiChatCompletionsToolsToIR = (payload: OpenAIChatCompletionsPayload): Pick<IRInputRequest, 'tools' | 'tool_choice'> => {
+const openaiChatCompletionsToolsToIR = (payload: OpenAIChatCompletionsPayload): Pick<IRInputRequestHeader, 'tools' | 'tool_choice'> => {
   const tools = payload.tools?.map(toolToIR).filter((tool): tool is IRInputTool => tool !== undefined);
   return {
     ...(tools === undefined || tools.length === 0 ? {} : { tools }),
@@ -265,7 +266,7 @@ const openaiChatCompletionsToolsToIR = (payload: OpenAIChatCompletionsPayload): 
   };
 };
 
-const openaiChatCompletionsRequestToIR = (payload: OpenAIChatCompletionsPayload): IRInputRequest => ({
+const openaiChatCompletionsRequestToIR = (payload: OpenAIChatCompletionsPayload): IRInputRequestHeader => ({
   settings: openaiChatCompletionsSettingsToIR(payload),
   ...openaiChatCompletionsToolsToIR(payload),
 });
@@ -309,7 +310,7 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
     ...(payload.prompt_cache_key === undefined ? {} : { prompt_cache_key: payload.prompt_cache_key }),
     ...(payload.safety_identifier === undefined ? {} : { safety_identifier: payload.safety_identifier }),
     ...(payload.verbosity == null ? {} : { verbosity: payload.verbosity }),
-    ...(payload.n == null ? {} : { candidate_count: payload.n }),
+    ...(payload.n == null ? {} : { choice_count: payload.n }),
     ...(payload.presence_penalty == null ? {} : { presence_penalty: payload.presence_penalty }),
     ...(payload.frequency_penalty == null ? {} : { frequency_penalty: payload.frequency_penalty }),
     // `include_usage` alone asks for the final report; the vLLM/SGLang extension
@@ -326,7 +327,7 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
  * Reading a Chat conversation is stateful: a `tool` message does not state the
  * kind of call it answers, so the reader tracks which calls it has already
  * seen, and the legacy `function` role correlates by name and occurrence. That
- * state lives in a closure each turn's `toIRTurn` captures, so the reading is a
+ * state lives in a closure each turn's `toIRInputTurns` captures, so the reading is a
  * plain value and the state never outlives the turns that need it.
  */
 export const openaiChatCompletionsRead = (payload: OpenAIChatCompletionsPayload): Reading<OpenAIChatCompletionsAssistantTurn> => {
@@ -337,8 +338,8 @@ export const openaiChatCompletionsRead = (payload: OpenAIChatCompletionsPayload)
       ? {
           kind: 'assistant' as const,
           assistantTurn: turn.items[0],
-          toIRTurn: () => [openaiChatCompletionsTurnToIR(turn, context)],
+          toIRInputTurns: () => [openaiChatCompletionsTurnToIR(turn, context)],
         }
-      : { kind: 'client' as const, toIRTurn: () => [openaiChatCompletionsTurnToIR(turn, context)] }),
+      : { kind: 'client' as const, toIRInputTurns: () => [openaiChatCompletionsTurnToIR(turn, context)] }),
   };
 };
