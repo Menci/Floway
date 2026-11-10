@@ -1,5 +1,6 @@
 import type { IRInputResolvedTurn } from '../ir/input/segments.ts';
 import type { IRInputAddressedAssistantItem, IRInputAddressedClientItem, IRInputAddressedTurn, IRInputTurn } from '../ir/input/types.ts';
+import { TranslatorInputError } from '../types.ts';
 
 /** A call that has been stated and is still waiting for its result. */
 export interface PendingCall {
@@ -34,9 +35,9 @@ export const assignCallIds = <Restored>(
   // call at all when the source stated no name either.
   const takePending = (name: string | undefined): PendingCall => {
     const index = name === undefined ? 0 : pending.findIndex(call => call.name === name);
-    if (index < 0) throw new Error(`A tool result names '${name}', which no awaiting call states.`);
+    if (index < 0) throw new TranslatorInputError(`Cannot translate a tool result naming '${name}': no call awaits it.`);
     const [matched] = pending.splice(index, 1);
-    if (matched === undefined) throw new Error(`A tool result answers no call (name: ${name ?? 'unstated'}).`);
+    if (matched === undefined) throw new TranslatorInputError(`Cannot translate a tool result that answers no call (name: ${name ?? 'unstated'}).`);
     return matched;
   };
 

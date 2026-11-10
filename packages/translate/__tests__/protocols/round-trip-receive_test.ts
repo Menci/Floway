@@ -146,8 +146,10 @@ test('preserves ordinary GenerateContent null-argument handling', async () => {
     { type: 'function_call', name: 'lookup', arguments: 'null' },
   ]);
   const messagesTrip = await routeGeminiGenerateContentViaAnthropicMessages(payload, context);
+  // Messages needs an argument object, so a `null` argument list keeps its raw
+  // text rather than becoming `input: null`.
   expect(messagesTrip.target.messages).toMatchObject([
-    { role: 'assistant', content: [{ type: 'tool_use', name: 'lookup', input: null }] },
+    { role: 'assistant', content: [{ type: 'tool_use', name: 'lookup', input: { raw_arguments: 'null' } }] },
   ]);
 });
 

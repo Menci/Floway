@@ -499,3 +499,14 @@ test('a call with no argument object is written with an empty one', async () => 
   const call = request.input.find(item => item.type === 'function_call');
   assertEquals(call?.type === 'function_call' ? call.arguments : undefined, '{}');
 });
+
+test('an orphaned tool choice is not stated', async () => {
+  // xAI-backed Responses upstreams reject a `tool_choice` sent without tools.
+  // https://github.com/jlcodes99/cockpit-tools/issues/1727
+  const request = await buildWithTestSidecar({
+    contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+    toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+  }, 'gpt-test');
+
+  assertEquals(request.tool_choice, undefined);
+});

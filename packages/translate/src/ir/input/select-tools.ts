@@ -34,6 +34,10 @@ export const irInputToolsForChoice = (
  * selector demand a callable that is not offered, so they are not stated;
  * a subset that selects nothing states `none` rather than letting `auto` reach
  * for a tool the request no longer offers.
+ *
+ * A writer whose upstream rejects an orphaned `tool_choice` suppresses the
+ * result when no declaration survives; that is the OpenAI wires' own rule, and
+ * it belongs to them rather than here.
  */
 export const irInputToolChoiceForTools = (
   choice: IRInputToolChoice | undefined,

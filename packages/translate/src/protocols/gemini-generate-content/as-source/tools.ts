@@ -47,6 +47,5 @@ export const geminiGenerateContentFunctionResponsePart = (part: GeminiGenerateCo
   // An id-less answer pairs with the oldest call of its name this reader has
   // seen. When none is left, the call it answers came from a turn a sidecar
   // restored, so the result states no id and the target pairs it by position.
-  const paired = unmatched?.shift();
-  return { response, id: paired };
+  return { response, id: unmatched?.shift() };
 };

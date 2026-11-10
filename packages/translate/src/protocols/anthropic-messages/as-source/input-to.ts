@@ -88,16 +88,23 @@ const userContentPart = (
   }
 };
 
-const toolResultPart = (block: AnthropicMessagesToolResultBlock['content'] extends string | undefined ? never : AnthropicMessagesToolResultBlock['content']): IRInputToolResultContentPart[] => block === undefined
-  ? []
-  : typeof block === 'string'
-    ? [{ type: 'text', text: block }]
-    : block.flatMap((part): IRInputToolResultContentPart[] => {
-        if (part.type === 'text') return [{ type: 'text', text: part.text }];
-        if (part.type === 'image') return [{ type: 'image', image: imageMedia(part.source) }];
-        if (part.type === 'search_result') return [{ type: 'text', text: JSON.stringify([part]) }];
-        throw new TranslatorInputError(`'${(part as { type: string }).type}' tool result content blocks are not supported.`);
-      });
+const toolResultPart = (block: AnthropicMessagesToolResultBlock['content'] extends string | undefined ? never : AnthropicMessagesToolResultBlock['content']): IRInputToolResultContentPart[] => {
+  if (block === undefined) return [];
+  if (typeof block === 'string') return [{ type: 'text', text: block }];
+  // Every search result of one tool result is stated as one JSON array: a
+  // target that only carries strings then receives valid JSON, where
+  // stringifying each block separately would concatenate several arrays.
+  const searchResults = block.filter(part => part.type === 'search_result');
+  return [
+    ...block.flatMap((part): IRInputToolResultContentPart[] => {
+      if (part.type === 'text') return [{ type: 'text', text: part.text }];
+      if (part.type === 'image') return [{ type: 'image', image: imageMedia(part.source) }];
+      if (part.type === 'search_result') return [];
+      throw new TranslatorInputError(`'${(part as { type: string }).type}' tool result content blocks are not supported.`);
+    }),
+    ...(searchResults.length === 0 ? [] : [{ type: 'text' as const, text: JSON.stringify(searchResults) }]),
+  ];
+};
 
 const userItems = (
   message: Exclude<AnthropicMessagesMessage, { role: 'assistant' }>,

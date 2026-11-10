@@ -261,7 +261,10 @@ export const openaiResponsesHeaderFromIR = (request: IRInputRequest): Omit<Canon
     // cannot be carried by this side at all.
     stream: streamingFlag(settings),
     ...(tools === undefined || tools.length === 0 ? {} : { tools: tools.map(toolFromIR) }),
-    ...(choice === undefined ? {} : { tool_choice: toolChoiceFromIR(choice) }),
+    // An orphaned `tool_choice` is not safe on this wire: xAI-backed upstreams
+    // reject the request outright.
+    // https://github.com/jlcodes99/cockpit-tools/issues/1727
+    ...(choice === undefined || tools === undefined || tools.length === 0 ? {} : { tool_choice: toolChoiceFromIR(choice) }),
   };
 };
 

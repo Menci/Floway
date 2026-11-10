@@ -51,7 +51,9 @@ const filePart = (media: IRInputMedia, filename?: string | null): OpenAIChatComp
 };
 
 const userContent = (item: Extract<IRInputClientItem, { type: 'message' }>): string | OpenAIChatCompletionsUserContentPart[] => {
-  if (item.content.every(part => part.type === 'text')) return item.content.flatMap(part => part.type === 'text' ? [part.text] : []).join('\n\n');
+  // Adjacent text parts join with no separator: the parts are one run of text,
+  // and a separator would invent characters the caller never wrote.
+  if (item.content.every(part => part.type === 'text')) return item.content.flatMap(part => part.type === 'text' ? [part.text] : []).join('');
   return item.content.map(part => {
     switch (part.type) {
     case 'text': return { type: 'text' as const, text: part.text };
@@ -127,8 +129,8 @@ const assistantMessage = (items: readonly IRInputAddressedAssistantItem[]): Open
   // null; a turn with neither is an explicitly empty message and keeps ''.
   return [{
     role: 'assistant',
-    content: text.length === 0 && (toolCalls.length > 0 || reasoning.length > 0) ? null : text.join('\n\n'),
-    ...(refusals.length === 0 ? {} : { refusal: refusals.join('\n\n') }),
+    content: text.length === 0 && (toolCalls.length > 0 || reasoning.length > 0) ? null : text.join(''),
+    ...(refusals.length === 0 ? {} : { refusal: refusals.join('') }),
     ...(reasoning.length === 0 ? {} : { reasoning_text: reasoning.join('') }),
     ...(toolCalls.length === 0 ? {} : { tool_calls: toolCalls }),
   }];

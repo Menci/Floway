@@ -2,6 +2,7 @@ import { test } from 'vitest';
 
 import type { IRInputTurn } from '../../src/ir/input/types.ts';
 import { assignCallIds } from '../../src/shared/call-ids.ts';
+import { TranslatorInputError } from '../../src/types.ts';
 import { assertThrows, assertEquals } from '@floway-dev/test-utils';
 
 const call = (name: string, callId?: string): IRInputTurn => ({
@@ -32,7 +33,7 @@ test('an id-less result with no name answers the oldest pending call', () => {
 test('a result naming a call nothing awaits is refused rather than taking another call id', () => {
   // Falling back to the oldest pending call would silently answer the wrong
   // call, so a name that matches nothing has to fail.
-  assertThrows(() => assignCallIds([call('read', 'a'), result('write')], () => []), Error, "names 'write'");
+  assertThrows(() => assignCallIds([call('read', 'a'), result('write')], () => []), TranslatorInputError, "naming 'write'");
 });
 
 test('a stated result releases its call so a later id-less result cannot take it', () => {

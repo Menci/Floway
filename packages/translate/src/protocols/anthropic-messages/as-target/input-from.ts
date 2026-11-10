@@ -139,16 +139,19 @@ const assistantBlocks = (items: readonly IRInputAddressedAssistantItem[]): Anthr
   return blocks;
 };
 
-// Messages needs an object, so a call whose arguments are malformed keeps the
-// raw text under `raw_arguments` rather than dropping the history.
-const parseArguments = (argumentsJson: string): Record<string, unknown> | null => {
+// Messages needs an object, so a call whose arguments are not an object keeps
+// the raw text under `raw_arguments` rather than dropping the history. A JSON
+// `null`, an array, and malformed text all take that path: none of them is an
+// argument object, and discarding the call would lose what the model said.
+const parseArguments = (argumentsJson: string): Record<string, unknown> => {
   // An out-of-range JSON number such as `1e400` parses to `Infinity` and would
   // serialize back as `null`. Parsing with raw-number preservation keeps the
   // caller's exact token.
   try {
     const parsed = parseJSONWithRawNumbers(argumentsJson);
-    if (parsed === null) return null;
-    return typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : { raw_arguments: argumentsJson };
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : { raw_arguments: argumentsJson };
   } catch {
     return { raw_arguments: argumentsJson };
   }
@@ -249,7 +252,10 @@ export const anthropicMessagesConversationFromIR = (
           system.push(...systemContent(item.content));
           continue;
         }
-        messages.push({ role: 'system', content: systemContent(item.content) });
+        // Messages states a system message's content as a non-empty block list
+        // or a bare string; an empty prompt run is the empty string.
+        const blocks = systemContent(item.content);
+        messages.push({ role: 'system', content: blocks.length === 0 ? '' : blocks });
         continue;
       }
       hoisting = false;
@@ -305,22 +311,22 @@ export const anthropicMessagesSettingsFromIR = (settings: IRInputSettings): Omit
     ? { format: { type: 'json_schema' as const, schema: format.schema } }
     : undefined;
 
-  // Anthropic splits the single effort axis across two slots: `thinking.type:
-  // 'disabled'` is the off switch, and every other level is `output_config.effort`.
-  // Its scale has no `none`, so that one value changes slot rather than passing
-  // through. Whether the target honours the off switch is the target's business.
+  // Anthropic splits the single effort axis across two slots: `thinking` and
+  // `output_config.effort`. A stated budget is the more specific quantity, so it
+  // decides the thinking slot — zero being this axis's off switch — while the
+  // level states the effort. With no budget, an effort of `none` moves to the
+  // off switch, because this scale has no `none` of its own. Whether the target
+  // honours the off switch is the target's business.
   // https://platform.claude.com/docs/en/build-with-claude/effort
-  const thinking = settings.reasoning_effort === 'none'
-    ? { type: 'disabled' as const }
-    : settings.reasoning_dynamic === true
-      ? { type: 'adaptive' as const }
-      : settings.reasoning_budget === undefined
-        ? undefined
-        // A budget of zero is this axis's off switch. Messages states any other
-        // token budget on an enabled thinking mode.
-        : settings.reasoning_budget === 0
-          ? { type: 'disabled' as const }
-          : { type: 'enabled' as const, budget_tokens: settings.reasoning_budget };
+  const thinking = settings.reasoning_dynamic === true
+    ? { type: 'adaptive' as const }
+    : settings.reasoning_budget !== undefined
+      ? settings.reasoning_budget === 0
+        ? { type: 'disabled' as const }
+        : { type: 'enabled' as const, budget_tokens: settings.reasoning_budget }
+      : settings.reasoning_effort === 'none'
+        ? { type: 'disabled' as const }
+        : undefined;
   const effort = settings.reasoning_effort === undefined || settings.reasoning_effort === 'none' ? undefined : settings.reasoning_effort;
   const outputConfig = effort === undefined && formatConfig === undefined
     ? undefined
