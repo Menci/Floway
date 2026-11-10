@@ -55,6 +55,27 @@ it('discovers provider-owned reset metrics only for auditable upstreams and retu
     metrics: [{ identity, display: { name: '', labelKey: 'dashboard.upstreamMetrics.metrics.remaining', windowSeconds: 18_000 }, currentStart: 300_000, previousStart: 120_000 }],
   });
   expect((await requestApp('/api/upstream-reset-cycles?upstream_id=cycles&end=-1', { headers })).status).toBe(400);
-  await repo.upstreams.delete('cycles');
-  expect((await requestApp(url, { headers })).status).toBe(404);
+});
+
+it('keeps deleted upstream history readable when reset-cycle discovery becomes unavailable', async () => {
+  const { repo, apiKey, adminSession } = await setupAppTest();
+  const headers = { 'x-floway-session': adminSession };
+  await saveUpstreamForTest(repo.upstreams, buildCodexUpstreamRecord({ id: 'historical' }));
+  await repo.usage.set({
+    keyId: apiKey.id, model: 'gpt-5', upstream: 'historical', modelKey: 'gpt-5',
+    hour: '2026-11-11T10', pricingSelector: {}, requests: 1,
+    metrics: [{ metric: 'input_tokens', quantity: '10', unitPrice: null }],
+  });
+  await repo.upstreams.delete('historical');
+
+  const usage = await requestApp('/api/token-usage/overview?start=2026-11-11T00&end=2026-11-12T00&filter_upstream=upstream%3Ahistorical', { headers });
+  expect(usage.status).toBe(200);
+  expect(await usage.json()).toMatchObject({
+    series: [{ group: 'gpt-5', requests: 1 }],
+    dimensionValues: { upstreams: ['upstream:historical'] },
+  });
+
+  const cycles = await requestApp(`/api/upstream-reset-cycles?upstream_id=historical&end=${Date.UTC(2026, 10, 12)}`, { headers });
+  expect(cycles.status).toBe(200);
+  expect(await cycles.json()).toEqual({ upstreamId: 'historical', available: false, metrics: [] });
 });

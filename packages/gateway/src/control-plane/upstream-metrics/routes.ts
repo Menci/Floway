@@ -27,7 +27,7 @@ export const upstreamResetCycles = async (c: CtxWithQuery<typeof upstreamResetCy
   if (!allowed) return c.json<UpstreamResetCyclesResponse>({ upstreamId: upstream_id, available: false, metrics: [] });
   const repo = getRepo();
   const upstream = await repo.upstreams.getById(upstream_id);
-  if (upstream === null) return c.json({ error: 'Upstream not found' }, 404);
+  if (upstream === null) return c.json<UpstreamResetCyclesResponse>({ upstreamId: upstream_id, available: false, metrics: [] });
   const identities = await repo.upstreamMetrics.listIdentities(upstream_id, end);
   const metrics = await Promise.all(identities.flatMap(identity => {
     const display = resetMetricForKind(upstream.kind, identity);

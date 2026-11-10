@@ -256,6 +256,36 @@ describe('usage dimension controls', () => {
     expect(data.upstreams).toEqual([{ id: 'up-1', name: 'Copilot seat', hue: 210 }]);
   });
 
+  it('loads calendar statistics for a deleted upstream without reset-cycle capability', async () => {
+    useAuthStore.getState().primeFromLogin({
+      token: 'admin-session',
+      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } },
+    });
+    const requests: URL[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'http://localhost');
+      requests.push(url);
+      if (url.pathname === '/api/upstream-reset-cycles') return Response.json({ upstreamId: 'historical', available: false, metrics: [] });
+      if (url.pathname === '/api/search-usage') return Response.json({ view: 'all-by-user', records: [], users: [] });
+      if (url.pathname === '/api/token-usage/overview') return Response.json({
+        ...loaderData.usage,
+        upstreams: [],
+        dimensionValues: { ...loaderData.usage.dimensionValues, upstreams: ['upstream:historical'] },
+        series: [{ ...usageRecord, metrics: [{ metric: 'input_tokens', quantity: '10' }] }],
+        axes: { none: [], model: [], upstream: [], userId: [], keyId: [] },
+      });
+      throw new Error(`Unexpected request: ${url.pathname}`);
+    }));
+
+    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/usage?r=7d&fu=upstream%3Ahistorical') } as never);
+
+    expect(data.error).toBeNull();
+    expect(data.range).toBe('7d');
+    expect(data.usage?.series[0]).toMatchObject({ requests: 1, metrics: { input_tokens: '10' } });
+    expect(data.resetCycles).toEqual({ upstreamId: 'historical', available: false, metrics: [] });
+    expect(requests.find(url => url.pathname === '/api/token-usage/overview')?.searchParams.getAll('filter_upstream')).toEqual(['upstream:historical']);
+  });
+
   it('reads upstream labels from the overview response', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'admin-session',
