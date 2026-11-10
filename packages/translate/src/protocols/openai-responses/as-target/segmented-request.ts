@@ -15,17 +15,16 @@ import type { CanonicalOpenAIResponsesInputItem, CanonicalOpenAIResponsesPayload
  * This wire states the prompt slot as one string, which only a conversation's
  * first segment may fill.
  */
-export const openaiResponsesPayloadFromSegments = <Restored extends readonly CanonicalOpenAIResponsesInputItem[]>(
+export const openaiResponsesPayloadFromSegments = (
   request: IRInputRequestHeader,
-  turns: readonly (IRInputAddressedTurn | ResolvedTurn<Restored>)[],
-  resolvedInput: (turn: Restored) => readonly CanonicalOpenAIResponsesInputItem[],
+  turns: readonly (IRInputAddressedTurn | ResolvedTurn<readonly CanonicalOpenAIResponsesInputItem[]>)[],
 ): CanonicalOpenAIResponsesPayload => {
   const input: CanonicalOpenAIResponsesInputItem[] = [];
   // The prompt slot is stated once for the conversation, and segmentation is
   // what says which segment may state it.
   let instructions: string | undefined;
   for (const piece of segmentTurns(turns)) {
-    if (piece.kind === 'resolved') { input.push(...resolvedInput(piece.turn)); continue; }
+    if (piece.kind === 'resolved') { input.push(...piece.turn); continue; }
     const segment = openaiResponsesConversationFromIR(piece.turns, piece.leading);
     if (segment.instructions != null) instructions ??= segment.instructions;
     input.push(...segment.input);

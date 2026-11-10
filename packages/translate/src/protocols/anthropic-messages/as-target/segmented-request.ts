@@ -18,10 +18,9 @@ import type { AnthropicMessagesMessage, AnthropicMessagesPayload, AnthropicMessa
  * resolved message is already what the source vendor sent back, so it never
  * takes a breakpoint this translation invents.
  */
-export const anthropicMessagesPayloadFromSegments = <Restored>(
+export const anthropicMessagesPayloadFromSegments = (
   request: IRInputRequestHeader,
-  turns: readonly (IRInputAddressedTurn | ResolvedTurn<Restored>)[],
-  resolvedMessage: (turn: Restored) => AnthropicMessagesMessage,
+  turns: readonly (IRInputAddressedTurn | ResolvedTurn<AnthropicMessagesMessage>)[],
   options: AnthropicMessagesRequestFromIROptions = {},
 ): AnthropicMessagesPayload => {
   const system: AnthropicMessagesTextBlockParam[] = [];
@@ -29,9 +28,8 @@ export const anthropicMessagesPayloadFromSegments = <Restored>(
   const restored = new Set<AnthropicMessagesMessage>();
   for (const piece of segmentTurns(turns)) {
     if (piece.kind === 'resolved') {
-      const message = resolvedMessage(piece.turn);
-      messages.push(message);
-      restored.add(message);
+      messages.push(piece.turn);
+      restored.add(piece.turn);
       continue;
     }
     // Only a conversation's first segment may lift its leading prompt into the

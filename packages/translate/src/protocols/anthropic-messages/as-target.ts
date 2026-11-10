@@ -30,7 +30,7 @@ export const anthropicMessagesTargetProtocol: TargetProtocol<
     // declaration and call is stated under the flat spelling it computes.
     const flattened = flattenRequestNames(request, turns);
     return {
-      payload: anthropicMessagesPayloadFromSegments(flattened.request, assignCallIds(flattened.turns, callsOf), turn => turn, {
+      payload: anthropicMessagesPayloadFromSegments(flattened.request, assignCallIds(flattened.turns, callsOf), {
         fallbackMaxOutputTokens: options.fallbackMaxOutputTokens,
       }),
       // Both facts come from the same flattening that produced the request, so

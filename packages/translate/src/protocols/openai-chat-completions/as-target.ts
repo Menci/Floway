@@ -48,7 +48,6 @@ export const openaiChatCompletionsTargetProtocol: TargetProtocol<
       payload: openaiChatCompletionsPayloadFromSegments(
         flattened.request,
         assignCallIds(flattened.turns, turn => callsOf(turn, legacy.callIds)),
-        turn => turn,
         legacy.names,
       ),
       // Both facts come from the same flattening that produced the request, so
