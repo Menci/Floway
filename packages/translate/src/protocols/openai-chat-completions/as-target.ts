@@ -4,7 +4,7 @@ import { assignCallIds, type PendingCall } from '../composition/call-ids.ts';
 import { flattenRequestNames } from '../composition/flatten-request.ts';
 import type { ResolvedTurn } from '../composition/segments.ts';
 import type { TargetProtocol } from '../composition.ts';
-import { openaiChatCompletionsPayloadFromSegments } from './as-target/segmented-request.ts';
+import { legacyFunctionCallId, legacyFunctionCallNamesOf, openaiChatCompletionsPayloadFromSegments } from './as-target/segmented-request.ts';
 import { irFromOpenAIChatCompletions } from './as-target/sse-from.ts';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -21,27 +21,6 @@ const callsOf = (turn: ChatResolvedTurn): readonly PendingCall[] => {
     ...legacy,
     ...(turn.tool_calls ?? []).map(call => ({ callId: call.id, name: call.type === 'function' ? call.function.name : call.custom.name })),
   ];
-};
-
-/**
- * The id this writer gives a legacy `function_call`.
- *
- * That field states no id, but a result still has to name the call it answers.
- * The prefix keeps the invented id out of the way of a real one, and the map
- * this function feeds is what lets the result be written as the legacy `function`
- * message the field belongs with.
- */
-const legacyFunctionCallId = (name: string): string => `legacy_call:${name}`;
-
-/** Every legacy call this payload states, by the id the writer invented for it. */
-const legacyFunctionCallNamesOf = (turns: readonly (IRInputAddressedTurn | ResolvedTurn<ChatResolvedTurn>)[]): ReadonlyMap<string, string> => {
-  const legacy = new Map<string, string>();
-  for (const piece of turns) {
-    if (piece.kind !== 'resolved') continue;
-    const name = piece.turn.role === 'assistant' ? piece.turn.function_call?.name : undefined;
-    if (name !== undefined) legacy.set(legacyFunctionCallId(name), name);
-  }
-  return legacy;
 };
 
 /**

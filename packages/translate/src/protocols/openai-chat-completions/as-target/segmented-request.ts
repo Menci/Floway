@@ -3,6 +3,22 @@ import type { IRInputAddressedTurn, IRInputRequestHeader } from '../../../ir/inp
 import { segmentTurns, type ResolvedTurn } from '../../composition/segments.ts';
 import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 
+/** The id this payload gives a legacy `function_call`. */
+export const legacyFunctionCallId = (name: string): string => `legacy_call:${name}`;
+
+/** Every legacy call these turns state, by the id the writer invented for it. */
+export const legacyFunctionCallNamesOf = <Restored extends OpenAIChatCompletionsMessage>(
+  turns: readonly (IRInputAddressedTurn | ResolvedTurn<Restored>)[],
+): ReadonlyMap<string, string> => {
+  const legacy = new Map<string, string>();
+  for (const piece of turns) {
+    if (piece.kind !== 'resolved') continue;
+    const name = piece.turn.role === 'assistant' ? piece.turn.function_call?.name : undefined;
+    if (name !== undefined) legacy.set(legacyFunctionCallId(name), name);
+  }
+  return legacy;
+};
+
 /**
  * Writes a segmented conversation as one Chat Completions payload.
  *
