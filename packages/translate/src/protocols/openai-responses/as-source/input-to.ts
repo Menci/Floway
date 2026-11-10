@@ -113,8 +113,10 @@ const assistantItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IR
   case 'message': {
     if (item.role !== 'assistant') throw new TranslatorInputError(`Invalid assistant message role '${item.role}'.`);
     const content = assistantContent(item);
-    // An empty assistant message has nothing to replay.
-    return content.length === 0 ? undefined : { type: 'message' as const, content };
+    // An explicitly empty assistant message still occupies a turn: dropping it
+    // would put the client runs on either side next to each other, and every
+    // target that combines adjacent same-role messages would merge them.
+    return { type: 'message' as const, content };
   }
   case 'reasoning':
     // An encrypted carrier is the sidecar's material: it is authenticated

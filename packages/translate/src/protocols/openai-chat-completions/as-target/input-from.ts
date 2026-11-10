@@ -158,8 +158,9 @@ const openaiChatCompletionsClientItem = (
   case 'prompt':
     // A single text part collapses to the string spelling Chat accepts for
     // text-only system/developer messages; several parts keep their array so
-    // block boundaries survive.
-    return [{ role: item.role, content: item.content.length === 1 ? item.content[0].text : item.content.map(part => ({ type: 'text' as const, text: part.text })) }];
+    // block boundaries survive. An empty list is not a legal body on this wire,
+    // so it becomes the empty string.
+    return [{ role: item.role, content: item.content.length === 1 ? item.content[0].text : item.content.length === 0 ? '' : item.content.map(part => ({ type: 'text' as const, text: part.text })) }];
   case 'tool_result': {
     const projected = openaiChatCompletionsToolResultContent(item.call_id, item.output);
     lift(projected.lifted);

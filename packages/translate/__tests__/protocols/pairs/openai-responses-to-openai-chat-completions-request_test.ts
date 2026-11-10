@@ -844,3 +844,10 @@ test.each(['system', 'developer'] as const)('preserves %s text part boundaries',
   const result = await buildWithTestSidecar({ model: 'gpt-test', input: [{ type: 'message', role, content: [{ type: 'input_text', text: 'a' }, { type: 'input_text', text: 'b' }] }] });
   assertEquals(result.target.messages, [{ role, content: [{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }] }]);
 });
+
+test.each(['system', 'developer'] as const)('collapses an empty %s message to the empty string', async role => {
+  // An empty part array is not a legal Chat body; the empty string states the
+  // same message in the spelling this wire accepts.
+  const result = await buildWithTestSidecar({ model: 'gpt-test', input: [{ type: 'message', role, content: '' }] });
+  assertEquals(result.target.messages, [{ role, content: '' }]);
+});

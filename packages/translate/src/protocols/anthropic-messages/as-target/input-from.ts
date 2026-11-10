@@ -126,9 +126,9 @@ const assistantBlocks = (items: readonly IRInputAddressedAssistantItem[]): Anthr
         type: 'tool_use' as const,
         id: item.call_id,
         name: item.name,
-        // An absent argument object stays absent; Messages omits the `input`
-        // key entirely for a tool call that takes no arguments.
-        ...(item.arguments === undefined ? {} : { input: parseArguments(item.arguments) }),
+        // `input` is required on this wire, and a call that takes no argument
+        // object states the empty one — the spelling every target uses for it.
+        input: item.arguments === undefined ? {} : parseArguments(item.arguments),
       }] as AnthropicMessagesAssistantInputContentBlock[];
     case 'custom_tool_call':
       // Messages has no freeform tool call; the wrapper schema a custom tool is

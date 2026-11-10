@@ -465,3 +465,17 @@ test.each([undefined, []])('preserves an empty model turn with parts %j', async 
   const result = await buildWithTestSidecar(payload, 'target-model', noOptions);
   assertEquals((result.messages as Array<{ role?: string; content?: unknown }>).filter(item => item.role === 'assistant'), [{ role: 'assistant', content: '' }]);
 });
+
+test('states an empty argument object for a call that carries no args', async () => {
+  // `input` is required on a Messages tool_use, and the empty object is how
+  // every target spells a call that takes no argument object.
+  const result = await buildWithTestSidecar({
+    contents: [
+      { role: 'user', parts: [{ text: 'go' }] },
+      { role: 'model', parts: [{ functionCall: { name: 'f' } }] },
+      { role: 'user', parts: [{ functionResponse: { name: 'f', response: { r: 1 } } }] },
+    ],
+  }, 'target-model', noOptions);
+  const assistant = (result.messages as Array<{ role?: string; content?: unknown }>).find(item => item.role === 'assistant');
+  assertEquals((assistant?.content as Array<{ input?: unknown }>)[0]?.input, {});
+});

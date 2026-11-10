@@ -1222,3 +1222,17 @@ test('buildTargetPayload throws when a non-leading developer input message conta
 // (Native native↔native only — OpenAI Responses no longer carries thinking-mode
 // extension fields; alias overlays land on the Anthropic Messages target payload at the wire
 // call via `applyRulesToUpstreamAnthropicMessages`.)
+
+test('keeps an empty assistant message as the turn that separates two client runs', async () => {
+  // Dropping it would leave two adjacent user messages, which this wire merges
+  // into one turn, losing the boundary the client stated.
+  const result = await buildWithTestSidecar({
+    model: 'gpt-test',
+    input: [
+      { type: 'message', role: 'user', content: 'one' },
+      { type: 'message', role: 'assistant', content: [] },
+      { type: 'message', role: 'user', content: 'two' },
+    ],
+  });
+  assertEquals(result.target.messages.map(message => message.role), ['user', 'assistant', 'user']);
+});
