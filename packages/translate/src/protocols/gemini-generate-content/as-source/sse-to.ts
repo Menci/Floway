@@ -71,7 +71,6 @@ interface GenerateContentUnit {
   opened: boolean;
   pendingData?: TextProvenanceSpan[];
   pendingArguments?: TextProvenanceSpan[];
-  nextPending?: GenerateContentUnit;
 }
 
 interface PendingTextQueue {

@@ -1,9 +1,9 @@
 import { expect, test } from 'vitest';
 
 import type { IRRecord } from '../../src/ir/output/stream.ts';
-import { createIRUnitQueue, createIRUnitRegistry, type IRQueuedUnit } from '../../src/ir/output/unit-queue.ts';
+import { createIRUnitQueue, createIRUnitRegistry } from '../../src/ir/output/unit-queue.ts';
 
-interface Unit extends IRQueuedUnit<Unit> { readonly name: string }
+interface Unit { readonly name: string }
 
 test('unit queue dequeues units in the order they were enqueued', () => {
   const queue = createIRUnitQueue<Unit>();

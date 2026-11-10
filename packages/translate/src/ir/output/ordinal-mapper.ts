@@ -1,5 +1,5 @@
 import { irPathKey } from './operation-paths.ts';
-import type { IRPath } from './stream.ts';
+import type { IRPath } from './records.ts';
 
 // Numbers the native units (blocks, output items, tool calls) of a stream in the order
 // they open, and forgets a unit when it closes.

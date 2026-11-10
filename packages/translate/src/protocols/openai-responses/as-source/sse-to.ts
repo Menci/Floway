@@ -39,7 +39,6 @@ interface ResponsesOutputUnitBase {
   id?: string;
   callId?: string;
   status?: 'completed' | 'incomplete';
-  nextPending?: ResponsesOutputUnit;
 }
 
 type ResponsesOutputUnit = ResponsesOutputUnitBase & (

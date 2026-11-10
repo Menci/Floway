@@ -76,7 +76,6 @@ interface MessagesUnit {
   textContentState?: EmittedFieldState<'text'>;
   // Keep source intervals until their native field is emitted, including terminal JSON normalization.
   pendingText?: Map<string, TextProvenanceSpan[]>;
-  nextPending?: MessagesUnit;
 }
 
 const unitKind = (value: unknown): MessagesUnit['kind'] | 'custom_tool_call' | undefined => {

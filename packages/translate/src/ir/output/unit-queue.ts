@@ -1,5 +1,5 @@
 import { irPathKey, irRecordOwnerPaths } from './operation-paths.ts';
-import type { IRPath, IRRecord } from './stream.ts';
+import type { IRPath, IRRecord } from './records.ts';
 
 // Finds the unit that a record belongs to. A writer registers each unit at the path
 // where its output IR structure was initialized.
@@ -20,27 +20,30 @@ export const createIRUnitRegistry = <T>() => {
   };
 };
 
-// Units wait here until the writer can open them, and are opened in output IR order.
-export interface IRQueuedUnit<T> { nextPending?: T }
+// The queue's own link, so the units it carries stay plain values.
+interface QueuedNode<T> {
+  readonly value: T;
+  next?: QueuedNode<T>;
+}
 
-export const createIRUnitQueue = <T extends IRQueuedUnit<T>>() => {
-  let head: T | undefined;
-  let tail: T | undefined;
+// Units wait here until the writer can open them, and are opened in output IR order.
+export const createIRUnitQueue = <T>() => {
+  let head: QueuedNode<T> | undefined;
+  let tail: QueuedNode<T> | undefined;
   return {
-    get head(): T | undefined { return head; },
+    get head(): T | undefined { return head?.value; },
     enqueue: (unit: T): void => {
-      if (tail === undefined) head = unit;
-      else tail.nextPending = unit;
-      tail = unit;
+      const node: QueuedNode<T> = { value: unit };
+      if (tail === undefined) head = node;
+      else tail.next = node;
+      tail = node;
     },
     // Removes the head unit, which the caller has just opened or discarded.
     dropHead: (): void => {
-      const unit = head!;
-      head = unit.nextPending;
-      unit.nextPending = undefined;
+      head = head!.next;
       if (head === undefined) tail = undefined;
     },
   };
 };
 
-export type IRUnitQueue<T extends IRQueuedUnit<T>> = ReturnType<typeof createIRUnitQueue<T>>;
+export type IRUnitQueue<T> = ReturnType<typeof createIRUnitQueue<T>>;

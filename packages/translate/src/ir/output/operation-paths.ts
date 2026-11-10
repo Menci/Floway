@@ -1,5 +1,5 @@
+import type { IREvent, IRPath, IRRecord } from './records.ts';
 import { irSchema, type IRObjectNode, type IRSchemaNode, type IRUnionNode, type IRUnitKind } from './schema.ts';
-import type { IREvent, IRPath, IRRecord } from './stream.ts';
 
 // Everything here is derived from the schema in schema.ts. A path is resolved against the
 // schema, and the answers come from the traits of the node it lands on. Where the node
