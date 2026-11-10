@@ -7,8 +7,9 @@ import { openaiChatCompletionsFromIR as openaiChatCompletionsFromIRProduction } 
 import { irFromOpenAIChatCompletions as irFromOpenAIChatCompletionsProduction } from '../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
 import { openaiResponsesFromIR as openaiResponsesFromIRProduction } from '../../src/protocols/openai-responses/as-source/sse-to.ts';
 import { irFromOpenAIResponses as irFromOpenAIResponsesProduction } from '../../src/protocols/openai-responses/as-target/sse-from.ts';
+import type { RoundTripReader } from '../../src/round-trip/reader.ts';
 import { createReferenceBuilder } from '../../src/round-trip/reference/reference-builder.ts';
-import type { RoundTripReader, RoundTripWriter } from '../../src/round-trip/stream.ts';
+import type { RoundTripWriter } from '../../src/round-trip/writer.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 export const iterate = async function* <T>(values: readonly T[]): AsyncGenerator<T> { yield* values; };

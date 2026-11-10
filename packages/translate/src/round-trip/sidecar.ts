@@ -1,8 +1,9 @@
 import type { AssistantTurnProtocol } from './assistant-turn.ts';
 import type { RoundTripTurnDigest } from './turn-digest.ts';
 import type { SidecarCodec } from '../types.ts';
-import type { ReferenceableInputAssistantTurnFor, ContentReference } from './reference/assistant-turn.ts';
 import { tagContentReferences, untagContentReferences } from './reference/content-reference-tag.ts';
+import type { ContentReference } from './reference/reference-type.ts';
+import type { ReferenceableInputAssistantTurnFor } from './reference/registry.ts';
 import { isJSONRecord } from '../shared/json/object.ts';
 
 export type { AssistantTurnProtocol };

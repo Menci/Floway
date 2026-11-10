@@ -1,4 +1,5 @@
-import { ContentReference, type InputAssistantTurnStateFor, type ContentReferenceSegment } from './assistant-turn.ts';
+import { ContentReference, type ContentReferenceSegment } from './reference-type.ts';
+import { type InputAssistantTurnStateFor } from './registry.ts';
 import type { IRJSONObject } from '../../ir/common/json.ts';
 import { parseJSONObject } from '../../shared/json/object.ts';
 import type { InputAssistantTurnByProtocol, InputAssistantTurnFor } from '../assistant-turn.ts';

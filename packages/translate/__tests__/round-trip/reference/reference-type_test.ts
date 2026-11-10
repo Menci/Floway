@@ -1,6 +1,7 @@
 import { expectTypeOf, test } from 'vitest';
 
-import type { JSONRule, TextRule, ReferenceState, ReferenceableValue } from '../../../src/round-trip/reference/assistant-turn.ts';
+import { JSONRule, TextRule, ReferenceState, ReferenceableValue } from '../../../src/round-trip/reference/reference-type.ts';
+
 import { createFieldState, type ReadFieldState, type ReadFieldStates } from '../../../src/round-trip/reference/reference-builder.ts';
 
 test('derives selected text, JSON, and sparse state leaves from one nested rule', () => {

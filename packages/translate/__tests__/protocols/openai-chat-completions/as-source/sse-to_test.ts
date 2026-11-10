@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import { createIRBuilder } from '../../../../src/ir/output/stream.ts';
 import { openaiChatCompletionsFromIR } from '../../../../src/protocols/openai-chat-completions/as-source/sse-to.ts';
 import { createReferenceBuilder, collectEmittedFieldPlacements, createFieldState, createFieldReferencer, appendField } from '../../../../src/round-trip/reference/reference-builder.ts';
-import { type RoundTripWriter } from '../../../../src/round-trip/stream.ts';
+import { type RoundTripWriter } from '../../../../src/round-trip/writer.ts';
 
 test('prepares each Chat choice independently while another choice has partial audio', async () => {
   const source = createIRBuilder();

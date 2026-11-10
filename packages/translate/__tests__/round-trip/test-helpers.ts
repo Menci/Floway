@@ -1,8 +1,9 @@
 import type { InputAssistantTurnByProtocol, InputAssistantTurnFor } from '../../src/round-trip/assistant-turn.ts';
-import type { InputAssistantTurnStateFor } from '../../src/round-trip/reference/assistant-turn.ts';
+import type { RoundTripReader } from '../../src/round-trip/reader.ts';
 import { createReferenceBuilder, type EmittedFieldStates, type ReadFieldStates } from '../../src/round-trip/reference/reference-builder.ts';
-import type { RoundTripReader, RoundTripWriter } from '../../src/round-trip/stream.ts';
+import type { InputAssistantTurnStateFor } from '../../src/round-trip/reference/registry.ts';
 import type { RoundTripTurnDigest } from '../../src/round-trip/turn-digest.ts';
+import type { RoundTripWriter } from '../../src/round-trip/writer.ts';
 
 export const createRoundTripReaderCapture = <Protocol extends keyof InputAssistantTurnByProtocol>() => {
   const builder = createReferenceBuilder();

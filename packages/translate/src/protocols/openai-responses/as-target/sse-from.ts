@@ -9,8 +9,8 @@ import {
   type IRWriteHandle,
 } from '../../../ir/output/stream.ts';
 import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
+import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendField, createFieldState, invalidateField, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
-import type { RoundTripReader } from '../../../round-trip/stream.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {

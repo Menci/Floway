@@ -3,10 +3,10 @@ import { expect, test } from 'vitest';
 import type { IRRecord } from '../../../../src/ir/output/stream.ts';
 import type { OpenAIChatCompletionsInputAssistantTurn } from '../../../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
 import { irFromOpenAIChatCompletions } from '../../../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
+import type { RoundTripReader } from '../../../../src/round-trip/reader.ts';
 import { appendContent, collectEmittedFieldPlacements, createEmittedFieldState, createReferenceBuilder } from '../../../../src/round-trip/reference/reference-builder.ts';
 import { referenceAssistantTurn } from '../../../../src/round-trip/reference/reference-selection.ts';
 import { restoreAssistantTurn } from '../../../../src/round-trip/reference/restore.ts';
-import type { RoundTripReader } from '../../../../src/round-trip/stream.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 

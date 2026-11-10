@@ -1,18 +1,19 @@
+import type { FlatCallContext } from './composition/flatten-request.ts';
 import type { Reading } from './composition/reading.ts';
 import { resolveReading } from './composition/reading.ts';
 import type { ResolvedTurn } from './composition/segments.ts';
 import type { IRInputRequestHeader, IRInputTurn } from '../ir/input/types.ts';
 import type { IRRecord } from '../ir/output/stream.ts';
 import type { AssistantTurnProtocol, InputAssistantTurnFor } from '../round-trip/assistant-turn.ts';
-import type { ReplayContent } from '../round-trip/reference/assistant-turn.ts';
+import type { RoundTripReader } from '../round-trip/reader.ts';
+import type { ReplayContent } from '../round-trip/reference/reference-type.ts';
 import type { SidecarCarrier } from '../round-trip/resolve.ts';
 import { roundTripAssistantTurn } from '../round-trip/resolve.ts';
 import type { SourceAssistantTurnFor } from '../round-trip/source-assistant-turn.ts';
-import type { RoundTripReader, RoundTripWriter } from '../round-trip/stream.ts';
 import { createRoundTripStream } from '../round-trip/stream.ts';
 import type { RoundTripTurnDigest } from '../round-trip/turn-digest.ts';
+import type { RoundTripWriter } from '../round-trip/writer.ts';
 import type { RestateSourceError, TranslateOptions, TranslateTrip } from '../types.ts';
-import type { FlatCallContext } from './composition/flatten-request.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 /**

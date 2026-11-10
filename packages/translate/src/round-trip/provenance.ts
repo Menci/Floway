@@ -1,4 +1,4 @@
-import type { TextFragmentId } from './reference-builder.ts';
+import type { TextFragmentId } from './reference/reference-builder.ts';
 
 export interface TextProvenanceSpan {
   readonly start: number;

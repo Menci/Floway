@@ -1,4 +1,5 @@
-import { ContentReference, type ReplayContent, type ContentReferenceSegment, type ReferenceableInputAssistantTurnFor } from './assistant-turn.ts';
+import { ContentReference, type ReplayContent, type ContentReferenceSegment } from './reference-type.ts';
+import { type ReferenceableInputAssistantTurnFor } from './registry.ts';
 import { parseJSONObject } from '../../shared/json/object.ts';
 import { rawJSON } from '../../shared/json/raw-json.ts';
 import type { InputAssistantTurnByProtocol, InputAssistantTurnFor } from '../assistant-turn.ts';

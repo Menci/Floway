@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import { createIRBuilder } from '../../../../src/ir/output/stream.ts';
 import { geminiGenerateContentFromIR } from '../../../../src/protocols/gemini-generate-content/as-source/sse-to.ts';
 import { appendField, collectEmittedFieldPlacements, createReferenceBuilder, createFieldState, createFieldReferencer } from '../../../../src/round-trip/reference/reference-builder.ts';
-import { type RoundTripWriter } from '../../../../src/round-trip/stream.ts';
+import { type RoundTripWriter } from '../../../../src/round-trip/writer.ts';
 
 test('resolves delayed Gemini audio atoms within the complete emitted data field', async () => {
   const references = createReferenceBuilder();

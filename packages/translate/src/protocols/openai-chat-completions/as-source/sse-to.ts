@@ -4,9 +4,9 @@ import { irItemPath, irPartPath, irPathKey } from '../../../ir/output/operation-
 import { createIROrdinalMapper } from '../../../ir/output/ordinal-mapper.ts';
 import { consumeIRRecords, type IRRecord } from '../../../ir/output/stream.ts';
 import { IRAbsent, type IRErrorPayload, type IROutputItem, type IROutputMessageItem, type IROutputTokenLogprob } from '../../../ir/output/types.ts';
+import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
 import { appendContent, createEmittedFieldState, type EmittedFieldStates, type EmittedFieldState } from '../../../round-trip/reference/reference-builder.ts';
-import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
-import type { SourceStreamOutputOptions } from '../../../round-trip/stream.ts';
+import type { SourceStreamOutputOptions } from '../../../round-trip/writer.ts';
 import { isJSONRecord } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantState } from '../as-target/assistant-turn.ts';

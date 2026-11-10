@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { provenanceSpanForAppend, replayTextProvenance } from '../../../src/round-trip/reference/text-provenance.ts';
+import { provenanceSpanForAppend, replayTextProvenance } from '../../src/round-trip/provenance.ts';
 
 it('captures appended suffixes and replays literal gaps around provenance spans', () => {
   const spans = [

@@ -1,5 +1,5 @@
 import type { IRJSONObject, IRJSONValue } from '../../../ir/common/json.ts';
-import type { ReplayContent } from '../../../round-trip/reference/assistant-turn.ts';
+import type { ReplayContent } from '../../../round-trip/reference/reference-type.ts';
 import type { SidecarCarrier } from '../../../round-trip/resolve.ts';
 import { collectTextGroups, collectTextPlacementIndex, type TextContribution, type TextPlacementIndex } from '../../../round-trip/text-groups.ts';
 import { turnDigestComputer, turnDigestVerifier } from '../../../round-trip/turn-digest.ts';

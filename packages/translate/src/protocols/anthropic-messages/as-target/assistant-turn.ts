@@ -1,5 +1,5 @@
 import type { IRJSONObject } from '../../../ir/common/json.ts';
-import type { ReferenceState, ReferenceStateLeaves, ReferenceableValue, TextRule, JSONRule } from '../../../round-trip/reference/assistant-turn.ts';
+import type { ReferenceState, ReferenceStateLeaves, ReferenceableValue, TextRule, JSONRule } from '../../../round-trip/reference/reference-type.ts';
 import type { AnthropicMessagesAssistantContentBlock } from '@floway-dev/protocols/anthropic-messages';
 
 type AnthropicMessagesBlockRule<Block> = Block extends { type: 'text' }

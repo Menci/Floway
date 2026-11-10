@@ -1,4 +1,4 @@
-import type { ReferenceState, ReferenceStateLeaves, ReferenceableValue, TextRule, JSONRule } from '../../../round-trip/reference/assistant-turn.ts';
+import type { ReferenceState, ReferenceStateLeaves, ReferenceableValue, TextRule, JSONRule } from '../../../round-trip/reference/reference-type.ts';
 import type { GeminiGenerateContentContent } from '@floway-dev/protocols/gemini-generate-content';
 
 type GeminiPartRule = {

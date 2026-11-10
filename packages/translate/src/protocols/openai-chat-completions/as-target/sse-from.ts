@@ -9,8 +9,8 @@ import {
   type IRRelativePath,
 } from '../../../ir/output/stream.ts';
 import { IRAbsent, type IRErrorPayload, type IROutputSourceCitation } from '../../../ir/output/types.ts';
+import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendField, createFieldState, type ReadFieldStates, type ReadFieldState, type TextFragmentId } from '../../../round-trip/reference/reference-builder.ts';
-import type { RoundTripReader } from '../../../round-trip/stream.ts';
 import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';

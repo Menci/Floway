@@ -6,9 +6,9 @@ import { irItemPath, irPartPath, irPathKey, isIRItemPath, isIRPartPath } from '.
 import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/output/stream.ts';
 import { IRAbsent, type IROutput, type IRErrorPayload, type IROutputSourceCitation, type IROutputTokenLogprob } from '../../../ir/output/types.ts';
 import { createIRUnitQueue, createIRUnitRegistry, type IRUnitQueue } from '../../../ir/output/unit-queue.ts';
+import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
 import { appendContent, createEmittedFieldState, type EmittedFieldStates, type EmittedFieldState as EmittedFieldState } from '../../../round-trip/reference/reference-builder.ts';
-import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
-import type { SourceStreamOutputOptions } from '../../../round-trip/stream.ts';
+import type { SourceStreamOutputOptions } from '../../../round-trip/writer.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import { isCompleteJSONObject, parseJSONObjectAtCompletion } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';

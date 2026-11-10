@@ -2,8 +2,8 @@ import type { AnthropicMessagesAssistantState } from './assistant-turn.ts';
 import { type AnthropicMessagesInputCounts, usageToIR } from './usage.ts';
 import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRRecord } from '../../../ir/output/stream.ts';
 import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
+import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendField, createFieldState, type ReadFieldState, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
-import type { RoundTripReader } from '../../../round-trip/stream.ts';
 import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';
 import {

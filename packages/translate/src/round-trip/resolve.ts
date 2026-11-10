@@ -2,7 +2,7 @@ import type { InputAssistantTurnByProtocol, InputAssistantTurnFor } from './assi
 import { decodeRoundTripSidecar, hasRoundTripTarget, type AnyRoundTripSidecar } from './sidecar.ts';
 import type { RoundTripTurnDigest } from './turn-digest.ts';
 import type { SidecarCodec } from '../types.ts';
-import type { ReplayContent } from './reference/assistant-turn.ts';
+import type { ReplayContent } from './reference/reference-type.ts';
 import { restoreAssistantTurn } from './reference/restore.ts';
 
 export interface SidecarCarrier<Turn> {

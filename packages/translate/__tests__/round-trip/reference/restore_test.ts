@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AnthropicMessagesReferenceableAssistantTurn } from '../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
 import type { GeminiGenerateContentReferenceableAssistantTurn } from '../../../src/protocols/gemini-generate-content/as-target/assistant-turn.ts';
 import type { OpenAIChatCompletionsReferenceableAssistantTurn } from '../../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
-import { ContentReference } from '../../../src/round-trip/reference/assistant-turn.ts';
+import { ContentReference } from '../../../src/round-trip/reference/reference-type.ts';
 import { restoreAssistantTurn } from '../../../src/round-trip/reference/restore.ts';
 import { hashRoundTripContent } from '../../../src/round-trip/turn-digest.ts';
 import { rawJSON } from '../../../src/shared/json/raw-json.ts';
