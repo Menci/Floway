@@ -7,8 +7,8 @@ import { readOpenAIChatCompletionsEvents as readOpenAIChatCompletionsEventsProdu
 import { writeOpenAIResponsesEvents as writeOpenAIResponsesEventsProduction } from '../../src/protocols/openai-responses/as-source/events.ts';
 import { flattenNamespaceTools } from '../../src/protocols/openai-responses/as-source/namespace-tools.ts';
 import { readOpenAIResponsesEvents as readOpenAIResponsesEventsProduction } from '../../src/protocols/openai-responses/as-target/events.ts';
-import { createReferenceBuilder } from '../../src/round-trip/reference/reference-builder.ts';
 import type { RoundTripReader } from '../../src/round-trip/reader.ts';
+import { createReferenceBuilder } from '../../src/round-trip/reference/reference-builder.ts';
 import type { RoundTripWriter } from '../../src/round-trip/writer.ts';
 
 const reader = <Protocol extends 'anthropicMessages' | 'openaiChatCompletions' | 'openaiResponses'>(): RoundTripReader<Protocol> => ({

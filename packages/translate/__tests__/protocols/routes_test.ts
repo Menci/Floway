@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { requireTrip } from './require-trip.ts';
 import { fixtureFrames, type nativeResult } from './fixtures.ts';
+import { requireTrip } from './require-trip.ts';
 import { partitionAnthropicMessagesTurns } from '../../src/protocols/anthropic-messages/as-source/conversation-turns.ts';
 import { findAnthropicMessagesSidecarOccurrences } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
 import { findGeminiGenerateContentSidecarOccurrences } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';

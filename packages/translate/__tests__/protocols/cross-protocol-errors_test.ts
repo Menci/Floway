@@ -5,9 +5,9 @@ import type { IRErrorPayload } from '../../src/ir/output/error.ts';
 import { readAnthropicMessagesEvents } from '../../src/protocols/anthropic-messages/as-target/events.ts';
 import { readOpenAIChatCompletionsEvents } from '../../src/protocols/openai-chat-completions/as-target/events.ts';
 import { readOpenAIResponsesEvents } from '../../src/protocols/openai-responses/as-target/events.ts';
-import { collect, iterate } from '../shared/iterables.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { createRoundTripReaderCapture } from '../round-trip/test-helpers.ts';
+import { collect, iterate } from '../shared/iterables.ts';
 import { PROMPT_TOO_LONG_MESSAGE } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
