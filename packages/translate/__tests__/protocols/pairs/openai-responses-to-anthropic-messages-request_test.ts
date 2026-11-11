@@ -827,6 +827,7 @@ test('buildTargetPayload states a custom tool result image as the URL it is', as
     role: 'user',
     content: [{
       type: 'tool_result', tool_use_id: 'call_exec',
+      is_error: true,
       content: [
         { type: 'text', text: 'partial capture' },
         { type: 'image', source: { type: 'url', url: 'https://example.com/capture.png' } },

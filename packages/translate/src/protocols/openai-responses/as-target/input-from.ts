@@ -121,7 +121,7 @@ const clientItems = (items: readonly IRInputClientItemWithCallIds[]): CanonicalO
   case 'tool_result': {
     const output = toolResultOutput(item.output);
     return item.tool_kind === 'custom'
-      ? { type: 'custom_tool_call_output', call_id: item.call_id, output }
+      ? { type: 'custom_tool_call_output', call_id: item.call_id, output, ...(item.is_error === undefined ? {} : { status: item.is_error ? 'incomplete' as const : 'completed' as const }) }
       : { type: 'function_call_output', call_id: item.call_id, output, ...(item.is_error === true ? { status: 'incomplete' as const } : { status: 'completed' as const }) };
   }
   }

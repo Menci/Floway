@@ -3,7 +3,6 @@ import { klona } from 'klona/json';
 import { requireCallableSelector } from './allowed-tools.ts';
 import { partitionOpenAIResponsesTurns, type OpenAIResponsesConversationTurn } from './conversation-turns.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from './programmatic-tooling.ts';
-import { isOpenAIResponsesEncryptedReasoning } from './round-trip.ts';
 import type { OpenAIResponsesSourceAssistantTurn } from './round-trip.ts';
 import type { SourceReading } from '../../../composition/reading.ts';
 import { mediaFromURL, mediaOrThrow } from '../../../ir/input/media.ts';
@@ -119,16 +118,13 @@ const assistantItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IR
     return { type: 'message' as const, content };
   }
   case 'reasoning':
-    // An encrypted carrier is the sidecar's material: it is authenticated
-    // against the issuing deployment and means nothing to another vendor.
-    if (isOpenAIResponsesEncryptedReasoning(item)) return undefined;
-    {
-      const summary = item.summary.map(part => part.text);
-      const content = (item.content ?? []).map(part => part.text);
-      // No readable text means nothing any target could replay.
-      if (summary.length === 0 && content.length === 0) return undefined;
-      return { type: 'reasoning' as const, ...(summary.length === 0 ? {} : { summary }), ...(content.length === 0 ? {} : { content }) };
-    }
+  {
+    const summary = item.summary.map(part => part.text);
+    const content = (item.content ?? []).map(part => part.text);
+    // No readable text means nothing any target could replay.
+    if (summary.length === 0 && content.length === 0) return undefined;
+    return { type: 'reasoning' as const, ...(summary.length === 0 ? {} : { summary }), ...(content.length === 0 ? {} : { content }) };
+  }
   case 'function_call':
     return { type: 'function_call' as const, call_id: item.call_id, name: item.name, ...('namespace' in item && typeof item.namespace === 'string' ? { namespace: item.namespace } : {}), arguments: item.arguments };
   case 'custom_tool_call':
@@ -168,6 +164,7 @@ const clientItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInp
       call_id: item.call_id,
       output: toolResultContent(item.output),
       tool_kind: 'custom' as const,
+      ...(item.status === 'incomplete' ? { is_error: true } : {}),
     }];
   // A deferred inventory states declarations, which the request's tool list
   // already carries; it is not something the model said.
