@@ -140,11 +140,11 @@ export const composeTranslation = <
  * the second.
  */
 const resolveReadingTurns = async <
-  SrcName extends AssistantTurnProtocol, SrcPayload, SrcEvent,
-  TgtName extends AssistantTurnProtocol, TgtPayload, TgtEvent,
+  SrcName extends AssistantTurnProtocol,
+  TgtName extends AssistantTurnProtocol,
 >(
-  source: SourceProtocol<SrcName, SrcPayload, SrcEvent>,
-  target: TargetProtocol<TgtName, TgtPayload, TgtEvent>,
+  source: { readonly name: SrcName; readonly sidecarRecognition: SidecarRecognition<SrcName> },
+  target: { readonly name: TgtName },
   reading: Reading<SourceAssistantTurnFor<SrcName>>,
   options: TranslateOptions,
 ): Promise<(IRInputTurn | ResolvedTurn<InputAssistantTurnFor<TgtName>>)[]> =>

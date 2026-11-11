@@ -12,7 +12,7 @@ export const createIRCollector = () => {
   const lifecycle = createLifecycle();
 
   const writableContainer = (path: IRPath): Record<string | number, unknown> => {
-    let target = state as unknown as Record<string | number, unknown>;
+    let target: Record<string | number, unknown> = state;
     for (const segment of path) {
       const child = target[segment] as object;
       if (!owned.has(child)) {

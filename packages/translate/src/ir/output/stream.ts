@@ -63,6 +63,9 @@ export const createIRBuilder = () => {
     for (const [key, child] of Object.entries(value)) remember([...path, Array.isArray(value) ? Number(key) : key], child);
   };
   const write = (value: IRWrite): void => { if (collector.applyWrite(value)) records.push(value); };
+  // A handle accepts any caller value; the collector is what decides whether it
+  // is a legal output IR value, so the write record states what was handed over
+  // and validation runs on the way in.
   const assign = (path: IRPath, value: unknown): void => {
     write({ type: 'write', kind: 'assign', path, value: value as IROutputValue });
     remember(path, value);

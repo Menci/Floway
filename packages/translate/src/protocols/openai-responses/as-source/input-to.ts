@@ -1,7 +1,7 @@
 import { klona } from 'klona/json';
 
 import { requireCallableSelector, validateCallableDeclarations } from './allowed-tools.ts';
-import { partitionOpenAIResponsesTurns } from './conversation-turns.ts';
+import { partitionOpenAIResponsesTurns, type OpenAIResponsesConversationTurn } from './conversation-turns.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from './programmatic-tooling.ts';
 import { isOpenAIResponsesEncryptedReasoning } from './round-trip.ts';
 import type { OpenAIResponsesAssistantTurn } from './round-trip.ts';
@@ -184,9 +184,7 @@ const openaiResponsesInstructionsToIR = (instructions: string | null | undefined
   ? { kind: 'client', items: [{ type: 'prompt', role: 'system', content: [{ type: 'text', text: instructions }] }] }
   : undefined;
 
-const openaiResponsesTurnToIR = (
-  turn: { readonly role: 'assistant' | 'client'; readonly items: readonly CanonicalOpenAIResponsesInputItem[] },
-): IRInputTurn[] => {
+const openaiResponsesTurnToIR = (turn: OpenAIResponsesConversationTurn): IRInputTurn[] => {
   const items = turn.items;
   if (turn.role !== 'assistant') return [{ kind: 'client', items: clientItems(items) }];
   // Every assistant item was dropped (an opaque reasoning carrier, say). The

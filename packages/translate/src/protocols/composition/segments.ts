@@ -1,4 +1,4 @@
-import type { IRInputTurn } from '../../ir/input/types.ts';
+import type { IRInputAddressedTurn } from '../../ir/input/addressed.ts';
 
 // A conversation translates in segments split at sidecar-resolved assistant
 // turns. Those turns are already native target structure, so a writer emits
@@ -7,11 +7,9 @@ import type { IRInputTurn } from '../../ir/input/types.ts';
 // Segmentation is what preserves cross-turn behaviour: a writer that folds
 // adjacent user turns into one native message must not fold across a resolved
 // assistant turn, because that turn sits between them in the output.
-export type Piece<Turn, InputTurn = IRInputTurn> = Segment<InputTurn> | ResolvedTurn<Turn>;
-
-export interface Segment<InputTurn = IRInputTurn> {
+export interface Segment {
   readonly kind: 'ir';
-  readonly turns: readonly InputTurn[];
+  readonly turns: readonly IRInputAddressedTurn[];
   // Only the first segment of a conversation may hoist a leading system run into
   // a protocol's top-level instructions slot.
   readonly leading: boolean;
@@ -22,9 +20,9 @@ export interface ResolvedTurn<Turn> {
   readonly turn: Turn;
 }
 
-export const segmentTurns = <Turn, InputTurn extends { readonly kind: 'client' | 'assistant' } = IRInputTurn>(turns: readonly (InputTurn | ResolvedTurn<Turn>)[]): readonly Piece<Turn, InputTurn>[] => {
-  const segments: (Segment<InputTurn> | ResolvedTurn<Turn>)[] = [];
-  let current: InputTurn[] = [];
+export const segmentTurns = <Turn>(turns: readonly (IRInputAddressedTurn | ResolvedTurn<Turn>)[]): readonly (Segment | ResolvedTurn<Turn>)[] => {
+  const segments: (Segment | ResolvedTurn<Turn>)[] = [];
+  let current: IRInputAddressedTurn[] = [];
   let leading = true;
   const flush = (): void => {
     if (current.length === 0) return;
