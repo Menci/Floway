@@ -32,13 +32,13 @@ payload and `TranslateOptions`, receiving a `TranslateTrip` or a `TranslateInput
 
 ## Current Production Subdirectories
 
-- `ir/common/` — values both directions share: the JSON shape, `IRAbsent`, the error payload, text ranges.
+- `ir/common/` — the JSON value shape shared by both directions.
 - `ir/input/` — the request conversation model, its types, and the target-side
   selection helpers.
 - `composition/` — what a trip needs before the IR is written: a
-  source conversation read into turn slots, and the segmentation that splits a
-  writer's input at the turns a sidecar restored.
-- `ir/output/` — the returned-stream model, its path schema, and protocol-independent streaming state.
+  source conversation read into turn slots and resolved through exclusive native or IR paths.
+- `request/` — target request preparation: callable names, call IDs, and segmentation around restored turns.
+- `ir/output/` — the returned-stream model, its path schema, builder, record consumer, and protocol-independent streaming state.
 - `round-trip/` — authenticated assistant-turn sidecars, replay validation, and native stream coordination.
 - `protocols/anthropic-messages/as-source/` — interprets Messages requests and emits Messages SSE.
 - `protocols/anthropic-messages/as-target/` — maps requests to Messages and consumes Messages SSE.
@@ -47,10 +47,10 @@ payload and `TranslateOptions`, receiving a `TranslateTrip` or a `TranslateInput
 - `protocols/openai-chat-completions/as-target/` — consumes ChatCompletions SSE.
 - `protocols/openai-responses/as-source/` — interprets Responses tools, restores event identities, and emits Responses SSE.
 - `protocols/openai-responses/as-target/` — consumes Responses SSE.
-- `composition/index.ts` — pairs one source protocol with one target protocol into a trip; the only file that names two protocols.
+- `composition/index.ts` — pairs one source protocol with one target protocol into a trip; the generic composition boundary.
 - `protocols/<protocol>/as-source.ts` — states that protocol as the side a request comes from.
 - `protocols/<protocol>/as-target.ts` — states that protocol as the side a request goes to.
-- `shared/` — cross-route coordinate conversion, error classification, JSON handling, and token validation.
+- `shared/` — cross-route coordinates, error classification, JSON handling, token validation, and callable wrapper formats.
 
 ## Rules
 

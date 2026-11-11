@@ -1,8 +1,7 @@
-import type { SourceReading } from './reading.ts';
 import { resolveReading } from './reading.ts';
-import type { RestoredAssistantTurn } from './segments.ts';
+import type { SourceReading, RestoredAssistantTurn } from './reading.ts';
 import type { IRInputRequestHeader, IRInputTurn } from '../ir/input/types.ts';
-import type { IRRecord } from '../ir/output/stream.ts';
+import type { IRRecord } from '../ir/output/records.ts';
 import { createRoundTripCoordinator } from '../round-trip/coordinator.ts';
 import type { AssistantTurnProtocol, InputAssistantTurnFor } from '../round-trip/input-assistant-turn.ts';
 import type { RoundTripReader } from '../round-trip/reader.ts';
@@ -10,8 +9,8 @@ import type { SidecarRecognition } from '../round-trip/resolve.ts';
 import { roundTripAssistantTurn } from '../round-trip/resolve.ts';
 import type { SourceAssistantTurnFor } from '../round-trip/source-assistant-turn.ts';
 import type { RoundTripWriter } from '../round-trip/writer.ts';
+import { TranslateInputException } from '../shared/input-error.ts';
 import type { ApiErrorTranslator, TranslateOptions, Translator } from '../types.ts';
-import { TranslateInputException } from '../types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 /** One protocol as the side a request comes from. */

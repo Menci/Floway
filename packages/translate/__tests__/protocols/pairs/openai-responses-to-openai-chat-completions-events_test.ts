@@ -1,5 +1,5 @@
 import { buildSourceEventsFor, emptyPayload, pairs } from '../../composition/helpers.ts';
-import { testOutputTranslation } from '../../ir/translation-cases.ts';
+import { testOutputTranslation } from '../fixtures.ts';
 
 testOutputTranslation('openai-responses', 'openai-chat-completions', (frames, codec) => {
   const [source, target] = pairs.responsesToChat;

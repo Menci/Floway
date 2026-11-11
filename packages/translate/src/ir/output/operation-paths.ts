@@ -89,16 +89,6 @@ export const isIRItemPath = (path: IRPath, root: unknown): boolean => unitAt(pat
 
 export const isIRPartPath = (path: IRPath, root: unknown): boolean => unitAt(path, root) === 'part';
 
-export const isIRAppendTarget = (path: IRPath, root: unknown): boolean => {
-  const node = resolveIRPath(path, root)?.node;
-  return node?.kind === 'string' && node.append === true;
-};
-
-export const isIRAbsentTarget = (path: IRPath, root: unknown): boolean => {
-  const node = resolveIRPath(path, root)?.node;
-  return node?.kind === 'string' && node.absent === true;
-};
-
 const WILDCARD = Symbol('index');
 type TemplateSegment = string | typeof WILDCARD;
 
@@ -125,28 +115,6 @@ const findUnitTemplate = (node: IRSchemaNode, kind: IRUnitKind, prefix: readonly
 
 const unitTemplates = new Map<IRUnitKind, readonly TemplateSegment[]>();
 
-// The units enclosing a unit, outermost first, followed by the unit itself.
-const unitKindsAlong = (kind: IRUnitKind): readonly IRUnitKind[] => {
-  const kinds: IRUnitKind[] = [];
-  const visit = (node: IRSchemaNode): boolean => {
-    const own = unitKindOf(node);
-    if (own !== undefined) kinds.push(own);
-    if (own === kind) return true;
-    let found = false;
-    switch (node.kind) {
-    case 'nullable': found = visit(node.of); break;
-    case 'array': found = visit(node.of); break;
-    case 'object': found = Object.values(node.fields).some(visit); break;
-    case 'union': found = Object.values(node.cases).some(visit); break;
-    default:
-    }
-    if (!found && own !== undefined) kinds.pop();
-    return found;
-  };
-  visit(irSchema);
-  return kinds;
-};
-
 // The path of a unit from the indices of it and its enclosing units, outermost first.
 export const irUnitPath = (kind: IRUnitKind, ...indices: readonly number[]): IRPath => {
   let template = unitTemplates.get(kind);
@@ -167,11 +135,10 @@ export const irPartPath = (choice: number, item: number, part: number): IRPath =
 
 // An `<unit>_end` event names the unit it ends by the indices of that unit and the units around it.
 export const irEndedUnit = (event: IREvent): IRUnit | undefined => {
-  if (!event.type.endsWith('_end')) return undefined;
-  const kind = event.type.slice(0, -'_end'.length) as IRUnitKind;
-  const kinds = unitKindsAlong(kind);
-  if (kinds.at(-1) !== kind) return undefined;
-  return { kind, path: irUnitPath(kind, ...kinds.map(unit => (event as unknown as Record<string, number>)[unit])) };
+  if (event.type === 'choice_end') return { kind: 'choice', path: irUnitPath('choice', event.choice) };
+  if (event.type === 'item_end') return { kind: 'item', path: irUnitPath('item', event.choice, event.item) };
+  if (event.type === 'part_end') return { kind: 'part', path: irUnitPath('part', event.choice, event.item, event.part) };
+  return undefined;
 };
 
 // The units a record belongs to, innermost first.

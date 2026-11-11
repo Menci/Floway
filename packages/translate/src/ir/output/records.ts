@@ -1,4 +1,5 @@
-import type { IRErrorPayload, IROutputValue } from './types.ts';
+import type { IRErrorPayload } from './error.ts';
+import type { IROutputValue } from './types.ts';
 
 export type IRPath = readonly (string | number)[];
 export type IRWrite = Readonly<

@@ -6,6 +6,7 @@ import type { AnthropicMessagesReferenceableInputAssistantTurn } from '../../../
 import { collectGeminiGenerateContentTextPlacements } from '../../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
 import type { GeminiGenerateContentInputAssistantTurnState, GeminiGenerateContentInputAssistantTurn } from '../../../src/protocols/gemini-generate-content/as-target/assistant-turn.ts';
 import type { OpenAIChatCompletionsInputAssistantTurnState, OpenAIChatCompletionsInputAssistantTurn } from '../../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
+import { hashRoundTripContent } from '../../../src/round-trip/hash.ts';
 import {
   appendEmittedField,
   appendReadField,
@@ -21,7 +22,6 @@ import {
 import { referenceAssistantTurn } from '../../../src/round-trip/reference/reference-selection.ts';
 import { restoreAssistantTurn } from '../../../src/round-trip/reference/restore.ts';
 import { ContentReference } from '../../../src/round-trip/reference/types.ts';
-import { hashRoundTripContent } from '../../../src/round-trip/turn-digest.ts';
 import { parseJSONObject } from '../../../src/shared/json/object.ts';
 
 describe('ReferenceBuilder', () => {

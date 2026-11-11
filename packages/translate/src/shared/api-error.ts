@@ -1,5 +1,5 @@
 import { isJSONRecord } from './json/object.ts';
-import type { IRErrorPayload } from '../ir/common/error.ts';
+import type { IRErrorPayload } from '../ir/output/error.ts';
 import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
 const recordOf = (value: unknown): Readonly<Record<string, unknown>> | undefined =>

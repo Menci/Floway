@@ -1,5 +1,5 @@
+import type { SidecarCodec } from './codec.ts';
 import type { InputAssistantTurnByProtocol, InputAssistantTurnFor } from './input-assistant-turn.ts';
-import type { SidecarCodec } from '../types.ts';
 import { restoreAssistantTurn } from './reference/restore.ts';
 import type { ReplayContent } from './reference/types.ts';
 import { decodeRoundTripSidecar, hasRoundTripTarget, type AnyRoundTripSidecar } from './sidecar.ts';

@@ -1,9 +1,6 @@
-import type { IRAbsent } from '../common/absent.ts';
+import type { IRAbsent } from './absent.ts';
+import type { TextRange } from '../../shared/text-range.ts';
 import type { JSONValueOf } from '../common/json.ts';
-import type { IRTextRange } from '../common/text-range.ts';
-
-export type { IRErrorPayload } from '../common/error.ts';
-export { IRAbsent } from '../common/absent.ts';
 
 // All
 export type IROutputValue = JSONValueOf<IRAbsent>;
@@ -117,7 +114,7 @@ export type IROutputSourceCitation = {
   readonly source_label?: string | null; // All
   readonly source_text?: string; // Messages, GenerateContent
   readonly source_page_range?: IROutputSourcePageRange; // Messages, GenerateContent
-  readonly output_text_range?: IRTextRange; // ChatCompletions, Responses, GenerateContent
+  readonly output_text_range?: TextRange; // ChatCompletions, Responses, GenerateContent
 } & (
   | {
     readonly source_kind: 'url' | 'document' | 'search_result'; // All

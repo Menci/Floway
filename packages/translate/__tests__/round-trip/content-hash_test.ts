@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { hashRoundTripContent, verifyRoundTripTurnDigest } from '../../src/round-trip/turn-digest.ts';
+import { hashRoundTripContent } from '../../src/round-trip/hash.ts';
+import { verifyRoundTripTurnDigest } from '../../src/round-trip/turn-digest.ts';
 
 describe('round-trip content hashes', () => {
   it.each([

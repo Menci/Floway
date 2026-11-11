@@ -1,7 +1,8 @@
 import { openaiResponsesConversationFromIR, openaiResponsesHeaderFromIR } from './input-from.ts';
-import { segmentTurns, type RestoredAssistantTurn } from '../../../composition/segments.ts';
-import type { IRInputTurnWithCallIds } from '../../../ir/input/call-ids.ts';
+import { type RestoredAssistantTurn } from '../../../composition/reading.ts';
 import type { IRInputRequestHeader } from '../../../ir/input/types.ts';
+import type { IRInputTurnWithCallIds } from '../../../request/call-ids.ts';
+import { segmentTurns } from '../../../request/segments.ts';
 import type { CanonicalOpenAIResponsesInputItem, CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 /**

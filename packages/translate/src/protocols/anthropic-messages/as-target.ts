@@ -1,10 +1,10 @@
 import { readAnthropicMessagesEvents } from './as-target/events.ts';
 import { anthropicMessagesPayloadFromSegments } from './as-target/segmented-request.ts';
-import { assignCallIds, type PendingCall } from '../../composition/call-ids.ts';
 import type { TargetProtocol } from '../../composition/index.ts';
-import type { RestoredAssistantTurn } from '../../composition/segments.ts';
-import { allocateToolNames, type ToolNameContext } from '../../composition/tool-names.ts';
+import type { RestoredAssistantTurn } from '../../composition/reading.ts';
 import type { IRInputRequestHeader, IRInputTurn } from '../../ir/input/types.ts';
+import { assignCallIds, type PendingCall } from '../../request/call-ids.ts';
+import { allocateToolNames, type ToolNameContext } from '../../request/tool-names.ts';
 import type { InputAssistantTurnFor } from '../../round-trip/input-assistant-turn.ts';
 import type { TranslateOptions } from '../../types.ts';
 import type { AnthropicMessagesMessage, AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';

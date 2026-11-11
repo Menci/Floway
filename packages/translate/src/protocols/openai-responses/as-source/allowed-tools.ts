@@ -1,4 +1,4 @@
-import { TranslateInputException } from '../../../types.ts';
+import { TranslateInputException } from '../../../shared/input-error.ts';
 
 /**
  * The callable a selector names.

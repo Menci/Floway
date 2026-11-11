@@ -1,13 +1,7 @@
 import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantTurnState } from './assistant-turn.ts';
 import { usageToIR } from './usage.ts';
-import {
-  createIRBuilder,
-  type IRRecord,
-  type IRItemHandle,
-  type IRPartHandle,
-  type IRRelativePath,
-  type IRWriteHandle,
-} from '../../../ir/output/stream.ts';
+import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRRelativePath, type IRWriteHandle } from '../../../ir/output/builder.ts';
+import { type IRRecord } from '../../../ir/output/records.ts';
 import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendReadField, createReadFieldState, invalidateReadField, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';

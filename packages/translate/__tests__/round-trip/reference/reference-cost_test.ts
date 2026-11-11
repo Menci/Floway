@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AnthropicMessagesInputAssistantTurnState, AnthropicMessagesInputAssistantTurn } from '../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
+import { hashRoundTripContent } from '../../../src/round-trip/hash.ts';
 import { appendEmittedField, appendReadField, collectEmittedFieldPlacements, createEmittedFieldState, createReadFieldState, createReferenceBuilder, type ReadFieldStates } from '../../../src/round-trip/reference/reference-builder.ts';
 import { referenceAssistantTurn } from '../../../src/round-trip/reference/reference-selection.ts';
 import { restoreAssistantTurn } from '../../../src/round-trip/reference/restore.ts';
 import { ContentReference } from '../../../src/round-trip/reference/types.ts';
 import type { TextPlacement } from '../../../src/round-trip/text-groups.ts';
-import { hashRoundTripContent } from '../../../src/round-trip/turn-digest.ts';
 
 const finalizeTexts = async (texts: readonly string[]) => {
   const builder = createReferenceBuilder();

@@ -19,7 +19,7 @@ import type {
   IRInputUserContentPart,
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
-import { TranslateInputException } from '../../../types.ts';
+import { TranslateInputException } from '../../../shared/input-error.ts';
 import type {
   AnthropicMessagesAssistantInputContentBlock,
   AnthropicMessagesClientTool,

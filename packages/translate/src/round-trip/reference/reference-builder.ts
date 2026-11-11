@@ -2,9 +2,9 @@ import { type InputAssistantTurnStateFor } from './assistant-turn-types.ts';
 import { ContentReference, type ContentReferenceSegment } from './types.ts';
 import type { IRJSONObject } from '../../ir/common/json.ts';
 import { parseJSONObject } from '../../shared/json/object.ts';
+import { hashRoundTripContent } from '../hash.ts';
 import type { InputAssistantTurnByProtocol, InputAssistantTurnFor } from '../input-assistant-turn.ts';
 import type { TextPlacement, TextPlacementIndex } from '../text-groups.ts';
-import { hashRoundTripContent } from '../turn-digest.ts';
 import { encodeHex } from '@floway-dev/protocols/common';
 
 const fieldStatePhase: unique symbol = Symbol('ReferenceFieldStatePhase');

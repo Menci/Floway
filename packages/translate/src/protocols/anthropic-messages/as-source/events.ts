@@ -1,18 +1,23 @@
 import { collectAnthropicMessagesTextPlacements, computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import type { IRJSONObject } from '../../../ir/common/json.ts';
+import { IRAbsent } from '../../../ir/output/absent.ts';
 import type { IRCollector } from '../../../ir/output/collector.ts';
+import { type IRErrorPayload } from '../../../ir/output/error.ts';
 import { isIRItemPath, isIRPartPath, irPathKey } from '../../../ir/output/operation-paths.ts';
-import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/output/stream.ts';
-import { IRAbsent, type IROutput, type IRErrorPayload } from '../../../ir/output/types.ts';
+import { type IRPath, type IRRecord } from '../../../ir/output/records.ts';
+import { consumeIRRecords } from '../../../ir/output/stream.ts';
+import { type IROutput } from '../../../ir/output/types.ts';
 import { createIRUnitIndexAllocator } from '../../../ir/output/unit-index.ts';
-import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/output/unit-queue.ts';
+import { createIRUnitQueue } from '../../../ir/output/unit-queue.ts';
+import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
 import { appendEmittedField, createEmittedFieldState, type EmittedFieldState, type EmittedFieldStates } from '../../../round-trip/reference/reference-builder.ts';
-import type { SourceEventWriterOptions } from '../../../round-trip/writer.ts';
 import { errorDetailsOf } from '../../../shared/api-error.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
-import { parseJSONObject, parseJSONObjectUnlessTruncated, requireJSONObject, isJSONRecord } from '../../../shared/json/object.ts';
+import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
+import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.ts';
+import { parseJSONObject, requireJSONObject, isJSONRecord } from '../../../shared/json/object.ts';
 import type { AnthropicMessagesInputAssistantTurnState, AnthropicMessagesInputAssistantTurn } from '../as-target/assistant-turn.ts';
 import {
   generateAnthropicId,

@@ -1,6 +1,6 @@
+import type { SidecarCodec } from './codec.ts';
 import type { InputAssistantTurnByProtocol, InputAssistantTurnFor } from './input-assistant-turn.ts';
 import type { RoundTripReader } from './reader.ts';
-import type { SidecarCodec } from '../types.ts';
 import type { InputAssistantTurnStateFor } from './reference/assistant-turn-types.ts';
 import type { ReadFieldStates, ReferenceBuilder } from './reference/reference-builder.ts';
 import { collectEmittedFieldPlacements, createReferenceBuilder } from './reference/reference-builder.ts';

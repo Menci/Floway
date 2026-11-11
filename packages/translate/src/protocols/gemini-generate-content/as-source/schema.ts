@@ -1,6 +1,6 @@
 import { klona } from 'klona/json';
 
-import { TranslateInputException } from '../../../types.ts';
+import { TranslateInputException } from '../../../shared/input-error.ts';
 import { jsonInteger } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentFunctionDeclaration, GeminiGenerateContentGenerationConfig, GeminiGenerateContentSchema } from '@floway-dev/protocols/gemini-generate-content';
 

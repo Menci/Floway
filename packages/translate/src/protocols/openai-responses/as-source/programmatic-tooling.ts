@@ -1,4 +1,4 @@
-import { TranslateInputException } from '../../../types.ts';
+import { TranslateInputException } from '../../../shared/input-error.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 
 export const rejectProgrammaticOpenAIResponsesPayload = (payload: OpenAIResponsesPayloadEx): void => {

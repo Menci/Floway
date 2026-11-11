@@ -1,7 +1,7 @@
 import { readOpenAIResponsesEvents } from './as-target/events.ts';
 import { openaiResponsesPayloadFromSegments } from './as-target/segmented-request.ts';
-import { assignCallIds, type PendingCall } from '../../composition/call-ids.ts';
 import type { TargetProtocol } from '../../composition/index.ts';
+import { assignCallIds, type PendingCall } from '../../request/call-ids.ts';
 import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 type ResponsesRestoredAssistantTurn = readonly CanonicalOpenAIResponsesInputItem[];

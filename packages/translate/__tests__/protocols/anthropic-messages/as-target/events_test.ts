@@ -4,7 +4,7 @@ import type { AnthropicMessagesInputAssistantTurnState, AnthropicMessagesInputAs
 import { readAnthropicMessagesEvents } from '../../../../src/protocols/anthropic-messages/as-target/events.ts';
 import { appendEmittedField, collectEmittedFieldPlacements, createEmittedFieldState, createReferenceBuilder, type ReadFieldStates } from '../../../../src/round-trip/reference/reference-builder.ts';
 import { referenceAssistantTurn } from '../../../../src/round-trip/reference/reference-selection.ts';
-import { fixtureFrames } from '../../../ir/translation-cases.ts';
+import { fixtureFrames } from '../../fixtures.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 

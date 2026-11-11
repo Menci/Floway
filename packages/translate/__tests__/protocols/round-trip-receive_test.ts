@@ -5,11 +5,12 @@ import { computeAnthropicMessagesTurnDigest } from '../../src/protocols/anthropi
 import { computeGeminiGenerateContentTurnDigest } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
 import { computeOpenAIChatCompletionsTurnDigest } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
 import { computeOpenAIResponsesTurnDigest } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
+import { hashRoundTripContent } from '../../src/round-trip/hash.ts';
 import type { AssistantTurnProtocol, InputAssistantTurnFor } from '../../src/round-trip/input-assistant-turn.ts';
 import type { ReferenceableInputAssistantTurnFor } from '../../src/round-trip/reference/assistant-turn-types.ts';
 import { ContentReference } from '../../src/round-trip/reference/types.ts';
 import { encodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
-import { hashRoundTripContent, replayMaterialsByType } from '../../src/round-trip/turn-digest.ts';
+import { replayMaterialsByType } from '../../src/round-trip/turn-digest.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { expectTrip } from '../trip.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';

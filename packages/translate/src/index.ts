@@ -1,5 +1,6 @@
-export type { SidecarCodec, TranslateTrip, TranslateInputError, TranslateOptions } from './types.ts';
-export { SidecarTaggedValue } from './round-trip/sidecar-tagged-value.ts';
+export type { SidecarCodec } from './round-trip/codec.ts';
+export type { TranslateTrip, TranslateInputError, TranslateOptions } from './types.ts';
+export { SidecarTaggedValue } from './round-trip/codec.ts';
 export { canonicalizeOpenAIResponsesPayload } from './protocols/openai-responses/canonicalize-payload.ts';
 
 export {

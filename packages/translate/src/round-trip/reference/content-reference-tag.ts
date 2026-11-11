@@ -1,6 +1,6 @@
 import { ContentReference, type ContentReferenceSegment } from './types.ts';
 import { rawJSON } from '../../shared/json/raw-json.ts';
-import { SidecarTaggedValue } from '../sidecar-tagged-value.ts';
+import { SidecarTaggedValue } from '../codec.ts';
 
 const THIN_TEXT_TAG = 65_536;
 const THIN_JSON_TAG = 65_537;

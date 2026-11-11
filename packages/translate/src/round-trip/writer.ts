@@ -15,15 +15,3 @@ export interface RoundTripWriter<Protocol extends keyof InputAssistantTurnByProt
     textPlacements: TextPlacementIndex,
   ) => Promise<string>;
 }
-
-/**
- * What a source's emitted stream is stated with.
- *
- * `id` and `created` are the response identity the client sees; only the
- * round trip is this layer's concern.
- */
-export interface SourceEventWriterOptions<Protocol extends keyof InputAssistantTurnByProtocol> {
-  id?: string;
-  created?: number;
-  roundTrip: RoundTripWriter<Protocol>;
-}

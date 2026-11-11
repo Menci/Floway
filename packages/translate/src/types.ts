@@ -1,10 +1,5 @@
+import type { SidecarCodec } from './round-trip/codec.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-
-export interface SidecarCodec {
-  /** Encode and decode must preserve sidecar tagged values, byte arrays, and raw JSON values. */
-  encode: (payload: NonNullable<unknown> | null) => Promise<string>;
-  decode: (encoded: string) => Promise<unknown>;
-}
 
 /**
  * What a translation trip needs from the data plane.
@@ -54,16 +49,3 @@ export type Translator<SourcePayload, SourceEvent, TargetPayload, TargetEvent> =
   payload: SourcePayload,
   options: TranslateOptions,
 ) => Promise<TranslateTrip<TargetPayload, SourceEvent, TargetEvent> | TranslateInputError>;
-
-// Expected input failures are caught at the package's public operations. Internal
-// reader and writer helpers can abort without spreading a result union through
-// every intermediate transformation.
-export class TranslateInputException extends Error {
-  readonly failure: TranslateInputError;
-
-  constructor(message: string, options?: Omit<TranslateInputError, 'type' | 'message'>) {
-    super(message);
-    this.name = 'TranslateInputException';
-    this.failure = { type: 'input-error', message, ...options };
-  }
-}

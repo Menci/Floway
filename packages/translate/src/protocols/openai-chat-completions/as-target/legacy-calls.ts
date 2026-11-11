@@ -1,7 +1,7 @@
-import type { RestoredAssistantTurn } from '../../../composition/segments.ts';
+import type { RestoredAssistantTurn } from '../../../composition/reading.ts';
 import type { IRInputTurn } from '../../../ir/input/types.ts';
 import type { InputAssistantTurnFor } from '../../../round-trip/input-assistant-turn.ts';
-import { TranslateInputException } from '../../../types.ts';
+import { TranslateInputException } from '../../../shared/input-error.ts';
 
 type ChatRestoredAssistantTurn = InputAssistantTurnFor<'openaiChatCompletions'>;
 

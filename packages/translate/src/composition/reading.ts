@@ -1,5 +1,10 @@
 import type { IRInputRequestHeader, IRInputTurn } from '../ir/input/types.ts';
 
+export interface RestoredAssistantTurn<Turn> {
+  readonly kind: 'restored';
+  readonly turn: Turn;
+}
+
 /**
  * One turn of a source conversation, classified by the reader that produced it.
  *
@@ -45,8 +50,8 @@ export interface SourceReading<AssistantTurn> {
 export const resolveReading = async <AssistantTurn, Resolved>(
   reading: SourceReading<AssistantTurn>,
   resolve: (turn: Extract<SourceTurnSlot<AssistantTurn>, { kind: 'assistant' }>) => Promise<Resolved | undefined>,
-): Promise<(IRInputTurn | { readonly kind: 'restored'; readonly turn: Resolved })[]> => {
-  const turns: (IRInputTurn | { readonly kind: 'restored'; readonly turn: Resolved })[] = [];
+): Promise<(IRInputTurn | RestoredAssistantTurn<Resolved>)[]> => {
+  const turns: (IRInputTurn | RestoredAssistantTurn<Resolved>)[] = [];
   const append = (input: readonly IRInputTurn[]): void => {
     for (const turn of input) {
       const previous = turns.at(-1);

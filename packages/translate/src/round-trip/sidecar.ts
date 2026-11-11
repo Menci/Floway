@@ -1,5 +1,5 @@
+import type { SidecarCodec } from './codec.ts';
 import type { AssistantTurnProtocol } from './input-assistant-turn.ts';
-import type { SidecarCodec } from '../types.ts';
 import type { ReferenceableInputAssistantTurnFor } from './reference/assistant-turn-types.ts';
 import { tagContentReferences, untagContentReferences } from './reference/content-reference-tag.ts';
 import type { ContentReference } from './reference/types.ts';

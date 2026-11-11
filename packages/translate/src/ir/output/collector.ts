@@ -1,7 +1,8 @@
+import { IRAbsent } from './absent.ts';
 import { createLifecycle } from './lifecycle.ts';
 import { irEndedUnit, irPathKey, resolveIRPath, valueAt } from './operation-paths.ts';
 import type { IREvent, IRWrite, IRPath } from './records.ts';
-import { IRAbsent, type IROutput } from './types.ts';
+import { type IROutput } from './types.ts';
 import { assertComplete, walkValue } from './value-validation.ts';
 
 export const createIRCollector = () => {

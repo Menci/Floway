@@ -1,9 +1,10 @@
-import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds } from '../../../ir/input/call-ids.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
 import { irInputToolChoiceForTools } from '../../../ir/input/tool-choice.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputMedia, IRInputTextPart, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
-import { TranslateInputException, type TranslateOptions } from '../../../types.ts';
-import { buildCustomToolInputSchema } from '../../custom-tool.ts';
+import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds } from '../../../request/call-ids.ts';
+import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
+import { TranslateInputException } from '../../../shared/input-error.ts';
+import { type TranslateOptions } from '../../../types.ts';
 import type {
   AnthropicMessagesAssistantInputContentBlock,
   AnthropicMessagesClientTool,

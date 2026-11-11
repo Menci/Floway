@@ -1,7 +1,8 @@
+import { IRAbsent } from './absent.ts';
 import { irPathKey, unionVariantNode } from './operation-paths.ts';
 import type { IRPath } from './records.ts';
 import type { IRSchemaNode } from './schema.ts';
-import { IRAbsent, type IROutputValue } from './types.ts';
+import { type IROutputValue } from './types.ts';
 
 type IRValueVisitor = (path: IRPath, node: IRSchemaNode, value: IROutputValue) => void;
 

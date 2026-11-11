@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { requireCallableSelector } from '../../../../src/protocols/openai-responses/as-source/allowed-tools.ts';
-import { TranslateInputException } from '../../../../src/types.ts';
-import type { SidecarCodec } from '../../../../src/types.ts';
+import type { SidecarCodec } from '../../../../src/round-trip/codec.ts';
+import { TranslateInputException } from '../../../../src/shared/input-error.ts';
 import { buildTargetPayloadFor, pairs } from '../../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';

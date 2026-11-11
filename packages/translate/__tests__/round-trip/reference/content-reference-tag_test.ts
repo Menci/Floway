@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
 
+import { SidecarTaggedValue } from '../../../src/round-trip/codec.ts';
 import { tagContentReferences, untagContentReferences } from '../../../src/round-trip/reference/content-reference-tag.ts';
 import { ContentReference } from '../../../src/round-trip/reference/types.ts';
-import { SidecarTaggedValue } from '../../../src/round-trip/sidecar-tagged-value.ts';
 
 test.each(['text', 'json'] as const)('maps %s references to their transport tag and back', kind => {
   const reference = new ContentReference(kind, [0, [1, 2, 3]]);

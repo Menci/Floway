@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
-import type { RestoredAssistantTurn } from '../../../../src/composition/segments.ts';
+import type { RestoredAssistantTurn } from '../../../../src/composition/reading.ts';
 import type { IRInputTurn } from '../../../../src/ir/input/types.ts';
 import { chatLegacyCallsOf } from '../../../../src/protocols/openai-chat-completions/as-target/legacy-calls.ts';
 import type { InputAssistantTurnFor } from '../../../../src/round-trip/input-assistant-turn.ts';
-import { TranslateInputException } from '../../../../src/types.ts';
+import { TranslateInputException } from '../../../../src/shared/input-error.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 type LegacyTurn = InputAssistantTurnFor<'openaiChatCompletions'>;

@@ -2,8 +2,8 @@ import { type ReferenceableInputAssistantTurnFor } from './assistant-turn-types.
 import { ContentReference, type ReplayContent, type ContentReferenceSegment } from './types.ts';
 import { parseJSONObject } from '../../shared/json/object.ts';
 import { rawJSON } from '../../shared/json/raw-json.ts';
+import { hashRoundTripContent } from '../hash.ts';
 import type { InputAssistantTurnByProtocol, InputAssistantTurnFor } from '../input-assistant-turn.ts';
-import { hashRoundTripContent } from '../turn-digest.ts';
 import { encodeHex } from '@floway-dev/protocols/common';
 
 export type RestoreResult<T> =

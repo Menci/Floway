@@ -1,4 +1,5 @@
-import type { IROutput, IRAbsent, IROutputSourceCitation, IROutputTokenLogprob } from './types.ts';
+import type { IRAbsent } from './absent.ts';
+import type { IROutput, IROutputSourceCitation, IROutputTokenLogprob } from './types.ts';
 
 // The structure of the IROutput, declared once. Every question about a path (is it an append
 // target, may it hold `IRAbsent`, which lifecycle unit does it belong to) is answered by

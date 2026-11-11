@@ -1,9 +1,9 @@
 import { readOpenAIChatCompletionsEvents } from './as-target/events.ts';
 import { chatLegacyCallsOf } from './as-target/legacy-calls.ts';
 import { openaiChatCompletionsPayloadFromSegments } from './as-target/segmented-request.ts';
-import { assignCallIds, type PendingCall } from '../../composition/call-ids.ts';
 import type { TargetProtocol } from '../../composition/index.ts';
-import { allocateToolNames, type ToolNameContext } from '../../composition/tool-names.ts';
+import { assignCallIds, type PendingCall } from '../../request/call-ids.ts';
+import { allocateToolNames, type ToolNameContext } from '../../request/tool-names.ts';
 import type { InputAssistantTurnFor } from '../../round-trip/input-assistant-turn.ts';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 

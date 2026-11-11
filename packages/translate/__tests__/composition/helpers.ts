@@ -1,7 +1,6 @@
 import type { SourceProtocol, TargetProtocol } from '../../src/composition/index.ts';
-import type { SourceReading } from '../../src/composition/reading.ts';
 import { resolveReading } from '../../src/composition/reading.ts';
-import type { RestoredAssistantTurn } from '../../src/composition/segments.ts';
+import type { SourceReading, RestoredAssistantTurn } from '../../src/composition/reading.ts';
 import type { IRInputTurn } from '../../src/ir/input/types.ts';
 import { anthropicMessagesSourceProtocol } from '../../src/protocols/anthropic-messages/as-source.ts';
 import { anthropicMessagesTargetProtocol } from '../../src/protocols/anthropic-messages/as-target.ts';

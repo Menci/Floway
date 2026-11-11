@@ -1,9 +1,9 @@
-import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../ir/input/call-ids.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
 import { irInputToolChoiceForTools } from '../../../ir/input/tool-choice.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem, IRInputPromptItem } from '../../../ir/input/types.ts';
-import { TranslateInputException } from '../../../types.ts';
-import { reasoningEffortForBudget } from '../../openai-reasoning.ts';
+import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../request/call-ids.ts';
+import { TranslateInputException } from '../../../shared/input-error.ts';
+import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import type {
   CanonicalOpenAIResponsesInputItem,
   CanonicalOpenAIResponsesPayload,

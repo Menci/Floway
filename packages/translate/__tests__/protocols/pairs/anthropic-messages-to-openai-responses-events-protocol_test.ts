@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { buildSourceEventsFor, emptyPayload, pairs } from '../../composition/helpers.ts';
-import { structuredResponsesFixture } from '../../ir/responses-fixture.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
+import { structuredResponsesFixture } from '../openai-responses/fixtures.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { openaiResponsesResultToEvents, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';

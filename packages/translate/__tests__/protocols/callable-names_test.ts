@@ -1,11 +1,12 @@
 import { expect, test } from 'vitest';
 
+import { fixtureFrames } from './fixtures.ts';
 import type { IRInputRequestHeader } from '../../src/ir/input/types.ts';
-import { consumeIRRecords, type IRRecord } from '../../src/ir/output/stream.ts';
+import { type IRRecord } from '../../src/ir/output/records.ts';
+import { consumeIRRecords } from '../../src/ir/output/stream.ts';
 import { anthropicMessagesTargetProtocol } from '../../src/protocols/anthropic-messages/as-target.ts';
 import { openaiChatCompletionsTargetProtocol } from '../../src/protocols/openai-chat-completions/as-target.ts';
-import { iterate } from '../ir/helpers.ts';
-import { fixtureFrames } from '../ir/translation-cases.ts';
+import { iterate } from '../iterables.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { createRoundTripReaderCapture } from '../round-trip/test-helpers.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';

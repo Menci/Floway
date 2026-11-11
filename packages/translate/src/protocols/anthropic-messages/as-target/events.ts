@@ -1,12 +1,13 @@
 import type { AnthropicMessagesInputAssistantTurnState } from './assistant-turn.ts';
 import { type AnthropicMessagesInputCounts, usageToIR } from './usage.ts';
-import type { ToolNameContext } from '../../../composition/tool-names.ts';
-import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRRecord } from '../../../ir/output/stream.ts';
+import { createIRBuilder, type IRItemHandle, type IRPartHandle } from '../../../ir/output/builder.ts';
+import { type IRRecord } from '../../../ir/output/records.ts';
 import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
+import type { ToolNameContext } from '../../../request/tool-names.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendReadField, createReadFieldState, type ReadFieldState, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
+import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';
-import { unwrapCustomToolInput } from '../../custom-tool-unwrap.ts';
 import {
   type AnthropicMessagesAssistantContentBlock,
   type AnthropicMessagesStreamEventEx,

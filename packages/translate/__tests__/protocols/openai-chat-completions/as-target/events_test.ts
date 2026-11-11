@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import type { IRRecord } from '../../../../src/ir/output/stream.ts';
+import type { IRRecord } from '../../../../src/ir/output/records.ts';
 import type { OpenAIChatCompletionsInputAssistantTurn } from '../../../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
 import { readOpenAIChatCompletionsEvents } from '../../../../src/protocols/openai-chat-completions/as-target/events.ts';
 import type { RoundTripReader } from '../../../../src/round-trip/reader.ts';

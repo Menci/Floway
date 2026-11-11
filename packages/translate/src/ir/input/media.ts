@@ -1,5 +1,5 @@
 import type { IRInputMedia } from './types.ts';
-import { TranslateInputException } from '../../types.ts';
+import { TranslateInputException } from '../../shared/input-error.ts';
 
 // RFC 2397: `data:[<mediatype>][;base64],<data>`, where a mediatype may carry
 // parameters (`text/csv;charset=utf-8`). Only the base64 form is decoded here;
