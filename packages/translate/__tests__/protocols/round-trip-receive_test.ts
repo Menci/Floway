@@ -90,7 +90,7 @@ test('hydrates a native JSON field from a replayed GenerateContent argument cand
     sourceTurnDigest: await hashRoundTripContent(JSON.stringify(checkMaterial)),
   });
   const trip = expectTrip(await routeGeminiGenerateContentViaAnthropicMessages({ model: 'model', contents: [{ role: 'model', parts: [{ functionCall: { name: 'lookup', args }, thoughtSignature: carrier }] }] }, context));
-  expect(trip.target.messages).toEqual([{ role: 'assistant', content: [{ type: 'tool_use', id: 'native-call', name: 'native-tool', input: args }] }]);
+  expect(trip.target.messages).toEqual([{ role: 'assistant', content: [{ type: 'tool_use', id: 'native-call', name: 'lookup', input: args }] }]);
 });
 
 test('exposes an authenticated missing reference as an internal error after replay verification', async () => {
