@@ -30,17 +30,31 @@ export interface TranslateOptions {
 }
 
 /**
- * A wire-shaped upstream error body handed to `TranslateTripResult.restateUpstreamError`.
- * The pair returns a same-shaped object to rewrite the outbound envelope, or
- * `undefined` to pass it through unchanged. The provider layer's
- * `ApiErrorResult` shape is intentionally not imported here — translate is a
- * leaf below provider, so we express the contract in bare HTTP-response
- * primitives and let the gateway compose it back into an `ApiErrorResult`.
+ * A failed upstream answer, as the upstream wrote it.
+ *
+ * This is the input side of error restatement. The body is bytes because that
+ * is what arrived; whether it is an error envelope this package recognizes is
+ * decided while reading it.
  */
 export interface TranslatedApiError {
   readonly status: number;
   readonly headers: Headers;
   readonly body: Uint8Array;
+}
+
+/**
+ * A failure stated in the source protocol's own envelope, still as JSON.
+ *
+ * An error envelope is a JSON value in every protocol we speak, so restating
+ * one produces a value rather than bytes: a stream event carries it as it is,
+ * and only an HTTP response renders it. The upstream's status stands unless
+ * the recognized failure means something the client's protocol spells with a
+ * different code.
+ */
+export interface RestatedSourceError {
+  readonly status: number;
+  readonly headers: Headers;
+  readonly body: unknown;
 }
 
 /**
@@ -53,7 +67,7 @@ export interface TranslatedApiError {
  * exactly that: the caller relays the upstream's own status, headers, and
  * bytes untouched.
  */
-export type RestateSourceError = (upstream: TranslatedApiError) => TranslatedApiError | undefined;
+export type RestateSourceError = (upstream: TranslatedApiError) => RestatedSourceError | undefined;
 
 /**
  * What one translation trip hands back: the target payload, an events

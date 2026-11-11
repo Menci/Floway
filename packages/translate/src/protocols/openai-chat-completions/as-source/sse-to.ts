@@ -7,6 +7,7 @@ import { IRAbsent, type IRErrorPayload, type IROutputItem, type IROutputMessageI
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
 import { appendContent, createEmittedFieldState, type EmittedFieldStates, type EmittedFieldState } from '../../../round-trip/reference/reference-builder.ts';
 import type { SourceStreamOutputOptions } from '../../../round-trip/writer.ts';
+import { errorDetailsOf } from '../../../shared/api-error.ts';
 import { isJSONRecord } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantState } from '../as-target/assistant-turn.ts';
@@ -20,13 +21,20 @@ import {
   createOpenAIChatCompletionsEventAccumulator,
 } from '@floway-dev/protocols/openai-chat-completions';
 
-export const openaiChatCompletionsErrorFromIR = (error: IRErrorPayload): IRErrorPayload => ({
-  message: error.message,
-  type: typeof error.type === 'string' && error.type !== 'error' ? error.type : error.code ?? 'server_error',
-  ...(error.code === undefined ? {} : { code: error.code }),
-  ...(error.param === undefined ? {} : { param: error.param }),
-  ...(error.provider_specific_fields === undefined ? {} : { provider_specific_fields: error.provider_specific_fields }),
-});
+// The payload the wire states for a failed turn: the IR's own fields, with the
+// target's extra ones under the extension slot this protocol names.
+export const openaiChatCompletionsErrorFromIR = (error: IRErrorPayload): IRErrorPayload => {
+  const details = errorDetailsOf(error);
+  return {
+    message: error.message,
+    // Chat's error object declares `type`, so one is stated even when the
+    // upstream named none; the code is the most specific thing it did name.
+    type: error.type ?? error.code ?? 'server_error',
+    ...(error.code === undefined ? {} : { code: error.code }),
+    ...(error.param === undefined ? {} : { param: error.param }),
+    ...(details === undefined ? {} : { provider_specific_fields: details }),
+  };
+};
 
 interface OpenAIChatCompletionsSSEOutputOptions extends SourceStreamOutputOptions<'openaiChatCompletions'> {
   // Replay identity belongs to the newly emitted target audio, not the source output IR content.

@@ -12,6 +12,5 @@ import type { RestateSourceError } from '../../../types.ts';
 export const restateGeminiGenerateContentError: RestateSourceError = upstream => {
   const error = irErrorPayloadFromBody(upstream);
   if (error === undefined) return undefined;
-  const body = geminiGenerateContentErrorFromIR(error, upstream.status);
-  return restateError(upstream, new TextEncoder().encode(JSON.stringify({ error: body })));
+  return restateError(upstream, { error: geminiGenerateContentErrorFromIR(error, upstream.status) });
 };

@@ -1,3 +1,4 @@
+import { openaiResponsesErrorEventOf } from './sse-to.ts';
 import { irErrorPayloadFromBody, restateError } from '../../../shared/api-error.ts';
 import type { RestateSourceError } from '../../../types.ts';
 
@@ -14,11 +15,5 @@ import type { RestateSourceError } from '../../../types.ts';
 export const restateOpenAIResponsesError: RestateSourceError = upstream => {
   const error = irErrorPayloadFromBody(upstream);
   if (error === undefined) return undefined;
-  const body = new TextEncoder().encode(JSON.stringify({
-    type: 'error',
-    message: error.message,
-    code: error.code ?? error.type ?? null,
-    param: error.param ?? null,
-  }));
-  return restateError(upstream, body);
+  return restateError(upstream, openaiResponsesErrorEventOf(error));
 };

@@ -16,5 +16,5 @@ import type { RestateSourceError } from '../../../types.ts';
 export const restateOpenAIChatCompletionsError: RestateSourceError = upstream => {
   const error = irErrorPayloadFromBody(upstream);
   if (error === undefined) return undefined;
-  return restateError(upstream, new TextEncoder().encode(JSON.stringify({ error: openaiChatCompletionsErrorFromIR(error) })));
+  return restateError(upstream, { error: openaiChatCompletionsErrorFromIR(error) });
 };

@@ -4,11 +4,10 @@ import { restateAnthropicMessagesError } from '../../../../src/protocols/anthrop
 import { buildPromptTooLongBody, PROMPT_TOO_LONG_MESSAGE } from '@floway-dev/protocols/anthropic-messages';
 import { assert, assertEquals } from '@floway-dev/test-utils';
 
-const decoded = (result: { body: Uint8Array } | undefined) => JSON.parse(new TextDecoder().decode(result!.body)) as {
+const decoded = (result: { body: unknown } | undefined) => result!.body as {
   type: string;
   error: { type: string; message: string };
 };
-
 const upstreamOf = (status: number, body: unknown, headers: Record<string, string> = {}) => ({
   status,
   headers: new Headers({ 'x-upstream': 'a', ...headers }),
@@ -75,4 +74,29 @@ test('reads a message-only envelope the same way its stream does', () => {
 
   assertEquals(result!.status, 529);
   assertEquals(decoded(result).error.message, 'Overloaded');
+});
+
+test('carries the fields the target protocol states that the IR does not name', () => {
+  // A target protocol may report failure data no other protocol has. The
+  // restated envelope keeps it instead of describing the failure less
+  // completely than the upstream did.
+  const result = restateAnthropicMessagesError(upstreamOf(400, {
+    error: { message: 'bad request', code: 'invalid', safety_violations: [{ category: 'hate' }], headers: { 'x-trace': 'abc' } },
+  }));
+
+  const error = decoded(result).error as Record<string, unknown>;
+  assertEquals(error.provider_specific_fields, {
+    safety_violations: [{ category: 'hate' }],
+    headers: { 'x-trace': 'abc' },
+  });
+});
+
+test('keeps an upstream provider_specific_fields container as the whole of it', () => {
+  // The container is the upstream's own statement about its non-standard data;
+  // a loose key beside it is the legacy spelling of the same thing.
+  const result = restateAnthropicMessagesError(upstreamOf(400, {
+    error: { message: 'bad request', provider_specific_fields: { stack: 'theirs' }, stack: 'legacy' },
+  }));
+
+  assertEquals((decoded(result).error as Record<string, unknown>).provider_specific_fields, { stack: 'theirs' });
 });

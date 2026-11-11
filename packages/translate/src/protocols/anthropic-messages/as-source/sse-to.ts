@@ -10,6 +10,7 @@ import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/output/unit
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
 import { appendContent, createEmittedFieldState, type EmittedFieldState, type EmittedFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import type { SourceStreamOutputOptions } from '../../../round-trip/writer.ts';
+import { errorDetailsOf } from '../../../shared/api-error.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import { parseJSONObject, parseJSONObjectAtCompletion, requireJSONObject, isJSONRecord } from '../../../shared/json/object.ts';
 import type { AnthropicMessagesAssistantState, AnthropicMessagesInputAssistantTurn } from '../as-target/assistant-turn.ts';
@@ -45,9 +46,13 @@ const MESSAGES_ERROR_TYPES = [
  * upstream that never heard of it would otherwise report the overflow in its
  * own words and the client would treat it as an ordinary failure.
  */
-const messagesError = (error: IRErrorPayload, contextExceeded: boolean): AnthropicMessagesErrorEventEx['error'] => contextExceeded
-  ? { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE }
-  : { type: error.type !== undefined && MESSAGES_ERROR_TYPES.includes(error.type) ? error.type : 'api_error', message: error.message };
+const messagesError = (error: IRErrorPayload, contextExceeded: boolean): AnthropicMessagesErrorEventEx['error'] => {
+  const details = errorDetailsOf(error);
+  const extension = details === undefined ? {} : { provider_specific_fields: details };
+  return contextExceeded
+    ? { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE, ...extension }
+    : { type: error.type !== undefined && MESSAGES_ERROR_TYPES.includes(error.type) ? error.type : 'api_error', message: error.message, ...extension };
+};
 
 export const anthropicMessagesErrorFromIR = (error: IRErrorPayload): AnthropicMessagesErrorEventEx['error'] =>
   messagesError(error, isContextExceededError(error));
@@ -61,10 +66,10 @@ export const anthropicMessagesErrorFromIR = (error: IRErrorPayload): AnthropicMe
  * restated failure keeps the shape a client already sees from this vendor.
  * Detection reads only `error.message`; the status is not part of it.
  */
-export const anthropicMessagesErrorEnvelope = (error: IRErrorPayload): { readonly body: Uint8Array; readonly status: number | undefined } => {
+export const anthropicMessagesErrorEnvelope = (error: IRErrorPayload): { readonly body: unknown; readonly status: number | undefined } => {
   const contextExceeded = isContextExceededError(error);
   return {
-    body: new TextEncoder().encode(JSON.stringify({ type: 'error', error: messagesError(error, contextExceeded) })),
+    body: { type: 'error', error: messagesError(error, contextExceeded) },
     status: contextExceeded ? 400 : undefined,
   };
 };

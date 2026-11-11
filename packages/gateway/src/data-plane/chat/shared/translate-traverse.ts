@@ -72,7 +72,16 @@ export const traverseTranslation = async <SP, TP, SE, TE>(
   if (inner.type === 'api-error' && inner.source === 'upstream') {
     capture?.upstreamApiError({ status: inner.status, headers: inner.headers, body: inner.body });
     const rewritten = trip.restateUpstreamError?.({ status: inner.status, headers: inner.headers, body: inner.body });
-    if (rewritten !== undefined) return { ...inner, status: rewritten.status, headers: rewritten.headers, body: rewritten.body };
+    // A restated failure is a JSON envelope, not bytes: the transport encodes
+    // it here, the only place a response body becomes wire form.
+    if (rewritten !== undefined) {
+      return {
+        ...inner,
+        status: rewritten.status,
+        headers: rewritten.headers,
+        body: new TextEncoder().encode(JSON.stringify(rewritten.body)),
+      };
+    }
   }
   return inner;
 };

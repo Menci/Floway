@@ -4,11 +4,12 @@ import type { IRCollector } from '../../../ir/output/collector.ts';
 import { irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/output/operation-paths.ts';
 import { createIROrdinalMapper } from '../../../ir/output/ordinal-mapper.ts';
 import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/output/stream.ts';
-import { IRAbsent, type IROutput, type IROutputItem, type IROutputMessageItem, type IROutputSourceCitation, type IROutputTokenLogprob } from '../../../ir/output/types.ts';
+import { IRAbsent, type IRErrorPayload, type IROutput, type IROutputItem, type IROutputMessageItem, type IROutputSourceCitation, type IROutputTokenLogprob } from '../../../ir/output/types.ts';
 import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/output/unit-queue.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
 import { appendContent, createEmittedFieldState, type EmittedFieldState, type EmittedFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import type { SourceStreamOutputOptions } from '../../../round-trip/writer.ts';
+import { errorDetailsOf } from '../../../shared/api-error.ts';
 import { isCompleteJSONObject, parseJSONObjectAtCompletion, isJSONRecord } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantState } from '../as-target/assistant-turn.ts';
@@ -175,6 +176,26 @@ const textOrRefusalPart = (state: IROutput, path: IRPath): Extract<MessagePart, 
   const part = item.content[path[5] as number];
   if (part.type !== 'text' && part.type !== 'refusal') throw new TypeError('Responses message output supports only text and refusal parts');
   return part;
+};
+
+/**
+ * How Responses states a failure: as an `error` event, whether it happened
+ * before the stream opened or during it.
+ *
+ * The body of a failed request carries this same object, so a client sees one
+ * shape in both cases. Fields the IR does not name are stated back under the
+ * extension slot this protocol has, so a restated failure says everything the
+ * upstream said about it.
+ */
+export const openaiResponsesErrorEventOf = (error: IRErrorPayload): OpenAIResponsesStreamEventEx => {
+  const details = errorDetailsOf(error);
+  return {
+    type: 'error',
+    message: error.message,
+    code: error.code ?? error.type ?? null,
+    ...(error.param == null ? {} : { param: error.param }),
+    ...(details === undefined ? {} : { provider_specific_fields: details }),
+  };
 };
 
 export const openaiResponsesFromIR = async function* (
@@ -641,12 +662,7 @@ export const openaiResponsesFromIR = async function* (
   for await (const { record, collector } of consumeIRRecords(records)) {
     const { state } = collector;
     if (record.type === 'error') {
-      yield emit({
-        type: 'error',
-        message: record.error.message,
-        code: record.error.code ?? record.error.type,
-        ...(record.error.param === undefined ? {} : { param: record.error.param }),
-      });
+      yield emit(openaiResponsesErrorEventOf(record.error));
       return;
     }
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;

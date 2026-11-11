@@ -9,6 +9,7 @@ import { createIRUnitQueue, createIRUnitRegistry, type IRUnitQueue } from '../..
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
 import { appendContent, createEmittedFieldState, type EmittedFieldStates, type EmittedFieldState as EmittedFieldState } from '../../../round-trip/reference/reference-builder.ts';
 import type { SourceStreamOutputOptions } from '../../../round-trip/writer.ts';
+import { errorDetailsOf } from '../../../shared/api-error.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import { isCompleteJSONObject, parseJSONObjectAtCompletion } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
@@ -53,16 +54,27 @@ const statusNameOf = (status: number): string => {
  *
  * A stream failure has no HTTP status of its own, so the error kind decides
  * one. A failed request does have one, and it is what actually happened, so it
- * is passed in and decides both the emitted `code` and the status name; the
- * error kind is used only when there is no HTTP status.
+ * decides the emitted `code` and the status name.
+ *
+ * A context overflow is the one failure whose status the restatement changes:
+ * the client's own retry depends on seeing the condition rather than the
+ * status the upstream happened to answer with, so the overflow decides both
+ * places the envelope states it, in either phase.
  */
 export const geminiGenerateContentErrorFromIR = (error: IRErrorPayload, httpStatus?: number): GeminiGenerateContentErrorResponse['error'] => {
-  const code = error.code ?? error.type;
-  const [status, inferred] = code === 'rate_limit_exceeded' || code === 'rate_limit_error' ? ['RESOURCE_EXHAUSTED', 429]
-    : code === 'invalid_prompt' || code === 'invalid_request_error' || isContextExceededError(error) ? ['INVALID_ARGUMENT', 400]
-      : code === 'overloaded_error' ? ['UNAVAILABLE', 503] : ['INTERNAL', 500];
-  if (httpStatus === undefined) return { code: inferred, status, message: error.message };
-  return { code: httpStatus, status: statusNameOf(httpStatus), message: error.message };
+  const details = errorDetailsOf(error);
+  // GenerateContent states non-standard failure data as a Struct inside its
+  // details list, which is the shape arbitrary fields take on this wire.
+  const extension = details === undefined ? {} : { details: [{ '@type': 'type.googleapis.com/google.protobuf.Struct', value: details }] };
+  const kind = error.code ?? error.type;
+  // An overflow is the one failure whose status the restatement changes, in
+  // either phase: the client's retry depends on seeing the condition rather
+  // than the status the upstream happened to answer with.
+  const code = httpStatus !== undefined && !isContextExceededError(error) ? httpStatus
+    : kind === 'rate_limit_exceeded' || kind === 'rate_limit_error' ? 429
+      : kind === 'invalid_prompt' || kind === 'invalid_request_error' || isContextExceededError(error) ? 400
+        : kind === 'overloaded_error' ? 503 : 500;
+  return { code, status: statusNameOf(code), message: error.message, ...extension };
 };
 
 interface GenerateContentUnit {

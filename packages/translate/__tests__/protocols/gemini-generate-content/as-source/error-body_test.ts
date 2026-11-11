@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { restateGeminiGenerateContentError } from '../../../../src/protocols/gemini-generate-content/as-source/error-body.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
-const decoded = (result: { body: Uint8Array } | undefined) => JSON.parse(new TextDecoder().decode(result!.body)) as {
+const decoded = (result: { body: unknown } | undefined) => result!.body as {
   error: { code: number; status: string; message: string };
 };
 

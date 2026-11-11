@@ -11,6 +11,7 @@ import {
 import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendField, createFieldState, invalidateField, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
+import { errorPayloadFromWire } from '../../../shared/api-error.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
@@ -558,10 +559,18 @@ export const irFromOpenAIResponses = async function* (
   for await (const frame of frames) {
     if (frame.type === 'done') throw new Error('Responses done arrived without a terminal response');
     const e = frame.event;
-    if (e.type === 'error') { builder.event({ type: 'error', error: 'error' in e ? e.error ?? e : e }); yield* builder.drain(); return; }
+    if (e.type === 'error') {
+      // The flat form states the failure on the event itself, and its `type`
+      // names the event rather than the failure. The fields the event adds
+      // around it — its sequence number — are transport, not error content.
+      const { sequence_number: _sequenceNumber, type: _type, ...failure } = e;
+      builder.event({ type: 'error', error: errorPayloadFromWire('error' in e ? e.error ?? e : failure) });
+      yield* builder.drain();
+      return;
+    }
     if (e.type === 'response.failed' && e.response.error?.code !== 'bio_policy' && e.response.error?.code !== 'cyber_policy') {
       // `error` is nullable on a Response, so a failure may carry no description.
-      builder.event({ type: 'error', error: e.response.error ?? { message: 'Response failed due to unknown error.' } });
+      builder.event({ type: 'error', error: errorPayloadFromWire(e.response.error ?? { message: 'Response failed due to unknown error.' }) });
       yield* builder.drain();
       return;
     }
