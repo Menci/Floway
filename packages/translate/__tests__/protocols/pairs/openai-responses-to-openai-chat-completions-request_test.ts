@@ -857,3 +857,11 @@ test.each(['system', 'developer'] as const)('collapses an empty %s message to th
   const result = await buildWithTestSidecar({ model: 'gpt-test', input: [{ type: 'message', role, content: '' }] });
   assertEquals(result.target.messages, [{ role, content: '' }]);
 });
+
+test('carries Responses penalties into the Chat request', async () => {
+  const { target } = await buildWithTestSidecar({
+    model: 'm', input: 'hello', presence_penalty: 0.6, frequency_penalty: -0.4,
+  });
+  assertEquals(target.presence_penalty, 0.6);
+  assertEquals(target.frequency_penalty, -0.4);
+});

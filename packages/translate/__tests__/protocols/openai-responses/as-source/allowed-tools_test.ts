@@ -170,3 +170,28 @@ test.each(['chat', 'messages'] as const)('preserves declarations and selects onl
     assertEquals(result.target.tool_choice, { type: 'tool', name: 'files_edit_2' });
   }
 });
+
+for (const allowed of [false, true]) {
+  test.each([
+    ['exact flat declaration', 'web.run', 'web.run', 'web', 'run', true],
+    ['dotted namespace', 'a.b.run', 'a_b_run', 'a.b', 'run', false],
+    ['double underscore alias', 'web__run', 'web_run', 'web', 'run', false],
+  ] as const)(`resolves %s from full callable identities (allowed_tools=${allowed})`, async (_label, selected, expected, namespace, name, flat) => {
+    const payload: OpenAIResponsesRequestPayloadEx = {
+      model: 'm', stream: true, input: 'hi',
+      tools: [
+        ...(flat ? [{ type: 'function' as const, name: selected, parameters: { type: 'object', properties: {} } }] : []),
+        { type: 'namespace', name: namespace, description: '', tools: [{ type: 'function', name, parameters: { type: 'object', properties: {} } }] },
+      ],
+      tool_choice: allowed
+        ? { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: selected }] }
+        : { type: 'function', name: selected },
+    };
+    const result = await buildChat(payload, createTestSidecarCodec());
+    const baseline = await buildChat({ ...payload, tool_choice: 'auto' }, createTestSidecarCodec());
+    assertEquals(result.target.tools, baseline.target.tools);
+    assertEquals(result.target.tool_choice, allowed
+      ? { type: 'allowed_tools', allowed_tools: { mode: 'required', tools: [{ type: 'function', function: { name: expected } }] } }
+      : { type: 'function', function: { name: expected } });
+  });
+}

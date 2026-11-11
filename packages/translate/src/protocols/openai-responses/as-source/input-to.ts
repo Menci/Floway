@@ -1,6 +1,6 @@
 import { klona } from 'klona/json';
 
-import { requireCallableSelector, validateAllowedToolSelectors } from './allowed-tools.ts';
+import { requireCallableSelector } from './allowed-tools.ts';
 import { partitionOpenAIResponsesTurns, type OpenAIResponsesConversationTurn } from './conversation-turns.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from './programmatic-tooling.ts';
 import { isOpenAIResponsesEncryptedReasoning } from './round-trip.ts';
@@ -199,7 +199,8 @@ const openaiResponsesTurnToIR = (turn: OpenAIResponsesConversationTurn): IRInput
 const toolToIR = (tool: Extract<OpenAIResponsesTool, { type: 'function' | 'custom' }>, namespace?: string): IRInputTool => {
   // A declaration this protocol groups states its group beside the name inside
   // it, and every other protocol reads that pair as the callable's identity.
-  const identity = namespace === undefined ? {} : { namespace };
+  const group = namespace ?? ('namespace' in tool && typeof tool.namespace === 'string' ? tool.namespace : undefined);
+  const identity = group === undefined ? {} : { namespace: group };
   if (tool.type === 'custom') {
     const format = tool.format as { type?: unknown; definition?: unknown; syntax?: unknown } | undefined;
     return {
@@ -224,35 +225,22 @@ const toolToIR = (tool: Extract<OpenAIResponsesTool, { type: 'function' | 'custo
   };
 };
 
-/**
- * A selector names a grouped callable either with a `namespace` field or with a
- * dotted spelling of the pair. A dotted name is only read that way when the
- * declarations contain the group it names — otherwise the dot is part of a flat
- * name, which this wire allows.
- */
-const selectionToIR = (
-  selection: { readonly type: 'function' | 'custom'; readonly name: string; readonly namespace?: string },
-  declaredGroups: ReadonlySet<string>,
-): IRInputToolSelector => {
-  if (selection.namespace !== undefined) return { type: selection.type, name: selection.name, namespace: selection.namespace };
-  const dot = selection.name.indexOf('.');
-  if (dot < 0) return { type: selection.type, name: selection.name };
-  const namespace = selection.name.slice(0, dot);
-  return declaredGroups.has(namespace)
-    ? { type: selection.type, name: selection.name.slice(dot + 1), namespace }
-    : { type: selection.type, name: selection.name };
+const selectionToIR = (selection: IRInputToolSelector, declarations: readonly IRInputTool[]): IRInputToolSelector => {
+  if (selection.namespace !== undefined) return selection;
+  if (declarations.some(tool => tool.type === selection.type && tool.namespace === undefined && tool.name === selection.name)) return selection;
+  const qualified = declarations.filter(tool => tool.type === selection.type && tool.namespace !== undefined
+    && (selection.name === `${tool.namespace}.${tool.name}` || selection.name === `${tool.namespace}__${tool.name}`));
+  const first = qualified[0];
+  if (first === undefined) return selection;
+  if (qualified.some(tool => tool.namespace !== first.namespace || tool.name !== first.name)) {
+    throw new TranslateInputException(`Cannot translate ambiguous tool selector '${selection.name}'.`);
+  }
+  return { type: selection.type, name: first.name, namespace: first.namespace };
 };
 
-/** The group names this payload declares, wherever its inventories state them. */
-const declaredGroupsOf = (payload: CanonicalOpenAIResponsesPayload): ReadonlySet<string> =>
-  new Set([
-    ...(payload.tools ?? []),
-    ...payload.input.flatMap(item => item.type === 'additional_tools' || item.type === 'tool_search_output' ? item.tools : []),
-  ].flatMap(tool => tool.type === 'namespace' ? [tool.name] : []));
-
 // A selector may name a whole group, which selects each callable it holds.
-const selectorOf = (payload: CanonicalOpenAIResponsesPayload, selector: Record<string, unknown>): IRInputToolSelector[] => {
-  if (selector.type !== 'namespace') return [selectionToIR(requireCallableSelector(selector), declaredGroupsOf(payload))];
+const selectorOf = (payload: CanonicalOpenAIResponsesPayload, selector: Record<string, unknown>, declarations: readonly IRInputTool[]): IRInputToolSelector[] => {
+  if (typeof selector !== 'object' || selector?.type !== 'namespace') return [selectionToIR(requireCallableSelector(selector), declarations)];
   const groups = [
     ...(payload.tools ?? []),
     ...payload.input.flatMap(item => item.type === 'additional_tools' || item.type === 'tool_search_output' ? item.tools : []),
@@ -263,7 +251,7 @@ const selectorOf = (payload: CanonicalOpenAIResponsesPayload, selector: Record<s
     : []));
 };
 
-const toolChoiceToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputToolChoice => {
+const toolChoiceToIR = (payload: CanonicalOpenAIResponsesPayload, declarations: readonly IRInputTool[]): IRInputToolChoice => {
   const choice = payload.tool_choice;
   if (choice == null) throw new TranslateInputException('Cannot translate a missing tool choice.');
   if (typeof choice === 'string') {
@@ -273,13 +261,21 @@ const toolChoiceToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputToolCh
     throw new TranslateInputException(`Cannot translate OpenAI Responses tool choice '${choice}'.`);
   }
   if (choice.type === 'allowed_tools') {
-    return {
-      type: 'allowed_tools',
-      mode: choice.mode,
-      tools: choice.tools.flatMap(selector => selectorOf(payload, selector)),
-    };
+    if ((choice.mode !== 'auto' && choice.mode !== 'required') || !Array.isArray(choice.tools)) {
+      throw new TranslateInputException('Cannot translate malformed allowed_tools mode or tools array.');
+    }
+    const tools = choice.tools.flatMap(selector => selectorOf(payload, selector, declarations));
+    for (const selector of tools) {
+      if (!declarations.some(tool => tool.type === selector.type && tool.namespace === selector.namespace && tool.name === selector.name)) {
+        throw new TranslateInputException(`Cannot translate allowed_tools selector '${selector.name}' without a matching callable declaration.`);
+      }
+    }
+    if (tools.length === 0 && choice.mode === 'required') {
+      throw new TranslateInputException('Cannot translate required allowed_tools with an empty callable subset.');
+    }
+    return { type: 'allowed_tools', mode: choice.mode, tools };
   }
-  if (choice.type === 'function' || choice.type === 'custom') return selectionToIR(choice, declaredGroupsOf(payload));
+  if (choice.type === 'function' || choice.type === 'custom') return selectionToIR(choice, declarations);
   // A hosted selector names a tool this IR does not carry.
   throw new TranslateInputException(`Cannot translate OpenAI Responses tool choice type '${choice.type}'.`);
 };
@@ -317,7 +313,7 @@ const openaiResponsesToolsToIR = (payload: CanonicalOpenAIResponsesPayload): Pic
   const declared = payload.tools?.flatMap(toolGroupToIR) ?? [];
   const deferred = deferredInventories(payload).flatMap(toolGroupToIR);
   const tools = declared.length === 0 && deferred.length === 0 ? undefined : [...declared, ...deferred];
-  const toolChoice = payload.tool_choice == null ? undefined : toolChoiceToIR(payload);
+  const toolChoice = payload.tool_choice == null ? undefined : toolChoiceToIR(payload, tools ?? []);
   return {
     ...(tools === undefined ? {} : { tools }),
     ...(toolChoice === undefined ? {} : { tool_choice: toolChoice }),
@@ -353,6 +349,8 @@ const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): 
     stream: payload.stream === true,
     ...(payload.temperature == null ? {} : { temperature: payload.temperature }),
     ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
+    ...(payload.presence_penalty == null ? {} : { presence_penalty: payload.presence_penalty }),
+    ...(payload.frequency_penalty == null ? {} : { frequency_penalty: payload.frequency_penalty }),
     ...(payload.max_output_tokens == null ? {} : { max_output_tokens: payload.max_output_tokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
     ...(payload.metadata == null ? {} : { metadata: payload.metadata }),
@@ -360,6 +358,7 @@ const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): 
     ...(payload.service_tier == null ? {} : { service_tier: payload.service_tier }),
     ...(payload.parallel_tool_calls == null ? {} : { parallel_tool_calls: payload.parallel_tool_calls }),
     ...(payload.reasoning?.effort == null ? {} : { reasoning_effort: payload.reasoning.effort }),
+    ...(payload.reasoning?.summary == null ? {} : { reasoning_summary: payload.reasoning.summary }),
     ...(payload.prompt_cache_key === undefined ? {} : { prompt_cache_key: payload.prompt_cache_key }),
     ...(payload.safety_identifier === undefined ? {} : { safety_identifier: payload.safety_identifier }),
     ...(payload.text?.verbosity == null ? {} : { verbosity: payload.text.verbosity }),
@@ -368,7 +367,6 @@ const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): 
 
 export const readOpenAIResponsesRequest = (source: OpenAIResponsesRequestPayloadEx): SourceReading<OpenAIResponsesSourceAssistantTurn> => {
   const canonical = requireCanonicalOpenAIResponsesPayload(source);
-  validateAllowedToolSelectors(canonical.tools, canonical.tool_choice, canonical.input);
   rejectProgrammaticOpenAIResponsesPayload(canonical);
 
   const prompt = openaiResponsesInstructionsToIR(canonical.instructions);

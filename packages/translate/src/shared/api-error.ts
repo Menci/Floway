@@ -1,5 +1,6 @@
-import { isJSONRecord, parseJSONObject } from './json/object.ts';
+import { isJSONRecord } from './json/object.ts';
 import type { IRErrorPayload } from '../ir/common/error.ts';
+import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
 const recordOf = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
   isJSONRecord(value) ? value : undefined;
@@ -19,17 +20,30 @@ const stringOf = (value: unknown): string | undefined => typeof value === 'strin
  * status, headers, and bytes alone rather than inventing a shape for them.
  */
 export const irErrorPayloadFromBody = (body: Uint8Array): IRErrorPayload | undefined => {
-  const text = new TextDecoder().decode(body);
-  let parsed: Readonly<Record<string, unknown>>;
+  let text: string;
   try {
-    parsed = parseJSONObject(text);
-  } catch {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(body);
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error;
     return undefined;
   }
-  // A protocol nests the error object inside its body envelope; the enclosing
-  // object is the error itself only when nothing is nested.
+  let parsed: unknown;
+  try {
+    parsed = parseJSONWithRawNumbers(text);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return undefined;
+  }
+  if (!isJSONRecord(parsed)) return undefined;
   const nested = recordOf(parsed.error);
-  return errorPayloadOf(nested ?? parsed);
+  if (nested === undefined) return errorPayloadOf(parsed);
+  const payload = errorPayloadOf(nested);
+  if (payload === undefined) return undefined;
+  const envelope = extensionOf(parsed, new Set(['error', ...(parsed.type === 'error' ? ['type'] : [])]));
+  return envelope === undefined ? payload : {
+    ...payload,
+    provider_specific_fields: { ...envelope, ...payload.provider_specific_fields },
+  };
 };
 
 /**
@@ -45,12 +59,18 @@ export const errorPayloadOf = (error: Readonly<Record<string, unknown>>): IRErro
   const message = stringOf(error.message) ?? stringOf(error.msg);
   if (message === undefined) return undefined;
   const type = stringOf(error.type);
-  const code = stringOf(error.code) ?? stringOf(error.status);
+  const code = error.code === null ? null : stringOf(error.code) ?? stringOf(error.status);
   // `param` names the request field the failure is about, and a client that
   // retries reads it. It is stated here so the pre-stream envelope and the
   // mid-stream one agree.
-  const param = stringOf(error.param);
-  const extra = extensionOf(error, NAMED_ERROR_FIELDS);
+  const param = error.param === null ? null : stringOf(error.param);
+  const represented = new Set([
+    typeof error.message === 'string' ? 'message' : 'msg',
+    ...(type === undefined ? [] : ['type']),
+    ...(code === undefined ? [] : [error.code === null || typeof error.code === 'string' ? 'code' : 'status']),
+    ...(param === undefined ? [] : ['param']),
+  ]);
+  const extra = extensionOf(error, represented);
   return {
     message,
     ...(type === undefined ? {} : { type }),

@@ -111,8 +111,6 @@ const assignToolNames = (
   const taken = new Set(reserved);
   const nextSuffixes = new Map<string, number>();
   const assigned = new Map<string, string>();
-  // Dotted selectors cannot distinguish two pairs with the same qualified spelling.
-  const assignedPairs = new Map<string, { readonly namespace: string; readonly name: string }>();
   const bareNames = new Set<string>();
   for (const callable of callables) {
     const { namespace, name } = callable;
@@ -122,14 +120,6 @@ const assignToolNames = (
       bareNames.add(name);
       assigned.set(key, name);
       continue;
-    }
-    if (namespace !== undefined) {
-      const dotted = `${namespace}.${name}`;
-      const prior = assignedPairs.get(dotted);
-      if (prior !== undefined && (prior.namespace !== namespace || prior.name !== name)) {
-        throw new TranslateInputException(`Cannot translate ambiguous grouped callables both spelling '${dotted}'.`);
-      }
-      assignedPairs.set(dotted, { namespace, name });
     }
     const scope = namespace === undefined ? '' : `${namespace.slice(0, 64)}_`.slice(0, 64);
     const base = namespace === undefined ? name : `${scope}${name.slice(0, 64 - scope.length)}`.replaceAll(/[^a-zA-Z0-9_-]/g, '_');
