@@ -39,7 +39,7 @@ test('ChatCompletions locks the first reasoning field independently for each cho
     chunk([{ index: 0, delta: { reasoning: 'A' } }, { index: 1, delta: { reasoning_content: 'X' } }]),
     chunk([{ index: 0, delta: { reasoning_text: 'B', reasoning: 'C' } }, { index: 1, delta: { reasoning: 'Y', reasoning_content: 'Z' } }]),
     chunk([{ index: 0, delta: {}, finish_reason: 'stop' }, { index: 1, delta: {}, finish_reason: 'stop' }]), doneFrame(),
-  ]), { maxChoices: 2 }));
+  ])));
   expect(ir.choices.map(choice => choice.items)).toEqual([
     [{ type: 'reasoning', summary: ['AC'] }],
     [{ type: 'reasoning', summary: ['XZ'] }],

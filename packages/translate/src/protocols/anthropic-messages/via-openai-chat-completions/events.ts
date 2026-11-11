@@ -6,7 +6,7 @@ import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthr
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
-export const translateToSourceEvents = (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>, codec: SidecarCodec, maxChoices = 1): AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>> => {
+export const translateToSourceEvents = (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>, codec: SidecarCodec): AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>> => {
   const stream = createRoundTripStream('anthropicMessages', 'openaiChatCompletions', codec);
-  return anthropicMessagesFromIR(irFromOpenAIChatCompletions(frames, { maxChoices, roundTrip: stream.reader }), { roundTrip: stream.writer });
+  return anthropicMessagesFromIR(irFromOpenAIChatCompletions(frames, { roundTrip: stream.reader }), { roundTrip: stream.writer });
 };
