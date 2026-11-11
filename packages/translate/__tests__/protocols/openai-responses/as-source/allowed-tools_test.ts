@@ -1,27 +1,18 @@
 import { test } from 'vitest';
 
-import { buildTargetPayloadFor } from '../../../../src/composition/index.ts';
-import { irInputToolsForChoice } from '../../../../src/ir/input/select-tools.ts';
-import type { IRInputRequestHeader } from '../../../../src/ir/input/types.ts';
 import { requireCallableSelector } from '../../../../src/protocols/openai-responses/as-source/allowed-tools.ts';
-import { openaiResponsesRead } from '../../../../src/protocols/openai-responses/as-source/input-to.ts';
-import { TranslatorInputError } from '../../../../src/types.ts';
+import { TranslateInputException } from '../../../../src/types.ts';
 import type { SidecarCodec } from '../../../../src/types.ts';
-import { pairs } from '../../../composition/helpers.ts';
+import { buildTargetPayloadFor, pairs } from '../../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
-const customToolNamesOf = (request: IRInputRequestHeader): ReadonlySet<string> =>
-  new Set((irInputToolsForChoice(request.tools, request.tool_choice) ?? [])
-    .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
 
 const buildChat = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec) => {
-  const r = openaiResponsesRead(payload);
-  return { target: await buildTargetPayloadFor(pairs.responsesToChat[0], pairs.responsesToChat[1], payload, { sidecarCodec: codec }), customToolNames: customToolNamesOf(r.request) };
+  return { target: await buildTargetPayloadFor(pairs.responsesToChat[0], pairs.responsesToChat[1], payload, { sidecarCodec: codec }) };
 };
 const buildMessages = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec, options: { fallbackMaxOutputTokens?: number } = {}) => {
-  const r = openaiResponsesRead(payload);
-  return { target: await buildTargetPayloadFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { sidecarCodec: codec, ...options }), customToolNames: customToolNamesOf(r.request) };
+  return { target: await buildTargetPayloadFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], payload, { sidecarCodec: codec, ...options }) };
 };
 
 const source = (tool_choice: OpenAIResponsesToolChoice): OpenAIResponsesRequestPayloadEx => ({
@@ -45,7 +36,7 @@ for (const target of ['chat', 'messages'] as const) {
       const payload = source({ type: 'allowed_tools', mode, tools: [{ type: 'custom', name: 'edit' }, { type: 'function', name: 'read' }] });
       const original = structuredClone(payload);
       if (target === 'messages') {
-        await assertRejects(() => build(payload), TranslatorInputError, 'cannot express an allowed_tools');
+        await assertRejects(() => build(payload), TranslateInputException, 'cannot express an allowed_tools');
         assertEquals(payload, original);
         return;
       }
@@ -55,7 +46,7 @@ for (const target of ['chat', 'messages'] as const) {
       const wire = JSON.parse(JSON.stringify(result.target)) as { tools: Array<{ name?: string; function?: { name: string } }>; tool_choice: unknown };
       assertEquals(wire.tools.map(tool => tool.function?.name ?? tool.name), ['read', 'charge', 'edit']);
       assertEquals(wire.tool_choice, { type: 'allowed_tools', allowed_tools: { mode, tools: [{ type: 'function', function: { name: 'edit' } }, { type: 'function', function: { name: 'read' } }] } });
-      assertEquals(result.customToolNames, new Set(['edit']));
+
       assertEquals(payload, original);
     });
   }
@@ -65,7 +56,7 @@ for (const target of ['chat', 'messages'] as const) {
     payload.tools!.push({ type: 'custom', name: 'read' });
     const result = await build(payload);
     assertEquals(result.target.tools?.length, 4);
-    assertEquals(result.customToolNames, new Set(['read']));
+
   });
 
   for (const history of ['additional_tools', 'tool_search_output'] as const) {
@@ -97,7 +88,7 @@ for (const target of ['chat', 'messages'] as const) {
   test(`${target} request rejects a flat selector that would erase a declaration namespace`, async () => {
     const payload = source({ type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: 'read' }] });
     payload.tools![0] = { ...payload.tools![0], namespace: 'files' } as unknown as OpenAIResponsesTool;
-    await assertRejects(() => build(payload), TranslatorInputError, 'allowed_tools');
+    await assertRejects(() => build(payload), TranslateInputException, 'allowed_tools');
   });
 
   for (const [label, choice] of [
@@ -114,7 +105,7 @@ for (const target of ['chat', 'messages'] as const) {
     test(`${target} request typed-rejects ${label} instead of widening allowed_tools`, async () => {
       const payload = source(choice as unknown as OpenAIResponsesToolChoice);
       payload.tools!.push({ type: 'custom', name: 'read' });
-      await assertRejects(() => build(payload), TranslatorInputError, 'allowed_tools');
+      await assertRejects(() => build(payload), TranslateInputException, 'allowed_tools');
     });
   }
 }
@@ -123,7 +114,7 @@ test('requireCallableSelector rejects a namespace that is not a string', () => {
   // The selector's namespace is carried into the IR as a string, so a member
   // stating anything else is malformed rather than something to pass through.
   assertEquals(requireCallableSelector({ type: 'function', name: 'read', namespace: 'files' }).namespace, 'files');
-  assertThrows(() => requireCallableSelector({ type: 'function', name: 'read', namespace: 42 }), TranslatorInputError);
+  assertThrows(() => requireCallableSelector({ type: 'function', name: 'read', namespace: 42 }), TranslateInputException);
 });
 
 test.each(['auto', 'required'] as const)('Messages expresses a complete %s callable set without changing its declarations', async mode => {
@@ -141,7 +132,7 @@ test.each(['auto', 'required'] as const)('Messages expresses a complete %s calla
 test('Messages rejects an optional single-tool subset rather than forcing that call', async () => {
   await assertRejects(
     () => buildMessages(source({ type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: 'read' }] }), createTestSidecarCodec()),
-    TranslatorInputError,
+    TranslateInputException,
     'cannot express an allowed_tools auto subset',
   );
 });

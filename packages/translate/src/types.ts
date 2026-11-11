@@ -29,96 +29,41 @@ export interface TranslateOptions {
   readonly fallbackMaxOutputTokens?: number;
 }
 
-/**
- * A failed upstream answer, as the upstream wrote it.
- *
- * This is the input side of error restatement. The body is bytes because that
- * is what arrived; whether it is an error envelope this package recognizes is
- * decided while reading it.
- */
-export interface TranslatedApiError {
-  readonly status: number;
-  readonly headers: Headers;
-  readonly body: Uint8Array;
-}
-
-/**
- * A failure stated in the source protocol's own envelope, still as JSON.
- *
- * An error envelope is a JSON value in every protocol we speak, so restating
- * one produces a value rather than bytes: a stream event carries it as it is,
- * and only an HTTP response renders it. The upstream's status stands unless
- * the recognized failure means something the client's protocol spells with a
- * different code.
- */
-export interface RestatedSourceError {
+export type ApiErrorTranslator = (status: number, headers: Headers, body: Uint8Array) => {
   readonly status: number;
   readonly headers: Headers;
   readonly body: unknown;
+} | undefined;
+
+/** A prepared request and the two paths that translate its upstream answer. */
+export interface TranslateTrip<TargetPayload, SourceEvent, TargetEvent> {
+  readonly type: 'trip';
+  readonly target: TargetPayload;
+  readonly events: (frames: AsyncIterable<ProtocolFrame<TargetEvent>>) => AsyncIterable<ProtocolFrame<SourceEvent>>;
+  readonly error: ApiErrorTranslator;
 }
 
-/**
- * Restates a failed upstream answer in the source protocol's own words.
- *
- * A client speaks one protocol, so a failure raised by a different one has to
- * be stated in the client's envelope. That is only honest when the body is an
- * error structure this package recognizes; an answer it cannot read is more
- * faithfully delivered as the upstream wrote it. Returning `undefined` does
- * exactly that: the caller relays the upstream's own status, headers, and
- * bytes untouched.
- */
-export type RestateSourceError = (upstream: TranslatedApiError) => RestatedSourceError | undefined;
-
-/**
- * What one translation trip hands back: the target payload, an events
- * translator closure mapping target-protocol events into source-protocol
- * events, and the source protocol's error writer.
- *
- * The target owns its mutable JSON objects and arrays. Downstream rules and
- * providers can mutate it while the source request and other trips remain
- * live, so pair builders clone values borrowed from their source.
- *
- * A failed upstream never reaches this result as an already-translated body:
- * the caller hands the writer the upstream's own answer, which either restates
- * a recognized failure in the client's envelope or declines and lets it
- * through. That is the same model a mid-stream error travels on, so both
- * failures reach the client the same way.
- */
-export interface TranslateTripResult<TgtPayload, SrcEvent, TgtEvent> {
-  target: TgtPayload;
-  events: (frames: AsyncIterable<ProtocolFrame<TgtEvent>>) => AsyncIterable<ProtocolFrame<SrcEvent>>;
-  restateUpstreamError?: RestateSourceError;
+export interface TranslateInputError {
+  readonly type: 'input-error';
+  readonly message: string;
+  readonly param?: string;
+  readonly code?: string;
 }
 
-/**
- * One translation trip: a source request in, a target request and a return
- * path out.
- *
- * The function body owns the trip. Everything it derives from the request — a
- * namespace map, a custom-tool name set — is a local captured by the returned
- * closures, so a caller sees only the payload and a way to translate events.
- */
-export type TranslateTrip<SrcPayload, SrcEvent, TgtPayload extends { model: string }, TgtEvent> = (
-  src: SrcPayload,
+export type Translator<SourcePayload, SourceEvent, TargetPayload, TargetEvent> = (
+  payload: SourcePayload,
   options: TranslateOptions,
-) => Promise<TranslateTripResult<TgtPayload, SrcEvent, TgtEvent>>;
+) => Promise<TranslateTrip<TargetPayload, SourceEvent, TargetEvent> | TranslateInputError>;
 
-// A caller-input validation failure surfaced by a translator: the caller
-// sent something the target protocol cannot represent (an unsupported
-// content-part type, a role the target does not accept, a missing field
-// the target requires, etc.). Distinct from a plain `Error` so the
-// data-plane http handlers can return a protocol-shaped 400 envelope
-// instead of routing the failure through the generic internal-error 502
-// path. The optional `param` and `code` follow the OpenAI / Anthropic
-// error-body convention.
-export class TranslatorInputError extends Error {
-  readonly param: string | undefined;
-  readonly code: string | undefined;
+// Expected input failures are caught at the package's public operations. Internal
+// reader and writer helpers can abort without spreading a result union through
+// every intermediate transformation.
+export class TranslateInputException extends Error {
+  readonly failure: TranslateInputError;
 
-  constructor(message: string, options?: { param?: string; code?: string }) {
+  constructor(message: string, options?: Omit<TranslateInputError, 'type' | 'message'>) {
     super(message);
-    this.name = 'TranslatorInputError';
-    this.param = options?.param;
-    this.code = options?.code;
+    this.name = 'TranslateInputException';
+    this.failure = { type: 'input-error', message, ...options };
   }
 }

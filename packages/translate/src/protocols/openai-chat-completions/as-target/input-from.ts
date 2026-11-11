@@ -1,8 +1,8 @@
-import type { IRInputAddressedAssistantItem, IRInputAddressedTurn, IRInputAddressedClientItem } from '../../../ir/input/addressed.ts';
-import { irInputToolChoiceForTools } from '../../../ir/input/select-tools.ts';
-import { requireStreaming } from '../../../ir/input/stream.ts';
+import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../ir/input/call-ids.ts';
+import { requireStreaming } from '../../../ir/input/streaming.ts';
+import { irInputToolChoiceForTools } from '../../../ir/input/tool-choice.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
-import { TranslatorInputError } from '../../../types.ts';
+import { TranslateInputException } from '../../../types.ts';
 import { buildCustomToolInputSchema } from '../../custom-tool.ts';
 import { reasoningEffortForBudget } from '../../openai-reasoning.ts';
 import type {
@@ -18,7 +18,7 @@ import type {
 const audioFormat = (mediaType: string): string => {
   if (mediaType === 'audio/wav') return 'wav';
   if (mediaType === 'audio/mpeg' || mediaType === 'audio/mp3') return 'mp3';
-  throw new TranslatorInputError(`Cannot translate audio MIME type '${mediaType}' to OpenAI Chat Completions.`);
+  throw new TranslateInputException(`Cannot translate audio MIME type '${mediaType}' to OpenAI Chat Completions.`);
 };
 
 const dataUrl = (media: Extract<IRInputMedia, { source_kind: 'base64' }>): string => `data:${media.media_type ?? 'application/octet-stream'};base64,${media.data}`;
@@ -26,7 +26,7 @@ const dataUrl = (media: Extract<IRInputMedia, { source_kind: 'base64' }>): strin
 const imageUrlPart = (media: IRInputMedia, detail?: string | null): OpenAIChatCompletionsUserContentPart => ({
   type: 'image_url',
   image_url: {
-    url: media.source_kind === 'url' ? media.url : media.source_kind === 'base64' ? dataUrl(media) : (() => { throw new TranslatorInputError('Cannot translate file_id-only image content to OpenAI Chat Completions.'); })(),
+    url: media.source_kind === 'url' ? media.url : media.source_kind === 'base64' ? dataUrl(media) : (() => { throw new TranslateInputException('Cannot translate file_id-only image content to OpenAI Chat Completions.'); })(),
     ...(detail == null ? {} : { detail }),
   },
 });
@@ -36,7 +36,7 @@ const filePart = (media: IRInputMedia, filename?: string | null): OpenAIChatComp
   switch (media.source_kind) {
   case 'file': return { type: 'file', file: { file_id: media.file_id, ...name } };
   case 'base64': return { type: 'file', file: { file_data: dataUrl(media), ...name } };
-  case 'url': throw new TranslatorInputError('Cannot translate a file URL to OpenAI Chat Completions.');
+  case 'url': throw new TranslateInputException('Cannot translate a file URL to OpenAI Chat Completions.');
   }
 };
 
@@ -67,7 +67,7 @@ export const openaiChatCompletionsToolResultContent = (
   output: string | readonly IRInputToolResultContentPart[],
 ): { readonly content: string; readonly lifted: OpenAIChatCompletionsUserContentPart[] } => {
   if (typeof output === 'string') return { content: output, lifted: [] };
-  if (output.some(part => part.type === 'file')) throw new TranslatorInputError('Cannot translate file tool output to OpenAI Chat Completions.');
+  if (output.some(part => part.type === 'file')) throw new TranslateInputException('Cannot translate file tool output to OpenAI Chat Completions.');
   const text = output.flatMap(part => part.type === 'text' ? [part.text] : []).join('');
   const images = output.flatMap(part => part.type === 'image' ? [imageUrlPart(part.image, part.detail)] : []);
   return images.length === 0
@@ -78,7 +78,7 @@ export const openaiChatCompletionsToolResultContent = (
       };
 };
 
-const assistantMessage = (items: readonly IRInputAddressedAssistantItem[]): OpenAIChatCompletionsMessage[] => {
+const assistantMessage = (items: readonly IRInputAssistantItemWithCallIds[]): OpenAIChatCompletionsMessage[] => {
   const text: string[] = [];
   const refusals: string[] = [];
   const reasoning: string[] = [];
@@ -126,7 +126,7 @@ const assistantMessage = (items: readonly IRInputAddressedAssistantItem[]): Open
 };
 
 const clientMessages = (
-  items: readonly IRInputAddressedClientItem[],
+  items: readonly IRInputClientItemWithCallIds[],
   legacyCallNames: ReadonlyMap<string, string>,
 ): OpenAIChatCompletionsMessage[] => {
   // Images lifted out of consecutive tool results gather into one user message
@@ -147,7 +147,7 @@ const clientMessages = (
 };
 
 const openaiChatCompletionsClientItem = (
-  item: IRInputAddressedClientItem,
+  item: IRInputClientItemWithCallIds,
   lift: (parts: readonly OpenAIChatCompletionsUserContentPart[]) => void,
   legacyCallNames: ReadonlyMap<string, string>,
 ): OpenAIChatCompletionsMessage[] => [item].flatMap<OpenAIChatCompletionsMessage>(item => {
@@ -176,7 +176,7 @@ const openaiChatCompletionsClientItem = (
 });
 
 export const openaiChatCompletionsConversationFromIR = (
-  turns: readonly IRInputAddressedTurn[],
+  turns: readonly IRInputTurnWithCallIds[],
   legacyCallNames: ReadonlyMap<string, string>,
 ): OpenAIChatCompletionsMessage[] => turns.flatMap(turn => turn.kind === 'assistant'
   ? assistantMessage(turn.items)

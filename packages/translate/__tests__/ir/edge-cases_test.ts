@@ -1,11 +1,10 @@
 import { expect, test, vi } from 'vitest';
 
-import { anthropicMessagesFromIR, collectIR, collect, completeIR, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
+import { writeAnthropicMessagesEvents, collectIR, collect, completeIR, writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, iterate, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './helpers.ts';
 import { fixtureFrames, nativeResult } from './translation-cases.ts';
-import { buildSourceEventsFor, buildTargetPayloadFor } from '../../src/composition/index.ts';
 import { createIRBuilder } from '../../src/ir/output/stream.ts';
-import { irFromOpenAIChatCompletions as irFromOpenAIChatCompletionsProduction } from '../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
-import { emptyPayload, pairs } from '../composition/helpers.ts';
+import { readOpenAIChatCompletionsEvents as irFromOpenAIChatCompletionsProduction } from '../../src/protocols/openai-chat-completions/as-target/events.ts';
+import { buildSourceEventsFor, buildTargetPayloadFor, emptyPayload, pairs } from '../composition/helpers.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { createRoundTripReaderCapture } from '../round-trip/test-helpers.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
@@ -61,7 +60,7 @@ test('rate limiting becomes a native GenerateContent error', async () => {
 });
 
 test('ChatCompletions ignores empty identity frames and starts when a model appears', async () => {
-  const frames = await collect(irFromOpenAIChatCompletions(iterate([
+  const frames = await collect(readOpenAIChatCompletionsEvents(iterate([
     eventFrame({ id: '', object: '', created: 0, model: '', choices: [], prompt_filter_results: [{}], usage: null } as any),
     eventFrame({ id: 'chat-real', object: 'chat.completion.chunk', created: 10, model: 'served', choices: [] } as any),
     eventFrame({ id: 'chat-real', object: 'chat.completion.chunk', created: 10, model: 'served', choices: [{ index: 0, delta: { content: 'answer' }, finish_reason: null }] } as any),
@@ -72,7 +71,7 @@ test('ChatCompletions ignores empty identity frames and starts when a model appe
 });
 
 test('ChatCompletions rejects generated content before any non-empty model', async () => {
-  await expect(collectIR(irFromOpenAIChatCompletions(iterate([
+  await expect(collectIR(readOpenAIChatCompletionsEvents(iterate([
     eventFrame({ id: '', object: '', created: 0, model: '', choices: [] } as any),
     eventFrame({ id: '', object: '', created: 0, model: '', choices: [{ index: 0, delta: { content: 'answer' }, finish_reason: null }] } as any),
   ])))).rejects.toThrow('before a non-empty model');
@@ -80,7 +79,7 @@ test('ChatCompletions rejects generated content before any non-empty model', asy
 
 test('ChatCompletions role-only choices still require finish_reason without creating output IR records', async () => {
   const role = eventFrame({ id: 'chat_role', model: 'served', choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }] } as any);
-  await expect(collectIR(irFromOpenAIChatCompletions(iterate([role])))).rejects.toThrow('ended without finish_reason');
+  await expect(collectIR(readOpenAIChatCompletionsEvents(iterate([role])))).rejects.toThrow('ended without finish_reason');
 
   let reached!: () => void;
   let release!: () => void;
@@ -93,7 +92,7 @@ test('ChatCompletions role-only choices still require finish_reason without crea
     yield eventFrame({ id: 'chat_role', model: 'served', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] } as any);
   };
   const output: any[] = [];
-  const run = (async () => { for await (const record of irFromOpenAIChatCompletions(source())) output.push(record); })();
+  const run = (async () => { for await (const record of readOpenAIChatCompletionsEvents(source())) output.push(record); })();
   await atGate;
   expect(output.some(record => record.type === 'write' && record.path[0] === 'choices')).toBe(false);
   release();
@@ -102,13 +101,13 @@ test('ChatCompletions role-only choices still require finish_reason without crea
 
 test.each([['id', 'an id'], ['model', 'a model']] as const)('Messages message_start requires a string %s', async (field, expected) => {
   const message = { id: 'msg', model: 'claude-test', content: [], usage: { input_tokens: 0, output_tokens: 0 }, [field]: 42 };
-  await expect(collectIR(irFromAnthropicMessages(iterate([
+  await expect(collectIR(readAnthropicMessagesEvents(iterate([
     eventFrame({ type: 'message_start', message } as any),
   ])))).rejects.toThrow(`requires ${expected}`);
 });
 
 test('Messages takes tool input only from input_json_delta', async () => {
-  const ir = await collectIR(irFromAnthropicMessages(iterate([
+  const ir = await collectIR(readAnthropicMessagesEvents(iterate([
     eventFrame({ type: 'message_start', message: { id: 'msg', model: 'claude-test', content: [], usage: { input_tokens: 0, output_tokens: 0 } } } as any),
     eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'call', name: 'lookup', input: { ignored: true } } } as any),
     eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"q":1}' } } as any),
@@ -125,48 +124,48 @@ test('ChatCompletions ignores late identity changes and accepts later model upda
     eventFrame({ id: 'chat-late', object: 'other', created: 20, model: 'fallback', choices: [{ index: 0, delta: { content: 'B' }, finish_reason: null }] } as any),
     eventFrame({ id: '', object: '', created: 0, model: '', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] } as any),
   ];
-  const frames = await collect(irFromOpenAIChatCompletions(iterate(input)));
+  const frames = await collect(readOpenAIChatCompletionsEvents(iterate(input)));
   const start = frames.find(record => record.type === 'start');
   expect(start).toEqual({ type: 'start', id: 'chat-first', created: 10 });
-  expect((await collectIR(irFromOpenAIChatCompletions(iterate(input)))).model).toBe('fallback');
+  expect((await collectIR(readOpenAIChatCompletionsEvents(iterate(input)))).model).toBe('fallback');
 });
 
 test('ChatCompletions choice indexes must stay in sequence', async () => {
   // A stream that opens choice 1 without ever stating choice 0 describes a
   // candidate the request never had; the IR cannot represent the gap.
-  await expect(collectIR(irFromOpenAIChatCompletions(iterate([
+  await expect(collectIR(readOpenAIChatCompletionsEvents(iterate([
     eventFrame({ id: 'chat_choices', model: 'served', choices: [{ index: 1, delta: {}, finish_reason: 'stop' }] } as any),
   ])))).rejects.toThrow('out of sequence');
 });
 
 test('Responses rejects output events before the initial envelope', async () => {
-  await expect(collectIR(irFromOpenAIResponses(iterate([
+  await expect(collectIR(readOpenAIResponsesEvents(iterate([
     eventFrame({ type: 'response.output_item.added', output_index: 0, item: { type: 'message', id: 'msg', role: 'assistant', content: [] } } as any),
   ])))).rejects.toThrow('before the initial response envelope');
 });
 
 test('Messages and GenerateContent reject custom tool calls they cannot represent', async () => {
   const frames = completeIR([{ type: 'custom_tool_call', call_id: 'call_custom', name: 'run_code', input: 'input' }]);
-  await expect(collect(anthropicMessagesFromIR(iterate(frames)))).rejects.toThrow('cannot represent custom tool calls');
-  await expect(collect(geminiGenerateContentFromIR(iterate(frames)))).rejects.toThrow('cannot represent custom tool calls');
+  await expect(collect(writeAnthropicMessagesEvents(iterate(frames)))).rejects.toThrow('cannot represent custom tool calls');
+  await expect(collect(writeGeminiGenerateContentEvents(iterate(frames)))).rejects.toThrow('cannot represent custom tool calls');
 });
 
 test('writers omit output they cannot represent', async () => {
   const image = completeIR([{ type: 'message', content: [{ type: 'text', text: 'before' }, { type: 'image', image: { data: 'aW1n', media_type: 'image/png' } }] }]);
-  expect(JSON.stringify(await collect(anthropicMessagesFromIR(iterate(image))))).toContain('before');
-  expect(JSON.stringify(await collect(openaiChatCompletionsFromIR(iterate(image))))).toContain('before');
+  expect(JSON.stringify(await collect(writeAnthropicMessagesEvents(iterate(image))))).toContain('before');
+  expect(JSON.stringify(await collect(writeOpenAIChatCompletionsEvents(iterate(image))))).toContain('before');
 
   const documentCitation = completeIR([{ type: 'message', content: [{ type: 'text', text: 'source', annotations: [{ type: 'source_citation', source_kind: 'document', source: 'file_1', source_label: 'Document', output_text_range: { start: 0, end_exclusive: 6 } }] }] }]);
-  expect(JSON.stringify(await collect(openaiChatCompletionsFromIR(iterate(documentCitation))))).not.toContain('url_citation');
+  expect(JSON.stringify(await collect(writeOpenAIChatCompletionsEvents(iterate(documentCitation))))).not.toContain('url_citation');
 
   const ranged = completeIR([{ type: 'message', content: [{ type: 'text', text: 'source', annotations: [{ type: 'source_citation', source_kind: 'url', source: 'https://example.com', output_text_range: { start: 0, end_exclusive: 6 } }] }] }]);
-  expect(JSON.stringify(await collect(anthropicMessagesFromIR(iterate(ranged))))).toContain('source');
+  expect(JSON.stringify(await collect(writeAnthropicMessagesEvents(iterate(ranged))))).toContain('source');
 
   const documentForResponses = completeIR([{ type: 'message', content: [{ type: 'text', text: 'source', annotations: [{ type: 'source_citation', source_kind: 'document', source: 'file_1', source_label: 'Document', output_text_range: { start: 0, end_exclusive: 6 } }] }] }]);
-  expect(JSON.stringify(await collect(openaiResponsesFromIR(iterate(documentForResponses))))).not.toContain('citation');
+  expect(JSON.stringify(await collect(writeOpenAIResponsesEvents(iterate(documentForResponses))))).not.toContain('citation');
 
   const sourceLess = completeIR([{ type: 'message', content: [{ type: 'text', text: 'source', annotations: [{ type: 'source_citation', source_kind: 'document', source: null, source_text: 'quote' }] }] }]);
-  expect(JSON.stringify(await collect(openaiResponsesFromIR(iterate(sourceLess))))).not.toContain('citation');
+  expect(JSON.stringify(await collect(writeOpenAIResponsesEvents(iterate(sourceLess))))).not.toContain('citation');
 });
 
 test('single-choice writers reject a second choice when it is initialized', async () => {
@@ -176,12 +175,12 @@ test('single-choice writers reject a second choice when it is initialized', asyn
   b.choice(0);
   b.choice(1);
   const frames = [...b.drain()];
-  await expect(collect(anthropicMessagesFromIR(iterate(frames)))).rejects.toThrow('cannot represent multiple choices');
-  await expect(collect(openaiResponsesFromIR(iterate(frames)))).rejects.toThrow('cannot represent multiple choices');
+  await expect(collect(writeAnthropicMessagesEvents(iterate(frames)))).rejects.toThrow('cannot represent multiple choices');
+  await expect(collect(writeOpenAIResponsesEvents(iterate(frames)))).rejects.toThrow('cannot represent multiple choices');
 });
 
 test('Responses initial envelope requires a model', async () => {
-  await expect(collectIR(irFromOpenAIResponses(iterate([
+  await expect(collectIR(readOpenAIResponsesEvents(iterate([
     eventFrame({ type: 'response.created', response: { id: 'resp_missing_model', output: [], usage: null } } as any),
   ])))).rejects.toThrow('requires a model');
 });

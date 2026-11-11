@@ -1,11 +1,11 @@
 import { klona } from 'klona/json';
 
-import { requireCallableSelector, validateCallableDeclarations } from './allowed-tools.ts';
+import { requireCallableSelector, validateAllowedToolSelectors } from './allowed-tools.ts';
 import { partitionOpenAIResponsesTurns, type OpenAIResponsesConversationTurn } from './conversation-turns.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from './programmatic-tooling.ts';
 import { isOpenAIResponsesEncryptedReasoning } from './round-trip.ts';
-import type { OpenAIResponsesAssistantTurn } from './round-trip.ts';
-import type { Reading } from '../../../composition/reading.ts';
+import type { OpenAIResponsesSourceAssistantTurn } from './round-trip.ts';
+import type { SourceReading } from '../../../composition/reading.ts';
 import { mediaFromURL, mediaOrThrow } from '../../../ir/input/media.ts';
 import type {
   IRInputAssistantContentPart,
@@ -24,8 +24,8 @@ import type {
   IRInputUserContentPart,
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
-import { TranslatorInputError } from '../../../types.ts';
-import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
+import { TranslateInputException } from '../../../types.ts';
+import { requireCanonicalOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import type {
   CanonicalOpenAIResponsesInputItem,
   CanonicalOpenAIResponsesPayload,
@@ -38,7 +38,7 @@ import type {
 const imageMedia = (part: Extract<OpenAIResponsesInputContent, { type: 'input_image' }>): IRInputMedia => {
   if (typeof part.image_url === 'string') return mediaOrThrow(mediaFromURL(part.image_url), part.image_url);
   if (typeof part.file_id === 'string') return { source_kind: 'file', file_id: part.file_id };
-  throw new TranslatorInputError('An OpenAI Responses input_image requires image_url or file_id.');
+  throw new TranslateInputException('An OpenAI Responses input_image requires image_url or file_id.');
 };
 
 const fileMedia = (part: Extract<OpenAIResponsesInputContent, { type: 'input_file' }>): IRInputMedia => {
@@ -49,10 +49,10 @@ const fileMedia = (part: Extract<OpenAIResponsesInputContent, { type: 'input_fil
     // media type a target may need. A data URL this cannot decode is not raw
     // base64 — labelling it so would send the URL text itself as the payload.
     const media = mediaFromURL(part.file_data);
-    if (media === undefined) throw new TranslatorInputError('An OpenAI Responses input_file states a data URL this translation cannot decode.');
+    if (media === undefined) throw new TranslateInputException('An OpenAI Responses input_file states a data URL this translation cannot decode.');
     return media.source_kind === 'base64' ? media : { source_kind: 'base64', data: part.file_data };
   }
-  throw new TranslatorInputError('An OpenAI Responses input_file requires file_id, file_url, or file_data.');
+  throw new TranslateInputException('An OpenAI Responses input_file requires file_id, file_url, or file_data.');
 };
 
 const userContentPart = (part: OpenAIResponsesInputContent): IRInputUserContentPart => {
@@ -73,11 +73,11 @@ const userContent = (content: string | OpenAIResponsesInputContent[]): IRInputUs
   ? content === '' ? [] : [{ type: 'text', text: content }]
   : content.map(userContentPart);
 
-const systemContent = (message: OpenAIResponsesInputMessageEx): IRInputTextPart[] => typeof message.content === 'string'
+const promptPartsToIR = (message: OpenAIResponsesInputMessageEx): IRInputTextPart[] => typeof message.content === 'string'
   ? message.content === '' ? [] : [{ type: 'text', text: message.content }]
   : message.content.map(part => {
       if (part.type !== 'input_text' && part.type !== 'output_text') {
-        throw new TranslatorInputError(`Invalid '${part.type}' content part in ${message.role} message. Only 'input_text' content parts are supported in ${message.role} messages on this model.`);
+        throw new TranslateInputException(`Invalid '${part.type}' content part in ${message.role} message. Only 'input_text' content parts are supported in ${message.role} messages on this model.`);
       }
       return { type: 'text', text: part.text };
     });
@@ -92,7 +92,7 @@ const assistantContent = (message: Extract<OpenAIResponsesInputMessageEx, { role
       // An assistant turn replays model output, so a refusal it produced is
       // history like any other part.
       if (part.type === 'refusal') return { type: 'refusal' as const, refusal: part.refusal };
-      throw new TranslatorInputError(`Cannot translate ${part.type} assistant content.`);
+      throw new TranslateInputException(`Cannot translate ${part.type} assistant content.`);
     });
 
 const toolResultContent = (output: string | readonly OpenAIResponsesInputContent[]): string | readonly IRInputToolResultContentPart[] => typeof output === 'string'
@@ -104,14 +104,14 @@ const toolResultContent = (output: string | readonly OpenAIResponsesInputContent
     });
 
 const unsupportedItem = (item: CanonicalOpenAIResponsesInputItem): never => {
-  throw new TranslatorInputError(`Invalid input item: ${JSON.stringify(item)}`);
+  throw new TranslateInputException(`Invalid input item: ${JSON.stringify(item)}`);
 };
 
 const assistantItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInputAssistantItem[] => items.map((item): IRInputAssistantItem | undefined => {
   rejectProgramCaller(item);
   switch (item.type) {
   case 'message': {
-    if (item.role !== 'assistant') throw new TranslatorInputError(`Invalid assistant message role '${item.role}'.`);
+    if (item.role !== 'assistant') throw new TranslateInputException(`Invalid assistant message role '${item.role}'.`);
     const content = assistantContent(item);
     // An explicitly empty assistant message still occupies a turn: dropping it
     // would put the client runs on either side next to each other, and every
@@ -149,8 +149,8 @@ const clientItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInp
     switch (item.role) {
     case 'user': return [{ type: 'message' as const, content: userContent(item.content) }];
     case 'system':
-    case 'developer': return [{ type: 'prompt' as const, role: item.role, content: systemContent(item) }];
-    default: throw new TranslatorInputError(`Invalid role '${item.role}' in input message.`);
+    case 'developer': return [{ type: 'prompt' as const, role: item.role, content: promptPartsToIR(item) }];
+    default: throw new TranslateInputException(`Invalid role '${item.role}' in input message.`);
     }
   case 'function_call_output': {
     const result: IRInputToolResultItem = {
@@ -257,7 +257,7 @@ const selectorOf = (payload: CanonicalOpenAIResponsesPayload, selector: Record<s
     ...(payload.tools ?? []),
     ...payload.input.flatMap(item => item.type === 'additional_tools' || item.type === 'tool_search_output' ? item.tools : []),
   ].flatMap(tool => tool.type === 'namespace' && tool.name === selector.name ? [tool] : []);
-  if (groups.length === 0) throw new TranslatorInputError(`Cannot translate group selector '${String(selector.name)}' without a matching declaration.`);
+  if (groups.length === 0) throw new TranslateInputException(`Cannot translate group selector '${String(selector.name)}' without a matching declaration.`);
   return groups.flatMap(group => group.tools.flatMap(child => child.type === 'function' || child.type === 'custom'
     ? [{ type: child.type, name: child.name, namespace: group.name } as IRInputToolSelector]
     : []));
@@ -265,12 +265,12 @@ const selectorOf = (payload: CanonicalOpenAIResponsesPayload, selector: Record<s
 
 const toolChoiceToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputToolChoice => {
   const choice = payload.tool_choice;
-  if (choice == null) throw new TranslatorInputError('Cannot translate a missing tool choice.');
+  if (choice == null) throw new TranslateInputException('Cannot translate a missing tool choice.');
   if (typeof choice === 'string') {
     if (choice === 'auto' || choice === 'none' || choice === 'required') return choice;
     // Any other bare string is a hosted selector, which names a callable this
     // IR does not carry.
-    throw new TranslatorInputError(`Cannot translate OpenAI Responses tool choice '${choice}'.`);
+    throw new TranslateInputException(`Cannot translate OpenAI Responses tool choice '${choice}'.`);
   }
   if (choice.type === 'allowed_tools') {
     return {
@@ -281,7 +281,7 @@ const toolChoiceToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputToolCh
   }
   if (choice.type === 'function' || choice.type === 'custom') return selectionToIR(choice, declaredGroupsOf(payload));
   // A hosted selector names a tool this IR does not carry.
-  throw new TranslatorInputError(`Cannot translate OpenAI Responses tool choice type '${choice.type}'.`);
+  throw new TranslateInputException(`Cannot translate OpenAI Responses tool choice type '${choice.type}'.`);
 };
 
 // A group is a declaration container, not a callable: this IR carries the
@@ -291,7 +291,7 @@ const toolGroupToIR = (tool: OpenAIResponsesTool): IRInputTool[] => {
   if (tool.type === 'namespace') {
     return tool.tools.flatMap(child => {
       if (child.type !== 'function' && child.type !== 'custom') {
-        throw new TranslatorInputError(`Cannot translate non-callable child in namespace '${tool.name}'.`);
+        throw new TranslateInputException(`Cannot translate non-callable child in namespace '${tool.name}'.`);
       }
       // A group's own description qualifies each child's, the way one merged
       // declaration states it.
@@ -305,7 +305,7 @@ const toolGroupToIR = (tool: OpenAIResponsesTool): IRInputTool[] => {
     });
   }
   if (tool.type === 'function' || tool.type === 'custom') return [toolToIR(tool)];
-  throw new TranslatorInputError(`Cannot translate OpenAI Responses tool type '${tool.type}'.`);
+  throw new TranslateInputException(`Cannot translate OpenAI Responses tool type '${tool.type}'.`);
 };
 
 // A request can defer declarations to an inventory item inside the
@@ -366,10 +366,10 @@ const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): 
   };
 };
 
-export const openaiResponsesRead = (source: OpenAIResponsesRequestPayloadEx): Reading<OpenAIResponsesAssistantTurn> => {
-  const canonical = canonicalizeOpenAIResponsesPayload(source);
-  validateCallableDeclarations(canonical.tools, canonical.tool_choice, canonical.input);
-  rejectProgrammaticOpenAIResponsesPayload(canonical, 'translation');
+export const readOpenAIResponsesRequest = (source: OpenAIResponsesRequestPayloadEx): SourceReading<OpenAIResponsesSourceAssistantTurn> => {
+  const canonical = requireCanonicalOpenAIResponsesPayload(source);
+  validateAllowedToolSelectors(canonical.tools, canonical.tool_choice, canonical.input);
+  rejectProgrammaticOpenAIResponsesPayload(canonical);
 
   const prompt = openaiResponsesInstructionsToIR(canonical.instructions);
   return {

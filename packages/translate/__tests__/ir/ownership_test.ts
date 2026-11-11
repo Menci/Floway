@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
-import { collect, collectIR, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
+import { collect, collectIR, writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, iterate, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './helpers.ts';
 import { nativeResult } from './translation-cases.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 
@@ -20,10 +20,10 @@ const messagesCitationFrames = (citedText?: string) => [
 test('ChatCompletions logprobs retain their text owner when a tool appears in the same chunk', async () => {
   const token = { token: 'hello', logprob: -0.1, bytes: [104, 101, 108, 108, 111], top_logprobs: [] };
   const source = [chunk({ content: 'hello', annotations: [citation(0, 5)], tool_calls: [{ index: 0, id: 'call', type: 'function', function: { name: 'lookup', arguments: '{}' } }] }, { logprobs: { content: [token], refusal: null }, finish_reason: 'tool_calls' }), doneFrame()];
-  const ir = await collectIR(irFromOpenAIChatCompletions(iterate(source)));
+  const ir = await collectIR(readOpenAIChatCompletionsEvents(iterate(source)));
   expect(ir.choices[0].items).toHaveLength(2);
   expect(ir.choices[0].logprobs).toEqual([{ scope: 'text_part', item_index: 0, content_index: 0, tokens: [token] }]);
-  const frames = await collect(openaiResponsesFromIR(irFromOpenAIChatCompletions(iterate(source))));
+  const frames = await collect(writeOpenAIResponsesEvents(readOpenAIChatCompletionsEvents(iterate(source))));
   expect(frames.find(frame => frame.type === 'event' && frame.event.type === 'response.output_text.done')).toMatchObject({ event: { logprobs: [token] } });
   const annotation = frames.findIndex(frame => frame.type === 'event' && frame.event.type === 'response.output_text.annotation.added');
   const end = frames.findIndex(frame => frame.type === 'event' && frame.event.type === 'response.output_item.done');
@@ -37,10 +37,10 @@ test('ChatCompletions logprobs retain their text owner when a tool appears in th
 test('ChatCompletions citations rebase cumulative Unicode coordinates across interrupted items', async () => {
   const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
   const source = [chunk({ content: 'A😀' }), chunk({ reasoning_text: 'R' }), chunk({ content: '中B' }), chunk({ annotations: [citation(1, 3)] }, { finish_reason: 'stop' }), doneFrame()];
-  const ir = await collectIR(irFromOpenAIChatCompletions(iterate(source)));
+  const ir = await collectIR(readOpenAIChatCompletionsEvents(iterate(source)));
   expect(ir.choices[0].items[0]).toMatchObject({ content: [{ text: 'A😀' }] });
   expect(ir.choices[0].items[2]).toMatchObject({ content: [{ text: '中B', annotations: [{ output_text_range: { start: 0, end_exclusive: 1 } }] }] });
-  const result = await nativeResult('openai-responses', await collect(openaiResponsesFromIR(irFromOpenAIChatCompletions(iterate(source)))));
+  const result = await nativeResult('openai-responses', await collect(writeOpenAIResponsesEvents(readOpenAIChatCompletionsEvents(iterate(source)))));
   expect(result.output[2].content[0].annotations).toEqual([{ type: 'url_citation', url: 'https://example.com', title: 'Source', start_index: 0, end_index: 1 }]);
   expect(warning).toHaveBeenCalledWith('Clamping ChatCompletions citation to open text', expect.objectContaining({ choice: 0 }));
   warning.mockRestore();
@@ -56,7 +56,7 @@ test('Responses converts only new citations after indexed text keeps streaming',
     chunk({ annotations: [first, second] }, { finish_reason: 'stop' }),
     doneFrame(),
   ];
-  const frames = await collect(openaiResponsesFromIR(irFromOpenAIChatCompletions(iterate(source))));
+  const frames = await collect(writeOpenAIResponsesEvents(readOpenAIChatCompletionsEvents(iterate(source))));
   const annotations = frames.flatMap(frame => frame.type === 'event' && frame.event.type === 'response.output_text.annotation.added' ? [frame.event] : []);
   expect(annotations.map(event => event.annotation_index)).toEqual([0, 1]);
   expect(annotations.map(event => event.annotation)).toEqual([
@@ -68,7 +68,7 @@ test('Responses converts only new citations after indexed text keeps streaming',
 test('late ChatCompletions citations on closed text are dropped', async () => {
   const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
   const source = [chunk({ content: 'A😀' }), chunk({ reasoning_text: 'R' }), chunk({ content: '中B' }), chunk({ reasoning_text: 'tail' }), chunk({ annotations: [citation(1, 3)] }, { finish_reason: 'stop' }), doneFrame()];
-  const ir = await collectIR(irFromOpenAIChatCompletions(iterate(source)));
+  const ir = await collectIR(readOpenAIChatCompletionsEvents(iterate(source)));
   expect(ir.choices[0].items.filter(item => item.type === 'message').every(item => item.content.every(part => part.type !== 'text' || part.annotations === undefined))).toBe(true);
   expect(warning).toHaveBeenCalledWith('Dropping ChatCompletions citation outside open text', expect.objectContaining({ choice: 0 }));
   warning.mockRestore();
@@ -76,34 +76,34 @@ test('late ChatCompletions citations on closed text are dropped', async () => {
 
 test('ChatCompletions rejects a reversed citation before clamping it to available text', async () => {
   const source = [chunk({ content: 'abc' }), chunk({ annotations: [citation(5, 3)] }, { finish_reason: 'stop' }), doneFrame()];
-  await expect(collectIR(irFromOpenAIChatCompletions(iterate(source)))).rejects.toThrow('Invalid code-point range');
+  await expect(collectIR(readOpenAIChatCompletionsEvents(iterate(source)))).rejects.toThrow('Invalid code-point range');
 });
 
 test('Messages cited text remains source text without inventing output coordinates', async () => {
-  const ir = await collectIR(irFromAnthropicMessages(iterate(messagesCitationFrames('source quote'))));
+  const ir = await collectIR(readAnthropicMessagesEvents(iterate(messagesCitationFrames('source quote'))));
   const item = ir.choices[0].items[0];
   if (item.type !== 'message' || item.content[0].type !== 'text') throw new Error('expected cited text part');
   expect(item.content[0].annotations?.[0]).toMatchObject({ source_text: 'source quote' });
   expect(item.content[0].annotations?.[0]).not.toHaveProperty('output_text_range');
 
-  const result = await nativeResult('openai-responses', await collect(openaiResponsesFromIR(irFromAnthropicMessages(iterate(messagesCitationFrames('source quote'))))));
+  const result = await nativeResult('openai-responses', await collect(writeOpenAIResponsesEvents(readAnthropicMessagesEvents(iterate(messagesCitationFrames('source quote'))))));
   expect(result.output[0].content[0].annotations).toEqual([]);
 });
 
 test('Messages URL citations without cited text do not expand to the entire Responses text', async () => {
-  const ir = await collectIR(irFromAnthropicMessages(iterate(messagesCitationFrames())));
+  const ir = await collectIR(readAnthropicMessagesEvents(iterate(messagesCitationFrames())));
   const item = ir.choices[0].items[0];
   expect(item).toMatchObject({ content: [{ annotations: [{ source: 'https://docs.example.com/page-1' }] }] });
   if (item.type !== 'message' || item.content[0].type !== 'text') throw new Error('expected cited text part');
   expect(item.content[0].annotations?.[0]).not.toHaveProperty('output_text_range');
-  const result = await nativeResult('openai-responses', await collect(openaiResponsesFromIR(irFromAnthropicMessages(iterate(messagesCitationFrames())))));
+  const result = await nativeResult('openai-responses', await collect(writeOpenAIResponsesEvents(readAnthropicMessagesEvents(iterate(messagesCitationFrames())))));
   expect(result.output[0].content[0].annotations).toEqual([]);
 });
 
 test('range-less Messages citations do not expand to whole-part ChatCompletions or GenerateContent citations', async () => {
-  const chatFrames = await collect(openaiChatCompletionsFromIR(irFromAnthropicMessages(iterate(messagesCitationFrames('source quote'))), { id: 'chat_target', created: 1 }));
+  const chatFrames = await collect(writeOpenAIChatCompletionsEvents(readAnthropicMessagesEvents(iterate(messagesCitationFrames('source quote'))), { id: 'chat_target', created: 1 }));
   expect(chatFrames.some(frame => frame.type === 'event' && !('error' in frame.event) && frame.event.choices.some(choice => 'annotations' in choice.delta))).toBe(false);
 
-  const generateContentFrames = await collect(geminiGenerateContentFromIR(irFromAnthropicMessages(iterate(messagesCitationFrames('source quote')))));
+  const generateContentFrames = await collect(writeGeminiGenerateContentEvents(readAnthropicMessagesEvents(iterate(messagesCitationFrames('source quote')))));
   expect(generateContentFrames.some(frame => frame.type === 'event' && 'candidates' in frame.event && frame.event.candidates?.some(candidate => candidate.groundingMetadata !== undefined))).toBe(false);
 });

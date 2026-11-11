@@ -1,17 +1,17 @@
+import { readOpenAIChatCompletionsEvents } from './as-target/events.ts';
 import { chatLegacyCallsOf } from './as-target/legacy-calls.ts';
 import { openaiChatCompletionsPayloadFromSegments } from './as-target/segmented-request.ts';
-import { irFromOpenAIChatCompletions } from './as-target/sse-from.ts';
 import { assignCallIds, type PendingCall } from '../../composition/call-ids.ts';
-import { flattenRequestNames } from '../../composition/flatten-request.ts';
 import type { TargetProtocol } from '../../composition/index.ts';
-import type { InputAssistantTurnFor } from '../../round-trip/assistant-turn.ts';
+import { allocateToolNames, type ToolNameContext } from '../../composition/tool-names.ts';
+import type { InputAssistantTurnFor } from '../../round-trip/input-assistant-turn.ts';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
-type ChatResolvedTurn = InputAssistantTurnFor<'openaiChatCompletions'>;
+type ChatRestoredAssistantTurn = InputAssistantTurnFor<'openaiChatCompletions'>;
 
 const callsOf = (
-  turn: ChatResolvedTurn,
-  legacyCallIds: ReadonlyMap<ChatResolvedTurn, string>,
+  turn: ChatRestoredAssistantTurn,
+  legacyCallIds: ReadonlyMap<ChatRestoredAssistantTurn, string>,
 ): readonly PendingCall[] => {
   // The legacy `function_call` field is a call too. This wire states no id for
   // it, so the only id it has is the one the client's own history answers it
@@ -35,13 +35,13 @@ const callsOf = (
  * Writing records both.
  */
 export const openaiChatCompletionsTargetProtocol: TargetProtocol<
-  'openaiChatCompletions', OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent
+  'openaiChatCompletions', OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent, ToolNameContext
 > = {
   name: 'openaiChatCompletions',
   // This wire addresses a callable by one bare name, so every grouped
   // declaration and call is stated under the flat spelling it computes.
   write: (request, turns) => {
-    const flattened = flattenRequestNames(request, turns);
+    const flattened = allocateToolNames(request, turns);
     const legacy = chatLegacyCallsOf(flattened.turns);
     return {
       payload: openaiChatCompletionsPayloadFromSegments(
@@ -54,6 +54,6 @@ export const openaiChatCompletionsTargetProtocol: TargetProtocol<
       context: flattened.context,
     };
   },
-  readStream: (frames, context, roundTripReader) =>
-    irFromOpenAIChatCompletions(frames, { ...context, roundTrip: roundTripReader }),
+  readEvents: (frames, context, roundTripReader) =>
+    readOpenAIChatCompletionsEvents(frames, { ...context, roundTrip: roundTripReader }),
 };

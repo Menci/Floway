@@ -13,18 +13,18 @@ import type {
 // but a target's wire correlates every result by id. A target fills the missing
 // ones before writing, and this is the shape it holds afterwards — so a writer
 // reads the id without re-checking what the filling already established.
-export type IRInputAddressedTurn = IRInputAddressedClientTurn | IRInputAddressedAssistantTurn;
-export interface IRInputAddressedClientTurn {
+export type IRInputTurnWithCallIds = IRInputClientTurnWithCallIds | IRInputAssistantTurnWithCallIds;
+export interface IRInputClientTurnWithCallIds {
   readonly kind: 'client';
-  readonly items: readonly IRInputAddressedClientItem[];
+  readonly items: readonly IRInputClientItemWithCallIds[];
 }
-export interface IRInputAddressedAssistantTurn {
+export interface IRInputAssistantTurnWithCallIds {
   readonly kind: 'assistant';
-  readonly items: readonly IRInputAddressedAssistantItem[];
+  readonly items: readonly IRInputAssistantItemWithCallIds[];
 }
-export type IRInputAddressedClientItem = IRInputPromptItem | IRInputUserMessageItem | IRInputAddressedToolResultItem;
-export type IRInputAddressedToolResultItem = IRInputToolResultItem & { readonly call_id: string };
-export type IRInputAddressedAssistantItem =
+export type IRInputClientItemWithCallIds = IRInputPromptItem | IRInputUserMessageItem | IRInputToolResultItemWithCallId;
+export type IRInputToolResultItemWithCallId = IRInputToolResultItem & { readonly call_id: string };
+export type IRInputAssistantItemWithCallIds =
   | Exclude<IRInputAssistantItem, IRInputFunctionCallItem | IRInputCustomToolCallItem>
   | (IRInputFunctionCallItem & { readonly call_id: string })
   | (IRInputCustomToolCallItem & { readonly call_id: string });

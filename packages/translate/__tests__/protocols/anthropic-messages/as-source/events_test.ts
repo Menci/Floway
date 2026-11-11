@@ -1,16 +1,16 @@
 import { expect, test } from 'vitest';
 
 import { createIRBuilder } from '../../../../src/ir/output/stream.ts';
-import { anthropicMessagesFromIR } from '../../../../src/protocols/anthropic-messages/as-source/sse-to.ts';
-import { appendField, collectEmittedFieldPlacements, createReferenceBuilder, createFieldState, createFieldReferencer } from '../../../../src/round-trip/reference/reference-builder.ts';
+import { writeAnthropicMessagesEvents } from '../../../../src/protocols/anthropic-messages/as-source/events.ts';
+import { appendReadField, collectEmittedFieldPlacements, createReferenceBuilder, createReadFieldState, createFieldReferencer } from '../../../../src/round-trip/reference/reference-builder.ts';
 import { hashRoundTripContent } from '../../../../src/round-trip/turn-digest.ts';
 import { type RoundTripWriter } from '../../../../src/round-trip/writer.ts';
 import { type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 
 test.each(['text', 'refusal', 'audio'] as const)('resolves blocked %s against the emitted Messages text field', async kind => {
   const references = createReferenceBuilder();
-  const field = createFieldState('text');
-  const parts = ['H', 'i'].map(text => appendField(references, field, text));
+  const field = createReadFieldState('text');
+  const parts = ['H', 'i'].map(text => appendReadField(references, field, text));
   const source = createIRBuilder();
   source.choice(0);
   source.assign(['model'], 'model');
@@ -31,7 +31,7 @@ test.each(['text', 'refusal', 'audio'] as const)('resolves blocked %s against th
   let prepared = false;
   const roundTrip: RoundTripWriter<'anthropicMessages'> = {
     builder: references,
-    prepareSidecar: async (_choice, _check, turn, state, textPlacements) => {
+    encodeSidecar: async (_choice, _check, turn, state, textPlacements) => {
       const views = collectEmittedFieldPlacements(turn, state, textPlacements);
       expect([...views.values()]).toContainEqual({ enclosingText: 'Hi', offset: 0 });
       const finalizer = createFieldReferencer(references, views);
@@ -42,19 +42,19 @@ test.each(['text', 'refusal', 'audio'] as const)('resolves blocked %s against th
     },
   };
   const events: AnthropicMessagesStreamEventEx[] = [];
-  for await (const frame of anthropicMessagesFromIR((async function* () { yield* source.drain(); })(), { roundTrip })) events.push(frame.event);
+  for await (const frame of writeAnthropicMessagesEvents((async function* () { yield* source.drain(); })(), { roundTrip })) events.push(frame.event);
   expect(events.flatMap(event => event.type === 'content_block_delta' && event.delta.type === 'text_delta' ? [event.delta.text] : [])).toEqual(['Hi']);
   expect(prepared).toBe(true);
 });
 
 test('resolves blocked reasoning in emitted summary/content order before live appends', async () => {
   const references = createReferenceBuilder();
-  const summary = createFieldState('text');
-  const content = createFieldState('text');
-  const a = appendField(references, summary, 'A');
-  const x = appendField(references, content, 'X');
-  const b = appendField(references, summary, 'B');
-  const c = appendField(references, summary, 'C');
+  const summary = createReadFieldState('text');
+  const content = createReadFieldState('text');
+  const a = appendReadField(references, summary, 'A');
+  const x = appendReadField(references, content, 'X');
+  const b = appendReadField(references, summary, 'B');
+  const c = appendReadField(references, summary, 'C');
   const source = createIRBuilder();
   source.choice(0);
   source.assign(['model'], 'model');
@@ -72,13 +72,13 @@ test('resolves blocked reasoning in emitted summary/content order before live ap
   source.choice(0).end('tool_calls');
   source.event({ type: 'finish', status: 'completed' });
 
-  let prepared: Parameters<RoundTripWriter<'anthropicMessages'>['prepareSidecar']> | undefined;
+  let prepared: Parameters<RoundTripWriter<'anthropicMessages'>['encodeSidecar']> | undefined;
   const roundTrip: RoundTripWriter<'anthropicMessages'> = {
     builder: references,
-    prepareSidecar: async (...args) => { prepared = args; return 'sidecar'; },
+    encodeSidecar: async (...args) => { prepared = args; return 'sidecar'; },
   };
   const events: AnthropicMessagesStreamEventEx[] = [];
-  for await (const frame of anthropicMessagesFromIR((async function* () { yield* source.drain(); })(), { roundTrip })) events.push(frame.event);
+  for await (const frame of writeAnthropicMessagesEvents((async function* () { yield* source.drain(); })(), { roundTrip })) events.push(frame.event);
   expect(events.flatMap(event => event.type === 'content_block_delta' && event.delta.type === 'thinking_delta' ? [event.delta.thinking] : [])).toEqual(['ABX', 'C']);
   if (prepared === undefined) throw new Error('Messages sidecar was not prepared');
   const [, , turn, state] = prepared;
@@ -91,8 +91,8 @@ test('resolves blocked reasoning in emitted summary/content order before live ap
 
 test.each(['{"x":1,}', '{"x": 1}'])('tracks the emitted canonical JSON view without resolving transformed atoms: %s', async original => {
   const references = createReferenceBuilder();
-  const field = createFieldState('text');
-  const partId = appendField(references, field, original);
+  const field = createReadFieldState('text');
+  const partId = appendReadField(references, field, original);
   const source = createIRBuilder();
   source.choice(0);
   source.assign(['model'], 'model');
@@ -105,7 +105,7 @@ test.each(['{"x":1,}', '{"x": 1}'])('tracks the emitted canonical JSON view with
   let prepared = false;
   const roundTrip: RoundTripWriter<'anthropicMessages'> = {
     builder: references,
-    prepareSidecar: async (_choice, _check, turn, state, textPlacements) => {
+    encodeSidecar: async (_choice, _check, turn, state, textPlacements) => {
       const views = collectEmittedFieldPlacements(turn, state, textPlacements);
       expect([...views.values()]).toContainEqual({ enclosingText: '{"x":1}', offset: 0 });
       const finalizer = createFieldReferencer(references, views);
@@ -114,6 +114,6 @@ test.each(['{"x":1,}', '{"x": 1}'])('tracks the emitted canonical JSON view with
       return 'sidecar';
     },
   };
-  for await (const _frame of anthropicMessagesFromIR((async function* () { yield* source.drain(); })(), { roundTrip, parseToolArguments: original.endsWith(',}') ? () => ({ x: 1 }) : undefined })) {}
+  for await (const _frame of writeAnthropicMessagesEvents((async function* () { yield* source.drain(); })(), { roundTrip, parseToolArguments: original.endsWith(',}') ? () => ({ x: 1 }) : undefined })) {}
   expect(prepared).toBe(true);
 });

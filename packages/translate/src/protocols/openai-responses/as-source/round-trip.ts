@@ -1,8 +1,8 @@
 import type { IRJSONObject, IRJSONValue } from '../../../ir/common/json.ts';
-import type { ReplayContent } from '../../../round-trip/reference/reference-type.ts';
-import type { SidecarCarrier } from '../../../round-trip/resolve.ts';
+import type { ReplayContent } from '../../../round-trip/reference/types.ts';
+import type { SidecarOccurrence } from '../../../round-trip/resolve.ts';
 import { collectTextGroups, collectTextPlacementIndex, type TextContribution, type TextPlacementIndex } from '../../../round-trip/text-groups.ts';
-import { replayMaterialsByType, turnDigestComputer, turnDigestVerifier } from '../../../round-trip/turn-digest.ts';
+import { replayMaterialsByType, createTurnDigestComputer, createTurnDigestVerifier } from '../../../round-trip/turn-digest.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputContent, OpenAIResponsesOutputContentBlock, OpenAIResponsesOutputItemEx, OpenAIResponsesOutputReasoning } from '@floway-dev/protocols/openai-responses';
 
 type OpenAIResponsesMessagePart = OpenAIResponsesInputContent | OpenAIResponsesOutputContentBlock;
@@ -17,14 +17,14 @@ const responsesMessageTextGroup = (part: OpenAIResponsesMessagePart): TextContri
 const responsesReasoningTextGroup = <Part extends { readonly text: string }>(part: Part): TextContribution<'text'> =>
   ({ channel: 'text', field: 'text', text: part.text });
 
-export type OpenAIResponsesAssistantTurnItem = CanonicalOpenAIResponsesInputItem | OpenAIResponsesOutputItemEx;
-export type OpenAIResponsesAssistantTurn = OpenAIResponsesAssistantTurnItem[];
+export type OpenAIResponsesSourceAssistantItem = CanonicalOpenAIResponsesInputItem | OpenAIResponsesOutputItemEx;
+export type OpenAIResponsesSourceAssistantTurn = OpenAIResponsesSourceAssistantItem[];
 
-export type OpenAIResponsesSidecarCarrier = OpenAIResponsesOutputReasoning & { summary: []; encrypted_content: string };
+export type OpenAIResponsesSidecarItem = OpenAIResponsesOutputReasoning & { summary: []; encrypted_content: string };
 
 type TypedReplayMaterial = IRJSONObject & { type: string };
 
-export const isOpenAIResponsesEncryptedReasoning = (item: OpenAIResponsesAssistantTurnItem): item is Extract<OpenAIResponsesAssistantTurnItem, { type: 'reasoning' }> & { encrypted_content: string } =>
+export const isOpenAIResponsesEncryptedReasoning = (item: OpenAIResponsesSourceAssistantItem): item is Extract<OpenAIResponsesSourceAssistantItem, { type: 'reasoning' }> & { encrypted_content: string } =>
   item.type === 'reasoning' && typeof item.encrypted_content === 'string';
 
 const responseMessageMaterials = (content: string | OpenAIResponsesMessagePart[]): [string, TypedReplayMaterial[]][] => {
@@ -41,10 +41,10 @@ const responseMessageMaterials = (content: string | OpenAIResponsesMessagePart[]
 const concatenateResponseText = <Part extends object & { readonly text: string }>(parts: readonly Part[]): string =>
   collectTextGroups(parts, responsesReasoningTextGroup).get('text')?.text ?? '';
 
-const replayItemStatus = (item: OpenAIResponsesAssistantTurnItem): { status?: string | null } =>
+const replayItemStatus = (item: OpenAIResponsesSourceAssistantItem): { status?: string | null } =>
   'status' in item && item.status !== undefined ? { status: item.status } : {};
 
-const replayItemMaterial = (item: OpenAIResponsesAssistantTurnItem): TypedReplayMaterial => {
+const replayItemMaterial = (item: OpenAIResponsesSourceAssistantItem): TypedReplayMaterial => {
   if (item.type === 'reasoning') return {
     type: item.type,
     ...replayItemStatus(item),
@@ -78,9 +78,9 @@ const replayItemMaterial = (item: OpenAIResponsesAssistantTurnItem): TypedReplay
   return { type: item.type, ...replayItemStatus(item) };
 };
 
-const responsesTurnDigestMaterialV1 = (turn: OpenAIResponsesAssistantTurn): IRJSONValue => replayMaterialsByType(turn.map(replayItemMaterial));
+const responsesTurnDigestMaterialV1 = (turn: OpenAIResponsesSourceAssistantTurn): IRJSONValue => replayMaterialsByType(turn.map(replayItemMaterial));
 
-export const findOpenAIResponsesSidecarCarriers = (turn: OpenAIResponsesAssistantTurn): SidecarCarrier<OpenAIResponsesAssistantTurn>[] =>
+export const findOpenAIResponsesSidecarOccurrences = (turn: OpenAIResponsesSourceAssistantTurn): SidecarOccurrence<OpenAIResponsesSourceAssistantTurn>[] =>
   turn.flatMap((item, itemIndex) => !isOpenAIResponsesEncryptedReasoning(item) ? [] : [{
     data: item.encrypted_content,
     withoutSidecar: () => {
@@ -90,9 +90,9 @@ export const findOpenAIResponsesSidecarCarriers = (turn: OpenAIResponsesAssistan
     },
   }]);
 
-export const computeOpenAIResponsesTurnDigest = turnDigestComputer(responsesTurnDigestMaterialV1);
+export const computeOpenAIResponsesTurnDigest = createTurnDigestComputer(responsesTurnDigestMaterialV1);
 
-export const collectOpenAIResponsesReplayContents = (turn: OpenAIResponsesAssistantTurn): ReplayContent[] => {
+export const collectOpenAIResponsesReplayContents = (turn: OpenAIResponsesSourceAssistantTurn): ReplayContent[] => {
   const candidates: ReplayContent[] = [];
   for (const item of turn) {
     if (item.type === 'message') {
@@ -110,16 +110,16 @@ export const collectOpenAIResponsesReplayContents = (turn: OpenAIResponsesAssist
   return candidates;
 };
 
-export const verifyOpenAIResponsesTurnDigest = turnDigestVerifier(responsesTurnDigestMaterialV1);
+export const verifyOpenAIResponsesTurnDigest = createTurnDigestVerifier(responsesTurnDigestMaterialV1);
 
-export const createOpenAIResponsesSidecarCarrier = (id: string, data: string): OpenAIResponsesSidecarCarrier => ({
+export const createOpenAIResponsesSidecarCarrier = (id: string, data: string): OpenAIResponsesSidecarItem => ({
   type: 'reasoning',
   id,
   summary: [],
   encrypted_content: data,
 });
 
-export const collectOpenAIResponsesTextViews = (turn: OpenAIResponsesAssistantTurn): TextPlacementIndex => {
+export const collectOpenAIResponsesTextPlacements = (turn: OpenAIResponsesSourceAssistantTurn): TextPlacementIndex => {
   const views: TextPlacementIndex = new Map();
   for (const item of turn) {
     if (item.type === 'message' && Array.isArray(item.content)) {

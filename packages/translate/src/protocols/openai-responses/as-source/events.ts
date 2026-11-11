@@ -1,18 +1,18 @@
-import { collectOpenAIResponsesTextViews, computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier } from './round-trip.ts';
+import { collectOpenAIResponsesTextPlacements, computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import type { IRCollector } from '../../../ir/output/collector.ts';
 import { irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/output/operation-paths.ts';
-import { createIROrdinalMapper } from '../../../ir/output/ordinal-mapper.ts';
 import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/output/stream.ts';
 import { IRAbsent, type IRErrorPayload, type IROutput, type IROutputItem, type IROutputMessageItem, type IROutputSourceCitation, type IROutputTokenLogprob } from '../../../ir/output/types.ts';
+import { createIRUnitIndexAllocator } from '../../../ir/output/unit-index.ts';
 import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/output/unit-queue.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
-import { appendContent, createEmittedFieldState, type EmittedFieldState, type EmittedFieldStates } from '../../../round-trip/reference/reference-builder.ts';
-import type { SourceStreamOutputOptions } from '../../../round-trip/writer.ts';
+import { appendEmittedField, createEmittedFieldState, type EmittedFieldState, type EmittedFieldStates } from '../../../round-trip/reference/reference-builder.ts';
+import type { SourceEventWriterOptions } from '../../../round-trip/writer.ts';
 import { errorDetailsOf } from '../../../shared/api-error.ts';
-import { isCompleteJSONObject, parseJSONObjectAtCompletion, isJSONRecord } from '../../../shared/json/object.ts';
+import { isCompleteJSONObject, parseJSONObjectUnlessTruncated, isJSONRecord } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
-import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantState } from '../as-target/assistant-turn.ts';
+import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantTurnState } from '../as-target/assistant-turn.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   createRandomOpenAIResponsesItemId,
@@ -31,7 +31,7 @@ export const createRandomOpenAIResponsesResponseId = (): string => `resp_${crypt
 interface ResponsesOutputUnitBase {
   readonly path: IRPath;
   readonly parts: IRPath[];
-  readonly contentOrdinals: ReturnType<typeof createIROrdinalMapper>;
+  readonly contentOrdinals: ReturnType<typeof createIRUnitIndexAllocator>;
   readonly annotationProgress: Map<string, { seen: number; emitted: number }>;
   readonly coordinateIndexes: Map<string, TextCoordinateIndex>;
   pendingText?: Map<string, TextProvenanceSpan[]>;
@@ -49,7 +49,7 @@ type ResponsesOutputUnit = ResponsesOutputUnitBase & (
   | { readonly kind: 'function_call' | 'custom_tool_call'; toolContentState?: EmittedFieldState<'text'> }
 );
 
-interface OpenAIResponsesSSEOutputOptions extends SourceStreamOutputOptions<'openaiResponses'> {
+interface OpenAIResponsesEventWriterOptions extends SourceEventWriterOptions<'openaiResponses'> {
   /** The declarations the client asked with, echoed back on every response object. */
   echoedTools?: NonNullable<CanonicalOpenAIResponsesPayload['tools']>;
   echoedToolChoice?: NonNullable<CanonicalOpenAIResponsesPayload['tool_choice']>;
@@ -198,9 +198,9 @@ export const openaiResponsesErrorEventOf = (error: IRErrorPayload): OpenAIRespon
   };
 };
 
-export const openaiResponsesFromIR = async function* (
+export const writeOpenAIResponsesEvents = async function* (
   records: AsyncIterable<IRRecord>,
-  options: OpenAIResponsesSSEOutputOptions,
+  options: OpenAIResponsesEventWriterOptions,
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   const { echoedTools, echoedToolChoice } = options;
   let metadata = { id: '', model: '', created: 0 };
@@ -208,7 +208,7 @@ export const openaiResponsesFromIR = async function* (
   let sequence = 0;
   let finishReason: Extract<IRRecord, { type: 'choice_end' }>['finish_reason'] = 'stop';
   const outputUnits: ResponsesOutputUnit[] = [];
-  const nativeState: OpenAIResponsesOutputAssistantState<EmittedFieldStates> = [];
+  const nativeState: OpenAIResponsesOutputAssistantTurnState<EmittedFieldStates> = [];
   const units = createIRUnitRegistry<ResponsesOutputUnit>();
   const messageUnits = new Map<number, ResponsesOutputUnit[]>();
   const logprobGroups = new Map<string, number>();
@@ -252,7 +252,7 @@ export const openaiResponsesFromIR = async function* (
       if (unit.toolContentState === undefined) throw new Error('Responses tool text requires an opened native field');
       content = unit.toolContentState;
     } else return;
-    appendContent(options.roundTrip.builder, content, text, textFragmentIds);
+    appendEmittedField(options.roundTrip.builder, content, text, textFragmentIds);
   };
 
   const appendPendingText = (unit: ResponsesOutputUnit, path: IRPath, text: string): void => {
@@ -400,7 +400,7 @@ export const openaiResponsesFromIR = async function* (
           const unit: ResponsesOutputUnitBase = {
             path: record.path,
             parts: [],
-            contentOrdinals: createIROrdinalMapper(),
+            contentOrdinals: createIRUnitIndexAllocator(),
             annotationProgress: new Map(),
             coordinateIndexes: new Map(),
             opened: false,
@@ -426,7 +426,7 @@ export const openaiResponsesFromIR = async function* (
               path: record.path,
               kind: 'message',
               parts: [],
-              contentOrdinals: createIROrdinalMapper(),
+              contentOrdinals: createIRUnitIndexAllocator(),
               annotationProgress: new Map(),
               coordinateIndexes: new Map(),
               contentState: {},
@@ -442,7 +442,7 @@ export const openaiResponsesFromIR = async function* (
             path: record.path,
             kind: 'image',
             parts: [record.path],
-            contentOrdinals: createIROrdinalMapper(),
+            contentOrdinals: createIRUnitIndexAllocator(),
             annotationProgress: new Map(),
             coordinateIndexes: new Map(),
             opened: false,
@@ -688,7 +688,7 @@ export const openaiResponsesFromIR = async function* (
         const item = state.choices[0].items[current.path[3] as number];
         if (item.type !== 'function_call') throw new TypeError('Responses pending function unit requires a function item');
         const outputIndex = requireOutputIndex(current);
-        parseJSONObjectAtCompletion(item.arguments, finishReason === 'length' ? 'truncated' : 'complete');
+        parseJSONObjectUnlessTruncated(item.arguments, finishReason === 'length' ? 'truncated' : 'complete');
         yield emit({
           type: 'response.function_call_arguments.done',
           item_id: requireId(current),
@@ -855,7 +855,7 @@ export const openaiResponsesFromIR = async function* (
       nativeState.length = nativeOutput.length;
       const sourceTurnDigest = await computeOpenAIResponsesTurnDigest(nativeOutput);
       const input = toOpenAIResponsesInputAssistantTurn<EmittedFieldStates>(nativeOutput, nativeState);
-      const data = await options.roundTrip.prepareSidecar(0, sourceTurnDigest, input.turn, input.state, collectOpenAIResponsesTextViews(input.turn));
+      const data = await options.roundTrip.encodeSidecar(0, sourceTurnDigest, input.turn, input.state, collectOpenAIResponsesTextPlacements(input.turn));
       sidecar = { ...createOpenAIResponsesSidecarCarrier(createRandomOpenAIResponsesItemId('reasoning'), data), status: 'completed' };
       const outputIndex = outputUnits.length;
       yield emit({ type: 'response.output_item.added', output_index: outputIndex, item: sidecar });

@@ -42,12 +42,12 @@ export const verifyRoundTripTurnDigest = async (material: IRJSONValue, sourceTur
  * Every protocol hashes its own material; only the version switch is the same,
  * so this holds the switch and the caller supplies the material.
  */
-export const turnDigestComputer = <Turn>(
+export const createTurnDigestComputer = <Turn>(
   materialOf: (turn: Turn) => IRJSONValue,
 ): (turn: Turn) => Promise<RoundTripTurnDigest> => async turn => await computeRoundTripTurnDigest(materialOf(turn));
 
-/** The verifier half of {@link turnDigestComputer}. */
-export const turnDigestVerifier = <Turn>(
+/** The verifier half of {@link createTurnDigestComputer}. */
+export const createTurnDigestVerifier = <Turn>(
   materialOf: (turn: Turn) => IRJSONValue,
 ): (turn: Turn, sourceTurnDigest: RoundTripTurnDigest, version: number) => Promise<boolean> => (turn, sourceTurnDigest, version) => {
   switch (version) {

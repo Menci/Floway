@@ -1,27 +1,27 @@
-import type { ResolvedTurn } from '../../../composition/segments.ts';
+import type { RestoredAssistantTurn } from '../../../composition/segments.ts';
 import type { IRInputTurn } from '../../../ir/input/types.ts';
-import type { InputAssistantTurnFor } from '../../../round-trip/assistant-turn.ts';
-import { TranslatorInputError } from '../../../types.ts';
+import type { InputAssistantTurnFor } from '../../../round-trip/input-assistant-turn.ts';
+import { TranslateInputException } from '../../../types.ts';
 
-type ChatResolvedTurn = InputAssistantTurnFor<'openaiChatCompletions'>;
+type ChatRestoredAssistantTurn = InputAssistantTurnFor<'openaiChatCompletions'>;
 
 interface ChatLegacyCalls {
   /**
    * The id the answer to each restored legacy call is written under, keyed by
    * that restored turn. Two calls may share a name, so the turn identifies one.
    */
-  readonly callIds: ReadonlyMap<ChatResolvedTurn, string>;
+  readonly callIds: ReadonlyMap<ChatRestoredAssistantTurn, string>;
   /** The legacy call each of those ids answers, by that id. */
   readonly names: ReadonlyMap<string, string>;
 }
 
 /** Every call id this conversation states, which no legacy answer can name. */
-const statedCallIds = <Restored extends ChatResolvedTurn>(
-  turns: readonly (IRInputTurn | ResolvedTurn<Restored>)[],
+const statedCallIds = <Restored extends ChatRestoredAssistantTurn>(
+  turns: readonly (IRInputTurn | RestoredAssistantTurn<Restored>)[],
 ): ReadonlySet<string> => {
   const ids = new Set<string>();
   for (const piece of turns) {
-    if (piece.kind === 'resolved') {
+    if (piece.kind === 'restored') {
       for (const call of piece.turn.tool_calls ?? []) ids.add(call.id);
       continue;
     }
@@ -54,15 +54,15 @@ const statedCallIds = <Restored extends ChatResolvedTurn>(
  * answer at all; both are refused. A call at the end of the conversation is
  * still simply awaiting its answer, which is not an error.
  */
-export const chatLegacyCallsOf = <Restored extends ChatResolvedTurn>(
-  turns: readonly (IRInputTurn | ResolvedTurn<Restored>)[],
+export const chatLegacyCallsOf = <Restored extends ChatRestoredAssistantTurn>(
+  turns: readonly (IRInputTurn | RestoredAssistantTurn<Restored>)[],
 ): ChatLegacyCalls => {
   const stated = statedCallIds(turns);
-  const callIds = new Map<ChatResolvedTurn, string>();
+  const callIds = new Map<ChatRestoredAssistantTurn, string>();
   const names = new Map<string, string>();
   let allocated = 0;
   for (const [index, piece] of turns.entries()) {
-    if (piece.kind !== 'resolved') continue;
+    if (piece.kind !== 'restored') continue;
     const name = piece.turn.function_call?.name;
     if (name === undefined) continue;
     const next = turns[index + 1];
@@ -71,13 +71,13 @@ export const chatLegacyCallsOf = <Restored extends ChatResolvedTurn>(
       : [];
     const unnamed = results.filter(item => item.call_id === undefined || !stated.has(item.call_id));
     if (unnamed.length > 1) {
-      throw new TranslatorInputError(`Cannot translate the answer to the legacy call '${name}': the turn after it states ${unnamed.length} results that name no call of this conversation, so nothing says which one answers it.`);
+      throw new TranslateInputException(`Cannot translate the answer to the legacy call '${name}': the turn after it states ${unnamed.length} results that name no call of this conversation, so nothing says which one answers it.`);
     }
     const [answer] = unnamed;
     if (answer === undefined) {
       // Only a conversation that moves past the call has missed its answer.
       if (index < turns.length - 1) {
-        throw new TranslatorInputError(`Cannot translate the legacy call '${name}': the turn after it does not answer it, and a wire that states no id for the call cannot say which later answer means it.`);
+        throw new TranslateInputException(`Cannot translate the legacy call '${name}': the turn after it does not answer it, and a wire that states no id for the call cannot say which later answer means it.`);
       }
       continue;
     }

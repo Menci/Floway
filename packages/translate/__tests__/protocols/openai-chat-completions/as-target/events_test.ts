@@ -2,9 +2,9 @@ import { expect, test } from 'vitest';
 
 import type { IRRecord } from '../../../../src/ir/output/stream.ts';
 import type { OpenAIChatCompletionsInputAssistantTurn } from '../../../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
-import { irFromOpenAIChatCompletions } from '../../../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
+import { readOpenAIChatCompletionsEvents } from '../../../../src/protocols/openai-chat-completions/as-target/events.ts';
 import type { RoundTripReader } from '../../../../src/round-trip/reader.ts';
-import { appendContent, collectEmittedFieldPlacements, createEmittedFieldState, createReferenceBuilder } from '../../../../src/round-trip/reference/reference-builder.ts';
+import { appendEmittedField, collectEmittedFieldPlacements, createEmittedFieldState, createReferenceBuilder } from '../../../../src/round-trip/reference/reference-builder.ts';
 import { referenceAssistantTurn } from '../../../../src/round-trip/reference/reference-selection.ts';
 import { restoreAssistantTurn } from '../../../../src/round-trip/reference/restore.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
@@ -20,7 +20,7 @@ const drain = async (frames: ReturnType<typeof chunk>[]): Promise<Map<number, Op
     builder: createReferenceBuilder(),
     onAssistantTurn: (choice, turn) => { turns.set(choice, turn); },
   };
-  for await (const _record of irFromOpenAIChatCompletions((async function* () { yield* frames; yield doneFrame(); })(), { roundTrip })) {}
+  for await (const _record of readOpenAIChatCompletionsEvents((async function* () { yield* frames; yield doneFrame(); })(), { roundTrip })) {}
   return turns;
 };
 
@@ -70,11 +70,11 @@ test('collects every native Chat choice when a sibling omits delta', async () =>
   ]);
 });
 
-const traceTools = async (frames: ReturnType<typeof chunk>[], options: { prefix?: string; customToolNames?: ReadonlySet<string>; flatIdentities?: ReadonlyMap<string, { readonly namespace: string; readonly name: string }> } = {}) => {
+const traceTools = async (frames: ReturnType<typeof chunk>[], options: { prefix?: string; customToolNames?: ReadonlySet<string>; originalToolNames?: ReadonlyMap<string, { readonly namespace: string; readonly name: string }> } = {}) => {
   const builder = createReferenceBuilder();
   const content = createEmittedFieldState(builder, 'text');
   let text = options.prefix ?? '';
-  appendContent(builder, content, text);
+  appendEmittedField(builder, content, text);
   let captured: Parameters<RoundTripReader<'openaiChatCompletions'>['onAssistantTurn']> | undefined;
   const appends: Extract<IRRecord, { type: 'write'; kind: 'append' }>[] = [];
   const assigns: Extract<IRRecord, { type: 'write'; kind: 'assign' }>[] = [];
@@ -82,20 +82,20 @@ const traceTools = async (frames: ReturnType<typeof chunk>[], options: { prefix?
     builder,
     onAssistantTurn: (...args) => { captured = args; },
   };
-  for await (const record of irFromOpenAIChatCompletions((async function* () { yield* frames; yield doneFrame(); })(), { roundTrip, customToolNames: options.customToolNames, flatIdentities: options.flatIdentities })) {
+  for await (const record of readOpenAIChatCompletionsEvents((async function* () { yield* frames; yield doneFrame(); })(), { roundTrip, customToolNames: options.customToolNames, originalToolNames: options.originalToolNames })) {
     if (record.type === 'write' && record.kind === 'assign') assigns.push(record);
     if (record.type !== 'write' || record.kind !== 'append') continue;
     const field = record.path.at(-1);
     if (field !== 'arguments' && field !== 'input') continue;
     appends.push(record);
-    appendContent(builder, content, record.value, record.textFragmentIds);
+    appendEmittedField(builder, content, record.value, record.textFragmentIds);
     text += record.value;
   }
   if (captured === undefined) throw new Error('Native Chat turn was not collected');
   const [, turn, fieldState] = captured;
   const finalized = await referenceAssistantTurn(turn, fieldState, builder, collectEmittedFieldPlacements(text, content));
   const hydrated = await restoreAssistantTurn('openaiChatCompletions', [text], finalized.targetTurn, finalized.referencedContentHashes);
-  expect(hydrated).toEqual({ ok: true, turn });
+  expect(hydrated).toEqual({ ok: true, value: turn });
   return { turn, fieldState, appends, assigns, finalized };
 };
 
@@ -172,14 +172,14 @@ test('states the pair again when a grouped call renames after it opened', async 
   // The request sent `web__run` for the pair `web`/`run`; a later fragment
   // renames the call. Both writes have to state the pair, or the item ends with
   // a flat name beside the group's namespace.
-  const flatIdentities = new Map([
+  const originalToolNames = new Map([
     ['web__run', { namespace: 'web', name: 'run' }],
     ['web__fetch', { namespace: 'web', name: 'fetch' }],
   ]);
   const result = await traceTools([
     chunk([{ index: 0, delta: { tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'web__run', arguments: '{"u":' } }] }, finish_reason: null }]),
     chunk([{ index: 0, delta: { tool_calls: [{ index: 0, function: { name: 'web__fetch', arguments: '"x"}' } }] }, finish_reason: 'tool_calls' }]),
-  ], { flatIdentities });
+  ], { originalToolNames });
 
   // The rename states the group's own name, and the opening already stated the
   // group, so no flat spelling survives on the item.

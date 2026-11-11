@@ -1,13 +1,13 @@
 import { test } from 'vitest';
 
 import type { IRInputTurn } from '../../../../src/ir/input/types.ts';
-import { openaiChatCompletionsRead } from '../../../../src/protocols/openai-chat-completions/as-source/input-to.ts';
+import { readOpenAIChatCompletionsRequest } from '../../../../src/protocols/openai-chat-completions/as-source/input-to.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const itemsOf = (turns: readonly IRInputTurn[]) => turns.flatMap(turn => [...turn.items]);
 
 test('a tool result keeps the call kind even when a sidecar states the turn that made the call', () => {
-  const reading = openaiChatCompletionsRead({
+  const reading = readOpenAIChatCompletionsRequest({
     model: 'gpt-test',
     messages: [
       { role: 'user', content: 'go' },

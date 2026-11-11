@@ -111,7 +111,7 @@ export class DumpAccumulator {
   private errorMeta: DumpErrorMeta | null = null;
   private readonly preparedRequestBody: Promise<PreparedDumpRequestBody>;
   // Pre-translation (target-protocol) view. Populated only on translated turns
-  // via `traverseTranslation`'s capture hook; stays empty on native turns.
+  // via `executeTranslation`'s capture hook; stays empty on native turns.
   private readonly upstreamEvents: DumpStreamEvent[] = [];
   private upstreamTargetApi: ChatTargetApi | null = null;
   private upstreamApiErrorEnvelope: { status: number; headers: Array<[string, string]>; body: Uint8Array } | null = null;
@@ -155,7 +155,7 @@ export class DumpAccumulator {
     this.events.push({ frame, ts: Date.now() - this.startedAt });
   }
 
-  // --- pre-translation upstream hooks (called from `traverseTranslation`) ---
+  // --- pre-translation upstream hooks (called from `executeTranslation`) ---
 
   // Stamped eagerly at capture construction so `meta.targetApi` is set even
   // when the upstream stream produces zero frames (e.g. immediate done).
@@ -172,7 +172,7 @@ export class DumpAccumulator {
   }
 
   // Captures the verbatim upstream api-error envelope (status/headers/body)
-  // BEFORE the optional `trip.restateUpstreamError` rewrite. The bytes variant of the
+  // BEFORE the `trip.error` rewrite. The bytes variant of the
   // upstream body; the dashboard renders it like any non-stream response body.
   upstreamApiError(error: { status: number; headers: Headers; body: Uint8Array }): void {
     this.upstreamApiErrorEnvelope = { status: error.status, headers: headerPairs(error.headers), body: error.body };

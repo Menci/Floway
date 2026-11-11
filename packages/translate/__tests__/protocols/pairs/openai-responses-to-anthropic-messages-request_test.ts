@@ -1,16 +1,10 @@
 import { test } from 'vitest';
 
-import { irInputToolsForChoice } from '../../../src/ir/input/select-tools.ts';
-import type { IRInputRequestHeader } from '../../../src/ir/input/types.ts';
-import { openaiResponsesRead } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesClientTool, type AnthropicMessagesToolResultBlock, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIResponsesInputMultiAgentCallOutputItem, OpenAIResponsesTool, OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
-const customToolNamesOf = (request: IRInputRequestHeader): ReadonlySet<string> =>
-  new Set((irInputToolsForChoice(request.tools, request.tool_choice) ?? [])
-    .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
 
 const minimalPayload = {
   model: 'claude-test',
@@ -31,18 +25,13 @@ const testBuildOptions: { fallbackMaxOutputTokens?: number } = {
   fallbackMaxOutputTokens: undefined,
 };
 
-// A Responses request carries two plain rewrites — which tools are freeform and
-// what each flattened namespace name was — that the request translation derives
-// and the event translation reads. A test asserting the payload also asserts
-// them, so this states where they come from.
 const buildWithTestSidecar = async (
   payload: OpenAIResponsesRequestPayloadEx,
   options: Partial<typeof testBuildOptions> = {},
 ) => {
   const streamed = { ...payload, stream: true };
-  const reading = openaiResponsesRead(streamed);
   const built = await buildTargetPayloadFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], streamed, { sidecarCodec: createTestSidecarCodec(), ...testBuildOptions, ...options });
-  return { target: built, customToolNames: customToolNamesOf(reading.request) };
+  return { target: built };
 };
 
 test('buildTargetPayload preserves unsafe JSON number tokens in function history', async () => {
@@ -524,7 +513,6 @@ test('buildTargetPayload wraps custom tools as single-string function tools and 
     parallel_tool_calls: true,
   });
 
-  assertEquals(result.customToolNames.has('apply_patch'), true);
   assertEquals(result.target.tools, [
     {
       type: 'custom',

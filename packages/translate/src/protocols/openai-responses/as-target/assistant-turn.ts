@@ -1,4 +1,4 @@
-import type { ReferenceState, ReferenceStateLeaves, ReferenceableValue, TextRule } from '../../../round-trip/reference/reference-type.ts';
+import type { ReferenceState, ReferenceStateLeaves, ReferenceableValue, TextRule } from '../../../round-trip/reference/types.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesOutputItemEx } from '@floway-dev/protocols/openai-responses';
 
 type OpenAIResponsesItemRule<T> = T extends { type: 'message' }
@@ -11,17 +11,18 @@ type OpenAIResponsesItemRule<T> = T extends { type: 'message' }
         ? { input: TextRule }
         : never;
 
-type OpenAIResponsesThinItem<T, Reference> = T extends unknown
+type OpenAIResponsesReferenceableItem<T, Reference> = T extends unknown
   ? OpenAIResponsesItemRule<T> extends never ? T : ReferenceableValue<T, OpenAIResponsesItemRule<T>, Reference>
   : never;
 export type OpenAIResponsesItemState<T, States extends ReferenceStateLeaves> = T extends unknown
   ? OpenAIResponsesItemRule<T> extends never ? never : ReferenceState<T, OpenAIResponsesItemRule<T>, States>
   : never;
 
-export type OpenAIResponsesReferenceableAssistantTurn<Reference> = OpenAIResponsesThinItem<CanonicalOpenAIResponsesInputItem, Reference>[];
+export type OpenAIResponsesInputAssistantTurn = CanonicalOpenAIResponsesInputItem[];
+export type OpenAIResponsesReferenceableInputAssistantTurn<Reference> = OpenAIResponsesReferenceableItem<CanonicalOpenAIResponsesInputItem, Reference>[];
 export type OpenAIResponsesOutputAssistantTurn = readonly OpenAIResponsesOutputItemEx[];
-export type OpenAIResponsesOutputAssistantState<States extends ReferenceStateLeaves> = Array<OpenAIResponsesItemState<OpenAIResponsesOutputItemEx, States> | undefined>;
-export type OpenAIResponsesAssistantState<States extends ReferenceStateLeaves> = Array<OpenAIResponsesItemState<CanonicalOpenAIResponsesInputItem, States> | undefined>;
+export type OpenAIResponsesOutputAssistantTurnState<States extends ReferenceStateLeaves> = Array<OpenAIResponsesItemState<OpenAIResponsesOutputItemEx, States> | undefined>;
+export type OpenAIResponsesInputAssistantTurnState<States extends ReferenceStateLeaves> = Array<OpenAIResponsesItemState<CanonicalOpenAIResponsesInputItem, States> | undefined>;
 
 type OpenAIResponsesOutputMessage = Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>;
 type OpenAIResponsesOutputContent = OpenAIResponsesOutputMessage['content'][number];
@@ -68,14 +69,14 @@ const outputItemToHistoryItem = (item: OpenAIResponsesOutputItemEx): CanonicalOp
 
 export function toOpenAIResponsesInputAssistantTurn(
   turn: OpenAIResponsesOutputAssistantTurn,
-): CanonicalOpenAIResponsesInputItem[];
+): OpenAIResponsesInputAssistantTurn;
 export function toOpenAIResponsesInputAssistantTurn<States extends ReferenceStateLeaves>(
   turn: OpenAIResponsesOutputAssistantTurn,
-  state: OpenAIResponsesOutputAssistantState<States>,
-): { turn: CanonicalOpenAIResponsesInputItem[]; state: OpenAIResponsesAssistantState<States> };
+  state: OpenAIResponsesOutputAssistantTurnState<States>,
+): { turn: OpenAIResponsesInputAssistantTurn; state: OpenAIResponsesInputAssistantTurnState<States> };
 export function toOpenAIResponsesInputAssistantTurn<States extends ReferenceStateLeaves>(
   turn: OpenAIResponsesOutputAssistantTurn,
-  state?: OpenAIResponsesOutputAssistantState<States>,
+  state?: OpenAIResponsesOutputAssistantTurnState<States>,
 ) {
   // Match the official SDK's history normalization for SDK-owned fields and replay-only item transforms.
   // https://github.com/openai/openai-node/blob/f57c9651c8d22ae82cacca27317cfa7126491011/src/lib/responses/ResponseInputItems.ts#L41-L67
@@ -86,7 +87,7 @@ export function toOpenAIResponsesInputAssistantTurn<States extends ReferenceStat
   });
   const inputTurn = items.map(item => item.turn);
   if (state === undefined) return inputTurn;
-  const inputState: OpenAIResponsesAssistantState<States> = [];
+  const inputState: OpenAIResponsesInputAssistantTurnState<States> = [];
   inputState.length = items.length;
   items.forEach(({ turn: inputItem, sourceIndex }, index) => {
     if (!Object.hasOwn(state, sourceIndex)) return;

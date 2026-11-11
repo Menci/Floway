@@ -1,9 +1,9 @@
-import type { AssistantTurnProtocol } from './assistant-turn.ts';
-import type { RoundTripTurnDigest } from './turn-digest.ts';
+import type { AssistantTurnProtocol } from './input-assistant-turn.ts';
 import type { SidecarCodec } from '../types.ts';
+import type { ReferenceableInputAssistantTurnFor } from './reference/assistant-turn-types.ts';
 import { tagContentReferences, untagContentReferences } from './reference/content-reference-tag.ts';
-import type { ContentReference } from './reference/reference-type.ts';
-import type { ReferenceableInputAssistantTurnFor } from './reference/registry.ts';
+import type { ContentReference } from './reference/types.ts';
+import type { RoundTripTurnDigest } from './turn-digest.ts';
 import { isJSONRecord } from '../shared/json/object.ts';
 
 const ROUND_TRIP_SIDECAR_VERSION = 1;
@@ -27,7 +27,7 @@ export type AnyRoundTripSidecar = RoundTripSidecarByTarget[AssistantTurnProtocol
 const isAssistantTurnProtocol = (value: unknown): value is AssistantTurnProtocol =>
   value === 'openaiChatCompletions' || value === 'openaiResponses' || value === 'anthropicMessages' || value === 'geminiGenerateContent';
 
-const assertTargetTurn = (target: AssistantTurnProtocol, value: unknown): void => {
+const assertTargetTurnContainer = (target: AssistantTurnProtocol, value: unknown): void => {
   if (target === 'openaiChatCompletions') {
     if (!isJSONRecord(value) || value.role !== 'assistant') throw new TypeError('Chat Completions assistant turn is invalid');
     return;
@@ -39,11 +39,11 @@ const assertTargetTurn = (target: AssistantTurnProtocol, value: unknown): void =
   if (!Array.isArray(value)) throw new TypeError(`${target} assistant turn is invalid`);
 };
 
-function assertRoundTripSidecar(value: Record<string, unknown>): asserts value is AnyRoundTripSidecar {
+function assertRoundTripEnvelope(value: Record<string, unknown>): asserts value is AnyRoundTripSidecar {
   if (value.v !== ROUND_TRIP_SIDECAR_VERSION) throw new TypeError('Assistant-turn sidecar version is unsupported');
   if (!isAssistantTurnProtocol(value.source)) throw new TypeError('Assistant-turn sidecar source is invalid');
   if (!isAssistantTurnProtocol(value.target)) throw new TypeError('Assistant-turn sidecar target is invalid');
-  assertTargetTurn(value.target, value.targetTurn);
+  assertTargetTurnContainer(value.target, value.targetTurn);
   if (value.referencedContentHashes !== undefined
     && (!Array.isArray(value.referencedContentHashes) || value.referencedContentHashes.some(hash => !(hash instanceof Uint8Array)))) {
     throw new TypeError('Assistant-turn sidecar referenced contents are invalid');
@@ -68,7 +68,7 @@ export const decodeRoundTripSidecar = async <Source extends AssistantTurnProtoco
   if (sidecar === undefined) return undefined;
   if (!isJSONRecord(sidecar) || typeof sidecar.source !== 'string') throw new TypeError('Authenticated assistant-turn sidecar envelope is invalid');
   if (sidecar.source !== source) return undefined;
-  assertRoundTripSidecar(sidecar);
+  assertRoundTripEnvelope(sidecar);
   return sidecar;
 };
 

@@ -1,6 +1,6 @@
 import { openaiResponsesConversationFromIR, openaiResponsesHeaderFromIR } from './input-from.ts';
-import { segmentTurns, type ResolvedTurn } from '../../../composition/segments.ts';
-import type { IRInputAddressedTurn } from '../../../ir/input/addressed.ts';
+import { segmentTurns, type RestoredAssistantTurn } from '../../../composition/segments.ts';
+import type { IRInputTurnWithCallIds } from '../../../ir/input/call-ids.ts';
 import type { IRInputRequestHeader } from '../../../ir/input/types.ts';
 import type { CanonicalOpenAIResponsesInputItem, CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
@@ -17,14 +17,14 @@ import type { CanonicalOpenAIResponsesInputItem, CanonicalOpenAIResponsesPayload
  */
 export const openaiResponsesPayloadFromSegments = (
   request: IRInputRequestHeader,
-  turns: readonly (IRInputAddressedTurn | ResolvedTurn<readonly CanonicalOpenAIResponsesInputItem[]>)[],
+  turns: readonly (IRInputTurnWithCallIds | RestoredAssistantTurn<readonly CanonicalOpenAIResponsesInputItem[]>)[],
 ): CanonicalOpenAIResponsesPayload => {
   const input: CanonicalOpenAIResponsesInputItem[] = [];
   // The prompt slot is stated once for the conversation, and segmentation is
   // what says which segment may state it.
   let instructions: string | undefined;
   for (const piece of segmentTurns(turns)) {
-    if (piece.kind === 'resolved') { input.push(...piece.turn); continue; }
+    if (piece.kind === 'restored') { input.push(...piece.turn); continue; }
     const segment = openaiResponsesConversationFromIR(piece.turns, piece.leading);
     if (segment.instructions != null) instructions ??= segment.instructions;
     input.push(...segment.input);

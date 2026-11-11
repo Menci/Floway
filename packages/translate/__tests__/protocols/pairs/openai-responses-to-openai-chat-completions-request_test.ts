@@ -1,23 +1,15 @@
 import { test } from 'vitest';
 
-import { irInputToolsForChoice } from '../../../src/ir/input/select-tools.ts';
-import type { IRInputRequestHeader } from '../../../src/ir/input/types.ts';
-import { openaiResponsesRead } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsFunctionTool, OpenAIChatCompletionsToolMessage } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesInputMultiAgentCallOutputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
-const customToolNamesOf = (request: IRInputRequestHeader): ReadonlySet<string> =>
-  new Set((irInputToolsForChoice(request.tools, request.tool_choice) ?? [])
-    .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
 
 const buildWithTestSidecar = async (payload: OpenAIResponsesRequestPayloadEx) => {
   const streamed = { ...payload, stream: true };
-  const reading = openaiResponsesRead(streamed);
   return {
     target: await buildTargetPayloadFor(pairs.responsesToChat[0], pairs.responsesToChat[1], streamed, { sidecarCodec: createTestSidecarCodec() }),
-    customToolNames: customToolNamesOf(reading.request),
   };
 };
 
@@ -377,7 +369,6 @@ test('buildTargetPayload wraps custom tools as single-string function tools and 
     text: null,
   });
 
-  assertEquals(result.customToolNames.has('apply_patch'), true);
   assertEquals(result.target.tools, [
     {
       type: 'function',

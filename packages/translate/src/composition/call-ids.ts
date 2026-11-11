@@ -1,7 +1,7 @@
-import type { ResolvedTurn } from './segments.ts';
-import type { IRInputAddressedAssistantItem, IRInputAddressedClientItem, IRInputAddressedTurn } from '../ir/input/addressed.ts';
+import type { RestoredAssistantTurn } from './segments.ts';
+import type { IRInputAssistantItemWithCallIds, IRInputClientItemWithCallIds, IRInputTurnWithCallIds } from '../ir/input/call-ids.ts';
 import type { IRInputTurn } from '../ir/input/types.ts';
-import { TranslatorInputError } from '../types.ts';
+import { TranslateInputException } from '../types.ts';
 
 /** A call that has been stated and is still waiting for its result. */
 export interface PendingCall {
@@ -28,9 +28,9 @@ export interface PendingCall {
  * a call, and nothing outside this step reads them.
  */
 export const assignCallIds = <Restored>(
-  turns: readonly (IRInputTurn | ResolvedTurn<Restored>)[],
+  turns: readonly (IRInputTurn | RestoredAssistantTurn<Restored>)[],
   restoredCalls: (turn: Restored) => readonly PendingCall[],
-): readonly (IRInputAddressedTurn | ResolvedTurn<Restored>)[] => {
+): readonly (IRInputTurnWithCallIds | RestoredAssistantTurn<Restored>)[] => {
   const pending: PendingCall[] = [];
   let allocated = 0;
   // Every id this conversation states, read before allocating anything: an id
@@ -38,7 +38,7 @@ export const assignCallIds = <Restored>(
   // conversation, or two calls would share it.
   const claimed = new Set<string>();
   for (const piece of turns) {
-    if (piece.kind === 'resolved') {
+    if (piece.kind === 'restored') {
       for (const call of restoredCalls(piece.turn)) if (call.callId !== undefined) claimed.add(call.callId);
     } else if (piece.kind === 'assistant') {
       for (const item of piece.items) {
@@ -63,28 +63,28 @@ export const assignCallIds = <Restored>(
       ? pending.findIndex(call => call.callId === callId)
       : name === undefined ? 0 : pending.findIndex(call => call.name === name);
     if (index < 0) {
-      throw new TranslatorInputError(callId === undefined
+      throw new TranslateInputException(callId === undefined
         ? `Cannot translate a tool result that answers no call${name === undefined ? ' (name: unstated)' : ` (name: ${name})`}.`
         : `Cannot translate a tool result answering '${callId}': no call of this conversation states that id.`);
     }
     const [answered] = pending.splice(index, 1);
-    if (answered === undefined) throw new TranslatorInputError('Cannot translate a tool result that answers no call.');
+    if (answered === undefined) throw new TranslateInputException('Cannot translate a tool result that answers no call.');
     return answered;
   };
 
-  return turns.map((piece): IRInputAddressedTurn | ResolvedTurn<Restored> => {
-    if (piece.kind === 'resolved') {
+  return turns.map((piece): IRInputTurnWithCallIds | RestoredAssistantTurn<Restored> => {
+    if (piece.kind === 'restored') {
       pending.push(...restoredCalls(piece.turn));
       return piece;
     }
     if (piece.kind === 'client') {
-      const items: IRInputAddressedClientItem[] = piece.items.map((item): IRInputAddressedClientItem => {
+      const items: IRInputClientItemWithCallIds[] = piece.items.map((item): IRInputClientItemWithCallIds => {
         if (item.type !== 'tool_result') return item;
         return { ...item, call_id: answer(item.call_id, item.name).callId };
       });
       return { kind: 'client', items };
     }
-    const items: IRInputAddressedAssistantItem[] = piece.items.map(item => {
+    const items: IRInputAssistantItemWithCallIds[] = piece.items.map(item => {
       if (item.type !== 'function_call' && item.type !== 'custom_tool_call') return item;
       const callId = item.call_id ?? allocate(item.name);
       pending.push({ name: item.name, callId });

@@ -1,4 +1,4 @@
-import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantState } from './assistant-turn.ts';
+import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantTurnState } from './assistant-turn.ts';
 import { usageToIR } from './usage.ts';
 import {
   createIRBuilder,
@@ -10,7 +10,7 @@ import {
 } from '../../../ir/output/stream.ts';
 import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
-import { appendField, createFieldState, invalidateField, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
+import { appendReadField, createReadFieldState, invalidateReadField, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import { errorPayloadFromWire } from '../../../shared/api-error.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -147,13 +147,13 @@ const irItemSeed = (item: OpenAIResponsesOutputItemEx): Record<string, unknown> 
 
 const itemId = (item: OpenAIResponsesOutputItemEx): unknown => 'id' in item ? item.id : undefined;
 
-export const irFromOpenAIResponses = async function* (
+export const readOpenAIResponsesEvents = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   options: { roundTrip: RoundTripReader<'openaiResponses'> },
 ): AsyncGenerator<IRRecord> {
   const builder = createIRBuilder();
   const items = new Map<number, ResponsesItemState>();
-  const outputState: OpenAIResponsesOutputAssistantState<ReadFieldStates> = [];
+  const outputState: OpenAIResponsesOutputAssistantTurnState<ReadFieldStates> = [];
   let started = false;
   let finished = false;
   let responseIdentity: { id: string; model: string } | undefined;
@@ -237,7 +237,7 @@ export const irFromOpenAIResponses = async function* (
   const ensureToolText = (state: ResponsesItemState): ResponsesTextPosition => {
     if (state.item === undefined || (state.type !== 'function_call' && state.type !== 'custom_tool_call')) throw new TypeError('Responses tool text requires a tool item');
     if (state.toolText !== undefined) return state.toolText;
-    const fieldState = createFieldState('text');
+    const fieldState = createReadFieldState('text');
     if (state.type === 'function_call') {
       const node = state.fieldState;
       node.arguments = fieldState;
@@ -253,7 +253,7 @@ export const irFromOpenAIResponses = async function* (
 
   const appendTextAtom = (target: ResponsesTextPosition, text: string): void => {
     if (target.fieldState === undefined) target.handle.append(target.path, text);
-    else target.handle.append(target.path, text, [appendField(options.roundTrip.builder, target.fieldState, text)]);
+    else target.handle.append(target.path, text, [appendReadField(options.roundTrip.builder, target.fieldState, text)]);
   };
   const reconcileAppend = (target: ResponsesTextPosition, snapshot: unknown): string => {
     const { handle, path } = target;
@@ -282,7 +282,7 @@ export const irFromOpenAIResponses = async function* (
       if (current === '') appendTextAtom(target, suffix);
       else {
         if (target.fieldState !== undefined) {
-          invalidateField(target.fieldState);
+          invalidateReadField(target.fieldState);
           target.fieldState = undefined;
         }
         handle.append(path, suffix);
@@ -309,7 +309,7 @@ export const irFromOpenAIResponses = async function* (
     if (index > length) throw new TypeError(`Responses ${field} index is not contiguous`);
     if (index === length) {
       state.item.initialize([field, index], '');
-      const fieldState = createFieldState('text');
+      const fieldState = createReadFieldState('text');
       const fieldStateNode = { text: fieldState };
       const nativeState = state.fieldState;
       const parts = nativeState[field] ??= [];
@@ -338,7 +338,7 @@ export const irFromOpenAIResponses = async function* (
     contentIndex: number,
     path: 'text' | 'refusal',
   ) => {
-    const fieldState = createFieldState('text');
+    const fieldState = createReadFieldState('text');
     const fieldStateNode: TextFieldStateNode = path === 'text' ? { text: fieldState } : { refusal: fieldState };
     const content = owner.fieldState.content ??= [];
     content[contentIndex] = fieldStateNode;

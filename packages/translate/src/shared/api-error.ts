@@ -1,6 +1,5 @@
 import { isJSONRecord, parseJSONObject } from './json/object.ts';
 import type { IRErrorPayload } from '../ir/common/error.ts';
-import type { RestatedSourceError, TranslatedApiError } from '../types.ts';
 
 const recordOf = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
   isJSONRecord(value) ? value : undefined;
@@ -19,8 +18,8 @@ const stringOf = (value: unknown): string | undefined => typeof value === 'strin
  * That is not a failure to parse: the answer is to leave the upstream's own
  * status, headers, and bytes alone rather than inventing a shape for them.
  */
-export const irErrorPayloadFromBody = (upstream: TranslatedApiError): IRErrorPayload | undefined => {
-  const text = new TextDecoder().decode(upstream.body);
+export const irErrorPayloadFromBody = (body: Uint8Array): IRErrorPayload | undefined => {
+  const text = new TextDecoder().decode(body);
   let parsed: Readonly<Record<string, unknown>>;
   try {
     parsed = parseJSONObject(text);
@@ -132,12 +131,12 @@ export const errorDetailsOf = (error: IRErrorPayload, representedFields: readonl
  * caller as the body is.
  */
 export const restateError = (
-  upstream: TranslatedApiError,
+  status: number,
+  headers: Headers,
   body: unknown,
-  status?: number,
-): RestatedSourceError => ({
-  status: status ?? upstream.status,
-  headers: restatedHeaders(upstream.headers),
+) => ({
+  status,
+  headers: restatedHeaders(headers),
   body,
 });
 

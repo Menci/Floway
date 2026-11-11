@@ -1,26 +1,26 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { IRJSONObject } from '../../../src/ir/common/json.ts';
-import { collectAnthropicMessagesTextViews } from '../../../src/protocols/anthropic-messages/as-source/round-trip.ts';
-import type { AnthropicMessagesReferenceableAssistantTurn } from '../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
-import { collectGeminiGenerateContentTextViews } from '../../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
-import type { GeminiGenerateContentAssistantState, GeminiGenerateContentInputAssistantTurn } from '../../../src/protocols/gemini-generate-content/as-target/assistant-turn.ts';
-import type { OpenAIChatCompletionsAssistantState, OpenAIChatCompletionsInputAssistantTurn } from '../../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
+import { collectAnthropicMessagesTextPlacements } from '../../../src/protocols/anthropic-messages/as-source/round-trip.ts';
+import type { AnthropicMessagesReferenceableInputAssistantTurn } from '../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
+import { collectGeminiGenerateContentTextPlacements } from '../../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
+import type { GeminiGenerateContentInputAssistantTurnState, GeminiGenerateContentInputAssistantTurn } from '../../../src/protocols/gemini-generate-content/as-target/assistant-turn.ts';
+import type { OpenAIChatCompletionsInputAssistantTurnState, OpenAIChatCompletionsInputAssistantTurn } from '../../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
 import {
-  appendContent,
-  appendField,
+  appendEmittedField,
+  appendReadField,
   collectEmittedFieldPlacements,
   createReferenceBuilder,
   createEmittedFieldState,
-  createFieldState,
+  createReadFieldState,
   createFieldReferencer,
-  invalidateField,
+  invalidateReadField,
   type EmittedFieldStates,
   type ReadFieldStates,
 } from '../../../src/round-trip/reference/reference-builder.ts';
 import { referenceAssistantTurn } from '../../../src/round-trip/reference/reference-selection.ts';
-import { ContentReference } from '../../../src/round-trip/reference/reference-type.ts';
 import { restoreAssistantTurn } from '../../../src/round-trip/reference/restore.ts';
+import { ContentReference } from '../../../src/round-trip/reference/types.ts';
 import { hashRoundTripContent } from '../../../src/round-trip/turn-digest.ts';
 import { parseJSONObject } from '../../../src/shared/json/object.ts';
 
@@ -29,36 +29,36 @@ describe('ReferenceBuilder', () => {
     const builder = createReferenceBuilder();
     const visible = createEmittedFieldState(builder, 'text');
     const transcript = createEmittedFieldState(builder, 'text');
-    appendContent(builder, visible, 'visible');
-    appendContent(builder, transcript, 'transcript');
+    appendEmittedField(builder, visible, 'visible');
+    appendEmittedField(builder, transcript, 'transcript');
     const turn: GeminiGenerateContentInputAssistantTurn = [{
       role: 'model',
       parts: [{ text: 'visible', audioTranscription: { text: 'transcript' } }],
     }];
-    const state: GeminiGenerateContentAssistantState<EmittedFieldStates> = [{
+    const state: GeminiGenerateContentInputAssistantTurnState<EmittedFieldStates> = [{
       parts: [{ text: visible, audioTranscription: { text: transcript } }],
     }];
 
-    expect(collectEmittedFieldPlacements(turn, state, collectGeminiGenerateContentTextViews(turn))).toEqual(new Map([
-      [visible.contentId, { enclosingText: 'visible', offset: 0 }],
-      [transcript.contentId, { enclosingText: 'transcript', offset: 0 }],
+    expect(collectEmittedFieldPlacements(turn, state, collectGeminiGenerateContentTextPlacements(turn))).toEqual(new Map([
+      [visible.emittedFieldId, { enclosingText: 'visible', offset: 0 }],
+      [transcript.emittedFieldId, { enclosingText: 'transcript', offset: 0 }],
     ]));
   });
 
   it('keeps provenance directly in sparse state leaves across shallow copies', async () => {
     const builder = createReferenceBuilder();
-    const field = createFieldState('text');
-    const first = appendField(builder, field, 'hel');
-    const second = appendField(builder, field, 'lo');
+    const field = createReadFieldState('text');
+    const first = appendReadField(builder, field, 'hel');
+    const second = appendReadField(builder, field, 'lo');
     const content = createEmittedFieldState(builder, 'text');
-    appendContent(builder, content, '[');
-    appendContent(builder, content, 'hello', [first, second]);
-    appendContent(builder, content, ']');
+    appendEmittedField(builder, content, '[');
+    appendEmittedField(builder, content, 'hello', [first, second]);
+    appendEmittedField(builder, content, ']');
 
     const fieldState = { content: [{ text: { ...field } }] };
     const contentState = { content: [{ text: { ...content } }] };
     expect(fieldState.content[0].text).toMatchObject({ kind: 'text', text: 'hello', textFragmentIds: [first, second] });
-    expect(contentState.content[0].text).toMatchObject({ kind: 'text', contentId: 0, text: '[hello]' });
+    expect(contentState.content[0].text).toMatchObject({ kind: 'text', emittedFieldId: 0, text: '[hello]' });
 
     const turn = { role: 'assistant' as const, content: [{ type: 'text' as const, text: '[hello]', citations: null }] };
     const finalizer = createFieldReferencer(builder, collectEmittedFieldPlacements(turn, contentState));
@@ -69,12 +69,12 @@ describe('ReferenceBuilder', () => {
     const builder = createReferenceBuilder();
     const left = 'left segment '.repeat(30);
     const right = 'right segment '.repeat(30);
-    const fields = [createFieldState('text'), createFieldState('text')];
+    const fields = [createReadFieldState('text'), createReadFieldState('text')];
     const contents = [createEmittedFieldState(builder, 'text'), createEmittedFieldState(builder, 'text')];
-    appendContent(builder, contents[0], left, [appendField(builder, fields[0], left)]);
-    appendContent(builder, contents[1], right, [appendField(builder, fields[1], right)]);
+    appendEmittedField(builder, contents[0], left, [appendReadField(builder, fields[0], left)]);
+    appendEmittedField(builder, contents[1], right, [appendReadField(builder, fields[1], right)]);
     const turn = { role: 'assistant' as const, content: [{ type: 'text' as const, text: left, citations: null }, { type: 'text' as const, text: right, citations: null }] };
-    const views = collectEmittedFieldPlacements(turn, { content: contents.map(text => ({ text })) }, collectAnthropicMessagesTextViews([turn]));
+    const views = collectEmittedFieldPlacements(turn, { content: contents.map(text => ({ text })) }, collectAnthropicMessagesTextPlacements([turn]));
     const finalizer = createFieldReferencer(builder, views);
     const digest = vi.spyOn(crypto.subtle, 'digest');
     try {
@@ -89,13 +89,13 @@ describe('ReferenceBuilder', () => {
 
   it('looks up equal complete texts once per content ID rather than once per SSE atom', async () => {
     const builder = createReferenceBuilder();
-    const fields = [createFieldState('text'), createFieldState('text')];
+    const fields = [createReadFieldState('text'), createReadFieldState('text')];
     const contents = fields.map(() => createEmittedFieldState(builder, 'text'));
     const texts = contents.map(() => Array.from({ length: 128 }, () => 'abcdefgh').join(''));
     for (const [index, field] of fields.entries()) {
       for (let offset = 0; offset < texts[index].length; offset += 8) {
         const piece = texts[index].slice(offset, offset + 8);
-        appendContent(builder, contents[index], piece, [appendField(builder, field, piece)]);
+        appendEmittedField(builder, contents[index], piece, [appendReadField(builder, field, piece)]);
       }
     }
     const views = new Map(contents.flatMap((content, index) => [...collectEmittedFieldPlacements(texts[index], content)]));
@@ -119,45 +119,45 @@ describe('ReferenceBuilder', () => {
 
   it('coalesces shifted ranges across canonical parts and preserves original-leaf validation', async () => {
     const builder = createReferenceBuilder();
-    const field = createFieldState('text');
+    const field = createReadFieldState('text');
     const contents = [createEmittedFieldState(builder, 'text'), createEmittedFieldState(builder, 'text')];
     const left = 'prefix \ud83d';
     const right = '\ude00 suffix';
-    appendContent(builder, contents[0], left, [appendField(builder, field, left)]);
-    appendContent(builder, contents[1], right, [appendField(builder, field, right)]);
+    appendEmittedField(builder, contents[0], left, [appendReadField(builder, field, left)]);
+    appendEmittedField(builder, contents[1], right, [appendReadField(builder, field, right)]);
     const turn = { role: 'assistant' as const, content: [{ type: 'text' as const, text: left, citations: null }, { type: 'text' as const, text: right, citations: null }] };
     const state = { content: contents.map(text => ({ text })) };
-    const finalizer = createFieldReferencer(builder, collectEmittedFieldPlacements(turn, state, collectAnthropicMessagesTextViews([turn])));
+    const finalizer = createFieldReferencer(builder, collectEmittedFieldPlacements(turn, state, collectAnthropicMessagesTextPlacements([turn])));
     expect(await finalizer.referenceField(left + right, field)).toMatchObject({ parts: [0] });
     const changed = { ...turn, content: [{ ...turn.content[0], text: 'changed' }, turn.content[1]] };
-    const changedFinalizer = createFieldReferencer(builder, collectEmittedFieldPlacements(changed, state, collectAnthropicMessagesTextViews([changed])));
+    const changedFinalizer = createFieldReferencer(builder, collectEmittedFieldPlacements(changed, state, collectAnthropicMessagesTextPlacements([changed])));
     expect(await changedFinalizer.referenceField(left + right, field)).toBe(left + right);
     expect(changedFinalizer.referencedContentHashes).toEqual([]);
   });
 
   it('resolves every original SSE atom within one merged output IR append', async () => {
     const builder = createReferenceBuilder();
-    const field = createFieldState('text');
-    const first = appendField(builder, field, 'hel');
-    const second = appendField(builder, field, 'lo');
+    const field = createReadFieldState('text');
+    const first = appendReadField(builder, field, 'hel');
+    const second = appendReadField(builder, field, 'lo');
     const content = createEmittedFieldState(builder, 'text');
-    appendContent(builder, content, '[');
-    appendContent(builder, content, 'hello', [first, second]);
-    appendContent(builder, content, ']');
+    appendEmittedField(builder, content, '[');
+    appendEmittedField(builder, content, 'hello', [first, second]);
+    appendEmittedField(builder, content, ']');
     const finalizer = createFieldReferencer(builder, collectEmittedFieldPlacements('[hello]', content));
     expect(await finalizer.referenceField('hello', field)).toMatchObject({ parts: [[0, 1, 6]] });
   });
   it('resolves B SSE atoms directly into one A content occurrence', async () => {
     const builder = createReferenceBuilder();
-    const field = createFieldState('text');
-    const first = appendField(builder, field, 'hel');
-    const second = appendField(builder, field, 'lo');
+    const field = createReadFieldState('text');
+    const first = appendReadField(builder, field, 'hel');
+    const second = appendReadField(builder, field, 'lo');
     const content = createEmittedFieldState(builder, 'text');
 
-    appendContent(builder, content, '[');
-    appendContent(builder, content, 'hel', [first]);
-    appendContent(builder, content, 'lo', [second]);
-    appendContent(builder, content, ']');
+    appendEmittedField(builder, content, '[');
+    appendEmittedField(builder, content, 'hel', [first]);
+    appendEmittedField(builder, content, 'lo', [second]);
+    appendEmittedField(builder, content, ']');
 
     const finalizer = createFieldReferencer(builder, collectEmittedFieldPlacements('[hello]', content));
     const reference = await finalizer.referenceField('hello', field);
@@ -170,12 +170,12 @@ describe('ReferenceBuilder', () => {
 
   it('simplifies a reference covering the whole hashed content', async () => {
     const builder = createReferenceBuilder();
-    const field = createFieldState('text');
-    const first = appendField(builder, field, 'hel');
-    const second = appendField(builder, field, 'lo');
+    const field = createReadFieldState('text');
+    const first = appendReadField(builder, field, 'hel');
+    const second = appendReadField(builder, field, 'lo');
     const content = createEmittedFieldState(builder, 'text');
-    appendContent(builder, content, 'hel', [first]);
-    appendContent(builder, content, 'lo', [second]);
+    appendEmittedField(builder, content, 'hel', [first]);
+    appendEmittedField(builder, content, 'lo', [second]);
 
     const finalizer = createFieldReferencer(builder, collectEmittedFieldPlacements('hello', content));
     const reference = await finalizer.referenceField('hello', field);
@@ -186,11 +186,11 @@ describe('ReferenceBuilder', () => {
 
   it('keeps the whole original field when any SSE atom is unresolved', async () => {
     const builder = createReferenceBuilder();
-    const field = createFieldState('text');
-    const first = appendField(builder, field, 'hel');
-    appendField(builder, field, 'lo');
+    const field = createReadFieldState('text');
+    const first = appendReadField(builder, field, 'hel');
+    appendReadField(builder, field, 'lo');
     const content = createEmittedFieldState(builder, 'text');
-    appendContent(builder, content, 'hel', [first]);
+    appendEmittedField(builder, content, 'hel', [first]);
 
     const finalizer = createFieldReferencer(builder, collectEmittedFieldPlacements('hel', content));
     expect(await finalizer.referenceField('hello', field)).toBe('hello');
@@ -199,27 +199,27 @@ describe('ReferenceBuilder', () => {
 
   it('keeps an invalidated field literal and rejects later provenance capture', async () => {
     const builder = createReferenceBuilder();
-    const field = createFieldState('text');
-    const partId = appendField(builder, field, 'hello');
+    const field = createReadFieldState('text');
+    const partId = appendReadField(builder, field, 'hello');
     const content = createEmittedFieldState(builder, 'text');
-    appendContent(builder, content, 'hello', [partId]);
+    appendEmittedField(builder, content, 'hello', [partId]);
     const copiedParent = { text: field };
-    invalidateField(field);
+    invalidateReadField(field);
 
     expect(copiedParent.text).toBe(field);
     expect(copiedParent.text.valid).toBe(false);
     const finalizer = createFieldReferencer(builder, collectEmittedFieldPlacements('hello', content));
     expect(await finalizer.referenceField('hello', field)).toBe('hello');
     expect(finalizer.referencedContentHashes).toEqual([]);
-    expect(() => appendField(builder, field, '!')).toThrowError('Cannot append provenance to an invalid field');
+    expect(() => appendReadField(builder, field, '!')).toThrowError('Cannot append provenance to an invalid field');
   });
 
-  it('discards resolutions when the final input text view changed', async () => {
+  it('discards fragmentPlacements when the final input text view changed', async () => {
     const builder = createReferenceBuilder();
-    const field = createFieldState('text');
-    const partId = appendField(builder, field, 'hello');
+    const field = createReadFieldState('text');
+    const partId = appendReadField(builder, field, 'hello');
     const content = createEmittedFieldState(builder, 'text');
-    appendContent(builder, content, 'hello', [partId]);
+    appendEmittedField(builder, content, 'hello', [partId]);
 
     const emittedFieldPlacements = collectEmittedFieldPlacements('changed', content);
     const finalizer = createFieldReferencer(builder, emittedFieldPlacements);
@@ -229,25 +229,25 @@ describe('ReferenceBuilder', () => {
 
   it('rejects a second output occurrence for the same SSE atom', () => {
     const builder = createReferenceBuilder();
-    const field = createFieldState('text');
-    const partId = appendField(builder, field, 'same');
+    const field = createReadFieldState('text');
+    const partId = appendReadField(builder, field, 'same');
     const first = createEmittedFieldState(builder, 'text');
     const second = createEmittedFieldState(builder, 'text');
-    appendContent(builder, first, 'same', [partId]);
+    appendEmittedField(builder, first, 'same', [partId]);
 
-    expect(() => appendContent(builder, second, 'same', [partId])).toThrowError('ReferenceBuilder fragment 0 has multiple output occurrences');
+    expect(() => appendEmittedField(builder, second, 'same', [partId])).toThrowError('ReferenceBuilder fragment 0 has multiple output occurrences');
   });
 
   it('deduplicates equal final content hashes', async () => {
     const builder = createReferenceBuilder();
-    const firstField = createFieldState('text');
-    const secondField = createFieldState('text');
-    const firstPart = appendField(builder, firstField, 'same');
-    const secondPart = appendField(builder, secondField, 'same');
+    const firstField = createReadFieldState('text');
+    const secondField = createReadFieldState('text');
+    const firstPart = appendReadField(builder, firstField, 'same');
+    const secondPart = appendReadField(builder, secondField, 'same');
     const firstContent = createEmittedFieldState(builder, 'text');
     const secondContent = createEmittedFieldState(builder, 'text');
-    appendContent(builder, firstContent, 'same', [firstPart]);
-    appendContent(builder, secondContent, 'same', [secondPart]);
+    appendEmittedField(builder, firstContent, 'same', [firstPart]);
+    appendEmittedField(builder, secondContent, 'same', [secondPart]);
     const emittedFieldPlacements = new Map([
       ...collectEmittedFieldPlacements('same', firstContent),
       ...collectEmittedFieldPlacements('same', secondContent),
@@ -269,26 +269,26 @@ describe('ReferenceBuilder', () => {
 
   it('finalizes nested assistant state without materializing sparse holes', async () => {
     const builder = createReferenceBuilder();
-    const contentField = createFieldState('text');
-    const argumentsField = createFieldState('text');
-    const contentPart = appendField(builder, contentField, 'answer');
-    const argumentsPart = appendField(builder, argumentsField, '{}');
+    const contentField = createReadFieldState('text');
+    const argumentsField = createReadFieldState('text');
+    const contentPart = appendReadField(builder, contentField, 'answer');
+    const argumentsPart = appendReadField(builder, argumentsField, '{}');
     const content = createEmittedFieldState(builder, 'text');
     const argumentsContent = createEmittedFieldState(builder, 'text');
-    appendContent(builder, content, 'answer', [contentPart]);
-    appendContent(builder, argumentsContent, '{}', [argumentsPart]);
+    appendEmittedField(builder, content, 'answer', [contentPart]);
+    appendEmittedField(builder, argumentsContent, '{}', [argumentsPart]);
     const toolCalls: NonNullable<OpenAIChatCompletionsInputAssistantTurn['tool_calls']> = [];
     toolCalls.length = 2;
     toolCalls[1] = { id: 'call', type: 'function', function: { name: 'lookup', arguments: '{}' } };
     const turn: OpenAIChatCompletionsInputAssistantTurn = { role: 'assistant', name: 'assistant', content: 'answer', tool_calls: toolCalls };
-    const fieldToolCalls: NonNullable<OpenAIChatCompletionsAssistantState<ReadFieldStates>['tool_calls']> = [];
+    const fieldToolCalls: NonNullable<OpenAIChatCompletionsInputAssistantTurnState<ReadFieldStates>['tool_calls']> = [];
     fieldToolCalls.length = 2;
     fieldToolCalls[1] = { function: { arguments: argumentsField } };
-    const fieldState: OpenAIChatCompletionsAssistantState<ReadFieldStates> = { content: contentField, tool_calls: fieldToolCalls };
-    const contentToolCalls: NonNullable<OpenAIChatCompletionsAssistantState<EmittedFieldStates>['tool_calls']> = [];
+    const fieldState: OpenAIChatCompletionsInputAssistantTurnState<ReadFieldStates> = { content: contentField, tool_calls: fieldToolCalls };
+    const contentToolCalls: NonNullable<OpenAIChatCompletionsInputAssistantTurnState<EmittedFieldStates>['tool_calls']> = [];
     contentToolCalls.length = 2;
     contentToolCalls[1] = { function: { arguments: argumentsContent } };
-    const contentState: OpenAIChatCompletionsAssistantState<EmittedFieldStates> = { content, tool_calls: contentToolCalls };
+    const contentState: OpenAIChatCompletionsInputAssistantTurnState<EmittedFieldStates> = { content, tool_calls: contentToolCalls };
     const finalized = await referenceAssistantTurn<'openaiChatCompletions'>(turn, fieldState, builder, collectEmittedFieldPlacements(turn, contentState));
 
     expect(finalized.targetTurn.name).toBe('assistant');
@@ -303,13 +303,13 @@ describe('ReferenceBuilder', () => {
 
   it('omits referenced contents when every B field remains literal despite valid A views', async () => {
     const builder = createReferenceBuilder();
-    const field = createFieldState('text');
-    appendField(builder, field, 'literal B text');
+    const field = createReadFieldState('text');
+    appendReadField(builder, field, 'literal B text');
     const content = createEmittedFieldState(builder, 'text');
-    appendContent(builder, content, 'visible A text');
+    appendEmittedField(builder, content, 'visible A text');
     const turn: OpenAIChatCompletionsInputAssistantTurn = { role: 'assistant', content: 'literal B text' };
-    const fieldState: OpenAIChatCompletionsAssistantState<ReadFieldStates> = { content: field };
-    const contentState: OpenAIChatCompletionsAssistantState<EmittedFieldStates> = { content };
+    const fieldState: OpenAIChatCompletionsInputAssistantTurnState<ReadFieldStates> = { content: field };
+    const contentState: OpenAIChatCompletionsInputAssistantTurnState<EmittedFieldStates> = { content };
 
     const finalized = await referenceAssistantTurn<'openaiChatCompletions'>(
       turn,
@@ -324,14 +324,14 @@ describe('ReferenceBuilder', () => {
 
   it('lists only referenced contents when other valid views stay literal', async () => {
     const builder = createReferenceBuilder();
-    const referenced = createFieldState('text');
-    const literal = createFieldState('text');
-    const part = appendField(builder, referenced, 'referenced');
-    appendField(builder, literal, 'literal B text');
+    const referenced = createReadFieldState('text');
+    const literal = createReadFieldState('text');
+    const part = appendReadField(builder, referenced, 'referenced');
+    appendReadField(builder, literal, 'literal B text');
     const referencedContent = createEmittedFieldState(builder, 'text');
     const literalContent = createEmittedFieldState(builder, 'text');
-    appendContent(builder, referencedContent, 'referenced', [part]);
-    appendContent(builder, literalContent, 'visible A text');
+    appendEmittedField(builder, referencedContent, 'referenced', [part]);
+    appendEmittedField(builder, literalContent, 'visible A text');
     const views = new Map([
       ...collectEmittedFieldPlacements('referenced', referencedContent),
       ...collectEmittedFieldPlacements('visible A text', literalContent),
@@ -347,7 +347,7 @@ describe('ReferenceBuilder', () => {
   it('rejects a paired state whose container shape does not match the turn', async () => {
     const builder = createReferenceBuilder();
     const turn: OpenAIChatCompletionsInputAssistantTurn = { role: 'assistant', tool_calls: [] };
-    const state: OpenAIChatCompletionsAssistantState<ReadFieldStates> = {};
+    const state: OpenAIChatCompletionsInputAssistantTurnState<ReadFieldStates> = {};
     Reflect.set(state, 'tool_calls', {});
 
     await expect(referenceAssistantTurn<'openaiChatCompletions'>(turn, state, builder, new Map())).rejects.toThrow('ReferenceBuilder state object does not match its assistant turn');
@@ -355,22 +355,22 @@ describe('ReferenceBuilder', () => {
 
   it('creates slices across two A fields in UTF-16 coordinates', async () => {
     const builder = createReferenceBuilder();
-    const field = createFieldState('text');
+    const field = createReadFieldState('text');
     const text = '\ud800a\udc00?';
     const firstText = text.slice(0, 2);
     const secondText = text.slice(2);
-    const firstPart = appendField(builder, field, firstText);
-    const secondPart = appendField(builder, field, secondText);
+    const firstPart = appendReadField(builder, field, firstText);
+    const secondPart = appendReadField(builder, field, secondText);
     const firstCarrier = `x${firstText}y`;
     const secondCarrier = `[${secondText}]`;
     const firstResolved = createEmittedFieldState(builder, 'text');
     const secondResolved = createEmittedFieldState(builder, 'text');
-    appendContent(builder, firstResolved, 'x');
-    appendContent(builder, firstResolved, firstText, [firstPart]);
-    appendContent(builder, firstResolved, 'y');
-    appendContent(builder, secondResolved, '[');
-    appendContent(builder, secondResolved, secondText, [secondPart]);
-    appendContent(builder, secondResolved, ']');
+    appendEmittedField(builder, firstResolved, 'x');
+    appendEmittedField(builder, firstResolved, firstText, [firstPart]);
+    appendEmittedField(builder, firstResolved, 'y');
+    appendEmittedField(builder, secondResolved, '[');
+    appendEmittedField(builder, secondResolved, secondText, [secondPart]);
+    appendEmittedField(builder, secondResolved, ']');
     const views = new Map([
       ...collectEmittedFieldPlacements(firstCarrier, firstResolved),
       ...collectEmittedFieldPlacements(secondCarrier, secondResolved),
@@ -385,48 +385,48 @@ describe('ReferenceBuilder', () => {
 
 it('uses the final JSON text view to reference and restore a B object', async () => {
   const builder = createReferenceBuilder();
-  const field = createFieldState('json');
+  const field = createReadFieldState('json');
   const json = '{"x":1}';
-  const partId = appendField(builder, field, json);
+  const partId = appendReadField(builder, field, json);
   const content = createEmittedFieldState(builder, 'json');
-  appendContent(builder, content, json, [partId]);
+  appendEmittedField(builder, content, json, [partId]);
   const original = parseJSONObject(json);
   const finalizer = createFieldReferencer(builder, collectEmittedFieldPlacements(original, content));
   const reference = await finalizer.referenceField(original, field);
 
   expect(reference).toBeInstanceOf(ContentReference);
   if (!(reference instanceof ContentReference) || reference.kind !== 'json') throw new Error('Expected a JSON reference');
-  const turn: AnthropicMessagesReferenceableAssistantTurn<ContentReference> = {
+  const turn: AnthropicMessagesReferenceableInputAssistantTurn<ContentReference> = {
     role: 'assistant',
     content: [{ type: 'tool_use', id: 'call', name: 'lookup', input: reference }],
   };
   expect(await restoreAssistantTurn('anthropicMessages', [original], turn, finalizer.referencedContentHashes)).toEqual({
     ok: true,
-    turn: { role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'lookup', input: original }] },
+    value: { role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'lookup', input: original }] },
   });
 });
 
 it('round-trips raw JSON numbers and keeps changed key order literal', async () => {
   const builder = createReferenceBuilder();
   const json = '{"n":9007199254740993}';
-  const field = createFieldState('json');
-  const partId = appendField(builder, field, json);
+  const field = createReadFieldState('json');
+  const partId = appendReadField(builder, field, json);
   const content = createEmittedFieldState(builder, 'json');
-  appendContent(builder, content, json, [partId]);
+  appendEmittedField(builder, content, json, [partId]);
   const original = parseJSONObject(json);
   const finalizer = createFieldReferencer(builder, collectEmittedFieldPlacements(original, content));
   const reference = await finalizer.referenceField(original, field);
   if (!(reference instanceof ContentReference) || reference.kind !== 'json') throw new Error('Expected a JSON reference');
-  const turn: AnthropicMessagesReferenceableAssistantTurn<ContentReference> = { role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'lookup', input: reference }] };
+  const turn: AnthropicMessagesReferenceableInputAssistantTurn<ContentReference> = { role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'lookup', input: reference }] };
   const hydrated = await restoreAssistantTurn('anthropicMessages', [original], turn, finalizer.referencedContentHashes);
   expect(hydrated.ok).toBe(true);
   if (!hydrated.ok) throw new Error('Expected JSON hydration');
-  expect(JSON.stringify(hydrated.turn.content[0])).toContain('9007199254740993');
+  expect(JSON.stringify(hydrated.value.content[0])).toContain('9007199254740993');
 
-  const reorderedField = createFieldState('json');
-  const reorderedPart = appendField(builder, reorderedField, '{"a":1,"b":2}');
+  const reorderedField = createReadFieldState('json');
+  const reorderedPart = appendReadField(builder, reorderedField, '{"a":1,"b":2}');
   const reorderedContent = createEmittedFieldState(builder, 'text');
-  appendContent(builder, reorderedContent, '{"a":1,"b":2}', [reorderedPart]);
+  appendEmittedField(builder, reorderedContent, '{"a":1,"b":2}', [reorderedPart]);
   const reorderedFinalizer = createFieldReferencer(builder, collectEmittedFieldPlacements('{"a":1,"b":2}', reorderedContent));
   const reorderedOriginal: IRJSONObject = { b: 2, a: 1 };
   expect(await reorderedFinalizer.referenceField(reorderedOriginal, reorderedField)).toBe(reorderedOriginal);
@@ -434,10 +434,10 @@ it('round-trips raw JSON numbers and keeps changed key order literal', async () 
 
 it('keeps JSON fields literal when their string turns do not restore the original object', async () => {
   const builder = createReferenceBuilder();
-  const field = createFieldState('json');
-  const partId = appendField(builder, field, '{"x":1}');
+  const field = createReadFieldState('json');
+  const partId = appendReadField(builder, field, '{"x":1}');
   const content = createEmittedFieldState(builder, 'text');
-  appendContent(builder, content, '{"x":1}', [partId]);
+  appendEmittedField(builder, content, '{"x":1}', [partId]);
   const original: IRJSONObject = { x: 2 };
   const finalizer = createFieldReferencer(builder, collectEmittedFieldPlacements('{"x":1}', content));
 
@@ -447,11 +447,11 @@ it('keeps JSON fields literal when their string turns do not restore the origina
 
 it('keeps the original JSON object when the collected B text is incomplete', async () => {
   const builder = createReferenceBuilder();
-  const field = createFieldState('json');
+  const field = createReadFieldState('json');
   const incomplete = '{"x":1';
-  const partId = appendField(builder, field, incomplete);
+  const partId = appendReadField(builder, field, incomplete);
   const content = createEmittedFieldState(builder, 'text');
-  appendContent(builder, content, incomplete, [partId]);
+  appendEmittedField(builder, content, incomplete, [partId]);
   const original: IRJSONObject = { x: 1 };
   const finalizer = createFieldReferencer(builder, collectEmittedFieldPlacements(incomplete, content));
 

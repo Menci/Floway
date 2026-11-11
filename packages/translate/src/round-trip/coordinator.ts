@@ -1,10 +1,10 @@
-import type { InputAssistantTurnByProtocol, InputAssistantTurnFor } from './assistant-turn.ts';
+import type { InputAssistantTurnByProtocol, InputAssistantTurnFor } from './input-assistant-turn.ts';
 import type { RoundTripReader } from './reader.ts';
 import type { SidecarCodec } from '../types.ts';
+import type { InputAssistantTurnStateFor } from './reference/assistant-turn-types.ts';
 import type { ReadFieldStates, ReferenceBuilder } from './reference/reference-builder.ts';
 import { collectEmittedFieldPlacements, createReferenceBuilder } from './reference/reference-builder.ts';
 import { referenceAssistantTurn } from './reference/reference-selection.ts';
-import type { InputAssistantTurnStateFor } from './reference/registry.ts';
 import type { RoundTripSidecar } from './sidecar.ts';
 import { encodeRoundTripSidecar } from './sidecar.ts';
 import type { RoundTripWriter } from './writer.ts';
@@ -16,7 +16,7 @@ import type { RoundTripWriter } from './writer.ts';
  * target streamed: the reader records where each emitted field came from, and
  * the writer, given that same record, turns it into a reference.
  */
-export const createRoundTripStream = <
+export const createRoundTripCoordinator = <
   Source extends keyof InputAssistantTurnByProtocol,
   Target extends keyof InputAssistantTurnByProtocol,
 >(source: Source, target: Target, codec: SidecarCodec) => {
@@ -31,7 +31,7 @@ export const createRoundTripStream = <
   };
   const writer: RoundTripWriter<Source> = {
     builder,
-    prepareSidecar: async (choice, sourceTurnDigest, turn, contentState, textPlacements) => {
+    encodeSidecar: async (choice, sourceTurnDigest, turn, contentState, textPlacements) => {
       const pending = turns.get(choice);
       if (pending === undefined) throw new Error(`Missing native assistant turn for choice ${choice}`);
       const finalized = await referenceAssistantTurn(

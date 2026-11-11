@@ -1,5 +1,6 @@
 import { klona } from 'klona/json';
 
+import { inputErrorResult } from './errors.ts';
 import { openaiResponsesInterceptors } from './interceptors/index.ts';
 import type { OpenAIResponsesAttemptResult, OpenAIResponsesInvocation } from './interceptors/types.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
@@ -11,16 +12,16 @@ import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts'
 import { anthropicMessagesAttempt } from '../anthropic-messages/attempt.ts';
 import { openaiChatCompletionsAttempt } from '../openai-chat-completions/attempt.ts';
 import { applyRulesToUpstreamOpenAIResponses } from '../shared/alias-rules.ts';
+import { captureFromDump, executeTranslation } from '../shared/execute-translation.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { providerStreamResultToExecuteResult } from '../shared/provider-stream-result.ts';
 import { SidecarDomain } from '../shared/sidecar-codec.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
-import { captureFromDump, traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type ModelCandidate, eventResult, readUpstreamApiError, providerModelOf, type ChatTargetApi, type ExecuteResult, type ProviderOpenAIResponsesResult, type OpenAIResponsesAction } from '@floway-dev/provider';
-import { routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
+import { routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions, type TranslateInputError } from '@floway-dev/translate';
 
 // `/v1/responses` generate prefers the native OpenAI Responses target, then the
 // translated Anthropic Messages path, then the translated OpenAI Chat Completions path. The
@@ -94,8 +95,10 @@ export const openaiResponsesAttempt = {
       targetApi,
       headers,
     };
-    const chainResult = await runInterceptors(invocation, ctx, openaiResponsesInterceptors, async () =>
-      await dispatchOpenAIResponses(invocation, ctx));
+    const chainResult = await runInterceptors(invocation, ctx, openaiResponsesInterceptors, async () => {
+      const result = await dispatchOpenAIResponses(invocation, ctx);
+      return result.type === 'input-error' ? inputErrorResult(result, ctx.attempt.telemetry) : result;
+    });
 
     if (chainResult.type !== 'events') return chainResult;
 
@@ -130,7 +133,7 @@ export const openaiResponsesAttempt = {
 const dispatchOpenAIResponses = async (
   invocation: OpenAIResponsesInvocation,
   ctx: ChatGatewayCtx,
-): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
+): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>> | TranslateInputError> => {
   const { candidate, targetApi } = invocation;
   switch (targetApi) {
   case 'openaiResponses': {
@@ -167,7 +170,7 @@ const dispatchOpenAIResponses = async (
       // unexpected-input-item guard.
       throw new Error(`openaiResponsesAttempt: action='compact' reached dispatch on targetApi='anthropicMessages' — the openai-responses-compact-shim must engage and pivot the action`);
     }
-    return await traverseTranslation(
+    return await executeTranslation(
       invocation.payload,
       p => routeOpenAIResponsesViaAnthropicMessages(p, {
         sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
@@ -182,7 +185,7 @@ const dispatchOpenAIResponses = async (
     if (invocation.action === 'compact') {
       throw new Error(`openaiResponsesAttempt: action='compact' reached dispatch on targetApi='openaiChatCompletions' — the openai-responses-compact-shim must engage and pivot the action`);
     }
-    return await traverseTranslation(
+    return await executeTranslation(
       invocation.payload,
       p => routeOpenAIResponsesViaOpenAIChatCompletions(p, { sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
       translated => openaiChatCompletionsAttempt.generate({

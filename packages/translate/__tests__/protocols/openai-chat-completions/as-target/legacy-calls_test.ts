@@ -1,15 +1,15 @@
 import { test } from 'vitest';
 
-import type { ResolvedTurn } from '../../../../src/composition/segments.ts';
+import type { RestoredAssistantTurn } from '../../../../src/composition/segments.ts';
 import type { IRInputTurn } from '../../../../src/ir/input/types.ts';
 import { chatLegacyCallsOf } from '../../../../src/protocols/openai-chat-completions/as-target/legacy-calls.ts';
-import type { InputAssistantTurnFor } from '../../../../src/round-trip/assistant-turn.ts';
-import { TranslatorInputError } from '../../../../src/types.ts';
+import type { InputAssistantTurnFor } from '../../../../src/round-trip/input-assistant-turn.ts';
+import { TranslateInputException } from '../../../../src/types.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 type LegacyTurn = InputAssistantTurnFor<'openaiChatCompletions'>;
-const legacy = (name: string): ResolvedTurn<LegacyTurn> => ({ kind: 'resolved', turn: { role: 'assistant', function_call: { name, arguments: '{}' } } });
-const modern = (callId: string): ResolvedTurn<LegacyTurn> => ({ kind: 'resolved', turn: { role: 'assistant', tool_calls: [{ id: callId, type: 'function', function: { name: 'lookup', arguments: '{}' } }] } });
+const legacy = (name: string): RestoredAssistantTurn<LegacyTurn> => ({ kind: 'restored', turn: { role: 'assistant', function_call: { name, arguments: '{}' } } });
+const modern = (callId: string): RestoredAssistantTurn<LegacyTurn> => ({ kind: 'restored', turn: { role: 'assistant', tool_calls: [{ id: callId, type: 'function', function: { name: 'lookup', arguments: '{}' } }] } });
 const message = (text: string): IRInputTurn => ({ kind: 'client', items: [{ type: 'message', content: [{ type: 'text', text }] }] });
 const result = (callId: string): IRInputTurn => ({ kind: 'client', items: [{ type: 'tool_result', call_id: callId, output: '' }] });
 
@@ -28,12 +28,12 @@ test('an answer naming a call the conversation states is left alone', () => {
 test('two answers naming no stated call is refused as ambiguous', () => {
   // Neither can be told apart, so nothing says which answers the legacy call.
   const twoAnswers: IRInputTurn = { kind: 'client', items: [{ type: 'tool_result', call_id: 'a', output: '' }, { type: 'tool_result', call_id: 'b', output: '' }] };
-  assertThrows(() => chatLegacyCallsOf([legacy('lookup'), twoAnswers]), TranslatorInputError);
+  assertThrows(() => chatLegacyCallsOf([legacy('lookup'), twoAnswers]), TranslateInputException);
 });
 
 test('a legacy call the next turn does not answer is refused', () => {
   // A wire that states no id for the call cannot say which later answer means it.
-  assertThrows(() => chatLegacyCallsOf([legacy('lookup'), message('later')]), TranslatorInputError);
+  assertThrows(() => chatLegacyCallsOf([legacy('lookup'), message('later')]), TranslateInputException);
 });
 
 test('a legacy call answered in the turn after it, after other client content, is accepted', () => {

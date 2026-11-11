@@ -1,7 +1,6 @@
 import { test } from 'vitest';
 
-import { buildSourceEventsFor } from '../../../src/composition/index.ts';
-import { emptyPayload, pairs } from '../../composition/helpers.ts';
+import { buildSourceEventsFor, emptyPayload, pairs } from '../../composition/helpers.ts';
 import { structuredResponsesFixture } from '../../ir/responses-fixture.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';

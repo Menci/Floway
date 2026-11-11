@@ -1,10 +1,10 @@
 import { klona } from 'klona/json';
 
 import { partitionGeminiGenerateContentTurns, type GeminiGenerateContentConversationTurn as GeminiGenerateContentTurn } from './conversation-turns.ts';
-import { geminiGenerateContentThinkingLevelEffort } from './reasoning.ts';
-import type { GeminiGenerateContentAssistantTurn } from './round-trip.ts';
+import { geminiGenerateContentReasoningEffortToIR } from './reasoning.ts';
+import type { GeminiGenerateContentSourceAssistantTurn } from './round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from './schema.ts';
-import type { Reading, TurnSlot } from '../../../composition/reading.ts';
+import type { SourceReading, SourceTurnSlot } from '../../../composition/reading.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputRequestHeader,
@@ -18,12 +18,12 @@ import type {
   IRInputUserContentPart,
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
-import { TranslatorInputError } from '../../../types.ts';
+import { TranslateInputException } from '../../../types.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentPartData, GeminiGenerateContentPayload, GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 
 const inlinePart = (part: GeminiGenerateContentPart): IRInputUserContentPart => {
   const inlineData = geminiGenerateContentInlineData(part);
-  if (inlineData === null) throw new TranslatorInputError('Expected inline data.');
+  if (inlineData === null) throw new TranslateInputException('Expected inline data.');
   const media = { source_kind: 'base64' as const, media_type: inlineData.mimeType, data: inlineData.data };
   switch (inlineData.kind) {
   case 'image': return { type: 'image', image: media };
@@ -72,7 +72,7 @@ const userParts = (content: GeminiGenerateContentContent, ids: GeminiGenerateCon
       pending.push(inlinePart(part));
       return;
     default:
-      throw new TranslatorInputError(`"${kind}" parts are not supported in user content.`);
+      throw new TranslateInputException(`"${kind}" parts are not supported in user content.`);
     }
   });
   flush();
@@ -81,9 +81,9 @@ const userParts = (content: GeminiGenerateContentContent, ids: GeminiGenerateCon
 
 // A thought part states no id of its own, so its IR identity comes from the
 // position it occupies in the request.
-const reasoningId = (turnIndex: number, partIndex: number): string => `gemini_reasoning_${turnIndex}_${partIndex}`;
+const reasoningId = (contentIndex: number, partIndex: number): string => `gemini_reasoning_${contentIndex}_${partIndex}`;
 
-const assistantItems = (content: GeminiGenerateContentContent, turnIndex: number, ids: GeminiGenerateContentUnmatchedCallIds): IRInputAssistantItem[] => {
+const assistantItems = (content: GeminiGenerateContentContent, contentIndex: number, ids: GeminiGenerateContentUnmatchedCallIds): IRInputAssistantItem[] => {
   const items: IRInputAssistantItem[] = [];
   const pending: IRInputAssistantContentPart[] = [];
   const flush = (): void => {
@@ -99,7 +99,7 @@ const assistantItems = (content: GeminiGenerateContentContent, turnIndex: number
   parts.forEach(({ kind, part }, partIndex) => {
     switch (kind) {
     case 'function_call': {
-      const { call, id } = geminiGenerateContentFunctionCallMatch(part, ids, turnIndex, partIndex)!;
+      const { call, id } = geminiGenerateContentFunctionCallMatch(part, ids, contentIndex, partIndex)!;
       flush();
       // An absent `functionCall.args` stays absent: `JSON.stringify(undefined)`
       // is `undefined`, so the field is omitted exactly as before. An explicit
@@ -111,7 +111,7 @@ const assistantItems = (content: GeminiGenerateContentContent, turnIndex: number
       const thoughtText = geminiGenerateContentThoughtText(part);
       if (thoughtText !== null) {
         flush();
-        items.push({ type: 'reasoning', id: reasoningId(turnIndex, partIndex), summary: [thoughtText] });
+        items.push({ type: 'reasoning', id: reasoningId(contentIndex, partIndex), summary: [thoughtText] });
         return;
       }
       const visible = geminiGenerateContentVisibleText(part);
@@ -121,9 +121,9 @@ const assistantItems = (content: GeminiGenerateContentContent, turnIndex: number
     case 'inline_data':
       // A model part has no media variant on any target; the current routes
       // reject it rather than flattening it.
-      throw new TranslatorInputError('"inline_data" parts are not supported in model content.');
+      throw new TranslateInputException('"inline_data" parts are not supported in model content.');
     default:
-      throw new TranslatorInputError(`"${kind}" parts are not supported in model content.`);
+      throw new TranslateInputException(`"${kind}" parts are not supported in model content.`);
     }
   });
   flush();
@@ -154,7 +154,7 @@ const turnToIRTurns = (
       kind: 'client',
       items: turn.items.flatMap(content => {
         if (content.role !== 'user' && content.role !== undefined) {
-          throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
+          throw new TranslateInputException(`"${(content as { role: string }).role}" is not a supported content role.`);
         }
         return (content.parts?.length ?? 0) === 0
           ? [{ type: 'message' as const, content: [] }]
@@ -227,7 +227,7 @@ const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequestHe
  * reader would otherwise not know. Both counters live in a closure each turn's
  * `toIRInputTurns` captures, so the reading stays a plain value.
  */
-export const geminiGenerateContentRead = (payload: GeminiGenerateContentRequest): Reading<GeminiGenerateContentAssistantTurn> => {
+export const readGeminiGenerateContentRequest = (payload: GeminiGenerateContentRequest): SourceReading<GeminiGenerateContentSourceAssistantTurn> => {
   const ids: GeminiGenerateContentUnmatchedCallIds = Object.create(null);
   let contentIndex = 0;
   const prompt = geminiGenerateContentSystemToIR(payload.systemInstruction);
@@ -236,7 +236,7 @@ export const geminiGenerateContentRead = (payload: GeminiGenerateContentRequest)
   // of its name, and an omitted id is invented from the position the content
   // and part occupy. Both have to advance over every turn, which is why the
   // thunks close over the position they were created at.
-  const turnSlotFor = (turn: GeminiGenerateContentTurn): TurnSlot<GeminiGenerateContentAssistantTurn> => {
+  const turnSlotFor = (turn: GeminiGenerateContentTurn): SourceTurnSlot<GeminiGenerateContentSourceAssistantTurn> => {
     const at = contentIndex;
     contentIndex += turn.items.length;
     const toIRInputTurns = () => turnToIRTurns(turn, at, ids);
@@ -264,7 +264,7 @@ const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest
   // string, and a target that accepts it forwards it verbatim. A budget is a
   // different quantity the caller may state instead, so it travels on its own
   // field and each target decides what it can do with it.
-  const statedLevel = geminiGenerateContentThinkingLevelEffort(config?.thinkingConfig);
+  const statedLevel = geminiGenerateContentReasoningEffortToIR(config?.thinkingConfig);
   // A stated level beside a stated budget is the one combination GenerateContent
   // refuses outright: the two knobs are mutually exclusive, and no model accepts
   // both. Neither can be preferred here, because which one a model understands
@@ -273,7 +273,7 @@ const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest
   // itself gives. An empty level names no tier, so it is not a statement.
   // https://github.com/cline/cline/issues/7957
   if (statedLevel !== undefined && statedLevel !== '' && budget !== undefined) {
-    throw new TranslatorInputError('Unable to submit request because thinking_budget and thinking_level are not supported together.');
+    throw new TranslateInputException('Unable to submit request because thinking_budget and thinking_level are not supported together.');
   }
   // A budget of zero is GenerateContent's off switch, which every target spells
   // on the effort axis.
@@ -307,7 +307,7 @@ const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest
   };
 };
 
-const geminiGenerateContentToolCallId = (turnIndex: number, partIndex: number): string => `gemini_call_${turnIndex}_${partIndex}`;
+const geminiGenerateContentToolCallId = (contentIndex: number, partIndex: number): string => `gemini_call_${contentIndex}_${partIndex}`;
 
 type GeminiGenerateContentUnmatchedCallIds = Record<string, string[]>;
 
@@ -327,11 +327,11 @@ interface GeminiGenerateContentFunctionResponseMatch {
   id: string | undefined;
 }
 
-const geminiGenerateContentFunctionCallMatch = (part: GeminiGenerateContentPart, ids: GeminiGenerateContentUnmatchedCallIds, turnIndex: number, partIndex: number): GeminiGenerateContentFunctionCallMatch | null => {
+const geminiGenerateContentFunctionCallMatch = (part: GeminiGenerateContentPart, ids: GeminiGenerateContentUnmatchedCallIds, contentIndex: number, partIndex: number): GeminiGenerateContentFunctionCallMatch | null => {
   const call = part.functionCall;
   if (!call) return null;
 
-  const id = call.id ?? geminiGenerateContentToolCallId(turnIndex, partIndex);
+  const id = call.id ?? geminiGenerateContentToolCallId(contentIndex, partIndex);
   ids[call.name] ??= [];
   ids[call.name].push(id);
 

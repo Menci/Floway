@@ -1,8 +1,8 @@
-import type { IRInputAddressedAssistantItem, IRInputAddressedTurn } from '../../../ir/input/addressed.ts';
-import { irInputToolChoiceForTools } from '../../../ir/input/select-tools.ts';
-import { requireStreaming } from '../../../ir/input/stream.ts';
+import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds } from '../../../ir/input/call-ids.ts';
+import { requireStreaming } from '../../../ir/input/streaming.ts';
+import { irInputToolChoiceForTools } from '../../../ir/input/tool-choice.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputMedia, IRInputTextPart, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
-import { TranslatorInputError } from '../../../types.ts';
+import { TranslateInputException, type TranslateOptions } from '../../../types.ts';
 import { buildCustomToolInputSchema } from '../../custom-tool.ts';
 import type {
   AnthropicMessagesAssistantInputContentBlock,
@@ -25,13 +25,13 @@ const imageSource = (media: IRInputMedia): AnthropicMessagesImageSource => {
     // rather than an upstream preference, so it fails instead of being written.
     const scheme = media.url.slice(0, media.url.indexOf(':'));
     if (scheme !== 'http' && scheme !== 'https') {
-      throw new TranslatorInputError(`Messages image input requires an http or https URL, got '${media.url}'.`);
+      throw new TranslateInputException(`Messages image input requires an http or https URL, got '${media.url}'.`);
     }
     return { type: 'url', url: media.url };
   }
   case 'file': return { type: 'file', file_id: media.file_id };
   case 'base64':
-    if (media.media_type === undefined) throw new TranslatorInputError('Anthropic Messages image input requires a media type.');
+    if (media.media_type === undefined) throw new TranslateInputException('Anthropic Messages image input requires a media type.');
     return { type: 'base64', media_type: media.media_type as Extract<AnthropicMessagesImageSource, { type: 'base64' }>['media_type'], data: media.data };
   }
 };
@@ -62,7 +62,7 @@ const documentBlock = (media: IRInputMedia): AnthropicMessagesUserContentBlock =
   case 'url': return { type: 'document', source: { type: 'url', url: media.url } };
   case 'file': return { type: 'document', source: { type: 'file', file_id: media.file_id } };
   case 'base64': {
-    if (media.media_type === undefined) throw new TranslatorInputError('Anthropic Messages document input requires a media type.');
+    if (media.media_type === undefined) throw new TranslateInputException('Anthropic Messages document input requires a media type.');
     return media.media_type === 'text/plain'
       ? { type: 'document', source: { type: 'text', media_type: 'text/plain', data: textOfBase64(media.data) } }
       : { type: 'document', source: { type: 'base64', media_type: media.media_type, data: media.data } };
@@ -83,8 +83,8 @@ const userContent = (
     case 'file':
       blocks.push(documentBlock(part.file));
       break;
-    case 'audio': throw new TranslatorInputError(`Cannot translate an audio part of MIME type '${part.audio.media_type}' to Anthropic Messages.`);
-    default: throw new TranslatorInputError(`Invalid '${(part as { type: string }).type}' content part.`);
+    case 'audio': throw new TranslateInputException(`Cannot translate an audio part of MIME type '${part.audio.media_type}' to Anthropic Messages.`);
+    default: throw new TranslateInputException(`Invalid '${(part as { type: string }).type}' content part.`);
     }
   }
   // Messages' user content is a non-empty block list in the same way.
@@ -98,14 +98,14 @@ const toolResultContent = (
   const blocks: AnthropicMessagesToolResultContentBlock[] = [];
   for (const part of output) {
     if (part.type === 'text') { blocks.push({ type: 'text', text: part.text }); continue; }
-    if (part.type === 'file') throw new TranslatorInputError('Cannot translate file tool output to Anthropic Messages.');
+    if (part.type === 'file') throw new TranslateInputException('Cannot translate file tool output to Anthropic Messages.');
     blocks.push(imageBlock(part.image));
   }
   // Messages spells an empty tool result as the empty string.
   return blocks.length === 0 ? '' : blocks;
 };
 
-const assistantBlocks = (items: readonly IRInputAddressedAssistantItem[]): AnthropicMessagesAssistantInputContentBlock[] => {
+const assistantBlocks = (items: readonly IRInputAssistantItemWithCallIds[]): AnthropicMessagesAssistantInputContentBlock[] => {
   const blocks = items.flatMap<AnthropicMessagesAssistantInputContentBlock>(item => {
     switch (item.type) {
     case 'message':
@@ -168,7 +168,7 @@ const toolFromIR = (tool: IRInputTool): AnthropicMessagesClientTool => {
     : buildCustomToolInputSchema(tool.format);
   // Messages states a declaration's schema as an object; anything else cannot be
   // expressed as a tool here.
-  if (schema.type !== 'object') throw new TranslatorInputError('Anthropic Messages function tools require an object input schema.');
+  if (schema.type !== 'object') throw new TranslateInputException('Anthropic Messages function tools require an object input schema.');
   return {
     // Messages states this kind for a declaration that is not one of its own
     // native tool types, which is every declaration this IR carries.
@@ -189,16 +189,10 @@ const toolChoiceFromIR = (choice: IRInputToolChoice, tools: readonly IRInputTool
     if (choice.mode === 'auto' && choice.tools.length === 0) return { type: 'none' };
     const permitted = new Set(choice.tools.map(tool => `${tool.type}:${tool.name}`));
     if (tools.every(tool => permitted.has(`${tool.type}:${tool.name}`))) return { type: choice.mode === 'required' ? 'any' : 'auto' };
-    throw new TranslatorInputError(`Anthropic Messages cannot express an allowed_tools ${choice.mode} subset of ${choice.tools.length} tools.`);
+    throw new TranslateInputException(`Anthropic Messages cannot express an allowed_tools ${choice.mode} subset of ${choice.tools.length} tools.`);
   }
   return { type: 'tool', name: choice.name };
 };
-
-export interface AnthropicMessagesRequestFromIROptions {
-  // The upstream's own output limit, when the operator knows it. Messages
-  // requires a ceiling and the source may not have stated one.
-  readonly fallbackMaxOutputTokens?: number;
-}
 
 /**
  * One segment's messages and the system blocks a leading prompt run lifts.
@@ -207,10 +201,9 @@ export interface AnthropicMessagesRequestFromIROptions {
  * run is lifted there, one block per source text part so the boundaries
  * survive; later system messages stay inline at their position.
  *
- * Reading holds `hoisting` across a whole conversation — once anything but a
- * leading prompt is reached, later prompts stay inline. A segment therefore
- * states whether it may still hoist, which is what keeps a split conversation
- * reading the same as an unsplit one.
+ * Only the segment opening the whole conversation may hoist. Splitting at a
+ * restored assistant turn must not promote a later inline prompt merely because
+ * it opens another segment.
  */
 export interface AnthropicMessagesConversation {
   readonly messages: AnthropicMessagesMessage[];
@@ -218,7 +211,7 @@ export interface AnthropicMessagesConversation {
 }
 
 export const anthropicMessagesConversationFromIR = (
-  turns: readonly IRInputAddressedTurn[],
+  turns: readonly IRInputTurnWithCallIds[],
   leading: boolean,
 ): AnthropicMessagesConversation => {
   const system: AnthropicMessagesTextBlockParam[] = [];
@@ -281,7 +274,7 @@ export const anthropicMessagesConversationFromIR = (
  */
 export const anthropicMessagesHeaderFromIR = (
   request: IRInputRequestHeader,
-  options: AnthropicMessagesRequestFromIROptions = {},
+  options: Pick<TranslateOptions, 'fallbackMaxOutputTokens'> = {},
 ): Omit<AnthropicMessagesPayload, 'messages' | 'system'> => {
   const tools = request.tools;
   const choice = irInputToolChoiceForTools(request.tool_choice, tools);

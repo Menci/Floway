@@ -3,25 +3,25 @@ import type { IRPath } from './records.ts';
 
 // Numbers the native units (blocks, output items, tool calls) of a stream in the order
 // they open, and forgets a unit when it closes.
-export const createIROrdinalMapper = () => {
-  const ordinals = new Map<string, number>();
+export const createIRUnitIndexAllocator = () => {
+  const indices = new Map<string, number>();
   let next = 0;
   const open = (path: IRPath): number => {
     const key = irPathKey(path);
-    if (ordinals.has(key)) throw new TypeError(`output IR unit is already open: ${key}`);
-    const ordinal = next++;
-    ordinals.set(key, ordinal);
-    return ordinal;
+    if (indices.has(key)) throw new TypeError(`output IR unit is already open: ${key}`);
+    const index = next++;
+    indices.set(key, index);
+    return index;
   };
   const get = (path: IRPath): number => {
     const key = irPathKey(path);
-    const ordinal = ordinals.get(key);
-    if (ordinal === undefined) throw new TypeError(`Unknown open output IR unit: ${key}`);
-    return ordinal;
+    const index = indices.get(key);
+    if (index === undefined) throw new TypeError(`Unknown open output IR unit: ${key}`);
+    return index;
   };
   const close = (path: IRPath): void => {
     get(path);
-    ordinals.delete(irPathKey(path));
+    indices.delete(irPathKey(path));
   };
   return { open, get, close };
 };

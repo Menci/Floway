@@ -1,16 +1,16 @@
-import { collectOpenAIChatCompletionsTextViews, computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarCarrier } from './round-trip.ts';
+import { collectOpenAIChatCompletionsTextPlacements, computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarDetails } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import { irItemPath, irPartPath, irPathKey } from '../../../ir/output/operation-paths.ts';
-import { createIROrdinalMapper } from '../../../ir/output/ordinal-mapper.ts';
 import { consumeIRRecords, type IRRecord } from '../../../ir/output/stream.ts';
 import { IRAbsent, type IRErrorPayload, type IROutputItem, type IROutputMessageItem, type IROutputTokenLogprob } from '../../../ir/output/types.ts';
+import { createIRUnitIndexAllocator } from '../../../ir/output/unit-index.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
-import { appendContent, createEmittedFieldState, type EmittedFieldStates, type EmittedFieldState } from '../../../round-trip/reference/reference-builder.ts';
-import type { SourceStreamOutputOptions } from '../../../round-trip/writer.ts';
+import { appendEmittedField, createEmittedFieldState, type EmittedFieldStates, type EmittedFieldState } from '../../../round-trip/reference/reference-builder.ts';
+import type { SourceEventWriterOptions } from '../../../round-trip/writer.ts';
 import { errorDetailsOf } from '../../../shared/api-error.ts';
 import { isJSONRecord } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
-import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantState } from '../as-target/assistant-turn.ts';
+import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantTurnState } from '../as-target/assistant-turn.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   type OpenAIChatCompletionsAnnotation,
@@ -23,7 +23,7 @@ import {
 
 // The payload the wire states for a failed turn: the IR's own fields, with the
 // target's extra ones under the extension slot this protocol names.
-export const openaiChatCompletionsErrorFromIR = (error: IRErrorPayload): IRErrorPayload => {
+export const openaiChatCompletionsErrorFromIR = (error: IRErrorPayload) => {
   const details = errorDetailsOf(error, ['message', 'type', 'code', 'param']);
   return {
     message: error.message,
@@ -36,7 +36,7 @@ export const openaiChatCompletionsErrorFromIR = (error: IRErrorPayload): IRError
   };
 };
 
-interface OpenAIChatCompletionsSSEOutputOptions extends SourceStreamOutputOptions<'openaiChatCompletions'> {
+interface OpenAIChatCompletionsEventWriterOptions extends SourceEventWriterOptions<'openaiChatCompletions'> {
   // Replay identity belongs to the newly emitted target audio, not the source output IR content.
   audioMetadata?: (choice: number) => { id: string; expires_at: number };
   continuousUsageStats?: boolean;
@@ -85,14 +85,14 @@ type ChatChoiceChunk = Omit<OpenAIChatCompletionsStreamEvent['choices'][number],
 type ChatChunkFields = Partial<Pick<OpenAIChatCompletionsStreamEvent, 'service_tier' | 'usage'>>;
 type ChatTextField = 'content' | 'refusal' | 'reasoning_text';
 
-export const openaiChatCompletionsFromIR = async function* (
+export const writeOpenAIChatCompletionsEvents = async function* (
   records: AsyncIterable<IRRecord>,
-  options: OpenAIChatCompletionsSSEOutputOptions,
+  options: OpenAIChatCompletionsEventWriterOptions,
 ): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
   let metadata = { id: '', model: '', created: 0 };
   let started = false;
   const startedChoices = new Set<number>();
-  const tools = new Map<number, ReturnType<typeof createIROrdinalMapper>>();
+  const tools = new Map<number, ReturnType<typeof createIRUnitIndexAllocator>>();
   const startedAudio = new Set<string>();
   const itemTypes = new Map<string, IROutputItem['type']>();
   const partTypes = new Map<string, IROutputMessageItem['content'][number]['type']>();
@@ -110,11 +110,11 @@ export const openaiChatCompletionsFromIR = async function* (
   // has gone out so far. A caller that digests the answer must read it after the
   // last delta it intends the client to see.
   const emittedChoice = (choice: number) => nativeAccumulator(choice).result().choices.find(candidate => candidate.index === choice);
-  const outputStates = new Map<number, OpenAIChatCompletionsOutputAssistantState<EmittedFieldStates>>();
+  const outputStates = new Map<number, OpenAIChatCompletionsOutputAssistantTurnState<EmittedFieldStates>>();
   const pendingTranscripts = new Map<string, TextProvenanceSpan[]>();
   let usage: OpenAIChatCompletionsUsageEx | undefined;
 
-  const outputState = (choice: number): OpenAIChatCompletionsOutputAssistantState<EmittedFieldStates> => {
+  const outputState = (choice: number): OpenAIChatCompletionsOutputAssistantTurnState<EmittedFieldStates> => {
     let state = outputStates.get(choice);
     if (state === undefined) {
       state = {};
@@ -163,7 +163,7 @@ export const openaiChatCompletionsFromIR = async function* (
   const ensureChoice = (choice: number, tier?: string): ProtocolFrame<OpenAIChatCompletionsStreamEvent> | undefined => {
     if (startedChoices.has(choice)) return undefined;
     startedChoices.add(choice);
-    tools.set(choice, createIROrdinalMapper());
+    tools.set(choice, createIRUnitIndexAllocator());
     return deltaFrame(choice, { role: 'assistant', content: '' }, tier);
   };
 
@@ -265,7 +265,7 @@ export const openaiChatCompletionsFromIR = async function* (
 
       if (record.kind === 'append') {
         if (path.length === 7 && path[2] === 'items' && path[4] === 'content' && (path[6] === 'text' || path[6] === 'refusal')) {
-          appendContent(options.roundTrip.builder, textState(choice, path[6] === 'text' ? 'content' : 'refusal'), record.value, record.textFragmentIds);
+          appendEmittedField(options.roundTrip.builder, textState(choice, path[6] === 'text' ? 'content' : 'refusal'), record.value, record.textFragmentIds);
           yield deltaFrame(choice, path[6] === 'text' ? { content: record.value } : { refusal: record.value }, tier);
           continue;
         }
@@ -296,7 +296,7 @@ export const openaiChatCompletionsFromIR = async function* (
           continue;
         }
         if (path.length === 6 && path[2] === 'items' && (path[4] === 'summary' || path[4] === 'content')) {
-          appendContent(options.roundTrip.builder, textState(choice, 'reasoning_text'), record.value, record.textFragmentIds);
+          appendEmittedField(options.roundTrip.builder, textState(choice, 'reasoning_text'), record.value, record.textFragmentIds);
           yield deltaFrame(choice, { reasoning_text: record.value }, tier);
           continue;
         }
@@ -305,7 +305,7 @@ export const openaiChatCompletionsFromIR = async function* (
           if (itemType !== 'function_call' && itemType !== 'custom_tool_call') throw new TypeError('ChatCompletions tool delta requires a tool item');
           const ordinal = tools.get(choice)!.get(path.slice(0, 4));
           const custom = itemType === 'custom_tool_call';
-          appendContent(options.roundTrip.builder, toolState(choice, ordinal, custom), record.value, record.textFragmentIds);
+          appendEmittedField(options.roundTrip.builder, toolState(choice, ordinal, custom), record.value, record.textFragmentIds);
           const call = custom
             ? { index: ordinal, custom: { input: record.value } }
             : { index: ordinal, function: { arguments: record.value } };
@@ -361,7 +361,7 @@ export const openaiChatCompletionsFromIR = async function* (
       if (part?.type === 'audio' && !startedAudio.has(irPathKey(path)) && part.audio.transcript !== undefined) {
         const content = textState(record.choice, 'content');
         replayTextProvenance(part.audio.transcript, pendingTranscripts.get(irPathKey(path)) ?? [], (value, textFragmentIds) => {
-          appendContent(options.roundTrip.builder, content, value, textFragmentIds);
+          appendEmittedField(options.roundTrip.builder, content, value, textFragmentIds);
         });
         pendingTranscripts.delete(irPathKey(path));
         yield deltaFrame(record.choice, { content: part.audio.transcript }, tier);
@@ -397,7 +397,7 @@ export const openaiChatCompletionsFromIR = async function* (
       });
       if (annotations.length > 0) yield deltaFrame(record.choice, { annotations }, tier);
       if (choice.refusal_details?.explanation != null) {
-        appendContent(options.roundTrip.builder, textState(record.choice, 'refusal'), choice.refusal_details.explanation);
+        appendEmittedField(options.roundTrip.builder, textState(record.choice, 'refusal'), choice.refusal_details.explanation);
         yield deltaFrame(record.choice, { refusal: choice.refusal_details.explanation }, tier);
       }
       const summary = emittedChoice(record.choice)?.message.reasoning_text;
@@ -408,8 +408,8 @@ export const openaiChatCompletionsFromIR = async function* (
       if (nativeChoice === undefined) throw new Error(`Missing Chat Completions choice ${record.choice} at choice_end`);
       const sourceTurnDigest = await computeOpenAIChatCompletionsTurnDigest(nativeChoice.message);
       const input = toOpenAIChatCompletionsInputAssistantTurn<EmittedFieldStates>(nativeChoice.message, outputState(record.choice));
-      const data = await options.roundTrip.prepareSidecar(record.choice, sourceTurnDigest, input.turn, input.state, collectOpenAIChatCompletionsTextViews(input.turn));
-      yield deltaFrame(record.choice, { reasoning_details: createOpenAIChatCompletionsSidecarCarrier(data) }, tier);
+      const data = await options.roundTrip.encodeSidecar(record.choice, sourceTurnDigest, input.turn, input.state, collectOpenAIChatCompletionsTextPlacements(input.turn));
+      yield deltaFrame(record.choice, { reasoning_details: createOpenAIChatCompletionsSidecarDetails(data) }, tier);
       yield chunk([{ index: record.choice, delta: {}, finish_reason: record.finish_reason }], tierFields(tier));
       continue;
     }

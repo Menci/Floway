@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { TranslatorInputError } from '../../../src/types.ts';
+import { TranslateInputException } from '../../../src/types.ts';
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
@@ -293,7 +293,7 @@ test.each([null, undefined])('buildTargetPayload omits unset reasoning_effort=%j
 });
 
 test('rejects a json_schema request with no schema instead of removing constraints', async () => {
-  await assertRejects(() => buildWithTestSidecar({ model: 'gpt-test', messages: [], response_format: { type: 'json_schema', json_schema: { name: 'shape' } } }), TranslatorInputError, 'without a schema');
+  await assertRejects(() => buildWithTestSidecar({ model: 'gpt-test', messages: [], response_format: { type: 'json_schema', json_schema: { name: 'shape' } } }), TranslateInputException, 'without a schema');
 });
 
 test('allowed_tools retains both native callable kinds', async () => {

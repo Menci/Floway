@@ -1,10 +1,10 @@
 import { expect, test } from 'vitest';
 
 import { resolveReading } from '../../src/composition/reading.ts';
-import { anthropicMessagesRead } from '../../src/protocols/anthropic-messages/as-source/input-to.ts';
+import { readAnthropicMessagesRequest } from '../../src/protocols/anthropic-messages/as-source/input-to.ts';
 
 test('joins parallel server results and the next user message into one client turn', async () => {
-  const reading = anthropicMessagesRead({
+  const reading = readAnthropicMessagesRequest({
     model: 'model', max_tokens: 32, messages: [
       { role: 'user', content: 'Q' },
       {
@@ -37,7 +37,7 @@ test('joins parallel server results and the next user message into one client tu
 });
 
 test('keeps prompt and restored assistant boundaries while joining client pieces', async () => {
-  const reading = anthropicMessagesRead({
+  const reading = readAnthropicMessagesRequest({
     model: 'model', max_tokens: 32, system: 'Rules', messages: [
       { role: 'user', content: 'Before' },
       { role: 'assistant', content: 'Native' },
@@ -45,5 +45,5 @@ test('keeps prompt and restored assistant boundaries while joining client pieces
     ],
   });
   expect((await resolveReading(reading, async () => 'restored')).map(turn => turn.kind))
-    .toEqual(['client', 'client', 'resolved', 'client']);
+    .toEqual(['client', 'client', 'restored', 'client']);
 });

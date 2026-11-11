@@ -1,8 +1,8 @@
-import type { IRInputAddressedAssistantItem, IRInputAddressedTurn, IRInputAddressedClientItem } from '../../../ir/input/addressed.ts';
-import { irInputToolChoiceForTools } from '../../../ir/input/select-tools.ts';
-import { requireStreaming } from '../../../ir/input/stream.ts';
+import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../ir/input/call-ids.ts';
+import { requireStreaming } from '../../../ir/input/streaming.ts';
+import { irInputToolChoiceForTools } from '../../../ir/input/tool-choice.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem, IRInputPromptItem } from '../../../ir/input/types.ts';
-import { TranslatorInputError } from '../../../types.ts';
+import { TranslateInputException } from '../../../types.ts';
 import { reasoningEffortForBudget } from '../../openai-reasoning.ts';
 import type {
   CanonicalOpenAIResponsesInputItem,
@@ -59,11 +59,11 @@ const userContent = (item: Extract<IRInputClientItem, { type: 'message' }>): Ope
   case 'text': return { type: 'input_text' as const, text: part.text };
   case 'image': return inputContent(part.image, part.detail);
   case 'file': return fileContent(part.file, part.filename);
-  case 'audio': throw new TranslatorInputError(`Cannot translate an audio part of MIME type '${part.audio.media_type}' to OpenAI Responses.`);
+  case 'audio': throw new TranslateInputException(`Cannot translate an audio part of MIME type '${part.audio.media_type}' to OpenAI Responses.`);
   }
 });
 
-const assistantItems = (items: readonly IRInputAddressedAssistantItem[]): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
+const assistantItems = (items: readonly IRInputAssistantItemWithCallIds[]): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
   switch (item.type) {
   case 'message':
     return {
@@ -99,7 +99,7 @@ const assistantItems = (items: readonly IRInputAddressedAssistantItem[]): Canoni
   }
 });
 
-const clientItems = (items: readonly IRInputAddressedClientItem[]): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
+const clientItems = (items: readonly IRInputClientItemWithCallIds[]): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
   switch (item.type) {
   case 'prompt': {
     // A prompt boundary states its text plainly: one part is that string, and
@@ -134,7 +134,7 @@ const isHoistablePrompt = (entry: IRInputClientItem): entry is IRInputPromptItem
   entry.type === 'prompt';
 
 export const openaiResponsesConversationFromIR = (
-  turns: readonly IRInputAddressedTurn[],
+  turns: readonly IRInputTurnWithCallIds[],
   hoistSystem: boolean,
 ): Pick<CanonicalOpenAIResponsesPayload, 'instructions' | 'input'> => {
   const instructions: string[] = [];
@@ -174,7 +174,7 @@ export const openaiResponsesConversationFromIR = (
 };
 
 const requireSchema = (format: IRInputOutputFormat): Readonly<Record<string, unknown>> => {
-  if (format.schema === undefined) throw new TranslatorInputError('Cannot translate json_schema response format without a schema.');
+  if (format.schema === undefined) throw new TranslateInputException('Cannot translate json_schema response format without a schema.');
   return format.schema;
 };
 

@@ -1,11 +1,11 @@
 import { test } from 'vitest';
 
+import { TranslateInputException } from '../../../src/types.ts';
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesAssistantContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsFunctionTool } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
-import { TranslatorInputError } from '@floway-dev/translate';
 
 const buildWithTestSidecar = (payload: AnthropicMessagesPayload) =>
   buildTargetPayloadFor(pairs.messagesToChat[0], pairs.messagesToChat[1], { ...payload, stream: true }, { sidecarCodec: createTestSidecarCodec() });
@@ -662,7 +662,7 @@ test('rejects a metadata value the neutral model cannot state as a string pair',
       messages: [{ role: 'user', content: 'hi' }],
       metadata: { user_id: 'u', nested: { depth: 1 } } as never,
     }),
-    TranslatorInputError,
+    TranslateInputException,
     'nested',
   );
 });

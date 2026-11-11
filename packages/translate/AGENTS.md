@@ -3,7 +3,7 @@
 `src/protocols/<protocol>/` owns translation entrypoints and protocol-specific
 code. `__tests__/protocols/` mirrors production ownership. Package callers
 import the pair's named export from the package root and call it with a source
-payload and `TranslateOptions` to create an independent trip.
+payload and `TranslateOptions`, receiving a `TranslateTrip` or a `TranslateInputError`.
 
 ## Categories
 
@@ -15,13 +15,13 @@ payload and `TranslateOptions` to create an independent trip.
 3. **Target-only helper** — keep it in `protocols/<protocol>/as-target/`.
    Only routes whose target is that protocol may import it.
 4. **Output IR** — keep private types, its path schema, stream operations,
-   validation, accumulation, operation paths, and native ordinal mapping under
+   validation, accumulation, operation paths, and native unit index allocation under
    `ir/output/`, and the input model under `ir/input/`. A reading holds the
    source's native assistant turns beside the IR it would produce, so it belongs
-   to composition rather than to the IR. Native SSE adapters
-   belong to their protocol: `as-target/sse-from.ts` consumes upstream SSE and
-   `as-source/sse-to.ts` emits client SSE with its sidecar. The return path is
-   upstream SSE → IR SSE → client SSE with sidecar. IR stays internal to translate.
+   to composition rather than to the IR. Protocol event adapters
+   belong to their protocol: `as-target/events.ts` reads upstream protocol events and
+   `as-source/events.ts` writes client protocol events with its sidecar. The return path is
+   upstream protocol events → output IR records → client protocol events with sidecar. IR stays internal to translate.
 5. **Assistant-turn round trips** — keep owner-specific sidecar validation, replay
    validation, and native stream coordination under `round-trip/`. Source replay
    inspection and carriers belong in `as-source/round-trip.ts`; native assistant-turn

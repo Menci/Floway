@@ -1,5 +1,5 @@
 import type { IRInputMedia } from './types.ts';
-import { TranslatorInputError } from '../../types.ts';
+import { TranslateInputException } from '../../types.ts';
 
 // RFC 2397: `data:[<mediatype>][;base64],<data>`, where a mediatype may carry
 // parameters (`text/csv;charset=utf-8`). Only the base64 form is decoded here;
@@ -38,6 +38,6 @@ export const mediaFromURL = (url: string): IRInputMedia | undefined => {
  * would send something the upstream cannot read.
  */
 export const mediaOrThrow = (media: IRInputMedia | undefined, url: string): IRInputMedia => {
-  if (media === undefined) throw new TranslatorInputError(`Cannot decode a data URL: ${url.slice(0, 32)}`);
+  if (media === undefined) throw new TranslateInputException(`Cannot decode a data URL: ${url.slice(0, 32)}`);
   return media;
 };

@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
 
-import type { AnthropicMessagesAssistantState, AnthropicMessagesInputAssistantTurn } from '../../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
-import { irFromAnthropicMessages } from '../../../../src/protocols/anthropic-messages/as-target/sse-from.ts';
-import { appendContent, collectEmittedFieldPlacements, createEmittedFieldState, createReferenceBuilder, type ReadFieldStates } from '../../../../src/round-trip/reference/reference-builder.ts';
+import type { AnthropicMessagesInputAssistantTurnState, AnthropicMessagesInputAssistantTurn } from '../../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
+import { readAnthropicMessagesEvents } from '../../../../src/protocols/anthropic-messages/as-target/events.ts';
+import { appendEmittedField, collectEmittedFieldPlacements, createEmittedFieldState, createReferenceBuilder, type ReadFieldStates } from '../../../../src/round-trip/reference/reference-builder.ts';
 import { referenceAssistantTurn } from '../../../../src/round-trip/reference/reference-selection.ts';
 import { fixtureFrames } from '../../../ir/translation-cases.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
@@ -25,11 +25,11 @@ test('keeps native-shaped field state aligned through sparse block ordering and 
   ];
   const builder = createReferenceBuilder();
   const content = createEmittedFieldState(builder, 'text');
-  let captured: { turn: AnthropicMessagesInputAssistantTurn; state: AnthropicMessagesAssistantState<ReadFieldStates> } | undefined;
-  for await (const record of irFromAnthropicMessages((async function* () { yield* frames; })(), {
+  let captured: { turn: AnthropicMessagesInputAssistantTurn; state: AnthropicMessagesInputAssistantTurnState<ReadFieldStates> } | undefined;
+  for await (const record of readAnthropicMessagesEvents((async function* () { yield* frames; })(), {
     roundTrip: { builder, onAssistantTurn: (_choice, turn, state) => { captured = { turn, state }; } },
   })) {
-    if (record.type === 'write' && record.kind === 'append' && record.path.at(-1) === 'text') appendContent(builder, content, record.value, record.textFragmentIds);
+    if (record.type === 'write' && record.kind === 'append' && record.path.at(-1) === 'text') appendEmittedField(builder, content, record.value, record.textFragmentIds);
   }
   if (captured === undefined) throw new Error('Native assistant turn was not collected');
   expect(captured.turn.content).toEqual([

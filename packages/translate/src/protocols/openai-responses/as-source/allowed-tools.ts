@@ -1,4 +1,4 @@
-import { TranslatorInputError } from '../../../types.ts';
+import { TranslateInputException } from '../../../types.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 // A permitted selector must name a declaration without changing the full tool
@@ -38,12 +38,12 @@ export const requireCallableSelector = (selector: unknown): { readonly type: 'fu
     || typeof (selector as { name?: unknown }).name !== 'string'
     || ('namespace' in selector && selector.namespace !== undefined && typeof selector.namespace !== 'string')
     || Object.keys(selector).some(key => key !== 'type' && key !== 'name' && key !== 'namespace')) {
-    throw new TranslatorInputError('Cannot translate an allowed_tools selector that is not a function or custom tool.');
+    throw new TranslateInputException('Cannot translate an allowed_tools selector that is not a function or custom tool.');
   }
   return selector as { readonly type: 'function' | 'custom'; readonly name: string; readonly namespace?: string };
 };
 
-export const validateCallableDeclarations = (
+export const validateAllowedToolSelectors = (
   tools: readonly OpenAIResponsesTool[] | null | undefined,
   choice: OpenAIResponsesToolChoice | null | undefined,
   input?: readonly CanonicalOpenAIResponsesInputItem[],
@@ -53,7 +53,7 @@ export const validateCallableDeclarations = (
   if (typeof choice !== 'object' || choice?.type !== 'allowed_tools') return;
 
   if ((choice.mode !== 'auto' && choice.mode !== 'required') || !Array.isArray(choice.tools)) {
-    throw new TranslatorInputError('Cannot translate malformed allowed_tools mode or tools array.');
+    throw new TranslateInputException('Cannot translate malformed allowed_tools mode or tools array.');
   }
 
   const declared = new Set(declarations.map(({ type, name }) => `${type}:${name}`));
@@ -67,7 +67,7 @@ export const validateCallableDeclarations = (
     if (typeof selector !== 'object' || selector === null) return [selector];
     if ((selector as { type?: unknown }).type !== 'namespace') return [selector];
     const group = allGroups.flatMap(tool => tool.type === 'namespace' && tool.name === (selector as { name?: unknown }).name ? [tool] : []);
-    if (group.length === 0) throw new TranslatorInputError(`Cannot translate group selector '${String((selector as { name?: unknown }).name)}' without a matching declaration.`);
+    if (group.length === 0) throw new TranslateInputException(`Cannot translate group selector '${String((selector as { name?: unknown }).name)}' without a matching declaration.`);
     return group.flatMap(entry => entry.tools.flatMap(child => child.type === 'function' || child.type === 'custom'
       ? [{ type: child.type, namespace: entry.name, name: child.name }]
       : []));
@@ -82,11 +82,11 @@ export const validateCallableDeclarations = (
     // A selector names a callable by kind, so a function and a custom tool that
     // share a name stay distinguishable.
     if (!declared.has(`${type}:${name}`)) {
-      throw new TranslatorInputError(`Cannot translate allowed_tools selector '${name}' without a matching callable declaration.`);
+      throw new TranslateInputException(`Cannot translate allowed_tools selector '${name}' without a matching callable declaration.`);
     }
     selected.add(`${type}:${name}`);
   }
   if (selected.size === 0 && choice.mode === 'required') {
-    throw new TranslatorInputError('Cannot translate required allowed_tools with an empty callable subset.');
+    throw new TranslateInputException('Cannot translate required allowed_tools with an empty callable subset.');
   }
 };

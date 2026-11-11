@@ -1,4 +1,4 @@
-import { ContentReference, type ContentReferenceSegment } from './reference-type.ts';
+import { ContentReference, type ContentReferenceSegment } from './types.ts';
 import { rawJSON } from '../../shared/json/raw-json.ts';
 import { SidecarTaggedValue } from '../sidecar-tagged-value.ts';
 

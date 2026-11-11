@@ -57,14 +57,14 @@ export const createIRCollector = () => {
       if (write.kind === 'initialize') {
         walkValue(path, node, write.value, (childPath, childNode, child) => {
           if (childNode.kind === 'string' && childNode.append === true && child !== '') throw new TypeError(`output IR append target must initialize to an empty string: ${irPathKey(childPath)}`);
-        }, true);
+        }, { allowAbsent: true });
       } else if (write.value === IRAbsent) {
         if (node.kind !== 'string' || node.absent !== true) throw new TypeError(`IRAbsent is not allowed at ${irPathKey(path)}`);
         if (present) throw new TypeError('IRAbsent may only be assigned to an absent target');
       } else {
         walkValue(path, node, write.value, (childPath, childNode) => {
           if (childNode.kind === 'string' && childNode.append === true) throw new TypeError(`output IR append target cannot be assigned: ${irPathKey(childPath)}`);
-        }, false);
+        }, { allowAbsent: false });
         if (present && Object.is(current, write.value)) return false;
       }
     }

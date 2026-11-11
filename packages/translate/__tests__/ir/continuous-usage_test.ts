@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 
+import { expectTrip } from '../trip.ts';
 import { collect, iterate } from './helpers.ts';
 import { fixtureFrames } from './translation-cases.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
@@ -13,8 +14,8 @@ test.each(protocols)('ChatCompletions via %s captures continuous usage preferenc
   for (const include_usage of flags) for (const continuous_usage_stats of flags) {
     const src: OpenAIChatCompletionsPayloadEx = { model: 'model', messages: [], stream: true, stream_options: { include_usage, continuous_usage_stats } };
     const trip = protocol === 'anthropic-messages'
-      ? await routeOpenAIChatCompletionsViaAnthropicMessages(src, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), fallbackMaxOutputTokens: 100 })
-      : await routeOpenAIChatCompletionsViaOpenAIResponses(src, { sidecarCodec: createTestSidecarCodec('test-codec-scope') });
+      ? expectTrip(await routeOpenAIChatCompletionsViaAnthropicMessages(src, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), fallbackMaxOutputTokens: 100 }))
+      : expectTrip(await routeOpenAIChatCompletionsViaOpenAIResponses(src, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }));
     // Nothing mutates this payload after the trip exists, so the request it
     // stated is the one the trip answers with.
     const usage = protocol === 'anthropic-messages' ? { input_tokens: 10, output_tokens: 4 } : { input_tokens: 10, output_tokens: 4, total_tokens: 14 };
@@ -31,7 +32,7 @@ test.each(protocols)('ChatCompletions via %s captures continuous usage preferenc
 });
 
 test('ChatCompletions continuous usage reflects reported Responses counters without extra progress chunks', async () => {
-  const trip = await routeOpenAIChatCompletionsViaOpenAIResponses({ model: 'model', messages: [], stream: true, stream_options: { include_usage: true, continuous_usage_stats: true } }, { sidecarCodec: createTestSidecarCodec('test-codec-scope') });
+  const trip = expectTrip(await routeOpenAIChatCompletionsViaOpenAIResponses({ model: 'model', messages: [], stream: true, stream_options: { include_usage: true, continuous_usage_stats: true } }, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }));
   const response = { id: 'resp', model: 'model', created_at: 1, status: 'in_progress', output: [], usage: null };
   const frames = [
     { type: 'response.created', response },

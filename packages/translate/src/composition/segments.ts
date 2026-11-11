@@ -1,4 +1,4 @@
-import type { IRInputAddressedTurn } from '../ir/input/addressed.ts';
+import type { IRInputTurnWithCallIds } from '../ir/input/call-ids.ts';
 
 // A conversation translates in segments split at sidecar-resolved assistant
 // turns. Those turns are already native target structure, so a writer emits
@@ -9,20 +9,20 @@ import type { IRInputAddressedTurn } from '../ir/input/addressed.ts';
 // assistant turn, because that turn sits between them in the output.
 export interface Segment {
   readonly kind: 'ir';
-  readonly turns: readonly IRInputAddressedTurn[];
+  readonly turns: readonly IRInputTurnWithCallIds[];
   // Only the first segment of a conversation may hoist a leading system run into
   // a protocol's top-level instructions slot.
   readonly leading: boolean;
 }
 
-export interface ResolvedTurn<Turn> {
-  readonly kind: 'resolved';
+export interface RestoredAssistantTurn<Turn> {
+  readonly kind: 'restored';
   readonly turn: Turn;
 }
 
-export const segmentTurns = <Turn>(turns: readonly (IRInputAddressedTurn | ResolvedTurn<Turn>)[]): readonly (Segment | ResolvedTurn<Turn>)[] => {
-  const segments: (Segment | ResolvedTurn<Turn>)[] = [];
-  let current: IRInputAddressedTurn[] = [];
+export const segmentTurns = <Turn>(turns: readonly (IRInputTurnWithCallIds | RestoredAssistantTurn<Turn>)[]): readonly (Segment | RestoredAssistantTurn<Turn>)[] => {
+  const segments: (Segment | RestoredAssistantTurn<Turn>)[] = [];
+  let current: IRInputTurnWithCallIds[] = [];
   let leading = true;
   const flush = (): void => {
     if (current.length === 0) return;
@@ -31,7 +31,7 @@ export const segmentTurns = <Turn>(turns: readonly (IRInputAddressedTurn | Resol
     leading = false;
   };
   for (const piece of turns) {
-    if (piece.kind === 'resolved') {
+    if (piece.kind === 'restored') {
       flush();
       leading = false;
       segments.push(piece);

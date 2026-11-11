@@ -1,11 +1,11 @@
+import { readAnthropicMessagesEvents } from './as-target/events.ts';
 import { anthropicMessagesPayloadFromSegments } from './as-target/segmented-request.ts';
-import { irFromAnthropicMessages } from './as-target/sse-from.ts';
 import { assignCallIds, type PendingCall } from '../../composition/call-ids.ts';
-import { flattenRequestNames } from '../../composition/flatten-request.ts';
 import type { TargetProtocol } from '../../composition/index.ts';
-import type { ResolvedTurn } from '../../composition/segments.ts';
+import type { RestoredAssistantTurn } from '../../composition/segments.ts';
+import { allocateToolNames, type ToolNameContext } from '../../composition/tool-names.ts';
 import type { IRInputRequestHeader, IRInputTurn } from '../../ir/input/types.ts';
-import type { InputAssistantTurnFor } from '../../round-trip/assistant-turn.ts';
+import type { InputAssistantTurnFor } from '../../round-trip/input-assistant-turn.ts';
 import type { TranslateOptions } from '../../types.ts';
 import type { AnthropicMessagesMessage, AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 
@@ -22,13 +22,13 @@ const callsOf = (turn: Extract<AnthropicMessagesMessage, { role: 'assistant' }>)
  * rather than inferred, because only Messages knows where it puts them.
  */
 export const anthropicMessagesTargetProtocol: TargetProtocol<
-  'anthropicMessages', AnthropicMessagesPayload, AnthropicMessagesStreamEventEx
+  'anthropicMessages', AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, ToolNameContext
 > = {
   name: 'anthropicMessages',
-  write: (request: IRInputRequestHeader, turns: readonly (IRInputTurn | ResolvedTurn<InputAssistantTurnFor<'anthropicMessages'>>)[], options: TranslateOptions) => {
+  write: (request: IRInputRequestHeader, turns: readonly (IRInputTurn | RestoredAssistantTurn<InputAssistantTurnFor<'anthropicMessages'>>)[], options: TranslateOptions) => {
     // This wire addresses a callable by one bare name, so every grouped
     // declaration and call is stated under the flat spelling it computes.
-    const flattened = flattenRequestNames(request, turns);
+    const flattened = allocateToolNames(request, turns);
     return {
       payload: anthropicMessagesPayloadFromSegments(flattened.request, assignCallIds(flattened.turns, callsOf), {
         fallbackMaxOutputTokens: options.fallbackMaxOutputTokens,
@@ -38,5 +38,5 @@ export const anthropicMessagesTargetProtocol: TargetProtocol<
       context: flattened.context,
     };
   },
-  readStream: (frames, context, roundTripReader) => irFromAnthropicMessages(frames, { ...context, roundTrip: roundTripReader }),
+  readEvents: (frames, context, roundTripReader) => readAnthropicMessagesEvents(frames, { ...context, roundTrip: roundTripReader }),
 };

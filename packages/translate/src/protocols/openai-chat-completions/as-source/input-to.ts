@@ -1,8 +1,8 @@
 import { klona } from 'klona/json';
 
 import { partitionOpenAIChatCompletionsTurns, type OpenAIChatCompletionsConversationMessage, type OpenAIChatCompletionsConversationTurn } from './conversation-turns.ts';
-import type { OpenAIChatCompletionsAssistantTurn } from './round-trip.ts';
-import type { Reading } from '../../../composition/reading.ts';
+import type { OpenAIChatCompletionsSourceAssistantTurn } from './round-trip.ts';
+import type { SourceReading } from '../../../composition/reading.ts';
 import { mediaFromURL, mediaOrThrow } from '../../../ir/input/media.ts';
 import type {
   IRInputAssistantContentPart,
@@ -21,7 +21,7 @@ import type {
   IRInputClientItem,
 
 } from '../../../ir/input/types.ts';
-import { TranslatorInputError } from '../../../types.ts';
+import { TranslateInputException } from '../../../types.ts';
 import type {
   OpenAIChatCompletionsNamedToolChoice,
   OpenAIChatCompletionsPayload,
@@ -38,7 +38,7 @@ const AUDIO_MEDIA_TYPES: Readonly<Record<string, string>> = { wav: 'audio/wav', 
 // message of its own, so those keep one empty text part. An empty system run
 // contributes nothing to the system prompt and is dropped instead.
 // `keepEmpty` is false for a prompt run, whose emptiness contributes nothing to the system prompt.
-const textOf = (value: string, keepEmpty = true): IRInputTextPart[] => value === '' && !keepEmpty ? [] : [{ type: 'text', text: value }];
+const textPartsToIR = (value: string, options: { keepEmpty?: boolean } = {}): IRInputTextPart[] => value === '' && options.keepEmpty === false ? [] : [{ type: 'text', text: value }];
 
 // A legacy call states only its name, so its identity is the name plus which
 // occurrence of that name it is. Both the call and its result take the id from
@@ -91,10 +91,10 @@ const userContentPart = (part: OpenAIChatCompletionsUserContentPart): IRInputUse
         ...filename,
       };
     }
-    throw new TranslatorInputError("A Chat Completions file part requires 'file_id' or 'file_data'.");
+    throw new TranslateInputException("A Chat Completions file part requires 'file_id' or 'file_data'.");
   }
   default:
-    throw new TranslatorInputError(`Invalid '${(part as { type: string }).type}' content part. Only 'text', 'image_url', 'input_audio', and 'file' are supported.`);
+    throw new TranslateInputException(`Invalid '${(part as { type: string }).type}' content part. Only 'text', 'image_url', 'input_audio', and 'file' are supported.`);
   }
 };
 
@@ -109,7 +109,7 @@ const assistantItems = (turn: Extract<OpenAIChatCompletionsConversationTurn, { r
   const message = turn.items[0];
 
   const content: IRInputAssistantContentPart[] = typeof message.content === 'string'
-    ? textOf(message.content)
+    ? textPartsToIR(message.content)
     : (message.content ?? []).map(part => part.type === 'text'
         ? { type: 'text' as const, text: part.text }
         : { type: 'refusal' as const, refusal: part.refusal });
@@ -178,19 +178,19 @@ const clientItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, 
       // A non-text part in system/developer content has no representation on
       // any target, so it is rejected here rather than dropped silently.
       content: typeof message.content === 'string'
-        ? textOf(message.content, false)
+        ? textPartsToIR(message.content, { keepEmpty: false })
         : (message.content ?? []).map(part => {
-            if (part.type !== 'text') throw new TranslatorInputError(`Invalid '${part.type}' content part in system or developer message. Only 'text' content parts are supported in system messages on this model.`);
+            if (part.type !== 'text') throw new TranslateInputException(`Invalid '${part.type}' content part in system or developer message. Only 'text' content parts are supported in system messages on this model.`);
             return { type: 'text' as const, text: part.text };
           }),
     }];
   case 'user':
     return [{
       type: 'message',
-      content: message.content == null ? [{ type: 'text', text: '' }] : typeof message.content === 'string' ? textOf(message.content) : message.content.map(userContentPart),
+      content: message.content == null ? [{ type: 'text', text: '' }] : typeof message.content === 'string' ? textPartsToIR(message.content) : message.content.map(userContentPart),
     }];
   case 'tool': {
-    if (!message.tool_call_id) throw new TranslatorInputError("Missing required field 'tool_call_id' on a 'tool' role message.");
+    if (!message.tool_call_id) throw new TranslateInputException("Missing required field 'tool_call_id' on a 'tool' role message.");
     const toolKind = context.callKinds.get(message.tool_call_id);
     const result: IRInputToolResultItem = {
       type: 'tool_result',
@@ -205,7 +205,7 @@ const clientItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, 
   case 'function':
     return [{ type: 'tool_result', call_id: legacyOccurrenceCallId(message.name, takeOccurrence(context.legacyResultOccurrences, message.name)), output: message.content == null ? '' : toolResultContent(message.content) }];
   default:
-    throw new TranslatorInputError(`Invalid role '${(message as { role: string }).role}'.`);
+    throw new TranslateInputException(`Invalid role '${(message as { role: string }).role}'.`);
   }
 };
 
@@ -330,7 +330,7 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
  * state lives in a closure each turn's `toIRInputTurns` captures, so the reading is a
  * plain value and the state never outlives the turns that need it.
  */
-export const openaiChatCompletionsRead = (payload: OpenAIChatCompletionsPayload): Reading<OpenAIChatCompletionsAssistantTurn> => {
+export const readOpenAIChatCompletionsRequest = (payload: OpenAIChatCompletionsPayload): SourceReading<OpenAIChatCompletionsSourceAssistantTurn> => {
   const context = openaiChatCompletionsInputContext(payload);
   return {
     request: openaiChatCompletionsRequestToIR(payload),

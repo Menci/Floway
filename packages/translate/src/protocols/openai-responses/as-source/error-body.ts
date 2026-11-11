@@ -1,6 +1,6 @@
-import { openaiResponsesErrorEventOf } from './sse-to.ts';
+import { openaiResponsesErrorEventOf } from './events.ts';
 import { irErrorPayloadFromBody, restateError } from '../../../shared/api-error.ts';
-import type { RestateSourceError } from '../../../types.ts';
+import type { ApiErrorTranslator } from '../../../types.ts';
 
 /**
  * States a failed request in the Responses envelope.
@@ -12,8 +12,8 @@ import type { RestateSourceError } from '../../../types.ts';
  *
  * A body that is not an error envelope this package recognizes is left alone.
  */
-export const restateOpenAIResponsesError: RestateSourceError = upstream => {
-  const error = irErrorPayloadFromBody(upstream);
+export const restateOpenAIResponsesError: ApiErrorTranslator = (upstreamStatus, headers, upstreamBody) => {
+  const error = irErrorPayloadFromBody(upstreamBody);
   if (error === undefined) return undefined;
-  return restateError(upstream, openaiResponsesErrorEventOf(error));
+  return restateError(upstreamStatus, headers, openaiResponsesErrorEventOf(error));
 };

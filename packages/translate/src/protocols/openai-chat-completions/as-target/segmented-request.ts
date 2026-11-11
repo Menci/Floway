@@ -1,6 +1,6 @@
 import { openaiChatCompletionsConversationFromIR, openaiChatCompletionsHeaderFromIR } from './input-from.ts';
-import { segmentTurns, type ResolvedTurn } from '../../../composition/segments.ts';
-import type { IRInputAddressedTurn } from '../../../ir/input/addressed.ts';
+import { segmentTurns, type RestoredAssistantTurn } from '../../../composition/segments.ts';
+import type { IRInputTurnWithCallIds } from '../../../ir/input/call-ids.ts';
 import type { IRInputRequestHeader } from '../../../ir/input/types.ts';
 import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -17,7 +17,7 @@ import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from 
  */
 export const openaiChatCompletionsPayloadFromSegments = (
   request: IRInputRequestHeader,
-  turns: readonly (IRInputAddressedTurn | ResolvedTurn<OpenAIChatCompletionsMessage>)[],
+  turns: readonly (IRInputTurnWithCallIds | RestoredAssistantTurn<OpenAIChatCompletionsMessage>)[],
   // The legacy call each result answers, by the id that result carries. Only
   // this writer reads it: a legacy call has no id to answer with, so its answer
   // is stated in the `function` form this wire pairs with the field.
@@ -25,7 +25,7 @@ export const openaiChatCompletionsPayloadFromSegments = (
 ): OpenAIChatCompletionsPayload => {
   const messages: OpenAIChatCompletionsMessage[] = [];
   for (const piece of segmentTurns(turns)) {
-    if (piece.kind === 'resolved') { messages.push(piece.turn); continue; }
+    if (piece.kind === 'restored') { messages.push(piece.turn); continue; }
     messages.push(...openaiChatCompletionsConversationFromIR(piece.turns, legacyCallNames));
   }
   // The request-level fields are one answer for the whole conversation, so they

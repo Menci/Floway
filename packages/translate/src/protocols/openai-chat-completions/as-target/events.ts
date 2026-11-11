@@ -1,5 +1,6 @@
-import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantState } from './assistant-turn.ts';
+import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantTurnState } from './assistant-turn.ts';
 import { usageToIR } from './usage.ts';
+import type { ToolNameContext } from '../../../composition/tool-names.ts';
 import {
   createIRBuilder,
   type IRRecord,
@@ -10,7 +11,7 @@ import {
 } from '../../../ir/output/stream.ts';
 import { IRAbsent, type IRErrorPayload, type IROutputSourceCitation } from '../../../ir/output/types.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
-import { appendField, createFieldState, type ReadFieldStates, type ReadFieldState, type TextFragmentId } from '../../../round-trip/reference/reference-builder.ts';
+import { appendReadField, createReadFieldState, type ReadFieldStates, type ReadFieldState, type TextFragmentId } from '../../../round-trip/reference/reference-builder.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { unwrapCustomToolInput } from '../../custom-tool-unwrap.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -24,7 +25,7 @@ import {
   type OpenAIChatCompletionsUsageEx,
 } from '@floway-dev/protocols/openai-chat-completions';
 
-type ChatToolFieldState = NonNullable<NonNullable<OpenAIChatCompletionsOutputAssistantState<ReadFieldStates>['tool_calls']>[number]>;
+type ChatToolFieldState = NonNullable<NonNullable<OpenAIChatCompletionsOutputAssistantTurnState<ReadFieldStates>['tool_calls']>[number]>;
 
 interface ChatToolState {
   item?: IRItemHandle;
@@ -116,17 +117,14 @@ interface ChatChoiceState {
   currentTool?: ChatToolState;
   readonly logprobParts: Map<string, { item: IRItemHandle; part: IRPartHandle }>;
   readonly logprobGroups: Map<IRPartHandle, { index: number; length: number }>;
-  readonly fieldState: OpenAIChatCompletionsOutputAssistantState<ReadFieldStates>;
+  readonly fieldState: OpenAIChatCompletionsOutputAssistantTurnState<ReadFieldStates>;
   ended: boolean;
   incomplete: boolean;
 }
 
-export const irFromOpenAIChatCompletions = async function* (
+export const readOpenAIChatCompletionsEvents = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
-  options: {
-    customToolNames?: ReadonlySet<string>;
-    // The original identity each allocated request name stands for.
-    flatIdentities?: ReadonlyMap<string, { readonly namespace?: string; readonly name: string }>;
+  options: Partial<ToolNameContext> & {
     roundTrip: RoundTripReader<'openaiChatCompletions'>;
   },
 ): AsyncGenerator<IRRecord> {
@@ -135,7 +133,7 @@ export const irFromOpenAIChatCompletions = async function* (
   const nativeAccumulators = new Map<number, ReturnType<typeof createOpenAIChatCompletionsEventAccumulator>>();
   // An allocated wire name is restored to the callable the client declared.
   const namingOf = (flatName: string): { readonly name: string; readonly namespace?: string } => {
-    const identity = options.flatIdentities?.get(flatName);
+    const identity = options.originalToolNames?.get(flatName);
     return identity ?? { name: flatName };
   };
   const nativeAccumulator = (choice: number): ReturnType<typeof createOpenAIChatCompletionsEventAccumulator> => {
@@ -175,7 +173,7 @@ export const irFromOpenAIChatCompletions = async function* (
     text: string,
     state: ReadFieldState<'text'>,
   ): void => {
-    const fragmentId = appendField(options.roundTrip.builder, state, text);
+    const fragmentId = appendReadField(options.roundTrip.builder, state, text);
     handle.append(field, text, [fragmentId]);
   };
   const createItem = (index: number, choice: ChatChoiceState, value: unknown): IRItemHandle => {
@@ -317,18 +315,18 @@ export const irFromOpenAIChatCompletions = async function* (
       closeMessage(choice);
       const reasoning = choice.reasoning ??= createItem(index, choice, { type: 'reasoning', summary: [''] });
       reasoning.ensure('summary', ['']);
-      const fieldState = choice.fieldState[field] ??= createFieldState('text');
+      const fieldState = choice.fieldState[field] ??= createReadFieldState('text');
       appendFieldAtom(reasoning, ['summary', 0], text, fieldState);
     }
   };
 
   const readMessage = (index: number, choice: ChatChoiceState, delta: ChatDelta): void => {
     if (typeof delta.content === 'string' && delta.content !== '') {
-      const field = choice.fieldState.content ??= createFieldState('text');
+      const field = choice.fieldState.content ??= createReadFieldState('text');
       appendText(index, choice, delta.content, field);
     }
     if (typeof delta.refusal === 'string' && delta.refusal !== '') {
-      const field = choice.fieldState.refusal ??= createFieldState('text');
+      const field = choice.fieldState.refusal ??= createReadFieldState('text');
       appendFieldAtom(messagePart(index, choice, 'refusal'), 'refusal', delta.refusal, field);
     }
     if (delta.audio != null) {
@@ -406,21 +404,21 @@ export const irFromOpenAIChatCompletions = async function* (
       let field: ReadFieldStates['text'];
       if (call.index === -1) {
         const state = choice.fieldState.function_call ??= {};
-        field = state.arguments ??= createFieldState('text');
+        field = state.arguments ??= createReadFieldState('text');
       } else {
         const state = tool.fieldState;
         if (call.custom !== undefined) {
           const existing = state !== undefined && 'custom' in state ? state.custom?.input : undefined;
-          field = existing ?? createFieldState('text');
+          field = existing ?? createReadFieldState('text');
           if (existing === undefined) tool.fieldState = { custom: { input: field } };
         } else {
           const existing = state !== undefined && 'function' in state ? state.function?.arguments : undefined;
-          field = existing ?? createFieldState('text');
+          field = existing ?? createReadFieldState('text');
           if (existing === undefined) tool.fieldState = { function: { arguments: field } };
         }
         (choice.fieldState.tool_calls ??= [])[call.index] = tool.fieldState;
       }
-      fragmentReferenceId = appendField(options.roundTrip.builder, field, fragment);
+      fragmentReferenceId = appendReadField(options.roundTrip.builder, field, fragment);
     }
     tool.wrapped = !tool.custom && options.customToolNames?.has(tool.name) === true;
     if (tool.item === undefined && fragment !== undefined) {

@@ -1,7 +1,7 @@
-import type { AnthropicMessagesAssistantTurn } from '../protocols/anthropic-messages/as-source/round-trip.ts';
-import type { GeminiGenerateContentAssistantTurn } from '../protocols/gemini-generate-content/as-source/round-trip.ts';
-import type { OpenAIChatCompletionsAssistantTurn } from '../protocols/openai-chat-completions/as-source/round-trip.ts';
-import type { OpenAIResponsesAssistantTurn } from '../protocols/openai-responses/as-source/round-trip.ts';
+import type { AnthropicMessagesSourceAssistantTurn } from '../protocols/anthropic-messages/as-source/round-trip.ts';
+import type { GeminiGenerateContentSourceAssistantTurn } from '../protocols/gemini-generate-content/as-source/round-trip.ts';
+import type { OpenAIChatCompletionsSourceAssistantTurn } from '../protocols/openai-chat-completions/as-source/round-trip.ts';
+import type { OpenAIResponsesSourceAssistantTurn } from '../protocols/openai-responses/as-source/round-trip.ts';
 
 /**
  * The structure a protocol states an assistant turn in, on the way in.
@@ -11,10 +11,10 @@ import type { OpenAIResponsesAssistantTurn } from '../protocols/openai-responses
  * wrote, which is the only thing its sidecar can be computed over.
  */
 interface SourceAssistantTurnByProtocol {
-  openaiChatCompletions: OpenAIChatCompletionsAssistantTurn;
-  openaiResponses: OpenAIResponsesAssistantTurn;
-  anthropicMessages: AnthropicMessagesAssistantTurn;
-  geminiGenerateContent: GeminiGenerateContentAssistantTurn;
+  openaiChatCompletions: OpenAIChatCompletionsSourceAssistantTurn;
+  openaiResponses: OpenAIResponsesSourceAssistantTurn;
+  anthropicMessages: AnthropicMessagesSourceAssistantTurn;
+  geminiGenerateContent: GeminiGenerateContentSourceAssistantTurn;
 }
 
 export type SourceAssistantTurnFor<Protocol extends keyof SourceAssistantTurnByProtocol> =

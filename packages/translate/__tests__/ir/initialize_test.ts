@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { collect, iterate, openaiResponsesFromIR } from './helpers.ts';
+import { collect, iterate, writeOpenAIResponsesEvents } from './helpers.ts';
 import { createIRCollector } from '../../src/ir/output/collector.ts';
 import { createIRBuilder, type IRRecord } from '../../src/ir/output/stream.ts';
 
@@ -15,7 +15,7 @@ test('initialize carries real required fields while append targets start empty',
     { type: 'choice_end', choice: 0, finish_reason: 'tool_calls' },
     { type: 'finish', status: 'completed' },
   ];
-  const output = await collect(openaiResponsesFromIR(iterate(records)));
+  const output = await collect(writeOpenAIResponsesEvents(iterate(records)));
   const serialized = JSON.stringify(output);
   expect(serialized).toContain('real-name');
   expect(serialized).toContain('{}');

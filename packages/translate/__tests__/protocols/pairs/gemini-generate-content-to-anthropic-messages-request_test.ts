@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { TranslatorInputError } from '../../../src/types.ts';
+import { TranslateInputException } from '../../../src/types.ts';
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/anthropic-messages';
@@ -151,7 +151,7 @@ test('buildTargetPayload refuses a stated budget beside a stated level', async (
       contents: [],
       generationConfig: { thinkingConfig: { thinkingBudget: 2048, thinkingLevel: 'HIGH' } },
     }, 'claude-test', noOptions),
-    TranslatorInputError,
+    TranslateInputException,
     'thinking_budget and thinking_level are not supported together',
   );
 });
@@ -340,7 +340,7 @@ test('buildTargetPayload rejects an unrepresentable ANY subset without narrowing
 
   await assertRejects(
     () => buildWithTestSidecar(payload, 'claude-test', noOptions),
-    TranslatorInputError,
+    TranslateInputException,
     'cannot express an allowed_tools required subset',
   );
 });

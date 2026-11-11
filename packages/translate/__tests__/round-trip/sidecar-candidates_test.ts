@@ -1,19 +1,19 @@
 import { expect, test, vi } from 'vitest';
 
 import { createTestSidecarCodec } from './sidecar-codec.ts';
-import { computeAnthropicMessagesTurnDigest, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest, type AnthropicMessagesAssistantTurn } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
-import { computeGeminiGenerateContentTurnDigest, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest, type GeminiGenerateContentAssistantTurn } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
-import { computeOpenAIChatCompletionsTurnDigest, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest, type OpenAIChatCompletionsAssistantTurn } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
-import { computeOpenAIResponsesTurnDigest, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest, type OpenAIResponsesAssistantTurn } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
-import type { AssistantTurnProtocol } from '../../src/round-trip/assistant-turn.ts';
-import { roundTripAssistantTurn, type SidecarCarrier } from '../../src/round-trip/resolve.ts';
+import { computeAnthropicMessagesTurnDigest, findAnthropicMessagesSidecarOccurrences, verifyAnthropicMessagesTurnDigest, type AnthropicMessagesSourceAssistantTurn } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
+import { computeGeminiGenerateContentTurnDigest, findGeminiGenerateContentSidecarOccurrences, verifyGeminiGenerateContentTurnDigest, type GeminiGenerateContentSourceAssistantTurn } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
+import { computeOpenAIChatCompletionsTurnDigest, findOpenAIChatCompletionsSidecarOccurrences, verifyOpenAIChatCompletionsTurnDigest, type OpenAIChatCompletionsSourceAssistantTurn } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
+import { computeOpenAIResponsesTurnDigest, findOpenAIResponsesSidecarOccurrences, verifyOpenAIResponsesTurnDigest, type OpenAIResponsesSourceAssistantTurn } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
+import type { AssistantTurnProtocol } from '../../src/round-trip/input-assistant-turn.ts';
+import { roundTripAssistantTurn, type SidecarOccurrence } from '../../src/round-trip/resolve.ts';
 import { encodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import type { RoundTripTurnDigest } from '../../src/round-trip/turn-digest.ts';
 
 const sourceCase = <Turn>(
   source: AssistantTurnProtocol,
   makeTurn: (carriers: string[]) => Turn,
-  inspect: (turn: Turn) => SidecarCarrier<Turn>[],
+  inspect: (turn: Turn) => SidecarOccurrence<Turn>[],
   compute: (turn: Turn) => Promise<RoundTripTurnDigest>,
   verify: (turn: Turn, check: RoundTripTurnDigest, version: number) => Promise<boolean>,
 ) => ({
@@ -60,21 +60,21 @@ const sourceCase = <Turn>(
 });
 
 const cases = [
-  sourceCase('openaiChatCompletions', (carriers): OpenAIChatCompletionsAssistantTurn => ({
+  sourceCase('openaiChatCompletions', (carriers): OpenAIChatCompletionsSourceAssistantTurn => ({
     role: 'assistant', content: 'answer', reasoning_details: [
       ...carriers.map(data => ({ type: 'reasoning.encrypted', data })), { type: 'reasoning.summary', summary: 'ordinary summary' },
     ],
-  }), findOpenAIChatCompletionsSidecarCarriers, computeOpenAIChatCompletionsTurnDigest, verifyOpenAIChatCompletionsTurnDigest),
-  sourceCase('anthropicMessages', (carriers): AnthropicMessagesAssistantTurn => [{
+  }), findOpenAIChatCompletionsSidecarOccurrences, computeOpenAIChatCompletionsTurnDigest, verifyOpenAIChatCompletionsTurnDigest),
+  sourceCase('anthropicMessages', (carriers): AnthropicMessagesSourceAssistantTurn => [{
     role: 'assistant', content: [{ type: 'text', text: 'answer' }, ...carriers.map(data => ({ type: 'redacted_thinking' as const, data })), { type: 'text', text: 'tail' }],
-  }, { role: 'assistant', content: '' }, { role: 'assistant', content: [] }], findAnthropicMessagesSidecarCarriers, computeAnthropicMessagesTurnDigest, verifyAnthropicMessagesTurnDigest),
-  sourceCase('openaiResponses', (carriers): OpenAIResponsesAssistantTurn => [
+  }, { role: 'assistant', content: '' }, { role: 'assistant', content: [] }], findAnthropicMessagesSidecarOccurrences, computeAnthropicMessagesTurnDigest, verifyAnthropicMessagesTurnDigest),
+  sourceCase('openaiResponses', (carriers): OpenAIResponsesSourceAssistantTurn => [
     { type: 'message', role: 'assistant', content: 'answer' }, ...carriers.map(encrypted_content => ({ type: 'reasoning' as const, summary: [], encrypted_content })),
     { type: 'message', role: 'assistant', content: [] },
-  ], findOpenAIResponsesSidecarCarriers, computeOpenAIResponsesTurnDigest, verifyOpenAIResponsesTurnDigest),
-  sourceCase('geminiGenerateContent', (carriers): GeminiGenerateContentAssistantTurn => [{
+  ], findOpenAIResponsesSidecarOccurrences, computeOpenAIResponsesTurnDigest, verifyOpenAIResponsesTurnDigest),
+  sourceCase('geminiGenerateContent', (carriers): GeminiGenerateContentSourceAssistantTurn => [{
     role: 'model', parts: [{ text: 'answer' }, ...carriers.map(thoughtSignature => ({ thoughtSignature })), { text: 'tail' }],
-  }, { role: 'model' }, { role: 'model', parts: [] }], findGeminiGenerateContentSidecarCarriers, computeGeminiGenerateContentTurnDigest, verifyGeminiGenerateContentTurnDigest),
+  }, { role: 'model' }, { role: 'model', parts: [] }], findGeminiGenerateContentSidecarOccurrences, computeGeminiGenerateContentTurnDigest, verifyGeminiGenerateContentTurnDigest),
 ];
 
 const scenarios = ['middle', 'foreign', 'wrong-direction', 'duplicate', 'different-targets', 'malformed'] as const;

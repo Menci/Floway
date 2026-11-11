@@ -1,9 +1,8 @@
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
-import { translatorInputErrorFields, type ChatServeFailure } from '../shared/errors.ts';
+import { inputErrorFields, type ChatServeFailure, type InputErrorDetails } from '../shared/errors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentStreamEvent, GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
-import { internalDebugErrorFields, type ExecuteResult, type PerformanceTelemetryContext, type InternalDebugError } from '@floway-dev/provider';
-import type { TranslatorInputError } from '@floway-dev/translate';
+import { internalDebugErrorFields, type ApiErrorResult, type ExecuteResult, type PerformanceTelemetryContext, type InternalDebugError } from '@floway-dev/provider';
 
 // Google RPC Status envelope, used by Gemini's `error` channel everywhere
 // (HTTP body, SSE-tunnelled error event).
@@ -52,7 +51,7 @@ const geminiGenerateContentRpcErrorResult = (
   message: string,
   performance?: PerformanceTelemetryContext,
   extension?: Record<string, unknown>,
-): ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>> => ({
+): ApiErrorResult => ({
   type: 'api-error',
   source: 'gateway',
   status,
@@ -72,13 +71,13 @@ const geminiGenerateContentRpcErrorResult = (
 // disallowed role, missing required field, etc.). Render as a 400
 // INVALID_ARGUMENT envelope so the caller sees a Gemini-generateContent-shaped failure
 // instead of the internal-error 500 envelope. `performance` carries the
-// throwing candidate's telemetry attribution when the throw fired
-// mid-attempt (see AttemptState.telemetry).
-export const translatorInputErrorResult = (
-  error: TranslatorInputError,
+// candidate's telemetry attribution when validation failed
+// during an attempt (see AttemptState.telemetry).
+export const inputErrorResult = (
+  error: InputErrorDetails,
   performance?: PerformanceTelemetryContext,
-): ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>> =>
-  geminiGenerateContentRpcErrorResult(400, error.message, performance, translatorInputErrorFields(error));
+): ApiErrorResult =>
+  geminiGenerateContentRpcErrorResult(400, error.message, performance, inputErrorFields(error));
 
 // `endpoint` selects between `:generateContent` and `:countTokens` only in
 // the `model-unsupported` message string.

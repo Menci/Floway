@@ -1,4 +1,4 @@
-import { TranslatorInputError } from '../../types.ts';
+import { TranslateInputException, type TranslateInputError } from '../../types.ts';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesEasyInputMessageEx, CanonicalOpenAIResponsesInputItem, OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 
 // Wire `OpenAIResponsesRequestPayload.input` accepts a bare string and EasyInputMessage
@@ -10,7 +10,16 @@ import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesEasyInputMessageEx
 // boundary that produces a payload destined for internal use and by direct
 // OpenAI-Responses-source translators; cross-protocol translators already construct
 // `CanonicalOpenAIResponsesPayload` with explicit message discriminators.
-export function canonicalizeOpenAIResponsesPayload(value: unknown): CanonicalOpenAIResponsesPayload {
+export const canonicalizeOpenAIResponsesPayload = (value: unknown): CanonicalOpenAIResponsesPayload | TranslateInputError => {
+  try {
+    return requireCanonicalOpenAIResponsesPayload(value);
+  } catch (error) {
+    if (error instanceof TranslateInputException) return error.failure;
+    throw error;
+  }
+};
+
+export const requireCanonicalOpenAIResponsesPayload = (value: unknown): CanonicalOpenAIResponsesPayload => {
   const hasValidPromptCacheBreakpoint = (content: Record<string, unknown>): boolean => {
     const breakpoint = content.prompt_cache_breakpoint;
     if (breakpoint === undefined || breakpoint === null) return true;
@@ -44,7 +53,7 @@ export function canonicalizeOpenAIResponsesPayload(value: unknown): CanonicalOpe
   };
 
   if (typeof value !== 'object' || value === null) {
-    throw new TranslatorInputError('OpenAI Responses payload must be an object.');
+    throw new TranslateInputException('OpenAI Responses payload must be an object.');
   }
   const payload = value as OpenAIResponsesRequestPayloadEx;
   // Resolution binds `model` straight into a SQL lookup, so the wire boundary is
@@ -52,11 +61,11 @@ export function canonicalizeOpenAIResponsesPayload(value: unknown): CanonicalOpe
   // and code reproduce OpenAI's own rejection verbatim.
   // https://github.com/mattermost/mattermost-plugin-agents/issues/476
   if (typeof payload.model !== 'string' || payload.model.length === 0) {
-    throw new TranslatorInputError("Missing required parameter: 'model'.", { param: 'model', code: 'missing_required_parameter' });
+    throw new TranslateInputException("Missing required parameter: 'model'.", { param: 'model', code: 'missing_required_parameter' });
   }
   const input: unknown = payload.input;
   if (typeof input !== 'string' && !Array.isArray(input)) {
-    throw new TranslatorInputError('OpenAI Responses input must be a string or an array.', { param: 'input' });
+    throw new TranslateInputException('OpenAI Responses input must be a string or an array.', { param: 'input' });
   }
   return {
     ...payload,
@@ -66,9 +75,9 @@ export function canonicalizeOpenAIResponsesPayload(value: unknown): CanonicalOpe
       : input.map((item, index) => {
           if (isImplicitEasyInputMessage(item)) return { ...item, type: 'message' };
           if (typeof item !== 'object' || item === null || (item as { type?: unknown }).type === undefined) {
-            throw new TranslatorInputError('Untyped OpenAI Responses input items require a valid role and content.', { param: `input[${index}]` });
+            throw new TranslateInputException('Untyped OpenAI Responses input items require a valid role and content.', { param: `input[${index}]` });
           }
           return item as CanonicalOpenAIResponsesInputItem;
         }),
   };
-}
+};

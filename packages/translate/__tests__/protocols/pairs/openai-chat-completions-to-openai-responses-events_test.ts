@@ -1,9 +1,8 @@
 import { expect, test } from 'vitest';
 
-import { buildSourceEventsFor, buildTargetPayloadFor } from '../../../src/composition/index.ts';
 import { openaiChatCompletionsSourceProtocol } from '../../../src/protocols/openai-chat-completions/as-source.ts';
 import { openaiResponsesTargetProtocol } from '../../../src/protocols/openai-responses/as-target.ts';
-import { emptyPayload, pairs } from '../../composition/helpers.ts';
+import { buildSourceEventsFor, buildTargetPayloadFor, emptyPayload, pairs } from '../../composition/helpers.ts';
 import { structuredResponsesFixture } from '../../ir/responses-fixture.ts';
 import { testOutputTranslation } from '../../ir/translation-cases.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
@@ -415,7 +414,7 @@ test('translateToSourceEvents translates OpenAI Responses failed terminal events
 
 test.each(['flat error', 'nested error', 'failed response'])('translateToSourceEvents preserves the error provider namespace without copying (%s)', async path => {
   const provider_specific_fields = {
-    name: 'TranslatorInputError',
+    name: 'TranslateInputException',
     stack: 'translator stack',
     cause: { message: 'source failed', cause: { code: 17, details: [false, null, { value: 'nested' }] } },
     target_api: 'openai-responses',

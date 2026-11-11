@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import { partitionAnthropicMessagesTurns } from '../../src/protocols/anthropic-messages/as-source/conversation-turns.ts';
-import { computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarCarrier, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
+import { computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarCarrier, findAnthropicMessagesSidecarOccurrences, verifyAnthropicMessagesTurnDigest } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
 import { partitionGeminiGenerateContentTurns } from '../../src/protocols/gemini-generate-content/as-source/conversation-turns.ts';
-import { computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSidecarCarrier, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
+import { computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSidecarCarrier, findGeminiGenerateContentSidecarOccurrences, verifyGeminiGenerateContentTurnDigest } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../../src/protocols/openai-chat-completions/as-source/conversation-turns.ts';
-import { computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarCarrier, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
+import { computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarDetails, findOpenAIChatCompletionsSidecarOccurrences, verifyOpenAIChatCompletionsTurnDigest } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
 import { partitionOpenAIResponsesTurns } from '../../src/protocols/openai-responses/as-source/conversation-turns.ts';
-import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
+import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier, findOpenAIResponsesSidecarOccurrences, verifyOpenAIResponsesTurnDigest } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
 import { toOpenAIResponsesInputAssistantTurn } from '../../src/protocols/openai-responses/as-target/assistant-turn.ts';
-import type { SidecarCarrier } from '../../src/round-trip/resolve.ts';
+import type { SidecarOccurrence } from '../../src/round-trip/resolve.ts';
 import type { AnyRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesAssistantMessage, AnthropicMessagesMessage } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentContent } from '@floway-dev/protocols/gemini-generate-content';
@@ -24,7 +24,7 @@ const chatTurn = (): OpenAIChatCompletionsAssistantMessageEx => ({
   annotations: [{ type: 'url_citation', url_citation: { start_index: 0, end_index: 6, title: 'source', url: 'https://example.test' } }],
   reasoning_details: [
     { type: 'reasoning.summary', summary: 'readable summary', format: 'unknown', index: 0 },
-    ...createOpenAIChatCompletionsSidecarCarrier('opaque-sidecar'),
+    ...createOpenAIChatCompletionsSidecarDetails('opaque-sidecar'),
   ],
   tool_calls: [
     { id: 'call-a', type: 'function', function: { name: 'lookup', arguments: '{"q":"a"}' }, provider_specific_fields: { trace: 'a' } },
@@ -61,39 +61,39 @@ const geminiTurn = (): GeminiGenerateContentContent[] => [
   { role: 'model', parts: [createGeminiGenerateContentSidecarCarrier('opaque-sidecar')] },
 ];
 
-const fixtureSidecar = <Turn>(candidates: SidecarCarrier<Turn>[], data = 'opaque-sidecar') => {
+const fixtureSidecar = <Turn>(candidates: SidecarOccurrence<Turn>[], data = 'opaque-sidecar') => {
   const candidate = candidates.find(candidate => candidate.data === data);
   if (candidate === undefined) throw new Error(`Missing fixture sidecar: ${data}`);
   return { sidecar: candidate.data, turn: candidate.withoutSidecar() };
 };
 
 const verifyChatTurn = (
-  turn: Parameters<typeof findOpenAIChatCompletionsSidecarCarriers>[0],
+  turn: Parameters<typeof findOpenAIChatCompletionsSidecarOccurrences>[0],
   sourceTurnDigest: Parameters<typeof verifyOpenAIChatCompletionsTurnDigest>[1],
   data = 'opaque-sidecar',
   version = 1,
-) => verifyOpenAIChatCompletionsTurnDigest(fixtureSidecar(findOpenAIChatCompletionsSidecarCarriers(turn), data).turn, sourceTurnDigest, version);
+) => verifyOpenAIChatCompletionsTurnDigest(fixtureSidecar(findOpenAIChatCompletionsSidecarOccurrences(turn), data).turn, sourceTurnDigest, version);
 
 const verifyResponsesTurn = (
-  turn: Parameters<typeof findOpenAIResponsesSidecarCarriers>[0],
+  turn: Parameters<typeof findOpenAIResponsesSidecarOccurrences>[0],
   sourceTurnDigest: Parameters<typeof verifyOpenAIResponsesTurnDigest>[1],
   data = 'opaque-sidecar',
   version = 1,
-) => verifyOpenAIResponsesTurnDigest(fixtureSidecar(findOpenAIResponsesSidecarCarriers(turn), data).turn, sourceTurnDigest, version);
+) => verifyOpenAIResponsesTurnDigest(fixtureSidecar(findOpenAIResponsesSidecarOccurrences(turn), data).turn, sourceTurnDigest, version);
 
 const verifyMessagesTurn = (
-  turn: Parameters<typeof findAnthropicMessagesSidecarCarriers>[0],
+  turn: Parameters<typeof findAnthropicMessagesSidecarOccurrences>[0],
   sourceTurnDigest: Parameters<typeof verifyAnthropicMessagesTurnDigest>[1],
   data = 'opaque-sidecar',
   version = 1,
-) => verifyAnthropicMessagesTurnDigest(fixtureSidecar(findAnthropicMessagesSidecarCarriers(turn), data).turn, sourceTurnDigest, version);
+) => verifyAnthropicMessagesTurnDigest(fixtureSidecar(findAnthropicMessagesSidecarOccurrences(turn), data).turn, sourceTurnDigest, version);
 
 const verifyGeminiTurn = (
-  turn: Parameters<typeof findGeminiGenerateContentSidecarCarriers>[0],
+  turn: Parameters<typeof findGeminiGenerateContentSidecarOccurrences>[0],
   sourceTurnDigest: Parameters<typeof verifyGeminiGenerateContentTurnDigest>[1],
   data = 'opaque-sidecar',
   version = 1,
-) => verifyGeminiGenerateContentTurnDigest(fixtureSidecar(findGeminiGenerateContentSidecarCarriers(turn), data).turn, sourceTurnDigest, version);
+) => verifyGeminiGenerateContentTurnDigest(fixtureSidecar(findGeminiGenerateContentSidecarOccurrences(turn), data).turn, sourceTurnDigest, version);
 
 describe('assistant-turn sidecar protocols', () => {
   it('extracts Chat encrypted details without changing ordinary reasoning details or the input', async () => {
@@ -102,14 +102,14 @@ describe('assistant-turn sidecar protocols', () => {
       role: 'assistant', content: 'answer', reasoning_content: 'thought',
       reasoning_details: details,
     };
-    const turn = { ...ordinary, reasoning_details: [...details, ...createOpenAIChatCompletionsSidecarCarrier('opaque')] };
+    const turn = { ...ordinary, reasoning_details: [...details, ...createOpenAIChatCompletionsSidecarDetails('opaque')] };
     const before = structuredClone(turn);
-    const inspection = fixtureSidecar(findOpenAIChatCompletionsSidecarCarriers(turn), 'opaque');
+    const inspection = fixtureSidecar(findOpenAIChatCompletionsSidecarOccurrences(turn), 'opaque');
     expect(inspection).toEqual({ sidecar: 'opaque', turn: ordinary });
     expect(turn).toEqual(before);
     const check = await computeOpenAIChatCompletionsTurnDigest(ordinary);
     expect(await verifyOpenAIChatCompletionsTurnDigest(inspection.turn, check, 1)).toBe(true);
-    const changedCarrier = { ...turn, reasoning_details: [...details, ...createOpenAIChatCompletionsSidecarCarrier('different')] };
+    const changedCarrier = { ...turn, reasoning_details: [...details, ...createOpenAIChatCompletionsSidecarDetails('different')] };
     expect(await verifyChatTurn(changedCarrier, check, 'different')).toBe(true);
     expect(await verifyChatTurn({ ...turn, reasoning_content: 'edited thought' }, check, 'opaque')).toBe(false);
   });
@@ -119,7 +119,7 @@ describe('assistant-turn sidecar protocols', () => {
     const ordinary: AnthropicMessagesAssistantMessage[] = [{ role: 'assistant', content: blocks }];
     const turn: AnthropicMessagesAssistantMessage[] = [{ ...ordinary[0], content: [...blocks, createAnthropicMessagesSidecarCarrier('opaque')] }];
     const before = structuredClone(turn);
-    const inspection = fixtureSidecar(findAnthropicMessagesSidecarCarriers(turn), 'opaque');
+    const inspection = fixtureSidecar(findAnthropicMessagesSidecarOccurrences(turn), 'opaque');
     expect(inspection).toEqual({ sidecar: 'opaque', turn: ordinary });
     expect(turn).toEqual(before);
     const check = await computeAnthropicMessagesTurnDigest(ordinary);
@@ -137,7 +137,7 @@ describe('assistant-turn sidecar protocols', () => {
     const carrier = { ...createOpenAIResponsesSidecarCarrier('carrier', 'opaque'), status: 'incomplete' };
     const turn = [...ordinary, carrier];
     const before = structuredClone(turn);
-    const inspection = fixtureSidecar(findOpenAIResponsesSidecarCarriers(turn), 'opaque');
+    const inspection = fixtureSidecar(findOpenAIResponsesSidecarOccurrences(turn), 'opaque');
     expect(inspection).toEqual({ sidecar: 'opaque', turn: ordinary });
     expect(turn).toEqual(before);
     const check = await computeOpenAIResponsesTurnDigest(ordinary);
@@ -154,7 +154,7 @@ describe('assistant-turn sidecar protocols', () => {
     const attached = { ...reasoning, encrypted_content: 'opaque' };
     const turn = [attached];
     const before = structuredClone(turn);
-    const inspection = fixtureSidecar(findOpenAIResponsesSidecarCarriers(turn), 'opaque');
+    const inspection = fixtureSidecar(findOpenAIResponsesSidecarOccurrences(turn), 'opaque');
     expect(inspection).toEqual({ sidecar: 'opaque', turn: [reasoning] });
     expect(turn).toEqual(before);
     const check = await computeOpenAIResponsesTurnDigest([reasoning]);
@@ -173,7 +173,7 @@ describe('assistant-turn sidecar protocols', () => {
       { role: 'model', parts: [createGeminiGenerateContentSidecarCarrier('standalone-content')] },
     ];
     const before = structuredClone(turn);
-    const inspection = fixtureSidecar(findGeminiGenerateContentSidecarCarriers(turn), 'standalone-content');
+    const inspection = fixtureSidecar(findGeminiGenerateContentSidecarOccurrences(turn), 'standalone-content');
     expect(inspection).toEqual({ sidecar: 'standalone-content', turn: ordinary });
     expect(turn).toEqual(before);
     const check = await computeGeminiGenerateContentTurnDigest(ordinary);
@@ -212,7 +212,7 @@ describe('assistant-turn sidecar protocols', () => {
 
   it('checks complete Chat body, readable summary, and ordered tool identities and arguments', async () => {
     const turn = chatTurn();
-    const inspection = fixtureSidecar(findOpenAIChatCompletionsSidecarCarriers(turn));
+    const inspection = fixtureSidecar(findOpenAIChatCompletionsSidecarOccurrences(turn));
     expect(inspection.sidecar).toBe('opaque-sidecar');
     const check = await computeOpenAIChatCompletionsTurnDigest(inspection.turn);
     expect(await verifyChatTurn(turn, check)).toBe(true);
@@ -220,7 +220,7 @@ describe('assistant-turn sidecar protocols', () => {
     const firstFunctionCall = turn.tool_calls![0] as Extract<NonNullable<typeof turn.tool_calls>[number], { type: 'function' }>;
     for (const changed of [
       { ...turn, content: 'edited answer' },
-      { ...turn, reasoning_details: [{ type: 'reasoning.summary', summary: 'edited summary' }, ...createOpenAIChatCompletionsSidecarCarrier('opaque-sidecar')] },
+      { ...turn, reasoning_details: [{ type: 'reasoning.summary', summary: 'edited summary' }, ...createOpenAIChatCompletionsSidecarDetails('opaque-sidecar')] },
       { ...turn, tool_calls: [...turn.tool_calls!].reverse() },
       { ...turn, tool_calls: [{ ...turn.tool_calls![0], id: 'edited-call' }, turn.tool_calls![1]] },
       { ...turn, tool_calls: [{ ...firstFunctionCall, function: { ...firstFunctionCall.function, name: 'edited-name' } }, turn.tool_calls![1]] },
@@ -230,7 +230,7 @@ describe('assistant-turn sidecar protocols', () => {
     ]) expect(await verifyChatTurn(changed, check)).toBe(false);
     const reasoningDetails = [
       { type: 'reasoning.summary', summary: 'readable summary', format: 'unknown', index: 0 },
-      ...createOpenAIChatCompletionsSidecarCarrier('opaque-sidecar'),
+      ...createOpenAIChatCompletionsSidecarDetails('opaque-sidecar'),
     ];
     expect(await verifyChatTurn({
       ...turn,
@@ -245,7 +245,7 @@ describe('assistant-turn sidecar protocols', () => {
       reasoning_details: [reasoningDetails[0], { ...reasoningDetails[1], format: 'edited' }],
     }, check)).toBe(true);
     expect(await verifyChatTurn(turn, check, 'opaque-sidecar', 99)).toBe(false);
-    expect(createOpenAIChatCompletionsSidecarCarrier('opaque')).toEqual([
+    expect(createOpenAIChatCompletionsSidecarDetails('opaque')).toEqual([
       { type: 'reasoning.encrypted', data: 'opaque', format: 'unknown', index: 1 },
     ]);
   });
@@ -267,7 +267,7 @@ describe('assistant-turn sidecar protocols', () => {
 
   it('checks Responses bodies and statuses in order within each item type independently of other metadata', async () => {
     const turn = responseTurn();
-    const check = await computeOpenAIResponsesTurnDigest(fixtureSidecar(findOpenAIResponsesSidecarCarriers(turn)).turn);
+    const check = await computeOpenAIResponsesTurnDigest(fixtureSidecar(findOpenAIResponsesSidecarOccurrences(turn)).turn);
     expect(await verifyResponsesTurn(turn, check)).toBe(true);
     for (const changed of [
       [{ ...turn[0] as Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>, content: [{ type: 'output_text' as const, text: 'edited answer', annotations: [], logprobs: [] }] }, ...turn.slice(1)],
@@ -299,7 +299,7 @@ describe('assistant-turn sidecar protocols', () => {
 
     const secondCall = { ...turn[1] as Extract<OpenAIResponsesOutputItemEx, { type: 'function_call' }>, call_id: 'call-b', name: 'other', arguments: '{"q":"b"}' };
     const twoCalls = [turn[0], turn[1], secondCall, turn[2]];
-    const twoCallsCheck = await computeOpenAIResponsesTurnDigest(fixtureSidecar(findOpenAIResponsesSidecarCarriers(twoCalls)).turn);
+    const twoCallsCheck = await computeOpenAIResponsesTurnDigest(fixtureSidecar(findOpenAIResponsesSidecarOccurrences(twoCalls)).turn);
     expect(await verifyResponsesTurn([turn[0], secondCall, turn[1], turn[2]], twoCallsCheck)).toBe(false);
     expect(await verifyResponsesTurn([turn[1], secondCall, turn[0], turn[2]], twoCallsCheck)).toBe(true);
 
@@ -448,7 +448,7 @@ describe('assistant-turn sidecar protocols', () => {
     expect(turns.map(({ role, items }) => [role, items.length])).toEqual([['assistant', 2], ['user', 1]]);
     expect(turns.map(({ items }) => items).flat()).toEqual([first, second, user]);
     const targetTurn = [first, second];
-    const inspection = fixtureSidecar(findAnthropicMessagesSidecarCarriers(targetTurn));
+    const inspection = fixtureSidecar(findAnthropicMessagesSidecarOccurrences(targetTurn));
     expect(inspection.sidecar).toBe('opaque-sidecar');
     const check = await computeAnthropicMessagesTurnDigest(inspection.turn);
     expect(await verifyMessagesTurn(targetTurn, check)).toBe(true);
@@ -466,11 +466,11 @@ describe('assistant-turn sidecar protocols', () => {
     expect(await verifyMessagesTurn(changed([continued, text, thinking, call]), check)).toBe(false);
     const secondTool = { ...call, id: 'tool-b', name: 'other', input: { q: 'b' } };
     const twoTools = changed([text, thinking, call, secondTool, continued]);
-    const twoToolsCheck = await computeAnthropicMessagesTurnDigest(fixtureSidecar(findAnthropicMessagesSidecarCarriers(twoTools)).turn);
+    const twoToolsCheck = await computeAnthropicMessagesTurnDigest(fixtureSidecar(findAnthropicMessagesSidecarOccurrences(twoTools)).turn);
     expect(await verifyMessagesTurn(changed([text, thinking, secondTool, call, continued]), twoToolsCheck)).toBe(false);
     expect(await verifyMessagesTurn(changed([text, call, secondTool, thinking, continued]), twoToolsCheck)).toBe(true);
     const settingsTurn: AnthropicMessagesAssistantMessage[] = [{ ...first, clear_at: 'never', output_config: null }, second];
-    const settingsCheck = await computeAnthropicMessagesTurnDigest(fixtureSidecar(findAnthropicMessagesSidecarCarriers(settingsTurn)).turn);
+    const settingsCheck = await computeAnthropicMessagesTurnDigest(fixtureSidecar(findAnthropicMessagesSidecarOccurrences(settingsTurn)).turn);
     expect(await verifyMessagesTurn(settingsTurn, settingsCheck)).toBe(true);
     expect(await verifyMessagesTurn([{ ...settingsTurn[0], clear_at: 'next_user_message' }, second], settingsCheck)).toBe(true);
     const stringContentCheck = await computeAnthropicMessagesTurnDigest([{ role: 'assistant', content: 'plain text' }]);
@@ -498,7 +498,7 @@ describe('assistant-turn sidecar protocols', () => {
       createAnthropicMessagesSidecarCarrier('opaque-sidecar'),
     ] satisfies AnthropicMessagesAssistantContentBlock[];
     const citedTurn: AnthropicMessagesAssistantMessage[] = [{ role: 'assistant', content: responseContent }];
-    const citedCheck = await computeAnthropicMessagesTurnDigest(fixtureSidecar(findAnthropicMessagesSidecarCarriers(citedTurn)).turn);
+    const citedCheck = await computeAnthropicMessagesTurnDigest(fixtureSidecar(findAnthropicMessagesSidecarOccurrences(citedTurn)).turn);
     const responseText = responseContent[0] as Extract<typeof responseContent[number], { type: 'text' }>;
     expect(await verifyMessagesTurn([{
       role: 'assistant',
@@ -514,7 +514,7 @@ describe('assistant-turn sidecar protocols', () => {
       { role: 'model', parts: [{ text: 'next turn' }] },
     ]);
     expect(turns.map(({ role, items }) => [role, items.length])).toEqual([['assistant', 2], ['client', 1], ['assistant', 1]]);
-    const check = await computeGeminiGenerateContentTurnDigest(fixtureSidecar(findGeminiGenerateContentSidecarCarriers(turn)).turn);
+    const check = await computeGeminiGenerateContentTurnDigest(fixtureSidecar(findGeminiGenerateContentSidecarOccurrences(turn)).turn);
     expect(await verifyGeminiTurn([{ ...turn[0], parts: [turn[0].parts![1], turn[0].parts![0], turn[0].parts![3], turn[0].parts![2]] }, turn[1]], check)).toBe(true);
     const moved = [
       {
@@ -555,7 +555,7 @@ describe('assistant-turn sidecar protocols', () => {
     const secondPart = { inlineData: { mimeType: 'image/png', data: 'image-b' } };
     const carrier = createGeminiGenerateContentSidecarCarrier('opaque-sidecar');
     const turn = [{ role: 'model' as const, parts: [part, secondPart, carrier] }];
-    const check = await computeGeminiGenerateContentTurnDigest(fixtureSidecar(findGeminiGenerateContentSidecarCarriers(turn)).turn);
+    const check = await computeGeminiGenerateContentTurnDigest(fixtureSidecar(findGeminiGenerateContentSidecarOccurrences(turn)).turn);
     expect(await verifyGeminiTurn([{
       ...turn[0], parts: [{
         ...part, inlineData: { ...part.inlineData, displayName: 'label' }, audioTranscription: { ...part.audioTranscription, speakerLabel: 'speaker' },
@@ -579,7 +579,7 @@ describe('assistant-turn sidecar protocols', () => {
         { text: 'answer', thoughtSignature: 'opaque-sidecar' },
       ],
     }];
-    const check = await computeGeminiGenerateContentTurnDigest(fixtureSidecar(findGeminiGenerateContentSidecarCarriers(turn)).turn);
+    const check = await computeGeminiGenerateContentTurnDigest(fixtureSidecar(findGeminiGenerateContentSidecarOccurrences(turn)).turn);
     const replay = [{
       role: 'model' as const, parts: [
         { functionCall },

@@ -1,9 +1,10 @@
-import type { AnthropicMessagesAssistantState } from './assistant-turn.ts';
+import type { AnthropicMessagesInputAssistantTurnState } from './assistant-turn.ts';
 import { type AnthropicMessagesInputCounts, usageToIR } from './usage.ts';
+import type { ToolNameContext } from '../../../composition/tool-names.ts';
 import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRRecord } from '../../../ir/output/stream.ts';
 import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
-import { appendField, createFieldState, type ReadFieldState, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
+import { appendReadField, createReadFieldState, type ReadFieldState, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';
 import { unwrapCustomToolInput } from '../../custom-tool-unwrap.ts';
 import {
@@ -47,7 +48,7 @@ const UNTRANSLATED_BLOCK_TYPES: readonly string[] = [
   'container_upload',
 ];
 
-type MessagesBlockFieldState = NonNullable<NonNullable<AnthropicMessagesAssistantState<ReadFieldStates>['content']>[number]>;
+type MessagesBlockFieldState = NonNullable<NonNullable<AnthropicMessagesInputAssistantTurnState<ReadFieldStates>['content']>[number]>;
 
 interface MessagesBlockState {
   readonly item?: IRItemHandle;
@@ -60,12 +61,9 @@ interface MessagesBlockState {
   wrappedInput: string;
 }
 
-export const irFromAnthropicMessages = async function* (
+export const readAnthropicMessagesEvents = async function* (
   frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
-  options: {
-    customToolNames?: ReadonlySet<string>;
-    // The original identity each allocated request name stands for.
-    flatIdentities?: ReadonlyMap<string, { readonly namespace?: string; readonly name: string }>;
+  options: Partial<ToolNameContext> & {
     roundTrip: RoundTripReader<'anthropicMessages'>;
   },
 ): AsyncGenerator<IRRecord> {
@@ -102,19 +100,19 @@ export const irFromAnthropicMessages = async function* (
       part = item.part({ type: 'text', text: '', ...(annotations === undefined ? {} : { annotations }) });
       annotationCount = Array.isArray(annotations) ? annotations.length : undefined;
       if (block.text !== '') {
-        textField = createFieldState('text');
-        part.append('text', block.text, [appendField(options.roundTrip.builder, textField, block.text)]);
+        textField = createReadFieldState('text');
+        part.append('text', block.text, [appendReadField(options.roundTrip.builder, textField, block.text)]);
       }
     } else if (block.type === 'thinking') {
       item = builder.item(0, { type: 'reasoning', summary: [''] });
       if (block.thinking !== '') {
-        textField = createFieldState('text');
-        item.append(['summary', 0], block.thinking, [appendField(options.roundTrip.builder, textField, block.thinking)]);
+        textField = createReadFieldState('text');
+        item.append(['summary', 0], block.thinking, [appendReadField(options.roundTrip.builder, textField, block.thinking)]);
       }
     } else if (block.type === 'tool_use') {
       custom = options.customToolNames?.has(block.name) === true;
       // Restore allocated names, including bare names renamed to avoid collisions.
-      const identity = options.flatIdentities?.get(block.name);
+      const identity = options.originalToolNames?.get(block.name);
       const naming = identity ?? { name: block.name };
       item = builder.item(0, custom
         ? { type: 'custom_tool_call', call_id: block.id, ...naming, input: '' }
@@ -158,10 +156,10 @@ export const irFromAnthropicMessages = async function* (
       case 'text_delta':
         if (d.text !== '') {
           if (block.textField === undefined) {
-            block.textField = createFieldState('text');
+            block.textField = createReadFieldState('text');
             block.fieldState = { text: block.textField };
           }
-          const fragmentId = appendField(options.roundTrip.builder, block.textField, d.text);
+          const fragmentId = appendReadField(options.roundTrip.builder, block.textField, d.text);
           if (block.part === undefined) block.item.append(['content', 0, 'text'], d.text, [fragmentId]);
           else block.part.append('text', d.text, [fragmentId]);
         }
@@ -169,20 +167,20 @@ export const irFromAnthropicMessages = async function* (
       case 'thinking_delta':
         if (d.thinking !== '') {
           if (block.textField === undefined) {
-            block.textField = createFieldState('text');
+            block.textField = createReadFieldState('text');
             block.fieldState = { thinking: block.textField };
           }
-          block.item.append(['summary', 0], d.thinking, [appendField(options.roundTrip.builder, block.textField, d.thinking)]);
+          block.item.append(['summary', 0], d.thinking, [appendReadField(options.roundTrip.builder, block.textField, d.thinking)]);
         }
         break;
       case 'signature_delta': break;
       case 'input_json_delta':
         if (d.partial_json !== '') {
           if (block.jsonField === undefined) {
-            block.jsonField = createFieldState('json');
+            block.jsonField = createReadFieldState('json');
             block.fieldState = { input: block.jsonField };
           }
-          const fragmentId = appendField(options.roundTrip.builder, block.jsonField, d.partial_json);
+          const fragmentId = appendReadField(options.roundTrip.builder, block.jsonField, d.partial_json);
           if (block.custom) block.wrappedInput += d.partial_json;
           else block.item.append('arguments', d.partial_json, [fragmentId]);
         }
@@ -238,7 +236,7 @@ export const irFromAnthropicMessages = async function* (
       if (!started) throw new Error('Messages message_stop arrived before message_start');
       if (openBlocks.size > 0) throw new Error('Messages message_stop arrived with open content blocks');
       const nativeResult = nativeAccumulator.result();
-      const contentFields: NonNullable<AnthropicMessagesAssistantState<ReadFieldStates>['content']> = [];
+      const contentFields: NonNullable<AnthropicMessagesInputAssistantTurnState<ReadFieldStates>['content']> = [];
       contentFields.length = nativeResult.content.length;
       [...blockFieldStates.entries()].toSorted(([left], [right]) => left - right).forEach(([, block], index) => {
         if (block.fieldState !== undefined) contentFields[index] = block.fieldState;

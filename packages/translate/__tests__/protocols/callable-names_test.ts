@@ -52,7 +52,7 @@ test.each([undefined, 'files'])('Chat restores callable names and kinds in names
     }],
   }), doneFrame()];
   const capture = createRoundTripReaderCapture<'openaiChatCompletions'>();
-  await expectOriginalCalls(openaiChatCompletionsTargetProtocol.readStream(iterate(frames), written.context, capture.roundTrip), namespace);
+  await expectOriginalCalls(openaiChatCompletionsTargetProtocol.readEvents(iterate(frames), written.context, capture.roundTrip), namespace);
   expect(capture.turns.get(0)?.turn.tool_calls).toMatchObject([
     { function: { name: functionName } }, { function: { name: customName } },
   ]);
@@ -76,7 +76,7 @@ test.each([undefined, 'files'])('Messages restores callable names and kinds in n
     ...ordinary.filter(frame => frame.type === 'event' && (frame.event.type === 'message_delta' || frame.event.type === 'message_stop')),
   ];
   const capture = createRoundTripReaderCapture<'anthropicMessages'>();
-  await expectOriginalCalls(anthropicMessagesTargetProtocol.readStream(iterate(frames), written.context, capture.roundTrip), namespace);
+  await expectOriginalCalls(anthropicMessagesTargetProtocol.readEvents(iterate(frames), written.context, capture.roundTrip), namespace);
   expect(capture.turns.get(0)?.turn.content).toMatchObject([
     { type: 'tool_use', name: functionName }, { type: 'tool_use', name: customName },
   ]);

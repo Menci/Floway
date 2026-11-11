@@ -1,7 +1,7 @@
 import { restateAnthropicMessagesError } from './as-source/error-body.ts';
-import { anthropicMessagesRead } from './as-source/input-to.ts';
-import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from './as-source/round-trip.ts';
-import { anthropicMessagesFromIR } from './as-source/sse-to.ts';
+import { writeAnthropicMessagesEvents } from './as-source/events.ts';
+import { readAnthropicMessagesRequest } from './as-source/input-to.ts';
+import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarOccurrences, verifyAnthropicMessagesTurnDigest } from './as-source/round-trip.ts';
 import type { SourceProtocol } from '../../composition/index.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 
@@ -16,13 +16,13 @@ export const anthropicMessagesSourceProtocol: SourceProtocol<
   'anthropicMessages', AnthropicMessagesPayload, AnthropicMessagesStreamEventEx
 > = {
   name: 'anthropicMessages',
-  read: anthropicMessagesRead,
+  read: readAnthropicMessagesRequest,
   sidecarRecognition: {
-    inspect: findAnthropicMessagesSidecarCarriers,
+    inspect: findAnthropicMessagesSidecarOccurrences,
     verify: verifyAnthropicMessagesTurnDigest,
     collectCandidates: collectAnthropicMessagesReplayContents,
   },
-  restateUpstreamError: restateAnthropicMessagesError,
+  error: restateAnthropicMessagesError,
   // Stating a Messages stream needs nothing the request produced.
-  writeStream: (_payload, records, roundTrip) => anthropicMessagesFromIR(records, { roundTrip }),
+  writeEvents: (_payload, records, roundTrip) => writeAnthropicMessagesEvents(records, { roundTrip }),
 };

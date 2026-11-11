@@ -1,11 +1,11 @@
 import type { AnthropicMessagesInputAssistantTurn } from '../protocols/anthropic-messages/as-target/assistant-turn.ts';
 import type { GeminiGenerateContentInputAssistantTurn } from '../protocols/gemini-generate-content/as-target/assistant-turn.ts';
 import type { OpenAIChatCompletionsInputAssistantTurn } from '../protocols/openai-chat-completions/as-target/assistant-turn.ts';
-import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesInputAssistantTurn } from '../protocols/openai-responses/as-target/assistant-turn.ts';
 
 export interface InputAssistantTurnByProtocol {
   openaiChatCompletions: OpenAIChatCompletionsInputAssistantTurn;
-  openaiResponses: CanonicalOpenAIResponsesInputItem[];
+  openaiResponses: OpenAIResponsesInputAssistantTurn;
   anthropicMessages: AnthropicMessagesInputAssistantTurn;
   geminiGenerateContent: GeminiGenerateContentInputAssistantTurn;
 }

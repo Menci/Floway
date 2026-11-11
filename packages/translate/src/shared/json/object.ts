@@ -28,7 +28,7 @@ export const isCompleteJSONObject = (text: string): boolean => {
   }
 };
 
-export const parseJSONObjectAtCompletion = (
+export const parseJSONObjectUnlessTruncated = (
   text: string,
   completion: 'complete' | 'truncated',
   parser?: (text: string) => unknown,

@@ -8,7 +8,7 @@
 // per-protocol readers, never here.
 //
 // Request translation has three branches. An assistant turn whose authenticated
-// sidecar resolves to the source protocol's native turn bypasses this IR
+// sidecar resolves to the target protocol's native turn bypasses this IR
 // entirely. The other two are the types below:
 //
 //     A client turn    -> IRInputClientTurn    -> B client turn
@@ -121,15 +121,8 @@ export interface IRInputRequestHeader {
 // survives only where the target distinguishes it.
 export type IRInputTool = IRInputFunctionTool | IRInputCustomTool;
 
-export interface IRInputFunctionTool {
+export interface IRInputFunctionTool extends IRInputToolSelector {
   readonly type: 'function';
-  // The name inside the declaration group, or the whole name when the source
-  // has no groups.
-  readonly name: string;
-  // The declaration group this tool belongs to. A protocol whose wire has no
-  // namespaces states nothing here and a protocol that does states the pair
-  // back the way its client wrote it.
-  readonly namespace?: string; // Responses
   readonly description?: string;
   // A JSON Schema object. Both OpenAI wires accept one optionally and omit it
   // when the source declared none; Messages always states one, so the reader
@@ -143,10 +136,8 @@ export interface IRInputFunctionTool {
 // A freeform tool: the model returns the string the declaration describes.
 // Responses has a native arm for it; Chat Completions and Messages wrap it in a
 // single-`input`-string function schema.
-export interface IRInputCustomTool {
+export interface IRInputCustomTool extends IRInputToolSelector {
   readonly type: 'custom';
-  readonly name: string;
-  readonly namespace?: string; // Responses
   readonly description?: string;
   // The constrained grammar a target uses to validate the model's string.
   readonly format?: IRInputCustomToolFormat;
@@ -170,16 +161,16 @@ export type IRInputToolChoice =
 // A selector names one declared callable by kind and its logical identity, which
 // is what every protocol's selector arm states. A protocol that groups its
 // declarations states the group here too.
-export type IRInputToolSelector =
-  | { readonly type: 'function'; readonly name: string; readonly namespace?: string }
-  | { readonly type: 'custom'; readonly name: string; readonly namespace?: string };
+export interface IRInputToolSelector {
+  readonly type: 'function' | 'custom';
+  readonly name: string;
+  readonly namespace?: string;
+}
 
-// A turn is a maximal run of one branch class, not a protocol's message
-// grouping. An assistant message is always its own turn; a prompt is a turn of
-// its own, and a run of other client messages is one turn, because a writer
-// that folds adjacent client turns into one native message gets the same result
-// either way. Writers regroup the flat item list into whatever boundaries their
-// protocol uses, so the source grouping never constrains them.
+// A turn groups one conversation branch. Assistant messages keep their own
+// boundaries; adjacent client messages join except at prompts, whose boundaries
+// let targets place them inline or hoist them. Items stay ordered while each
+// target chooses its native message grouping.
 export type IRInputTurn = IRInputClientTurn | IRInputAssistantTurn;
 
 // Everything the client stated. The branch is named `client` rather than `user`
@@ -300,9 +291,9 @@ export interface IRInputAudio {
 // `media_type` is absent exactly when the source does not state one: OpenAI
 // `file_data` is bare base64, while images always arrive with a type (a data
 // URL upstream, or a typed base64 block in Messages and GenerateContent).
-// Responses decodes a `data:` URL into the base64 arm; Chat Completions carries
-// `file_data` verbatim. The `url` arm means a reference a target may fetch or
-// forward.
+// Both OpenAI readers decode a `data:` URL into the base64 arm; raw base64
+// remains untyped when no media type was stated. The `url` arm is a reference
+// the target may fetch or forward.
 export type IRInputMedia =
   | { readonly source_kind: 'url'; readonly url: string } // All
   | { readonly source_kind: 'base64'; readonly media_type?: string; readonly data: string } // All
@@ -328,15 +319,11 @@ export interface IRInputReasoningItem {
   readonly content?: readonly string[]; // Responses
 }
 
-export interface IRInputFunctionCallItem {
+export interface IRInputFunctionCallItem extends Pick<IRInputToolSelector, 'name' | 'namespace'> {
   readonly type: 'function_call'; // All
   // A source that omits the id leaves it absent. A target whose wire correlates
   // results by id states the missing ones while writing.
   readonly call_id?: string; // All
-  // The name inside the declaration group, or the whole name when the source
-  // has no groups, plus the group when the source grouped this call.
-  readonly name: string; // All
-  readonly namespace?: string; // Responses
   // JSON text, never a parsed object. Chat Completions and Responses carry
   // arguments as strings that may be malformed, and a reader that parsed them
   // would have to invent a wrapper for invalid JSON. Each target parses at its
@@ -346,11 +333,9 @@ export interface IRInputFunctionCallItem {
   readonly arguments?: string; // All
 }
 
-export interface IRInputCustomToolCallItem {
+export interface IRInputCustomToolCallItem extends Pick<IRInputToolSelector, 'name' | 'namespace'> {
   readonly type: 'custom_tool_call'; // ChatCompletions, Responses
   readonly call_id?: string; // ChatCompletions, Responses
-  readonly name: string; // ChatCompletions, Responses
-  readonly namespace?: string; // Responses
   readonly input: string; // ChatCompletions, Responses
 }
 

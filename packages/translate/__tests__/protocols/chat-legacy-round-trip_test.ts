@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import { toOpenAIResponsesInputAssistantTurn } from '../../src/protocols/openai-responses/as-target/assistant-turn.ts';
 import { iterate } from '../ir/helpers.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
+import { expectTrip } from '../trip.ts';
 import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
@@ -63,13 +64,13 @@ test('Messages returns matching legacy function results while modern calls remai
     tools: [{ name: 'lookup', input_schema: { type: 'object', properties: { x: { type: 'integer' } } } }],
   };
   for (const [index, mode] of (['legacy', 'modern', 'legacy'] as const).entries()) {
-    const trip = await routeAnthropicMessagesViaOpenAIChatCompletions(payload, context);
+    const trip = expectTrip(await routeAnthropicMessagesViaOpenAIChatCompletions(payload, context));
     const result = await collectAnthropicMessagesProtocolEventsToResult(trip.events(iterate(nativeFrames(mode, 'lookup'))));
     const call = result.content.find(block => block.type === 'tool_use');
     if (call === undefined) throw new Error('Expected a public Messages tool invocation');
     payload.messages.push({ role: 'assistant', content: result.content }, { role: 'user', content: [{ type: 'tool_result', tool_use_id: call.id, content: `result-${index}` }] });
   }
-  const replay = await routeAnthropicMessagesViaOpenAIChatCompletions(payload, context);
+  const replay = expectTrip(await routeAnthropicMessagesViaOpenAIChatCompletions(payload, context));
   assertNativeHistory(replay.target, 'lookup', ['result-0', 'result-1', 'result-2']);
 });
 
@@ -81,7 +82,7 @@ test('Responses binds public namespaced call IDs to the native legacy function n
   };
   let nativeName = '';
   for (const [index, mode] of (['legacy', 'modern', 'legacy'] as const).entries()) {
-    const trip = await routeOpenAIResponsesViaOpenAIChatCompletions(payload, context);
+    const trip = expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions(payload, context));
     const declaration = trip.target.tools?.find(tool => tool.type === 'function');
     if (declaration?.type !== 'function') throw new Error('Expected a native function declaration');
     nativeName = declaration.function.name;
@@ -94,7 +95,7 @@ test('Responses binds public namespaced call IDs to the native legacy function n
     if (!Array.isArray(payload.input)) throw new Error('Expected item-array history');
     payload.input.push(...toOpenAIResponsesInputAssistantTurn(result.output), { type: 'function_call_output', call_id: call.call_id, output: `result-${index}` });
   }
-  const replay = await routeOpenAIResponsesViaOpenAIChatCompletions(payload, context);
+  const replay = expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions(payload, context));
   assertNativeHistory(replay.target, nativeName, ['result-0', 'result-1', 'result-2']);
 });
 
@@ -106,7 +107,7 @@ test('Gemini matches ID-less legacy responses by public name and explicit modern
     tools: [{ functionDeclarations: [{ name: 'lookup', parameters: { type: 'OBJECT', properties: { x: { type: 'INTEGER' } } } }] }],
   };
   for (const [index, mode] of (['legacy', 'modern', 'legacy'] as const).entries()) {
-    const trip = await routeGeminiGenerateContentViaOpenAIChatCompletions(payload, context);
+    const trip = expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions(payload, context));
     const result = await collectGeminiGenerateContentProtocolEventsToResult(trip.events(iterate(nativeFrames(mode, 'lookup'))));
     const content = result.candidates?.[0]?.content;
     const call = content?.parts?.find(part => part.functionCall !== undefined)?.functionCall;
@@ -114,20 +115,20 @@ test('Gemini matches ID-less legacy responses by public name and explicit modern
     expect(call.id).toBe(mode === 'modern' ? 'native-modern' : undefined);
     payload.contents.push(content, { role: 'user', parts: [{ functionResponse: { name: call.name, ...(call.id === undefined ? {} : { id: call.id }), response: { result: index } } }] });
   }
-  const replay = await routeGeminiGenerateContentViaOpenAIChatCompletions(payload, context);
+  const replay = expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions(payload, context));
   assertNativeHistory(replay.target, 'lookup', ['{"result":0}', '{"result":1}', '{"result":2}']);
 });
 
 test('Gemini keeps modern IDs separate when a vendor stream includes both call formats', async () => {
   const context = { sidecarCodec: createTestSidecarCodec() };
   const source: GeminiGenerateContentRequest = { model: 'model', contents: [{ role: 'user', parts: [{ text: 'Call lookup' }] }] };
-  const trip = await routeGeminiGenerateContentViaOpenAIChatCompletions(source, context);
+  const trip = expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions(source, context));
   const result = await collectGeminiGenerateContentProtocolEventsToResult(trip.events(iterate(nativeFrames('mixed', 'lookup'))));
   const content = result.candidates?.[0]?.content;
   if (content === undefined) throw new Error('Expected a public Gemini assistant content');
   const calls = content.parts?.flatMap(part => part.functionCall === undefined ? [] : [part.functionCall]);
   expect(calls).toHaveLength(2);
-  const replay = await routeGeminiGenerateContentViaOpenAIChatCompletions({
+  const replay = expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions({
     model: 'model',
     contents: [
       ...source.contents ?? [], content,
@@ -138,7 +139,7 @@ test('Gemini keeps modern IDs separate when a vendor stream includes both call f
         ],
       },
     ],
-  }, context);
+  }, context));
   const native = replay.target.messages.find(message => message.role === 'assistant');
   expect(native?.function_call).toEqual({ name: 'lookup', arguments: '{"x":1}' });
   expect(native?.tool_calls).toEqual([{ id: 'native-modern', type: 'function', function: { name: 'lookup', arguments: '{"x":1}' } }]);
@@ -153,14 +154,14 @@ test('Gemini keeps modern IDs separate when a vendor stream includes both call f
 
 test('restored legacy results retain the ordinary Responses input_file rejection', async () => {
   const context = { sidecarCodec: createTestSidecarCodec() };
-  const trip = await routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'public-model', stream: true, input: 'Call lookup' }, context);
+  const trip = expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'public-model', stream: true, input: 'Call lookup' }, context));
   const result = await collectOpenAIResponsesProtocolEventsToResult(trip.events(iterate(nativeFrames('legacy', 'lookup'))));
   const call = result.output.find(item => item.type === 'function_call');
   if (call === undefined) throw new Error('Expected a public Responses invocation');
   const output = { type: 'function_call_output' as const, call_id: call.call_id, output: [{ type: 'input_file' as const, file_id: 'unsupported-file' }] };
   const input = toOpenAIResponsesInputAssistantTurn(result.output);
   for (const history of [input, input.filter(item => item.type !== 'reasoning')]) {
-    await expect(routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'public-model', stream: true, input: [...history, output] }, context)).rejects.toThrow('Cannot translate file tool output to OpenAI Chat Completions.');
+    await expect(routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'public-model', stream: true, input: [...history, output] }, context)).resolves.toMatchObject({ type: 'input-error', message: expect.stringContaining('Cannot translate file tool output to OpenAI Chat Completions.') });
   }
 });
 
@@ -173,7 +174,7 @@ test('a legacy call answered after another assistant turn is refused', async () 
     messages: [{ role: 'user', content: 'Call lookup' }],
     tools: [{ name: 'lookup', input_schema: { type: 'object', properties: { x: { type: 'integer' } } } }],
   };
-  const trip = await routeAnthropicMessagesViaOpenAIChatCompletions(payload, context);
+  const trip = expectTrip(await routeAnthropicMessagesViaOpenAIChatCompletions(payload, context));
   const result = await collectAnthropicMessagesProtocolEventsToResult(trip.events(iterate(nativeFrames('legacy', 'lookup'))));
   const call = result.content.find(block => block.type === 'tool_use');
   if (call === undefined) throw new Error('Expected a public Messages tool invocation');
@@ -183,7 +184,7 @@ test('a legacy call answered after another assistant turn is refused', async () 
     { role: 'assistant', content: 'meanwhile' },
     { role: 'user', content: [{ type: 'tool_result', tool_use_id: call.id, content: 'late' }] },
   );
-  await expect(routeAnthropicMessagesViaOpenAIChatCompletions(payload, context)).rejects.toThrow('does not answer it');
+  await expect(routeAnthropicMessagesViaOpenAIChatCompletions(payload, context)).resolves.toMatchObject({ type: 'input-error', message: expect.stringContaining('does not answer it') });
 });
 
 test('a legacy call and its answer share one client turn without being refused', async () => {
@@ -196,7 +197,7 @@ test('a legacy call and its answer share one client turn without being refused',
       messages: [{ role: 'user', content: 'Call lookup' }],
       tools: [{ name: 'lookup', input_schema: { type: 'object', properties: { x: { type: 'integer' } } } }],
     };
-    const trip = await routeAnthropicMessagesViaOpenAIChatCompletions(payload, context);
+    const trip = expectTrip(await routeAnthropicMessagesViaOpenAIChatCompletions(payload, context));
     const result = await collectAnthropicMessagesProtocolEventsToResult(trip.events(iterate(nativeFrames('legacy', 'lookup'))));
     const call = result.content.find(block => block.type === 'tool_use');
     if (call === undefined) throw new Error('Expected a public Messages tool invocation');
@@ -205,7 +206,7 @@ test('a legacy call and its answer share one client turn without being refused',
       : { role: 'user', content: 'chatter' };
     const rest = order === 'before' ? { role: 'user' as const, content: 'chatter' } : { role: 'user' as const, content: [{ type: 'tool_result' as const, tool_use_id: call.id, content: 'the-answer' }] };
     payload.messages.push({ role: 'assistant', content: result.content }, answer, rest);
-    const replay = await routeAnthropicMessagesViaOpenAIChatCompletions(payload, context);
+    const replay = expectTrip(await routeAnthropicMessagesViaOpenAIChatCompletions(payload, context));
     expect(replay.target.messages.filter(message => message.role === 'function')).toEqual([{ role: 'function', name: 'lookup', content: 'the-answer' }]);
   }
 });

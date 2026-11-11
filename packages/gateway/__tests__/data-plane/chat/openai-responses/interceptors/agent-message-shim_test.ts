@@ -6,8 +6,7 @@ import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesInputAgentMessageItem, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 import { eventResult, type FlagId } from '@floway-dev/provider';
-import { assert, assertEquals, assertRejects, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
-import { TranslatorInputError } from '@floway-dev/translate';
+import { assert, assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const gatewayCtx = mockChatGatewayCtx();
 const okEvents = () => Promise.resolve(eventResult((async function* () { yield doneFrame(); })(), testTelemetryModelIdentity));
@@ -20,7 +19,7 @@ const lower = async (
     enabledFlags?: ReadonlySet<FlagId>;
     targetApi?: OpenAIResponsesInvocation['targetApi'];
   } = {},
-): Promise<{ before: OpenAIResponsesInvocation['payload']; seen: OpenAIResponsesInvocation['payload'] }> => {
+) => {
   const invocation: OpenAIResponsesInvocation = {
     payload: { model: 'test-model', input },
     candidate: stubModelCandidate({ enabledFlags }),
@@ -30,11 +29,11 @@ const lower = async (
   };
   const before = invocation.payload;
   let seen: OpenAIResponsesInvocation['payload'] | undefined;
-  await withOpenAIResponsesAgentMessageShim(invocation, gatewayCtx, () => {
+  const result = await withOpenAIResponsesAgentMessageShim(invocation, gatewayCtx, () => {
     seen = invocation.payload;
     return okEvents();
   });
-  return { before, seen: seen! };
+  return { before, seen, result };
 };
 
 const newTask: OpenAIResponsesInputAgentMessageItem = {
@@ -78,6 +77,7 @@ test('lowers agent_message items in place to framed user messages when the flag 
     { type: 'function_call', call_id: 'call_1', name: 'shell', arguments: '{}', status: 'completed' },
     reply,
   ], { enabledFlags: FLAG });
+  assert(seen !== undefined);
 
   assertEquals(seen.input, [
     { type: 'message', role: 'developer', content: 'You are an agent in a team of agents.' },
@@ -103,6 +103,7 @@ test('lowers agent_message items in place to framed user messages when the flag 
 
 test('forwards agent_message verbatim to a native OpenAI Responses target without the flag', async () => {
   const { before, seen } = await lower([newTask]);
+  assert(seen !== undefined);
   assert(seen === before);
   assertEquals(seen.input, [newTask]);
 });
@@ -111,6 +112,7 @@ test.each(['anthropicMessages', 'openaiChatCompletions'] as const)(
   'lowers agent_message at a %s target even without the flag',
   async targetApi => {
     const { seen } = await lower([newTask], { targetApi });
+    assert(seen !== undefined);
     assertEquals(seen.input, [framedNewTask]);
   },
 );
@@ -119,19 +121,20 @@ test('leaves a payload without agent_message as the same object', async () => {
   const input: CanonicalOpenAIResponsesInputItem[] = [{ type: 'message', role: 'user', content: 'hi' }];
   for (const options of [{ enabledFlags: FLAG }, {}, { targetApi: 'anthropicMessages' as const }]) {
     const { before, seen } = await lower(input, options);
+    assert(seen !== undefined);
     assert(seen === before);
   }
 });
 
-test('rejects an agent_message whose content cannot be lowered', async () => {
-  await assertRejects(
-    () => lower([{
-      type: 'agent_message',
-      author: '/root',
-      recipient: '/root/worker',
-      content: [{ type: 'encrypted_content', encrypted_content: 'opaque' }],
-    }], { enabledFlags: FLAG }),
-    TranslatorInputError,
-    "Invalid value: 'encrypted_content' for 'agent_message.content[0].type'.",
-  );
+test('returns an input error without running downstream when agent content cannot be lowered', async () => {
+  const { result, seen } = await lower([{
+    type: 'agent_message', author: '/root', recipient: '/root/worker',
+    content: [{ type: 'encrypted_content', encrypted_content: 'opaque' }],
+  }], { enabledFlags: FLAG });
+  assertEquals(seen, undefined);
+  assert(result.type === 'api-error');
+  assertEquals(result.status, 400);
+  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { message: string; param: string } };
+  assertEquals(body.error.message, "Invalid value: 'encrypted_content' for 'agent_message.content[0].type'.");
+  assertEquals(body.error.param, 'agent_message.content[0].type');
 });

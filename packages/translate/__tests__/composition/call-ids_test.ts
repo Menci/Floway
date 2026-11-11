@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 
 import { assignCallIds, type PendingCall } from '../../src/composition/call-ids.ts';
-import type { ResolvedTurn } from '../../src/composition/segments.ts';
+import type { RestoredAssistantTurn } from '../../src/composition/segments.ts';
 import type { IRInputTurn } from '../../src/ir/input/types.ts';
-import { TranslatorInputError } from '../../src/types.ts';
+import { TranslateInputException } from '../../src/types.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 const call = (name: string, callId?: string): IRInputTurn => ({
@@ -15,7 +15,7 @@ const result = (name?: string, callId?: string): IRInputTurn => ({
   items: [{ type: 'tool_result', ...(name === undefined ? {} : { name }), ...(callId === undefined ? {} : { call_id: callId }), output: '' }],
 });
 /** A turn a sidecar restored: one the target states natively, with its own calls. */
-const restored = (calls: readonly PendingCall[]): ResolvedTurn<readonly PendingCall[]> => ({ kind: 'resolved', turn: calls });
+const restored = (calls: readonly PendingCall[]): RestoredAssistantTurn<readonly PendingCall[]> => ({ kind: 'restored', turn: calls });
 const restoredCalls = (turn: readonly PendingCall[]): readonly PendingCall[] => turn;
 
 /** The result the last client turn ends with. */
@@ -43,8 +43,8 @@ test('a result naming a call nothing awaits is refused rather than answered with
   // The call it names is a turn this side never saw — a trimmed history, say.
   // Answering an oldest pending call instead would pair it with the wrong one,
   // and inventing an id would state a call no assistant turn ever made.
-  assertThrows(() => assignCallIds([call('read', 'a'), result('write')], () => []), TranslatorInputError);
-  assertThrows(() => assignCallIds([call('read', 'a'), result(undefined, 'invented')], () => []), TranslatorInputError);
+  assertThrows(() => assignCallIds([call('read', 'a'), result('write')], () => []), TranslateInputException);
+  assertThrows(() => assignCallIds([call('read', 'a'), result(undefined, 'invented')], () => []), TranslateInputException);
 });
 
 test('a stated result releases its call so a later id-less result cannot take it', () => {

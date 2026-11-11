@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { restateGeminiGenerateContentError } from '../../../../src/protocols/gemini-generate-content/as-source/error-body.ts';
-import { geminiGenerateContentErrorFromIR } from '../../../../src/protocols/gemini-generate-content/as-source/sse-to.ts';
+import { geminiGenerateContentErrorFromIR } from '../../../../src/protocols/gemini-generate-content/as-source/events.ts';
 import { errorPayloadFromWire } from '../../../../src/shared/api-error.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -9,14 +9,14 @@ const decoded = (result: { body: unknown } | undefined) => result!.body as {
   error: { code: number; status: string; message: string };
 };
 
-const upstreamOf = (status: number, body: unknown, headers: Record<string, string> = {}) => ({
+const upstreamOf = (status: number, body: unknown, headers: Record<string, string> = {}) => [
   status,
-  headers: new Headers({ 'x-upstream': 'a', ...headers }),
-  body: new TextEncoder().encode(typeof body === 'string' ? body : JSON.stringify(body)),
-});
+  new Headers({ 'x-upstream': 'a', ...headers }),
+  new TextEncoder().encode(typeof body === 'string' ? body : JSON.stringify(body)),
+] as const;
 
 test('keeps the upstream status in both places GenerateContent states it', () => {
-  const result = restateGeminiGenerateContentError(upstreamOf(503, { error: { message: 'upstream overloaded' } }));
+  const result = restateGeminiGenerateContentError(...upstreamOf(503, { error: { message: 'upstream overloaded' } }));
 
   // The protocol repeats the HTTP status inside the error object, so the two
   // must agree. Re-deriving the code from the message would report a different
@@ -28,7 +28,7 @@ test('keeps the upstream status in both places GenerateContent states it', () =>
 });
 
 test('keeps a status the inferred table would have flattened', () => {
-  const result = restateGeminiGenerateContentError(upstreamOf(402, { error: { message: 'payment required' } }));
+  const result = restateGeminiGenerateContentError(...upstreamOf(402, { error: { message: 'payment required' } }));
 
   assertEquals(result!.status, 402);
   assertEquals(decoded(result).error.code, 402);
@@ -36,7 +36,7 @@ test('keeps a status the inferred table would have flattened', () => {
 });
 
 test('keeps the upstream headers a client reads', () => {
-  const result = restateGeminiGenerateContentError(upstreamOf(429, { error: { message: 'slow down' } }, { 'retry-after': '12', 'x-request-id': 'req_9' }));
+  const result = restateGeminiGenerateContentError(...upstreamOf(429, { error: { message: 'slow down' } }, { 'retry-after': '12', 'x-request-id': 'req_9' }));
 
   assertEquals(result!.headers.get('retry-after'), '12');
   assertEquals(result!.headers.get('x-request-id'), 'req_9');
@@ -44,8 +44,8 @@ test('keeps the upstream headers a client reads', () => {
 });
 
 test('passes an unrecognized body through untouched', () => {
-  assertEquals(restateGeminiGenerateContentError(upstreamOf(500, 'internal blew up')), undefined);
-  assertEquals(restateGeminiGenerateContentError(upstreamOf(500, { detail: 'nope' })), undefined);
+  assertEquals(restateGeminiGenerateContentError(...upstreamOf(500, 'internal blew up')), undefined);
+  assertEquals(restateGeminiGenerateContentError(...upstreamOf(500, { detail: 'nope' })), undefined);
 });
 
 test('preserves the upstream failure fields beside the native RPC code', () => {
@@ -53,7 +53,7 @@ test('preserves the upstream failure fields beside the native RPC code', () => {
     message: 'bad field', type: 'invalid_request_error', code: 'invalid_value', param: 'temperature',
     provider_specific_fields: { request_id: 'req_1' }, retry_after: 10,
   };
-  const result = restateGeminiGenerateContentError(upstreamOf(400, { error }));
+  const result = restateGeminiGenerateContentError(...upstreamOf(400, { error }));
   const expected = {
     code: 400, status: 'INVALID_ARGUMENT', message: 'bad field',
     details: [{

@@ -1,17 +1,16 @@
 import { test } from 'vitest';
 
-import { translatorInputErrorResult } from '../../../../src/data-plane/chat/anthropic-messages/errors.ts';
+import { inputErrorResult } from '../../../../src/data-plane/chat/anthropic-messages/errors.ts';
 import type { ApiErrorResult } from '@floway-dev/provider';
 import { assert, assertEquals } from '@floway-dev/test-utils';
-import { TranslatorInputError } from '@floway-dev/translate';
 
-const apiErrorOf = (result: ReturnType<typeof translatorInputErrorResult>): ApiErrorResult => result as ApiErrorResult;
-const bodyOf = (result: ReturnType<typeof translatorInputErrorResult>): Record<string, unknown> =>
+const apiErrorOf = (result: ReturnType<typeof inputErrorResult>): ApiErrorResult => result as ApiErrorResult;
+const bodyOf = (result: ReturnType<typeof inputErrorResult>): Record<string, unknown> =>
   JSON.parse(new TextDecoder().decode(apiErrorOf(result).body));
 
-test('translatorInputErrorResult renders an Anthropic 400 invalid_request_error envelope with top-level request_id', () => {
-  const result = translatorInputErrorResult(
-    new TranslatorInputError("Invalid 'image_url' content part in system or developer message. Only 'text' content parts are supported in system messages on this model."),
+test('inputErrorResult renders an Anthropic 400 invalid_request_error envelope with top-level request_id', () => {
+  const result = inputErrorResult(
+    { message: "Invalid 'image_url' content part in system or developer message. Only 'text' content parts are supported in system messages on this model." },
   );
   const apiError = apiErrorOf(result);
 
@@ -29,18 +28,18 @@ test('translatorInputErrorResult renders an Anthropic 400 invalid_request_error 
   assert(typeof body.request_id === 'string' && /^req_[A-Za-z0-9]{24}$/.test(body.request_id), `request_id ${String(body.request_id)} must match Anthropic-shape req_<24 opaque chars>`);
 });
 
-test('translatorInputErrorResult preserves Anthropic key order: type, error, request_id', () => {
-  const result = translatorInputErrorResult(new TranslatorInputError('whatever'));
+test('inputErrorResult preserves Anthropic key order: type, error, request_id', () => {
+  const result = inputErrorResult({ message: 'whatever' });
   const raw = new TextDecoder().decode(apiErrorOf(result).body);
   // Key-order is load-bearing for byte-faithfulness with Anthropic-direct.
   assert(/^\{"type":"error","error":\{"type":"invalid_request_error","message":"whatever"\},"request_id":"req_[A-Za-z0-9]{24}"\}$/.test(raw), `body ${raw} must match Anthropic-direct byte shape`);
 });
 
-test('translatorInputErrorResult keeps the field and code the translator named', () => {
+test('inputErrorResult keeps the field and code the translator named', () => {
   // A translator that knows which request field failed says so; without this
   // the client sees a generic 400 and has to guess what to change.
-  const result = translatorInputErrorResult(
-    new TranslatorInputError("Missing required parameter: 'model'.", { param: 'model', code: 'missing_required_parameter' }),
+  const result = inputErrorResult(
+    { message: "Missing required parameter: 'model'.", param: 'model', code: 'missing_required_parameter' },
   );
 
   assertEquals(bodyOf(result).error, {

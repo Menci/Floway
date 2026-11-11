@@ -155,10 +155,7 @@ type IROutputTextPartLogprobs = {
 };
 
 // ChatCompletions, Responses, GenerateContent
-export type IROutputTokenLogprob = {
-  readonly token: string; // ChatCompletions, Responses, GenerateContent
-  readonly logprob: number; // ChatCompletions, Responses, GenerateContent
-  readonly bytes?: readonly number[] | null; // ChatCompletions, Responses
+export type IROutputTokenLogprob = IROutputTokenLogprobAlternative & {
   readonly top_logprobs?: readonly IROutputTokenLogprobAlternative[]; // ChatCompletions, Responses, GenerateContent
 };
 

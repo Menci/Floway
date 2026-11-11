@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 
 import { toOpenAIResponsesInputAssistantTurn } from '../../src/protocols/openai-responses/as-target/assistant-turn.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
+import { expectTrip } from '../trip.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { reassembleOpenAIResponsesEvents } from '@floway-dev/protocols/openai-responses';
@@ -13,7 +14,7 @@ const chunk = (delta: OpenAIChatCompletionsAssistantDeltaEx, finish_reason: 'sto
 
 test('round-trips native Chat reasoning fragments through Responses without corrupting detail identity', async () => {
   const context = { sidecarCodec: createTestSidecarCodec() };
-  const trip = await routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'source', stream: true, input: [{ role: 'user', content: 'question' }] }, context);
+  const trip = expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'source', stream: true, input: [{ role: 'user', content: 'question' }] }, context));
   const upstream = async function* () {
     yield chunk({ role: 'assistant', reasoning_details: [{ type: 'reasoning.summary', summary: ' reading', id: 'summary', index: 0, format: 'openai-responses-v1' }] });
     yield chunk({ reasoning_details: [{ type: 'reasoning.summary', summary: ' it.', id: 'summary', index: 0, format: 'openai-responses-v1' }] });
@@ -25,7 +26,7 @@ test('round-trips native Chat reasoning fragments through Responses without corr
     for await (const frame of trip.events(upstream())) if (frame.type === 'event') yield frame.event;
   };
   const result = await reassembleOpenAIResponsesEvents(responseEvents());
-  const restored = await routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'source', stream: true, input: toOpenAIResponsesInputAssistantTurn(result.output) }, context);
+  const restored = expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'source', stream: true, input: toOpenAIResponsesInputAssistantTurn(result.output) }, context));
   expect(restored.target.messages).toEqual([{
     role: 'assistant', content: 'answer', refusal: null, provider_specific_fields: { trace: 'native' },
     reasoning_details: [

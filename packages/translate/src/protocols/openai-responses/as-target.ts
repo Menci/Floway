@@ -1,12 +1,12 @@
+import { readOpenAIResponsesEvents } from './as-target/events.ts';
 import { openaiResponsesPayloadFromSegments } from './as-target/segmented-request.ts';
-import { irFromOpenAIResponses } from './as-target/sse-from.ts';
 import { assignCallIds, type PendingCall } from '../../composition/call-ids.ts';
 import type { TargetProtocol } from '../../composition/index.ts';
 import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
-type ResponsesResolvedTurn = readonly CanonicalOpenAIResponsesInputItem[];
+type ResponsesRestoredAssistantTurn = readonly CanonicalOpenAIResponsesInputItem[];
 
-const callsOf = (turn: ResponsesResolvedTurn): readonly PendingCall[] =>
+const callsOf = (turn: ResponsesRestoredAssistantTurn): readonly PendingCall[] =>
   turn.flatMap(item => item.type === 'function_call' || item.type === 'custom_tool_call'
     ? [{ callId: item.call_id, name: item.name }]
     : []);
@@ -28,5 +28,5 @@ export const openaiResponsesTargetProtocol: TargetProtocol<
     // needs nothing beside the payload.
     context: undefined,
   }),
-  readStream: (frames, _context, roundTripReader) => irFromOpenAIResponses(frames, { roundTrip: roundTripReader }),
+  readEvents: (frames, _context, roundTripReader) => readOpenAIResponsesEvents(frames, { roundTrip: roundTripReader }),
 };

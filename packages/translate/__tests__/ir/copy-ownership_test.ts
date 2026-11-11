@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { collect, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, iterate } from './helpers.ts';
+import { collect, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, iterate } from './helpers.ts';
 import { createIRCollector } from '../../src/ir/output/collector.ts';
 import { consumeIRRecords, createIRBuilder } from '../../src/ir/output/stream.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
@@ -82,9 +82,9 @@ test('value exposes the accumulator live readonly view', () => {
 });
 
 test.each([
-  ['ChatCompletions', irFromOpenAIChatCompletions, (error: object) => ({ id: 'chat', model: 'm', choices: [], error })],
-  ['Responses', irFromOpenAIResponses, (error: object) => ({ type: 'error', error })],
-  ['Messages', irFromAnthropicMessages, (error: object) => ({ type: 'error', error })],
+  ['ChatCompletions', readOpenAIChatCompletionsEvents, (error: object) => ({ id: 'chat', model: 'm', choices: [], error })],
+  ['Responses', readOpenAIResponsesEvents, (error: object) => ({ type: 'error', error })],
+  ['Messages', readAnthropicMessagesEvents, (error: object) => ({ type: 'error', error })],
 ] as const)('%s reader transfers immutable error objects without copying', async (_name, reader, event) => {
   const error = Object.freeze({ type: 'api_error', message: 'original', details: Object.freeze([Object.freeze({ text: 'original' })]) });
   const frames = await collect(reader(iterate([eventFrame(event(error) as any)])));

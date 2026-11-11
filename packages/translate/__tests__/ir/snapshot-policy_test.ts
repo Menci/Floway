@@ -1,11 +1,11 @@
 import { expect, test } from 'vitest';
 
-import { collect, collectIR, irFromOpenAIResponses, iterate } from './helpers.ts';
+import { collect, collectIR, readOpenAIResponsesEvents, iterate } from './helpers.ts';
 import { createRoundTripReaderCapture } from '../round-trip/test-helpers.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 
 const response = (output: any[] = []) => ({ id: 'resp', model: 'served', created_at: 1, status: 'completed', output, usage: null, error: null, incomplete_details: null });
-const read = async (events: any[]) => await collectIR(irFromOpenAIResponses(iterate(events.map(event => eventFrame(event as any)))));
+const read = async (events: any[]) => await collectIR(readOpenAIResponsesEvents(iterate(events.map(event => eventFrame(event as any)))));
 
 test.each([-1, 1.5, Number.MAX_SAFE_INTEGER + 1])('output indexes must be nonnegative safe integers: %s', async outputIndex => {
   await expect(read([
@@ -236,7 +236,7 @@ test('output item snapshots require text in every declared part', async () => {
 });
 
 test('Responses retains the initial response id when later envelopes rotate it', async () => {
-  const records = await collect(irFromOpenAIResponses(iterate([
+  const records = await collect(readOpenAIResponsesEvents(iterate([
     eventFrame({ type: 'response.created', response: response([]) } as any),
     eventFrame({ type: 'response.in_progress', response: { ...response([]), id: 'resp_rotated' } } as any),
     eventFrame({ type: 'response.completed', response: { ...response([]), id: 'resp_terminal' } } as any),
@@ -284,7 +284,7 @@ test('an empty terminal Responses output captures closed snapshots for round tri
   const added = { type: 'message', id: 'msg', role: 'assistant', status: 'in_progress', content: [] };
   const done = { ...added, status: 'completed', content: [{ type: 'output_text', text: 'answer', annotations: [], logprobs: [] }] };
   const capture = createRoundTripReaderCapture<'openaiResponses'>();
-  await collectIR(irFromOpenAIResponses(iterate([
+  await collectIR(readOpenAIResponsesEvents(iterate([
     eventFrame({ type: 'response.created', response: response([]) } as any),
     eventFrame({ type: 'response.output_item.added', output_index: 0, item: added } as any),
     eventFrame({ type: 'response.output_item.done', output_index: 0, item: done } as any),

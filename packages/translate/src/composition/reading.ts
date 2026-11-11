@@ -15,7 +15,7 @@ import type { IRInputRequestHeader, IRInputTurn } from '../ir/input/types.ts';
  * `toIRInputTurns` is a thunk because the two paths are exclusive: a turn a sidecar
  * resolves is written natively, and its IR is never built.
  */
-export type TurnSlot<AssistantTurn> =
+export type SourceTurnSlot<AssistantTurn> =
   | { readonly kind: 'client'; readonly toIRInputTurns: () => IRInputTurn[] }
   | {
     readonly kind: 'assistant';
@@ -30,9 +30,9 @@ export type TurnSlot<AssistantTurn> =
  * a client turn rather than a field of its own, which is what lets a writer
  * place it by position the same way it places every other turn.
  */
-export interface Reading<AssistantTurn> {
+export interface SourceReading<AssistantTurn> {
   readonly request: IRInputRequestHeader;
-  readonly turns: readonly TurnSlot<AssistantTurn>[];
+  readonly turns: readonly SourceTurnSlot<AssistantTurn>[];
 }
 
 /**
@@ -43,10 +43,10 @@ export interface Reading<AssistantTurn> {
  * the two paths are exclusive.
  */
 export const resolveReading = async <AssistantTurn, Resolved>(
-  reading: Reading<AssistantTurn>,
-  resolve: (turn: Extract<TurnSlot<AssistantTurn>, { kind: 'assistant' }>) => Promise<Resolved | undefined>,
-): Promise<(IRInputTurn | { readonly kind: 'resolved'; readonly turn: Resolved })[]> => {
-  const turns: (IRInputTurn | { readonly kind: 'resolved'; readonly turn: Resolved })[] = [];
+  reading: SourceReading<AssistantTurn>,
+  resolve: (turn: Extract<SourceTurnSlot<AssistantTurn>, { kind: 'assistant' }>) => Promise<Resolved | undefined>,
+): Promise<(IRInputTurn | { readonly kind: 'restored'; readonly turn: Resolved })[]> => {
+  const turns: (IRInputTurn | { readonly kind: 'restored'; readonly turn: Resolved })[] = [];
   const append = (input: readonly IRInputTurn[]): void => {
     for (const turn of input) {
       const previous = turns.at(-1);
@@ -72,7 +72,7 @@ export const resolveReading = async <AssistantTurn, Resolved>(
       append(turn.toIRInputTurns());
       continue;
     }
-    turns.push({ kind: 'resolved', turn: result });
+    turns.push({ kind: 'restored', turn: result });
   }
   return turns;
 };

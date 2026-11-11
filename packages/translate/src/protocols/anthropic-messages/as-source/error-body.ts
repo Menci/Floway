@@ -1,6 +1,6 @@
-import { anthropicMessagesErrorEnvelope } from './sse-to.ts';
+import { anthropicMessagesErrorEnvelope } from './events.ts';
 import { irErrorPayloadFromBody, restateError } from '../../../shared/api-error.ts';
-import type { RestateSourceError } from '../../../types.ts';
+import type { ApiErrorTranslator } from '../../../types.ts';
 
 /**
  * States a failed request in the Messages envelope.
@@ -12,11 +12,11 @@ import type { RestateSourceError } from '../../../types.ts';
  * restating an unknown shape would describe the failure wrongly, and the
  * upstream's own answer is the more faithful one.
  */
-export const restateAnthropicMessagesError: RestateSourceError = upstream => {
-  const error = irErrorPayloadFromBody(upstream);
+export const restateAnthropicMessagesError: ApiErrorTranslator = (upstreamStatus, headers, upstreamBody) => {
+  const error = irErrorPayloadFromBody(upstreamBody);
   if (error === undefined) return undefined;
   // The restatement keeps the upstream's status with one exception, which the
   // shared statement decides alongside the wording so the two cannot drift.
   const { body, status } = anthropicMessagesErrorEnvelope(error);
-  return restateError(upstream, body, status);
+  return restateError(status ?? upstreamStatus, headers, body);
 };

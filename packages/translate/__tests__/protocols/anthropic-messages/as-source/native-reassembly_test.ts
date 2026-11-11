@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest';
 
 import { computeAnthropicMessagesTurnDigest } from '../../../../src/protocols/anthropic-messages/as-source/round-trip.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
+import { expectTrip } from '../../../trip.ts';
 import { createAnthropicMessagesEventAccumulator, reassembleAnthropicMessagesEvents } from '@floway-dev/protocols/anthropic-messages';
 import { openaiResponsesResultToEvents } from '@floway-dev/protocols/openai-responses';
 import { routeAnthropicMessagesViaOpenAIResponses } from '@floway-dev/translate';
@@ -21,9 +22,9 @@ test.each(['complete', 'truncated'] as const)('reads only the current native blo
   vi.mocked(createAnthropicMessagesEventAccumulator).mockClear();
   const count = 32;
   const codec = createTestSidecarCodec();
-  const trip = await routeAnthropicMessagesViaOpenAIResponses({
+  const trip = expectTrip(await routeAnthropicMessagesViaOpenAIResponses({
     model: 'source', max_tokens: 4096, stream: true, messages: [{ role: 'user', content: 'question' }],
-  }, { sidecarCodec: codec });
+  }, { sidecarCodec: codec }));
   const frames = async function* () {
     yield* openaiResponsesResultToEvents({
       id: 'response', object: 'response', model: 'target',

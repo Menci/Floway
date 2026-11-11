@@ -1,12 +1,11 @@
 import { expect, it } from 'vitest';
 
-import { buildTargetPayloadFor } from '../../../src/composition/index.ts';
-import { openaiResponsesRead } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
+import { readOpenAIResponsesRequest } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
-import type { OpenAIResponsesAssistantTurn } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
+import type { OpenAIResponsesSourceAssistantTurn } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
 import { encodeRoundTripSidecar } from '../../../src/round-trip/sidecar.ts';
 import type { SidecarCodec } from '../../../src/types.ts';
-import { pairs } from '../../composition/helpers.ts';
+import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 
@@ -19,7 +18,7 @@ const buildMessagesRequest = async (payload: OpenAIResponsesRequestPayloadEx, co
   target: await buildTargetPayloadFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], { ...payload, stream: true }, { sidecarCodec: codec, ...options }),
 });
 
-const replayedTurn: OpenAIResponsesAssistantTurn = [
+const replayedTurn: OpenAIResponsesSourceAssistantTurn = [
   { type: 'function_call', call_id: 'native', name: 'run', namespace: 'web', arguments: '{}', status: 'completed' },
 ];
 
@@ -110,7 +109,7 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('bypasses ordin
     ],
   };
   const ctx = { sidecarCodec: codec, fallbackMaxOutputTokens: undefined };
-  const reading = openaiResponsesRead(source);
+  const reading = readOpenAIResponsesRequest(source);
   const irCall = (r: typeof reading, callId: string): { namespace?: string; name: string } | undefined => r.turns
     .flatMap(turn => turn.toIRInputTurns())
     .flatMap(turn => turn.items as readonly { type: string; call_id?: string; name: string; namespace?: string }[])
@@ -145,7 +144,7 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('allocates bare
     ],
   };
   const ctx = { sidecarCodec: codec, fallbackMaxOutputTokens: undefined };
-  const reading = openaiResponsesRead(source);
+  const reading = readOpenAIResponsesRequest(source);
   const target_ = target === 'openaiChatCompletions'
     ? await buildTargetPayloadFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, ctx, reading)
     : await buildTargetPayloadFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], source, ctx, reading);

@@ -1,7 +1,7 @@
 import { restateOpenAIChatCompletionsError } from './as-source/error-body.ts';
-import { continuousUsageOf, openaiChatCompletionsRead } from './as-source/input-to.ts';
-import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from './as-source/round-trip.ts';
-import { openaiChatCompletionsFromIR } from './as-source/sse-to.ts';
+import { writeOpenAIChatCompletionsEvents } from './as-source/events.ts';
+import { continuousUsageOf, readOpenAIChatCompletionsRequest } from './as-source/input-to.ts';
+import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarOccurrences, verifyOpenAIChatCompletionsTurnDigest } from './as-source/round-trip.ts';
 import type { SourceProtocol } from '../../composition/index.ts';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -15,15 +15,15 @@ export const openaiChatCompletionsSourceProtocol: SourceProtocol<
   'openaiChatCompletions', OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent
 > = {
   name: 'openaiChatCompletions',
-  read: openaiChatCompletionsRead,
+  read: readOpenAIChatCompletionsRequest,
   sidecarRecognition: {
-    inspect: findOpenAIChatCompletionsSidecarCarriers,
+    inspect: findOpenAIChatCompletionsSidecarOccurrences,
     verify: verifyOpenAIChatCompletionsTurnDigest,
     collectCandidates: collectOpenAIChatCompletionsReplayContents,
   },
-  restateUpstreamError: restateOpenAIChatCompletionsError,
+  error: restateOpenAIChatCompletionsError,
   // The client's own rendering choice, read off the request it sent.
-  writeStream: (payload, records, roundTrip) => openaiChatCompletionsFromIR(records, {
+  writeEvents: (payload, records, roundTrip) => writeOpenAIChatCompletionsEvents(records, {
     continuousUsageStats: continuousUsageOf(payload),
     roundTrip,
   }),

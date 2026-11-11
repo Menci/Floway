@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import { computeGeminiGenerateContentTurnDigest } from '../../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
 import { encodeRoundTripSidecar } from '../../../src/round-trip/sidecar.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
+import { expectTrip } from '../../trip.ts';
 import type { GeminiGenerateContentContent } from '@floway-dev/protocols/gemini-generate-content';
 import { routeGeminiGenerateContentViaAnthropicMessages, routeGeminiGenerateContentViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIResponses } from '@floway-dev/translate';
 
@@ -18,7 +19,7 @@ test.each(['lookup', '__proto__'])('Gemini via Chat uses restored call IDs for i
   const codec = createTestSidecarCodec();
   const native = { role: 'assistant' as const, tool_calls: [{ id: 'native-chat-call', type: 'function' as const, function: { name, arguments: '{"query":"docs"}' } }] };
   const carrier = await encodeRoundTripSidecar(codec, { v: 1, source: 'geminiGenerateContent', target: 'openaiChatCompletions', targetTurn: native, sourceTurnDigest: await computeGeminiGenerateContentTurnDigest(targetTurn(name)) });
-  const { target: request } = await routeGeminiGenerateContentViaOpenAIChatCompletions({ model: 'model', contents: replayedContents(name, carrier) }, { sidecarCodec: createTestSidecarCodec('test-codec-scope') });
+  const { target: request } = expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions({ model: 'model', contents: replayedContents(name, carrier) }, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }));
   expect(request.messages).toEqual([
     { role: 'user', content: 'question' },
     native,
@@ -31,7 +32,7 @@ test.each(['lookup', '__proto__'])('Gemini via Messages uses restored call IDs w
   const codec = createTestSidecarCodec();
   const native = { role: 'assistant' as const, content: [{ type: 'tool_use' as const, id: 'native-messages-call', name, input: { query: 'docs' } }] };
   const carrier = await encodeRoundTripSidecar(codec, { v: 1, source: 'geminiGenerateContent', target: 'anthropicMessages', targetTurn: native, sourceTurnDigest: await computeGeminiGenerateContentTurnDigest(targetTurn(name)) });
-  const { target: request } = await routeGeminiGenerateContentViaAnthropicMessages({ model: 'model', contents: replayedContents(name, carrier) }, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), fallbackMaxOutputTokens: undefined });
+  const { target: request } = expectTrip(await routeGeminiGenerateContentViaAnthropicMessages({ model: 'model', contents: replayedContents(name, carrier) }, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), fallbackMaxOutputTokens: undefined }));
   expect(request.messages[1]).toEqual(native);
   expect(request.messages[2]).toEqual({ role: 'user', content: [{ type: 'tool_result', tool_use_id: 'native-messages-call', content: '{"answer":42}' }] });
   expect(request.messages[3]).toEqual({ role: 'assistant', content: [{ type: 'tool_use', id: 'gemini_call_3_0', name: 'other', input: {}, cache_control: { type: 'ephemeral' } }] });
@@ -41,7 +42,7 @@ test.each(['lookup', '__proto__'])('Gemini via Responses uses restored call IDs 
   const codec = createTestSidecarCodec();
   const native = [{ type: 'function_call' as const, call_id: 'native-responses-call', name, arguments: '{"query":"docs"}', status: 'completed' as const }];
   const carrier = await encodeRoundTripSidecar(codec, { v: 1, source: 'geminiGenerateContent', target: 'openaiResponses', targetTurn: native, sourceTurnDigest: await computeGeminiGenerateContentTurnDigest(targetTurn(name)) });
-  const { target: request } = await routeGeminiGenerateContentViaOpenAIResponses({ model: 'model', contents: replayedContents(name, carrier) }, { sidecarCodec: createTestSidecarCodec('test-codec-scope') });
+  const { target: request } = expectTrip(await routeGeminiGenerateContentViaOpenAIResponses({ model: 'model', contents: replayedContents(name, carrier) }, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }));
   expect(request.input).toEqual([
     { type: 'message', role: 'user', content: 'question' },
     ...native,

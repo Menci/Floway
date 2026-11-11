@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { restateAnthropicMessagesError } from '../../../../src/protocols/anthropic-messages/as-source/error-body.ts';
-import { anthropicMessagesErrorFromIR } from '../../../../src/protocols/anthropic-messages/as-source/sse-to.ts';
+import { anthropicMessagesErrorFromIR } from '../../../../src/protocols/anthropic-messages/as-source/events.ts';
 import { errorPayloadFromWire } from '../../../../src/shared/api-error.ts';
 import { buildPromptTooLongBody, PROMPT_TOO_LONG_MESSAGE } from '@floway-dev/protocols/anthropic-messages';
 import { assert, assertEquals } from '@floway-dev/test-utils';
@@ -10,11 +10,11 @@ const decoded = (result: { body: unknown } | undefined) => result!.body as {
   type: string;
   error: { type: string; message: string };
 };
-const upstreamOf = (status: number, body: unknown, headers: Record<string, string> = {}) => ({
+const upstreamOf = (status: number, body: unknown, headers: Record<string, string> = {}) => [
   status,
-  headers: new Headers({ 'x-upstream': 'a', ...headers }),
-  body: new TextEncoder().encode(typeof body === 'string' ? body : JSON.stringify(body)),
-});
+  new Headers({ 'x-upstream': 'a', ...headers }),
+  new TextEncoder().encode(typeof body === 'string' ? body : JSON.stringify(body)),
+] as const;
 
 test('buildPromptTooLongBody — Anthropic envelope with load-bearing prefix', () => {
   const body = new TextDecoder().decode(buildPromptTooLongBody());
@@ -30,7 +30,7 @@ test.each([
   ['Codex Responses', { error: { code: 'context_length_exceeded', message: 'Your input exceeds the context window of this model. Please adjust your input and try again.' } }],
   ['message-only signal', { error: { message: "This model's maximum context length is 4097 tokens. However, your messages resulted in 4498 tokens." } }],
 ])('restates a context overflow from the %s as the prompt-too-long wording', (_name, body) => {
-  const result = restateAnthropicMessagesError(upstreamOf(502, body));
+  const result = restateAnthropicMessagesError(...upstreamOf(502, body));
 
   // Claude Code recognizes this exact wording and re-runs with a smaller
   // prompt; any other spelling of the same condition reads as an ordinary
@@ -44,7 +44,7 @@ test.each([
 });
 
 test('restates a recognized failure in the Messages envelope and keeps the upstream status', () => {
-  const result = restateAnthropicMessagesError(upstreamOf(401, { error: { code: 'invalid_api_key', message: 'bad token' } }));
+  const result = restateAnthropicMessagesError(...upstreamOf(401, { error: { code: 'invalid_api_key', message: 'bad token' } }));
 
   // The client speaks Messages, so it must not receive whatever envelope the
   // target protocol happened to use. The status is what actually happened, so
@@ -54,7 +54,7 @@ test('restates a recognized failure in the Messages envelope and keeps the upstr
 });
 
 test('keeps the upstream headers a client reads', () => {
-  const result = restateAnthropicMessagesError(upstreamOf(429, { error: { message: 'slow down' } }, { 'retry-after': '30', 'request-id': 'req_1' }));
+  const result = restateAnthropicMessagesError(...upstreamOf(429, { error: { message: 'slow down' } }, { 'retry-after': '30', 'request-id': 'req_1' }));
 
   // A retry hint and a request id are as load-bearing as the body is.
   assertEquals(result!.headers.get('retry-after'), '30');
@@ -66,13 +66,13 @@ test('passes an unrecognized body through untouched', () => {
   // A failure the package cannot read as an error envelope is described more
   // faithfully by the upstream's own answer than by any envelope invented
   // here, so the trip states no replacement at all.
-  assertEquals(restateAnthropicMessagesError(upstreamOf(502, 'Bad Gateway')), undefined);
-  assertEquals(restateAnthropicMessagesError(upstreamOf(500, { detail: 'something broke' })), undefined);
-  assertEquals(restateAnthropicMessagesError(upstreamOf(500, {})), undefined);
+  assertEquals(restateAnthropicMessagesError(...upstreamOf(502, 'Bad Gateway')), undefined);
+  assertEquals(restateAnthropicMessagesError(...upstreamOf(500, { detail: 'something broke' })), undefined);
+  assertEquals(restateAnthropicMessagesError(...upstreamOf(500, {})), undefined);
 });
 
 test('reads a message-only envelope the same way its stream does', () => {
-  const result = restateAnthropicMessagesError(upstreamOf(529, { error: { message: 'Overloaded' } }));
+  const result = restateAnthropicMessagesError(...upstreamOf(529, { error: { message: 'Overloaded' } }));
 
   assertEquals(result!.status, 529);
   assertEquals(decoded(result).error.message, 'Overloaded');
@@ -82,7 +82,7 @@ test('carries the fields the target protocol states that the IR does not name', 
   // A target protocol may report failure data no other protocol has. The
   // restated envelope keeps it instead of describing the failure less
   // completely than the upstream did.
-  const result = restateAnthropicMessagesError(upstreamOf(400, {
+  const result = restateAnthropicMessagesError(...upstreamOf(400, {
     error: { message: 'bad request', code: 'invalid', safety_violations: [{ category: 'hate' }], headers: { 'x-trace': 'abc' } },
   }));
 
@@ -95,7 +95,7 @@ test('carries the fields the target protocol states that the IR does not name', 
 });
 
 test('merges loose error fields with the upstream container and keeps its collision priority', () => {
-  const result = restateAnthropicMessagesError(upstreamOf(400, {
+  const result = restateAnthropicMessagesError(...upstreamOf(400, {
     error: { message: 'bad request', provider_specific_fields: { stack: 'theirs' }, stack: 'legacy', retry_after: 10, code: 'invalid_value', param: 'temperature' },
   }));
 
@@ -109,7 +109,7 @@ test('preserves the same failure fields before and during a stream', () => {
     message: 'bad field', type: 'invalid_request_error', code: 'invalid_value', param: 'temperature',
     provider_specific_fields: { request_id: 'req_1' }, retry_after: 10,
   };
-  const result = restateAnthropicMessagesError(upstreamOf(400, { error }));
+  const result = restateAnthropicMessagesError(...upstreamOf(400, { error }));
   const expected = {
     type: 'invalid_request_error', message: 'bad field',
     provider_specific_fields: { code: 'invalid_value', param: 'temperature', request_id: 'req_1', retry_after: 10 },

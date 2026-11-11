@@ -17,7 +17,7 @@ const assertPlainValue = (path: IRPath, value: unknown): void => {
 
 // Walks a value that is about to be written together with the schema node describing it.
 // `IRAbsent` is accepted where the schema allows it unless `allowAbsent` is off.
-export const walkValue = (path: IRPath, node: IRSchemaNode, value: IROutputValue, visitor: IRValueVisitor, allowAbsent: boolean): void => {
+export const walkValue = (path: IRPath, node: IRSchemaNode, value: IROutputValue, visitor: IRValueVisitor, { allowAbsent }: { readonly allowAbsent: boolean }): void => {
   if (value === undefined) throw new TypeError(`output IR values cannot contain undefined: ${irPathKey(path)}`);
   if (node.kind === 'nullable') {
     if (value === null) return visitor(path, node, value);
@@ -36,7 +36,7 @@ export const walkValue = (path: IRPath, node: IRSchemaNode, value: IROutputValue
     return;
   case 'array':
     if (!Array.isArray(value)) throw new TypeError(`output IR value must be an array: ${irPathKey(path)}`);
-    value.forEach((child, index) => walkValue([...path, index], node.of, child, visitor, allowAbsent));
+    value.forEach((child, index) => walkValue([...path, index], node.of, child, visitor, { allowAbsent }));
     return;
   case 'object':
   case 'union': {
@@ -46,7 +46,7 @@ export const walkValue = (path: IRPath, node: IRSchemaNode, value: IROutputValue
     for (const [key, child] of Object.entries(value)) {
       const field = node.kind === 'union' && key === node.discriminant ? { kind: 'string' } as const : Object.hasOwn(variant.fields, key) ? variant.fields[key] : undefined;
       if (field === undefined) throw new TypeError(`output IR value has no field ${key}: ${irPathKey(path)}`);
-      walkValue([...path, key], field, child, visitor, allowAbsent);
+      walkValue([...path, key], field, child, visitor, { allowAbsent });
     }
     return;
   }

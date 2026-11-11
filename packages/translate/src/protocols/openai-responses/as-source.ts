@@ -1,7 +1,7 @@
 import { restateOpenAIResponsesError } from './as-source/error-body.ts';
-import { openaiResponsesRead } from './as-source/input-to.ts';
-import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from './as-source/round-trip.ts';
-import { createRandomOpenAIResponsesResponseId, openaiResponsesFromIR } from './as-source/sse-to.ts';
+import { createRandomOpenAIResponsesResponseId, writeOpenAIResponsesEvents } from './as-source/events.ts';
+import { readOpenAIResponsesRequest } from './as-source/input-to.ts';
+import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarOccurrences, verifyOpenAIResponsesTurnDigest } from './as-source/round-trip.ts';
 import type { SourceProtocol } from '../../composition/index.ts';
 import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
@@ -15,21 +15,21 @@ export const openaiResponsesSourceProtocol: SourceProtocol<
   'openaiResponses', OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx
 > = {
   name: 'openaiResponses',
-  read: openaiResponsesRead,
+  read: readOpenAIResponsesRequest,
   sidecarRecognition: {
-    inspect: findOpenAIResponsesSidecarCarriers,
+    inspect: findOpenAIResponsesSidecarOccurrences,
     verify: verifyOpenAIResponsesTurnDigest,
     collectCandidates: collectOpenAIResponsesReplayContents,
   },
-  restateUpstreamError: restateOpenAIResponsesError,
-  writeStream: (payload, records, roundTrip) => {
+  error: restateOpenAIResponsesError,
+  writeEvents: (payload, records, roundTrip) => {
     // A response id names the upstream response, so one is minted per trip.
     const responseId = createRandomOpenAIResponsesResponseId();
     // The response objects echo the client's own declarations, which only the
     // payload states as the client wrote them: the IR holds a normalized form
     // and the upstream states none of this at all.
     const { tools, tool_choice: toolChoice } = payload;
-    return openaiResponsesFromIR(records, {
+    return writeOpenAIResponsesEvents(records, {
       id: responseId,
       roundTrip,
       ...(tools == null || tools.length === 0 ? {} : { echoedTools: tools }),
