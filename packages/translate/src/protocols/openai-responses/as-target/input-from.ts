@@ -255,8 +255,7 @@ export const openaiResponsesHeaderFromIR = (request: IRInputRequestHeader): Omit
 };
 
 export const openaiResponsesSettingsFromIR = (settings: IRInputSettings): Partial<CanonicalOpenAIResponsesPayload> => {
-  const ceiling = settings.max_completion_tokens !== undefined ? settings.max_completion_tokens
-    : settings.max_output_tokens !== undefined ? settings.max_output_tokens : settings.max_tokens;
+  const ceiling = settings.max_output_tokens !== undefined ? settings.max_output_tokens : settings.max_visible_output_tokens;
   const format = settings.output_format;
   const reasoningEffort = settings.reasoning_effort ?? (settings.reasoning_budget === undefined ? undefined : reasoningEffortForBudget(settings.reasoning_budget));
 

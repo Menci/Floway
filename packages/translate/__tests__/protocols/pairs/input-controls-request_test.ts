@@ -17,20 +17,25 @@ import type { OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-res
 
 const options = { sidecarCodec: createTestSidecarCodec() };
 
-test('Chat keeps both token limits until each target chooses its ceiling', async () => {
-  const source = { model: 'm', stream: true, messages: [{ role: 'user' as const, content: 'A' }], max_tokens: 5, max_completion_tokens: 9 };
+test.each([
+  { combined: 9, responsesCeiling: 9, messagesCeiling: 9 },
+  { combined: 0, responsesCeiling: 0, messagesCeiling: 0 },
+  { combined: null, responsesCeiling: null, messagesCeiling: 5 },
+])('Chat keeps both output bounds until target projection with combined ceiling $combined', async ({ combined, responsesCeiling, messagesCeiling }) => {
+  const source = { model: 'm', stream: true, messages: [{ role: 'user' as const, content: 'A' }], max_tokens: 5, max_completion_tokens: combined };
   const { settings } = readOpenAIChatCompletionsRequest(source).request;
-  expect(settings).toMatchObject({ max_tokens: 5, max_completion_tokens: 9 });
-  expect(settings).not.toHaveProperty('max_output_tokens');
+  expect(settings).toMatchObject({ max_visible_output_tokens: 5, max_output_tokens: combined });
+  expect(settings).not.toHaveProperty('max_tokens');
+  expect(settings).not.toHaveProperty('max_completion_tokens');
 
   const responses = await routeOpenAIChatCompletionsViaOpenAIResponses(source, options);
   expect(responses.type).toBe('trip');
   if (responses.type !== 'trip') throw new Error(responses.message);
-  expect(responses.target.max_output_tokens).toBe(9);
+  expect(responses.target.max_output_tokens).toBe(responsesCeiling);
   const messages = await routeOpenAIChatCompletionsViaAnthropicMessages(source, options);
   expect(messages.type).toBe('trip');
   if (messages.type !== 'trip') throw new Error(messages.message);
-  expect(messages.target.max_tokens).toBe(9);
+  expect(messages.target.max_tokens).toBe(messagesCeiling);
 });
 
 test('nullable token limits and cache controls remain explicit in source IR', async () => {
@@ -39,7 +44,7 @@ test('nullable token limits and cache controls remain explicit in source IR', as
     prompt_cache_options: null, prompt_cache_retention: null, user: null,
   };
   expect(readOpenAIChatCompletionsRequest(source).request.settings).toMatchObject({
-    max_tokens: null, max_completion_tokens: null, prompt_cache_options: null, prompt_cache_retention: null, user: null,
+    max_visible_output_tokens: null, max_output_tokens: null, prompt_cache_options: null, prompt_cache_retention: null, user: null,
   });
   const responses = await routeOpenAIChatCompletionsViaOpenAIResponses(source, options);
   if (responses.type !== 'trip') throw new Error(responses.message);

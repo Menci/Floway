@@ -293,7 +293,7 @@ export const anthropicMessagesHeaderFromIR = (
   return {
     ...anthropicMessagesSettingsFromIR(request.settings),
     model: request.settings.model,
-    max_tokens: request.settings.max_completion_tokens ?? request.settings.max_output_tokens ?? request.settings.max_tokens
+    max_tokens: request.settings.max_output_tokens ?? request.settings.max_visible_output_tokens
       ?? options.fallbackMaxOutputTokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
     // A trip guarantees a streaming request; a request that says otherwise
     // cannot be carried by this side at all.
@@ -310,7 +310,7 @@ export const anthropicMessagesHeaderFromIR = (
  * still lands here as `max_tokens`.
  */
 export const anthropicMessagesSettingsFromIR = (settings: IRInputSettings): Omit<Partial<AnthropicMessagesPayload>, 'model'> => {
-  const ceiling = settings.max_completion_tokens ?? settings.max_output_tokens ?? settings.max_tokens;
+  const ceiling = settings.max_output_tokens ?? settings.max_visible_output_tokens;
   const format = settings.output_format;
   const formatConfig = format?.type === 'json_schema' && format.schema !== undefined
     ? { format: { type: 'json_schema' as const, schema: format.schema } }

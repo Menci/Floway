@@ -37,12 +37,11 @@ export interface IRInputSettings {
   readonly top_k?: number; // Messages, GenerateContent
   readonly stop?: readonly string[]; // ChatCompletions, Messages, GenerateContent
   readonly seed?: number; // ChatCompletions, GenerateContent
-  // Keep the legacy visible-output ceiling separate from the completion
-  // ceiling that includes reasoning. A writer chooses the bound its wire can
-  // state; reading a request must not choose between source-stated quantities.
-  readonly max_tokens?: number | null; // ChatCompletions
-  readonly max_completion_tokens?: number | null; // ChatCompletions
-  readonly max_output_tokens?: number | null; // Responses, Messages, GenerateContent
+  // Visible output and total generated output (including reasoning) are
+  // independent bounds. A writer chooses the bound its wire can state;
+  // reading a request must not choose between source-stated quantities.
+  readonly max_visible_output_tokens?: number | null; // ChatCompletions
+  readonly max_output_tokens?: number | null; // All
   readonly output_format?: IRInputOutputFormat; // ChatCompletions, Responses, Messages, GenerateContent
   // Key/value tags a caller attaches for its own bookkeeping. The IR holds
   // string pairs; a wire that admits other value types converts at its reader
