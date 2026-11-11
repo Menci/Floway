@@ -56,28 +56,16 @@ const overviewHoursSql = (scoped: boolean) => `/* usage-overview-hours */
   GROUP BY hour
   ORDER BY hour`;
 
+// CTE references expand before materialization; keep filters scalar and axes
+// tabular so each dimension does not copy the authorized source tree.
+// https://github.com/sqlite/sqlite/blob/version-3.54.1/src/select.c#L5672-L5682
 const overviewSql = (scoped: boolean) => `/* usage-overview */
 WITH
-settings(actor_user_id, is_admin, unattributed_user_id, no_upstream_value, upstream_prefix) AS (
-  VALUES (?, ?, ?, ?, ?)
-),
-model_filter(value) AS MATERIALIZED (
-  SELECT CAST(value AS TEXT) FROM json_each(?)
-),
-upstream_filter(value) AS MATERIALIZED (
-  SELECT CAST(value AS TEXT) FROM json_each(?)
-),
-user_filter(value) AS MATERIALIZED (
-  SELECT CAST(value AS INTEGER) FROM json_each(?)
-),
-key_filter(value) AS MATERIALIZED (
-  SELECT CAST(value AS TEXT) FROM json_each(?)
-),
-visible_user(value) AS MATERIALIZED (
-  SELECT CAST(value AS INTEGER) FROM json_each(?)
-),
-visible_upstream(value) AS MATERIALIZED (
-  SELECT CAST(value AS TEXT) FROM json_each(?)
+settings(
+  actor_user_id, is_admin, unattributed_user_id, no_upstream_value, upstream_prefix,
+  models_json, upstreams_json, users_json, keys_json, visible_users_json, visible_upstreams_json
+) AS (
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ),
 bucket_map(hour, bucket) AS MATERIALIZED (
   SELECT key, CAST(value AS TEXT) FROM json_each(?)
@@ -111,7 +99,7 @@ facts AS MATERIALIZED (
   FROM usage
   WHERE ${scopedRange('usage', scoped)}
 ),
-scoped AS MATERIALIZED (
+authorized AS MATERIALIZED (
   SELECT
     facts.*,
     COALESCE(api_keys.user_id, settings.unattributed_user_id) AS user_id,
@@ -123,23 +111,21 @@ scoped AS MATERIALIZED (
   FROM facts
   CROSS JOIN settings
   LEFT JOIN api_keys ON api_keys.id = facts.key_id
-),
-authorized AS MATERIALIZED (
-  SELECT *
-  FROM scoped
-  CROSS JOIN settings
   WHERE settings.is_admin = 1
-    OR user_id IN (SELECT value FROM visible_user)
-    OR upstream IN (SELECT value FROM visible_upstream)
+    OR COALESCE(api_keys.user_id, settings.unattributed_user_id) IN (
+      SELECT CAST(value AS INTEGER) FROM json_each(settings.visible_users_json)
+    )
+    OR facts.upstream IN (SELECT CAST(value AS TEXT) FROM json_each(settings.visible_upstreams_json))
 ),
 filtered AS MATERIALIZED (
-  SELECT *
+  SELECT authorized.*
   FROM authorized
+  CROSS JOIN settings
   WHERE
-    (NOT EXISTS (SELECT 1 FROM model_filter) OR model IN (SELECT value FROM model_filter))
-    AND (NOT EXISTS (SELECT 1 FROM upstream_filter) OR upstream_value IN (SELECT value FROM upstream_filter))
-    AND (NOT EXISTS (SELECT 1 FROM user_filter) OR user_id IN (SELECT value FROM user_filter))
-    AND (NOT EXISTS (SELECT 1 FROM key_filter) OR key_id IN (SELECT value FROM key_filter))
+    (json_array_length(settings.models_json) = 0 OR model IN (SELECT CAST(value AS TEXT) FROM json_each(settings.models_json)))
+    AND (json_array_length(settings.upstreams_json) = 0 OR upstream_value IN (SELECT CAST(value AS TEXT) FROM json_each(settings.upstreams_json)))
+    AND (json_array_length(settings.users_json) = 0 OR user_id IN (SELECT CAST(value AS INTEGER) FROM json_each(settings.users_json)))
+    AND (json_array_length(settings.keys_json) = 0 OR key_id IN (SELECT CAST(value AS TEXT) FROM json_each(settings.keys_json)))
 ),
 -- workerd caps compound SELECTs at five terms, so this extensible axis catalog
 -- is a VALUES table rather than a UNION ALL chain.
@@ -174,23 +160,20 @@ projected AS MATERIALIZED (
 ),
 facet_rows AS (
   SELECT 'facet' AS row_kind, NULL AS axis, NULL AS bucket, NULL AS group_value,
-    'keyId' AS dimension, key_id AS facet_value, NULL AS requests_text,
+    axes.axis AS dimension,
+    CASE axes.grouping
+      WHEN 'keyId' THEN authorized.key_id
+      WHEN 'userId' THEN CAST(authorized.user_id AS TEXT)
+      WHEN 'model' THEN authorized.model
+      WHEN 'upstream' THEN authorized.upstream_value
+    END AS facet_value,
+    NULL AS requests_text,
     NULL AS metric, NULL AS quantity, NULL AS unit_price, NULL AS occurrences_text, NULL AS metric_order
   FROM authorized
-  WHERE owned = 1
-  GROUP BY key_id
-  UNION ALL
-  SELECT 'facet', NULL, NULL, NULL, 'userId', CAST(user_id AS TEXT), NULL, NULL, NULL, NULL, NULL, NULL
-  FROM authorized
-  GROUP BY user_id
-  UNION ALL
-  SELECT 'facet', NULL, NULL, NULL, 'model', model, NULL, NULL, NULL, NULL, NULL, NULL
-  FROM authorized
-  GROUP BY model
-  UNION ALL
-  SELECT 'facet', NULL, NULL, NULL, 'upstream', upstream_value, NULL, NULL, NULL, NULL, NULL, NULL
-  FROM authorized
-  GROUP BY upstream_value
+  CROSS JOIN axes
+  WHERE axes.axis IN ('keyId', 'userId', 'model', 'upstream')
+    AND (axes.owned_only = 0 OR authorized.owned = 1)
+  GROUP BY dimension, facet_value
 ),
 request_rows AS (
   SELECT 'request' AS row_kind, axis, bucket, group_value, NULL AS dimension, NULL AS facet_value,
