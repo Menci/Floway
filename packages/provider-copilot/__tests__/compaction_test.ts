@@ -55,6 +55,16 @@ test('normalizes every retained text part to input_text — assistant output_tex
   expect(userPart.type).toBe('input_text');
 });
 
+test('retains assistant refusal text in the compacted input spelling', () => {
+  const result = compactionResponse([
+    { type: 'message', role: 'assistant', content: [{ type: 'refusal', refusal: 'Cannot provide that.' }] },
+  ], generatedResult([compaction]));
+
+  expect(result.output[0]).toMatchObject({
+    type: 'message', role: 'assistant', content: [{ type: 'input_text', text: 'Cannot provide that.' }],
+  });
+});
+
 test('assigns final random ids to retained messages instead of reusing input ids', () => {
   const result = compactionResponse(
     [{ type: 'message', id: 'msg_input', role: 'user', content: 'hello' }],

@@ -136,8 +136,6 @@ const translateToolOutput = async (output: string | OpenAIResponsesInputContent[
       blocks.push(image);
     } else if (part.type === 'input_file') {
       throw new TranslatorInputError('Cannot translate input_file tool output to Anthropic Messages.');
-    } else if (part.type === 'refusal') {
-      throw new TranslatorInputError('Cannot translate refusal content in a tool output to Anthropic Messages.');
     } else {
       blocks.push({ type: 'text', text: part.text });
     }

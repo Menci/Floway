@@ -8,7 +8,7 @@
 //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/core/src/compact_remote_v2.rs#L439-L501
 //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/utils/string/src/truncate.rs#L71-L74
 
-import { isOpenAIResponsesCompactionItem, createRandomOpenAIResponsesItemId, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesCompactionTriggerItem, type OpenAIResponsesInputContent, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesInputMessageEx, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesCompactionItem, createRandomOpenAIResponsesItemId, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesCompactionTriggerItem, type OpenAIResponsesInputContent, type OpenAIResponsesAssistantInputContent, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesInputMessageEx, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 
 export const COMPACTION_TRIGGER: OpenAIResponsesCompactionTriggerItem = { type: 'compaction_trigger' };
 
@@ -28,11 +28,15 @@ const encoder = new TextEncoder();
 
 // Native compact echoes every text part — including assistant `output_text` —
 // as `input_text` so the client can resend `output` verbatim as next-turn
-// `input`. Normalize unconditionally; non-text content passes through and costs
-// 0 tokens against the retained budget.
-const normalizeContent = (content: OpenAIResponsesInputMessageEx['content']): OpenAIResponsesInputContent[] => {
+// `input`. A replayed refusal has no input spelling, so its text is retained as
+// ordinary input text; dropping it would shorten the history the client resends.
+const normalizeContent = (content: string | OpenAIResponsesAssistantInputContent[]): OpenAIResponsesInputContent[] => {
   if (typeof content === 'string') return [{ type: 'input_text', text: content }];
-  return content.map(part => (part.type === 'output_text' ? { ...part, type: 'input_text' } : part));
+  return content.map(part => {
+    if (part.type === 'output_text') return { ...part, type: 'input_text' as const };
+    if (part.type === 'refusal') return { type: 'input_text' as const, text: part.refusal };
+    return part;
+  });
 };
 
 const isRetainedMessage = (item: CanonicalOpenAIResponsesInputItem): item is OpenAIResponsesInputMessageEx =>
