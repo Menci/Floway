@@ -281,7 +281,7 @@ test.each(returnedTrips)('$a via $b returns generated content and a decodable si
 
   const carrier = sidecarPayload(assistant);
   assert(typeof carrier === 'string');
-  const sidecar = await decodeRoundTripSidecar(codec, carrier);
+  const sidecar = await decodeRoundTripSidecar(codec, protocolKeys[a], carrier);
   assert(sidecar !== undefined);
   assertEquals(sidecar.source, protocolKeys[a]);
   assertEquals(sidecar.target, protocolKeys[b]);

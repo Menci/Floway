@@ -24,8 +24,8 @@ export const roundTripAssistantTurn = async <Source extends keyof InputAssistant
   const { inspect, verify, collectCandidates } = recognition;
   let selected: { carrier: SidecarCarrier<SourceTurn>; sidecar: AnyRoundTripSidecar } | undefined;
   for (const carrier of inspect(turn)) {
-    const sidecar = await decodeRoundTripSidecar(codec, carrier.data);
-    if (sidecar?.source !== source) continue;
+    const sidecar = await decodeRoundTripSidecar(codec, source, carrier.data);
+    if (sidecar === undefined) continue;
     if (selected !== undefined) throw new Error('Assistant turn has multiple recognized round-trip sidecars');
     selected = { carrier, sidecar };
   }

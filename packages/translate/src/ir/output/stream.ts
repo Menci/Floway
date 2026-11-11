@@ -3,7 +3,7 @@ import { irItemPath, irPartPath, irPathKey, irUnitPath } from './operation-paths
 import type { IREvent, IRPath, IRRecord, IRWrite } from './records.ts';
 import type { IROutputUsage, IROutputValue } from './types.ts';
 
-export type { IREvent, IRPath, IRRecord, IRWrite } from './records.ts';
+export type { IRPath, IRRecord } from './records.ts';
 
 export type IRRelativePath = string | number | IRPath;
 

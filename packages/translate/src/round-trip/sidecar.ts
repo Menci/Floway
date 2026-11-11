@@ -51,10 +51,23 @@ function assertRoundTripSidecar(value: Record<string, unknown>): asserts value i
   if (!(value.sourceTurnDigest instanceof Uint8Array)) throw new TypeError('Assistant-turn sidecar turn digest is invalid');
 }
 
-export const decodeRoundTripSidecar = async (codec: SidecarCodec, data: string): Promise<AnyRoundTripSidecar | undefined> => {
+/**
+ * Reads the sidecar a carrier holds, when it belongs to the source asking.
+ *
+ * An envelope naming another source is not this trip's business: it is dropped
+ * before its format is checked, because what it states about a different
+ * protocol's turn says nothing about this one. What is checked is the envelope
+ * a trip would actually use.
+ */
+export const decodeRoundTripSidecar = async <Source extends AssistantTurnProtocol>(
+  codec: SidecarCodec,
+  source: Source,
+  data: string,
+): Promise<AnyRoundTripSidecar | undefined> => {
   const sidecar = untagContentReferences(await codec.decode(data));
   if (sidecar === undefined) return undefined;
   if (!isJSONRecord(sidecar) || typeof sidecar.source !== 'string') throw new TypeError('Authenticated assistant-turn sidecar envelope is invalid');
+  if (sidecar.source !== source) return undefined;
   assertRoundTripSidecar(sidecar);
   return sidecar;
 };
