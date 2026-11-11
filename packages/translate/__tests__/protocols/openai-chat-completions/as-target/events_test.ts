@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import type { IRRecord } from '../../../../src/ir/output/records.ts';
 import type { OpenAIChatCompletionsInputAssistantTurn } from '../../../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
-import { irFromOpenAIChatCompletions } from '../../../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
+import { readOpenAIChatCompletionsEvents } from '../../../../src/protocols/openai-chat-completions/as-target/events.ts';
 import { appendContent, collectContentViews, createContentState, createReferenceBuilder } from '../../../../src/round-trip/reference/reference-builder.ts';
 import { finalizeAssistantTurnReferences } from '../../../../src/round-trip/reference/reference-selection.ts';
 import { restoreAssistantTurn } from '../../../../src/round-trip/reference/restore.ts';
@@ -20,7 +20,7 @@ const drain = async (frames: ReturnType<typeof chunk>[]): Promise<Map<number, Op
     builder: createReferenceBuilder(),
     onAssistantTurn: (choice, turn) => { turns.set(choice, turn); },
   };
-  for await (const _record of irFromOpenAIChatCompletions((async function* () { yield* frames; yield doneFrame(); })(), { maxChoices: 2, roundTrip })) {}
+  for await (const _record of readOpenAIChatCompletionsEvents((async function* () { yield* frames; yield doneFrame(); })(), { maxChoices: 2, roundTrip })) {}
   return turns;
 };
 
@@ -82,7 +82,7 @@ const traceTools = async (frames: ReturnType<typeof chunk>[], options: { prefix?
     builder,
     onAssistantTurn: (...args) => { captured = args; },
   };
-  for await (const record of irFromOpenAIChatCompletions((async function* () { yield* frames; yield doneFrame(); })(), { roundTrip, customToolNames: options.customToolNames })) {
+  for await (const record of readOpenAIChatCompletionsEvents((async function* () { yield* frames; yield doneFrame(); })(), { roundTrip, customToolNames: options.customToolNames })) {
     if (record.type === 'write' && record.kind === 'assign') assigns.push(record);
     if (record.type !== 'write' || record.kind !== 'append') continue;
     const field = record.path.at(-1);

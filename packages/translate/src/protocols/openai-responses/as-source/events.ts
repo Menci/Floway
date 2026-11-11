@@ -13,7 +13,7 @@ import { createIRUnitQueue } from '../../../ir/output/unit-queue.ts';
 import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
 import { appendContent, createContentState, type ContentState, type ContentStates } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
-import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
+import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { isCompleteJSONObject, parseJSONObjectAtCompletion } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantState } from '../as-target/assistant-turn.ts';
@@ -50,7 +50,7 @@ type ResponsesOutputUnit = ResponsesOutputUnitBase & (
   | { readonly kind: 'function_call' | 'custom_tool_call'; toolContentState?: ContentState<'text'> }
 );
 
-type OpenAIResponsesSSEOutputOptions = RoundTripOutputOptions<'openaiResponses'> & { namespaceToolNames: NamespaceToolNames };
+type OpenAIResponsesEventWriterOptions = SourceEventWriterOptions<'openaiResponses'> & { namespaceToolNames: NamespaceToolNames };
 
 const IMAGE_OUTPUT_FORMATS = { 'image/png': 'png', 'image/jpeg': 'jpeg', 'image/webp': 'webp' } as const;
 
@@ -178,9 +178,9 @@ const textOrRefusalPart = (state: IROutput, path: IRPath): Extract<MessagePart, 
   return part;
 };
 
-export const openaiResponsesFromIR = async function* (
+export const writeOpenAIResponsesEvents = async function* (
   records: AsyncIterable<IRRecord>,
-  options: OpenAIResponsesSSEOutputOptions,
+  options: OpenAIResponsesEventWriterOptions,
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   let metadata = { id: '', model: '', created: 0 };
   let started = false;

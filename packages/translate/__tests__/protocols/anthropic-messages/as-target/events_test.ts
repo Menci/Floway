@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import type { AnthropicMessagesAssistantState, AnthropicMessagesInputAssistantTurn } from '../../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
-import { irFromAnthropicMessages } from '../../../../src/protocols/anthropic-messages/as-target/sse-from.ts';
+import { readAnthropicMessagesEvents } from '../../../../src/protocols/anthropic-messages/as-target/events.ts';
 import { appendContent, collectContentViews, createContentState, createReferenceBuilder, type FieldStates } from '../../../../src/round-trip/reference/reference-builder.ts';
 import { finalizeAssistantTurnReferences } from '../../../../src/round-trip/reference/reference-selection.ts';
 import { fixtureFrames } from '../../fixtures.ts';
@@ -26,7 +26,7 @@ test('keeps native-shaped field state aligned through sparse block ordering and 
   const builder = createReferenceBuilder();
   const content = createContentState(builder, 'text');
   let captured: { turn: AnthropicMessagesInputAssistantTurn; state: AnthropicMessagesAssistantState<FieldStates> } | undefined;
-  for await (const record of irFromAnthropicMessages((async function* () { yield* frames; })(), {
+  for await (const record of readAnthropicMessagesEvents((async function* () { yield* frames; })(), {
     roundTrip: { builder, onAssistantTurn: (_choice, turn, state) => { captured = { turn, state }; } },
   })) {
     if (record.type === 'write' && record.kind === 'append' && record.path.at(-1) === 'text') appendContent(builder, content, record.value, record.referencePieceIds);

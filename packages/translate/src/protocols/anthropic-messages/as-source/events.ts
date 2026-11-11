@@ -13,8 +13,8 @@ import { createIRUnitQueue } from '../../../ir/output/unit-queue.ts';
 import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
 import { appendContent, createContentState, type ContentState, type ContentStates } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
-import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
+import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { parseJSONObject, parseJSONObjectAtCompletion, requireJSONObject } from '../../../shared/json/object.ts';
 import type { AnthropicMessagesAssistantState, AnthropicMessagesInputAssistantTurn } from '../as-target/assistant-turn.ts';
 import {
@@ -87,13 +87,13 @@ const outputTextKind = (unit: MessagesUnit, record: IRAppendRecord): 'text' | 't
   return undefined;
 };
 
-interface AnthropicMessagesSSEOutputOptions extends RoundTripOutputOptions<'anthropicMessages'> {
+interface AnthropicMessagesEventWriterOptions extends SourceEventWriterOptions<'anthropicMessages'> {
   parseToolArguments?: (text: string) => IRJSONObject;
 }
 
-export const anthropicMessagesFromIR = async function* (
+export const writeAnthropicMessagesEvents = async function* (
   records: AsyncIterable<IRRecord>,
-  options: AnthropicMessagesSSEOutputOptions,
+  options: AnthropicMessagesEventWriterOptions,
 ): AsyncGenerator<EventFrame<AnthropicMessagesStreamEventEx>> {
   let metadata = { id: '', model: '' };
   let started = false;

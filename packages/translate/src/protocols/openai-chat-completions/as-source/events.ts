@@ -9,7 +9,7 @@ import type { IROutputItem, IROutputMessageItem, IROutputTokenLogprob } from '..
 import { createIRUnitIndexAllocator } from '../../../ir/output/unit-index.ts';
 import { appendContent, createContentState, type ContentStates, type ContentState } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
-import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
+import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantState } from '../as-target/assistant-turn.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -30,7 +30,7 @@ const irChatError = (error: IRErrorPayload): IRErrorPayload => ({
   ...(error.provider_specific_fields === undefined ? {} : { provider_specific_fields: error.provider_specific_fields }),
 });
 
-interface OpenAIChatCompletionsSSEOutputOptions extends RoundTripOutputOptions<'openaiChatCompletions'> {
+interface OpenAIChatCompletionsEventWriterOptions extends SourceEventWriterOptions<'openaiChatCompletions'> {
   // Replay identity belongs to the newly emitted target audio, not the source IR content.
   audioMetadata?: (choice: number) => { id: string; expires_at: number };
   continuousUsageStats?: boolean;
@@ -82,9 +82,9 @@ type ChatChoiceChunk = Omit<OpenAIChatCompletionsStreamEvent['choices'][number],
 type ChatChunkFields = Partial<Pick<OpenAIChatCompletionsStreamEvent, 'service_tier' | 'usage'>>;
 type ChatTextField = 'content' | 'refusal' | 'reasoning_text';
 
-export const openaiChatCompletionsFromIR = async function* (
+export const writeOpenAIChatCompletionsEvents = async function* (
   records: AsyncIterable<IRRecord>,
-  options: OpenAIChatCompletionsSSEOutputOptions,
+  options: OpenAIChatCompletionsEventWriterOptions,
 ): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
   let metadata = { id: '', model: '', created: 0 };
   let started = false;

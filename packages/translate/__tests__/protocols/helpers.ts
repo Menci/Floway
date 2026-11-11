@@ -1,12 +1,12 @@
 import type { IRRecord } from '../../src/ir/output/records.ts';
-import { anthropicMessagesFromIR as anthropicMessagesFromIRProduction } from '../../src/protocols/anthropic-messages/as-source/sse-to.ts';
-import { irFromAnthropicMessages as irFromAnthropicMessagesProduction } from '../../src/protocols/anthropic-messages/as-target/sse-from.ts';
-import { geminiGenerateContentFromIR as geminiGenerateContentFromIRProduction } from '../../src/protocols/gemini-generate-content/as-source/sse-to.ts';
-import { openaiChatCompletionsFromIR as openaiChatCompletionsFromIRProduction } from '../../src/protocols/openai-chat-completions/as-source/sse-to.ts';
-import { irFromOpenAIChatCompletions as irFromOpenAIChatCompletionsProduction } from '../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
+import { writeAnthropicMessagesEvents as writeAnthropicMessagesEventsProduction } from '../../src/protocols/anthropic-messages/as-source/events.ts';
+import { readAnthropicMessagesEvents as readAnthropicMessagesEventsProduction } from '../../src/protocols/anthropic-messages/as-target/events.ts';
+import { writeGeminiGenerateContentEvents as writeGeminiGenerateContentEventsProduction } from '../../src/protocols/gemini-generate-content/as-source/events.ts';
+import { writeOpenAIChatCompletionsEvents as writeOpenAIChatCompletionsEventsProduction } from '../../src/protocols/openai-chat-completions/as-source/events.ts';
+import { readOpenAIChatCompletionsEvents as readOpenAIChatCompletionsEventsProduction } from '../../src/protocols/openai-chat-completions/as-target/events.ts';
+import { writeOpenAIResponsesEvents as writeOpenAIResponsesEventsProduction } from '../../src/protocols/openai-responses/as-source/events.ts';
 import { flattenNamespaceTools } from '../../src/protocols/openai-responses/as-source/namespace-tools.ts';
-import { openaiResponsesFromIR as openaiResponsesFromIRProduction } from '../../src/protocols/openai-responses/as-source/sse-to.ts';
-import { irFromOpenAIResponses as irFromOpenAIResponsesProduction } from '../../src/protocols/openai-responses/as-target/sse-from.ts';
+import { readOpenAIResponsesEvents as readOpenAIResponsesEventsProduction } from '../../src/protocols/openai-responses/as-target/events.ts';
 import { createReferenceBuilder } from '../../src/round-trip/reference/reference-builder.ts';
 import type { RoundTripReader, RoundTripWriter } from '../../src/round-trip/stream.ts';
 
@@ -31,19 +31,19 @@ const withoutProvenance = async function* (records: AsyncIterable<IRRecord>): As
   }
 };
 
-export const irFromAnthropicMessages = (frames: Parameters<typeof irFromAnthropicMessagesProduction>[0], options: Omit<Parameters<typeof irFromAnthropicMessagesProduction>[1], 'roundTrip'> = {}) =>
-  withoutProvenance(irFromAnthropicMessagesProduction(frames, { ...options, roundTrip: reader<'anthropicMessages'>() }));
-export const irFromOpenAIChatCompletions = (frames: Parameters<typeof irFromOpenAIChatCompletionsProduction>[0], options: Omit<Parameters<typeof irFromOpenAIChatCompletionsProduction>[1], 'roundTrip'> = {}) =>
-  withoutProvenance(irFromOpenAIChatCompletionsProduction(frames, { ...options, roundTrip: reader<'openaiChatCompletions'>() }));
-export const irFromOpenAIResponses = (
-  frames: Parameters<typeof irFromOpenAIResponsesProduction>[0],
+export const readAnthropicMessagesEvents = (frames: Parameters<typeof readAnthropicMessagesEventsProduction>[0], options: Omit<Parameters<typeof readAnthropicMessagesEventsProduction>[1], 'roundTrip'> = {}) =>
+  withoutProvenance(readAnthropicMessagesEventsProduction(frames, { ...options, roundTrip: reader<'anthropicMessages'>() }));
+export const readOpenAIChatCompletionsEvents = (frames: Parameters<typeof readOpenAIChatCompletionsEventsProduction>[0], options: Omit<Parameters<typeof readOpenAIChatCompletionsEventsProduction>[1], 'roundTrip'> = {}) =>
+  withoutProvenance(readOpenAIChatCompletionsEventsProduction(frames, { ...options, roundTrip: reader<'openaiChatCompletions'>() }));
+export const readOpenAIResponsesEvents = (
+  frames: Parameters<typeof readOpenAIResponsesEventsProduction>[0],
   roundTrip: RoundTripReader<'openaiResponses'> = reader<'openaiResponses'>(),
-) => withoutProvenance(irFromOpenAIResponsesProduction(frames, { roundTrip }));
-export const anthropicMessagesFromIR = (records: Parameters<typeof anthropicMessagesFromIRProduction>[0], options: Omit<Parameters<typeof anthropicMessagesFromIRProduction>[1], 'roundTrip'> = {}) =>
-  anthropicMessagesFromIRProduction(records, { ...options, roundTrip: writer<'anthropicMessages'>() });
-export const openaiChatCompletionsFromIR = (records: Parameters<typeof openaiChatCompletionsFromIRProduction>[0], options: Omit<Parameters<typeof openaiChatCompletionsFromIRProduction>[1], 'roundTrip'> = {}) =>
-  openaiChatCompletionsFromIRProduction(records, { ...options, roundTrip: writer<'openaiChatCompletions'>() });
-export const openaiResponsesFromIR = (records: Parameters<typeof openaiResponsesFromIRProduction>[0], options: Omit<Parameters<typeof openaiResponsesFromIRProduction>[1], 'roundTrip' | 'namespaceToolNames'> = {}) =>
-  openaiResponsesFromIRProduction(records, { ...options, roundTrip: writer<'openaiResponses'>(), namespaceToolNames });
-export const geminiGenerateContentFromIR = (records: Parameters<typeof geminiGenerateContentFromIRProduction>[0], options: Omit<Parameters<typeof geminiGenerateContentFromIRProduction>[1], 'roundTrip'> = {}) =>
-  geminiGenerateContentFromIRProduction(records, { ...options, roundTrip: writer<'geminiGenerateContent'>() });
+) => withoutProvenance(readOpenAIResponsesEventsProduction(frames, { roundTrip }));
+export const writeAnthropicMessagesEvents = (records: Parameters<typeof writeAnthropicMessagesEventsProduction>[0], options: Omit<Parameters<typeof writeAnthropicMessagesEventsProduction>[1], 'roundTrip'> = {}) =>
+  writeAnthropicMessagesEventsProduction(records, { ...options, roundTrip: writer<'anthropicMessages'>() });
+export const writeOpenAIChatCompletionsEvents = (records: Parameters<typeof writeOpenAIChatCompletionsEventsProduction>[0], options: Omit<Parameters<typeof writeOpenAIChatCompletionsEventsProduction>[1], 'roundTrip'> = {}) =>
+  writeOpenAIChatCompletionsEventsProduction(records, { ...options, roundTrip: writer<'openaiChatCompletions'>() });
+export const writeOpenAIResponsesEvents = (records: Parameters<typeof writeOpenAIResponsesEventsProduction>[0], options: Omit<Parameters<typeof writeOpenAIResponsesEventsProduction>[1], 'roundTrip' | 'namespaceToolNames'> = {}) =>
+  writeOpenAIResponsesEventsProduction(records, { ...options, roundTrip: writer<'openaiResponses'>(), namespaceToolNames });
+export const writeGeminiGenerateContentEvents = (records: Parameters<typeof writeGeminiGenerateContentEventsProduction>[0], options: Omit<Parameters<typeof writeGeminiGenerateContentEventsProduction>[1], 'roundTrip'> = {}) =>
+  writeGeminiGenerateContentEventsProduction(records, { ...options, roundTrip: writer<'geminiGenerateContent'>() });

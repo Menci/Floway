@@ -137,7 +137,7 @@ const irItemSeed = (item: OpenAIResponsesOutputItemEx): Record<string, unknown> 
 
 const itemId = (item: OpenAIResponsesOutputItemEx): unknown => 'id' in item ? item.id : undefined;
 
-export const irFromOpenAIResponses = async function* (
+export const readOpenAIResponsesEvents = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   options: { roundTrip: RoundTripReader<'openaiResponses'> },
 ): AsyncGenerator<IRRecord> {

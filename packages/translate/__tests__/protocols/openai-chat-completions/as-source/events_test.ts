@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { createIRBuilder } from '../../../../src/ir/output/builder.ts';
-import { openaiChatCompletionsFromIR } from '../../../../src/protocols/openai-chat-completions/as-source/sse-to.ts';
+import { writeOpenAIChatCompletionsEvents } from '../../../../src/protocols/openai-chat-completions/as-source/events.ts';
 import { createReferenceBuilder, collectContentViews, createFieldState, createReferenceFinalizer, appendField } from '../../../../src/round-trip/reference/reference-builder.ts';
 import type { RoundTripWriter } from '../../../../src/round-trip/stream.ts';
 
@@ -37,7 +37,7 @@ test('prepares each Chat choice independently while another choice has partial a
     prepareSidecar: async choice => { prepared.push(choice); return `sidecar-${choice}`; },
   };
   const frames = [];
-  for await (const frame of openaiChatCompletionsFromIR((async function* () { yield* source.drain(); })(), {
+  for await (const frame of writeOpenAIChatCompletionsEvents((async function* () { yield* source.drain(); })(), {
     roundTrip,
     audioMetadata: choice => ({ id: `audio-${choice}`, expires_at: 10 }),
   })) frames.push(frame);
@@ -79,7 +79,7 @@ test.each([false, true])('resolves delayed transcript provenance at actual proje
     builder: references,
     prepareSidecar: async (...args) => { prepared = args; return 'sidecar'; },
   };
-  for await (const _frame of openaiChatCompletionsFromIR((async function* () { yield* source.drain(); })(), {
+  for await (const _frame of writeOpenAIChatCompletionsEvents((async function* () { yield* source.drain(); })(), {
     roundTrip, audioMetadata: () => ({ id: 'audio', expires_at: 10 }),
   })) {}
   if (prepared === undefined) throw new Error('ChatCompletions sidecar was not prepared');

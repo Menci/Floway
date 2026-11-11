@@ -61,7 +61,7 @@ interface MessagesBlockState {
   wrappedInput: string;
 }
 
-export const irFromAnthropicMessages = async function* (
+export const readAnthropicMessagesEvents = async function* (
   frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
   options: { customToolNames?: ReadonlySet<string>; roundTrip: RoundTripReader<'anthropicMessages'> },
 ): AsyncGenerator<IRRecord> {

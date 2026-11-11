@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { createIRBuilder } from '../../../../src/ir/output/builder.ts';
-import { geminiGenerateContentFromIR } from '../../../../src/protocols/gemini-generate-content/as-source/sse-to.ts';
+import { writeGeminiGenerateContentEvents } from '../../../../src/protocols/gemini-generate-content/as-source/events.ts';
 import { appendField, collectContentViews, createReferenceBuilder, createFieldState, createReferenceFinalizer } from '../../../../src/round-trip/reference/reference-builder.ts';
 import type { RoundTripWriter } from '../../../../src/round-trip/stream.ts';
 
@@ -33,7 +33,7 @@ test('resolves delayed Gemini audio atoms within the complete emitted data field
       return 'sidecar';
     },
   };
-  for await (const _frame of geminiGenerateContentFromIR((async function* () { yield* source.drain(); })(), { roundTrip })) {}
+  for await (const _frame of writeGeminiGenerateContentEvents((async function* () { yield* source.drain(); })(), { roundTrip })) {}
   expect(prepared).toBe(true);
 });
 
@@ -62,6 +62,6 @@ test.each(['{"x":1,}', '{"x": 1}'])('tracks the emitted canonical JSON view with
       return 'sidecar';
     },
   };
-  for await (const _frame of geminiGenerateContentFromIR((async function* () { yield* source.drain(); })(), { roundTrip, parseToolArguments: original.endsWith(',}') ? () => ({ x: 1 }) : undefined })) {}
+  for await (const _frame of writeGeminiGenerateContentEvents((async function* () { yield* source.drain(); })(), { roundTrip, parseToolArguments: original.endsWith(',}') ? () => ({ x: 1 }) : undefined })) {}
   expect(prepared).toBe(true);
 });

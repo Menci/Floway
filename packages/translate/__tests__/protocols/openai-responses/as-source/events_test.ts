@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
 
 import { createIRBuilder } from '../../../../src/ir/output/builder.ts';
+import { writeOpenAIResponsesEvents } from '../../../../src/protocols/openai-responses/as-source/events.ts';
 import { flattenNamespaceTools } from '../../../../src/protocols/openai-responses/as-source/namespace-tools.ts';
-import { openaiResponsesFromIR } from '../../../../src/protocols/openai-responses/as-source/sse-to.ts';
 import { appendField, collectContentViews, createReferenceBuilder, createFieldState, createReferenceFinalizer } from '../../../../src/round-trip/reference/reference-builder.ts';
 import type { RoundTripWriter } from '../../../../src/round-trip/stream.ts';
 
@@ -79,7 +79,7 @@ test('collects sparse namespace-restored Responses state from emitted IR atoms',
   builder.event({ type: 'choice_end', choice: 0, finish_reason: 'tool_calls' });
   builder.event({ type: 'finish', status: 'completed' });
 
-  for await (const _frame of openaiResponsesFromIR((async function* () { yield* builder.drain(); })(), { roundTrip, namespaceToolNames: namespace.names })) {}
+  for await (const _frame of writeOpenAIResponsesEvents((async function* () { yield* builder.drain(); })(), { roundTrip, namespaceToolNames: namespace.names })) {}
   if (prepared === undefined) throw new Error('Responses sidecar was not prepared');
   const [, , turn, state] = prepared;
 

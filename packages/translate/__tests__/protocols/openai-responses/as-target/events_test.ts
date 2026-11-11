@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { irFromOpenAIResponses } from '../../../../src/protocols/openai-responses/as-target/sse-from.ts';
+import { readOpenAIResponsesEvents } from '../../../../src/protocols/openai-responses/as-target/events.ts';
 import { appendContent, collectContentViews, createContentState } from '../../../../src/round-trip/reference/reference-builder.ts';
 import { finalizeAssistantTurnReferences } from '../../../../src/round-trip/reference/reference-selection.ts';
 import { restoreAssistantTurn } from '../../../../src/round-trip/reference/restore.ts';
@@ -46,7 +46,7 @@ const collectProvenance = async (events: readonly OpenAIResponsesStreamEventEx[]
     for (const event of events) yield eventFrame(event);
   })();
 
-  for await (const record of irFromOpenAIResponses(frames, { roundTrip: capture.roundTrip })) {
+  for await (const record of readOpenAIResponsesEvents(frames, { roundTrip: capture.roundTrip })) {
     if (record.type !== 'write' || record.kind !== 'append' || record.path.at(-1) !== field) continue;
     appends.push({ text: record.value, ...(record.referencePieceIds === undefined ? {} : { referencePieceIds: record.referencePieceIds }) });
     appendContent(capture.builder, content, record.value, record.referencePieceIds);

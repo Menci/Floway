@@ -34,14 +34,14 @@ export interface IRUnionNode<D extends string = string, C extends Readonly<Recor
   readonly cases: C;
   readonly unit?: IRUnitKind;
 }
-// A value that is only ever replaced as a whole. `value` exists for the type only.
-export interface IROpaqueNode<V = unknown> { readonly kind: 'opaque'; readonly value?: V }
+// A value that is only ever replaced as a whole. `phantom` exists for the type only.
+export interface IROpaqueNode<V = unknown> { readonly kind: 'opaque'; readonly phantom?: V }
 export type IRSchemaNode = IRStringNode | IRNumberNode | IRNullableNode | IRArrayNode | IRObjectNode | IRUnionNode | IROpaqueNode;
 export interface IRSchemaFields { readonly [key: string]: IRSchemaNode }
 
 const string = { kind: 'string' } as const;
 const appendString = { kind: 'string', append: true } as const;
-const callId = { kind: 'string', absent: true } as const;
+const absentString = { kind: 'string', absent: true } as const;
 const number = { kind: 'number' } as const;
 const nullable = <N extends IRSchemaNode>(of: N): IRNullableNode<N> => ({ kind: 'nullable', of });
 const array = <N extends IRSchemaNode>(of: N): IRArrayNode<N> => ({ kind: 'array', of });
@@ -69,8 +69,8 @@ const item = union('type', {
     summary: array(appendString),
     content: array(appendString),
   }, { optional: ['summary', 'content'] }),
-  function_call: object({ call_id: callId, name: string, arguments: appendString }, { optional: ['call_id'] }),
-  custom_tool_call: object({ call_id: callId, name: string, input: appendString }, { optional: ['call_id'] }),
+  function_call: object({ call_id: absentString, name: string, arguments: appendString }, { optional: ['call_id'] }),
+  custom_tool_call: object({ call_id: absentString, name: string, input: appendString }, { optional: ['call_id'] }),
 }, 'item');
 
 const logprobs = nullable(array(union('scope', {
@@ -121,4 +121,4 @@ type Mutual<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 // Compile-time proof that the schema and the IR types describe the same values: a field the
 // schema declares optional, nullable, appendable or `IRAbsent`-capable differs from the IR type
 // exactly when this stops being `true`.
-export const irSchemaMatchesIRTypes: Mutual<ValueOf<typeof irSchema>, IROutput> = true;
+export const irSchemaTypeEquality: Mutual<ValueOf<typeof irSchema>, IROutput> = true;

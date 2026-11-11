@@ -117,7 +117,7 @@ interface ChatChoiceState {
   incomplete: boolean;
 }
 
-export const irFromOpenAIChatCompletions = async function* (
+export const readOpenAIChatCompletionsEvents = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
   options: { customToolNames?: ReadonlySet<string>; maxChoices?: number; roundTrip: RoundTripReader<'openaiChatCompletions'> },
 ): AsyncGenerator<IRRecord> {

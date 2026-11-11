@@ -12,8 +12,8 @@ import { createIRUnitQueue, type IRUnitQueue } from '../../../ir/output/unit-que
 import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
 import { appendContent, createContentState, type ContentStates, type ContentState as ReferenceContentState } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
-import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
+import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { isCompleteJSONObject, parseJSONObjectAtCompletion } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { GeminiGenerateContentAssistantState, GeminiGenerateContentInputAssistantTurn } from '../as-target/assistant-turn.ts';
@@ -57,13 +57,13 @@ interface TextSegment {
   targetStart: number;
 }
 
-interface GeminiGenerateContentSSEOutputOptions extends RoundTripOutputOptions<'geminiGenerateContent'> {
+interface GeminiGenerateContentEventWriterOptions extends SourceEventWriterOptions<'geminiGenerateContent'> {
   parseToolArguments?: (text: string) => IRJSONObject;
 }
 
-export const geminiGenerateContentFromIR = async function* (
+export const writeGeminiGenerateContentEvents = async function* (
   records: AsyncIterable<IRRecord>,
-  options: GeminiGenerateContentSSEOutputOptions,
+  options: GeminiGenerateContentEventWriterOptions,
 ): AsyncGenerator<EventFrame<GeminiGenerateContentStreamEvent>> {
   let metadata = { id: '', model: '' };
   let started = false;

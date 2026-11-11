@@ -20,9 +20,9 @@ import the source protocol's subpath and call
 5. **Output IR** — keep private types, its path schema, stream operations,
    validation, accumulation, operation paths, and native unit index allocation under
    `ir/output/`. Native SSE adapters
-   belong to their protocol: `as-target/sse-from.ts` consumes upstream SSE and
-   `as-source/sse-to.ts` emits client SSE with its sidecar. The return path is
-   upstream SSE → IR SSE → client SSE with sidecar. IR stays internal to translate.
+   belong to their protocol: `as-target/events.ts` reads upstream protocol events and
+   `as-source/events.ts` writes client protocol events with its sidecar. The return path is
+   upstream events → IR records → client events with sidecar. IR stays internal to translate.
 6. **Assistant-turn round trips** — keep owner-specific sidecar validation, replay
    validation, and native stream coordination under `round-trip/`. Source replay
    inspection and carriers belong in `as-source/round-trip.ts`; native assistant-turn
