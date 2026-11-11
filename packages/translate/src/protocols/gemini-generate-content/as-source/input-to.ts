@@ -1,7 +1,6 @@
 import { klona } from 'klona/json';
 
 import { partitionGeminiGenerateContentTurns, type GeminiGenerateContentConversationTurn as GeminiGenerateContentTurn } from './conversation-turns.ts';
-import { geminiGenerateContentReasoningEffortToIR } from './reasoning.ts';
 import type { GeminiGenerateContentSourceAssistantTurn } from './round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from './schema.ts';
 import type { SourceReading, SourceTurnSlot } from '../../../composition/reading.ts';
@@ -19,7 +18,21 @@ import type {
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
-import type { GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentPartData, GeminiGenerateContentPayload, GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentThinkingConfig, GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentPartData, GeminiGenerateContentPayload, GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
+
+// Translate Google's named thinking levels to target effort names; the default
+// sentinel leaves effort unset. Preserve all other open-string values verbatim.
+// Reference: https://ai.google.dev/api/generate-content#ThinkingLevel
+const geminiGenerateContentReasoningEffortToIR = (thinkingConfig?: GeminiGenerateContentThinkingConfig): string | undefined => {
+  switch (thinkingConfig?.thinkingLevel) {
+  case 'LOW': return 'low';
+  case 'MEDIUM': return 'medium';
+  case 'HIGH': return 'high';
+  case 'MINIMAL': return 'minimal';
+  case 'THINKING_LEVEL_UNSPECIFIED': return undefined;
+  default: return thinkingConfig?.thinkingLevel;
+  }
+};
 
 const inlinePart = (part: GeminiGenerateContentPart): IRInputUserContentPart => {
   const inlineData = geminiGenerateContentInlineData(part);
@@ -168,8 +181,6 @@ const geminiGenerateContentSystemToIR = (content: GeminiGenerateContentContent |
   return parts.length === 0 ? undefined : { kind: 'client', items: [{ type: 'prompt', role: 'system', content: parts }] };
 };
 
-const partitionContents = (payload: GeminiGenerateContentPayload): GeminiGenerateContentTurn[] => partitionGeminiGenerateContentTurns(payload.contents ?? []);
-
 // GenerateContent declares functions in groups and narrows them through
 // `toolConfig.functionCallingConfig`. The IR states that narrowing as
 // `allowed_tools`, keeping the complete declaration list separate from which
@@ -251,7 +262,7 @@ export const readGeminiGenerateContentRequest = (payload: GeminiGenerateContentR
     },
     turns: [
       ...(prompt === undefined ? [] : [{ kind: 'client' as const, toIRInputTurns: () => [prompt] }]),
-      ...partitionContents(payload).map(turnSlotFor),
+      ...partitionGeminiGenerateContentTurns(payload.contents ?? []).map(turnSlotFor),
     ],
   };
 };

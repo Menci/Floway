@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { geminiGenerateContentReasoningEffortToIR } from '../../../../src/protocols/gemini-generate-content/as-source/reasoning.ts';
+import { readGeminiGenerateContentRequest } from '../../../../src/protocols/gemini-generate-content/as-source/input-to.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test.each([
@@ -13,5 +13,5 @@ test.each([
   ['VENDOR_Turbo', 'VENDOR_Turbo'],
   ['Low', 'Low'],
 ] as const)('thinkingLevel %s maps to effort %s', (thinkingLevel, effort) => {
-  assertEquals(geminiGenerateContentReasoningEffortToIR({ thinkingLevel }), effort);
+  assertEquals(readGeminiGenerateContentRequest({ model: 'm', contents: [], generationConfig: { thinkingConfig: { thinkingLevel } } }).request.settings.reasoning_effort, effort);
 });

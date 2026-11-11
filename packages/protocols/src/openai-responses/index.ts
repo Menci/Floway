@@ -140,10 +140,6 @@ export type CanonicalOpenAIResponsesInputItem =
 
 export type OpenAIResponsesMessagePhase = 'commentary' | 'final_answer' | (string & {}) | null;
 
-// `content` is conditioned on `role`: client roles state what the caller sent,
-// while an assistant turn replays model output and may therefore carry a
-// refusal. A refusal in client-produced content is not expressible.
-// https://github.com/openai/openai-node/blob/master/src/resources/responses/responses.ts (ResponseInputItem)
 interface OpenAIResponsesInputMessageFields {
   type: 'message';
   id?: string;
@@ -156,7 +152,7 @@ interface OpenAIResponsesInputMessageFields {
 
 export type OpenAIResponsesInputMessageEx = OpenAIResponsesInputMessageFields & (
   | { role: 'user' | 'system' | 'developer'; content: string | OpenAIResponsesInputContent[] }
-  | { role: 'assistant'; content: string | (OpenAIResponsesInputContent | OpenAIResponsesOutputRefusal)[] }
+  | { role: 'assistant'; content: string | OpenAIResponsesAssistantInputContent[] }
 );
 
 // The OpenAI Responses request schema's EasyInputMessage makes the constant
@@ -185,9 +181,6 @@ export type CanonicalOpenAIResponsesPayload = Omit<OpenAIResponsesPayloadEx, 'in
   input: CanonicalOpenAIResponsesInputItem[];
 };
 
-// A refusal is model output: the request schema carries it only when replaying an
-// assistant turn, never in client-produced content.
-// https://github.com/openai/openai-node/blob/master/src/resources/responses/responses.ts (ResponseOutputRefusal)
 export type OpenAIResponsesInputContent = CanonicalOpenAIResponsesText | OpenAIResponsesInputImage | OpenAIResponsesInputFile;
 
 export type OpenAIResponsesAssistantInputContent = OpenAIResponsesInputContent | OpenAIResponsesOutputRefusal;

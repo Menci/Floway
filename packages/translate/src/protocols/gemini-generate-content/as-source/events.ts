@@ -11,7 +11,7 @@ import { type IROutput, type IROutputSourceCitation, type IROutputTokenLogprob }
 import { createIRUnitQueue, type IRUnitQueue } from '../../../ir/output/unit-queue.ts';
 import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
-import { appendEmittedField, createEmittedFieldState, type EmittedFieldStates, type EmittedFieldState as EmittedFieldState } from '../../../round-trip/reference/reference-builder.ts';
+import { appendEmittedField, createEmittedFieldState, type EmittedFieldStates, type EmittedFieldState } from '../../../round-trip/reference/reference-builder.ts';
 import { errorDetailsOf } from '../../../shared/api-error.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';

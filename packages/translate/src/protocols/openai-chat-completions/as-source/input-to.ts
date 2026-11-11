@@ -221,7 +221,7 @@ const clientItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, 
 // A Chat declaration states a function with a nested definition, a freeform
 // custom tool, or a hosted tool this IR does not carry (an interceptor rewrites
 // those before translation). Only the two callable arms are representable.
-const toolToIR = (tool: OpenAIChatCompletionsTool): IRInputTool | undefined => {
+const toolToIR = (tool: OpenAIChatCompletionsTool): IRInputTool => {
   if (tool.type === 'custom') {
     const format = tool.custom.format;
     return {
@@ -258,7 +258,7 @@ const toolChoiceToIR = (choice: NonNullable<OpenAIChatCompletionsPayload['tool_c
 
 const openaiChatCompletionsToolsToIR = (payload: OpenAIChatCompletionsPayload): Pick<IRInputRequestHeader, 'tools' | 'tool_choice'> => {
   const declarations = payload.tools ?? payload.functions?.map(fn => ({ type: 'function' as const, function: fn }));
-  const tools = declarations?.map(toolToIR).filter((tool): tool is IRInputTool => tool !== undefined);
+  const tools = declarations?.map(toolToIR);
   const legacyChoice = payload.function_call;
   const choice = payload.tool_choice ?? (typeof legacyChoice === 'string'
     ? legacyChoice

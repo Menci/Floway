@@ -18,7 +18,7 @@ test('error restatement retains nullable fields, unused aliases and outer metada
   })));
   expect(result?.body).toEqual({
     error: {
-      message: 'bad field', type: 'server_error', code: null, param: null,
+      message: 'bad field', code: null, param: null,
       provider_specific_fields: { status: 'INVALID_ARGUMENT', request_id: 'req_1' },
     },
   });

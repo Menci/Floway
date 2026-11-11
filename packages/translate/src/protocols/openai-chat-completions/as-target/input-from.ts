@@ -150,7 +150,7 @@ const openaiChatCompletionsClientItem = (
   item: IRInputClientItemWithCallIds,
   lift: (parts: readonly OpenAIChatCompletionsUserContentPart[]) => void,
   legacyCallNames: ReadonlyMap<string, string>,
-): OpenAIChatCompletionsMessage[] => [item].flatMap<OpenAIChatCompletionsMessage>(item => {
+): OpenAIChatCompletionsMessage[] => {
   switch (item.type) {
   case 'message':
     return [{ role: 'user', content: userContent(item) }];
@@ -173,7 +173,7 @@ const openaiChatCompletionsClientItem = (
       : { role: 'function', name: legacyCallName, content: projected.content }];
   }
   }
-});
+};
 
 export const openaiChatCompletionsConversationFromIR = (
   turns: readonly IRInputTurnWithCallIds[],
