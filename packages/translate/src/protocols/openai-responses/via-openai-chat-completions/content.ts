@@ -1,28 +1,28 @@
 import { TranslatorInputError } from '../../../translator-input-error.ts';
-import type { OpenAIChatCompletionsContentPart } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesInputContent } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIChatCompletionsUserContentPart } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIResponsesInputContent, OpenAIResponsesAssistantInputContent } from '@floway-dev/protocols/openai-responses';
 
 // OpenAI Chat Completions and OpenAI Responses text arrays are transport fragments of one message, not
 // paragraph blocks. Preserve the existing no-separator flattening.
-const contentPartText = (part: OpenAIChatCompletionsContentPart | OpenAIResponsesInputContent): string | null => (part.type === 'text' || part.type === 'input_text' || part.type === 'output_text' ? part.text : null);
+const contentPartText = (part: OpenAIChatCompletionsUserContentPart | OpenAIResponsesAssistantInputContent): string | null => (part.type === 'text' || part.type === 'input_text' || part.type === 'output_text' ? part.text : null);
 
-const contentPartsToText = (parts: readonly (OpenAIChatCompletionsContentPart | OpenAIResponsesInputContent)[]): string =>
+const contentPartsToText = (parts: readonly (OpenAIChatCompletionsUserContentPart | OpenAIResponsesAssistantInputContent)[]): string =>
   parts
     .map(contentPartText)
     .filter((text): text is string => text !== null)
     .join('');
 
-export const openaiResponsesContentToText = (content: string | OpenAIResponsesInputContent[]): string => (typeof content === 'string' ? content : contentPartsToText(content));
+export const openaiResponsesContentToText = (content: string | OpenAIResponsesAssistantInputContent[]): string => (typeof content === 'string' ? content : contentPartsToText(content));
 
-export const openaiResponsesContentToOpenAIChatCompletionsContent = (content: string | OpenAIResponsesInputContent[]): string | OpenAIChatCompletionsContentPart[] => {
+export const openaiResponsesContentToOpenAIChatCompletionsContent = (content: string | OpenAIResponsesInputContent[]): string | OpenAIChatCompletionsUserContentPart[] => {
   if (typeof content === 'string') return content;
   if (!content.every((part): part is Exclude<OpenAIResponsesInputContent, { type: 'input_file' }> => part.type !== 'input_file')) {
     throw new TranslatorInputError('Cannot translate input_file content to OpenAI Chat Completions.');
   }
 
-  return content.some(part => part.type === 'input_image' || part.type === 'refusal')
+  return content.some(part => part.type === 'input_image')
     ? content.map(
-        (part): OpenAIChatCompletionsContentPart => {
+        (part): OpenAIChatCompletionsUserContentPart => {
           if (part.type === 'input_image') {
             if (typeof part.image_url !== 'string') {
               throw new TranslatorInputError('Cannot translate file_id-only image content to OpenAI Chat Completions.');
@@ -41,7 +41,6 @@ export const openaiResponsesContentToOpenAIChatCompletionsContent = (content: st
               },
             };
           }
-          if (part.type === 'refusal') return { type: 'refusal', refusal: part.refusal };
           return { type: 'text', text: part.text };
         },
       )
