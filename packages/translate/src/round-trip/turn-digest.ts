@@ -26,3 +26,16 @@ export const verifyRoundTripTurnDigest = async (material: IRJSONValue, sourceTur
   const digest = await hashRoundTripContent(stringifyReplayMaterial(material));
   return digest.length === sourceTurnDigest.length && digest.every((byte, index) => byte === sourceTurnDigest[index]);
 };
+
+export const createTurnDigestComputer = <Turn>(
+  materialOf: (turn: Turn) => IRJSONValue,
+): (turn: Turn) => Promise<RoundTripTurnDigest> => turn => computeRoundTripTurnDigest(materialOf(turn));
+
+export const createTurnDigestVerifier = <Turn>(
+  materialOf: (turn: Turn) => IRJSONValue,
+): (turn: Turn, sourceTurnDigest: RoundTripTurnDigest, version: number) => Promise<boolean> => (turn, sourceTurnDigest, version) => {
+  switch (version) {
+  case 1: return verifyRoundTripTurnDigest(materialOf(turn), sourceTurnDigest);
+  default: return Promise.resolve(false);
+  }
+};

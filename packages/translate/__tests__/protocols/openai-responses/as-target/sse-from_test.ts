@@ -114,7 +114,7 @@ test('keeps a tiny complete snapshot-only atom literal and hydrates the native R
     ['hello'],
     finalized.targetTurn,
     finalized.referencedContentHashes,
-  )).toEqual({ ok: true, turn: captured.turn });
+  )).toEqual({ ok: true, value: captured.turn });
 });
 
 test('invalidates streamed refusal provenance when its done snapshot supplies a suffix', async () => {
@@ -138,7 +138,7 @@ test('invalidates streamed refusal provenance when its done snapshot supplies a 
   expect(itemState.content[0]).toMatchObject({ refusal: { valid: false } });
   const finalized = await referenceAssistantTurn<'openaiResponses'>(captured.turn, captured.fieldState, captured.builder, collectEmittedFieldPlacements('refused', captured.content));
   expect(finalized).not.toHaveProperty('referencedContentHashes');
-  expect(await restoreAssistantTurn('openaiResponses', ['refused'], finalized.targetTurn, finalized.referencedContentHashes)).toEqual({ ok: true, turn: captured.turn });
+  expect(await restoreAssistantTurn('openaiResponses', ['refused'], finalized.targetTurn, finalized.referencedContentHashes)).toEqual({ ok: true, value: captured.turn });
 });
 
 test('collects a snapshot-only refusal through its refusal field state', async () => {
@@ -154,7 +154,7 @@ test('collects a snapshot-only refusal through its refusal field state', async (
   expect(captured.appends).toEqual([{ text: 'refused', textFragmentIds: [0] }]);
   const finalized = await referenceAssistantTurn<'openaiResponses'>(captured.turn, captured.fieldState, captured.builder, collectEmittedFieldPlacements('refused', captured.content));
   expect(finalized).not.toHaveProperty('referencedContentHashes');
-  expect(await restoreAssistantTurn('openaiResponses', ['refused'], finalized.targetTurn, finalized.referencedContentHashes)).toEqual({ ok: true, turn: captured.turn });
+  expect(await restoreAssistantTurn('openaiResponses', ['refused'], finalized.targetTurn, finalized.referencedContentHashes)).toEqual({ ok: true, value: captured.turn });
 });
 
 type ToolItem = Extract<OpenAIResponsesOutputItemEx, { type: 'function_call' | 'custom_tool_call' }>;
@@ -191,7 +191,7 @@ test.each(toolCases)('collects streamed native $type text through its existing s
   const finalized = await referenceAssistantTurn<'openaiResponses'>(captured.turn, captured.fieldState, captured.builder, collectEmittedFieldPlacements(text, captured.content));
   expect(finalized.targetTurn[0]).toHaveProperty(field, text);
   expect(finalized).not.toHaveProperty('referencedContentHashes');
-  expect(await restoreAssistantTurn('openaiResponses', [text], finalized.targetTurn, finalized.referencedContentHashes)).toEqual({ ok: true, turn: captured.turn });
+  expect(await restoreAssistantTurn('openaiResponses', [text], finalized.targetTurn, finalized.referencedContentHashes)).toEqual({ ok: true, value: captured.turn });
 });
 
 test.each(toolCases)('collects a snapshot-only native $type atom and inlines the tiny field', async ({ type, field, prefix, suffix }) => {
@@ -208,7 +208,7 @@ test.each(toolCases)('collects a snapshot-only native $type atom and inlines the
   const finalized = await referenceAssistantTurn<'openaiResponses'>(captured.turn, captured.fieldState, captured.builder, collectEmittedFieldPlacements(text, captured.content));
   expect(finalized.targetTurn[0]).toHaveProperty(field, text);
   expect(finalized).not.toHaveProperty('referencedContentHashes');
-  expect(await restoreAssistantTurn('openaiResponses', [text], finalized.targetTurn, finalized.referencedContentHashes)).toEqual({ ok: true, turn: captured.turn });
+  expect(await restoreAssistantTurn('openaiResponses', [text], finalized.targetTurn, finalized.referencedContentHashes)).toEqual({ ok: true, value: captured.turn });
 });
 
 test.each(toolCases)('invalidates native $type provenance when its done snapshot extends a delta', async ({ type, field, prefix, suffix }) => {

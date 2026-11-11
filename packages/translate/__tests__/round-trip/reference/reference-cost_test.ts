@@ -61,14 +61,14 @@ describe('thin reference selection', () => {
     const result = await finalizeTexts(texts);
     expect(result.referencedContentHashes).toEqual([await hashRoundTripContent(texts[0])]);
     expect(result.targetTurn.content).toEqual(texts.map(() => ({ type: 'text', text: new ContentReference('text', [0]), citations: null })));
-    expect(await restoreAssistantTurn('anthropicMessages', texts, result.targetTurn, result.referencedContentHashes)).toEqual({ ok: true, turn: result.turn });
+    expect(await restoreAssistantTurn('anthropicMessages', texts, result.targetTurn, result.referencedContentHashes)).toEqual({ ok: true, value: result.turn });
   });
 
   it.each(['汉'.repeat(80), 'a'.repeat(80)])('selects equally long Unicode and ASCII text using format-independent lengths: %j', async text => {
     const result = await finalizeTexts([text]);
     expect(result.targetTurn.content).toEqual([{ type: 'text', text: new ContentReference('text', [0]), citations: null }]);
     expect(result.referencedContentHashes).toEqual([await hashRoundTripContent(text)]);
-    expect(await restoreAssistantTurn('anthropicMessages', [text], result.targetTurn, result.referencedContentHashes)).toEqual({ ok: true, turn: result.turn });
+    expect(await restoreAssistantTurn('anthropicMessages', [text], result.targetTurn, result.referencedContentHashes)).toEqual({ ok: true, value: result.turn });
   });
 
   it('drops unprofitable hashes and compacts the surviving index', async () => {
@@ -80,7 +80,7 @@ describe('thin reference selection', () => {
       ...small.map(text => ({ type: 'text', text, citations: null })),
       { type: 'text', text: new ContentReference('text', [0]), citations: null },
     ]);
-    expect(await restoreAssistantTurn('anthropicMessages', [...small, large], result.targetTurn, result.referencedContentHashes)).toEqual({ ok: true, turn: result.turn });
+    expect(await restoreAssistantTurn('anthropicMessages', [...small, large], result.targetTurn, result.referencedContentHashes)).toEqual({ ok: true, value: result.turn });
   });
 
   it('selects the hashes of one atomic mixed reference together after merging adjacent ranges', async () => {
@@ -101,7 +101,7 @@ describe('thin reference selection', () => {
     const result = await referenceAssistantTurn<'anthropicMessages'>(turn, { content: [{ text: field }] }, builder, views);
     expect(result.referencedContentHashes).toEqual([await hashRoundTripContent(text), await hashRoundTripContent('!')]);
     expect(result.targetTurn.content).toEqual([{ type: 'text', text: new ContentReference('text', [0, 1]), citations: null }]);
-    expect(await restoreAssistantTurn('anthropicMessages', [text, '!'], result.targetTurn, result.referencedContentHashes)).toEqual({ ok: true, turn });
+    expect(await restoreAssistantTurn('anthropicMessages', [text, '!'], result.targetTurn, result.referencedContentHashes)).toEqual({ ok: true, value: turn });
   });
 
   it.each([{ length: 50, referenced: false }, { length: 80, referenced: true }])('does not fund the selected table with rejected atomic fields: %j', async ({ length, referenced }) => {
@@ -127,6 +127,6 @@ describe('thin reference selection', () => {
     ]);
     if (referenced) expect(result.referencedContentHashes).toEqual([await hashRoundTripContent(shared)]);
     else expect(result).not.toHaveProperty('referencedContentHashes');
-    expect(await restoreAssistantTurn('anthropicMessages', [shared, suffix], result.targetTurn, result.referencedContentHashes)).toEqual({ ok: true, turn });
+    expect(await restoreAssistantTurn('anthropicMessages', [shared, suffix], result.targetTurn, result.referencedContentHashes)).toEqual({ ok: true, value: turn });
   });
 });

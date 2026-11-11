@@ -402,7 +402,7 @@ it('uses the final JSON text view to reference and restore a B object', async ()
   };
   expect(await restoreAssistantTurn('anthropicMessages', [original], turn, finalizer.referencedContentHashes)).toEqual({
     ok: true,
-    turn: { role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'lookup', input: original }] },
+    value: { role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'lookup', input: original }] },
   });
 });
 
@@ -421,7 +421,7 @@ it('round-trips raw JSON numbers and keeps changed key order literal', async () 
   const hydrated = await restoreAssistantTurn('anthropicMessages', [original], turn, finalizer.referencedContentHashes);
   expect(hydrated.ok).toBe(true);
   if (!hydrated.ok) throw new Error('Expected JSON hydration');
-  expect(JSON.stringify(hydrated.turn.content[0])).toContain('9007199254740993');
+  expect(JSON.stringify(hydrated.value.content[0])).toContain('9007199254740993');
 
   const reorderedField = createReadFieldState('json');
   const reorderedPart = appendReadField(builder, reorderedField, '{"a":1,"b":2}');

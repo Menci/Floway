@@ -2,8 +2,7 @@ import type { IRJSONObject, IRJSONValue } from '../../../ir/types.ts';
 import type { ReplayContent } from '../../../round-trip/reference/types.ts';
 import type { SidecarOccurrence } from '../../../round-trip/resolve.ts';
 import { collectTextGroups, collectTextPlacementIndex, type TextContribution, type TextPlacementIndex } from '../../../round-trip/text-groups.ts';
-import { computeRoundTripTurnDigest, replayMaterialsByType, verifyRoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
-import type { RoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
+import { createTurnDigestComputer, replayMaterialsByType, createTurnDigestVerifier } from '../../../round-trip/turn-digest.ts';
 import { isPlainJSONObject, requireJSONObject } from '../../../shared/json/object.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesAssistantMessage, AnthropicMessagesRedactedThinkingBlock } from '@floway-dev/protocols/anthropic-messages';
 
@@ -50,8 +49,7 @@ export const findAnthropicMessagesSidecarOccurrences = (turn: AnthropicMessagesS
     }]);
   });
 
-export const computeAnthropicMessagesTurnDigest = (turn: AnthropicMessagesSourceAssistantTurn): Promise<RoundTripTurnDigest> =>
-  computeRoundTripTurnDigest(messagesTurnDigestMaterialV1(turn));
+export const computeAnthropicMessagesTurnDigest = createTurnDigestComputer(messagesTurnDigestMaterialV1);
 
 export const collectAnthropicMessagesReplayContents = (turn: AnthropicMessagesSourceAssistantTurn): ReplayContent[] => {
   const candidates: ReplayContent[] = [];
@@ -68,16 +66,7 @@ export const collectAnthropicMessagesReplayContents = (turn: AnthropicMessagesSo
   return candidates;
 };
 
-export const verifyAnthropicMessagesTurnDigest = (
-  turn: AnthropicMessagesSourceAssistantTurn,
-  sourceTurnDigest: RoundTripTurnDigest,
-  version: number,
-): Promise<boolean> => {
-  switch (version) {
-  case 1: return verifyRoundTripTurnDigest(messagesTurnDigestMaterialV1(turn), sourceTurnDigest);
-  default: return Promise.resolve(false);
-  }
-};
+export const verifyAnthropicMessagesTurnDigest = createTurnDigestVerifier(messagesTurnDigestMaterialV1);
 
 export const createAnthropicMessagesSidecarBlock = (data: string): AnthropicMessagesRedactedThinkingBlock => ({ type: 'redacted_thinking', data });
 

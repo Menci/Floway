@@ -31,5 +31,5 @@ it.each<{ input: IRJSONObject; referenced: boolean }>([
     expect(result.targetTurn.content).toMatchObject([{ input: new ContentReference('json', [0]) }]);
     expect(result.referencedContentHashes).toHaveLength(1);
   }
-  expect(await restoreAssistantTurn('anthropicMessages', [input], result.targetTurn, result.referencedContentHashes)).toEqual({ ok: true, turn });
+  expect(await restoreAssistantTurn('anthropicMessages', [input], result.targetTurn, result.referencedContentHashes)).toEqual({ ok: true, value: turn });
 });

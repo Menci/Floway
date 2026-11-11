@@ -24,9 +24,9 @@ describe('restoreAssistantTurn', () => {
     const object = input.object;
     const hydrated = await restoreAssistantTurn('anthropicMessages', [], turn);
     if (!hydrated.ok) throw new Error('Expected a literal assistant turn');
-    expect(hydrated.turn).toBe(turn);
-    expect(hydrated.turn.content).toBe(blocks);
-    expect(hydrated.turn.content[0]).toBe(block);
+    expect(hydrated.value).toBe(turn);
+    expect(hydrated.value.content).toBe(blocks);
+    expect(hydrated.value.content[0]).toBe(block);
     if (block.type !== 'tool_use') throw new Error('Expected a tool block');
     expect(block.input).toBe(input);
     expect(input.nested).toBe(nested);
@@ -41,10 +41,10 @@ describe('restoreAssistantTurn', () => {
     const turn: GeminiGenerateContentReferenceableInputAssistantTurn<ContentReference> = [content];
     const hydrated = await restoreAssistantTurn('geminiGenerateContent', [], turn);
     if (!hydrated.ok) throw new Error('Expected a literal assistant turn');
-    expect(hydrated.turn).toBe(turn);
-    expect(hydrated.turn[0]).toBe(content);
-    expect(hydrated.turn[0].parts).toBe(parts);
-    expect(hydrated.turn[0].parts?.[0]).toBe(part);
+    expect(hydrated.value).toBe(turn);
+    expect(hydrated.value[0]).toBe(content);
+    expect(hydrated.value[0].parts).toBe(parts);
+    expect(hydrated.value[0].parts?.[0]).toBe(part);
   });
 
   it('restores text and JSON reference leaves in place while retaining their containers', async () => {
@@ -57,10 +57,10 @@ describe('restoreAssistantTurn', () => {
       await hashRoundTripContent('[answer]'), await hashRoundTripContent(JSON.stringify(candidate)),
     ]);
     if (!hydrated.ok) throw new Error('Expected reference hydration');
-    expect(hydrated.turn).toBe(turn);
-    expect(hydrated.turn.content).toBe(blocks);
-    expect(hydrated.turn.content[0]).toBe(text);
-    expect(hydrated.turn.content[1]).toBe(tool);
+    expect(hydrated.value).toBe(turn);
+    expect(hydrated.value.content).toBe(blocks);
+    expect(hydrated.value.content[0]).toBe(text);
+    expect(hydrated.value.content[1]).toBe(tool);
     expect(text.text).toBe('answer');
     expect(tool.input).toEqual(candidate);
     expect(tool.input).not.toBe(candidate);
@@ -77,9 +77,9 @@ describe('restoreAssistantTurn', () => {
     };
     const hydrated = await restoreAssistantTurn('openaiChatCompletions', ['answer'], turn, [await hashRoundTripContent('answer')]);
     if (!hydrated.ok) throw new Error('Expected reference hydration');
-    expect(hydrated.turn).toBe(turn);
-    expect(hydrated.turn.content).toBe('answer');
-    expect(hydrated.turn.provider_specific_fields).toBe(metadata);
+    expect(hydrated.value).toBe(turn);
+    expect(hydrated.value.content).toBe('answer');
+    expect(hydrated.value.provider_specific_fields).toBe(metadata);
     expect(metadata.bytes).toBe(bytes);
     expect(metadata.number).toBe(number);
     expect(metadata.nested).toBe(nested);
@@ -92,7 +92,7 @@ describe('restoreAssistantTurn', () => {
     const turn: OpenAIChatCompletionsReferenceableInputAssistantTurn<ContentReference> = { role: 'assistant', content: 'unchanged' };
     const digest = vi.spyOn(crypto.subtle, 'digest');
     try {
-      expect(await restoreAssistantTurn('openaiChatCompletions', ['unused candidate'], turn)).toEqual({ ok: true, turn });
+      expect(await restoreAssistantTurn('openaiChatCompletions', ['unused candidate'], turn)).toEqual({ ok: true, value: turn });
       expect(digest).not.toHaveBeenCalled();
     } finally {
       digest.mockRestore();

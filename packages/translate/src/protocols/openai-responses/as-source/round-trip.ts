@@ -2,8 +2,7 @@ import type { IRJSONObject, IRJSONValue } from '../../../ir/types.ts';
 import type { ReplayContent } from '../../../round-trip/reference/types.ts';
 import type { SidecarOccurrence } from '../../../round-trip/resolve.ts';
 import { collectTextGroups, collectTextPlacementIndex, type TextContribution, type TextPlacementIndex } from '../../../round-trip/text-groups.ts';
-import { computeRoundTripTurnDigest, replayMaterialsByType, verifyRoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
-import type { RoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
+import { createTurnDigestComputer, replayMaterialsByType, createTurnDigestVerifier } from '../../../round-trip/turn-digest.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputContent, OpenAIResponsesOutputContentBlock, OpenAIResponsesOutputItemEx, OpenAIResponsesOutputReasoning } from '@floway-dev/protocols/openai-responses';
 
 type OpenAIResponsesMessagePart = OpenAIResponsesInputContent | OpenAIResponsesOutputContentBlock;
@@ -91,8 +90,7 @@ export const findOpenAIResponsesSidecarOccurrences = (turn: OpenAIResponsesSourc
     },
   }]);
 
-export const computeOpenAIResponsesTurnDigest = (turn: OpenAIResponsesSourceAssistantTurn): Promise<RoundTripTurnDigest> =>
-  computeRoundTripTurnDigest(responsesTurnDigestMaterialV1(turn));
+export const computeOpenAIResponsesTurnDigest = createTurnDigestComputer(responsesTurnDigestMaterialV1);
 
 export const collectOpenAIResponsesReplayContents = (turn: OpenAIResponsesSourceAssistantTurn): ReplayContent[] => {
   const candidates: ReplayContent[] = [];
@@ -112,16 +110,7 @@ export const collectOpenAIResponsesReplayContents = (turn: OpenAIResponsesSource
   return candidates;
 };
 
-export const verifyOpenAIResponsesTurnDigest = (
-  turn: OpenAIResponsesSourceAssistantTurn,
-  sourceTurnDigest: RoundTripTurnDigest,
-  version: number,
-): Promise<boolean> => {
-  switch (version) {
-  case 1: return verifyRoundTripTurnDigest(responsesTurnDigestMaterialV1(turn), sourceTurnDigest);
-  default: return Promise.resolve(false);
-  }
-};
+export const verifyOpenAIResponsesTurnDigest = createTurnDigestVerifier(responsesTurnDigestMaterialV1);
 
 export const createOpenAIResponsesSidecarItem = (id: string, data: string): OpenAIResponsesSidecarItem => ({
   type: 'reasoning',

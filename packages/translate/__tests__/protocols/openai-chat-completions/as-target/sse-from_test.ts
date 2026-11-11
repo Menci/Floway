@@ -95,7 +95,7 @@ const traceTools = async (frames: ReturnType<typeof chunk>[], options: { prefix?
   const [, turn, fieldState] = captured;
   const finalized = await referenceAssistantTurn(turn, fieldState, builder, collectEmittedFieldPlacements(text, content));
   const hydrated = await restoreAssistantTurn('openaiChatCompletions', [text], finalized.targetTurn, finalized.referencedContentHashes);
-  expect(hydrated).toEqual({ ok: true, turn });
+  expect(hydrated).toEqual({ ok: true, value: turn });
   return { turn, fieldState, appends, assigns, finalized };
 };
 

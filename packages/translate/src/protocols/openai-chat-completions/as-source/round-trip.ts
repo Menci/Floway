@@ -2,8 +2,7 @@ import type { IRJSONObject, IRJSONValue } from '../../../ir/types.ts';
 import type { ReplayContent } from '../../../round-trip/reference/types.ts';
 import type { SidecarOccurrence } from '../../../round-trip/resolve.ts';
 import { collectTextGroups, collectTextPlacementIndex, type TextContribution, type TextPlacementIndex } from '../../../round-trip/text-groups.ts';
-import { computeRoundTripTurnDigest, verifyRoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
-import type { RoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
+import { createTurnDigestComputer, createTurnDigestVerifier } from '../../../round-trip/turn-digest.ts';
 import type { OpenAIChatCompletionsAssistantExtensions, OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsAssistantOutputMessage, OpenAIChatCompletionsToolCallEx } from '@floway-dev/protocols/openai-chat-completions';
 
 type OpenAIChatCompletionsReplayPart = NonNullable<Exclude<OpenAIChatCompletionsSourceAssistantTurn['content'], string>>[number];
@@ -83,8 +82,7 @@ export const findOpenAIChatCompletionsSidecarOccurrences = (turn: OpenAIChatComp
   }]);
 };
 
-export const computeOpenAIChatCompletionsTurnDigest = (turn: OpenAIChatCompletionsSourceAssistantTurn): Promise<RoundTripTurnDigest> =>
-  computeRoundTripTurnDigest(chatTurnDigestMaterialV1(turn));
+export const computeOpenAIChatCompletionsTurnDigest = createTurnDigestComputer(chatTurnDigestMaterialV1);
 
 export const collectOpenAIChatCompletionsReplayContents = (turn: OpenAIChatCompletionsSourceAssistantTurn): ReplayContent[] => {
   const candidates: ReplayContent[] = [];
@@ -105,16 +103,7 @@ export const collectOpenAIChatCompletionsReplayContents = (turn: OpenAIChatCompl
   return candidates;
 };
 
-export const verifyOpenAIChatCompletionsTurnDigest = (
-  turn: OpenAIChatCompletionsSourceAssistantTurn,
-  sourceTurnDigest: RoundTripTurnDigest,
-  version: number,
-): Promise<boolean> => {
-  switch (version) {
-  case 1: return verifyRoundTripTurnDigest(chatTurnDigestMaterialV1(turn), sourceTurnDigest);
-  default: return Promise.resolve(false);
-  }
-};
+export const verifyOpenAIChatCompletionsTurnDigest = createTurnDigestVerifier(chatTurnDigestMaterialV1);
 
 // Our carrier uses indexed OpenRouter reasoning_details.
 // https://openrouter.ai/docs/guides/best-practices/reasoning-tokens#reasoning-details-api-shape
