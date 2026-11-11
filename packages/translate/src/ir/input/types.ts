@@ -157,7 +157,7 @@ export type IRInputCustomToolFormat =
   | { readonly type: 'grammar'; readonly definition: string; readonly syntax: string };
 
 // What the model may call, and how freely. `allowed_tools` states a mode with a
-// narrowed visible set, so it stays a distinct arm rather than being flattened
+// restricted callable set, so it stays a distinct arm rather than being flattened
 // into that mode plus a filtered declaration list: widening or narrowing the
 // declaration list changes what the model can see, not what it may choose.
 export type IRInputToolChoice =

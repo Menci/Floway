@@ -120,16 +120,16 @@ describe('traverseTranslation', () => {
     const translateWithRewrite = async (payload: string): Promise<{
       target: string;
       events: (e: AsyncIterable<ProtocolFrame<TgtEvent>>) => AsyncIterable<ProtocolFrame<SrcEvent>>;
-      restateUpstreamError: (upstream: { status: number; headers: Headers; body: Uint8Array }) => { status: number; headers: Headers; body: Uint8Array };
+      restateUpstreamError: (upstream: { status: number; headers: Headers; body: Uint8Array }) => { status: number; headers: Headers; body: { error: { message: string } } };
     }> => ({
       ...(await translate(payload)),
-      restateUpstreamError: () => ({ status: 400, headers: new Headers({ 'content-type': 'application/json' }), body: new TextEncoder().encode('rewritten') }),
+      restateUpstreamError: () => ({ status: 400, headers: new Headers({ 'content-type': 'application/json' }), body: { error: { message: 'rewritten' } } }),
     });
 
     const result = await traverseTranslation('payload', translateWithRewrite, async () => inner);
     expect(result.type).toBe('api-error');
     if (result.type !== 'api-error') throw new Error('unreachable');
-    expect(new TextDecoder().decode(result.body)).toBe('rewritten');
+    expect(JSON.parse(new TextDecoder().decode(result.body))).toEqual({ error: { message: 'rewritten' } });
     expect(result.headers.get('content-type')).toBe('application/json');
     expect(result.headers.get('x-upstream-request-id')).toBeNull();
     // Fields not touched by the rewriter (source, performance, upstream) survive.
@@ -166,12 +166,12 @@ describe('traverseTranslation', () => {
     const translateWithRewrite = async (payload: string): Promise<{
       target: string;
       events: (e: AsyncIterable<ProtocolFrame<TgtEvent>>) => AsyncIterable<ProtocolFrame<SrcEvent>>;
-      restateUpstreamError: () => { status: number; headers: Headers; body: Uint8Array };
+      restateUpstreamError: () => { status: number; headers: Headers; body: { error: { message: string } } };
     }> => ({
       ...(await translate(payload)),
       restateUpstreamError: () => {
         called = true;
-        return { status: 999, headers: new Headers(), body: new Uint8Array() };
+        return { status: 999, headers: new Headers(), body: { error: { message: 'unused' } } };
       },
     });
 
@@ -245,10 +245,10 @@ describe('traverseTranslation upstream capture', () => {
     const translateWithRewrite = async (payload: string): Promise<{
       target: string;
       events: (e: AsyncIterable<ProtocolFrame<TgtEvent>>) => AsyncIterable<ProtocolFrame<SrcEvent>>;
-      restateUpstreamError: () => { status: number; headers: Headers; body: Uint8Array };
+      restateUpstreamError: () => { status: number; headers: Headers; body: { error: { message: string } } };
     }> => ({
       ...(await translate(payload)),
-      restateUpstreamError: () => ({ status: 400, headers: new Headers(), body: new TextEncoder().encode('rewritten') }),
+      restateUpstreamError: () => ({ status: 400, headers: new Headers(), body: { error: { message: 'rewritten' } } }),
     });
 
     const result = await traverseTranslation('payload', translateWithRewrite, async () => inner, capture);
@@ -260,7 +260,7 @@ describe('traverseTranslation upstream capture', () => {
     expect(captured[0].headers.get('x-upstream')).toBe('yes');
     expect(new TextDecoder().decode(captured[0].body)).toBe('raw upstream body');
     // Downstream got the rewrite.
-    expect(new TextDecoder().decode(result.body)).toBe('rewritten');
+    expect(JSON.parse(new TextDecoder().decode(result.body))).toEqual({ error: { message: 'rewritten' } });
   });
 
   test('api-error path — capture fires even when trip.restateUpstreamError is undefined (no restatement)', async () => {

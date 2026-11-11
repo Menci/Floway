@@ -51,7 +51,7 @@ export const errorPayloadOf = (error: Readonly<Record<string, unknown>>): IRErro
   // retries reads it. It is stated here so the pre-stream envelope and the
   // mid-stream one agree.
   const param = stringOf(error.param);
-  const extra = extensionOf(error);
+  const extra = extensionOf(error, NAMED_ERROR_FIELDS);
   return {
     message,
     ...(type === undefined ? {} : { type }),
@@ -80,7 +80,7 @@ export const errorPayloadFromWire = (wire: unknown): IRErrorPayload => {
   if (isErrorPayload(source)) return source;
   // Gathered rather than nested again: this object may itself carry the
   // container, and wrapping it whole would state one inside another.
-  const extra = extensionOf(source);
+  const extra = extensionOf(source, NAMED_ERROR_FIELDS);
   return { message: '', ...(extra === undefined ? {} : { provider_specific_fields: extra }) };
 };
 
@@ -95,31 +95,29 @@ const NAMED_ERROR_FIELDS: ReadonlySet<string> = new Set(['message', 'msg', 'type
  * The protocol-specific fields an error carries, gathered into one object.
  *
  * An upstream may state its own `provider_specific_fields` and any number of
- * other keys its protocol defines. Both travel in one container: the IR has no
- * vocabulary for either, so keeping them apart would only invent a second
- * non-standard slot beside the one this payload already is. An upstream that
- * states the container has already decided what its non-standard data is, so
- * the loose keys beside it are a legacy spelling of the same thing and do not
- * widen it.
+ * other keys its protocol defines. Unrepresented fields travel in one
+ * container. Its own values win a name collision, while unrelated loose keys
+ * remain alongside them.
  */
-const extensionOf = (error: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> | undefined => {
+const extensionOf = (error: Readonly<Record<string, unknown>>, representedFields: ReadonlySet<string>): Readonly<Record<string, unknown>> | undefined => {
   const own = recordOf(error.provider_specific_fields);
-  if (own !== undefined) return own;
   const rest: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(error)) {
-    if (NAMED_ERROR_FIELDS.has(key) || key === 'provider_specific_fields') continue;
+    if (representedFields.has(key) || key === 'provider_specific_fields' || own !== undefined && Object.hasOwn(own, key)) continue;
     rest[key] = value;
   }
-  return Object.keys(rest).length === 0 ? undefined : rest;
+  return Object.keys(rest).length === 0 ? own : { ...rest, ...own };
 };
 
 /**
  * The protocol-specific fields an IR error carries.
  *
  * The error object a target protocol reads travels into the IR as it arrived,
- * so this gathers what it states at the point a source writer writes it back.
+ * so each writer names the fields its envelope already represents. Everything
+ * else remains in its extension container.
  */
-export const errorDetailsOf = (error: IRErrorPayload): Readonly<Record<string, unknown>> | undefined => extensionOf(error);
+export const errorDetailsOf = (error: IRErrorPayload, representedFields: readonly string[]): Readonly<Record<string, unknown>> | undefined =>
+  extensionOf(error, new Set(representedFields));
 
 /**
  * Restates a failure in the client's envelope while keeping what it can.

@@ -1,5 +1,5 @@
 import type { IRInputAddressedAssistantItem, IRInputAddressedTurn } from '../../../ir/input/addressed.ts';
-import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
+import { irInputToolChoiceForTools } from '../../../ir/input/select-tools.ts';
 import { requireStreaming } from '../../../ir/input/stream.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputMedia, IRInputTextPart, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../types.ts';
@@ -180,13 +180,17 @@ const toolFromIR = (tool: IRInputTool): AnthropicMessagesClientTool => {
   };
 };
 
-const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<AnthropicMessagesPayload['tool_choice']> => {
+const toolChoiceFromIR = (choice: IRInputToolChoice, tools: readonly IRInputTool[]): NonNullable<AnthropicMessagesPayload['tool_choice']> => {
   if (choice === 'auto') return { type: 'auto' };
   if (choice === 'none') return { type: 'none' };
   if (choice === 'required') return { type: 'any' };
-  // Messages has no declaration-level restriction: `allowed_tools` becomes the
-  // matching mode, and the narrowed declaration list is applied by the caller.
-  if (choice.type === 'allowed_tools') return choice.mode === 'required' ? { type: 'any' } : { type: 'auto' };
+  if (choice.type === 'allowed_tools') {
+    if (choice.mode === 'required' && choice.tools.length === 1) return { type: 'tool', name: choice.tools[0].name };
+    if (choice.mode === 'auto' && choice.tools.length === 0) return { type: 'none' };
+    const permitted = new Set(choice.tools.map(tool => `${tool.type}:${tool.name}`));
+    if (tools.every(tool => permitted.has(`${tool.type}:${tool.name}`))) return { type: choice.mode === 'required' ? 'any' : 'auto' };
+    throw new TranslatorInputError(`Anthropic Messages cannot express an allowed_tools ${choice.mode} subset of ${choice.tools.length} tools.`);
+  }
   return { type: 'tool', name: choice.name };
 };
 
@@ -279,11 +283,8 @@ export const anthropicMessagesHeaderFromIR = (
   request: IRInputRequestHeader,
   options: AnthropicMessagesRequestFromIROptions = {},
 ): Omit<AnthropicMessagesPayload, 'messages' | 'system'> => {
-  // Messages has no declaration-level selector: a narrowed declaration list is
-  // how this wire states which callables the model may pick from, and the
-  // choice itself carries only the mode.
-  const selectedTools = irInputToolsForChoice(request.tools, request.tool_choice);
-  const choice = irInputToolChoiceForTools(request.tool_choice, selectedTools);
+  const tools = request.tools;
+  const choice = irInputToolChoiceForTools(request.tool_choice, tools);
   return {
     ...anthropicMessagesSettingsFromIR(request.settings),
     model: request.settings.model,
@@ -291,8 +292,8 @@ export const anthropicMessagesHeaderFromIR = (
     // A trip guarantees a streaming request; a request that says otherwise
     // cannot be carried by this side at all.
     stream: requireStreaming(request.settings),
-    ...(selectedTools === undefined || selectedTools.length === 0 ? {} : { tools: selectedTools.map(toolFromIR) }),
-    ...(choice === undefined ? {} : { tool_choice: toolChoiceFromIR(choice) }),
+    ...(tools === undefined || tools.length === 0 ? {} : { tools: tools.map(toolFromIR) }),
+    ...(choice === undefined ? {} : { tool_choice: toolChoiceFromIR(choice, tools ?? []) }),
   };
 };
 

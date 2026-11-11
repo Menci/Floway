@@ -27,6 +27,7 @@ import type {
   AnthropicMessagesMetadataEx,
   AnthropicMessagesMessage,
   AnthropicMessagesPayload,
+  AnthropicMessagesSearchResultBlock,
   AnthropicMessagesTextBlockParam,
   AnthropicMessagesToolResultBlock,
   AnthropicMessagesUserContentBlock,
@@ -90,22 +91,30 @@ const userContentPart = (
   }
 };
 
-const toolResultPart = (block: AnthropicMessagesToolResultBlock['content'] extends string | undefined ? never : AnthropicMessagesToolResultBlock['content']): IRInputToolResultContentPart[] => {
+const toolResultPart = (block: AnthropicMessagesToolResultBlock['content']): IRInputToolResultContentPart[] => {
   if (block === undefined) return [];
   if (typeof block === 'string') return [{ type: 'text', text: block }];
-  // Every search result of one tool result is stated as one JSON array: a
-  // target that only carries strings then receives valid JSON, where
-  // stringifying each block separately would concatenate several arrays.
-  const searchResults = block.filter(part => part.type === 'search_result');
-  return [
-    ...block.flatMap((part): IRInputToolResultContentPart[] => {
-      if (part.type === 'text') return [{ type: 'text', text: part.text }];
-      if (part.type === 'image') return [{ type: 'image', image: imageMedia(part.source) }];
-      if (part.type === 'search_result') return [];
-      throw new TranslatorInputError(`'${(part as { type: string }).type}' tool result content blocks are not supported.`);
-    }),
-    ...(searchResults.length === 0 ? [] : [{ type: 'text' as const, text: JSON.stringify(searchResults) }]),
-  ];
+  const parts: IRInputToolResultContentPart[] = [];
+  const searchResults: AnthropicMessagesSearchResultBlock[] = [];
+  // Only consecutive search results share an array, so text and images retain
+  // their positions while an all-search result still becomes one JSON value.
+  const flushSearchResults = (): void => {
+    if (searchResults.length === 0) return;
+    parts.push({ type: 'text', text: JSON.stringify(searchResults) });
+    searchResults.length = 0;
+  };
+  for (const part of block) {
+    if (part.type === 'search_result') {
+      searchResults.push(part);
+      continue;
+    }
+    flushSearchResults();
+    if (part.type === 'text') parts.push({ type: 'text', text: part.text });
+    else if (part.type === 'image') parts.push({ type: 'image', image: imageMedia(part.source) });
+    else throw new TranslatorInputError(`'${(part as { type: string }).type}' tool result content blocks are not supported.`);
+  }
+  flushSearchResults();
+  return parts;
 };
 
 const clientItems = (
@@ -410,9 +419,8 @@ const reasoningEffortFromAnthropicMessages = (payload: AnthropicMessagesPayload)
  *
  * A server tool's result sits inside the assistant message that called it, and
  * an assistant turn can therefore yield both assistant and client turns. The
- * reader holds one client slot back so an assistant turn can be opened before
- * the client piece that follows it, which is what keeps the assistant and its
- * own server-result turns adjacent in the reading.
+ * lazy conversion preserves those boundaries until composition resolves the
+ * sidecar path and joins adjacent client turns.
  */
 export const anthropicMessagesRead = (payload: AnthropicMessagesPayload): Reading<AnthropicMessagesAssistantTurn> => {
   const request: IRInputRequestHeader = {

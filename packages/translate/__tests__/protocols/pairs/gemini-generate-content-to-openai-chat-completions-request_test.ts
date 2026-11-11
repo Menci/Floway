@@ -377,8 +377,9 @@ test('buildTargetPayload maps tool declarations and tool choice modes', async ()
           },
         },
       },
+      { type: 'function', function: { name: 'ping' } },
     ],
-    tool_choice: { type: 'function', function: { name: 'lookup' } },
+    tool_choice: { type: 'allowed_tools', allowed_tools: { mode: 'required', tools: [{ type: 'function', function: { name: 'lookup' } }] } },
   });
 
   assertEquals(
@@ -428,7 +429,7 @@ test('buildTargetPayload maps tool declarations and tool choice modes', async ()
   assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'gpt-test')).tool_choice, undefined);
 });
 
-test('buildTargetPayload filters tools to allowed function names for ANY mode', async () => {
+test('buildTargetPayload preserves declarations and restricts callable names for ANY mode', async () => {
   const result = await buildWithTestSidecar(
     {
       contents: [],
@@ -462,8 +463,9 @@ test('buildTargetPayload filters tools to allowed function names for ANY mode', 
       type: 'function',
       function: { name: 'ping' },
     },
+    { type: 'function', function: { name: 'forbidden' } },
   ]);
-  assertEquals(result.tool_choice, 'required');
+  assertEquals(result.tool_choice, { type: 'allowed_tools', allowed_tools: { mode: 'required', tools: [{ type: 'function', function: { name: 'lookup' } }, { type: 'function', function: { name: 'ping' } }] } });
 });
 
 test('buildTargetPayload maps thinking budget thresholds', async () => {
@@ -605,7 +607,7 @@ test.each([undefined, []])('preserves an empty model turn with parts %j', async 
   assertEquals((result.messages as Array<{ role?: string; content?: unknown }>).filter(item => item.role === 'assistant'), [{ role: 'assistant', content: '' }]);
 });
 
-test('VALIDATED narrows the declarations it may call while leaving the choice free', async () => {
+test('VALIDATED restricts calls without changing declarations while leaving the choice free', async () => {
   // `allowed_function_names` applies to ANY and VALIDATED but not AUTO: the
   // model still decides whether to call a function, over a smaller set.
   // https://github.com/googleapis/googleapis/blob/master/google/ai/generativelanguage/v1beta/content.proto
@@ -615,8 +617,8 @@ test('VALIDATED narrows the declarations it may call while leaving the choice fr
     toolConfig: { functionCallingConfig: { mode: 'VALIDATED', allowedFunctionNames: ['allowed'] } },
   }, 'gpt-test');
 
-  assertEquals(result.tools?.map(tool => tool.type === 'function' ? tool.function.name : undefined), ['allowed']);
-  assertEquals(result.tool_choice, 'auto');
+  assertEquals(result.tools?.map(tool => tool.type === 'function' ? tool.function.name : undefined), ['allowed', 'excluded']);
+  assertEquals(result.tool_choice, { type: 'allowed_tools', allowed_tools: { mode: 'auto', tools: [{ type: 'function', function: { name: 'allowed' } }] } });
 });
 
 test('a call with no argument object is written with an empty one', async () => {

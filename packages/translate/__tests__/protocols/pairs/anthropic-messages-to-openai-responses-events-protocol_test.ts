@@ -169,6 +169,7 @@ test('translateToSourceEvents translates OpenAI Responses failed terminal to Ant
       error: {
         type: 'api_error',
         message: 'upstream failed',
+        provider_specific_fields: { code: 'server_error', type: 'server_error' },
       },
     } satisfies AnthropicMessagesStreamEventEx),
   ]);
@@ -199,6 +200,7 @@ test('translateToSourceEvents translates OpenAI Responses error terminal to Anth
       error: {
         type: 'api_error',
         message: 'upstream overloaded',
+        provider_specific_fields: { code: 'overloaded_error' },
       },
     } satisfies AnthropicMessagesStreamEventEx),
   ]);

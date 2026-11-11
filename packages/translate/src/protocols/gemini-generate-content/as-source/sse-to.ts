@@ -62,7 +62,7 @@ const statusNameOf = (status: number): string => {
  * places the envelope states it, in either phase.
  */
 export const geminiGenerateContentErrorFromIR = (error: IRErrorPayload, httpStatus?: number): GeminiGenerateContentErrorResponse['error'] => {
-  const details = errorDetailsOf(error);
+  const details = errorDetailsOf(error, ['message']);
   // GenerateContent states non-standard failure data as a Struct inside its
   // details list, which is the shape arbitrary fields take on this wire.
   const extension = details === undefined ? {} : { details: [{ '@type': 'type.googleapis.com/google.protobuf.Struct', value: details }] };

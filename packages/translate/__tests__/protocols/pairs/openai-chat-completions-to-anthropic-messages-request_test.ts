@@ -1183,12 +1183,34 @@ test('buildTargetPayload leaves thinking absent when reasoning_effort is not non
   assertEquals(result.output_config, { effort: 'high' });
 });
 
-test.each(['auto', 'required'] as const)('allowed_tools %s restricts native Messages declarations', async mode => {
+test('allowed_tools required selects one Messages tool without changing declarations', async () => {
   const result = await buildWithTestSidecar({
     model: 'claude-test', stream: true, messages: [{ role: 'user', content: 'hello' }], tools: [
       { type: 'function', function: { name: 'allowed' } }, { type: 'function', function: { name: 'excluded' } },
-    ], tool_choice: { type: 'allowed_tools', allowed_tools: { mode, tools: [{ type: 'function', function: { name: 'allowed' } }] } },
+    ], tool_choice: { type: 'allowed_tools', allowed_tools: { mode: 'required', tools: [{ type: 'function', function: { name: 'allowed' } }] } },
   });
-  assertEquals(result.tools?.map(tool => 'name' in tool ? tool.name : undefined), ['allowed']);
-  assertEquals(result.tool_choice, { type: mode === 'required' ? 'any' : 'auto' });
+  assertEquals(result.tools?.map(tool => 'name' in tool ? tool.name : undefined), ['allowed', 'excluded']);
+  assertEquals(result.tool_choice, { type: 'tool', name: 'allowed' });
+});
+
+test('translates a PDF data URL into a typed Messages document', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'model', stream: true, messages: [{
+      role: 'user', content: [{
+        type: 'file', file: { filename: 'test.pdf', file_data: 'data:application/pdf;base64,JVBERi0xLjQ=' },
+      }],
+    }],
+  });
+  assertEquals(userBlocks(result)[0], {
+    type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'JVBERi0xLjQ=' },
+  });
+});
+
+test('translates legacy declarations and forced choice into Messages tooling', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'model', stream: true, messages: [], functions: [{ name: 'lookup', parameters: { type: 'object', properties: {} } }],
+    function_call: { name: 'lookup' },
+  });
+  assertEquals(result.tools?.map(tool => 'name' in tool ? tool.name : undefined), ['lookup']);
+  assertEquals(result.tool_choice, { type: 'tool', name: 'lookup' });
 });

@@ -47,14 +47,29 @@ export const resolveReading = async <AssistantTurn, Resolved>(
   resolve: (turn: Extract<TurnSlot<AssistantTurn>, { kind: 'assistant' }>) => Promise<Resolved | undefined>,
 ): Promise<(IRInputTurn | { readonly kind: 'resolved'; readonly turn: Resolved })[]> => {
   const turns: (IRInputTurn | { readonly kind: 'resolved'; readonly turn: Resolved })[] = [];
+  const append = (input: readonly IRInputTurn[]): void => {
+    for (const turn of input) {
+      const previous = turns.at(-1);
+      // Prompts retain their own boundary for target-side hoisting. Other
+      // adjacent client pieces belong to the same turn, including server
+      // results followed by the client's next message.
+      if (previous?.kind === 'client' && turn.kind === 'client'
+        && !previous.items.some(item => item.type === 'prompt')
+        && !turn.items.some(item => item.type === 'prompt')) {
+        turns[turns.length - 1] = { kind: 'client', items: [...previous.items, ...turn.items] };
+      } else {
+        turns.push(turn);
+      }
+    }
+  };
   for (const turn of reading.turns) {
     if (turn.kind === 'client') {
-      turns.push(...turn.toIRInputTurns());
+      append(turn.toIRInputTurns());
       continue;
     }
     const result = await resolve(turn);
     if (result === undefined) {
-      turns.push(...turn.toIRInputTurns());
+      append(turn.toIRInputTurns());
       continue;
     }
     turns.push({ kind: 'resolved', turn: result });

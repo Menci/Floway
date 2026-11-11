@@ -9,6 +9,18 @@ import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils
 const buildWithTestSidecar = (payload: OpenAIChatCompletionsPayloadEx) =>
   buildTargetPayloadFor(pairs.chatToResponses[0], pairs.chatToResponses[1], { ...payload, stream: true }, { sidecarCodec: createTestSidecarCodec() });
 
+test.each(['auto', 'none', { name: 'lookup' }] as const)('translates legacy declarations and choice %j into modern tooling', async function_call => {
+  const result = await buildWithTestSidecar({
+    model: 'model', messages: [],
+    functions: [{ name: 'lookup', description: 'Look up facts', parameters: { type: 'object', properties: {} } }],
+    function_call,
+  });
+  assertEquals(result.tools, [{ type: 'function', name: 'lookup', description: 'Look up facts', parameters: { type: 'object', properties: {} }, strict: false }]);
+  assertEquals(result.tool_choice, typeof function_call === 'string' ? function_call : { type: 'function', name: 'lookup' });
+  assertFalse('functions' in result);
+  assertFalse('function_call' in result);
+});
+
 test('buildTargetPayload preserves scalar and content-part assistant refusals', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',

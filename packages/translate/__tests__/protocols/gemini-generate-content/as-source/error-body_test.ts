@@ -1,6 +1,8 @@
 import { test } from 'vitest';
 
 import { restateGeminiGenerateContentError } from '../../../../src/protocols/gemini-generate-content/as-source/error-body.ts';
+import { geminiGenerateContentErrorFromIR } from '../../../../src/protocols/gemini-generate-content/as-source/sse-to.ts';
+import { errorPayloadFromWire } from '../../../../src/shared/api-error.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const decoded = (result: { body: unknown } | undefined) => result!.body as {
@@ -44,4 +46,21 @@ test('keeps the upstream headers a client reads', () => {
 test('passes an unrecognized body through untouched', () => {
   assertEquals(restateGeminiGenerateContentError(upstreamOf(500, 'internal blew up')), undefined);
   assertEquals(restateGeminiGenerateContentError(upstreamOf(500, { detail: 'nope' })), undefined);
+});
+
+test('preserves the upstream failure fields beside the native RPC code', () => {
+  const error = {
+    message: 'bad field', type: 'invalid_request_error', code: 'invalid_value', param: 'temperature',
+    provider_specific_fields: { request_id: 'req_1' }, retry_after: 10,
+  };
+  const result = restateGeminiGenerateContentError(upstreamOf(400, { error }));
+  const expected = {
+    code: 400, status: 'INVALID_ARGUMENT', message: 'bad field',
+    details: [{
+      '@type': 'type.googleapis.com/google.protobuf.Struct',
+      value: { type: 'invalid_request_error', code: 'invalid_value', param: 'temperature', request_id: 'req_1', retry_after: 10 },
+    }],
+  };
+  assertEquals(decoded(result).error, expected);
+  assertEquals(geminiGenerateContentErrorFromIR(errorPayloadFromWire(error), 400), expected);
 });

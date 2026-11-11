@@ -9,6 +9,35 @@ import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils
 const buildWithTestSidecar = (payload: AnthropicMessagesPayload) =>
   buildTargetPayloadFor(pairs.messagesToResponses[0], pairs.messagesToResponses[1], { ...payload, stream: true }, { sidecarCodec: createTestSidecarCodec() });
 
+test('keeps search result runs between the text and images around them', async () => {
+  const first = { type: 'search_result' as const, source: 'https://example.com/1', title: 'First', content: [{ type: 'text' as const, text: 'one' }] };
+  const second = { ...first, source: 'https://example.com/2', title: 'Second' };
+  const third = { ...first, source: 'https://example.com/3', title: 'Third' };
+  const result = await buildWithTestSidecar({
+    model: 'model', max_tokens: 32, messages: [
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'lookup', input: {} }] },
+      {
+        role: 'user', content: [{
+          type: 'tool_result', tool_use_id: 'c', content: [
+            { type: 'text', text: 'Before' }, first, second,
+            { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
+            third, { type: 'text', text: 'After' },
+          ],
+        }],
+      },
+    ],
+  });
+  assertEquals(result.input[1], {
+    type: 'function_call_output', call_id: 'c', status: 'completed', output: [
+      { type: 'input_text', text: 'Before' },
+      { type: 'input_text', text: JSON.stringify([first, second]) },
+      { type: 'input_image', image_url: 'data:image/png;base64,AAAA' },
+      { type: 'input_text', text: JSON.stringify([third]) },
+      { type: 'input_text', text: 'After' },
+    ],
+  });
+});
+
 test('buildTargetPayload omits tool_choice when Anthropic Messages omits it', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',

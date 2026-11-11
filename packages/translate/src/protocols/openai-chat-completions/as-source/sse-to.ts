@@ -24,7 +24,7 @@ import {
 // The payload the wire states for a failed turn: the IR's own fields, with the
 // target's extra ones under the extension slot this protocol names.
 export const openaiChatCompletionsErrorFromIR = (error: IRErrorPayload): IRErrorPayload => {
-  const details = errorDetailsOf(error);
+  const details = errorDetailsOf(error, ['message', 'type', 'code', 'param']);
   return {
     message: error.message,
     // Chat's error object declares `type`, so one is stated even when the

@@ -1,5 +1,5 @@
 import type { IRInputAddressedAssistantItem, IRInputAddressedTurn, IRInputAddressedClientItem } from '../../../ir/input/addressed.ts';
-import { irInputToolChoiceForTools, irInputToolsForChoice } from '../../../ir/input/select-tools.ts';
+import { irInputToolChoiceForTools } from '../../../ir/input/select-tools.ts';
 import { requireStreaming } from '../../../ir/input/stream.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../types.ts';
@@ -113,8 +113,7 @@ const assistantMessage = (items: readonly IRInputAddressedAssistantItem[]): Open
       break;
     }
   }
-  // A turn with no text, tool calls, or reasoning carries nothing.
-  if (text.length === 0 && toolCalls.length === 0 && reasoning.length === 0) return [];
+  if (text.length === 0 && refusals.length === 0 && toolCalls.length === 0 && reasoning.length === 0) return [];
   // A turn carrying reasoning or tool calls with no text spells its content as
   // null; a turn with neither is an explicitly empty message and keeps ''.
   return [{
@@ -228,10 +227,13 @@ const toolFromIR = (tool: IRInputTool): OpenAIChatCompletionsTool => {
 
 const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<OpenAIChatCompletionsPayload['tool_choice']> => {
   if (typeof choice === 'string') return choice;
-  // A narrowed declaration list is understood by every upstream on this wire,
-  // while the `allowed_tools` selector is not, so the selection is applied to
-  // the declarations and only the mode is stated here.
-  if (choice.type === 'allowed_tools') return choice.mode === 'required' ? 'required' : 'auto';
+  if (choice.type === 'allowed_tools') return {
+    type: 'allowed_tools',
+    allowed_tools: {
+      mode: choice.mode,
+      tools: choice.tools.map(tool => ({ type: 'function', function: { name: tool.name } })),
+    },
+  };
   // A freeform declaration is written as a function tool, so a selector naming
   // it must name the same function.
   return { type: 'function', function: { name: choice.name } };
@@ -245,7 +247,7 @@ const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<OpenAIChatComp
  * per payload.
  */
 export const openaiChatCompletionsHeaderFromIR = (request: IRInputRequestHeader): Omit<OpenAIChatCompletionsPayload, 'messages'> => {
-  const tools = irInputToolsForChoice(request.tools, request.tool_choice);
+  const tools = request.tools;
   const choice = irInputToolChoiceForTools(request.tool_choice, tools);
   return {
     ...openaiChatCompletionsSettingsFromIR(request.settings),

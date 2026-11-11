@@ -245,7 +245,7 @@ test('buildTargetPayload never invents reasoning.context from Gemini generateCon
   assertFalse('context' in (result.reasoning ?? {}));
 });
 
-test('buildTargetPayload filters tools to allowed function names for ANY mode', async () => {
+test('buildTargetPayload preserves declarations and restricts callable names for ANY mode', async () => {
   const result = await buildWithTestSidecar(
     {
       contents: [],
@@ -283,8 +283,9 @@ test('buildTargetPayload filters tools to allowed function names for ANY mode', 
       parameters: { type: 'object', properties: {} },
       strict: false,
     },
+    { type: 'function', name: 'forbidden', parameters: { type: 'object', properties: {} }, strict: false },
   ]);
-  assertEquals(result.tool_choice, 'required');
+  assertEquals(result.tool_choice, { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: 'lookup' }, { type: 'function', name: 'ping' }] });
 });
 
 test('buildTargetPayload maps thinking budget thresholds and zero-budget disable', async () => {
@@ -349,8 +350,9 @@ test('buildTargetPayload maps tool declarations and tool choice modes only when 
         },
         strict: false,
       },
+      { type: 'function', name: 'ping', parameters: { type: 'object', properties: {} }, strict: false },
     ],
-    tool_choice: { type: 'function', name: 'lookup' },
+    tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: 'lookup' }] },
   });
 
   assertEquals(

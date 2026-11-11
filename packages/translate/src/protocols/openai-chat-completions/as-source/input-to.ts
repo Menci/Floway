@@ -83,7 +83,14 @@ const userContentPart = (part: OpenAIChatCompletionsUserContentPart): IRInputUse
   case 'file': {
     const filename = part.file.filename === undefined ? {} : { filename: part.file.filename };
     if (part.file.file_id !== undefined) return { type: 'file', file: { source_kind: 'file', file_id: part.file.file_id }, ...filename };
-    if (part.file.file_data !== undefined) return { type: 'file', file: { source_kind: 'base64', data: part.file.file_data }, ...filename };
+    if (part.file.file_data !== undefined) {
+      const media = mediaOrThrow(mediaFromURL(part.file.file_data), part.file.file_data);
+      return {
+        type: 'file',
+        file: media.source_kind === 'base64' ? media : { source_kind: 'base64', data: part.file.file_data },
+        ...filename,
+      };
+    }
     throw new TranslatorInputError("A Chat Completions file part requires 'file_id' or 'file_data'.");
   }
   default:
@@ -250,10 +257,15 @@ const toolChoiceToIR = (choice: NonNullable<OpenAIChatCompletionsPayload['tool_c
 };
 
 const openaiChatCompletionsToolsToIR = (payload: OpenAIChatCompletionsPayload): Pick<IRInputRequestHeader, 'tools' | 'tool_choice'> => {
-  const tools = payload.tools?.map(toolToIR).filter((tool): tool is IRInputTool => tool !== undefined);
+  const declarations = payload.tools ?? payload.functions?.map(fn => ({ type: 'function' as const, function: fn }));
+  const tools = declarations?.map(toolToIR).filter((tool): tool is IRInputTool => tool !== undefined);
+  const legacyChoice = payload.function_call;
+  const choice = payload.tool_choice ?? (typeof legacyChoice === 'string'
+    ? legacyChoice
+    : legacyChoice === undefined ? undefined : { type: 'function' as const, function: legacyChoice });
   return {
     ...(tools === undefined || tools.length === 0 ? {} : { tools }),
-    ...(payload.tool_choice == null ? {} : { tool_choice: toolChoiceToIR(payload.tool_choice) }),
+    ...(choice == null ? {} : { tool_choice: toolChoiceToIR(choice) }),
   };
 };
 

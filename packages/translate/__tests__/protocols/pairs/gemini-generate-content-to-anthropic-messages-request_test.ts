@@ -309,8 +309,8 @@ test('buildTargetPayload maps tool declarations and tool choice modes', async ()
           type: 'object',
           properties: { query: { type: 'string' } },
         },
-        cache_control: { type: 'ephemeral' },
       },
+      { type: 'custom', name: 'ping', input_schema: { type: 'object', properties: {} }, cache_control: { type: 'ephemeral' } },
     ],
     tool_choice: { type: 'tool', name: 'lookup' },
   });
@@ -322,7 +322,7 @@ test('buildTargetPayload maps tool declarations and tool choice modes', async ()
   assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'claude-test', noOptions)).tool_choice, undefined);
 });
 
-test('buildTargetPayload filters tools to multiple allowed names for ANY mode', async () => {
+test('buildTargetPayload rejects an unrepresentable ANY subset without narrowing declarations', async () => {
   const payload: GeminiGenerateContentPayload = {
     contents: [],
     tools: [
@@ -338,26 +338,11 @@ test('buildTargetPayload filters tools to multiple allowed names for ANY mode', 
     },
   };
 
-  assertEquals(await buildWithTestSidecar(payload, 'claude-test', noOptions), {
-    model: 'claude-test',
-    stream: true,
-    messages: [],
-    max_tokens: ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
-    tools: [
-      {
-        type: 'custom',
-        name: 'lookup',
-        input_schema: { type: 'object', properties: {} },
-      },
-      {
-        type: 'custom',
-        name: 'ping',
-        input_schema: { type: 'object', properties: {} },
-        cache_control: { type: 'ephemeral' },
-      },
-    ],
-    tool_choice: { type: 'any' },
-  });
+  await assertRejects(
+    () => buildWithTestSidecar(payload, 'claude-test', noOptions),
+    TranslatorInputError,
+    'cannot express an allowed_tools required subset',
+  );
 });
 
 test('buildTargetPayload maps dynamic thinking budget to adaptive thinking', async () => {

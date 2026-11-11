@@ -47,11 +47,12 @@ const MESSAGES_ERROR_TYPES = [
  * own words and the client would treat it as an ordinary failure.
  */
 const messagesError = (error: IRErrorPayload, contextExceeded: boolean): AnthropicMessagesErrorEventEx['error'] => {
-  const details = errorDetailsOf(error);
+  const type = contextExceeded
+    ? 'invalid_request_error'
+    : error.type !== undefined && MESSAGES_ERROR_TYPES.includes(error.type) ? error.type : 'api_error';
+  const details = errorDetailsOf(error, type === error.type ? ['message', 'type'] : ['message']);
   const extension = details === undefined ? {} : { provider_specific_fields: details };
-  return contextExceeded
-    ? { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE, ...extension }
-    : { type: error.type !== undefined && MESSAGES_ERROR_TYPES.includes(error.type) ? error.type : 'api_error', message: error.message, ...extension };
+  return { type, message: contextExceeded ? PROMPT_TOO_LONG_MESSAGE : error.message, ...extension };
 };
 
 export const anthropicMessagesErrorFromIR = (error: IRErrorPayload): AnthropicMessagesErrorEventEx['error'] =>

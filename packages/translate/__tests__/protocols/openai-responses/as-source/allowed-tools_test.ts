@@ -41,13 +41,20 @@ for (const target of ['chat', 'messages'] as const) {
         fallbackMaxOutputTokens: undefined,
       });
   for (const mode of ['auto', 'required'] as const) {
-    test(`${target} request serializes only the allowed function/custom subset and ${mode} mode`, async () => {
+    test(`${target} preserves declarations or rejects an unrepresentable ${mode} subset`, async () => {
       const payload = source({ type: 'allowed_tools', mode, tools: [{ type: 'custom', name: 'edit' }, { type: 'function', name: 'read' }] });
       const original = structuredClone(payload);
+      if (target === 'messages') {
+        await assertRejects(() => build(payload), TranslatorInputError, 'cannot express an allowed_tools');
+        assertEquals(payload, original);
+        return;
+      }
       const result = await build(payload);
+      const baseline = await build({ ...payload, tool_choice: 'auto' });
+      assertEquals(result.target.tools, baseline.target.tools);
       const wire = JSON.parse(JSON.stringify(result.target)) as { tools: Array<{ name?: string; function?: { name: string } }>; tool_choice: unknown };
-      assertEquals(wire.tools.map(tool => tool.function?.name ?? tool.name), ['read', 'edit']);
-      assertEquals(wire.tool_choice, target === 'chat' ? mode : { type: mode === 'required' ? 'any' : 'auto' });
+      assertEquals(wire.tools.map(tool => tool.function?.name ?? tool.name), ['read', 'charge', 'edit']);
+      assertEquals(wire.tool_choice, { type: 'allowed_tools', allowed_tools: { mode, tools: [{ type: 'function', function: { name: 'edit' } }, { type: 'function', function: { name: 'read' } }] } });
       assertEquals(result.customToolNames, new Set(['edit']));
       assertEquals(payload, original);
     });
@@ -57,7 +64,7 @@ for (const target of ['chat', 'messages'] as const) {
     const payload = source({ type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', name: 'read' }] });
     payload.tools!.push({ type: 'custom', name: 'read' });
     const result = await build(payload);
-    assertEquals(result.target.tools?.length, 1);
+    assertEquals(result.target.tools?.length, 4);
     assertEquals(result.customToolNames, new Set(['read']));
   });
 
@@ -76,10 +83,13 @@ for (const target of ['chat', 'messages'] as const) {
     });
   }
 
-  test(`${target} request represents an empty auto subset as no tools`, async () => {
+  test(`${target} request disables calling without removing declarations for an empty auto subset`, async () => {
     const result = await build(source({ type: 'allowed_tools', mode: 'auto', tools: [] }));
-    assertEquals(result.target.tools, undefined);
-    assertEquals(result.target.tool_choice, target === 'chat' ? 'none' : { type: 'none' });
+    const baseline = await build(source('auto'));
+    assertEquals(result.target.tools, baseline.target.tools);
+    assertEquals(result.target.tool_choice, target === 'chat'
+      ? { type: 'allowed_tools', allowed_tools: { mode: 'auto', tools: [] } }
+      : { type: 'none' });
   });
 
   test(`${target} request rejects a flat selector that would erase a declaration namespace`, async () => {
@@ -113,6 +123,26 @@ test('requireCallableSelector rejects a namespace that is not a string', () => {
   // stating anything else is malformed rather than something to pass through.
   assertEquals(requireCallableSelector({ type: 'function', name: 'read', namespace: 'files' }).namespace, 'files');
   assertThrows(() => requireCallableSelector({ type: 'function', name: 'read', namespace: 42 }), TranslatorInputError);
+});
+
+test.each(['auto', 'required'] as const)('Messages expresses a complete %s callable set without changing its declarations', async mode => {
+  const payload = source({
+    type: 'allowed_tools', mode, tools: [
+      { type: 'function', name: 'read' }, { type: 'function', name: 'charge' }, { type: 'custom', name: 'edit' },
+    ],
+  });
+  const result = await buildMessages(payload, createTestSidecarCodec());
+  const baseline = await buildMessages(source('auto'), createTestSidecarCodec());
+  assertEquals(result.target.tools, baseline.target.tools);
+  assertEquals(result.target.tool_choice, { type: mode === 'auto' ? 'auto' : 'any' });
+});
+
+test('Messages rejects an optional single-tool subset rather than forcing that call', async () => {
+  await assertRejects(
+    () => buildMessages(source({ type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: 'read' }] }), createTestSidecarCodec()),
+    TranslatorInputError,
+    'cannot express an allowed_tools auto subset',
+  );
 });
 
 test('a dotted selector is only read as a pair when that group is declared', async () => {

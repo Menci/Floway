@@ -172,8 +172,8 @@ const partitionContents = (payload: GeminiGenerateContentPayload): GeminiGenerat
 
 // GenerateContent declares functions in groups and narrows them through
 // `toolConfig.functionCallingConfig`. The IR states that narrowing as
-// `allowed_tools`, so a target keeps the permitted declarations visible and the
-// choice arm says only how freely the model may choose among them.
+// `allowed_tools`, keeping the complete declaration list separate from which
+// functions the model may call.
 // https://github.com/googleapis/googleapis/blob/master/google/ai/generativelanguage/v1beta/content.proto
 // (FunctionCallingConfig: `allowed_function_names` only applies to ANY and
 // VALIDATED, and limits which functions the model calls.)
@@ -184,27 +184,26 @@ const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequestHe
   const restrictable = config?.mode === 'ANY' || config?.mode === 'VALIDATED';
   const permitted = restrictable && allowedNames !== undefined && allowedNames.length > 0 ? new Set(allowedNames) : undefined;
 
-  const tools: IRInputTool[] = declarations
-    .filter(declaration => permitted === undefined || permitted.has(declaration.name))
-    .map(declaration => {
-      const parameters = geminiFunctionParameters(declaration);
-      return {
-        type: 'function' as const,
-        name: declaration.name,
-        ...(declaration.description === undefined ? {} : { description: declaration.description }),
-        // GenerateContent states a declaration's schema either as its own dialect or
-        // as JSON Schema; both become the same neutral object here.
-        ...(parameters === undefined ? {} : { parameters }),
-      };
-    });
+  const tools: IRInputTool[] = declarations.map(declaration => {
+    const parameters = geminiFunctionParameters(declaration);
+    return {
+      type: 'function' as const,
+      name: declaration.name,
+      ...(declaration.description === undefined ? {} : { description: declaration.description }),
+      // GenerateContent states a declaration's schema either as its own dialect or
+      // as JSON Schema; both become the same neutral object here.
+      ...(parameters === undefined ? {} : { parameters }),
+    };
+  });
 
   let toolChoice: IRInputToolChoice | undefined;
   if (config?.mode === 'NONE') toolChoice = 'none';
-  else if (config?.mode === 'AUTO' || config?.mode === 'VALIDATED') toolChoice = 'auto';
-  else if (config?.mode === 'ANY') {
-    // A single permitted function is the one the model must call; several leave
-    // the choice to the model among them.
-    toolChoice = permitted?.size === 1 ? { type: 'function', name: [...permitted][0] } : 'required';
+  else if (config?.mode === 'AUTO' || config?.mode === 'VALIDATED' || config?.mode === 'ANY') {
+    const mode = config.mode === 'ANY' ? 'required' : 'auto';
+    toolChoice = permitted === undefined ? mode : {
+      type: 'allowed_tools', mode,
+      tools: [...permitted].map(name => ({ type: 'function', name })),
+    };
   }
 
   return {

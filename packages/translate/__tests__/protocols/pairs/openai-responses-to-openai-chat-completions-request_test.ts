@@ -21,6 +21,21 @@ const buildWithTestSidecar = async (payload: OpenAIResponsesRequestPayloadEx) =>
   };
 };
 
+test('preserves a refusal-only assistant turn between client turns', async () => {
+  const { target } = await buildWithTestSidecar({
+    model: 'model', input: [
+      { type: 'message', role: 'user', content: 'Q' },
+      { type: 'message', role: 'assistant', content: [{ type: 'refusal', refusal: 'Cannot help.' }] },
+      { type: 'message', role: 'user', content: 'Why?' },
+    ],
+  });
+  assertEquals(target.messages, [
+    { role: 'user', content: 'Q' },
+    { role: 'assistant', content: '', refusal: 'Cannot help.' },
+    { role: 'user', content: 'Why?' },
+  ]);
+});
+
 test('buildTargetPayload accepts an implicit message discriminator', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',

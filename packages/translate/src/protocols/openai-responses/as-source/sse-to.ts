@@ -188,7 +188,7 @@ const textOrRefusalPart = (state: IROutput, path: IRPath): Extract<MessagePart, 
  * upstream said about it.
  */
 export const openaiResponsesErrorEventOf = (error: IRErrorPayload): OpenAIResponsesStreamEventEx => {
-  const details = errorDetailsOf(error);
+  const details = errorDetailsOf(error, error.code == null ? ['message', 'code', 'param', 'type'] : ['message', 'code', 'param']);
   return {
     type: 'error',
     message: error.message,
