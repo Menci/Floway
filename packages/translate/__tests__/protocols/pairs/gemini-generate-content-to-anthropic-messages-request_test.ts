@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import { TranslatorInputError } from '../../../src/types.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import { buildTargetPayloadFor, pairs } from '../composition-helpers.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/anthropic-messages';
@@ -122,7 +123,6 @@ test('buildTargetPayload maps generation config and thinking controls', async ()
       topK: 40,
       stopSequences: ['END'],
       thinkingConfig: {
-        thinkingBudget: 2048,
         thinkingLevel: 'high',
       },
     },
@@ -137,11 +137,23 @@ test('buildTargetPayload maps generation config and thinking controls', async ()
     top_p: 0.8,
     top_k: 40,
     stop_sequences: ['END'],
-    thinking: { type: 'enabled', budget_tokens: 2048 },
     output_config: { effort: 'high' },
   });
 
   assertEquals((await buildWithTestSidecar({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 0 } } }, 'claude-test', noOptions)).thinking, { type: 'disabled' });
+});
+
+test('buildTargetPayload refuses a stated budget beside a stated level', async () => {
+  // GenerateContent rejects the pair itself, so translating it would have to
+  // pick a winner that a different model family disagrees with.
+  await assertRejects(
+    () => buildWithTestSidecar({
+      contents: [],
+      generationConfig: { thinkingConfig: { thinkingBudget: 2048, thinkingLevel: 'HIGH' } },
+    }, 'claude-test', noOptions),
+    TranslatorInputError,
+    'thinking_budget and thinking_level are not supported together',
+  );
 });
 
 test('buildTargetPayload keeps readable thinking and tool calls while dropping thought signatures', async () => {

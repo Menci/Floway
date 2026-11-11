@@ -266,6 +266,16 @@ const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest
   // different quantity the caller may state instead, so it travels on its own
   // field and each target decides what it can do with it.
   const statedLevel = geminiGenerateContentThinkingLevelEffort(config?.thinkingConfig);
+  // A stated level beside a stated budget is the one combination GenerateContent
+  // refuses outright: the two knobs are mutually exclusive, and no model accepts
+  // both. Neither can be preferred here, because which one a model understands
+  // depends on its family, and a tie-break would invert a caller who asked for
+  // one and got the other. Refusing keeps this reader's answer the one Google
+  // itself gives. An empty level names no tier, so it is not a statement.
+  // https://github.com/cline/cline/issues/7957
+  if (statedLevel !== undefined && statedLevel !== '' && budget !== undefined) {
+    throw new TranslatorInputError('Unable to submit request because thinking_budget and thinking_level are not supported together.');
+  }
   // A budget of zero is GenerateContent's off switch, which every target spells
   // on the effort axis.
   const effort = statedLevel ?? (budget === 0 ? 'none' : undefined);
