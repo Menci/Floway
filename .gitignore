@@ -12,6 +12,8 @@ apps/web/.react-router/
 .env
 .pnpm-store/
 /wrangler.jsonc
+.tmp/
+.research/
 
 # Local node-target dev runtime (sqlite db + uploaded files). One under the
 # repo root for `pnpm run dev:node` invoked at the root, one under the package
