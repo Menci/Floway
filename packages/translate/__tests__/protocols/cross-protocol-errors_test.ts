@@ -1,10 +1,10 @@
 import { expect, test } from 'vitest';
 
 import { requireTrip } from './require-trip.ts';
-import type { IRErrorPayload } from '../../src/ir/types.ts';
-import { irFromAnthropicMessages } from '../../src/protocols/anthropic-messages/as-target/sse-from.ts';
-import { irFromOpenAIChatCompletions } from '../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
-import { irFromOpenAIResponses } from '../../src/protocols/openai-responses/as-target/sse-from.ts';
+import type { IRErrorPayload } from '../../src/ir/output/error.ts';
+import { readAnthropicMessagesEvents } from '../../src/protocols/anthropic-messages/as-target/events.ts';
+import { readOpenAIChatCompletionsEvents } from '../../src/protocols/openai-chat-completions/as-target/events.ts';
+import { readOpenAIResponsesEvents } from '../../src/protocols/openai-responses/as-target/events.ts';
 import { collect, iterate } from '../ir/helpers.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { createRoundTripReaderCapture } from '../round-trip/test-helpers.ts';
@@ -174,13 +174,13 @@ test('Responses nested error envelopes preserve outer metadata in both phases', 
 });
 
 test('native target errors retain canonical object identity', async () => {
-  const chatRecords = await collect(irFromOpenAIChatCompletions(iterate([eventFrame(chatEvent(failure))]), {
+  const chatRecords = await collect(readOpenAIChatCompletionsEvents(iterate([eventFrame(chatEvent(failure))]), {
     roundTrip: createRoundTripReaderCapture<'openaiChatCompletions'>().roundTrip,
   }));
-  const messagesRecords = await collect(irFromAnthropicMessages(iterate([eventFrame(nestedEvent(failure))]), {
+  const messagesRecords = await collect(readAnthropicMessagesEvents(iterate([eventFrame(nestedEvent(failure))]), {
     roundTrip: createRoundTripReaderCapture<'anthropicMessages'>().roundTrip,
   }));
-  const responsesRecords = await collect(irFromOpenAIResponses(iterate([eventFrame(nestedEvent(failure))]), {
+  const responsesRecords = await collect(readOpenAIResponsesEvents(iterate([eventFrame(nestedEvent(failure))]), {
     roundTrip: createRoundTripReaderCapture<'openaiResponses'>().roundTrip,
   }));
   for (const records of [chatRecords, messagesRecords, responsesRecords]) {
