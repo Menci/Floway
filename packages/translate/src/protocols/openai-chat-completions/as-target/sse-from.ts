@@ -1,14 +1,10 @@
 import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantState } from './assistant-turn.ts';
 import { usageToIR } from './usage.ts';
-import {
-  createIRBuilder,
-  type IRRecord,
-  type IRItemHandle,
-  type IRPartHandle,
-  type IRWriteHandle,
-  type IRRelativePath,
-} from '../../../ir/stream.ts';
-import { IRAbsent, type IRErrorPayload, type IRSourceCitation } from '../../../ir/types.ts';
+import { IRAbsent } from '../../../ir/output/absent.ts';
+import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRWriteHandle, type IRRelativePath } from '../../../ir/output/builder.ts';
+import type { IRErrorPayload } from '../../../ir/output/error.ts';
+import type { IRRecord } from '../../../ir/output/records.ts';
+import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
 import { appendField, createFieldState, type FieldStates, type FieldState, type ReferencePieceId } from '../../../round-trip/reference/reference-builder.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
@@ -226,12 +222,12 @@ export const irFromOpenAIChatCompletions = async function* (
       }
       const start = Math.min(native.start_index, availableCodePoints);
       const end = Math.min(native.end_index, availableCodePoints);
-      return { annotation, range: state.coordinateIndex!.codePointRangeToIR(start, end), exceedsAvailableText: native.end_index > availableCodePoints };
+      return { annotation, range: state.coordinateIndex!.codePointRangeToUTF16(start, end), exceedsAvailableText: native.end_index > availableCodePoints };
     });
     // Only the message that is still open can receive citations; earlier parts already ended.
     const openSegments = state.message?.isOpen === true ? state.textSegments.filter(segment => segment.item === state.message) : [];
     for (const segment of openSegments) {
-      const converted: IRSourceCitation[] = citations.flatMap(({ annotation, range }) => {
+      const converted: IROutputSourceCitation[] = citations.flatMap(({ annotation, range }) => {
         const start = Math.max(range.start, segment.start);
         const end = Math.min(range.end_exclusive, segment.end);
         if (start >= end) return [];

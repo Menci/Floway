@@ -1,7 +1,9 @@
 import { expect, test } from 'vitest';
 
-import { collect, collectIR, irFromOpenAIResponses, iterate } from './helpers.ts';
-import { createRoundTripReaderCapture } from '../round-trip/test-helpers.ts';
+import { collectIR } from '../../../ir/output/helpers.ts';
+import { createRoundTripReaderCapture } from '../../../round-trip/test-helpers.ts';
+import { collect, iterate } from '../../../shared/iterables.ts';
+import { irFromOpenAIResponses } from '../../helpers.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 
 const response = (output: any[] = []) => ({ id: 'resp', model: 'served', created_at: 1, status: 'completed', output, usage: null, error: null, incomplete_details: null });

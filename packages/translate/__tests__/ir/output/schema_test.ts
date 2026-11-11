@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { irEndedUnit, irItemPath, irPartPath, irRecordOwnerPaths, irUnitChain, irUnitPath, isIRAppendTarget, isIRItemPath, isIRAbsentTarget, isIRPartPath } from '../../src/ir/operation-paths.ts';
+import { irEndedUnit, irItemPath, irPartPath, irRecordOwnerPaths, irUnitChain, irUnitPath, isIRItemPath, isIRPartPath, resolveIRPath } from '../../../src/ir/output/operation-paths.ts';
 
 const root = {
   choices: [{
@@ -19,7 +19,7 @@ describe('IR schema queries', () => {
     [item(0, 'content', 0, 'text'), true],
     [item(0, 'content', 1, 'audio', 'data'), true],
     [item(0, 'content', 1, 'audio', 'transcript'), true],
-    [item(0, 'content', 1, 'audio', 'mime_type'), false],
+    [item(0, 'content', 1, 'audio', 'media_type'), false],
     [item(1, 'summary', 0), true],
     [item(1, 'content', 0), true],
     [item(2, 'arguments'), true],
@@ -28,14 +28,15 @@ describe('IR schema queries', () => {
     [item(2, 'input'), false],
     [['model'], false],
   ])('append target at %j is %s', (path, expected) => {
-    expect(isIRAppendTarget(path, root)).toBe(expected);
+    const node = resolveIRPath(path, root)?.node;
+    expect(node?.kind === 'string' && node.append === true).toBe(expected);
   });
 
   test('only tool call IDs may be IRAbsent', () => {
-    expect(isIRAbsentTarget(item(2, 'call_id'), root)).toBe(true);
-    expect(isIRAbsentTarget(item(3, 'call_id'), root)).toBe(true);
-    expect(isIRAbsentTarget(item(2, 'name'), root)).toBe(false);
-    expect(isIRAbsentTarget(item(0, 'call_id'), root)).toBe(false);
+    expect(resolveIRPath(item(2, 'call_id'), root)?.node).toMatchObject({ kind: 'string', absent: true });
+    expect(resolveIRPath(item(3, 'call_id'), root)?.node).toMatchObject({ kind: 'string', absent: true });
+    expect(resolveIRPath(item(2, 'name'), root)?.node).not.toMatchObject({ kind: 'string', absent: true });
+    expect(resolveIRPath(item(0, 'call_id'), root)?.node).not.toMatchObject({ kind: 'string', absent: true });
   });
 
   test('items and parts are the lifecycle units of a choice', () => {

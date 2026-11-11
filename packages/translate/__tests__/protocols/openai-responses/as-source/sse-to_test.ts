@@ -1,10 +1,10 @@
 import { expect, test } from 'vitest';
 
-import { createIRBuilder } from '../../../../src/ir/stream.ts';
+import { createIRBuilder } from '../../../../src/ir/output/builder.ts';
 import { flattenNamespaceTools } from '../../../../src/protocols/openai-responses/as-source/namespace-tools.ts';
 import { openaiResponsesFromIR } from '../../../../src/protocols/openai-responses/as-source/sse-to.ts';
 import { appendField, collectContentViews, createReferenceBuilder, createFieldState, createReferenceFinalizer } from '../../../../src/round-trip/reference/reference-builder.ts';
-import { type RoundTripWriter } from '../../../../src/round-trip/stream.ts';
+import type { RoundTripWriter } from '../../../../src/round-trip/stream.ts';
 
 test('collects sparse namespace-restored Responses state from emitted IR atoms', async () => {
   const namespace = flattenNamespaceTools({
@@ -72,7 +72,7 @@ test('collects sparse namespace-restored Responses state from emitted IR atoms',
   builder.event({ type: 'item_end', choice: 0, item: 3 });
 
   builder.initialize(['choices', 0, 'items', 4], { type: 'message', content: [] });
-  builder.initialize(['choices', 0, 'items', 4, 'content', 0], { type: 'image', image: { data: 'literal', mime_type: 'image/png' } });
+  builder.initialize(['choices', 0, 'items', 4, 'content', 0], { type: 'image', image: { data: 'literal', media_type: 'image/png' } });
   builder.event({ type: 'part_end', choice: 0, item: 4, part: 0 });
   builder.event({ type: 'item_end', choice: 0, item: 4 });
 

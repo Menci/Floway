@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { anthropicMessagesFromIR, collectIR, collect, completeIR, events, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
-import { createIRBuilder } from '../../src/ir/stream.ts';
-import type { IRItem, IRJSONObject } from '../../src/ir/types.ts';
+import { anthropicMessagesFromIR, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
+import type { IRJSONObject } from '../../src/ir/common/json.ts';
+import { createIRBuilder } from '../../src/ir/output/builder.ts';
+import type { IROutputItem } from '../../src/ir/output/types.ts';
 import { usageFromIR as messagesUsageFromIR } from '../../src/protocols/anthropic-messages/as-source/usage.ts';
 import { usageToIR as messagesUsageToIR } from '../../src/protocols/anthropic-messages/as-target/usage.ts';
 import { usageFromIR as responsesUsageFromIR } from '../../src/protocols/openai-responses/as-source/usage.ts';
 import { usageToIR as responsesUsageToIR } from '../../src/protocols/openai-responses/as-target/usage.ts';
 import { TextCoordinateIndex } from '../../src/shared/text-coordinate-index.ts';
+import { collectIR, completeIR } from '../ir/output/helpers.ts';
+import { collect, events, iterate } from '../shared/iterables.ts';
 import { reassembleAnthropicMessagesEvents, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import { reassembleGeminiGenerateContentEvents } from '@floway-dev/protocols/gemini-generate-content';
@@ -190,10 +193,10 @@ describe('IR streaming', () => {
     const value = await collectIR(chat());
     const item = value.choices[0].items.find(i => i.type === 'message');
     expect(item?.type === 'message' && item.content[0].type === 'text' && item.content[0].annotations?.[0].output_text_range).toEqual({ start: 1, end_exclusive: 4 });
-    expect(TextCoordinateIndex.codePointsToUTF16('A😀中B').codePointRangeToIR(1, 3)).toEqual({ start: 1, end_exclusive: 4 });
+    expect(TextCoordinateIndex.codePointsToUTF16('A😀中B').codePointRangeToUTF16(1, 3)).toEqual({ start: 1, end_exclusive: 4 });
     const index = TextCoordinateIndex.utf16ToCodePoints('A😀中B');
-    expect(index.irRangeToCodePoints({ start: 1, end_exclusive: 4 })).toEqual({ start: 1, end: 3 });
-    expect(() => index.irRangeToCodePoints({ start: 2, end_exclusive: 4 })).toThrow();
+    expect(index.utf16RangeToCodePoints({ start: 1, end_exclusive: 4 })).toEqual({ start: 1, end: 3 });
+    expect(() => index.utf16RangeToCodePoints({ start: 2, end_exclusive: 4 })).toThrow();
   });
 
   it('delivers text before pulling the upstream completion', async () => {
@@ -324,7 +327,7 @@ describe('IR streaming', () => {
     b.event({ type: 'part_end', choice: 0, item: 1, part: 0 });
     b.event({ type: 'item_end', choice: 0, item: 1 });
     b.initialize(['choices', 0, 'items', 2], { type: 'message', content: [] });
-    b.initialize(['choices', 0, 'items', 2, 'content', 0], { type: 'audio', audio: { mime_type: 'audio/wav' } });
+    b.initialize(['choices', 0, 'items', 2, 'content', 0], { type: 'audio', audio: { media_type: 'audio/wav' } });
     b.initialize(['choices', 0, 'items', 2, 'content', 0, 'audio', 'data'], '');
     b.append(['choices', 0, 'items', 2, 'content', 0, 'audio', 'data'], 'YQ==');
     b.event({ type: 'part_end', choice: 0, item: 2, part: 0 });
@@ -354,7 +357,7 @@ describe('IR streaming', () => {
   });
 
   it('retains text-image-text order in Responses output', async () => {
-    const frames = openaiResponsesFromIR(iterate(completeIR([{ type: 'message', content: [{ type: 'text', text: 'before' }, { type: 'image', image: { data: 'YQ==', mime_type: 'image/png' } }, { type: 'text', text: 'after' }] }])), options);
+    const frames = openaiResponsesFromIR(iterate(completeIR([{ type: 'message', content: [{ type: 'text', text: 'before' }, { type: 'image', image: { data: 'YQ==', media_type: 'image/png' } }, { type: 'text', text: 'after' }] }])), options);
     const result = await reassembleOpenAIResponsesEvents(events(frames));
     expect(result.output.map(item => item.type)).toEqual(['message', 'image_generation_call', 'message', 'reasoning']);
   });
@@ -419,7 +422,7 @@ describe('IR streaming', () => {
     expect(result.output[0]).toMatchObject({ content: [{ logprobs: tokens }] });
   });
 
-  it.each<{ items: readonly IRItem[] }>([{ items: [] }, { items: [{ type: 'reasoning', content: ['thought'] }] }])('exposes invalid logprob item ownership %j', async ({ items }) => {
+  it.each<{ items: readonly IROutputItem[] }>([{ items: [] }, { items: [{ type: 'reasoning', content: ['thought'] }] }])('exposes invalid logprob item ownership %j', async ({ items }) => {
     const frames = completeIR(items);
     const end = frames.findIndex(record => record.type === 'choice_end');
     const logprobs = [
@@ -438,7 +441,7 @@ describe('IR streaming', () => {
   });
 
   it('preserves Responses generated image format', async () => {
-    const result = await reassembleOpenAIResponsesEvents(events(openaiResponsesFromIR(iterate(completeIR([{ type: 'message', content: [{ type: 'image', image: { data: 'YQ==', mime_type: 'image/jpeg' } }] }])), options)));
+    const result = await reassembleOpenAIResponsesEvents(events(openaiResponsesFromIR(iterate(completeIR([{ type: 'message', content: [{ type: 'image', image: { data: 'YQ==', media_type: 'image/jpeg' } }] }])), options)));
     expect(result.output[0]).toMatchObject({ type: 'image_generation_call', output_format: 'jpeg' });
   });
 

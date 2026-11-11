@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
 
 import { toOpenAIResponsesInputAssistantTurn } from '../../src/protocols/openai-responses/as-target/assistant-turn.ts';
-import { iterate } from '../ir/helpers.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
+import { iterate } from '../shared/iterables.ts';
 import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';

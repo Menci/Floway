@@ -1,9 +1,12 @@
 import { collectOpenAIChatCompletionsTextViews, computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
-import { irItemPath, irPartPath, irPathKey } from '../../../ir/operation-paths.ts';
-import { createIROrdinalMapper } from '../../../ir/ordinal-mapper.ts';
-import { consumeIRRecords, type IRRecord } from '../../../ir/stream.ts';
-import { IRAbsent, type IRErrorPayload, type IRItem, type IRMessageItem, type IRTokenLogprob } from '../../../ir/types.ts';
+import { IRAbsent } from '../../../ir/output/absent.ts';
+import type { IRErrorPayload } from '../../../ir/output/error.ts';
+import { irItemPath, irPartPath, irPathKey } from '../../../ir/output/operation-paths.ts';
+import type { IRRecord } from '../../../ir/output/records.ts';
+import { consumeIRRecords } from '../../../ir/output/stream.ts';
+import type { IROutputItem, IROutputMessageItem, IROutputTokenLogprob } from '../../../ir/output/types.ts';
+import { createIRUnitIndexAllocator } from '../../../ir/output/unit-index.ts';
 import { appendContent, createContentState, type ContentStates, type ContentState } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
@@ -35,12 +38,12 @@ interface OpenAIChatCompletionsSSEOutputOptions extends RoundTripOutputOptions<'
 
 const tierFields = (tier?: string): { service_tier?: string } => tier === undefined ? {} : { service_tier: tier };
 
-type IRToolCallItem = Extract<IRItem, { type: 'function_call' | 'custom_tool_call' }>;
+type IRToolCallItem = Extract<IROutputItem, { type: 'function_call' | 'custom_tool_call' }>;
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const isIRItem = (value: unknown): value is IRItem => {
+const isIRItem = (value: unknown): value is IROutputItem => {
   if (!isRecord(value)) return false;
   switch (value.type) {
   case 'message': return Array.isArray(value.content);
@@ -51,7 +54,7 @@ const isIRItem = (value: unknown): value is IRItem => {
   }
 };
 
-const partType = (value: unknown): IRMessageItem['content'][number]['type'] | undefined => {
+const partType = (value: unknown): IROutputMessageItem['content'][number]['type'] | undefined => {
   if (!isRecord(value)) return undefined;
   return value.type === 'text' || value.type === 'refusal' || value.type === 'image' || value.type === 'audio' ? value.type : undefined;
 };
@@ -71,7 +74,7 @@ const logprobMetadata = (value: unknown): LogprobMetadata | undefined => {
   return undefined;
 };
 
-const isIRTokenLogprob = (value: unknown): value is IRTokenLogprob =>
+const isIRTokenLogprob = (value: unknown): value is IROutputTokenLogprob =>
   isRecord(value) && typeof value.token === 'string' && typeof value.logprob === 'number';
 
 // Emitted deltas carry the assistant extension fields (reasoning, annotations) beside the standard ones.
@@ -86,10 +89,10 @@ export const openaiChatCompletionsFromIR = async function* (
   let metadata = { id: '', model: '', created: 0 };
   let started = false;
   const startedChoices = new Set<number>();
-  const tools = new Map<number, ReturnType<typeof createIROrdinalMapper>>();
+  const tools = new Map<number, ReturnType<typeof createIRUnitIndexAllocator>>();
   const startedAudio = new Set<string>();
-  const itemTypes = new Map<string, IRItem['type']>();
-  const partTypes = new Map<string, IRMessageItem['content'][number]['type']>();
+  const itemTypes = new Map<string, IROutputItem['type']>();
+  const partTypes = new Map<string, IROutputMessageItem['content'][number]['type']>();
   const logprobRefusal = new Map<string, boolean>();
   const nativeAccumulators = new Map<number, ReturnType<typeof createOpenAIChatCompletionsEventAccumulator>>();
   const nativeAccumulator = (choice: number): ReturnType<typeof createOpenAIChatCompletionsEventAccumulator> => {
@@ -153,7 +156,7 @@ export const openaiChatCompletionsFromIR = async function* (
   const ensureChoice = (choice: number, tier?: string): ProtocolFrame<OpenAIChatCompletionsStreamEvent> | undefined => {
     if (startedChoices.has(choice)) return undefined;
     startedChoices.add(choice);
-    tools.set(choice, createIROrdinalMapper());
+    tools.set(choice, createIRUnitIndexAllocator());
     return deltaFrame(choice, { role: 'assistant', content: '' }, tier);
   };
 
@@ -377,7 +380,7 @@ export const openaiChatCompletionsFromIR = async function* (
             const range = annotation.output_text_range;
             coordinateIndex ??= TextCoordinateIndex.utf16ToCodePoints(flattened);
             coordinateIndex.assertUTF16Length(flattened.length);
-            const offsets = coordinateIndex.irRangeToCodePoints({ start: base + range.start, end_exclusive: base + range.end_exclusive });
+            const offsets = coordinateIndex.utf16RangeToCodePoints({ start: base + range.start, end_exclusive: base + range.end_exclusive });
             annotations.push({
               type: 'url_citation',
               url_citation: { start_index: offsets.start, end_index: offsets.end, title: annotation.source_label ?? annotation.source, url: annotation.source },
@@ -386,9 +389,9 @@ export const openaiChatCompletionsFromIR = async function* (
         });
       });
       if (annotations.length > 0) yield deltaFrame(record.choice, { annotations }, tier);
-      if (choice.refusal?.explanation != null) {
-        appendContent(options.roundTrip.builder, textState(record.choice, 'refusal'), choice.refusal.explanation);
-        yield deltaFrame(record.choice, { refusal: choice.refusal.explanation }, tier);
+      if (choice.refusal_details?.explanation != null) {
+        appendContent(options.roundTrip.builder, textState(record.choice, 'refusal'), choice.refusal_details.explanation);
+        yield deltaFrame(record.choice, { refusal: choice.refusal_details.explanation }, tier);
       }
       const summary = nativeAccumulator(record.choice).result().choices.find(choice => choice.index === record.choice)?.message.reasoning_text;
       if (typeof summary === 'string' && summary !== '') {

@@ -1,14 +1,17 @@
 import { expect, test } from 'vitest';
 
-import { collectIR, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
-import { fixtureFrames } from './translation-cases.ts';
+import { fixtureFrames } from './fixtures.ts';
+import { geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
 import { usageFromIR as messagesUsageFromIR } from '../../src/protocols/anthropic-messages/as-source/usage.ts';
 import { usageToIR as messagesUsageToIR } from '../../src/protocols/anthropic-messages/as-target/usage.ts';
 import { usageFromIR } from '../../src/protocols/gemini-generate-content/as-source/usage.ts';
 import { usageFromIR as chatUsageFromIR } from '../../src/protocols/openai-chat-completions/as-source/usage.ts';
 import { usageToIR as chatUsageToIR } from '../../src/protocols/openai-chat-completions/as-target/usage.ts';
 import { usageFromIR as responsesUsageFromIR } from '../../src/protocols/openai-responses/as-source/usage.ts';
-import { usageToIR as responsesUsageToIR } from '../../src/protocols/openai-responses/as-target/usage.ts';import { eventFrame } from '@floway-dev/protocols/common';
+import { usageToIR as responsesUsageToIR } from '../../src/protocols/openai-responses/as-target/usage.ts';
+import { collectIR } from '../ir/output/helpers.ts';
+import { iterate } from '../shared/iterables.ts';
+import { eventFrame } from '@floway-dev/protocols/common';
 
 const initialUsage = { input_tokens: 17, output_tokens: 2, total_tokens: 19, input_tokens_details: { cached_tokens: 3, cache_write_tokens: 4 } };
 const sources = [

@@ -1,8 +1,8 @@
 import { expect, test, vi } from 'vitest';
 
-import { anthropicMessagesFromIR, collectIR, collect, completeIR, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
-import { fixtureFrames, nativeResult } from './translation-cases.ts';
-import { createIRBuilder } from '../../src/ir/stream.ts';
+import { fixtureFrames, nativeResult } from './fixtures.ts';
+import { anthropicMessagesFromIR, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
+import { createIRBuilder } from '../../src/ir/output/builder.ts';
 import { translateToSourceEvents as messagesViaChat } from '../../src/protocols/anthropic-messages/via-openai-chat-completions/events.ts';
 import { buildTargetRequest as messagesRequestViaChat } from '../../src/protocols/anthropic-messages/via-openai-chat-completions/request.ts';
 import { translateToSourceEvents as messagesViaResponses } from '../../src/protocols/anthropic-messages/via-openai-responses/events.ts';
@@ -11,8 +11,10 @@ import { translateToSourceEvents as generateContentViaResponses } from '../../sr
 import { irFromOpenAIChatCompletions as irFromOpenAIChatCompletionsProduction } from '../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
 import { translateToSourceEvents as responsesViaMessages } from '../../src/protocols/openai-responses/via-anthropic-messages/events.ts';
 import { translateToSourceEvents as responsesViaChat } from '../../src/protocols/openai-responses/via-openai-chat-completions/events.ts';
+import { collectIR, completeIR } from '../ir/output/helpers.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { createRoundTripReaderCapture, emptyNamespaceToolNames } from '../round-trip/test-helpers.ts';
+import { collect, iterate } from '../shared/iterables.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 
 for (const [code, category] of [['bio_policy', 'bio'], ['cyber_policy', 'cyber']] as const) {
@@ -135,7 +137,7 @@ test('Messages and GenerateContent reject custom tool calls they cannot represen
 });
 
 test('writers omit output they cannot represent', async () => {
-  const image = completeIR([{ type: 'message', content: [{ type: 'text', text: 'before' }, { type: 'image', image: { data: 'aW1n', mime_type: 'image/png' } }] }]);
+  const image = completeIR([{ type: 'message', content: [{ type: 'text', text: 'before' }, { type: 'image', image: { data: 'aW1n', media_type: 'image/png' } }] }]);
   expect(JSON.stringify(await collect(anthropicMessagesFromIR(iterate(image))))).toContain('before');
   expect(JSON.stringify(await collect(openaiChatCompletionsFromIR(iterate(image))))).toContain('before');
 

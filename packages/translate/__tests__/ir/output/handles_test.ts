@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { createIRBuilder } from '../../src/ir/stream.ts';
+import { createIRBuilder } from '../../../src/ir/output/builder.ts';
 
 test('write handles build unit paths and ensure fields once', () => {
   const builder = createIRBuilder();
@@ -15,7 +15,7 @@ test('write handles build unit paths and ensure fields once', () => {
 
   expect(choice.path).toEqual(['choices', 0]);
   expect(item.path).toEqual(['choices', 0, 'items', 0]);
-  expect(item.resolve(['summary', 0])).toEqual(['choices', 0, 'items', 0, 'summary', 0]);
+  expect(item.absolutePath(['summary', 0])).toEqual(['choices', 0, 'items', 0, 'summary', 0]);
   expect(builder.drain()).toEqual([
     { type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } },
     { type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 0], value: { type: 'reasoning' } },
@@ -47,9 +47,9 @@ test('ending an item closes only its open parts and is idempotent', () => {
   ]);
 });
 
-test('handles expose accumulated values needed for snapshot reconciliation and annotation coordinates', () => {
+test('a handle reads back the value accumulated from earlier upstream events', () => {
   const builder = createIRBuilder();
-  const choice = builder.choice(0);
+  builder.choice(0);
   const first = builder.item(0, { type: 'message', content: [] });
   const firstText = first.part({ type: 'text', text: '' });
   firstText.append('text', 'first');
@@ -58,8 +58,5 @@ test('handles expose accumulated values needed for snapshot reconciliation and a
   secondText.append('text', 'second');
 
   expect(firstText.current('text')).toBe('first');
-  expect(choice.textParts()).toEqual([
-    { item: first, part: firstText, text: 'first' },
-    { item: second, part: secondText, text: 'second' },
-  ]);
+  expect(secondText.current('text')).toBe('second');
 });

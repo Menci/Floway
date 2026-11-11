@@ -1,14 +1,8 @@
 import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantState } from './assistant-turn.ts';
 import { usageToIR } from './usage.ts';
-import {
-  createIRBuilder,
-  type IRRecord,
-  type IRItemHandle,
-  type IRPartHandle,
-  type IRRelativePath,
-  type IRWriteHandle,
-} from '../../../ir/stream.ts';
-import type { IRSourceCitation } from '../../../ir/types.ts';
+import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRRelativePath, type IRWriteHandle } from '../../../ir/output/builder.ts';
+import type { IRRecord } from '../../../ir/output/records.ts';
+import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
 import { appendField, createFieldState, invalidateField, type FieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
@@ -98,14 +92,14 @@ const closedSnapshotEqual = (left: OpenAIResponsesOutputItemEx, right: OpenAIRes
   return deepEqual(leftSnapshot, rightSnapshot);
 };
 
-const annotationToIR = (coordinateIndex: () => TextCoordinateIndex, annotation: OpenAIResponsesAnnotation): IRSourceCitation | undefined => {
+const annotationToIR = (coordinateIndex: () => TextCoordinateIndex, annotation: OpenAIResponsesAnnotation): IROutputSourceCitation | undefined => {
   if (annotation.type === 'url_citation') {
     return {
       type: 'source_citation',
       source_kind: 'url',
       source: annotation.url,
       source_label: annotation.title,
-      output_text_range: coordinateIndex().codePointRangeToIR(annotation.start_index, annotation.end_index),
+      output_text_range: coordinateIndex().codePointRangeToUTF16(annotation.start_index, annotation.end_index),
     };
   }
   if (annotation.type === 'file_citation') {
@@ -117,7 +111,7 @@ const annotationToIR = (coordinateIndex: () => TextCoordinateIndex, annotation: 
       source_kind: 'document',
       source: annotation.file_id,
       source_label: annotation.filename,
-      output_text_range: coordinateIndex().codePointRangeToIR(annotation.start_index, annotation.end_index),
+      output_text_range: coordinateIndex().codePointRangeToUTF16(annotation.start_index, annotation.end_index),
     };
   }
   if (annotation.type === 'file_path') return { type: 'source_citation', source_kind: 'document', source: annotation.file_id };
@@ -246,7 +240,7 @@ export const irFromOpenAIResponses = async function* (
   };
   const reconcileAppend = (target: ResponsesTextTarget, snapshot: unknown): string => {
     const { handle, path } = target;
-    const absolutePath = handle.resolve(path);
+    const absolutePath = handle.absolutePath(path);
     if (typeof snapshot !== 'string') throw new TypeError(`Responses text snapshot must be a string at ${JSON.stringify(absolutePath)}`);
     const current = handle.current<string>(path);
     // Responses done events are final snapshots in the official SDK. Downstream
@@ -285,7 +279,7 @@ export const irFromOpenAIResponses = async function* (
     const current = handle.current(path);
     if (current === undefined) handle.assign(path, snapshot);
     else if (!deepEqual(current, snapshot)) {
-      throw new TypeError(`Responses snapshot conflicts with streamed value at ${JSON.stringify(handle.resolve(path))}`);
+      throw new TypeError(`Responses snapshot conflicts with streamed value at ${JSON.stringify(handle.absolutePath(path))}`);
     }
   };
 
@@ -515,7 +509,7 @@ export const irFromOpenAIResponses = async function* (
       if (state.parts.size === 0) {
         const handle = state.item.part({
           type: 'image',
-          image: { data: item.result, ...(item.output_format == null ? {} : { mime_type: `image/${item.output_format}` }) },
+          image: { data: item.result, ...(item.output_format == null ? {} : { media_type: `image/${item.output_format}` }) },
         });
         state.parts.set(0, { type: 'image', handle });
       } else {
@@ -524,7 +518,7 @@ export const irFromOpenAIResponses = async function* (
         const { handle } = part;
         reconcileAssign({ handle, path: ['image', 'data'] }, item.result);
         if (item.output_format != null) {
-          reconcileAssign({ handle, path: ['image', 'mime_type'] }, `image/${item.output_format}`);
+          reconcileAssign({ handle, path: ['image', 'media_type'] }, `image/${item.output_format}`);
         }
       }
     }
@@ -601,7 +595,7 @@ export const irFromOpenAIResponses = async function* (
           audioItem.end();
         }
         const policy = response.error?.code === 'cyber_policy' ? 'cyber' : response.error?.code === 'bio_policy' ? 'bio' : undefined;
-        if (policy !== undefined) ir.choice(0).assign('refusal', { category: policy, explanation: response.error?.message });
+        if (policy !== undefined) ir.choice(0).assign('refusal_details', { category: policy, explanation: response.error?.message });
         outputState.length = terminalOutput.length;
         const input = toOpenAIResponsesInputAssistantTurn<FieldStates>(terminalOutput, outputState);
         options.roundTrip.onAssistantTurn(0, input.turn, input.state);

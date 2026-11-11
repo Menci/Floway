@@ -1,11 +1,16 @@
 import { collectAnthropicMessagesTextViews, computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
-import type { IRCollector } from '../../../ir/collector.ts';
-import { isIRItemPath, isIRPartPath, irPathKey } from '../../../ir/operation-paths.ts';
-import { createIROrdinalMapper } from '../../../ir/ordinal-mapper.ts';
-import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/stream.ts';
-import { IRAbsent, type IR, type IRErrorPayload, type IRJSONObject } from '../../../ir/types.ts';
-import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/unit-queue.ts';
+import type { IRJSONObject } from '../../../ir/common/json.ts';
+import { IRAbsent } from '../../../ir/output/absent.ts';
+import type { IRCollector } from '../../../ir/output/collector.ts';
+import type { IRErrorPayload } from '../../../ir/output/error.ts';
+import { isIRItemPath, isIRPartPath, irPathKey } from '../../../ir/output/operation-paths.ts';
+import type { IRPath, IRRecord } from '../../../ir/output/records.ts';
+import { consumeIRRecords } from '../../../ir/output/stream.ts';
+import type { IROutput } from '../../../ir/output/types.ts';
+import { createIRUnitIndexAllocator } from '../../../ir/output/unit-index.ts';
+import { createIRUnitQueue } from '../../../ir/output/unit-queue.ts';
+import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
 import { appendContent, createContentState, type ContentState, type ContentStates } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
@@ -46,7 +51,6 @@ interface MessagesUnit {
   textContentState?: ContentState<'text'>;
   // Keep source intervals until their native field is emitted, including terminal JSON normalization.
   pendingText?: Map<string, TextProvenanceSpan[]>;
-  nextPending?: MessagesUnit;
 }
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
@@ -96,7 +100,7 @@ export const anthropicMessagesFromIR = async function* (
   let finishReason: NonNullable<AnthropicMessagesResult['stop_reason']> = 'end_turn';
   const units = createIRUnitRegistry<MessagesUnit>();
   const pending = createIRUnitQueue<MessagesUnit>();
-  const ordinals = createIROrdinalMapper();
+  const ordinals = createIRUnitIndexAllocator();
   const nativeAccumulator = createAnthropicMessagesEventAccumulator();
   const contentState: NonNullable<AnthropicMessagesAssistantState<ContentStates>['content']> = [];
   let nextBlockIndex = 0;
@@ -111,7 +115,7 @@ export const anthropicMessagesFromIR = async function* (
   const blockDelta = (index: number, delta: AnthropicMessagesContentBlockDeltaEvent['delta']): EventFrame<AnthropicMessagesStreamEventEx> =>
     emit({ type: 'content_block_delta', index, delta });
 
-  const usage = (state: IR): AnthropicMessagesUsage => {
+  const usage = (state: IROutput): AnthropicMessagesUsage => {
     const value = usageFromIR(state.usage ?? {});
     if (state.service_tier === 'fast') value.speed = 'fast';
     else if (typeof state.service_tier === 'string') value.service_tier = state.service_tier;
@@ -119,7 +123,7 @@ export const anthropicMessagesFromIR = async function* (
   };
 
   // Queues the content blocks that the IR structures initialized by a record will become.
-  const registerUnits = (record: IRRecord, state: IR): void => {
+  const registerUnits = (record: IRRecord, state: IROutput): void => {
     if (record.type === 'write' && record.kind === 'initialize') {
       let path: IRPath | undefined;
       let kind: MessagesUnit['kind'] | undefined;
@@ -155,7 +159,7 @@ export const anthropicMessagesFromIR = async function* (
   };
 
   // Opens the waiting units in IR order, until one still lacks what its start event needs.
-  const openPendingUnits = (state: IR, collector: IRCollector): AnthropicMessagesStreamEventEx[] => {
+  const openPendingUnits = (state: IROutput, collector: IRCollector): AnthropicMessagesStreamEventEx[] => {
     const pendingEvents: AnthropicMessagesStreamEventEx[] = [];
     while (pending.head !== undefined) {
       const unit = pending.head;
@@ -179,12 +183,12 @@ export const anthropicMessagesFromIR = async function* (
         else wait = !closed;
       } else if (item.type === 'function_call') {
         if (item.name === '') throw new TypeError('Completed tool calls require a name');
-        const callId = collector.optional<string>([...unit.path, 'call_id']);
+        const callId = collector.valueOrAbsent<string>([...unit.path, 'call_id']);
         if (callId === undefined) wait = true;
         else block = { type: 'tool_use', id: callId === IRAbsent ? `${metadata.id}_${itemIndex}` : callId, name: item.name, input: {} };
       }
       if (wait) break;
-      pending.dequeue();
+      pending.dropHead();
       if (block === undefined) { units.delete(unit.path); continue; }
       unit.opened = true;
       const index = ordinals.open(unit.path);
@@ -361,7 +365,7 @@ export const anthropicMessagesFromIR = async function* (
         yield pendingBlockStop;
         pendingBlockStop = undefined;
       }
-      const refusal = state.choices[0]?.refusal;
+      const refusal = state.choices[0]?.refusal_details;
       yield emit({
         type: 'message_delta',
         delta: {

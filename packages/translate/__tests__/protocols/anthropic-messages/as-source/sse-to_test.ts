@@ -1,11 +1,11 @@
 import { expect, test } from 'vitest';
 
-import { createIRBuilder } from '../../../../src/ir/stream.ts';
+import { createIRBuilder } from '../../../../src/ir/output/builder.ts';
 import { anthropicMessagesFromIR } from '../../../../src/protocols/anthropic-messages/as-source/sse-to.ts';
 import { appendField, collectContentViews, createReferenceBuilder, createFieldState, createReferenceFinalizer } from '../../../../src/round-trip/reference/reference-builder.ts';
-import { type RoundTripWriter } from '../../../../src/round-trip/stream.ts';
+import type { RoundTripWriter } from '../../../../src/round-trip/stream.ts';
 import { hashRoundTripContent } from '../../../../src/round-trip/turn-digest.ts';
-import { type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 
 test.each(['text', 'refusal', 'audio'] as const)('resolves blocked %s against the emitted Messages text field', async kind => {
   const references = createReferenceBuilder();

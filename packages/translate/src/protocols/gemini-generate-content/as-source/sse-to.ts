@@ -1,10 +1,15 @@
 import { collectGeminiGenerateContentTextViews, computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
-import type { IRCollector } from '../../../ir/collector.ts';
-import { irItemPath, irPartPath, irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/operation-paths.ts';
-import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/stream.ts';
-import { IRAbsent, type IR, type IRErrorPayload, type IRJSONObject, type IRSourceCitation, type IRTokenLogprob } from '../../../ir/types.ts';
-import { createIRUnitQueue, createIRUnitRegistry, type IRUnitQueue } from '../../../ir/unit-queue.ts';
+import type { IRJSONObject } from '../../../ir/common/json.ts';
+import { IRAbsent } from '../../../ir/output/absent.ts';
+import type { IRCollector } from '../../../ir/output/collector.ts';
+import type { IRErrorPayload } from '../../../ir/output/error.ts';
+import { irItemPath, irPartPath, irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/output/operation-paths.ts';
+import type { IRPath, IRRecord } from '../../../ir/output/records.ts';
+import { consumeIRRecords } from '../../../ir/output/stream.ts';
+import type { IROutput, IROutputSourceCitation, IROutputTokenLogprob } from '../../../ir/output/types.ts';
+import { createIRUnitQueue, type IRUnitQueue } from '../../../ir/output/unit-queue.ts';
+import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
 import { appendContent, createContentState, type ContentStates, type ContentState as ReferenceContentState } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
@@ -37,7 +42,6 @@ interface GenerateContentUnit {
   opened: boolean;
   pendingData?: TextProvenanceSpan[];
   pendingArguments?: TextProvenanceSpan[];
-  nextPending?: GenerateContentUnit;
 }
 
 interface PendingTextQueue {
@@ -186,7 +190,7 @@ export const geminiGenerateContentFromIR = async function* (
   };
 
   // Queues the units that the IR structures initialized by a record will become.
-  const registerUnits = (record: IRRecord, state: IR): void => {
+  const registerUnits = (record: IRRecord, state: IROutput): void => {
     if (record.type === 'write' && record.kind === 'initialize') {
       const choice = record.path[1];
       if (typeof choice !== 'number') return;
@@ -206,7 +210,7 @@ export const geminiGenerateContentFromIR = async function* (
   };
 
   // Opens each choice's waiting units in IR order, until one still lacks what its part needs.
-  const openPendingUnits = function* (record: IRRecord, state: IR, collector: IRCollector): Generator<EventFrame<GeminiGenerateContentStreamEvent>> {
+  const openPendingUnits = function* (record: IRRecord, state: IROutput, collector: IRCollector): Generator<EventFrame<GeminiGenerateContentStreamEvent>> {
     const endingChoice = record.type === 'choice_end' ? record : undefined;
     for (const [choice, queue] of queues) {
       const choiceEnding = endingChoice?.choice === choice ? endingChoice : undefined;
@@ -220,9 +224,9 @@ export const geminiGenerateContentFromIR = async function* (
           if (item.type !== 'message') throw new TypeError('GenerateContent message unit requires a message item');
           const content = item.content[unit.path[5] as number];
           const inlineMedia = content.type === 'image'
-            ? { mimeType: content.image.mime_type, data: content.image.data }
+            ? { mimeType: content.image.media_type, data: content.image.data }
             : content.type === 'audio' && content.audio.data !== undefined
-              ? { mimeType: content.audio.mime_type, data: content.audio.data }
+              ? { mimeType: content.audio.media_type, data: content.audio.data }
               : undefined;
           if (content.type === 'text' || content.type === 'refusal') {
             part = undefined;
@@ -287,7 +291,7 @@ export const geminiGenerateContentFromIR = async function* (
           }
         }
         if (wait) break;
-        queue.dequeue();
+        queue.dropHead();
         unit.opened = true;
         if (part !== undefined) yield emitPart(choice, part);
         for (const pendingPart of drainPendingText(choice, collector)) yield emitPart(choice, pendingPart);
@@ -298,7 +302,7 @@ export const geminiGenerateContentFromIR = async function* (
   };
 
   // The terminal candidate of a choice: finish reason, grounding built from its citations, and logprobs.
-  const terminalCandidate = (record: Extract<IRRecord, { type: 'choice_end' }>, state: IR, collector: IRCollector): GeminiGenerateContentCandidate => {
+  const terminalCandidate = (record: Extract<IRRecord, { type: 'choice_end' }>, state: IROutput, collector: IRCollector): GeminiGenerateContentCandidate => {
     const choice = state.choices[record.choice];
     const partTexts = new Map<number, { text: string; coordinateIndex?: TextCoordinateIndex }>();
     for (const [partIndex, segments] of segmentsByChoice.get(record.choice) ?? []) {
@@ -331,7 +335,7 @@ export const geminiGenerateContentFromIR = async function* (
             const range = { start: segment.targetStart + start - segment.sourceStart, end_exclusive: segment.targetStart + end - segment.sourceStart };
             partText.coordinateIndex ??= TextCoordinateIndex.utf16ToUTF8(partText.text);
             partText.coordinateIndex.assertUTF16Length(partText.text.length);
-            const bytes = partText.coordinateIndex.irRangeToUTF8(range);
+            const bytes = partText.coordinateIndex.utf16RangeToUTF8(range);
             supports.push({
               groundingChunkIndices: [chunkIndex],
               segment: { partIndex: segment.partIndex, startIndex: bytes.start, endIndex: bytes.end, text: partText.text.slice(range.start, range.end_exclusive) },
@@ -342,7 +346,7 @@ export const geminiGenerateContentFromIR = async function* (
     });
     const tokens = choice.logprobs?.flatMap(group => group.tokens);
     return {
-      ...(choice.refusal?.explanation == null ? {} : { finishMessage: choice.refusal.explanation }),
+      ...(choice.refusal_details?.explanation == null ? {} : { finishMessage: choice.refusal_details.explanation }),
       index: record.choice,
       finishReason: record.finish_reason === 'length' ? 'MAX_TOKENS' : record.finish_reason === 'content_filter' ? 'SAFETY' : 'STOP',
       ...(chunks.length === 0 ? {} : { groundingMetadata: { groundingChunks: chunks, groundingSupports: supports } }),
@@ -430,14 +434,14 @@ export const geminiGenerateContentFromIR = async function* (
   }
 };
 
-const logprobsResult = (tokens: readonly IRTokenLogprob[]): NonNullable<GeminiGenerateContentCandidate['logprobsResult']> => ({
+const logprobsResult = (tokens: readonly IROutputTokenLogprob[]): NonNullable<GeminiGenerateContentCandidate['logprobsResult']> => ({
   chosenCandidates: tokens.map(token => ({ token: token.token, logProbability: token.logprob })),
   topCandidates: tokens.map(token => ({
     candidates: (token.top_logprobs ?? []).map(alternative => ({ token: alternative.token, logProbability: alternative.logprob })),
   })),
 });
 
-const groundingChunk = (citation: IRSourceCitation): GeminiGenerateContentGroundingChunk => {
+const groundingChunk = (citation: IROutputSourceCitation): GeminiGenerateContentGroundingChunk => {
   if (citation.source_kind === 'url') return { web: { uri: citation.source, title: citation.source_label ?? undefined } };
   return {
     retrievedContext: {

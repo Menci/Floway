@@ -2,12 +2,15 @@ import { restoreNamespaceOutputItem, type NamespaceToolNames } from './namespace
 import { createRandomOpenAIResponsesResponseId } from './response-id.ts';
 import { collectOpenAIResponsesTextViews, computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
-import type { IRCollector } from '../../../ir/collector.ts';
-import { irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/operation-paths.ts';
-import { createIROrdinalMapper } from '../../../ir/ordinal-mapper.ts';
-import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/stream.ts';
-import { IRAbsent, type IR, type IRItem, type IRMessageItem, type IRSourceCitation, type IRTokenLogprob } from '../../../ir/types.ts';
-import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/unit-queue.ts';
+import { IRAbsent } from '../../../ir/output/absent.ts';
+import type { IRCollector } from '../../../ir/output/collector.ts';
+import { irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/output/operation-paths.ts';
+import type { IRPath, IRRecord } from '../../../ir/output/records.ts';
+import { consumeIRRecords } from '../../../ir/output/stream.ts';
+import type { IROutput, IROutputItem, IROutputMessageItem, IROutputSourceCitation, IROutputTokenLogprob } from '../../../ir/output/types.ts';
+import { createIRUnitIndexAllocator } from '../../../ir/output/unit-index.ts';
+import { createIRUnitQueue } from '../../../ir/output/unit-queue.ts';
+import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
 import { appendContent, createContentState, type ContentState, type ContentStates } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
@@ -29,7 +32,7 @@ import {
 interface ResponsesOutputUnitBase {
   readonly path: IRPath;
   readonly parts: IRPath[];
-  readonly contentOrdinals: ReturnType<typeof createIROrdinalMapper>;
+  readonly contentOrdinals: ReturnType<typeof createIRUnitIndexAllocator>;
   readonly annotationProgress: Map<string, { seen: number; emitted: number }>;
   readonly coordinateIndexes: Map<string, TextCoordinateIndex>;
   pendingText?: Map<string, TextProvenanceSpan[]>;
@@ -38,7 +41,6 @@ interface ResponsesOutputUnitBase {
   id?: string;
   callId?: string;
   status?: 'completed' | 'incomplete';
-  nextPending?: ResponsesOutputUnit;
 }
 
 type ResponsesOutputUnit = ResponsesOutputUnitBase & (
@@ -53,7 +55,7 @@ type OpenAIResponsesSSEOutputOptions = RoundTripOutputOptions<'openaiResponses'>
 const IMAGE_OUTPUT_FORMATS = { 'image/png': 'png', 'image/jpeg': 'jpeg', 'image/webp': 'webp' } as const;
 
 type IRWriteRecord = Extract<IRRecord, { type: 'write' }>;
-type IRToolCallItem = Extract<IRItem, { type: 'function_call' | 'custom_tool_call' }>;
+type IRToolCallItem = Extract<IROutputItem, { type: 'function_call' | 'custom_tool_call' }>;
 // The item an opened unit announces, and the events that bring it up to the content IR already holds.
 interface OpenedUnit {
   readonly added: OpenAIResponsesOutputItemEx;
@@ -61,7 +63,7 @@ interface OpenedUnit {
 }
 
 type ReasoningField = 'summary' | 'content';
-type MessagePart = IRMessageItem['content'][number];
+type MessagePart = IROutputMessageItem['content'][number];
 
 type ResponsesMessageState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>, ContentStates>;
 type ResponsesReasoningState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'reasoning' }>, ContentStates>;
@@ -69,7 +71,7 @@ type ResponsesReasoningState = OpenAIResponsesItemState<Extract<OpenAIResponsesO
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const initializedType = (value: unknown): IRItem['type'] | MessagePart['type'] | undefined => {
+const initializedType = (value: unknown): IROutputItem['type'] | MessagePart['type'] | undefined => {
   if (!isRecord(value)) return undefined;
   return value.type === 'message'
     || value.type === 'reasoning'
@@ -92,7 +94,7 @@ const textPartLogprobMetadata = (value: unknown): TextPartLogprobMetadata | unde
     : undefined;
 };
 
-const isIRTokenLogprob = (value: unknown): value is IRTokenLogprob =>
+const isIRTokenLogprob = (value: unknown): value is IROutputTokenLogprob =>
   isRecord(value) && typeof value.token === 'string' && typeof value.logprob === 'number';
 
 const reasoningPartAdded = (field: ReasoningField, itemId: string, outputIndex: number, index: number): OpenAIResponsesStreamEventEx =>
@@ -168,7 +170,7 @@ const emptyContentPart = (type: 'text' | 'refusal'): OpenAIResponsesOutputConten
   : { type: 'refusal', refusal: '' };
 
 // The text or refusal part a message unit covers; other part kinds never join a message unit.
-const textOrRefusalPart = (state: IR, path: IRPath): Extract<MessagePart, { type: 'text' | 'refusal' }> => {
+const textOrRefusalPart = (state: IROutput, path: IRPath): Extract<MessagePart, { type: 'text' | 'refusal' }> => {
   const item = state.choices[0].items[path[3] as number];
   if (item.type !== 'message') throw new TypeError('Responses content unit requires a message item');
   const part = item.content[path[5] as number];
@@ -249,10 +251,10 @@ export const openaiResponsesFromIR = async function* (
     return index;
   };
 
-  const convertAnnotation = (coordinateIndex: () => TextCoordinateIndex, annotation: IRSourceCitation): OpenAIResponsesAnnotation | undefined => {
+  const convertAnnotation = (coordinateIndex: () => TextCoordinateIndex, annotation: IROutputSourceCitation): OpenAIResponsesAnnotation | undefined => {
     if ((annotation.source_kind === 'url' || annotation.source_kind === 'search_result') && annotation.source != null) {
       if (annotation.output_text_range === undefined) return undefined;
-      const range = coordinateIndex().irRangeToCodePoints(annotation.output_text_range);
+      const range = coordinateIndex().utf16RangeToCodePoints(annotation.output_text_range);
       return {
         type: 'url_citation',
         url: annotation.source,
@@ -284,11 +286,11 @@ export const openaiResponsesFromIR = async function* (
     return unit.outputIndex;
   };
 
-  const contentPart = (state: IR, unit: ResponsesOutputUnit, path: IRPath): OpenAIResponsesOutputRefusal | Required<OpenAIResponsesOutputText> => {
+  const contentPart = (state: IROutput, unit: ResponsesOutputUnit, path: IRPath): OpenAIResponsesOutputRefusal | Required<OpenAIResponsesOutputText> => {
     const part = textOrRefusalPart(state, path);
     if (part.type === 'refusal') return { type: 'refusal', refusal: part.refusal };
     const logprobGroup = logprobGroups.get(irPathKey(path));
-    let logprobs: readonly IRTokenLogprob[] = [];
+    let logprobs: readonly IROutputTokenLogprob[] = [];
     if (logprobGroup !== undefined) {
       const group = state.choices[0].logprobs?.[logprobGroup];
       if (group === undefined) throw new TypeError(`Responses logprob group ${logprobGroup} is missing`);
@@ -297,7 +299,7 @@ export const openaiResponsesFromIR = async function* (
     return { type: 'output_text', text: part.text, annotations: convertAnnotations(unit, path, part), logprobs: [...logprobs] };
   };
 
-  const outputItem = (state: IR, unit: ResponsesOutputUnit): OpenAIResponsesOutputItemEx => {
+  const outputItem = (state: IROutput, unit: ResponsesOutputUnit): OpenAIResponsesOutputItemEx => {
     const itemIndex = unit.path[3];
     if (typeof itemIndex !== 'number') throw new TypeError('Responses output unit has no item index');
     const item = state.choices[0].items[itemIndex];
@@ -310,7 +312,7 @@ export const openaiResponsesFromIR = async function* (
       const part = item.content[unit.path[5] as number];
       if (part.type !== 'image') throw new TypeError('Responses image unit requires an image part');
       if (status !== 'completed') throw new TypeError('Responses image unit can only complete');
-      const outputFormat = part.image.mime_type === undefined ? undefined : IMAGE_OUTPUT_FORMATS[part.image.mime_type as keyof typeof IMAGE_OUTPUT_FORMATS];
+      const outputFormat = part.image.media_type === undefined ? undefined : IMAGE_OUTPUT_FORMATS[part.image.media_type as keyof typeof IMAGE_OUTPUT_FORMATS];
       return { type: 'image_generation_call', id, status, result: part.image.data, ...(outputFormat === undefined ? {} : { output_format: outputFormat }) };
     }
     if (unit.kind === 'reasoning') {
@@ -330,7 +332,7 @@ export const openaiResponsesFromIR = async function* (
     return { type: 'function_call', id, call_id: unit.callId, name: item.name, arguments: item.arguments, status };
   };
 
-  const response = (state: IR, status: OpenAIResponsesResultEx['status'], usage: OpenAIResponsesResultEx['usage']): OpenAIResponsesResultEx => ({
+  const response = (state: IROutput, status: OpenAIResponsesResultEx['status'], usage: OpenAIResponsesResultEx['usage']): OpenAIResponsesResultEx => ({
     id: metadata.id,
     object: 'response',
     created_at: metadata.created,
@@ -344,7 +346,7 @@ export const openaiResponsesFromIR = async function* (
   });
 
   // Creates the output units that the IR structures initialized by a record will become.
-  const registerUnits = (record: IRRecord, state: IR): void => {
+  const registerUnits = (record: IRRecord, state: IROutput): void => {
     if (record.type === 'write' && record.kind === 'initialize') {
       if (record.path[0] === 'choices' && record.path[1] !== 0) throw new Error('Responses cannot represent multiple choices');
       if (record.path.length === 4 && record.path[0] === 'choices' && record.path[2] === 'logprobs') {
@@ -361,7 +363,7 @@ export const openaiResponsesFromIR = async function* (
           const unit: ResponsesOutputUnitBase = {
             path: record.path,
             parts: [],
-            contentOrdinals: createIROrdinalMapper(),
+            contentOrdinals: createIRUnitIndexAllocator(),
             annotationProgress: new Map(),
             coordinateIndexes: new Map(),
             opened: false,
@@ -387,7 +389,7 @@ export const openaiResponsesFromIR = async function* (
               path: record.path,
               kind: 'message',
               parts: [],
-              contentOrdinals: createIROrdinalMapper(),
+              contentOrdinals: createIRUnitIndexAllocator(),
               annotationProgress: new Map(),
               coordinateIndexes: new Map(),
               contentState: {},
@@ -403,7 +405,7 @@ export const openaiResponsesFromIR = async function* (
             path: record.path,
             kind: 'image',
             parts: [record.path],
-            contentOrdinals: createIROrdinalMapper(),
+            contentOrdinals: createIRUnitIndexAllocator(),
             annotationProgress: new Map(),
             coordinateIndexes: new Map(),
             opened: false,
@@ -413,7 +415,7 @@ export const openaiResponsesFromIR = async function* (
     }
   };
 
-  const openMessageUnit = (unit: ResponsesOutputUnit, state: IR, outputIndex: number): OpenedUnit => {
+  const openMessageUnit = (unit: ResponsesOutputUnit, state: IROutput, outputIndex: number): OpenedUnit => {
     const id = createRandomOpenAIResponsesItemId('message');
     unit.id = id;
     const followUps: OpenAIResponsesStreamEventEx[] = [];
@@ -464,7 +466,7 @@ export const openaiResponsesFromIR = async function* (
     return { added: { type: 'image_generation_call', id, status: 'in_progress', result: null }, followUps: [] };
   };
 
-  const openReasoningUnit = (unit: ResponsesOutputUnit, item: IRItem, outputIndex: number): OpenedUnit => {
+  const openReasoningUnit = (unit: ResponsesOutputUnit, item: IROutputItem, outputIndex: number): OpenedUnit => {
     const reasoning = item.type === 'reasoning' ? item : undefined;
     const id = createRandomOpenAIResponsesItemId('reasoning');
     unit.id = id;
@@ -502,7 +504,7 @@ export const openaiResponsesFromIR = async function* (
   };
 
   // Opens the waiting units in IR order, until one still lacks what its opening event needs.
-  const openPendingUnits = (state: IR, collector: IRCollector): { events: OpenAIResponsesStreamEventEx[]; justOpened: Set<string> } => {
+  const openPendingUnits = (state: IROutput, collector: IRCollector): { events: OpenAIResponsesStreamEventEx[]; justOpened: Set<string> } => {
     const justOpened = new Set<string>();
     const pendingEvents: OpenAIResponsesStreamEventEx[] = [];
     while (pending.head !== undefined) {
@@ -511,11 +513,11 @@ export const openaiResponsesFromIR = async function* (
       let tool: { item: IRToolCallItem; callId: string | typeof IRAbsent } | undefined;
       if (unit.kind === 'function_call' || unit.kind === 'custom_tool_call') {
         if ((item.type !== 'function_call' && item.type !== 'custom_tool_call') || item.name === '') throw new TypeError('Completed tool calls require a name');
-        const callId = collector.optional<string>([...unit.path, 'call_id']);
+        const callId = collector.valueOrAbsent<string>([...unit.path, 'call_id']);
         if (callId === undefined) break;
         tool = { item, callId };
       }
-      pending.dequeue();
+      pending.dropHead();
       const outputIndex = outputUnits.length;
       unit.outputIndex = outputIndex;
       if (unit.kind === 'message' || unit.kind === 'reasoning') nativeState[outputIndex] = unit.contentState;
@@ -531,7 +533,7 @@ export const openaiResponsesFromIR = async function* (
     return { events: pendingEvents, justOpened };
   };
 
-  const messageUnitEvents = (unit: ResponsesOutputUnit, outputIndex: number, record: IRWriteRecord, state: IR): OpenAIResponsesStreamEventEx[] => {
+  const messageUnitEvents = (unit: ResponsesOutputUnit, outputIndex: number, record: IRWriteRecord, state: IROutput): OpenAIResponsesStreamEventEx[] => {
     const itemId = requireId(unit);
     if (record.kind === 'initialize' && record.path.length === 6) {
       const type = initializedType(record.value);
@@ -600,7 +602,7 @@ export const openaiResponsesFromIR = async function* (
   };
 
   // The events for an operation on a unit that is already open.
-  const openedUnitEvents = (unit: ResponsesOutputUnit, record: IRWriteRecord, state: IR): OpenAIResponsesStreamEventEx[] => {
+  const openedUnitEvents = (unit: ResponsesOutputUnit, record: IRWriteRecord, state: IROutput): OpenAIResponsesStreamEventEx[] => {
     const outputIndex = requireOutputIndex(unit);
     switch (unit.kind) {
     case 'message': return messageUnitEvents(unit, outputIndex, record, state);
@@ -799,7 +801,7 @@ export const openaiResponsesFromIR = async function* (
     }
 
     if (record.type === 'finish') {
-      const refusal = state.choices[0].refusal;
+      const refusal = state.choices[0].refusal_details;
       const finalUsage = state.usage === undefined ? null : usageFromIR(state.usage);
       if (refusal?.category === 'cyber' || refusal?.category === 'bio') {
         const declined = refusal.explanation == null || refusal.explanation.trim() === '';

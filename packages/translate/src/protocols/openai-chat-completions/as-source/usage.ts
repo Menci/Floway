@@ -1,9 +1,9 @@
-import type { IRUsage } from '../../../ir/types.ts';
+import type { IROutputUsage } from '../../../ir/output/types.ts';
 import { requireTokenCount } from '../../../shared/token-count.ts';
 import type { OpenAIChatCompletionsUsageEx } from '@floway-dev/protocols/openai-chat-completions';
 
-export const usageFromIR = (usage: IRUsage): OpenAIChatCompletionsUsageEx => {
-  const count = (key: keyof IRUsage): number | undefined => usage[key] === undefined ? undefined : requireTokenCount(key, usage[key]);
+export const usageFromIR = (usage: IROutputUsage): OpenAIChatCompletionsUsageEx => {
+  const count = (key: keyof IROutputUsage): number | undefined => usage[key] === undefined ? undefined : requireTokenCount(key, usage[key]);
   const input = count('input_tokens_inclusive') ?? 0;
   const output = count('output_tokens_inclusive') ?? 0;
   const inputDetails: NonNullable<OpenAIChatCompletionsUsageEx['prompt_tokens_details']> = {};

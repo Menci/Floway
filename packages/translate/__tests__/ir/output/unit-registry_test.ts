@@ -1,24 +1,7 @@
 import { expect, test } from 'vitest';
 
-import type { IRRecord } from '../../src/ir/stream.ts';
-import { createIRUnitQueue, createIRUnitRegistry, type IRQueuedUnit } from '../../src/ir/unit-queue.ts';
-
-interface Unit extends IRQueuedUnit<Unit> { readonly name: string }
-
-test('unit queue dequeues units in the order they were enqueued', () => {
-  const queue = createIRUnitQueue<Unit>();
-  const [a, b] = [{ name: 'a' }, { name: 'b' }];
-  queue.enqueue(a);
-  queue.enqueue(b);
-  expect(queue.head).toBe(a);
-  queue.dequeue();
-  expect(queue.head).toBe(b);
-  queue.dequeue();
-  expect(queue.head).toBeUndefined();
-  const c = { name: 'c' };
-  queue.enqueue(c);
-  expect(queue.head).toBe(c);
-});
+import type { IRRecord } from '../../../src/ir/output/records.ts';
+import { createIRUnitRegistry } from '../../../src/ir/output/unit-registry.ts';
 
 test('unit registry finds the innermost registered owner of a record', () => {
   const registry = createIRUnitRegistry<string>();

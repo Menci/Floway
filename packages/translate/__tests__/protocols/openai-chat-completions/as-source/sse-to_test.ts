@@ -1,9 +1,9 @@
 import { expect, test } from 'vitest';
 
-import { createIRBuilder } from '../../../../src/ir/stream.ts';
+import { createIRBuilder } from '../../../../src/ir/output/builder.ts';
 import { openaiChatCompletionsFromIR } from '../../../../src/protocols/openai-chat-completions/as-source/sse-to.ts';
 import { createReferenceBuilder, collectContentViews, createFieldState, createReferenceFinalizer, appendField } from '../../../../src/round-trip/reference/reference-builder.ts';
-import { type RoundTripWriter } from '../../../../src/round-trip/stream.ts';
+import type { RoundTripWriter } from '../../../../src/round-trip/stream.ts';
 
 test('prepares each Chat choice independently while another choice has partial audio', async () => {
   const source = createIRBuilder(2);
@@ -13,7 +13,7 @@ test('prepares each Chat choice independently while another choice has partial a
   source.event({ type: 'start', id: 'response' });
 
   source.initialize(['choices', 1, 'items', 0], { type: 'message', content: [] });
-  source.initialize(['choices', 1, 'items', 0, 'content', 0], { type: 'audio', audio: { mime_type: 'audio/wav' } });
+  source.initialize(['choices', 1, 'items', 0, 'content', 0], { type: 'audio', audio: { media_type: 'audio/wav' } });
   source.initialize(['choices', 1, 'items', 0, 'content', 0, 'audio', 'data'], '');
   source.append(['choices', 1, 'items', 0, 'content', 0, 'audio', 'data'], 'YQ==');
 

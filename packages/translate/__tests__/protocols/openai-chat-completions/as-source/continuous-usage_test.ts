@@ -1,9 +1,9 @@
 import { expect, test } from 'vitest';
 
-import { collect, iterate } from './helpers.ts';
-import { fixtureFrames } from './translation-cases.ts';
-import { routeOpenAIChatCompletions } from '../../src/protocols/openai-chat-completions/index.ts';
-import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
+import { routeOpenAIChatCompletions } from '../../../../src/protocols/openai-chat-completions/index.ts';
+import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
+import { collect, iterate } from '../../../shared/iterables.ts';
+import { fixtureFrames } from '../../fixtures.ts';
 import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 
 const protocols = ['anthropic-messages', 'openai-responses'] as const;

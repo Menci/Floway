@@ -1,7 +1,9 @@
 import { expect, test, vi } from 'vitest';
 
-import { collect, collectIR, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
-import { nativeResult } from './translation-cases.ts';
+import { nativeResult } from './fixtures.ts';
+import { geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
+import { collectIR } from '../ir/output/helpers.ts';
+import { collect, iterate } from '../shared/iterables.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 
 const chunk = (delta: any, extra: any = {}) => eventFrame({ id: 'chat_owner', model: 'served', created: 1, choices: [{ index: 0, delta, finish_reason: null, ...extra }] } as any);
@@ -106,4 +108,15 @@ test('range-less Messages citations do not expand to whole-part ChatCompletions 
 
   const generateContentFrames = await collect(geminiGenerateContentFromIR(irFromAnthropicMessages(iterate(messagesCitationFrames('source quote')))));
   expect(generateContentFrames.some(frame => frame.type === 'event' && 'candidates' in frame.event && frame.event.candidates?.some(candidate => candidate.groundingMetadata !== undefined))).toBe(false);
+});
+
+test.each([
+  ['ChatCompletions', irFromOpenAIChatCompletions, (error: object) => ({ id: 'chat', model: 'm', choices: [], error })],
+  ['Responses', irFromOpenAIResponses, (error: object) => ({ type: 'error', error })],
+  ['Messages', irFromAnthropicMessages, (error: object) => ({ type: 'error', error })],
+] as const)('%s reader transfers immutable error objects without copying', async (_name, reader, event) => {
+  const error = Object.freeze({ type: 'api_error', message: 'original', details: Object.freeze([Object.freeze({ text: 'original' })]) });
+  const frames = await collect(reader(iterate([eventFrame(event(error) as any)])));
+  const record = frames.find(record => record.type === 'error');
+  expect(record?.error).toBe(error);
 });
