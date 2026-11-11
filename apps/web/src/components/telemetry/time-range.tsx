@@ -121,7 +121,7 @@ export function TelemetryTimeRange<PickerProps extends object>({ addressOf, aria
     }}>
       <PopoverSurface aria-label={t(picker === 'reset-cycle' ? 'dashboard.telemetry.resetCycle.choose' : 'dashboard.telemetry.range.choose')}
         className={picker === 'reset-cycle' ? 'w-[min(320px,calc(100vw-32px))] flex flex-col' : 'floway-date-range-surface'} id={popupId} onBlurCapture={event => blur(event.relatedTarget)} ref={surfaceRef}>
-        <Fragment key={session.serial}>{picker === 'reset-cycle' ? <ScrollArea axes="vertical" className="floway-telemetry-range-scroller min-h-0" contentClassName="floway-telemetry-range-scroll-content" noTabIndex>
+        <Fragment key={session.serial}>{picker === 'reset-cycle' ? <ScrollArea axes="vertical" className="floway-telemetry-range-scroller floway-telemetry-range-picker-scroller min-h-0" contentClassName="floway-telemetry-range-scroll-content" noTabIndex>
           {resetCyclePicker && CyclePicker && <CyclePicker {...resetCyclePicker.props} onApply={finish} onCancel={cancel} />}
         </ScrollArea>
           : <CalendarRange autoFocus displayDate={session.date} onChange={select} value={draft} />}</Fragment>
