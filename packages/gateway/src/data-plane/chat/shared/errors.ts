@@ -56,3 +56,19 @@ export const noViableCandidateFailure = (
   sawModel
     ? { kind: 'model-unsupported', model, failedUpstreams }
     : { kind: 'model-missing', model, failedUpstreams };
+
+/**
+ * What a caller-input failure says beyond its message.
+ *
+ * A translator names the request field the failure is about, and a client that
+ * retries reads it; the code says which kind of violation it is. Both ride in
+ * the protocol's own extension slot, because the envelopes that can state them
+ * have no standard place for either.
+ */
+export const translatorInputErrorFields = (error: { readonly param?: string; readonly code?: string }): Record<string, unknown> | undefined => {
+  const fields = {
+    ...(error.param === undefined ? {} : { param: error.param }),
+    ...(error.code === undefined ? {} : { code: error.code }),
+  };
+  return Object.keys(fields).length === 0 ? undefined : fields;
+};

@@ -77,7 +77,11 @@ export const errorPayloadFromWire = (wire: unknown): IRErrorPayload => {
   // A wire object that states a message is already the IR's shape, so it
   // travels as it arrived. One that states none still has to be reported, and
   // the message is the only field the IR requires.
-  return isErrorPayload(source) ? source : { message: '', provider_specific_fields: source };
+  if (isErrorPayload(source)) return source;
+  // Gathered rather than nested again: this object may itself carry the
+  // container, and wrapping it whole would state one inside another.
+  const extra = extensionOf(source);
+  return { message: '', ...(extra === undefined ? {} : { provider_specific_fields: extra }) };
 };
 
 const isErrorPayload = (value: Readonly<Record<string, unknown>>): value is IRErrorPayload & Readonly<Record<string, unknown>> =>

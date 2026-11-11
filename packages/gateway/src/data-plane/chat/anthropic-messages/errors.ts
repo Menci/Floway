@@ -1,5 +1,5 @@
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
-import type { ChatServeFailure } from '../shared/errors.ts';
+import { translatorInputErrorFields, type ChatServeFailure } from '../shared/errors.ts';
 import { generateAnthropicId, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
@@ -16,6 +16,7 @@ const anthropicErrorResult = (
   type: string,
   message: string,
   performance?: PerformanceTelemetryContext,
+  extension?: Record<string, unknown>,
 ): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> => ({
   type: 'api-error',
   source: 'gateway',
@@ -23,7 +24,7 @@ const anthropicErrorResult = (
   headers: new Headers({ 'content-type': 'application/json' }),
   body: new TextEncoder().encode(JSON.stringify({
     type: 'error',
-    error: { type, message },
+    error: { type, message, ...(extension === undefined ? {} : { provider_specific_fields: extension }) },
     request_id: generateAnthropicId('req'),
   })),
   ...(performance ? { performance } : {}),
@@ -39,7 +40,7 @@ export const translatorInputErrorResult = (
   error: TranslatorInputError,
   performance?: PerformanceTelemetryContext,
 ): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> =>
-  anthropicErrorResult(400, 'invalid_request_error', error.message, performance);
+  anthropicErrorResult(400, 'invalid_request_error', error.message, performance, translatorInputErrorFields(error));
 
 // `endpoint` selects between `/messages` and `/messages/count_tokens` only in
 // the `model-unsupported` message string.

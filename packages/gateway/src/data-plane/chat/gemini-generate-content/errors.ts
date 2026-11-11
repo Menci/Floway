@@ -1,5 +1,5 @@
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
-import type { ChatServeFailure } from '../shared/errors.ts';
+import { translatorInputErrorFields, type ChatServeFailure } from '../shared/errors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentStreamEvent, GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
 import { internalDebugErrorFields, type ExecuteResult, type PerformanceTelemetryContext, type InternalDebugError } from '@floway-dev/provider';
@@ -47,13 +47,23 @@ export const geminiGenerateContentInternalErrorPayload = (status: number, error:
   };
 };
 
-const geminiGenerateContentRpcErrorResult = (status: number, message: string, performance?: PerformanceTelemetryContext): ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>> => ({
+const geminiGenerateContentRpcErrorResult = (
+  status: number,
+  message: string,
+  performance?: PerformanceTelemetryContext,
+  extension?: Record<string, unknown>,
+): ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>> => ({
   type: 'api-error',
   source: 'gateway',
   status,
   headers: new Headers({ 'content-type': 'application/json' }),
   body: new TextEncoder().encode(JSON.stringify({
-    error: { code: status, message, status: geminiGenerateContentStatusForHttpStatus(status) },
+    error: {
+      code: status,
+      message,
+      status: geminiGenerateContentStatusForHttpStatus(status),
+      ...(extension === undefined ? {} : { details: [{ '@type': 'type.googleapis.com/google.protobuf.Struct', value: extension }] }),
+    },
   })),
   ...(performance ? { performance } : {}),
 });
@@ -68,7 +78,7 @@ export const translatorInputErrorResult = (
   error: TranslatorInputError,
   performance?: PerformanceTelemetryContext,
 ): ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>> =>
-  geminiGenerateContentRpcErrorResult(400, error.message, performance);
+  geminiGenerateContentRpcErrorResult(400, error.message, performance, translatorInputErrorFields(error));
 
 // `endpoint` selects between `:generateContent` and `:countTokens` only in
 // the `model-unsupported` message string.

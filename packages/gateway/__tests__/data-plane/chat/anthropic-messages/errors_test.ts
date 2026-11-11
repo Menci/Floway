@@ -35,3 +35,17 @@ test('translatorInputErrorResult preserves Anthropic key order: type, error, req
   // Key-order is load-bearing for byte-faithfulness with Anthropic-direct.
   assert(/^\{"type":"error","error":\{"type":"invalid_request_error","message":"whatever"\},"request_id":"req_[A-Za-z0-9]{24}"\}$/.test(raw), `body ${raw} must match Anthropic-direct byte shape`);
 });
+
+test('translatorInputErrorResult keeps the field and code the translator named', () => {
+  // A translator that knows which request field failed says so; without this
+  // the client sees a generic 400 and has to guess what to change.
+  const result = translatorInputErrorResult(
+    new TranslatorInputError("Missing required parameter: 'model'.", { param: 'model', code: 'missing_required_parameter' }),
+  );
+
+  assertEquals(bodyOf(result).error, {
+    type: 'invalid_request_error',
+    message: "Missing required parameter: 'model'.",
+    provider_specific_fields: { param: 'model', code: 'missing_required_parameter' },
+  });
+});
