@@ -1,16 +1,17 @@
 import { collectOpenAIChatCompletionsTextPlacements, computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarDetails } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
-import type { IRErrorPayload } from '../../../ir/output/error.ts';
+import { type IRErrorPayload } from '../../../ir/output/error.ts';
 import { irItemPath, irPartPath, irPathKey } from '../../../ir/output/operation-paths.ts';
-import type { IRRecord } from '../../../ir/output/records.ts';
+import { type IRRecord } from '../../../ir/output/records.ts';
 import { consumeIRRecords } from '../../../ir/output/stream.ts';
-import type { IROutputItem, IROutputMessageItem, IROutputTokenLogprob } from '../../../ir/output/types.ts';
+import { type IROutputItem, type IROutputMessageItem, type IROutputTokenLogprob } from '../../../ir/output/types.ts';
 import { createIRUnitIndexAllocator } from '../../../ir/output/unit-index.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
 import { appendEmittedField, createEmittedFieldState, type EmittedFieldStates, type EmittedFieldState } from '../../../round-trip/reference/reference-builder.ts';
 import { errorDetailsOf } from '../../../shared/api-error.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
+import { isJSONRecord } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantTurnState } from '../as-target/assistant-turn.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -23,6 +24,8 @@ import {
   createOpenAIChatCompletionsEventAccumulator,
 } from '@floway-dev/protocols/openai-chat-completions';
 
+// The payload the wire states for a failed turn: the IR's own fields, with the
+// target's extra ones under the extension slot this protocol names.
 export const openaiChatCompletionsErrorFromIR = (error: IRErrorPayload) => {
   const details = errorDetailsOf(error, ['message', 'type', 'code', 'param']);
   return {
@@ -35,7 +38,7 @@ export const openaiChatCompletionsErrorFromIR = (error: IRErrorPayload) => {
 };
 
 interface OpenAIChatCompletionsEventWriterOptions extends SourceEventWriterOptions<'openaiChatCompletions'> {
-  // Replay identity belongs to the newly emitted target audio, not the source IR content.
+  // Replay identity belongs to the newly emitted target audio, not the source output IR content.
   audioMetadata?: (choice: number) => { id: string; expires_at: number };
   continuousUsageStats?: boolean;
 }
@@ -44,11 +47,8 @@ const tierFields = (tier?: string): { service_tier?: string } => tier === undefi
 
 type IRToolCallItem = Extract<IROutputItem, { type: 'function_call' | 'custom_tool_call' }>;
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const isIRItem = (value: unknown): value is IROutputItem => {
-  if (!isRecord(value)) return false;
+  if (!isJSONRecord(value)) return false;
   switch (value.type) {
   case 'message': return Array.isArray(value.content);
   case 'reasoning': return true;
@@ -59,7 +59,7 @@ const isIRItem = (value: unknown): value is IROutputItem => {
 };
 
 const partType = (value: unknown): IROutputMessageItem['content'][number]['type'] | undefined => {
-  if (!isRecord(value)) return undefined;
+  if (!isJSONRecord(value)) return undefined;
   return value.type === 'text' || value.type === 'refusal' || value.type === 'image' || value.type === 'audio' ? value.type : undefined;
 };
 
@@ -70,7 +70,7 @@ type LogprobMetadata = { readonly scope: 'choice' } | {
 };
 
 const logprobMetadata = (value: unknown): LogprobMetadata | undefined => {
-  if (!isRecord(value)) return undefined;
+  if (!isJSONRecord(value)) return undefined;
   if (value.scope === 'choice') return { scope: 'choice' };
   if (value.scope === 'text_part' && typeof value.item_index === 'number' && typeof value.content_index === 'number') {
     return { scope: 'text_part', item_index: value.item_index, content_index: value.content_index };
@@ -79,7 +79,7 @@ const logprobMetadata = (value: unknown): LogprobMetadata | undefined => {
 };
 
 const isIRTokenLogprob = (value: unknown): value is IROutputTokenLogprob =>
-  isRecord(value) && typeof value.token === 'string' && typeof value.logprob === 'number';
+  isJSONRecord(value) && typeof value.token === 'string' && typeof value.logprob === 'number';
 
 // Emitted deltas carry the assistant extension fields (reasoning, annotations) beside the standard ones.
 type ChatChoiceChunk = Omit<OpenAIChatCompletionsStreamEvent['choices'][number], 'delta'> & { delta: OpenAIChatCompletionsAssistantDeltaEx };
@@ -107,6 +107,10 @@ export const writeOpenAIChatCompletionsEvents = async function* (
     }
     return accumulator;
   };
+  // The accumulator sees every frame this writer emits, so this reassembles what
+  // has gone out so far. A caller that digests the answer must read it after the
+  // last delta it intends the client to see.
+  const emittedChoice = (choice: number) => nativeAccumulator(choice).result().choices.find(candidate => candidate.index === choice);
   const outputStates = new Map<number, OpenAIChatCompletionsOutputAssistantTurnState<EmittedFieldStates>>();
   const pendingTranscripts = new Map<string, TextProvenanceSpan[]>();
   let usage: OpenAIChatCompletionsUsageEx | undefined;
@@ -188,7 +192,7 @@ export const writeOpenAIChatCompletionsEvents = async function* (
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;
     if (record.type === 'write' && record.path[0] === 'usage') usage = state.usage === undefined ? undefined : usageFromIR(state.usage);
     if (record.type === 'start') {
-      if (state.model === undefined) throw new TypeError('ChatCompletions output requires an IR model before start');
+      if (state.model === undefined) throw new TypeError('ChatCompletions output requires an output IR model before start');
       const id = options.id ?? record.id;
       metadata = {
         id: id === undefined || id === '' ? `chatcmpl-${crypto.randomUUID()}` : id,
@@ -368,22 +372,22 @@ export const writeOpenAIChatCompletionsEvents = async function* (
 
     if (record.type === 'choice_end') {
       const choice = state.choices[record.choice];
-      let flattened = '';
+      let concatenatedText = '';
       let coordinateIndex: TextCoordinateIndex | undefined;
       const annotations: OpenAIChatCompletionsAnnotation[] = [];
       choice.items.forEach(item => {
         if (item.type !== 'message') return;
         item.content.forEach(part => {
           if (part.type !== 'text') return;
-          const base = flattened.length;
-          flattened += part.text;
+          const base = concatenatedText.length;
+          concatenatedText += part.text;
           coordinateIndex?.append(part.text);
           for (const annotation of part.annotations ?? []) {
             if (annotation.source_kind === 'document' || annotation.source == null) continue;
             if (annotation.output_text_range === undefined) continue;
             const range = annotation.output_text_range;
-            coordinateIndex ??= TextCoordinateIndex.utf16ToCodePoints(flattened);
-            coordinateIndex.assertUTF16Length(flattened.length);
+            coordinateIndex ??= TextCoordinateIndex.utf16ToCodePoints(concatenatedText);
+            coordinateIndex.assertUTF16Length(concatenatedText.length);
             const offsets = coordinateIndex.utf16RangeToCodePoints({ start: base + range.start, end_exclusive: base + range.end_exclusive });
             annotations.push({
               type: 'url_citation',
@@ -397,11 +401,11 @@ export const writeOpenAIChatCompletionsEvents = async function* (
         appendEmittedField(options.roundTrip.builder, textState(record.choice, 'refusal'), choice.refusal_details.explanation);
         yield deltaFrame(record.choice, { refusal: choice.refusal_details.explanation }, tier);
       }
-      const summary = nativeAccumulator(record.choice).result().choices.find(choice => choice.index === record.choice)?.message.reasoning_text;
+      const summary = emittedChoice(record.choice)?.message.reasoning_text;
       if (typeof summary === 'string' && summary !== '') {
         yield deltaFrame(record.choice, { reasoning_details: [{ type: 'reasoning.summary', summary, format: 'unknown', index: 0 }] }, tier);
       }
-      const nativeChoice = nativeAccumulator(record.choice).result().choices.find(choice => choice.index === record.choice);
+      const nativeChoice = emittedChoice(record.choice);
       if (nativeChoice === undefined) throw new Error(`Missing Chat Completions choice ${record.choice} at choice_end`);
       const sourceTurnDigest = await computeOpenAIChatCompletionsTurnDigest(nativeChoice.message);
       const input = toOpenAIChatCompletionsInputAssistantTurn<EmittedFieldStates>(nativeChoice.message, outputState(record.choice));

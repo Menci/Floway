@@ -1,13 +1,13 @@
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 
-export const rejectProgrammaticOpenAIResponsesPayload = (payload: OpenAIResponsesPayloadEx, target: string): void => {
+export const rejectProgrammaticOpenAIResponsesPayload = (payload: OpenAIResponsesPayloadEx): void => {
   const toolChoice = payload.tool_choice;
   if (payload.tools?.some(hasProgrammaticCaller) === true || (toolChoice !== null && typeof toolChoice === 'object' && toolChoice.type === 'programmatic_tool_calling')) {
-    throw new TranslateInputException(`Programmatic OpenAI Responses tooling cannot be translated to ${target}.`);
+    throw new TranslateInputException('Programmatic OpenAI Responses tooling cannot be translated.');
   }
   if (payload.tools?.some(hasDeferredTool) === true) {
-    throw new TranslateInputException(`Deferred OpenAI Responses tooling cannot be translated to ${target}.`);
+    throw new TranslateInputException('Deferred OpenAI Responses tooling cannot be translated.');
   }
 };
 
@@ -26,14 +26,10 @@ const hasDeferredTool = (tool: unknown): boolean => {
   return Array.isArray(record.tools) && record.tools.some(hasDeferredTool);
 };
 
-const isProgramCaller = (item: CanonicalOpenAIResponsesInputItem): item is CanonicalOpenAIResponsesInputItem & { call_id: string; caller: { type: 'program'; caller_id: string } } => {
-  if (!('caller' in item)) return false;
-  const caller = item.caller;
-  return typeof caller === 'object' && caller !== null && 'type' in caller && caller.type === 'program';
-};
-
 export const rejectProgramCaller = (item: CanonicalOpenAIResponsesInputItem): void => {
-  if (isProgramCaller(item)) {
-    throw new TranslateInputException(`Cannot translate ${item.type} '${item.call_id}' with a program caller.`);
+  if (!('caller' in item)) return;
+  const caller = item.caller;
+  if (typeof caller === 'object' && caller !== null && 'type' in caller && caller.type === 'program') {
+    throw new TranslateInputException(`Cannot translate ${item.type} '${Reflect.get(item, 'call_id')}' with a program caller.`);
   }
 };

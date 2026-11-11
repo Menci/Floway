@@ -12,9 +12,6 @@ const geminiVisibleTextGroup = (part: GeminiGenerateContentPart): TextContributi
 export type GeminiGenerateContentSourceAssistantTurn = GeminiGenerateContentContent[];
 export type GeminiGenerateContentSidecarPart = GeminiGenerateContentPart & { thoughtSignature: string };
 
-export const hasGeminiGenerateContentThoughtSignature = (content: GeminiGenerateContentContent): boolean =>
-  content.parts?.some(part => part.thoughtSignature !== undefined) ?? false;
-
 const geminiTurnDigestMaterialV1 = (turn: GeminiGenerateContentSourceAssistantTurn): IRJSONObject => {
   const contents = turn.map(content => {
     const visible = collectTextGroups(content.parts ?? [], geminiVisibleTextGroup).get('visible');
@@ -72,7 +69,7 @@ export const verifyGeminiGenerateContentTurnDigest = createTurnDigestVerifier(ge
 
 // Gemini returns model-side thought signatures as Part metadata.
 // https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures
-export const createGeminiGenerateContentSidecarPart = (data: string): GeminiGenerateContentSidecarPart => ({ thoughtSignature: data });
+export const createGeminiGenerateContentSidecarCarrier = (data: string): GeminiGenerateContentSidecarPart => ({ thoughtSignature: data });
 
 export const collectGeminiGenerateContentTextPlacements = (turn: GeminiGenerateContentSourceAssistantTurn): TextPlacementIndex => {
   const views: TextPlacementIndex = new Map();

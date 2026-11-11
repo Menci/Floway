@@ -1,5 +1,6 @@
 import { beforeEach, expect, test, vi } from 'vitest';
 
+import { inputErrorResult } from '../../../../../src/data-plane/chat/openai-responses/errors.ts';
 import { withOpenAIResponsesServerToolShim } from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tool-shim.ts';
 import {
   consumeTurnStreaming,
@@ -36,7 +37,6 @@ import type {
 import { getRepo, initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
-import { requireTrip } from '../../shared/require-trip.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { decodeCanonicalBase64, encodeBase64, eventFrame } from '@floway-dev/protocols/common';
 import type { BillableUsage, ProtocolFrame } from '@floway-dev/protocols/common';
@@ -777,6 +777,7 @@ const makeInvocation = (overrides: InvocationOverrides = {}): OpenAIResponsesInv
   targetApi: overrides.targetApi ?? 'openaiChatCompletions',
   payload: {
     model: 'claude-x',
+    stream: true,
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     tools: [{ type: 'web_search' }],
     // Opt the wire item into `results` so most tests can inspect them
@@ -7351,7 +7352,8 @@ for (const targetApi of ['openaiChatCompletions', 'anthropicMessages', 'openaiRe
         ]]).run();
       }
       if (targetApi === 'openaiChatCompletions') {
-        const trip = await requireTrip(routeOpenAIResponsesViaOpenAIChatCompletions(inv.payload, { model: 'm', sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }));
+        const trip = await routeOpenAIResponsesViaOpenAIChatCompletions(inv.payload, { sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) });
+        if (trip.type === 'input-error') return inputErrorResult(trip);
         const client = trip.target.tools?.[1];
         assert(client?.type === 'function');
         const events = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
@@ -7360,7 +7362,8 @@ for (const targetApi of ['openaiChatCompletions', 'anthropicMessages', 'openaiRe
         })();
         return eventResult(trip.events(events), testTelemetryModelIdentity);
       }
-      const trip = await requireTrip(routeOpenAIResponsesViaAnthropicMessages(inv.payload, { model: 'm', sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn), loadRemoteImage: async () => { throw new Error('Unexpected image'); } }));
+      const trip = await routeOpenAIResponsesViaAnthropicMessages(inv.payload, { sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) });
+      if (trip.type === 'input-error') return inputErrorResult(trip);
       const tool = trip.target.tools?.[1];
       const name = tool !== undefined && 'name' in tool ? tool.name : undefined;
       assert(typeof name === 'string');
@@ -7398,7 +7401,7 @@ test('native helper injection allocates past namespace children while retaining 
 
 for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
   for (const mode of ['forced', 'auto', 'required'] as const) {
-    test(`${target} ${mode} helper choice follows a namespace-induced alias and restores its original echo`, async () => {
+    test(`${target} ${mode} helper choice follows a namespace-induced alias and preserves translation constraints`, async () => {
       const { backend } = makeStubDeps();
       const selector = { type: 'function' as const, name: SHIM_TOOL_NAME };
       const choice: OpenAIResponsesToolChoice = mode === 'forced' ? selector : { type: 'allowed_tools', mode, tools: [selector] };
@@ -7413,25 +7416,43 @@ for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
       const alias = `${SHIM_TOOL_NAME}_2`;
       const script = scriptedRun([fcTurn(0, 'hosted', alias, '{"search_query":[{"q":"hosted"}]}'), messageTurn('done')]);
       const choices: unknown[] = [];
-      const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), async () => {
+      const run = async () => {
         choices.push(structuredClone(inv.payload.tool_choice));
         const before = structuredClone(inv.payload);
         const trip = target === 'openaiChatCompletions'
-          ? await requireTrip(routeOpenAIResponsesViaOpenAIChatCompletions(inv.payload, { model: 'm', sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }))
-          : await requireTrip(routeOpenAIResponsesViaAnthropicMessages(inv.payload, { model: 'm', sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn), loadRemoteImage: async () => { throw new Error('Unexpected image'); } }));
+          ? await routeOpenAIResponsesViaOpenAIChatCompletions(inv.payload, { sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) })
+          : await routeOpenAIResponsesViaAnthropicMessages(inv.payload, { sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) });
+        if (trip.type === 'input-error') return inputErrorResult(trip);
         const wire = JSON.parse(JSON.stringify(trip.target)) as { tools: Array<{ name?: string; function?: { name: string } }> };
-        assert(wire.tools.some(tool => (tool.function?.name ?? tool.name) === alias), 'the translated subset must declare the helper alias');
+        assert(wire.tools.some(tool => (tool.function?.name ?? tool.name) === alias), 'the complete declaration list must retain the helper alias');
         assertEquals(inv.payload, before, 'repeated translation must preserve the outer loop payload');
         return await script.run();
-      });
+      };
+      if (target === 'anthropicMessages' && mode === 'auto') {
+        const { result } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), run);
+        assert(result.type === 'api-error');
+        assertEquals(result.status, 400);
+        assert(new TextDecoder().decode(result.body).includes('allowed_tools auto subset'));
+        assertEquals(script.callCount(), 0);
+        assertEquals(backend.calls.length, 0);
+        assertEquals(choices, [{ type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: alias }] }]);
+        return;
+      }
+      const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), run);
       const renamed = { type: 'function', name: alias };
       assertEquals(choices, mode === 'forced' ? [renamed, 'auto'] : [
         { type: 'allowed_tools', mode, tools: [renamed] },
         { type: 'allowed_tools', mode: 'auto', tools: [renamed] },
       ]);
       assertEquals(choice, original);
-      assertEquals(script.callCount(), 2);
       assertEquals(backend.calls.length, 1);
+      if (target === 'anthropicMessages' && mode === 'required') {
+        assertEquals(script.callCount(), 1);
+        const failed = frames.find(frame => frame.type === 'event' && frame.event.type === 'response.failed');
+        expect(failed).toMatchObject({ event: { response: { status: 'failed', error: { message: expect.stringContaining('allowed_tools auto subset') } } } });
+        return;
+      }
+      assertEquals(script.callCount(), 2);
       assertEquals(findResponseCompleted(frames).response.tool_choice, original);
     });
   }

@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { partitionAnthropicMessagesTurns } from '../../src/protocols/anthropic-messages/as-source/conversation-turns.ts';
-import { computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarBlock, findAnthropicMessagesSidecarOccurrences, verifyAnthropicMessagesTurnDigest } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
+import { computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarCarrier, findAnthropicMessagesSidecarOccurrences, verifyAnthropicMessagesTurnDigest } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
 import { partitionGeminiGenerateContentTurns } from '../../src/protocols/gemini-generate-content/as-source/conversation-turns.ts';
-import { computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSidecarPart, findGeminiGenerateContentSidecarOccurrences, verifyGeminiGenerateContentTurnDigest } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
+import { computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSidecarCarrier, findGeminiGenerateContentSidecarOccurrences, verifyGeminiGenerateContentTurnDigest } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../../src/protocols/openai-chat-completions/as-source/conversation-turns.ts';
 import { computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarDetails, findOpenAIChatCompletionsSidecarOccurrences, verifyOpenAIChatCompletionsTurnDigest } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
 import { partitionOpenAIResponsesTurns } from '../../src/protocols/openai-responses/as-source/conversation-turns.ts';
-import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarItem, findOpenAIResponsesSidecarOccurrences, verifyOpenAIResponsesTurnDigest } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
+import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier, findOpenAIResponsesSidecarOccurrences, verifyOpenAIResponsesTurnDigest } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
+import { toOpenAIResponsesInputAssistantTurn } from '../../src/protocols/openai-responses/as-target/assistant-turn.ts';
 import type { SidecarOccurrence } from '../../src/round-trip/resolve.ts';
 import type { AnyRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesAssistantMessage, AnthropicMessagesMessage } from '@floway-dev/protocols/anthropic-messages';
@@ -44,7 +45,7 @@ const messagesTurn = (): AnthropicMessagesAssistantMessage[] => [{
     { type: 'text', text: 'answer', citations: null },
     { type: 'thinking', thinking: 'reasoning', signature: 'native-message-signature' },
     { type: 'tool_use', id: 'call-a', name: 'lookup', input: { q: 'a' } },
-    createAnthropicMessagesSidecarBlock('opaque-sidecar'),
+    createAnthropicMessagesSidecarCarrier('opaque-sidecar'),
   ],
 }];
 
@@ -57,7 +58,7 @@ const geminiTurn = (): GeminiGenerateContentContent[] => [
       { functionCall: { id: 'call-b', name: 'lookup', args: { q: 'b' } } },
     ],
   },
-  { role: 'model', parts: [createGeminiGenerateContentSidecarPart('opaque-sidecar')] },
+  { role: 'model', parts: [createGeminiGenerateContentSidecarCarrier('opaque-sidecar')] },
 ];
 
 const fixtureSidecar = <Turn>(candidates: SidecarOccurrence<Turn>[], data = 'opaque-sidecar') => {
@@ -116,15 +117,15 @@ describe('assistant-turn sidecar protocols', () => {
   it('extracts Messages redacted blocks while preserving ordinary thinking and the input', async () => {
     const blocks: AnthropicMessagesAssistantContentBlock[] = [{ type: 'text', text: 'answer', citations: null }, { type: 'thinking', thinking: 'thought', signature: 'native' }];
     const ordinary: AnthropicMessagesAssistantMessage[] = [{ role: 'assistant', content: blocks }];
-    const turn: AnthropicMessagesAssistantMessage[] = [{ ...ordinary[0], content: [...blocks, createAnthropicMessagesSidecarBlock('opaque')] }];
+    const turn: AnthropicMessagesAssistantMessage[] = [{ ...ordinary[0], content: [...blocks, createAnthropicMessagesSidecarCarrier('opaque')] }];
     const before = structuredClone(turn);
     const inspection = fixtureSidecar(findAnthropicMessagesSidecarOccurrences(turn), 'opaque');
     expect(inspection).toEqual({ sidecar: 'opaque', turn: ordinary });
     expect(turn).toEqual(before);
     const check = await computeAnthropicMessagesTurnDigest(ordinary);
     expect(await verifyAnthropicMessagesTurnDigest(inspection.turn, check, 1)).toBe(true);
-    expect(await verifyMessagesTurn([{ ...ordinary[0], content: [...blocks, createAnthropicMessagesSidecarBlock('different')] }], check, 'different')).toBe(true);
-    expect(await verifyMessagesTurn([{ role: 'assistant', content: [{ type: 'text', text: 'edited answer', citations: null }, ...blocks.slice(1), createAnthropicMessagesSidecarBlock('opaque')] }], check, 'opaque')).toBe(false);
+    expect(await verifyMessagesTurn([{ ...ordinary[0], content: [...blocks, createAnthropicMessagesSidecarCarrier('different')] }], check, 'different')).toBe(true);
+    expect(await verifyMessagesTurn([{ role: 'assistant', content: [{ type: 'text', text: 'edited answer', citations: null }, ...blocks.slice(1), createAnthropicMessagesSidecarCarrier('opaque')] }], check, 'opaque')).toBe(false);
   });
 
   it('extracts Responses encrypted items without retaining carrier metadata or changing ordinary reasoning', async () => {
@@ -133,7 +134,7 @@ describe('assistant-turn sidecar protocols', () => {
       { type: 'message', id: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'answer', annotations: [] }] },
       reasoning,
     ];
-    const carrier = { ...createOpenAIResponsesSidecarItem('carrier', 'opaque'), status: 'incomplete' };
+    const carrier = { ...createOpenAIResponsesSidecarCarrier('carrier', 'opaque'), status: 'incomplete' };
     const turn = [...ordinary, carrier];
     const before = structuredClone(turn);
     const inspection = fixtureSidecar(findOpenAIResponsesSidecarOccurrences(turn), 'opaque');
@@ -166,10 +167,10 @@ describe('assistant-turn sidecar protocols', () => {
 
   it('extracts Gemini signatures from attached bodies and removes standalone carriers without mutating input', async () => {
     const functionCall = { id: 'call', name: 'lookup', args: { q: 'a' } };
-    const ordinary: GeminiGenerateContentContent[] = [{ role: 'model', parts: [{ text: 'answer', thoughtSignature: 'on-text' }, { functionCall, thoughtSignature: 'on-call' }, { text: 'native thought', thought: true }, createGeminiGenerateContentSidecarPart('standalone-part')] }];
+    const ordinary: GeminiGenerateContentContent[] = [{ role: 'model', parts: [{ text: 'answer', thoughtSignature: 'on-text' }, { functionCall, thoughtSignature: 'on-call' }, { text: 'native thought', thought: true }, createGeminiGenerateContentSidecarCarrier('standalone-part')] }];
     const turn: GeminiGenerateContentContent[] = [
-      { role: 'model', parts: [{ text: 'answer', thoughtSignature: 'on-text' }, { functionCall, thoughtSignature: 'on-call' }, { text: 'native thought', thought: true }, createGeminiGenerateContentSidecarPart('standalone-part')] },
-      { role: 'model', parts: [createGeminiGenerateContentSidecarPart('standalone-content')] },
+      { role: 'model', parts: [{ text: 'answer', thoughtSignature: 'on-text' }, { functionCall, thoughtSignature: 'on-call' }, { text: 'native thought', thought: true }, createGeminiGenerateContentSidecarCarrier('standalone-part')] },
+      { role: 'model', parts: [createGeminiGenerateContentSidecarCarrier('standalone-content')] },
     ];
     const before = structuredClone(turn);
     const inspection = fixtureSidecar(findGeminiGenerateContentSidecarOccurrences(turn), 'standalone-content');
@@ -204,7 +205,7 @@ describe('assistant-turn sidecar protocols', () => {
     ];
     const turns = partitionOpenAIChatCompletionsTurns(messages);
     expect(turns.map(({ role, items }) => [role, items.length])).toEqual([
-      ['bare', 1], ['assistant', 1], ['bare', 1], ['assistant', 1],
+      ['client', 1], ['assistant', 1], ['client', 1], ['assistant', 1],
     ]);
     expect(turns.map(({ items }) => items).flat()).toEqual(messages);
   });
@@ -259,7 +260,7 @@ describe('assistant-turn sidecar protocols', () => {
     ];
     const turns = partitionOpenAIResponsesTurns(input);
     expect(turns.map(({ role, items }) => [role, items.length])).toEqual([
-      ['assistant', 2], ['bare', 1], ['assistant', 1], ['bare', 1],
+      ['assistant', 2], ['client', 1], ['assistant', 1], ['client', 1],
     ]);
     expect(turns.flatMap(({ items }) => items)).toEqual(input);
   });
@@ -328,7 +329,7 @@ describe('assistant-turn sidecar protocols', () => {
     const custom: Extract<OpenAIResponsesOutputItemEx, { type: 'custom_tool_call' }> = {
       type: 'custom_tool_call', id: 'custom-record', call_id: 'call-custom', name: 'format', input: 'plain input',
     };
-    const carrier = createOpenAIResponsesSidecarItem('rs-sidecar', 'opaque-sidecar');
+    const carrier = createOpenAIResponsesSidecarCarrier('rs-sidecar', 'opaque-sidecar');
     const check = await computeOpenAIResponsesTurnDigest([reasoning, custom]);
     expect(await verifyResponsesTurn([{ ...reasoning, id: 'different' }, { ...custom, id: 'different' }, carrier], check)).toBe(true);
     for (const changed of [
@@ -386,13 +387,40 @@ describe('assistant-turn sidecar protocols', () => {
     expect(await verifyOpenAIResponsesTurnDigest(cases[2].original, statuslessCheck, 1)).toBe(false);
   });
 
-  it('preserves the Responses sidecar shape and checks generated image replay', async () => {
-    expect(createOpenAIResponsesSidecarItem('rs_sidecar', 'opaque-sidecar')).toEqual({
+  it('builds canonical Responses history items', async () => {
+    expect(createOpenAIResponsesSidecarCarrier('rs_sidecar', 'opaque-sidecar')).toEqual({
       type: 'reasoning', id: 'rs_sidecar', summary: [], encrypted_content: 'opaque-sidecar',
     });
     const imageCall: Extract<OpenAIResponsesOutputItemEx, { type: 'image_generation_call' }> = {
       type: 'image_generation_call', id: 'ig-data', result: 'image-base64', status: 'completed', action: 'generate', output_format: 'png',
     };
+    const messageWithSDKFields = {
+      type: 'message', id: 'message-a', role: 'assistant', status: 'completed', phase: 'final_answer', created_by: 'sdk',
+      content: [{ type: 'output_text', text: 'answer', annotations: [{ type: 'url_citation', url: 'https://example.test', title: 'source', start_index: 0, end_index: 6 }], logprobs: [], parsed: { answer: true } }],
+    } satisfies Extract<OpenAIResponsesOutputItemEx, { type: 'message' }> & { created_by: string; content: (Extract<Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>['content'][number], { type: 'output_text' }> & { parsed: { answer: boolean } })[] };
+    const functionCallWithSDKFields = {
+      type: 'function_call', id: 'function-a', call_id: 'call-a', name: 'lookup', arguments: '{"q":"a"}', parsed_arguments: { q: 'a' }, status: 'completed', created_by: 'sdk',
+    } satisfies Extract<OpenAIResponsesOutputItemEx, { type: 'function_call' }> & { parsed_arguments: { q: string }; created_by: string };
+    const outputHistory: OpenAIResponsesOutputItemEx[] = [
+      messageWithSDKFields,
+      functionCallWithSDKFields,
+      { type: 'shell_call_output', id: 'shell-output', call_id: 'shell-call', output: [{ stdout: 'ok', stderr: '', outcome: { type: 'exit', exit_code: 0 }, created_by: 'sdk' }], status: 'completed', created_by: 'sdk' },
+      { type: 'computer_call_output', call_id: 'computer-call', output: { type: 'computer_screenshot', file_id: 'screenshot' }, status: 'failed', created_by: 'sdk' },
+      { type: 'custom_tool_call_output', call_id: 'custom-incomplete', output: 'incomplete', status: 'incomplete' },
+      { type: 'custom_tool_call_output', id: 'custom-completed', call_id: 'custom-completed-call', output: 'complete', status: 'completed' },
+      { type: 'additional_tools', id: 'additional-tools-developer', role: 'developer', tools: [] },
+      { type: 'image_generation_call', id: 'ig-null', result: null, status: 'completed' },
+      imageCall,
+    ];
+    expect(toOpenAIResponsesInputAssistantTurn(outputHistory)).toEqual([
+      { type: 'message', id: 'message-a', role: 'assistant', status: 'completed', phase: 'final_answer', content: [{ type: 'output_text', text: 'answer', annotations: [{ type: 'url_citation', url: 'https://example.test', title: 'source', start_index: 0, end_index: 6 }], logprobs: [] }] },
+      { type: 'function_call', id: 'function-a', call_id: 'call-a', name: 'lookup', arguments: '{"q":"a"}', status: 'completed' },
+      { type: 'shell_call_output', id: 'shell-output', call_id: 'shell-call', output: [{ stdout: 'ok', stderr: '', outcome: { type: 'exit', exit_code: 0 } }], status: 'completed' },
+      { type: 'custom_tool_call_output', id: 'custom-completed', call_id: 'custom-completed-call', output: 'complete' },
+      { type: 'additional_tools', id: 'additional-tools-developer', role: 'developer', tools: [] },
+      { type: 'image_generation_call', id: 'ig-null', result: null, status: 'completed' },
+      imageCall,
+    ]);
     const imageTurn: OpenAIResponsesOutputItemEx[] = [
       imageCall,
       { type: 'reasoning', id: 'rs-image', summary: [], encrypted_content: 'opaque-sidecar' },
@@ -467,7 +495,7 @@ describe('assistant-turn sidecar protocols', () => {
       { type: 'text', text: 'answer', citations: [textCitation] },
       { type: 'thinking', thinking: 'reasoning', signature: 'native-message-signature' },
       { type: 'tool_use', id: 'call-a', name: 'lookup', input: { q: 'a' } },
-      createAnthropicMessagesSidecarBlock('opaque-sidecar'),
+      createAnthropicMessagesSidecarCarrier('opaque-sidecar'),
     ] satisfies AnthropicMessagesAssistantContentBlock[];
     const citedTurn: AnthropicMessagesAssistantMessage[] = [{ role: 'assistant', content: responseContent }];
     const citedCheck = await computeAnthropicMessagesTurnDigest(fixtureSidecar(findAnthropicMessagesSidecarOccurrences(citedTurn)).turn);
@@ -485,7 +513,7 @@ describe('assistant-turn sidecar protocols', () => {
       { role: 'user', parts: [{ text: 'question' }] },
       { role: 'model', parts: [{ text: 'next turn' }] },
     ]);
-    expect(turns.map(({ role, items }) => [role, items.length])).toEqual([['assistant', 2], ['bare', 1], ['assistant', 1]]);
+    expect(turns.map(({ role, items }) => [role, items.length])).toEqual([['assistant', 2], ['client', 1], ['assistant', 1]]);
     const check = await computeGeminiGenerateContentTurnDigest(fixtureSidecar(findGeminiGenerateContentSidecarOccurrences(turn)).turn);
     expect(await verifyGeminiTurn([{ ...turn[0], parts: [turn[0].parts![1], turn[0].parts![0], turn[0].parts![3], turn[0].parts![2]] }, turn[1]], check)).toBe(true);
     const moved = [
@@ -497,7 +525,7 @@ describe('assistant-turn sidecar protocols', () => {
           turn[0].parts![3],
         ],
       },
-      { role: 'model', parts: [createGeminiGenerateContentSidecarPart('opaque-sidecar')] },
+      { role: 'model', parts: [createGeminiGenerateContentSidecarCarrier('opaque-sidecar')] },
     ];
     expect(await verifyGeminiTurn(moved, check)).toBe(true);
     expect(await verifyGeminiTurn([
@@ -525,7 +553,7 @@ describe('assistant-turn sidecar protocols', () => {
   it('checks emitted Gemini media and transcript while excluding part metadata', async () => {
     const part = { inlineData: { mimeType: 'audio/wav', data: 'audio-a' }, audioTranscription: { text: 'transcript-a' } };
     const secondPart = { inlineData: { mimeType: 'image/png', data: 'image-b' } };
-    const carrier = createGeminiGenerateContentSidecarPart('opaque-sidecar');
+    const carrier = createGeminiGenerateContentSidecarCarrier('opaque-sidecar');
     const turn = [{ role: 'model' as const, parts: [part, secondPart, carrier] }];
     const check = await computeGeminiGenerateContentTurnDigest(fixtureSidecar(findGeminiGenerateContentSidecarOccurrences(turn)).turn);
     expect(await verifyGeminiTurn([{

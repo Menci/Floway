@@ -115,7 +115,7 @@ const dispatchAnthropicMessages = async (
   if (targetApi === 'openaiResponses') {
     return await executeTranslation(
       invocation.payload,
-      p => routeAnthropicMessagesViaOpenAIResponses(p, { model: candidate.model.id, sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
+      p => routeAnthropicMessagesViaOpenAIResponses(p, { sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
       translated => openaiResponsesAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
       }),
@@ -125,7 +125,7 @@ const dispatchAnthropicMessages = async (
   if (targetApi === 'openaiChatCompletions') {
     return await executeTranslation(
       invocation.payload,
-      p => routeAnthropicMessagesViaOpenAIChatCompletions(p, { model: candidate.model.id, sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
+      p => routeAnthropicMessagesViaOpenAIChatCompletions(p, { sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
       translated => openaiChatCompletionsAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
       }),

@@ -63,6 +63,7 @@ type IROutputFunctionCallItem = {
   readonly type: 'function_call'; // All
   readonly call_id?: string | IRAbsent; // All
   readonly name: string; // All
+  readonly namespace?: string; // ChatCompletions, Responses, Messages
   readonly arguments: string; // All
 };
 
@@ -71,6 +72,7 @@ type IROutputCustomToolCallItem = {
   readonly type: 'custom_tool_call'; // ChatCompletions, Responses, Messages
   readonly call_id?: string | IRAbsent; // ChatCompletions, Responses, Messages
   readonly name: string; // ChatCompletions, Responses, Messages
+  readonly namespace?: string; // ChatCompletions, Responses, Messages
   readonly input: string; // ChatCompletions, Responses, Messages
 };
 

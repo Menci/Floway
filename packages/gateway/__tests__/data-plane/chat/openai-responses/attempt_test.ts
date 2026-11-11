@@ -427,11 +427,10 @@ test('compact returns the clean upstream result for source-edge affinity and sto
   assertEquals(result.result.id, compactionResult.id);
 });
 
-test('generate strips disallowed headers and injects external image loading across translation to Anthropic Messages', async () => {
+test('generate strips disallowed headers and states a remote image URL to Anthropic Messages', async () => {
   installRepo();
-  initExternalResourceFetcher(url => {
-    assertEquals(url.href, 'https://example.com/image.png');
-    return Promise.resolve(new Response(Uint8Array.of(1, 2, 3), { headers: { 'content-type': 'image/png' } }));
+  initExternalResourceFetcher(() => {
+    throw new Error('translation must not fetch images');
   });
   let observedHeaders: Headers | undefined;
   let observedAnthropicBeta: readonly string[] | undefined;
@@ -493,7 +492,7 @@ test('generate strips disallowed headers and injects external image loading acro
   assert(message?.role === 'user' && Array.isArray(message.content));
   const image = message.content.find(block => block.type === 'image');
   assert(image?.type === 'image');
-  assertEquals(image.source, { type: 'base64', media_type: 'image/png', data: 'AQID' });
+  assertEquals(image.source, { type: 'url', url: 'https://example.com/image.png' });
 });
 
 test('generate preserves order and downgrades a disallowed system turn across translation to Anthropic Messages', async () => {

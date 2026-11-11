@@ -1,13 +1,13 @@
-import { collectAnthropicMessagesTextPlacements, computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarBlock } from './round-trip.ts';
+import { collectAnthropicMessagesTextPlacements, computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import type { IRJSONObject } from '../../../ir/common/json.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
 import type { IRCollector } from '../../../ir/output/collector.ts';
-import type { IRErrorPayload } from '../../../ir/output/error.ts';
+import { type IRErrorPayload } from '../../../ir/output/error.ts';
 import { isIRItemPath, isIRPartPath, irPathKey } from '../../../ir/output/operation-paths.ts';
-import type { IRPath, IRRecord } from '../../../ir/output/records.ts';
+import { type IRPath, type IRRecord } from '../../../ir/output/records.ts';
 import { consumeIRRecords } from '../../../ir/output/stream.ts';
-import type { IROutput } from '../../../ir/output/types.ts';
+import { type IROutput } from '../../../ir/output/types.ts';
 import { createIRUnitIndexAllocator } from '../../../ir/output/unit-index.ts';
 import { createIRUnitQueue } from '../../../ir/output/unit-queue.ts';
 import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
@@ -16,7 +16,8 @@ import { appendEmittedField, createEmittedFieldState, type EmittedFieldState, ty
 import { errorDetailsOf } from '../../../shared/api-error.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
-import { parseJSONObject, parseJSONObjectAtCompletion, requireJSONObject } from '../../../shared/json/object.ts';
+import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.ts';
+import { parseJSONObject, requireJSONObject, isJSONRecord } from '../../../shared/json/object.ts';
 import type { AnthropicMessagesInputAssistantTurnState, AnthropicMessagesInputAssistantTurn } from '../as-target/assistant-turn.ts';
 import {
   generateAnthropicId,
@@ -31,7 +32,6 @@ import {
 } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type EventFrame } from '@floway-dev/protocols/common';
 
-// https://platform.claude.com/docs/en/api/errors#http-errors
 const MESSAGES_ERROR_TYPES = [
   'invalid_request_error',
   'authentication_error',
@@ -42,6 +42,7 @@ const MESSAGES_ERROR_TYPES = [
   'overloaded_error',
 ];
 
+/** HTTP and SSE share the Messages error object. Context overflow uses the shared prompt-too-long compatibility message. */
 const messagesError = (error: IRErrorPayload, contextExceeded: boolean): AnthropicMessagesErrorEventEx['error'] => {
   const type = contextExceeded
     ? 'invalid_request_error'
@@ -54,6 +55,7 @@ const messagesError = (error: IRErrorPayload, contextExceeded: boolean): Anthrop
 export const anthropicMessagesErrorFromIR = (error: IRErrorPayload): AnthropicMessagesErrorEventEx['error'] =>
   messagesError(error, isContextExceededError(error));
 
+/** Classify overflow once so its compatibility message and our chosen 400 mapping stay consistent. */
 export const anthropicMessagesErrorEnvelope = (error: IRErrorPayload): { readonly body: unknown; readonly status: number | undefined } => {
   const contextExceeded = isContextExceededError(error);
   return {
@@ -71,11 +73,8 @@ interface MessagesUnit {
   pendingText?: Map<string, TextProvenanceSpan[]>;
 }
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const unitKind = (value: unknown): MessagesUnit['kind'] | 'custom_tool_call' | undefined => {
-  if (!isRecord(value)) return undefined;
+  if (!isJSONRecord(value)) return undefined;
   return value.type === 'text'
     || value.type === 'refusal'
     || value.type === 'audio'
@@ -140,7 +139,7 @@ export const writeAnthropicMessagesEvents = async function* (
     return value;
   };
 
-  // Queues the content blocks that the IR structures initialized by a record will become.
+  // Queues the content blocks that the output IR structures initialized by a record will become.
   const registerUnits = (record: IRRecord, state: IROutput): void => {
     if (record.type === 'write' && record.kind === 'initialize') {
       let path: IRPath | undefined;
@@ -176,7 +175,7 @@ export const writeAnthropicMessagesEvents = async function* (
     unit.pendingText?.delete(key);
   };
 
-  // Opens the waiting units in IR order, until one still lacks what its start event needs.
+  // Opens the waiting units in output IR order, until one still lacks what its start event needs.
   const openPendingUnits = (state: IROutput, collector: IRCollector): AnthropicMessagesStreamEventEx[] => {
     const pendingEvents: AnthropicMessagesStreamEventEx[] = [];
     while (pending.head !== undefined) {
@@ -245,7 +244,7 @@ export const writeAnthropicMessagesEvents = async function* (
     if (record.type === 'error') { yield emit({ type: 'error', error: anthropicMessagesErrorFromIR(record.error) }); return; }
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;
     if (record.type === 'start') {
-      if (state.model === undefined) throw new TypeError('Messages output requires an IR model before start');
+      if (state.model === undefined) throw new TypeError('Messages output requires an output IR model before start');
       const id = options.id ?? record.id;
       metadata = { id: id === undefined || id === '' ? generateAnthropicId('msg') : id, model: state.model };
       yield emit({
@@ -275,7 +274,7 @@ export const writeAnthropicMessagesEvents = async function* (
         : record.finish_reason === 'tool_calls' ? 'tool_use'
           : record.finish_reason === 'content_filter' ? 'refusal' : 'end_turn';
       for (const item of state.choices[0].items) if (item.type === 'function_call') {
-        parseJSONObjectAtCompletion(item.arguments, record.finish_reason === 'length' ? 'truncated' : 'complete', options.parseToolArguments);
+        parseJSONObjectUnlessTruncated(item.arguments, record.finish_reason === 'length' ? 'truncated' : 'complete', options.parseToolArguments);
       }
       continue;
     }
@@ -334,7 +333,7 @@ export const writeAnthropicMessagesEvents = async function* (
             serializedInput = serialized;
             if (serialized !== '') yield blockDelta(index, { type: 'input_json_delta', partial_json: serialized });
           } else {
-            const parsed = parseJSONObjectAtCompletion(item.arguments, record.type === 'item_end' && record.status === 'incomplete' ? 'truncated' : 'complete');
+            const parsed = parseJSONObjectUnlessTruncated(item.arguments, record.type === 'item_end' && record.status === 'incomplete' ? 'truncated' : 'complete');
             if (parsed.completion === 'complete') serializedInput = JSON.stringify(parsed.value);
           }
         }
@@ -376,7 +375,7 @@ export const writeAnthropicMessagesEvents = async function* (
       const assistantState: AnthropicMessagesInputAssistantTurnState<EmittedFieldStates> = { content: contentState };
       const sourceTurnDigest = await computeAnthropicMessagesTurnDigest([targetTurn]);
       const data = await options.roundTrip.encodeSidecar(0, sourceTurnDigest, targetTurn, assistantState, collectAnthropicMessagesTextPlacements([targetTurn]));
-      const carrier = createAnthropicMessagesSidecarBlock(data);
+      const carrier = createAnthropicMessagesSidecarCarrier(data);
       yield emit({ type: 'content_block_start', index: nextBlockIndex, content_block: carrier });
       yield emit({ type: 'content_block_stop', index: nextBlockIndex });
       if (pendingBlockStop !== undefined) {

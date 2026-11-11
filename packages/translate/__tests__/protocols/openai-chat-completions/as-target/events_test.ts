@@ -70,7 +70,7 @@ test('collects every native Chat choice when a sibling omits delta', async () =>
   ]);
 });
 
-const traceTools = async (frames: ReturnType<typeof chunk>[], options: { prefix?: string; customToolNames?: ReadonlySet<string> } = {}) => {
+const traceTools = async (frames: ReturnType<typeof chunk>[], options: { prefix?: string; customToolNames?: ReadonlySet<string>; originalToolNames?: ReadonlyMap<string, { readonly namespace: string; readonly name: string }> } = {}) => {
   const builder = createReferenceBuilder();
   const content = createEmittedFieldState(builder, 'text');
   let text = options.prefix ?? '';
@@ -82,7 +82,7 @@ const traceTools = async (frames: ReturnType<typeof chunk>[], options: { prefix?
     builder,
     onAssistantTurn: (...args) => { captured = args; },
   };
-  for await (const record of readOpenAIChatCompletionsEvents((async function* () { yield* frames; yield doneFrame(); })(), { roundTrip, customToolNames: options.customToolNames })) {
+  for await (const record of readOpenAIChatCompletionsEvents((async function* () { yield* frames; yield doneFrame(); })(), { roundTrip, customToolNames: options.customToolNames, originalToolNames: options.originalToolNames })) {
     if (record.type === 'write' && record.kind === 'assign') assigns.push(record);
     if (record.type !== 'write' || record.kind !== 'append') continue;
     const field = record.path.at(-1);
@@ -99,7 +99,7 @@ const traceTools = async (frames: ReturnType<typeof chunk>[], options: { prefix?
   return { turn, fieldState, appends, assigns, finalized };
 };
 
-test('keeps merged pre-name arguments in one IR append with every original atom ID', async () => {
+test('keeps merged pre-name arguments in one output IR append with every original atom ID', async () => {
   const result = await traceTools([
     chunk([{ index: 0, delta: { tool_calls: [{ index: 0, id: 'call', type: 'function', function: { arguments: '{"x":' } }] }, finish_reason: null }]),
     chunk([{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '1}' } }] }, finish_reason: null }]),
@@ -166,4 +166,24 @@ test('keeps the name of an open tool call when later fragments repeat an empty n
 
   expect(result.assigns.filter(record => record.path.at(-1) === 'name').map(record => record.value)).not.toContain('');
   expect(result.finalized.targetTurn).toMatchObject({ tool_calls: [{ function: { name: 'bash', arguments: '{"command":"ls"}' } }] });
+});
+
+test('states the pair again when a grouped call renames after it opened', async () => {
+  // The request sent `web__run` for the pair `web`/`run`; a later fragment
+  // renames the call. Both writes have to state the pair, or the item ends with
+  // a flat name beside the group's namespace.
+  const originalToolNames = new Map([
+    ['web__run', { namespace: 'web', name: 'run' }],
+    ['web__fetch', { namespace: 'web', name: 'fetch' }],
+  ]);
+  const result = await traceTools([
+    chunk([{ index: 0, delta: { tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'web__run', arguments: '{"u":' } }] }, finish_reason: null }]),
+    chunk([{ index: 0, delta: { tool_calls: [{ index: 0, function: { name: 'web__fetch', arguments: '"x"}' } }] }, finish_reason: 'tool_calls' }]),
+  ], { originalToolNames });
+
+  const nameAssigns = result.assigns.filter(record => record.path.at(-1) === 'name').map(record => record.value);
+  expect(nameAssigns).toEqual(['fetch']);
+  expect(result.finalized.targetTurn).toMatchObject({
+    tool_calls: [{ function: { name: 'web__fetch', arguments: '{"u":"x"}' } }],
+  });
 });

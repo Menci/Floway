@@ -4,8 +4,8 @@ import { createIRBuilder } from '../../../../src/ir/output/builder.ts';
 import { writeAnthropicMessagesEvents } from '../../../../src/protocols/anthropic-messages/as-source/events.ts';
 import { hashRoundTripContent } from '../../../../src/round-trip/hash.ts';
 import { appendReadField, collectEmittedFieldPlacements, createReferenceBuilder, createReadFieldState, createFieldReferencer } from '../../../../src/round-trip/reference/reference-builder.ts';
-import type { RoundTripWriter } from '../../../../src/round-trip/writer.ts';
-import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import { type RoundTripWriter } from '../../../../src/round-trip/writer.ts';
+import { type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 
 test.each(['text', 'refusal', 'audio'] as const)('resolves blocked %s against the emitted Messages text field', async kind => {
   const references = createReferenceBuilder();
@@ -31,8 +31,8 @@ test.each(['text', 'refusal', 'audio'] as const)('resolves blocked %s against th
   let prepared = false;
   const roundTrip: RoundTripWriter<'anthropicMessages'> = {
     builder: references,
-    encodeSidecar: async (_choice, _check, turn, state, textViews) => {
-      const views = collectEmittedFieldPlacements(turn, state, textViews);
+    encodeSidecar: async (_choice, _check, turn, state, textPlacements) => {
+      const views = collectEmittedFieldPlacements(turn, state, textPlacements);
       expect([...views.values()]).toContainEqual({ enclosingText: 'Hi', offset: 0 });
       const finalizer = createFieldReferencer(references, views);
       expect(await finalizer.referenceField('Hi', field)).toMatchObject({ parts: [0] });
@@ -105,8 +105,8 @@ test.each(['{"x":1,}', '{"x": 1}'])('tracks the emitted canonical JSON view with
   let prepared = false;
   const roundTrip: RoundTripWriter<'anthropicMessages'> = {
     builder: references,
-    encodeSidecar: async (_choice, _check, turn, state, textViews) => {
-      const views = collectEmittedFieldPlacements(turn, state, textViews);
+    encodeSidecar: async (_choice, _check, turn, state, textPlacements) => {
+      const views = collectEmittedFieldPlacements(turn, state, textPlacements);
       expect([...views.values()]).toContainEqual({ enclosingText: '{"x":1}', offset: 0 });
       const finalizer = createFieldReferencer(references, views);
       expect(await finalizer.referenceField(original, field)).toBe(original);

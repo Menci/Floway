@@ -1,13 +1,13 @@
-import { collectGeminiGenerateContentTextPlacements, computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSidecarPart } from './round-trip.ts';
+import { collectGeminiGenerateContentTextPlacements, computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import type { IRJSONObject } from '../../../ir/common/json.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
 import type { IRCollector } from '../../../ir/output/collector.ts';
-import type { IRErrorPayload } from '../../../ir/output/error.ts';
+import { type IRErrorPayload } from '../../../ir/output/error.ts';
 import { irItemPath, irPartPath, irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/output/operation-paths.ts';
-import type { IRPath, IRRecord } from '../../../ir/output/records.ts';
+import { type IRPath, type IRRecord } from '../../../ir/output/records.ts';
 import { consumeIRRecords } from '../../../ir/output/stream.ts';
-import type { IROutput, IROutputSourceCitation, IROutputTokenLogprob } from '../../../ir/output/types.ts';
+import { type IROutput, type IROutputSourceCitation, type IROutputTokenLogprob } from '../../../ir/output/types.ts';
 import { createIRUnitQueue, type IRUnitQueue } from '../../../ir/output/unit-queue.ts';
 import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
@@ -15,7 +15,8 @@ import { appendEmittedField, createEmittedFieldState, type EmittedFieldStates, t
 import { errorDetailsOf } from '../../../shared/api-error.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
-import { isCompleteJSONObject, parseJSONObjectAtCompletion } from '../../../shared/json/object.ts';
+import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.ts';
+import { isCompleteJSONObject } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { GeminiGenerateContentInputAssistantTurnState, GeminiGenerateContentInputAssistantTurn } from '../as-target/assistant-turn.ts';
 import { eventFrame, FAST_SERVICE_TIER, type EventFrame } from '@floway-dev/protocols/common';
@@ -29,7 +30,10 @@ import {
   createGeminiGenerateContentEventAccumulator,
 } from '@floway-dev/protocols/gemini-generate-content';
 
-// https://ai.google.dev/api/rest/v1beta/Status
+/**
+ * Use the Google RPC status vocabulary for the numeric error code.
+ * https://ai.google.dev/api/rest/v1beta/Status
+ */
 const statusNameOf = (status: number): string => {
   switch (status) {
   case 400: return 'INVALID_ARGUMENT';
@@ -47,10 +51,13 @@ const statusNameOf = (status: number): string => {
   }
 };
 
+/**
+ * HTTP failures supply an upstream status; streaming failures derive a code from the error kind.
+ * Context overflow selects our local 400 code.
+ */
 export const geminiGenerateContentErrorFromIR = (error: IRErrorPayload, httpStatus?: number): GeminiGenerateContentErrorResponse['error'] => {
   const details = errorDetailsOf(error, ['message']);
-  // Arbitrary error fields use the source's Struct details container.
-  // https://protobuf.dev/reference/protobuf/google.protobuf/#struct
+  // Preserve unmodeled diagnostic fields in a chosen Struct Any inside details.
   const extension = details === undefined ? {} : { details: [{ '@type': 'type.googleapis.com/google.protobuf.Struct', value: details }] };
   const kind = error.code ?? error.type;
   const code = httpStatus !== undefined && !isContextExceededError(error) ? httpStatus
@@ -100,11 +107,11 @@ export const writeGeminiGenerateContentEvents = async function* (
   const pendingText = new Map<number, PendingTextQueue>();
   const sourceLengths = new Map<string, number>();
   const nativeAccumulator = createGeminiGenerateContentEventAccumulator();
-  type GeminiContentState = NonNullable<GeminiGenerateContentInputAssistantTurnState<EmittedFieldStates>[number]>;
-  type PartsState = NonNullable<GeminiContentState['parts']>;
-  const partStates = new Map<number, PartsState>();
+  type AssistantContentState = NonNullable<GeminiGenerateContentInputAssistantTurnState<EmittedFieldStates>[number]>;
+  type AssistantPartsState = NonNullable<AssistantContentState['parts']>;
+  const partStates = new Map<number, AssistantPartsState>();
 
-  const partsState = (choice: number): PartsState => {
+  const partsState = (choice: number): AssistantPartsState => {
     let state = partStates.get(choice);
     if (state === undefined) { state = []; partStates.set(choice, state); }
     return state;
@@ -213,7 +220,7 @@ export const writeGeminiGenerateContentEvents = async function* (
       : undefined;
   };
 
-  // Queues the units that the IR structures initialized by a record will become.
+  // Queues the units that the output IR structures initialized by a record will become.
   const registerUnits = (record: IRRecord, state: IROutput): void => {
     if (record.type === 'write' && record.kind === 'initialize') {
       const choice = record.path[1];
@@ -233,7 +240,7 @@ export const writeGeminiGenerateContentEvents = async function* (
     }
   };
 
-  // Opens each choice's waiting units in IR order, until one still lacks what its part needs.
+  // Opens each choice's waiting units in output IR order, until one still lacks what its part needs.
   const openPendingUnits = function* (record: IRRecord, state: IROutput, collector: IRCollector): Generator<EventFrame<GeminiGenerateContentStreamEvent>> {
     const endingChoice = record.type === 'choice_end' ? record : undefined;
     for (const [choice, queue] of queues) {
@@ -295,7 +302,7 @@ export const writeGeminiGenerateContentEvents = async function* (
             if (completion === 'truncated') part = undefined;
             else if (!isCompleteJSONObject(item.arguments) && choiceEnding === undefined && record.type !== 'finish') wait = true;
             else {
-              const parsed = parseJSONObjectAtCompletion(item.arguments, completion, options.parseToolArguments);
+              const parsed = parseJSONObjectUnlessTruncated(item.arguments, completion, options.parseToolArguments);
               if (parsed.completion === 'complete') {
                 const partIndex = occupyPart(choice, 'other');
                 part = {
@@ -383,7 +390,7 @@ export const writeGeminiGenerateContentEvents = async function* (
     if (record.type === 'error') { yield eventFrame({ error: geminiGenerateContentErrorFromIR(record.error) }); return; }
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;
     if (record.type === 'start') {
-      if (state.model === undefined) throw new TypeError('GenerateContent output requires an IR model before start');
+      if (state.model === undefined) throw new TypeError('GenerateContent output requires an output IR model before start');
       const id = options.id ?? record.id;
       metadata = { id: id === undefined || id === '' ? crypto.randomUUID() : id, model: state.model };
       started = true;
@@ -447,7 +454,7 @@ export const writeGeminiGenerateContentEvents = async function* (
       const assistantState: GeminiGenerateContentInputAssistantTurnState<EmittedFieldStates> = [{ parts: stateParts }];
       const sourceTurnDigest = await computeGeminiGenerateContentTurnDigest(targetTurn);
       const data = await options.roundTrip.encodeSidecar(record.choice, sourceTurnDigest, targetTurn, assistantState, collectGeminiGenerateContentTextPlacements(targetTurn));
-      yield emitPart(record.choice, createGeminiGenerateContentSidecarPart(data));
+      yield emitPart(record.choice, createGeminiGenerateContentSidecarCarrier(data));
       yield emit({ candidates: [terminalCandidate(record, state, collector)] });
     }
 

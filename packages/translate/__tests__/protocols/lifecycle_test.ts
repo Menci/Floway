@@ -1,11 +1,11 @@
 import { expect, test, vi } from 'vitest';
 
+import { writeAnthropicMessagesEvents, writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './events.ts';
 import { nativeResult } from './fixtures.ts';
-import { writeAnthropicMessagesEvents, writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './helpers.ts';
 import { IRAbsent } from '../../src/ir/output/absent.ts';
 import type { IRRecord } from '../../src/ir/output/records.ts';
 import { collectIR } from '../ir/output/helpers.ts';
-import { collect, iterate } from '../shared/iterables.ts';
+import { collect, iterate } from '../iterables.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 
 const chat = (delta: any, finish_reason: string | null = null) => eventFrame({ id: 'chatcmpl_lifecycle', model: 'served', created: 1, choices: [{ index: 0, delta, finish_reason }] } as any);
@@ -299,4 +299,32 @@ test('Messages publishes cumulative usage progress before pulling the rest of th
   });
   const final = output.findLast(frame => frame.event?.type === 'message_delta');
   expect(final).toMatchObject({ event: { delta: { stop_reason: 'end_turn' }, usage: { input_tokens: 10, output_tokens: 2 } } });
+});
+
+test('Responses states a grouped call its group on the announcement and the snapshot alike', async () => {
+  // The request declared this call inside a group, so both the opening event and
+  // the terminal snapshot name it by the pair; an announcement that dropped the
+  // group would disagree with the snapshot the client already saw.
+  const records: IRRecord[] = [
+    { type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } },
+    { type: 'write', kind: 'assign', path: ['model'], value: 'served' },
+    { type: 'start', id: 'source' },
+    {
+      type: 'write',
+      kind: 'initialize',
+      path: ['choices', 0, 'items', 0],
+      value: { type: 'function_call', call_id: 'call_1', name: 'lookup', namespace: 'public', arguments: '' },
+    },
+    { type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'arguments'], value: '{}' },
+    { type: 'item_end', choice: 0, item: 0 },
+    { type: 'choice_end', choice: 0, finish_reason: 'tool_calls' },
+    { type: 'finish', status: 'completed' },
+  ];
+  const frames = await collect(writeOpenAIResponsesEvents(iterate(records)));
+
+  const callItems = frames.flatMap(frame => frame.type === 'event' ? [frame.event] : [])
+    .flatMap(event => 'item' in event && event.item != null && typeof event.item === 'object' ? [event.item] : [])
+    .filter(item => 'type' in item && (item.type === 'function_call' || item.type === 'custom_tool_call'));
+  expect(callItems.map(item => ('name' in item ? item.name : undefined))).toEqual(['lookup', 'lookup']);
+  expect(callItems.map(item => ('namespace' in item ? item.namespace : undefined))).toEqual(['public', 'public']);
 });

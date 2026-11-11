@@ -1,7 +1,5 @@
 import { test } from 'vitest';
 
-import { fixtureFrames, type nativeResult } from './fixtures.ts';
-import { requireTrip } from './require-trip.ts';
 import { partitionAnthropicMessagesTurns } from '../../src/protocols/anthropic-messages/as-source/conversation-turns.ts';
 import { findAnthropicMessagesSidecarOccurrences } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
 import { findGeminiGenerateContentSidecarOccurrences } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
@@ -13,20 +11,24 @@ import { findOpenAIResponsesSidecarOccurrences } from '../../src/protocols/opena
 import { toOpenAIResponsesInputAssistantTurn } from '../../src/protocols/openai-responses/as-target/assistant-turn.ts';
 import { decodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import { requireJSONObject } from '../../src/shared/json/object.ts';
+import type { TranslateInputError } from '../../src/types.ts';
+import { collect, iterate } from '../iterables.ts';
+import { fixtureFrames, type nativeResult } from './fixtures.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
-import { collect, iterate } from '../shared/iterables.ts';
+import { expectTrip } from '../trip.ts';
 import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
-import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentContent, type GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentContent, type GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 import { collectOpenAIChatCompletionsProtocolEventsToResult, type OpenAIChatCompletionsAssistantMessageEx, type OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesInputItem, type CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals } from '@floway-dev/test-utils';
-import { routeAnthropicMessagesViaOpenAIChatCompletions, routeAnthropicMessagesViaOpenAIResponses, routeGeminiGenerateContentViaAnthropicMessages, routeGeminiGenerateContentViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIResponses, routeOpenAIChatCompletionsViaAnthropicMessages, routeOpenAIChatCompletionsViaOpenAIResponses, routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
+import { routeAnthropicMessagesViaOpenAIChatCompletions, routeAnthropicMessagesViaOpenAIResponses, routeOpenAIChatCompletionsViaAnthropicMessages, routeOpenAIChatCompletionsViaOpenAIResponses, routeGeminiGenerateContentViaAnthropicMessages, routeGeminiGenerateContentViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIResponses, routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
 const schema = { type: 'object' as const, properties: { x: { type: 'string' } } };
 const formatSchema = { type: 'object', properties: { y: { type: 'string' } } };
 
 const responses: CanonicalOpenAIResponsesPayload = {
   model: 'm',
+  stream: true,
   input: [
     { type: 'reasoning', id: 'rs1', summary: [{ type: 'summary_text', text: 'thought' }] },
     { type: 'message', role: 'user', content: 'hi' },
@@ -37,6 +39,7 @@ const responses: CanonicalOpenAIResponsesPayload = {
 };
 const chat: OpenAIChatCompletionsPayload = {
   model: 'm',
+  stream: true,
   messages: [
     { role: 'assistant', content: 'hello', reasoning_text: 'thought' } as OpenAIChatCompletionsAssistantMessageEx,
     { role: 'user', content: 'hi' },
@@ -48,14 +51,15 @@ const chat: OpenAIChatCompletionsPayload = {
   tool_choice: 'auto',
 };
 const anthropic: AnthropicMessagesPayload = {
-  model: 'm', max_tokens: 16,
+  model: 'm', max_tokens: 16, stream: true,
   messages: [{ role: 'user', content: 'hi' }],
   tools: [{ name: 'f', input_schema: schema }],
   output_config: { format: { type: 'json_schema', schema: formatSchema } },
   stop_sequences: ['END'],
   metadata: { user_id: 'u', extension: 'retained' } as AnthropicMessagesPayload['metadata'],
 };
-const gemini: GeminiGenerateContentPayload = {
+const gemini: GeminiGenerateContentRequest = {
+  model: 'model',
   contents: [
     { role: 'model', parts: [{ functionCall: { name: 'f', args: { nested: { value: 'x' } } } }] },
     { role: 'user', parts: [{ text: 'hi' }] },
@@ -76,15 +80,15 @@ const objectsIn = (value: unknown): Set<object> => {
 };
 
 const translations: Array<{ name: string; source: unknown; translate: () => Promise<unknown> }> = [
-  { name: 'Responses to Chat Completions', source: responses, translate: async () => (await requireTrip(routeOpenAIResponsesViaOpenAIChatCompletions(responses, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'm' }))).target },
-  { name: 'Responses to Anthropic Messages', source: responses, translate: async () => (await requireTrip(routeOpenAIResponsesViaAnthropicMessages(responses, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } }))).target },
-  { name: 'Chat Completions to Responses', source: chat, translate: async () => (await requireTrip(routeOpenAIChatCompletionsViaOpenAIResponses(chat, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'm' }))).target },
-  { name: 'Chat Completions to Anthropic Messages', source: chat, translate: async () => (await requireTrip(routeOpenAIChatCompletionsViaAnthropicMessages(chat, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } }))).target },
-  { name: 'Anthropic Messages to Responses', source: anthropic, translate: async () => (await requireTrip(routeAnthropicMessagesViaOpenAIResponses(anthropic, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'm' }))).target },
-  { name: 'Anthropic Messages to Chat Completions', source: anthropic, translate: async () => (await requireTrip(routeAnthropicMessagesViaOpenAIChatCompletions(anthropic, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'm' }))).target },
-  { name: 'Gemini to Responses', source: gemini, translate: async () => (await requireTrip(routeGeminiGenerateContentViaOpenAIResponses(gemini, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'm' }))).target },
-  { name: 'Gemini to Chat Completions', source: gemini, translate: async () => (await requireTrip(routeGeminiGenerateContentViaOpenAIChatCompletions(gemini, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'm' }))).target },
-  { name: 'Gemini to Anthropic Messages', source: gemini, translate: async () => (await requireTrip(routeGeminiGenerateContentViaAnthropicMessages(gemini, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'm', fallbackMaxOutputTokens: 16 }))).target },
+  { name: 'Responses to Chat Completions', source: responses, translate: async () => (expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions(responses, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }))).target },
+  { name: 'Responses to Anthropic Messages', source: responses, translate: async () => (expectTrip(await routeOpenAIResponsesViaAnthropicMessages(responses, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }))).target },
+  { name: 'Chat Completions to Responses', source: chat, translate: async () => (expectTrip(await routeOpenAIChatCompletionsViaOpenAIResponses(chat, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }))).target },
+  { name: 'Chat Completions to Anthropic Messages', source: chat, translate: async () => (expectTrip(await routeOpenAIChatCompletionsViaAnthropicMessages(chat, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }))).target },
+  { name: 'Anthropic Messages to Responses', source: anthropic, translate: async () => (expectTrip(await routeAnthropicMessagesViaOpenAIResponses(anthropic, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }))).target },
+  { name: 'Anthropic Messages to Chat Completions', source: anthropic, translate: async () => (expectTrip(await routeAnthropicMessagesViaOpenAIChatCompletions(anthropic, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }))).target },
+  { name: 'Gemini to Responses', source: gemini, translate: async () => (expectTrip(await routeGeminiGenerateContentViaOpenAIResponses(gemini, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }))).target },
+  { name: 'Gemini to Chat Completions', source: gemini, translate: async () => (expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions(gemini, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }))).target },
+  { name: 'Gemini to Anthropic Messages', source: gemini, translate: async () => (expectTrip(await routeGeminiGenerateContentViaAnthropicMessages(gemini, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), fallbackMaxOutputTokens: 16 }))).target },
 ];
 
 test.each(translations)('$name owns its target payload without retaining source or prior target objects', async ({ source, translate }) => {
@@ -106,16 +110,16 @@ test.each(translations)('$name owns its target payload without retaining source 
 type Protocol = 'openai-chat-completions' | 'openai-responses' | 'anthropic-messages' | 'gemini-generate-content';
 const codecScope = 'test-codec-scope';
 
-const returnedTrips: { a: Protocol; b: Protocol; trip: (codecScope: string) => Promise<{ events: (frames: AsyncIterable<any>) => AsyncIterable<any> }> }[] = [
-  { a: 'openai-responses', b: 'openai-chat-completions', trip: codecScope => requireTrip(routeOpenAIResponsesViaOpenAIChatCompletions(responses, { sidecarCodec: createTestSidecarCodec(codecScope), model: 'm' })) },
-  { a: 'openai-responses', b: 'anthropic-messages', trip: codecScope => requireTrip(routeOpenAIResponsesViaAnthropicMessages(responses, { sidecarCodec: createTestSidecarCodec(codecScope), model: 'm', loadRemoteImage: async () => null })) },
-  { a: 'openai-chat-completions', b: 'openai-responses', trip: codecScope => requireTrip(routeOpenAIChatCompletionsViaOpenAIResponses(chat, { sidecarCodec: createTestSidecarCodec(codecScope), model: 'm' })) },
-  { a: 'openai-chat-completions', b: 'anthropic-messages', trip: codecScope => requireTrip(routeOpenAIChatCompletionsViaAnthropicMessages(chat, { sidecarCodec: createTestSidecarCodec(codecScope), model: 'm', loadRemoteImage: async () => null })) },
-  { a: 'anthropic-messages', b: 'openai-responses', trip: codecScope => requireTrip(routeAnthropicMessagesViaOpenAIResponses(anthropic, { sidecarCodec: createTestSidecarCodec(codecScope), model: 'm' })) },
-  { a: 'anthropic-messages', b: 'openai-chat-completions', trip: codecScope => requireTrip(routeAnthropicMessagesViaOpenAIChatCompletions(anthropic, { sidecarCodec: createTestSidecarCodec(codecScope), model: 'm' })) },
-  { a: 'gemini-generate-content', b: 'openai-responses', trip: codecScope => requireTrip(routeGeminiGenerateContentViaOpenAIResponses(gemini, { sidecarCodec: createTestSidecarCodec(codecScope), model: 'm' })) },
-  { a: 'gemini-generate-content', b: 'openai-chat-completions', trip: codecScope => requireTrip(routeGeminiGenerateContentViaOpenAIChatCompletions(gemini, { sidecarCodec: createTestSidecarCodec(codecScope), model: 'm' })) },
-  { a: 'gemini-generate-content', b: 'anthropic-messages', trip: codecScope => requireTrip(routeGeminiGenerateContentViaAnthropicMessages(gemini, { sidecarCodec: createTestSidecarCodec(codecScope), model: 'm', fallbackMaxOutputTokens: 16 })) },
+const returnedTrips: { a: Protocol; b: Protocol; trip: (codecScope: string) => Promise<TranslateInputError | { type: 'trip'; events: (frames: AsyncIterable<any>) => AsyncIterable<any> }> }[] = [
+  { a: 'openai-responses', b: 'openai-chat-completions', trip: codecScope => routeOpenAIResponsesViaOpenAIChatCompletions(responses, { sidecarCodec: createTestSidecarCodec(codecScope) }) },
+  { a: 'openai-responses', b: 'anthropic-messages', trip: codecScope => routeOpenAIResponsesViaAnthropicMessages(responses, { sidecarCodec: createTestSidecarCodec(codecScope) }) },
+  { a: 'openai-chat-completions', b: 'openai-responses', trip: codecScope => routeOpenAIChatCompletionsViaOpenAIResponses(chat, { sidecarCodec: createTestSidecarCodec(codecScope) }) },
+  { a: 'openai-chat-completions', b: 'anthropic-messages', trip: codecScope => routeOpenAIChatCompletionsViaAnthropicMessages(chat, { sidecarCodec: createTestSidecarCodec(codecScope) }) },
+  { a: 'anthropic-messages', b: 'openai-responses', trip: codecScope => routeAnthropicMessagesViaOpenAIResponses(anthropic, { sidecarCodec: createTestSidecarCodec(codecScope) }) },
+  { a: 'anthropic-messages', b: 'openai-chat-completions', trip: codecScope => routeAnthropicMessagesViaOpenAIChatCompletions(anthropic, { sidecarCodec: createTestSidecarCodec(codecScope) }) },
+  { a: 'gemini-generate-content', b: 'openai-responses', trip: codecScope => routeGeminiGenerateContentViaOpenAIResponses(gemini, { sidecarCodec: createTestSidecarCodec(codecScope) }) },
+  { a: 'gemini-generate-content', b: 'openai-chat-completions', trip: codecScope => routeGeminiGenerateContentViaOpenAIChatCompletions(gemini, { sidecarCodec: createTestSidecarCodec(codecScope) }) },
+  { a: 'gemini-generate-content', b: 'anthropic-messages', trip: codecScope => routeGeminiGenerateContentViaAnthropicMessages(gemini, { sidecarCodec: createTestSidecarCodec(codecScope), fallbackMaxOutputTokens: 16 }) },
 ] as const;
 
 const protocolKeys = {
@@ -216,25 +220,46 @@ type TargetPayload =
 
 const replayAssistantTurn = async (assistant: AssistantTurn, target: Protocol): Promise<TargetPayload> => {
   if (assistant.protocol === 'openai-responses') {
-    if (target === 'openai-chat-completions') return { protocol: target, payload: (await requireTrip(routeOpenAIResponsesViaOpenAIChatCompletions({ ...responses, input: [...assistant.turn, { type: 'message', role: 'user', content: 'next question' }] }, { sidecarCodec: createTestSidecarCodec(codecScope), model: 'm' }))).target };
-    if (target === 'anthropic-messages') return { protocol: target, payload: (await requireTrip(routeOpenAIResponsesViaAnthropicMessages({ ...responses, input: [...assistant.turn, { type: 'message', role: 'user', content: 'next question' }] }, { sidecarCodec: createTestSidecarCodec(codecScope), model: 'm', loadRemoteImage: async () => null }))).target };
+    const request = { ...responses, input: [...assistant.turn, { type: 'message' as const, role: 'user' as const, content: 'next question' }] };
+    if (target === 'openai-chat-completions') {
+      return { protocol: 'openai-chat-completions', payload: (expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions(request, { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
+    }
+    if (target === 'anthropic-messages') {
+      return { protocol: 'anthropic-messages', payload: (expectTrip(await routeOpenAIResponsesViaAnthropicMessages(request, { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
+    }
   }
   if (assistant.protocol === 'openai-chat-completions') {
-    if (target === 'openai-responses') return { protocol: target, payload: (await requireTrip(routeOpenAIChatCompletionsViaOpenAIResponses({ ...chat, messages: [assistant.turn, { role: 'user', content: 'next question' }] }, { sidecarCodec: createTestSidecarCodec(codecScope), model: 'm' }))).target };
-    if (target === 'anthropic-messages') return { protocol: target, payload: (await requireTrip(routeOpenAIChatCompletionsViaAnthropicMessages({ ...chat, messages: [assistant.turn, { role: 'user', content: 'next question' }] }, { sidecarCodec: createTestSidecarCodec(codecScope), model: 'm', loadRemoteImage: async () => null }))).target };
+    const request = { ...chat, messages: [assistant.turn, { role: 'user' as const, content: 'next question' }] };
+    if (target === 'openai-responses') {
+      return { protocol: 'openai-responses', payload: (expectTrip(await routeOpenAIChatCompletionsViaOpenAIResponses(request, { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
+    }
+    if (target === 'anthropic-messages') {
+      return { protocol: 'anthropic-messages', payload: (expectTrip(await routeOpenAIChatCompletionsViaAnthropicMessages(request, { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
+    }
   }
   if (assistant.protocol === 'anthropic-messages') {
-    if (target === 'openai-responses') return { protocol: target, payload: (await requireTrip(routeAnthropicMessagesViaOpenAIResponses({ ...anthropic, messages: [assistant.turn, { role: 'user', content: 'next question' }] }, { sidecarCodec: createTestSidecarCodec(codecScope), model: 'm' }))).target };
-    if (target === 'openai-chat-completions') return { protocol: target, payload: (await requireTrip(routeAnthropicMessagesViaOpenAIChatCompletions({ ...anthropic, messages: [assistant.turn, { role: 'user', content: 'next question' }] }, { sidecarCodec: createTestSidecarCodec(codecScope), model: 'm' }))).target };
+    const request = { ...anthropic, messages: [assistant.turn, { role: 'user' as const, content: 'next question' }] };
+    if (target === 'openai-responses') {
+      return { protocol: 'openai-responses', payload: (expectTrip(await routeAnthropicMessagesViaOpenAIResponses(request, { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
+    }
+    if (target === 'openai-chat-completions') {
+      return { protocol: 'openai-chat-completions', payload: (expectTrip(await routeAnthropicMessagesViaOpenAIChatCompletions(request, { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
+    }
   }
   if (assistant.protocol === 'gemini-generate-content') {
-    if (target === 'openai-responses') return { protocol: target, payload: (await requireTrip(routeGeminiGenerateContentViaOpenAIResponses({ ...gemini, contents: [...assistant.turn, { role: 'user', parts: [{ text: 'next question' }] }] }, { sidecarCodec: createTestSidecarCodec(codecScope), model: 'm' }))).target };
-    if (target === 'openai-chat-completions') return { protocol: target, payload: (await requireTrip(routeGeminiGenerateContentViaOpenAIChatCompletions({ ...gemini, contents: [...assistant.turn, { role: 'user', parts: [{ text: 'next question' }] }] }, { sidecarCodec: createTestSidecarCodec(codecScope), model: 'm' }))).target };
-    if (target === 'anthropic-messages') return { protocol: target, payload: (await requireTrip(routeGeminiGenerateContentViaAnthropicMessages({ ...gemini, contents: [...assistant.turn, { role: 'user', parts: [{ text: 'next question' }] }] }, { sidecarCodec: createTestSidecarCodec(codecScope), model: 'm', fallbackMaxOutputTokens: 16 }))).target };
+    const request = { ...gemini, contents: [...assistant.turn, { role: 'user' as const, parts: [{ text: 'next question' }] }] };
+    if (target === 'openai-responses') {
+      return { protocol: 'openai-responses', payload: (expectTrip(await routeGeminiGenerateContentViaOpenAIResponses(request, { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
+    }
+    if (target === 'openai-chat-completions') {
+      return { protocol: 'openai-chat-completions', payload: (expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions(request, { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
+    }
+    if (target === 'anthropic-messages') {
+      return { protocol: 'anthropic-messages', payload: (expectTrip(await routeGeminiGenerateContentViaAnthropicMessages(request, { sidecarCodec: createTestSidecarCodec(codecScope), fallbackMaxOutputTokens: 16 }))).target };
+    }
   }
   throw new Error(`Unsupported route: ${assistant.protocol} via ${target}`);
 };
-
 const targetAssistantTurn = (target: TargetPayload) => {
   if (target.protocol === 'openai-responses') return partitionOpenAIResponsesTurns(target.payload.input).find(turn => turn.role === 'assistant')?.items;
   if (target.protocol === 'openai-chat-completions') return partitionOpenAIChatCompletionsTurns(target.payload.messages).find(turn => turn.role === 'assistant')?.items[0];
@@ -243,7 +268,7 @@ const targetAssistantTurn = (target: TargetPayload) => {
 
 test.each(returnedTrips)('$a via $b returns generated content and a decodable sidecar through its public TranslateTrip', async ({ a, b, trip }) => {
   const codec = createTestSidecarCodec(codecScope);
-  const translation = await trip(codecScope);
+  const translation = expectTrip(await trip(codecScope));
   const fixture = {
     text: ['return ', 'path'],
     thinking: ['upstream thought'],
@@ -271,4 +296,28 @@ test.each(returnedTrips)('$a via $b returns generated content and a decodable si
   const moved = moveCarrierBeforeBody(assistant, carrier);
   assertEquals(assistant, before);
   assertEquals(targetAssistantTurn(await replayAssistantTurn(moved, b)), sidecar.targetTurn);
+});
+
+test('a Responses client sees its own declarations echoed on the response object', async () => {
+  // The upstream states no tools of its own, so the response objects carry the
+  // declarations the client asked with. A client that reads this field expects
+  // its groups back, not the flattened names the request was written with.
+  const declaration = { type: 'namespace' as const, name: 'public', description: '', tools: [{ type: 'function' as const, name: 'lookup', parameters: schema }] };
+  const payload: CanonicalOpenAIResponsesPayload = {
+    model: 'm',
+    stream: true,
+    input: [{ type: 'message', role: 'user', content: 'hi' }],
+    tools: [declaration],
+    tool_choice: 'auto',
+  };
+  const trip = expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions(payload, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }));
+  const frames = await collect(trip.events(iterate(fixtureFrames('openai-chat-completions', {
+    text: ['ok'], thinking: [], signature: '', tools: [],
+  }))));
+
+  const created = frames.find(frame => frame.type === 'event' && frame.event.type === 'response.created');
+  assert(created?.type === 'event');
+  const createdResponse = 'response' in created.event ? created.event.response : undefined;
+  assertEquals(createdResponse?.tools, [declaration]);
+  assertEquals(createdResponse?.tool_choice, 'auto');
 });

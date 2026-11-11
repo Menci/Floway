@@ -58,11 +58,8 @@ const payloadCases: Array<{
   },
 ];
 
-const targetPayloadCases = ['OpenAI Chat Completions', 'Anthropic Messages'].flatMap(target =>
-  payloadCases.map(testCase => ({ target, ...testCase })));
-
-test.each(targetPayloadCases)('rejectProgrammaticOpenAIResponsesPayload rejects $name for $target', ({ target, payload, message }) => {
-  expect(() => rejectProgrammaticOpenAIResponsesPayload({ model: 'gpt-test', input: [], ...payload }, target)).toThrow(message);
+test.each(payloadCases)('rejectProgrammaticOpenAIResponsesPayload rejects $name', ({ payload, message }) => {
+  expect(() => rejectProgrammaticOpenAIResponsesPayload({ model: 'gpt-test', input: [], ...payload })).toThrow(message);
 });
 
 test('rejectProgramCaller accepts ordinary callers', () => {
@@ -74,5 +71,5 @@ test('rejectProgrammaticOpenAIResponsesPayload accepts ordinary function tooling
     model: 'gpt-test',
     input: [],
     tools: [{ type: 'function', name: 'lookup', parameters: {}, strict: true }],
-  }, 'Anthropic Messages')).not.toThrow();
+  })).not.toThrow();
 });

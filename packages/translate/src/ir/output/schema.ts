@@ -69,8 +69,8 @@ const item = union('type', {
     summary: array(appendString),
     content: array(appendString),
   }, { optional: ['summary', 'content'] }),
-  function_call: object({ call_id: absentString, name: string, arguments: appendString }, { optional: ['call_id'] }),
-  custom_tool_call: object({ call_id: absentString, name: string, input: appendString }, { optional: ['call_id'] }),
+  function_call: object({ call_id: absentString, name: string, namespace: string, arguments: appendString }, { optional: ['call_id', 'namespace'] }),
+  custom_tool_call: object({ call_id: absentString, name: string, namespace: string, input: appendString }, { optional: ['call_id', 'namespace'] }),
 }, 'item');
 
 const logprobs = nullable(array(union('scope', {

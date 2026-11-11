@@ -1,7 +1,7 @@
 import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantTurnState } from './assistant-turn.ts';
 import { usageToIR } from './usage.ts';
 import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRRelativePath, type IRWriteHandle } from '../../../ir/output/builder.ts';
-import type { IRRecord } from '../../../ir/output/records.ts';
+import { type IRRecord } from '../../../ir/output/records.ts';
 import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendReadField, createReadFieldState, invalidateReadField, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
@@ -24,16 +24,16 @@ type FunctionFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutput
 type CustomFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'custom_tool_call' }>, ReadFieldStates>;
 type TextFieldStateNode = NonNullable<NonNullable<MessageFieldState['content']>[number]>;
 
-interface WriteTarget {
+interface WritePosition {
   readonly handle: IRWriteHandle;
   readonly path: IRRelativePath;
 }
 
-interface ResponsesTextTarget extends WriteTarget {
+interface ResponsesTextPosition extends WritePosition {
   fieldState?: ReadFieldStates['text'];
 }
 
-interface ResponsesOutputTextPartState extends ResponsesTextTarget {
+interface ResponsesOutputTextPartState extends ResponsesTextPosition {
   readonly type: 'output_text';
   readonly handle: IRPartHandle;
   readonly path: 'text';
@@ -44,7 +44,7 @@ interface ResponsesOutputTextPartState extends ResponsesTextTarget {
   nextAnnotationOrdinal: number;
 }
 
-interface ResponsesRefusalPartState extends ResponsesTextTarget {
+interface ResponsesRefusalPartState extends ResponsesTextPosition {
   readonly type: 'refusal';
   readonly handle: IRPartHandle;
   readonly path: 'refusal';
@@ -56,9 +56,12 @@ type ResponsesPartState = ResponsesTextPartState | ResponsesImagePartState;
 interface ResponsesItemStateBase {
   readonly outputIndex: number;
   readonly id: string;
+  // The declaration group the item opened with, kept so a later snapshot cannot
+  // silently state a call from a different group under the same id.
+  readonly namespace?: string;
   item?: IRItemHandle;
   readonly parts: Map<number, ResponsesPartState>;
-  readonly reasoning: Record<'summary' | 'content', ResponsesTextTarget[]>;
+  readonly reasoning: Record<'summary' | 'content', ResponsesTextPosition[]>;
   readonly logprobs: Map<number, { readonly index: number; length: number }>;
   closed: boolean;
   finalSnapshot?: OpenAIResponsesOutputItemEx;
@@ -67,8 +70,8 @@ interface ResponsesItemStateBase {
 type ResponsesItemState = ResponsesItemStateBase & (
       | { readonly type: 'message'; fieldState: MessageFieldState }
       | { readonly type: 'reasoning'; fieldState: ReasoningFieldState }
-      | { readonly type: 'function_call'; fieldState: FunctionFieldState; toolText?: ResponsesTextTarget }
-      | { readonly type: 'custom_tool_call'; fieldState: CustomFieldState; toolText?: ResponsesTextTarget }
+      | { readonly type: 'function_call'; fieldState: FunctionFieldState; toolText?: ResponsesTextPosition }
+      | { readonly type: 'custom_tool_call'; fieldState: CustomFieldState; toolText?: ResponsesTextPosition }
       | { readonly type: Exclude<OpenAIResponsesOutputItemEx['type'], 'message' | 'reasoning' | 'function_call' | 'custom_tool_call'>; fieldState?: never }
     );
 
@@ -119,7 +122,7 @@ const annotationToIR = (coordinateIndex: () => TextCoordinateIndex, annotation: 
   return undefined;
 };
 
-// The IR item an output item opens as; other item types have no IR counterpart.
+// The output IR item an output item opens as; other item types have no output IR counterpart.
 const irItemSeed = (item: OpenAIResponsesOutputItemEx): Record<string, unknown> | undefined => {
   switch (item.type) {
   case 'message':
@@ -128,9 +131,9 @@ const irItemSeed = (item: OpenAIResponsesOutputItemEx): Record<string, unknown> 
   case 'reasoning':
     return undefined;
   case 'function_call':
-    return { type: 'function_call', ...(item.call_id === undefined ? {} : { call_id: item.call_id }), name: item.name, arguments: '' };
+    return { type: 'function_call', ...(item.call_id === undefined ? {} : { call_id: item.call_id }), name: item.name, ...(item.namespace === undefined ? {} : { namespace: item.namespace }), arguments: '' };
   case 'custom_tool_call':
-    return { type: 'custom_tool_call', ...(item.call_id === undefined ? {} : { call_id: item.call_id }), name: item.name, input: '' };
+    return { type: 'custom_tool_call', ...(item.call_id === undefined ? {} : { call_id: item.call_id }), name: item.name, ...(item.namespace === undefined ? {} : { namespace: item.namespace }), input: '' };
   default:
     return undefined;
   }
@@ -142,7 +145,7 @@ export const readOpenAIResponsesEvents = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   options: { roundTrip: RoundTripReader<'openaiResponses'> },
 ): AsyncGenerator<IRRecord> {
-  const ir = createIRBuilder();
+  const builder = createIRBuilder();
   const items = new Map<number, ResponsesItemState>();
   const outputState: OpenAIResponsesOutputAssistantTurnState<ReadFieldStates> = [];
   let started = false;
@@ -160,14 +163,14 @@ export const readOpenAIResponsesEvents = async function* (
     if (typeof response.model !== 'string') throw new TypeError('Responses response envelope requires a model');
     if (responseIdentity === undefined) {
       responseIdentity = { id: response.id, model: response.model };
-      ir.assign(['model'], response.model);
+      builder.assign(['model'], response.model);
     } else {
       if (response.model !== responseIdentity.model) {
         throw new TypeError(`Responses response model changed from ${responseIdentity.model} to ${response.model}`);
       }
     }
-    if (typeof response.service_tier === 'string') ir.assign(['service_tier'], response.service_tier);
-    if (response.usage != null) ir.usage(usageToIR(response.usage));
+    if (typeof response.service_tier === 'string') builder.assign(['service_tier'], response.service_tier);
+    if (response.usage != null) builder.usage(usageToIR(response.usage));
   };
 
   const requireOutputIndex = (value: unknown): number => {
@@ -183,10 +186,13 @@ export const readOpenAIResponsesEvents = async function* (
     const id = itemId(item);
     if (typeof id !== 'string') throw new TypeError('Responses output items require an id');
     const seed = irItemSeed(item);
-    const handle = seed === undefined ? undefined : ir.item(0, seed);
+    const handle = seed === undefined ? undefined : builder.item(0, seed);
     const base: ResponsesItemStateBase = {
       outputIndex,
       id,
+      ...(item.type === 'function_call' || item.type === 'custom_tool_call'
+        ? item.namespace === undefined ? {} : { namespace: item.namespace }
+        : {}),
       item: handle,
       parts: new Map(),
       reasoning: { summary: [], content: [] },
@@ -216,9 +222,13 @@ export const readOpenAIResponsesEvents = async function* (
     if (item.type !== state.type) throw new TypeError(`Responses output item type changed from ${state.type} to ${item.type}`);
     const id = itemId(item);
     if (id !== state.id) throw new TypeError(`Responses output item id changed from ${state.id} to ${String(id)}`);
+    // The group is part of what names the call, so it may not move between
+    // snapshots any more than the id may.
+    const namespace = item.type === 'function_call' || item.type === 'custom_tool_call' ? item.namespace : undefined;
+    if (namespace !== state.namespace) throw new TypeError(`Responses output item namespace changed from ${String(state.namespace)} to ${String(namespace)}`);
   };
 
-  const ensureToolText = (state: ResponsesItemState): ResponsesTextTarget => {
+  const ensureToolText = (state: ResponsesItemState): ResponsesTextPosition => {
     if (state.item === undefined || (state.type !== 'function_call' && state.type !== 'custom_tool_call')) throw new TypeError('Responses tool text requires a tool item');
     if (state.toolText !== undefined) return state.toolText;
     const fieldState = createReadFieldState('text');
@@ -235,11 +245,11 @@ export const readOpenAIResponsesEvents = async function* (
     return state.toolText;
   };
 
-  const appendTextAtom = (target: ResponsesTextTarget, text: string): void => {
+  const appendTextAtom = (target: ResponsesTextPosition, text: string): void => {
     if (target.fieldState === undefined) target.handle.append(target.path, text);
     else target.handle.append(target.path, text, [appendReadField(options.roundTrip.builder, target.fieldState, text)]);
   };
-  const reconcileAppend = (target: ResponsesTextTarget, snapshot: unknown): string => {
+  const reconcileAppend = (target: ResponsesTextPosition, snapshot: unknown): string => {
     const { handle, path } = target;
     const absolutePath = handle.absolutePath(path);
     if (typeof snapshot !== 'string') throw new TypeError(`Responses text snapshot must be a string at ${JSON.stringify(absolutePath)}`);
@@ -275,7 +285,7 @@ export const readOpenAIResponsesEvents = async function* (
     return snapshot;
   };
 
-  const reconcileAssign = ({ handle, path }: WriteTarget, snapshot: unknown): void => {
+  const reconcileAssign = ({ handle, path }: WritePosition, snapshot: unknown): void => {
     if (snapshot === undefined) return;
     const current = handle.current(path);
     if (current === undefined) handle.assign(path, snapshot);
@@ -284,9 +294,9 @@ export const readOpenAIResponsesEvents = async function* (
     }
   };
 
-  const ensureReasoningText = (state: ResponsesItemState, field: 'summary' | 'content', index: number): ResponsesTextTarget => {
+  const ensureReasoningText = (state: ResponsesItemState, field: 'summary' | 'content', index: number): ResponsesTextPosition => {
     if (state.type !== 'reasoning') throw new TypeError('Responses reasoning text requires a reasoning item');
-    state.item ??= ir.item(0, { type: 'reasoning' });
+    state.item ??= builder.item(0, { type: 'reasoning' });
     state.item.ensure(field, []);
     const targets = state.reasoning[field];
     const length = targets.length;
@@ -363,7 +373,7 @@ export const readOpenAIResponsesEvents = async function* (
   const ensureLogprobGroup = (state: ResponsesItemState, contentIndex: number, part: IRPartHandle): { readonly index: number; length: number } => {
     let group = state.logprobs.get(contentIndex);
     if (group !== undefined) return group;
-    const choice = ir.choice(0);
+    const choice = builder.choice(0);
     choice.ensure('logprobs', []);
     if (state.item === undefined) throw new TypeError('Responses content part requires a message item');
     group = { index: nextLogprobGroup++, length: 0 };
@@ -385,7 +395,7 @@ export const readOpenAIResponsesEvents = async function* (
   ): void => {
     if (tokens === undefined || tokens.length === 0) return;
     const group = ensureLogprobGroup(state, contentIndex, part.handle);
-    const choice = ir.choice(0);
+    const choice = builder.choice(0);
     for (const token of tokens) choice.assign(['logprobs', group.index, 'tokens', group.length++], token);
   };
 
@@ -397,7 +407,7 @@ export const readOpenAIResponsesEvents = async function* (
   ): void => {
     if (tokens === undefined || tokens.length === 0) return;
     const group = ensureLogprobGroup(state, contentIndex, part.handle);
-    const choice = ir.choice(0);
+    const choice = builder.choice(0);
     tokens.forEach((token, index) => reconcileAssign({ handle: choice, path: ['logprobs', group.index, 'tokens', index] }, token));
     group.length = Math.max(group.length, tokens.length);
   };
@@ -544,14 +554,14 @@ export const readOpenAIResponsesEvents = async function* (
     if (frame.type === 'done') throw new Error('Responses done arrived without a terminal response');
     const e = frame.event;
     if (e.type === 'error') {
-      ir.event({ type: 'error', error: errorPayloadFromEvent(e) });
-      yield* ir.drain();
+      builder.event({ type: 'error', error: errorPayloadFromEvent(e) });
+      yield* builder.drain();
       return;
     }
     if (e.type === 'response.failed' && e.response.error?.code !== 'bio_policy' && e.response.error?.code !== 'cyber_policy') {
       // `error` is nullable on a Response, so a failure may carry no description.
-      ir.event({ type: 'error', error: errorPayloadFromWire(e.response.error ?? { message: 'Response failed due to unknown error.' }) });
-      yield* ir.drain();
+      builder.event({ type: 'error', error: errorPayloadFromWire(e.response.error ?? { message: 'Response failed due to unknown error.' }) });
+      yield* builder.drain();
       return;
     }
     if (!started && !('response' in e)) throw new Error('Responses event arrived before the initial response envelope');
@@ -561,8 +571,8 @@ export const readOpenAIResponsesEvents = async function* (
       responseMetadata(response);
       if (!started) {
         if (responseIdentity === undefined) throw new Error('Responses metadata did not establish response identity');
-        ir.choice(0);
-        ir.event({ type: 'start', id: responseIdentity.id, ...(response.created_at === undefined ? {} : { created: response.created_at }) });
+        builder.choice(0);
+        builder.event({ type: 'start', id: responseIdentity.id, ...(response.created_at === undefined ? {} : { created: response.created_at }) });
         started = true;
       }
       if (['response.completed', 'response.incomplete', 'response.failed'].includes(e.type)) {
@@ -600,7 +610,7 @@ export const readOpenAIResponsesEvents = async function* (
           audioItem.end();
         }
         const policy = response.error?.code === 'cyber_policy' ? 'cyber' : response.error?.code === 'bio_policy' ? 'bio' : undefined;
-        if (policy !== undefined) ir.choice(0).assign('refusal_details', { category: policy, explanation: response.error?.message });
+        if (policy !== undefined) builder.choice(0).assign('refusal_details', { category: policy, explanation: response.error?.message });
         outputState.length = terminalOutput.length;
         const input = toOpenAIResponsesInputAssistantTurn<ReadFieldStates>(terminalOutput, outputState);
         options.roundTrip.onAssistantTurn(0, input.turn, input.state);
@@ -608,8 +618,8 @@ export const readOpenAIResponsesEvents = async function* (
         const finishReason = policy !== undefined ? 'content_filter'
           : e.type === 'response.incomplete' ? incompleteReason
             : hasTools ? 'tool_calls' : 'stop';
-        ir.choice(0).end(finishReason);
-        ir.event({ type: 'finish', status: e.type === 'response.incomplete' ? 'incomplete' : 'completed' });
+        builder.choice(0).end(finishReason);
+        builder.event({ type: 'finish', status: e.type === 'response.incomplete' ? 'incomplete' : 'completed' });
         finished = true;
       }
     } else if (e.type === 'response.output_item.added') {
@@ -622,7 +632,7 @@ export const readOpenAIResponsesEvents = async function* (
     } else if (e.type === 'response.audio.delta' || e.type === 'response.audio.transcript.delta') {
       const field = e.type === 'response.audio.delta' ? 'data' : 'transcript';
       if (audioItem === undefined) {
-        audioItem = ir.item(0, { type: 'message', content: [] });
+        audioItem = builder.item(0, { type: 'message', content: [] });
         audioPart = audioItem.part({ type: 'audio', audio: {} });
       }
       const part = audioPart;
@@ -687,7 +697,7 @@ export const readOpenAIResponsesEvents = async function* (
         }
       }
     }
-    yield* ir.drain();
+    yield* builder.drain();
     if (finished) return;
   }
   throw new Error('Responses stream ended without a terminal response');

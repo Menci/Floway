@@ -2,6 +2,9 @@ import { rawJSON } from './raw-json.ts';
 import type { IRJSONObject } from '../../ir/common/json.ts';
 import { isJsonObject, parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
+export const isJSONRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
 export const isPlainJSONObject = (value: unknown): value is IRJSONObject => isJsonObject(value) && !rawJSON.isRawJSON(value);
 
 export const requireJSONObject = (value: unknown): IRJSONObject => {

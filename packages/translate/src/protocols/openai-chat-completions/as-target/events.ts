@@ -2,13 +2,14 @@ import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOu
 import { usageToIR } from './usage.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
 import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRWriteHandle, type IRRelativePath } from '../../../ir/output/builder.ts';
-import type { IRErrorPayload } from '../../../ir/output/error.ts';
-import type { IRRecord } from '../../../ir/output/records.ts';
-import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
+import { type IRErrorPayload } from '../../../ir/output/error.ts';
+import { type IRRecord } from '../../../ir/output/records.ts';
+import { type IROutputSourceCitation } from '../../../ir/output/types.ts';
+import type { ToolNameContext } from '../../../request/tool-names.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendReadField, createReadFieldState, type ReadFieldStates, type ReadFieldState, type TextFragmentId } from '../../../round-trip/reference/reference-builder.ts';
+import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
-import { unwrapCustomToolInput } from '../../openai-responses/common/custom-tool-wrap.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   createOpenAIChatCompletionsEventAccumulator,
@@ -27,7 +28,7 @@ interface ChatToolState {
   id?: string;
   name: string;
   pendingInput: string;
-  pendingTextFragmentIds: TextFragmentId[];
+  pendingFragmentIds: TextFragmentId[];
   fieldState?: ChatToolFieldState;
   custom: boolean;
   wrapped: boolean;
@@ -119,11 +120,17 @@ interface ChatChoiceState {
 
 export const readOpenAIChatCompletionsEvents = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
-  options: { customToolNames?: ReadonlySet<string>; roundTrip: RoundTripReader<'openaiChatCompletions'> },
+  options: Partial<ToolNameContext> & {
+    roundTrip: RoundTripReader<'openaiChatCompletions'>;
+  },
 ): AsyncGenerator<IRRecord> {
-  const ir = createIRBuilder();
+  const builder = createIRBuilder();
   const choices = new Map<number, ChatChoiceState>();
   const nativeAccumulators = new Map<number, ReturnType<typeof createOpenAIChatCompletionsEventAccumulator>>();
+  const namingOf = (flatName: string): { readonly name: string; readonly namespace?: string } => {
+    const identity = options.originalToolNames?.get(flatName);
+    return identity ?? { name: flatName };
+  };
   const nativeAccumulator = (choice: number): ReturnType<typeof createOpenAIChatCompletionsEventAccumulator> => {
     let accumulator = nativeAccumulators.get(choice);
     if (accumulator === undefined) {
@@ -161,18 +168,18 @@ export const readOpenAIChatCompletionsEvents = async function* (
     text: string,
     state: ReadFieldState<'text'>,
   ): void => {
-    const partId = appendReadField(options.roundTrip.builder, state, text);
-    handle.append(field, text, [partId]);
+    const fragmentId = appendReadField(options.roundTrip.builder, state, text);
+    handle.append(field, text, [fragmentId]);
   };
   const createItem = (index: number, choice: ChatChoiceState, value: unknown): IRItemHandle => {
-    const item = ir.item(index, value);
+    const item = builder.item(index, value);
     choice.items.push(item);
     return item;
   };
 
   const start = (chunk: ChatChunk): void => {
     if (started) return;
-    ir.event({
+    builder.event({
       type: 'start',
       ...(typeof chunk.id === 'string' && chunk.id !== '' ? { id: chunk.id } : {}),
       ...(typeof chunk.created === 'number' ? { created: chunk.created } : {}),
@@ -180,7 +187,7 @@ export const readOpenAIChatCompletionsEvents = async function* (
     started = true;
   };
 
-  const startForContent = (chunk: ChatChunk): void => {
+  const startIfModelKnown = (chunk: ChatChunk): void => {
     if (started) return;
     if (!hasModel) throw new TypeError('ChatCompletions content arrived before a non-empty model');
     start(chunk);
@@ -189,7 +196,7 @@ export const readOpenAIChatCompletionsEvents = async function* (
   const assignUsage = (usage: OpenAIChatCompletionsUsageEx): void => {
     const converted = usageToIR(usage);
     if (!started && !hasModel) throw new TypeError('ChatCompletions usage arrived before a non-empty model');
-    ir.usage(converted);
+    builder.usage(converted);
   };
 
   // Append text to the message part that currently owns the text channel, keeping the
@@ -273,7 +280,7 @@ export const readOpenAIChatCompletionsEvents = async function* (
     if (tool.wrapped) {
       const input = unwrapCustomToolInput(tool.pendingInput);
       if (input !== '') tool.item.append('input', input);
-      tool.pendingTextFragmentIds = [];
+      tool.pendingFragmentIds = [];
     }
     tool.item.end(status);
   };
@@ -281,8 +288,8 @@ export const readOpenAIChatCompletionsEvents = async function* (
   const finish = (): readonly IRRecord[] => {
     if (!started) throw new Error('ChatCompletions stream ended without a response');
     for (const [index, choice] of choices) if (!choice.ended) throw new Error(`ChatCompletions choice ${index} ended without finish_reason`);
-    ir.event({ type: 'finish', status: [...choices.values()].some(choice => choice.incomplete) ? 'incomplete' : 'completed' });
-    return ir.drain();
+    builder.event({ type: 'finish', status: [...choices.values()].some(choice => choice.incomplete) ? 'incomplete' : 'completed' });
+    return builder.drain();
   };
 
   // The open part of this kind in the choice's message, created on first use.
@@ -329,7 +336,7 @@ export const readOpenAIChatCompletionsEvents = async function* (
   };
 
   const readLogprobs = (index: number, choice: ChatChoiceState, logprobs: OpenAIChatCompletionsLogprobs): void => {
-    const choiceHandle = ir.choice(index);
+    const choiceHandle = builder.choice(index);
     choiceHandle.ensure('logprobs', []);
     for (const kind of ['content', 'refusal'] as const) {
       const tokens = logprobs[kind];
@@ -371,7 +378,7 @@ export const readOpenAIChatCompletionsEvents = async function* (
       tool = {
         name: '',
         pendingInput: '',
-        pendingTextFragmentIds: [],
+        pendingFragmentIds: [],
         custom: call.type === 'custom' || call.custom !== undefined,
         wrapped: false,
         callIdAssigned: false,
@@ -387,7 +394,7 @@ export const readOpenAIChatCompletionsEvents = async function* (
     // https://github.com/openai/openai-node/blob/7423ac3e9351c46300cd094479cded5551a72eb4/src/lib/ChatCompletionStream.ts#L2104-L2106
     if (fn?.name !== undefined && fn.name !== '') tool.name = fn.name;
     const fragment = fn?.arguments ?? fn?.input;
-    let textFragmentId: TextFragmentId | undefined;
+    let fragmentReferenceId: TextFragmentId | undefined;
     if (typeof fragment === 'string' && fragment !== '') {
       let field: ReadFieldStates['text'];
       if (call.index === -1) {
@@ -406,35 +413,33 @@ export const readOpenAIChatCompletionsEvents = async function* (
         }
         (choice.fieldState.tool_calls ??= [])[call.index] = tool.fieldState;
       }
-      textFragmentId = appendReadField(options.roundTrip.builder, field, fragment);
+      fragmentReferenceId = appendReadField(options.roundTrip.builder, field, fragment);
     }
     tool.wrapped = !tool.custom && options.customToolNames?.has(tool.name) === true;
     if (tool.item === undefined && fragment !== undefined) {
       tool.pendingInput += fragment;
-      if (textFragmentId !== undefined) tool.pendingTextFragmentIds.push(textFragmentId);
+      if (fragmentReferenceId !== undefined) tool.pendingFragmentIds.push(fragmentReferenceId);
     }
 
     if (tool.item === undefined && tool.name !== '') {
-      // Waiting here delays no supported target: Messages and Responses need the name when
-      // the structure opens, while GenerateContent emits only complete calls. Planned
-      // Interactions support has the same step.start requirement:
-      // https://ai.google.dev/gemini-api/docs/streaming
-      // The official ChatCompletions SDK tolerates a late name:
+      // The name must precede any delta a client can act on, so it waits for the
+      // field that carries it. The official ChatCompletions SDK tolerates a late
+      // name:
       // https://github.com/openai/openai-node/blob/7423ac3e9351c46300cd094479cded5551a72eb4/src/lib/ChatCompletionStream.ts#L2059-L2107
       // Clients such as the Vercel AI SDK reject a first tool delta without one:
       // https://github.com/vercel/ai/blob/ba05943b69ad070558bb5bc912da99ec66d7d263/packages/provider-utils/src/streaming-tool-call-tracker.ts#L356-L395
       const custom = tool.custom || tool.wrapped;
       const callId = call.index === -1 ? IRAbsent : tool.id;
       tool.item = createItem(index, choice, custom
-        ? { type: 'custom_tool_call', ...(callId === undefined ? {} : { call_id: callId }), name: tool.name, input: '' }
-        : { type: 'function_call', ...(callId === undefined ? {} : { call_id: callId }), name: tool.name, arguments: '' });
+        ? { type: 'custom_tool_call', ...(callId === undefined ? {} : { call_id: callId }), ...namingOf(tool.name), input: '' }
+        : { type: 'function_call', ...(callId === undefined ? {} : { call_id: callId }), ...namingOf(tool.name), arguments: '' });
       tool.callIdAssigned = callId !== undefined;
       tool.emittedName = tool.name;
       if (!tool.wrapped && tool.pendingInput !== '') {
-        const textFragmentIds = tool.pendingTextFragmentIds;
+        const textFragmentIds = tool.pendingFragmentIds;
         tool.item.append(custom ? 'input' : 'arguments', tool.pendingInput, textFragmentIds.length > 0 ? textFragmentIds : undefined);
         tool.pendingInput = '';
-        tool.pendingTextFragmentIds = [];
+        tool.pendingFragmentIds = [];
       }
     } else if (tool.item !== undefined) {
       if (tool.id !== undefined && !tool.callIdAssigned) {
@@ -442,10 +447,14 @@ export const readOpenAIChatCompletionsEvents = async function* (
         tool.callIdAssigned = true;
       }
       if (tool.name !== tool.emittedName) {
-        tool.item.assign('name', tool.name);
+        // A rename has to state the same pair the opening did, or a grouped call
+        // would end up with a flat name beside the group's namespace.
+        const naming = namingOf(tool.name);
+        tool.item.assign('name', naming.name);
+        if (naming.namespace !== undefined) tool.item.assign('namespace', naming.namespace);
         tool.emittedName = tool.name;
       }
-      if (fragment !== undefined && fragment !== '' && !tool.wrapped) tool.item.append(tool.custom ? 'input' : 'arguments', fragment, textFragmentId === undefined ? undefined : [textFragmentId]);
+      if (fragment !== undefined && fragment !== '' && !tool.wrapped) tool.item.append(tool.custom ? 'input' : 'arguments', fragment, fragmentReferenceId === undefined ? undefined : [fragmentReferenceId]);
       if (fragment !== undefined && tool.wrapped) tool.pendingInput += fragment;
     }
   };
@@ -463,7 +472,7 @@ export const readOpenAIChatCompletionsEvents = async function* (
       .map(([, tool]) => tool.fieldState);
     const input = toOpenAIChatCompletionsInputAssistantTurn<ReadFieldStates>(nativeChoice.message, choice.fieldState);
     options.roundTrip.onAssistantTurn(index, input.turn, input.state);
-    ir.choice(index).end(finishReason === 'function_call'
+    builder.choice(index).end(finishReason === 'function_call'
       ? 'tool_calls'
       : finishReason as 'stop' | 'length' | 'tool_calls' | 'content_filter');
     choice.ended = true;
@@ -489,8 +498,8 @@ export const readOpenAIChatCompletionsEvents = async function* (
     choice.reasoningField ??= chatReasoningField(delta);
     if (!hasContent && entry.finish_reason == null) return;
 
-    startForContent(chunk);
-    ir.choice(index);
+    startIfModelKnown(chunk);
+    builder.choice(index);
     readReasoning(index, choice, delta);
     readMessage(index, choice, delta);
     if (entry.logprobs != null) readLogprobs(index, choice, entry.logprobs);
@@ -505,13 +514,13 @@ export const readOpenAIChatCompletionsEvents = async function* (
   for await (const frame of frames) {
     if (frame.type === 'done') { yield* finish(); return; }
     const chunk: ChatChunk = frame.event;
-    if (chunk.error !== undefined) { ir.event({ type: 'error', error: chunk.error }); yield* ir.drain(); return; }
+    if (chunk.error !== undefined) { builder.event({ type: 'error', error: chunk.error }); yield* builder.drain(); return; }
     const model = typeof chunk.model === 'string' && chunk.model !== '' ? chunk.model : undefined;
     if (model !== undefined) {
-      ir.assign(['model'], model);
+      builder.assign(['model'], model);
       hasModel = true;
     }
-    if (typeof chunk.service_tier === 'string') ir.assign(['service_tier'], chunk.service_tier);
+    if (typeof chunk.service_tier === 'string') builder.assign(['service_tier'], chunk.service_tier);
     if (chunk.usage != null) assignUsage(chunk.usage);
     if (!started && model !== undefined) start(chunk);
 
@@ -523,7 +532,7 @@ export const readOpenAIChatCompletionsEvents = async function* (
     // Copilot omits object, varies created, and begins with an empty-id prompt frame; redacted probe evidence:
     // https://github.com/Menci/Floway/pull/594#issuecomment-6129531836
     for (const entry of chunk.choices) readChoice(chunk, entry);
-    yield* ir.drain();
+    yield* builder.drain();
   }
   yield* finish();
 };

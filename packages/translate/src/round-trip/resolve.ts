@@ -10,35 +10,31 @@ export interface SidecarOccurrence<Turn> {
   readonly withoutSidecar: () => Turn;
 }
 
-export interface RoundTripAssistantTurn<Target extends keyof InputAssistantTurnByProtocol> {
-  turn: InputAssistantTurnFor<Target>;
+export interface SidecarRecognition<Turn> {
+  readonly inspect: (turn: Turn) => SidecarOccurrence<Turn>[];
+  readonly verify: (turn: Turn, digest: RoundTripTurnDigest, version: number) => Promise<boolean>;
+  readonly collectCandidates: (turn: Turn) => ReplayContent[];
 }
-
-export const warnDroppedUnrecognizedAssistantReasoning = (
-  source: keyof InputAssistantTurnByProtocol,
-  target: keyof InputAssistantTurnByProtocol,
-): void => { console.warn('Dropping reasoning from an unidentifiable foreign assistant turn', { source, target }); };
 
 export const roundTripAssistantTurn = async <Source extends keyof InputAssistantTurnByProtocol, Target extends keyof InputAssistantTurnByProtocol, SourceTurn>(
   source: Source,
   target: Target,
   turn: SourceTurn,
   codec: SidecarCodec,
-  inspect: (turn: SourceTurn) => SidecarOccurrence<SourceTurn>[],
-  verify: (turn: SourceTurn, sourceTurnDigest: RoundTripTurnDigest, version: number) => Promise<boolean>,
-  collectCandidates: (turn: SourceTurn) => ReplayContent[],
-): Promise<RoundTripAssistantTurn<Target> | undefined> => {
-  let selected: { candidate: SidecarOccurrence<SourceTurn>; sidecar: AnyRoundTripSidecar } | undefined;
-  for (const candidate of inspect(turn)) {
-    const sidecar = await decodeRoundTripSidecar(codec, source, candidate.data);
+  recognition: SidecarRecognition<SourceTurn>,
+): Promise<InputAssistantTurnFor<Target> | undefined> => {
+  const { inspect, verify, collectCandidates } = recognition;
+  let selected: { carrier: SidecarOccurrence<SourceTurn>; sidecar: AnyRoundTripSidecar } | undefined;
+  for (const carrier of inspect(turn)) {
+    const sidecar = await decodeRoundTripSidecar(codec, source, carrier.data);
     if (sidecar === undefined) continue;
     if (selected !== undefined) throw new Error('Assistant turn has multiple recognized round-trip sidecars');
-    selected = { candidate, sidecar };
+    selected = { carrier, sidecar };
   }
   if (selected === undefined || !hasRoundTripTarget(selected.sidecar, target)) return undefined;
-  const sourceTurn = selected.candidate.withoutSidecar();
+  const sourceTurn = selected.carrier.withoutSidecar();
   if (!(await verify(sourceTurn, selected.sidecar.sourceTurnDigest, selected.sidecar.v))) return undefined;
   const resolved = await restoreAssistantTurn(target, collectCandidates(sourceTurn), selected.sidecar.targetTurn, selected.sidecar.referencedContentHashes);
   if (!resolved.ok) throw new Error(`Authenticated assistant-turn sidecar restoration failed: ${resolved.reason}`);
-  return { turn: resolved.value };
+  return resolved.value;
 };

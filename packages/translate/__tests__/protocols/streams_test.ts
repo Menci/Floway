@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { writeAnthropicMessagesEvents, writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './helpers.ts';
+import { writeAnthropicMessagesEvents, writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './events.ts';
 import type { IRJSONObject } from '../../src/ir/common/json.ts';
 import { createIRBuilder } from '../../src/ir/output/builder.ts';
 import type { IROutputItem } from '../../src/ir/output/types.ts';
@@ -10,7 +10,7 @@ import { usageFromIR as responsesUsageFromIR } from '../../src/protocols/openai-
 import { usageToIR as responsesUsageToIR } from '../../src/protocols/openai-responses/as-target/usage.ts';
 import { TextCoordinateIndex } from '../../src/shared/text-coordinate-index.ts';
 import { collectIR, completeIR } from '../ir/output/helpers.ts';
-import { collect, events, iterate } from '../shared/iterables.ts';
+import { collect, events, iterate } from '../iterables.ts';
 import { reassembleAnthropicMessagesEvents, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import { reassembleGeminiGenerateContentEvents } from '@floway-dev/protocols/gemini-generate-content';
@@ -73,7 +73,7 @@ const translateChatFrames = async (nativeFrames: readonly any[]) => {
   };
 };
 
-describe('IR streaming', () => {
+describe('output IR streaming', () => {
   it.each([['ChatCompletions', chat], ['Responses', responses], ['Messages', messages]] as const)('normalizes %s without flattening source strings', async (_name, source) => {
     const value = await collectIR(source());
     expect(value.usage?.input_tokens_inclusive).toBe(11);
@@ -363,7 +363,7 @@ describe('IR streaming', () => {
     expect(result.output.map(item => item.type)).toEqual(['message', 'image_generation_call', 'message', 'reasoning']);
   });
 
-  it('marks ChatCompletions length termination incomplete and exposes IR errors', async () => {
+  it('marks ChatCompletions length termination incomplete and exposes output IR errors', async () => {
     const frames = await collect(readOpenAIChatCompletionsEvents(iterate([chatFrame([{ index: 0, delta: { content: 'text' }, finish_reason: 'length' }]), doneFrame()])));
     expect(frames.find(record => record.type === 'finish')).toMatchObject({ status: 'incomplete' });
     await expect(collectIR(iterate([{ type: 'error', error: { message: 'failure' } }]))).rejects.toThrow();
@@ -435,7 +435,7 @@ describe('IR streaming', () => {
     await expect(collect(writeOpenAIChatCompletionsEvents(iterate(frames), options))).rejects.toThrow();
   });
 
-  it('uses the same lifecycle validation when collecting IR', async () => {
+  it('uses the same lifecycle validation when collecting output IR', async () => {
     for (const records of [[{ type: 'finish', status: 'completed' }], [{ type: 'start', id: 's', model: 'm' }, { type: 'start', id: 's', model: 'm' }, { type: 'finish', status: 'completed' }]]) {
       await expect(collectIR(iterate(records as any))).rejects.toThrow();
     }
@@ -481,8 +481,8 @@ describe('IR streaming', () => {
     ['Responses', writeOpenAIResponsesEvents],
     ['Messages', writeAnthropicMessagesEvents],
     ['GenerateContent', writeGeminiGenerateContentEvents],
-  ] as const)('%s rejects IR start without a model', async (_name, adapter) => {
-    await expect(collect<unknown>(adapter(iterate([{ type: 'start', id: 'source' }] as any), options))).rejects.toThrow('requires an IR model');
+  ] as const)('%s rejects output IR start without a model', async (_name, adapter) => {
+    await expect(collect<unknown>(adapter(iterate([{ type: 'start', id: 'source' }] as any), options))).rejects.toThrow('requires an output IR model');
   });
 
 });
