@@ -134,6 +134,12 @@ export const irFromOpenAIChatCompletions = async function* (
   const builder = createIRBuilder();
   const choices = new Map<number, ChatChoiceState>();
   const nativeAccumulators = new Map<number, ReturnType<typeof createOpenAIChatCompletionsEventAccumulator>>();
+  // A name the request sent grouped comes back flat; stating the pair again is
+  // what lets the source-side writer restore it.
+  const namingOf = (flatName: string): { readonly name: string; readonly namespace?: string } => {
+    const identity = options.flatIdentities?.get(flatName);
+    return identity === undefined ? { name: flatName } : { name: identity.name, namespace: identity.namespace };
+  };
   const nativeAccumulator = (choice: number): ReturnType<typeof createOpenAIChatCompletionsEventAccumulator> => {
     let accumulator = nativeAccumulators.get(choice);
     if (accumulator === undefined) {
@@ -433,15 +439,9 @@ export const irFromOpenAIChatCompletions = async function* (
       // https://github.com/vercel/ai/blob/ba05943b69ad070558bb5bc912da99ec66d7d263/packages/provider-utils/src/streaming-tool-call-tracker.ts#L356-L395
       const custom = tool.custom || tool.wrapped;
       const callId = call.index === -1 ? IRAbsent : tool.id;
-      // A name the request sent grouped comes back flat; stating the pair again
-      // here is what lets the source-side writer restore it.
-      const identity = options.flatIdentities?.get(tool.name);
-      const naming = identity === undefined
-        ? { name: tool.name }
-        : { name: identity.name, namespace: identity.namespace };
       tool.item = createItem(index, choice, custom
-        ? { type: 'custom_tool_call', ...(callId === undefined ? {} : { call_id: callId }), ...naming, input: '' }
-        : { type: 'function_call', ...(callId === undefined ? {} : { call_id: callId }), ...naming, arguments: '' });
+        ? { type: 'custom_tool_call', ...(callId === undefined ? {} : { call_id: callId }), ...namingOf(tool.name), input: '' }
+        : { type: 'function_call', ...(callId === undefined ? {} : { call_id: callId }), ...namingOf(tool.name), arguments: '' });
       tool.callIdAssigned = callId !== undefined;
       tool.emittedName = tool.name;
       if (!tool.wrapped && tool.pendingInput !== '') {
@@ -456,7 +456,11 @@ export const irFromOpenAIChatCompletions = async function* (
         tool.callIdAssigned = true;
       }
       if (tool.name !== tool.emittedName) {
-        tool.item.assign('name', tool.name);
+        // A rename has to state the same pair the opening did, or a grouped call
+        // would end up with a flat name beside the group's namespace.
+        const naming = namingOf(tool.name);
+        tool.item.assign('name', naming.name);
+        if (naming.namespace !== undefined) tool.item.assign('namespace', naming.namespace);
         tool.emittedName = tool.name;
       }
       if (fragment !== undefined && fragment !== '' && !tool.wrapped) tool.item.append(tool.custom ? 'input' : 'arguments', fragment, fragmentReferenceId === undefined ? undefined : [fragmentReferenceId]);

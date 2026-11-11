@@ -227,3 +227,14 @@ test.each(toolCases)('invalidates native $type provenance when its done snapshot
   expect(finalized.targetTurn).toEqual(captured.turn);
   expect(finalized).not.toHaveProperty('referencedContentHashes');
 });
+
+test('rejects a snapshot that moves a tool call into another group', async () => {
+  const grouped = (namespace: string): ToolItem => ({ type: 'function_call', id: 'tool', call_id: 'call', name: 'lookup', namespace, arguments: '{}', status: 'completed' });
+
+  await expect(collectProvenance([
+    { type: 'response.created', response: response([], 'in_progress') },
+    { type: 'response.output_item.added', output_index: 0, item: grouped('files') },
+    { type: 'response.output_item.done', output_index: 0, item: grouped('web') },
+    { type: 'response.completed', response: response([], 'completed') },
+  ], 'arguments')).rejects.toThrow('namespace changed from files to web');
+});
