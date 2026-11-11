@@ -2,6 +2,7 @@ import { translateToSourceEvents } from './events.ts';
 import { buildTargetRequest } from './request.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import type { Translator } from '../../../types.ts';
+import { restateGeminiGenerateContentError } from '../as-source/error-body.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 
@@ -12,7 +13,7 @@ export const translate: Translator<
   try {
     return {
       type: 'trip',
-      error: () => undefined,
+      error: restateGeminiGenerateContentError,
       target: await buildTargetRequest(src, ctx.model, ctx.sidecarCodec, { fallbackMaxOutputTokens: ctx.fallbackMaxOutputTokens }),
       events: frames => translateToSourceEvents(frames, ctx.sidecarCodec),
     };

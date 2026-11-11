@@ -376,7 +376,6 @@ test('translateToSourceEvents translates OpenAI Responses error events to OpenAI
   if (frames[0].type !== 'event') throw new Error('expected event frame');
   assertEquals((frames[0].event as unknown as Record<string, unknown>).error, {
     message: 'upstream overloaded',
-    type: 'overloaded_error',
     code: 'overloaded_error',
   });
 });
@@ -432,7 +431,7 @@ test.each(['flat error', 'nested error', 'failed response'])('translateToSourceE
   const translated = (frames[0].event as unknown as { error: Record<string, unknown> }).error;
   expect(translated).toEqual({
     message: error.message,
-    type: path === 'flat error' ? error.code : error.type,
+    ...(path === 'flat error' ? {} : { type: error.type }),
     code: error.code,
     provider_specific_fields,
   });

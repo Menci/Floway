@@ -9,6 +9,7 @@ import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/unit-queue.
 import { appendContent, createContentState, type ContentState, type ContentStates } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
+import { errorDetailsOf } from '../../../shared/api-error.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import { parseJSONObject, parseJSONObjectAtCompletion, requireJSONObject } from '../../../shared/json/object.ts';
 import type { AnthropicMessagesAssistantState, AnthropicMessagesInputAssistantTurn } from '../as-target/assistant-turn.ts';
@@ -25,6 +26,7 @@ import {
 } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type EventFrame } from '@floway-dev/protocols/common';
 
+// https://platform.claude.com/docs/en/api/errors#http-errors
 const MESSAGES_ERROR_TYPES = [
   'invalid_request_error',
   'authentication_error',
@@ -35,9 +37,25 @@ const MESSAGES_ERROR_TYPES = [
   'overloaded_error',
 ];
 
-const irMessagesError = (error: IRErrorPayload): AnthropicMessagesErrorEventEx['error'] => isContextExceededError(error)
-  ? { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE }
-  : { type: error.type !== undefined && MESSAGES_ERROR_TYPES.includes(error.type) ? error.type : 'api_error', message: error.message };
+const messagesError = (error: IRErrorPayload, contextExceeded: boolean): AnthropicMessagesErrorEventEx['error'] => {
+  const type = contextExceeded
+    ? 'invalid_request_error'
+    : error.type !== undefined && MESSAGES_ERROR_TYPES.includes(error.type) ? error.type : 'api_error';
+  const details = errorDetailsOf(error, type === error.type ? ['message', 'type'] : ['message']);
+  const extension = details === undefined ? {} : { provider_specific_fields: details };
+  return { type, message: contextExceeded ? PROMPT_TOO_LONG_MESSAGE : error.message, ...extension };
+};
+
+export const anthropicMessagesErrorFromIR = (error: IRErrorPayload): AnthropicMessagesErrorEventEx['error'] =>
+  messagesError(error, isContextExceededError(error));
+
+export const anthropicMessagesErrorEnvelope = (error: IRErrorPayload): { readonly body: unknown; readonly status: number | undefined } => {
+  const contextExceeded = isContextExceededError(error);
+  return {
+    body: { type: 'error', error: messagesError(error, contextExceeded) },
+    status: contextExceeded ? 400 : undefined,
+  };
+};
 
 interface MessagesUnit {
   readonly path: IRPath;
@@ -220,7 +238,7 @@ export const anthropicMessagesFromIR = async function* (
 
   for await (const { record, collector } of consumeIRRecords(records)) {
     const { state } = collector;
-    if (record.type === 'error') { yield emit({ type: 'error', error: irMessagesError(record.error) }); return; }
+    if (record.type === 'error') { yield emit({ type: 'error', error: anthropicMessagesErrorFromIR(record.error) }); return; }
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;
     if (record.type === 'start') {
       if (state.model === undefined) throw new TypeError('Messages output requires an IR model before start');

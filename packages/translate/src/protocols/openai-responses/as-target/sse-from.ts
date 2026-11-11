@@ -11,6 +11,7 @@ import {
 import type { IRSourceCitation } from '../../../ir/types.ts';
 import { appendField, createFieldState, invalidateField, type FieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
+import { errorPayloadFromWire } from '../../../shared/api-error.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
@@ -548,10 +549,15 @@ export const irFromOpenAIResponses = async function* (
   for await (const frame of frames) {
     if (frame.type === 'done') throw new Error('Responses done arrived without a terminal response');
     const e = frame.event;
-    if (e.type === 'error') { ir.event({ type: 'error', error: 'error' in e ? e.error ?? e : e }); yield* ir.drain(); return; }
+    if (e.type === 'error') {
+      const { sequence_number: _sequenceNumber, type: _type, ...failure } = e;
+      ir.event({ type: 'error', error: errorPayloadFromWire('error' in e ? e.error ?? e : failure) });
+      yield* ir.drain();
+      return;
+    }
     if (e.type === 'response.failed' && e.response.error?.code !== 'bio_policy' && e.response.error?.code !== 'cyber_policy') {
       // `error` is nullable on a Response, so a failure may carry no description.
-      ir.event({ type: 'error', error: e.response.error ?? { message: 'Response failed due to unknown error.' } });
+      ir.event({ type: 'error', error: errorPayloadFromWire(e.response.error ?? { message: 'Response failed due to unknown error.' }) });
       yield* ir.drain();
       return;
     }
