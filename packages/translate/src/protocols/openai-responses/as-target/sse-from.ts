@@ -11,7 +11,7 @@ import {
 import type { IRSourceCitation } from '../../../ir/types.ts';
 import { appendField, createFieldState, invalidateField, type FieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
-import { errorPayloadFromWire } from '../../../shared/api-error.ts';
+import { errorPayloadFromEvent, errorPayloadFromWire } from '../../../shared/api-error.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
@@ -550,8 +550,7 @@ export const irFromOpenAIResponses = async function* (
     if (frame.type === 'done') throw new Error('Responses done arrived without a terminal response');
     const e = frame.event;
     if (e.type === 'error') {
-      const { sequence_number: _sequenceNumber, type: _type, ...failure } = e;
-      ir.event({ type: 'error', error: errorPayloadFromWire('error' in e ? e.error ?? e : failure) });
+      ir.event({ type: 'error', error: errorPayloadFromEvent(e) });
       yield* ir.drain();
       return;
     }

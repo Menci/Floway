@@ -141,6 +141,38 @@ test('Responses flat errors remove transport discriminants before restatement', 
   expect(frames).toEqual([eventFrame({ error: { message: 'failed', code: null, param: null } })]);
 });
 
+test('Responses nested error envelopes preserve request_id in both phases', async () => {
+  const trip = await requireTrip(routeOpenAIChatCompletionsViaOpenAIResponses(chat, options()));
+  const envelope = {
+    type: 'error' as const, sequence_number: 17, request_id: 'req_1', error: { message: 'failed', code: null },
+  };
+  const expected = { error: { message: 'failed', code: null, provider_specific_fields: { request_id: 'req_1' } } };
+  const http = trip.error(502, new Headers(), new TextEncoder().encode(JSON.stringify(envelope)));
+  expect(http?.body).toEqual(expected);
+  expect(await collect(trip.events(iterate([eventFrame(envelope)])))).toEqual([eventFrame(expected)]);
+});
+
+test('Responses nested error envelopes preserve outer metadata in both phases', async () => {
+  const trip = await requireTrip(routeOpenAIChatCompletionsViaOpenAIResponses(chat, options()));
+  const error = {
+    message: 'failed', type: 'upstream_type', code: null, param: null,
+    request_id: 'inner_loose', provider_specific_fields: { request_id: 'inner_bag', retry_after: 7 },
+  };
+  const envelope = {
+    type: 'error' as const, sequence_number: 17, error,
+    request_id: 'outer', trace: { region: 'us' }, provider_specific_fields: { outer_detail: true },
+  };
+  const expected = {
+    error: {
+      message: 'failed', type: 'upstream_type', code: null, param: null,
+      provider_specific_fields: { request_id: 'inner_bag', retry_after: 7, trace: { region: 'us' }, outer_detail: true },
+    },
+  };
+  const http = trip.error(502, new Headers(), new TextEncoder().encode(JSON.stringify(envelope)));
+  expect(http?.body).toEqual(expected);
+  expect(await collect(trip.events(iterate([eventFrame(envelope)])))).toEqual([eventFrame(expected)]);
+});
+
 test('native target errors retain canonical object identity', async () => {
   const chatRecords = await collect(irFromOpenAIChatCompletions(iterate([eventFrame(chatEvent(failure))]), {
     roundTrip: createRoundTripReaderCapture<'openaiChatCompletions'>().roundTrip,

@@ -74,6 +74,9 @@ test('canonical wire errors retain object identity', () => {
   const error = { message: 'failed', type: 'upstream_type', code: 'upstream_code', param: null, request_id: 'req_1' };
   expect(errorPayloadFromWire(error)).toBe(error);
   expect(errorPayloadFromWire({ error })).toBe(error);
+  expect(errorPayloadFromWire({ type: 'error', sequence_number: 1, error })).toBe(error);
+  const nativeCategory = { ...error, type: 'error' };
+  expect(errorPayloadFromWire(nativeCategory)).toBe(nativeCategory);
 });
 
 test('envelope transport fields stay outside the error metadata', () => {

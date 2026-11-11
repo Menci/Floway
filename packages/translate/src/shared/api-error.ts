@@ -24,18 +24,9 @@ export const irErrorPayloadFromBody = (body: Uint8Array): IRErrorPayload | undef
   }
   const envelopeRecord = recordOf(parsed);
   if (envelopeRecord === undefined) return undefined;
-  const nested = recordOf(envelopeRecord.error);
-  if (nested === undefined) {
-    const { type: _type, sequence_number: _sequenceNumber, ...failure } = envelopeRecord;
-    return errorPayloadOf(envelopeRecord.type === 'error' ? failure : envelopeRecord);
-  }
-  const payload = errorPayloadOf(nested);
-  if (payload === undefined) return undefined;
-  const envelope = extensionOf(envelopeRecord, new Set(['error', ...(envelopeRecord.type === 'error' ? ['type', 'sequence_number'] : [])]));
-  return envelope === undefined ? payload : {
-    ...payload,
-    provider_specific_fields: { ...envelope, ...payload.provider_specific_fields },
-  };
+  const { source, details } = errorEnvelopeOf(envelopeRecord.type === 'error' ? errorEventPayloadOf(envelopeRecord) : envelopeRecord);
+  const payload = errorPayloadOf(source);
+  return payload === undefined ? undefined : withEnvelopeDetails(payload, details);
 };
 
 export const errorPayloadOf = (error: Readonly<Record<string, unknown>>): IRErrorPayload | undefined => {
@@ -60,19 +51,42 @@ export const errorPayloadOf = (error: Readonly<Record<string, unknown>>): IRErro
   };
 };
 
-// Canonical wire payloads retain identity for native errors carried through the IR.
+const errorEnvelopeOf = (envelope: Readonly<Record<string, unknown>>) => {
+  const nested = recordOf(envelope.error);
+  const transportFields = envelope.type === 'error' ? ['type', 'sequence_number'] : [];
+  if (nested !== undefined) return {
+    source: nested,
+    details: extensionOf(envelope, new Set(['error', ...transportFields])),
+  };
+  return { source: envelope, details: undefined };
+};
+
+// Error-level extension fields take precedence over envelope metadata in their shared container.
+const withEnvelopeDetails = (payload: IRErrorPayload, details: Readonly<Record<string, unknown>> | undefined): IRErrorPayload =>
+  details === undefined ? payload : {
+    ...payload,
+    provider_specific_fields: { ...details, ...errorDetailsOf(payload, ['message', 'type', 'code', 'param']) },
+  };
+
+const errorEventPayloadOf = (event: Readonly<Record<string, unknown>>) => {
+  const { type: _type, sequence_number: _sequenceNumber, ...payload } = event;
+  return payload;
+};
+
+export const errorPayloadFromEvent = (event: Readonly<Record<string, unknown>>): IRErrorPayload =>
+  errorPayloadFromWire(errorEventPayloadOf(event));
+
+// Canonical wire payloads retain identity when their envelope adds no metadata.
 export const errorPayloadFromWire = (wire: unknown): IRErrorPayload => {
-  const stated = recordOf(wire) ?? {};
-  const nested = recordOf(stated.error);
-  const source = nested ?? stated;
-  if (hasErrorMessage(source)) return source;
+  const { source, details } = errorEnvelopeOf(recordOf(wire) ?? {});
+  if (hasErrorMessage(source)) return withEnvelopeDetails(source, details);
   const aliasMessage = stringOf(source.msg);
   if (aliasMessage !== undefined) {
     const { msg: _msg, ...fields } = source;
-    return { ...fields, message: aliasMessage };
+    return withEnvelopeDetails({ ...fields, message: aliasMessage }, details);
   }
   const extra = extensionOf(source, NAMED_ERROR_FIELDS);
-  return { message: '', ...(extra === undefined ? {} : { provider_specific_fields: extra }) };
+  return withEnvelopeDetails({ message: '', ...(extra === undefined ? {} : { provider_specific_fields: extra }) }, details);
 };
 
 const hasErrorMessage = (value: Readonly<Record<string, unknown>>): value is Readonly<Record<string, unknown>> & { readonly message: string } =>
