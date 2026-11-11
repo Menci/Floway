@@ -19,12 +19,11 @@
 // from the stream IR; the Fit boundary is identical.
 //
 // How a request is generated, as opposed to what its conversation says. These
-// are the request-wide settings every protocol names, normalized once so a
-// writer can respell them for its own target.
+// are the request-wide quantities translated pairs can carry, normalized once
+// so a writer can respell them for its own target.
 //
-// Every field names one request-wide concept, never a protocol's spelling of
-// it: a reader normalizes what its wire stated and a writer spells it again for
-// its own target. A knob a target cannot express is dropped there.
+// Readers preserve independently stated request quantities; each target chooses
+// how to express them. A knob a target cannot express is dropped there.
 export interface IRInputSettings {
   // The source's model id. A route that resolves a target model folds it into
   // the source payload before the trip, so this field always states the model
@@ -38,16 +37,12 @@ export interface IRInputSettings {
   readonly top_k?: number; // Messages, GenerateContent
   readonly stop?: readonly string[]; // ChatCompletions, Messages, GenerateContent
   readonly seed?: number; // ChatCompletions, GenerateContent
-  // One ceiling. Chat Completions states it as `max_tokens` or
-  // `max_completion_tokens`, and only the latter counts hidden reasoning
-  // tokens; Responses states it as `max_output_tokens`, Messages and
-  // GenerateContent as their single spelling.
-  //
-  // Collapsing to one value here is what lets a writer emit a single field:
-  // upstreams reject a request that carries two. A source that states both
-  // Chat names resolves that itself, because which one wins is that wire's
-  // rule, not this IR's.
-  readonly max_output_tokens?: number; // All
+  // Keep the legacy visible-output ceiling separate from the completion
+  // ceiling that includes reasoning. A writer chooses the bound its wire can
+  // state; reading a request must not choose between source-stated quantities.
+  readonly max_tokens?: number | null; // ChatCompletions
+  readonly max_completion_tokens?: number | null; // ChatCompletions
+  readonly max_output_tokens?: number | null; // Responses, Messages, GenerateContent
   readonly output_format?: IRInputOutputFormat; // ChatCompletions, Responses, Messages, GenerateContent
   // Key/value tags a caller attaches for its own bookkeeping. The IR holds
   // string pairs; a wire that admits other value types converts at its reader
@@ -60,9 +55,8 @@ export interface IRInputSettings {
   readonly service_tier?: string; // ChatCompletions, Responses, Messages
   // Whether the model may issue several calls in one turn.
   readonly parallel_tool_calls?: boolean; // ChatCompletions, Responses, Messages
-  // The reasoning effort, an open string on every wire that has one. Messages
-  // splits the axis across `output_config.effort` and `thinking`, so its reader
-  // and writer each derive one from the other.
+  // The reasoning effort is independent of its numeric budget. A target with
+  // only effort levels can approximate a budget when no level was supplied.
   readonly reasoning_effort?: string; // ChatCompletions, Responses, Messages
   // How many tokens the model may spend on internal reasoning. This is a
   // separate quantity from the effort level: Messages states both, and a source
@@ -83,14 +77,29 @@ export interface IRInputSettings {
   // explicit `null`, which is distinct from omitting the field: `null` states
   // that no key applies, while an absent field defers to the target.
   readonly prompt_cache_key?: string | null; // ChatCompletions, Responses
+  // Maximum cache retention and minimum breakpoint lifetime are independent.
+  // https://github.com/openai/openai-node/blob/7423ac3e9351c46300cd094479cded5551a72eb4/src/resources/chat/completions/completions.ts
+  readonly prompt_cache_retention?: string | null; // ChatCompletions, Responses
+  readonly prompt_cache_options?: IRInputPromptCacheOptions | null; // ChatCompletions, Responses
   // An opaque caller identity the upstream uses for abuse review. Nullable for
   // the same reason as `prompt_cache_key`.
   readonly safety_identifier?: string | null; // ChatCompletions, Responses
+  // The caller's legacy identity remains independent of the dedicated cache
+  // and safety identities; its uses span both concerns.
+  readonly user?: string | null; // ChatCompletions, Responses
+  // Whether token probabilities are requested and how many alternatives to
+  // return at each position. The target decides how to request their inclusion.
+  readonly logprobs?: boolean | null; // ChatCompletions, Responses
+  readonly top_logprobs?: number | null; // ChatCompletions, Responses
   // How many independent completions the caller asks for.
   readonly choice_count?: number; // ChatCompletions, GenerateContent
-  // Repetition penalties. Chat and GenerateContent state the same pair.
-  readonly presence_penalty?: number; // ChatCompletions, GenerateContent
-  readonly frequency_penalty?: number; // ChatCompletions, GenerateContent
+  readonly presence_penalty?: number | null; // ChatCompletions, Responses, GenerateContent
+  readonly frequency_penalty?: number | null; // ChatCompletions, Responses, GenerateContent
+}
+
+export interface IRInputPromptCacheOptions {
+  readonly mode?: string;
+  readonly ttl?: string;
 }
 
 // Structured output. `strict` is three-state: absent means the source did not

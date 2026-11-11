@@ -1,5 +1,4 @@
 import { requireStreaming } from '../../../ir/input/streaming.ts';
-import { irInputToolChoiceForTools } from '../../../ir/input/tool-choice.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputMedia, IRInputTextPart, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
 import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds } from '../../../request/call-ids.ts';
 import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
@@ -195,6 +194,13 @@ const toolChoiceFromIR = (choice: IRInputToolChoice, tools: readonly IRInputTool
   return { type: 'tool', name: choice.name };
 };
 
+const toolChoiceForTools = (choice: IRInputToolChoice | undefined, tools: readonly IRInputTool[] | undefined): IRInputToolChoice | undefined => {
+  if (tools !== undefined && tools.length > 0) return choice;
+  if (choice === 'none' || choice === 'auto') return choice;
+  if (typeof choice === 'object' && choice.type === 'allowed_tools' && choice.mode === 'auto') return 'none';
+  return undefined;
+};
+
 /**
  * One segment's messages and the system blocks a leading prompt run lifts.
  *
@@ -278,7 +284,7 @@ export const anthropicMessagesHeaderFromIR = (
   options: Pick<TranslateOptions, 'fallbackMaxOutputTokens'> = {},
 ): Omit<AnthropicMessagesPayload, 'messages' | 'system'> => {
   const tools = request.tools;
-  const choice = irInputToolChoiceForTools(request.tool_choice, tools);
+  const choice = toolChoiceForTools(request.tool_choice, tools);
   const selected = choice === undefined ? undefined : toolChoiceFromIR(choice, tools ?? []);
   const parallel = request.settings.parallel_tool_calls;
   const toolChoice = parallel === undefined || selected?.type === 'none'
@@ -287,7 +293,8 @@ export const anthropicMessagesHeaderFromIR = (
   return {
     ...anthropicMessagesSettingsFromIR(request.settings),
     model: request.settings.model,
-    max_tokens: request.settings.max_output_tokens ?? options.fallbackMaxOutputTokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
+    max_tokens: request.settings.max_completion_tokens ?? request.settings.max_output_tokens ?? request.settings.max_tokens
+      ?? options.fallbackMaxOutputTokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
     // A trip guarantees a streaming request; a request that says otherwise
     // cannot be carried by this side at all.
     stream: requireStreaming(request.settings),
@@ -303,7 +310,7 @@ export const anthropicMessagesHeaderFromIR = (
  * still lands here as `max_tokens`.
  */
 export const anthropicMessagesSettingsFromIR = (settings: IRInputSettings): Omit<Partial<AnthropicMessagesPayload>, 'model'> => {
-  const ceiling = settings.max_output_tokens;
+  const ceiling = settings.max_completion_tokens ?? settings.max_output_tokens ?? settings.max_tokens;
   const format = settings.output_format;
   const formatConfig = format?.type === 'json_schema' && format.schema !== undefined
     ? { format: { type: 'json_schema' as const, schema: format.schema } }
@@ -331,7 +338,7 @@ export const anthropicMessagesSettingsFromIR = (settings: IRInputSettings): Omit
     : { ...(effort === undefined ? {} : { effort }), ...(formatConfig ?? {}) };
 
   return {
-    ...(ceiling === undefined ? {} : { max_tokens: ceiling }),
+    ...(ceiling == null ? {} : { max_tokens: ceiling }),
     ...(settings.temperature === undefined ? {} : { temperature: settings.temperature }),
     ...(settings.top_p === undefined ? {} : { top_p: settings.top_p }),
     ...(settings.top_k === undefined ? {} : { top_k: settings.top_k }),

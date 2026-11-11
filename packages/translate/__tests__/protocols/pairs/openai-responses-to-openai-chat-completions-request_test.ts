@@ -305,7 +305,7 @@ test('buildTargetPayload keeps function tool_choice', async () => {
   });
 });
 
-test.each(['auto', 'none'] as const)('buildTargetPayload keeps supported string tool choice %s', async toolChoice => {
+test.each(['auto', 'none'] as const)('buildTargetPayload omits orphan string tool choice %s', async toolChoice => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'Hi' }],
@@ -322,7 +322,7 @@ test.each(['auto', 'none'] as const)('buildTargetPayload keeps supported string 
     text: null,
   });
 
-  assertEquals(result.target.tool_choice, toolChoice);
+  assertEquals(result.target.tool_choice, undefined);
 });
 
 test('buildTargetPayload omits a required tool choice that has no declaration to demand', async () => {

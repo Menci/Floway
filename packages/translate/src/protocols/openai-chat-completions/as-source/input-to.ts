@@ -209,15 +209,6 @@ const clientItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, 
   }
 };
 
-/**
- * Chat Completions states one ceiling under two names. `max_tokens` predates
- * reasoning models; `max_completion_tokens` is its replacement and counts hidden
- * reasoning tokens as well. A request that states both is read from
- * `max_completion_tokens`, the newer of the two.
- *
- * https://help.openai.com/en/articles/5072518-controlling-the-length-of-openai-model-responses
- * https://community.openai.com/t/why-was-max-tokens-changed-to-max-completion-tokens/938077
- */
 // A Chat declaration states a function with a nested definition, a freeform
 // custom tool, or a hosted tool this IR does not carry (an interceptor rewrites
 // those before translation). Only the two callable arms are representable.
@@ -278,8 +269,6 @@ export const continuousUsageOf = (payload: OpenAIChatCompletionsPayloadEx): bool
   payload.stream_options?.include_usage === true && payload.stream_options?.continuous_usage_stats === true;
 
 const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload): IRInputSettings => {
-  const ceiling = payload.max_completion_tokens ?? payload.max_tokens;
-
   const format = payload.response_format;
   const outputFormat: IRInputOutputFormat | undefined = format === undefined ? undefined
     : format.type === 'json_schema'
@@ -301,7 +290,8 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
     ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
     ...(payload.stop == null ? {} : { stop: typeof payload.stop === 'string' ? [payload.stop] : [...payload.stop] }),
     ...(payload.seed == null ? {} : { seed: payload.seed }),
-    ...(ceiling == null ? {} : { max_output_tokens: ceiling }),
+    ...(payload.max_tokens === undefined ? {} : { max_tokens: payload.max_tokens }),
+    ...(payload.max_completion_tokens === undefined ? {} : { max_completion_tokens: payload.max_completion_tokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
     ...(payload.metadata == null ? {} : { metadata: payload.metadata }),
     ...(payload.store == null ? {} : { store: payload.store }),
@@ -309,11 +299,16 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
     ...(payload.parallel_tool_calls == null ? {} : { parallel_tool_calls: payload.parallel_tool_calls }),
     ...(payload.reasoning_effort == null ? {} : { reasoning_effort: payload.reasoning_effort }),
     ...(payload.prompt_cache_key === undefined ? {} : { prompt_cache_key: payload.prompt_cache_key }),
+    ...(payload.prompt_cache_retention === undefined ? {} : { prompt_cache_retention: payload.prompt_cache_retention }),
+    ...(payload.prompt_cache_options === undefined ? {} : { prompt_cache_options: klona(payload.prompt_cache_options) }),
     ...(payload.safety_identifier === undefined ? {} : { safety_identifier: payload.safety_identifier }),
+    ...(payload.user === undefined ? {} : { user: payload.user }),
+    ...(payload.logprobs === undefined ? {} : { logprobs: payload.logprobs }),
+    ...(payload.top_logprobs === undefined ? {} : { top_logprobs: payload.top_logprobs }),
     ...(payload.verbosity == null ? {} : { verbosity: payload.verbosity }),
     ...(payload.n == null ? {} : { choice_count: payload.n }),
-    ...(payload.presence_penalty == null ? {} : { presence_penalty: payload.presence_penalty }),
-    ...(payload.frequency_penalty == null ? {} : { frequency_penalty: payload.frequency_penalty }),
+    ...(payload.presence_penalty === undefined ? {} : { presence_penalty: payload.presence_penalty }),
+    ...(payload.frequency_penalty === undefined ? {} : { frequency_penalty: payload.frequency_penalty }),
     // `include_usage` alone asks for the final report; the vLLM/SGLang extension
     // asks for one on every chunk. Both are the client's own rendering choice,
     // so the field states what it asked for and a target never receives it.

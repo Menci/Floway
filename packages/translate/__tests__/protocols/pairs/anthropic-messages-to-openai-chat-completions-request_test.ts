@@ -45,8 +45,8 @@ test('buildTargetPayload forwards empty output_config.effort verbatim', async ()
   assertEquals(result.reasoning_effort, '');
 });
 
-test('buildTargetPayload maps thinking.enabled to reasoning_effort medium regardless of budget_tokens', async () => {
-  for (const budget of [1024, 16384]) {
+test('buildTargetPayload projects thinking.enabled budgets onto reasoning effort', async () => {
+  for (const [budget, effort] of [[1024, 'low'], [16384, 'high']] as const) {
     const result = await buildWithTestSidecar({
       model: 'gpt-test',
       max_tokens: 4096,
@@ -54,7 +54,7 @@ test('buildTargetPayload maps thinking.enabled to reasoning_effort medium regard
       messages: [{ role: 'user', content: 'hi' }],
     });
 
-    assertEquals(result.reasoning_effort, 'medium');
+    assertEquals(result.reasoning_effort, effort);
   }
 });
 

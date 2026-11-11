@@ -261,8 +261,8 @@ test('buildTargetPayload preserves output_config.effort max at the translation b
   assertEquals(result.reasoning, { effort: 'max' });
 });
 
-test('buildTargetPayload maps thinking.enabled to reasoning.effort medium regardless of budget_tokens', async () => {
-  for (const budget of [1024, 16384]) {
+test('buildTargetPayload projects thinking.enabled budgets onto reasoning.effort', async () => {
+  for (const [budget, effort] of [[1024, 'low'], [16384, 'high']] as const) {
     const result = await buildWithTestSidecar({
       model: 'gpt-test',
       max_tokens: 4096,
@@ -270,7 +270,7 @@ test('buildTargetPayload maps thinking.enabled to reasoning.effort medium regard
       messages: [{ role: 'user', content: 'hi' }],
     });
 
-    assertEquals(result.reasoning, { effort: 'medium' });
+    assertEquals(result.reasoning, { effort });
   }
 });
 
@@ -599,7 +599,7 @@ test('buildTargetPayload rejects an unknown message role', async () => {
   );
 });
 
-test('buildTargetPayload collapses Anthropic thinking mode onto reasoning.effort only', async () => {
+test('buildTargetPayload projects an Anthropic thinking budget onto reasoning.effort', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -607,8 +607,6 @@ test('buildTargetPayload collapses Anthropic thinking mode onto reasoning.effort
     thinking: { type: 'enabled', budget_tokens: 4096 },
   });
 
-  // `thinking.type === 'enabled'` resolves to the OpenAI-canonical `medium`
-  // effort; the `budget_tokens` scalar has no OpenAI Responses slot and drops.
   assertEquals(result.reasoning, { effort: 'medium' });
 });
 

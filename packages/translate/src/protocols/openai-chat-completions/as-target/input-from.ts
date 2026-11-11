@@ -1,5 +1,4 @@
 import { requireStreaming } from '../../../ir/input/streaming.ts';
-import { irInputToolChoiceForTools } from '../../../ir/input/tool-choice.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
 import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../request/call-ids.ts';
 import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
@@ -248,7 +247,7 @@ const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<OpenAIChatComp
  */
 export const openaiChatCompletionsHeaderFromIR = (request: IRInputRequestHeader): Omit<OpenAIChatCompletionsPayload, 'messages'> => {
   const tools = request.tools;
-  const choice = irInputToolChoiceForTools(request.tool_choice, tools);
+  const choice = tools === undefined || tools.length === 0 ? undefined : request.tool_choice;
   return {
     ...openaiChatCompletionsSettingsFromIR(request.settings),
     model: request.settings.model,
@@ -267,21 +266,13 @@ export const openaiChatCompletionsHeaderFromIR = (request: IRInputRequestHeader)
   };
 };
 
-/**
- * The effort this wire states for the IR's reasoning settings.
- *
- * This wire accepts effort names only, so a token budget has to be reported at
- * the nearest tier it can express, and a stated budget is the more specific of
- * the two quantities. An empty effort names no tier at all — it is an open
- * string the caller sent, and it only stands when no budget governs the answer.
- */
+/** A numeric budget approximates effort only when the caller supplied no level. */
 const chatReasoningEffort = (settings: IRInputSettings): string | undefined =>
-  settings.reasoning_budget !== undefined
-    ? reasoningEffortForBudget(settings.reasoning_budget)
-    : settings.reasoning_effort;
+  settings.reasoning_effort ?? (settings.reasoning_budget === undefined ? undefined : reasoningEffortForBudget(settings.reasoning_budget));
 
 export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): Partial<OpenAIChatCompletionsPayload> => {
-  const ceiling = settings.max_output_tokens;
+  const ceiling = settings.max_completion_tokens !== undefined ? settings.max_completion_tokens
+    : settings.max_output_tokens !== undefined ? settings.max_output_tokens : settings.max_tokens;
   const format = settings.output_format;
   const reasoningEffort = chatReasoningEffort(settings);
 
@@ -297,7 +288,12 @@ export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): 
     ...(settings.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: settings.parallel_tool_calls }),
     ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
     ...(settings.prompt_cache_key === undefined ? {} : { prompt_cache_key: settings.prompt_cache_key }),
+    ...(settings.prompt_cache_retention === undefined ? {} : { prompt_cache_retention: settings.prompt_cache_retention }),
+    ...(settings.prompt_cache_options === undefined ? {} : { prompt_cache_options: settings.prompt_cache_options === null ? null : { ...settings.prompt_cache_options } }),
     ...(settings.safety_identifier === undefined ? {} : { safety_identifier: settings.safety_identifier }),
+    ...(settings.user === undefined ? {} : { user: settings.user }),
+    ...(settings.logprobs === undefined ? {} : { logprobs: settings.logprobs }),
+    ...(settings.top_logprobs === undefined ? {} : { top_logprobs: settings.top_logprobs }),
     ...(settings.verbosity === undefined ? {} : { verbosity: settings.verbosity }),
     ...(settings.choice_count === undefined ? {} : { n: settings.choice_count }),
     ...(settings.presence_penalty === undefined ? {} : { presence_penalty: settings.presence_penalty }),

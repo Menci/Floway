@@ -349,9 +349,9 @@ const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): 
     stream: payload.stream === true,
     ...(payload.temperature == null ? {} : { temperature: payload.temperature }),
     ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
-    ...(payload.presence_penalty == null ? {} : { presence_penalty: payload.presence_penalty }),
-    ...(payload.frequency_penalty == null ? {} : { frequency_penalty: payload.frequency_penalty }),
-    ...(payload.max_output_tokens == null ? {} : { max_output_tokens: payload.max_output_tokens }),
+    ...(payload.presence_penalty === undefined ? {} : { presence_penalty: payload.presence_penalty }),
+    ...(payload.frequency_penalty === undefined ? {} : { frequency_penalty: payload.frequency_penalty }),
+    ...(payload.max_output_tokens === undefined ? {} : { max_output_tokens: payload.max_output_tokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
     ...(payload.metadata == null ? {} : { metadata: payload.metadata }),
     ...(payload.store == null ? {} : { store: payload.store }),
@@ -360,7 +360,17 @@ const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): 
     ...(payload.reasoning?.effort == null ? {} : { reasoning_effort: payload.reasoning.effort }),
     ...(payload.reasoning?.summary == null ? {} : { reasoning_summary: payload.reasoning.summary }),
     ...(payload.prompt_cache_key === undefined ? {} : { prompt_cache_key: payload.prompt_cache_key }),
+    ...(payload.prompt_cache_retention === undefined ? {} : { prompt_cache_retention: payload.prompt_cache_retention }),
+    ...(payload.prompt_cache_options === undefined ? {} : {
+      prompt_cache_options: {
+        ...(payload.prompt_cache_options.mode === undefined ? {} : { mode: payload.prompt_cache_options.mode }),
+        ...(payload.prompt_cache_options.ttl === undefined ? {} : { ttl: payload.prompt_cache_options.ttl }),
+      },
+    }),
     ...(payload.safety_identifier === undefined ? {} : { safety_identifier: payload.safety_identifier }),
+    ...(payload.user === undefined ? {} : { user: payload.user }),
+    ...(payload.include === undefined ? {} : { logprobs: payload.include === null ? null : payload.include.includes('message.output_text.logprobs') }),
+    ...(payload.top_logprobs === undefined ? {} : { top_logprobs: payload.top_logprobs }),
     ...(payload.text?.verbosity == null ? {} : { verbosity: payload.text.verbosity }),
   };
 };

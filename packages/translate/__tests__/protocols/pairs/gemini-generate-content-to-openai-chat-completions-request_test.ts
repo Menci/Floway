@@ -29,13 +29,13 @@ test('buildTargetPayload forwards an empty thinkingLevel verbatim', async () => 
   assertEquals(request.reasoning_effort, '');
 });
 
-test('buildTargetPayload gives thinkingBudget precedence over an empty thinkingLevel', async () => {
+test('buildTargetPayload preserves an explicit empty thinkingLevel beside a budget', async () => {
   const request = await buildWithTestSidecar({
     contents: [],
     generationConfig: { thinkingConfig: { thinkingBudget: 2048, thinkingLevel: '' } },
   }, 'gpt-test');
 
-  assertEquals(request.reasoning_effort, 'low');
+  assertEquals(request.reasoning_effort, '');
 });
 
 test('buildTargetPayload maps system instruction and multimodal user content', async () => {

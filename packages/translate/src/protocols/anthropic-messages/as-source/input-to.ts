@@ -370,12 +370,8 @@ const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload): IRInp
     ...(payload.tool_choice !== undefined && 'disable_parallel_tool_use' in payload.tool_choice && payload.tool_choice.disable_parallel_tool_use != null
       ? { parallel_tool_calls: !payload.tool_choice.disable_parallel_tool_use }
       : {}),
-    // Messages splits one reasoning axis across three controls: a level, an off
-    // switch, and a token budget. The level and the off switch are the same axis
-    // every other protocol states as an effort. A budget does not reach the IR
-    // here: an enabled or adaptive mode is reported as the tier that mode
-    // implies, and no target spends a number the caller never bounded.
     ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
+    ...(payload.thinking?.type === 'enabled' ? { reasoning_budget: payload.thinking.budget_tokens } : {}),
     ...(payload.thinking?.type === 'adaptive' ? { reasoning_budget_dynamic: true } : {}),
   };
 };
@@ -409,7 +405,7 @@ const serviceTierToIR = (payload: AnthropicMessagesPayload): string | undefined 
 const reasoningEffortToIR = (payload: AnthropicMessagesPayload): string | undefined => {
   if (payload.output_config?.effort != null) return payload.output_config.effort;
   if (payload.thinking?.type === 'disabled') return 'none';
-  if (payload.thinking?.type === 'enabled' || payload.thinking?.type === 'adaptive') return 'medium';
+  if (payload.thinking?.type === 'adaptive') return 'medium';
   return undefined;
 };
 

@@ -1,5 +1,4 @@
 import { requireStreaming } from '../../../ir/input/streaming.ts';
-import { irInputToolChoiceForTools } from '../../../ir/input/tool-choice.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem, IRInputPromptItem } from '../../../ir/input/types.ts';
 import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../request/call-ids.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
@@ -243,7 +242,7 @@ export const openaiResponsesHeaderFromIR = (request: IRInputRequestHeader): Omit
   // This wire states a permitted subset natively, so the declarations stay
   // whole: narrowing them as well would also narrow what the model may see.
   const tools = request.tools;
-  const choice = irInputToolChoiceForTools(request.tool_choice, tools);
+  const choice = tools === undefined || tools.length === 0 ? undefined : request.tool_choice;
   return {
     ...openaiResponsesSettingsFromIR(settings),
     model: settings.model,
@@ -251,27 +250,22 @@ export const openaiResponsesHeaderFromIR = (request: IRInputRequestHeader): Omit
     // cannot be carried by this side at all.
     stream: requireStreaming(settings),
     ...(tools === undefined || tools.length === 0 ? {} : { tools: tools.map(toolFromIR) }),
-    // An orphaned `tool_choice` is not safe on this wire: xAI-backed upstreams
-    // reject the request outright.
-    // https://github.com/jlcodes99/cockpit-tools/issues/1727
-    ...(choice === undefined || tools === undefined || tools.length === 0 ? {} : { tool_choice: toolChoiceFromIR(choice) }),
+    ...(choice === undefined ? {} : { tool_choice: toolChoiceFromIR(choice) }),
   };
 };
 
 export const openaiResponsesSettingsFromIR = (settings: IRInputSettings): Partial<CanonicalOpenAIResponsesPayload> => {
-  const ceiling = settings.max_output_tokens;
+  const ceiling = settings.max_completion_tokens !== undefined ? settings.max_completion_tokens
+    : settings.max_output_tokens !== undefined ? settings.max_output_tokens : settings.max_tokens;
   const format = settings.output_format;
-  // This wire accepts effort names only, so a token budget is reported at the
-  // nearest tier it can express, and a stated budget is the more specific of the
-  // two quantities. An empty effort names no tier at all.
-  const reasoningEffort = settings.reasoning_budget !== undefined
-    ? reasoningEffortForBudget(settings.reasoning_budget)
-    : settings.reasoning_effort;
+  const reasoningEffort = settings.reasoning_effort ?? (settings.reasoning_budget === undefined ? undefined : reasoningEffortForBudget(settings.reasoning_budget));
 
   return {
     ...(ceiling === undefined ? {} : { max_output_tokens: ceiling }),
     ...(settings.temperature === undefined ? {} : { temperature: settings.temperature }),
     ...(settings.top_p === undefined ? {} : { top_p: settings.top_p }),
+    ...(settings.presence_penalty === undefined ? {} : { presence_penalty: settings.presence_penalty }),
+    ...(settings.frequency_penalty === undefined ? {} : { frequency_penalty: settings.frequency_penalty }),
     ...(settings.metadata === undefined ? {} : { metadata: { ...settings.metadata } }),
     ...(settings.store === undefined ? {} : { store: settings.store }),
     ...(settings.service_tier === undefined ? {} : { service_tier: settings.service_tier }),
@@ -283,7 +277,14 @@ export const openaiResponsesSettingsFromIR = (settings: IRInputSettings): Partia
       },
     }),
     ...(settings.prompt_cache_key === undefined ? {} : { prompt_cache_key: settings.prompt_cache_key }),
+    ...(settings.prompt_cache_retention === undefined ? {} : { prompt_cache_retention: settings.prompt_cache_retention }),
+    ...(settings.prompt_cache_options == null ? {} : { prompt_cache_options: { ...settings.prompt_cache_options } }),
     ...(settings.safety_identifier === undefined ? {} : { safety_identifier: settings.safety_identifier }),
+    ...(settings.user == null ? {} : { user: settings.user }),
+    // Responses requests token probabilities through its includable output data.
+    // https://github.com/openai/openai-node/blob/7423ac3e9351c46300cd094479cded5551a72eb4/src/resources/responses/responses.ts
+    ...(settings.logprobs === undefined ? {} : { include: settings.logprobs === null ? null : settings.logprobs ? ['message.output_text.logprobs'] : [] }),
+    ...(settings.top_logprobs === undefined ? {} : { top_logprobs: settings.top_logprobs }),
     ...(format === undefined && settings.verbosity === undefined
       ? {}
       : {
