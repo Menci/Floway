@@ -1223,6 +1223,11 @@ const en = {
         range: {
           oneDay: 'Last Day', sevenDays: '7 Days', thirtyDays: '30 Days', custom: 'Custom', choose: 'Choose date range',
           currentReset: 'Current reset cycle', previousReset: 'Previous reset cycle',
+          byCycle: 'By cycle',
+        },
+        resetCycle: {
+          label: 'Cycle', choose: 'Choose reset cycle', view: 'View statistics',
+          previousWaiting: 'A previous cycle needs two recorded resets in different hours. Only the current cycle is available for this metric.',
         },
         resetMetric: {
           label: 'Reset metric',

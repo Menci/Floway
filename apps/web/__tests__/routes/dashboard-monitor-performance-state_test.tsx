@@ -88,12 +88,16 @@ it('uses reset boundaries for a single upstream performance query and hides the 
   }));
   const { router } = renderPage('fu=up-1', resetCycles);
   expect(screen.queryByRole('combobox', { name: 'Reset metric' })).toBeNull();
-  fireEvent.click(screen.getByRole('radio', { name: 'Previous reset cycle' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'By cycle' }));
+  fireEvent.click(screen.getByRole('combobox', { name: 'Cycle' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Previous reset cycle' }));
+  fireEvent.click(screen.getByRole('button', { name: 'View statistics' }));
   await waitFor(() => expect(requests.at(-1)?.searchParams.get('start')).toBe('2026-11-11T05'));
   expect(requests.at(-1)?.searchParams.get('end')).toBe('2026-11-11T10');
   expect(requests.at(-1)?.searchParams.getAll('filter_upstream')).toEqual(['up-1']);
   await waitFor(() => expect(urlSearch(router).get('r')).toBe('reset-previous'));
-  expect(screen.getByRole('combobox', { name: 'Reset metric' })).toBeTruthy();
+  expect(screen.getByRole('radio', { name: 'By cycle' }).getAttribute('aria-checked')).toBe('true');
+  expect(screen.queryByRole('combobox', { name: 'Reset metric' })).toBeNull();
   fireEvent.click(screen.getByRole('radio', { name: '7 Days' }));
   await waitFor(() => expect(urlSearch(router).get('r')).toBe('7d'));
   expect(screen.queryByRole('combobox', { name: 'Reset metric' })).toBeNull();
