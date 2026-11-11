@@ -1,0 +1,9 @@
+import { openaiChatCompletionsErrorFromIR } from './sse-to.ts';
+import { irErrorPayloadFromBody, restateError } from '../../../shared/api-error.ts';
+import type { ApiErrorTranslator } from '../../../types.ts';
+
+export const restateOpenAIChatCompletionsError: ApiErrorTranslator = (upstreamStatus, headers, upstreamBody) => {
+  const error = irErrorPayloadFromBody(upstreamBody);
+  if (error === undefined) return undefined;
+  return restateError(upstreamStatus, headers, { error: openaiChatCompletionsErrorFromIR(error) });
+};

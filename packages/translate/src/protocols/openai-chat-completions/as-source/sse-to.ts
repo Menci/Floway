@@ -7,6 +7,7 @@ import { IRAbsent, type IRErrorPayload, type IRItem, type IRMessageItem, type IR
 import { appendContent, createContentState, type ContentStates, type ContentState } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
+import { errorDetailsOf } from '../../../shared/api-error.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantState } from '../as-target/assistant-turn.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -19,13 +20,16 @@ import {
   createOpenAIChatCompletionsEventAccumulator,
 } from '@floway-dev/protocols/openai-chat-completions';
 
-const irChatError = (error: IRErrorPayload): IRErrorPayload => ({
-  message: error.message,
-  type: typeof error.type === 'string' && error.type !== 'error' ? error.type : error.code ?? 'server_error',
-  ...(error.code === undefined ? {} : { code: error.code }),
-  ...(error.param === undefined ? {} : { param: error.param }),
-  ...(error.provider_specific_fields === undefined ? {} : { provider_specific_fields: error.provider_specific_fields }),
-});
+export const openaiChatCompletionsErrorFromIR = (error: IRErrorPayload) => {
+  const details = errorDetailsOf(error, ['message', 'type', 'code', 'param']);
+  return {
+    message: error.message,
+    ...(error.type === undefined ? {} : { type: error.type }),
+    ...(error.code === undefined ? {} : { code: error.code }),
+    ...(error.param === undefined ? {} : { param: error.param }),
+    ...(details === undefined ? {} : { provider_specific_fields: details }),
+  };
+};
 
 interface OpenAIChatCompletionsSSEOutputOptions extends RoundTripOutputOptions<'openaiChatCompletions'> {
   // Replay identity belongs to the newly emitted target audio, not the source IR content.
@@ -175,7 +179,7 @@ export const openaiChatCompletionsFromIR = async function* (
   for await (const { record, collector } of consumeIRRecords(records)) {
     const { state } = collector;
     if (record.type === 'error') {
-      yield eventFrame({ error: irChatError(record.error) } as unknown as OpenAIChatCompletionsStreamEvent);
+      yield eventFrame({ error: openaiChatCompletionsErrorFromIR(record.error) } as unknown as OpenAIChatCompletionsStreamEvent);
       return;
     }
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;
