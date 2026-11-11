@@ -3,7 +3,7 @@ import { irItemPath, irPartPath, irPathKey, irUnitPath } from './operation-paths
 import type { IREvent, IRPath, IRRecord, IRWrite } from './records.ts';
 import type { IROutputUsage, IROutputValue } from './types.ts';
 
-export type IRRelativePath = string | number | IRPath;
+export type IRRelativePath = string | IRPath;
 
 export interface IRWriteHandle {
   readonly path: IRPath;
@@ -49,6 +49,9 @@ export const createIRBuilder = (maxChoices = 1) => {
     for (const [key, child] of Object.entries(value)) remember([...path, Array.isArray(value) ? Number(key) : key], child);
   };
   const write = (value: IRWrite): void => { if (collector.applyWrite(value)) records.push(value); };
+  // A handle accepts any caller value; the collector is what decides whether it
+  // is a legal output IR value, so the write record states what was handed over
+  // and validation runs on the way in.
   const assign = (path: IRPath, value: unknown): void => {
     write({ type: 'write', kind: 'assign', path, value: value as IROutputValue });
     remember(path, value);
@@ -66,7 +69,7 @@ export const createIRBuilder = (maxChoices = 1) => {
   });
   const event = (value: IREvent): void => { collector.applyEvent(value); records.push(value); };
   const drain = (): readonly IRRecord[] => { const drained = records; records = []; return drained; };
-  const relativePath = (base: IRPath, path: IRRelativePath): IRPath => [...base, ...Array.isArray(path) ? path : [path]];
+  const relativePath = (base: IRPath, path: IRRelativePath): IRPath => [...base, ...typeof path === 'string' ? [path] : path];
   const writeHandle = (path: IRPath, index: number): IRWriteHandle => ({
     path,
     index,

@@ -17,7 +17,7 @@ test('carries optional source part IDs on append operations', () => {
   ]);
 });
 
-test('retains every original ID when a native buffer is merged into one IR append', () => {
+test('retains every original ID when a native buffer is merged into one output IR append', () => {
   const builder = createIRBuilder();
   const part = builder.item(0, { type: 'message', content: [] }).part({ type: 'text', text: '' });
   builder.drain();

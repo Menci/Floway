@@ -14,7 +14,8 @@ import { appendContent, createContentState, type ContentStates, type ContentStat
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
-import { isCompleteJSONObject, parseJSONObjectAtCompletion } from '../../../shared/json/object.ts';
+import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.ts';
+import { isCompleteJSONObject } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { GeminiGenerateContentAssistantState, GeminiGenerateContentInputAssistantTurn } from '../as-target/assistant-turn.ts';
 import { eventFrame, FAST_SERVICE_TIER, type EventFrame } from '@floway-dev/protocols/common';
@@ -271,7 +272,7 @@ export const writeGeminiGenerateContentEvents = async function* (
             if (completion === 'truncated') part = undefined;
             else if (!isCompleteJSONObject(item.arguments) && choiceEnding === undefined && record.type !== 'finish') wait = true;
             else {
-              const parsed = parseJSONObjectAtCompletion(item.arguments, completion, options.parseToolArguments);
+              const parsed = parseJSONObjectUnlessTruncated(item.arguments, completion, options.parseToolArguments);
               if (parsed.completion === 'complete') {
                 const partIndex = occupyPart(choice, 'other');
                 part = {

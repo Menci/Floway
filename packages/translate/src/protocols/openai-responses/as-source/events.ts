@@ -14,7 +14,8 @@ import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
 import { appendContent, createContentState, type ContentState, type ContentStates } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
-import { isCompleteJSONObject, parseJSONObjectAtCompletion } from '../../../shared/json/object.ts';
+import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.ts';
+import { isCompleteJSONObject, isJSONRecord } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantState } from '../as-target/assistant-turn.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -68,11 +69,8 @@ type MessagePart = IROutputMessageItem['content'][number];
 type ResponsesMessageState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>, ContentStates>;
 type ResponsesReasoningState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'reasoning' }>, ContentStates>;
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const initializedType = (value: unknown): IROutputItem['type'] | MessagePart['type'] | undefined => {
-  if (!isRecord(value)) return undefined;
+  if (!isJSONRecord(value)) return undefined;
   return value.type === 'message'
     || value.type === 'reasoning'
     || value.type === 'function_call'
@@ -88,14 +86,14 @@ const initializedType = (value: unknown): IROutputItem['type'] | MessagePart['ty
 type TextPartLogprobMetadata = { readonly item_index: number; readonly content_index: number };
 
 const textPartLogprobMetadata = (value: unknown): TextPartLogprobMetadata | undefined => {
-  if (!isRecord(value) || value.scope !== 'text_part') return undefined;
+  if (!isJSONRecord(value) || value.scope !== 'text_part') return undefined;
   return typeof value.item_index === 'number' && typeof value.content_index === 'number'
     ? { item_index: value.item_index, content_index: value.content_index }
     : undefined;
 };
 
 const isIRTokenLogprob = (value: unknown): value is IROutputTokenLogprob =>
-  isRecord(value) && typeof value.token === 'string' && typeof value.logprob === 'number';
+  isJSONRecord(value) && typeof value.token === 'string' && typeof value.logprob === 'number';
 
 const reasoningPartAdded = (field: ReasoningField, itemId: string, outputIndex: number, index: number): OpenAIResponsesStreamEventEx =>
   field === 'summary'
@@ -647,7 +645,7 @@ export const writeOpenAIResponsesEvents = async function* (
         const item = state.choices[0].items[current.path[3] as number];
         if (item.type !== 'function_call') throw new TypeError('Responses pending function unit requires a function item');
         const outputIndex = requireOutputIndex(current);
-        parseJSONObjectAtCompletion(item.arguments, finishReason === 'length' ? 'truncated' : 'complete');
+        parseJSONObjectUnlessTruncated(item.arguments, finishReason === 'length' ? 'truncated' : 'complete');
         yield emit({
           type: 'response.function_call_arguments.done',
           item_id: requireId(current),
