@@ -8,8 +8,9 @@ import { irFromOpenAIChatCompletions as irFromOpenAIChatCompletionsProduction } 
 import { flattenNamespaceTools } from '../../src/protocols/openai-responses/as-source/namespace-tools.ts';
 import { openaiResponsesFromIR as openaiResponsesFromIRProduction } from '../../src/protocols/openai-responses/as-source/sse-to.ts';
 import { irFromOpenAIResponses as irFromOpenAIResponsesProduction } from '../../src/protocols/openai-responses/as-target/sse-from.ts';
+import type { RoundTripReader } from '../../src/round-trip/reader.ts';
 import { createReferenceBuilder } from '../../src/round-trip/reference/reference-builder.ts';
-import type { RoundTripReader, RoundTripWriter } from '../../src/round-trip/stream.ts';
+import type { RoundTripWriter } from '../../src/round-trip/writer.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 export const iterate = async function* <T>(values: readonly T[]): AsyncGenerator<T> { yield* values; };
@@ -22,7 +23,7 @@ const reader = <Protocol extends 'anthropicMessages' | 'openaiChatCompletions' |
 });
 const writer = <Protocol extends 'anthropicMessages' | 'geminiGenerateContent' | 'openaiChatCompletions' | 'openaiResponses'>(): RoundTripWriter<Protocol> => ({
   builder: createReferenceBuilder(),
-  prepareSidecar: async () => 'test-sidecar',
+  encodeSidecar: async () => 'test-sidecar',
 });
 const namespaceToolNames = flattenNamespaceTools({ model: 'test', input: [], tools: [] }).names;
 
@@ -31,7 +32,7 @@ const namespaceToolNames = flattenNamespaceTools({ model: 'test', input: [], too
 const withoutProvenance = async function* (records: AsyncIterable<IRRecord>): AsyncGenerator<IRRecord> {
   for await (const record of records) {
     if (record.type === 'write' && record.kind === 'append') {
-      const { referencePieceIds: _referencePieceIds, ...operation } = record;
+      const { textFragmentIds: _textFragmentIds, ...operation } = record;
       yield operation;
     } else yield record;
   }

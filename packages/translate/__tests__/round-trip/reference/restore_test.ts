@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AnthropicMessagesReferenceableAssistantTurn } from '../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
-import type { GeminiGenerateContentReferenceableAssistantTurn } from '../../../src/protocols/gemini-generate-content/as-target/assistant-turn.ts';
-import type { OpenAIChatCompletionsReferenceableAssistantTurn } from '../../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
-import { ContentReference } from '../../../src/round-trip/reference/assistant-turn.ts';
+import type { AnthropicMessagesReferenceableInputAssistantTurn } from '../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
+import type { GeminiGenerateContentReferenceableInputAssistantTurn } from '../../../src/protocols/gemini-generate-content/as-target/assistant-turn.ts';
+import type { OpenAIChatCompletionsReferenceableInputAssistantTurn } from '../../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
+import { hashRoundTripContent } from '../../../src/round-trip/hash.ts';
 import { restoreAssistantTurn } from '../../../src/round-trip/reference/restore.ts';
-import { hashRoundTripContent } from '../../../src/round-trip/turn-digest.ts';
+import { ContentReference } from '../../../src/round-trip/reference/types.ts';
 import { rawJSON } from '../../../src/shared/json/raw-json.ts';
 
 describe('restoreAssistantTurn', () => {
@@ -14,7 +14,7 @@ describe('restoreAssistantTurn', () => {
       kind: 'text', parts: [0], nested: [0, [0, 1, 2]],
       object: { kind: 'json', parts: [[0, 0, 1]] },
     };
-    const turn: AnthropicMessagesReferenceableAssistantTurn<ContentReference> = {
+    const turn: AnthropicMessagesReferenceableInputAssistantTurn<ContentReference> = {
       role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'echo', input }],
     };
     const before = structuredClone(turn);
@@ -38,7 +38,7 @@ describe('restoreAssistantTurn', () => {
     const part = { text: 'unchanged' };
     const parts = [part];
     const content = { role: 'model' as const, parts };
-    const turn: GeminiGenerateContentReferenceableAssistantTurn<ContentReference> = [content];
+    const turn: GeminiGenerateContentReferenceableInputAssistantTurn<ContentReference> = [content];
     const hydrated = await restoreAssistantTurn('geminiGenerateContent', [], turn);
     if (!hydrated.ok) throw new Error('Expected a literal assistant turn');
     expect(hydrated.turn).toBe(turn);
@@ -52,7 +52,7 @@ describe('restoreAssistantTurn', () => {
     const text = { type: 'text' as const, text: new ContentReference('text', [[0, 1, 7]]), citations: null };
     const tool = { type: 'tool_use' as const, id: 'call', name: 'lookup', input: new ContentReference('json', [1]) };
     const blocks = [text, tool];
-    const turn: AnthropicMessagesReferenceableAssistantTurn<ContentReference> = { role: 'assistant', content: blocks };
+    const turn: AnthropicMessagesReferenceableInputAssistantTurn<ContentReference> = { role: 'assistant', content: blocks };
     const hydrated = await restoreAssistantTurn('anthropicMessages', ['[answer]', candidate], turn, [
       await hashRoundTripContent('[answer]'), await hashRoundTripContent(JSON.stringify(candidate)),
     ]);
@@ -72,7 +72,7 @@ describe('restoreAssistantTurn', () => {
     const metadata = { bytes, number, nested: [{ kind: 'text', parts: [0] }] };
     const nested = metadata.nested;
     const ordinary = nested[0];
-    const turn: OpenAIChatCompletionsReferenceableAssistantTurn<ContentReference> = {
+    const turn: OpenAIChatCompletionsReferenceableInputAssistantTurn<ContentReference> = {
       role: 'assistant', content: new ContentReference('text', [0]), provider_specific_fields: metadata,
     };
     const hydrated = await restoreAssistantTurn('openaiChatCompletions', ['answer'], turn, [await hashRoundTripContent('answer')]);
@@ -89,7 +89,7 @@ describe('restoreAssistantTurn', () => {
   });
 
   it('does not hash candidates when a full turn has no referenced contents', async () => {
-    const turn: OpenAIChatCompletionsReferenceableAssistantTurn<ContentReference> = { role: 'assistant', content: 'unchanged' };
+    const turn: OpenAIChatCompletionsReferenceableInputAssistantTurn<ContentReference> = { role: 'assistant', content: 'unchanged' };
     const digest = vi.spyOn(crypto.subtle, 'digest');
     try {
       expect(await restoreAssistantTurn('openaiChatCompletions', ['unused candidate'], turn)).toEqual({ ok: true, turn });
@@ -100,7 +100,7 @@ describe('restoreAssistantTurn', () => {
   });
 
   it.each([{ payload: [] }, { payload: [0] }])('rejects an authenticated text reference without referenced contents: $payload', async ({ payload }) => {
-    const turn: OpenAIChatCompletionsReferenceableAssistantTurn<ContentReference> = {
+    const turn: OpenAIChatCompletionsReferenceableInputAssistantTurn<ContentReference> = {
       role: 'assistant',
       content: new ContentReference('text', payload),
     };
@@ -108,7 +108,7 @@ describe('restoreAssistantTurn', () => {
   });
 
   it('fails the whole turn when a referenced candidate is missing', async () => {
-    const turn: OpenAIChatCompletionsReferenceableAssistantTurn<ContentReference> = {
+    const turn: OpenAIChatCompletionsReferenceableInputAssistantTurn<ContentReference> = {
       role: 'assistant',
       content: new ContentReference('text', [0]),
     };
@@ -116,7 +116,7 @@ describe('restoreAssistantTurn', () => {
   });
 
   it('propagates malformed JSON reference errors', async () => {
-    const turn: AnthropicMessagesReferenceableAssistantTurn<ContentReference> = {
+    const turn: AnthropicMessagesReferenceableInputAssistantTurn<ContentReference> = {
       role: 'assistant',
       content: [{ type: 'tool_use', id: 'call', name: 'lookup', input: new ContentReference('json', [0]) }],
     };
@@ -124,7 +124,7 @@ describe('restoreAssistantTurn', () => {
   });
 
   it('propagates authenticated hash-index invariant failures', async () => {
-    const turn: OpenAIChatCompletionsReferenceableAssistantTurn<ContentReference> = {
+    const turn: OpenAIChatCompletionsReferenceableInputAssistantTurn<ContentReference> = {
       role: 'assistant',
       content: new ContentReference('text', [1]),
     };

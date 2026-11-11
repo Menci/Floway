@@ -1,27 +1,27 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AnthropicMessagesAssistantState, AnthropicMessagesInputAssistantTurn } from '../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
-import { ContentReference } from '../../../src/round-trip/reference/assistant-turn.ts';
-import { appendContent, appendField, collectContentViews, createContentState, createFieldState, createReferenceBuilder, type FieldStates } from '../../../src/round-trip/reference/reference-builder.ts';
-import { finalizeAssistantTurnReferences } from '../../../src/round-trip/reference/reference-selection.ts';
+import type { AnthropicMessagesInputAssistantTurnState, AnthropicMessagesInputAssistantTurn } from '../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
+import { hashRoundTripContent } from '../../../src/round-trip/hash.ts';
+import { appendEmittedField, appendReadField, collectEmittedFieldPlacements, createEmittedFieldState, createReadFieldState, createReferenceBuilder, type ReadFieldStates } from '../../../src/round-trip/reference/reference-builder.ts';
+import { referenceAssistantTurn } from '../../../src/round-trip/reference/reference-selection.ts';
 import { restoreAssistantTurn } from '../../../src/round-trip/reference/restore.ts';
+import { ContentReference } from '../../../src/round-trip/reference/types.ts';
 import type { TextPlacement } from '../../../src/round-trip/text-groups.ts';
-import { hashRoundTripContent } from '../../../src/round-trip/turn-digest.ts';
 
 const finalizeTexts = async (texts: readonly string[]) => {
   const builder = createReferenceBuilder();
-  const contentState: NonNullable<AnthropicMessagesAssistantState<FieldStates>['content']> = [];
+  const contentState: NonNullable<AnthropicMessagesInputAssistantTurnState<ReadFieldStates>['content']> = [];
   const views = new Map<number, TextPlacement>();
   for (const text of texts) {
-    const field = createFieldState('text');
-    const content = createContentState(builder, 'text');
-    const part = appendField(builder, field, text);
-    appendContent(builder, content, text, [part]);
+    const field = createReadFieldState('text');
+    const content = createEmittedFieldState(builder, 'text');
+    const part = appendReadField(builder, field, text);
+    appendEmittedField(builder, content, text, [part]);
     contentState.push({ text: field });
-    for (const [id, view] of collectContentViews(text, content)) views.set(id, view);
+    for (const [id, view] of collectEmittedFieldPlacements(text, content)) views.set(id, view);
   }
   const turn: AnthropicMessagesInputAssistantTurn = { role: 'assistant', content: texts.map(text => ({ type: 'text', text, citations: null })) };
-  return { turn, ...await finalizeAssistantTurnReferences<'anthropicMessages'>(turn, { content: contentState }, builder, views) };
+  return { turn, ...await referenceAssistantTurn<'anthropicMessages'>(turn, { content: contentState }, builder, views) };
 };
 
 describe('thin reference selection', () => {
@@ -33,15 +33,15 @@ describe('thin reference selection', () => {
 
   it('skips hashing a large A field when its B reference cannot beat the literal', async () => {
     const builder = createReferenceBuilder();
-    const field = createFieldState('text');
-    const content = createContentState(builder, 'text');
+    const field = createReadFieldState('text');
+    const content = createEmittedFieldState(builder, 'text');
     const prefix = 'Large A content. '.repeat(100);
-    appendContent(builder, content, prefix);
-    appendContent(builder, content, 'hello', [appendField(builder, field, 'hello')]);
+    appendEmittedField(builder, content, prefix);
+    appendEmittedField(builder, content, 'hello', [appendReadField(builder, field, 'hello')]);
     const turn: AnthropicMessagesInputAssistantTurn = { role: 'assistant', content: [{ type: 'text', text: 'hello', citations: null }] };
     const digest = vi.spyOn(crypto.subtle, 'digest');
     try {
-      const result = await finalizeAssistantTurnReferences<'anthropicMessages'>(turn, { content: [{ text: field }] }, builder, collectContentViews(`${prefix}hello`, content));
+      const result = await referenceAssistantTurn<'anthropicMessages'>(turn, { content: [{ text: field }] }, builder, collectEmittedFieldPlacements(`${prefix}hello`, content));
       expect(result.targetTurn).toEqual(turn);
       expect(result).not.toHaveProperty('referencedContentHashes');
       expect(digest).not.toHaveBeenCalled();
@@ -85,20 +85,20 @@ describe('thin reference selection', () => {
 
   it('selects the hashes of one atomic mixed reference together after merging adjacent ranges', async () => {
     const builder = createReferenceBuilder();
-    const field = createFieldState('text');
-    const first = createContentState(builder, 'text');
-    const second = createContentState(builder, 'text');
+    const field = createReadFieldState('text');
+    const first = createEmittedFieldState(builder, 'text');
+    const second = createEmittedFieldState(builder, 'text');
     const text = 'One long native string. '.repeat(5);
     const middle = Math.floor(text.length / 2);
-    const left = appendField(builder, field, text.slice(0, middle));
-    const right = appendField(builder, field, text.slice(middle));
-    const suffix = appendField(builder, field, '!');
-    appendContent(builder, first, text.slice(0, middle), [left]);
-    appendContent(builder, first, text.slice(middle), [right]);
-    appendContent(builder, second, '!', [suffix]);
+    const left = appendReadField(builder, field, text.slice(0, middle));
+    const right = appendReadField(builder, field, text.slice(middle));
+    const suffix = appendReadField(builder, field, '!');
+    appendEmittedField(builder, first, text.slice(0, middle), [left]);
+    appendEmittedField(builder, first, text.slice(middle), [right]);
+    appendEmittedField(builder, second, '!', [suffix]);
     const turn: AnthropicMessagesInputAssistantTurn = { role: 'assistant', content: [{ type: 'text', text: `${text}!`, citations: null }] };
-    const views = new Map([...collectContentViews(text, first), ...collectContentViews('!', second)]);
-    const result = await finalizeAssistantTurnReferences<'anthropicMessages'>(turn, { content: [{ text: field }] }, builder, views);
+    const views = new Map([...collectEmittedFieldPlacements(text, first), ...collectEmittedFieldPlacements('!', second)]);
+    const result = await referenceAssistantTurn<'anthropicMessages'>(turn, { content: [{ text: field }] }, builder, views);
     expect(result.referencedContentHashes).toEqual([await hashRoundTripContent(text), await hashRoundTripContent('!')]);
     expect(result.targetTurn.content).toEqual([{ type: 'text', text: new ContentReference('text', [0, 1]), citations: null }]);
     expect(await restoreAssistantTurn('anthropicMessages', [text, '!'], result.targetTurn, result.referencedContentHashes)).toEqual({ ok: true, turn });
@@ -109,18 +109,18 @@ describe('thin reference selection', () => {
     const shared = 'a'.repeat(length);
     const suffix = 'b'.repeat(30);
     const mixed = shared.slice(0, 30) + suffix;
-    const wholeField = createFieldState('text');
-    const mixedField = createFieldState('text');
-    const wholeContent = createContentState(builder, 'text');
-    const sharedContent = createContentState(builder, 'text');
-    const suffixContent = createContentState(builder, 'text');
-    appendContent(builder, wholeContent, shared, [appendField(builder, wholeField, shared)]);
-    appendContent(builder, sharedContent, shared.slice(0, 30), [appendField(builder, mixedField, shared.slice(0, 30))]);
-    appendContent(builder, sharedContent, shared.slice(30));
-    appendContent(builder, suffixContent, suffix, [appendField(builder, mixedField, suffix)]);
+    const wholeField = createReadFieldState('text');
+    const mixedField = createReadFieldState('text');
+    const wholeContent = createEmittedFieldState(builder, 'text');
+    const sharedContent = createEmittedFieldState(builder, 'text');
+    const suffixContent = createEmittedFieldState(builder, 'text');
+    appendEmittedField(builder, wholeContent, shared, [appendReadField(builder, wholeField, shared)]);
+    appendEmittedField(builder, sharedContent, shared.slice(0, 30), [appendReadField(builder, mixedField, shared.slice(0, 30))]);
+    appendEmittedField(builder, sharedContent, shared.slice(30));
+    appendEmittedField(builder, suffixContent, suffix, [appendReadField(builder, mixedField, suffix)]);
     const turn: AnthropicMessagesInputAssistantTurn = { role: 'assistant', content: [{ type: 'text', text: shared, citations: null }, { type: 'text', text: mixed, citations: null }] };
-    const views = new Map([...collectContentViews(shared, wholeContent), ...collectContentViews(shared, sharedContent), ...collectContentViews(suffix, suffixContent)]);
-    const result = await finalizeAssistantTurnReferences<'anthropicMessages'>(turn, { content: [{ text: wholeField }, { text: mixedField }] }, builder, views);
+    const views = new Map([...collectEmittedFieldPlacements(shared, wholeContent), ...collectEmittedFieldPlacements(shared, sharedContent), ...collectEmittedFieldPlacements(suffix, suffixContent)]);
+    const result = await referenceAssistantTurn<'anthropicMessages'>(turn, { content: [{ text: wholeField }, { text: mixedField }] }, builder, views);
     expect(result.targetTurn.content).toEqual([
       { type: 'text', text: referenced ? new ContentReference('text', [0]) : shared, citations: null },
       { type: 'text', text: mixed, citations: null },

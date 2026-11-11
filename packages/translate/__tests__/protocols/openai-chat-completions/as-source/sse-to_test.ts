@@ -2,8 +2,8 @@ import { expect, test } from 'vitest';
 
 import { createIRBuilder } from '../../../../src/ir/stream.ts';
 import { openaiChatCompletionsFromIR } from '../../../../src/protocols/openai-chat-completions/as-source/sse-to.ts';
-import { createReferenceBuilder, collectContentViews, createFieldState, createReferenceFinalizer, appendField } from '../../../../src/round-trip/reference/reference-builder.ts';
-import { type RoundTripWriter } from '../../../../src/round-trip/stream.ts';
+import { createReferenceBuilder, collectEmittedFieldPlacements, createReadFieldState, createFieldReferencer, appendReadField } from '../../../../src/round-trip/reference/reference-builder.ts';
+import { type RoundTripWriter } from '../../../../src/round-trip/writer.ts';
 
 test('prepares each Chat choice independently while another choice has partial audio', async () => {
   const source = createIRBuilder(2);
@@ -34,7 +34,7 @@ test('prepares each Chat choice independently while another choice has partial a
   const prepared: number[] = [];
   const roundTrip: RoundTripWriter<'openaiChatCompletions'> = {
     builder: createReferenceBuilder(),
-    prepareSidecar: async choice => { prepared.push(choice); return `sidecar-${choice}`; },
+    encodeSidecar: async choice => { prepared.push(choice); return `sidecar-${choice}`; },
   };
   const frames = [];
   for await (const frame of openaiChatCompletionsFromIR((async function* () { yield* source.drain(); })(), {
@@ -49,9 +49,9 @@ test('prepares each Chat choice independently while another choice has partial a
 
 test.each([false, true])('resolves delayed transcript provenance at actual projection (audio data: %s)', async hasAudioData => {
   const references = createReferenceBuilder();
-  const transcript = createFieldState('text');
-  const first = appendField(references, transcript, 'late ');
-  const second = appendField(references, transcript, 'text');
+  const transcript = createReadFieldState('text');
+  const first = appendReadField(references, transcript, 'late ');
+  const second = appendReadField(references, transcript, 'text');
   const source = createIRBuilder();
   source.choice(0);
   source.assign(['model'], 'model');
@@ -74,18 +74,18 @@ test.each([false, true])('resolves delayed transcript provenance at actual proje
   source.choice(0).end('stop');
   source.event({ type: 'finish', status: 'completed' });
 
-  let prepared: Parameters<RoundTripWriter<'openaiChatCompletions'>['prepareSidecar']> | undefined;
+  let prepared: Parameters<RoundTripWriter<'openaiChatCompletions'>['encodeSidecar']> | undefined;
   const roundTrip: RoundTripWriter<'openaiChatCompletions'> = {
     builder: references,
-    prepareSidecar: async (...args) => { prepared = args; return 'sidecar'; },
+    encodeSidecar: async (...args) => { prepared = args; return 'sidecar'; },
   };
   for await (const _frame of openaiChatCompletionsFromIR((async function* () { yield* source.drain(); })(), {
     roundTrip, audioMetadata: () => ({ id: 'audio', expires_at: 10 }),
   })) {}
   if (prepared === undefined) throw new Error('ChatCompletions sidecar was not prepared');
   const [, , turn, state] = prepared;
-  const finalizer = createReferenceFinalizer(references, collectContentViews(turn, state));
+  const finalizer = createFieldReferencer(references, collectEmittedFieldPlacements(turn, state));
   expect(turn.content).toBe(hasAudioData ? 'early ' : 'early late text');
-  expect(await finalizer.finalizeField('late text', transcript)).toEqual(hasAudioData ? 'late text' : expect.objectContaining({ parts: [[0, 6, 15]] }));
+  expect(await finalizer.referenceField('late text', transcript)).toEqual(hasAudioData ? 'late text' : expect.objectContaining({ parts: [[0, 6, 15]] }));
   if (hasAudioData) expect(turn.audio).toEqual({ id: 'audio' });
 });

@@ -16,4 +16,14 @@ describe('round-trip turn digests', () => {
     // @ts-expect-error Replay material excludes undefined at the public boundary.
     await expect(computeRoundTripTurnDigest(undefined)).rejects.toThrowError('Replay material is not JSON-serializable');
   });
+
+  it('verifies exactly eight replay digest bytes', async () => {
+    const material = { content: ['answer'] };
+    const sourceTurnDigest = new Uint8Array([68, 150, 67, 115, 244, 243, 164, 21]);
+
+    expect(await verifyRoundTripTurnDigest(material, sourceTurnDigest)).toBe(true);
+    expect(await verifyRoundTripTurnDigest({ content: ['edited'] }, sourceTurnDigest)).toBe(false);
+    expect(await verifyRoundTripTurnDigest(material, sourceTurnDigest.subarray(0, 7))).toBe(false);
+    expect(await verifyRoundTripTurnDigest(material, new Uint8Array([...sourceTurnDigest, 0]))).toBe(false);
+  });
 });

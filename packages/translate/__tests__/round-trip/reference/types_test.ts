@@ -1,7 +1,7 @@
 import { expectTypeOf, test } from 'vitest';
 
-import type { JSONRule, TextRule, ReferenceState, ReferenceableValue } from '../../../src/round-trip/reference/assistant-turn.ts';
-import { createFieldState, type FieldState, type FieldStates } from '../../../src/round-trip/reference/reference-builder.ts';
+import { createReadFieldState, type ReadFieldState, type ReadFieldStates } from '../../../src/round-trip/reference/reference-builder.ts';
+import type { JSONRule, TextRule, ReferenceState, ReferenceableValue } from '../../../src/round-trip/reference/types.ts';
 
 test('derives selected text, JSON, and sparse state leaves from one nested rule', () => {
   type Source = {
@@ -23,13 +23,13 @@ test('derives selected text, JSON, and sparse state leaves from one nested rule'
     input: { ordered: number } | Reference;
     encrypted_content: string;
   }>();
-  expectTypeOf<ReferenceState<Source, Rule, FieldStates>>().toEqualTypeOf<{
-    text?: FieldState<'text'>;
-    items?: Array<{ text?: FieldState<'text'> } | undefined>;
-    input?: FieldState<'json'>;
+  expectTypeOf<ReferenceState<Source, Rule, ReadFieldStates>>().toEqualTypeOf<{
+    text?: ReadFieldState<'text'>;
+    items?: Array<{ text?: ReadFieldState<'text'> } | undefined>;
+    input?: ReadFieldState<'json'>;
   }>();
-  const jsonState = createFieldState('json');
+  const jsonState = createReadFieldState('json');
   // @ts-expect-error A JSON field state cannot occupy a text rule leaf.
-  const invalid: ReferenceState<Source, Rule, FieldStates> = { text: jsonState };
-  expectTypeOf(invalid).toMatchTypeOf<ReferenceState<Source, Rule, FieldStates>>();
+  const invalid: ReferenceState<Source, Rule, ReadFieldStates> = { text: jsonState };
+  expectTypeOf(invalid).toMatchTypeOf<ReferenceState<Source, Rule, ReadFieldStates>>();
 });

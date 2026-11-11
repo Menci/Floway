@@ -1,3 +1,3 @@
-export type { RemoteImageData, RemoteImageLoader, SidecarCodec, TranslatedApiError, TranslateTripResult, TranslationContext } from './types.ts';
+export { SidecarTaggedValue, type SidecarCodec } from './round-trip/codec.ts';
+export type { RemoteImageData, RemoteImageLoader, TranslatedApiError, TranslateTripResult, TranslationContext } from './types.ts';
 export { TranslatorInputError } from './translator-input-error.ts';
-export { SidecarTaggedValue } from './round-trip/sidecar-tagged-value.ts';

@@ -1,13 +1,13 @@
 import type { IRJSONObject, IRJSONValue } from '../../../ir/types.ts';
-import type { ReplayContent } from '../../../round-trip/reference/assistant-turn.ts';
-import type { EncodedRoundTripSidecar } from '../../../round-trip/resolve.ts';
+import type { ReplayContent } from '../../../round-trip/reference/types.ts';
+import type { SidecarOccurrence } from '../../../round-trip/resolve.ts';
 import { collectTextGroups, collectTextPlacementIndex, type TextContribution, type TextPlacementIndex } from '../../../round-trip/text-groups.ts';
 import { computeRoundTripTurnDigest, replayMaterialsByType, verifyRoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
 import type { RoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
 import { isPlainJSONObject, requireJSONObject } from '../../../shared/json/object.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesAssistantMessage, AnthropicMessagesRedactedThinkingBlock } from '@floway-dev/protocols/anthropic-messages';
 
-type AnthropicMessagesReplayPart = NonNullable<Exclude<AnthropicMessagesAssistantTurn[number]['content'], string>>[number];
+type AnthropicMessagesReplayPart = NonNullable<Exclude<AnthropicMessagesSourceAssistantTurn[number]['content'], string>>[number];
 type AnthropicMessagesTextGroup = 'text' | 'thinking';
 
 const anthropicMessagesTextGroup = (part: AnthropicMessagesReplayPart): TextContribution<AnthropicMessagesTextGroup> | undefined => {
@@ -16,11 +16,11 @@ const anthropicMessagesTextGroup = (part: AnthropicMessagesReplayPart): TextCont
   return undefined;
 };
 
-export type AnthropicMessagesAssistantTurn = (AnthropicMessagesAssistantMessage | { role: 'assistant'; content: AnthropicMessagesAssistantContentBlock[] })[];
+export type AnthropicMessagesSourceAssistantTurn = (AnthropicMessagesAssistantMessage | { role: 'assistant'; content: AnthropicMessagesAssistantContentBlock[] })[];
 
 type TypedReplayMaterial = IRJSONObject & { type: string };
 
-const messageTurnDigestMaterialV1 = (message: AnthropicMessagesAssistantTurn[number]): IRJSONValue => {
+const messageTurnDigestMaterialV1 = (message: AnthropicMessagesSourceAssistantTurn[number]): IRJSONValue => {
   const blocks: TypedReplayMaterial[] = [];
   if (typeof message.content === 'string') return replayMaterialsByType([{ type: 'text', text: message.content, citations: [] }]);
   const channels = collectTextGroups(message.content, anthropicMessagesTextGroup);
@@ -37,9 +37,9 @@ const messageTurnDigestMaterialV1 = (message: AnthropicMessagesAssistantTurn[num
   return replayMaterialsByType(blocks);
 };
 
-const messagesTurnDigestMaterialV1 = (turn: AnthropicMessagesAssistantTurn): IRJSONValue => turn.map(messageTurnDigestMaterialV1);
+const messagesTurnDigestMaterialV1 = (turn: AnthropicMessagesSourceAssistantTurn): IRJSONValue => turn.map(messageTurnDigestMaterialV1);
 
-export const findAnthropicMessagesSidecarCarriers = (turn: AnthropicMessagesAssistantTurn): EncodedRoundTripSidecar<AnthropicMessagesAssistantTurn>[] =>
+export const findAnthropicMessagesSidecarOccurrences = (turn: AnthropicMessagesSourceAssistantTurn): SidecarOccurrence<AnthropicMessagesSourceAssistantTurn>[] =>
   turn.flatMap((message, messageIndex) => {
     const content = message.content;
     return typeof content === 'string' ? [] : content.flatMap((block, blockIndex) => block.type !== 'redacted_thinking' ? [] : [{
@@ -50,10 +50,10 @@ export const findAnthropicMessagesSidecarCarriers = (turn: AnthropicMessagesAssi
     }]);
   });
 
-export const computeAnthropicMessagesTurnDigest = (turn: AnthropicMessagesAssistantTurn): Promise<RoundTripTurnDigest> =>
+export const computeAnthropicMessagesTurnDigest = (turn: AnthropicMessagesSourceAssistantTurn): Promise<RoundTripTurnDigest> =>
   computeRoundTripTurnDigest(messagesTurnDigestMaterialV1(turn));
 
-export const collectAnthropicMessagesReplayContents = (turn: AnthropicMessagesAssistantTurn): ReplayContent[] => {
+export const collectAnthropicMessagesReplayContents = (turn: AnthropicMessagesSourceAssistantTurn): ReplayContent[] => {
   const candidates: ReplayContent[] = [];
   for (const message of turn) {
     if (typeof message.content === 'string') candidates.push(message.content);
@@ -69,7 +69,7 @@ export const collectAnthropicMessagesReplayContents = (turn: AnthropicMessagesAs
 };
 
 export const verifyAnthropicMessagesTurnDigest = (
-  turn: AnthropicMessagesAssistantTurn,
+  turn: AnthropicMessagesSourceAssistantTurn,
   sourceTurnDigest: RoundTripTurnDigest,
   version: number,
 ): Promise<boolean> => {
@@ -79,9 +79,9 @@ export const verifyAnthropicMessagesTurnDigest = (
   }
 };
 
-export const createAnthropicMessagesSidecarCarrier = (data: string): AnthropicMessagesRedactedThinkingBlock => ({ type: 'redacted_thinking', data });
+export const createAnthropicMessagesSidecarBlock = (data: string): AnthropicMessagesRedactedThinkingBlock => ({ type: 'redacted_thinking', data });
 
-export const collectAnthropicMessagesTextViews = (turn: AnthropicMessagesAssistantTurn): TextPlacementIndex => {
+export const collectAnthropicMessagesTextPlacements = (turn: AnthropicMessagesSourceAssistantTurn): TextPlacementIndex => {
   const views: TextPlacementIndex = new Map();
   for (const message of turn) {
     if (Array.isArray(message.content)) collectTextPlacementIndex(collectTextGroups(message.content, anthropicMessagesTextGroup), views);
