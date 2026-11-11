@@ -134,7 +134,7 @@ test('buildTargetPayload maps function calls, tool responses, and readable reaso
       reasoning_text: 'private trace',
       tool_calls: [
         {
-          id: 'gemini_call_0_2',
+          id: 'lookup_call_1',
           type: 'function',
           function: { name: 'lookup', arguments: '{"query":"docs"}' },
         },
@@ -142,7 +142,7 @@ test('buildTargetPayload maps function calls, tool responses, and readable reaso
     } as OpenAIChatCompletionsAssistantMessageEx,
     {
       role: 'tool',
-      tool_call_id: 'gemini_call_0_2',
+      tool_call_id: 'lookup_call_1',
       content: '{"answer":42}',
     },
   ]);
@@ -180,12 +180,12 @@ test('buildTargetPayload matches omitted functionResponse ids to same-name calls
       content: null,
       tool_calls: [
         {
-          id: 'gemini_call_0_0',
+          id: 'lookup_call_1',
           type: 'function',
           function: { name: 'lookup', arguments: '{"query":"first"}' },
         },
         {
-          id: 'gemini_call_0_1',
+          id: 'lookup_call_2',
           type: 'function',
           function: { name: 'lookup', arguments: '{"query":"second"}' },
         },
@@ -193,12 +193,12 @@ test('buildTargetPayload matches omitted functionResponse ids to same-name calls
     },
     {
       role: 'tool',
-      tool_call_id: 'gemini_call_0_0',
+      tool_call_id: 'lookup_call_1',
       content: '{"answer":"first"}',
     },
     {
       role: 'tool',
-      tool_call_id: 'gemini_call_0_1',
+      tool_call_id: 'lookup_call_2',
       content: '{"answer":"second"}',
     },
   ]);
@@ -209,14 +209,14 @@ test('buildTargetPayload does not rematch a prior call already answered by expli
     contents: [
       {
         role: 'model',
-        parts: [{ functionCall: { name: 'lookup', args: { query: 'first' } } }, { functionCall: { name: 'lookup', args: { query: 'second' } } }],
+        parts: [{ functionCall: { name: 'lookup', args: { query: 'first' } } }, { functionCall: { id: 'call_second', name: 'lookup', args: { query: 'second' } } }],
       },
       {
         role: 'user',
         parts: [
           {
             functionResponse: {
-              id: 'gemini_call_0_1',
+              id: 'call_second',
               name: 'lookup',
               response: { answer: 'second' },
             },
@@ -240,12 +240,12 @@ test('buildTargetPayload does not rematch a prior call already answered by expli
       content: null,
       tool_calls: [
         {
-          id: 'gemini_call_0_0',
+          id: 'lookup_call_1',
           type: 'function',
           function: { name: 'lookup', arguments: '{"query":"first"}' },
         },
         {
-          id: 'gemini_call_0_1',
+          id: 'call_second',
           type: 'function',
           function: { name: 'lookup', arguments: '{"query":"second"}' },
         },
@@ -253,12 +253,12 @@ test('buildTargetPayload does not rematch a prior call already answered by expli
     },
     {
       role: 'tool',
-      tool_call_id: 'gemini_call_0_1',
+      tool_call_id: 'call_second',
       content: '{"answer":"second"}',
     },
     {
       role: 'tool',
-      tool_call_id: 'gemini_call_0_0',
+      tool_call_id: 'lookup_call_1',
       content: '{"answer":"first"}',
     },
   ]);

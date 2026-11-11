@@ -80,8 +80,6 @@ export const buildTargetPayloadFor = async <
   target: TargetProtocol<TgtName, TgtPayload, TgtEvent, Context>,
   payload: SrcPayload,
   options: TranslateOptions,
-  // SourceReading is stateful, so a caller that also inspects what it recorded passes
-  // the same reading rather than opening a second one.
   reading: SourceReading<SourceAssistantTurnFor<SrcName>> = source.read(payload),
 ): Promise<TgtPayload> =>
   target.write(reading.request, await resolveReadingTurns(source, target, reading, options), options).payload;

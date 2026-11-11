@@ -1,4 +1,4 @@
-import type { RestoredAssistantTurn } from '../composition/reading.ts';
+import type { RestoredAssistantTurn, SourceCallIdentity } from '../composition/reading.ts';
 import type { IRInputRequestHeader, IRInputTool, IRInputToolChoice, IRInputToolSelector, IRInputTurn } from '../ir/input/types.ts';
 import { TranslateInputException } from '../shared/input-error.ts';
 
@@ -14,25 +14,34 @@ const customNamesOf = (request: IRInputRequestHeader): ReadonlySet<string> =>
 
 const callableKey = ({ type, namespace, name }: IRInputToolSelector): string => JSON.stringify([type, namespace, name]);
 
-const allocateCallableNames = (
-  tools: readonly IRInputTool[],
-  turns: readonly IRInputTurn[],
-): { readonly wireNames: ReadonlyMap<string, string>; readonly identities: Map<string, Pick<IRInputToolSelector, 'namespace' | 'name'>> } => {
-  const calls = turns.flatMap(turn => turn.items.flatMap(item =>
-    item.type === 'function_call' || item.type === 'custom_tool_call'
-      ? [{ type: item.type === 'function_call' ? 'function' as const : 'custom' as const, namespace: item.namespace, name: item.name }]
-      : []));
-  const callables = [...tools, ...calls];
-  const reserved = new Set(callables.flatMap(callable => callable.namespace === undefined ? [callable.name] : []));
-  const wireNames = assignToolNames(callables, reserved);
-  const identities = new Map<string, Pick<IRInputToolSelector, 'namespace' | 'name'>>();
-  for (const callable of callables) {
-    const wireName = wireNames.get(callableKey(callable))!;
-    if (callable.namespace !== undefined || wireName !== callable.name) {
-      identities.set(wireName, { name: callable.name, ...(callable.namespace === undefined ? {} : { namespace: callable.namespace }) });
-    }
+export interface NativeCallNames<Turn> {
+  readonly ids: (turn: Turn) => readonly (string | undefined)[];
+  readonly rename: (turn: Turn, names: readonly string[]) => Turn;
+}
+
+const nativeCallIdentities = <Turn>(
+  turn: RestoredAssistantTurn<Turn>,
+  native: NativeCallNames<Turn>,
+): readonly SourceCallIdentity[] => {
+  const calls = native.ids(turn.turn);
+  const remaining = new Set(turn.callIdentities);
+  const byId = new Map(turn.callIdentities.flatMap(identity => identity.call_id === undefined ? [] : [[identity.call_id, identity] as const]));
+  const matched = calls.map(callId => {
+    const identity = callId === undefined ? undefined : byId.get(callId);
+    if (identity !== undefined) remaining.delete(identity);
+    return identity;
+  });
+  const unmatched = matched.flatMap((identity, index) => identity === undefined ? [index] : []);
+  // Legacy Chat names no id. Once modern ids are removed, the one remaining
+  // source call is its identity; no wire spelling or position invents a match.
+  if (unmatched.length === 1 && remaining.size === 1) {
+    const [identity] = remaining;
+    if (calls[unmatched[0]] === undefined || identity.call_id === undefined) matched[unmatched[0]] = identity;
   }
-  return { wireNames, identities };
+  return matched.map(identity => {
+    if (identity === undefined) throw new Error('Authenticated native call has no unique source identity.');
+    return identity;
+  });
 };
 
 /**
@@ -47,9 +56,24 @@ const allocateCallableNames = (
 export const allocateToolNames = <Restored>(
   request: IRInputRequestHeader,
   inputTurns: readonly (IRInputTurn | RestoredAssistantTurn<Restored>)[],
+  native: NativeCallNames<Restored>,
 ): { readonly request: IRInputRequestHeader; readonly turns: readonly (IRInputTurn | RestoredAssistantTurn<Restored>)[]; readonly context: ToolNameContext } => {
-  const irTurns = inputTurns.flatMap(turn => turn.kind === 'restored' ? [] : [turn]);
-  const { wireNames, identities: originalToolNames } = allocateCallableNames(request.tools ?? [], irTurns);
+  const callables = [
+    ...(request.tools ?? []),
+    ...inputTurns.flatMap(turn => turn.kind === 'restored' ? turn.callIdentities : turn.items.flatMap(item =>
+      item.type === 'function_call' || item.type === 'custom_tool_call'
+        ? [{ type: item.type === 'function_call' ? 'function' as const : 'custom' as const, namespace: item.namespace, name: item.name }]
+        : [])),
+  ];
+  const reserved = new Set(callables.flatMap(callable => callable.namespace === undefined ? [callable.name] : []));
+  const wireNames = assignToolNames(callables, reserved);
+  const originalToolNames = new Map<string, Pick<IRInputToolSelector, 'namespace' | 'name'>>();
+  for (const callable of callables) {
+    const wireName = wireNames.get(callableKey(callable))!;
+    if (callable.namespace !== undefined || wireName !== callable.name) {
+      originalToolNames.set(wireName, { name: callable.name, ...(callable.namespace === undefined ? {} : { namespace: callable.namespace }) });
+    }
+  }
 
   const wireNameOf = (callable: IRInputToolSelector): string => {
     const wireName = wireNames.get(callableKey(callable));
@@ -80,7 +104,10 @@ export const allocateToolNames = <Restored>(
     request: allocatedRequest,
     context: { customToolNames: customNamesOf(allocatedRequest), originalToolNames },
     turns: inputTurns.map((turn): IRInputTurn | RestoredAssistantTurn<Restored> => {
-      if (turn.kind === 'restored') return turn;
+      if (turn.kind === 'restored') {
+        const names = nativeCallIdentities(turn, native).map(wireNameOf);
+        return names.length === 0 ? turn : { ...turn, turn: native.rename(turn.turn, names) };
+      }
       if (turn.kind === 'assistant') {
         return {
           kind: 'assistant',

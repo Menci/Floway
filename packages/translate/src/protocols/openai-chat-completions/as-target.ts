@@ -41,7 +41,24 @@ export const openaiChatCompletionsTargetProtocol: TargetProtocol<
   // This wire addresses a callable by one bare name, so every grouped
   // declaration and call is stated under the flat spelling it computes.
   write: (request, turns) => {
-    const flattened = allocateToolNames(request, turns);
+    const flattened = allocateToolNames(request, turns, {
+      ids: turn => [
+        ...(turn.function_call == null ? [] : [undefined]),
+        ...(turn.tool_calls ?? []).map(call => call.id),
+      ],
+      rename: (turn, names) => {
+        let index = 0;
+        return {
+          ...turn,
+          ...(turn.function_call == null ? {} : { function_call: { ...turn.function_call, name: names[index++]! } }),
+          ...(turn.tool_calls === undefined ? {} : {
+            tool_calls: turn.tool_calls.map(call => call.type === 'function'
+              ? { ...call, function: { ...call.function, name: names[index++]! } }
+              : { ...call, custom: { ...call.custom, name: names[index++]! } }),
+          }),
+        };
+      },
+    });
     const legacy = chatLegacyCallsOf(flattened.turns);
     return {
       payload: openaiChatCompletionsPayloadFromSegments(

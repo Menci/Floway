@@ -15,7 +15,7 @@ const result = (name?: string, callId?: string): IRInputTurn => ({
   items: [{ type: 'tool_result', ...(name === undefined ? {} : { name }), ...(callId === undefined ? {} : { call_id: callId }), output: '' }],
 });
 /** A turn a sidecar restored: one the target states natively, with its own calls. */
-const restored = (calls: readonly PendingCall[]): RestoredAssistantTurn<readonly PendingCall[]> => ({ kind: 'restored', turn: calls });
+const restored = (calls: readonly PendingCall[]): RestoredAssistantTurn<readonly PendingCall[]> => ({ kind: 'restored', callIdentities: [], turn: calls });
 const restoredCalls = (turn: readonly PendingCall[]): readonly PendingCall[] => turn;
 
 /** The result the last client turn ends with. */

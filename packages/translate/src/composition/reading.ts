@@ -1,8 +1,13 @@
-import type { IRInputRequestHeader, IRInputTurn } from '../ir/input/types.ts';
+import type { IRInputRequestHeader, IRInputToolSelector, IRInputTurn } from '../ir/input/types.ts';
+
+export interface SourceCallIdentity extends IRInputToolSelector {
+  readonly call_id?: string;
+}
 
 export interface RestoredAssistantTurn<Turn> {
   readonly kind: 'restored';
   readonly turn: Turn;
+  readonly callIdentities: readonly SourceCallIdentity[];
 }
 
 /**
@@ -17,6 +22,9 @@ export interface RestoredAssistantTurn<Turn> {
  * digest are material taken from it — so a resolved turn cannot be rebuilt from
  * the IR it would have produced.
  *
+ * `readCallIdentities` reads only naming facts for native replay, independently
+ * of the conversion that would normalize or discard native residuals.
+ *
  * `toIRInputTurns` is a thunk because the two paths are exclusive: a turn a sidecar
  * resolves is written natively, and its IR is never built.
  */
@@ -25,6 +33,7 @@ export type SourceTurnSlot<AssistantTurn> =
   | {
     readonly kind: 'assistant';
     readonly assistantTurn: AssistantTurn;
+    readonly readCallIdentities: () => readonly SourceCallIdentity[];
     readonly toIRInputTurns: () => IRInputTurn[];
   };
 
@@ -77,7 +86,7 @@ export const resolveReading = async <AssistantTurn, Resolved>(
       append(turn.toIRInputTurns());
       continue;
     }
-    turns.push({ kind: 'restored', turn: result });
+    turns.push({ kind: 'restored', turn: result, callIdentities: turn.readCallIdentities() });
   }
   return turns;
 };

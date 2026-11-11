@@ -136,7 +136,7 @@ test('buildTargetPayload maps assistant reasoning, function calls, and call-orde
     },
     {
       type: 'function_call',
-      call_id: 'gemini_call_0_2',
+      call_id: 'lookup_call_1',
       name: 'lookup',
       arguments: '{"query":"first"}',
       status: 'completed',
@@ -150,7 +150,7 @@ test('buildTargetPayload maps assistant reasoning, function calls, and call-orde
     },
     {
       type: 'function_call_output',
-      call_id: 'gemini_call_0_2',
+      call_id: 'lookup_call_1',
       output: '{"answer":"first"}',
       status: 'completed',
     },
@@ -187,7 +187,7 @@ test('buildTargetPayload ignores thought signatures when translating to OpenAI R
     },
     {
       type: 'function_call',
-      call_id: 'gemini_call_0_1',
+      call_id: 'lookup_call_1',
       name: 'lookup',
       arguments: '{}',
       status: 'completed',

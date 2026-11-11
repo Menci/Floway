@@ -8,8 +8,8 @@ import { TranslateInputException } from '../../../../src/shared/input-error.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 type LegacyTurn = InputAssistantTurnFor<'openaiChatCompletions'>;
-const legacy = (name: string): RestoredAssistantTurn<LegacyTurn> => ({ kind: 'restored', turn: { role: 'assistant', function_call: { name, arguments: '{}' } } });
-const modern = (callId: string): RestoredAssistantTurn<LegacyTurn> => ({ kind: 'restored', turn: { role: 'assistant', tool_calls: [{ id: callId, type: 'function', function: { name: 'lookup', arguments: '{}' } }] } });
+const legacy = (name: string): RestoredAssistantTurn<LegacyTurn> => ({ kind: 'restored', callIdentities: [], turn: { role: 'assistant', function_call: { name, arguments: '{}' } } });
+const modern = (callId: string): RestoredAssistantTurn<LegacyTurn> => ({ kind: 'restored', callIdentities: [], turn: { role: 'assistant', tool_calls: [{ id: callId, type: 'function', function: { name: 'lookup', arguments: '{}' } }] } });
 const message = (text: string): IRInputTurn => ({ kind: 'client', items: [{ type: 'message', content: [{ type: 'text', text }] }] });
 const result = (callId: string): IRInputTurn => ({ kind: 'client', items: [{ type: 'tool_result', call_id: callId, output: '' }] });
 

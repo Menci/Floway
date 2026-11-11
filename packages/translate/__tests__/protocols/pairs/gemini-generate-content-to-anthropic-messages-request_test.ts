@@ -194,7 +194,7 @@ test('buildTargetPayload keeps readable thinking and tool calls while dropping t
         },
         {
           type: 'tool_use',
-          id: 'gemini_call_1_0',
+          id: 'fallback_call_1',
           name: 'fallback',
           input: {},
           cache_control: { type: 'ephemeral' },
@@ -236,13 +236,13 @@ test('buildTargetPayload correlates omitted function response ids in call order'
       content: [
         {
           type: 'tool_use',
-          id: 'gemini_call_0_0',
+          id: 'lookup_call_1',
           name: 'lookup',
           input: { q: 'first' },
         },
         {
           type: 'tool_use',
-          id: 'gemini_call_0_1',
+          id: 'lookup_call_2',
           name: 'lookup',
           input: { q: 'second' },
         },
@@ -253,12 +253,12 @@ test('buildTargetPayload correlates omitted function response ids in call order'
       content: [
         {
           type: 'tool_result',
-          tool_use_id: 'gemini_call_0_0',
+          tool_use_id: 'lookup_call_1',
           content: '{"answer":"first"}',
         },
         {
           type: 'tool_result',
-          tool_use_id: 'gemini_call_0_1',
+          tool_use_id: 'lookup_call_2',
           content: '{"answer":"second"}',
           cache_control: { type: 'ephemeral' },
         },

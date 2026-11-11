@@ -50,7 +50,7 @@ const inlinePart = (part: GeminiGenerateContentPart): IRInputUserContentPart => 
   }
 };
 
-const userParts = (content: GeminiGenerateContentContent, ids: GeminiGenerateContentUnmatchedCallIds): IRInputClientItem[] => {
+const userParts = (content: GeminiGenerateContentContent): IRInputClientItem[] => {
   const items: IRInputClientItem[] = [];
   const pending: IRInputUserContentPart[] = [];
   const flush = (): void => {
@@ -64,14 +64,13 @@ const userParts = (content: GeminiGenerateContentContent, ids: GeminiGenerateCon
     case null:
       return;
     case 'function_response': {
-      const { response, id } = geminiGenerateContentFunctionResponseMatch(part, ids)!;
+      const response = part.functionResponse!;
       flush();
       items.push({
         type: 'tool_result',
-        // The name is what lets a target pair a result this reader could not:
-        // GenerateContent correlates by name, and the id may be unstated.
+        // The target matches id-less results against both ordinary and native calls.
         name: response.name,
-        ...(id === undefined ? {} : { call_id: id }),
+        ...(response.id === undefined ? {} : { call_id: response.id }),
         output: JSON.stringify(response.response),
       });
       return;
@@ -96,7 +95,7 @@ const userParts = (content: GeminiGenerateContentContent, ids: GeminiGenerateCon
 // position it occupies in the request.
 const reasoningId = (contentIndex: number, partIndex: number): string => `gemini_reasoning_${contentIndex}_${partIndex}`;
 
-const assistantItems = (content: GeminiGenerateContentContent, contentIndex: number, ids: GeminiGenerateContentUnmatchedCallIds): IRInputAssistantItem[] => {
+const assistantItems = (content: GeminiGenerateContentContent, contentIndex: number): IRInputAssistantItem[] => {
   const items: IRInputAssistantItem[] = [];
   const pending: IRInputAssistantContentPart[] = [];
   const flush = (): void => {
@@ -112,12 +111,12 @@ const assistantItems = (content: GeminiGenerateContentContent, contentIndex: num
   parts.forEach(({ kind, part }, partIndex) => {
     switch (kind) {
     case 'function_call': {
-      const { call, id } = geminiGenerateContentFunctionCallMatch(part, ids, contentIndex, partIndex)!;
+      const call = part.functionCall!;
       flush();
       // An absent `functionCall.args` stays absent: `JSON.stringify(undefined)`
       // is `undefined`, so the field is omitted exactly as before. An explicit
       // `null` keeps `null`, because both OpenAI protocols distinguish the two.
-      items.push({ type: 'function_call', call_id: id, name: call.name, arguments: JSON.stringify(call.args) });
+      items.push({ type: 'function_call', ...(call.id === undefined ? {} : { call_id: call.id }), name: call.name, arguments: JSON.stringify(call.args) });
       return;
     }
     case 'text': {
@@ -155,13 +154,12 @@ const systemParts = (content: GeminiGenerateContentContent | undefined): IRInput
 const turnToIRTurns = (
   turn: GeminiGenerateContentTurn,
   contentIndex: number,
-  ids: GeminiGenerateContentUnmatchedCallIds,
 ): IRInputTurn[] => turn.role === 'assistant'
   ? [{
       kind: 'assistant',
       items: turn.items.flatMap((content, index) => (content.parts?.length ?? 0) === 0
         ? [{ type: 'message' as const, content: [{ type: 'text' as const, text: '' }] }]
-        : assistantItems(content, contentIndex + index, ids)),
+        : assistantItems(content, contentIndex + index)),
     }]
   : [{
       kind: 'client',
@@ -171,7 +169,7 @@ const turnToIRTurns = (
         }
         return (content.parts?.length ?? 0) === 0
           ? [{ type: 'message' as const, content: [] }]
-          : userParts(content, ids);
+          : userParts(content);
       }),
     }];
 
@@ -223,36 +221,22 @@ const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequestHe
   };
 };
 
-/**
- * A GenerateContent request read into the turns a writer consumes.
- *
- * Reading a GenerateContent conversation is stateful in two ways. A
- * `functionResponse` part states a call id only when the caller has one and
- * otherwise answers the oldest call of that name, so the reader tracks which
- * calls it has already matched. A call id the source omitted is invented from
- * the position of the content and the part, which the reader counts across the
- * whole request.
- *
- * A sidecar-resolved assistant turn never passes through this reader, but it
- * did consume source contents, and the calls it states are keyed by ids the
- * reader would otherwise not know. Both counters live in a closure each turn's
- * `toIRInputTurns` captures, so the reading stays a plain value.
- */
 export const readGeminiGenerateContentRequest = (payload: GeminiGenerateContentRequest): SourceReading<GeminiGenerateContentSourceAssistantTurn> => {
-  const ids: GeminiGenerateContentUnmatchedCallIds = Object.create(null);
   let contentIndex = 0;
   const prompt = geminiGenerateContentSystemToIR(payload.systemInstruction);
 
-  // Reading is stateful: an id-less `functionResponse` answers the oldest call
-  // of its name, and an omitted id is invented from the position the content
-  // and part occupy. Both have to advance over every turn, which is why the
-  // thunks close over the position they were created at.
   const turnSlotFor = (turn: GeminiGenerateContentTurn): SourceTurnSlot<GeminiGenerateContentSourceAssistantTurn> => {
     const at = contentIndex;
     contentIndex += turn.items.length;
-    const toIRInputTurns = () => turnToIRTurns(turn, at, ids);
+    const toIRInputTurns = () => turnToIRTurns(turn, at);
     if (turn.role !== 'assistant') return { kind: 'client', toIRInputTurns };
-    return { kind: 'assistant', assistantTurn: turn.items, toIRInputTurns };
+    return {
+      kind: 'assistant', assistantTurn: turn.items, toIRInputTurns,
+      readCallIdentities: () => turn.items.flatMap(content => (content.parts ?? []).flatMap(part => part.functionCall === undefined ? [] : [{
+        type: 'function' as const, name: part.functionCall.name,
+        ...(part.functionCall.id === undefined ? {} : { call_id: part.functionCall.id }),
+      }])),
+    };
   };
 
   return {
@@ -316,54 +300,6 @@ const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest
     // no reasoning at all has nothing to summarize.
     ...(effort !== 'none' && config?.thinkingConfig?.includeThoughts === true ? { reasoning_summary: 'detailed' } : {}),
   };
-};
-
-const geminiGenerateContentToolCallId = (contentIndex: number, partIndex: number): string => `gemini_call_${contentIndex}_${partIndex}`;
-
-type GeminiGenerateContentUnmatchedCallIds = Record<string, string[]>;
-
-type GeminiGenerateContentFunctionCall = NonNullable<GeminiGenerateContentPart['functionCall']>;
-type GeminiGenerateContentFunctionResponse = NonNullable<GeminiGenerateContentPart['functionResponse']>;
-
-interface GeminiGenerateContentFunctionCallMatch {
-  call: GeminiGenerateContentFunctionCall;
-  id: string;
-}
-
-interface GeminiGenerateContentFunctionResponseMatch {
-  response: GeminiGenerateContentFunctionResponse;
-  // Absent when the source stated no id and no call this reader saw is still
-  // awaiting this answer: a target then pairs the result by order, which is
-  // what makes it answer a call only a restored turn stated.
-  id: string | undefined;
-}
-
-const geminiGenerateContentFunctionCallMatch = (part: GeminiGenerateContentPart, ids: GeminiGenerateContentUnmatchedCallIds, contentIndex: number, partIndex: number): GeminiGenerateContentFunctionCallMatch | null => {
-  const call = part.functionCall;
-  if (!call) return null;
-
-  const id = call.id ?? geminiGenerateContentToolCallId(contentIndex, partIndex);
-  ids[call.name] ??= [];
-  ids[call.name].push(id);
-
-  return { call, id };
-};
-
-const geminiGenerateContentFunctionResponseMatch = (part: GeminiGenerateContentPart, ids: GeminiGenerateContentUnmatchedCallIds): GeminiGenerateContentFunctionResponseMatch | null => {
-  const response = part.functionResponse;
-  if (!response) return null;
-
-  const unmatched = ids[response.name];
-  if (response.id !== undefined) {
-    const index = unmatched?.indexOf(response.id) ?? -1;
-    if (index >= 0) unmatched?.splice(index, 1);
-    return { response, id: response.id };
-  }
-
-  // An id-less answer pairs with the oldest call of its name this reader has
-  // seen. When none is left, the call it answers came from a turn a sidecar
-  // restored, so the result states no id and the target pairs it by position.
-  return { response, id: unmatched?.shift() };
 };
 
 const GEMINI_GENERATE_CONTENT_SUPPORTED_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] as const;
