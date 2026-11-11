@@ -47,7 +47,7 @@ for (const [code, category] of [['bio_policy', 'bio'], ['cyber_policy', 'cyber']
 
 test.each(['The model failed.', 'The safety policy service is unavailable.'])('a server error stays an error regardless of message keywords: %s', async message => {
   const frames = await collect(generateContentViaResponses(iterate([eventFrame({ type: 'response.failed', response: { id: 'resp_failed', model: 'served', output: [], status: 'failed', error: { code: 'server_error', message } } })] as any), createTestSidecarCodec()));
-  expect(frames).toEqual([eventFrame({ error: { code: 500, status: 'INTERNAL', message } })]);
+  expect(frames).toEqual([eventFrame({ error: { code: 500, status: 'INTERNAL', message, details: [{ '@type': 'type.googleapis.com/google.protobuf.Struct', value: { code: 'server_error' } }] } })]);
 });
 
 test('a failed Responses stream without an error description still fails with a message', async () => {
@@ -57,7 +57,7 @@ test('a failed Responses stream without an error description still fails with a 
 
 test('rate limiting becomes a native GenerateContent error', async () => {
   const frames = await collect(generateContentViaResponses(iterate([eventFrame({ type: 'error', code: 'rate_limit_exceeded', message: 'Try later.' })] as any), createTestSidecarCodec()));
-  expect(frames).toEqual([eventFrame({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'Try later.' } })]);
+  expect(frames).toEqual([eventFrame({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'Try later.', details: [{ '@type': 'type.googleapis.com/google.protobuf.Struct', value: { code: 'rate_limit_exceeded' } }] } })]);
 });
 
 test('ChatCompletions ignores empty identity frames and starts when a model appears', async () => {
