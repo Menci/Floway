@@ -76,15 +76,20 @@ export const errorPayloadFromWire = (wire: unknown): IRErrorPayload => {
   // A wire object that states a message is already the IR's shape, so it
   // travels as it arrived. One that states none still has to be reported, and
   // the message is the only field the IR requires.
-  if (isErrorPayload(source)) return source;
+  if (hasErrorMessage(source)) return source;
+  const aliasMessage = stringOf(source.msg);
+  if (aliasMessage !== undefined) {
+    const { msg: _msg, ...fields } = source;
+    return { ...fields, message: aliasMessage };
+  }
   // Gathered rather than nested again: this object may itself carry the
   // container, and wrapping it whole would state one inside another.
   const extra = extensionOf(source, NAMED_ERROR_FIELDS);
   return { message: '', ...(extra === undefined ? {} : { provider_specific_fields: extra }) };
 };
 
-const isErrorPayload = (value: Readonly<Record<string, unknown>>): value is IRErrorPayload & Readonly<Record<string, unknown>> =>
-  stringOf(value.message) !== undefined || stringOf(value.msg) !== undefined;
+const hasErrorMessage = (value: Readonly<Record<string, unknown>>): value is Readonly<Record<string, unknown>> & { readonly message: string } =>
+  stringOf(value.message) !== undefined;
 
 // The fields the IR names, so a payload can state everything else instead of
 // losing it.

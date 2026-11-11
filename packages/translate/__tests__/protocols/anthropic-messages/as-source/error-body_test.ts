@@ -117,3 +117,21 @@ test('preserves the same failure fields before and during a stream', () => {
   assertEquals(decoded(result).error, expected);
   assertEquals(anthropicMessagesErrorFromIR(errorPayloadFromWire(error)), expected);
 });
+
+test('normalizes a wire msg alias before treating the object as an IR error', () => {
+  const details = { request_id: 'req_alias' };
+  const wire = { msg: 'Alias message', code: 'invalid_value', param: 'temperature', provider_specific_fields: details };
+  const error = errorPayloadFromWire({ error: wire });
+  assertEquals(error.message, wire.msg);
+  assertEquals(error.code, wire.code);
+  assertEquals(error.param, wire.param);
+  assert(error.provider_specific_fields === details);
+  assertEquals(anthropicMessagesErrorFromIR(error).message, wire.msg);
+  const beforeStream = restateAnthropicMessagesError(...upstreamOf(400, { error: wire }));
+  assertEquals(decoded(beforeStream).error, anthropicMessagesErrorFromIR(error));
+});
+
+test('a canonical wire error keeps its original object', () => {
+  const wire = { message: 'Canonical message', code: 'invalid_value' };
+  assert(errorPayloadFromWire({ error: wire }) === wire);
+});
