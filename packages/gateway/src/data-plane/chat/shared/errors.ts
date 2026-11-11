@@ -10,6 +10,12 @@ export type ChatServeFailure =
   | { readonly kind: 'model-unsupported'; readonly model: string; readonly failedUpstreams: readonly string[] }
   | { readonly kind: 'routing-unavailable'; readonly message: string };
 
+export interface InputErrorDetails {
+  readonly message: string;
+  readonly param?: string;
+  readonly code?: string;
+}
+
 class ChatServeFailureError<TFailure extends { readonly kind: string }> extends Error {
   readonly failure: TFailure;
 

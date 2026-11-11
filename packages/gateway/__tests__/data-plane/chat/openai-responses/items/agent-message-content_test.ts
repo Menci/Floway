@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import { agentMessageContent } from '../../../../../src/data-plane/chat/openai-responses/items/agent-message-content.ts';
+import { tryCatchChatServeFailure, type InputErrorDetails } from '../../../../../src/data-plane/chat/shared/errors.ts';
 import type { OpenAIResponsesInputAgentMessageItem } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
@@ -61,9 +62,12 @@ test('agentMessageContent reports the exact path for unknown beta content', () =
   const error = assertThrows(
     () => agentMessageContent(agentMessage([{ type: 'future_agent_part', value: 1 }])),
     Error,
-    "Invalid value: 'future_agent_part'",
   );
-  assertEquals((error as Error & { param?: string }).param, 'agent_message.content[0].type');
+  assertEquals(tryCatchChatServeFailure<InputErrorDetails & { readonly kind: 'invalid-input' }>(error), {
+    kind: 'invalid-input',
+    message: "Invalid value: 'future_agent_part' for 'agent_message.content[0].type'.",
+    param: 'agent_message.content[0].type',
+  });
 });
 
 test('agentMessageContent reports the exact path for malformed text', () => {
@@ -72,7 +76,10 @@ test('agentMessageContent reports the exact path for malformed text', () => {
       { type: 'input_text', text: 42 } as unknown as OpenAIResponsesInputAgentMessageItem['content'][number],
     ])),
     Error,
-    "Invalid type for 'agent_message.content[0].text'",
   );
-  assertEquals((error as Error & { param?: string }).param, 'agent_message.content[0].text');
+  assertEquals(tryCatchChatServeFailure<InputErrorDetails & { readonly kind: 'invalid-input' }>(error), {
+    kind: 'invalid-input',
+    message: "Invalid type for 'agent_message.content[0].text': expected a string.",
+    param: 'agent_message.content[0].text',
+  });
 });

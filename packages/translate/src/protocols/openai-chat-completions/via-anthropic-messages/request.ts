@@ -1,7 +1,7 @@
 import { klona } from 'klona/json';
 
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
-import { TranslatorInputError } from '../../../translator-input-error.ts';
+import { TranslateInputException } from '../../../shared/input-error.ts';
 import type { SidecarCodec, RemoteImageLoader } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-messages/as-target/reasoning-effort.ts';
@@ -54,7 +54,7 @@ const buildAssistantBlocks = (message: OpenAIChatCompletionsAssistantMessage): A
   if (message.refusal) blocks.push({ type: 'text', text: message.refusal });
 
   for (const toolCall of message.tool_calls ?? []) {
-    if (toolCall.type !== 'function') throw new TranslatorInputError('Cannot translate a custom Chat tool call to Anthropic Messages.');
+    if (toolCall.type !== 'function') throw new TranslateInputException('Cannot translate a custom Chat tool call to Anthropic Messages.');
     blocks.push({
       type: 'tool_use',
       id: toolCall.id,
@@ -101,7 +101,7 @@ const convertUserContent = async (message: OpenAIChatCompletionsMessage, loadRem
         return resolveImageUrlToAnthropicMessagesImage(part.image_url.url, loadRemoteImage);
       }
 
-      throw new TranslatorInputError(`Invalid '${(part as { type: string }).type}' content part. Only 'text' and 'image_url' are supported in user content.`);
+      throw new TranslateInputException(`Invalid '${(part as { type: string }).type}' content part. Only 'text' and 'image_url' are supported in user content.`);
     }),
   );
 
@@ -125,7 +125,7 @@ const convertSystemContent = (content: OpenAIChatCompletionsMessage['content']):
   const blocks: AnthropicMessagesTextBlockParam[] = [];
   for (const part of content) {
     if (part.type === 'image_url') {
-      throw new TranslatorInputError("Invalid 'image_url' content part in system or developer message. Only 'text' content parts are supported in system messages on this model.");
+      throw new TranslateInputException("Invalid 'image_url' content part in system or developer message. Only 'text' content parts are supported in system messages on this model.");
     }
     if (part.type === 'text') {
       blocks.push({ type: 'text', text: part.text });
@@ -147,7 +147,7 @@ const translateNonAssistantMessages = async (
       break;
     case 'tool':
       if (!message.tool_call_id) {
-        throw new TranslatorInputError("Missing required field 'tool_call_id' on a 'tool' role message.");
+        throw new TranslateInputException("Missing required field 'tool_call_id' on a 'tool' role message.");
       }
 
       appendUserBlocks(result, [
@@ -175,14 +175,14 @@ const translateNonAssistantMessages = async (
       break;
     }
     default:
-      throw new TranslatorInputError(`Invalid role '${message.role}'.`);
+      throw new TranslateInputException(`Invalid role '${message.role}'.`);
     }
   }
 };
 
 const translateOpenAIChatCompletionsTools = (tools: OpenAIChatCompletionsTool[]): AnthropicMessagesPayload['tools'] =>
   tools.map(tool => {
-    if (tool.type !== 'function') throw new TranslatorInputError('Cannot translate custom Chat tools to Anthropic Messages.');
+    if (tool.type !== 'function') throw new TranslateInputException('Cannot translate custom Chat tools to Anthropic Messages.');
     return {
       name: tool.function.name,
       description: tool.function.description,
@@ -195,7 +195,7 @@ const translateOpenAIChatCompletionsToolChoice = (toolChoice: NonNullable<OpenAI
   if (typeof toolChoice === 'string') return klona(CHAT_TOOL_CHOICES[toolChoice]);
 
   if (toolChoice.type === 'allowed_tools') return { type: toolChoice.allowed_tools.mode === 'required' ? 'any' : 'auto' };
-  if (toolChoice.type !== 'function') throw new TranslatorInputError(`Cannot translate ${toolChoice.type} Chat tool choice to Anthropic Messages.`);
+  if (toolChoice.type !== 'function') throw new TranslateInputException(`Cannot translate ${toolChoice.type} Chat tool choice to Anthropic Messages.`);
   return { type: 'tool', name: toolChoice.function.name };
 };
 
@@ -242,7 +242,7 @@ export const buildTargetRequest = async (
   const maxTokens = payload.max_tokens ?? options.fallbackMaxOutputTokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS;
   const allowedTools = typeof payload.tool_choice === 'object' && payload.tool_choice?.type === 'allowed_tools'
     ? new Set(payload.tool_choice.allowed_tools.tools.map(tool => {
-        if (tool.type !== 'function') throw new TranslatorInputError('Cannot translate custom Chat tools to Anthropic Messages.');
+        if (tool.type !== 'function') throw new TranslateInputException('Cannot translate custom Chat tools to Anthropic Messages.');
         return tool.function.name;
       }))
     : undefined;

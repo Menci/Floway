@@ -2,8 +2,8 @@
 
 `src/protocols/<protocol>/` owns translation entrypoints and protocol-specific
 code. `__tests__/protocols/` mirrors production ownership. Package callers
-import the source protocol's subpath and call
-`route<Protocol>(input).via<Target>(context)` to create an independent trip.
+import the package root and call
+`route<Source>Via<Target>(input, options)` to create an independent trip.
 
 ## Categories
 
@@ -27,7 +27,7 @@ import the source protocol's subpath and call
    validation, and native stream coordination under `round-trip/`. Source replay
    inspection and carriers belong in `as-source/round-trip.ts`; native assistant-turn
    shapes and output-to-input converters belong in `as-target/assistant-turn.ts`.
-   Transport encoding is injected through `TranslationContext.sidecarCodec`.
+   Transport encoding is injected through `TranslateOptions.sidecarCodec`.
 7. **Protocol-independent utility** — keep it in `shared/`, with tests under
    `__tests__/shared/`. Protocol behavior belongs in its owning protocol directory.
 
