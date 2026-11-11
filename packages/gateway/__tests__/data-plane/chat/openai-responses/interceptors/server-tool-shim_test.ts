@@ -36,6 +36,7 @@ import type {
 import { getRepo, initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
+import { requireTrip } from '../../shared/require-trip.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { decodeCanonicalBase64, encodeBase64, eventFrame } from '@floway-dev/protocols/common';
 import type { BillableUsage, ProtocolFrame } from '@floway-dev/protocols/common';
@@ -55,7 +56,7 @@ import type {
 } from '@floway-dev/protocols/openai-responses';
 import { eventResult, type EventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, assertFalse, assertRejects, stubModelCandidate } from '@floway-dev/test-utils';
-import { routeOpenAIResponses } from '@floway-dev/translate/openai-responses';
+import { routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
 const withOpenAIResponsesWebSearchShim = withOpenAIResponsesServerToolShim([webSearchServerTool]);
 
@@ -7350,7 +7351,7 @@ for (const targetApi of ['openaiChatCompletions', 'anthropicMessages', 'openaiRe
         ]]).run();
       }
       if (targetApi === 'openaiChatCompletions') {
-        const trip = await routeOpenAIResponses(inv.payload).viaOpenAIChatCompletions({ model: 'm', sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) });
+        const trip = await requireTrip(routeOpenAIResponsesViaOpenAIChatCompletions(inv.payload, { model: 'm', sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }));
         const client = trip.target.tools?.[1];
         assert(client?.type === 'function');
         const events = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
@@ -7359,7 +7360,7 @@ for (const targetApi of ['openaiChatCompletions', 'anthropicMessages', 'openaiRe
         })();
         return eventResult(trip.events(events), testTelemetryModelIdentity);
       }
-      const trip = await routeOpenAIResponses(inv.payload).viaAnthropicMessages({ model: 'm', sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn), loadRemoteImage: async () => { throw new Error('Unexpected image'); } });
+      const trip = await requireTrip(routeOpenAIResponsesViaAnthropicMessages(inv.payload, { model: 'm', sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn), loadRemoteImage: async () => { throw new Error('Unexpected image'); } }));
       const tool = trip.target.tools?.[1];
       const name = tool !== undefined && 'name' in tool ? tool.name : undefined;
       assert(typeof name === 'string');
@@ -7416,8 +7417,8 @@ for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
         choices.push(structuredClone(inv.payload.tool_choice));
         const before = structuredClone(inv.payload);
         const trip = target === 'openaiChatCompletions'
-          ? await routeOpenAIResponses(inv.payload).viaOpenAIChatCompletions({ model: 'm', sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) })
-          : await routeOpenAIResponses(inv.payload).viaAnthropicMessages({ model: 'm', sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn), loadRemoteImage: async () => { throw new Error('Unexpected image'); } });
+          ? await requireTrip(routeOpenAIResponsesViaOpenAIChatCompletions(inv.payload, { model: 'm', sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }))
+          : await requireTrip(routeOpenAIResponsesViaAnthropicMessages(inv.payload, { model: 'm', sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn), loadRemoteImage: async () => { throw new Error('Unexpected image'); } }));
         const wire = JSON.parse(JSON.stringify(trip.target)) as { tools: Array<{ name?: string; function?: { name: string } }> };
         assert(wire.tools.some(tool => (tool.function?.name ?? tool.name) === alias), 'the translated subset must declare the helper alias');
         assertEquals(inv.payload, before, 'repeated translation must preserve the outer loop payload');

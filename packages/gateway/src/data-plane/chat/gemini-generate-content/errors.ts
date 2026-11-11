@@ -1,9 +1,7 @@
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
-import type { ChatServeFailure } from '../shared/errors.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiGenerateContentStreamEvent, GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
-import { internalDebugErrorFields, type ExecuteResult, type PerformanceTelemetryContext, type InternalDebugError } from '@floway-dev/provider';
-import type { TranslatorInputError } from '@floway-dev/translate';
+import type { ChatServeFailure, InputErrorDetails } from '../shared/errors.ts';
+import type { GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
+import { internalDebugErrorFields, type ApiErrorResult, type PerformanceTelemetryContext, type InternalDebugError } from '@floway-dev/provider';
 
 // Google RPC Status envelope, used by Gemini's `error` channel everywhere
 // (HTTP body, SSE-tunnelled error event).
@@ -47,7 +45,7 @@ export const geminiGenerateContentInternalErrorPayload = (status: number, error:
   };
 };
 
-const geminiGenerateContentRpcErrorResult = (status: number, message: string, performance?: PerformanceTelemetryContext): ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>> => ({
+const geminiGenerateContentRpcErrorResult = (status: number, message: string, performance?: PerformanceTelemetryContext): ApiErrorResult => ({
   type: 'api-error',
   source: 'gateway',
   status,
@@ -62,12 +60,12 @@ const geminiGenerateContentRpcErrorResult = (status: number, message: string, pe
 // disallowed role, missing required field, etc.). Render as a 400
 // INVALID_ARGUMENT envelope so the caller sees a Gemini-generateContent-shaped failure
 // instead of the internal-error 500 envelope. `performance` carries the
-// throwing candidate's telemetry attribution when the throw fired
-// mid-attempt (see AttemptState.telemetry).
-export const translatorInputErrorResult = (
-  error: TranslatorInputError,
+// candidate's telemetry attribution when validation failed
+// during an attempt (see AttemptState.telemetry).
+export const inputErrorResult = (
+  error: InputErrorDetails,
   performance?: PerformanceTelemetryContext,
-): ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>> =>
+): ApiErrorResult =>
   geminiGenerateContentRpcErrorResult(400, error.message, performance);
 
 // `endpoint` selects between `:generateContent` and `:countTokens` only in
@@ -75,7 +73,7 @@ export const translatorInputErrorResult = (
 export const renderGeminiGenerateContentFailure = (
   failure: ChatServeFailure,
   endpoint: 'generate' | 'countTokens',
-): ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>> => {
+): ApiErrorResult => {
   switch (failure.kind) {
   case 'routing-unavailable':
     return geminiGenerateContentRpcErrorResult(400, failure.message);

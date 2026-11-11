@@ -1,4 +1,4 @@
-import { TranslatorInputError } from '../../../translator-input-error.ts';
+import { TranslateInputException } from '../../../shared/input-error.ts';
 import type { OpenAIChatCompletionsContentPart } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesInputContent } from '@floway-dev/protocols/openai-responses';
 
@@ -26,7 +26,7 @@ export const openaiChatCompletionsContentToOpenAIResponsesInputContent = (conten
       case 'refusal':
         return { type: 'refusal', refusal: part.refusal };
       case 'input_audio':
-        throw new TranslatorInputError('Cannot translate input_audio content to OpenAI Responses.');
+        throw new TranslateInputException('Cannot translate input_audio content to OpenAI Responses.');
       case 'file':
         return { type: 'input_file', ...part.file };
       case 'image_url':

@@ -411,7 +411,7 @@ test('translateToSourceEvents translates OpenAI Responses failed terminal events
 
 test.each(['flat error', 'nested error', 'failed response'])('translateToSourceEvents preserves the error provider namespace without copying (%s)', async path => {
   const provider_specific_fields = {
-    name: 'TranslatorInputError',
+    name: 'TranslateInputException',
     stack: 'translator stack',
     cause: { message: 'source failed', cause: { code: 17, details: [false, null, { value: 'nested' }] } },
     target_api: 'openai-responses',

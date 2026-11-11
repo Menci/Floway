@@ -1,5 +1,5 @@
+import { throwChatServeFailure } from '../../shared/errors.ts';
 import type { OpenAIResponsesInputAgentMessageItem, OpenAIResponsesInputContent, OpenAIResponsesInputImage } from '@floway-dev/protocols/openai-responses';
-import { TranslatorInputError } from '@floway-dev/translate';
 
 interface AgentContentFields {
   type: string;
@@ -12,14 +12,14 @@ interface AgentContentFields {
 
 const requiredString = (value: unknown, path: string): string => {
   if (typeof value !== 'string') {
-    throw new TranslatorInputError(`Invalid type for '${path}': expected a string.`, { param: path });
+    return throwChatServeFailure({ kind: 'invalid-input', message: `Invalid type for '${path}': expected a string.`, param: path });
   }
   return value;
 };
 
 const nullableString = (value: unknown, path: string): string | null | undefined => {
   if (value !== undefined && value !== null && typeof value !== 'string') {
-    throw new TranslatorInputError(`Invalid type for '${path}': expected a string or null.`, { param: path });
+    return throwChatServeFailure({ kind: 'invalid-input', message: `Invalid type for '${path}': expected a string or null.`, param: path });
   }
   return value;
 };
@@ -107,7 +107,7 @@ export const agentMessageContent = (
       });
       break;
     default:
-      throw new TranslatorInputError(`Invalid value: '${part.type}' for '${path}.type'.`, { param: `${path}.type` });
+      return throwChatServeFailure({ kind: 'invalid-input', message: `Invalid value: '${part.type}' for '${path}.type'.`, param: `${path}.type` });
     }
   }
 

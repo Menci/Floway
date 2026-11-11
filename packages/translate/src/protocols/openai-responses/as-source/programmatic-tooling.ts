@@ -1,13 +1,13 @@
-import { TranslatorInputError } from '../../../translator-input-error.ts';
+import { TranslateInputException } from '../../../shared/input-error.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 
 export const rejectProgrammaticOpenAIResponsesPayload = (payload: OpenAIResponsesPayloadEx, target: string): void => {
   const toolChoice = payload.tool_choice;
   if (payload.tools?.some(hasProgrammaticCaller) === true || (toolChoice !== null && typeof toolChoice === 'object' && toolChoice.type === 'programmatic_tool_calling')) {
-    throw new TranslatorInputError(`Programmatic OpenAI Responses tooling cannot be translated to ${target}.`);
+    throw new TranslateInputException(`Programmatic OpenAI Responses tooling cannot be translated to ${target}.`);
   }
   if (payload.tools?.some(hasDeferredTool) === true) {
-    throw new TranslatorInputError(`Deferred OpenAI Responses tooling cannot be translated to ${target}.`);
+    throw new TranslateInputException(`Deferred OpenAI Responses tooling cannot be translated to ${target}.`);
   }
 };
 
@@ -34,6 +34,6 @@ const isProgramCaller = (item: CanonicalOpenAIResponsesInputItem): item is Canon
 
 export const rejectProgramCaller = (item: CanonicalOpenAIResponsesInputItem): void => {
   if (isProgramCaller(item)) {
-    throw new TranslatorInputError(`Cannot translate ${item.type} '${item.call_id}' with a program caller.`);
+    throw new TranslateInputException(`Cannot translate ${item.type} '${item.call_id}' with a program caller.`);
   }
 };

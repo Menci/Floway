@@ -1,7 +1,7 @@
 import { klona } from 'klona/json';
 
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
-import { TranslatorInputError } from '../../../translator-input-error.ts';
+import { TranslateInputException } from '../../../shared/input-error.ts';
 import type { SidecarCodec } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
@@ -46,7 +46,7 @@ const inlineDataToContentBlock = (part: GeminiGenerateContentPart): AnthropicMes
     };
   case 'audio':
   case 'unsupported':
-    throw new TranslatorInputError(`Cannot translate Gemini generateContent inlineData MIME type '${inlineData.mimeType}' to Anthropic Messages.`);
+    throw new TranslateInputException(`Cannot translate Gemini generateContent inlineData MIME type '${inlineData.mimeType}' to Anthropic Messages.`);
   }
 };
 
@@ -78,7 +78,7 @@ const buildUserMessage = (content: GeminiGenerateContentContent, turnIndex: numb
       return;
     }
     default:
-      throw new TranslatorInputError(`"${kind}" parts are not supported in user content.`);
+      throw new TranslateInputException(`"${kind}" parts are not supported in user content.`);
     }
   });
 
@@ -120,7 +120,7 @@ const buildAssistantMessage = (content: GeminiGenerateContentContent, turnIndex:
       return;
     }
     default:
-      throw new TranslatorInputError(`"${kind}" parts are not supported in model content.`);
+      throw new TranslateInputException(`"${kind}" parts are not supported in model content.`);
     }
   });
 
@@ -223,7 +223,7 @@ export const buildTargetRequest = async (
           if (message) request.messages.push(message);
         }
       } else for (const [index, content] of turn.items.entries()) {
-        if (content.role !== 'user' && content.role !== undefined) throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
+        if (content.role !== 'user' && content.role !== undefined) throw new TranslateInputException(`"${(content as { role: string }).role}" is not a supported content role.`);
         const message = buildUserMessage(content, contentIndex + index, unmatchedToolCallIds);
         if (message) request.messages.push(message);
       }

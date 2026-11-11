@@ -1,4 +1,4 @@
-import { TranslatorInputError } from '../../../translator-input-error.ts';
+import { TranslateInputException } from '../../../shared/input-error.ts';
 import type { OpenAIChatCompletionsContentPart } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesInputContent } from '@floway-dev/protocols/openai-responses';
 
@@ -17,7 +17,7 @@ export const openaiResponsesContentToText = (content: string | OpenAIResponsesIn
 export const openaiResponsesContentToOpenAIChatCompletionsContent = (content: string | OpenAIResponsesInputContent[]): string | OpenAIChatCompletionsContentPart[] => {
   if (typeof content === 'string') return content;
   if (!content.every((part): part is Exclude<OpenAIResponsesInputContent, { type: 'input_file' }> => part.type !== 'input_file')) {
-    throw new TranslatorInputError('Cannot translate input_file content to OpenAI Chat Completions.');
+    throw new TranslateInputException('Cannot translate input_file content to OpenAI Chat Completions.');
   }
 
   return content.some(part => part.type === 'input_image' || part.type === 'refusal')
@@ -25,7 +25,7 @@ export const openaiResponsesContentToOpenAIChatCompletionsContent = (content: st
         (part): OpenAIChatCompletionsContentPart => {
           if (part.type === 'input_image') {
             if (typeof part.image_url !== 'string') {
-              throw new TranslatorInputError('Cannot translate file_id-only image content to OpenAI Chat Completions.');
+              throw new TranslateInputException('Cannot translate file_id-only image content to OpenAI Chat Completions.');
             }
             return {
               type: 'image_url',
