@@ -119,9 +119,9 @@ interface ChatChoiceState {
 
 export const readOpenAIChatCompletionsEvents = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
-  options: { customToolNames?: ReadonlySet<string>; maxChoices?: number; roundTrip: RoundTripReader<'openaiChatCompletions'> },
+  options: { customToolNames?: ReadonlySet<string>; roundTrip: RoundTripReader<'openaiChatCompletions'> },
 ): AsyncGenerator<IRRecord> {
-  const ir = createIRBuilder(options.maxChoices ?? 1);
+  const ir = createIRBuilder();
   const choices = new Map<number, ChatChoiceState>();
   const nativeAccumulators = new Map<number, ReturnType<typeof createOpenAIChatCompletionsEventAccumulator>>();
   const nativeAccumulator = (choice: number): ReturnType<typeof createOpenAIChatCompletionsEventAccumulator> => {

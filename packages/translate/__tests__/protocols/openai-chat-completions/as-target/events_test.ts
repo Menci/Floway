@@ -20,7 +20,7 @@ const drain = async (frames: ReturnType<typeof chunk>[]): Promise<Map<number, Op
     builder: createReferenceBuilder(),
     onAssistantTurn: (choice, turn) => { turns.set(choice, turn); },
   };
-  for await (const _record of readOpenAIChatCompletionsEvents((async function* () { yield* frames; yield doneFrame(); })(), { maxChoices: 2, roundTrip })) {}
+  for await (const _record of readOpenAIChatCompletionsEvents((async function* () { yield* frames; yield doneFrame(); })(), { roundTrip })) {}
   return turns;
 };
 

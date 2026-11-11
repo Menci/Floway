@@ -33,8 +33,7 @@ export interface IRChoiceHandle extends IRWriteHandle {
   end: (finishReason: 'stop' | 'length' | 'tool_calls' | 'content_filter') => void;
 }
 
-export const createIRBuilder = (maxChoices = 1) => {
-  if (!Number.isSafeInteger(maxChoices) || maxChoices <= 0) throw new RangeError(`IR maxChoices must be a positive safe integer: ${maxChoices}`);
+export const createIRBuilder = () => {
   const collector = createIRCollector();
   const { state } = collector;
   let records: IRRecord[] = [];
@@ -87,7 +86,7 @@ export const createIRBuilder = (maxChoices = 1) => {
     for (const [key, value] of Object.entries(fields)) assign(['usage', key], value);
   };
   const choice = (index: number): IRChoiceHandle => {
-    if (!Number.isSafeInteger(index) || index < 0 || index >= maxChoices) throw new RangeError(`IR choice index exceeds the configured choice count: ${index}`);
+    if (!Number.isSafeInteger(index) || index < 0 || index > choices.size) throw new RangeError(`output IR choice index is out of sequence: ${index}`);
     while (choices.size <= index) {
       const choiceIndex = choices.size;
       const path = irUnitPath('choice', choiceIndex);
