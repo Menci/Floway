@@ -5,7 +5,7 @@ export type IRPath = readonly (string | number)[];
 export type IRWrite = Readonly<
   | { type: 'write'; kind: 'initialize'; path: IRPath; value: IROutputValue }
   | { type: 'write'; kind: 'assign'; path: IRPath; value: IROutputValue }
-  | { type: 'write'; kind: 'append'; path: IRPath; value: string; referencePieceIds?: readonly number[] }>;
+  | { type: 'write'; kind: 'append'; path: IRPath; value: string; textFragmentIds?: readonly number[] }>;
 export type IREvent = Readonly<
   | { type: 'start'; id?: string; created?: number }
   | { type: 'item_end'; choice: number; item: number; status?: 'completed' | 'incomplete' }

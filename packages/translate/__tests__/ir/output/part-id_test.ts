@@ -12,7 +12,7 @@ test('carries optional source part IDs on append operations', () => {
   part.append('text', 'second');
 
   expect(builder.drain()).toEqual([
-    { type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'first', referencePieceIds: [7] },
+    { type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'first', textFragmentIds: [7] },
     { type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'second' },
   ]);
 });
@@ -25,6 +25,6 @@ test('retains every original ID when a native buffer is merged into one IR appen
   part.append('text', 'merged', ids);
   ids.length = 0;
   expect(builder.drain()).toEqual([
-    { type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'merged', referencePieceIds: [7, 9] },
+    { type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'merged', textFragmentIds: [7, 9] },
   ]);
 });

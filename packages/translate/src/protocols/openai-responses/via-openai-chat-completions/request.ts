@@ -1,14 +1,14 @@
 import { klona } from 'klona/json';
 
 import { openaiResponsesContentToOpenAIChatCompletionsContent, openaiResponsesContentToText } from './content.ts';
+import type { SidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
-import type { SidecarCodec } from '../../../types.ts';
 import { restrictAllowedTools } from '../as-source/allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
-import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, isOpenAIResponsesEncryptedReasoning, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
+import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarOccurrences, isOpenAIResponsesEncryptedReasoning, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
 import { requireCanonicalOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import { buildCustomToolInputSchema } from '../common/custom-tool-wrap.ts';
 import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsResponseFormat, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
@@ -268,7 +268,7 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
 
   for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
     if (turn.role !== 'assistant') { target.messages.push(...translateNonAssistantInput(turn.items)); continue; }
-    const roundTrip = await roundTripAssistantTurn('openaiResponses', 'openaiChatCompletions', turn.items, codec, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest, collectOpenAIResponsesReplayContents);
+    const roundTrip = await roundTripAssistantTurn('openaiResponses', 'openaiChatCompletions', turn.items, codec, findOpenAIResponsesSidecarOccurrences, verifyOpenAIResponsesTurnDigest, collectOpenAIResponsesReplayContents);
     if (roundTrip?.turn.function_call != null) {
       const modernIds = new Set(roundTrip.turn.tool_calls?.map(call => call.id));
       for (const item of turn.items) {

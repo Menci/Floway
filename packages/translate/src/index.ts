@@ -1,5 +1,5 @@
-export type { RemoteImageData, RemoteImageLoader, SidecarCodec, TranslateTrip, TranslateInputError, TranslateOptions, Translator } from './types.ts';
-export { SidecarTaggedValue } from './round-trip/sidecar-tagged-value.ts';
+export type { RemoteImageData, RemoteImageLoader, TranslateTrip, TranslateInputError, TranslateOptions, Translator } from './types.ts';
+export { SidecarTaggedValue, type SidecarCodec } from './round-trip/codec.ts';
 export { canonicalizeOpenAIResponsesPayload } from './protocols/openai-responses/canonicalize-payload.ts';
 export {
   routeAnthropicMessagesViaOpenAIChatCompletions,

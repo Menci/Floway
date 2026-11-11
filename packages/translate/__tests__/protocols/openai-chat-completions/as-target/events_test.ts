@@ -3,10 +3,10 @@ import { expect, test } from 'vitest';
 import type { IRRecord } from '../../../../src/ir/output/records.ts';
 import type { OpenAIChatCompletionsInputAssistantTurn } from '../../../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
 import { readOpenAIChatCompletionsEvents } from '../../../../src/protocols/openai-chat-completions/as-target/events.ts';
-import { appendContent, collectContentViews, createContentState, createReferenceBuilder } from '../../../../src/round-trip/reference/reference-builder.ts';
-import { finalizeAssistantTurnReferences } from '../../../../src/round-trip/reference/reference-selection.ts';
+import { appendEmittedField, collectEmittedFieldPlacements, createEmittedFieldState, createReferenceBuilder } from '../../../../src/round-trip/reference/reference-builder.ts';
+import { referenceAssistantTurn } from '../../../../src/round-trip/reference/reference-selection.ts';
+import type { RoundTripReader } from '../../../../src/round-trip/reader.ts';
 import { restoreAssistantTurn } from '../../../../src/round-trip/reference/restore.ts';
-import type { RoundTripReader } from '../../../../src/round-trip/stream.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -72,9 +72,9 @@ test('collects every native Chat choice when a sibling omits delta', async () =>
 
 const traceTools = async (frames: ReturnType<typeof chunk>[], options: { prefix?: string; customToolNames?: ReadonlySet<string> } = {}) => {
   const builder = createReferenceBuilder();
-  const content = createContentState(builder, 'text');
+  const content = createEmittedFieldState(builder, 'text');
   let text = options.prefix ?? '';
-  appendContent(builder, content, text);
+  appendEmittedField(builder, content, text);
   let captured: Parameters<RoundTripReader<'openaiChatCompletions'>['onAssistantTurn']> | undefined;
   const appends: Extract<IRRecord, { type: 'write'; kind: 'append' }>[] = [];
   const assigns: Extract<IRRecord, { type: 'write'; kind: 'assign' }>[] = [];
@@ -88,14 +88,14 @@ const traceTools = async (frames: ReturnType<typeof chunk>[], options: { prefix?
     const field = record.path.at(-1);
     if (field !== 'arguments' && field !== 'input') continue;
     appends.push(record);
-    appendContent(builder, content, record.value, record.referencePieceIds);
+    appendEmittedField(builder, content, record.value, record.textFragmentIds);
     text += record.value;
   }
   if (captured === undefined) throw new Error('Native Chat turn was not collected');
   const [, turn, fieldState] = captured;
-  const finalized = await finalizeAssistantTurnReferences(turn, fieldState, builder, collectContentViews(text, content));
+  const finalized = await referenceAssistantTurn(turn, fieldState, builder, collectEmittedFieldPlacements(text, content));
   const hydrated = await restoreAssistantTurn('openaiChatCompletions', [text], finalized.targetTurn, finalized.referencedContentHashes);
-  expect(hydrated).toEqual({ ok: true, turn });
+  expect(hydrated).toEqual({ ok: true, value: turn });
   return { turn, fieldState, appends, assigns, finalized };
 };
 
@@ -106,7 +106,7 @@ test('keeps merged pre-name arguments in one IR append with every original atom 
     chunk([{ index: 0, delta: { tool_calls: [{ index: 0, function: { name: 'lookup' } }] }, finish_reason: 'tool_calls' }]),
   ], { prefix: 'p:' });
 
-  expect(result.appends.map(record => ({ text: record.value, referencePieceIds: record.referencePieceIds }))).toEqual([{ text: '{"x":1}', referencePieceIds: [0, 1] }]);
+  expect(result.appends.map(record => ({ text: record.value, textFragmentIds: record.textFragmentIds }))).toEqual([{ text: '{"x":1}', textFragmentIds: [0, 1] }]);
   expect(result.fieldState).toMatchObject({ tool_calls: [{ function: { arguments: expect.any(Object) } }] });
   expect(result.finalized.targetTurn).toMatchObject({ tool_calls: [{ function: { arguments: '{"x":1}' } }] });
   expect(result.finalized).not.toHaveProperty('referencedContentHashes');
@@ -152,7 +152,7 @@ test('keeps a transformed wrapped tool field literal', async () => {
   const result = await traceTools([
     chunk([{ index: 0, delta: { tool_calls: [{ index: 0, id: 'wrapped', type: 'function', function: { name: 'wrapped', arguments: '{"input":"hello"}' } }] }, finish_reason: 'tool_calls' }]),
   ], { customToolNames: new Set(['wrapped']) });
-  expect(result.appends.map(record => ({ text: record.value, referencePieceIds: record.referencePieceIds }))).toEqual([{ text: 'hello', referencePieceIds: undefined }]);
+  expect(result.appends.map(record => ({ text: record.value, textFragmentIds: record.textFragmentIds }))).toEqual([{ text: 'hello', textFragmentIds: undefined }]);
   expect(result.finalized.targetTurn).toEqual(result.turn);
   expect(result.finalized).not.toHaveProperty('referencedContentHashes');
 });

@@ -1,7 +1,7 @@
-import type { AssistantTurnByProtocol } from '../round-trip/assistant-turn.ts';
-import type { RoundTripWriter } from '../round-trip/stream.ts';
+import type { AssistantTurnProtocol } from '../round-trip/input-assistant-turn.ts';
+import type { RoundTripWriter } from '../round-trip/writer.ts';
 
-export interface SourceEventWriterOptions<Protocol extends keyof AssistantTurnByProtocol> {
+export interface SourceEventWriterOptions<Protocol extends AssistantTurnProtocol> {
   id?: string;
   created?: number;
   roundTrip: RoundTripWriter<Protocol>;

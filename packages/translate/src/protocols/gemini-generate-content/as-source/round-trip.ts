@@ -1,22 +1,21 @@
 import type { IRJSONObject } from '../../../ir/common/json.ts';
-import type { ReplayContent } from '../../../round-trip/reference/assistant-turn.ts';
-import type { EncodedRoundTripSidecar } from '../../../round-trip/resolve.ts';
+import type { ReplayContent } from '../../../round-trip/reference/types.ts';
+import type { SidecarOccurrence } from '../../../round-trip/resolve.ts';
 import { collectTextGroups, collectTextPlacementIndex, type TextContribution, type TextPlacementIndex } from '../../../round-trip/text-groups.ts';
-import { computeRoundTripTurnDigest, verifyRoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
-import type { RoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
+import { createTurnDigestComputer, createTurnDigestVerifier } from '../../../round-trip/turn-digest.ts';
 import { isPlainJSONObject, requireJSONObject } from '../../../shared/json/object.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
 
 const geminiVisibleTextGroup = (part: GeminiGenerateContentPart): TextContribution<'visible'> | undefined =>
   part.thought !== true && part.text !== undefined ? { channel: 'visible', field: 'text', text: part.text } : undefined;
 
-export type GeminiGenerateContentAssistantTurn = GeminiGenerateContentContent[];
-export type GeminiGenerateContentSidecarCarrier = GeminiGenerateContentPart & { thoughtSignature: string };
+export type GeminiGenerateContentSourceAssistantTurn = GeminiGenerateContentContent[];
+export type GeminiGenerateContentSidecarPart = GeminiGenerateContentPart & { thoughtSignature: string };
 
 export const hasGeminiGenerateContentThoughtSignature = (content: GeminiGenerateContentContent): boolean =>
   content.parts?.some(part => part.thoughtSignature !== undefined) ?? false;
 
-const geminiTurnDigestMaterialV1 = (turn: GeminiGenerateContentAssistantTurn): IRJSONObject => {
+const geminiTurnDigestMaterialV1 = (turn: GeminiGenerateContentSourceAssistantTurn): IRJSONObject => {
   const contents = turn.map(content => {
     const visible = collectTextGroups(content.parts ?? [], geminiVisibleTextGroup).get('visible');
     const inlineData: { mimeType: string; data: string; audioTranscription?: string }[] = [];
@@ -39,7 +38,7 @@ const geminiTurnDigestMaterialV1 = (turn: GeminiGenerateContentAssistantTurn): I
   return { contents };
 };
 
-export const findGeminiGenerateContentSidecarCarriers = (turn: GeminiGenerateContentAssistantTurn): EncodedRoundTripSidecar<GeminiGenerateContentAssistantTurn>[] =>
+export const findGeminiGenerateContentSidecarOccurrences = (turn: GeminiGenerateContentSourceAssistantTurn): SidecarOccurrence<GeminiGenerateContentSourceAssistantTurn>[] =>
   turn.flatMap((content, contentIndex) => {
     const nativeParts = content.parts;
     return nativeParts?.flatMap((part, partIndex) => typeof part.thoughtSignature !== 'string' ? [] : [{
@@ -52,10 +51,9 @@ export const findGeminiGenerateContentSidecarCarriers = (turn: GeminiGenerateCon
     }]) ?? [];
   });
 
-export const computeGeminiGenerateContentTurnDigest = (turn: GeminiGenerateContentAssistantTurn): Promise<RoundTripTurnDigest> =>
-  computeRoundTripTurnDigest(geminiTurnDigestMaterialV1(turn));
+export const computeGeminiGenerateContentTurnDigest = createTurnDigestComputer(geminiTurnDigestMaterialV1);
 
-export const collectGeminiGenerateContentReplayContents = (turn: GeminiGenerateContentAssistantTurn): ReplayContent[] => {
+export const collectGeminiGenerateContentReplayContents = (turn: GeminiGenerateContentSourceAssistantTurn): ReplayContent[] => {
   const candidates: ReplayContent[] = [];
   for (const content of turn) {
     const visible = collectTextGroups(content.parts ?? [], geminiVisibleTextGroup).get('visible');
@@ -70,22 +68,13 @@ export const collectGeminiGenerateContentReplayContents = (turn: GeminiGenerateC
   return candidates;
 };
 
-export const verifyGeminiGenerateContentTurnDigest = (
-  turn: GeminiGenerateContentAssistantTurn,
-  sourceTurnDigest: RoundTripTurnDigest,
-  version: number,
-): Promise<boolean> => {
-  switch (version) {
-  case 1: return verifyRoundTripTurnDigest(geminiTurnDigestMaterialV1(turn), sourceTurnDigest);
-  default: return Promise.resolve(false);
-  }
-};
+export const verifyGeminiGenerateContentTurnDigest = createTurnDigestVerifier(geminiTurnDigestMaterialV1);
 
 // Gemini returns model-side thought signatures as Part metadata.
 // https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures
-export const createGeminiGenerateContentSidecarCarrier = (data: string): GeminiGenerateContentSidecarCarrier => ({ thoughtSignature: data });
+export const createGeminiGenerateContentSidecarPart = (data: string): GeminiGenerateContentSidecarPart => ({ thoughtSignature: data });
 
-export const collectGeminiGenerateContentTextViews = (turn: GeminiGenerateContentAssistantTurn): TextPlacementIndex => {
+export const collectGeminiGenerateContentTextPlacements = (turn: GeminiGenerateContentSourceAssistantTurn): TextPlacementIndex => {
   const views: TextPlacementIndex = new Map();
   for (const content of turn) {
     if (content.parts !== undefined) collectTextPlacementIndex(collectTextGroups(content.parts, geminiVisibleTextGroup), views);
