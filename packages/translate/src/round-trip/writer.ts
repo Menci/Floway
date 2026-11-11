@@ -4,6 +4,7 @@ import type { EmittedFieldStates, ReferenceBuilder } from './reference/reference
 import type { TextPlacementIndex } from './text-groups.ts';
 import type { RoundTripTurnDigest } from './turn-digest.ts';
 
+/** The coordinator's outbound half: a source writer states its turn's sidecar. */
 export interface RoundTripWriter<Protocol extends keyof InputAssistantTurnByProtocol> {
   builder: ReferenceBuilder;
   encodeSidecar: (
