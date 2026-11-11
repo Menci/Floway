@@ -1,9 +1,8 @@
 import { TranslatorInputError } from '../../../types.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
-// A writer that states a permitted subset by narrowing its declaration list
-// needs every selector to name a declaration the request actually makes;
-// otherwise the permitted set would silently widen there.
+// A permitted selector must name a declaration without changing the full tool
+// list that participates in prompt caching.
 //
 // A namespace selector is expanded here into the callables its group holds, and
 // a hosted selector is rejected here: this IR carries no hosted callable.
@@ -20,23 +19,11 @@ const callableDeclarations = (tools: readonly OpenAIResponsesTool[]): { type: 'f
     return [{ type: tool.type, name: `${namespace}${tool.name}` }];
   });
 
-// A deferred inventory states declarations the request may still use, so a
-// name that means two things there cannot be carried either.
+// A deferred inventory states declarations the request may still use.
 const inventoryDeclarations = (input: readonly CanonicalOpenAIResponsesInputItem[] | undefined): { type: 'function' | 'custom'; name: string }[] =>
   (input ?? []).flatMap(item => item.type === 'additional_tools' || item.type === 'tool_search_output'
     ? callableDeclarations(item.tools)
     : []);
-
-const validateCallableKinds = (declarations: readonly { type: 'function' | 'custom'; name: string }[]): void => {
-  const kinds = new Map<string, 'function' | 'custom'>();
-  for (const { type, name } of declarations) {
-    const prior = kinds.get(name);
-    if (prior !== undefined && prior !== type) {
-      throw new TranslatorInputError(`Cannot translate distinct callable kinds sharing '${name}'.`);
-    }
-    kinds.set(name, type);
-  }
-};
 
 /**
  * The callable a selector names.
@@ -63,17 +50,13 @@ export const validateCallableDeclarations = (
 ): void => {
   // A deferred inventory declares callables too, so a selector may name one.
   const declarations = [...callableDeclarations(tools ?? []), ...inventoryDeclarations(input)];
-  if (typeof choice !== 'object' || choice?.type !== 'allowed_tools') {
-    validateCallableKinds(declarations);
-    return;
-  }
+  if (typeof choice !== 'object' || choice?.type !== 'allowed_tools') return;
 
   if ((choice.mode !== 'auto' && choice.mode !== 'required') || !Array.isArray(choice.tools)) {
     throw new TranslatorInputError('Cannot translate malformed allowed_tools mode or tools array.');
   }
 
   const declared = new Set(declarations.map(({ type, name }) => `${type}:${name}`));
-  const selectedKinds = new Map<string, 'function' | 'custom'>();
   const selected = new Set<string>();
   // A selector that names a whole group stands for every callable it holds.
   const allGroups = [
@@ -101,17 +84,9 @@ export const validateCallableDeclarations = (
     if (!declared.has(`${type}:${name}`)) {
       throw new TranslatorInputError(`Cannot translate allowed_tools selector '${name}' without a matching callable declaration.`);
     }
-    const kind = selectedKinds.get(name);
-    if (kind !== undefined && kind !== type) {
-      throw new TranslatorInputError(`Cannot translate distinct allowed_tools callable kinds sharing '${name}'.`);
-    }
-    selectedKinds.set(name, type);
     selected.add(`${type}:${name}`);
   }
   if (selected.size === 0 && choice.mode === 'required') {
     throw new TranslatorInputError('Cannot translate required allowed_tools with an empty callable subset.');
   }
-  // The subset lands on the target as one declaration list, so two kinds under
-  // one name cannot both be carried even when the selector names only one.
-  validateCallableKinds(declarations.filter(({ type, name }) => selected.has(`${type}:${name}`)));
 };

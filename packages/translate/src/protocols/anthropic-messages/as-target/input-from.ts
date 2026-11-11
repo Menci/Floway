@@ -285,6 +285,11 @@ export const anthropicMessagesHeaderFromIR = (
 ): Omit<AnthropicMessagesPayload, 'messages' | 'system'> => {
   const tools = request.tools;
   const choice = irInputToolChoiceForTools(request.tool_choice, tools);
+  const selected = choice === undefined ? undefined : toolChoiceFromIR(choice, tools ?? []);
+  const parallel = request.settings.parallel_tool_calls;
+  const toolChoice = parallel === undefined || selected?.type === 'none'
+    ? selected
+    : { ...(selected ?? { type: 'auto' as const }), disable_parallel_tool_use: !parallel };
   return {
     ...anthropicMessagesSettingsFromIR(request.settings),
     model: request.settings.model,
@@ -293,7 +298,7 @@ export const anthropicMessagesHeaderFromIR = (
     // cannot be carried by this side at all.
     stream: requireStreaming(request.settings),
     ...(tools === undefined || tools.length === 0 ? {} : { tools: tools.map(toolFromIR) }),
-    ...(choice === undefined ? {} : { tool_choice: toolChoiceFromIR(choice, tools ?? []) }),
+    ...(toolChoice === undefined ? {} : { tool_choice: toolChoice }),
   };
 };
 

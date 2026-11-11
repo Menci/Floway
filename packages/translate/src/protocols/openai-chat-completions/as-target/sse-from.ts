@@ -125,20 +125,18 @@ export const irFromOpenAIChatCompletions = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
   options: {
     customToolNames?: ReadonlySet<string>;
-    // The pair each flat name in the request stands for, so the group the
-    // client declared is stated back on the IR.
-    flatIdentities?: ReadonlyMap<string, { readonly namespace: string; readonly name: string }>;
+    // The original identity each allocated request name stands for.
+    flatIdentities?: ReadonlyMap<string, { readonly namespace?: string; readonly name: string }>;
     roundTrip: RoundTripReader<'openaiChatCompletions'>;
   },
 ): AsyncGenerator<IRRecord> {
   const builder = createIRBuilder();
   const choices = new Map<number, ChatChoiceState>();
   const nativeAccumulators = new Map<number, ReturnType<typeof createOpenAIChatCompletionsEventAccumulator>>();
-  // A name the request sent grouped comes back flat; stating the pair again is
-  // what lets the source-side writer restore it.
+  // An allocated wire name is restored to the callable the client declared.
   const namingOf = (flatName: string): { readonly name: string; readonly namespace?: string } => {
     const identity = options.flatIdentities?.get(flatName);
-    return identity === undefined ? { name: flatName } : { name: identity.name, namespace: identity.namespace };
+    return identity ?? { name: flatName };
   };
   const nativeAccumulator = (choice: number): ReturnType<typeof createOpenAIChatCompletionsEventAccumulator> => {
     let accumulator = nativeAccumulators.get(choice);

@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
+import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import { buildTargetPayloadFor, pairs } from '../composition-helpers.ts';
 import type { GeminiGenerateContentPart, GeminiGenerateContentContent, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsAssistantMessageEx } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
@@ -56,7 +56,7 @@ test('buildTargetPayload maps system instruction and multimodal user content', a
     stream: true,
     stream_options: { include_usage: true, continuous_usage_stats: true },
     messages: [
-      { role: 'system', content: 'Be precise.\n\nUse markdown.' },
+      { role: 'system', content: 'Be precise.Use markdown.' },
       {
         role: 'user',
         content: [

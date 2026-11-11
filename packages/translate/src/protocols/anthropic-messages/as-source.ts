@@ -1,8 +1,8 @@
-import type { SourceProtocol } from '../composition.ts';
 import { restateAnthropicMessagesError } from './as-source/error-body.ts';
 import { anthropicMessagesRead } from './as-source/input-to.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from './as-source/round-trip.ts';
 import { anthropicMessagesFromIR } from './as-source/sse-to.ts';
+import type { SourceProtocol } from '../../composition/index.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 
 /**

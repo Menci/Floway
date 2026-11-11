@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 
-import { buildSourceEventsFor } from '../../../src/protocols/composition.ts';
+import { buildSourceEventsFor } from '../../../src/composition/index.ts';
+import { emptyPayload, pairs } from '../../composition/helpers.ts';
 import { fixtureFrames } from '../../ir/translation-cases.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import { emptyPayload, pairs } from '../composition-helpers.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';

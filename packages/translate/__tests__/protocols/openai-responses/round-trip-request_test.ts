@@ -1,13 +1,13 @@
 import { expect, it } from 'vitest';
 
-import { buildTargetPayloadFor } from '../../../src/protocols/composition.ts';
+import { buildTargetPayloadFor } from '../../../src/composition/index.ts';
 import { openaiResponsesRead } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
 import type { OpenAIResponsesAssistantTurn } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
 import { encodeRoundTripSidecar } from '../../../src/round-trip/sidecar.ts';
 import type { SidecarCodec } from '../../../src/types.ts';
+import { pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import { pairs } from '../composition-helpers.ts';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 
 // A restored turn's own request is what these cases assert on, so each build

@@ -1,12 +1,12 @@
 import { expect, test } from 'vitest';
 
-import { buildSourceEventsFor, buildTargetPayloadFor } from '../../../src/protocols/composition.ts';
+import { buildSourceEventsFor, buildTargetPayloadFor } from '../../../src/composition/index.ts';
 import { openaiChatCompletionsSourceProtocol } from '../../../src/protocols/openai-chat-completions/as-source.ts';
 import { openaiResponsesTargetProtocol } from '../../../src/protocols/openai-responses/as-target.ts';
+import { emptyPayload, pairs } from '../../composition/helpers.ts';
 import { structuredResponsesFixture } from '../../ir/responses-fixture.ts';
 import { testOutputTranslation } from '../../ir/translation-cases.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import { emptyPayload, pairs } from '../composition-helpers.ts';
 import { eventFrame, type ProtocolFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIChatCompletionsProtocolEventsToResult, parseOpenAIChatCompletionsStream, openaiChatCompletionsProtocolFrameToSSEFrame as writeChatFrame, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { openaiResponsesResultToEvents, parseOpenAIResponsesStream, collectOpenAIResponsesProtocolEventsToResult, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';

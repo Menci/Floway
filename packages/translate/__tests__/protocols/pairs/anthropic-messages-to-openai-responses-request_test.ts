@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
+import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import { buildTargetPayloadFor, pairs } from '../composition-helpers.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesAssistantContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIResponsesFunctionTool, OpenAIResponsesInputReasoning } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
@@ -672,4 +672,14 @@ test('preserves expressible Messages metadata extensions and rejects non-string 
   const payload = { model: 'm', max_tokens: 16, messages: [], metadata: { user_id: 'u', tenant: 't' } };
   assertEquals((await buildWithTestSidecar(payload)).metadata, { user_id: 'u', tenant: 't' });
   await assertRejects(() => buildWithTestSidecar({ ...payload, metadata: { user_id: 'u', tenant: { nested: 't' } } } as AnthropicMessagesPayload), undefined, "metadata field 'tenant'");
+});
+
+test.each([true, false])('maps disable_parallel_tool_use %s without changing declarations', async disabled => {
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [],
+    tools: [{ name: 'f', input_schema: { type: 'object', properties: {} } }],
+    tool_choice: { type: 'auto', disable_parallel_tool_use: disabled },
+  });
+  assertEquals(result.parallel_tool_calls, !disabled);
+  assertEquals(result.tools?.length, 1);
 });

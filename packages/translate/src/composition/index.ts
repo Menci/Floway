@@ -1,7 +1,7 @@
-import type { FlatCallContext } from './composition/flatten-request.ts';
-import type { Reading } from './composition/reading.ts';
-import { resolveReading } from './composition/reading.ts';
-import type { ResolvedTurn } from './composition/segments.ts';
+import type { FlatCallContext } from './flatten-request.ts';
+import type { Reading } from './reading.ts';
+import { resolveReading } from './reading.ts';
+import type { ResolvedTurn } from './segments.ts';
 import type { IRInputRequestHeader, IRInputTurn } from '../ir/input/types.ts';
 import type { IRRecord } from '../ir/output/stream.ts';
 import type { AssistantTurnProtocol, InputAssistantTurnFor } from '../round-trip/assistant-turn.ts';

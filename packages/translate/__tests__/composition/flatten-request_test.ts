@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
-import type { IRInputRequestHeader, IRInputTool, IRInputTurn } from '../../../src/ir/input/types.ts';
-import { flattenRequestNames } from '../../../src/protocols/composition/flatten-request.ts';
-import { TranslatorInputError } from '../../../src/types.ts';
+import { flattenRequestNames } from '../../src/composition/flatten-request.ts';
+import type { IRInputRequestHeader, IRInputTool, IRInputTurn } from '../../src/ir/input/types.ts';
+import { TranslatorInputError } from '../../src/types.ts';
 import { assertThrows, assertEquals } from '@floway-dev/test-utils';
 
 const request = (tools: readonly IRInputTool[]): IRInputRequestHeader => ({ settings: { model: 'm', stream: true }, tools });
@@ -91,13 +91,29 @@ test('a plain selector passes through untouched', () => {
   assertEquals(flattened.request.tool_choice, { type: 'function', name: 'plain' });
 });
 
-test('a name shared by a function and a custom tool is not reported as freeform', () => {
-  // The answer names the call and nothing else, so an ambiguous name cannot be
-  // classified; only names that are exclusively freeform are reported.
-  const flattened = flattenRequestNames(request([
-    { type: 'function', name: 'edit', parameters: { type: 'object' } },
-    { type: 'custom', name: 'edit' },
-    { type: 'custom', name: 'run' },
-  ]), []);
-  assertEquals([...flattened.context.customToolNames], ['run']);
+test.each([undefined, 'files'])('allocates distinct names per callable kind in namespace %s independently of selection', namespace => {
+  const tools: IRInputTool[] = [
+    { type: 'function', namespace, name: 'edit', parameters: { type: 'object' } },
+    { type: 'custom', namespace, name: 'edit' },
+    { type: 'function', name: 'edit_2', parameters: { type: 'object' } },
+  ];
+  const turns: IRInputTurn[] = [{
+    kind: 'assistant', items: [
+      { type: 'function_call', namespace, name: 'edit', call_id: 'f', arguments: '{}' },
+      { type: 'custom_tool_call', namespace, name: 'edit', call_id: 'c', input: 'raw' },
+      { type: 'custom_tool_call', namespace, name: 'edit', call_id: 'c2', input: 'again' },
+    ],
+  }];
+  const baseline = flattenRequestNames({ ...request(tools), tool_choice: 'auto' }, turns);
+  const selected = flattenRequestNames({ ...request(tools), tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', namespace, name: 'edit' }] } }, turns);
+  const first = namespace === undefined ? 'edit' : 'files_edit';
+  const second = namespace === undefined ? 'edit_3' : 'files_edit_2';
+  assertEquals(baseline.request.tools?.map(tool => tool.name), [first, second, 'edit_2']);
+  assertEquals(selected.request.tools, baseline.request.tools);
+  assertEquals(selected.turns, baseline.turns);
+  assertEquals(selected.request.tool_choice, { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', name: second }] });
+  const assistant = selected.turns[0];
+  assertEquals(assistant.kind === 'assistant' ? assistant.items.map(item => 'name' in item ? item.name : undefined) : [], [first, second, second]);
+  assertEquals([...selected.context.customToolNames], [second]);
+  assertEquals(selected.context.flatIdentities.get(second), { name: 'edit', ...(namespace === undefined ? {} : { namespace }) });
 });

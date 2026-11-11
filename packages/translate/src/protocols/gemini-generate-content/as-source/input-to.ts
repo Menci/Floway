@@ -4,6 +4,7 @@ import { partitionGeminiGenerateContentTurns, type GeminiGenerateContentConversa
 import { geminiGenerateContentThinkingLevelEffort } from './reasoning.ts';
 import type { GeminiGenerateContentAssistantTurn } from './round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from './schema.ts';
+import type { Reading, TurnSlot } from '../../../composition/reading.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputRequestHeader,
@@ -18,7 +19,6 @@ import type {
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../types.ts';
-import type { Reading, TurnSlot } from '../../composition/reading.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentPartData, GeminiGenerateContentPayload, GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 
 const inlinePart = (part: GeminiGenerateContentPart): IRInputUserContentPart => {
@@ -303,7 +303,7 @@ const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest
     // GenerateContent states readable reasoning as a boolean; the neutral
     // spelling names how much of it the caller wants. A request that asked for
     // no reasoning at all has nothing to summarize.
-    ...(effort !== undefined && effort !== 'none' && config?.thinkingConfig?.includeThoughts === true ? { reasoning_summary: 'detailed' } : {}),
+    ...(effort !== 'none' && config?.thinkingConfig?.includeThoughts === true ? { reasoning_summary: 'detailed' } : {}),
   };
 };
 
@@ -420,7 +420,7 @@ const geminiGenerateContentVisibleText = (part: GeminiGenerateContentPart): stri
 const geminiGenerateContentText = (content?: GeminiGenerateContentContent): string | null => {
   const texts = content?.parts?.map(geminiGenerateContentPartText).filter((text): text is string => text !== null);
 
-  return texts?.length ? texts.join('\n\n') : null;
+  return texts?.length ? texts.join('') : null;
 };
 
 const geminiGenerateContentInlineData = (part: GeminiGenerateContentPart): GeminiGenerateContentInlineData | null => {

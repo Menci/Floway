@@ -1,8 +1,8 @@
-import type { SourceProtocol } from '../composition.ts';
 import { restateGeminiGenerateContentError } from './as-source/error-body.ts';
 import { geminiGenerateContentRead } from './as-source/input-to.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from './as-source/round-trip.ts';
 import { geminiGenerateContentFromIR } from './as-source/sse-to.ts';
+import type { SourceProtocol } from '../../composition/index.ts';
 import type { GeminiGenerateContentRequest, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 
 /**

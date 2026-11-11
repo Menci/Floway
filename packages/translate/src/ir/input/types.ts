@@ -59,7 +59,7 @@ export interface IRInputSettings {
   // protocol defines; a target whose tier vocabulary differs maps it there.
   readonly service_tier?: string; // ChatCompletions, Responses, Messages
   // Whether the model may issue several calls in one turn.
-  readonly parallel_tool_calls?: boolean; // ChatCompletions, Responses
+  readonly parallel_tool_calls?: boolean; // ChatCompletions, Responses, Messages
   // The reasoning effort, an open string on every wire that has one. Messages
   // splits the axis across `output_config.effort` and `thinking`, so its reader
   // and writer each derive one from the other.

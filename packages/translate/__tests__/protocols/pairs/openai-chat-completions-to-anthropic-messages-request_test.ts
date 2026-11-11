@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
+import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import { buildTargetPayloadFor, pairs } from '../composition-helpers.ts';
 import {
   ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
   type AnthropicMessagesAssistantContentBlock,
@@ -1213,4 +1213,11 @@ test('translates legacy declarations and forced choice into Messages tooling', a
   });
   assertEquals(result.tools?.map(tool => 'name' in tool ? tool.name : undefined), ['lookup']);
   assertEquals(result.tool_choice, { type: 'tool', name: 'lookup' });
+});
+
+test.each([true, false])('maps parallel_tool_calls %s into Messages tool choice', async parallel => {
+  for (const tool_choice of [undefined, 'auto', 'required', 'none'] as const) {
+    const result = await buildWithTestSidecar(mkPayload({ messages: [], tools: [{ type: 'function', function: { name: 'f', parameters: { type: 'object', properties: {} } } }], tool_choice, parallel_tool_calls: parallel }));
+    assertEquals(result.tool_choice, tool_choice === 'none' ? { type: 'none' } : { type: tool_choice === 'required' ? 'any' : 'auto', disable_parallel_tool_use: !parallel });
+  }
 });

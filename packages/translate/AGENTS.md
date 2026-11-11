@@ -9,7 +9,7 @@ payload and `TranslateOptions` to create an independent trip.
 
 1. **Composition** — a route pairs a source and a target and states nothing else.
    Anything a pair alone needs belongs to one of its sides; if it truly needs
-   both, it belongs in `protocols/composition.ts`.
+   both, it belongs in `composition/index.ts`.
 2. **Source-only helper** — keep it in `protocols/<protocol>/as-source/`.
    Only routes whose source is that protocol may import it.
 3. **Target-only helper** — keep it in `protocols/<protocol>/as-target/`.
@@ -35,7 +35,7 @@ payload and `TranslateOptions` to create an independent trip.
 - `ir/common/` — values both directions share: the JSON shape, `IRAbsent`, the error payload, text ranges.
 - `ir/input/` — the request conversation model, its types, and the target-side
   selection helpers.
-- `protocols/composition/` — what a trip needs before the IR is written: a
+- `composition/` — what a trip needs before the IR is written: a
   source conversation read into turn slots, and the segmentation that splits a
   writer's input at the turns a sidecar restored.
 - `ir/output/` — the returned-stream model, its path schema, and protocol-independent streaming state.
@@ -47,7 +47,7 @@ payload and `TranslateOptions` to create an independent trip.
 - `protocols/openai-chat-completions/as-target/` — consumes ChatCompletions SSE.
 - `protocols/openai-responses/as-source/` — interprets Responses tools, restores event identities, and emits Responses SSE.
 - `protocols/openai-responses/as-target/` — consumes Responses SSE.
-- `protocols/composition.ts` — pairs one source protocol with one target protocol into a trip; the only file that names two protocols.
+- `composition/index.ts` — pairs one source protocol with one target protocol into a trip; the only file that names two protocols.
 - `protocols/<protocol>/as-source.ts` — states that protocol as the side a request comes from.
 - `protocols/<protocol>/as-target.ts` — states that protocol as the side a request goes to.
 - `shared/` — cross-route coordinate conversion, error classification, JSON handling, and token validation.
@@ -55,7 +55,7 @@ payload and `TranslateOptions` to create an independent trip.
 ## Rules
 
 - Inspect helpers by content and consumers. Keep protocol behaviour on the side
-  that owns it; `composition.ts` holds only what needs both sides.
+  that owns it; `composition/index.ts` holds only what needs both sides.
 
 - Shallow wrappers that only rename or stringify must be inlined at every call
   site, not extracted. A helper that defines a format two or more routes must

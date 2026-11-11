@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { TranslatorInputError } from '../../../src/types.ts';
+import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import { buildTargetPayloadFor, pairs } from '../composition-helpers.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentPart, GeminiGenerateContentContent, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
@@ -63,7 +63,7 @@ test('buildTargetPayload maps system, default max tokens, and multimodal user co
     model: 'claude-test',
     stream: true,
     max_tokens: ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
-    system: [{ type: 'text', text: 'Be precise.\n\nUse markdown.', cache_control: { type: 'ephemeral' } }],
+    system: [{ type: 'text', text: 'Be precise.Use markdown.', cache_control: { type: 'ephemeral' } }],
     messages: [
       {
         role: 'user',

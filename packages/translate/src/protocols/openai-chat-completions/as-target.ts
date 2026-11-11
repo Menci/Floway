@@ -1,10 +1,10 @@
-import type { InputAssistantTurnFor } from '../../round-trip/assistant-turn.ts';
-import { assignCallIds, type PendingCall } from '../composition/call-ids.ts';
-import { flattenRequestNames } from '../composition/flatten-request.ts';
-import type { TargetProtocol } from '../composition.ts';
 import { chatLegacyCallsOf } from './as-target/legacy-calls.ts';
 import { openaiChatCompletionsPayloadFromSegments } from './as-target/segmented-request.ts';
 import { irFromOpenAIChatCompletions } from './as-target/sse-from.ts';
+import { assignCallIds, type PendingCall } from '../../composition/call-ids.ts';
+import { flattenRequestNames } from '../../composition/flatten-request.ts';
+import type { TargetProtocol } from '../../composition/index.ts';
+import type { InputAssistantTurnFor } from '../../round-trip/assistant-turn.ts';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 type ChatResolvedTurn = InputAssistantTurnFor<'openaiChatCompletions'>;

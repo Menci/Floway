@@ -3,8 +3,8 @@ import { test } from 'vitest';
 import { irInputToolsForChoice } from '../../../src/ir/input/select-tools.ts';
 import type { IRInputRequestHeader } from '../../../src/ir/input/types.ts';
 import { openaiResponsesRead } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
+import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import { buildTargetPayloadFor, pairs } from '../composition-helpers.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesClientTool, type AnthropicMessagesToolResultBlock, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIResponsesInputMultiAgentCallOutputItem, OpenAIResponsesTool, OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
@@ -151,7 +151,7 @@ test('buildTargetPayload wires OpenAI Responses tooling guards', async () => {
 
 test('buildTargetPayload accepts null tool_choice', async () => {
   const result = await buildWithTestSidecar({ ...minimalPayload, tool_choice: null });
-  assertEquals(result.target.tool_choice, undefined);
+  assertEquals(result.target.tool_choice, { type: 'auto', disable_parallel_tool_use: false });
 });
 
 test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetPayload rejects input_file in %s', async type => {
@@ -546,7 +546,7 @@ test('buildTargetPayload wraps custom tools as single-string function tools and 
       cache_control: { type: 'ephemeral' },
     },
   ]);
-  assertEquals(result.target.tool_choice, { type: 'tool', name: 'apply_patch' });
+  assertEquals(result.target.tool_choice, { type: 'tool', name: 'apply_patch', disable_parallel_tool_use: false });
 });
 
 test.each(['web_search', 'file_search'])('buildTargetPayload rejects unsupported tool type %s', async type => {
@@ -688,7 +688,7 @@ test('buildTargetPayload flattens namespace functions collision-safely and maps 
       cache_control: { type: 'ephemeral' },
     }],
   });
-  assertEquals(result.target.tool_choice, { type: 'tool', name: 'web_run_2' });
+  assertEquals(result.target.tool_choice, { type: 'tool', name: 'web_run_2', disable_parallel_tool_use: false });
 });
 
 test('buildTargetPayload gives a schema-less function tool the empty object schema', async () => {

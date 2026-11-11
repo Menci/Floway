@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
+import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import { buildTargetPayloadFor, pairs } from '../composition-helpers.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesAssistantContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsFunctionTool } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
@@ -679,4 +679,14 @@ test('buildTargetPayload encodes a plain-text document source as base64', async 
   const part = result.messages[0].content;
   if (!Array.isArray(part)) throw new Error('expected a content array');
   assertEquals(part[0], { type: 'file', file: { file_data: 'data:text/plain;base64,aGVsbG8gd29ybGQ=' } });
+});
+
+test.each([true, false])('maps disable_parallel_tool_use %s without changing declarations', async disabled => {
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [],
+    tools: [{ name: 'f', input_schema: { type: 'object', properties: {} } }],
+    tool_choice: { type: 'auto', disable_parallel_tool_use: disabled },
+  });
+  assertEquals(result.parallel_tool_calls, !disabled);
+  assertEquals(result.tools?.length, 1);
 });

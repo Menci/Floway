@@ -1,8 +1,8 @@
-import type { SourceProtocol } from '../composition.ts';
 import { restateOpenAIResponsesError } from './as-source/error-body.ts';
 import { openaiResponsesRead } from './as-source/input-to.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest } from './as-source/round-trip.ts';
 import { createRandomOpenAIResponsesResponseId, openaiResponsesFromIR } from './as-source/sse-to.ts';
+import type { SourceProtocol } from '../../composition/index.ts';
 import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 /**

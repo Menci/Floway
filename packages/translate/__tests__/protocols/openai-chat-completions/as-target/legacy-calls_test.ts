@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
+import type { ResolvedTurn } from '../../../../src/composition/segments.ts';
 import type { IRInputTurn } from '../../../../src/ir/input/types.ts';
-import type { ResolvedTurn } from '../../../../src/protocols/composition/segments.ts';
 import { chatLegacyCallsOf } from '../../../../src/protocols/openai-chat-completions/as-target/legacy-calls.ts';
 import type { InputAssistantTurnFor } from '../../../../src/round-trip/assistant-turn.ts';
 import { TranslatorInputError } from '../../../../src/types.ts';

@@ -2,10 +2,10 @@ import { expect, test, vi } from 'vitest';
 
 import { anthropicMessagesFromIR, collectIR, collect, completeIR, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
 import { fixtureFrames, nativeResult } from './translation-cases.ts';
+import { buildSourceEventsFor, buildTargetPayloadFor } from '../../src/composition/index.ts';
 import { createIRBuilder } from '../../src/ir/output/stream.ts';
-import { buildSourceEventsFor, buildTargetPayloadFor } from '../../src/protocols/composition.ts';
 import { irFromOpenAIChatCompletions as irFromOpenAIChatCompletionsProduction } from '../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
-import { emptyPayload, pairs } from '../protocols/composition-helpers.ts';
+import { emptyPayload, pairs } from '../composition/helpers.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { createRoundTripReaderCapture } from '../round-trip/test-helpers.ts';
 import { eventFrame } from '@floway-dev/protocols/common';

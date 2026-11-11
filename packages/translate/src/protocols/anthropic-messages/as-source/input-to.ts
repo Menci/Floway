@@ -2,6 +2,7 @@ import { klona } from 'klona/json';
 
 import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn } from './conversation-turns.ts';
 import type { AnthropicMessagesAssistantTurn } from './round-trip.ts';
+import type { Reading, TurnSlot } from '../../../composition/reading.ts';
 import { mediaFromURL, mediaOrThrow } from '../../../ir/input/media.ts';
 import type {
   IRInputAssistantContentPart,
@@ -19,7 +20,6 @@ import type {
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
 import { TranslatorInputError } from '../../../types.ts';
-import type { Reading, TurnSlot } from '../../composition/reading.ts';
 import type {
   AnthropicMessagesAssistantInputContentBlock,
   AnthropicMessagesClientTool,
@@ -367,6 +367,9 @@ const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload): IRInp
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
     ...(serviceTier === undefined ? {} : { service_tier: serviceTier }),
     ...(metadata === undefined ? {} : { metadata }),
+    ...(payload.tool_choice !== undefined && 'disable_parallel_tool_use' in payload.tool_choice && payload.tool_choice.disable_parallel_tool_use != null
+      ? { parallel_tool_calls: !payload.tool_choice.disable_parallel_tool_use }
+      : {}),
     // Messages splits one reasoning axis across three controls: a level, an off
     // switch, and a token budget. The level and the off switch are the same axis
     // every other protocol states as an effort. A budget does not reach the IR

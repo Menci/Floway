@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
-import { buildSourceEventsFor } from '../../src/protocols/composition.ts';
-import { emptyPayload, pairs } from '../protocols/composition-helpers.ts';
+import { buildSourceEventsFor } from '../../src/composition/index.ts';
+import { emptyPayload, pairs } from '../composition/helpers.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';

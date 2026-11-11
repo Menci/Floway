@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
+import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import { buildTargetPayloadFor, pairs } from '../composition-helpers.ts';
 import type { GeminiGenerateContentPart, GeminiGenerateContentContent, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
@@ -52,7 +52,7 @@ test('buildTargetPayload maps instructions and multimodal user input without def
   assertEquals(await buildWithTestSidecar(payload, 'gpt-test'), {
     model: 'gpt-test',
     stream: true,
-    instructions: 'Be precise.\n\nUse markdown.',
+    instructions: 'Be precise.Use markdown.',
     input: [
       {
         type: 'message',
@@ -511,4 +511,9 @@ test('an orphaned tool choice is not stated', async () => {
   }, 'gpt-test');
 
   assertEquals(request.tool_choice, undefined);
+});
+
+test.each([undefined, 1024, -1])('preserves includeThoughts without a thinking level for budget %s', async thinkingBudget => {
+  const request = await buildWithTestSidecar({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget, includeThoughts: true } } }, 'm');
+  assertEquals(request.reasoning, { ...(thinkingBudget === 1024 ? { effort: 'low' } : {}), summary: 'detailed' });
 });

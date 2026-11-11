@@ -1,4 +1,4 @@
-import type { IRInputRequestHeader, IRInputTurn } from '../../ir/input/types.ts';
+import type { IRInputRequestHeader, IRInputTurn } from '../ir/input/types.ts';
 
 /**
  * One turn of a source conversation, classified by the reader that produced it.

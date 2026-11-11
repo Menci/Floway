@@ -1,6 +1,6 @@
+import { buildTargetPayloadFor, buildSourceEventsFor } from '../../src/composition/index.ts';
 import { anthropicMessagesSourceProtocol } from '../../src/protocols/anthropic-messages/as-source.ts';
 import { anthropicMessagesTargetProtocol } from '../../src/protocols/anthropic-messages/as-target.ts';
-import { buildTargetPayloadFor, buildSourceEventsFor } from '../../src/protocols/composition.ts';
 import { geminiGenerateContentSourceProtocol } from '../../src/protocols/gemini-generate-content/as-source.ts';
 import { openaiChatCompletionsSourceProtocol } from '../../src/protocols/openai-chat-completions/as-source.ts';
 import { openaiChatCompletionsTargetProtocol } from '../../src/protocols/openai-chat-completions/as-target.ts';

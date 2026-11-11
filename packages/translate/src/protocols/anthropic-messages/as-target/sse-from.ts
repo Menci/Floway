@@ -64,9 +64,8 @@ export const irFromAnthropicMessages = async function* (
   frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
   options: {
     customToolNames?: ReadonlySet<string>;
-    // The pair each flat name in the request stands for, so the group the
-    // client declared is stated back on the IR.
-    flatIdentities?: ReadonlyMap<string, { readonly namespace: string; readonly name: string }>;
+    // The original identity each allocated request name stands for.
+    flatIdentities?: ReadonlyMap<string, { readonly namespace?: string; readonly name: string }>;
     roundTrip: RoundTripReader<'anthropicMessages'>;
   },
 ): AsyncGenerator<IRRecord> {
@@ -114,12 +113,9 @@ export const irFromAnthropicMessages = async function* (
       }
     } else if (block.type === 'tool_use') {
       custom = options.customToolNames?.has(block.name) === true;
-      // A name the request sent grouped comes back flat; stating the pair again
-      // here is what lets the source-side writer restore it.
+      // Restore allocated names, including bare names renamed to avoid collisions.
       const identity = options.flatIdentities?.get(block.name);
-      const naming = identity === undefined
-        ? { name: block.name }
-        : { name: identity.name, namespace: identity.namespace };
+      const naming = identity ?? { name: block.name };
       item = builder.item(0, custom
         ? { type: 'custom_tool_call', call_id: block.id, ...naming, input: '' }
         : { type: 'function_call', call_id: block.id, ...naming, arguments: '' });

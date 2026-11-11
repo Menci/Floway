@@ -1,12 +1,12 @@
+import { anthropicMessagesPayloadFromSegments } from './as-target/segmented-request.ts';
+import { irFromAnthropicMessages } from './as-target/sse-from.ts';
+import { assignCallIds, type PendingCall } from '../../composition/call-ids.ts';
+import { flattenRequestNames } from '../../composition/flatten-request.ts';
+import type { TargetProtocol } from '../../composition/index.ts';
+import type { ResolvedTurn } from '../../composition/segments.ts';
 import type { IRInputRequestHeader, IRInputTurn } from '../../ir/input/types.ts';
 import type { InputAssistantTurnFor } from '../../round-trip/assistant-turn.ts';
 import type { TranslateOptions } from '../../types.ts';
-import { assignCallIds, type PendingCall } from '../composition/call-ids.ts';
-import { flattenRequestNames } from '../composition/flatten-request.ts';
-import type { ResolvedTurn } from '../composition/segments.ts';
-import type { TargetProtocol } from '../composition.ts';
-import { anthropicMessagesPayloadFromSegments } from './as-target/segmented-request.ts';
-import { irFromAnthropicMessages } from './as-target/sse-from.ts';
 import type { AnthropicMessagesMessage, AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 
 const callsOf = (turn: Extract<AnthropicMessagesMessage, { role: 'assistant' }>): readonly PendingCall[] =>

@@ -1,7 +1,7 @@
+import type { ResolvedTurn } from '../../../composition/segments.ts';
 import type { IRInputTurn } from '../../../ir/input/types.ts';
 import type { InputAssistantTurnFor } from '../../../round-trip/assistant-turn.ts';
 import { TranslatorInputError } from '../../../types.ts';
-import type { ResolvedTurn } from '../../composition/segments.ts';
 
 type ChatResolvedTurn = InputAssistantTurnFor<'openaiChatCompletions'>;
 

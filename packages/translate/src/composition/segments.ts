@@ -1,4 +1,4 @@
-import type { IRInputAddressedTurn } from '../../ir/input/addressed.ts';
+import type { IRInputAddressedTurn } from '../ir/input/addressed.ts';
 
 // A conversation translates in segments split at sidecar-resolved assistant
 // turns. Those turns are already native target structure, so a writer emits

@@ -1,6 +1,6 @@
 import { anthropicMessagesSourceProtocol } from './anthropic-messages/as-source.ts';
 import { anthropicMessagesTargetProtocol } from './anthropic-messages/as-target.ts';
-import { composeTranslation } from './composition.ts';
+import { composeTranslation } from '../composition/index.ts';
 import { geminiGenerateContentSourceProtocol } from './gemini-generate-content/as-source.ts';
 import { openaiChatCompletionsSourceProtocol } from './openai-chat-completions/as-source.ts';
 import { openaiChatCompletionsTargetProtocol } from './openai-chat-completions/as-target.ts';

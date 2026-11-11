@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
-import { anthropicMessagesRead } from '../../../src/protocols/anthropic-messages/as-source/input-to.ts';
-import { resolveReading } from '../../../src/protocols/composition/reading.ts';
+import { resolveReading } from '../../src/composition/reading.ts';
+import { anthropicMessagesRead } from '../../src/protocols/anthropic-messages/as-source/input-to.ts';
 
 test('joins parallel server results and the next user message into one client turn', async () => {
   const reading = anthropicMessagesRead({

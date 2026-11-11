@@ -1,14 +1,14 @@
 import { test } from 'vitest';
 
+import { buildTargetPayloadFor } from '../../../../src/composition/index.ts';
 import { irInputToolsForChoice } from '../../../../src/ir/input/select-tools.ts';
 import type { IRInputRequestHeader } from '../../../../src/ir/input/types.ts';
-import { buildTargetPayloadFor } from '../../../../src/protocols/composition.ts';
 import { requireCallableSelector } from '../../../../src/protocols/openai-responses/as-source/allowed-tools.ts';
 import { openaiResponsesRead } from '../../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { TranslatorInputError } from '../../../../src/types.ts';
 import type { SidecarCodec } from '../../../../src/types.ts';
+import { pairs } from '../../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
-import { pairs } from '../../composition-helpers.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
 const customToolNamesOf = (request: IRInputRequestHeader): ReadonlySet<string> =>
@@ -69,17 +69,19 @@ for (const target of ['chat', 'messages'] as const) {
   });
 
   for (const history of ['additional_tools', 'tool_search_output'] as const) {
-    test(`${target} request rejects flat function/custom collisions from ${history} before converting calls`, async () => {
+    test(`${target} request allocates distinct names for function/custom declarations from ${history}`, async () => {
       const custom: OpenAIResponsesTool = { type: 'custom', name: 'web_search' };
       const item: CanonicalOpenAIResponsesInputItem = history === 'additional_tools'
         ? { type: 'additional_tools', role: 'developer', tools: [custom] }
         : { type: 'tool_search_output', execution: 'client', tools: [custom] };
       const payload: OpenAIResponsesRequestPayloadEx = {
-        model: 'model',
+        model: 'model', stream: true,
         tools: [{ type: 'function', name: 'web_search', parameters: { type: 'object' } }],
         input: [item],
       };
-      await assertRejects(() => build(payload), TranslatorInputError, "distinct callable kinds sharing 'web_search'");
+      const result = await build(payload);
+      const wire = JSON.parse(JSON.stringify(result.target)) as { tools: Array<{ name?: string; function?: { name: string } }> };
+      assertEquals(wire.tools.map(tool => tool.function?.name ?? tool.name), ['web_search', 'web_search_2']);
     });
   }
 
@@ -108,7 +110,6 @@ for (const target of ['chat', 'messages'] as const) {
     ['unknown mode', { type: 'allowed_tools', mode: 'future', tools: [{ type: 'function', name: 'read' }] }],
     ['malformed tools array', { type: 'allowed_tools', mode: 'auto', tools: null }],
     ['malformed selector', { type: 'allowed_tools', mode: 'auto', tools: [null] }],
-    ['colliding callable kinds', { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: 'read' }, { type: 'custom', name: 'read' }] }],
   ] as const) {
     test(`${target} request typed-rejects ${label} instead of widening allowed_tools`, async () => {
       const payload = source(choice as unknown as OpenAIResponsesToolChoice);
@@ -151,4 +152,30 @@ test('a dotted selector is only read as a pair when that group is declared', asy
   // — or refused a legal request.
   const flat = await buildChat(source({ type: 'function', name: 'a.b' }), createTestSidecarCodec());
   assertEquals(flat.target.tool_choice, { type: 'function', function: { name: 'a.b' } });
+});
+
+test.each(['chat', 'messages'] as const)('preserves declarations and selects only the namespaced custom callable on %s', async target => {
+  const payload: OpenAIResponsesRequestPayloadEx = {
+    model: 'm', stream: true, input: 'hi', tools: [{
+      type: 'namespace', name: 'files', description: '', tools: [
+        { type: 'function', name: 'edit', parameters: { type: 'object', properties: {} } },
+        { type: 'custom', name: 'edit' },
+      ],
+    }],
+    tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', namespace: 'files', name: 'edit' }] },
+  };
+  const codec = createTestSidecarCodec();
+  if (target === 'chat') {
+    const result = await buildChat(payload, codec);
+    const baseline = await buildChat({ ...payload, tool_choice: 'auto' }, codec);
+    assertEquals(result.target.tools, baseline.target.tools);
+    assertEquals(result.target.tools?.map(tool => tool.type === 'function' ? tool.function.name : tool.custom.name), ['files_edit', 'files_edit_2']);
+    assertEquals(result.target.tool_choice, { type: 'allowed_tools', allowed_tools: { mode: 'required', tools: [{ type: 'function', function: { name: 'files_edit_2' } }] } });
+  } else {
+    const result = await buildMessages(payload, codec);
+    const baseline = await buildMessages({ ...payload, tool_choice: 'auto' }, codec);
+    assertEquals(result.target.tools, baseline.target.tools);
+    assertEquals(result.target.tools?.flatMap(tool => 'name' in tool ? [tool.name] : []), ['files_edit', 'files_edit_2']);
+    assertEquals(result.target.tool_choice, { type: 'tool', name: 'files_edit_2' });
+  }
 });
