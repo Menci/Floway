@@ -147,6 +147,26 @@ test.each([
 });
 
 test.each([
+  { error: { type: 'error' as const, sequence_number: 0, error: { type: 'invalid_request_error', code: null, message: 'invalid tools', param: 'tools' } }, status: 400 },
+  { error: { type: 'error' as const, sequence_number: 0, code: 'rate_limit_exceeded', message: 'slow down', param: null }, status: 429 },
+  { error: { type: 'error' as const, sequence_number: 0, code: null, message: 'bad key', param: null, provider_specific_fields: { type: 'authentication_error' } }, status: 401 },
+  { error: { type: 'error' as const, sequence_number: 0, code: 'server_error', message: 'failed', param: null }, status: 500 },
+  { error: { type: 'error' as const, sequence_number: 0, code: 'vendor_failure', message: 'failed', param: null }, status: 502 },
+] as const)('Responses non-streaming error classification selects HTTP $status', async ({ error, status }) => {
+  const failed = { id: 'resp_failed', object: 'response', model: 'm', status: 'failed' as const, output: [], error: null, incomplete_details: null };
+  const frames = async function* () {
+    yield eventFrame<OpenAIResponsesStreamEventEx>(error);
+    yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.failed', sequence_number: 1, response: failed });
+  };
+  const app = new Hono().get('/', c => respondOpenAIResponses(c, eventResult(frames(), testTelemetryModelIdentity), false, mockChatGatewayCtx(), { model: 'm', input: [] }));
+  const response = await app.request('/');
+
+  expect(response.status).toBe(status);
+  const { sequence_number: _sequenceNumber, ...body } = error;
+  expect(await response.json()).toEqual(body);
+});
+
+test.each([
   { type: 'error' as const, sequence_number: 3, code: null, param: 'tools', message: 'rate limited', vendor: { retryable: true } },
   { type: 'error' as const, sequence_number: 3, error: { code: null, param: null, message: 'rate limited', vendor: { retryable: true } }, trace: 'native-trace' },
 ])('Responses non-streaming failure drains the failed resource, preserves error fields, and records usage once: %j', async error => {
