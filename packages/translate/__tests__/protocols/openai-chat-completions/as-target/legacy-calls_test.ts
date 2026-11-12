@@ -83,3 +83,17 @@ test('legacy matching wins over an earlier pending modern call of the same name'
   const client = assigned[2];
   assertEquals(client.kind === 'client' && client.items[0].type === 'tool_result' ? client.items[0].call_id : undefined, legacyCalls.callIds.get(legacyTurn.turn));
 });
+
+test('a different legacy function does not end the result search', () => {
+  const first = legacy('first');
+  const second = legacy('second');
+  const answers: IRInputTurn = {
+    kind: 'client',
+    items: [
+      { type: 'tool_result', name: 'first', output: 'FIRST' },
+      { type: 'tool_result', name: 'second', output: 'SECOND' },
+    ],
+  };
+  const legacyCalls = chatLegacyCallsOf([first, message('between'), second, answers]);
+  assertEquals([...legacyCalls.names.values()], ['first', 'second']);
+});

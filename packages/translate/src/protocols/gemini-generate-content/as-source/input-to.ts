@@ -158,7 +158,7 @@ const turnToIRTurns = (
   : [{
       kind: 'client',
       items: turn.items.flatMap(content => {
-        if (content.role !== 'user' && content.role !== undefined) {
+        if (content.role !== 'user' && content.role != null) {
           throw new TranslateInputException(`"${(content as { role: string }).role}" is not a supported content role.`);
         }
         return (content.parts?.length ?? 0) === 0
@@ -264,9 +264,9 @@ const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest
     ...(config?.seed == null ? {} : { seed: config.seed }),
     ...(config?.maxOutputTokens == null ? {} : { max_output_tokens: config.maxOutputTokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
-    ...(config?.candidateCount === undefined ? {} : { choice_count: config.candidateCount }),
-    ...(config?.presencePenalty === undefined ? {} : { presence_penalty: config.presencePenalty }),
-    ...(config?.frequencyPenalty === undefined ? {} : { frequency_penalty: config.frequencyPenalty }),
+    ...(config?.candidateCount == null ? {} : { choice_count: config.candidateCount }),
+    ...(config?.presencePenalty == null ? {} : { presence_penalty: config.presencePenalty }),
+    ...(config?.frequencyPenalty == null ? {} : { frequency_penalty: config.frequencyPenalty }),
     ...(effort === undefined ? {} : { reasoning_effort: effort }),
     // A negative budget asks the model to choose its own and states no number.
     ...(budget === undefined || budget <= 0 ? {} : { reasoning_budget: budget }),

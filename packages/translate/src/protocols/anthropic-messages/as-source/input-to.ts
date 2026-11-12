@@ -66,10 +66,11 @@ const documentMedia = (block: Extract<AnthropicMessagesUserContentBlock, { type:
   // IR's media arms uniform.
   case 'text': return { source_kind: 'base64', media_type: source.media_type, data: base64Of(source.data) };
   case 'content': {
-    const content = typeof source.content === 'string'
-      ? { type: 'text' as const, text: source.content }
-      : source.content.length === 1 ? source.content[0] : undefined;
-    if (content?.type === 'text') return { source_kind: 'base64', media_type: 'text/plain', data: base64Of(content.text) };
+    if (typeof source.content === 'string') return { source_kind: 'base64', media_type: 'text/plain', data: base64Of(source.content) };
+    if (source.content.every(content => content.type === 'text')) {
+      return { source_kind: 'base64', media_type: 'text/plain', data: base64Of(source.content.map(content => content.text).join('')) };
+    }
+    const content = source.content.length === 1 ? source.content[0] : undefined;
     if (content?.type === 'image') return imageMedia(content.source);
     throw new TranslateInputException('Cannot translate a multi-part inline content document as one file.');
   }

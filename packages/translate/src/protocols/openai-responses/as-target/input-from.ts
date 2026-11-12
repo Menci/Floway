@@ -131,12 +131,12 @@ const isInstruction = (entry: IRInputClientItem): entry is IRInputInstructionIte
 
 export const openaiResponsesConversationFromIR = (
   turns: readonly IRInputTurnWithCallIds[],
-  hoistSystem: boolean,
+  leading: boolean,
 ): Pick<CanonicalOpenAIResponsesPayload, 'instructions' | 'input'> => {
-  const instructions: string[] = [];
+  let instructions: string | undefined;
   // Only the first segment can contain the request's top-level instruction.
   // A later segment continues conversation history, so every item stays inline.
-  let hoisting = hoistSystem;
+  let hoisting = leading;
 
   const input = turns.flatMap(item => {
     if (item.kind === 'assistant') {
@@ -145,7 +145,7 @@ export const openaiResponsesConversationFromIR = (
     }
     return item.items.flatMap((entry): CanonicalOpenAIResponsesInputItem[] => {
       if (hoisting && isInstruction(entry)) {
-        instructions.push(entry.content.map(part => part.text).join(''));
+        instructions = entry.content.map(part => part.text).join('');
         hoisting = false;
         return [];
       }
@@ -154,7 +154,7 @@ export const openaiResponsesConversationFromIR = (
     });
   });
 
-  return { instructions: instructions.length === 0 ? undefined : instructions.join('\n\n'), input };
+  return { instructions, input };
 };
 
 const requireSchema = (format: IRInputOutputFormat): Readonly<Record<string, unknown>> => {

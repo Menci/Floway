@@ -25,8 +25,8 @@ export const anthropicMessagesPayloadFromSegments = (
       restored.add(piece.turn);
       continue;
     }
-    // Only a conversation's first segment may lift its leading prompt into the
-    // top-level `system` slot, and segmentation is what says which that is.
+    // Only the first segment may project its instruction or leading
+    // system/developer messages into the top-level `system` slot.
     const segment = anthropicMessagesConversationFromIR(piece.turns, piece.leading);
     system.push(...segment.system);
     messages.push(...segment.messages);

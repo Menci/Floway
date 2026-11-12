@@ -42,7 +42,7 @@ test('mixed tool-result blocks keep documents formal and unknown blocks opaque',
         role: 'user',
         content: [{
           type: 'tool_result', tool_use_id: 'c', content: [
-            { type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'hello' } },
+            { type: 'document', source: { type: 'content', content: [{ type: 'text', text: 'hel' }, { type: 'text', text: 'lo' }] } },
             unknown,
           ],
         }],
@@ -56,14 +56,18 @@ test('mixed tool-result blocks keep documents formal and unknown blocks opaque',
   ]);
 });
 
-test('inline text content documents enter the IR as text files', async () => {
+test.each([
+  ['string', 'hello', 'aGVsbG8='],
+  ['text blocks', [{ type: 'text' as const, text: 'hel' }, { type: 'text' as const, text: 'lo' }], 'aGVsbG8='],
+  ['empty text blocks', [], ''],
+] as const)('inline content document %s enters the IR as a text file', async (_name, content, data) => {
   const result = await buildWithTestSidecar({
     model: 'm', max_tokens: 32, messages: [{
-      role: 'user', content: [{ type: 'document', source: { type: 'content', content: 'hello' } }],
+      role: 'user', content: [{ type: 'document', source: { type: 'content', content: typeof content === 'string' ? content : [...content] } }],
     }],
   });
   assertEquals(result.input, [{
-    type: 'message', role: 'user', content: [{ type: 'input_file', file_data: 'data:text/plain;base64,aGVsbG8=' }],
+    type: 'message', role: 'user', content: [{ type: 'input_file', file_data: `data:text/plain;base64,${data}` }],
   }]);
 });
 

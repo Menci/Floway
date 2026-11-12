@@ -29,6 +29,22 @@ test('ProtoJSON null configuration members are treated as unset', async () => {
     contents: [], generationConfig: { thinkingConfig: { thinkingLevel: null as never, thinkingBudget: 1024 } },
   }, 'gpt-test');
   assertEquals(nullLevel.reasoning, { effort: 'low' });
+
+  const nullScalars = await buildWithTestSidecar({
+    contents: [{ role: null as never, parts: [{ text: 'hello' }] }],
+    generationConfig: {
+      candidateCount: null as never,
+      presencePenalty: null as never,
+      frequencyPenalty: null as never,
+      responseSchema: null as never,
+    },
+    tools: [{ functionDeclarations: [{ name: 'lookup', parameters: null as never }] }],
+  }, 'gpt-test');
+  assertEquals(nullScalars.input, [{ type: 'message', role: 'user', content: 'hello' }]);
+  assertFalse('presence_penalty' in nullScalars);
+  assertFalse('frequency_penalty' in nullScalars);
+  assertEquals(nullScalars.text, undefined);
+  assertEquals(nullScalars.tools?.[0]?.type === 'function' ? nullScalars.tools[0].parameters : undefined, { type: 'object', properties: {} });
 });
 
 test('buildTargetPayload translates LOW to reasoning.effort', async () => {

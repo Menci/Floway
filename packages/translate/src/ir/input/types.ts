@@ -51,8 +51,7 @@ export interface IRInputPromptCacheOptions {
   readonly ttl?: string;
 }
 
-// Structured output. `strict` is three-state: absent means the source did not
-// say, which is not the same as `false`.
+// Structured output. `strict` keeps absent, null, false, and true distinct.
 export interface IRInputOutputFormat {
   readonly type: 'text' | 'json_object' | 'json_schema';
   readonly name?: string;

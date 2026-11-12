@@ -11,6 +11,16 @@ const buildWithTestSidecar = (
   model: string,
 ) => buildTargetPayloadFor(pairs.geminiToChat[0], pairs.geminiToChat[1], { ...payload, model }, { sidecarCodec: createTestSidecarCodec() });
 
+test('ProtoJSON null scalar members are treated as unset', async () => {
+  const request = await buildWithTestSidecar({
+    contents: [],
+    generationConfig: { candidateCount: null as never, presencePenalty: null as never, frequencyPenalty: null as never },
+  }, 'gpt-test');
+  assertEquals(request.n, undefined);
+  assertEquals(request.presence_penalty, undefined);
+  assertEquals(request.frequency_penalty, undefined);
+});
+
 test('buildTargetPayload translates LOW to reasoning_effort', async () => {
   const request = await buildWithTestSidecar({
     contents: [],

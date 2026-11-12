@@ -18,7 +18,7 @@ export const openaiResponsesPayloadFromSegments = (
   for (const piece of segmentTurns(turns)) {
     if (piece.kind === 'restored') { input.push(...piece.turn); continue; }
     const segment = openaiResponsesConversationFromIR(piece.turns, piece.leading);
-    if (segment.instructions != null) instructions ??= segment.instructions;
+    if (segment.instructions != null) instructions = segment.instructions;
     input.push(...segment.input);
   }
 
