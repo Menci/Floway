@@ -14,7 +14,7 @@ const result = (name?: string, callId?: string): IRInputTurn => ({
   kind: 'client',
   items: [{ type: 'tool_result', ...(name === undefined ? {} : { name }), ...(callId === undefined ? {} : { call_id: callId }), output: '' }],
 });
-const restored = (calls: readonly PendingCall[]): RestoredAssistantTurn<readonly PendingCall[]> => ({ kind: 'restored', callIdentities: [], turn: calls });
+const restored = (calls: readonly PendingCall[]): RestoredAssistantTurn<readonly PendingCall[]> => ({ kind: 'restored', turn: calls });
 const restoredCalls = (turn: readonly PendingCall[]): readonly PendingCall[] => turn;
 
 const lastResult = (turns: ReturnType<typeof assignCallIds>) => {

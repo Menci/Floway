@@ -5,7 +5,7 @@ import type { IRInputRequestHeader, IRInputTool, IRInputTurn } from '../../../sr
 import { TranslateInputException } from '../../../src/shared/input-error.ts';
 import { assertThrows, assertEquals } from '@floway-dev/test-utils';
 
-const native: NativeCallNames<never> = { ids: turn => turn, rename: turn => turn };
+const native: NativeCallNames<never> = { names: turn => turn };
 
 const request = (tools: readonly IRInputTool[]): IRInputRequestHeader => ({ settings: { model: 'm', stream: true }, tools });
 

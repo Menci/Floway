@@ -52,7 +52,7 @@ it('keeps restored Chat history native while translating bare namespace calls', 
 
   expect(result.target.messages).toEqual([
     { role: 'system', content: 'instructions' },
-    { ...targetTurn, tool_calls: targetTurn.tool_calls.map(call => ({ ...call, function: { ...call.function, name: 'web_run_2' } })) },
+    targetTurn,
     { role: 'tool', tool_call_id: 'native', content: 'native result' },
     { role: 'assistant', content: null, tool_calls: [{ type: 'function', id: 'bare', function: { name: 'web_run_2', arguments: '{}' } }] },
   ]);
@@ -76,8 +76,8 @@ it('keeps restored Messages history native while hoisting system and translating
 
   expect(result.target.system).toEqual([{ type: 'text', text: 'instructions', cache_control: { type: 'ephemeral' } }]);
   expect(result.target.messages).toEqual([
-    { ...targetTurn, content: targetTurn.content.map(block => ({ ...block, name: 'web_run_2' })) },
-    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'native', content: 'native result', is_error: undefined }] },
+    targetTurn,
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'native', content: 'native result' }] },
     { role: 'assistant', content: [{ type: 'tool_use', id: 'bare', name: 'web_run_2', input: {}, cache_control: { type: 'ephemeral' } }] },
   ]);
 });

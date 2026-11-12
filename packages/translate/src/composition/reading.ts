@@ -1,22 +1,16 @@
-import type { IRInputRequestHeader, IRInputToolSelector, IRInputTurn } from '../ir/input/types.ts';
-
-export interface SourceCallIdentity extends IRInputToolSelector {
-  readonly call_id?: string;
-}
+import type { IRInputRequestHeader, IRInputTurn } from '../ir/input/types.ts';
 
 export interface RestoredAssistantTurn<Turn> {
   readonly kind: 'restored';
   readonly turn: Turn;
-  readonly callIdentities: readonly SourceCallIdentity[];
 }
 
-/** Native turns authenticate sidecars; naming facts are read separately while restored turns bypass lazy IR conversion. */
+/** Native turns authenticate sidecars and bypass lazy IR conversion. */
 export type SourceTurnSlot<AssistantTurn> =
   | { readonly kind: 'client'; readonly toIRInputTurns: () => IRInputTurn[] }
   | {
     readonly kind: 'assistant';
     readonly assistantTurn: AssistantTurn;
-    readonly readCallIdentities: () => readonly SourceCallIdentity[];
     readonly toIRInputTurns: () => IRInputTurn[];
   };
 
@@ -62,7 +56,7 @@ export const resolveReading = async <AssistantTurn, Resolved>(
       append(turn.toIRInputTurns());
       continue;
     }
-    turns.push({ kind: 'restored', turn: result, callIdentities: turn.readCallIdentities() });
+    turns.push({ kind: 'restored', turn: result });
   }
   return turns;
 };

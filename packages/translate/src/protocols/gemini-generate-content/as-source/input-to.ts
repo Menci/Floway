@@ -218,13 +218,7 @@ export const readGeminiGenerateContentRequest = (payload: GeminiGenerateContentR
     contentIndex += turn.items.length;
     const toIRInputTurns = () => turnToIRTurns(turn, at);
     if (turn.role !== 'assistant') return { kind: 'client', toIRInputTurns };
-    return {
-      kind: 'assistant', assistantTurn: turn.items, toIRInputTurns,
-      readCallIdentities: () => turn.items.flatMap(content => (content.parts ?? []).flatMap(part => part.functionCall === undefined ? [] : [{
-        type: 'function' as const, name: part.functionCall.name,
-        ...(part.functionCall.id === undefined ? {} : { call_id: part.functionCall.id }),
-      }])),
-    };
+    return { kind: 'assistant', assistantTurn: turn.items, toIRInputTurns };
   };
 
   return {

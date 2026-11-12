@@ -1,5 +1,5 @@
 import type { RestoredAssistantTurn } from '../../../composition/reading.ts';
-import type { IRInputTurn } from '../../../ir/input/types.ts';
+import type { IRInputToolResultItem, IRInputTurn } from '../../../ir/input/types.ts';
 import type { InputAssistantTurnFor } from '../../../round-trip/input-assistant-turn.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 
@@ -15,7 +15,7 @@ interface ChatLegacyCalls {
   readonly names: ReadonlyMap<string, string>;
 }
 
-/** Every call id this conversation states, which no legacy answer can name. */
+/** Every call id this conversation states, which an internal legacy pairing id must avoid. */
 const statedCallIds = <Restored extends ChatRestoredAssistantTurn>(
   turns: readonly (IRInputTurn | RestoredAssistantTurn<Restored>)[],
 ): ReadonlySet<string> => {
@@ -33,9 +33,9 @@ const statedCallIds = <Restored extends ChatRestoredAssistantTurn>(
 };
 
 /**
- * Native legacy function_call has no ID. Match its result within the following client turn by
- * eliminating stated modern call IDs; id-less results follow pending-call order.
- * Require one unambiguous answer before another round begins. A tail call may remain pending.
+ * Native legacy function_call has no ID. It consumes the unique later id-less
+ * result that states the same function name before modern calls consume the
+ * remaining results. A tail call may remain pending.
  * Internal pairing IDs never change the legacy wire's name-based result correlation.
  */
 export const chatLegacyCallsOf = <Restored extends ChatRestoredAssistantTurn>(
@@ -45,33 +45,30 @@ export const chatLegacyCallsOf = <Restored extends ChatRestoredAssistantTurn>(
   const claimed = new Set(stated);
   const callIds = new Map<ChatRestoredAssistantTurn, string>();
   const names = new Map<string, string>();
+  const consumed = new Set<IRInputToolResultItem>();
   let allocated = 0;
   for (const [index, piece] of turns.entries()) {
     if (piece.kind !== 'restored') continue;
     const name = piece.turn.function_call?.name;
     if (name === undefined) continue;
-    const next = turns[index + 1];
-    const results = next?.kind === 'client'
-      ? next.items.flatMap(item => item.type === 'tool_result' ? [item] : [])
-      : [];
-    const unnamed = results.filter(item => item.call_id === undefined || !stated.has(item.call_id));
-    if (unnamed.length > 1) {
-      throw new TranslateInputException(`Cannot translate the answer to the legacy call '${name}': the turn after it states ${unnamed.length} results that name no call of this conversation, so nothing says which one answers it.`);
+    const candidates = turns.slice(index + 1).flatMap(turn => turn.kind !== 'client' ? [] : turn.items.flatMap(item =>
+      item.type === 'tool_result' && item.call_id === undefined && item.name === name && !consumed.has(item) ? [item] : []));
+    if (candidates.length > 1) {
+      throw new TranslateInputException(`Cannot translate the answer to the legacy call '${name}': ${candidates.length} id-less results state that function name.`);
     }
-    const [answer] = unnamed;
+    const [answer] = candidates;
     if (answer === undefined) {
       if (index < turns.length - 1) {
-        throw new TranslateInputException(`Cannot translate the legacy call '${name}': the turn after it does not answer it, and a wire that states no id for the call cannot say which later answer means it.`);
+        throw new TranslateInputException(`Cannot translate the legacy call '${name}': no unique id-less result states that function name.`);
       }
       continue;
     }
-    let callId = answer.call_id;
-    if (callId === undefined) {
-      do {
-        allocated += 1;
-        callId = `legacy_call_${allocated}`;
-      } while (claimed.has(callId));
-    }
+    consumed.add(answer);
+    let callId: string;
+    do {
+      allocated += 1;
+      callId = `legacy_call_${allocated}`;
+    } while (claimed.has(callId));
     claimed.add(callId);
     callIds.set(piece.turn, callId);
     names.set(callId, name);

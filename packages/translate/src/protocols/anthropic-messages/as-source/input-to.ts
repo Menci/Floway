@@ -423,9 +423,6 @@ export const readAnthropicMessagesRequest = (payload: AnthropicMessagesPayload):
       turns.push({
         kind: 'assistant',
         assistantTurn: turn.items,
-        readCallIdentities: () => turn.items.flatMap(message => typeof message.content === 'string' ? [] : message.content.flatMap(block => block.type === 'tool_use' || block.type === 'server_tool_use'
-          ? [{ type: 'function' as const, name: block.name, call_id: block.id }]
-          : [])),
         toIRInputTurns: () => anthropicMessagesTurnToIR(turn, firstMessageIndex),
       });
       continue;

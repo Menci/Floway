@@ -324,15 +324,6 @@ export const readOpenAIChatCompletionsRequest = (payload: OpenAIChatCompletionsP
         ? {
             kind: 'assistant' as const,
             assistantTurn: turn.items[0],
-            readCallIdentities: () => {
-              const message = turn.items[0];
-              return [
-                ...(message.function_call == null ? [] : [{ type: 'function' as const, name: message.function_call.name, call_id: context.legacyIds[at]! }]),
-                ...(message.tool_calls ?? []).map(call => call.type === 'custom'
-                  ? { type: 'custom' as const, name: call.custom.name, call_id: call.id }
-                  : { type: 'function' as const, name: call.function.name, call_id: call.id }),
-              ];
-            },
             toIRInputTurns: () => [openaiChatCompletionsTurnToIR(turn, context, at)],
           }
         : { kind: 'client' as const, toIRInputTurns: () => [openaiChatCompletionsTurnToIR(turn, context, at)] };

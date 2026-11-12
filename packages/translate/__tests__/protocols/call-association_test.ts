@@ -86,19 +86,19 @@ test.each([['chat', 'function'], ['chat', 'custom'], ['messages', 'function'], [
   try {
     if (target === 'chat') {
       const trip = expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions(request, options));
-      expect(trip.target.tools?.map(tool => tool.type === 'function' ? tool.function.name : tool.custom.name)).toEqual(['web_run_2', 'web_run']);
+      expect(trip.target.tools?.map(tool => tool.type === 'function' ? tool.function.name : tool.custom.name)).toEqual(['web_run_2', 'web_run_3']);
       expect(trip.target.tool_choice).toEqual({ type: 'allowed_tools', allowed_tools: { mode: 'required', tools: [{ type: 'function', function: { name: 'web_run_2' } }] } });
       const calls = trip.target.messages.flatMap(message => message.role === 'assistant' ? message.tool_calls ?? [] : []);
-      expect(calls.map(item => item.type === 'function' ? item.function.name : item.custom.name)).toEqual(['web_run_2', 'web_run_2']);
+      expect(calls.map(item => item.type === 'function' ? item.function.name : item.custom.name)).toEqual(['web_run', 'web_run_2']);
       expect(trip.target.messages[0]).toMatchObject({ reasoning_content: 'native reasoning' });
       const returned = await collectOpenAIResponsesProtocolEventsToResult(trip.events(iterate(chatFrames('web_run_2', args))));
       expect(returned.output.find(item => item.type === 'function_call' || item.type === 'custom_tool_call')).toMatchObject({ type: kind === 'function' ? 'function_call' : 'custom_tool_call', name: 'run', namespace: 'web' });
     } else {
       const trip = expectTrip(await routeOpenAIResponsesViaAnthropicMessages(request, options));
-      expect(trip.target.tools?.map(tool => 'name' in tool ? tool.name : undefined)).toEqual(['web_run_2', 'web_run']);
+      expect(trip.target.tools?.map(tool => 'name' in tool ? tool.name : undefined)).toEqual(['web_run_2', 'web_run_3']);
       expect(trip.target.tool_choice).toEqual({ type: 'tool', name: 'web_run_2' });
       const calls = trip.target.messages.flatMap(message => message.role === 'assistant' && Array.isArray(message.content) ? message.content.flatMap(block => block.type === 'tool_use' ? [block] : []) : []);
-      expect(calls.map(item => item.name)).toEqual(['web_run_2', 'web_run_2']);
+      expect(calls.map(item => item.name)).toEqual(['web_run', 'web_run_2']);
       expect(trip.target.messages[0].content).toContainEqual({ type: 'thinking', thinking: 'native reasoning', signature: 'native signature' });
       expect(trip.target.messages[0].content).toContainEqual({ type: 'redacted_thinking', data: 'native encrypted blob' });
       const returned = await collectOpenAIResponsesProtocolEventsToResult(trip.events(iterate(messagesFrames('web_run_2', args))));
@@ -111,19 +111,18 @@ test.each([['chat', 'function'], ['chat', 'custom'], ['messages', 'function'], [
   }
 });
 
-test('native legacy Chat aliases are rebound without adding a wire call ID', async () => {
+test('a native legacy Chat call consumes the unique id-less Gemini result of the same name', async () => {
   const options = { sidecarCodec: createTestSidecarCodec() };
-  const first = expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'm', stream: true, input: 'start', tools: [group('function')] }, options));
-  const result = await collectOpenAIResponsesProtocolEventsToResult(first.events(iterate(chatFrames('web_run', '{}', true))));
-  const call = result.output.find(item => item.type === 'function_call');
-  if (call === undefined) throw new Error('Expected the public legacy call.');
-  const replay = expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions({
-    model: 'm', stream: true, tools: [group('function'), { type: 'function', name: 'web_run', parameters: { type: 'object', properties: {} } }],
-    input: [...toOpenAIResponsesInputItems(result.output), { type: 'function_call_output', call_id: call.call_id, output: 'ok' }],
+  const first = expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions({ model: 'm', contents: [{ role: 'user', parts: [{ text: 'start' }] }] }, options));
+  const result = await collectGeminiGenerateContentProtocolEventsToResult(first.events(iterate(chatFrames('legacy', '{}', true))));
+  const native = result.candidates?.[0]?.content;
+  if (native === undefined) throw new Error('Expected the public legacy call.');
+  const replay = expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions({
+    model: 'm', contents: [native, { role: 'user', parts: [{ functionResponse: { name: 'legacy', response: { ok: true } } }] }],
   }, options));
-  expect(replay.target.messages[0]).toMatchObject({ role: 'assistant', function_call: { name: 'web_run_2', arguments: '{}' }, reasoning_content: 'native reasoning' });
+  expect(replay.target.messages[0]).toMatchObject({ role: 'assistant', function_call: { name: 'legacy', arguments: '{}' }, reasoning_content: 'native reasoning' });
   expect(replay.target.messages[0]).not.toHaveProperty('tool_calls');
-  expect(replay.target.messages[1]).toEqual({ role: 'function', name: 'web_run_2', content: 'ok' });
+  expect(replay.target.messages[1]).toEqual({ role: 'function', name: 'legacy', content: '{"ok":true}' });
 });
 
 test.each(['chat', 'messages', 'responses'] as const)('Gemini id-less results answer the complete native and ordinary %s history in FIFO order', async target => {
@@ -215,7 +214,7 @@ test('Chat source custom identity renames native Messages calls independently fr
     messages: [result.choices[0].message, { role: 'tool', tool_call_id: 'native', content: 'ok' }, { role: 'assistant', content: null, tool_calls: [{ type: 'custom', id: 'later', custom: { name: 'edit', input: 'later' } }] }],
   }, options));
   const calls = replay.target.messages.flatMap(message => message.role === 'assistant' && Array.isArray(message.content) ? message.content.flatMap(block => block.type === 'tool_use' ? [block] : []) : []);
-  expect(calls.map(call => call.name)).toEqual(['edit_2', 'edit_2']);
+  expect(calls.map(call => call.name)).toEqual(['edit', 'edit_3']);
   expect(calls.map(call => call.input)).toEqual([{ input: 'raw' }, { input: 'later' }]);
   expect(replay.target.messages[0].content).toContainEqual({ type: 'thinking', thinking: 'native reasoning', signature: 'native signature' });
 });

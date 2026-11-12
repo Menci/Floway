@@ -375,11 +375,6 @@ export const readOpenAIResponsesRequest = (source: OpenAIResponsesRequestPayload
         ? {
             kind: 'assistant' as const,
             assistantTurn: turn.items,
-            readCallIdentities: () => turn.items.flatMap(item => item.type === 'function_call' || item.type === 'custom_tool_call' ? [{
-              type: item.type === 'function_call' ? 'function' as const : 'custom' as const,
-              name: item.name, call_id: item.call_id,
-              ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
-            }] : []),
             toIRInputTurns: () => openaiResponsesTurnToIR(turn),
           }
         : { kind: 'client' as const, toIRInputTurns: () => openaiResponsesTurnToIR(turn) }),

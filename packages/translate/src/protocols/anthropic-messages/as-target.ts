@@ -22,18 +22,12 @@ export const anthropicMessagesTargetProtocol: TargetProtocol<
   write: (request: IRInputRequestHeader, turns: readonly (IRInputTurn | RestoredAssistantTurn<InputAssistantTurnFor<'anthropicMessages'>>)[], options: TranslateOptions) => {
     // This wire addresses a callable by one bare name, so every grouped
     // declaration and call is stated under the flat spelling it computes.
-    const flattened = allocateToolNames(request, turns, {
-      ids: turn => typeof turn.content === 'string' ? [] : turn.content.flatMap(block => block.type === 'tool_use' ? [block.id] : []),
-      rename: (turn, names) => {
-        let index = 0;
-        return {
-          ...turn,
-          content: typeof turn.content === 'string' ? turn.content : turn.content.map(block => block.type === 'tool_use' ? { ...block, name: names[index++]! } : block),
-        };
-      },
+    const assigned = assignCallIds(turns, callsOf);
+    const flattened = allocateToolNames(request, assigned, {
+      names: turn => typeof turn.content === 'string' ? [] : turn.content.flatMap(block => block.type === 'tool_use' ? [block.name] : []),
     });
     return {
-      payload: anthropicMessagesPayloadFromSegments(flattened.request, assignCallIds(flattened.turns, callsOf), {
+      payload: anthropicMessagesPayloadFromSegments(flattened.request, flattened.turns, {
         fallbackMaxOutputTokens: options.fallbackMaxOutputTokens,
       }),
       // Both facts come from the same flattening that produced the request, so
