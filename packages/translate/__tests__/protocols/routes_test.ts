@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import { fixtureFrames, type nativeResult } from './fixtures.ts';
 import { partitionAnthropicMessagesTurns } from '../../src/protocols/anthropic-messages/as-source/conversation-turns.ts';
 import { findAnthropicMessagesSidecarCarriers } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
 import { findGeminiGenerateContentSidecarCarriers } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
@@ -11,9 +12,8 @@ import { findOpenAIResponsesSidecarCarriers } from '../../src/protocols/openai-r
 import { toOpenAIResponsesInputAssistantTurn } from '../../src/protocols/openai-responses/as-target/assistant-turn.ts';
 import { decodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import { requireJSONObject } from '../../src/shared/json/object.ts';
-import { collect, iterate } from '../ir/helpers.ts';
-import { fixtureFrames, type nativeResult } from '../ir/translation-cases.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
+import { collect, iterate } from '../shared/iterables.ts';
 import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentContent, type GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import { collectOpenAIChatCompletionsProtocolEventsToResult, type OpenAIChatCompletionsAssistantMessageEx, type OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';

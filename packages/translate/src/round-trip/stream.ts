@@ -57,9 +57,3 @@ export const createRoundTripStream = <
   };
   return { reader, writer };
 };
-
-export interface RoundTripOutputOptions<Protocol extends keyof AssistantTurnByProtocol> {
-  id?: string;
-  created?: number;
-  roundTrip: RoundTripWriter<Protocol>;
-}
