@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest';
 
-import { writeAnthropicMessagesEvents, writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './helpers.ts';
 import { nativeResult } from './fixtures.ts';
+import { writeAnthropicMessagesEvents, writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './helpers.ts';
 import { IRAbsent } from '../../src/ir/output/absent.ts';
 import type { IRRecord } from '../../src/ir/output/records.ts';
 import { collectIR } from '../ir/output/helpers.ts';

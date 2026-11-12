@@ -1,14 +1,14 @@
 import { expect, test, vi } from 'vitest';
 
-import { writeAnthropicMessagesEvents, writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './helpers.ts';
-import { collectIR, completeIR } from '../ir/output/helpers.ts';
-import { collect, iterate } from '../shared/iterables.ts';
 import { fixtureFrames, nativeResult } from './fixtures.ts';
+import { writeAnthropicMessagesEvents, writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './helpers.ts';
 import { createIRBuilder } from '../../src/ir/output/builder.ts';
 import { readOpenAIChatCompletionsEvents as irFromOpenAIChatCompletionsProduction } from '../../src/protocols/openai-chat-completions/as-target/events.ts';
 import { buildSourceEventsFor, buildTargetPayloadFor, emptyPayload, pairs } from '../composition/helpers.ts';
+import { collectIR, completeIR } from '../ir/output/helpers.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { createRoundTripReaderCapture } from '../round-trip/test-helpers.ts';
+import { collect, iterate } from '../shared/iterables.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 
 const events = (pair: readonly [any, any], payload: any, codec: any) =>

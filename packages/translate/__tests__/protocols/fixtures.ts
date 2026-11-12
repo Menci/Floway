@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
 
 import { decodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
-import { collect, iterate } from '../shared/iterables.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
+import { collect, iterate } from '../shared/iterables.ts';
 import { collectAnthropicMessagesProtocolEventsToResult } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, doneFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectGeminiGenerateContentProtocolEventsToResult } from '@floway-dev/protocols/gemini-generate-content';

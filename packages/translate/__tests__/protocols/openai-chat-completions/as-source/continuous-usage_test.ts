@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
-import { collect, iterate } from '../../../shared/iterables.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
+import { collect, iterate } from '../../../shared/iterables.ts';
 import { expectTrip } from '../../../trip.ts';
 import { fixtureFrames } from '../../fixtures.ts';
 import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';

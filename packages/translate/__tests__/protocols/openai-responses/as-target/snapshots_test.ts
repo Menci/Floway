@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
 
 import { collectIR } from '../../../ir/output/helpers.ts';
-import { collect, iterate } from '../../../shared/iterables.ts';
 import { createRoundTripReaderCapture } from '../../../round-trip/test-helpers.ts';
+import { collect, iterate } from '../../../shared/iterables.ts';
 import { readOpenAIResponsesEvents } from '../../helpers.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 

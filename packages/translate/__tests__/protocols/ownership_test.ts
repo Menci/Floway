@@ -1,9 +1,9 @@
 import { expect, test, vi } from 'vitest';
 
+import { nativeResult } from './fixtures.ts';
+import { writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './helpers.ts';
 import { collectIR } from '../ir/output/helpers.ts';
 import { collect, iterate } from '../shared/iterables.ts';
-import { writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './helpers.ts';
-import { nativeResult } from './fixtures.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 
 const chunk = (delta: any, extra: any = {}) => eventFrame({ id: 'chat_owner', model: 'served', created: 1, choices: [{ index: 0, delta, finish_reason: null, ...extra }] } as any);

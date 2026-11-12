@@ -482,7 +482,7 @@ describe('output IR streaming', () => {
     ['Messages', writeAnthropicMessagesEvents],
     ['GenerateContent', writeGeminiGenerateContentEvents],
   ] as const)('%s rejects output IR start without a model', async (_name, adapter) => {
-    await expect(collect<unknown>(adapter(iterate([{ type: 'start', id: 'source' }] as any), options))).rejects.toThrow('requires an output IR model');
+    await expect(collect<unknown>(adapter(iterate([{ type: 'start', id: 'source' }] as any), options))).rejects.toThrow('requires an IR model');
   });
 
 });
