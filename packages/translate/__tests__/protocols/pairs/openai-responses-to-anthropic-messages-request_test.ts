@@ -149,7 +149,7 @@ test('buildTargetPayload wires OpenAI Responses tooling guards', async () => {
 
 test('buildTargetPayload accepts null tool_choice', async () => {
   const result = await buildWithTestSidecar({ ...minimalPayload, tool_choice: null });
-  assertEquals(result.target.tool_choice, { type: 'auto', disable_parallel_tool_use: false });
+  assertEquals(result.target.tool_choice, undefined);
 });
 
 test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetPayload rejects input_file in %s', async type => {
@@ -745,7 +745,8 @@ test('buildTargetPayload preserves out-of-range numeric tool arguments as raw JS
   assertEquals(JSON.stringify(toolUse.input), '{"value":1e400}');
 });
 
-test.each(['not json', '[1,2,3]'])('buildTargetPayload keeps raw_arguments fallback for invalid or non-object tool arguments', async argumentsJson => {
+test('buildTargetPayload keeps raw_arguments fallback for malformed tool arguments', async () => {
+  const argumentsJson = 'not json';
   const result = await buildWithTestSidecar({
     ...minimalPayload,
     input: [{ type: 'function_call', call_id: 'call_1', name: 'tool', arguments: argumentsJson, status: 'completed' }],
@@ -757,6 +758,18 @@ test.each(['not json', '[1,2,3]'])('buildTargetPayload keeps raw_arguments fallb
   const toolUse = assistantMessage.content[0];
   assert(toolUse.type === 'tool_use');
   assertEquals(toolUse.input, { raw_arguments: argumentsJson });
+});
+
+test('buildTargetPayload preserves a valid non-object JSON argument value', async () => {
+  const result = await buildWithTestSidecar({
+    ...minimalPayload,
+    input: [{ type: 'function_call', call_id: 'call_1', name: 'tool', arguments: '[1,2,3]', status: 'completed' }],
+  });
+  const assistantMessage = result.target.messages[0];
+  assert(assistantMessage.role === 'assistant' && Array.isArray(assistantMessage.content));
+  const toolUse = assistantMessage.content[0];
+  assert(toolUse.type === 'tool_use');
+  assertEquals(toolUse.input, [1, 2, 3]);
 });
 
 test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetPayload maps multimodal %s into tool_result image and text blocks', async type => {
