@@ -1,27 +1,21 @@
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
 import { inputErrorFields, type ChatServeFailure, type InputErrorDetails } from '../shared/errors.ts';
-import type { GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
+import { geminiGenerateContentStatusForHttpStatus, type GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
 import { internalDebugErrorFields, type ApiErrorResult, type PerformanceTelemetryContext, type InternalDebugError } from '@floway-dev/provider';
 
 // Google RPC Status envelope, used by Gemini's `error` channel everywhere
 // (HTTP body, SSE-tunnelled error event).
-export const geminiGenerateContentStatusForHttpStatus = (status: number): string => {
+export const gatewayErrorStatus = (status: number): string => {
   switch (status) {
   case 400:
-    return 'INVALID_ARGUMENT';
   case 401:
-    return 'UNAUTHENTICATED';
   case 403:
-    return 'PERMISSION_DENIED';
   case 404:
-    return 'NOT_FOUND';
   case 429:
-    return 'RESOURCE_EXHAUSTED';
   case 500:
-    return 'INTERNAL';
   case 502:
   case 503:
-    return 'UNAVAILABLE';
+    return geminiGenerateContentStatusForHttpStatus(status)!;
   default:
     return 'INTERNAL';
   }
@@ -36,7 +30,7 @@ export const geminiGenerateContentInternalErrorPayload = (status: number, error:
     error: {
       code: status,
       message: error.message,
-      status: geminiGenerateContentStatusForHttpStatus(status),
+      status: gatewayErrorStatus(status),
       details: [
         ...(stack === undefined ? [] : [{ '@type': 'type.googleapis.com/google.rpc.DebugInfo', stackEntries: stack.split('\n') }]),
         { '@type': 'type.googleapis.com/google.protobuf.Struct', value: { type: error.type, ...fields } },
@@ -61,7 +55,7 @@ const geminiGenerateContentRpcErrorResult = (
     error: {
       code: status,
       message,
-      status: geminiGenerateContentStatusForHttpStatus(status),
+      status: gatewayErrorStatus(status),
       ...(extension === undefined ? {} : { details: [{ '@type': 'type.googleapis.com/google.protobuf.Struct', value: extension }] }),
     },
   })),
