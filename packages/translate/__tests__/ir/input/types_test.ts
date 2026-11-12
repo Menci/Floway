@@ -14,6 +14,7 @@ describe('input IR shape', () => {
 
   test('a conversation carries user and assistant turns in order', () => {
     const clientItems: IRInputClientItem[] = [
+      { type: 'instruction', content: [{ type: 'text', text: 'top-level instruction' }] },
       { type: 'prompt', role: 'system', content: [{ type: 'text', text: 'be brief' }] },
       { type: 'prompt', role: 'developer', content: [{ type: 'text', text: 'tools are strict' }] },
       { type: 'message', content: userParts },
@@ -31,7 +32,7 @@ describe('input IR shape', () => {
     const turns = [user, assistant];
 
     expect(turns.map(turn => turn.kind)).toEqual(['client', 'assistant']);
-    expect(user.items.map(item => item.type)).toEqual(['prompt', 'prompt', 'message', 'tool_result', 'tool_result']);
+    expect(user.items.map(item => item.type)).toEqual(['instruction', 'prompt', 'prompt', 'message', 'tool_result', 'tool_result']);
     expect(assistant.items.map(item => item.type)).toEqual(['reasoning', 'message', 'function_call', 'custom_tool_call']);
   });
 

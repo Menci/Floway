@@ -341,7 +341,7 @@ test('buildTargetPayload omits temperature when the source omitted it', async ()
   assertFalse('temperature' in result);
 });
 
-test('buildTargetPayload prepends multi-block top-level system as a leading input system message preserving block boundaries', async () => {
+test('buildTargetPayload writes multi-block top-level system through Responses instructions', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -352,16 +352,8 @@ test('buildTargetPayload prepends multi-block top-level system as a leading inpu
     messages: [{ role: 'user', content: 'hi' }],
   });
 
-  assertFalse('instructions' in result);
-  const input = result.input as Array<{ type: string; role?: string; content?: unknown }>;
-  assertEquals(input[0], {
-    type: 'message',
-    role: 'system',
-    content: [
-      { type: 'input_text', text: 'Alpha' },
-      { type: 'input_text', text: 'Beta' },
-    ],
-  });
+  assertEquals(result.instructions, 'AlphaBeta');
+  assertEquals(result.input, [{ type: 'message', role: 'user', content: 'hi' }]);
 });
 
 test('buildTargetPayload keeps a single-block top-level system in canonical `instructions` slot', async () => {

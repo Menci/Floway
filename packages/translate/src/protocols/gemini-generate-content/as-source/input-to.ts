@@ -168,7 +168,7 @@ const turnToIRTurns = (
 
 const geminiGenerateContentSystemToIR = (content: GeminiGenerateContentContent | undefined): IRInputTurn | undefined => {
   const parts = systemParts(content);
-  return parts.length === 0 ? undefined : { kind: 'client', items: [{ type: 'prompt', role: 'system', content: parts }] };
+  return parts.length === 0 ? undefined : { kind: 'client', items: [{ type: 'instruction', content: parts }] };
 };
 
 // GenerateContent restricts selectable functions through allowed_tools while retaining the complete declarations.

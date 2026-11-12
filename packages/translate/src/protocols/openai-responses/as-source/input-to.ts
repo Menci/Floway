@@ -170,7 +170,7 @@ const clientItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInp
 });
 
 const openaiResponsesInstructionsToIR = (instructions: string | null | undefined): IRInputTurn | undefined => instructions
-  ? { kind: 'client', items: [{ type: 'prompt', role: 'system', content: [{ type: 'text', text: instructions }] }] }
+  ? { kind: 'client', items: [{ type: 'instruction', content: [{ type: 'text', text: instructions }] }] }
   : undefined;
 
 const openaiResponsesTurnToIR = (turn: OpenAIResponsesConversationTurn): IRInputTurn[] => {

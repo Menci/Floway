@@ -17,6 +17,11 @@ const buildWithTestSidecar = (
   options: { fallbackMaxOutputTokens?: number },
 ) => buildTargetPayloadFor(pairs.geminiToMessages[0], pairs.geminiToMessages[1], { ...payload, model }, { sidecarCodec: createTestSidecarCodec(), ...options });
 
+test('buildTargetPayload preserves an empty thought as a thinking turn', async () => {
+  const result = await buildWithTestSidecar({ contents: [{ role: 'model', parts: [{ text: '', thought: true }] }] }, 'claude-test', noOptions);
+  assertEquals(result.messages, [{ role: 'assistant', content: [{ type: 'thinking', thinking: '', signature: '' }] }]);
+});
+
 test('buildTargetPayload translates a named thinking level to the effort name', async () => {
   const request = await buildWithTestSidecar({
     contents: [],
@@ -103,9 +108,10 @@ test.each(['audio/wav', 'audio/mp3', 'audio/mpeg'])('buildTargetPayload rejects 
 test('buildTargetPayload forwards a non-audio inline MIME type from Gemini as a Messages document', async () => {
   // GenerateContent states any MIME type inline; the document's media type
   // travels verbatim so the selected upstream decides whether it accepts it.
-  // A `text` source states characters, not the base64 the IR carries.
+  // The target accepts inline bytes, so text data remains base64 instead of
+  // being decoded under an assumed charset.
   const request = await buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'text/plain', data: 'ZGF0YQ==' } }] }] }, 'claude-test', noOptions);
-  assertEquals(request.messages, [{ role: 'user', content: [{ type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'data' } }] }]);
+  assertEquals(request.messages, [{ role: 'user', content: [{ type: 'document', source: { type: 'base64', media_type: 'text/plain', data: 'ZGF0YQ==' } }] }]);
 });
 
 test('buildTargetPayload prefers limits.max_output_tokens over the gateway default when payload omits maxOutputTokens', async () => {

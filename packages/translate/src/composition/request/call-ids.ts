@@ -1,4 +1,4 @@
-import type { IRInputAssistantItem, IRInputCustomToolCallItem, IRInputFunctionCallItem, IRInputPromptItem, IRInputToolResultItem, IRInputUserMessageItem, IRInputTurn } from '../../ir/input/types.ts';
+import type { IRInputAssistantItem, IRInputCustomToolCallItem, IRInputFunctionCallItem, IRInputInstructionItem, IRInputPromptItem, IRInputToolResultItem, IRInputUserMessageItem, IRInputTurn } from '../../ir/input/types.ts';
 import { TranslateInputException } from '../../shared/input-error.ts';
 import type { RestoredAssistantTurn } from '../reading.ts';
 
@@ -12,7 +12,7 @@ export interface IRInputAssistantTurnWithCallIds {
   readonly kind: 'assistant';
   readonly items: readonly IRInputAssistantItemWithCallIds[];
 }
-export type IRInputClientItemWithCallIds = IRInputPromptItem | IRInputUserMessageItem | IRInputToolResultItemWithCallId;
+export type IRInputClientItemWithCallIds = IRInputInstructionItem | IRInputPromptItem | IRInputUserMessageItem | IRInputToolResultItemWithCallId;
 export type IRInputToolResultItemWithCallId = IRInputToolResultItem & { readonly call_id: string };
 export type IRInputAssistantItemWithCallIds =
   | Exclude<IRInputAssistantItem, IRInputFunctionCallItem | IRInputCustomToolCallItem>

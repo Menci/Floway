@@ -1131,13 +1131,13 @@ test('buildTargetPayload preserves payload.instructions and leading system as se
   );
 
   assertEquals(result.target.system, [
-    { type: 'text', text: 'canonical top-level instructions' },
-    { type: 'text', text: 'leading note', cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: 'canonical top-level instructions', cache_control: { type: 'ephemeral' } },
   ]);
-  assertEquals(result.target.messages.length, 3);
-  assertEquals(result.target.messages[0].role, 'user');
-  assertEquals(result.target.messages[1], { role: 'system', content: [{ type: 'text', text: 'mid-array note' }] });
-  assertEquals(result.target.messages[2].role, 'user');
+  assertEquals(result.target.messages.length, 4);
+  assertEquals(result.target.messages[0], { role: 'system', content: [{ type: 'text', text: 'leading note' }] });
+  assertEquals(result.target.messages[1].role, 'user');
+  assertEquals(result.target.messages[2], { role: 'system', content: [{ type: 'text', text: 'mid-array note' }] });
+  assertEquals(result.target.messages[3].role, 'user');
 });
 
 test('buildTargetPayload throws when a system input message contains an image part', async () => {

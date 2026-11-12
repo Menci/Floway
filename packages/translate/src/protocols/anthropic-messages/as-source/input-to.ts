@@ -250,7 +250,7 @@ const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'a
 const anthropicMessagesSystemToIR = (system: AnthropicMessagesPayload['system']): IRInputTurn | undefined => {
   if (system === undefined) return undefined;
   const content = promptPartsToIR(system);
-  return content.length === 0 ? undefined : { kind: 'client', items: [{ type: 'prompt', role: 'system', content }] };
+  return content.length === 0 ? undefined : { kind: 'client', items: [{ type: 'instruction', content }] };
 };
 
 const anthropicMessagesTurnToIR = (

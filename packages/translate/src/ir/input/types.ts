@@ -122,8 +122,8 @@ export interface IRInputToolSelector {
 }
 
 // A turn groups one conversation branch. Assistant messages keep their own
-// boundaries; adjacent client messages join except at prompts, whose boundaries
-// let targets place them inline or hoist them. Items stay ordered while each
+// boundaries; top-level instructions and inline prompts retain distinct client
+// boundaries. Items stay ordered while each
 // target chooses its native message grouping.
 export type IRInputTurn = IRInputClientTurn | IRInputAssistantTurn;
 
@@ -146,7 +146,7 @@ export interface IRInputAssistantTurn {
 // message's own parts together while tool results and tool calls remain
 // separate items lets every writer reproduce its own grouping without this IR
 // prejudging one protocol's shape.
-export type IRInputClientItem = IRInputPromptItem | IRInputUserMessageItem | IRInputToolResultItem;
+export type IRInputClientItem = IRInputInstructionItem | IRInputPromptItem | IRInputUserMessageItem | IRInputToolResultItem;
 
 export type IRInputAssistantItem =
   | IRInputAssistantMessageItem
@@ -154,8 +154,13 @@ export type IRInputAssistantItem =
   | IRInputFunctionCallItem
   | IRInputCustomToolCallItem;
 
-// Prompt position represents both top-level instructions and inline system/developer messages.
-// Each target chooses which leading prompts it can hoist.
+/** A source protocol's top-level instruction field, distinct from conversation history. */
+export interface IRInputInstructionItem {
+  readonly type: 'instruction';
+  readonly content: readonly IRInputTextPart[];
+}
+
+/** An inline system or developer message at its conversation position. */
 export interface IRInputPromptItem {
   readonly type: 'prompt';
   readonly role: 'system' | 'developer';

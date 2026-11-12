@@ -17,6 +17,17 @@ import type { OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-res
 
 const options = { sidecarCodec: createTestSidecarCodec() };
 
+test('an explicitly empty Chat assistant content array remains a turn on both targets', async () => {
+  const source = { model: 'm', stream: true, messages: [{ role: 'assistant' as const, content: [] }] };
+  const responses = await routeOpenAIChatCompletionsViaOpenAIResponses(source, options);
+  if (responses.type !== 'trip') throw new Error(responses.message);
+  expect(responses.target.input).toEqual([{ type: 'message', role: 'assistant', content: '' }]);
+
+  const messages = await routeOpenAIChatCompletionsViaAnthropicMessages(source, { ...options, fallbackMaxOutputTokens: 16 });
+  if (messages.type !== 'trip') throw new Error(messages.message);
+  expect(messages.target.messages).toEqual([{ role: 'assistant', content: [{ type: 'text', text: '', cache_control: { type: 'ephemeral' } }] }]);
+});
+
 test.each([
   { combined: 9, responsesCeiling: 9, messagesCeiling: 9 },
   { combined: 0, responsesCeiling: 0, messagesCeiling: 0 },

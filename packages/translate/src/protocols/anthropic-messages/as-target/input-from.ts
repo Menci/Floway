@@ -118,8 +118,7 @@ const assistantBlocks = (items: readonly IRInputAssistantItemWithCallIds[]): Ant
         : { type: 'text', text: part.refusal });
     case 'reasoning': {
       // Project readable reasoning summaries into Messages thinking blocks; opaque signed replay state uses sidecars.
-      const thinking = (item.summary ?? []).join('');
-      return thinking === '' ? [] : [{ type: 'thinking', thinking, signature: '' }];
+      return item.summary === undefined ? [] : [{ type: 'thinking', thinking: item.summary.join(''), signature: '' }];
     }
     case 'function_call':
       return [{
@@ -240,6 +239,16 @@ export const anthropicMessagesConversationFromIR = (
     }
     const turnBlocks: AnthropicMessagesUserContentBlock[] = [];
     for (const item of turn.items) {
+      if (item.type === 'instruction') {
+        if (hoisting) {
+          system.push(...systemContent(item.content));
+          hoisting = false;
+          continue;
+        }
+        const blocks = systemContent(item.content);
+        messages.push({ role: 'system', content: blocks.length === 0 ? '' : blocks });
+        continue;
+      }
       if (item.type === 'prompt') {
         if (hoisting) {
           system.push(...systemContent(item.content));

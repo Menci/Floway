@@ -1,6 +1,6 @@
 import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../composition/request/call-ids.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
-import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem, IRInputPromptItem } from '../../../ir/input/types.ts';
+import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem, IRInputInstructionItem, IRInputPromptItem } from '../../../ir/input/types.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import type {
@@ -100,6 +100,8 @@ const assistantItems = (items: readonly IRInputAssistantItemWithCallIds[]): Cano
 
 const clientItems = (items: readonly IRInputClientItemWithCallIds[]): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
   switch (item.type) {
+  case 'instruction':
+    return { type: 'message', role: 'system', content: item.content.length === 1 ? item.content[0].text : item.content.map(part => ({ type: 'input_text' as const, text: part.text })) };
   case 'prompt': {
     // A prompt boundary states its text plainly: one part is that string, and
     // several keep their array so the boundaries between them survive.
@@ -127,8 +129,8 @@ const clientItems = (items: readonly IRInputClientItemWithCallIds[]): CanonicalO
 // A leading system or developer run states the request's prompt, which
 // Responses keeps in its own top-level slot. Every later system message stays
 // inline as an ordinary input item.
-const isHoistablePrompt = (entry: IRInputClientItem): entry is IRInputPromptItem =>
-  entry.type === 'prompt';
+const isInstruction = (entry: IRInputClientItem): entry is IRInputInstructionItem => entry.type === 'instruction';
+const isPrompt = (entry: IRInputClientItem): entry is IRInputPromptItem => entry.type === 'prompt';
 
 export const openaiResponsesConversationFromIR = (
   turns: readonly IRInputTurnWithCallIds[],
@@ -146,11 +148,12 @@ export const openaiResponsesConversationFromIR = (
       return assistantItems(item.items);
     }
     return item.items.flatMap((entry): CanonicalOpenAIResponsesInputItem[] => {
-      if (hoisting && isHoistablePrompt(entry)) {
-        // Responses states the slot as one string. A single text part is one
-        // string; several parts cannot be merged without losing the boundaries
-        // the source drew, so the run stays inline with each part its own
-        // `input_text` block.
+      if (hoisting && isInstruction(entry)) {
+        instructions.push(entry.content.map(part => part.text).join(''));
+        hoisting = false;
+        return [];
+      }
+      if (hoisting && isPrompt(entry)) {
         const parts = entry.content.filter(part => part.text !== '');
         if (parts.length === 1) {
           instructions.push(parts[0].text);

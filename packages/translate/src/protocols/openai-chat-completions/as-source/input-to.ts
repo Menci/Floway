@@ -122,7 +122,8 @@ const assistantItems = (turn: Extract<OpenAIChatCompletionsConversationTurn, { r
   // A null content with nothing else to say is an explicitly empty assistant
   // message; with tool calls or a refusal it is simply absent.
   const legacyCall = message.function_call ?? undefined;
-  const emptyMessage = message.content == null && message.refusal == null && (message.tool_calls?.length ?? 0) === 0 && legacyCall === undefined;
+  const emptyMessage = Array.isArray(message.content) && message.content.length === 0
+    || message.content == null && message.refusal == null && (message.tool_calls?.length ?? 0) === 0 && legacyCall === undefined;
   const items: IRInputAssistantItem[] = emptyMessage
     ? [{ type: 'message', content: [{ type: 'text', text: '' }] }]
     : content.length > 0 ? [{ type: 'message', content }] : [];

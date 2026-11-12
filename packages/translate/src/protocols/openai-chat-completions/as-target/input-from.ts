@@ -153,6 +153,8 @@ const openaiChatCompletionsClientItem = (
   switch (item.type) {
   case 'message':
     return [{ role: 'user', content: userContent(item) }];
+  case 'instruction':
+    return [{ role: 'system', content: item.content.length === 1 ? item.content[0].text : item.content.length === 0 ? '' : item.content.map(part => ({ type: 'text' as const, text: part.text })) }];
   case 'prompt':
     // A single text part collapses to the string spelling Chat accepts for
     // text-only system/developer messages; several parts keep their array so
