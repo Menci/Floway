@@ -13,6 +13,8 @@ interface ChatLegacyCalls {
   readonly callIds: ReadonlyMap<ChatRestoredAssistantTurn, string>;
   /** The legacy call each of those ids answers, by that id. */
   readonly names: ReadonlyMap<string, string>;
+  /** The selected id-less result for each legacy call, before modern matching. */
+  readonly results: ReadonlyMap<IRInputToolResultItem, string>;
 }
 
 /** Every call id this conversation states, which an internal legacy pairing id must avoid. */
@@ -45,7 +47,7 @@ export const chatLegacyCallsOf = <Restored extends ChatRestoredAssistantTurn>(
   const claimed = new Set(stated);
   const callIds = new Map<ChatRestoredAssistantTurn, string>();
   const names = new Map<string, string>();
-  const consumed = new Set<IRInputToolResultItem>();
+  const results = new Map<IRInputToolResultItem, string>();
   let allocated = 0;
   for (const [index, piece] of turns.entries()) {
     if (piece.kind !== 'restored') continue;
@@ -54,7 +56,7 @@ export const chatLegacyCallsOf = <Restored extends ChatRestoredAssistantTurn>(
     const nextLegacyOffset = turns.slice(index + 1).findIndex(turn => turn.kind === 'restored' && turn.turn.function_call !== undefined);
     const end = nextLegacyOffset < 0 ? turns.length : index + 1 + nextLegacyOffset;
     const candidates = turns.slice(index + 1, end).flatMap(turn => turn.kind !== 'client' ? [] : turn.items.flatMap(item =>
-      item.type === 'tool_result' && item.call_id === undefined && item.name === name && !consumed.has(item) ? [item] : []));
+      item.type === 'tool_result' && item.call_id === undefined && item.name === name ? [item] : []));
     if (candidates.length > 1) {
       throw new TranslateInputException(`Cannot translate the answer to the legacy call '${name}': ${candidates.length} id-less results state that function name.`);
     }
@@ -65,7 +67,6 @@ export const chatLegacyCallsOf = <Restored extends ChatRestoredAssistantTurn>(
       }
       continue;
     }
-    consumed.add(answer);
     let callId: string;
     do {
       allocated += 1;
@@ -74,6 +75,7 @@ export const chatLegacyCallsOf = <Restored extends ChatRestoredAssistantTurn>(
     claimed.add(callId);
     callIds.set(piece.turn, callId);
     names.set(callId, name);
+    results.set(answer, callId);
   }
-  return { callIds, names };
+  return { callIds, names, results };
 };

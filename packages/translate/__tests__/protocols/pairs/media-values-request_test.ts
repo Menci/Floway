@@ -48,3 +48,19 @@ test('Messages decodes a data URL only at its target boundary', async () => {
   if (result.type !== 'trip') throw new Error(result.message);
   expect(result.target.messages).toEqual([{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png;charset=utf-8', data: 'AAAA' }, cache_control: { type: 'ephemeral' } }] }]);
 });
+
+test.each([
+  ['data:;charset=utf-8,hi', 'text/plain;charset=utf-8', 'aGk='],
+  ['data:text/plain;base64,SGk%3D', 'text/plain', 'SGk='],
+] as const)('Messages decodes target-boundary data URL %s', async (url, mediaType, data) => {
+  const result = await routeOpenAIChatCompletionsViaAnthropicMessages({
+    model: 'm', stream: true, messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url } }] }],
+  }, options);
+  if (result.type !== 'trip') throw new Error(result.message);
+  expect(result.target.messages).toEqual([{
+    role: 'user',
+    content: [{
+      type: 'image', source: { type: 'base64', media_type: mediaType, data }, cache_control: { type: 'ephemeral' },
+    }],
+  }]);
+});

@@ -211,7 +211,7 @@ const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequestHe
 
 export const readGeminiGenerateContentRequest = (payload: GeminiGenerateContentRequest): SourceReading<GeminiGenerateContentSourceAssistantTurn> => {
   let contentIndex = 0;
-  const prompt = geminiGenerateContentSystemToIR(payload.systemInstruction);
+  const instruction = geminiGenerateContentSystemToIR(payload.systemInstruction);
 
   const turnSlotFor = (turn: GeminiGenerateContentTurn): SourceTurnSlot<GeminiGenerateContentSourceAssistantTurn> => {
     const at = contentIndex;
@@ -227,7 +227,7 @@ export const readGeminiGenerateContentRequest = (payload: GeminiGenerateContentR
       ...toolsToIR(payload),
     },
     turns: [
-      ...(prompt === undefined ? [] : [{ kind: 'client' as const, toIRInputTurns: () => [prompt] }]),
+      ...(instruction === undefined ? [] : [{ kind: 'client' as const, toIRInputTurns: () => [instruction] }]),
       ...partitionGeminiGenerateContentTurns(payload.contents ?? []).map(turnSlotFor),
     ],
   };

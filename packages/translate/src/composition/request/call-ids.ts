@@ -32,6 +32,7 @@ export interface PendingCall {
 export const assignCallIds = <Restored>(
   turns: readonly (IRInputTurn | RestoredAssistantTurn<Restored>)[],
   restoredCalls: (turn: Restored) => readonly PendingCall[],
+  resultCallIds?: ReadonlyMap<IRInputToolResultItem, string>,
 ): readonly (IRInputTurnWithCallIds | RestoredAssistantTurn<Restored>)[] => {
   const pending: PendingCall[] = [];
   let allocated = 0;
@@ -82,7 +83,7 @@ export const assignCallIds = <Restored>(
     if (piece.kind === 'client') {
       const items: IRInputClientItemWithCallIds[] = piece.items.map((item): IRInputClientItemWithCallIds => {
         if (item.type !== 'tool_result') return item;
-        return { ...item, call_id: answer(item.call_id, item.name).callId };
+        return { ...item, call_id: answer(resultCallIds?.get(item) ?? item.call_id, item.name).callId };
       });
       return { kind: 'client', items };
     }

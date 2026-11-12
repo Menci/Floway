@@ -152,20 +152,29 @@ test('buildTargetPayload accepts null tool_choice', async () => {
   assertEquals(result.target.tool_choice, undefined);
 });
 
-test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetPayload rejects input_file in %s', async type => {
-  await assertRejects(
-    () => buildWithTestSidecar({
-      ...minimalPayload,
-      input: [
-        ...(type === 'function_call_output'
-          ? [{ type: 'function_call' as const, call_id: 'call_1', name: 'lookup', arguments: '{}' }]
-          : [{ type: 'custom_tool_call' as const, call_id: 'call_1', name: 'lookup', input: '{}' }]),
-        { type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] },
-      ],
-    }),
-    Error,
-    'file tool output',
-  );
+test('buildTargetPayload preserves required tool choice without declarations', async () => {
+  const result = await buildWithTestSidecar({ ...minimalPayload, tools: null, tool_choice: 'required' });
+  assertEquals(result.target.tool_choice, { type: 'any' });
+});
+
+test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetPayload maps input_file in %s to a document', async type => {
+  const result = await buildWithTestSidecar({
+    ...minimalPayload,
+    input: [
+      ...(type === 'function_call_output'
+        ? [{ type: 'function_call' as const, call_id: 'call_1', name: 'lookup', arguments: '{}' }]
+        : [{ type: 'custom_tool_call' as const, call_id: 'call_1', name: 'lookup', input: '{}' }]),
+      { type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] },
+    ],
+  });
+  const user = result.target.messages.find(message => message.role === 'user');
+  assertEquals(user, {
+    role: 'user',
+    content: [{
+      type: 'tool_result', tool_use_id: 'call_1', content: [{ type: 'document', source: { type: 'file', file_id: 'file_1' } }],
+      cache_control: { type: 'ephemeral' },
+    }],
+  });
 });
 
 test.each([

@@ -86,7 +86,7 @@ test.each([['chat', 'function'], ['chat', 'custom'], ['messages', 'function'], [
   try {
     if (target === 'chat') {
       const trip = expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions(request, options));
-      expect(trip.target.tools?.map(tool => tool.type === 'function' ? tool.function.name : tool.custom.name)).toEqual(['web_run_2', 'web_run_3']);
+      expect(trip.target.tools?.map(tool => tool.type === 'function' ? tool.function.name : tool.custom.name)).toEqual(['web_run_2', 'web_run']);
       expect(trip.target.tool_choice).toEqual({ type: 'allowed_tools', allowed_tools: { mode: 'required', tools: [{ type: 'function', function: { name: 'web_run_2' } }] } });
       const calls = trip.target.messages.flatMap(message => message.role === 'assistant' ? message.tool_calls ?? [] : []);
       expect(calls.map(item => item.type === 'function' ? item.function.name : item.custom.name)).toEqual(['web_run', 'web_run_2']);
@@ -95,7 +95,7 @@ test.each([['chat', 'function'], ['chat', 'custom'], ['messages', 'function'], [
       expect(returned.output.find(item => item.type === 'function_call' || item.type === 'custom_tool_call')).toMatchObject({ type: kind === 'function' ? 'function_call' : 'custom_tool_call', name: 'run', namespace: 'web' });
     } else {
       const trip = expectTrip(await routeOpenAIResponsesViaAnthropicMessages(request, options));
-      expect(trip.target.tools?.map(tool => 'name' in tool ? tool.name : undefined)).toEqual(['web_run_2', 'web_run_3']);
+      expect(trip.target.tools?.map(tool => 'name' in tool ? tool.name : undefined)).toEqual(['web_run_2', 'web_run']);
       expect(trip.target.tool_choice).toEqual({ type: 'tool', name: 'web_run_2' });
       const calls = trip.target.messages.flatMap(message => message.role === 'assistant' && Array.isArray(message.content) ? message.content.flatMap(block => block.type === 'tool_use' ? [block] : []) : []);
       expect(calls.map(item => item.name)).toEqual(['web_run', 'web_run_2']);
@@ -214,7 +214,7 @@ test('Chat source custom identity renames native Messages calls independently fr
     messages: [result.choices[0].message, { role: 'tool', tool_call_id: 'native', content: 'ok' }, { role: 'assistant', content: null, tool_calls: [{ type: 'custom', id: 'later', custom: { name: 'edit', input: 'later' } }] }],
   }, options));
   const calls = replay.target.messages.flatMap(message => message.role === 'assistant' && Array.isArray(message.content) ? message.content.flatMap(block => block.type === 'tool_use' ? [block] : []) : []);
-  expect(calls.map(call => call.name)).toEqual(['edit', 'edit_3']);
+  expect(calls.map(call => call.name)).toEqual(['edit', 'edit_2']);
   expect(calls.map(call => call.input)).toEqual([{ input: 'raw' }, { input: 'later' }]);
   expect(replay.target.messages[0].content).toContainEqual({ type: 'thinking', thinking: 'native reasoning', signature: 'native signature' });
 });

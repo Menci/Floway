@@ -1,17 +1,16 @@
 import { test } from 'vitest';
 
-import { allocateToolNames, type NativeCallNames } from '../../../src/composition/request/tool-names.ts';
-import type { IRInputRequestHeader, IRInputTool, IRInputTurn } from '../../../src/ir/input/types.ts';
+import type { IRInputTurnWithCallIds } from '../../../src/composition/request/call-ids.ts';
+import { allocateToolNames } from '../../../src/composition/request/tool-names.ts';
+import type { IRInputRequestHeader, IRInputTool } from '../../../src/ir/input/types.ts';
 import { TranslateInputException } from '../../../src/shared/input-error.ts';
 import { assertThrows, assertEquals } from '@floway-dev/test-utils';
-
-const native: NativeCallNames<never> = { names: turn => turn };
 
 const request = (tools: readonly IRInputTool[]): IRInputRequestHeader => ({ settings: { model: 'm', stream: true }, tools });
 
 test('a grouped declaration keeps its pair when its namespace contains the flatten separator', () => {
   // Keep the full callable identity beside its allocated wire name; never reconstruct it by parsing that spelling.
-  const flattened = allocateToolNames(request([{ type: 'function', namespace: 'a.b', name: 'read', parameters: { type: 'object' } }]), [], native);
+  const flattened = allocateToolNames(request([{ type: 'function', namespace: 'a.b', name: 'read', parameters: { type: 'object' } }]), []);
 
   const flatName = flattened.context.originalToolNames.keys().next().value;
   assertEquals(typeof flatName, 'string');
@@ -19,7 +18,7 @@ test('a grouped declaration keeps its pair when its namespace contains the flatt
 });
 
 test('a grouped declaration keeps its pair when its name contains the flatten separator', () => {
-  const flattened = allocateToolNames(request([{ type: 'function', namespace: 'files', name: 'read.one', parameters: { type: 'object' } }]), [], native);
+  const flattened = allocateToolNames(request([{ type: 'function', namespace: 'files', name: 'read.one', parameters: { type: 'object' } }]), []);
 
   const flatName = flattened.context.originalToolNames.keys().next().value;
   assertEquals(typeof flatName, 'string');
@@ -27,7 +26,7 @@ test('a grouped declaration keeps its pair when its name contains the flatten se
 });
 
 test('custom declarations are reported under the flat names this wire writes', () => {
-  const flattened = allocateToolNames(request([{ type: 'custom', namespace: 'files', name: 'edit' }]), [], native);
+  const flattened = allocateToolNames(request([{ type: 'custom', namespace: 'files', name: 'edit' }]), []);
 
   // The reader that recognises these calls back sees the wire name, not the
   // client's, so the set has to be stated after flattening.
@@ -36,11 +35,11 @@ test('custom declarations are reported under the flat names this wire writes', (
 });
 
 test('a call naming an undeclared group still gets a flat spelling and its pair', () => {
-  const turns: IRInputTurn[] = [{
+  const turns: IRInputTurnWithCallIds[] = [{
     kind: 'assistant',
     items: [{ type: 'function_call', call_id: 'c1', namespace: 'ghost', name: 'run', arguments: '{}' }],
   }];
-  const flattened = allocateToolNames(request([]), turns, native);
+  const flattened = allocateToolNames(request([]), turns);
 
   const assistantTurn = flattened.turns[0];
   assertEquals(assistantTurn.kind, 'assistant');
@@ -58,7 +57,7 @@ test('a selector naming a group the request never declared is a caller error', (
       settings: { model: 'm', stream: true },
       tools: [{ type: 'function', namespace: 'files', name: 'read', parameters: { type: 'object' } }],
       tool_choice: { type: 'function', namespace: 'ghost', name: 'run' },
-    }, [], native),
+    }, []),
     TranslateInputException,
     'undeclared grouped tool',
   );
@@ -68,7 +67,7 @@ test('distinct structured identities with the same dotted spelling get distinct 
   const flattened = allocateToolNames(request([
     { type: 'function', namespace: 'a', name: 'b.c', parameters: { type: 'object' } },
     { type: 'function', namespace: 'a.b', name: 'c', parameters: { type: 'object' } },
-  ]), [], native);
+  ]), []);
   assertEquals(flattened.request.tools?.map(tool => tool.name), ['a_b_c', 'a_b_c_2']);
   assertEquals([...flattened.context.originalToolNames.values()], [{ namespace: 'a', name: 'b.c' }, { namespace: 'a.b', name: 'c' }]);
 });
@@ -76,13 +75,13 @@ test('distinct structured identities with the same dotted spelling get distinct 
 test('a selector naming a group this request does not declare is refused', () => {
   // No declaration or history call allocates this grouped identity, so the selector cannot name an upstream callable.
   assertThrows(
-    () => allocateToolNames({ settings: { model: 'm', stream: true }, tools: [{ type: 'function', name: 'web.run', parameters: { type: 'object' } }], tool_choice: { type: 'function', name: 'run', namespace: 'web' } }, [], native),
+    () => allocateToolNames({ settings: { model: 'm', stream: true }, tools: [{ type: 'function', name: 'web.run', parameters: { type: 'object' } }], tool_choice: { type: 'function', name: 'run', namespace: 'web' } }, []),
     TranslateInputException,
   );
 });
 
 test('a plain selector passes through untouched', () => {
-  const flattened = allocateToolNames({ settings: { model: 'm', stream: true }, tools: [{ type: 'function', name: 'plain', parameters: { type: 'object' } }], tool_choice: { type: 'function', name: 'plain' } }, [], native);
+  const flattened = allocateToolNames({ settings: { model: 'm', stream: true }, tools: [{ type: 'function', name: 'plain', parameters: { type: 'object' } }], tool_choice: { type: 'function', name: 'plain' } }, []);
   assertEquals(flattened.request.tool_choice, { type: 'function', name: 'plain' });
 });
 
@@ -92,15 +91,15 @@ test.each([undefined, 'files'])('allocates distinct names per callable kind in n
     { type: 'custom', namespace, name: 'edit' },
     { type: 'function', name: 'edit_2', parameters: { type: 'object' } },
   ];
-  const turns: IRInputTurn[] = [{
+  const turns: IRInputTurnWithCallIds[] = [{
     kind: 'assistant', items: [
       { type: 'function_call', namespace, name: 'edit', call_id: 'f', arguments: '{}' },
       { type: 'custom_tool_call', namespace, name: 'edit', call_id: 'c', input: 'raw' },
       { type: 'custom_tool_call', namespace, name: 'edit', call_id: 'c2', input: 'again' },
     ],
   }];
-  const baseline = allocateToolNames({ ...request(tools), tool_choice: 'auto' }, turns, native);
-  const selected = allocateToolNames({ ...request(tools), tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', namespace, name: 'edit' }] } }, turns, native);
+  const baseline = allocateToolNames({ ...request(tools), tool_choice: 'auto' }, turns);
+  const selected = allocateToolNames({ ...request(tools), tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', namespace, name: 'edit' }] } }, turns);
   const first = namespace === undefined ? 'edit' : 'files_edit';
   const second = namespace === undefined ? 'edit_3' : 'files_edit_2';
   assertEquals(baseline.request.tools?.map(tool => tool.name), [first, second, 'edit_2']);

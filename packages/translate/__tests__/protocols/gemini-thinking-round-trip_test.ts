@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
+import { iterate } from '../shared/iterables.ts';
 import { expectTrip } from '../trip.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import { collectGeminiGenerateContentProtocolEventsToResult } from '@floway-dev/protocols/gemini-generate-content';
@@ -19,20 +20,27 @@ const upstream = async function* (): AsyncGenerator<ReturnType<typeof eventFrame
   yield doneFrame();
 };
 
-test.each([false, true])('includeThoughts=%s controls plaintext without changing sidecar replay', async includeThoughts => {
+test('includeThoughts controls only visible plaintext', async () => {
   const options = { sidecarCodec: createTestSidecarCodec() };
-  const trip = expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions({
-    model: 'm', contents: [{ role: 'user', parts: [{ text: 'question' }] }],
-    generationConfig: { thinkingConfig: { includeThoughts } },
-  }, options));
-  const result = await collectGeminiGenerateContentProtocolEventsToResult(trip.events(upstream()));
-  const content = result.candidates?.[0]?.content;
-  if (content === undefined) throw new Error('Expected translated Gemini content.');
-  const thoughts = content.parts?.filter(part => part.thought === true) ?? [];
-  expect(thoughts.map(part => part.text)).toContain(includeThoughts ? 'secret' : '');
-  expect(thoughts.map(part => part.text)).not.toContain(includeThoughts ? '' : 'secret');
-  expect(content.parts?.some(part => part.thoughtSignature !== undefined)).toBe(true);
+  const runs = await Promise.all([false, true].map(async includeThoughts => {
+    const trip = expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions({
+      model: 'm', contents: [{ role: 'user', parts: [{ text: 'question' }] }],
+      generationConfig: { thinkingConfig: { includeThoughts } },
+    }, options));
+    const frames = [];
+    for await (const frame of trip.events(upstream())) frames.push(frame);
+    const result = await collectGeminiGenerateContentProtocolEventsToResult(iterate(frames));
+    const content = result.candidates?.[0]?.content;
+    if (content === undefined) throw new Error('Expected translated Gemini content.');
+    return { includeThoughts, target: trip.target, frames, content };
+  }));
 
-  const replay = expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions({ model: 'm', contents: [content] }, options));
-  expect(replay.target.messages).toContainEqual(expect.objectContaining({ role: 'assistant', content: 'answer', reasoning_content: 'secret' }));
+  expect(runs[0].target).toEqual(runs[1].target);
+  expect(JSON.stringify(runs[0].frames)).not.toContain('secret');
+  expect(JSON.stringify(runs[1].frames)).toContain('secret');
+  for (const run of runs) {
+    expect(run.content.parts?.some(part => part.thoughtSignature !== undefined)).toBe(true);
+    const replay = expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions({ model: 'm', contents: [run.content] }, options));
+    expect(replay.target.messages).toContainEqual(expect.objectContaining({ role: 'assistant', content: 'answer', reasoning_content: 'secret' }));
+  }
 });

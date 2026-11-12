@@ -88,9 +88,11 @@ const assistantMessage = (items: readonly IRInputAssistantItemWithCallIds[]): Op
   const refusals: string[] = [];
   const reasoning: string[] = [];
   const toolCalls: OpenAIChatCompletionsToolCall[] = [];
+  let hasMessage = false;
   for (const item of items) {
     switch (item.type) {
     case 'message':
+      hasMessage = true;
       for (const part of item.content) if (part.type === 'text') text.push(part.text); else refusals.push(part.refusal);
       break;
     case 'reasoning':
@@ -112,7 +114,7 @@ const assistantMessage = (items: readonly IRInputAssistantItemWithCallIds[]): Op
       break;
     }
   }
-  if (text.length === 0 && refusals.length === 0 && toolCalls.length === 0 && reasoning.length === 0) return [];
+  if (!hasMessage && toolCalls.length === 0 && reasoning.length === 0) return [];
   // A turn carrying reasoning or tool calls with no text spells its content as
   // null; a turn with neither is an explicitly empty message and keeps ''.
   return [{

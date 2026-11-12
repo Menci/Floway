@@ -33,6 +33,40 @@ test('document tool results enter the IR as files', async () => {
   assertEquals(output?.type === 'function_call_output' ? output.output : undefined, [{ type: 'input_file', file_data: 'data:text/plain;base64,aGVsbG8=' }]);
 });
 
+test('mixed tool-result blocks keep documents formal and unknown blocks opaque', async () => {
+  const unknown = { type: 'tool_reference' as const, tool_name: 'read' };
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'read', input: {} }] },
+      {
+        role: 'user',
+        content: [{
+          type: 'tool_result', tool_use_id: 'c', content: [
+            { type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'hello' } },
+            unknown,
+          ],
+        }],
+      },
+    ],
+  });
+  const output = result.input.find(item => item.type === 'function_call_output');
+  assertEquals(output?.type === 'function_call_output' ? output.output : undefined, [
+    { type: 'input_file', file_data: 'data:text/plain;base64,aGVsbG8=' },
+    { type: 'input_text', text: JSON.stringify(unknown) },
+  ]);
+});
+
+test('inline text content documents enter the IR as text files', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [{
+      role: 'user', content: [{ type: 'document', source: { type: 'content', content: 'hello' } }],
+    }],
+  });
+  assertEquals(result.input, [{
+    type: 'message', role: 'user', content: [{ type: 'input_file', file_data: 'data:text/plain;base64,aGVsbG8=' }],
+  }]);
+});
+
 test('keeps search result runs between the text and images around them', async () => {
   const first = { type: 'search_result' as const, source: 'https://example.com/1', title: 'First', content: [{ type: 'text' as const, text: 'one' }] };
   const second = { ...first, source: 'https://example.com/2', title: 'Second' };
@@ -573,7 +607,7 @@ test('buildTargetPayload preserves in-array system text blocks as separate input
   });
 });
 
-test('buildTargetPayload hoists a leading in-array system message and keeps later ones in place', async () => {
+test('buildTargetPayload keeps in-array system messages in place', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -586,15 +620,14 @@ test('buildTargetPayload hoists a leading in-array system message and keeps late
     ],
   });
 
-  // The leading run is what the request states before its first turn, so it is
-  // the prompt; a system message after a turn happened stays where it was.
-  assertEquals(result.instructions, 'mid-array A');
+  assertEquals(result.instructions, undefined);
   const input = result.input as Array<{ type: string; role?: string }>;
-  assertEquals(input.length, 4);
-  assertEquals(input[0].role, 'user');
-  assertEquals(input[1].role, 'assistant');
-  assertEquals(input[2].role, 'system');
-  assertEquals(input[3].role, 'user');
+  assertEquals(input.length, 5);
+  assertEquals(input[0].role, 'system');
+  assertEquals(input[1].role, 'user');
+  assertEquals(input[2].role, 'assistant');
+  assertEquals(input[3].role, 'system');
+  assertEquals(input[4].role, 'user');
 });
 
 test('buildTargetPayload rejects an unknown message role', async () => {

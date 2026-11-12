@@ -35,13 +35,8 @@ export const openaiChatCompletionsTargetProtocol: TargetProtocol<
   // declaration and call is stated under the flat spelling it computes.
   write: (request, turns) => {
     const legacy = chatLegacyCallsOf(turns);
-    const assigned = assignCallIds(turns, turn => callsOf(turn, legacy.callIds));
-    const flattened = allocateToolNames(request, assigned, {
-      names: turn => [
-        ...(turn.function_call == null ? [] : [turn.function_call.name]),
-        ...(turn.tool_calls ?? []).map(call => call.type === 'function' ? call.function.name : call.custom.name),
-      ],
-    });
+    const assigned = assignCallIds(turns, turn => callsOf(turn, legacy.callIds), legacy.results);
+    const flattened = allocateToolNames(request, assigned);
     return {
       payload: openaiChatCompletionsPayloadFromSegments(
         flattened.request,

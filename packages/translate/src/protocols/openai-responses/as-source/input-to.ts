@@ -5,7 +5,6 @@ import { partitionOpenAIResponsesTurns, type OpenAIResponsesConversationTurn } f
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from './programmatic-tooling.ts';
 import type { OpenAIResponsesSourceAssistantTurn } from './round-trip.ts';
 import type { SourceReading } from '../../../composition/reading.ts';
-import { mediaFromURL } from '../../../ir/input/media.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -35,7 +34,7 @@ import type {
 } from '@floway-dev/protocols/openai-responses';
 
 const imageMedia = (part: Extract<OpenAIResponsesInputContent, { type: 'input_image' }>): IRInputMedia => {
-  if (typeof part.image_url === 'string') return mediaFromURL(part.image_url);
+  if (typeof part.image_url === 'string') return { source_kind: 'url', url: part.image_url };
   if (typeof part.file_id === 'string') return { source_kind: 'file', file_id: part.file_id };
   throw new TranslateInputException('An OpenAI Responses input_image requires image_url or file_id.');
 };
@@ -67,7 +66,7 @@ const userContent = (content: string | OpenAIResponsesInputContent[]): IRInputUs
   ? content === '' ? [] : [{ type: 'text', text: content }]
   : content.map(userContentPart);
 
-const promptPartsToIR = (message: OpenAIResponsesInputMessageEx): IRInputTextPart[] => typeof message.content === 'string'
+const textPartsToIR = (message: OpenAIResponsesInputMessageEx): IRInputTextPart[] => typeof message.content === 'string'
   ? message.content === '' ? [] : [{ type: 'text', text: message.content }]
   : message.content.map(part => {
       if (part.type !== 'input_text' && part.type !== 'output_text') {
@@ -139,7 +138,7 @@ const clientItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInp
     switch (item.role) {
     case 'user': return [{ type: 'message' as const, role: 'user' as const, content: userContent(item.content) }];
     case 'system':
-    case 'developer': return [{ type: 'message' as const, role: item.role, content: promptPartsToIR(item) }];
+    case 'developer': return [{ type: 'message' as const, role: item.role, content: textPartsToIR(item) }];
     default: throw new TranslateInputException(`Invalid role '${item.role}' in input message.`);
     }
   case 'function_call_output': {
@@ -237,9 +236,11 @@ const selectorOf = (payload: CanonicalOpenAIResponsesPayload, selector: Record<s
     : []));
 };
 
-const toolChoiceToIR = (payload: CanonicalOpenAIResponsesPayload, declarations: readonly IRInputTool[]): IRInputToolChoice => {
-  const choice = payload.tool_choice;
-  if (choice == null) throw new TranslateInputException('Cannot translate a missing tool choice.');
+const toolChoiceToIR = (
+  payload: CanonicalOpenAIResponsesPayload,
+  choice: NonNullable<CanonicalOpenAIResponsesPayload['tool_choice']>,
+  declarations: readonly IRInputTool[],
+): IRInputToolChoice => {
   if (typeof choice === 'string') {
     if (choice === 'auto' || choice === 'none' || choice === 'required') return choice;
     // Any other bare string is a hosted selector, which names a callable this
@@ -300,7 +301,7 @@ const openaiResponsesToolsToIR = (payload: CanonicalOpenAIResponsesPayload): Pic
   const declared = payload.tools?.flatMap(toolGroupToIR) ?? [];
   const deferred = deferredInventories(payload).flatMap(toolGroupToIR);
   const tools = declared.length === 0 && deferred.length === 0 ? undefined : [...declared, ...deferred];
-  const toolChoice = payload.tool_choice == null ? undefined : toolChoiceToIR(payload, tools ?? []);
+  const toolChoice = payload.tool_choice == null ? undefined : toolChoiceToIR(payload, payload.tool_choice, tools ?? []);
   return {
     ...(tools === undefined ? {} : { tools }),
     ...(toolChoice === undefined ? {} : { tool_choice: toolChoice }),
@@ -323,7 +324,7 @@ const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): 
           ...('schema' in format && format.schema !== undefined && format.schema !== null && typeof format.schema === 'object'
             ? { schema: klona(format.schema) as Record<string, unknown> }
             : {}),
-          ...('strict' in format && typeof format.strict === 'boolean' ? { strict: format.strict } : {}),
+          ...('strict' in format && format.strict !== undefined ? { strict: format.strict } : {}),
         }
       : { type: format.type };
 
@@ -363,14 +364,14 @@ export const readOpenAIResponsesRequest = (source: OpenAIResponsesRequestPayload
   if (!('input' in canonical)) throw new TranslateInputException(canonical.error.message, canonical.error);
   rejectProgrammaticOpenAIResponsesPayload(canonical);
 
-  const prompt = openaiResponsesInstructionsToIR(canonical.instructions);
+  const instruction = openaiResponsesInstructionsToIR(canonical.instructions);
   return {
     request: {
       settings: openaiResponsesSettingsToIR(canonical),
       ...openaiResponsesToolsToIR(canonical),
     },
     turns: [
-      ...(prompt === undefined ? [] : [{ kind: 'client' as const, toIRInputTurns: () => [prompt] }]),
+      ...(instruction === undefined ? [] : [{ kind: 'client' as const, toIRInputTurns: () => [instruction] }]),
       ...partitionOpenAIResponsesTurns(canonical.input).map(turn => turn.role === 'assistant'
         ? {
             kind: 'assistant' as const,

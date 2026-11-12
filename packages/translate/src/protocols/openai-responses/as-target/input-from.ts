@@ -1,6 +1,6 @@
 import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../composition/request/call-ids.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
-import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem, IRInputInstructionItem, IRInputClientMessageItem } from '../../../ir/input/types.ts';
+import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem, IRInputInstructionItem } from '../../../ir/input/types.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import type {
@@ -124,21 +124,18 @@ const clientItems = (items: readonly IRInputClientItemWithCallIds[]): CanonicalO
   }
 });
 
-// A leading system or developer run states the request's prompt, which
-// Responses keeps in its own top-level slot. Every later system message stays
-// inline as an ordinary input item.
+// Only the IR's top-level instruction belongs in Responses `instructions`.
+// Historical system and developer messages remain input messages at their
+// original positions.
 const isInstruction = (entry: IRInputClientItem): entry is IRInputInstructionItem => entry.type === 'instruction';
-const isPrompt = (entry: IRInputClientItem): entry is Extract<IRInputClientMessageItem, { role: 'system' | 'developer' }> =>
-  entry.type === 'message' && entry.role !== 'user';
 
 export const openaiResponsesConversationFromIR = (
   turns: readonly IRInputTurnWithCallIds[],
   hoistSystem: boolean,
 ): Pick<CanonicalOpenAIResponsesPayload, 'instructions' | 'input'> => {
   const instructions: string[] = [];
-  // A conversation's own leading prompt is the first turn of the first segment.
-  // Later segments continue an exchange that already started, so their leading
-  // prompt (if any) stays inline where the caller placed it.
+  // Only the first segment can contain the request's top-level instruction.
+  // A later segment continues conversation history, so every item stays inline.
   let hoisting = hoistSystem;
 
   const input = turns.flatMap(item => {
@@ -150,18 +147,6 @@ export const openaiResponsesConversationFromIR = (
       if (hoisting && isInstruction(entry)) {
         instructions.push(entry.content.map(part => part.text).join(''));
         hoisting = false;
-        return [];
-      }
-      if (hoisting && isPrompt(entry)) {
-        const parts = entry.content.filter(part => part.text !== '');
-        if (parts.length === 1) {
-          instructions.push(parts[0].text);
-          return [];
-        }
-        if (parts.length > 1) {
-          hoisting = false;
-          return [{ type: 'message', role: entry.role, content: parts.map(part => ({ type: 'input_text' as const, text: part.text })) }];
-        }
         return [];
       }
       hoisting = false;
@@ -236,7 +221,7 @@ export const openaiResponsesHeaderFromIR = (request: IRInputRequestHeader): Omit
   // This wire states a permitted subset natively, so the declarations stay
   // whole: narrowing them as well would also narrow what the model may see.
   const tools = request.tools;
-  const choice = tools === undefined || tools.length === 0 ? request.tool_choice === 'required' ? 'required' : undefined : request.tool_choice;
+  const choice = tools === undefined || tools.length === 0 ? undefined : request.tool_choice;
   return {
     ...openaiResponsesSettingsFromIR(settings),
     model: settings.model,

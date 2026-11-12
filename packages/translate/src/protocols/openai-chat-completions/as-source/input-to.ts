@@ -3,7 +3,6 @@ import { klona } from 'klona/json';
 import { partitionOpenAIChatCompletionsTurns, type OpenAIChatCompletionsConversationMessage, type OpenAIChatCompletionsConversationTurn } from './conversation-turns.ts';
 import type { OpenAIChatCompletionsSourceAssistantTurn } from './round-trip.ts';
 import type { SourceReading } from '../../../composition/reading.ts';
-import { mediaFromURL } from '../../../ir/input/media.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -34,7 +33,7 @@ import type {
 const AUDIO_MEDIA_TYPES: Readonly<Record<string, string>> = { wav: 'audio/wav', mp3: 'audio/mp3' };
 
 // Explicit empty user and assistant messages retain their turn boundaries.
-// Empty prompt text contributes no text to the prompt.
+// A caller can explicitly keep or omit an empty text part.
 const textPartsToIR = (value: string, options: { keepEmpty?: boolean } = {}): IRInputTextPart[] => value === '' && options.keepEmpty === false ? [] : [{ type: 'text', text: value }];
 
 interface OpenAIChatCompletionsInputContext {
@@ -78,7 +77,7 @@ const userContentPart = (part: OpenAIChatCompletionsUserContentPart): IRInputUse
   case 'image_url':
     return {
       type: 'image',
-      image: mediaFromURL(part.image_url.url),
+      image: { source_kind: 'url', url: part.image_url.url },
       ...(part.image_url.detail === undefined ? {} : { detail: part.image_url.detail }),
     };
   case 'input_audio':
@@ -255,7 +254,7 @@ const openaiChatCompletionsToolsToIR = (payload: OpenAIChatCompletionsPayload): 
     : legacyChoice === undefined ? undefined : { type: 'function' as const, function: legacyChoice });
   return {
     ...(tools === undefined || tools.length === 0 ? {} : { tools }),
-    ...(choice == null || tools === undefined || tools.length === 0 ? {} : { tool_choice: toolChoiceToIR(choice) }),
+    ...(choice == null ? {} : { tool_choice: toolChoiceToIR(choice) }),
   };
 };
 

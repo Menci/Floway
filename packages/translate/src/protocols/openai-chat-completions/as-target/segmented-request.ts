@@ -7,7 +7,7 @@ import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from 
 
 /**
  * Preserve restored native Chat turns verbatim and compute request-wide fields once.
- * Chat has no top-level prompt slot, so prompts retain their inline positions.
+ * Chat has no top-level instruction slot, so instructions become inline messages.
  */
 export const openaiChatCompletionsPayloadFromSegments = (
   request: IRInputRequestHeader,

@@ -23,9 +23,7 @@ export const anthropicMessagesTargetProtocol: TargetProtocol<
     // This wire addresses a callable by one bare name, so every grouped
     // declaration and call is stated under the flat spelling it computes.
     const assigned = assignCallIds(turns, callsOf);
-    const flattened = allocateToolNames(request, assigned, {
-      names: turn => typeof turn.content === 'string' ? [] : turn.content.flatMap(block => block.type === 'tool_use' ? [block.name] : []),
-    });
+    const flattened = allocateToolNames(request, assigned);
     return {
       payload: anthropicMessagesPayloadFromSegments(flattened.request, flattened.turns, {
         fallbackMaxOutputTokens: options.fallbackMaxOutputTokens,

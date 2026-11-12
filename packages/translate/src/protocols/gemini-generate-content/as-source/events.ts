@@ -68,7 +68,6 @@ export const writeGeminiGenerateContentEvents = async function* (
   const pendingText = new Map<number, PendingTextQueue>();
   const sourceLengths = new Map<string, number>();
   const nativeAccumulator = createGeminiGenerateContentEventAccumulator();
-  const visibleAccumulator = createGeminiGenerateContentEventAccumulator();
   type GeminiContentState = NonNullable<GeminiGenerateContentInputAssistantTurnState<EmittedFieldStates>[number]>;
   type PartsState = NonNullable<GeminiContentState['parts']>;
   const partStates = new Map<number, PartsState>();
@@ -87,7 +86,6 @@ export const writeGeminiGenerateContentEvents = async function* (
   const emit = (event: GeminiGenerateContentResult): EventFrame<GeminiGenerateContentStreamEvent> => {
     const frame = frameOf(event);
     nativeAccumulator.accept(frame.event);
-    visibleAccumulator.accept(frame.event);
     return frame;
   };
   const emitPart = (choice: number, part: GeminiGenerateContentPart): EventFrame<GeminiGenerateContentStreamEvent> =>
@@ -96,9 +94,7 @@ export const writeGeminiGenerateContentEvents = async function* (
     if (part.thought !== true || options.includeThoughts === true) return emitPart(choice, part);
     const full = frameOf({ candidates: [{ index: choice, content: { role: 'model', parts: [part] } }] });
     nativeAccumulator.accept(full.event);
-    const visible = frameOf({ candidates: [{ index: choice, content: { role: 'model', parts: [{ text: '', thought: true }] } }] });
-    visibleAccumulator.accept(visible.event);
-    return visible;
+    return frameOf({ candidates: [{ index: choice, content: { role: 'model', parts: [{ text: '', thought: true }] } }] });
   };
   const addUnit = (choice: number, unit: GenerateContentUnit): void => {
     let queue = queues.get(choice);
@@ -422,12 +418,10 @@ export const writeGeminiGenerateContentEvents = async function* (
     if (record.type === 'choice_end') {
       const nativeCandidate = nativeAccumulator.candidate(record.choice);
       const targetTurn: GeminiGenerateContentInputAssistantTurn = [{ role: 'model', parts: nativeCandidate?.content?.parts ?? [] }];
-      const visibleCandidate = visibleAccumulator.candidate(record.choice);
-      const sourceTurn: GeminiGenerateContentInputAssistantTurn = [{ role: 'model', parts: visibleCandidate?.content?.parts ?? [] }];
       const stateParts = partsState(record.choice);
       stateParts.length = targetTurn[0].parts?.length ?? 0;
       const assistantState: GeminiGenerateContentInputAssistantTurnState<EmittedFieldStates> = [{ parts: stateParts }];
-      const sourceTurnDigest = await computeGeminiGenerateContentTurnDigest(sourceTurn);
+      const sourceTurnDigest = await computeGeminiGenerateContentTurnDigest(targetTurn);
       const data = await options.roundTrip.encodeSidecar(record.choice, sourceTurnDigest, targetTurn, assistantState, collectGeminiGenerateContentTextPlacements(targetTurn));
       yield emitPart(record.choice, createGeminiGenerateContentSidecarPart(data));
       yield emit({ candidates: [terminalCandidate(record, state, collector)] });

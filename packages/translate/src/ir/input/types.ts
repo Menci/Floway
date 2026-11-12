@@ -122,12 +122,12 @@ export interface IRInputToolSelector {
 }
 
 // A turn groups one conversation branch. Assistant messages keep their own
-// boundaries; top-level instructions and inline prompts retain distinct client
+// boundaries; top-level instructions and inline system/developer messages retain distinct client
 // boundaries. Items stay ordered while each
 // target chooses its native message grouping.
 export type IRInputTurn = IRInputClientTurn | IRInputAssistantTurn;
 
-// Client turns contain all nonassistant input, including prompts and tool results.
+// Client turns contain all nonassistant input, including instructions, messages, and tool results.
 // Kind identifies the conversation branch; item role identifies the speaker.
 export interface IRInputClientTurn {
   readonly kind: 'client';

@@ -17,7 +17,7 @@ export type SourceTurnSlot<AssistantTurn> =
 /**
  * A request read into what a writer consumes.
  *
- * The request's own prompt field opens `turns` when the protocol has one. It is
+ * The request's own instruction field opens `turns` when the protocol has one. It is
  * a client turn rather than a field of its own, which is what lets a writer
  * place it by position the same way it places every other turn.
  */

@@ -3,7 +3,6 @@ import { klona } from 'klona/json';
 import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn } from './conversation-turns.ts';
 import type { AnthropicMessagesSourceAssistantTurn } from './round-trip.ts';
 import type { SourceReading, SourceTurnSlot } from '../../../composition/reading.ts';
-import { mediaFromURL } from '../../../ir/input/media.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputRequestHeader,
@@ -37,12 +36,12 @@ import { FAST_SERVICE_TIER } from '@floway-dev/protocols/common';
 const imageMedia = (source: AnthropicMessagesImageBlock['source']): IRInputMedia => {
   switch (source.type) {
   case 'base64': return { source_kind: 'base64', media_type: source.media_type, data: source.data };
-  case 'url': return mediaFromURL(source.url);
+  case 'url': return { source_kind: 'url', url: source.url };
   case 'file': return { source_kind: 'file', file_id: source.file_id };
   }
 };
 
-const promptPartsToIR = (content: string | readonly AnthropicMessagesTextBlockParam[]): IRInputTextPart[] => typeof content === 'string'
+const textPartsToIR = (content: string | readonly AnthropicMessagesTextBlockParam[]): IRInputTextPart[] => typeof content === 'string'
   ? content === '' ? [] : [{ type: 'text', text: content }]
   : content.map(block => {
       if (block.type !== 'text') throw new TranslateInputException('Only text system content is supported.');
@@ -66,8 +65,14 @@ const documentMedia = (block: Extract<AnthropicMessagesUserContentBlock, { type:
   // every target that accepts a file expects base64. Encoding here keeps the
   // IR's media arms uniform.
   case 'text': return { source_kind: 'base64', media_type: source.media_type, data: base64Of(source.data) };
-  case 'content':
-    throw new TranslateInputException('Cannot translate an inline content document; supply a base64, URL, text, or file source.');
+  case 'content': {
+    const content = typeof source.content === 'string'
+      ? { type: 'text' as const, text: source.content }
+      : source.content.length === 1 ? source.content[0] : undefined;
+    if (content?.type === 'text') return { source_kind: 'base64', media_type: 'text/plain', data: base64Of(content.text) };
+    if (content?.type === 'image') return imageMedia(content.source);
+    throw new TranslateInputException('Cannot translate a multi-part inline content document as one file.');
+  }
   }
 };
 
@@ -91,9 +96,6 @@ const userContentPart = (
 const toolResultPart = (block: AnthropicMessagesToolResultBlock['content']): IRInputToolResultContentPart[] => {
   if (block === undefined) return [];
   if (typeof block === 'string') return [{ type: 'text', text: block }];
-  if (block.some(part => part.type !== 'text' && part.type !== 'image' && part.type !== 'document' && part.type !== 'search_result')) {
-    return [{ type: 'text', text: JSON.stringify(block) }];
-  }
   const parts: IRInputToolResultContentPart[] = [];
   const searchResults: AnthropicMessagesSearchResultBlock[] = [];
   // Only consecutive search results share an array, so text and images retain
@@ -112,7 +114,7 @@ const toolResultPart = (block: AnthropicMessagesToolResultBlock['content']): IRI
     if (part.type === 'text') parts.push({ type: 'text', text: part.text });
     else if (part.type === 'image') parts.push({ type: 'image', image: imageMedia(part.source) });
     else if (part.type === 'document') parts.push({ type: 'file', file: documentMedia(part) });
-    else throw new TranslateInputException(`'${(part as { type: string }).type}' tool result content blocks are not supported.`);
+    else parts.push({ type: 'text', text: JSON.stringify(part) });
   }
   flushSearchResults();
   return parts;
@@ -126,7 +128,7 @@ const clientItems = (
     if (typeof message.content !== 'string' && message.content.some(block => block.type !== 'text')) {
       throw new TranslateInputException('Only text system content is supported.');
     }
-    return [{ type: 'message', role: 'system', content: promptPartsToIR(message.content as string | readonly AnthropicMessagesTextBlockParam[]) }];
+    return [{ type: 'message', role: 'system', content: textPartsToIR(message.content as string | readonly AnthropicMessagesTextBlockParam[]) }];
   }
   if (typeof message.content === 'string') {
     return [{ type: 'message', role: 'user', content: message.content === '' ? [] : [{ type: 'text', text: message.content }] }];
@@ -257,7 +259,7 @@ const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'a
 
 const anthropicMessagesSystemToIR = (system: AnthropicMessagesPayload['system']): IRInputTurn | undefined => {
   if (system === undefined) return undefined;
-  const content = promptPartsToIR(system);
+  const content = textPartsToIR(system);
   return content.length === 0 ? undefined : { kind: 'client', items: [{ type: 'instruction', content }] };
 };
 
@@ -395,7 +397,7 @@ const reasoningEffortToIR = (payload: AnthropicMessagesPayload): string | undefi
 /**
  * A Messages request read into the turns a writer consumes.
  *
- * Messages states its prompt in a top-level field and its conversation in
+ * Messages states its instruction in a top-level field and its conversation in
  * `messages`; both enter the IR, and the request-wide fields come from the same
  * payload.
  *
@@ -413,8 +415,8 @@ export const readAnthropicMessagesRequest = (payload: AnthropicMessagesPayload):
   const turns: SourceTurnSlot<AnthropicMessagesSourceAssistantTurn>[] = [];
   let messageIndex = 0;
 
-  const prompt = anthropicMessagesSystemToIR(payload.system);
-  if (prompt !== undefined) turns.push({ kind: 'client', toIRInputTurns: () => [prompt] });
+  const instruction = anthropicMessagesSystemToIR(payload.system);
+  if (instruction !== undefined) turns.push({ kind: 'client', toIRInputTurns: () => [instruction] });
 
   for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
     const firstMessageIndex = messageIndex;

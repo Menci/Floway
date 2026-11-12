@@ -1,5 +1,5 @@
+import { parseDataURL, type ParsedDataURL } from './data-url.ts';
 import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds } from '../../../composition/request/call-ids.ts';
-import { parseDataURL, type ParsedDataURL } from '../../../ir/input/media.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputMedia, IRInputTextPart, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
 import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
@@ -55,7 +55,7 @@ const imageBlock = (media: IRInputMedia): AnthropicMessagesImageBlock => ({ type
  * Inline documents remain bytes. The target requires a media type, so an
  * untyped raw base64 value receives the generic binary type at this boundary.
  */
-const documentBlock = (media: IRInputMedia): AnthropicMessagesUserContentBlock => {
+const documentBlock = (media: IRInputMedia): Extract<AnthropicMessagesUserContentBlock, { type: 'document' }> => {
   switch (media.source_kind) {
   case 'url': {
     if (!media.url.startsWith('data:')) return { type: 'document', source: { type: 'url', url: media.url } };
@@ -99,7 +99,7 @@ const toolResultContent = (
   const blocks: AnthropicMessagesToolResultContentBlock[] = [];
   for (const part of output) {
     if (part.type === 'text') { blocks.push({ type: 'text', text: part.text }); continue; }
-    if (part.type === 'file') throw new TranslateInputException('Cannot translate file tool output to Anthropic Messages.');
+    if (part.type === 'file') { blocks.push(documentBlock(part.file)); continue; }
     blocks.push(imageBlock(part.image));
   }
   // Messages spells an empty tool result as the empty string.
@@ -137,10 +137,8 @@ const assistantBlocks = (items: readonly IRInputAssistantItemWithCallIds[]): Ant
   return blocks;
 };
 
-// Messages needs an object, so a call whose arguments are not an object keeps
-// the raw text under `raw_arguments` rather than dropping the history. A JSON
-// `null`, an array, and malformed text all take that path: none of them is an
-// argument object, and discarding the call would lose what the model said.
+// Messages accepts any JSON tool input. Malformed JSON keeps its raw text under
+// `raw_arguments` so the historical call is not discarded.
 const parseArguments = (argumentsJson: string): unknown => {
   // An out-of-range JSON number such as `1e400` parses to `Infinity` and would
   // serialize back as `null`. Parsing with raw-number preservation keeps the
@@ -185,20 +183,20 @@ const toolChoiceFromIR = (choice: IRInputToolChoice, tools: readonly IRInputTool
 
 const toolChoiceForTools = (choice: IRInputToolChoice | undefined, tools: readonly IRInputTool[] | undefined): IRInputToolChoice | undefined => {
   if (tools !== undefined && tools.length > 0) return choice;
-  if (choice === 'none' || choice === 'auto') return choice;
+  if (choice === 'none' || choice === 'auto' || choice === 'required') return choice;
   if (typeof choice === 'object' && choice.type === 'allowed_tools' && choice.mode === 'auto') return 'none';
   return undefined;
 };
 
 /**
- * One segment's messages and the system blocks a leading prompt run lifts.
+ * One segment's messages and the system blocks lifted from its instruction.
  *
- * Messages keeps the system prompt in its own top-level field. A leading system
- * run is lifted there, one block per source text part so the boundaries
+ * Messages keeps instructions in its top-level system field, one block per
+ * source text part so the boundaries
  * survive; later system messages stay inline at their position.
  *
  * Only the segment opening the whole conversation may hoist. Splitting at a
- * restored assistant turn must not promote a later inline prompt merely because
+ * restored assistant turn must not promote a later system message merely because
  * it opens another segment.
  */
 export interface AnthropicMessagesConversation {

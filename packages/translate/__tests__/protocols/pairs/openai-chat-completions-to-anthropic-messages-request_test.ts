@@ -1214,6 +1214,11 @@ test('translates legacy declarations and forced choice into Messages tooling', a
   assertEquals(result.tool_choice, { type: 'tool', name: 'lookup' });
 });
 
+test('preserves required tool choice without declarations', async () => {
+  const result = await buildWithTestSidecar({ model: 'model', stream: true, messages: [], tool_choice: 'required' });
+  assertEquals(result.tool_choice, { type: 'any' });
+});
+
 test.each([true, false])('maps parallel_tool_calls %s into Messages tool choice', async parallel => {
   for (const tool_choice of [undefined, 'auto', 'required', 'none'] as const) {
     const result = await buildWithTestSidecar(mkPayload({ messages: [], tools: [{ type: 'function', function: { name: 'f', parameters: { type: 'object', properties: {} } } }], tool_choice, parallel_tool_calls: parallel }));

@@ -28,6 +28,21 @@ test('preserves a refusal-only assistant turn between client turns', async () =>
   ]);
 });
 
+test('preserves an empty assistant turn between client turns', async () => {
+  const { target } = await buildWithTestSidecar({
+    model: 'model', input: [
+      { type: 'message', role: 'user', content: 'A' },
+      { type: 'message', role: 'assistant', content: [] },
+      { type: 'message', role: 'user', content: 'B' },
+    ],
+  });
+  assertEquals(target.messages, [
+    { role: 'user', content: 'A' },
+    { role: 'assistant', content: '' },
+    { role: 'user', content: 'B' },
+  ]);
+});
+
 test('buildTargetPayload accepts an implicit message discriminator', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
@@ -209,6 +224,18 @@ test('buildTargetPayload reshapes flat json_schema text format into OpenAI Chat 
       strict: true,
       schema,
     },
+  });
+});
+
+test('buildTargetPayload preserves null json_schema strictness', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'gpt-test',
+    input: 'Hi',
+    text: { format: { type: 'json_schema', name: 'result', schema: {}, strict: null } },
+  });
+  assertEquals(result.target.response_format, {
+    type: 'json_schema',
+    json_schema: { name: 'result', schema: {}, strict: null },
   });
 });
 
