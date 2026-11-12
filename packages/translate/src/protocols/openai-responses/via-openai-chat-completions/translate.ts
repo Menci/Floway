@@ -2,6 +2,7 @@ import { translateToSourceEvents } from './events.ts';
 import { buildTargetRequest } from './request.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import type { Translator } from '../../../types.ts';
+import { restateOpenAIResponsesError } from '../as-source/error-body.ts';
 import { restoreNamespaceEvents } from '../as-source/namespace-tools.ts';
 import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
@@ -13,7 +14,7 @@ export const translate: Translator<
     const { target, customToolNames, namespaceToolNames } = await buildTargetRequest(src, ctx.sidecarCodec);
     return {
       type: 'trip',
-      error: () => undefined,
+      error: restateOpenAIResponsesError,
       target,
       events: frames => restoreNamespaceEvents(
         translateToSourceEvents(frames, customToolNames, ctx.sidecarCodec, namespaceToolNames),

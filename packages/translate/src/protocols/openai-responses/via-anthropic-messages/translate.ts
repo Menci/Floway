@@ -2,6 +2,7 @@ import { translateToSourceEvents } from './events.ts';
 import { buildTargetRequest } from './request.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import type { RemoteImageLoader, Translator } from '../../../types.ts';
+import { restateOpenAIResponsesError } from '../as-source/error-body.ts';
 import { restoreNamespaceEvents } from '../as-source/namespace-tools.ts';
 import { createRandomOpenAIResponsesResponseId } from '../as-source/response-id.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
@@ -23,7 +24,7 @@ export const translate: Translator<
 
     return {
       type: 'trip',
-      error: () => undefined,
+      error: restateOpenAIResponsesError,
       target,
       events: frames => restoreNamespaceEvents(translateToSourceEvents(frames, responseId, customToolNames, ctx.sidecarCodec, namespaceToolNames), namespaceToolNames),
     };

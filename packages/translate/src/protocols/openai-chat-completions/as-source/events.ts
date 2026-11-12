@@ -1,7 +1,7 @@
+import { openaiChatCompletionsErrorFromIR } from './error.ts';
 import { collectOpenAIChatCompletionsTextPlacements, computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarDetails } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
-import type { IRErrorPayload } from '../../../ir/output/error.ts';
 import { irItemPath, irPartPath, irPathKey } from '../../../ir/output/operation-paths.ts';
 import type { IRRecord } from '../../../ir/output/records.ts';
 import { consumeIRRecords } from '../../../ir/output/stream.ts';
@@ -22,14 +22,6 @@ import {
   type OpenAIChatCompletionsUsageEx,
   createOpenAIChatCompletionsEventAccumulator,
 } from '@floway-dev/protocols/openai-chat-completions';
-
-const irChatError = (error: IRErrorPayload): IRErrorPayload => ({
-  message: error.message,
-  type: typeof error.type === 'string' && error.type !== 'error' ? error.type : error.code ?? 'server_error',
-  ...(error.code === undefined ? {} : { code: error.code }),
-  ...(error.param === undefined ? {} : { param: error.param }),
-  ...(error.provider_specific_fields === undefined ? {} : { provider_specific_fields: error.provider_specific_fields }),
-});
 
 interface OpenAIChatCompletionsEventWriterOptions extends SourceEventWriterOptions<'openaiChatCompletions'> {
   // Replay identity belongs to the newly emitted target audio, not the source IR content.
@@ -176,7 +168,7 @@ export const writeOpenAIChatCompletionsEvents = async function* (
   for await (const { record, collector } of consumeIRRecords(records)) {
     const { state } = collector;
     if (record.type === 'error') {
-      yield eventFrame({ error: irChatError(record.error) } as unknown as OpenAIChatCompletionsStreamEvent);
+      yield eventFrame({ error: openaiChatCompletionsErrorFromIR(record.error) } as unknown as OpenAIChatCompletionsStreamEvent);
       return;
     }
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;

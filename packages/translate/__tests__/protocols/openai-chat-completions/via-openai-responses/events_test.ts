@@ -376,7 +376,6 @@ test('translateToSourceEvents translates OpenAI Responses error events to OpenAI
   if (frames[0].type !== 'event') throw new Error('expected event frame');
   assertEquals((frames[0].event as unknown as Record<string, unknown>).error, {
     message: 'upstream overloaded',
-    type: 'overloaded_error',
     code: 'overloaded_error',
   });
 });
@@ -409,7 +408,7 @@ test('translateToSourceEvents translates OpenAI Responses failed terminal events
   });
 });
 
-test.each(['flat error', 'nested error', 'failed response'])('translateToSourceEvents preserves the error provider namespace without copying (%s)', async path => {
+test.each(['flat error', 'nested error', 'failed response'])('translateToSourceEvents preserves the error provider namespace and colliding loose fields (%s)', async path => {
   const provider_specific_fields = {
     name: 'TranslateInputException',
     stack: 'translator stack',
@@ -432,11 +431,13 @@ test.each(['flat error', 'nested error', 'failed response'])('translateToSourceE
   const translated = (frames[0].event as unknown as { error: Record<string, unknown> }).error;
   expect(translated).toEqual({
     message: error.message,
-    type: path === 'flat error' ? error.code : error.type,
+    ...(path === 'flat error' ? {} : { type: error.type }),
     code: error.code,
-    provider_specific_fields,
+    provider_specific_fields: {
+      ...provider_specific_fields,
+      name_1: error.name, stack_1: error.stack, cause_1: error.cause, target_api_1: error.target_api,
+    },
   });
-  expect(translated.provider_specific_fields).toBe(provider_specific_fields);
   const sse = writeChatFrame(frames[0], includeUsageChunk);
   if (sse === null) throw new Error('expected error SSE frame');
   expect(JSON.parse(sse.data)).toEqual({ error: translated });

@@ -1,9 +1,9 @@
+import { geminiGenerateContentErrorFromIR } from './error.ts';
 import { collectGeminiGenerateContentTextPlacements, computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSidecarPart } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import type { IRJSONObject } from '../../../ir/common/json.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
 import type { IRCollector } from '../../../ir/output/collector.ts';
-import type { IRErrorPayload } from '../../../ir/output/error.ts';
 import { irItemPath, irPartPath, irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/output/operation-paths.ts';
 import type { IRPath, IRRecord } from '../../../ir/output/records.ts';
 import { consumeIRRecords } from '../../../ir/output/stream.ts';
@@ -12,7 +12,6 @@ import { createIRUnitQueue, type IRUnitQueue } from '../../../ir/output/unit-que
 import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
 import { appendEmittedField, createEmittedFieldState, type EmittedFieldStates, type EmittedFieldState } from '../../../round-trip/reference/reference-builder.ts';
-import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.ts';
 import { isCompleteJSONObject } from '../../../shared/json/object.ts';
@@ -21,21 +20,12 @@ import type { GeminiGenerateContentInputAssistantTurnState, GeminiGenerateConten
 import { eventFrame, FAST_SERVICE_TIER, type EventFrame } from '@floway-dev/protocols/common';
 import {
   type GeminiGenerateContentCandidate,
-  type GeminiGenerateContentErrorResponse,
   type GeminiGenerateContentGroundingChunk,
   type GeminiGenerateContentPart,
   type GeminiGenerateContentResult,
   type GeminiGenerateContentStreamEvent,
   createGeminiGenerateContentEventAccumulator,
 } from '@floway-dev/protocols/gemini-generate-content';
-
-const irGenerateContentError = (error: IRErrorPayload): GeminiGenerateContentErrorResponse['error'] => {
-  const code = error.code ?? error.type;
-  const [status, statusCode] = code === 'rate_limit_exceeded' || code === 'rate_limit_error' ? ['RESOURCE_EXHAUSTED', 429]
-    : code === 'invalid_prompt' || code === 'invalid_request_error' || isContextExceededError(error) ? ['INVALID_ARGUMENT', 400]
-      : code === 'overloaded_error' ? ['UNAVAILABLE', 503] : ['INTERNAL', 500];
-  return { code: statusCode, status, message: error.message };
-};
 
 interface GenerateContentUnit {
   readonly path: IRPath;
@@ -357,7 +347,7 @@ export const writeGeminiGenerateContentEvents = async function* (
 
   for await (const { record, collector } of consumeIRRecords(records)) {
     const { state } = collector;
-    if (record.type === 'error') { yield eventFrame({ error: irGenerateContentError(record.error) }); return; }
+    if (record.type === 'error') { yield eventFrame({ error: geminiGenerateContentErrorFromIR(record.error) }); return; }
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;
     if (record.type === 'start') {
       if (state.model === undefined) throw new TypeError('GenerateContent output requires an IR model before start');

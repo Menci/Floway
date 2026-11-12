@@ -1,3 +1,4 @@
+import { openaiResponsesErrorEventOf } from './error.ts';
 import { restoreNamespaceOutputItem, type NamespaceToolNames } from './namespace-tools.ts';
 import { createRandomOpenAIResponsesResponseId } from './response-id.ts';
 import { collectOpenAIResponsesTextPlacements, computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarItem } from './round-trip.ts';
@@ -615,12 +616,7 @@ export const writeOpenAIResponsesEvents = async function* (
   for await (const { record, collector } of consumeIRRecords(records)) {
     const { state } = collector;
     if (record.type === 'error') {
-      yield emit({
-        type: 'error',
-        message: record.error.message,
-        code: record.error.code ?? record.error.type,
-        ...(record.error.param === undefined ? {} : { param: record.error.param }),
-      });
+      yield emit(openaiResponsesErrorEventOf(record.error));
       return;
     }
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;

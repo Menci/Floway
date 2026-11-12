@@ -7,7 +7,7 @@ import { isOpenAIResponsesCompactionItem, openaiResponsesResultToEvents, type Op
 // Complete output items become reusable at their first done frame, so each row
 // commits before that frame is yielded. Later done frames remain
 // visible but cannot replace the durable item. The response snapshot commits
-// separately before a successful terminal frame. Failed/error terminals keep
+// separately before a successful terminal frame. Failed responses keep
 // completed item rows but never a snapshot.
 //
 // One client response can span several upstream calls behind the server-tool
@@ -95,11 +95,6 @@ export const wrapOpenAIResponsesClientOutput = async function* (
       yield eventFrame({ ...event, response: clientEnvelope(event.response) });
       return;
     }
-    if (event.type === 'error') {
-      yield frame;
-      return;
-    }
-
     yield frame;
   }
 };

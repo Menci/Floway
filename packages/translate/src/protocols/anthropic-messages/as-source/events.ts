@@ -1,9 +1,9 @@
+import { anthropicMessagesErrorFromIR } from './error.ts';
 import { collectAnthropicMessagesTextPlacements, computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarBlock } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import type { IRJSONObject } from '../../../ir/common/json.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
 import type { IRCollector } from '../../../ir/output/collector.ts';
-import type { IRErrorPayload } from '../../../ir/output/error.ts';
 import { isIRItemPath, isIRPartPath, irPathKey } from '../../../ir/output/operation-paths.ts';
 import type { IRPath, IRRecord } from '../../../ir/output/records.ts';
 import { consumeIRRecords } from '../../../ir/output/stream.ts';
@@ -13,7 +13,6 @@ import { createIRUnitQueue } from '../../../ir/output/unit-queue.ts';
 import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
 import { appendEmittedField, createEmittedFieldState, type EmittedFieldState, type EmittedFieldStates } from '../../../round-trip/reference/reference-builder.ts';
-import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.ts';
 import { parseJSONObject, requireJSONObject } from '../../../shared/json/object.ts';
@@ -21,30 +20,14 @@ import type { AnthropicMessagesInputAssistantTurnState, AnthropicMessagesInputAs
 import {
   generateAnthropicId,
   createAnthropicMessagesEventAccumulator,
-  PROMPT_TOO_LONG_MESSAGE,
   type AnthropicMessagesAssistantContentBlock,
   type AnthropicMessagesContentBlockDeltaEvent,
-  type AnthropicMessagesErrorEventEx,
   type AnthropicMessagesResult,
   type AnthropicMessagesStreamEventEx,
   type AnthropicMessagesUsage,
 } from '@floway-dev/protocols/anthropic-messages';
 import { isJsonObject } from '@floway-dev/protocols/common';
 import { eventFrame, type EventFrame } from '@floway-dev/protocols/common';
-
-const MESSAGES_ERROR_TYPES = [
-  'invalid_request_error',
-  'authentication_error',
-  'permission_error',
-  'not_found_error',
-  'rate_limit_error',
-  'api_error',
-  'overloaded_error',
-];
-
-const irMessagesError = (error: IRErrorPayload): AnthropicMessagesErrorEventEx['error'] => isContextExceededError(error)
-  ? { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE }
-  : { type: error.type !== undefined && MESSAGES_ERROR_TYPES.includes(error.type) ? error.type : 'api_error', message: error.message };
 
 interface MessagesUnit {
   readonly path: IRPath;
@@ -223,7 +206,7 @@ export const writeAnthropicMessagesEvents = async function* (
 
   for await (const { record, collector } of consumeIRRecords(records)) {
     const { state } = collector;
-    if (record.type === 'error') { yield emit({ type: 'error', error: irMessagesError(record.error) }); return; }
+    if (record.type === 'error') { yield emit({ type: 'error', error: anthropicMessagesErrorFromIR(record.error) }); return; }
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;
     if (record.type === 'start') {
       if (state.model === undefined) throw new TypeError('Messages output requires an IR model before start');

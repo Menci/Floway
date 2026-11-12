@@ -4,7 +4,7 @@ import { requireTrip } from './require-trip.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { reassembleOpenAIResponsesEvents, toOpenAIResponsesInputItems } from '@floway-dev/protocols/openai-responses';
+import { toOpenAIResponsesInputItems, reassembleOpenAIResponsesEvents } from '@floway-dev/protocols/openai-responses';
 import { routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
 const chunk = (delta: OpenAIChatCompletionsAssistantDeltaEx, finish_reason: 'stop' | null = null) => eventFrame<OpenAIChatCompletionsStreamEvent>({

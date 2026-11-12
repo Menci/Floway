@@ -208,6 +208,31 @@ describe('OpenAI Responses affinity egress', () => {
     expect(output).toEqual([eventFrame({ type: 'response.failed', response: response([], 'failed') })]);
   });
 
+  test.each([
+    { item: { type: 'reasoning' as const, id: 'rs_complete', summary: [], encrypted_content: 'opaque' }, shift: 0 },
+    { item: { type: 'message' as const, id: 'msg_complete', role: 'assistant' as const, status: 'completed', content: [{ type: 'output_text' as const, text: 'answer', annotations: [] }] }, shift: 2 },
+  ])('preserves the error and following failed response after a $item.type item', async ({ item, shift }) => {
+    const error = { type: 'error' as const, sequence_number: 3, code: null, param: 'tools', message: 'native failure', vendor: { retryable: false } };
+    const failed = { ...response([item], 'failed'), error: { code: 'vendor_failure', message: error.message }, usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 } };
+    const output: OpenAIResponsesStreamEventEx[] = [];
+    for await (const frame of wrapOpenAIResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.created', sequence_number: 0, response: response([], 'in_progress') }),
+      eventFrame({ type: 'response.output_item.added', sequence_number: 1, output_index: 0, item }),
+      eventFrame({ type: 'response.output_item.done', sequence_number: 2, output_index: 0, item }),
+      eventFrame(error),
+      eventFrame({ type: 'response.failed', sequence_number: 4, response: failed }),
+    ]), { codec: immediateCodec, affinity })) {
+      if (frame.type === 'event') output.push(frame.event);
+    }
+
+    expect(output.map(event => event.sequence_number)).toEqual(Array.from({ length: 5 + shift }, (_, index) => index));
+    expect(output.find(event => event.type === 'error')).toEqual({ ...error, sequence_number: 3 + shift });
+    const terminal = output.at(-1);
+    if (terminal?.type !== 'response.failed') throw new Error('expected response.failed');
+    const finalizedItems = output.flatMap(event => event.type === 'response.output_item.done' ? [event.item] : []);
+    expect(terminal.response).toEqual({ ...failed, output: finalizedItems });
+  });
+
   test('wraps compaction_summary as a natural carrier without inserting a prefix', async () => {
     const item = { type: 'compaction_summary', id: 'cmp_upstream', encrypted_content: 'opaque' } as unknown as OpenAIResponsesOutputItemEx;
     const output: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];

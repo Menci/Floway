@@ -60,7 +60,7 @@ test('translateToSourceEvents translates Anthropic Messages error terminal and s
     eventFrame({
       type: 'error',
       message: 'upstream overloaded',
-      code: 'overloaded_error',
+      provider_specific_fields: { type: 'overloaded_error' },
       sequence_number: 0,
     }),
   );
