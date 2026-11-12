@@ -33,6 +33,10 @@ export interface IRChoiceHandle extends IRWriteHandle {
   end: (finishReason: 'stop' | 'length' | 'tool_calls' | 'content_filter') => void;
 }
 
+/**
+ * Open choices in consecutive upstream index order. Skipped indices are malformed;
+ * additional consecutive choices remain valid.
+ */
 export const createIRBuilder = () => {
   const collector = createIRCollector();
   const { state } = collector;
