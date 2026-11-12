@@ -141,15 +141,13 @@ const assistantBlocks = (items: readonly IRInputAssistantItemWithCallIds[]): Ant
 // the raw text under `raw_arguments` rather than dropping the history. A JSON
 // `null`, an array, and malformed text all take that path: none of them is an
 // argument object, and discarding the call would lose what the model said.
-const parseArguments = (argumentsJson: string): Record<string, unknown> => {
+const parseArguments = (argumentsJson: string): unknown => {
   // An out-of-range JSON number such as `1e400` parses to `Infinity` and would
   // serialize back as `null`. Parsing with raw-number preservation keeps the
   // caller's exact token.
   try {
     const parsed = parseJSONWithRawNumbers(argumentsJson);
-    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : { raw_arguments: argumentsJson };
+    return parsed;
   } catch {
     return { raw_arguments: argumentsJson };
   }

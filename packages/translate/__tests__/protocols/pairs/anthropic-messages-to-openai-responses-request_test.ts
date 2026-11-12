@@ -9,6 +9,30 @@ import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils
 const buildWithTestSidecar = (payload: AnthropicMessagesPayload) =>
   buildTargetPayloadFor(pairs.messagesToResponses[0], pairs.messagesToResponses[1], { ...payload, stream: true }, { sidecarCodec: createTestSidecarCodec() });
 
+test('server tool errors become incomplete Responses results', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [{
+      role: 'assistant', content: [
+        { type: 'server_tool_use', id: 's', name: 'web_search', input: {} },
+        { type: 'web_search_tool_result', tool_use_id: 's', content: { type: 'web_search_tool_result_error', error_code: 'too_many_requests' } },
+      ],
+    }],
+  });
+  const output = result.input.find(item => item.type === 'function_call_output');
+  assertEquals(output?.type === 'function_call_output' ? output.status : undefined, 'incomplete');
+});
+
+test('document tool results enter the IR as files', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'read', input: {} }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'c', content: [{ type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'hello' } }] as never }] },
+    ],
+  });
+  const output = result.input.find(item => item.type === 'function_call_output');
+  assertEquals(output?.type === 'function_call_output' ? output.output : undefined, [{ type: 'input_file', file_data: 'data:text/plain;base64,aGVsbG8=' }]);
+});
+
 test('keeps search result runs between the text and images around them', async () => {
   const first = { type: 'search_result' as const, source: 'https://example.com/1', title: 'First', content: [{ type: 'text' as const, text: 'one' }] };
   const second = { ...first, source: 'https://example.com/2', title: 'Second' };

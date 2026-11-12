@@ -91,6 +91,9 @@ const userContentPart = (
 const toolResultPart = (block: AnthropicMessagesToolResultBlock['content']): IRInputToolResultContentPart[] => {
   if (block === undefined) return [];
   if (typeof block === 'string') return [{ type: 'text', text: block }];
+  if (block.some(part => part.type !== 'text' && part.type !== 'image' && part.type !== 'document' && part.type !== 'search_result')) {
+    return [{ type: 'text', text: JSON.stringify(block) }];
+  }
   const parts: IRInputToolResultContentPart[] = [];
   const searchResults: AnthropicMessagesSearchResultBlock[] = [];
   // Only consecutive search results share an array, so text and images retain
@@ -108,6 +111,7 @@ const toolResultPart = (block: AnthropicMessagesToolResultBlock['content']): IRI
     flushSearchResults();
     if (part.type === 'text') parts.push({ type: 'text', text: part.text });
     else if (part.type === 'image') parts.push({ type: 'image', image: imageMedia(part.source) });
+    else if (part.type === 'document') parts.push({ type: 'file', file: documentMedia(part) });
     else throw new TranslateInputException(`'${(part as { type: string }).type}' tool result content blocks are not supported.`);
   }
   flushSearchResults();
@@ -215,6 +219,10 @@ const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'a
         type: 'tool_result',
         call_id: result.tool_use_id,
         output: JSON.stringify(result.content),
+        ...(typeof result.content === 'object' && result.content !== null && !Array.isArray(result.content)
+          && 'type' in result.content && typeof result.content.type === 'string' && result.content.type.endsWith('_error')
+          ? { is_error: true }
+          : {}),
       });
       flushSegment();
       continue;

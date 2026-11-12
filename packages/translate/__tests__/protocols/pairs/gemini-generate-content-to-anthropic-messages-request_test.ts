@@ -17,6 +17,14 @@ const buildWithTestSidecar = (
   options: { fallbackMaxOutputTokens?: number },
 ) => buildTargetPayloadFor(pairs.geminiToMessages[0], pairs.geminiToMessages[1], { ...payload, model }, { sidecarCodec: createTestSidecarCodec(), ...options });
 
+test('a ProtoJSON null function-call args value reaches Messages unchanged', async () => {
+  const result = await buildWithTestSidecar({
+    contents: [{ role: 'model', parts: [{ functionCall: { name: 'f', args: null as never } }] }],
+  }, 'claude-test', noOptions);
+  const message = result.messages[0];
+  assertEquals(message.role === 'assistant' && Array.isArray(message.content) && message.content[0]?.type === 'tool_use' ? message.content[0].input : undefined, null);
+});
+
 test('buildTargetPayload preserves an empty thought as a thinking turn', async () => {
   const result = await buildWithTestSidecar({ contents: [{ role: 'model', parts: [{ text: '', thought: true }] }] }, 'claude-test', noOptions);
   assertEquals(result.messages, [{ role: 'assistant', content: [{ type: 'thinking', thinking: '', signature: '' }] }]);

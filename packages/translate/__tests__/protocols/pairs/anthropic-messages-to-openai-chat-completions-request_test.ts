@@ -10,6 +10,17 @@ import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils
 const buildWithTestSidecar = (payload: AnthropicMessagesPayload) =>
   buildTargetPayloadFor(pairs.messagesToChat[0], pairs.messagesToChat[1], { ...payload, stream: true }, { sidecarCodec: createTestSidecarCodec() });
 
+test('unmodeled structured tool-result blocks retain main opaque JSON behavior', async () => {
+  const content = [{ type: 'browser_state', tabs: [] }];
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'browse', input: {} }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'c', content: content as never }] },
+    ],
+  });
+  assertEquals(result.messages.at(-1), { role: 'tool', tool_call_id: 'c', content: JSON.stringify(content) });
+});
+
 test('buildTargetPayload maps thinking.disabled to reasoning_effort none', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
