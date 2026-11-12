@@ -87,3 +87,46 @@ test('envelope transport fields stay outside the error metadata', () => {
     message: 'failed', code: null, provider_specific_fields: { request_id: 'req_1' },
   });
 });
+
+test('error metadata collisions reserve original suffix keys across every namespace', () => {
+  const body = new TextEncoder().encode(JSON.stringify({
+    error: {
+      message: 'failed', trace: 'inner loose',
+      provider_specific_fields: { trace: 'inner container' },
+    },
+    trace: 'outer loose', trace_1: 'original suffix',
+    provider_specific_fields: { trace: 'outer container' },
+  }));
+  expect(irErrorPayloadFromBody(body)).toEqual({
+    message: 'failed',
+    provider_specific_fields: {
+      trace: 'inner container', trace_1: 'original suffix',
+      trace_2: 'inner loose', trace_3: 'outer container', trace_4: 'outer loose',
+    },
+  });
+});
+
+test('equal values at one metadata key coalesce across namespaces without consuming explicit suffix keys', () => {
+  const body = new TextEncoder().encode(JSON.stringify({
+    error: {
+      message: 'failed', trace: { region: 'us', attempts: [1, false, null] },
+      provider_specific_fields: { trace: 'preferred' },
+    },
+    trace: { attempts: [1, false, null], region: 'us' },
+    trace_1: { region: 'us', attempts: [1, false, null] },
+    provider_specific_fields: { trace: { region: 'us', attempts: [1, false, null] } },
+  }));
+  expect(irErrorPayloadFromBody(body)).toEqual({
+    message: 'failed',
+    provider_specific_fields: {
+      trace: 'preferred', trace_1: { region: 'us', attempts: [1, false, null] },
+      trace_2: { region: 'us', attempts: [1, false, null] },
+    },
+  });
+});
+
+test('metadata equality preserves distinct raw number tokens and coalesces identical tokens', () => {
+  const body = new TextEncoder().encode('{"error":{"message":"failed","amount":9007199254740993,"same":{"amount":1.00},"provider_specific_fields":{"amount":9007199254740992,"same":{"amount":1.00}}}}');
+  const payload = irErrorPayloadFromBody(body);
+  expect(JSON.stringify(payload)).toBe('{"message":"failed","provider_specific_fields":{"amount":9007199254740992,"same":{"amount":1.00},"amount_1":9007199254740993}}');
+});

@@ -80,13 +80,13 @@ test('carries the fields the target protocol states that the IR does not name', 
   });
 });
 
-test('merges loose error fields with the upstream container and keeps its collision priority', () => {
+test('preserves colliding loose error fields beneath the upstream container priority', () => {
   const result = restateAnthropicMessagesError(...upstreamOf(400, {
     error: { message: 'bad request', provider_specific_fields: { stack: 'theirs' }, stack: 'legacy', retry_after: 10, code: 'invalid_value', param: 'temperature' },
   }));
 
   assertEquals((decoded(result).error as Record<string, unknown>).provider_specific_fields, {
-    stack: 'theirs', retry_after: 10, code: 'invalid_value', param: 'temperature',
+    stack: 'theirs', stack_1: 'legacy', retry_after: 10, code: 'invalid_value', param: 'temperature',
   });
 });
 
