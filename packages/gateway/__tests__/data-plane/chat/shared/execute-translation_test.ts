@@ -56,7 +56,6 @@ describe('executeTranslation', () => {
     }, innerAttempt);
 
     expect(seen).toEqual({ model: 'm', stream: true });
-    // The caller's own payload is not mutated.
     expect(source).toEqual({ model: 'm', stream: false });
   });
 

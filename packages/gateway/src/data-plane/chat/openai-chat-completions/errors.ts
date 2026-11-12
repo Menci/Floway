@@ -4,13 +4,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
 
-// Translator surfaced a caller-input violation. Render as a 400
-// invalid_request_error so the caller sees a protocol-shaped failure
-// instead of the internal-error 502 envelope. `param` falls back to
-// `messages` (the OpenAI Chat Completions canonical messages field) when the
-// translator did not carry a more specific path. `performance` carries the
-// candidate's telemetry attribution when validation failed
-// during an attempt (see AttemptState.telemetry).
+// Validation failures retain the telemetry of the candidate whose attempt rejected the request.
 export const inputErrorResult = (
   error: InputErrorDetails,
   performance?: PerformanceTelemetryContext,
