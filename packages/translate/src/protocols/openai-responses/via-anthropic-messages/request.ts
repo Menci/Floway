@@ -15,7 +15,6 @@ import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.t
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarOccurrences, isOpenAIResponsesEncryptedReasoning, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
-import { requireCanonicalOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import { buildCustomToolInputSchema } from '../common/custom-tool-wrap.ts';
 import {
   ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
@@ -32,6 +31,7 @@ import {
   type AnthropicMessagesUserMessage,
 } from '@floway-dev/protocols/anthropic-messages';
 import { isFastServiceTier } from '@floway-dev/protocols/common';
+import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import type {
   OpenAIResponsesInputContent,
   OpenAIResponsesInputImage,
@@ -287,7 +287,8 @@ export const buildTargetRequest = async (
   codec: SidecarCodec,
   options: BuildTargetRequestOptions,
 ): Promise<TargetRequestResult> => {
-  const canonical = requireCanonicalOpenAIResponsesPayload(source);
+  const canonical = canonicalizeOpenAIResponsesPayload(source);
+  if (!('input' in canonical)) throw new TranslateInputException(canonical.error.message, canonical.error);
   const { payload, names: namespaceToolNames, flattenInput } = flattenNamespaceTools(canonical);
   rejectProgrammaticOpenAIResponsesPayload(payload, 'Anthropic Messages');
   const customToolNames = new Set<string>();

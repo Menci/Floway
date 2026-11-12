@@ -1,4 +1,4 @@
-import { inputErrorResult, geminiGenerateContentInternalErrorPayload, geminiGenerateContentStatusForHttpStatus } from './errors.ts';
+import { inputErrorResult, geminiGenerateContentInternalErrorPayload, gatewayErrorStatus } from './errors.ts';
 import { geminiGenerateContentCountTokensInterceptors, geminiGenerateContentInterceptors } from './interceptors/index.ts';
 import { stripUnsupportedPartFieldsFromPayload } from './interceptors/strip-unsupported-part-fields.ts';
 import { stripUnsupportedToolsFromPayload } from './interceptors/strip-unsupported-tools.ts';
@@ -122,7 +122,7 @@ const reshapeAnthropicMessagesCountAsGeminiGenerateContent = (anthropicMessagesR
 const geminiGenerateContentErrorPlainResult = (status: number, message: string, upstream?: string): PlainResult => plainResult(
   status,
   new Headers({ 'content-type': 'application/json' }),
-  new TextEncoder().encode(JSON.stringify({ error: { code: status, message, status: geminiGenerateContentStatusForHttpStatus(status) } })),
+  new TextEncoder().encode(JSON.stringify({ error: { code: status, message, status: gatewayErrorStatus(status) } })),
   upstream,
 );
 
