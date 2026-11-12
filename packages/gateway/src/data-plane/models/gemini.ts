@@ -1,8 +1,6 @@
-import type { Context } from 'hono';
-
 import { loadModelListingCatalog } from './load.ts';
 import { createModelsRefreshScheduler, type ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
-import { effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
+import { type AuthedContext, effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasesRepo, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
@@ -59,8 +57,8 @@ const geminiModelLoadError = (error: unknown): Response =>
   geminiError(502, error instanceof Error ? error.message : String(error));
 
 // Real chat models plus chat-kind alias entries; collision and dedupe ride
-// on the shared `mergeAliasesIntoModels` helper so /v1beta/models stays in
-// step with /v1/models and the dashboard's /api/models.
+// on the shared `mergeAliasesIntoModels` helper so the Gemini listing stays in
+// step with the OpenAI listing and the dashboard's /api/models.
 const loadGeminiModels = async (
   subject: User,
   upstreamFilter: readonly string[] | null,
@@ -81,7 +79,9 @@ const loadGeminiModels = async (
   return merged.map(toGeminiModel);
 };
 
-export const serveGeminiModels = async (c: Context): Promise<Response> => {
+// Reached from the shared model-list handler when the caller identifies as a
+// Gemini client; the route paths themselves carry no protocol meaning.
+export const serveGeminiModels = async (c: AuthedContext): Promise<Response> => {
   try {
     const scheduleRefresh = createModelsRefreshScheduler(getRuntimeLocation(c.req.raw), backgroundSchedulerFromContext(c));
     return Response.json({ models: await loadGeminiModels(userFromContext(c), effectiveUpstreamIdsFromContext(c), scheduleRefresh, getRepo().modelAliases) });
@@ -90,7 +90,7 @@ export const serveGeminiModels = async (c: Context): Promise<Response> => {
   }
 };
 
-export const serveGeminiModelInfo = async (c: Context): Promise<Response> => {
+export const serveGeminiModelInfo = async (c: AuthedContext): Promise<Response> => {
   const rawModelId = c.req.param('modelId');
   if (!rawModelId) return geminiError(404, 'Model not found: ');
 

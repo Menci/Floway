@@ -70,7 +70,9 @@ const makeApp = (): Hono<{ Variables: AuthVars }> => {
     c.set('user', buildUser());
     await next();
   });
-  app.post('/v1beta/models/:modelAction{.+}', geminiGenerateContentHttp);
+  // Both prefix versions carry the same handler; the Gemini wire API defines
+  // the action on the model segment under either one.
+  for (const version of ['v1', 'v1beta']) app.post(`/${version}/models/:modelAction{.+}`, geminiGenerateContentHttp);
   return app;
 };
 
@@ -180,6 +182,25 @@ test('POST /v1beta/models/:model:streamGenerateContent streams a Gemini generate
   const text = await response.text();
   assert(text.length > 0);
   assertEquals(callOpenAIChatCompletions.mock.calls.length, 1);
+});
+
+test('POST /v1/models/:model:generateContent serves the same Gemini body as the v1beta prefix', async () => {
+  installRepo();
+  const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+  }));
+  queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
+
+  const response = await makeApp().request('/v1/models/test-model:generateContent', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] }),
+  });
+
+  assertEquals(response.status, 200);
+  assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
+  const body = await response.json() as { candidates?: { content: { parts: { text: string }[] } }[] };
+  assertEquals(body.candidates?.[0]?.content.parts[0]?.text, 'hi');
 });
 
 test('POST /v1beta/models/:model:countTokens returns the Gemini generateContent totalTokens envelope', async () => {
