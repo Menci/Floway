@@ -278,6 +278,37 @@ test('client output persists a completed item before forwarding an error event',
   expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
 });
 
+test('client output preserves an error notification and the following failed response without committing a snapshot', async () => {
+  const { repo, store } = memoryOutputHarness();
+  const error = { type: 'error' as const, sequence_number: 3, code: null, message: 'upstream failed', param: 'tools', vendor: { retryable: false } };
+  const response = {
+    ...responseFor([completedReasoningItem]),
+    status: 'failed' as const,
+    error: { code: 'vendor_failure', message: error.message },
+    usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 },
+  };
+  const input = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+    yield eventFrame({ type: 'response.created', sequence_number: 0, response: { ...response, status: 'in_progress', output: [], error: null } });
+    yield eventFrame({ type: 'response.output_item.added', sequence_number: 1, output_index: 0, item: completedReasoningItem });
+    yield eventFrame({ type: 'response.output_item.done', sequence_number: 2, output_index: 0, item: completedReasoningItem });
+    yield eventFrame(error);
+    yield eventFrame({ type: 'response.failed', sequence_number: 4, response });
+  };
+  const output: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
+  for await (const frame of wrapOpenAIResponsesClientOutput(input(), { store, responseId: 'resp_public' })) {
+    output.push(frame);
+    if (frame.type === 'event' && frame.event.type === 'error') {
+      expect(await repo.openaiResponsesItems.lookupMany('key-a', ['rs_upstream'], 0)).toHaveLength(1);
+    }
+  }
+
+  expect(output.slice(-2)).toEqual([
+    eventFrame(error),
+    eventFrame({ type: 'response.failed', sequence_number: 4, response: { ...response, id: 'resp_public' } }),
+  ]);
+  expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
+});
+
 test('client output does not persist a partial item without output_item.done', async () => {
   const { repo, store } = memoryOutputHarness();
   const item = completedReasoningItem;

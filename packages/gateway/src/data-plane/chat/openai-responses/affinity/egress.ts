@@ -94,7 +94,6 @@ const wrapNaturalOpenAIResponsesAffinity = async function* (
       continue;
     }
     yield frame;
-    if (event.type === 'error') return;
   }
 };
 
@@ -291,7 +290,6 @@ const wrapOpenAIResponsesFirstCarrier = async function* (
     }
 
     yield eventFrame(shifted(event));
-    if (event.type === 'error') return;
   }
 };
 

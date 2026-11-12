@@ -12,7 +12,7 @@ import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../sha
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
 import { doneFrame, eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { openaiResponsesProtocolFrameToSSEFrame, OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, collectOpenAIResponsesProtocolEventsToResult } from '@floway-dev/protocols/openai-responses';
-import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientResponseResource, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesStreamEventEx, type OpenAIResponsesErrorEx } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesErrorEvent, isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientResponseResource, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesStreamEventEx, type OpenAIResponsesErrorEx } from '@floway-dev/protocols/openai-responses';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
 import { apiErrorToResponse } from '@floway-dev/provider';
 
@@ -68,8 +68,16 @@ export const respondOpenAIResponses = async (
       headers.set(OPENAI_RESPONSES_REASONING_INCLUDED_HEADER, OPENAI_RESPONSES_REASONING_INCLUDED_VALUE);
       return Response.json(response, { headers });
     } catch (error) {
-      recordFailedRequest(ctx, result.performance);
       ctx.dump?.failed(error);
+      if (error instanceof Error && isOpenAIResponsesErrorEvent(error.cause)) {
+        const metadata = await eventResultMetadata(result);
+        const usage = tokenUsageFromBillableUsage(metadata.billableUsage);
+        ctx.dump?.success(metadata.modelIdentity, usage);
+        settle(ctx, metadata.performance, metadata.modelIdentity, usage, true);
+        const { sequence_number: _sequenceNumber, ...body } = error.cause;
+        return Response.json(body, { status: 502 });
+      }
+      recordFailedRequest(ctx, result.performance);
       return internalOpenAIResponsesErrorResponse(502, toInternalDebugError(error));
     }
   }
@@ -111,17 +119,18 @@ const internalOpenAIResponsesErrorResponse = (status: number, error: InternalDeb
 
 // --- frame observation ---
 
-const isOpenAIResponsesTerminalFrame = (frame: ProtocolFrame<OpenAIResponsesStreamEventEx>) => frame.type === 'event' && isOpenAIResponsesTerminalEvent(frame.event);
-
 const observeOpenAIResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>, state: SourceStreamState, ctx: GatewayCtx) {
   for await (const frame of frames) {
     ctx.dump?.frame(frame);
-    const failed = frame.type === 'event' && (frame.event.type === 'error' || frame.event.type === 'response.failed');
+    if (frame.type === 'done') continue;
+    const failed = frame.event.type === 'error' || frame.event.type === 'response.failed';
+    const terminal = isOpenAIResponsesTerminalEvent(frame.event);
     if (failed) state.failed = true;
-    if (isOpenAIResponsesTerminalFrame(frame) && !failed) state.completed = true;
+    if (terminal && !failed) state.completed = true;
     yield frame;
-    if (isOpenAIResponsesTerminalFrame(frame)) return;
+    if (terminal) return;
   }
+  if (state.failed) return;
   throw new Error(OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE);
 };
 
