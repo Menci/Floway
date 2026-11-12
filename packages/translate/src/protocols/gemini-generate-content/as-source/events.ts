@@ -1,19 +1,17 @@
-import { collectGeminiGenerateContentTextPlacements, computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSidecarCarrier } from './round-trip.ts';
+import { geminiGenerateContentErrorFromIR } from './error.ts';
+import { collectGeminiGenerateContentTextPlacements, computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSidecarPart } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import type { IRJSONObject } from '../../../ir/common/json.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
 import type { IRCollector } from '../../../ir/output/collector.ts';
-import { type IRErrorPayload } from '../../../ir/output/error.ts';
 import { irItemPath, irPartPath, irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/output/operation-paths.ts';
-import { type IRPath, type IRRecord } from '../../../ir/output/records.ts';
+import type { IRPath, IRRecord } from '../../../ir/output/records.ts';
 import { consumeIRRecords } from '../../../ir/output/stream.ts';
-import { type IROutput, type IROutputSourceCitation, type IROutputTokenLogprob } from '../../../ir/output/types.ts';
+import type { IROutput, IROutputSourceCitation, IROutputTokenLogprob } from '../../../ir/output/types.ts';
 import { createIRUnitQueue, type IRUnitQueue } from '../../../ir/output/unit-queue.ts';
 import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
 import { appendEmittedField, createEmittedFieldState, type EmittedFieldStates, type EmittedFieldState } from '../../../round-trip/reference/reference-builder.ts';
-import { errorDetailsOf } from '../../../shared/api-error.ts';
-import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.ts';
 import { isCompleteJSONObject } from '../../../shared/json/object.ts';
@@ -22,50 +20,12 @@ import type { GeminiGenerateContentInputAssistantTurnState, GeminiGenerateConten
 import { eventFrame, FAST_SERVICE_TIER, type EventFrame } from '@floway-dev/protocols/common';
 import {
   type GeminiGenerateContentCandidate,
-  type GeminiGenerateContentErrorResponse,
   type GeminiGenerateContentGroundingChunk,
   type GeminiGenerateContentPart,
   type GeminiGenerateContentResult,
   type GeminiGenerateContentStreamEvent,
   createGeminiGenerateContentEventAccumulator,
 } from '@floway-dev/protocols/gemini-generate-content';
-
-/**
- * Use the Google RPC status vocabulary for the numeric error code.
- * https://ai.google.dev/api/rest/v1beta/Status
- */
-const statusNameOf = (status: number): string => {
-  switch (status) {
-  case 400: return 'INVALID_ARGUMENT';
-  case 401: return 'UNAUTHENTICATED';
-  case 403: return 'PERMISSION_DENIED';
-  case 404: return 'NOT_FOUND';
-  case 408: return 'DEADLINE_EXCEEDED';
-  case 409: return 'ABORTED';
-  case 429: return 'RESOURCE_EXHAUSTED';
-  case 500: return 'INTERNAL';
-  case 501: return 'UNIMPLEMENTED';
-  case 503: return 'UNAVAILABLE';
-  case 504: return 'DEADLINE_EXCEEDED';
-  default: return 'UNKNOWN';
-  }
-};
-
-/**
- * HTTP failures supply an upstream status; streaming failures derive a code from the error kind.
- * Context overflow selects our local 400 code.
- */
-export const geminiGenerateContentErrorFromIR = (error: IRErrorPayload, httpStatus?: number): GeminiGenerateContentErrorResponse['error'] => {
-  const details = errorDetailsOf(error, ['message']);
-  // Preserve unmodeled diagnostic fields in a chosen Struct Any inside details.
-  const extension = details === undefined ? {} : { details: [{ '@type': 'type.googleapis.com/google.protobuf.Struct', value: details }] };
-  const kind = error.code ?? error.type;
-  const code = httpStatus !== undefined && !isContextExceededError(error) ? httpStatus
-    : kind === 'rate_limit_exceeded' || kind === 'rate_limit_error' ? 429
-      : kind === 'invalid_prompt' || kind === 'invalid_request_error' || isContextExceededError(error) ? 400
-        : kind === 'overloaded_error' ? 503 : 500;
-  return { code, status: statusNameOf(code), message: error.message, ...extension };
-};
 
 interface GenerateContentUnit {
   readonly path: IRPath;
@@ -107,11 +67,11 @@ export const writeGeminiGenerateContentEvents = async function* (
   const pendingText = new Map<number, PendingTextQueue>();
   const sourceLengths = new Map<string, number>();
   const nativeAccumulator = createGeminiGenerateContentEventAccumulator();
-  type AssistantContentState = NonNullable<GeminiGenerateContentInputAssistantTurnState<EmittedFieldStates>[number]>;
-  type AssistantPartsState = NonNullable<AssistantContentState['parts']>;
-  const partStates = new Map<number, AssistantPartsState>();
+  type GeminiContentState = NonNullable<GeminiGenerateContentInputAssistantTurnState<EmittedFieldStates>[number]>;
+  type PartsState = NonNullable<GeminiContentState['parts']>;
+  const partStates = new Map<number, PartsState>();
 
-  const partsState = (choice: number): AssistantPartsState => {
+  const partsState = (choice: number): PartsState => {
     let state = partStates.get(choice);
     if (state === undefined) { state = []; partStates.set(choice, state); }
     return state;
@@ -220,7 +180,7 @@ export const writeGeminiGenerateContentEvents = async function* (
       : undefined;
   };
 
-  // Queues the units that the output IR structures initialized by a record will become.
+  // Queues the units that the IR structures initialized by a record will become.
   const registerUnits = (record: IRRecord, state: IROutput): void => {
     if (record.type === 'write' && record.kind === 'initialize') {
       const choice = record.path[1];
@@ -240,7 +200,7 @@ export const writeGeminiGenerateContentEvents = async function* (
     }
   };
 
-  // Opens each choice's waiting units in output IR order, until one still lacks what its part needs.
+  // Opens each choice's waiting units in IR order, until one still lacks what its part needs.
   const openPendingUnits = function* (record: IRRecord, state: IROutput, collector: IRCollector): Generator<EventFrame<GeminiGenerateContentStreamEvent>> {
     const endingChoice = record.type === 'choice_end' ? record : undefined;
     for (const [choice, queue] of queues) {
@@ -390,7 +350,7 @@ export const writeGeminiGenerateContentEvents = async function* (
     if (record.type === 'error') { yield eventFrame({ error: geminiGenerateContentErrorFromIR(record.error) }); return; }
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;
     if (record.type === 'start') {
-      if (state.model === undefined) throw new TypeError('GenerateContent output requires an output IR model before start');
+      if (state.model === undefined) throw new TypeError('GenerateContent output requires an IR model before start');
       const id = options.id ?? record.id;
       metadata = { id: id === undefined || id === '' ? crypto.randomUUID() : id, model: state.model };
       started = true;
@@ -454,7 +414,7 @@ export const writeGeminiGenerateContentEvents = async function* (
       const assistantState: GeminiGenerateContentInputAssistantTurnState<EmittedFieldStates> = [{ parts: stateParts }];
       const sourceTurnDigest = await computeGeminiGenerateContentTurnDigest(targetTurn);
       const data = await options.roundTrip.encodeSidecar(record.choice, sourceTurnDigest, targetTurn, assistantState, collectGeminiGenerateContentTextPlacements(targetTurn));
-      yield emitPart(record.choice, createGeminiGenerateContentSidecarCarrier(data));
+      yield emitPart(record.choice, createGeminiGenerateContentSidecarPart(data));
       yield emit({ candidates: [terminalCandidate(record, state, collector)] });
     }
 

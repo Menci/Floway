@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { restateGeminiGenerateContentError } from '../../../../src/protocols/gemini-generate-content/as-source/error-body.ts';
-import { geminiGenerateContentErrorFromIR } from '../../../../src/protocols/gemini-generate-content/as-source/events.ts';
+import { geminiGenerateContentErrorFromIR } from '../../../../src/protocols/gemini-generate-content/as-source/error.ts';
 import { errorPayloadFromWire } from '../../../../src/shared/api-error.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 

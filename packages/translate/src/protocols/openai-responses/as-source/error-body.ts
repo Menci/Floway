@@ -1,4 +1,4 @@
-import { openaiResponsesErrorEventOf } from './events.ts';
+import { openaiResponsesErrorEventOf } from './error.ts';
 import { irErrorPayloadFromBody, restateError } from '../../../shared/api-error.ts';
 import type { ApiErrorTranslator } from '../../../types.ts';
 

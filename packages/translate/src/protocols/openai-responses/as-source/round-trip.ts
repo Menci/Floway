@@ -2,7 +2,7 @@ import type { IRJSONObject, IRJSONValue } from '../../../ir/common/json.ts';
 import type { ReplayContent } from '../../../round-trip/reference/types.ts';
 import type { SidecarOccurrence } from '../../../round-trip/resolve.ts';
 import { collectTextGroups, collectTextPlacementIndex, type TextContribution, type TextPlacementIndex } from '../../../round-trip/text-groups.ts';
-import { replayMaterialsByType, createTurnDigestComputer, createTurnDigestVerifier } from '../../../round-trip/turn-digest.ts';
+import { createTurnDigestComputer, replayMaterialsByType, createTurnDigestVerifier } from '../../../round-trip/turn-digest.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputContent, OpenAIResponsesOutputContentBlock, OpenAIResponsesOutputItemEx, OpenAIResponsesOutputReasoning } from '@floway-dev/protocols/openai-responses';
 
 type OpenAIResponsesMessagePart = OpenAIResponsesInputContent | OpenAIResponsesOutputContentBlock;
@@ -112,7 +112,7 @@ export const collectOpenAIResponsesReplayContents = (turn: OpenAIResponsesSource
 
 export const verifyOpenAIResponsesTurnDigest = createTurnDigestVerifier(responsesTurnDigestMaterialV1);
 
-export const createOpenAIResponsesSidecarCarrier = (id: string, data: string): OpenAIResponsesSidecarItem => ({
+export const createOpenAIResponsesSidecarItem = (id: string, data: string): OpenAIResponsesSidecarItem => ({
   type: 'reasoning',
   id,
   summary: [],

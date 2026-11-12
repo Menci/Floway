@@ -27,6 +27,7 @@ export const verifyRoundTripTurnDigest = async (material: IRJSONValue, sourceTur
   return digest.length === sourceTurnDigest.length && digest.every((byte, index) => byte === sourceTurnDigest[index]);
 };
 
+/** Protocols provide native digest material; the shared digest format owns version selection. */
 export const createTurnDigestComputer = <Turn>(
   materialOf: (turn: Turn) => IRJSONValue,
 ): (turn: Turn) => Promise<RoundTripTurnDigest> => turn => computeRoundTripTurnDigest(materialOf(turn));

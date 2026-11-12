@@ -69,7 +69,7 @@ export const verifyGeminiGenerateContentTurnDigest = createTurnDigestVerifier(ge
 
 // Gemini returns model-side thought signatures as Part metadata.
 // https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures
-export const createGeminiGenerateContentSidecarCarrier = (data: string): GeminiGenerateContentSidecarPart => ({ thoughtSignature: data });
+export const createGeminiGenerateContentSidecarPart = (data: string): GeminiGenerateContentSidecarPart => ({ thoughtSignature: data });
 
 export const collectGeminiGenerateContentTextPlacements = (turn: GeminiGenerateContentSourceAssistantTurn): TextPlacementIndex => {
   const views: TextPlacementIndex = new Map();

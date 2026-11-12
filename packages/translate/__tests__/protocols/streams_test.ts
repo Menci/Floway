@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { writeAnthropicMessagesEvents, writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './events.ts';
+import { writeAnthropicMessagesEvents, writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './helpers.ts';
 import type { IRJSONObject } from '../../src/ir/common/json.ts';
 import { createIRBuilder } from '../../src/ir/output/builder.ts';
 import type { IROutputItem } from '../../src/ir/output/types.ts';
@@ -10,7 +10,7 @@ import { usageFromIR as responsesUsageFromIR } from '../../src/protocols/openai-
 import { usageToIR as responsesUsageToIR } from '../../src/protocols/openai-responses/as-target/usage.ts';
 import { TextCoordinateIndex } from '../../src/shared/text-coordinate-index.ts';
 import { collectIR, completeIR } from '../ir/output/helpers.ts';
-import { collect, events, iterate } from '../iterables.ts';
+import { collect, events, iterate } from '../shared/iterables.ts';
 import { reassembleAnthropicMessagesEvents, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import { reassembleGeminiGenerateContentEvents } from '@floway-dev/protocols/gemini-generate-content';

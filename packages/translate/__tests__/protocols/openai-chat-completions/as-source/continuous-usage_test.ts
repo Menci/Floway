@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { collect, iterate } from '../../../iterables.ts';
+import { collect, iterate } from '../../../shared/iterables.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import { expectTrip } from '../../../trip.ts';
 import { fixtureFrames } from '../../fixtures.ts';

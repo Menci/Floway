@@ -1,8 +1,8 @@
 import { expect, test, vi } from 'vitest';
 
-import { writeAnthropicMessagesEvents, writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './events.ts';
+import { writeAnthropicMessagesEvents, writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './helpers.ts';
 import { collectIR, completeIR } from '../ir/output/helpers.ts';
-import { collect, iterate } from '../iterables.ts';
+import { collect, iterate } from '../shared/iterables.ts';
 import { fixtureFrames, nativeResult } from './fixtures.ts';
 import { createIRBuilder } from '../../src/ir/output/builder.ts';
 import { readOpenAIChatCompletionsEvents as irFromOpenAIChatCompletionsProduction } from '../../src/protocols/openai-chat-completions/as-target/events.ts';

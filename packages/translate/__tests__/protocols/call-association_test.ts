@@ -2,7 +2,7 @@ import { expect, test, vi } from 'vitest';
 
 import { openaiResponsesSourceProtocol } from '../../src/protocols/openai-responses/as-source.ts';
 import { toOpenAIResponsesInputAssistantTurn } from '../../src/protocols/openai-responses/as-target/assistant-turn.ts';
-import { iterate } from '../iterables.ts';
+import { iterate } from '../shared/iterables.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { expectTrip } from '../trip.ts';
 import { createAnthropicMessagesUsage, toAnthropicMessagesUsageDelta, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';

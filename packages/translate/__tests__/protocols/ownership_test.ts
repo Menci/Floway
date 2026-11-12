@@ -1,8 +1,8 @@
 import { expect, test, vi } from 'vitest';
 
 import { collectIR } from '../ir/output/helpers.ts';
-import { collect, iterate } from '../iterables.ts';
-import { writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './events.ts';
+import { collect, iterate } from '../shared/iterables.ts';
+import { writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './helpers.ts';
 import { nativeResult } from './fixtures.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 

@@ -12,7 +12,7 @@ import { toOpenAIResponsesInputAssistantTurn } from '../../src/protocols/openai-
 import { decodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import { requireJSONObject } from '../../src/shared/json/object.ts';
 import type { TranslateInputError } from '../../src/types.ts';
-import { collect, iterate } from '../iterables.ts';
+import { collect, iterate } from '../shared/iterables.ts';
 import { fixtureFrames, type nativeResult } from './fixtures.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { expectTrip } from '../trip.ts';

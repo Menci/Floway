@@ -1,5 +1,6 @@
 import { restateOpenAIResponsesError } from './as-source/error-body.ts';
-import { createRandomOpenAIResponsesResponseId, writeOpenAIResponsesEvents } from './as-source/events.ts';
+import { writeOpenAIResponsesEvents } from './as-source/events.ts';
+import { createRandomOpenAIResponsesResponseId } from './as-source/response-id.ts';
 import { readOpenAIResponsesRequest } from './as-source/input-to.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarOccurrences, verifyOpenAIResponsesTurnDigest } from './as-source/round-trip.ts';
 import type { SourceProtocol } from '../../composition/index.ts';

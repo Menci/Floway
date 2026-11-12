@@ -2,7 +2,7 @@ import type { IRJSONObject, IRJSONValue } from '../../../ir/common/json.ts';
 import type { ReplayContent } from '../../../round-trip/reference/types.ts';
 import type { SidecarOccurrence } from '../../../round-trip/resolve.ts';
 import { collectTextGroups, collectTextPlacementIndex, type TextContribution, type TextPlacementIndex } from '../../../round-trip/text-groups.ts';
-import { replayMaterialsByType, createTurnDigestComputer, createTurnDigestVerifier } from '../../../round-trip/turn-digest.ts';
+import { createTurnDigestComputer, replayMaterialsByType, createTurnDigestVerifier } from '../../../round-trip/turn-digest.ts';
 import { isPlainJSONObject, requireJSONObject } from '../../../shared/json/object.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesAssistantMessage, AnthropicMessagesRedactedThinkingBlock } from '@floway-dev/protocols/anthropic-messages';
 
@@ -68,7 +68,7 @@ export const collectAnthropicMessagesReplayContents = (turn: AnthropicMessagesSo
 
 export const verifyAnthropicMessagesTurnDigest = createTurnDigestVerifier(messagesTurnDigestMaterialV1);
 
-export const createAnthropicMessagesSidecarCarrier = (data: string): AnthropicMessagesRedactedThinkingBlock => ({ type: 'redacted_thinking', data });
+export const createAnthropicMessagesSidecarBlock = (data: string): AnthropicMessagesRedactedThinkingBlock => ({ type: 'redacted_thinking', data });
 
 export const collectAnthropicMessagesTextPlacements = (turn: AnthropicMessagesSourceAssistantTurn): TextPlacementIndex => {
   const views: TextPlacementIndex = new Map();

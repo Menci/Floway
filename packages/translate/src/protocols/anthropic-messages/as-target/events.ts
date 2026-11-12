@@ -1,7 +1,7 @@
 import type { AnthropicMessagesInputAssistantTurnState } from './assistant-turn.ts';
 import { type AnthropicMessagesInputCounts, usageToIR } from './usage.ts';
 import { createIRBuilder, type IRItemHandle, type IRPartHandle } from '../../../ir/output/builder.ts';
-import { type IRRecord } from '../../../ir/output/records.ts';
+import type { IRRecord } from '../../../ir/output/records.ts';
 import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
 import type { ToolNameContext } from '../../../request/tool-names.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
@@ -36,7 +36,7 @@ const messagesCitationToIR = (citation: AnthropicMessagesTextCitation): IROutput
   } as IROutputSourceCitation;
 };
 
-// Blocks that open no output IR item; their content is not translated.
+// Blocks that open no IR item; their content is not translated.
 const UNTRANSLATED_BLOCK_TYPES: readonly string[] = [
   'redacted_thinking',
   'server_tool_use',
@@ -68,9 +68,9 @@ export const readAnthropicMessagesEvents = async function* (
     roundTrip: RoundTripReader<'anthropicMessages'>;
   },
 ): AsyncGenerator<IRRecord> {
-  const builder = createIRBuilder();
-  const openBlocks = new Map<number, MessagesBlockState>();
-  const blockFieldStates = new Map<number, MessagesBlockState>();
+  const ir = createIRBuilder();
+  const blocks = new Map<number, MessagesBlockState>();
+  const blockStates = new Map<number, MessagesBlockState>();
   const nativeAccumulator = createAnthropicMessagesEventAccumulator();
   let started = false;
   let finishReason: 'stop' | 'length' | 'tool_calls' | 'content_filter' = 'stop';
@@ -78,22 +78,22 @@ export const readAnthropicMessagesEvents = async function* (
 
   const inputCounts: AnthropicMessagesInputCounts = {};
   const assignUsage = (usage: Partial<AnthropicMessagesUsageDeltaEx> | null | undefined): void => {
-    builder.usage(usageToIR(usage, inputCounts));
+    ir.usage(usageToIR(usage, inputCounts));
     const tier = usage?.speed === 'fast' ? 'fast' : usage?.service_tier;
-    if (typeof tier === 'string') builder.assign(['service_tier'], tier);
+    if (typeof tier === 'string') ir.assign(['service_tier'], tier);
   };
 
   const openBlock = (index: number, block: AnthropicMessagesAssistantContentBlock): void => {
-    if (openBlocks.has(index)) throw new Error(`Duplicate Messages content_block_start at index ${index}`);
+    if (blocks.has(index)) throw new Error(`Duplicate Messages content_block_start at index ${index}`);
     let item: IRItemHandle | undefined;
     let part: IRPartHandle | undefined;
     let annotationCount: number | undefined;
     let custom = false;
     let textField: ReadFieldState<'text'> | undefined;
     if (block.type === 'fallback') {
-      builder.assign(['model'], block.to.model);
+      ir.assign(['model'], block.to.model);
     } else if (block.type === 'text') {
-      item = builder.item(0, { type: 'message', content: [] });
+      item = ir.item(0, { type: 'message', content: [] });
       const annotations = block.citations === undefined ? undefined : block.citations === null ? null : block.citations.flatMap(citation => {
         const converted = messagesCitationToIR(citation);
         return converted === undefined ? [] : [converted];
@@ -105,7 +105,7 @@ export const readAnthropicMessagesEvents = async function* (
         part.append('text', block.text, [appendReadField(options.roundTrip.builder, textField, block.text)]);
       }
     } else if (block.type === 'thinking') {
-      item = builder.item(0, { type: 'reasoning', summary: [''] });
+      item = ir.item(0, { type: 'reasoning', summary: [''] });
       if (block.thinking !== '') {
         textField = createReadFieldState('text');
         item.append(['summary', 0], block.thinking, [appendReadField(options.roundTrip.builder, textField, block.thinking)]);
@@ -115,7 +115,7 @@ export const readAnthropicMessagesEvents = async function* (
       // Restore allocated names, including bare names renamed to avoid collisions.
       const identity = options.originalToolNames?.get(block.name);
       const naming = identity ?? { name: block.name };
-      item = builder.item(0, custom
+      item = ir.item(0, custom
         ? { type: 'custom_tool_call', call_id: block.id, ...naming, input: '' }
         : { type: 'function_call', call_id: block.id, ...naming, arguments: '' });
     } else if (!UNTRANSLATED_BLOCK_TYPES.includes(block.type)) {
@@ -125,8 +125,8 @@ export const readAnthropicMessagesEvents = async function* (
       item, part, custom, annotationCount, wrappedInput: '', textField,
       fieldState: textField === undefined ? undefined : block.type === 'text' ? { text: textField } : { thinking: textField },
     };
-    openBlocks.set(index, state);
-    blockFieldStates.set(index, state);
+    blocks.set(index, state);
+    blockStates.set(index, state);
   };
 
   for await (const frame of frames) {
@@ -138,10 +138,10 @@ export const readAnthropicMessagesEvents = async function* (
       if (started) throw new Error('Duplicate Messages message_start');
       if (typeof e.message.id !== 'string') throw new TypeError('Messages message_start requires an id');
       if (typeof e.message.model !== 'string') throw new TypeError('Messages message_start requires a model');
-      builder.choice(0);
-      builder.assign(['model'], e.message.model);
+      ir.choice(0);
+      ir.assign(['model'], e.message.model);
       assignUsage(e.message.usage);
-      builder.event({ type: 'start', id: e.message.id });
+      ir.event({ type: 'start', id: e.message.id });
       started = true;
       break;
     case 'content_block_start':
@@ -149,7 +149,7 @@ export const readAnthropicMessagesEvents = async function* (
       openBlock(e.index, e.content_block);
       break;
     case 'content_block_delta': {
-      const block = openBlocks.get(e.index);
+      const block = blocks.get(e.index);
       if (block === undefined) throw new Error('Messages delta arrived before content_block_start');
       const d = e.delta;
       if (block.item === undefined) break;
@@ -160,9 +160,9 @@ export const readAnthropicMessagesEvents = async function* (
             block.textField = createReadFieldState('text');
             block.fieldState = { text: block.textField };
           }
-          const fragmentId = appendReadField(options.roundTrip.builder, block.textField, d.text);
-          if (block.part === undefined) block.item.append(['content', 0, 'text'], d.text, [fragmentId]);
-          else block.part.append('text', d.text, [fragmentId]);
+          const partId = appendReadField(options.roundTrip.builder, block.textField, d.text);
+          if (block.part === undefined) block.item.append(['content', 0, 'text'], d.text, [partId]);
+          else block.part.append('text', d.text, [partId]);
         }
         break;
       case 'thinking_delta':
@@ -181,9 +181,9 @@ export const readAnthropicMessagesEvents = async function* (
             block.jsonField = createReadFieldState('json');
             block.fieldState = { input: block.jsonField };
           }
-          const fragmentId = appendReadField(options.roundTrip.builder, block.jsonField, d.partial_json);
+          const partId = appendReadField(options.roundTrip.builder, block.jsonField, d.partial_json);
           if (block.custom) block.wrappedInput += d.partial_json;
-          else block.item.append('arguments', d.partial_json, [fragmentId]);
+          else block.item.append('arguments', d.partial_json, [partId]);
         }
         break;
       case 'citations_delta': {
@@ -204,9 +204,9 @@ export const readAnthropicMessagesEvents = async function* (
       break;
     }
     case 'content_block_stop': {
-      const block = openBlocks.get(e.index);
+      const block = blocks.get(e.index);
       if (block === undefined) throw new Error('Messages content_block_stop arrived before content_block_start');
-      openBlocks.delete(e.index);
+      blocks.delete(e.index);
       if (block.item !== undefined) {
         if (block.custom) {
           const input = unwrapCustomToolInput(block.wrappedInput);
@@ -221,7 +221,7 @@ export const readAnthropicMessagesEvents = async function* (
       assignUsage(e.usage);
       if (e.delta.stop_reason === 'compaction') throw new TypeError('Cannot translate Messages compaction stop');
       if (e.delta.stop_reason === 'refusal') {
-        builder.choice(0).assign('refusal_details', {
+        ir.choice(0).assign('refusal_details', {
           category: e.delta.stop_details?.category ?? null,
           explanation: e.delta.stop_details?.explanation ?? null,
         });
@@ -235,29 +235,29 @@ export const readAnthropicMessagesEvents = async function* (
       break;
     case 'message_stop': {
       if (!started) throw new Error('Messages message_stop arrived before message_start');
-      if (openBlocks.size > 0) throw new Error('Messages message_stop arrived with open content blocks');
+      if (blocks.size > 0) throw new Error('Messages message_stop arrived with open content blocks');
       const nativeResult = nativeAccumulator.result();
       const contentFields: NonNullable<AnthropicMessagesInputAssistantTurnState<ReadFieldStates>['content']> = [];
       contentFields.length = nativeResult.content.length;
-      [...blockFieldStates.entries()].toSorted(([left], [right]) => left - right).forEach(([, block], index) => {
+      [...blockStates.entries()].toSorted(([left], [right]) => left - right).forEach(([, block], index) => {
         if (block.fieldState !== undefined) contentFields[index] = block.fieldState;
       });
       const content = nativeResult.content.map(block => block.type === 'tool_use' ? { ...block, input: requireJSONObject(block.input) } : block);
       options.roundTrip.onAssistantTurn(0, { role: 'assistant', content }, { content: contentFields });
-      builder.choice(0).end(finishReason);
-      builder.event({ type: 'finish', status: finishReason === 'length' ? 'incomplete' : 'completed' });
+      ir.choice(0).end(finishReason);
+      ir.event({ type: 'finish', status: finishReason === 'length' ? 'incomplete' : 'completed' });
       finished = true;
       break;
     }
     case 'error':
-      builder.event({ type: 'error', error: e.error });
-      yield* builder.drain();
+      ir.event({ type: 'error', error: e.error });
+      yield* ir.drain();
       return;
     case 'ping':
-      builder.event({ type: 'ping' });
+      ir.event({ type: 'ping' });
       break;
     }
-    yield* builder.drain();
+    yield* ir.drain();
     if (finished) return;
   }
   throw new Error('Messages stream ended without message_stop');

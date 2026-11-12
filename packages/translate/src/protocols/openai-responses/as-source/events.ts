@@ -1,18 +1,18 @@
-import { collectOpenAIResponsesTextPlacements, computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier } from './round-trip.ts';
+import { openaiResponsesErrorEventOf } from './error.ts';
+import { createRandomOpenAIResponsesResponseId } from './response-id.ts';
+import { collectOpenAIResponsesTextPlacements, computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarItem } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
 import type { IRCollector } from '../../../ir/output/collector.ts';
-import { type IRErrorPayload } from '../../../ir/output/error.ts';
 import { irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/output/operation-paths.ts';
-import { type IRPath, type IRRecord } from '../../../ir/output/records.ts';
+import type { IRPath, IRRecord } from '../../../ir/output/records.ts';
 import { consumeIRRecords } from '../../../ir/output/stream.ts';
-import { type IROutput, type IROutputItem, type IROutputMessageItem, type IROutputSourceCitation, type IROutputTokenLogprob } from '../../../ir/output/types.ts';
+import type { IROutput, IROutputItem, IROutputMessageItem, IROutputSourceCitation, IROutputTokenLogprob } from '../../../ir/output/types.ts';
 import { createIRUnitIndexAllocator } from '../../../ir/output/unit-index.ts';
 import { createIRUnitQueue } from '../../../ir/output/unit-queue.ts';
 import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
 import { appendEmittedField, createEmittedFieldState, type EmittedFieldState, type EmittedFieldStates } from '../../../round-trip/reference/reference-builder.ts';
-import { errorDetailsOf } from '../../../shared/api-error.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.ts';
 import { isCompleteJSONObject, isJSONRecord } from '../../../shared/json/object.ts';
@@ -30,8 +30,6 @@ import {
   type OpenAIResponsesResultEx,
   type OpenAIResponsesStreamEventEx,
 } from '@floway-dev/protocols/openai-responses';
-
-export const createRandomOpenAIResponsesResponseId = (): string => `resp_${crypto.randomUUID().replaceAll('-', '').slice(0, 24)}`;
 
 interface ResponsesOutputUnitBase {
   readonly path: IRPath;
@@ -64,7 +62,7 @@ const IMAGE_OUTPUT_FORMATS = { 'image/png': 'png', 'image/jpeg': 'jpeg', 'image/
 
 type IRWriteRecord = Extract<IRRecord, { type: 'write' }>;
 type IRToolCallItem = Extract<IROutputItem, { type: 'function_call' | 'custom_tool_call' }>;
-// The item an opened unit announces, and the events that bring it up to the content output IR already holds.
+// The item an opened unit announces, and the events that bring it up to the content IR already holds.
 interface OpenedUnit {
   readonly added: OpenAIResponsesOutputItemEx;
   readonly followUps: OpenAIResponsesStreamEventEx[];
@@ -181,26 +179,6 @@ const textOrRefusalPart = (state: IROutput, path: IRPath): Extract<MessagePart, 
   const part = item.content[path[5] as number];
   if (part.type !== 'text' && part.type !== 'refusal') throw new TypeError('Responses message output supports only text and refusal parts');
   return part;
-};
-
-/**
- * How Responses states a failure: as an `error` event, whether it happened
- * before the stream opened or during it.
- *
- * The body of a failed request carries this same object, so a client sees one
- * shape in both cases. Fields the IR does not name are stated back under the
- * extension slot this protocol has, so a restated failure says everything the
- * upstream said about it.
- */
-export const openaiResponsesErrorEventOf = (error: IRErrorPayload): OpenAIResponsesStreamEventEx => {
-  const details = errorDetailsOf(error, ['message', 'code', 'param']);
-  return {
-    type: 'error',
-    message: error.message,
-    ...(error.code === undefined ? {} : { code: error.code }),
-    ...(error.param === undefined ? {} : { param: error.param }),
-    ...(details === undefined ? {} : { provider_specific_fields: details }),
-  };
 };
 
 export const writeOpenAIResponsesEvents = async function* (
@@ -353,14 +331,14 @@ export const writeOpenAIResponsesEvents = async function* (
     // A call the request stated grouped is written as that pair; one without a
     // group keeps its single name.
     if (unit.kind === 'custom_tool_call') {
-      if (item.type !== 'custom_tool_call') throw new TypeError('Responses tool unit has the wrong output IR item');
+      if (item.type !== 'custom_tool_call') throw new TypeError('Responses tool unit has the wrong IR item');
       return {
         type: 'custom_tool_call', id, call_id: unit.callId, name: item.name,
         ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
         input: item.input, status,
       };
     }
-    if (item.type !== 'function_call') throw new TypeError('Responses tool unit has the wrong output IR item');
+    if (item.type !== 'function_call') throw new TypeError('Responses tool unit has the wrong IR item');
     return {
       type: 'function_call', id, call_id: unit.callId, name: item.name,
       ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
@@ -387,7 +365,7 @@ export const writeOpenAIResponsesEvents = async function* (
     ...(echoedToolChoice === undefined ? {} : { tool_choice: echoedToolChoice }),
   });
 
-  // Creates the output units that the output IR structures initialized by a record will become.
+  // Creates the output units that the IR structures initialized by a record will become.
   const registerUnits = (record: IRRecord, state: IROutput): void => {
     if (record.type === 'write' && record.kind === 'initialize') {
       if (record.path[0] === 'choices' && record.path[1] !== 0) throw new Error('Responses cannot represent multiple choices');
@@ -554,7 +532,7 @@ export const writeOpenAIResponsesEvents = async function* (
     return { added, followUps };
   };
 
-  // Opens the waiting units in output IR order, until one still lacks what its opening event needs.
+  // Opens the waiting units in IR order, until one still lacks what its opening event needs.
   const openPendingUnits = (state: IROutput, collector: IRCollector): { events: OpenAIResponsesStreamEventEx[]; justOpened: Set<string> } => {
     const justOpened = new Set<string>();
     const pendingEvents: OpenAIResponsesStreamEventEx[] = [];
@@ -672,7 +650,7 @@ export const writeOpenAIResponsesEvents = async function* (
     }
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;
     if (record.type === 'start') {
-      if (state.model === undefined) throw new TypeError('Responses output requires an output IR model before start');
+      if (state.model === undefined) throw new TypeError('Responses output requires an IR model before start');
       const id = options.id ?? record.id;
       metadata = {
         id: id?.startsWith('resp_') ? id : createRandomOpenAIResponsesResponseId(),
@@ -813,7 +791,7 @@ export const writeOpenAIResponsesEvents = async function* (
             yield emit(reasoningPartDone(field, requireId(current), outputIndex, contentIndex, text));
           }
         } else if (current.kind === 'custom_tool_call') {
-          if (item.type !== 'custom_tool_call') throw new TypeError('Responses tool unit has the wrong output IR item');
+          if (item.type !== 'custom_tool_call') throw new TypeError('Responses tool unit has the wrong IR item');
           yield emit({
             type: 'response.custom_tool_call_input.done',
             item_id: requireId(current),
@@ -821,7 +799,7 @@ export const writeOpenAIResponsesEvents = async function* (
             input: item.input,
           });
         } else if (current.kind === 'function_call') {
-          if (item.type !== 'function_call') throw new TypeError('Responses tool unit has the wrong output IR item');
+          if (item.type !== 'function_call') throw new TypeError('Responses tool unit has the wrong IR item');
           yield emit({
             type: 'response.function_call_arguments.done',
             item_id: requireId(current),
@@ -861,7 +839,7 @@ export const writeOpenAIResponsesEvents = async function* (
       const sourceTurnDigest = await computeOpenAIResponsesTurnDigest(nativeOutput);
       const input = toOpenAIResponsesInputAssistantTurn<EmittedFieldStates>(nativeOutput, nativeState);
       const data = await options.roundTrip.encodeSidecar(0, sourceTurnDigest, input.turn, input.state, collectOpenAIResponsesTextPlacements(input.turn));
-      sidecar = { ...createOpenAIResponsesSidecarCarrier(createRandomOpenAIResponsesItemId('reasoning'), data), status: 'completed' };
+      sidecar = { ...createOpenAIResponsesSidecarItem(createRandomOpenAIResponsesItemId('reasoning'), data), status: 'completed' };
       const outputIndex = outputUnits.length;
       yield emit({ type: 'response.output_item.added', output_index: outputIndex, item: sidecar });
       yield emit({ type: 'response.output_item.done', output_index: outputIndex, item: sidecar });

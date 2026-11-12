@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
-import { collect, iterate } from '../iterables.ts';
-import { readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents } from './events.ts';
+import { collect, iterate } from '../shared/iterables.ts';
+import { readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents } from './helpers.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 
 test.each([

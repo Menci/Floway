@@ -2,6 +2,7 @@ import { rawJSON } from './raw-json.ts';
 import type { IRJSONObject } from '../../ir/common/json.ts';
 import { isJsonObject, parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
+/** Structural record check that also permits raw JSON token objects; isPlainJSONObject excludes those tokens. */
 export const isJSONRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -26,10 +27,3 @@ export const isCompleteJSONObject = (text: string): boolean => {
     throw error;
   }
 };
-
-export const parseJSONObjectAtCompletion = (
-  text: string,
-  completion: 'complete' | 'truncated',
-  parser?: (text: string) => unknown,
-): { readonly completion: 'truncated' } | { readonly completion: 'complete'; readonly value: ReturnType<typeof parseJSONObject> } =>
-  completion === 'truncated' ? { completion } : { completion, value: parseJSONObject(text, parser) };

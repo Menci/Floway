@@ -55,7 +55,7 @@ export const collectIR = async (records: AsyncIterable<IRRecord>): Promise<IROut
   let state: IROutput = { choices: [] };
   for await (const value of consumeIRRecords(records)) {
     state = value.collector.state;
-    if (value.record.type === 'error') throw new Error('IR generation failed', { cause: value.record.error });
+    if (value.record.type === 'error') throw new Error('output IR generation failed', { cause: value.record.error });
   }
   return state;
 };
