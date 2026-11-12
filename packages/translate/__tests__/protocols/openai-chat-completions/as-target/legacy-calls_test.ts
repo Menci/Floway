@@ -10,7 +10,7 @@ import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 type LegacyTurn = InputAssistantTurnFor<'openaiChatCompletions'>;
 const legacy = (name: string): RestoredAssistantTurn<LegacyTurn> => ({ kind: 'restored', callIdentities: [], turn: { role: 'assistant', function_call: { name, arguments: '{}' } } });
 const modern = (callId: string): RestoredAssistantTurn<LegacyTurn> => ({ kind: 'restored', callIdentities: [], turn: { role: 'assistant', tool_calls: [{ id: callId, type: 'function', function: { name: 'lookup', arguments: '{}' } }] } });
-const message = (text: string): IRInputTurn => ({ kind: 'client', items: [{ type: 'message', content: [{ type: 'text', text }] }] });
+const message = (text: string): IRInputTurn => ({ kind: 'client', items: [{ type: 'message', role: 'user', content: [{ type: 'text', text }] }] });
 const result = (callId: string): IRInputTurn => ({ kind: 'client', items: [{ type: 'tool_result', call_id: callId, output: '' }] });
 
 test('an answer naming no stated call is the one the legacy call gets', () => {
@@ -36,7 +36,7 @@ test('a legacy call the next turn does not answer is refused', () => {
 });
 
 test('a legacy call answered in the turn after it, after other client content, is accepted', () => {
-  const turn: IRInputTurn = { kind: 'client', items: [{ type: 'message', content: [{ type: 'text', text: 'chatter' }] }, { type: 'tool_result', call_id: 'client-invented', output: '' }] };
+  const turn: IRInputTurn = { kind: 'client', items: [{ type: 'message', role: 'user', content: [{ type: 'text', text: 'chatter' }] }, { type: 'tool_result', call_id: 'client-invented', output: '' }] };
   assertEquals([...chatLegacyCallsOf([legacy('lookup'), turn]).names.entries()], [['client-invented', 'lookup']]);
 });
 

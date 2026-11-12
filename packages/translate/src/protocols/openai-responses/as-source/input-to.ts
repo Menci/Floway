@@ -137,9 +137,9 @@ const clientItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInp
   switch (item.type) {
   case 'message':
     switch (item.role) {
-    case 'user': return [{ type: 'message' as const, content: userContent(item.content) }];
+    case 'user': return [{ type: 'message' as const, role: 'user' as const, content: userContent(item.content) }];
     case 'system':
-    case 'developer': return [{ type: 'prompt' as const, role: item.role, content: promptPartsToIR(item) }];
+    case 'developer': return [{ type: 'message' as const, role: item.role, content: promptPartsToIR(item) }];
     default: throw new TranslateInputException(`Invalid role '${item.role}' in input message.`);
     }
   case 'function_call_output': {
@@ -274,11 +274,12 @@ const toolGroupToIR = (tool: OpenAIResponsesTool): IRInputTool[] => {
       }
       // A group's own description qualifies each child's, the way one merged
       // declaration states it.
-      const childDescription = child.description ?? undefined;
+      const parentDescription = tool.description === '' ? undefined : tool.description;
+      const childDescription = child.description === '' ? undefined : child.description;
       return [toolToIR(
-        tool.description === undefined
+        parentDescription === undefined
           ? child
-          : { ...child, description: childDescription === undefined ? tool.description : `${tool.description}\n\n${childDescription}` },
+          : { ...child, description: childDescription === undefined ? parentDescription : `${parentDescription}\n\n${childDescription}` },
         tool.name,
       )];
     });
@@ -326,16 +327,16 @@ const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): 
   return {
     model: payload.model,
     stream: payload.stream === true,
-    ...(payload.temperature == null ? {} : { temperature: payload.temperature }),
-    ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
+    ...(payload.temperature === undefined ? {} : { temperature: payload.temperature }),
+    ...(payload.top_p === undefined ? {} : { top_p: payload.top_p }),
     ...(payload.presence_penalty === undefined ? {} : { presence_penalty: payload.presence_penalty }),
     ...(payload.frequency_penalty === undefined ? {} : { frequency_penalty: payload.frequency_penalty }),
     ...(payload.max_output_tokens === undefined ? {} : { max_output_tokens: payload.max_output_tokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
     ...(payload.metadata == null ? {} : { metadata: payload.metadata }),
-    ...(payload.store == null ? {} : { store: payload.store }),
+    ...(payload.store === undefined ? {} : { store: payload.store }),
     ...(payload.service_tier == null ? {} : { service_tier: payload.service_tier }),
-    ...(payload.parallel_tool_calls == null ? {} : { parallel_tool_calls: payload.parallel_tool_calls }),
+    ...(payload.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: payload.parallel_tool_calls }),
     ...(payload.reasoning?.effort == null ? {} : { reasoning_effort: payload.reasoning.effort }),
     ...(payload.reasoning?.summary == null ? {} : { reasoning_summary: payload.reasoning.summary }),
     ...(payload.prompt_cache_key === undefined ? {} : { prompt_cache_key: payload.prompt_cache_key }),

@@ -1,6 +1,6 @@
 import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../composition/request/call-ids.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
-import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem, IRInputInstructionItem, IRInputPromptItem } from '../../../ir/input/types.ts';
+import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem, IRInputInstructionItem, IRInputClientMessageItem } from '../../../ir/input/types.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import type {
@@ -102,15 +102,13 @@ const clientItems = (items: readonly IRInputClientItemWithCallIds[]): CanonicalO
   switch (item.type) {
   case 'instruction':
     return { type: 'message', role: 'system', content: item.content.length === 1 ? item.content[0].text : item.content.map(part => ({ type: 'input_text' as const, text: part.text })) };
-  case 'prompt': {
-    // A prompt boundary states its text plainly: one part is that string, and
-    // several keep their array so the boundaries between them survive.
-    const content = item.content.length === 1
-      ? item.content[0].text
-      : item.content.map(part => ({ type: 'input_text' as const, text: part.text }));
-    return { type: 'message', role: item.role, content };
-  }
   case 'message': {
+    if (item.role !== 'user') {
+      const content = item.content.length === 1
+        ? item.content[0].text
+        : item.content.map(part => ({ type: 'input_text' as const, text: part.text }));
+      return { type: 'message', role: item.role, content };
+    }
     // A single text part uses bare-string content; multipart user content retains its part boundaries.
     if (item.content.length === 1 && item.content[0].type === 'text') {
       return { type: 'message', role: 'user', content: item.content[0].text };
@@ -130,7 +128,8 @@ const clientItems = (items: readonly IRInputClientItemWithCallIds[]): CanonicalO
 // Responses keeps in its own top-level slot. Every later system message stays
 // inline as an ordinary input item.
 const isInstruction = (entry: IRInputClientItem): entry is IRInputInstructionItem => entry.type === 'instruction';
-const isPrompt = (entry: IRInputClientItem): entry is IRInputPromptItem => entry.type === 'prompt';
+const isPrompt = (entry: IRInputClientItem): entry is Extract<IRInputClientMessageItem, { role: 'system' | 'developer' }> =>
+  entry.type === 'message' && entry.role !== 'user';
 
 export const openaiResponsesConversationFromIR = (
   turns: readonly IRInputTurnWithCallIds[],

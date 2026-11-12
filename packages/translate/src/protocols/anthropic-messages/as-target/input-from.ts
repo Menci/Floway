@@ -74,7 +74,7 @@ const documentBlock = (media: IRInputMedia): AnthropicMessagesUserContentBlock =
 const systemContent = (content: readonly IRInputTextPart[]): AnthropicMessagesTextBlockParam[] => content.map(part => ({ type: 'text', text: part.text }));
 
 const userContent = (
-  item: Extract<IRInputClientItem, { type: 'message' }>,
+  item: Extract<IRInputClientItem, { type: 'message'; role: 'user' }>,
 ): AnthropicMessagesUserContentBlock[] => {
   const blocks: AnthropicMessagesUserContentBlock[] = [];
   for (const part of item.content) {
@@ -249,13 +249,13 @@ export const anthropicMessagesConversationFromIR = (
         messages.push({ role: 'system', content: blocks.length === 0 ? '' : blocks });
         continue;
       }
-      if (item.type === 'prompt') {
+      if (item.type === 'message' && item.role !== 'user') {
         if (hoisting) {
           system.push(...systemContent(item.content));
           continue;
         }
         // Messages states a system message's content as a non-empty block list
-        // or a bare string; an empty prompt run is the empty string.
+        // or a bare string; an empty message is the empty string.
         const blocks = systemContent(item.content);
         messages.push({ role: 'system', content: blocks.length === 0 ? '' : blocks });
         continue;
@@ -263,7 +263,7 @@ export const anthropicMessagesConversationFromIR = (
       hoisting = false;
       turnBlocks.push(...(item.type === 'tool_result'
         ? [{ type: 'tool_result' as const, tool_use_id: item.call_id, content: toolResultContent(item.output), ...(item.is_error === true ? { is_error: true } : {}) }]
-        : userContent(item)));
+        : userContent(item as Extract<IRInputClientItem, { type: 'message'; role: 'user' }>)));
     }
     append(turnBlocks);
   }
@@ -284,7 +284,7 @@ export const anthropicMessagesHeaderFromIR = (
   const tools = request.tools;
   const choice = toolChoiceForTools(request.tool_choice, tools);
   const selected = choice === undefined ? undefined : toolChoiceFromIR(choice, tools ?? []);
-  const parallel = request.settings.parallel_tool_calls;
+  const parallel = request.settings.parallel_tool_calls ?? undefined;
   const toolChoice = parallel === undefined || selected?.type === 'none'
     ? selected
     : { ...(selected ?? { type: 'auto' as const }), disable_parallel_tool_use: !parallel };
@@ -326,8 +326,8 @@ export const anthropicMessagesSettingsFromIR = (settings: IRInputSettings): Omit
 
   return {
     ...(ceiling == null ? {} : { max_tokens: ceiling }),
-    ...(settings.temperature === undefined ? {} : { temperature: settings.temperature }),
-    ...(settings.top_p === undefined ? {} : { top_p: settings.top_p }),
+    ...(settings.temperature == null ? {} : { temperature: settings.temperature }),
+    ...(settings.top_p == null ? {} : { top_p: settings.top_p }),
     ...(settings.top_k === undefined ? {} : { top_k: settings.top_k }),
     ...(settings.stop === undefined ? {} : { stop_sequences: [...settings.stop] }),
     ...(thinking === undefined ? {} : { thinking }),

@@ -25,13 +25,14 @@ import type { GeminiGenerateContentThinkingConfig, GeminiGenerateContentContent,
 // sentinel leaves effort unset. Preserve all other open-string values verbatim.
 // Reference: https://ai.google.dev/api/generate-content#ThinkingLevel
 const geminiGenerateContentReasoningEffortToIR = (thinkingConfig?: GeminiGenerateContentThinkingConfig): string | undefined => {
-  switch (thinkingConfig?.thinkingLevel) {
+  const level = thinkingConfig?.thinkingLevel ?? undefined;
+  switch (level) {
   case 'LOW': return 'low';
   case 'MEDIUM': return 'medium';
   case 'HIGH': return 'high';
   case 'MINIMAL': return 'minimal';
   case 'THINKING_LEVEL_UNSPECIFIED': return undefined;
-  default: return thinkingConfig?.thinkingLevel;
+  default: return level;
   }
 };
 
@@ -54,7 +55,7 @@ const userParts = (content: GeminiGenerateContentContent): IRInputClientItem[] =
   const pending: IRInputUserContentPart[] = [];
   const flush = (): void => {
     if (pending.length === 0) return;
-    items.push({ type: 'message', content: pending.splice(0) });
+    items.push({ type: 'message', role: 'user', content: pending.splice(0) });
   };
 
   (content.parts ?? []).forEach(part => {
@@ -161,7 +162,7 @@ const turnToIRTurns = (
           throw new TranslateInputException(`"${(content as { role: string }).role}" is not a supported content role.`);
         }
         return (content.parts?.length ?? 0) === 0
-          ? [{ type: 'message' as const, content: [] }]
+          ? [{ type: 'message' as const, role: 'user' as const, content: [] }]
           : userParts(content);
       }),
     }];
@@ -176,7 +177,7 @@ const geminiGenerateContentSystemToIR = (content: GeminiGenerateContentContent |
 const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequestHeader, 'tools' | 'tool_choice'> => {
   const declarations = payload.tools?.flatMap(group => group.functionDeclarations ?? []) ?? [];
   const config = payload.toolConfig?.functionCallingConfig;
-  const allowedNames = config?.allowedFunctionNames;
+  const allowedNames = config?.allowedFunctionNames ?? undefined;
   const restrictable = config?.mode === 'ANY' || config?.mode === 'VALIDATED';
   const permitted = restrictable && allowedNames !== undefined && allowedNames.length > 0 ? new Set(allowedNames) : undefined;
 
@@ -239,13 +240,14 @@ export const readGeminiGenerateContentRequest = (payload: GeminiGenerateContentR
 };
 
 const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest): IRInputSettings => {
-  const config = payload.generationConfig;
-  const budget = config?.thinkingConfig?.thinkingBudget;
+  const config = payload.generationConfig ?? undefined;
+  const thinkingConfig = config?.thinkingConfig ?? undefined;
+  const budget = thinkingConfig?.thinkingBudget ?? undefined;
   // A level is what the caller stated, including an empty one: it is an open
   // string, and a target that accepts it forwards it verbatim. A budget is a
   // different quantity the caller may state instead, so it travels on its own
   // field and each target decides what it can do with it.
-  const statedLevel = geminiGenerateContentReasoningEffortToIR(config?.thinkingConfig);
+  const statedLevel = geminiGenerateContentReasoningEffortToIR(thinkingConfig);
   // Reject a simultaneous budget and non-empty thinking level. The empty string is exempt from this conflict check.
   // https://github.com/cline/cline/issues/7957
   if (statedLevel !== undefined && statedLevel !== '' && budget !== undefined) {
@@ -278,7 +280,7 @@ const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest
     // GenerateContent states readable reasoning as a boolean; the neutral
     // spelling names how much of it the caller wants. A request that asked for
     // no reasoning at all has nothing to summarize.
-    ...(effort !== 'none' && config?.thinkingConfig?.includeThoughts === true ? { reasoning_summary: 'detailed' } : {}),
+    ...(effort !== 'none' && thinkingConfig?.includeThoughts === true ? { reasoning_summary: 'detailed' } : {}),
   };
 };
 

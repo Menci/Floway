@@ -66,6 +66,34 @@ test('nullable token limits and cache controls remain explicit in source IR', as
   expect(chat.target.max_completion_tokens).toBeNull();
 });
 
+test('nullable Chat sampling, storage, parallelism and schema strictness remain explicit', async () => {
+  const source = {
+    model: 'm', stream: true, messages: [], temperature: null, top_p: null, store: null, parallel_tool_calls: null as never,
+    response_format: { type: 'json_schema' as const, json_schema: { name: 'result', schema: {}, strict: null } },
+  };
+  expect(readOpenAIChatCompletionsRequest(source).request.settings).toMatchObject({
+    temperature: null, top_p: null, store: null, parallel_tool_calls: null,
+    output_format: { type: 'json_schema', name: 'result', schema: {}, strict: null },
+  });
+  const responses = await routeOpenAIChatCompletionsViaOpenAIResponses(source, options);
+  if (responses.type !== 'trip') throw new Error(responses.message);
+  expect(responses.target).toMatchObject({
+    temperature: null, top_p: null, store: null, parallel_tool_calls: null,
+    text: { format: { type: 'json_schema', name: 'result', schema: {}, strict: null } },
+  });
+});
+
+test('distinct content and scalar assistant refusals both remain in history', async () => {
+  const result = await routeOpenAIChatCompletionsViaOpenAIResponses({
+    model: 'm', stream: true, messages: [{ role: 'assistant', content: [{ type: 'refusal', refusal: 'first' }], refusal: 'second' }],
+  }, options);
+  if (result.type !== 'trip') throw new Error(result.message);
+  expect(result.target.input).toEqual([{
+    type: 'message', role: 'assistant',
+    content: [{ type: 'refusal', refusal: 'first' }, { type: 'refusal', refusal: 'second' }],
+  }]);
+});
+
 test.each([
   { max_tokens: 5 },
   { max_tokens: 5, max_completion_tokens: 0 },

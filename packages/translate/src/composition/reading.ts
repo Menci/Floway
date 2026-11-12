@@ -40,12 +40,12 @@ export const resolveReading = async <AssistantTurn, Resolved>(
   const append = (input: readonly IRInputTurn[]): void => {
     for (const turn of input) {
       const previous = turns.at(-1);
-      // Instructions and prompts retain their own source boundaries. Other
+      // Instructions and system/developer messages retain their source boundaries. Other
       // adjacent client pieces belong to the same turn, including server
       // results followed by the client's next message.
       if (previous?.kind === 'client' && turn.kind === 'client'
-        && !previous.items.some(item => item.type === 'instruction' || item.type === 'prompt')
-        && !turn.items.some(item => item.type === 'instruction' || item.type === 'prompt')) {
+        && !previous.items.some(item => item.type === 'instruction' || item.type === 'message' && item.role !== 'user')
+        && !turn.items.some(item => item.type === 'instruction' || item.type === 'message' && item.role !== 'user')) {
         turns[turns.length - 1] = { kind: 'client', items: [...previous.items, ...turn.items] };
       } else {
         turns.push(turn);

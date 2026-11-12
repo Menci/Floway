@@ -122,17 +122,17 @@ const clientItems = (
     if (typeof message.content !== 'string' && message.content.some(block => block.type !== 'text')) {
       throw new TranslateInputException('Only text system content is supported.');
     }
-    return [{ type: 'prompt', role: 'system', content: promptPartsToIR(message.content as string | readonly AnthropicMessagesTextBlockParam[]) }];
+    return [{ type: 'message', role: 'system', content: promptPartsToIR(message.content as string | readonly AnthropicMessagesTextBlockParam[]) }];
   }
   if (typeof message.content === 'string') {
-    return [{ type: 'message', content: message.content === '' ? [] : [{ type: 'text', text: message.content }] }];
+    return [{ type: 'message', role: 'user', content: message.content === '' ? [] : [{ type: 'text', text: message.content }] }];
   }
 
   const items: IRInputClientItem[] = [];
   const pending: IRInputUserContentPart[] = [];
   const flush = (): void => {
     if (pending.length === 0) return;
-    items.push({ type: 'message', content: [...pending] });
+    items.push({ type: 'message', role: 'user', content: [...pending] });
     pending.length = 0;
   };
 

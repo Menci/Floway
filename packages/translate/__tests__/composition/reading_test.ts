@@ -19,7 +19,7 @@ test('joins parallel server results and the next user message into one client tu
     ],
   });
   expect(await resolveReading(reading, async () => undefined)).toEqual([
-    { kind: 'client', items: [{ type: 'message', content: [{ type: 'text', text: 'Q' }] }] },
+    { kind: 'client', items: [{ type: 'message', role: 'user', content: [{ type: 'text', text: 'Q' }] }] },
     {
       kind: 'assistant', items: [
         { type: 'function_call', call_id: 's1', name: 'web_search', arguments: '{"query":"one"}' },
@@ -30,13 +30,13 @@ test('joins parallel server results and the next user message into one client tu
       kind: 'client', items: [
         { type: 'tool_result', call_id: 's1', output: '[]' },
         { type: 'tool_result', call_id: 's2', output: '[]' },
-        { type: 'message', content: [{ type: 'text', text: 'Next' }] },
+        { type: 'message', role: 'user', content: [{ type: 'text', text: 'Next' }] },
       ],
     },
   ]);
 });
 
-test('keeps prompt and restored assistant boundaries while joining client pieces', async () => {
+test('keeps instruction and restored assistant boundaries while joining client pieces', async () => {
   const reading = readAnthropicMessagesRequest({
     model: 'model', max_tokens: 32, system: 'Rules', messages: [
       { role: 'user', content: 'Before' },

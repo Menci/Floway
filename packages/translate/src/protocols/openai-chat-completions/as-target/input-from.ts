@@ -45,7 +45,7 @@ const filePart = (media: IRInputMedia, filename?: string | null): OpenAIChatComp
   }
 };
 
-const userContent = (item: Extract<IRInputClientItem, { type: 'message' }>): string | OpenAIChatCompletionsUserContentPart[] => {
+const userContent = (item: Extract<IRInputClientItem, { type: 'message'; role: 'user' }>): string | OpenAIChatCompletionsUserContentPart[] => {
   // Adjacent text parts join with no separator: the parts are one run of text,
   // and a separator would invent characters the caller never wrote.
   if (item.content.every(part => part.type === 'text')) return item.content.map(part => part.text).join('');
@@ -152,15 +152,11 @@ const openaiChatCompletionsClientItem = (
 ): OpenAIChatCompletionsMessage[] => {
   switch (item.type) {
   case 'message':
-    return [{ role: 'user', content: userContent(item) }];
+    return item.role === 'user'
+      ? [{ role: 'user', content: userContent(item) }]
+      : [{ role: item.role, content: item.content.length === 1 ? item.content[0].text : item.content.length === 0 ? '' : item.content.map(part => ({ type: 'text' as const, text: part.text })) }];
   case 'instruction':
     return [{ role: 'system', content: item.content.length === 1 ? item.content[0].text : item.content.length === 0 ? '' : item.content.map(part => ({ type: 'text' as const, text: part.text })) }];
-  case 'prompt':
-    // A single text part collapses to the string spelling Chat accepts for
-    // text-only system/developer messages; several parts keep their array so
-    // block boundaries survive. An empty list is not a legal body on this wire,
-    // so it becomes the empty string.
-    return [{ role: item.role, content: item.content.length === 1 ? item.content[0].text : item.content.length === 0 ? '' : item.content.map(part => ({ type: 'text' as const, text: part.text })) }];
   case 'tool_result': {
     const projected = openaiChatCompletionsToolResultContent(item.call_id, item.output);
     lift(projected.lifted);
@@ -279,7 +275,7 @@ export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): 
     ...(settings.metadata === undefined ? {} : { metadata: { ...settings.metadata } }),
     ...(settings.store === undefined ? {} : { store: settings.store }),
     ...(settings.service_tier === undefined ? {} : { service_tier: settings.service_tier }),
-    ...(settings.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: settings.parallel_tool_calls }),
+    ...(settings.parallel_tool_calls == null ? {} : { parallel_tool_calls: settings.parallel_tool_calls }),
     ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
     ...(settings.prompt_cache_key === undefined ? {} : { prompt_cache_key: settings.prompt_cache_key }),
     ...(settings.prompt_cache_retention === undefined ? {} : { prompt_cache_retention: settings.prompt_cache_retention }),

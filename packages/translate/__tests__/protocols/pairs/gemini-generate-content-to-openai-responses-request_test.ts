@@ -10,6 +10,27 @@ const buildWithTestSidecar = (
   model: string,
 ) => buildTargetPayloadFor(pairs.geminiToResponses[0], pairs.geminiToResponses[1], { ...payload, model }, { sidecarCodec: createTestSidecarCodec() });
 
+test('ProtoJSON null configuration members are treated as unset', async () => {
+  const absentConfig = await buildWithTestSidecar({ contents: [], generationConfig: null as never }, 'gpt-test');
+  assertEquals(absentConfig.reasoning, undefined);
+
+  const nullAllowedNames = await buildWithTestSidecar({
+    contents: [], tools: [{ functionDeclarations: [{ name: 'f' }] }],
+    toolConfig: { functionCallingConfig: { mode: 'ANY', allowedFunctionNames: null as never } },
+  }, 'gpt-test');
+  assertEquals(nullAllowedNames.tool_choice, 'required');
+
+  const nullBudget = await buildWithTestSidecar({
+    contents: [], generationConfig: { thinkingConfig: { thinkingLevel: 'LOW', thinkingBudget: null as never } },
+  }, 'gpt-test');
+  assertEquals(nullBudget.reasoning, { effort: 'low' });
+
+  const nullLevel = await buildWithTestSidecar({
+    contents: [], generationConfig: { thinkingConfig: { thinkingLevel: null as never, thinkingBudget: 1024 } },
+  }, 'gpt-test');
+  assertEquals(nullLevel.reasoning, { effort: 'low' });
+});
+
 test('buildTargetPayload translates LOW to reasoning.effort', async () => {
   const request = await buildWithTestSidecar({
     contents: [],

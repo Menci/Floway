@@ -7,8 +7,8 @@ export interface IRInputSettings {
   // The return path is a stream, so the request path asks the upstream for one
   // and a target writer rejects an IR that does not say `true`.
   readonly stream: boolean;
-  readonly temperature?: number;
-  readonly top_p?: number;
+  readonly temperature?: number | null;
+  readonly top_p?: number | null;
   readonly top_k?: number;
   readonly stop?: readonly string[];
   readonly seed?: number;
@@ -18,10 +18,10 @@ export interface IRInputSettings {
   readonly output_format?: IRInputOutputFormat;
   // Readers normalize metadata to string pairs; target writers do not coerce it again.
   readonly metadata?: Readonly<Record<string, string>>;
-  readonly store?: boolean;
+  readonly store?: boolean | null;
   // Preserve service-tier strings; each target owns vocabulary mapping.
   readonly service_tier?: string;
-  readonly parallel_tool_calls?: boolean;
+  readonly parallel_tool_calls?: boolean | null;
   // Keep effort as an open string, independently of numeric budget. Protocol readers and writers own their thinking-mode mapping.
   readonly reasoning_effort?: string;
   // Budget and effort remain independent; a source may cap reasoning tokens without naming an effort level.
@@ -58,7 +58,7 @@ export interface IRInputOutputFormat {
   readonly name?: string;
   readonly description?: string;
   readonly schema?: Readonly<Record<string, unknown>>;
-  readonly strict?: boolean;
+  readonly strict?: boolean | null;
 }
 
 // One request's own fields, from the source's wire to the target's. The
@@ -146,7 +146,7 @@ export interface IRInputAssistantTurn {
 // message's own parts together while tool results and tool calls remain
 // separate items lets every writer reproduce its own grouping without this IR
 // prejudging one protocol's shape.
-export type IRInputClientItem = IRInputInstructionItem | IRInputPromptItem | IRInputUserMessageItem | IRInputToolResultItem;
+export type IRInputClientItem = IRInputInstructionItem | IRInputClientMessageItem | IRInputToolResultItem;
 
 export type IRInputAssistantItem =
   | IRInputAssistantMessageItem
@@ -160,18 +160,10 @@ export interface IRInputInstructionItem {
   readonly content: readonly IRInputTextPart[];
 }
 
-/** An inline system or developer message at its conversation position. */
-export interface IRInputPromptItem {
-  readonly type: 'prompt';
-  readonly role: 'system' | 'developer';
-  // Prompt parts are text-only; source readers reject unsupported prompt media.
-  readonly content: readonly IRInputTextPart[];
-}
-
-export interface IRInputUserMessageItem {
-  readonly type: 'message';
-  readonly content: readonly IRInputUserContentPart[];
-}
+/** A client-side conversation message at its source position. */
+export type IRInputClientMessageItem =
+  | { readonly type: 'message'; readonly role: 'user'; readonly content: readonly IRInputUserContentPart[] }
+  | { readonly type: 'message'; readonly role: 'system' | 'developer'; readonly content: readonly IRInputTextPart[] };
 
 // Assistant IR projects text and refusals. Source readers reject assistant media that this model cannot represent.
 export interface IRInputAssistantMessageItem {

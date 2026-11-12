@@ -107,6 +107,15 @@ test('buildTargetPayload rejects an agent_message that no interceptor lowered', 
   );
 });
 
+test('an empty namespace description does not prefix a child description', async () => {
+  const result = await buildWithTestSidecar({
+    ...minimalPayload,
+    tools: [{ type: 'namespace', name: 'group', description: '', tools: [{ type: 'function', name: 'f', description: 'meaning', parameters: { type: 'object' } }] }],
+  });
+  const tool = result.target.tools?.[0];
+  assertEquals(tool !== undefined && 'description' in tool ? tool.description : undefined, 'meaning');
+});
+
 test.each([
   { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },
   { name: 'program_output', input: [{ type: 'program_output', id: 'prog_out_1', call_id: 'call_prog_1', result: '1', status: 'completed' }] },

@@ -115,7 +115,7 @@ const assistantItems = (turn: Extract<OpenAIChatCompletionsConversationTurn, { r
     : (message.content ?? []).map(part => part.type === 'text'
         ? { type: 'text' as const, text: part.text }
         : { type: 'refusal' as const, refusal: part.refusal });
-  if (message.refusal !== undefined && message.refusal !== null && !content.some(part => part.type === 'refusal')) {
+  if (message.refusal !== undefined && message.refusal !== null) {
     content.push({ type: 'refusal', refusal: message.refusal });
   }
 
@@ -176,7 +176,7 @@ const clientItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, 
   case 'system':
   case 'developer':
     return [{
-      type: 'prompt',
+      type: 'message',
       role: message.role,
       // A non-text part in system/developer content has no representation on
       // any target, so it is rejected here rather than dropped silently.
@@ -190,6 +190,7 @@ const clientItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, 
   case 'user':
     return [{
       type: 'message',
+      role: 'user',
       content: message.content == null ? [{ type: 'text', text: '' }] : typeof message.content === 'string' ? textPartsToIR(message.content) : message.content.map(userContentPart),
     }];
   case 'tool': {
@@ -277,24 +278,24 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
           ...(format.json_schema.schema === undefined ? {} : { schema: klona(format.json_schema.schema) }),
           // The tool-side and format-side `strict` share a spelling; an omitted
           // format strictness stays absent so the target applies its own default.
-          ...(format.json_schema.strict == null ? {} : { strict: format.json_schema.strict }),
+          ...(format.json_schema.strict === undefined ? {} : { strict: format.json_schema.strict }),
         }
       : { type: format.type };
 
   return {
     model: payload.model,
     stream: payload.stream === true,
-    ...(payload.temperature == null ? {} : { temperature: payload.temperature }),
-    ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
+    ...(payload.temperature === undefined ? {} : { temperature: payload.temperature }),
+    ...(payload.top_p === undefined ? {} : { top_p: payload.top_p }),
     ...(payload.stop == null ? {} : { stop: typeof payload.stop === 'string' ? [payload.stop] : [...payload.stop] }),
     ...(payload.seed == null ? {} : { seed: payload.seed }),
     ...(payload.max_tokens === undefined ? {} : { max_visible_output_tokens: payload.max_tokens }),
     ...(payload.max_completion_tokens === undefined ? {} : { max_output_tokens: payload.max_completion_tokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
     ...(payload.metadata == null ? {} : { metadata: payload.metadata }),
-    ...(payload.store == null ? {} : { store: payload.store }),
+    ...(payload.store === undefined ? {} : { store: payload.store }),
     ...(payload.service_tier == null ? {} : { service_tier: payload.service_tier }),
-    ...(payload.parallel_tool_calls == null ? {} : { parallel_tool_calls: payload.parallel_tool_calls }),
+    ...(payload.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: payload.parallel_tool_calls }),
     ...(payload.reasoning_effort == null ? {} : { reasoning_effort: payload.reasoning_effort }),
     ...(payload.prompt_cache_key === undefined ? {} : { prompt_cache_key: payload.prompt_cache_key }),
     ...(payload.prompt_cache_retention === undefined ? {} : { prompt_cache_retention: payload.prompt_cache_retention }),
