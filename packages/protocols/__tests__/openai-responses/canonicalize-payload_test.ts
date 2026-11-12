@@ -1,7 +1,7 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
+import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals } from '@floway-dev/test-utils';
-import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/translate';
 
 test('canonicalizes string and implicit-message wire inputs', () => {
   assertEquals(canonicalizeOpenAIResponsesPayload({ model: 'gpt-test', input: 'hello' }), {
@@ -61,7 +61,9 @@ test('rejects a payload without a usable model at the canonical boundary', () =>
     { model: null, input: 'hello' },
   ]) {
     assertEquals(canonicalizeOpenAIResponsesPayload(payload), {
-      type: 'input-error', message: "Missing required parameter: 'model'.", param: 'model', code: 'missing_required_parameter',
+      error: {
+        message: "Missing required parameter: 'model'.", param: 'model', code: 'missing_required_parameter',
+      },
     });
   }
 });
@@ -79,7 +81,9 @@ test('rejects malformed untyped input items at the canonical boundary', () => {
     { role: 'user', content: 'invalid phase', phase: 42 },
   ]) {
     assertEquals(canonicalizeOpenAIResponsesPayload({ model: 'gpt-test', input: [malformed] }), {
-      type: 'input-error', message: 'Untyped OpenAI Responses input items require a valid role and content.', param: 'input[0]',
+      error: {
+        message: 'Untyped OpenAI Responses input items require a valid role and content.', param: 'input[0]',
+      },
     });
   }
 });
@@ -102,4 +106,10 @@ test('canonicalizeOpenAIResponsesPayload preserves reasoning.context verbatim, i
   });
   assert('input' in canonicalFuture);
   assertEquals(canonicalFuture.reasoning, { context: 'future_mode' });
+});
+
+test('unexpected getters retain their original error and evaluation order', () => {
+  const failure = new Error('unexpected getter failure', { cause: new Error('cause') });
+  expect(() => canonicalizeOpenAIResponsesPayload({ get model() { throw failure; } })).toThrow(failure);
+  expect(() => canonicalizeOpenAIResponsesPayload({ model: 'm', input: [null], get metadata() { throw failure; } })).toThrow(failure);
 });

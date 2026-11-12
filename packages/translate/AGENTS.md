@@ -5,6 +5,9 @@ code. `__tests__/protocols/` mirrors production ownership. Package callers
 import the package root and call
 `route<Source>Via<Target>(input, options)` to create an independent trip.
 
+Protocol-native request normalization and Part data classification belong to
+`@floway-dev/protocols`; translation maps their failures at its own boundary.
+
 ## Categories
 
 1. **Single-pair helper** — keep it in

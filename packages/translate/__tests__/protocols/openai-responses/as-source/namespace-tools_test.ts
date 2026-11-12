@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest';
 
 import { flattenNamespaceTools, restoreNamespaceEvents, restoreNamespaceOutputItem } from '../../../../src/protocols/openai-responses/as-source/namespace-tools.ts';
-import { requireCanonicalOpenAIResponsesPayload } from '../../../../src/protocols/openai-responses/canonicalize-payload.ts';
 import { buildTargetRequest as buildMessagesRequest } from '../../../../src/protocols/openai-responses/via-anthropic-messages/request.ts';
 import { buildTargetRequest as buildChatRequest } from '../../../../src/protocols/openai-responses/via-openai-chat-completions/request.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
@@ -9,6 +8,7 @@ import { requireTrip } from '../../require-trip.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesOutputItemEx, OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
@@ -48,6 +48,12 @@ test.each(['additional_tools', 'tool_search_output'] as const)('keeps %s as a us
     { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'lookup', input: {}, cache_control: { type: 'ephemeral' } }] },
   ]);
 });
+
+const canonicalPayload = () => {
+  const canonical = canonicalizeOpenAIResponsesPayload(payload());
+  if (!('input' in canonical)) throw new Error(canonical.error.message);
+  return canonical;
+};
 
 test('namespace setup preserves the original input and allocates historical names only when explicitly flattened', () => {
   const request: CanonicalOpenAIResponsesPayload = {
@@ -107,7 +113,7 @@ test('forced namespace choices use the declaration mapping', async () => {
 });
 
 test('restores function and custom calls across item events and terminal snapshots', async () => {
-  const prepared = flattenNamespaceTools(requireCanonicalOpenAIResponsesPayload(payload()));
+  const prepared = flattenNamespaceTools(canonicalPayload());
   const output = [
     { type: 'function_call' as const, name: 'agents_spawn_2', call_id: 'spawn', arguments: '{"name":"agents_spawn_2"}', status: 'completed' },
     { type: 'custom_tool_call' as const, name: 'agents_audit', call_id: 'audit', input: 'agents_audit' },
@@ -129,7 +135,7 @@ test('restores function and custom calls across item events and terminal snapsho
 });
 
 test('restores all function/custom output item type combinations without retaining the replaced payload field', () => {
-  const names = flattenNamespaceTools(requireCanonicalOpenAIResponsesPayload(payload())).names;
+  const names = flattenNamespaceTools(canonicalPayload()).names;
   const functionName = names.sourceToTarget.get('agents.spawn');
   const customName = names.sourceToTarget.get('agents.audit');
   if (functionName === undefined || customName === undefined) throw new Error('Expected flattened namespace tool names');
