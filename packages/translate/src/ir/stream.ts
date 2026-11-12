@@ -49,6 +49,10 @@ export interface IRChoiceHandle extends IRWriteHandle {
   textParts: () => readonly { item: IRItemHandle; part: IRPartHandle; text: string }[];
 }
 
+/**
+ * Open choices in consecutive upstream index order. Skipped indices are malformed;
+ * additional consecutive choices remain valid.
+ */
 export const createIRBuilder = () => {
   const collector = createIRCollector();
   const { state } = collector;

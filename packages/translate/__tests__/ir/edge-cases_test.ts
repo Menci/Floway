@@ -117,6 +117,7 @@ test('ChatCompletions ignores late identity changes and accepts later model upda
 });
 
 test('ChatCompletions choice indexes must arrive in sequence', async () => {
+  // Choice indexes open consecutively from zero; opening choice 1 first leaves a gap.
   await expect(collectIR(irFromOpenAIChatCompletions(iterate([
     eventFrame({ id: 'chat_choices', model: 'served', choices: [{ index: 1, delta: {}, finish_reason: 'stop' }] } as any),
   ])))).rejects.toThrow('out of sequence');
