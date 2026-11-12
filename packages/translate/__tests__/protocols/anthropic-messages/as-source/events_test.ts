@@ -2,15 +2,15 @@ import { expect, test } from 'vitest';
 
 import { createIRBuilder } from '../../../../src/ir/output/builder.ts';
 import { writeAnthropicMessagesEvents } from '../../../../src/protocols/anthropic-messages/as-source/events.ts';
-import { appendField, collectContentViews, createReferenceBuilder, createFieldState, createReferenceFinalizer } from '../../../../src/round-trip/reference/reference-builder.ts';
-import type { RoundTripWriter } from '../../../../src/round-trip/stream.ts';
-import { hashRoundTripContent } from '../../../../src/round-trip/turn-digest.ts';
+import { hashRoundTripContent } from '../../../../src/round-trip/hash.ts';
+import { appendReadField, collectEmittedFieldPlacements, createReferenceBuilder, createReadFieldState, createFieldReferencer } from '../../../../src/round-trip/reference/reference-builder.ts';
+import type { RoundTripWriter } from '../../../../src/round-trip/writer.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 
 test.each(['text', 'refusal', 'audio'] as const)('resolves blocked %s against the emitted Messages text field', async kind => {
   const references = createReferenceBuilder();
-  const field = createFieldState('text');
-  const parts = ['H', 'i'].map(text => appendField(references, field, text));
+  const field = createReadFieldState('text');
+  const parts = ['H', 'i'].map(text => appendReadField(references, field, text));
   const source = createIRBuilder();
   source.choice(0);
   source.assign(['model'], 'model');
@@ -31,11 +31,11 @@ test.each(['text', 'refusal', 'audio'] as const)('resolves blocked %s against th
   let prepared = false;
   const roundTrip: RoundTripWriter<'anthropicMessages'> = {
     builder: references,
-    prepareSidecar: async (_choice, _check, turn, state, textViews) => {
-      const views = collectContentViews(turn, state, textViews);
-      expect([...views.values()]).toContainEqual({ text: 'Hi', offset: 0 });
-      const finalizer = createReferenceFinalizer(references, views);
-      expect(await finalizer.finalizeField('Hi', field)).toMatchObject({ parts: [0] });
+    encodeSidecar: async (_choice, _check, turn, state, textViews) => {
+      const views = collectEmittedFieldPlacements(turn, state, textViews);
+      expect([...views.values()]).toContainEqual({ enclosingText: 'Hi', offset: 0 });
+      const finalizer = createFieldReferencer(references, views);
+      expect(await finalizer.referenceField('Hi', field)).toMatchObject({ parts: [0] });
       expect(finalizer.referencedContentHashes).toEqual([await hashRoundTripContent('Hi')]);
       prepared = true;
       return 'sidecar';
@@ -49,12 +49,12 @@ test.each(['text', 'refusal', 'audio'] as const)('resolves blocked %s against th
 
 test('resolves blocked reasoning in emitted summary/content order before live appends', async () => {
   const references = createReferenceBuilder();
-  const summary = createFieldState('text');
-  const content = createFieldState('text');
-  const a = appendField(references, summary, 'A');
-  const x = appendField(references, content, 'X');
-  const b = appendField(references, summary, 'B');
-  const c = appendField(references, summary, 'C');
+  const summary = createReadFieldState('text');
+  const content = createReadFieldState('text');
+  const a = appendReadField(references, summary, 'A');
+  const x = appendReadField(references, content, 'X');
+  const b = appendReadField(references, summary, 'B');
+  const c = appendReadField(references, summary, 'C');
   const source = createIRBuilder();
   source.choice(0);
   source.assign(['model'], 'model');
@@ -72,10 +72,10 @@ test('resolves blocked reasoning in emitted summary/content order before live ap
   source.choice(0).end('tool_calls');
   source.event({ type: 'finish', status: 'completed' });
 
-  let prepared: Parameters<RoundTripWriter<'anthropicMessages'>['prepareSidecar']> | undefined;
+  let prepared: Parameters<RoundTripWriter<'anthropicMessages'>['encodeSidecar']> | undefined;
   const roundTrip: RoundTripWriter<'anthropicMessages'> = {
     builder: references,
-    prepareSidecar: async (...args) => { prepared = args; return 'sidecar'; },
+    encodeSidecar: async (...args) => { prepared = args; return 'sidecar'; },
   };
   const events: AnthropicMessagesStreamEventEx[] = [];
   for await (const frame of writeAnthropicMessagesEvents((async function* () { yield* source.drain(); })(), { roundTrip })) events.push(frame.event);
@@ -83,16 +83,16 @@ test('resolves blocked reasoning in emitted summary/content order before live ap
   if (prepared === undefined) throw new Error('Messages sidecar was not prepared');
   const [, , turn, state] = prepared;
   expect(turn.content).toContainEqual(expect.objectContaining({ type: 'thinking', thinking: 'ABXC' }));
-  const finalizer = createReferenceFinalizer(references, collectContentViews(turn, state));
-  expect(await finalizer.finalizeField('ABC', summary)).toMatchObject({ parts: [[0, 0, 2], [0, 3, 4]] });
-  expect(await finalizer.finalizeField('X', content)).toMatchObject({ parts: [[0, 2, 3]] });
+  const finalizer = createFieldReferencer(references, collectEmittedFieldPlacements(turn, state));
+  expect(await finalizer.referenceField('ABC', summary)).toMatchObject({ parts: [[0, 0, 2], [0, 3, 4]] });
+  expect(await finalizer.referenceField('X', content)).toMatchObject({ parts: [[0, 2, 3]] });
   expect(finalizer.referencedContentHashes).toEqual([await hashRoundTripContent('ABXC')]);
 });
 
 test.each(['{"x":1,}', '{"x": 1}'])('tracks the emitted canonical JSON view without resolving transformed atoms: %s', async original => {
   const references = createReferenceBuilder();
-  const field = createFieldState('text');
-  const partId = appendField(references, field, original);
+  const field = createReadFieldState('text');
+  const partId = appendReadField(references, field, original);
   const source = createIRBuilder();
   source.choice(0);
   source.assign(['model'], 'model');
@@ -105,11 +105,11 @@ test.each(['{"x":1,}', '{"x": 1}'])('tracks the emitted canonical JSON view with
   let prepared = false;
   const roundTrip: RoundTripWriter<'anthropicMessages'> = {
     builder: references,
-    prepareSidecar: async (_choice, _check, turn, state, textViews) => {
-      const views = collectContentViews(turn, state, textViews);
-      expect([...views.values()]).toContainEqual({ text: '{"x":1}', offset: 0 });
-      const finalizer = createReferenceFinalizer(references, views);
-      expect(await finalizer.finalizeField(original, field)).toBe(original);
+    encodeSidecar: async (_choice, _check, turn, state, textViews) => {
+      const views = collectEmittedFieldPlacements(turn, state, textViews);
+      expect([...views.values()]).toContainEqual({ enclosingText: '{"x":1}', offset: 0 });
+      const finalizer = createFieldReferencer(references, views);
+      expect(await finalizer.referenceField(original, field)).toBe(original);
       prepared = true;
       return 'sidecar';
     },

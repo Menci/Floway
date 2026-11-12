@@ -1,4 +1,4 @@
-import { collectOpenAIChatCompletionsTextViews, computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarCarrier } from './round-trip.ts';
+import { collectOpenAIChatCompletionsTextPlacements, computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarDetails } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
 import type { IRErrorPayload } from '../../../ir/output/error.ts';
@@ -7,11 +7,11 @@ import type { IRRecord } from '../../../ir/output/records.ts';
 import { consumeIRRecords } from '../../../ir/output/stream.ts';
 import type { IROutputItem, IROutputMessageItem, IROutputTokenLogprob } from '../../../ir/output/types.ts';
 import { createIRUnitIndexAllocator } from '../../../ir/output/unit-index.ts';
-import { appendContent, createContentState, type ContentStates, type ContentState } from '../../../round-trip/reference/reference-builder.ts';
-import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
+import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
+import { appendEmittedField, createEmittedFieldState, type EmittedFieldStates, type EmittedFieldState } from '../../../round-trip/reference/reference-builder.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
-import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantState } from '../as-target/assistant-turn.ts';
+import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantTurnState } from '../as-target/assistant-turn.ts';
 import { isJsonObject } from '@floway-dev/protocols/common';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
@@ -101,11 +101,11 @@ export const writeOpenAIChatCompletionsEvents = async function* (
     }
     return accumulator;
   };
-  const outputStates = new Map<number, OpenAIChatCompletionsOutputAssistantState<ContentStates>>();
+  const outputStates = new Map<number, OpenAIChatCompletionsOutputAssistantTurnState<EmittedFieldStates>>();
   const pendingTranscripts = new Map<string, TextProvenanceSpan[]>();
   let usage: OpenAIChatCompletionsUsageEx | undefined;
 
-  const outputState = (choice: number): OpenAIChatCompletionsOutputAssistantState<ContentStates> => {
+  const outputState = (choice: number): OpenAIChatCompletionsOutputAssistantTurnState<EmittedFieldStates> => {
     let state = outputStates.get(choice);
     if (state === undefined) {
       state = {};
@@ -113,11 +113,11 @@ export const writeOpenAIChatCompletionsEvents = async function* (
     }
     return state;
   };
-  const textState = (choice: number, field: ChatTextField): ContentState<'text'> => {
+  const textState = (choice: number, field: ChatTextField): EmittedFieldState<'text'> => {
     const state = outputState(choice);
-    return state[field] ??= createContentState(options.roundTrip.builder, 'text');
+    return state[field] ??= createEmittedFieldState(options.roundTrip.builder, 'text');
   };
-  const toolState = (choice: number, ordinal: number, custom: boolean): ContentState<'text'> => {
+  const toolState = (choice: number, ordinal: number, custom: boolean): EmittedFieldState<'text'> => {
     const choiceState = outputState(choice);
     const toolCalls = choiceState.tool_calls ??= [];
     const current = toolCalls[ordinal];
@@ -126,7 +126,7 @@ export const writeOpenAIChatCompletionsEvents = async function* (
       if (!custom && 'function' in current && current.function?.arguments !== undefined) return current.function.arguments;
       throw new TypeError(`ChatCompletions tool state kind changed at ordinal ${ordinal}`);
     }
-    const state = createContentState(options.roundTrip.builder, 'text');
+    const state = createEmittedFieldState(options.roundTrip.builder, 'text');
     toolCalls[ordinal] = custom ? { custom: { input: state } } : { function: { arguments: state } };
     return state;
   };
@@ -256,7 +256,7 @@ export const writeOpenAIChatCompletionsEvents = async function* (
 
       if (record.kind === 'append') {
         if (path.length === 7 && path[2] === 'items' && path[4] === 'content' && (path[6] === 'text' || path[6] === 'refusal')) {
-          appendContent(options.roundTrip.builder, textState(choice, path[6] === 'text' ? 'content' : 'refusal'), record.value, record.referencePieceIds);
+          appendEmittedField(options.roundTrip.builder, textState(choice, path[6] === 'text' ? 'content' : 'refusal'), record.value, record.referencePieceIds);
           yield deltaFrame(choice, path[6] === 'text' ? { content: record.value } : { refusal: record.value }, tier);
           continue;
         }
@@ -287,7 +287,7 @@ export const writeOpenAIChatCompletionsEvents = async function* (
           continue;
         }
         if (path.length === 6 && path[2] === 'items' && (path[4] === 'summary' || path[4] === 'content')) {
-          appendContent(options.roundTrip.builder, textState(choice, 'reasoning_text'), record.value, record.referencePieceIds);
+          appendEmittedField(options.roundTrip.builder, textState(choice, 'reasoning_text'), record.value, record.referencePieceIds);
           yield deltaFrame(choice, { reasoning_text: record.value }, tier);
           continue;
         }
@@ -296,7 +296,7 @@ export const writeOpenAIChatCompletionsEvents = async function* (
           if (itemType !== 'function_call' && itemType !== 'custom_tool_call') throw new TypeError('ChatCompletions tool delta requires a tool item');
           const ordinal = tools.get(choice)!.get(path.slice(0, 4));
           const custom = itemType === 'custom_tool_call';
-          appendContent(options.roundTrip.builder, toolState(choice, ordinal, custom), record.value, record.referencePieceIds);
+          appendEmittedField(options.roundTrip.builder, toolState(choice, ordinal, custom), record.value, record.referencePieceIds);
           const call = custom
             ? { index: ordinal, custom: { input: record.value } }
             : { index: ordinal, function: { arguments: record.value } };
@@ -351,8 +351,8 @@ export const writeOpenAIChatCompletionsEvents = async function* (
       const part = item.type === 'message' ? item.content[record.part] : undefined;
       if (part?.type === 'audio' && !startedAudio.has(irPathKey(path)) && part.audio.transcript !== undefined) {
         const content = textState(record.choice, 'content');
-        replayTextProvenance(part.audio.transcript, pendingTranscripts.get(irPathKey(path)) ?? [], (value, referencePieceIds) => {
-          appendContent(options.roundTrip.builder, content, value, referencePieceIds);
+        replayTextProvenance(part.audio.transcript, pendingTranscripts.get(irPathKey(path)) ?? [], (value, textFragmentIds) => {
+          appendEmittedField(options.roundTrip.builder, content, value, textFragmentIds);
         });
         pendingTranscripts.delete(irPathKey(path));
         yield deltaFrame(record.choice, { content: part.audio.transcript }, tier);
@@ -388,7 +388,7 @@ export const writeOpenAIChatCompletionsEvents = async function* (
       });
       if (annotations.length > 0) yield deltaFrame(record.choice, { annotations }, tier);
       if (choice.refusal_details?.explanation != null) {
-        appendContent(options.roundTrip.builder, textState(record.choice, 'refusal'), choice.refusal_details.explanation);
+        appendEmittedField(options.roundTrip.builder, textState(record.choice, 'refusal'), choice.refusal_details.explanation);
         yield deltaFrame(record.choice, { refusal: choice.refusal_details.explanation }, tier);
       }
       const summary = nativeAccumulator(record.choice).result().choices.find(choice => choice.index === record.choice)?.message.reasoning_text;
@@ -398,9 +398,9 @@ export const writeOpenAIChatCompletionsEvents = async function* (
       const nativeChoice = nativeAccumulator(record.choice).result().choices.find(choice => choice.index === record.choice);
       if (nativeChoice === undefined) throw new Error(`Missing Chat Completions choice ${record.choice} at choice_end`);
       const sourceTurnDigest = await computeOpenAIChatCompletionsTurnDigest(nativeChoice.message);
-      const input = toOpenAIChatCompletionsInputAssistantTurn<ContentStates>(nativeChoice.message, outputState(record.choice));
-      const data = await options.roundTrip.prepareSidecar(record.choice, sourceTurnDigest, input.turn, input.state, collectOpenAIChatCompletionsTextViews(input.turn));
-      yield deltaFrame(record.choice, { reasoning_details: createOpenAIChatCompletionsSidecarCarrier(data) }, tier);
+      const input = toOpenAIChatCompletionsInputAssistantTurn<EmittedFieldStates>(nativeChoice.message, outputState(record.choice));
+      const data = await options.roundTrip.encodeSidecar(record.choice, sourceTurnDigest, input.turn, input.state, collectOpenAIChatCompletionsTextPlacements(input.turn));
+      yield deltaFrame(record.choice, { reasoning_details: createOpenAIChatCompletionsSidecarDetails(data) }, tier);
       yield chunk([{ index: record.choice, delta: {}, finish_reason: record.finish_reason }], tierFields(tier));
       continue;
     }

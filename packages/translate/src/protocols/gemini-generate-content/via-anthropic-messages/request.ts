@@ -1,14 +1,14 @@
 import { klona } from 'klona/json';
 
+import type { SidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
-import type { SidecarCodec } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
 import { geminiGenerateContentInlineData, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
 import { geminiGenerateContentThinkingLevelEffort } from '../as-source/reasoning.ts';
-import { collectGeminiGenerateContentReplayContents, hasGeminiGenerateContentThoughtSignature, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
+import { collectGeminiGenerateContentReplayContents, hasGeminiGenerateContentThoughtSignature, findGeminiGenerateContentSidecarOccurrences, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../as-source/schema.ts';
 import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionDeclarations, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
 import {
@@ -216,7 +216,7 @@ export const buildTargetRequest = async (
   const restoredMessages = new Set<AnthropicMessagesPayload['messages'][number]>();
   let contentIndex = 0;
   for (const turn of partitionGeminiGenerateContentTurns(payload.contents ?? [])) {
-    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('geminiGenerateContent', 'anthropicMessages', turn.items, codec, findGeminiGenerateContentSidecarCarriers, verifyGeminiGenerateContentTurnDigest, collectGeminiGenerateContentReplayContents);
+    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('geminiGenerateContent', 'anthropicMessages', turn.items, codec, findGeminiGenerateContentSidecarOccurrences, verifyGeminiGenerateContentTurnDigest, collectGeminiGenerateContentReplayContents);
     if (!roundTrip) {
       if (turn.role === 'assistant') {
         for (const [index, content] of turn.items.entries()) {

@@ -1,19 +1,19 @@
 import { expect, it } from 'vitest';
 
-import { provenanceSpanForAppend, replayTextProvenance } from '../../../src/round-trip/reference/text-provenance.ts';
+import { provenanceSpanForAppend, replayTextProvenance } from '../../src/round-trip/provenance.ts';
 
 it('captures appended suffixes and replays literal gaps around provenance spans', () => {
   const spans = [
     provenanceSpanForAppend('prefix tracked', 'tracked', [3]),
     provenanceSpanForAppend('prefix tracked suffix', ' suffix'),
   ];
-  const output: Array<{ text: string; referencePieceIds?: readonly number[] }> = [];
-  replayTextProvenance('prefix tracked suffix', spans, (text, referencePieceIds) => {
-    output.push({ text, ...(referencePieceIds === undefined ? {} : { referencePieceIds }) });
+  const output: Array<{ text: string; textFragmentIds?: readonly number[] }> = [];
+  replayTextProvenance('prefix tracked suffix', spans, (text, textFragmentIds) => {
+    output.push({ text, ...(textFragmentIds === undefined ? {} : { textFragmentIds }) });
   });
   expect(output).toEqual([
     { text: 'prefix ' },
-    { text: 'tracked', referencePieceIds: [3] },
+    { text: 'tracked', textFragmentIds: [3] },
     { text: ' suffix' },
   ]);
 });
@@ -28,17 +28,17 @@ it('rejects mismatched appends and invalid span sequences', () => {
 });
 
 it('preserves literal gaps between and after tracked spans', () => {
-  const output: Array<{ text: string; referencePieceIds?: readonly number[] }> = [];
+  const output: Array<{ text: string; textFragmentIds?: readonly number[] }> = [];
   replayTextProvenance('aXXbYYc', [
-    { start: 1, endExclusive: 3, referencePieceIds: [1] },
-    { start: 4, endExclusive: 6, referencePieceIds: [2] },
-  ], (text, referencePieceIds) => output.push({ text, ...(referencePieceIds === undefined ? {} : { referencePieceIds }) }));
+    { start: 1, endExclusive: 3, textFragmentIds: [1] },
+    { start: 4, endExclusive: 6, textFragmentIds: [2] },
+  ], (text, textFragmentIds) => output.push({ text, ...(textFragmentIds === undefined ? {} : { textFragmentIds }) }));
 
   expect(output).toEqual([
     { text: 'a' },
-    { text: 'XX', referencePieceIds: [1] },
+    { text: 'XX', textFragmentIds: [1] },
     { text: 'b' },
-    { text: 'YY', referencePieceIds: [2] },
+    { text: 'YY', textFragmentIds: [2] },
     { text: 'c' },
   ]);
 });

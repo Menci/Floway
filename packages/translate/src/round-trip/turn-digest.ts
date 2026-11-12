@@ -1,3 +1,4 @@
+import { hashRoundTripContent } from './hash.ts';
 import type { IRJSONObject, IRJSONValue } from '../ir/common/json.ts';
 
 export type RoundTripTurnDigest = Uint8Array;
@@ -18,20 +19,24 @@ const stringifyReplayMaterial = (material: IRJSONValue): string => {
   return text;
 };
 
-const utf16Bytes = (text: string): Uint8Array<ArrayBuffer> => {
-  const bytes: Uint8Array<ArrayBuffer> = new Uint8Array(text.length * 2);
-  const view = new DataView(bytes.buffer);
-  for (let index = 0; index < text.length; index++) view.setUint16(index * 2, text.charCodeAt(index), true);
-  return bytes;
-};
-
-export const hashRoundTripContent = async (text: string): Promise<Uint8Array> =>
-  new Uint8Array(await crypto.subtle.digest('SHA-256', utf16Bytes(text)), 0, 8);
-
 export const computeRoundTripTurnDigest = async (material: IRJSONValue): Promise<RoundTripTurnDigest> =>
   await hashRoundTripContent(stringifyReplayMaterial(material));
 
 export const verifyRoundTripTurnDigest = async (material: IRJSONValue, sourceTurnDigest: RoundTripTurnDigest): Promise<boolean> => {
   const digest = await hashRoundTripContent(stringifyReplayMaterial(material));
   return digest.length === sourceTurnDigest.length && digest.every((byte, index) => byte === sourceTurnDigest[index]);
+};
+
+/** Protocols provide native digest material; the shared digest format owns version selection. */
+export const createTurnDigestComputer = <Turn>(
+  materialOf: (turn: Turn) => IRJSONValue,
+): (turn: Turn) => Promise<RoundTripTurnDigest> => turn => computeRoundTripTurnDigest(materialOf(turn));
+
+export const createTurnDigestVerifier = <Turn>(
+  materialOf: (turn: Turn) => IRJSONValue,
+): (turn: Turn, sourceTurnDigest: RoundTripTurnDigest, version: number) => Promise<boolean> => (turn, sourceTurnDigest, version) => {
+  switch (version) {
+  case 1: return verifyRoundTripTurnDigest(materialOf(turn), sourceTurnDigest);
+  default: return Promise.resolve(false);
+  }
 };

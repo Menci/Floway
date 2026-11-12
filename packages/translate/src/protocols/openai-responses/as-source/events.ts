@@ -1,6 +1,6 @@
 import { restoreNamespaceOutputItem, type NamespaceToolNames } from './namespace-tools.ts';
 import { createRandomOpenAIResponsesResponseId } from './response-id.ts';
-import { collectOpenAIResponsesTextViews, computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier } from './round-trip.ts';
+import { collectOpenAIResponsesTextPlacements, computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarItem } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
 import type { IRCollector } from '../../../ir/output/collector.ts';
@@ -11,13 +11,13 @@ import type { IROutput, IROutputItem, IROutputMessageItem, IROutputSourceCitatio
 import { createIRUnitIndexAllocator } from '../../../ir/output/unit-index.ts';
 import { createIRUnitQueue } from '../../../ir/output/unit-queue.ts';
 import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
-import { appendContent, createContentState, type ContentState, type ContentStates } from '../../../round-trip/reference/reference-builder.ts';
-import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
+import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
+import { appendEmittedField, createEmittedFieldState, type EmittedFieldState, type EmittedFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.ts';
 import { isCompleteJSONObject } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
-import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantState } from '../as-target/assistant-turn.ts';
+import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantTurnState } from '../as-target/assistant-turn.ts';
 import { isJsonObject } from '@floway-dev/protocols/common';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
@@ -49,7 +49,7 @@ type ResponsesOutputUnit = ResponsesOutputUnitBase & (
   | { readonly kind: 'image' }
   | { readonly kind: 'message'; readonly contentState: ResponsesMessageState }
   | { readonly kind: 'reasoning'; readonly contentState: ResponsesReasoningState }
-  | { readonly kind: 'function_call' | 'custom_tool_call'; toolContentState?: ContentState<'text'> }
+  | { readonly kind: 'function_call' | 'custom_tool_call'; toolContentState?: EmittedFieldState<'text'> }
 );
 
 type OpenAIResponsesEventWriterOptions = SourceEventWriterOptions<'openaiResponses'> & { namespaceToolNames: NamespaceToolNames };
@@ -67,8 +67,8 @@ interface OpenedUnit {
 type ReasoningField = 'summary' | 'content';
 type MessagePart = IROutputMessageItem['content'][number];
 
-type ResponsesMessageState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>, ContentStates>;
-type ResponsesReasoningState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'reasoning' }>, ContentStates>;
+type ResponsesMessageState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>, EmittedFieldStates>;
+type ResponsesReasoningState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'reasoning' }>, EmittedFieldStates>;
 
 const initializedType = (value: unknown): IROutputItem['type'] | MessagePart['type'] | undefined => {
   if (!isJsonObject(value)) return undefined;
@@ -186,7 +186,7 @@ export const writeOpenAIResponsesEvents = async function* (
   let sequence = 0;
   let finishReason: Extract<IRRecord, { type: 'choice_end' }>['finish_reason'] = 'stop';
   const outputUnits: ResponsesOutputUnit[] = [];
-  const nativeState: OpenAIResponsesOutputAssistantState<ContentStates> = [];
+  const nativeState: OpenAIResponsesOutputAssistantTurnState<EmittedFieldStates> = [];
   const units = createIRUnitRegistry<ResponsesOutputUnit>();
   const messageUnits = new Map<number, ResponsesOutputUnit[]>();
   const logprobGroups = new Map<string, number>();
@@ -202,15 +202,15 @@ export const writeOpenAIResponsesEvents = async function* (
     units.set(unit.path, unit);
   };
 
-  const appendUnitText = (unit: ResponsesOutputUnit, path: IRPath, text: string, referencePieceIds?: readonly number[]): void => {
-    let content: ContentState<'text'>;
+  const appendUnitText = (unit: ResponsesOutputUnit, path: IRPath, text: string, textFragmentIds?: readonly number[]): void => {
+    let content: EmittedFieldState<'text'>;
     if (unit.kind === 'message') {
       const index = unit.contentOrdinals.get(path.slice(0, 6));
       const parts = unit.contentState.content ??= [];
       const part = parts[index];
       const refusal = path.at(-1) === 'refusal';
       if (part === undefined) {
-        content = createContentState(options.roundTrip.builder, 'text');
+        content = createEmittedFieldState(options.roundTrip.builder, 'text');
         parts[index] = refusal ? { refusal: content } : { text: content };
       } else if (refusal) {
         if (!('refusal' in part) || part.refusal === undefined) throw new Error('Responses refusal state has the wrong kind');
@@ -225,17 +225,17 @@ export const writeOpenAIResponsesEvents = async function* (
       if ((field !== 'summary' && field !== 'content') || typeof index !== 'number') throw new Error('Responses reasoning text requires a native part');
       const parts = unit.contentState[field] ??= [];
       const part = parts[index] ??= {};
-      content = part.text ??= createContentState(options.roundTrip.builder, 'text');
+      content = part.text ??= createEmittedFieldState(options.roundTrip.builder, 'text');
     } else if (unit.kind === 'function_call' || unit.kind === 'custom_tool_call') {
       if (unit.toolContentState === undefined) throw new Error('Responses tool text requires an opened native field');
       content = unit.toolContentState;
     } else return;
-    appendContent(options.roundTrip.builder, content, text, referencePieceIds);
+    appendEmittedField(options.roundTrip.builder, content, text, textFragmentIds);
   };
 
   const appendPendingText = (unit: ResponsesOutputUnit, path: IRPath, text: string): void => {
     const key = irPathKey(path);
-    replayTextProvenance(text, unit.pendingText?.get(key) ?? [], (value, referencePieceIds) => appendUnitText(unit, path, value, referencePieceIds));
+    replayTextProvenance(text, unit.pendingText?.get(key) ?? [], (value, textFragmentIds) => appendUnitText(unit, path, value, textFragmentIds));
     unit.pendingText?.delete(key);
   };
 
@@ -489,7 +489,7 @@ export const writeOpenAIResponsesEvents = async function* (
       ? { type: 'custom_tool_call', id, call_id: resolvedCallId, name: item.name, input: '', status: 'in_progress' }
       : { type: 'function_call', id, call_id: resolvedCallId, name: item.name, arguments: '', status: 'in_progress' };
     const restored = restoreNamespaceOutputItem(added, options.namespaceToolNames, 'in_progress');
-    const content = createContentState(options.roundTrip.builder, 'text');
+    const content = createEmittedFieldState(options.roundTrip.builder, 'text');
     unit.toolContentState = content;
     nativeState[outputIndex] = restored.type === 'custom_tool_call' ? { input: content } : { arguments: content };
     const followUps: OpenAIResponsesStreamEventEx[] = [];
@@ -812,9 +812,9 @@ export const writeOpenAIResponsesEvents = async function* (
       const nativeOutput = outputUnits.map(unit => restoreNamespaceOutputItem(outputItem(state, unit), options.namespaceToolNames, 'completed'));
       nativeState.length = nativeOutput.length;
       const sourceTurnDigest = await computeOpenAIResponsesTurnDigest(nativeOutput);
-      const input = toOpenAIResponsesInputAssistantTurn<ContentStates>(nativeOutput, nativeState);
-      const data = await options.roundTrip.prepareSidecar(0, sourceTurnDigest, input.turn, input.state, collectOpenAIResponsesTextViews(input.turn));
-      sidecar = { ...createOpenAIResponsesSidecarCarrier(createRandomOpenAIResponsesItemId('reasoning'), data), status: 'completed' };
+      const input = toOpenAIResponsesInputAssistantTurn<EmittedFieldStates>(nativeOutput, nativeState);
+      const data = await options.roundTrip.encodeSidecar(0, sourceTurnDigest, input.turn, input.state, collectOpenAIResponsesTextPlacements(input.turn));
+      sidecar = { ...createOpenAIResponsesSidecarItem(createRandomOpenAIResponsesItemId('reasoning'), data), status: 'completed' };
       const outputIndex = outputUnits.length;
       yield emit({ type: 'response.output_item.added', output_index: outputIndex, item: sidecar });
       yield emit({ type: 'response.output_item.done', output_index: outputIndex, item: sidecar });

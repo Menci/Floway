@@ -1,10 +1,11 @@
 import { klona } from 'klona/json';
 
 import { openaiResponsesReasoningToAnthropicMessagesUpstreamBlock } from './reasoning.ts';
+import type { SidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { parseJSONObject } from '../../../shared/json/object.ts';
-import type { SidecarCodec, RemoteImageLoader } from '../../../types.ts';
+import type { RemoteImageLoader } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-messages/as-target/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
@@ -13,7 +14,7 @@ import { restrictAllowedTools } from '../as-source/allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
-import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarCarriers, isOpenAIResponsesEncryptedReasoning, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
+import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarOccurrences, isOpenAIResponsesEncryptedReasoning, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
 import { buildCustomToolInputSchema } from '../common/custom-tool-wrap.ts';
 import {
   ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
@@ -433,7 +434,7 @@ export const buildTargetRequest = async (
 
   for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
     if (turn.role !== 'assistant') { target.messages.push(...await translateNonAssistantInput(turn.items, options.loadRemoteImage)); continue; }
-    const roundTrip = await roundTripAssistantTurn('openaiResponses', 'anthropicMessages', turn.items, codec, findOpenAIResponsesSidecarCarriers, verifyOpenAIResponsesTurnDigest, collectOpenAIResponsesReplayContents);
+    const roundTrip = await roundTripAssistantTurn('openaiResponses', 'anthropicMessages', turn.items, codec, findOpenAIResponsesSidecarOccurrences, verifyOpenAIResponsesTurnDigest, collectOpenAIResponsesReplayContents);
     target.messages.push(...(roundTrip ? [roundTrip.turn] : translateAssistantTurn(turn.items)));
   }
   applyLastMessageCacheBreakpoint(target.messages.filter(message => bareMessages.has(message)));

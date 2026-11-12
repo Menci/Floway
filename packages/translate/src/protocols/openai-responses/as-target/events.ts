@@ -1,10 +1,10 @@
-import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantState } from './assistant-turn.ts';
+import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantTurnState } from './assistant-turn.ts';
 import { usageToIR } from './usage.ts';
 import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRRelativePath, type IRWriteHandle } from '../../../ir/output/builder.ts';
 import type { IRRecord } from '../../../ir/output/records.ts';
 import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
-import { appendField, createFieldState, invalidateField, type FieldStates } from '../../../round-trip/reference/reference-builder.ts';
-import type { RoundTripReader } from '../../../round-trip/stream.ts';
+import type { RoundTripReader } from '../../../round-trip/reader.ts';
+import { appendReadField, createReadFieldState, invalidateReadField, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
@@ -17,10 +17,10 @@ import type {
   OpenAIResponsesStreamEventEx,
 } from '@floway-dev/protocols/openai-responses';
 
-type ReasoningFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'reasoning' }>, FieldStates>;
-type MessageFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>, FieldStates>;
-type FunctionFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'function_call' }>, FieldStates>;
-type CustomFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'custom_tool_call' }>, FieldStates>;
+type ReasoningFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'reasoning' }>, ReadFieldStates>;
+type MessageFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>, ReadFieldStates>;
+type FunctionFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'function_call' }>, ReadFieldStates>;
+type CustomFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'custom_tool_call' }>, ReadFieldStates>;
 type TextFieldStateNode = NonNullable<NonNullable<MessageFieldState['content']>[number]>;
 
 interface WriteTarget {
@@ -29,7 +29,7 @@ interface WriteTarget {
 }
 
 interface ResponsesTextTarget extends WriteTarget {
-  fieldState?: FieldStates['text'];
+  fieldState?: ReadFieldStates['text'];
 }
 
 interface ResponsesOutputTextPartState extends ResponsesTextTarget {
@@ -143,7 +143,7 @@ export const readOpenAIResponsesEvents = async function* (
 ): AsyncGenerator<IRRecord> {
   const ir = createIRBuilder();
   const items = new Map<number, ResponsesItemState>();
-  const outputState: OpenAIResponsesOutputAssistantState<FieldStates> = [];
+  const outputState: OpenAIResponsesOutputAssistantTurnState<ReadFieldStates> = [];
   let started = false;
   let finished = false;
   let responseIdentity: { id: string; model: string } | undefined;
@@ -220,7 +220,7 @@ export const readOpenAIResponsesEvents = async function* (
   const ensureToolText = (state: ResponsesItemState): ResponsesTextTarget => {
     if (state.item === undefined || (state.type !== 'function_call' && state.type !== 'custom_tool_call')) throw new TypeError('Responses tool text requires a tool item');
     if (state.toolText !== undefined) return state.toolText;
-    const fieldState = createFieldState('text');
+    const fieldState = createReadFieldState('text');
     if (state.type === 'function_call') {
       const node = state.fieldState;
       node.arguments = fieldState;
@@ -236,7 +236,7 @@ export const readOpenAIResponsesEvents = async function* (
 
   const appendTextAtom = (target: ResponsesTextTarget, text: string): void => {
     if (target.fieldState === undefined) target.handle.append(target.path, text);
-    else target.handle.append(target.path, text, [appendField(options.roundTrip.builder, target.fieldState, text)]);
+    else target.handle.append(target.path, text, [appendReadField(options.roundTrip.builder, target.fieldState, text)]);
   };
   const reconcileAppend = (target: ResponsesTextTarget, snapshot: unknown): string => {
     const { handle, path } = target;
@@ -265,7 +265,7 @@ export const readOpenAIResponsesEvents = async function* (
       if (current === '') appendTextAtom(target, suffix);
       else {
         if (target.fieldState !== undefined) {
-          invalidateField(target.fieldState);
+          invalidateReadField(target.fieldState);
           target.fieldState = undefined;
         }
         handle.append(path, suffix);
@@ -292,7 +292,7 @@ export const readOpenAIResponsesEvents = async function* (
     if (index > length) throw new TypeError(`Responses ${field} index is not contiguous`);
     if (index === length) {
       state.item.initialize([field, index], '');
-      const fieldState = createFieldState('text');
+      const fieldState = createReadFieldState('text');
       const fieldStateNode = { text: fieldState };
       const nativeState = state.fieldState;
       const parts = nativeState[field] ??= [];
@@ -321,7 +321,7 @@ export const readOpenAIResponsesEvents = async function* (
     contentIndex: number,
     path: 'text' | 'refusal',
   ) => {
-    const fieldState = createFieldState('text');
+    const fieldState = createReadFieldState('text');
     const fieldStateNode: TextFieldStateNode = path === 'text' ? { text: fieldState } : { refusal: fieldState };
     const content = owner.fieldState.content ??= [];
     content[contentIndex] = fieldStateNode;
@@ -597,7 +597,7 @@ export const readOpenAIResponsesEvents = async function* (
         const policy = response.error?.code === 'cyber_policy' ? 'cyber' : response.error?.code === 'bio_policy' ? 'bio' : undefined;
         if (policy !== undefined) ir.choice(0).assign('refusal_details', { category: policy, explanation: response.error?.message });
         outputState.length = terminalOutput.length;
-        const input = toOpenAIResponsesInputAssistantTurn<FieldStates>(terminalOutput, outputState);
+        const input = toOpenAIResponsesInputAssistantTurn<ReadFieldStates>(terminalOutput, outputState);
         options.roundTrip.onAssistantTurn(0, input.turn, input.state);
         const incompleteReason = response.incomplete_details?.reason === 'content_filter' ? 'content_filter' : 'length';
         const finishReason = policy !== undefined ? 'content_filter'

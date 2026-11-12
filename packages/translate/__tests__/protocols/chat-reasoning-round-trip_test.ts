@@ -1,11 +1,10 @@
 import { expect, test } from 'vitest';
 
 import { requireTrip } from './require-trip.ts';
-import { toOpenAIResponsesInputAssistantTurn } from '../../src/protocols/openai-responses/as-target/assistant-turn.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { reassembleOpenAIResponsesEvents } from '@floway-dev/protocols/openai-responses';
+import { reassembleOpenAIResponsesEvents, toOpenAIResponsesInputItems } from '@floway-dev/protocols/openai-responses';
 import { routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
 const chunk = (delta: OpenAIChatCompletionsAssistantDeltaEx, finish_reason: 'stop' | null = null) => eventFrame<OpenAIChatCompletionsStreamEvent>({
@@ -26,7 +25,7 @@ test('round-trips native Chat reasoning fragments through Responses without corr
     for await (const frame of trip.events(upstream())) if (frame.type === 'event') yield frame.event;
   };
   const result = await reassembleOpenAIResponsesEvents(responseEvents());
-  const restored = await requireTrip(routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'source', input: toOpenAIResponsesInputAssistantTurn(result.output) }, context));
+  const restored = await requireTrip(routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'source', input: toOpenAIResponsesInputItems(result.output) }, context));
   expect(restored.target.messages).toEqual([{
     role: 'assistant', content: 'answer', refusal: null, provider_specific_fields: { trace: 'native' },
     reasoning_details: [

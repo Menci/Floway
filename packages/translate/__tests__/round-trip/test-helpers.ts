@@ -1,15 +1,16 @@
 import { flattenNamespaceTools } from '../../src/protocols/openai-responses/as-source/namespace-tools.ts';
-import type { AssistantTurnByProtocol, AssistantTurnFor } from '../../src/round-trip/assistant-turn.ts';
-import type { AssistantTurnStateFor } from '../../src/round-trip/reference/assistant-turn.ts';
-import { createReferenceBuilder, type ContentStates, type FieldStates } from '../../src/round-trip/reference/reference-builder.ts';
-import type { RoundTripReader, RoundTripWriter } from '../../src/round-trip/stream.ts';
+import type { InputAssistantTurnByProtocol, InputAssistantTurnFor } from '../../src/round-trip/input-assistant-turn.ts';
+import type { RoundTripReader } from '../../src/round-trip/reader.ts';
+import type { InputAssistantTurnStateFor } from '../../src/round-trip/reference/assistant-turn-types.ts';
+import { createReferenceBuilder, type EmittedFieldStates, type ReadFieldStates } from '../../src/round-trip/reference/reference-builder.ts';
 import type { RoundTripTurnDigest } from '../../src/round-trip/turn-digest.ts';
+import type { RoundTripWriter } from '../../src/round-trip/writer.ts';
 
-export const createRoundTripReaderCapture = <Protocol extends keyof AssistantTurnByProtocol>() => {
+export const createRoundTripReaderCapture = <Protocol extends keyof InputAssistantTurnByProtocol>() => {
   const builder = createReferenceBuilder();
   const turns = new Map<number, {
-    turn: AssistantTurnFor<Protocol>;
-    fieldState: AssistantTurnStateFor<Protocol, FieldStates>;
+    turn: InputAssistantTurnFor<Protocol>;
+    fieldState: InputAssistantTurnStateFor<Protocol, ReadFieldStates>;
   }>();
   const roundTrip: RoundTripReader<Protocol> = {
     builder,
@@ -18,17 +19,17 @@ export const createRoundTripReaderCapture = <Protocol extends keyof AssistantTur
   return { builder, turns, roundTrip };
 };
 
-export const captureRoundTripWriter = <Protocol extends keyof AssistantTurnByProtocol>() => {
+export const captureRoundTripWriter = <Protocol extends keyof InputAssistantTurnByProtocol>() => {
   const builder = createReferenceBuilder();
   const prepared: Array<{
     choice: number;
     sourceTurnDigest: RoundTripTurnDigest;
-    turn: AssistantTurnFor<Protocol>;
-    contentState: AssistantTurnStateFor<Protocol, ContentStates>;
+    turn: InputAssistantTurnFor<Protocol>;
+    contentState: InputAssistantTurnStateFor<Protocol, EmittedFieldStates>;
   }> = [];
   const roundTrip: RoundTripWriter<Protocol> = {
     builder,
-    prepareSidecar: async (choice, sourceTurnDigest, turn, contentState) => {
+    encodeSidecar: async (choice, sourceTurnDigest, turn, contentState) => {
       prepared.push({ choice, sourceTurnDigest, turn, contentState });
       return `sidecar-${choice}`;
     },

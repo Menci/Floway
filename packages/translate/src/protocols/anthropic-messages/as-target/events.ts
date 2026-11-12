@@ -1,10 +1,10 @@
-import type { AnthropicMessagesAssistantState } from './assistant-turn.ts';
+import type { AnthropicMessagesInputAssistantTurnState } from './assistant-turn.ts';
 import { type AnthropicMessagesInputCounts, usageToIR } from './usage.ts';
 import { createIRBuilder, type IRItemHandle, type IRPartHandle } from '../../../ir/output/builder.ts';
 import type { IRRecord } from '../../../ir/output/records.ts';
 import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
-import { appendField, createFieldState, type FieldState, type FieldStates } from '../../../round-trip/reference/reference-builder.ts';
-import type { RoundTripReader } from '../../../round-trip/stream.ts';
+import type { RoundTripReader } from '../../../round-trip/reader.ts';
+import { appendReadField, createReadFieldState, type ReadFieldState, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';
 import { unwrapCustomToolInput } from '../../openai-responses/common/custom-tool-wrap.ts';
 import {
@@ -48,15 +48,15 @@ const UNTRANSLATED_BLOCK_TYPES: readonly string[] = [
   'container_upload',
 ];
 
-type MessagesBlockFieldState = NonNullable<NonNullable<AnthropicMessagesAssistantState<FieldStates>['content']>[number]>;
+type MessagesBlockFieldState = NonNullable<NonNullable<AnthropicMessagesInputAssistantTurnState<ReadFieldStates>['content']>[number]>;
 
 interface MessagesBlockState {
   readonly item?: IRItemHandle;
   readonly part?: IRPartHandle;
   readonly custom: boolean;
   annotationCount?: number;
-  textField?: FieldState<'text'>;
-  jsonField?: FieldState<'json'>;
+  textField?: ReadFieldState<'text'>;
+  jsonField?: ReadFieldState<'json'>;
   fieldState?: MessagesBlockFieldState;
   wrappedInput: string;
 }
@@ -86,7 +86,7 @@ export const readAnthropicMessagesEvents = async function* (
     let part: IRPartHandle | undefined;
     let annotationCount: number | undefined;
     let custom = false;
-    let textField: FieldState<'text'> | undefined;
+    let textField: ReadFieldState<'text'> | undefined;
     if (block.type === 'fallback') {
       ir.assign(['model'], block.to.model);
     } else if (block.type === 'text') {
@@ -98,14 +98,14 @@ export const readAnthropicMessagesEvents = async function* (
       part = item.part({ type: 'text', text: '', ...(annotations === undefined ? {} : { annotations }) });
       annotationCount = Array.isArray(annotations) ? annotations.length : undefined;
       if (block.text !== '') {
-        textField = createFieldState('text');
-        part.append('text', block.text, [appendField(options.roundTrip.builder, textField, block.text)]);
+        textField = createReadFieldState('text');
+        part.append('text', block.text, [appendReadField(options.roundTrip.builder, textField, block.text)]);
       }
     } else if (block.type === 'thinking') {
       item = ir.item(0, { type: 'reasoning', summary: [''] });
       if (block.thinking !== '') {
-        textField = createFieldState('text');
-        item.append(['summary', 0], block.thinking, [appendField(options.roundTrip.builder, textField, block.thinking)]);
+        textField = createReadFieldState('text');
+        item.append(['summary', 0], block.thinking, [appendReadField(options.roundTrip.builder, textField, block.thinking)]);
       }
     } else if (block.type === 'tool_use') {
       custom = options.customToolNames?.has(block.name) === true;
@@ -151,10 +151,10 @@ export const readAnthropicMessagesEvents = async function* (
       case 'text_delta':
         if (d.text !== '') {
           if (block.textField === undefined) {
-            block.textField = createFieldState('text');
+            block.textField = createReadFieldState('text');
             block.fieldState = { text: block.textField };
           }
-          const partId = appendField(options.roundTrip.builder, block.textField, d.text);
+          const partId = appendReadField(options.roundTrip.builder, block.textField, d.text);
           if (block.part === undefined) block.item.append(['content', 0, 'text'], d.text, [partId]);
           else block.part.append('text', d.text, [partId]);
         }
@@ -162,20 +162,20 @@ export const readAnthropicMessagesEvents = async function* (
       case 'thinking_delta':
         if (d.thinking !== '') {
           if (block.textField === undefined) {
-            block.textField = createFieldState('text');
+            block.textField = createReadFieldState('text');
             block.fieldState = { thinking: block.textField };
           }
-          block.item.append(['summary', 0], d.thinking, [appendField(options.roundTrip.builder, block.textField, d.thinking)]);
+          block.item.append(['summary', 0], d.thinking, [appendReadField(options.roundTrip.builder, block.textField, d.thinking)]);
         }
         break;
       case 'signature_delta': break;
       case 'input_json_delta':
         if (d.partial_json !== '') {
           if (block.jsonField === undefined) {
-            block.jsonField = createFieldState('json');
+            block.jsonField = createReadFieldState('json');
             block.fieldState = { input: block.jsonField };
           }
-          const partId = appendField(options.roundTrip.builder, block.jsonField, d.partial_json);
+          const partId = appendReadField(options.roundTrip.builder, block.jsonField, d.partial_json);
           if (block.custom) block.wrappedInput += d.partial_json;
           else block.item.append('arguments', d.partial_json, [partId]);
         }
@@ -231,7 +231,7 @@ export const readAnthropicMessagesEvents = async function* (
       if (!started) throw new Error('Messages message_stop arrived before message_start');
       if (blocks.size > 0) throw new Error('Messages message_stop arrived with open content blocks');
       const nativeResult = nativeAccumulator.result();
-      const contentFields: NonNullable<AnthropicMessagesAssistantState<FieldStates>['content']> = [];
+      const contentFields: NonNullable<AnthropicMessagesInputAssistantTurnState<ReadFieldStates>['content']> = [];
       contentFields.length = nativeResult.content.length;
       [...blockStates.entries()].toSorted(([left], [right]) => left - right).forEach(([, block], index) => {
         if (block.fieldState !== undefined) contentFields[index] = block.fieldState;

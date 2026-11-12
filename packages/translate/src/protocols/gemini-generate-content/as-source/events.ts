@@ -1,4 +1,4 @@
-import { collectGeminiGenerateContentTextViews, computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSidecarCarrier } from './round-trip.ts';
+import { collectGeminiGenerateContentTextPlacements, computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSidecarPart } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import type { IRJSONObject } from '../../../ir/common/json.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
@@ -10,14 +10,14 @@ import { consumeIRRecords } from '../../../ir/output/stream.ts';
 import type { IROutput, IROutputSourceCitation, IROutputTokenLogprob } from '../../../ir/output/types.ts';
 import { createIRUnitQueue, type IRUnitQueue } from '../../../ir/output/unit-queue.ts';
 import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
-import { appendContent, createContentState, type ContentStates, type ContentState as ReferenceContentState } from '../../../round-trip/reference/reference-builder.ts';
-import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
+import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
+import { appendEmittedField, createEmittedFieldState, type EmittedFieldStates, type EmittedFieldState } from '../../../round-trip/reference/reference-builder.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.ts';
 import { isCompleteJSONObject } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
-import type { GeminiGenerateContentAssistantState, GeminiGenerateContentInputAssistantTurn } from '../as-target/assistant-turn.ts';
+import type { GeminiGenerateContentInputAssistantTurnState, GeminiGenerateContentInputAssistantTurn } from '../as-target/assistant-turn.ts';
 import { eventFrame, FAST_SERVICE_TIER, type EventFrame } from '@floway-dev/protocols/common';
 import {
   type GeminiGenerateContentCandidate,
@@ -77,8 +77,8 @@ export const writeGeminiGenerateContentEvents = async function* (
   const pendingText = new Map<number, PendingTextQueue>();
   const sourceLengths = new Map<string, number>();
   const nativeAccumulator = createGeminiGenerateContentEventAccumulator();
-  type ContentState = NonNullable<GeminiGenerateContentAssistantState<ContentStates>[number]>;
-  type PartsState = NonNullable<ContentState['parts']>;
+  type GeminiContentState = NonNullable<GeminiGenerateContentInputAssistantTurnState<EmittedFieldStates>[number]>;
+  type PartsState = NonNullable<GeminiContentState['parts']>;
   const partStates = new Map<number, PartsState>();
 
   const partsState = (choice: number): PartsState => {
@@ -87,8 +87,8 @@ export const writeGeminiGenerateContentEvents = async function* (
     return state;
   };
 
-  const appendPendingContent = (content: ReferenceContentState, text: string, spans: readonly TextProvenanceSpan[]): void =>
-    replayTextProvenance(text, spans, (value, referencePieceIds) => appendContent(options.roundTrip.builder, content, value, referencePieceIds));
+  const appendPendingContent = (content: EmittedFieldState, text: string, spans: readonly TextProvenanceSpan[]): void =>
+    replayTextProvenance(text, spans, (value, textFragmentIds) => appendEmittedField(options.roundTrip.builder, content, value, textFragmentIds));
 
   const emit = (event: GeminiGenerateContentResult): EventFrame<GeminiGenerateContentStreamEvent> => {
     const frame = eventFrame({ responseId: metadata.id, modelVersion: metadata.model, ...event });
@@ -112,7 +112,7 @@ export const writeGeminiGenerateContentEvents = async function* (
     return next;
   };
 
-  const appendText = (choice: number, source: IRPath, text: string, thought: boolean, referencePieceIds?: readonly number[]): GeminiGenerateContentPart | undefined => {
+  const appendText = (choice: number, source: IRPath, text: string, thought: boolean, textFragmentIds?: readonly number[]): GeminiGenerateContentPart | undefined => {
     if (text === '') return undefined;
     const kind = thought ? 'thought' : 'text';
     const partIndex = occupyPart(choice, kind);
@@ -140,9 +140,9 @@ export const writeGeminiGenerateContentEvents = async function* (
       const state = partsState(choice);
       const partState = state[partIndex];
       const existing = partState !== undefined && 'text' in partState ? partState.text : undefined;
-      const content = existing ?? createContentState(options.roundTrip.builder, 'text');
+      const content = existing ?? createEmittedFieldState(options.roundTrip.builder, 'text');
       if (existing === undefined) state[partIndex] = { text: content };
-      appendContent(options.roundTrip.builder, content, text, referencePieceIds);
+      appendEmittedField(options.roundTrip.builder, content, text, textFragmentIds);
     }
     return { text, ...(thought ? { thought: true } : {}) };
   };
@@ -168,7 +168,7 @@ export const writeGeminiGenerateContentEvents = async function* (
       const pending = queue.values[queue.head++];
       const source = collector.value<string>(pending.source);
       if (source === undefined) throw new TypeError(`GenerateContent pending text source is missing: ${JSON.stringify(pending.source)}`);
-      const part = appendText(choice, pending.source, source.slice(pending.span.start, pending.span.endExclusive), pending.thought, pending.span.referencePieceIds);
+      const part = appendText(choice, pending.source, source.slice(pending.span.start, pending.span.endExclusive), pending.thought, pending.span.textFragmentIds);
       if (part !== undefined) parts.push(part);
     }
     if (queue.head === queue.values.length) pendingText.delete(choice);
@@ -241,11 +241,11 @@ export const writeGeminiGenerateContentEvents = async function* (
             };
             const transcriptAtoms = content.type === 'audio' ? takePendingText(choice, unit) : [];
             const partIndex = occupyPart(choice, 'other');
-            const dataState = createContentState(options.roundTrip.builder, 'text');
+            const dataState = createEmittedFieldState(options.roundTrip.builder, 'text');
             appendPendingContent(dataState, inlineMedia.data, unit.pendingData ?? []);
-            let transcriptState: ReferenceContentState<'text'> | undefined;
+            let transcriptState: EmittedFieldState<'text'> | undefined;
             if (content.type === 'audio' && content.audio.transcript !== undefined) {
-              transcriptState = createContentState(options.roundTrip.builder, 'text');
+              transcriptState = createEmittedFieldState(options.roundTrip.builder, 'text');
               appendPendingContent(transcriptState, content.audio.transcript, transcriptAtoms.map(atom => atom.span));
             }
             partsState(choice)[partIndex] = {
@@ -282,10 +282,10 @@ export const writeGeminiGenerateContentEvents = async function* (
                     args: parsed.value,
                   },
                 };
-                const argumentState = createContentState(options.roundTrip.builder, 'json');
+                const argumentState = createEmittedFieldState(options.roundTrip.builder, 'json');
                 const serialized = JSON.stringify(parsed.value);
                 if (serialized === item.arguments) appendPendingContent(argumentState, serialized, unit.pendingArguments ?? []);
-                else appendContent(options.roundTrip.builder, argumentState, serialized);
+                else appendEmittedField(options.roundTrip.builder, argumentState, serialized);
                 partsState(choice)[partIndex] = { functionCall: { args: argumentState } };
               }
             }
@@ -421,10 +421,10 @@ export const writeGeminiGenerateContentEvents = async function* (
       const targetTurn: GeminiGenerateContentInputAssistantTurn = [{ role: 'model', parts: nativeCandidate?.content?.parts ?? [] }];
       const stateParts = partsState(record.choice);
       stateParts.length = targetTurn[0].parts?.length ?? 0;
-      const assistantState: GeminiGenerateContentAssistantState<ContentStates> = [{ parts: stateParts }];
+      const assistantState: GeminiGenerateContentInputAssistantTurnState<EmittedFieldStates> = [{ parts: stateParts }];
       const sourceTurnDigest = await computeGeminiGenerateContentTurnDigest(targetTurn);
-      const data = await options.roundTrip.prepareSidecar(record.choice, sourceTurnDigest, targetTurn, assistantState, collectGeminiGenerateContentTextViews(targetTurn));
-      yield emitPart(record.choice, createGeminiGenerateContentSidecarCarrier(data));
+      const data = await options.roundTrip.encodeSidecar(record.choice, sourceTurnDigest, targetTurn, assistantState, collectGeminiGenerateContentTextPlacements(targetTurn));
+      yield emitPart(record.choice, createGeminiGenerateContentSidecarPart(data));
       yield emit({ candidates: [terminalCandidate(record, state, collector)] });
     }
 

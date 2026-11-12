@@ -1,4 +1,4 @@
-import { collectAnthropicMessagesTextViews, computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarCarrier } from './round-trip.ts';
+import { collectAnthropicMessagesTextPlacements, computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarBlock } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import type { IRJSONObject } from '../../../ir/common/json.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
@@ -11,13 +11,13 @@ import type { IROutput } from '../../../ir/output/types.ts';
 import { createIRUnitIndexAllocator } from '../../../ir/output/unit-index.ts';
 import { createIRUnitQueue } from '../../../ir/output/unit-queue.ts';
 import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
-import { appendContent, createContentState, type ContentState, type ContentStates } from '../../../round-trip/reference/reference-builder.ts';
-import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
+import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
+import { appendEmittedField, createEmittedFieldState, type EmittedFieldState, type EmittedFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.ts';
 import { parseJSONObject, requireJSONObject } from '../../../shared/json/object.ts';
-import type { AnthropicMessagesAssistantState, AnthropicMessagesInputAssistantTurn } from '../as-target/assistant-turn.ts';
+import type { AnthropicMessagesInputAssistantTurnState, AnthropicMessagesInputAssistantTurn } from '../as-target/assistant-turn.ts';
 import {
   generateAnthropicId,
   createAnthropicMessagesEventAccumulator,
@@ -50,7 +50,7 @@ interface MessagesUnit {
   readonly path: IRPath;
   readonly kind: 'text' | 'refusal' | 'audio' | 'image' | 'reasoning' | 'function_call';
   opened: boolean;
-  textContentState?: ContentState<'text'>;
+  textContentState?: EmittedFieldState<'text'>;
   // Keep source intervals until their native field is emitted, including terminal JSON normalization.
   pendingText?: Map<string, TextProvenanceSpan[]>;
 }
@@ -101,7 +101,7 @@ export const writeAnthropicMessagesEvents = async function* (
   const pending = createIRUnitQueue<MessagesUnit>();
   const ordinals = createIRUnitIndexAllocator();
   const nativeAccumulator = createAnthropicMessagesEventAccumulator();
-  const contentState: NonNullable<AnthropicMessagesAssistantState<ContentStates>['content']> = [];
+  const contentState: NonNullable<AnthropicMessagesInputAssistantTurnState<EmittedFieldStates>['content']> = [];
   let nextBlockIndex = 0;
   // Keep only the frontier block wire-open so the finish-time sidecar can close
   // before it. Clients that require serial blocks reorder this in the gateway.
@@ -149,10 +149,10 @@ export const writeAnthropicMessagesEvents = async function* (
     }
   };
 
-  const appendPendingText = (unit: MessagesUnit, path: IRPath, text: string, content: ContentState): void => {
+  const appendPendingText = (unit: MessagesUnit, path: IRPath, text: string, content: EmittedFieldState): void => {
     const key = irPathKey(path);
-    replayTextProvenance(text, unit.pendingText?.get(key) ?? [], (value, referencePieceIds) => {
-      appendContent(options.roundTrip.builder, content, value, referencePieceIds);
+    replayTextProvenance(text, unit.pendingText?.get(key) ?? [], (value, textFragmentIds) => {
+      appendEmittedField(options.roundTrip.builder, content, value, textFragmentIds);
     });
     unit.pendingText?.delete(key);
   };
@@ -192,7 +192,7 @@ export const writeAnthropicMessagesEvents = async function* (
       unit.opened = true;
       const index = ordinals.open(unit.path);
       if (block.type === 'thinking' || block.type === 'text') {
-        unit.textContentState ??= createContentState(options.roundTrip.builder, 'text');
+        unit.textContentState ??= createEmittedFieldState(options.roundTrip.builder, 'text');
         contentState[index] = block.type === 'thinking' ? { thinking: unit.textContentState } : { text: unit.textContentState };
       }
       nextBlockIndex = Math.max(nextBlockIndex, index + 1);
@@ -275,7 +275,7 @@ export const writeAnthropicMessagesEvents = async function* (
         fields.set(key, atoms);
       } else if (kind !== undefined) {
         if (pendingUnit.textContentState === undefined) throw new Error('Missing Messages text content state');
-        appendContent(options.roundTrip.builder, pendingUnit.textContentState, record.value, record.referencePieceIds);
+        appendEmittedField(options.roundTrip.builder, pendingUnit.textContentState, record.value, record.referencePieceIds);
       }
     }
     for (const event of openPendingUnits(state, collector)) {
@@ -327,12 +327,12 @@ export const writeAnthropicMessagesEvents = async function* (
             if (block?.type !== 'tool_use') throw new Error('Messages function unit did not produce a native tool block');
             serializedInput = JSON.stringify(requireJSONObject(block.input));
           }
-          const content = createContentState(options.roundTrip.builder, 'json');
+          const content = createEmittedFieldState(options.roundTrip.builder, 'json');
           contentState[index] = { input: content };
           const item = state.choices[0].items[unit.path[3] as number];
           if (item.type !== 'function_call') throw new Error('Messages function unit requires a function item');
           if (serializedInput === item.arguments) appendPendingText(unit, [...unit.path, 'arguments'], serializedInput, content);
-          else appendContent(options.roundTrip.builder, content, serializedInput);
+          else appendEmittedField(options.roundTrip.builder, content, serializedInput);
         }
         ordinals.close(unit.path);
         if (nextBlockIndex > index + 1) yield stop;
@@ -354,10 +354,10 @@ export const writeAnthropicMessagesEvents = async function* (
         role: 'assistant',
         content: nativeResult.content.map(block => block.type === 'tool_use' ? { ...block, input: requireJSONObject(block.input) } : block),
       };
-      const assistantState: AnthropicMessagesAssistantState<ContentStates> = { content: contentState };
+      const assistantState: AnthropicMessagesInputAssistantTurnState<EmittedFieldStates> = { content: contentState };
       const sourceTurnDigest = await computeAnthropicMessagesTurnDigest([targetTurn]);
-      const data = await options.roundTrip.prepareSidecar(0, sourceTurnDigest, targetTurn, assistantState, collectAnthropicMessagesTextViews([targetTurn]));
-      const carrier = createAnthropicMessagesSidecarCarrier(data);
+      const data = await options.roundTrip.encodeSidecar(0, sourceTurnDigest, targetTurn, assistantState, collectAnthropicMessagesTextPlacements([targetTurn]));
+      const carrier = createAnthropicMessagesSidecarBlock(data);
       yield emit({ type: 'content_block_start', index: nextBlockIndex, content_block: carrier });
       yield emit({ type: 'content_block_stop', index: nextBlockIndex });
       if (pendingBlockStop !== undefined) {

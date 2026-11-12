@@ -1,12 +1,11 @@
 import type { IRJSONObject, IRJSONValue } from '../../../ir/common/json.ts';
-import type { ReplayContent } from '../../../round-trip/reference/assistant-turn.ts';
-import type { EncodedRoundTripSidecar } from '../../../round-trip/resolve.ts';
+import type { ReplayContent } from '../../../round-trip/reference/types.ts';
+import type { SidecarOccurrence } from '../../../round-trip/resolve.ts';
 import { collectTextGroups, collectTextPlacementIndex, type TextContribution, type TextPlacementIndex } from '../../../round-trip/text-groups.ts';
-import { computeRoundTripTurnDigest, verifyRoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
-import type { RoundTripTurnDigest } from '../../../round-trip/turn-digest.ts';
+import { createTurnDigestComputer, createTurnDigestVerifier } from '../../../round-trip/turn-digest.ts';
 import type { OpenAIChatCompletionsAssistantExtensions, OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsAssistantOutputMessage, OpenAIChatCompletionsToolCallEx } from '@floway-dev/protocols/openai-chat-completions';
 
-type OpenAIChatCompletionsReplayPart = NonNullable<Exclude<OpenAIChatCompletionsAssistantTurn['content'], string>>[number];
+type OpenAIChatCompletionsReplayPart = NonNullable<Exclude<OpenAIChatCompletionsSourceAssistantTurn['content'], string>>[number];
 type OpenAIChatCompletionsTextGroup = 'text' | 'refusal';
 
 const chatCompletionsTextGroup = (part: OpenAIChatCompletionsReplayPart): TextContribution<OpenAIChatCompletionsTextGroup> =>
@@ -14,18 +13,18 @@ const chatCompletionsTextGroup = (part: OpenAIChatCompletionsReplayPart): TextCo
     ? { channel: part.type, field: 'text', text: part.text }
     : { channel: part.type, field: 'refusal', text: part.refusal };
 
-export type OpenAIChatCompletionsAssistantTurn = (OpenAIChatCompletionsAssistantMessage | OpenAIChatCompletionsAssistantOutputMessage)
+export type OpenAIChatCompletionsSourceAssistantTurn = (OpenAIChatCompletionsAssistantMessage | OpenAIChatCompletionsAssistantOutputMessage)
   & Pick<OpenAIChatCompletionsAssistantExtensions, 'reasoning' | 'reasoning_text' | 'reasoning_content' | 'reasoning_details'>;
 
-export type OpenAIChatCompletionsReasoningDetailsCarrier = { type: 'reasoning.encrypted'; data: string; format: 'unknown'; index: 1 };
+export type OpenAIChatCompletionsSidecarDetail = { type: 'reasoning.encrypted'; data: string; format: 'unknown'; index: 1 };
 
 const reasoningFields = ['reasoning', 'reasoning_text', 'reasoning_content'] as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const reasoningDetails = (turn: OpenAIChatCompletionsAssistantTurn): unknown[] => Array.isArray(turn.reasoning_details) ? turn.reasoning_details : [];
+const reasoningDetails = (turn: OpenAIChatCompletionsSourceAssistantTurn): unknown[] => Array.isArray(turn.reasoning_details) ? turn.reasoning_details : [];
 
-const reasoningDetailsMaterial = (turn: OpenAIChatCompletionsAssistantTurn): IRJSONObject[] => {
+const reasoningDetailsMaterial = (turn: OpenAIChatCompletionsSourceAssistantTurn): IRJSONObject[] => {
   const materials: IRJSONObject[] = [];
   for (const value of reasoningDetails(turn)) {
     const item = isRecord(value) ? value : undefined;
@@ -36,7 +35,7 @@ const reasoningDetailsMaterial = (turn: OpenAIChatCompletionsAssistantTurn): IRJ
   return materials;
 };
 
-const messageContentMaterial = (turn: OpenAIChatCompletionsAssistantTurn): IRJSONValue | undefined => {
+const messageContentMaterial = (turn: OpenAIChatCompletionsSourceAssistantTurn): IRJSONValue | undefined => {
   if (typeof turn.content === 'string' || turn.content === null || turn.content === undefined) return turn.content;
   const channels = collectTextGroups(turn.content, chatCompletionsTextGroup);
   const parts: IRJSONObject[] = [];
@@ -51,7 +50,7 @@ const toolCallMaterial = (call: OpenAIChatCompletionsToolCallEx): IRJSONObject =
   ? { type: 'function', id: call.id, name: call.function.name, arguments: call.function.arguments }
   : { type: 'custom', id: call.id, name: call.custom.name, input: call.custom.input };
 
-const reasoningTextMaterial = (turn: OpenAIChatCompletionsAssistantTurn): IRJSONObject[] => {
+const reasoningTextMaterial = (turn: OpenAIChatCompletionsSourceAssistantTurn): IRJSONObject[] => {
   const materials: IRJSONObject[] = [];
   for (const field of reasoningFields) {
     if (!Object.hasOwn(turn, field)) continue;
@@ -61,10 +60,10 @@ const reasoningTextMaterial = (turn: OpenAIChatCompletionsAssistantTurn): IRJSON
   return materials;
 };
 
-export const hasOpenAIChatCompletionsReasoning = (turn: OpenAIChatCompletionsAssistantTurn): boolean =>
+export const hasOpenAIChatCompletionsReasoning = (turn: OpenAIChatCompletionsSourceAssistantTurn): boolean =>
   reasoningFields.some(field => turn[field] != null) || reasoningDetails(turn).length > 0;
 
-const chatTurnDigestMaterialV1 = (turn: OpenAIChatCompletionsAssistantTurn): IRJSONObject => ({
+const chatTurnDigestMaterialV1 = (turn: OpenAIChatCompletionsSourceAssistantTurn): IRJSONObject => ({
   ...(Object.hasOwn(turn, 'content') && turn.content !== undefined ? { content: messageContentMaterial(turn) } : {}),
   ...(Object.hasOwn(turn, 'refusal') && turn.refusal !== undefined ? { refusal: turn.refusal } : {}),
   ...(turn.function_call != null
@@ -75,7 +74,7 @@ const chatTurnDigestMaterialV1 = (turn: OpenAIChatCompletionsAssistantTurn): IRJ
   reasoningDetails: reasoningDetailsMaterial(turn),
 });
 
-export const findOpenAIChatCompletionsSidecarCarriers = (turn: OpenAIChatCompletionsAssistantTurn): EncodedRoundTripSidecar<OpenAIChatCompletionsAssistantTurn>[] => {
+export const findOpenAIChatCompletionsSidecarOccurrences = (turn: OpenAIChatCompletionsSourceAssistantTurn): SidecarOccurrence<OpenAIChatCompletionsSourceAssistantTurn>[] => {
   const details = reasoningDetails(turn);
   return details.flatMap((detail, detailIndex) => !isRecord(detail) || detail.type !== 'reasoning.encrypted' || typeof detail.data !== 'string' ? [] : [{
     data: detail.data,
@@ -83,10 +82,9 @@ export const findOpenAIChatCompletionsSidecarCarriers = (turn: OpenAIChatComplet
   }]);
 };
 
-export const computeOpenAIChatCompletionsTurnDigest = (turn: OpenAIChatCompletionsAssistantTurn): Promise<RoundTripTurnDigest> =>
-  computeRoundTripTurnDigest(chatTurnDigestMaterialV1(turn));
+export const computeOpenAIChatCompletionsTurnDigest = createTurnDigestComputer(chatTurnDigestMaterialV1);
 
-export const collectOpenAIChatCompletionsReplayContents = (turn: OpenAIChatCompletionsAssistantTurn): ReplayContent[] => {
+export const collectOpenAIChatCompletionsReplayContents = (turn: OpenAIChatCompletionsSourceAssistantTurn): ReplayContent[] => {
   const candidates: ReplayContent[] = [];
   const collectString = (value: string | null | undefined): void => {
     if (typeof value === 'string') candidates.push(value);
@@ -105,23 +103,14 @@ export const collectOpenAIChatCompletionsReplayContents = (turn: OpenAIChatCompl
   return candidates;
 };
 
-export const verifyOpenAIChatCompletionsTurnDigest = (
-  turn: OpenAIChatCompletionsAssistantTurn,
-  sourceTurnDigest: RoundTripTurnDigest,
-  version: number,
-): Promise<boolean> => {
-  switch (version) {
-  case 1: return verifyRoundTripTurnDigest(chatTurnDigestMaterialV1(turn), sourceTurnDigest);
-  default: return Promise.resolve(false);
-  }
-};
+export const verifyOpenAIChatCompletionsTurnDigest = createTurnDigestVerifier(chatTurnDigestMaterialV1);
 
 // Our carrier uses indexed OpenRouter reasoning_details.
 // https://openrouter.ai/docs/guides/best-practices/reasoning-tokens#reasoning-details-api-shape
-export const createOpenAIChatCompletionsSidecarCarrier = (data: string): OpenAIChatCompletionsReasoningDetailsCarrier[] =>
+export const createOpenAIChatCompletionsSidecarDetails = (data: string): OpenAIChatCompletionsSidecarDetail[] =>
   [{ type: 'reasoning.encrypted', data, format: 'unknown', index: 1 }];
 
-export const collectOpenAIChatCompletionsTextViews = (turn: OpenAIChatCompletionsAssistantTurn): TextPlacementIndex => {
+export const collectOpenAIChatCompletionsTextPlacements = (turn: OpenAIChatCompletionsSourceAssistantTurn): TextPlacementIndex => {
   const views: TextPlacementIndex = new Map();
   if (Array.isArray(turn.content)) collectTextPlacementIndex(collectTextGroups(turn.content, chatCompletionsTextGroup), views);
   return views;

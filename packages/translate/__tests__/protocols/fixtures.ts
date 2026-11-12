@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
+import type { AssistantTurnProtocol } from '../../src/round-trip/input-assistant-turn.ts';
 import { decodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
-import type { RoundTripProtocol } from '../../src/round-trip/sidecar.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { collect, iterate } from '../shared/iterables.ts';
 import { collectAnthropicMessagesProtocolEventsToResult } from '@floway-dev/protocols/anthropic-messages';
@@ -12,7 +12,7 @@ import { collectOpenAIResponsesProtocolEventsToResult, openaiResponsesResultToEv
 
 type Wire = Record<string, any>;
 export type IRTestProtocol = 'openai-chat-completions' | 'openai-responses' | 'anthropic-messages' | 'gemini-generate-content';
-const protocolKeys: Record<IRTestProtocol, RoundTripProtocol> = {
+const protocolKeys: Record<IRTestProtocol, AssistantTurnProtocol> = {
   'openai-chat-completions': 'openaiChatCompletions',
   'openai-responses': 'openaiResponses',
   'anthropic-messages': 'anthropicMessages',
