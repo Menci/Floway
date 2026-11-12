@@ -181,3 +181,5 @@ export { parseOpenAIChatCompletionsStream, type ParseOpenAIChatCompletionsStream
 export { collectOpenAIChatCompletionsProtocolEventsToResult } from './to-result.ts';
 export { createOpenAIChatCompletionsEventAccumulator, reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsEventAccumulator } from './reassemble.ts';
 export { openaiChatCompletionsProtocolFrameToSSEFrame } from './to-sse.ts';
+
+export { toOpenAIChatCompletionsInputAssistantMessage } from './history.ts';
