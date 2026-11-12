@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest';
 
-import { toOpenAIResponsesInputAssistantTurn } from '../../src/protocols/openai-responses/as-target/assistant-turn.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { iterate } from '../shared/iterables.ts';
 import { expectTrip } from '../trip.ts';
@@ -8,6 +7,7 @@ import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesP
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { toOpenAIResponsesInputItems } from '@floway-dev/protocols/openai-responses';
 import { collectOpenAIResponsesProtocolEventsToResult, type OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { routeAnthropicMessagesViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIChatCompletions, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
@@ -93,7 +93,7 @@ test('Responses binds public namespaced call IDs to the native legacy function n
     expect(call.name).toBe('lookup');
     expect(call.namespace).toBe('public');
     if (!Array.isArray(payload.input)) throw new Error('Expected item-array history');
-    payload.input.push(...toOpenAIResponsesInputAssistantTurn(result.output), { type: 'function_call_output', call_id: call.call_id, output: `result-${index}` });
+    payload.input.push(...toOpenAIResponsesInputItems(result.output), { type: 'function_call_output', call_id: call.call_id, output: `result-${index}` });
   }
   const replay = expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions(payload, context));
   assertNativeHistory(replay.target, nativeName, ['result-0', 'result-1', 'result-2']);
@@ -159,7 +159,7 @@ test('restored legacy results retain the ordinary Responses input_file rejection
   const call = result.output.find(item => item.type === 'function_call');
   if (call === undefined) throw new Error('Expected a public Responses invocation');
   const output = { type: 'function_call_output' as const, call_id: call.call_id, output: [{ type: 'input_file' as const, file_id: 'unsupported-file' }] };
-  const input = toOpenAIResponsesInputAssistantTurn(result.output);
+  const input = toOpenAIResponsesInputItems(result.output);
   for (const history of [input, input.filter(item => item.type !== 'reasoning')]) {
     await expect(routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'public-model', stream: true, input: [...history, output] }, context)).resolves.toMatchObject({ type: 'input-error', message: expect.stringContaining('Cannot translate file tool output to OpenAI Chat Completions.') });
   }

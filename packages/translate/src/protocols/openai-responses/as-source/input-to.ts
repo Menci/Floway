@@ -24,7 +24,7 @@ import type {
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
-import { requireCanonicalOpenAIResponsesPayload } from '../canonicalize-payload.ts';
+import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import type {
   CanonicalOpenAIResponsesInputItem,
   CanonicalOpenAIResponsesPayload,
@@ -360,7 +360,8 @@ const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): 
 };
 
 export const readOpenAIResponsesRequest = (source: OpenAIResponsesRequestPayloadEx): SourceReading<OpenAIResponsesSourceAssistantTurn> => {
-  const canonical = requireCanonicalOpenAIResponsesPayload(source);
+  const canonical = canonicalizeOpenAIResponsesPayload(source);
+  if (!('input' in canonical)) throw new TranslateInputException(canonical.error.message, canonical.error);
   rejectProgrammaticOpenAIResponsesPayload(canonical);
 
   const prompt = openaiResponsesInstructionsToIR(canonical.instructions);

@@ -1,28 +1,10 @@
 import type { IRErrorPayload } from '../../../ir/output/error.ts';
 import { errorDetailsOf } from '../../../shared/api-error.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
-import type { GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
+import { geminiGenerateContentStatusForHttpStatus, type GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
 
-/**
- * Use the Google RPC status vocabulary for the numeric error code.
- * https://ai.google.dev/api/rest/v1beta/Status
- */
-const statusNameOf = (status: number): string => {
-  switch (status) {
-  case 400: return 'INVALID_ARGUMENT';
-  case 401: return 'UNAUTHENTICATED';
-  case 403: return 'PERMISSION_DENIED';
-  case 404: return 'NOT_FOUND';
-  case 408: return 'DEADLINE_EXCEEDED';
-  case 409: return 'ABORTED';
-  case 429: return 'RESOURCE_EXHAUSTED';
-  case 500: return 'INTERNAL';
-  case 501: return 'UNIMPLEMENTED';
-  case 503: return 'UNAVAILABLE';
-  case 504: return 'DEADLINE_EXCEEDED';
-  default: return 'UNKNOWN';
-  }
-};
+// This translated-error boundary retains UNKNOWN for an upstream 502.
+const statusNameOf = (status: number): string => status === 502 ? 'UNKNOWN' : geminiGenerateContentStatusForHttpStatus(status) ?? 'UNKNOWN';
 
 /**
  * HTTP failures supply an upstream status; streaming failures derive a code from the error kind.

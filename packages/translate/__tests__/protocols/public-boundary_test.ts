@@ -2,7 +2,6 @@ import { expect, test } from 'vitest';
 
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import {
-  canonicalizeOpenAIResponsesPayload,
   routeGeminiGenerateContentViaOpenAIChatCompletions,
   routeOpenAIChatCompletionsViaAnthropicMessages,
   routeOpenAIChatCompletionsViaOpenAIResponses,
@@ -32,7 +31,6 @@ test('public operations preserve unexpected errors and their causes', async () =
     model: 'source-model', get messages(): never { throw failure; },
   }, { ...options, fallbackMaxOutputTokens: 32 })).rejects.toBe(failure);
 
-  expect(() => canonicalizeOpenAIResponsesPayload({ get model() { throw failure; } })).toThrow(failure);
   expect(failure.cause).toBe(cause);
 });
 

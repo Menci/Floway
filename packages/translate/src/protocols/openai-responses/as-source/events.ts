@@ -15,9 +15,10 @@ import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan 
 import { appendEmittedField, createEmittedFieldState, type EmittedFieldState, type EmittedFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.ts';
-import { isCompleteJSONObject, isJSONRecord } from '../../../shared/json/object.ts';
+import { isCompleteJSONObject } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantTurnState } from '../as-target/assistant-turn.ts';
+import { isJsonObject } from '@floway-dev/protocols/common';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   createRandomOpenAIResponsesItemId,
@@ -75,7 +76,7 @@ type ResponsesMessageState = OpenAIResponsesItemState<Extract<OpenAIResponsesOut
 type ResponsesReasoningState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'reasoning' }>, EmittedFieldStates>;
 
 const initializedType = (value: unknown): IROutputItem['type'] | MessagePart['type'] | undefined => {
-  if (!isJSONRecord(value)) return undefined;
+  if (!isJsonObject(value)) return undefined;
   return value.type === 'message'
     || value.type === 'reasoning'
     || value.type === 'function_call'
@@ -91,14 +92,14 @@ const initializedType = (value: unknown): IROutputItem['type'] | MessagePart['ty
 type TextPartLogprobMetadata = { readonly item_index: number; readonly content_index: number };
 
 const textPartLogprobMetadata = (value: unknown): TextPartLogprobMetadata | undefined => {
-  if (!isJSONRecord(value) || value.scope !== 'text_part') return undefined;
+  if (!isJsonObject(value) || value.scope !== 'text_part') return undefined;
   return typeof value.item_index === 'number' && typeof value.content_index === 'number'
     ? { item_index: value.item_index, content_index: value.content_index }
     : undefined;
 };
 
 const isIRTokenLogprob = (value: unknown): value is IROutputTokenLogprob =>
-  isJSONRecord(value) && typeof value.token === 'string' && typeof value.logprob === 'number';
+  isJsonObject(value) && typeof value.token === 'string' && typeof value.logprob === 'number';
 
 const reasoningPartAdded = (field: ReasoningField, itemId: string, outputIndex: number, index: number): OpenAIResponsesStreamEventEx =>
   field === 'summary'

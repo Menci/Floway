@@ -19,10 +19,9 @@ import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gat
 import { SourceStreamState, eventResultMetadata } from '../shared/respond.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { eventFrame, isJsonMediaType, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/openai-responses';
+import { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, canonicalizeOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesOutputItemEx, type OpenAIResponsesRequestPayloadEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type ExecuteResult, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
-import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/translate';
 
 interface WorkerWebSocket extends WebSocket {
   accept(): void;
@@ -365,7 +364,7 @@ const handleClientMessage = async (
       : Object.fromEntries(Object.entries(message).filter(([key]) => key !== 'type' && key !== 'event_id'));
     const payload = canonicalizeOpenAIResponsesPayload({ ...source, stream: true });
     if (!('input' in payload)) {
-      turnFailure.fail(400, { type: 'invalid_request_error', code: payload.code ?? 'invalid_request_error', message: payload.message, param: payload.param });
+      turnFailure.fail(400, { type: 'invalid_request_error', code: payload.error.code ?? 'invalid_request_error', message: payload.error.message, param: payload.error.param });
       return;
     }
     previousResponseId = payload.previous_response_id ?? undefined;

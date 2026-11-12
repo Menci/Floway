@@ -1,7 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
 import { openaiResponsesSourceProtocol } from '../../src/protocols/openai-responses/as-source.ts';
-import { toOpenAIResponsesInputAssistantTurn } from '../../src/protocols/openai-responses/as-target/assistant-turn.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { iterate } from '../shared/iterables.ts';
 import { expectTrip } from '../trip.ts';
@@ -10,7 +9,7 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols
 import { collectGeminiGenerateContentProtocolEventsToResult } from '@floway-dev/protocols/gemini-generate-content';
 import type { GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 import { collectOpenAIChatCompletionsProtocolEventsToResult, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { collectOpenAIResponsesProtocolEventsToResult } from '@floway-dev/protocols/openai-responses';
+import { toOpenAIResponsesInputItems, collectOpenAIResponsesProtocolEventsToResult } from '@floway-dev/protocols/openai-responses';
 import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 import { routeGeminiGenerateContentViaAnthropicMessages, routeGeminiGenerateContentViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIResponses, routeOpenAIChatCompletionsViaAnthropicMessages, routeOpenAIChatCompletionsViaOpenAIResponses, routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
@@ -72,7 +71,7 @@ test.each([['chat', 'function'], ['chat', 'custom'], ['messages', 'function'], [
     tools: [group(kind), { type: 'function', name: 'web_run', parameters: { type: 'object', properties: {} } }],
     tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: kind, name: 'run', namespace: 'web' }] },
     input: [
-      ...toOpenAIResponsesInputAssistantTurn(result.output),
+      ...toOpenAIResponsesInputItems(result.output),
       kind === 'function' ? { type: 'function_call_output', call_id: call.call_id, output: 'ok' } : { type: 'custom_tool_call_output', call_id: call.call_id, output: 'ok' },
       kind === 'function' ? { type: 'function_call', call_id: 'ordinary', name: 'run', namespace: 'web', arguments: '{}' } : { type: 'custom_tool_call', call_id: 'ordinary', name: 'run', namespace: 'web', input: 'again' },
     ],
@@ -120,7 +119,7 @@ test('native legacy Chat aliases are rebound without adding a wire call ID', asy
   if (call === undefined) throw new Error('Expected the public legacy call.');
   const replay = expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions({
     model: 'm', stream: true, tools: [group('function'), { type: 'function', name: 'web_run', parameters: { type: 'object', properties: {} } }],
-    input: [...toOpenAIResponsesInputAssistantTurn(result.output), { type: 'function_call_output', call_id: call.call_id, output: 'ok' }],
+    input: [...toOpenAIResponsesInputItems(result.output), { type: 'function_call_output', call_id: call.call_id, output: 'ok' }],
   }, options));
   expect(replay.target.messages[0]).toMatchObject({ role: 'assistant', function_call: { name: 'web_run_2', arguments: '{}' }, reasoning_content: 'native reasoning' });
   expect(replay.target.messages[0]).not.toHaveProperty('tool_calls');

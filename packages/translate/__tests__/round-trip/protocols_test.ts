@@ -8,12 +8,12 @@ import { partitionOpenAIChatCompletionsTurns } from '../../src/protocols/openai-
 import { computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarDetails, findOpenAIChatCompletionsSidecarOccurrences, verifyOpenAIChatCompletionsTurnDigest } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
 import { partitionOpenAIResponsesTurns } from '../../src/protocols/openai-responses/as-source/conversation-turns.ts';
 import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarItem, findOpenAIResponsesSidecarOccurrences, verifyOpenAIResponsesTurnDigest } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
-import { toOpenAIResponsesInputAssistantTurn } from '../../src/protocols/openai-responses/as-target/assistant-turn.ts';
 import type { SidecarOccurrence } from '../../src/round-trip/resolve.ts';
 import type { AnyRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesAssistantMessage, AnthropicMessagesMessage } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentContent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
+import { toOpenAIResponsesInputItems } from '@floway-dev/protocols/openai-responses';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesOutputItemEx } from '@floway-dev/protocols/openai-responses';
 
 const chatTurn = (): OpenAIChatCompletionsAssistantMessageEx => ({
@@ -412,7 +412,7 @@ describe('assistant-turn sidecar protocols', () => {
       { type: 'image_generation_call', id: 'ig-null', result: null, status: 'completed' },
       imageCall,
     ];
-    expect(toOpenAIResponsesInputAssistantTurn(outputHistory)).toEqual([
+    expect(toOpenAIResponsesInputItems(outputHistory)).toEqual([
       { type: 'message', id: 'message-a', role: 'assistant', status: 'completed', phase: 'final_answer', content: [{ type: 'output_text', text: 'answer', annotations: [{ type: 'url_citation', url: 'https://example.test', title: 'source', start_index: 0, end_index: 6 }], logprobs: [] }] },
       { type: 'function_call', id: 'function-a', call_id: 'call-a', name: 'lookup', arguments: '{"q":"a"}', status: 'completed' },
       { type: 'shell_call_output', id: 'shell-output', call_id: 'shell-call', output: [{ stdout: 'ok', stderr: '', outcome: { type: 'exit', exit_code: 0 } }], status: 'completed' },
