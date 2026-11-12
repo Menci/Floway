@@ -116,6 +116,16 @@ test('requireCallableSelector rejects a namespace that is not a string', () => {
   assertThrows(() => requireCallableSelector({ type: 'function', name: 'read', namespace: 42 }), TranslateInputException);
 });
 
+test.each(['chat', 'messages'] as const)('rejects namespace selector extensions for %s', async target => {
+  const payload = {
+    model: 'm', stream: true, input: 'hi',
+    tools: [{ type: 'namespace' as const, name: 'files', description: 'files', tools: [{ type: 'function' as const, name: 'read' }] }],
+    tool_choice: { type: 'allowed_tools' as const, mode: 'required' as const, tools: [{ type: 'namespace', name: 'files', extension: true }] },
+  };
+  const build = target === 'chat' ? buildChat : buildMessages;
+  await assertRejects(() => build(payload as never, createTestSidecarCodec()), TranslateInputException, 'namespace selector extensions');
+});
+
 test.each(['auto', 'required'] as const)('Messages expresses a complete %s callable set without changing its declarations', async mode => {
   const payload = source({
     type: 'allowed_tools', mode, tools: [

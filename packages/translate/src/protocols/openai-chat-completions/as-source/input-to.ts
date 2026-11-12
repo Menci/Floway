@@ -255,7 +255,7 @@ const openaiChatCompletionsToolsToIR = (payload: OpenAIChatCompletionsPayload): 
     : legacyChoice === undefined ? undefined : { type: 'function' as const, function: legacyChoice });
   return {
     ...(tools === undefined || tools.length === 0 ? {} : { tools }),
-    ...(choice == null ? {} : { tool_choice: toolChoiceToIR(choice) }),
+    ...(choice == null || tools === undefined || tools.length === 0 ? {} : { tool_choice: toolChoiceToIR(choice) }),
   };
 };
 

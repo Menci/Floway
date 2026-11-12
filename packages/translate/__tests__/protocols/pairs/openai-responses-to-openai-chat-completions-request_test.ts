@@ -326,7 +326,7 @@ test.each(['auto', 'none'] as const)('buildTargetPayload omits orphan string too
   assertEquals(result.target.tool_choice, undefined);
 });
 
-test('buildTargetPayload omits a required tool choice that has no declaration to demand', async () => {
+test('buildTargetPayload retains a required tool choice without declarations', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'Hi' }],
@@ -343,7 +343,7 @@ test('buildTargetPayload omits a required tool choice that has no declaration to
     text: null,
   });
 
-  assertEquals(result.target.tool_choice, undefined);
+  assertEquals(result.target.tool_choice, 'required');
 });
 
 test('buildTargetPayload wraps custom tools as single-string function tools and records their names', async () => {

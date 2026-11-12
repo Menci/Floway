@@ -5,6 +5,7 @@ import {
   routeAnthropicMessagesViaOpenAIResponses,
   routeOpenAIChatCompletionsViaAnthropicMessages,
   routeOpenAIChatCompletionsViaOpenAIResponses,
+  routeOpenAIResponsesViaAnthropicMessages,
   routeOpenAIResponsesViaOpenAIChatCompletions,
 } from '../../../src/index.ts';
 import { readAnthropicMessagesRequest } from '../../../src/protocols/anthropic-messages/as-source/input-to.ts';
@@ -196,6 +197,14 @@ test.each(['auto', 'none'] as const)('orphan Messages %s stays in source IR and 
     expect(result.target).not.toHaveProperty('tools');
     expect(result.target).not.toHaveProperty('tool_choice');
   }
+});
+
+test('parallel tool control without declarations does not invent a Messages tool choice', async () => {
+  const result = await routeOpenAIResponsesViaAnthropicMessages({
+    model: 'm', stream: true, input: 'hi', tools: [], parallel_tool_calls: false,
+  }, { ...options, fallbackMaxOutputTokens: 16 });
+  if (result.type !== 'trip') throw new Error(result.message);
+  expect(result.target).not.toHaveProperty('tool_choice');
 });
 
 test('tool selection never changes the complete allocated declaration inventory', async () => {

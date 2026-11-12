@@ -285,7 +285,7 @@ export const anthropicMessagesHeaderFromIR = (
   const choice = toolChoiceForTools(request.tool_choice, tools);
   const selected = choice === undefined ? undefined : toolChoiceFromIR(choice, tools ?? []);
   const parallel = request.settings.parallel_tool_calls ?? undefined;
-  const toolChoice = parallel === undefined || selected?.type === 'none'
+  const toolChoice = tools === undefined || tools.length === 0 || parallel === undefined || selected?.type === 'none'
     ? selected
     : { ...(selected ?? { type: 'auto' as const }), disable_parallel_tool_use: !parallel };
   return {

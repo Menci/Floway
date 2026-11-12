@@ -205,7 +205,7 @@ const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequestHe
 
   return {
     ...(tools.length === 0 ? {} : { tools }),
-    ...(toolChoice === undefined ? {} : { tool_choice: toolChoice }),
+    ...(toolChoice === undefined || tools.length === 0 && toolChoice === 'required' ? {} : { tool_choice: toolChoice }),
   };
 };
 

@@ -224,6 +224,9 @@ const selectionToIR = (selection: IRInputToolSelector, declarations: readonly IR
 // A selector may name a whole group, which selects each callable it holds.
 const selectorOf = (payload: CanonicalOpenAIResponsesPayload, selector: Record<string, unknown>, declarations: readonly IRInputTool[]): IRInputToolSelector[] => {
   if (typeof selector !== 'object' || selector?.type !== 'namespace') return [selectionToIR(requireCallableSelector(selector), declarations)];
+  if (typeof selector.name !== 'string' || Object.keys(selector).some(key => key !== 'type' && key !== 'name')) {
+    throw new TranslateInputException('Cannot translate namespace selector extensions.');
+  }
   const groups = [
     ...(payload.tools ?? []),
     ...payload.input.flatMap(item => item.type === 'additional_tools' || item.type === 'tool_search_output' ? item.tools : []),

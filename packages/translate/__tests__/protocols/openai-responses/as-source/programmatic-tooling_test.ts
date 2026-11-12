@@ -56,6 +56,16 @@ const payloadCases: Array<{
     },
     message: 'Programmatic',
   },
+  {
+    name: 'deferred inventory tool',
+    payload: { input: [{ type: 'additional_tools', role: 'developer', tools: [{ type: 'function', name: 'lookup', parameters: {}, defer_loading: true }] }] },
+    message: 'Deferred',
+  },
+  {
+    name: 'programmatic inventory caller',
+    payload: { input: [{ type: 'tool_search_output', call_id: 'search', execution: 'client', tools: [{ type: 'function', name: 'lookup', parameters: {}, allowed_callers: ['programmatic'] }] }] },
+    message: 'Programmatic',
+  },
 ];
 
 test.each(payloadCases)('rejectProgrammaticOpenAIResponsesPayload rejects $name', ({ payload, message }) => {

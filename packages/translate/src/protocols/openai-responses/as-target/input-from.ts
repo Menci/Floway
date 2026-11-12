@@ -236,7 +236,7 @@ export const openaiResponsesHeaderFromIR = (request: IRInputRequestHeader): Omit
   // This wire states a permitted subset natively, so the declarations stay
   // whole: narrowing them as well would also narrow what the model may see.
   const tools = request.tools;
-  const choice = tools === undefined || tools.length === 0 ? undefined : request.tool_choice;
+  const choice = tools === undefined || tools.length === 0 ? request.tool_choice === 'required' ? 'required' : undefined : request.tool_choice;
   return {
     ...openaiResponsesSettingsFromIR(settings),
     model: settings.model,

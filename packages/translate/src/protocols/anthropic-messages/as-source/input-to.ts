@@ -320,7 +320,7 @@ const anthropicMessagesToolsToIR = (payload: AnthropicMessagesPayload): Pick<IRI
   const toolChoice = payload.tool_choice == null ? undefined : toolChoiceToIR(payload.tool_choice, declarations);
   return {
     ...(declarations.length === 0 ? {} : { tools: declarations }),
-    ...(toolChoice === undefined ? {} : { tool_choice: toolChoice }),
+    ...(toolChoice === undefined || declarations.length === 0 && toolChoice === 'required' ? {} : { tool_choice: toolChoice }),
   };
 };
 

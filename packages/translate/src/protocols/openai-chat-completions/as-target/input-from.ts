@@ -237,7 +237,7 @@ const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<OpenAIChatComp
  */
 export const openaiChatCompletionsHeaderFromIR = (request: IRInputRequestHeader): Omit<OpenAIChatCompletionsPayload, 'messages'> => {
   const tools = request.tools;
-  const choice = tools === undefined || tools.length === 0 ? undefined : request.tool_choice;
+  const choice = tools === undefined || tools.length === 0 ? request.tool_choice === 'required' ? 'required' : undefined : request.tool_choice;
   return {
     ...openaiChatCompletionsSettingsFromIR(request.settings),
     model: request.settings.model,
