@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 
+import type { AssistantTurnProtocol } from '../../src/round-trip/input-assistant-turn.ts';
 import { decodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { collect, iterate } from '../shared/iterables.ts';
@@ -11,12 +12,12 @@ import { collectOpenAIResponsesProtocolEventsToResult, openaiResponsesResultToEv
 
 type Wire = Record<string, any>;
 export type IRTestProtocol = 'openai-chat-completions' | 'openai-responses' | 'anthropic-messages' | 'gemini-generate-content';
-const assistantTurnProtocolOf = {
+const protocolKeys: Record<IRTestProtocol, AssistantTurnProtocol> = {
   'openai-chat-completions': 'openaiChatCompletions',
   'openai-responses': 'openaiResponses',
   'anthropic-messages': 'anthropicMessages',
   'gemini-generate-content': 'geminiGenerateContent',
-} as const;
+};
 interface Fixture { text?: string[]; refusal?: string; thinking?: string[]; signature?: string; tools?: { name: string; id: string; args: Wire }[]; stop?: string; usage?: Wire; tier?: string }
 
 export const fixtureFrames = (protocol: IRTestProtocol, fixture: Fixture): ProtocolFrame<any>[] => {
@@ -115,11 +116,12 @@ export const testOutputTranslation = (target: IRTestProtocol, source: IRTestProt
     const result = await nativeResult(target, await collect(translate(iterate(fixtureFrames(source, { thinking: ['reason'], signature: 'opaque', text: ['answer'] })), codec)));
     expect(reasoningText(target, result)).toBe('reason');
     expect(bodyText(target, result)).toBe('answer');
+    const sourceName = protocolKeys[target];
     const carrier = target === 'openai-chat-completions' ? result.choices[0].message.reasoning_details.find((item: Wire) => item.type === 'reasoning.encrypted').data
       : target === 'openai-responses' ? result.output.at(-1).encrypted_content
         : target === 'anthropic-messages' ? result.content.at(-1).data
           : result.candidates[0].content.parts.at(-1).thoughtSignature;
-    const sidecar = await decodeRoundTripSidecar(codec, assistantTurnProtocolOf[target], carrier);
+    const sidecar = await decodeRoundTripSidecar(codec, sourceName, carrier);
     expect(JSON.stringify(sidecar)).toContain('opaque');
     if (target === 'anthropic-messages') expect(result.content.find((part: Wire) => part.type === 'thinking').signature).toBe('AA==');
   });

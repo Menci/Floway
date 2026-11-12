@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import { createIRBuilder } from '../../../../src/ir/output/builder.ts';
 import { writeGeminiGenerateContentEvents } from '../../../../src/protocols/gemini-generate-content/as-source/events.ts';
 import { appendReadField, collectEmittedFieldPlacements, createReferenceBuilder, createReadFieldState, createFieldReferencer } from '../../../../src/round-trip/reference/reference-builder.ts';
-import { type RoundTripWriter } from '../../../../src/round-trip/writer.ts';
+import type { RoundTripWriter } from '../../../../src/round-trip/writer.ts';
 
 test('resolves delayed Gemini audio atoms within the complete emitted data field', async () => {
   const references = createReferenceBuilder();
@@ -24,8 +24,8 @@ test('resolves delayed Gemini audio atoms within the complete emitted data field
   let prepared = false;
   const roundTrip: RoundTripWriter<'geminiGenerateContent'> = {
     builder: references,
-    encodeSidecar: async (_choice, _check, turn, state, textPlacements) => {
-      const views = collectEmittedFieldPlacements(turn, state, textPlacements);
+    encodeSidecar: async (_choice, _check, turn, state, textViews) => {
+      const views = collectEmittedFieldPlacements(turn, state, textViews);
       expect([...views.values()]).toEqual([{ enclosingText: 'YQ==', offset: 0 }]);
       const finalizer = createFieldReferencer(references, views);
       expect(await finalizer.referenceField('Q==', field)).toMatchObject({ parts: [[0, 1, 4]] });
@@ -53,8 +53,8 @@ test.each(['{"x":1,}', '{"x": 1}'])('tracks the emitted canonical JSON view with
   let prepared = false;
   const roundTrip: RoundTripWriter<'geminiGenerateContent'> = {
     builder: references,
-    encodeSidecar: async (_choice, _check, turn, state, textPlacements) => {
-      const views = collectEmittedFieldPlacements(turn, state, textPlacements);
+    encodeSidecar: async (_choice, _check, turn, state, textViews) => {
+      const views = collectEmittedFieldPlacements(turn, state, textViews);
       expect([...views.values()]).toContainEqual({ enclosingText: '{"x":1}', offset: 0 });
       const finalizer = createFieldReferencer(references, views);
       expect(await finalizer.referenceField(original, field)).toBe(original);
