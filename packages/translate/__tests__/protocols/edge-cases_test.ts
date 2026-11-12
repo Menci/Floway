@@ -132,12 +132,26 @@ test('ChatCompletions ignores late identity changes and accepts later model upda
   expect((await collectIR(readOpenAIChatCompletionsEvents(iterate(input)))).model).toBe('fallback');
 });
 
-test('ChatCompletions choice indexes must stay in sequence', async () => {
-  // A stream that opens choice 1 without ever stating choice 0 describes a
-  // candidate the request never had; the IR cannot represent the gap.
+test('ChatCompletions choice indexes must arrive in sequence', async () => {
   await expect(collectIR(readOpenAIChatCompletionsEvents(iterate([
     eventFrame({ id: 'chat_choices', model: 'served', choices: [{ index: 1, delta: {}, finish_reason: 'stop' }] } as any),
   ])))).rejects.toThrow('out of sequence');
+});
+
+test('ChatCompletions accepts every consecutively reported upstream choice', async () => {
+  const ir = await collectIR(readOpenAIChatCompletionsEvents(iterate([
+    eventFrame({
+      id: 'chat_choices', model: 'served', choices: [
+        { index: 0, delta: { content: 'first' }, finish_reason: 'stop' },
+        { index: 1, delta: { content: 'second' }, finish_reason: 'stop' },
+      ],
+    } as any),
+  ])));
+  expect(ir.choices).toHaveLength(2);
+  expect(ir.choices.map(choice => choice.items)).toEqual([
+    [{ type: 'message', content: [{ type: 'text', text: 'first' }] }],
+    [{ type: 'message', content: [{ type: 'text', text: 'second' }] }],
+  ]);
 });
 
 test('Responses rejects output events before the initial envelope', async () => {
