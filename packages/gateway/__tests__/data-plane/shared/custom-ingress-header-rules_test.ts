@@ -130,6 +130,18 @@ const CASES: RouteCase[] = [
     }),
   },
   {
+    name: '/v1 Gemini translates onto a Chat Completions upstream',
+    path: '/v1/models/chat-model:generateContent',
+    contentType: 'application/json',
+    body: () => JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] }),
+    upstreamPath: '/v1/chat/completions',
+    upstreamResponse: () => sseOpenAIChatCompletionsResponse({
+      id: 'chatcmpl_4v1', model: 'chat-model', created: 1,
+      choices: [{ logprobs: null, index: 0, message: { refusal: null, role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }),
+  },
+  {
     name: '/v1/messages/count_tokens reaches a Messages upstream',
     path: '/v1/messages/count_tokens',
     contentType: 'application/json',

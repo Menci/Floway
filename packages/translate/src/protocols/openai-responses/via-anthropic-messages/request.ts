@@ -3,8 +3,8 @@ import { klona } from 'klona/json';
 import { openaiResponsesReasoningToAnthropicMessagesUpstreamBlock } from './reasoning.ts';
 import type { SidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
+import { TranslateInputException } from '../../../shared/input-error.ts';
 import { parseJSONObject } from '../../../shared/json/object.ts';
-import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { RemoteImageLoader } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-messages/as-target/reasoning-effort.ts';
@@ -15,7 +15,6 @@ import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.t
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
 import { collectOpenAIResponsesReplayContents, findOpenAIResponsesSidecarOccurrences, isOpenAIResponsesEncryptedReasoning, verifyOpenAIResponsesTurnDigest } from '../as-source/round-trip.ts';
-import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import { buildCustomToolInputSchema } from '../common/custom-tool-wrap.ts';
 import {
   ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
@@ -32,6 +31,7 @@ import {
   type AnthropicMessagesUserMessage,
 } from '@floway-dev/protocols/anthropic-messages';
 import { isFastServiceTier } from '@floway-dev/protocols/common';
+import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import type {
   OpenAIResponsesInputContent,
   OpenAIResponsesInputImage,
@@ -95,18 +95,18 @@ const translateUserMessage = async (message: OpenAIResponsesInputMessageEx, load
     }
 
     if (block.type === 'input_file') {
-      throw new TranslatorInputError('Cannot translate input_file message content to Anthropic Messages.');
+      throw new TranslateInputException('Cannot translate input_file message content to Anthropic Messages.');
     }
 
     if (block.type === 'refusal') {
-      throw new TranslatorInputError('Cannot translate refusal content in a user message to Anthropic Messages.');
+      throw new TranslateInputException('Cannot translate refusal content in a user message to Anthropic Messages.');
     }
 
     if (block.type !== 'input_image') continue;
 
     const imageUrl = (block as OpenAIResponsesInputImage).image_url;
     if (typeof imageUrl !== 'string') {
-      throw new TranslatorInputError('Cannot translate file_id-only image content to Anthropic Messages.');
+      throw new TranslateInputException('Cannot translate file_id-only image content to Anthropic Messages.');
     }
     const image = await resolveImageUrlToAnthropicMessagesImage(imageUrl, loadRemoteImage);
     if (image) content.push(image);
@@ -128,17 +128,15 @@ const translateToolOutput = async (output: string | OpenAIResponsesInputContent[
   for (const part of output) {
     if (part.type === 'input_image') {
       if (typeof part.image_url !== 'string') {
-        throw new TranslatorInputError('Cannot translate file_id-only image tool output to Anthropic Messages.');
+        throw new TranslateInputException('Cannot translate file_id-only image tool output to Anthropic Messages.');
       }
       const image = await resolveImageUrlToAnthropicMessagesImage(part.image_url, loadRemoteImage);
       if (image === null) {
-        throw new TranslatorInputError('Cannot translate unavailable or unsupported image tool output to Anthropic Messages.');
+        throw new TranslateInputException('Cannot translate unavailable or unsupported image tool output to Anthropic Messages.');
       }
       blocks.push(image);
     } else if (part.type === 'input_file') {
-      throw new TranslatorInputError('Cannot translate input_file tool output to Anthropic Messages.');
-    } else if (part.type === 'refusal') {
-      throw new TranslatorInputError('Cannot translate refusal content in a tool output to Anthropic Messages.');
+      throw new TranslateInputException('Cannot translate input_file tool output to Anthropic Messages.');
     } else {
       blocks.push({ type: 'text', text: part.text });
     }
@@ -156,10 +154,10 @@ const translateAssistantMessage = (message: OpenAIResponsesInputMessageEx): Anth
 
   for (const block of message.content) {
     if (block.type === 'input_image') {
-      throw new TranslatorInputError('Cannot translate input_image assistant content to Anthropic Messages.');
+      throw new TranslateInputException('Cannot translate input_image assistant content to Anthropic Messages.');
     }
     if (block.type === 'input_file') {
-      throw new TranslatorInputError('Cannot translate input_file assistant content to Anthropic Messages.');
+      throw new TranslateInputException('Cannot translate input_file assistant content to Anthropic Messages.');
     }
     if (block.type === 'refusal') {
       content.push({ type: 'text', text: block.refusal });
@@ -186,12 +184,12 @@ const openaiResponsesSystemBlocks = (message: OpenAIResponsesInputMessageEx): An
   const blocks: AnthropicMessagesTextBlockParam[] = [];
   for (const block of message.content) {
     if (block.type === 'input_image') {
-      throw new TranslatorInputError(`Invalid 'input_image' content part in ${message.role} message. Only 'input_text' content parts are supported in ${message.role} messages on this model.`);
+      throw new TranslateInputException(`Invalid 'input_image' content part in ${message.role} message. Only 'input_text' content parts are supported in ${message.role} messages on this model.`);
     }
     if (block.type !== 'input_text' && block.type !== 'output_text') {
       // Every non-text content variant must opt into translator behavior
       // rather than be silently dropped from system content.
-      throw new TranslatorInputError(`Invalid content block type '${(block as { type: string }).type}' in ${message.role} message.`);
+      throw new TranslateInputException(`Invalid content block type '${(block as { type: string }).type}' in ${message.role} message.`);
     }
     blocks.push({ type: 'text', text: block.text });
   }
@@ -253,7 +251,7 @@ const translateTools = (
       });
       continue;
     }
-    throw new TranslatorInputError(`Cannot translate OpenAI Responses tool type '${tool.type}' to Anthropic Messages.`);
+    throw new TranslateInputException(`Cannot translate OpenAI Responses tool type '${tool.type}' to Anthropic Messages.`);
   }
   return out.length > 0 ? out : undefined;
 };
@@ -272,7 +270,7 @@ const translateToolChoice = (
     case 'required':
       return { type: 'any' };
     default:
-      throw new TranslatorInputError(`Cannot translate OpenAI Responses tool choice '${toolChoice}' to Anthropic Messages.`);
+      throw new TranslateInputException(`Cannot translate OpenAI Responses tool choice '${toolChoice}' to Anthropic Messages.`);
     }
   }
 
@@ -281,7 +279,7 @@ const translateToolChoice = (
   if (toolChoice.type === 'function' || toolChoice.type === 'custom') {
     return toolChoice.name ? { type: 'tool', name: toolChoice.name } : undefined;
   }
-  throw new TranslatorInputError(`Cannot translate OpenAI Responses tool choice type '${toolChoice.type}' to Anthropic Messages.`);
+  throw new TranslateInputException(`Cannot translate OpenAI Responses tool choice type '${toolChoice.type}' to Anthropic Messages.`);
 };
 
 export const buildTargetRequest = async (
@@ -290,6 +288,7 @@ export const buildTargetRequest = async (
   options: BuildTargetRequestOptions,
 ): Promise<TargetRequestResult> => {
   const canonical = canonicalizeOpenAIResponsesPayload(source);
+  if (!('input' in canonical)) throw new TranslateInputException(canonical.error.message, canonical.error);
   const { payload, names: namespaceToolNames, flattenInput } = flattenNamespaceTools(canonical);
   rejectProgrammaticOpenAIResponsesPayload(payload, 'Anthropic Messages');
   const customToolNames = new Set<string>();
@@ -310,7 +309,7 @@ export const buildTargetRequest = async (
       rejectProgramCaller(item);
       switch (item.type) {
       case 'message':
-        if (item.role !== 'assistant') throw new TranslatorInputError(`Invalid assistant message role '${item.role}'.`);
+        if (item.role !== 'assistant') throw new TranslateInputException(`Invalid assistant message role '${item.role}'.`);
         messages.push(translateAssistantMessage(item));
         break;
       case 'function_call':
@@ -331,9 +330,9 @@ export const buildTargetRequest = async (
       case 'item_reference':
       case 'web_search_call':
       case 'image_generation_call':
-        throw new TranslatorInputError(`Invalid input item type '${item.type}'.`);
+        throw new TranslateInputException(`Invalid input item type '${item.type}'.`);
       default:
-        throw new TranslatorInputError(`Invalid input item: ${JSON.stringify(item)}`);
+        throw new TranslateInputException(`Invalid input item: ${JSON.stringify(item)}`);
       }
     }
     for (const message of messages) bareMessages.add(message);
@@ -354,7 +353,7 @@ export const buildTargetRequest = async (
           messages.push({ role: 'system', content: blocks.length > 0 ? blocks : '' });
           break;
         }
-        default: throw new TranslatorInputError(`Invalid role '${item.role}' in input message.`);
+        default: throw new TranslateInputException(`Invalid role '${item.role}' in input message.`);
         }
         break;
       case 'function_call_output':
@@ -368,9 +367,9 @@ export const buildTargetRequest = async (
       case 'item_reference':
       case 'web_search_call':
       case 'image_generation_call':
-        throw new TranslatorInputError(`Invalid input item type '${item.type}'.`);
+        throw new TranslateInputException(`Invalid input item type '${item.type}'.`);
       default:
-        throw new TranslatorInputError(`Invalid input item: ${JSON.stringify(item)}`);
+        throw new TranslateInputException(`Invalid input item: ${JSON.stringify(item)}`);
       }
     }
     for (const message of messages) bareMessages.add(message);

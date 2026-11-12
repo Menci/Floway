@@ -1,3 +1,13 @@
+export type { RemoteImageData, RemoteImageLoader, TranslateTrip, TranslateInputError, TranslateOptions, Translator } from './types.ts';
 export { SidecarTaggedValue, type SidecarCodec } from './round-trip/codec.ts';
-export type { RemoteImageData, RemoteImageLoader, TranslatedApiError, TranslateTripResult, TranslationContext } from './types.ts';
-export { TranslatorInputError } from './translator-input-error.ts';
+export {
+  routeAnthropicMessagesViaOpenAIChatCompletions,
+  routeAnthropicMessagesViaOpenAIResponses,
+  routeGeminiGenerateContentViaAnthropicMessages,
+  routeGeminiGenerateContentViaOpenAIChatCompletions,
+  routeGeminiGenerateContentViaOpenAIResponses,
+  routeOpenAIChatCompletionsViaAnthropicMessages,
+  routeOpenAIChatCompletionsViaOpenAIResponses,
+  routeOpenAIResponsesViaAnthropicMessages,
+  routeOpenAIResponsesViaOpenAIChatCompletions,
+} from './protocols/routes.ts';

@@ -2,9 +2,10 @@ import { expect, test, vi } from 'vitest';
 
 import { computeAnthropicMessagesTurnDigest } from '../../../../src/protocols/anthropic-messages/as-source/round-trip.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
+import { requireTrip } from '../../require-trip.ts';
 import { createAnthropicMessagesEventAccumulator, reassembleAnthropicMessagesEvents } from '@floway-dev/protocols/anthropic-messages';
 import { openaiResponsesResultToEvents } from '@floway-dev/protocols/openai-responses';
-import { routeAnthropicMessages } from '@floway-dev/translate/anthropic-messages';
+import { routeAnthropicMessagesViaOpenAIResponses } from '@floway-dev/translate';
 
 vi.mock('@floway-dev/protocols/anthropic-messages', async importOriginal => {
   const actual = await importOriginal<typeof import('@floway-dev/protocols/anthropic-messages')>();
@@ -21,9 +22,9 @@ test.each(['complete', 'truncated'] as const)('reads only the current native blo
   vi.mocked(createAnthropicMessagesEventAccumulator).mockClear();
   const count = 32;
   const codec = createTestSidecarCodec();
-  const trip = await routeAnthropicMessages({
+  const trip = await requireTrip(routeAnthropicMessagesViaOpenAIResponses({
     model: 'source', max_tokens: 4096, messages: [{ role: 'user', content: 'question' }],
-  }).viaOpenAIResponses({ model: 'target', sidecarCodec: codec });
+  }, { model: 'target', sidecarCodec: codec }));
   const frames = async function* () {
     yield* openaiResponsesResultToEvents({
       id: 'response', object: 'response', model: 'target',

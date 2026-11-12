@@ -1,4 +1,4 @@
-import type { IRJSONObject } from '../../../ir/types.ts';
+import type { IRJSONObject } from '../../../ir/common/json.ts';
 import type { ReferenceState, ReferenceStateLeaves, ReferenceableValue, TextRule, JSONRule } from '../../../round-trip/reference/types.ts';
 import type { AnthropicMessagesAssistantContentBlock } from '@floway-dev/protocols/anthropic-messages';
 

@@ -2,9 +2,9 @@ import { expect, test } from 'vitest';
 
 import { translateToSourceEvents } from '../../../../src/protocols/openai-chat-completions/via-openai-responses/events.ts';
 import { buildTargetRequest } from '../../../../src/protocols/openai-chat-completions/via-openai-responses/request.ts';
-import { structuredResponsesFixture } from '../../../ir/responses-fixture.ts';
-import { testOutputTranslation } from '../../../ir/translation-cases.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
+import { testOutputTranslation } from '../../fixtures.ts';
+import { structuredResponsesFixture } from '../../openai-responses/fixtures.ts';
 import { eventFrame, type ProtocolFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIChatCompletionsProtocolEventsToResult, parseOpenAIChatCompletionsStream, openaiChatCompletionsProtocolFrameToSSEFrame as writeChatFrame, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { openaiResponsesResultToEvents, parseOpenAIResponsesStream, collectOpenAIResponsesProtocolEventsToResult, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
@@ -411,7 +411,7 @@ test('translateToSourceEvents translates OpenAI Responses failed terminal events
 
 test.each(['flat error', 'nested error', 'failed response'])('translateToSourceEvents preserves the error provider namespace without copying (%s)', async path => {
   const provider_specific_fields = {
-    name: 'TranslatorInputError',
+    name: 'TranslateInputException',
     stack: 'translator stack',
     cause: { message: 'source failed', cause: { code: 17, details: [false, null, { value: 'nested' }] } },
     target_api: 'openai-responses',

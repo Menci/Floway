@@ -139,3 +139,6 @@ export { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_
 export { GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, createGeminiGenerateContentCandidateCompletion, isGeminiGenerateContentErrorEvent, isGeminiGenerateContentTerminalEvent, collectGeminiGenerateContentProtocolEventsToResult } from './to-result.ts';
 export { createGeminiGenerateContentEventAccumulator, reassembleGeminiGenerateContentEvents, type GeminiGenerateContentEventAccumulator } from './reassemble.ts';
 export { geminiGenerateContentProtocolFrameToSSEFrame } from './to-sse.ts';
+
+export { geminiGenerateContentPartKind, type GeminiGenerateContentPartKind } from './part.ts';
+export { geminiGenerateContentStatusForHttpStatus } from './error-status.ts';

@@ -1,4 +1,4 @@
-import { TranslatorInputError } from '../../../translator-input-error.ts';
+import { TranslateInputException } from '../../../shared/input-error.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx, type OpenAIResponsesTool, type OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
@@ -74,7 +74,7 @@ export const flattenNamespaceTools = (payload: CanonicalOpenAIResponsesPayload):
     if (existing !== undefined) {
       const identity = names.targetToSource.get(existing)!;
       if (identity.namespace !== namespace || identity.name !== name || identity.type !== type) {
-        throw new TranslatorInputError(`Cannot translate ambiguous namespace tool '${key}'.`);
+        throw new TranslateInputException(`Cannot translate ambiguous namespace tool '${key}'.`);
       }
       return existing;
     }
@@ -112,7 +112,7 @@ export const flattenNamespaceTools = (payload: CanonicalOpenAIResponsesPayload):
       byNamespace.set(tool.name, children);
       for (const child of tool.tools) {
         if (child.type !== 'function' && child.type !== 'custom') {
-          throw new TranslatorInputError(`Cannot translate non-callable child in namespace '${tool.name}'.`);
+          throw new TranslateInputException(`Cannot translate non-callable child in namespace '${tool.name}'.`);
         }
         const name = allocate(tool.name, child.name, child.type);
         children.push({ type: child.type, name });
@@ -136,12 +136,12 @@ export const flattenNamespaceTools = (payload: CanonicalOpenAIResponsesPayload):
     const key = namespace === undefined ? choice.name : `${namespace}.${choice.name}`;
     if (namespace === undefined && flatNames.has(choice.name)) return choice;
     if (namespace !== undefined && !byNamespace.get(namespace)?.some(child => child.type === choice.type && names.targetToSource.get(child.name)?.name === choice.name)) {
-      throw new TranslatorInputError(`Cannot translate tool_choice / allowed_tools selector for undeclared namespace tool '${key}'.`);
+      throw new TranslateInputException(`Cannot translate tool_choice / allowed_tools selector for undeclared namespace tool '${key}'.`);
     }
     const qualified = namespace === undefined
       ? [...names.targetToSource].filter(([, identity]) => `${identity.namespace}.${identity.name}` === key || `${identity.namespace}__${identity.name}` === key)
       : [];
-    if (qualified.length > 1) throw new TranslatorInputError(`Cannot select ambiguous qualified tool '${key}'.`);
+    if (qualified.length > 1) throw new TranslateInputException(`Cannot select ambiguous qualified tool '${key}'.`);
     const name = namespace === undefined ? qualified[0]?.[0] : names.sourceToTarget.get(key);
     if (name === undefined) return choice;
     const { namespace: _namespace, ...rest } = choice;
@@ -154,15 +154,15 @@ export const flattenNamespaceTools = (payload: CanonicalOpenAIResponsesPayload):
       choice = {
         ...choice,
         tools: choice.tools.flatMap(tool => {
-          if (typeof tool !== 'object' || tool === null) throw new TranslatorInputError('Cannot translate malformed allowed_tools selector.');
+          if (typeof tool !== 'object' || tool === null) throw new TranslateInputException('Cannot translate malformed allowed_tools selector.');
           if (tool.type === 'namespace') {
             const children = typeof tool.name === 'string' ? byNamespace.get(tool.name) : undefined;
-            if (children === undefined) throw new TranslatorInputError(`Cannot select undeclared namespace '${String(tool.name)}'.`);
-            if (Object.keys(tool).some(key => key !== 'type' && key !== 'name')) throw new TranslatorInputError('Cannot translate namespace selector extensions.');
+            if (children === undefined) throw new TranslateInputException(`Cannot select undeclared namespace '${String(tool.name)}'.`);
+            if (Object.keys(tool).some(key => key !== 'type' && key !== 'name')) throw new TranslateInputException('Cannot translate namespace selector extensions.');
             return children;
           }
           if (tool.type !== 'function' && tool.type !== 'custom') return [tool];
-          if (!isNamedToolChoice(tool)) throw new TranslatorInputError('Cannot translate malformed allowed_tools selector.');
+          if (!isNamedToolChoice(tool)) throw new TranslateInputException('Cannot translate malformed allowed_tools selector.');
           const selected = selector(tool);
           return selected === tool ? [tool] : [{ ...selected }];
         }),

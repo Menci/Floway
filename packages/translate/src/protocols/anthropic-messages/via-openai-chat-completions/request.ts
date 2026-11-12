@@ -2,7 +2,7 @@ import { klona } from 'klona/json';
 
 import type { SidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
-import { TranslatorInputError } from '../../../translator-input-error.ts';
+import { TranslateInputException } from '../../../shared/input-error.ts';
 import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarOccurrences, verifyAnthropicMessagesTurnDigest } from '../as-source/round-trip.ts';
@@ -70,7 +70,7 @@ const toOpenAIChatCompletionsContent = (content: string | AnthropicMessagesUserC
     }
 
     if (block.type === 'image') {
-      if (block.source.type === 'file') throw new TranslatorInputError('Cannot translate file_id-only Anthropic image input to Chat Completions.');
+      if (block.source.type === 'file') throw new TranslateInputException('Cannot translate file_id-only Anthropic image input to Chat Completions.');
       parts.push({ type: 'image_url', image_url: { url: block.source.type === 'url' ? block.source.url : `data:${block.source.media_type};base64,${block.source.data}` } });
     }
   }
@@ -148,7 +148,7 @@ const translateAnthropicMessagesUser = (message: AnthropicMessagesUserMessage, m
     }
 
     if (block.type !== 'text' && block.type !== 'image') {
-      throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' content blocks are not supported on this model`);
+      throw new TranslateInputException(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' content blocks are not supported on this model`);
     }
 
     pendingUserBlocks.push(block);
@@ -200,7 +200,7 @@ const translateAnthropicMessagesAssistant = (message: AnthropicMessagesAssistant
       });
       break;
     default:
-      throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' assistant content blocks are not supported on this model`);
+      throw new TranslateInputException(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' assistant content blocks are not supported on this model`);
     }
   }
 
@@ -221,7 +221,7 @@ const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessag
   {
     role: 'system',
     content: typeof message.content === 'string' ? message.content : message.content.map(block => {
-      if (block.type !== 'text') throw new TranslatorInputError('Only text is supported in Chat system messages.');
+      if (block.type !== 'text') throw new TranslateInputException('Only text is supported in Chat system messages.');
       return { type: 'text', text: block.text };
     }),
   },
@@ -243,7 +243,7 @@ const translateAnthropicMessagesTools = (tools?: AnthropicMessagesClientTool[]):
 const translateAnthropicMessagesToolChoice = (toolChoice?: AnthropicMessagesPayload['tool_choice'], tools?: AnthropicMessagesClientTool[]): OpenAIChatCompletionsPayload['tool_choice'] => {
   if (!toolChoice) return undefined;
   if (!tools || tools.length === 0) {
-    if (toolChoice.type === 'tool') throw new TranslatorInputError(`Anthropic Messages tool_choice names an undeclared tool: ${String(toolChoice.name)}`);
+    if (toolChoice.type === 'tool') throw new TranslateInputException(`Anthropic Messages tool_choice names an undeclared tool: ${String(toolChoice.name)}`);
     return undefined;
   }
 
@@ -253,7 +253,7 @@ const translateAnthropicMessagesToolChoice = (toolChoice?: AnthropicMessagesPayl
   case 'any':
     return 'required';
   case 'tool': {
-    if (!toolChoice.name || !tools.some(tool => tool.name === toolChoice.name)) throw new TranslatorInputError(`Anthropic Messages tool_choice names an undeclared tool: ${String(toolChoice.name)}`);
+    if (!toolChoice.name || !tools.some(tool => tool.name === toolChoice.name)) throw new TranslateInputException(`Anthropic Messages tool_choice names an undeclared tool: ${String(toolChoice.name)}`);
     return { type: 'function', function: { name: toolChoice.name } };
   }
   case 'none':
@@ -302,7 +302,7 @@ export const buildTargetRequest = async (
       switch (message.role) {
       case 'user': messages.push(...translateAnthropicMessagesUser(message, messageIndex + index, legacyFunctionNames)); break;
       case 'system': messages.push(...translateAnthropicMessagesSystem(message)); break;
-      default: throw new TranslatorInputError(`messages.${messageIndex + index}.role: role '${(message as { role: string }).role}' is not supported on this model`);
+      default: throw new TranslateInputException(`messages.${messageIndex + index}.role: role '${(message as { role: string }).role}' is not supported on this model`);
       }
     }
     messageIndex += turn.items.length;

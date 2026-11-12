@@ -1,4 +1,4 @@
-import type { IRJSONObject } from '../../ir/types.ts';
+import type { IRJSONObject } from '../../ir/common/json.ts';
 
 export type ContentReferenceSegment = number | [hashIndex: number, start: number, endExclusive: number];
 

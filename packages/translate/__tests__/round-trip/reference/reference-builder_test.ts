@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { IRJSONObject } from '../../../src/ir/types.ts';
+import type { IRJSONObject } from '../../../src/ir/common/json.ts';
 import { collectAnthropicMessagesTextPlacements } from '../../../src/protocols/anthropic-messages/as-source/round-trip.ts';
 import type { AnthropicMessagesReferenceableInputAssistantTurn } from '../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
 import { collectGeminiGenerateContentTextPlacements } from '../../../src/protocols/gemini-generate-content/as-source/round-trip.ts';

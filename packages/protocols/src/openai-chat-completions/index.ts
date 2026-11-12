@@ -102,7 +102,6 @@ export interface OpenAIChatCompletionsFilePart { type: 'file'; file: { file_data
 export interface OpenAIChatCompletionsRefusalPart { type: 'refusal'; refusal: string }
 export type OpenAIChatCompletionsUserContentPart = OpenAIChatCompletionsTextPart | OpenAIChatCompletionsImagePart | OpenAIChatCompletionsInputAudioPart | OpenAIChatCompletionsFilePart;
 export type OpenAIChatCompletionsAssistantContentPart = OpenAIChatCompletionsTextPart | OpenAIChatCompletionsRefusalPart;
-export type OpenAIChatCompletionsContentPart = OpenAIChatCompletionsUserContentPart | OpenAIChatCompletionsRefusalPart;
 
 // Provider extension types belong only at the assistant boundary.
 export interface OpenAIChatCompletionsAssistantExtensions {

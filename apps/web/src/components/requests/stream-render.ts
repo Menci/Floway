@@ -38,15 +38,15 @@ export const detectCollectKind = (path: string): CollectKind | null => {
   if (path.includes('/responses')) return 'openai-responses';
   if (path.includes('/chat/completions')) return 'openai-chat-completions';
   if (path.includes('/completions')) return 'openai-completions';
-  if (path.includes('/v1beta/') || path.includes(':generateContent')) return 'gemini-generate-content';
+  // A Gemini turn carries its action in the model path segment
+  // (`…:generateContent`), optionally followed by `?alt=sse`. The listing
+  // paths end at `/models`, so the action name discriminates regardless of
+  // whether the turn arrived under `v1` or `v1beta`.
+  if (/:(?:generateContent|streamGenerateContent|countTokens)(?:\?|$)/.test(path)) return 'gemini-generate-content';
   return null;
 };
 
-// Mirror of `detectCollectKind` for the target protocol of a translated turn.
-// The downstream view derives its kind from `meta.path` (the client path =
-// source protocol); the upstream view cannot, because the client path names
-// the source, not the target. `meta.targetApi` is stamped at capture time by
-// `traverseTranslation` and names the target protocol the inner attempt spoke.
+// The upstream view uses meta.targetApi, stamped by captureFromDump, because meta.path identifies the client protocol.
 export const collectKindFromTargetApi = (api: string | null | undefined): CollectKind | null => {
   if (api === 'anthropicMessages') return 'anthropic-messages';
   if (api === 'openaiResponses') return 'openai-responses';

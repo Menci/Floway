@@ -1,3 +1,4 @@
+import { inputErrorResult } from './errors.ts';
 import { openaiChatCompletionsInterceptors } from './interceptors/index.ts';
 import type { OpenAIChatCompletionsInvocation } from './interceptors/types.ts';
 import { billableUsageFromOpenAIChatCompletionsEvent } from './usage.ts';
@@ -5,17 +6,17 @@ import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts'
 import { anthropicMessagesAttempt } from '../anthropic-messages/attempt.ts';
 import { openaiResponsesAttempt } from '../openai-responses/attempt.ts';
 import { applyRulesToUpstreamOpenAIChatCompletions } from '../shared/alias-rules.ts';
+import { captureFromDump, executeTranslation } from '../shared/execute-translation.ts';
 import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { providerStreamResultToExecuteResult } from '../shared/provider-stream-result.ts';
 import { SidecarDomain } from '../shared/sidecar-codec.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
-import { captureFromDump, traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ModelCandidate, type ExecuteResult, providerModelOf } from '@floway-dev/provider';
-import { routeOpenAIChatCompletions } from '@floway-dev/translate/openai-chat-completions';
+import { routeOpenAIChatCompletionsViaAnthropicMessages, routeOpenAIChatCompletionsViaOpenAIResponses, type TranslateInputError } from '@floway-dev/translate';
 
 // `/v1/chat/completions` generate prefers a native OpenAI Chat Completions target,
 // then the translated Anthropic Messages path, then the translated OpenAI Responses path.
@@ -41,43 +42,52 @@ export const openaiChatCompletionsAttempt = {
       headers,
     };
     return await runInterceptors(invocation, ctx, openaiChatCompletionsInterceptors, async () => {
-      if (targetApi === 'openaiChatCompletions') {
-        if (candidate.rules !== undefined) applyRulesToUpstreamOpenAIChatCompletions(invocation.payload, candidate.rules);
-        const { model: _model, ...body } = invocation.payload;
-        const providerResult = await candidate.provider.instance.callOpenAIChatCompletions(
-          providerModelOf(candidate),
-          body,
-          ctx.abortSignal,
-          buildUpstreamCallOptions(candidate, ctx, invocation.headers),
-        );
-        return await providerStreamResultToExecuteResult(providerResult, candidate, 'openaiChatCompletions', ctx, billableUsageFromOpenAIChatCompletionsEvent);
-      }
-      if (targetApi === 'anthropicMessages') {
-        return await traverseTranslation(
-          invocation.payload,
-          p => routeOpenAIChatCompletions(p).viaAnthropicMessages({
-            model: candidate.model.id,
-            sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
-            fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
-            loadRemoteImage: createExternalImageLoader(ctx.abortSignal),
-          }),
-          translated => anthropicMessagesAttempt.generate({
-            payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
-          }),
-          captureFromDump(ctx.dump, targetApi),
-        );
-      }
-      if (targetApi === 'openaiResponses') {
-        return await traverseTranslation(
-          invocation.payload,
-          p => routeOpenAIChatCompletions(p).viaOpenAIResponses({ model: candidate.model.id, sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
-          translated => openaiResponsesAttempt.generate({
-            payload: translated, ctx, candidate, headers: invocation.headers,
-          }),
-          captureFromDump(ctx.dump, targetApi),
-        );
-      }
-      throw new Error(`openaiChatCompletionsAttempt.generate: unexpected targetApi '${targetApi as string}'`);
+      const result = await dispatchOpenAIChatCompletions(invocation, ctx);
+      return result.type === 'input-error' ? inputErrorResult(result, ctx.attempt.telemetry) : result;
     });
   },
+};
+
+const dispatchOpenAIChatCompletions = async (
+  invocation: OpenAIChatCompletionsInvocation,
+  ctx: ChatGatewayCtx,
+): Promise<ExecuteResult<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> | TranslateInputError> => {
+  const { candidate, targetApi } = invocation;
+  if (targetApi === 'openaiChatCompletions') {
+    if (candidate.rules !== undefined) applyRulesToUpstreamOpenAIChatCompletions(invocation.payload, candidate.rules);
+    const { model: _model, ...body } = invocation.payload;
+    const providerResult = await candidate.provider.instance.callOpenAIChatCompletions(
+      providerModelOf(candidate),
+      body,
+      ctx.abortSignal,
+      buildUpstreamCallOptions(candidate, ctx, invocation.headers),
+    );
+    return await providerStreamResultToExecuteResult(providerResult, candidate, 'openaiChatCompletions', ctx, billableUsageFromOpenAIChatCompletionsEvent);
+  }
+  if (targetApi === 'anthropicMessages') {
+    return await executeTranslation(
+      invocation.payload,
+      p => routeOpenAIChatCompletionsViaAnthropicMessages(p, {
+        model: candidate.model.id,
+        sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
+        fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
+        loadRemoteImage: createExternalImageLoader(ctx.abortSignal),
+      }),
+      translated => anthropicMessagesAttempt.generate({
+        payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
+      }),
+      captureFromDump(ctx.dump, targetApi),
+    );
+  }
+  if (targetApi === 'openaiResponses') {
+    return await executeTranslation(
+      invocation.payload,
+      p => routeOpenAIChatCompletionsViaOpenAIResponses(p, { model: candidate.model.id, sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
+      translated => openaiResponsesAttempt.generate({
+        payload: translated, ctx, candidate, headers: invocation.headers,
+      }),
+      captureFromDump(ctx.dump, targetApi),
+    );
+  }
+  throw new Error(`openaiChatCompletionsAttempt.generate: unexpected targetApi '${targetApi as string}'`);
 };

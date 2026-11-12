@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { buildTargetRequest as buildMessages } from '../../../../src/protocols/openai-responses/via-anthropic-messages/request.ts';
 import { buildTargetRequest as buildChat } from '../../../../src/protocols/openai-responses/via-openai-chat-completions/request.ts';
-import { TranslatorInputError } from '../../../../src/translator-input-error.ts';
+import { TranslateInputException } from '../../../../src/shared/input-error.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
@@ -56,7 +56,7 @@ for (const target of ['chat', 'messages'] as const) {
         tools: [{ type: 'function', name: 'web_search', parameters: { type: 'object' } }],
         input: [item],
       };
-      await assertRejects(() => build(payload), TranslatorInputError, "distinct callable kinds sharing 'web_search'");
+      await assertRejects(() => build(payload), TranslateInputException, "distinct callable kinds sharing 'web_search'");
     });
   }
 
@@ -69,7 +69,7 @@ for (const target of ['chat', 'messages'] as const) {
   test(`${target} request rejects a flat selector that would erase a declaration namespace`, async () => {
     const payload = source({ type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: 'read' }] });
     payload.tools![0] = { ...payload.tools![0], namespace: 'files' } as unknown as OpenAIResponsesTool;
-    await assertRejects(() => build(payload), TranslatorInputError, 'allowed_tools');
+    await assertRejects(() => build(payload), TranslateInputException, 'allowed_tools');
   });
 
   for (const [label, choice] of [
@@ -87,7 +87,7 @@ for (const target of ['chat', 'messages'] as const) {
     test(`${target} request typed-rejects ${label} instead of widening allowed_tools`, async () => {
       const payload = source(choice as unknown as OpenAIResponsesToolChoice);
       payload.tools!.push({ type: 'custom', name: 'read' });
-      await assertRejects(() => build(payload), TranslatorInputError, 'allowed_tools');
+      await assertRejects(() => build(payload), TranslateInputException, 'allowed_tools');
     });
   }
 }

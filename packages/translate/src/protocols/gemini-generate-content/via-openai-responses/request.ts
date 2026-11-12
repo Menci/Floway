@@ -1,12 +1,13 @@
 import type { SidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
-import { TranslatorInputError } from '../../../translator-input-error.ts';
-import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from '../as-source/content.ts';
+import { TranslateInputException } from '../../../shared/input-error.ts';
+import { geminiGenerateContentInlineData, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
 import { geminiGenerateContentReasoningEffort } from '../as-source/reasoning.ts';
 import { collectGeminiGenerateContentReplayContents, hasGeminiGenerateContentThoughtSignature, findGeminiGenerateContentSidecarOccurrences, verifyGeminiGenerateContentTurnDigest } from '../as-source/round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../as-source/schema.ts';
 import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionDeclarations, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
+import { geminiGenerateContentPartKind } from '@floway-dev/protocols/gemini-generate-content';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 
@@ -35,7 +36,7 @@ const inlineDataToInputContent = (part: GeminiGenerateContentPart): OpenAIRespon
     };
   case 'audio':
   case 'unsupported':
-    throw new TranslatorInputError(`Cannot translate Gemini generateContent inlineData MIME type '${inlineData.mimeType}' to OpenAI Responses.`);
+    throw new TranslateInputException(`Cannot translate Gemini generateContent inlineData MIME type '${inlineData.mimeType}' to OpenAI Responses.`);
   }
 };
 
@@ -70,7 +71,7 @@ const buildUserInputItems = (content: GeminiGenerateContentContent, turnIndex: n
       return;
     }
     default:
-      throw new TranslatorInputError(`"${kind}" parts are not supported in user content.`);
+      throw new TranslateInputException(`"${kind}" parts are not supported in user content.`);
     }
   });
 
@@ -119,7 +120,7 @@ const buildAssistantInputItems = (content: GeminiGenerateContentContent, turnInd
       return;
     }
     default:
-      throw new TranslatorInputError(`"${kind}" parts are not supported in model content.`);
+      throw new TranslateInputException(`"${kind}" parts are not supported in model content.`);
     }
   });
 
@@ -201,7 +202,7 @@ export const buildTargetRequest = async (
           input.push(...buildAssistantInputItems(content, contentIndex + index, unmatchedToolCallIds));
         }
       } else for (const [index, content] of turn.items.entries()) {
-        if (content.role !== 'user' && content.role !== undefined) throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
+        if (content.role !== 'user' && content.role !== undefined) throw new TranslateInputException(`"${(content as { role: string }).role}" is not a supported content role.`);
         if ((content.parts?.length ?? 0) === 0) { input.push({ type: 'message', role: 'user', content: '' }); continue; }
         input.push(...buildUserInputItems(content, contentIndex + index, unmatchedToolCallIds));
       }
