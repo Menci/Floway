@@ -610,13 +610,14 @@ test('image_url with data URL → base64 image block', async () => {
   assertEquals(img.source.data, 'iVBORw0KGgo=');
 });
 
-test('a remote image URL is stated as the URL Messages accepts', async () => {
+test.each(['http', 'https', 'HTTP', 'HTTPS', 'hTtP', 'hTtPs'])('preserves a remote image URL with %s scheme', async scheme => {
+  const url = `${scheme}://example.com/image.png`;
   const result = await buildWithTestSidecar(mkPayload({
     messages: [{
       role: 'user',
       content: [
         { type: 'text', text: 'What is this?' },
-        { type: 'image_url', image_url: { url: 'https://example.com/image.png' } },
+        { type: 'image_url', image_url: { url } },
       ],
     }],
   }));
@@ -624,7 +625,7 @@ test('a remote image URL is stated as the URL Messages accepts', async () => {
   // Preserve remote image URLs; provider-specific fetching belongs at the gateway boundary.
   const blocks = userBlocks(result, 0);
   assertEquals(blocks.length, 2);
-  assertEquals(blocks[1], { type: 'image', source: { type: 'url', url: 'https://example.com/image.png' }, cache_control: { type: 'ephemeral' } });
+  assertEquals(blocks[1], { type: 'image', source: { type: 'url', url }, cache_control: { type: 'ephemeral' } });
 });
 
 test('image with jpeg media type', async () => {

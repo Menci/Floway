@@ -22,7 +22,7 @@ const imageSource = (media: IRInputMedia): AnthropicMessagesImageSource => {
   switch (media.source_kind) {
   case 'url': {
     // Messages remote images require HTTP(S) URLs; invalid schemes are translation input errors.
-    const scheme = media.url.slice(0, media.url.indexOf(':'));
+    const scheme = media.url.slice(0, media.url.indexOf(':')).toLowerCase();
     if (scheme !== 'http' && scheme !== 'https') {
       throw new TranslateInputException(`Messages image input requires an http or https URL, got '${media.url}'.`);
     }
