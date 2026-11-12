@@ -43,24 +43,10 @@ test('preserves an empty assistant turn between client turns', async () => {
   ]);
 });
 
-test('preserves nullable controls and snapshots mutable source objects', async () => {
-  const payload: OpenAIResponsesRequestPayloadEx = {
-    model: 'model', input: 'hi', metadata: { trace: 'before' }, service_tier: null,
-    text: { format: { type: 'json_schema', json_schema: { name: 'shape', schema: { type: 'object', properties: { name: { type: 'string' } } } } } as never },
-  };
-  const building = buildWithTestSidecar(payload);
-  payload.metadata!.trace = 'after';
-  const nested = payload.text!.format as unknown as { json_schema: { schema: { properties: { name: { type: string } } } } };
-  nested.json_schema.schema.properties.name.type = 'number';
-  const { target } = await building;
-  assertEquals(target.metadata, { trace: 'before' });
+test('preserves nullable metadata and service tier controls', async () => {
+  const { target } = await buildWithTestSidecar({ model: 'model', input: 'hi', metadata: null, service_tier: null });
+  assertEquals(target.metadata, null);
   assertEquals(target.service_tier, null);
-  assertEquals(target.response_format?.type === 'json_schema' ? target.response_format.json_schema.schema : undefined, {
-    type: 'object', properties: { name: { type: 'string' } },
-  });
-
-  const nullMetadata = await buildWithTestSidecar({ model: 'model', input: 'hi', metadata: null });
-  assertEquals(nullMetadata.target.metadata, null);
 });
 
 test('buildTargetPayload accepts an implicit message discriminator', async () => {

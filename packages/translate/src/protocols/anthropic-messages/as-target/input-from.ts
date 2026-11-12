@@ -239,6 +239,7 @@ export const anthropicMessagesConversationFromIR = (
       if (item.type === 'instruction') {
         if (hoisting) {
           system.push(...systemContent(item.content));
+          hoisting = false;
           continue;
         }
         const blocks = systemContent(item.content);
