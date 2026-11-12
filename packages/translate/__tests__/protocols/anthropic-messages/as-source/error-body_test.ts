@@ -31,6 +31,8 @@ test.each([
   ['message-only signal', { error: { message: "This model's maximum context length is 4097 tokens. However, your messages resulted in 4498 tokens." } }],
 ])('restates a context overflow from the %s as the prompt-too-long wording', (_name, body) => {
   const result = restateAnthropicMessagesError(...upstreamOf(502, body));
+  // Use our 400 invalid_request_error mapping and the prompt-too-long compatibility prefix.
+  // Claude Code recognizes that substring without requiring this complete message or HTTP status.
   assertEquals(result!.status, 400);
   assertEquals(result!.headers.get('content-type'), 'application/json');
   const parsed = decoded(result);

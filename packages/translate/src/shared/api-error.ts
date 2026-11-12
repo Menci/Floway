@@ -6,7 +6,10 @@ const recordOf = (value: unknown): Readonly<Record<string, unknown>> | undefined
 
 const stringOf = (value: unknown): string | undefined => typeof value === 'string' ? value : undefined;
 
-// Unknown bodies keep their original bytes; parser failures other than invalid syntax propagate.
+/**
+ * Recognize structured upstream error envelopes for cross-protocol rendering. Undefined includes
+ * malformed JSON, invalid UTF-8 and unrecognized bodies, preserving the original response untouched.
+ */
 export const irErrorPayloadFromBody = (body: Uint8Array): IRErrorPayload | undefined => {
   let text: string;
   try {
@@ -29,6 +32,7 @@ export const irErrorPayloadFromBody = (body: Uint8Array): IRErrorPayload | undef
   return payload === undefined ? undefined : withEnvelopeDetails(payload, details);
 };
 
+/** Restatement requires a message; preserve every unrepresented field in diagnostic details. */
 export const errorPayloadOf = (error: Readonly<Record<string, unknown>>): IRErrorPayload | undefined => {
   const message = stringOf(error.message) ?? stringOf(error.msg);
   if (message === undefined) return undefined;
@@ -76,6 +80,7 @@ const errorEventPayloadOf = (event: Readonly<Record<string, unknown>>) => {
 export const errorPayloadFromEvent = (event: Readonly<Record<string, unknown>>): IRErrorPayload =>
   errorPayloadFromWire(errorEventPayloadOf(event));
 
+/** Target adapters own wire shaping; source writers own extension-field projection. */
 // Canonical wire payloads retain identity when their envelope adds no metadata.
 export const errorPayloadFromWire = (wire: unknown): IRErrorPayload => {
   const { source, details } = errorEnvelopeOf(recordOf(wire) ?? {});
@@ -85,6 +90,7 @@ export const errorPayloadFromWire = (wire: unknown): IRErrorPayload => {
     const { msg: _msg, ...fields } = source;
     return withEnvelopeDetails({ ...fields, message: aliasMessage }, details);
   }
+  // Failures without message text still need an error frame; use an empty message.
   const extra = extensionOf(source, NAMED_ERROR_FIELDS);
   return withEnvelopeDetails({ message: '', ...(extra === undefined ? {} : { provider_specific_fields: extra }) }, details);
 };
@@ -104,9 +110,14 @@ const extensionOf = (error: Readonly<Record<string, unknown>>, representedFields
   return Object.keys(rest).length === 0 ? own : { ...rest, ...own };
 };
 
+/** Each source writer lists fields represented in its envelope; all remaining values stay in diagnostic extensions. */
 export const errorDetailsOf = (error: IRErrorPayload, representedFields: readonly string[]): Readonly<Record<string, unknown>> | undefined =>
   extensionOf(error, new Set(representedFields));
 
+/**
+ * Return a JSON envelope without transport encoding. Preserve semantic upstream headers while
+ * replacing the media type and removing length and encoding headers tied to the replaced body.
+ */
 export const restateError = (
   status: number,
   headers: Headers,
@@ -120,6 +131,7 @@ export const restateError = (
 const restatedHeaders = (headers: Headers): Headers => {
   const kept = new Headers(headers);
   kept.set('content-type', 'application/json');
+  // A replacement body can change length and encoding, so remove both upstream body headers.
   kept.delete('content-length');
   kept.delete('content-encoding');
   return kept;

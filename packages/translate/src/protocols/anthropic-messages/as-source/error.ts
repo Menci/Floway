@@ -14,6 +14,7 @@ const MESSAGES_ERROR_TYPES = [
   'overloaded_error',
 ];
 
+/** HTTP and SSE share the Messages error object. Context overflow uses the shared prompt-too-long compatibility message. */
 const messagesError = (error: IRErrorPayload, contextExceeded: boolean): AnthropicMessagesErrorEventEx['error'] => {
   const type = contextExceeded
     ? 'invalid_request_error'
@@ -26,6 +27,7 @@ const messagesError = (error: IRErrorPayload, contextExceeded: boolean): Anthrop
 export const anthropicMessagesErrorFromIR = (error: IRErrorPayload): AnthropicMessagesErrorEventEx['error'] =>
   messagesError(error, isContextExceededError(error));
 
+/** Classify overflow once so its compatibility message and our chosen 400 mapping stay consistent. */
 export const anthropicMessagesErrorEnvelope = (error: IRErrorPayload): { readonly body: unknown; readonly status: number | undefined } => {
   const contextExceeded = isContextExceededError(error);
   return {
