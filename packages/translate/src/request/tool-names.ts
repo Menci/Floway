@@ -58,6 +58,13 @@ export const allocateToolNames = <Restored>(
   inputTurns: readonly (IRInputTurn | RestoredAssistantTurn<Restored>)[],
   native: NativeCallNames<Restored>,
 ): { readonly request: IRInputRequestHeader; readonly turns: readonly (IRInputTurn | RestoredAssistantTurn<Restored>)[]; readonly context: ToolNameContext } => {
+  const declared = new Set<string>();
+  for (const tool of request.tools ?? []) {
+    const key = callableKey(tool);
+    // One identity allocates one name, and these wires reject a repeated declaration name.
+    if (declared.has(key)) throw new TranslateInputException(`Cannot translate repeated declarations of tool '${tool.name}'.`);
+    declared.add(key);
+  }
   const callables = [
     ...(request.tools ?? []),
     ...inputTurns.flatMap(turn => turn.kind === 'restored' ? turn.callIdentities : turn.items.flatMap(item =>

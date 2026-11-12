@@ -112,3 +112,8 @@ test.each([undefined, 'files'])('allocates distinct names per callable kind in n
   assertEquals([...selected.context.customToolNames], [second]);
   assertEquals(selected.context.originalToolNames.get(second), { name: 'edit', ...(namespace === undefined ? {} : { namespace }) });
 });
+
+test('a request declaring one callable identity twice is refused before allocation', () => {
+  const tool: IRInputTool = { type: 'function', namespace: 'agents', name: 'wait', parameters: { type: 'object' } };
+  assertThrows(() => allocateToolNames(request([tool, tool]), [], native), TranslateInputException, 'repeated declarations');
+});

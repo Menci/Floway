@@ -66,7 +66,8 @@ export interface IRInputOutputFormat {
 // writer needs them interleaved with the assistant turns a sidecar restored.
 export interface IRInputRequestHeader {
   readonly settings: IRInputSettings;
-  // Absent and empty are the same thing: a request that declares no tool.
+  // Absent and empty are the same thing: a request that declares no tool. Each
+  // callable identity appears once; a source that allows redeclaration resolves it.
   readonly tools?: readonly IRInputTool[];
   readonly tool_choice?: IRInputToolChoice;
 }

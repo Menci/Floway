@@ -229,14 +229,10 @@ const selectionToIR = (selection: IRInputToolSelector, declarations: readonly IR
 // A selector may name a whole group, which selects each callable it holds.
 const selectorOf = (payload: CanonicalOpenAIResponsesPayload, selector: Record<string, unknown>, declarations: readonly IRInputTool[]): IRInputToolSelector[] => {
   if (typeof selector !== 'object' || selector?.type !== 'namespace') return [selectionToIR(requireCallableSelector(selector), declarations)];
-  const groups = [
-    ...(payload.tools ?? []),
-    ...payload.input.flatMap(item => item.type === 'additional_tools' || item.type === 'tool_search_output' ? item.tools : []),
-  ].flatMap(tool => tool.type === 'namespace' && tool.name === selector.name ? [tool] : []);
-  if (groups.length === 0) throw new TranslateInputException(`Cannot translate group selector '${String(selector.name)}' without a matching declaration.`);
-  return groups.flatMap(group => group.tools.flatMap(child => child.type === 'function' || child.type === 'custom'
-    ? [{ type: child.type, name: child.name, namespace: group.name } as IRInputToolSelector]
-    : []));
+  if (!toolInventories(payload).some(tool => tool.type === 'namespace' && tool.name === selector.name)) {
+    throw new TranslateInputException(`Cannot translate group selector '${String(selector.name)}' without a matching declaration.`);
+  }
+  return declarations.flatMap(({ type, namespace, name }) => namespace === selector.name ? [{ type, namespace, name }] : []);
 };
 
 const toolChoiceToIR = (payload: CanonicalOpenAIResponsesPayload, declarations: readonly IRInputTool[]): IRInputToolChoice => {
@@ -294,14 +290,22 @@ const toolGroupToIR = (tool: OpenAIResponsesTool): IRInputTool[] => {
 
 // A request can defer declarations to an inventory item inside the
 // conversation; those are tools like any other, not things the model said.
-const deferredInventories = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesTool[] =>
-  payload.input.flatMap(item => item.type === 'additional_tools' || item.type === 'tool_search_output' ? item.tools : []);
+const toolInventories = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesTool[] => [
+  ...(payload.tools ?? []),
+  ...payload.input.flatMap(item => item.type === 'additional_tools' || item.type === 'tool_search_output' ? item.tools : []),
+];
+
+// Codex declares a namespace in `tools`, again in `additional_tools`, and once
+// more after each compaction, so one callable can arrive many times. The latest
+// declaration is the caller's current statement of it; it takes the slot of the
+// first, which keeps the declared prefix stable for prompt caching.
+const latestDeclarations = (tools: readonly IRInputTool[]): IRInputTool[] =>
+  [...new Map(tools.map(tool => [JSON.stringify([tool.type, tool.namespace, tool.name]), tool])).values()];
 
 const openaiResponsesToolsToIR = (payload: CanonicalOpenAIResponsesPayload): Pick<IRInputRequestHeader, 'tools' | 'tool_choice'> => {
-  const declared = payload.tools?.flatMap(toolGroupToIR) ?? [];
-  const deferred = deferredInventories(payload).flatMap(toolGroupToIR);
-  const tools = declared.length === 0 && deferred.length === 0 ? undefined : [...declared, ...deferred];
-  const toolChoice = payload.tool_choice == null ? undefined : toolChoiceToIR(payload, tools ?? []);
+  const declarations = latestDeclarations(toolInventories(payload).flatMap(toolGroupToIR));
+  const tools = declarations.length === 0 ? undefined : declarations;
+  const toolChoice = payload.tool_choice == null ? undefined : toolChoiceToIR(payload, declarations);
   return {
     ...(tools === undefined ? {} : { tools }),
     ...(toolChoice === undefined ? {} : { tool_choice: toolChoice }),
