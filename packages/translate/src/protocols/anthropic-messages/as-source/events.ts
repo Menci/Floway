@@ -15,7 +15,7 @@ import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan 
 import { appendEmittedField, createEmittedFieldState, type EmittedFieldState, type EmittedFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.ts';
-import { parseJSONObject, requireJSONObject, isJSONRecord } from '../../../shared/json/object.ts';
+import { parseJSONObject, requireJSONObject } from '../../../shared/json/object.ts';
 import type { AnthropicMessagesInputAssistantTurnState, AnthropicMessagesInputAssistantTurn } from '../as-target/assistant-turn.ts';
 import {
   generateAnthropicId,
@@ -26,6 +26,7 @@ import {
   type AnthropicMessagesStreamEventEx,
   type AnthropicMessagesUsage,
 } from '@floway-dev/protocols/anthropic-messages';
+import { isJsonObject } from '@floway-dev/protocols/common';
 import { eventFrame, type EventFrame } from '@floway-dev/protocols/common';
 
 interface MessagesUnit {
@@ -38,7 +39,7 @@ interface MessagesUnit {
 }
 
 const unitKind = (value: unknown): MessagesUnit['kind'] | 'custom_tool_call' | undefined => {
-  if (!isJSONRecord(value)) return undefined;
+  if (!isJsonObject(value)) return undefined;
   return value.type === 'text'
     || value.type === 'refusal'
     || value.type === 'audio'
