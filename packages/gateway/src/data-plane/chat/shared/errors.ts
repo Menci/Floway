@@ -10,6 +10,12 @@ export type ChatServeFailure =
   | { readonly kind: 'model-unsupported'; readonly model: string; readonly failedUpstreams: readonly string[] }
   | { readonly kind: 'routing-unavailable'; readonly message: string };
 
+export interface InputErrorDetails {
+  readonly message: string;
+  readonly param?: string;
+  readonly code?: string;
+}
+
 class ChatServeFailureError<TFailure extends { readonly kind: string }> extends Error {
   readonly failure: TFailure;
 
@@ -56,3 +62,11 @@ export const noViableCandidateFailure = (
   sawModel
     ? { kind: 'model-unsupported', model, failedUpstreams }
     : { kind: 'model-missing', model, failedUpstreams };
+
+export const inputErrorFields = (error: InputErrorDetails): Record<string, unknown> | undefined => {
+  const fields = {
+    ...(error.param === undefined ? {} : { param: error.param }),
+    ...(error.code === undefined ? {} : { code: error.code }),
+  };
+  return Object.keys(fields).length === 0 ? undefined : fields;
+};

@@ -1,4 +1,3 @@
-import { translatorInputErrorResult } from './errors.ts';
 import { respondAnthropicMessages } from './respond.ts';
 import { anthropicMessagesServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
@@ -11,7 +10,6 @@ import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gat
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
-import { TranslatorInputError } from '@floway-dev/translate';
 
 // Reject `anthropic_beta` / `betas` in the body; the Anthropic Messages protocol carries
 // them via the `anthropic-beta` HTTP header.
@@ -52,16 +50,6 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   return finalizeGatewayResponse(effectiveCtx, response);
 };
 
-// Pre-stream caller-input failure raised by a translator → Anthropic-Messages-shaped
-// 400 invalid_request_error envelope. Anything else falls through to the
-// internal-error 502 path.
-const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
-  if (!(error instanceof TranslatorInputError)) return await respondWithInternalError(c, error, requestBody, ctx);
-  const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
-  const response = await respondAnthropicMessages(c, translatorInputErrorResult(error, effectiveCtx.attempt.telemetry), false, effectiveCtx);
-  return finalizeGatewayResponse(effectiveCtx, response);
-};
-
 const parsePayload = (requestBody: RequestBody): AnthropicMessagesPayload =>
   JSON.parse(new TextDecoder().decode(requestBody.bytes)) as AnthropicMessagesPayload;
 
@@ -80,7 +68,7 @@ export const anthropicMessagesHttp = {
       const response = await respondAnthropicMessages(c, result, wantsStream, ctx);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {
-      return await respondToThrow(c, error, requestBody, ctx);
+      return await respondWithInternalError(c, error, requestBody, ctx);
     }
   },
 
@@ -97,7 +85,7 @@ export const anthropicMessagesHttp = {
       const response = await respondAnthropicMessages(c, result, false, ctx);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {
-      return await respondToThrow(c, error, requestBody, ctx);
+      return await respondWithInternalError(c, error, requestBody, ctx);
     }
   },
 };

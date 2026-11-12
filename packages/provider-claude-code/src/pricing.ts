@@ -18,9 +18,12 @@ const fastPricing = (rates: PriceVector, fastRates: PriceVector): ModelPricing =
 
 const OPUS_RATES = { input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', input_cache_write_1h_tokens: '10', output_tokens: '25' };
 const SONNET_PRICING = tokenBasePricing({ input_tokens: '3', input_cache_read_tokens: '0.3', input_cache_write_tokens: '3.75', input_cache_write_1h_tokens: '6', output_tokens: '15' });
-// Sonnet 5 and 5.5 share Anthropic's published standard rates, including the
-// five-minute and one-hour cache-write prices.
+// Sonnet 5.5 cuts cache reads to 0.05x while retaining Sonnet 5's remaining
+// rates. Keep the two cards separate so a change to either model cannot
+// silently alter the other.
 // https://platform.claude.com/docs/en/models/sonnet-5-5/overview
+const SONNET_5_5_PRICING = tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', input_cache_write_1h_tokens: '4', output_tokens: '10' });
+// https://platform.claude.com/docs/en/models/sonnet-5/overview
 const SONNET_5_PRICING = tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', input_cache_write_1h_tokens: '4', output_tokens: '10' });
 const OPUS_PRICING = tokenBasePricing(OPUS_RATES);
 const OPUS_FAST6X_PRICING = fastPricing(OPUS_RATES, { input_tokens: '30', input_cache_read_tokens: '3', input_cache_write_tokens: '37.5', input_cache_write_1h_tokens: '60', output_tokens: '150' });
@@ -49,7 +52,7 @@ const CLAUDE_CODE_MODEL_PRICING: Record<string, ModelPricing> = {
   'claude-opus-4-6': OPUS_FAST6X_PRICING,
   // Claude Code accepts the same id returned by Anthropic's model catalog.
   // https://support.claude.com/en/articles/11940350-claude-code-model-configuration
-  'claude-sonnet-5-5': SONNET_5_PRICING,
+  'claude-sonnet-5-5': SONNET_5_5_PRICING,
   'claude-sonnet-5': SONNET_5_PRICING,
   'claude-sonnet-4-6': SONNET_PRICING,
   // Haiku 5.5 prices the whole request at its long-context rate when the

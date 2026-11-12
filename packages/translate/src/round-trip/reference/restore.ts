@@ -1,15 +1,14 @@
-import { ContentReference, type ReplayContent, type ContentReferenceSegment, type ReferenceableAssistantTurnFor } from './assistant-turn.ts';
+import { type ReferenceableInputAssistantTurnFor } from './assistant-turn-types.ts';
+import { ContentReference, type ReplayContent, type ContentReferenceSegment } from './types.ts';
 import { parseJSONObject } from '../../shared/json/object.ts';
 import { rawJSON } from '../../shared/json/raw-json.ts';
-import type { AssistantTurnByProtocol, AssistantTurnFor } from '../assistant-turn.ts';
-import { hashRoundTripContent } from '../turn-digest.ts';
+import { hashRoundTripContent } from '../hash.ts';
+import type { InputAssistantTurnByProtocol, InputAssistantTurnFor } from '../input-assistant-turn.ts';
 import { encodeHex } from '@floway-dev/protocols/common';
 
 export type RestoreResult<T> =
-  | { ok: true; turn: T }
+  | { ok: true; value: T }
   | { ok: false; reason: 'missing-reference' };
-
-type RestoreValue = { ok: true; value: unknown } | { ok: false; reason: 'missing-reference' };
 
 const referencedText = (payload: readonly ContentReferenceSegment[], referencedContentHashes: readonly Uint8Array[] | undefined, textsByHash: ReadonlyMap<string, string>): string | undefined => {
   if (referencedContentHashes === undefined) throw new TypeError('Thin reference requires referenced contents');
@@ -25,7 +24,7 @@ const referencedText = (payload: readonly ContentReferenceSegment[], referencedC
   return text.join('');
 };
 
-const restoreValue = (value: unknown, referencedContentHashes: readonly Uint8Array[] | undefined, textsByHash: ReadonlyMap<string, string>): RestoreValue => {
+const restoreValue = (value: unknown, referencedContentHashes: readonly Uint8Array[] | undefined, textsByHash: ReadonlyMap<string, string>): RestoreResult<unknown> => {
   if (rawJSON.isRawJSON(value) || value instanceof Uint8Array) return { ok: true, value };
   if (value instanceof ContentReference) {
     const text = referencedText(value.parts, referencedContentHashes, textsByHash);
@@ -43,12 +42,12 @@ const restoreValue = (value: unknown, referencedContentHashes: readonly Uint8Arr
 };
 
 /** Consumes the exclusively owned turn decoded by the sidecar codec. */
-export const restoreAssistantTurn = async <Protocol extends keyof AssistantTurnByProtocol>(
+export const restoreAssistantTurn = async <Protocol extends keyof InputAssistantTurnByProtocol>(
   _protocol: Protocol,
   candidates: readonly ReplayContent[],
-  targetTurn: ReferenceableAssistantTurnFor<Protocol, ContentReference>,
+  targetTurn: ReferenceableInputAssistantTurnFor<Protocol, ContentReference>,
   referencedContentHashes?: readonly Uint8Array[],
-): Promise<RestoreResult<AssistantTurnFor<Protocol>>> => {
+): Promise<RestoreResult<InputAssistantTurnFor<Protocol>>> => {
   const textsByHash = new Map<string, string>();
   if (referencedContentHashes !== undefined) {
     for (const candidate of candidates) {
@@ -59,6 +58,6 @@ export const restoreAssistantTurn = async <Protocol extends keyof AssistantTurnB
   }
   const result = restoreValue(targetTurn, referencedContentHashes, textsByHash);
   return result.ok
-    ? { ok: true, turn: result.value as AssistantTurnFor<Protocol> }
+    ? { ok: true, value: result.value as InputAssistantTurnFor<Protocol> }
     : result;
 };

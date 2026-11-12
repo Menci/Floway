@@ -22,11 +22,11 @@ test('rewriteContextExceededToPromptTooLong — rewrites Copilot OpenAI Response
     })),
   };
 
-  const result = rewriteContextExceededToPromptTooLong(upstream);
+  const result = rewriteContextExceededToPromptTooLong(upstream.status, upstream.headers, upstream.body);
   assert(result !== undefined);
   assertEquals(result!.status, 400);
   assertEquals(result!.headers.get('content-type'), 'application/json');
-  const parsed = JSON.parse(new TextDecoder().decode(result!.body)) as { error: { message: string } };
+  const parsed = result.body as { error: { message: string } };
   assert(parsed.error.message.startsWith('prompt is too long:'));
 });
 
@@ -38,7 +38,7 @@ test('rewriteContextExceededToPromptTooLong — rewrites Codex OpenAI Responses 
       error: { code: 'context_length_exceeded', message: 'Your input exceeds the context window of this model. Please adjust your input and try again.' },
     })),
   };
-  const result = rewriteContextExceededToPromptTooLong(upstream);
+  const result = rewriteContextExceededToPromptTooLong(upstream.status, upstream.headers, upstream.body);
   assert(result !== undefined);
 });
 
@@ -50,7 +50,7 @@ test('rewriteContextExceededToPromptTooLong — recognizes bodies whose signal i
       error: { message: "This model's maximum context length is 4097 tokens. However, your messages resulted in 4498 tokens." },
     })),
   };
-  assert(rewriteContextExceededToPromptTooLong(upstream) !== undefined);
+  assert(rewriteContextExceededToPromptTooLong(upstream.status, upstream.headers, upstream.body) !== undefined);
 });
 
 test('rewriteContextExceededToPromptTooLong — passes unrelated bodies through unchanged', () => {
@@ -59,7 +59,7 @@ test('rewriteContextExceededToPromptTooLong — passes unrelated bodies through 
     headers: new Headers(),
     body: new TextEncoder().encode(JSON.stringify({ error: { code: 'invalid_api_key', message: 'bad token' } })),
   };
-  assertEquals(rewriteContextExceededToPromptTooLong(upstream), undefined);
+  assertEquals(rewriteContextExceededToPromptTooLong(upstream.status, upstream.headers, upstream.body), undefined);
 });
 
 test('rewriteContextExceededToPromptTooLong — falls back to plain-text substring when the body is not JSON', () => {
@@ -68,12 +68,12 @@ test('rewriteContextExceededToPromptTooLong — falls back to plain-text substri
     headers: new Headers(),
     body: new TextEncoder().encode('some upstream prose: exceeds the context window of this model'),
   };
-  assert(rewriteContextExceededToPromptTooLong(matching) !== undefined);
+  assert(rewriteContextExceededToPromptTooLong(matching.status, matching.headers, matching.body) !== undefined);
 
   const unrelated = {
     status: 502,
     headers: new Headers(),
     body: new TextEncoder().encode('Bad Gateway'),
   };
-  assertEquals(rewriteContextExceededToPromptTooLong(unrelated), undefined);
+  assertEquals(rewriteContextExceededToPromptTooLong(unrelated.status, unrelated.headers, unrelated.body), undefined);
 });

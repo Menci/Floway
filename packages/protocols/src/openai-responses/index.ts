@@ -140,17 +140,20 @@ export type CanonicalOpenAIResponsesInputItem =
 
 export type OpenAIResponsesMessagePhase = 'commentary' | 'final_answer' | (string & {}) | null;
 
-export interface OpenAIResponsesInputMessageEx {
+interface OpenAIResponsesInputMessageFields {
   type: 'message';
   id?: string;
   status?: string;
-  role: 'user' | 'assistant' | 'system' | 'developer';
-  content: string | OpenAIResponsesInputContent[];
   phase?: OpenAIResponsesMessagePhase;
   // Codex marks base-instruction fragments on ordinary developer messages.
   // https://github.com/openai/codex/blob/0462dcc062b822bb8fff16cc31ce6eeab69823b9/codex-rs/core/tests/suite/responses_lite.rs#L136-L155
   internal_chat_message_metadata_passthrough?: Record<string, unknown>;
 }
+
+export type OpenAIResponsesInputMessageEx = OpenAIResponsesInputMessageFields & (
+  | { role: 'user' | 'system' | 'developer'; content: string | OpenAIResponsesInputContent[] }
+  | { role: 'assistant'; content: string | OpenAIResponsesAssistantInputContent[] }
+);
 
 // The OpenAI Responses request schema's EasyInputMessage makes the constant
 // `type: "message"` discriminator optional. Wire-facing payloads accept that
@@ -178,7 +181,9 @@ export type CanonicalOpenAIResponsesPayload = Omit<OpenAIResponsesPayloadEx, 'in
   input: CanonicalOpenAIResponsesInputItem[];
 };
 
-export type OpenAIResponsesInputContent = CanonicalOpenAIResponsesText | OpenAIResponsesInputImage | OpenAIResponsesInputFile | OpenAIResponsesOutputRefusal;
+export type OpenAIResponsesInputContent = CanonicalOpenAIResponsesText | OpenAIResponsesInputImage | OpenAIResponsesInputFile;
+
+export type OpenAIResponsesAssistantInputContent = OpenAIResponsesInputContent | OpenAIResponsesOutputRefusal;
 
 // Explicit content breakpoints inherit their lifetime from
 // `prompt_cache_options.ttl`. The mode stays open-string for forward
@@ -1443,3 +1448,6 @@ export { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, collectOpenAIResponsesProtoc
 export { createRandomOpenAIResponsesItemId, type GeneratedOpenAIResponsesItemType } from './item-id.ts';
 export { reassembleOpenAIResponsesEvents } from './reassemble.ts';
 export { openaiResponsesProtocolFrameToSSEFrame } from './to-sse.ts';
+
+export { canonicalizeOpenAIResponsesPayload } from './canonicalize-payload.ts';
+export { toOpenAIResponsesInputItem, toOpenAIResponsesInputItems } from './history.ts';

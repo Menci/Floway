@@ -8,7 +8,7 @@
 //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/core/src/compact_remote_v2.rs#L439-L501
 //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/utils/string/src/truncate.rs#L71-L74
 
-import { isOpenAIResponsesCompactionItem, createRandomOpenAIResponsesItemId, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesCompactionTriggerItem, type OpenAIResponsesInputContent, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesInputMessageEx, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesCompactionItem, createRandomOpenAIResponsesItemId, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesCompactionTriggerItem, type OpenAIResponsesAssistantInputContent, type CanonicalOpenAIResponsesInputItem, type CanonicalOpenAIResponsesText, type OpenAIResponsesInputMessageEx, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 
 export const COMPACTION_TRIGGER: OpenAIResponsesCompactionTriggerItem = { type: 'compaction_trigger' };
 
@@ -26,11 +26,7 @@ const RETAINED_BUDGET_TOKENS = 64_000;
 const APPROX_BYTES_PER_TOKEN = 4;
 const encoder = new TextEncoder();
 
-// Native compact echoes every text part — including assistant `output_text` —
-// as `input_text` so the client can resend `output` verbatim as next-turn
-// `input`. Normalize unconditionally; non-text content passes through and costs
-// 0 tokens against the retained budget.
-const normalizeContent = (content: OpenAIResponsesInputMessageEx['content']): OpenAIResponsesInputContent[] => {
+const normalizeContent = <Content extends OpenAIResponsesAssistantInputContent>(content: string | Content[]): (Content | CanonicalOpenAIResponsesText)[] => {
   if (typeof content === 'string') return [{ type: 'input_text', text: content }];
   return content.map(part => (part.type === 'output_text' ? { ...part, type: 'input_text' } : part));
 };
@@ -54,8 +50,10 @@ export const compactionResponse = (input: CanonicalOpenAIResponsesInputItem[], g
     const item = input[i];
     if (!isRetainedMessage(item)) continue;
 
-    const content = normalizeContent(item.content);
-    const tokens = content.reduce((sum, part) =>
+    const message = item.role === 'assistant'
+      ? { role: item.role, content: normalizeContent(item.content) }
+      : { role: item.role, content: normalizeContent(item.content) };
+    const tokens = message.content.reduce((sum, part) =>
       part.type === 'input_text'
         ? sum + Math.ceil(encoder.encode(part.text).length / APPROX_BYTES_PER_TOKEN)
         : sum, 0);
@@ -66,8 +64,7 @@ export const compactionResponse = (input: CanonicalOpenAIResponsesInputItem[], g
       type: 'message',
       id: createRandomOpenAIResponsesItemId('message'),
       status: item.status ?? 'completed',
-      role: item.role,
-      content,
+      ...message,
       ...(item.phase !== undefined ? { phase: item.phase } : {}),
     });
   }

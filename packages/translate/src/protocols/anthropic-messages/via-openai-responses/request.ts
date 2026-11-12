@@ -1,12 +1,12 @@
 import { klona } from 'klona/json';
 
 import { anthropicMessagesReasoningBlockToOpenAIResponsesReasoning } from './reasoning.ts';
+import type { SidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
-import { TranslatorInputError } from '../../../translator-input-error.ts';
-import type { SidecarCodec } from '../../../types.ts';
+import { TranslateInputException } from '../../../shared/input-error.ts';
 import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
-import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from '../as-source/round-trip.ts';
+import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarOccurrences, verifyAnthropicMessagesTurnDigest } from '../as-source/round-trip.ts';
 import {
   type AnthropicMessagesAssistantMessage,
   type AnthropicMessagesClientTool,
@@ -74,7 +74,7 @@ const translateUserContentBlock = (
     };
   }
 
-  throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' user content blocks are not supported on this model`);
+  throw new TranslateInputException(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' user content blocks are not supported on this model`);
 };
 
 const toOpenAIResponsesFunctionCall = (block: AnthropicMessagesToolUseBlockParam | AnthropicMessagesServerToolUseBlockParam): CanonicalOpenAIResponsesInputItem => ({
@@ -160,7 +160,7 @@ const translateAssistantMessage = (message: AnthropicMessagesAssistantMessage, m
       continue;
     }
 
-    throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' assistant content blocks are not supported on this model`);
+    throw new TranslateInputException(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' assistant content blocks are not supported on this model`);
   }
 
   flushPendingContent(pendingContent, input, 'assistant');
@@ -176,7 +176,7 @@ const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessag
     content: typeof message.content === 'string'
       ? message.content
       : message.content.map(block => {
-          if (block.type !== 'text') throw new TranslatorInputError('Only text system content is supported by this Responses translation.');
+          if (block.type !== 'text') throw new TranslateInputException('Only text system content is supported by this Responses translation.');
           return { type: 'input_text', text: block.text };
         }),
   },
@@ -234,7 +234,7 @@ const translateTools = (tools: AnthropicMessagesClientTool[] | undefined): OpenA
 const translateToolChoice = (toolChoice: AnthropicMessagesPayload['tool_choice'], tools?: AnthropicMessagesClientTool[]): OpenAIResponsesToolChoice | undefined => {
   if (!toolChoice) return undefined;
   if (!tools || tools.length === 0) {
-    if (toolChoice.type === 'tool') throw new TranslatorInputError(`Anthropic Messages tool_choice names an undeclared tool: ${String(toolChoice.name)}`);
+    if (toolChoice.type === 'tool') throw new TranslateInputException(`Anthropic Messages tool_choice names an undeclared tool: ${String(toolChoice.name)}`);
     return undefined;
   }
 
@@ -246,7 +246,7 @@ const translateToolChoice = (toolChoice: AnthropicMessagesPayload['tool_choice']
   case 'any':
     return 'required';
   case 'tool': {
-    if (!toolChoice.name || !toolNames.has(toolChoice.name)) throw new TranslatorInputError(`Anthropic Messages tool_choice names an undeclared tool: ${String(toolChoice.name)}`);
+    if (!toolChoice.name || !toolNames.has(toolChoice.name)) throw new TranslateInputException(`Anthropic Messages tool_choice names an undeclared tool: ${String(toolChoice.name)}`);
     return { type: 'function', name: toolChoice.name };
   }
   case 'none':
@@ -256,7 +256,7 @@ const translateToolChoice = (toolChoice: AnthropicMessagesPayload['tool_choice']
 
 const translateMetadata = (metadata: AnthropicMessagesMetadataEx): Record<string, string> => Object.fromEntries(Object.entries(metadata).flatMap(([key, value]) => {
   if (key === 'user_id' && value == null) return [];
-  if (typeof value !== 'string') throw new TranslatorInputError(`Cannot translate Anthropic Messages metadata field '${key}' to a Responses string metadata value.`);
+  if (typeof value !== 'string') throw new TranslateInputException(`Cannot translate Anthropic Messages metadata field '${key}' to a Responses string metadata value.`);
   return [[key, value]];
 }));
 
@@ -290,13 +290,13 @@ export const buildTargetRequest = async (
   let messageIndex = 0;
   for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
     if (turn.role === 'assistant') {
-      const roundTrip = await roundTripAssistantTurn('anthropicMessages', 'openaiResponses', turn.items, codec, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest, collectAnthropicMessagesReplayContents);
+      const roundTrip = await roundTripAssistantTurn('anthropicMessages', 'openaiResponses', turn.items, codec, findAnthropicMessagesSidecarOccurrences, verifyAnthropicMessagesTurnDigest, collectAnthropicMessagesReplayContents);
       input.push(...(roundTrip ? roundTrip.turn : turn.items.flatMap((message, index) => translateAssistantMessage(message, messageIndex + index))));
     } else for (const [index, message] of turn.items.entries()) {
       switch (message.role) {
       case 'user': input.push(...translateUserMessage(message, messageIndex + index)); break;
       case 'system': input.push(...translateAnthropicMessagesSystem(message)); break;
-      default: throw new TranslatorInputError(`messages.${messageIndex + index}.role: role '${(message as { role: string }).role}' is not supported on this model`);
+      default: throw new TranslateInputException(`messages.${messageIndex + index}.role: role '${(message as { role: string }).role}' is not supported on this model`);
       }
     }
     messageIndex += turn.items.length;

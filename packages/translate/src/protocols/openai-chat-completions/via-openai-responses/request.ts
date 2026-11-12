@@ -1,13 +1,13 @@
 import { klona } from 'klona/json';
 
 import { openaiChatCompletionsContentToOpenAIResponsesInputContent, openaiChatCompletionsContentToText } from './content.ts';
+import type { SidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
-import { TranslatorInputError } from '../../../translator-input-error.ts';
-import type { SidecarCodec } from '../../../types.ts';
+import { TranslateInputException } from '../../../shared/input-error.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
-import { collectOpenAIChatCompletionsReplayContents, hasOpenAIChatCompletionsReasoning, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
+import { collectOpenAIChatCompletionsReplayContents, hasOpenAIChatCompletionsReasoning, findOpenAIChatCompletionsSidecarOccurrences, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
 import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesAssistantInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 const translateChatTools = (tools?: OpenAIChatCompletionsTool[] | null): OpenAIResponsesTool[] =>
   tools?.length
@@ -36,8 +36,8 @@ const translateChatToolChoice = (choice: NonNullable<OpenAIChatCompletionsPayloa
   };
 };
 
-const translateAssistantContent = (message: OpenAIChatCompletionsAssistantMessage): OpenAIResponsesInputContent[] => {
-  const content: OpenAIResponsesInputContent[] = [];
+const translateAssistantContent = (message: OpenAIChatCompletionsAssistantMessage): OpenAIResponsesAssistantInputContent[] => {
+  const content: OpenAIResponsesAssistantInputContent[] = [];
   let hasRefusalPart = false;
 
   if (typeof message.content === 'string') {
@@ -140,11 +140,11 @@ export const buildTargetRequest = async (
       }
 
       if (message.role !== 'tool') {
-        throw new TranslatorInputError(`Invalid role '${(message as { role: string }).role}'.`);
+        throw new TranslateInputException(`Invalid role '${(message as { role: string }).role}'.`);
       }
 
       if (!message.tool_call_id) {
-        throw new TranslatorInputError("Missing required field 'tool_call_id' on a 'tool' role message.");
+        throw new TranslateInputException("Missing required field 'tool_call_id' on a 'tool' role message.");
       }
 
       input.push({
@@ -156,7 +156,7 @@ export const buildTargetRequest = async (
   };
 
   for (const turn of partitionOpenAIChatCompletionsTurns(payload.messages)) {
-    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('openaiChatCompletions', 'openaiResponses', turn.items[0], codec, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest, collectOpenAIChatCompletionsReplayContents);
+    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('openaiChatCompletions', 'openaiResponses', turn.items[0], codec, findOpenAIChatCompletionsSidecarOccurrences, verifyOpenAIChatCompletionsTurnDigest, collectOpenAIChatCompletionsReplayContents);
     if (!roundTrip) {
       if (turn.role === 'assistant') translateAssistantMessage(turn.items[0]);
       else translateNonAssistantMessages(turn.items);
@@ -168,7 +168,7 @@ export const buildTargetRequest = async (
   }
 
   const format = klona(payload.response_format);
-  if (format?.type === 'json_schema' && format.json_schema.schema === undefined) throw new TranslatorInputError('Cannot translate json_schema response format without a schema.');
+  if (format?.type === 'json_schema' && format.json_schema.schema === undefined) throw new TranslateInputException('Cannot translate json_schema response format without a schema.');
   const responseTextConfig = format == null ? undefined : {
     format: format.type === 'json_schema'
       ? { type: 'json_schema' as const, ...format.json_schema, schema: format.json_schema.schema! }

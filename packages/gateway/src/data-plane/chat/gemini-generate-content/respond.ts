@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { wrapGeminiGenerateContentAffinityEgress } from './affinity/egress.ts';
-import { geminiGenerateContentInternalErrorPayload, geminiGenerateContentStatusForHttpStatus } from './errors.ts';
+import { geminiGenerateContentInternalErrorPayload, gatewayErrorStatus } from './errors.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
@@ -92,7 +92,7 @@ const googleRpcHttpStatusCode = (status: number): number => (Number.isInteger(st
 const geminiGenerateContentRpcErrorPayload = (status: number, message: string): GeminiGenerateContentErrorResponse => {
   const code = googleRpcHttpStatusCode(status);
   return {
-    error: { code, message, status: geminiGenerateContentStatusForHttpStatus(code) },
+    error: { code, message, status: gatewayErrorStatus(code) },
   };
 };
 
@@ -113,7 +113,7 @@ export const geminiGenerateContentInternalRpcErrorResponse = (status: number, er
 
 const geminiGenerateContentErrorResponse = (status: number, message: string, error?: InternalDebugError): Response => {
   // For gateway-minted errors, a non-500 that maps to INTERNAL is coerced to 500.
-  const code = geminiGenerateContentStatusForHttpStatus(status) === 'INTERNAL' && status !== 500 ? 500 : status;
+  const code = gatewayErrorStatus(status) === 'INTERNAL' && status !== 500 ? 500 : status;
   const payload = error === undefined ? geminiGenerateContentRpcErrorPayload(code, message) : geminiGenerateContentInternalErrorPayload(code, error);
   return Response.json(payload, { status: code });
 };

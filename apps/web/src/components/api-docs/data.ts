@@ -23,15 +23,22 @@ const endpoint = <const Name extends string>(
 };
 
 const geminiGenerateContentActionPath = (action: string) =>
-  PUBLIC_DATA_PLANE_ROUTES.geminiGenerateContentAction.paths[0].replace(':modelAction{.+}', `{model}:${action}`);
+  PUBLIC_DATA_PLANE_ROUTES.geminiGenerateContentAction.paths
+    .map(path => path.replace(':modelAction{.+}', `{model}:${action}`))
+    .join(', ');
+
+const geminiModelPath = PUBLIC_DATA_PLANE_ROUTES.geminiModel.paths
+  .map(path => path.replace(':modelId{.+}', '{model}'))
+  .join(', ');
 
 export const authCurlExample = (origin: string) =>
   `curl "${origin}/v1/models" -H "Authorization: Bearer $FLOWAY_API_KEY"`;
 
 export const apiDocsEndpoints = [
-  endpoint('models', { group: 'models', name: 'openAiModels', docs: `${openAi}/models/list` }),
-  endpoint('geminiModels', { group: 'models', name: 'geminiModels', docs: 'https://ai.google.dev/api/models' }),
-  endpoint('geminiModel', { group: 'models', name: 'geminiModel', docs: 'https://ai.google.dev/api/models', path: PUBLIC_DATA_PLANE_ROUTES.geminiModel.paths[0].replace(':modelId{.+}', '{model}') }),
+  // One listing endpoint serves two shapes: the OpenAI/Anthropic superset for
+  // every caller, and Gemini's `{ models }` for clients that identify as Gemini.
+  endpoint('models', { group: 'models', name: 'modelList', docs: `${openAi}/models/list` }),
+  endpoint('geminiModel', { group: 'models', name: 'geminiModel', docs: 'https://ai.google.dev/api/models', path: geminiModelPath }),
 
   endpoint('openaiCompletions', { group: 'generation', name: 'openAiCompletions', docs: `${openAi}/completions/create` }),
   endpoint('openaiChatCompletions', { group: 'generation', name: 'openAiChat', docs: `${openAi}/chat/create` }),

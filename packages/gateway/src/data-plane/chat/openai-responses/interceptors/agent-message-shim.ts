@@ -1,4 +1,6 @@
 import type { OpenAIResponsesInterceptor } from './types.ts';
+import { tryCatchChatServeFailure, type InputErrorDetails } from '../../shared/errors.ts';
+import { inputErrorResult } from '../errors.ts';
 import { agentMessageContent } from '../items/agent-message-content.ts';
 import { providerModelOf } from '@floway-dev/provider';
 
@@ -14,16 +16,22 @@ import { providerModelOf } from '@floway-dev/provider';
 // `openai-responses-agent-message-shim` on a native target, which otherwise
 // receives the item untouched.
 // https://github.com/openai/codex/blob/0a2eb4696c26ac33204bcd255721ab30220a4774/codex-rs/protocol/src/models.rs#L1036-L1046
-export const withOpenAIResponsesAgentMessageShim: OpenAIResponsesInterceptor = (ctx, _gatewayCtx, run) => {
+export const withOpenAIResponsesAgentMessageShim: OpenAIResponsesInterceptor = async (ctx, gatewayCtx, run) => {
   if (ctx.targetApi === 'openaiResponses'
-    && !providerModelOf(ctx.candidate).enabledFlags.has('openai-responses-agent-message-shim')) return run();
-  if (!ctx.payload.input.some(item => item.type === 'agent_message')) return run();
+    && !providerModelOf(ctx.candidate).enabledFlags.has('openai-responses-agent-message-shim')) return await run();
+  if (!ctx.payload.input.some(item => item.type === 'agent_message')) return await run();
 
-  ctx.payload = {
-    ...ctx.payload,
-    input: ctx.payload.input.map(item => item.type === 'agent_message'
-      ? { type: 'message', role: 'user', content: agentMessageContent(item) }
-      : item),
-  };
-  return run();
+  try {
+    ctx.payload = {
+      ...ctx.payload,
+      input: ctx.payload.input.map(item => item.type === 'agent_message'
+        ? { type: 'message', role: 'user', content: agentMessageContent(item) }
+        : item),
+    };
+  } catch (error) {
+    const failure = tryCatchChatServeFailure<InputErrorDetails & { readonly kind: 'invalid-input' }>(error);
+    if (failure === null) throw error;
+    return inputErrorResult(failure, gatewayCtx.attempt.telemetry);
+  }
+  return await run();
 };

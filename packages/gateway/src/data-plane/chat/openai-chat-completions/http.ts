@@ -1,4 +1,3 @@
-import { translatorInputErrorResult } from './errors.ts';
 import { respondOpenAIChatCompletions } from './respond.ts';
 import { openaiChatCompletionsServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
@@ -11,7 +10,6 @@ import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gat
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
-import { TranslatorInputError } from '@floway-dev/translate';
 
 // Surfaces a pre-stream throw (malformed JSON body, an interceptor crash,
 // etc.) as an OpenAI Chat Completions-shaped 502 with the same internal-error
@@ -29,16 +27,6 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   const result = internalErrorResult(502, toInternalDebugError(error), effectiveCtx.attempt.telemetry);
   const response = await respondOpenAIChatCompletions(c, result, false, false, effectiveCtx);
-  return finalizeGatewayResponse(effectiveCtx, response);
-};
-
-// Pre-stream caller-input failure raised by a translator → an OpenAI Chat
-// Completions-shaped 400 invalid_request_error envelope. Anything else
-// falls through to the internal-error 502 path.
-const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
-  if (!(error instanceof TranslatorInputError)) return await respondWithInternalError(c, error, requestBody, ctx);
-  const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
-  const response = await respondOpenAIChatCompletions(c, translatorInputErrorResult(error, effectiveCtx.attempt.telemetry), false, false, effectiveCtx);
   return finalizeGatewayResponse(effectiveCtx, response);
 };
 
@@ -60,7 +48,7 @@ export const openaiChatCompletionsHttp = {
       const response = await respondOpenAIChatCompletions(c, result, wantsStream, includeUsageChunk, ctx);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {
-      return await respondToThrow(c, error, requestBody, ctx);
+      return await respondWithInternalError(c, error, requestBody, ctx);
     }
   },
 };
