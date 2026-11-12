@@ -1,5 +1,5 @@
-import { createRoundTripCoordinator } from '../../../round-trip/coordinator.ts';
 import type { SidecarCodec } from '../../../round-trip/codec.ts';
+import { createRoundTripCoordinator } from '../../../round-trip/coordinator.ts';
 import { readOpenAIResponsesEvents } from '../../openai-responses/as-target/events.ts';
 import { writeOpenAIChatCompletionsEvents } from '../as-source/events.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
