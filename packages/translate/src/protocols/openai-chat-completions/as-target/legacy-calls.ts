@@ -42,6 +42,7 @@ export const chatLegacyCallsOf = <Restored extends ChatRestoredAssistantTurn>(
   turns: readonly (IRInputTurn | RestoredAssistantTurn<Restored>)[],
 ): ChatLegacyCalls => {
   const stated = statedCallIds(turns);
+  const claimed = new Set(stated);
   const callIds = new Map<ChatRestoredAssistantTurn, string>();
   const names = new Map<string, string>();
   let allocated = 0;
@@ -64,8 +65,14 @@ export const chatLegacyCallsOf = <Restored extends ChatRestoredAssistantTurn>(
       }
       continue;
     }
-    allocated += 1;
-    const callId = answer.call_id ?? `legacy_call_${allocated}`;
+    let callId = answer.call_id;
+    if (callId === undefined) {
+      do {
+        allocated += 1;
+        callId = `legacy_call_${allocated}`;
+      } while (claimed.has(callId));
+    }
+    claimed.add(callId);
     callIds.set(piece.turn, callId);
     names.set(callId, name);
   }
