@@ -43,17 +43,17 @@ const nestedEvent = (error: typeof failure) => ({ type: 'error' as const, error 
 const expectedChat = {
   error: {
     message: failure.message, type: failure.type, code: failure.code, param: failure.param,
-    provider_specific_fields: { status: failure.status, msg: failure.msg, request_id: 'req_1', retry_after: 9 },
+    provider_specific_fields: { status: failure.status, msg: failure.msg, request_id: 'req_1', retry_after: 9, retry_after_1: 7 },
   },
 };
 const expectedResponses = {
   type: 'error', message: failure.message, code: failure.code, param: failure.param,
-  provider_specific_fields: { type: failure.type, status: failure.status, msg: failure.msg, request_id: 'req_1', retry_after: 9 },
+  provider_specific_fields: { type: failure.type, status: failure.status, msg: failure.msg, request_id: 'req_1', retry_after: 9, retry_after_1: 7 },
 };
 const expectedMessages = {
   type: 'error', error: {
     type: failure.type, message: failure.message,
-    provider_specific_fields: { code: failure.code, param: failure.param, status: failure.status, msg: failure.msg, request_id: 'req_1', retry_after: 9 },
+    provider_specific_fields: { code: failure.code, param: failure.param, status: failure.status, msg: failure.msg, request_id: 'req_1', retry_after: 9, retry_after_1: 7 },
   },
 };
 const expectedGemini = {
@@ -62,7 +62,7 @@ const expectedGemini = {
     details: [{
       '@type': 'type.googleapis.com/google.protobuf.Struct', value: {
         type: failure.type, code: failure.code, param: failure.param, status: failure.status,
-        msg: failure.msg, request_id: 'req_1', retry_after: 9,
+        msg: failure.msg, request_id: 'req_1', retry_after: 9, retry_after_1: 7,
       },
     }],
   },
@@ -152,7 +152,7 @@ test('Responses nested error envelopes preserve request_id in both phases', asyn
   expect(await collect(trip.events(iterate([eventFrame(envelope)])))).toEqual([eventFrame(expected)]);
 });
 
-test('Responses nested error envelopes preserve outer metadata in both phases', async () => {
+test('Responses nested error envelopes preserve every collision and explicit suffix in both phases', async () => {
   const trip = await requireTrip(routeOpenAIChatCompletionsViaOpenAIResponses(chat, options()));
   const error = {
     message: 'failed', type: 'upstream_type', code: null, param: null,
@@ -160,16 +160,54 @@ test('Responses nested error envelopes preserve outer metadata in both phases', 
   };
   const envelope = {
     type: 'error' as const, sequence_number: 17, error,
-    request_id: 'outer', trace: { region: 'us' }, provider_specific_fields: { outer_detail: true },
+    request_id: 'outer_loose', request_id_1: 'original suffix', trace: { region: 'us' },
+    provider_specific_fields: { request_id: 'outer_bag', outer_detail: true },
   };
   const expected = {
     error: {
       message: 'failed', type: 'upstream_type', code: null, param: null,
-      provider_specific_fields: { request_id: 'inner_bag', retry_after: 7, trace: { region: 'us' }, outer_detail: true },
+      provider_specific_fields: {
+        request_id: 'inner_bag', retry_after: 7, trace: { region: 'us' }, outer_detail: true,
+        request_id_1: 'original suffix', request_id_2: 'inner_loose', request_id_3: 'outer_bag', request_id_4: 'outer_loose',
+      },
     },
   };
   const http = trip.error(502, new Headers(), new TextEncoder().encode(JSON.stringify(envelope)));
   expect(http?.body).toEqual(expected);
+  expect(await collect(trip.events(iterate([eventFrame(envelope)])))).toEqual([eventFrame(expected)]);
+});
+
+test('Responses nested error envelopes coalesce equal JSON metadata in both phases', async () => {
+  const trip = await requireTrip(routeOpenAIChatCompletionsViaOpenAIResponses(chat, options()));
+  const envelope = {
+    type: 'error' as const,
+    error: {
+      message: 'failed', trace: { region: 'us', attempts: [1, false, null] },
+      provider_specific_fields: { trace: { attempts: [1, false, null], region: 'us' } },
+    },
+    trace: { attempts: [1, false, null], region: 'us' },
+    provider_specific_fields: { trace: { region: 'us', attempts: [1, false, null] } },
+  };
+  const expected = {
+    error: { message: 'failed', provider_specific_fields: { trace: { region: 'us', attempts: [1, false, null] } } },
+  };
+  expect(trip.error(502, new Headers(), new TextEncoder().encode(JSON.stringify(envelope)))?.body).toEqual(expected);
+  expect(await collect(trip.events(iterate([eventFrame(envelope)])))).toEqual([eventFrame(expected)]);
+});
+
+test('Messages projects a canonical code once when outer metadata states the same value', async () => {
+  const trip = await requireTrip(routeAnthropicMessagesViaOpenAIResponses(messages, options()));
+  const envelope = {
+    type: 'error' as const, code: 'source-code',
+    error: { message: 'failed', code: 'source-code', provider_specific_fields: { code: 'container-code' } },
+  };
+  const expected = {
+    type: 'error', error: {
+      type: 'api_error', message: 'failed',
+      provider_specific_fields: { code: 'container-code', code_1: 'source-code' },
+    },
+  };
+  expect(trip.error(502, new Headers(), new TextEncoder().encode(JSON.stringify(envelope)))?.body).toEqual(expected);
   expect(await collect(trip.events(iterate([eventFrame(envelope)])))).toEqual([eventFrame(expected)]);
 });
 

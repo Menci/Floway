@@ -12,7 +12,7 @@ import { chatTargetPicker } from '../shared/target-picker.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import { type ModelCandidate, plainResult, toInternalDebugError, type ExecuteResult, type GeminiGenerateContentInvocation, type PlainResult } from '@floway-dev/provider';
+import { type ModelCandidate, plainResult, toInternalDebugError, type ApiErrorResult, type ExecuteResult, type GeminiGenerateContentInvocation, type PlainResult } from '@floway-dev/provider';
 import { routeGeminiGenerateContentViaAnthropicMessages, routeGeminiGenerateContentViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIResponses, type TranslateInputError } from '@floway-dev/translate';
 
 // Gemini generateContent has no native upstream target in the provider API; prefer OpenAI Chat Completions
@@ -48,7 +48,7 @@ export const geminiGenerateContentAttempt = {
     });
   },
 
-  countTokens: async (args: GeminiGenerateContentAttemptCountTokensArgs): Promise<PlainResult> => {
+  countTokens: async (args: GeminiGenerateContentAttemptCountTokensArgs): Promise<ApiErrorResult | PlainResult> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
     const payload = structuredClone(sourcePayload);
     const headers = new Headers(sourceHeaders);
@@ -74,10 +74,7 @@ export const geminiGenerateContentAttempt = {
       // The model travels in the URL rather than the body, so the request this
       // trip reads is the cleaned payload with the resolved model folded in.
       const trip = await routeGeminiGenerateContentViaAnthropicMessages({ ...cleaned, model: candidate.model.id }, transCtx);
-      if (trip.type === 'input-error') {
-        const failure = inputErrorResult(trip, ctx.attempt.telemetry);
-        return plainResult(failure.status, failure.headers, failure.body);
-      }
+      if (trip.type === 'input-error') return inputErrorResult(trip, ctx.attempt.telemetry);
       const { stream: _stream, ...target } = trip.target;
       const anthropicMessagesResult = await anthropicMessagesAttempt.countTokens({
         payload: target, ctx, candidate, headers: invocation.headers, anthropicBeta: [],

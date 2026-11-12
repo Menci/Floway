@@ -411,7 +411,7 @@ test('translateToSourceEvents translates OpenAI Responses failed terminal events
   });
 });
 
-test.each(['flat error', 'nested error', 'failed response'])('translateToSourceEvents preserves the error provider namespace without copying (%s)', async path => {
+test.each(['flat error', 'nested error', 'failed response'])('translateToSourceEvents preserves the error provider namespace and colliding loose fields (%s)', async path => {
   const provider_specific_fields = {
     name: 'TranslateInputException',
     stack: 'translator stack',
@@ -436,9 +436,11 @@ test.each(['flat error', 'nested error', 'failed response'])('translateToSourceE
     message: error.message,
     ...(path === 'flat error' ? {} : { type: error.type }),
     code: error.code,
-    provider_specific_fields,
+    provider_specific_fields: {
+      ...provider_specific_fields,
+      name_1: error.name, stack_1: error.stack, cause_1: error.cause, target_api_1: error.target_api,
+    },
   });
-  expect(translated.provider_specific_fields).toBe(provider_specific_fields);
   const sse = writeChatFrame(frames[0], includeUsageChunk);
   if (sse === null) throw new Error('expected error SSE frame');
   expect(JSON.parse(sse.data)).toEqual({ error: translated });

@@ -225,6 +225,75 @@ test('POST /v1beta/models/:model:countTokens accepts the generateContentRequest 
   assertEquals(await response.json(), { totalTokens: 7 });
 });
 
+test.each([
+  { upstreams: ['up_count_only'] },
+  { upstreams: ['up_count_first', 'up_count_last'] },
+])('countTokens records the final translation input failure once for $upstreams', async ({ upstreams }) => {
+  const repo = installRepo();
+  const recordFailure = vi.spyOn(repo.performance, 'recordZeroOutputError');
+  const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => {
+    throw new Error('Unsupported input must fail before the upstream call');
+  });
+  const candidates = upstreams.map(upstream => makeCandidate({ upstream, targetApi: 'anthropicMessages', callAnthropicMessagesCountTokens }));
+  queueCandidates(candidates);
+
+  const response = await makeApp().request('/v1beta/models/test-model:countTokens', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'audio/wav', data: 'AQID' } }] }] }),
+  });
+
+  assertEquals(response.status, 400);
+  const body = await response.json() as { error: { status: string; message: string } };
+  assertEquals(body.error.status, 'INVALID_ARGUMENT');
+  assert(body.error.message.includes('audio/wav'));
+  assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 0);
+  assertEquals(recordFailure.mock.calls.length, 1);
+  assertEquals(recordFailure.mock.calls[0][0].keyId, API_KEY_ID);
+  assertEquals(recordFailure.mock.calls[0][0].upstream, upstreams.at(-1));
+  assertEquals(recordFailure.mock.calls[0][0].model, candidates.at(-1)!.model.id);
+  assertEquals(recordFailure.mock.calls[0][0].operation, 'chat');
+  const rows = await repo.performance.listAll();
+  assertEquals(rows.map(row => ({ requests: row.requests, errors: row.errorsNoOutput, neutral: row.neutral })), [
+    { requests: 1, errors: 1, neutral: 0 },
+  ]);
+});
+
+test('generateContent retries a translation input failure and records the successful candidate', async () => {
+  const repo = installRepo();
+  const recordFailure = vi.spyOn(repo.performance, 'recordZeroOutputError');
+  const recordSuccess = vi.spyOn(repo.performance, 'recordNeutral');
+  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
+    throw new Error('Unsupported input must fail before the upstream call');
+  });
+  const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+  }));
+  queueCandidates([
+    makeCandidate({ upstream: 'up_messages', targetApi: 'anthropicMessages', callAnthropicMessages }),
+    makeCandidate({ upstream: 'up_chat', targetApi: 'openaiChatCompletions', callOpenAIChatCompletions }),
+  ]);
+
+  const response = await makeApp().request('/v1beta/models/test-model:generateContent', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'audio/wav', data: 'AQID' } }] }] }),
+  });
+
+  assertEquals(response.status, 200);
+  const body = await response.json() as { candidates: unknown[] };
+  assertEquals(body.candidates.length, 1);
+  assertEquals(callAnthropicMessages.mock.calls.length, 0);
+  assertEquals(callOpenAIChatCompletions.mock.calls.length, 1);
+  assertEquals(recordFailure.mock.calls.length, 0);
+  assertEquals(recordSuccess.mock.calls.length, 1);
+  assertEquals(recordSuccess.mock.calls[0][0].upstream, 'up_chat');
+  const rows = await repo.performance.listAll();
+  assertEquals(rows.map(row => ({ requests: row.requests, errors: row.errorsNoOutput, neutral: row.neutral })), [
+    { requests: 1, errors: 0, neutral: 1 },
+  ]);
+});
+
 test('POST /v1beta/models/:model:generateContent translates through Anthropic Messages target end to end', async () => {
   installRepo();
   const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
