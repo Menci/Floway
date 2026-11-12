@@ -41,15 +41,15 @@ const refusalMessage = (refusal: string, status: OutputMessage['status']): Outpu
 const collectProvenance = async (events: readonly OpenAIResponsesStreamEventEx[], field: 'text' | 'refusal' | 'arguments' | 'input' = 'text') => {
   const capture = createRoundTripReaderCapture<'openaiResponses'>();
   const content = createEmittedFieldState(capture.builder, 'text');
-  const appends: { text: string; textFragmentIds?: readonly number[] }[] = [];
+  const appends: { text: string; referencePieceIds?: readonly number[] }[] = [];
   const frames = (async function* () {
     for (const event of events) yield eventFrame(event);
   })();
 
   for await (const record of readOpenAIResponsesEvents(frames, { roundTrip: capture.roundTrip })) {
     if (record.type !== 'write' || record.kind !== 'append' || record.path.at(-1) !== field) continue;
-    appends.push({ text: record.value, ...(record.textFragmentIds === undefined ? {} : { textFragmentIds: record.textFragmentIds }) });
-    appendEmittedField(capture.builder, content, record.value, record.textFragmentIds);
+    appends.push({ text: record.value, ...(record.referencePieceIds === undefined ? {} : { referencePieceIds: record.referencePieceIds }) });
+    appendEmittedField(capture.builder, content, record.value, record.referencePieceIds);
   }
 
   const captured = capture.turns.get(0);
@@ -69,7 +69,7 @@ test('keeps the whole field literal when a done snapshot supplies a suffix witho
     { type: 'response.completed', response: response([done], 'completed') },
   ]);
 
-  expect(captured.appends).toEqual([{ text: 'hel', textFragmentIds: [0] }, { text: 'lo' }]);
+  expect(captured.appends).toEqual([{ text: 'hel', referencePieceIds: [0] }, { text: 'lo' }]);
   expect([...collectEmittedFieldPlacements('hello', captured.content).values()]).toEqual([{ enclosingText: 'hello', offset: 0 }]);
   const itemState = captured.fieldState[0];
   if (itemState === undefined || !('content' in itemState)) throw new Error('Responses message state was not collected');
@@ -96,7 +96,7 @@ test('keeps a tiny complete snapshot-only atom literal and hydrates the native R
     { type: 'response.completed', response: response([done], 'completed') },
   ]);
 
-  expect(captured.appends).toEqual([{ text: 'hello', textFragmentIds: [0] }]);
+  expect(captured.appends).toEqual([{ text: 'hello', referencePieceIds: [0] }]);
   const finalized = await referenceAssistantTurn<'openaiResponses'>(
     captured.turn,
     captured.fieldState,
@@ -130,7 +130,7 @@ test('invalidates streamed refusal provenance when its done snapshot supplies a 
     { type: 'response.completed', response: response([done], 'completed') },
   ], 'refusal');
 
-  expect(captured.appends).toEqual([{ text: 'refu', textFragmentIds: [0] }, { text: 'sed' }]);
+  expect(captured.appends).toEqual([{ text: 'refu', referencePieceIds: [0] }, { text: 'sed' }]);
   const itemState = captured.fieldState[0];
   if (itemState === undefined || !('content' in itemState) || !Array.isArray(itemState.content)) {
     throw new Error('Responses message content state was not collected');
@@ -151,7 +151,7 @@ test('collects a snapshot-only refusal through its refusal field state', async (
     { type: 'response.completed', response: response([done], 'completed') },
   ], 'refusal');
 
-  expect(captured.appends).toEqual([{ text: 'refused', textFragmentIds: [0] }]);
+  expect(captured.appends).toEqual([{ text: 'refused', referencePieceIds: [0] }]);
   const finalized = await referenceAssistantTurn<'openaiResponses'>(captured.turn, captured.fieldState, captured.builder, collectEmittedFieldPlacements('refused', captured.content));
   expect(finalized).not.toHaveProperty('referencedContentHashes');
   expect(await restoreAssistantTurn('openaiResponses', ['refused'], finalized.targetTurn, finalized.referencedContentHashes)).toEqual({ ok: true, value: captured.turn });
@@ -186,7 +186,7 @@ test.each(toolCases)('collects streamed native $type text through its existing s
     { type: 'response.output_item.done', output_index: 0, item: done },
     { type: 'response.completed', response: response([done], 'completed') },
   ], field);
-  expect(captured.appends).toEqual([{ text: prefix, textFragmentIds: [0] }, { text: suffix, textFragmentIds: [1] }]);
+  expect(captured.appends).toEqual([{ text: prefix, referencePieceIds: [0] }, { text: suffix, referencePieceIds: [1] }]);
   expect(captured.fieldState[0]).toHaveProperty(field, expect.any(Object));
   const finalized = await referenceAssistantTurn<'openaiResponses'>(captured.turn, captured.fieldState, captured.builder, collectEmittedFieldPlacements(text, captured.content));
   expect(finalized.targetTurn[0]).toHaveProperty(field, text);
@@ -204,7 +204,7 @@ test.each(toolCases)('collects a snapshot-only native $type atom and inlines the
     { type: 'response.output_item.done', output_index: 0, item: done },
     { type: 'response.completed', response: response([done], 'completed') },
   ], field);
-  expect(captured.appends).toEqual([{ text, textFragmentIds: [0] }]);
+  expect(captured.appends).toEqual([{ text, referencePieceIds: [0] }]);
   const finalized = await referenceAssistantTurn<'openaiResponses'>(captured.turn, captured.fieldState, captured.builder, collectEmittedFieldPlacements(text, captured.content));
   expect(finalized.targetTurn[0]).toHaveProperty(field, text);
   expect(finalized).not.toHaveProperty('referencedContentHashes');
@@ -221,7 +221,7 @@ test.each(toolCases)('invalidates native $type provenance when its done snapshot
     { type: 'response.output_item.done', output_index: 0, item: done },
     { type: 'response.completed', response: response([done], 'completed') },
   ], field);
-  expect(captured.appends).toEqual([{ text: prefix, textFragmentIds: [0] }, { text: suffix }]);
+  expect(captured.appends).toEqual([{ text: prefix, referencePieceIds: [0] }, { text: suffix }]);
   expect(captured.fieldState[0]).toMatchObject({ [field]: { valid: false } });
   const finalized = await referenceAssistantTurn<'openaiResponses'>(captured.turn, captured.fieldState, captured.builder, collectEmittedFieldPlacements(text, captured.content));
   expect(finalized.targetTurn).toEqual(captured.turn);

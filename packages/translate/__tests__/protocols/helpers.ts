@@ -24,7 +24,7 @@ const writer = <Protocol extends 'anthropicMessages' | 'geminiGenerateContent' |
 const withoutProvenance = async function* (records: AsyncIterable<IRRecord>): AsyncGenerator<IRRecord> {
   for await (const record of records) {
     if (record.type === 'write' && record.kind === 'append') {
-      const { textFragmentIds: _textFragmentIds, ...operation } = record;
+      const { referencePieceIds: _referencePieceIds, ...operation } = record;
       yield operation;
     } else yield record;
   }

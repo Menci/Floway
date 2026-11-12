@@ -1,11 +1,11 @@
 import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantTurnState } from './assistant-turn.ts';
 import { usageToIR } from './usage.ts';
+import type { ToolNameContext } from '../../../composition/request/tool-names.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
 import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRWriteHandle, type IRRelativePath } from '../../../ir/output/builder.ts';
 import type { IRErrorPayload } from '../../../ir/output/error.ts';
 import type { IRRecord } from '../../../ir/output/records.ts';
 import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
-import type { ToolNameContext } from '../../../request/tool-names.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendReadField, createReadFieldState, type ReadFieldStates, type ReadFieldState, type TextFragmentId } from '../../../round-trip/reference/reference-builder.ts';
 import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';

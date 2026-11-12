@@ -254,11 +254,11 @@ export const writeAnthropicMessagesEvents = async function* (
         const fields = pendingUnit.pendingText ??= new Map();
         const key = irPathKey(record.path);
         const atoms = fields.get(key) ?? [];
-        atoms.push(provenanceSpanForAppend(text, record.value, record.textFragmentIds));
+        atoms.push(provenanceSpanForAppend(text, record.value, record.referencePieceIds));
         fields.set(key, atoms);
       } else if (kind !== undefined) {
         if (pendingUnit.textContentState === undefined) throw new Error('Missing Messages text content state');
-        appendEmittedField(options.roundTrip.builder, pendingUnit.textContentState, record.value, record.textFragmentIds);
+        appendEmittedField(options.roundTrip.builder, pendingUnit.textContentState, record.value, record.referencePieceIds);
       }
     }
     for (const event of openPendingUnits(state, collector)) {

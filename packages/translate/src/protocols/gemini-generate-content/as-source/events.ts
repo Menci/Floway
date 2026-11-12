@@ -365,7 +365,7 @@ export const writeGeminiGenerateContentEvents = async function* (
       if (field !== undefined) {
         const text = collector.value<string>(record.path);
         if (text === undefined) throw new Error('Missing GenerateContent pending field');
-        (pendingUnit[field] ??= []).push(provenanceSpanForAppend(text, record.value, record.textFragmentIds));
+        (pendingUnit[field] ??= []).push(provenanceSpanForAppend(text, record.value, record.referencePieceIds));
       }
     }
     yield* openPendingUnits(record, state, collector);
@@ -390,11 +390,11 @@ export const writeGeminiGenerateContentEvents = async function* (
           queue.values.push({
             unit,
             source: record.path,
-            span: provenanceSpanForAppend(source, record.value, record.textFragmentIds),
+            span: provenanceSpanForAppend(source, record.value, record.referencePieceIds),
             thought: kind === 'thought',
           });
         } else {
-          const part = appendText(choice, record.path, record.value, kind === 'thought', record.textFragmentIds);
+          const part = appendText(choice, record.path, record.value, kind === 'thought', record.referencePieceIds);
           if (part !== undefined) yield emitPart(choice, part);
         }
       }

@@ -88,7 +88,7 @@ const traceTools = async (frames: ReturnType<typeof chunk>[], options: { prefix?
     const field = record.path.at(-1);
     if (field !== 'arguments' && field !== 'input') continue;
     appends.push(record);
-    appendEmittedField(builder, content, record.value, record.textFragmentIds);
+    appendEmittedField(builder, content, record.value, record.referencePieceIds);
     text += record.value;
   }
   if (captured === undefined) throw new Error('Native Chat turn was not collected');
@@ -106,7 +106,7 @@ test('keeps merged pre-name arguments in one output IR append with every origina
     chunk([{ index: 0, delta: { tool_calls: [{ index: 0, function: { name: 'lookup' } }] }, finish_reason: 'tool_calls' }]),
   ], { prefix: 'p:' });
 
-  expect(result.appends.map(record => ({ text: record.value, textFragmentIds: record.textFragmentIds }))).toEqual([{ text: '{"x":1}', textFragmentIds: [0, 1] }]);
+  expect(result.appends.map(record => ({ text: record.value, referencePieceIds: record.referencePieceIds }))).toEqual([{ text: '{"x":1}', referencePieceIds: [0, 1] }]);
   expect(result.fieldState).toMatchObject({ tool_calls: [{ function: { arguments: expect.any(Object) } }] });
   expect(result.finalized.targetTurn).toMatchObject({ tool_calls: [{ function: { arguments: '{"x":1}' } }] });
   expect(result.finalized).not.toHaveProperty('referencedContentHashes');
@@ -152,7 +152,7 @@ test('keeps a transformed wrapped tool field literal', async () => {
   const result = await traceTools([
     chunk([{ index: 0, delta: { tool_calls: [{ index: 0, id: 'wrapped', type: 'function', function: { name: 'wrapped', arguments: '{"input":"hello"}' } }] }, finish_reason: 'tool_calls' }]),
   ], { customToolNames: new Set(['wrapped']) });
-  expect(result.appends.map(record => ({ text: record.value, textFragmentIds: record.textFragmentIds }))).toEqual([{ text: 'hello', textFragmentIds: undefined }]);
+  expect(result.appends.map(record => ({ text: record.value, referencePieceIds: record.referencePieceIds }))).toEqual([{ text: 'hello', referencePieceIds: undefined }]);
   expect(result.finalized.targetTurn).toEqual(result.turn);
   expect(result.finalized).not.toHaveProperty('referencedContentHashes');
 });

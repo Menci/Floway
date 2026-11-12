@@ -1,6 +1,6 @@
-import type { RestoredAssistantTurn } from '../composition/reading.ts';
-import type { IRInputAssistantItem, IRInputCustomToolCallItem, IRInputFunctionCallItem, IRInputPromptItem, IRInputToolResultItem, IRInputUserMessageItem, IRInputTurn } from '../ir/input/types.ts';
-import { TranslateInputException } from '../shared/input-error.ts';
+import type { IRInputAssistantItem, IRInputCustomToolCallItem, IRInputFunctionCallItem, IRInputPromptItem, IRInputToolResultItem, IRInputUserMessageItem, IRInputTurn } from '../../ir/input/types.ts';
+import { TranslateInputException } from '../../shared/input-error.ts';
+import type { RestoredAssistantTurn } from '../reading.ts';
 
 // Target writers use this shape after allocating missing call IDs; every call and result has an ID.
 export type IRInputTurnWithCallIds = IRInputClientTurnWithCallIds | IRInputAssistantTurnWithCallIds;

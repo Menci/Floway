@@ -1,8 +1,8 @@
 import { openaiChatCompletionsConversationFromIR, openaiChatCompletionsHeaderFromIR } from './input-from.ts';
 import { type RestoredAssistantTurn } from '../../../composition/reading.ts';
+import type { IRInputTurnWithCallIds } from '../../../composition/request/call-ids.ts';
+import { segmentTurns } from '../../../composition/request/segments.ts';
 import type { IRInputRequestHeader } from '../../../ir/input/types.ts';
-import type { IRInputTurnWithCallIds } from '../../../request/call-ids.ts';
-import { segmentTurns } from '../../../request/segments.ts';
 import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 
 /**

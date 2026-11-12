@@ -1,6 +1,6 @@
+import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../composition/request/call-ids.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem, IRInputPromptItem } from '../../../ir/input/types.ts';
-import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../request/call-ids.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import type {

@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 
-import type { RestoredAssistantTurn } from '../../src/composition/reading.ts';
-import type { IRInputTurn } from '../../src/ir/input/types.ts';
-import { assignCallIds, type PendingCall } from '../../src/request/call-ids.ts';
-import { TranslateInputException } from '../../src/shared/input-error.ts';
+import type { RestoredAssistantTurn } from '../../../src/composition/reading.ts';
+import { assignCallIds, type PendingCall } from '../../../src/composition/request/call-ids.ts';
+import type { IRInputTurn } from '../../../src/ir/input/types.ts';
+import { TranslateInputException } from '../../../src/shared/input-error.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 const call = (name: string, callId?: string): IRInputTurn => ({

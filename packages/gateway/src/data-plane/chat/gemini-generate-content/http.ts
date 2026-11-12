@@ -16,11 +16,11 @@ interface GeminiGenerateContentModelAction {
 }
 
 // The Gemini generateContent wire API encodes both the model id and the action in one path
-// segment (e.g. `models/gemini-2.5-pro:streamGenerateContent`). The Hono route
-// captures everything after `/v1beta/models/` in a single `modelAction` param;
-// we split on the trailing `:` here so each entry sees just the action and
-// the resolved model id (with a leading `models/` prefix tolerated, as Google
-// SDKs send it).
+// segment (e.g. `models/gemini-2.5-pro:streamGenerateContent`). Both the
+// `v1` and `v1beta` routes capture everything after `/models/` in a single
+// `modelAction` param; we split on the trailing `:` here so each entry sees
+// just the action and the resolved model id (with a leading `models/` prefix
+// tolerated, as Google SDKs send it).
 const parseGeminiGenerateContentModelAction = (modelAction: string | undefined): GeminiGenerateContentModelAction | Response => {
   if (!modelAction) return geminiGenerateContentRpcErrorResponse(404, 'Missing Gemini model action.');
   const separator = modelAction.lastIndexOf(':');
@@ -79,10 +79,11 @@ const respondWithGeminiGenerateContentError = async (
   return finalizeGatewayResponse(ctx, response);
 };
 
-// Single entry for `/v1beta/models/:modelAction`. Splits the model and action
-// once, then dispatches to the matching sub-handler. Keeping the parse here
-// means the sub-handlers see a validated `(model, action)` pair and never
-// need to re-emit "Unknown Gemini model action" on already-validated input.
+// Single entry for `/v1/models/:modelAction` and `/v1beta/models/:modelAction`.
+// Splits the model and action once, then dispatches to the matching
+// sub-handler. Keeping the parse here means the sub-handlers see a validated
+// `(model, action)` pair and never need to re-emit "Unknown Gemini model
+// action" on already-validated input.
 export const geminiGenerateContentHttp = async (c: AuthedContext): Promise<Response> => {
   const parsed = parseGeminiGenerateContentModelAction(c.req.param('modelAction'));
   if (parsed instanceof Response) return parsed;

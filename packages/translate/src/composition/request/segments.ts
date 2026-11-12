@@ -1,5 +1,5 @@
 import type { IRInputTurnWithCallIds } from './call-ids.ts';
-import type { RestoredAssistantTurn } from '../composition/reading.ts';
+import type { RestoredAssistantTurn } from '../reading.ts';
 
 // A conversation translates in segments split at sidecar-resolved assistant
 // turns. Those turns are already native target structure, so a writer emits

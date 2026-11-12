@@ -691,14 +691,14 @@ export const writeOpenAIResponsesEvents = async function* (
     registerUnits(record, state);
     const unit = units.forRecord(record, state);
     if (unit !== undefined && unit.kind !== 'image' && record.type === 'write' && record.kind === 'append') {
-      if (unit.opened) appendUnitText(unit, record.path, record.value, record.textFragmentIds);
+      if (unit.opened) appendUnitText(unit, record.path, record.value, record.referencePieceIds);
       else {
         const text = collector.value<string>(record.path);
         if (text === undefined) throw new Error('Missing Responses pending text');
         const fields = unit.pendingText ??= new Map();
         const key = irPathKey(record.path);
         const atoms = fields.get(key) ?? [];
-        atoms.push(provenanceSpanForAppend(text, record.value, record.textFragmentIds));
+        atoms.push(provenanceSpanForAppend(text, record.value, record.referencePieceIds));
         fields.set(key, atoms);
       }
     }

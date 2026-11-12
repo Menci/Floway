@@ -227,7 +227,7 @@ const zhHansCN = {
       },
       apiDocs: {
         endpointsTitle: 'API 端点',
-        endpointsDescription: '全部公开数据面路由。除非明确标注协议，短路径是对应 /v1 路径的兼容别名。',
+        endpointsDescription: '全部公开数据面路由。除非明确标注协议，短路径是对应 /v1 路径的兼容别名。模型列表对所有调用方返回 OpenAI/Anthropic 形态，对标识为 Gemini SDK 的客户端返回 Gemini 的 `{ models }` 形态。',
         docsLink: '文档',
         columns: { method: '方法', endpoint: '端点', description: '说明', docs: '文档' },
         authentication: {
@@ -238,7 +238,7 @@ const zhHansCN = {
         },
         groups: { models: '模型发现', generation: '文本与多模态生成', media: 'Embedding、图像与音频', rerank: 'Rerank 协议', decision: 'Decision 协议', search: 'Codex 搜索' },
         endpointNames: {
-          openAiModels: 'OpenAI 模型列表', geminiModels: 'Gemini 模型列表', geminiModel: 'Gemini 模型详情',
+          modelList: '模型列表（OpenAI、Anthropic、Gemini）', geminiModel: 'Gemini 模型详情',
           openAiCompletions: 'OpenAI Completions', openAiChat: 'OpenAI Chat Completions',
           openAiResponses: 'OpenAI Responses', openAiCompact: 'OpenAI Responses 压缩', openAiResponsesWs: 'OpenAI Responses WebSocket',
           anthropicMessages: 'Anthropic Messages', anthropicCount: 'Anthropic Token 计数',

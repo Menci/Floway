@@ -248,7 +248,7 @@ export const writeOpenAIChatCompletionsEvents = async function* (
 
       if (record.kind === 'append') {
         if (path.length === 7 && path[2] === 'items' && path[4] === 'content' && (path[6] === 'text' || path[6] === 'refusal')) {
-          appendEmittedField(options.roundTrip.builder, textState(choice, path[6] === 'text' ? 'content' : 'refusal'), record.value, record.textFragmentIds);
+          appendEmittedField(options.roundTrip.builder, textState(choice, path[6] === 'text' ? 'content' : 'refusal'), record.value, record.referencePieceIds);
           yield deltaFrame(choice, path[6] === 'text' ? { content: record.value } : { refusal: record.value }, tier);
           continue;
         }
@@ -260,7 +260,7 @@ export const writeOpenAIChatCompletionsEvents = async function* (
             const transcript = collector.value<string>(path);
             if (transcript === undefined) throw new Error('Missing ChatCompletions pending transcript');
             const parts = pendingTranscripts.get(audioPath) ?? [];
-            parts.push(provenanceSpanForAppend(transcript, record.value, record.textFragmentIds));
+            parts.push(provenanceSpanForAppend(transcript, record.value, record.referencePieceIds));
             pendingTranscripts.set(audioPath, parts);
           }
           if (path[7] === 'data') {
@@ -279,7 +279,7 @@ export const writeOpenAIChatCompletionsEvents = async function* (
           continue;
         }
         if (path.length === 6 && path[2] === 'items' && (path[4] === 'summary' || path[4] === 'content')) {
-          appendEmittedField(options.roundTrip.builder, textState(choice, 'reasoning_text'), record.value, record.textFragmentIds);
+          appendEmittedField(options.roundTrip.builder, textState(choice, 'reasoning_text'), record.value, record.referencePieceIds);
           yield deltaFrame(choice, { reasoning_text: record.value }, tier);
           continue;
         }
@@ -288,7 +288,7 @@ export const writeOpenAIChatCompletionsEvents = async function* (
           if (itemType !== 'function_call' && itemType !== 'custom_tool_call') throw new TypeError('ChatCompletions tool delta requires a tool item');
           const ordinal = tools.get(choice)!.get(path.slice(0, 4));
           const custom = itemType === 'custom_tool_call';
-          appendEmittedField(options.roundTrip.builder, toolState(choice, ordinal, custom), record.value, record.textFragmentIds);
+          appendEmittedField(options.roundTrip.builder, toolState(choice, ordinal, custom), record.value, record.referencePieceIds);
           const call = custom
             ? { index: ordinal, custom: { input: record.value } }
             : { index: ordinal, function: { arguments: record.value } };

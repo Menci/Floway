@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
-import type { IRInputRequestHeader, IRInputTool, IRInputTurn } from '../../src/ir/input/types.ts';
-import { allocateToolNames, type NativeCallNames } from '../../src/request/tool-names.ts';
-import { TranslateInputException } from '../../src/shared/input-error.ts';
+import { allocateToolNames, type NativeCallNames } from '../../../src/composition/request/tool-names.ts';
+import type { IRInputRequestHeader, IRInputTool, IRInputTurn } from '../../../src/ir/input/types.ts';
+import { TranslateInputException } from '../../../src/shared/input-error.ts';
 import { assertThrows, assertEquals } from '@floway-dev/test-utils';
 
 const native: NativeCallNames<never> = { ids: turn => turn, rename: turn => turn };

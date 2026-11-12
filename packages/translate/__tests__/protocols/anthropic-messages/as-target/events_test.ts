@@ -29,7 +29,7 @@ test('keeps native-shaped field state aligned through sparse block ordering and 
   for await (const record of readAnthropicMessagesEvents((async function* () { yield* frames; })(), {
     roundTrip: { builder, onAssistantTurn: (_choice, turn, state) => { captured = { turn, state }; } },
   })) {
-    if (record.type === 'write' && record.kind === 'append' && record.path.at(-1) === 'text') appendEmittedField(builder, content, record.value, record.textFragmentIds);
+    if (record.type === 'write' && record.kind === 'append' && record.path.at(-1) === 'text') appendEmittedField(builder, content, record.value, record.referencePieceIds);
   }
   if (captured === undefined) throw new Error('Native assistant turn was not collected');
   expect(captured.turn.content).toEqual([

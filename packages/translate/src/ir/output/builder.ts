@@ -8,7 +8,7 @@ export type IRRelativePath = string | IRPath;
 export interface IRWriteHandle {
   readonly path: IRPath;
   readonly index: number;
-  append: (path: IRRelativePath, value: string, textFragmentIds?: readonly number[]) => void;
+  append: (path: IRRelativePath, value: string, referencePieceIds?: readonly number[]) => void;
   assign: (path: IRRelativePath, value: unknown) => void;
   initialize: (path: IRRelativePath, value: unknown) => void;
   ensure: (path: IRRelativePath, initialValue: unknown) => void;
@@ -63,12 +63,12 @@ export const createIRBuilder = () => {
     write({ type: 'write', kind: 'initialize', path, value: value as IROutputValue });
     remember(path, value);
   };
-  const append = (path: IRPath, value: string, textFragmentIds?: readonly number[]): void => write({
+  const append = (path: IRPath, value: string, referencePieceIds?: readonly number[]): void => write({
     type: 'write',
     kind: 'append',
     path,
     value,
-    ...(textFragmentIds === undefined ? {} : { textFragmentIds: [...textFragmentIds] }),
+    ...(referencePieceIds === undefined ? {} : { referencePieceIds: [...referencePieceIds] }),
   });
   const event = (value: IREvent): void => { collector.applyEvent(value); records.push(value); };
   const drain = (): readonly IRRecord[] => { const drained = records; records = []; return drained; };
@@ -76,7 +76,7 @@ export const createIRBuilder = () => {
   const writeHandle = (path: IRPath, index: number): IRWriteHandle => ({
     path,
     index,
-    append: (subpath, value, textFragmentIds) => append(relativePath(path, subpath), value, textFragmentIds),
+    append: (subpath, value, referencePieceIds) => append(relativePath(path, subpath), value, referencePieceIds),
     assign: (subpath, value) => assign(relativePath(path, subpath), value),
     initialize: (subpath, value) => initialize(relativePath(path, subpath), value),
     ensure: (subpath, initialValue) => {

@@ -41,7 +41,8 @@ Protocol-native request normalization and Part data classification belong to
   selection helpers.
 - `composition/` — what a trip needs before the IR is written: a
   source conversation read into turn slots and resolved through exclusive native or IR paths.
-- `request/` — target request preparation: callable names, call IDs, and segmentation around restored turns.
+  `composition/request/` prepares those resolved turns for target writers by
+  allocating callable names and call IDs, then segmenting around restored turns.
 - `ir/output/` — the returned-stream model, its path schema, builder, record consumer, and protocol-independent streaming state.
 - `round-trip/` — authenticated assistant-turn sidecars, replay validation, and native stream coordination.
 - `protocols/anthropic-messages/as-source/` — interprets Messages requests and emits Messages SSE.

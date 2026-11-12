@@ -1,6 +1,6 @@
-import type { RestoredAssistantTurn, SourceCallIdentity } from '../composition/reading.ts';
-import type { IRInputRequestHeader, IRInputTool, IRInputToolChoice, IRInputToolSelector, IRInputTurn } from '../ir/input/types.ts';
-import { TranslateInputException } from '../shared/input-error.ts';
+import type { IRInputRequestHeader, IRInputTool, IRInputToolChoice, IRInputToolSelector, IRInputTurn } from '../../ir/input/types.ts';
+import { TranslateInputException } from '../../shared/input-error.ts';
+import type { RestoredAssistantTurn, SourceCallIdentity } from '../reading.ts';
 
 /** Records allocated custom-call names and their original identities for the target event reader. */
 export interface ToolNameContext {

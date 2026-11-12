@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { collectKindFromTargetApi, renderStreamEvents, streamEndedCleanly, streamEventsCopyText } from '../../../src/components/requests/stream-render';
+import { collectKindFromTargetApi, detectCollectKind, renderStreamEvents, streamEndedCleanly, streamEventsCopyText } from '../../../src/components/requests/stream-render';
 import type { DumpStreamEvent } from '@floway-dev/gateway/browser';
 
 const event = (frame: DumpStreamEvent['frame']): DumpStreamEvent => ({ frame, ts: 1 });
@@ -17,6 +17,21 @@ describe('captured stream completion', () => {
     expect(streamEndedCleanly([
       event({ type: 'event', event: { value: 'partial' } }),
     ])).toBe(false);
+  });
+});
+
+describe('detectCollectKind', () => {
+  it('recognizes a Gemini turn under either prefix', () => {
+    expect(detectCollectKind('/v1beta/models/gemini-2.5-pro:generateContent')).toBe('gemini-generate-content');
+    expect(detectCollectKind('/v1/models/gemini-2.5-pro:generateContent')).toBe('gemini-generate-content');
+    expect(detectCollectKind('/v1/models/gemini-2.5-pro:streamGenerateContent?alt=sse')).toBe('gemini-generate-content');
+    expect(detectCollectKind('/v1/models/gemini-2.5-pro:countTokens')).toBe('gemini-generate-content');
+  });
+
+  it('leaves the model listing and unrelated paths alone', () => {
+    expect(detectCollectKind('/v1/models')).toBeNull();
+    expect(detectCollectKind('/v1beta/models')).toBeNull();
+    expect(detectCollectKind('/v1/models/gemini-2.5-pro')).toBeNull();
   });
 });
 
