@@ -2,7 +2,7 @@ import { IRAbsent } from './absent.ts';
 import { createLifecycle } from './lifecycle.ts';
 import { irEndedUnit, irPathKey, resolveIRPath, valueAt } from './operation-paths.ts';
 import type { IREvent, IRWrite, IRPath } from './records.ts';
-import type { IROutput } from './types.ts';
+import { type IROutput } from './types.ts';
 import { assertComplete, walkValue } from './value-validation.ts';
 
 export const createIRCollector = () => {
@@ -28,43 +28,43 @@ export const createIRCollector = () => {
 
   // Returns whether the write changed the state.
   const applyWrite = (write: IRWrite): boolean => {
-    if (write.value === undefined) throw new TypeError('IR writes cannot carry undefined');
+    if (write.value === undefined) throw new TypeError('output IR writes cannot carry undefined');
     const { path } = write;
     const resolution = resolveIRPath(path, state);
     if (resolution !== undefined) lifecycle.assertWritable(resolution.units, path);
     const key = path.at(-1);
-    if (key === undefined) throw new TypeError('IR writes require a property path');
+    if (key === undefined) throw new TypeError('output IR writes require a property path');
     const parentPath = path.slice(0, -1);
     const parent = valueAt(state, parentPath);
-    if (parent === undefined) throw new TypeError(`Missing IR path: ${irPathKey(parentPath)}`);
-    if (typeof parent !== 'object' || parent === null) throw new TypeError('IR write parent must be an object or array');
+    if (parent === undefined) throw new TypeError(`Missing output IR path: ${irPathKey(parentPath)}`);
+    if (typeof parent !== 'object' || parent === null) throw new TypeError('output IR write parent must be an object or array');
     const present = Object.hasOwn(parent, key);
-    if (write.kind === 'initialize' && present) throw new TypeError('IR initialize requires an absent target');
+    if (write.kind === 'initialize' && present) throw new TypeError('output IR initialize requires an absent target');
     if (Array.isArray(parent)) {
-      if (typeof key !== 'number' || !Number.isInteger(key) || key < 0 || key > parent.length) throw new TypeError('IR array write requires a contiguous nonnegative index');
-      if (!present && key !== parent.length) throw new TypeError('IR array insertion must use the next index');
-      if (write.kind === 'initialize' && key !== parent.length) throw new TypeError('IR array initialization must use the next index');
+      if (typeof key !== 'number' || !Number.isInteger(key) || key < 0 || key > parent.length) throw new TypeError('output IR array write requires a contiguous nonnegative index');
+      if (!present && key !== parent.length) throw new TypeError('output IR array insertion must use the next index');
+      if (write.kind === 'initialize' && key !== parent.length) throw new TypeError('output IR array initialization must use the next index');
     }
     const current = (parent as Record<string | number, unknown>)[key];
     const node = resolution?.node;
 
     if (write.kind === 'append') {
-      if (node?.kind !== 'string' || node.append !== true) throw new TypeError(`IR append requires an append-target path: ${irPathKey(path)}`);
-      if (typeof current !== 'string') throw new TypeError('IR append requires a string target');
-      if (typeof write.value !== 'string') throw new TypeError('IR append requires a string value');
+      if (node?.kind !== 'string' || node.append !== true) throw new TypeError(`output IR append requires an append-target path: ${irPathKey(path)}`);
+      if (typeof current !== 'string') throw new TypeError('output IR append requires a string target');
+      if (typeof write.value !== 'string') throw new TypeError('output IR append requires a string value');
       if (write.value === '') return false;
     } else {
-      if (node === undefined) throw new TypeError(`IR path is not part of the IR schema: ${irPathKey(path)}`);
+      if (node === undefined) throw new TypeError(`output IR path is not part of the output IR schema: ${irPathKey(path)}`);
       if (write.kind === 'initialize') {
         walkValue(path, node, write.value, (childPath, childNode, child) => {
-          if (childNode.kind === 'string' && childNode.append === true && child !== '') throw new TypeError(`IR append target must initialize to an empty string: ${irPathKey(childPath)}`);
+          if (childNode.kind === 'string' && childNode.append === true && child !== '') throw new TypeError(`output IR append target must initialize to an empty string: ${irPathKey(childPath)}`);
         }, { allowAbsent: true });
       } else if (write.value === IRAbsent) {
         if (node.kind !== 'string' || node.absent !== true) throw new TypeError(`IRAbsent is not allowed at ${irPathKey(path)}`);
         if (present) throw new TypeError('IRAbsent may only be assigned to an absent target');
       } else {
         walkValue(path, node, write.value, (childPath, childNode) => {
-          if (childNode.kind === 'string' && childNode.append === true) throw new TypeError(`IR append target cannot be assigned: ${irPathKey(childPath)}`);
+          if (childNode.kind === 'string' && childNode.append === true) throw new TypeError(`output IR append target cannot be assigned: ${irPathKey(childPath)}`);
         }, { allowAbsent: false });
         if (present && Object.is(current, write.value)) return false;
       }
@@ -84,7 +84,7 @@ export const createIRCollector = () => {
     const ended = irEndedUnit(event);
     if (ended !== undefined) {
       const resolution = resolveIRPath(ended.path, state);
-      if (resolution === undefined || valueAt(state, ended.path) === undefined) throw new TypeError(`IR ${ended.kind} does not exist: ${irPathKey(ended.path)}`);
+      if (resolution === undefined || valueAt(state, ended.path) === undefined) throw new TypeError(`output IR ${ended.kind} does not exist: ${irPathKey(ended.path)}`);
       lifecycle.closeUnit(resolution.units);
       assertComplete(ended.path, resolution.node, valueAt(state, ended.path));
     } else if (event.type === 'finish') lifecycle.assertFinishable();

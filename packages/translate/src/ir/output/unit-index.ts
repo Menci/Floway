@@ -8,7 +8,7 @@ export const createIRUnitIndexAllocator = () => {
   let next = 0;
   const open = (path: IRPath): number => {
     const key = irPathKey(path);
-    if (indices.has(key)) throw new TypeError(`IR unit is already open: ${key}`);
+    if (indices.has(key)) throw new TypeError(`output IR unit is already open: ${key}`);
     const index = next++;
     indices.set(key, index);
     return index;
@@ -16,7 +16,7 @@ export const createIRUnitIndexAllocator = () => {
   const get = (path: IRPath): number => {
     const key = irPathKey(path);
     const index = indices.get(key);
-    if (index === undefined) throw new TypeError(`Unknown open IR unit: ${key}`);
+    if (index === undefined) throw new TypeError(`Unknown open output IR unit: ${key}`);
     return index;
   };
   const close = (path: IRPath): void => {

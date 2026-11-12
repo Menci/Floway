@@ -1,10 +1,10 @@
 import type { IRAbsent } from './absent.ts';
 import type { IROutput, IROutputSourceCitation, IROutputTokenLogprob } from './types.ts';
 
-// The structure of the IR, declared once. Every question about a path (is it an append
+// The structure of the IROutput, declared once. Every question about a path (is it an append
 // target, may it hold `IRAbsent`, which lifecycle unit does it belong to) is answered by
 // walking this schema, never by matching path shapes. The value type inferred from the
-// schema is checked against the IR types at the bottom of this file.
+// schema is checked against the output IR types at the bottom of this file.
 
 // Items, content parts and choices have their own start and end in a stream.
 export type IRUnitKind = 'choice' | 'item' | 'part';
@@ -34,7 +34,7 @@ export interface IRUnionNode<D extends string = string, C extends Readonly<Recor
   readonly cases: C;
   readonly unit?: IRUnitKind;
 }
-// A value that is only ever replaced as a whole. `phantom` exists for the type only.
+// A value that is only ever replaced as a whole. `phantom` exists only to carry its generic type.
 export interface IROpaqueNode<V = unknown> { readonly kind: 'opaque'; readonly phantom?: V }
 export type IRSchemaNode = IRStringNode | IRNumberNode | IRNullableNode | IRArrayNode | IRObjectNode | IRUnionNode | IROpaqueNode;
 export interface IRSchemaFields { readonly [key: string]: IRSchemaNode }
@@ -118,7 +118,7 @@ type ValueOf<N> =
 
 type Mutual<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
-// Compile-time proof that the schema and the IR types describe the same values: a field the
-// schema declares optional, nullable, appendable or `IRAbsent`-capable differs from the IR type
+// Compile-time proof that the schema and the output IR types describe the same values: a field the
+// schema declares optional, nullable, appendable or `IRAbsent`-capable differs from the output IR type
 // exactly when this stops being `true`.
 export const irSchemaTypeEquality: Mutual<ValueOf<typeof irSchema>, IROutput> = true;

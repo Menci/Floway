@@ -9,15 +9,15 @@ export const consumeIRRecords = async function* (records: AsyncIterable<IRRecord
   let started = false;
   let finished = false;
   for await (const record of records) {
-    if (finished) throw new Error('IR record arrived after finish');
+    if (finished) throw new Error('output IR record arrived after finish');
     if (record.type === 'write') {
       collector.applyWrite(record);
     } else {
       if (record.type === 'start') {
-        if (started) throw new Error('Duplicate IR start');
+        if (started) throw new Error('Duplicate output IR start');
         started = true;
       } else if (record.type === 'finish') {
-        if (!started) throw new Error('IR finish arrived before start');
+        if (!started) throw new Error('output IR finish arrived before start');
         finished = true;
       } else if (record.type === 'error') {
         finished = true;
@@ -26,5 +26,5 @@ export const consumeIRRecords = async function* (records: AsyncIterable<IRRecord
     }
     yield { record, collector };
   }
-  if (!finished) throw new Error('IR stream ended without finish');
+  if (!finished) throw new Error('output IR stream ended without finish');
 };

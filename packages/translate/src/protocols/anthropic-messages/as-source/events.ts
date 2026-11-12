@@ -16,7 +16,8 @@ import { appendEmittedField, createEmittedFieldState, type EmittedFieldState, ty
 import { errorDetailsOf } from '../../../shared/api-error.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
-import { parseJSONObject, parseJSONObjectAtCompletion, requireJSONObject } from '../../../shared/json/object.ts';
+import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.ts';
+import { parseJSONObject, requireJSONObject, isJSONRecord } from '../../../shared/json/object.ts';
 import type { AnthropicMessagesInputAssistantTurnState, AnthropicMessagesInputAssistantTurn } from '../as-target/assistant-turn.ts';
 import {
   generateAnthropicId,
@@ -71,11 +72,8 @@ interface MessagesUnit {
   pendingText?: Map<string, TextProvenanceSpan[]>;
 }
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const unitKind = (value: unknown): MessagesUnit['kind'] | 'custom_tool_call' | undefined => {
-  if (!isRecord(value)) return undefined;
+  if (!isJSONRecord(value)) return undefined;
   return value.type === 'text'
     || value.type === 'refusal'
     || value.type === 'audio'
@@ -275,7 +273,7 @@ export const writeAnthropicMessagesEvents = async function* (
         : record.finish_reason === 'tool_calls' ? 'tool_use'
           : record.finish_reason === 'content_filter' ? 'refusal' : 'end_turn';
       for (const item of state.choices[0].items) if (item.type === 'function_call') {
-        parseJSONObjectAtCompletion(item.arguments, record.finish_reason === 'length' ? 'truncated' : 'complete', options.parseToolArguments);
+        parseJSONObjectUnlessTruncated(item.arguments, record.finish_reason === 'length' ? 'truncated' : 'complete', options.parseToolArguments);
       }
       continue;
     }
@@ -334,7 +332,7 @@ export const writeAnthropicMessagesEvents = async function* (
             serializedInput = serialized;
             if (serialized !== '') yield blockDelta(index, { type: 'input_json_delta', partial_json: serialized });
           } else {
-            const parsed = parseJSONObjectAtCompletion(item.arguments, record.type === 'item_end' && record.status === 'incomplete' ? 'truncated' : 'complete');
+            const parsed = parseJSONObjectUnlessTruncated(item.arguments, record.type === 'item_end' && record.status === 'incomplete' ? 'truncated' : 'complete');
             if (parsed.completion === 'complete') serializedInput = JSON.stringify(parsed.value);
           }
         }

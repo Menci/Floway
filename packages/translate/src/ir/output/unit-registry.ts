@@ -2,7 +2,7 @@ import { irPathKey, irRecordOwnerPaths } from './operation-paths.ts';
 import type { IRPath, IRRecord } from './records.ts';
 
 // Finds the unit that a record belongs to. A writer registers each unit at the path
-// where its IR structure was initialized.
+// where its output IR structure was initialized.
 export const createIRUnitRegistry = <T>() => {
   const units = new Map<string, T>();
   return {

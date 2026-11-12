@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { IRAbsent } from '../../../src/ir/output/absent.ts';
 import { createIRCollector } from '../../../src/ir/output/collector.ts';
 
-describe('IR accumulator', () => {
+describe('output IR accumulator', () => {
   test('stores plain accumulated state without publication metadata', () => {
     const collector = createIRCollector();
     collector.applyWrite({ type: 'write', kind: 'initialize', path: ['usage'], value: {} });

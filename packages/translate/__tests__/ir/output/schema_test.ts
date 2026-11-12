@@ -14,7 +14,7 @@ const root = {
 };
 const item = (index: number, ...rest: (string | number)[]) => ['choices', 0, 'items', index, ...rest];
 
-describe('IR schema queries', () => {
+describe('output IR schema queries', () => {
   test.each([
     [item(0, 'content', 0, 'text'), true],
     [item(0, 'content', 1, 'audio', 'data'), true],
