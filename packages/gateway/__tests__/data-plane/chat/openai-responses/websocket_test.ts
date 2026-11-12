@@ -1279,6 +1279,7 @@ test('OpenAI Responses WebSocket evicts a failed continuation target so the next
 test('OpenAI Responses WebSocket evicts a continuation that failed through a streamed terminal event', async () => {
   const { apiKey } = await setupAppTest();
   let responseCalls = 0;
+  const upstreamError = { type: 'error', sequence_number: 1, code: null, param: 'tools', message: 'the upstream gave up mid-turn', vendor: { retryable: false } };
 
   await withMockedFetch(
     async request => {
@@ -1304,7 +1305,8 @@ test('OpenAI Responses WebSocket evicts a continuation that failed through a str
           };
           return sseResponse([
             { event: 'response.created', data: { type: 'response.created', response: { ...failing, status: 'in_progress', error: null }, sequence_number: 0 } },
-            { event: 'response.failed', data: { type: 'response.failed', response: failing, sequence_number: 1 } },
+            { event: 'error', data: upstreamError },
+            { event: 'response.failed', data: { type: 'response.failed', response: failing, sequence_number: 2 } },
             { data: '[DONE]' },
           ]);
         }
@@ -1345,6 +1347,10 @@ test('OpenAI Responses WebSocket evicts a continuation that failed through a str
         },
       }));
       const failedMessages = await failedTurn;
+      assertEquals(failedMessages.map(message => message.type), ['response.created', 'error', 'response.in_progress', 'response.failed']);
+      assertEquals(failedMessages[1], { ...upstreamError, event_id: 'evt_streamed_failure' });
+      assertEquals(failedMessages.map(message => message.sequence_number), [0, 1, 2, 3]);
+      assert(failedMessages.every(message => message.event_id === 'evt_streamed_failure'));
       assertEquals(failedMessages.at(-1)?.type, 'response.failed');
 
       const evicted = waitForMessages(client, messages => messages.some(message => message.type === 'error'));
@@ -1371,6 +1377,64 @@ test('OpenAI Responses WebSocket evicts a continuation that failed through a str
         },
       }]);
       assertEquals(responseCalls, 2);
+    }),
+  );
+});
+
+test.each([
+  { type: 'error', code: null, param: null, message: 'native failure', vendor: { detail: 'flat' } },
+  { type: 'error', error: { code: 'vendor_failure', param: 'tools', message: 'native failure', vendor: { detail: 'nested' } }, trace: 'native-trace' },
+].flatMap(error => [false, true].map(announced => ({ error, announced }))))('OpenAI Responses WebSocket preserves a standalone upstream error and accepts the next turn %j', async ({ error, announced }) => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+  let responseCalls = 0;
+  const nativeError = { ...error, sequence_number: announced ? 1 : 0 };
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        responseCalls += 1;
+        if (responseCalls === 1) return sseResponse([
+          ...(announced ? [{ event: 'response.created', data: { type: 'response.created', sequence_number: 0, response: { id: 'resp_error', object: 'response', model: 'gpt-direct-responses', status: 'in_progress', output: [], error: null, incomplete_details: null } } }] : []),
+          { event: 'error', data: nativeError },
+          { data: '[DONE]' },
+        ]);
+        return sseOpenAIResponsesResponse({ id: 'resp_after_error', object: 'response', model: 'gpt-direct-responses', status: 'completed', output: [] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
+      const raw = recordRawMessages(client);
+      try {
+        const received = waitForMessages(client, messages => messages.some(message => message.type === 'error'));
+        client.send(JSON.stringify({ type: 'response.create', event_id: 'evt_standalone', response: { model: 'gpt-direct-responses', input: 'hello' } }));
+        const messages = await received;
+        assertEquals(messages.map(message => message.type), announced ? ['response.created', 'error'] : ['error']);
+        assertEquals(messages.at(-1), { ...nativeError, event_id: 'evt_standalone' });
+        await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+        assertEquals(raw.messages.map(message => JSON.parse(message)), messages);
+        assertEquals(dumps.stored[0]?.record.meta.responseBytes, raw.messages.reduce((total, message) => total + new TextEncoder().encode(message).byteLength, 0));
+        const nextTurn = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
+        if (announced) {
+          const created = messages[0] as { response: { id: string } };
+          client.send(JSON.stringify({ type: 'response.interrupt', event_id: 'evt_late_interrupt', response_id: created.response.id, mode: 'discard_partial_items' }));
+        }
+        client.send(JSON.stringify({ type: 'response.create', event_id: 'evt_after_error', response: { model: 'gpt-direct-responses', input: 'next turn' } }));
+        assert((await nextTurn).every(message => message.event_id === 'evt_after_error'));
+        assertEquals(responseCalls, 2);
+      } finally {
+        raw.stop();
+        client.close();
+      }
     }),
   );
 });

@@ -638,16 +638,17 @@ const respondOpenAIResponsesWebSocket = async (input: {
       }
     }
 
-    if (terminalEvent === undefined) {
+    if (terminalEvent === undefined && !state.failed) {
       throw new Error(OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE);
     }
     // Renumbered here rather than where it was buffered: keep-alives can still
     // fire while the generator drains behind the terminal event, and each of
     // those takes a slot that has to land before the terminal event's own.
-    if (!sendOpenAIResponsesEvent(socket, sequence.renumber(terminalEvent), eventId, ctx.dump)) {
+    if (terminalEvent !== undefined && !sendOpenAIResponsesEvent(socket, sequence.renumber(terminalEvent), eventId, ctx.dump)) {
       completion = 'cancel';
       return;
     }
+    turn.terminal = true;
     completion = 'eof';
   } catch (error) {
     if ((signal.aborted && !turn.interrupted) || isClosed()) {
@@ -662,7 +663,7 @@ const respondOpenAIResponsesWebSocket = async (input: {
     const failed = state.failedAfter(completion);
     if (failed) {
       // `fail` cannot carry the eviction for every failed turn: one that
-      // streamed an `error` or `response.failed` terminal answered the client
+      // streamed an `error` notification or `response.failed` answered the client
       // with an event rather than an error envelope, and one the client
       // abandoned before the terminal event answered with nothing at all.
       // Both settle here. For the abandoned turn the eviction is inert — the
