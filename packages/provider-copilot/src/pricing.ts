@@ -40,7 +40,7 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   // Fast lane. The live Copilot catalog already exposes this exact public id.
   // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
   // https://platform.claude.com/docs/en/models/sonnet-5-5/overview
-  ['claude-sonnet-5-5', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' })],
+  ['claude-sonnet-5-5', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '10' })],
   ['claude-sonnet-5', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' })],
   [/^claude-sonnet-4(-[56])?$/, tokenBasePricing({ input_tokens: '3', input_cache_read_tokens: '0.3', input_cache_write_tokens: '3.75', output_tokens: '15' })],
   // GitHub bills Haiku 5.5 at Anthropic's provider list price, with the whole
