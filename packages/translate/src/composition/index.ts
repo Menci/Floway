@@ -54,7 +54,6 @@ export interface TargetProtocol<Name extends AssistantTurnProtocol, Payload, Eve
   ) => AsyncIterable<IRRecord>;
 }
 
-/** Compose request and event pipelines with shared replay coordination. */
 export const composeTranslation = <
   SrcName extends AssistantTurnProtocol, SrcPayload, SrcEvent,
   TgtName extends AssistantTurnProtocol, TgtPayload extends { model: string }, TgtEvent, Context,

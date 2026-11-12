@@ -103,10 +103,6 @@ const userParts = (content: GeminiGenerateContentContent): IRInputClientItem[] =
   return items;
 };
 
-// A thought part states no id of its own, so its IR identity comes from the
-// position it occupies in the request.
-const reasoningId = (contentIndex: number, partIndex: number): string => `gemini_reasoning_${contentIndex}_${partIndex}`;
-
 const assistantItems = (content: GeminiGenerateContentContent, contentIndex: number): IRInputAssistantItem[] => {
   const items: IRInputAssistantItem[] = [];
   const pending: IRInputAssistantContentPart[] = [];
@@ -133,7 +129,8 @@ const assistantItems = (content: GeminiGenerateContentContent, contentIndex: num
       const thoughtText = geminiGenerateContentThoughtText(part);
       if (thoughtText !== null) {
         flush();
-        items.push({ type: 'reasoning', id: reasoningId(contentIndex, partIndex), summary: [thoughtText] });
+        // Thought parts have no ID; their IR identity comes from their position.
+        items.push({ type: 'reasoning', id: `gemini_reasoning_${contentIndex}_${partIndex}`, summary: [thoughtText] });
         return;
       }
       const visible = geminiGenerateContentVisibleText(part);
@@ -184,7 +181,7 @@ const geminiGenerateContentSystemToIR = (content: GeminiGenerateContentContent |
   return parts.length === 0 ? undefined : { kind: 'client', items: [{ type: 'instruction', content: parts }] };
 };
 
-// GenerateContent restricts selectable functions through allowed_tools while retaining the complete declarations.
+// GenerateContent's allowedFunctionNames becomes an IR allowed_tools choice while retaining all declarations.
 // https://github.com/googleapis/googleapis/blob/bc7e3baa28fbb223fa93782e130260fab8205bfc/google/ai/generativelanguage/v1beta/content.proto
 const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequestHeader, 'tools' | 'tool_choice'> => {
   const declarations = payload.tools?.flatMap(group => group.functionDeclarations ?? []) ?? [];

@@ -14,7 +14,7 @@ import type { AnthropicMessagesMessage, AnthropicMessagesPayload, AnthropicMessa
 export const anthropicMessagesPayloadFromSegments = (
   request: IRInputRequestHeader,
   turns: readonly (IRInputTurnWithCallIds | RestoredAssistantTurn<AnthropicMessagesMessage>)[],
-  options: Pick<TranslateOptions, 'fallbackMaxOutputTokens'> = {},
+  options: Pick<TranslateOptions, 'fallbackMaxOutputTokens'>,
 ): AnthropicMessagesPayload => {
   const system: AnthropicMessagesTextBlockParam[] = [];
   const messages: AnthropicMessagesMessage[] = [];

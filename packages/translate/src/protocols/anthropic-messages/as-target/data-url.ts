@@ -30,9 +30,6 @@ const stringOfBytes = (bytes: readonly number[]): string => {
   return value;
 };
 
-const base64OfBytes = (bytes: readonly number[]): string => btoa(stringOfBytes(bytes));
-
-/** Parse a data URL at the Messages target boundary that requires inline bytes. */
 export const parseDataURL = (url: string): ParsedDataURL => {
   const match = DATA_URL.exec(url);
   if (match === null) throw new TranslateInputException(`Expected a data URL, got '${url.slice(0, 32)}'.`);
@@ -44,6 +41,6 @@ export const parseDataURL = (url: string): ParsedDataURL => {
   const bytes = bytesOfPercentEncodedData(body);
   return {
     ...(normalizedMediaType === '' ? {} : { media_type: normalizedMediaType }),
-    data: encodedAsBase64 ? stringOfBytes(bytes) : base64OfBytes(bytes),
+    data: encodedAsBase64 ? stringOfBytes(bytes) : btoa(stringOfBytes(bytes)),
   };
 };

@@ -19,7 +19,6 @@ export const openaiResponsesSourceProtocol: SourceProtocol<
   },
   error: restateOpenAIResponsesError,
   writeEvents: (payload, records, roundTrip) => {
-    // Mint the client-visible translated Responses ID for this event stream.
     const responseId = createRandomOpenAIResponsesResponseId();
     // The response objects echo the client's own declarations, which only the
     // payload states as the client wrote them: the IR holds a normalized form

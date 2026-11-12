@@ -1,6 +1,6 @@
 import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../composition/request/call-ids.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
-import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputDocument, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem, IRInputInstructionItem } from '../../../ir/input/types.ts';
+import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputDocument, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
 import { DOCUMENT_CLOSE_TAG, DOCUMENT_OPEN_TAG, utf8Base64 } from '../../../shared/document.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
@@ -71,7 +71,6 @@ const toolResultOutput = (output: string | readonly IRInputToolResultContentPart
       return documentContent(part.document);
     });
 
-// The content-array projection preserves IR part boundaries.
 const userContent = (item: Extract<IRInputClientItem, { type: 'message' }>): OpenAIResponsesInputContent[] => item.content.flatMap(part => {
   switch (part.type) {
   case 'text': return { type: 'input_text' as const, text: part.text };
@@ -88,8 +87,7 @@ const assistantItems = (items: readonly IRInputAssistantItemWithCallIds[]): Cano
     return {
       type: 'message',
       role: 'assistant',
-      // Responses spelling of an empty assistant history message.
-      content: item.content.length === 0 || item.content.every(part => part.type === 'text' && part.text === '')
+      content: item.content.every(part => part.type === 'text' && part.text === '')
         ? ''
         : item.content.map(part => part.type === 'text'
             ? { type: 'output_text' as const, text: part.text }
@@ -116,7 +114,7 @@ const assistantItems = (items: readonly IRInputAssistantItemWithCallIds[]): Cano
   }
 });
 
-const clientItems = (items: readonly IRInputClientItemWithCallIds[]): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
+const clientItem = (item: IRInputClientItemWithCallIds): CanonicalOpenAIResponsesInputItem => {
   switch (item.type) {
   case 'instruction':
     return { type: 'message', role: 'system', content: item.content.length === 1 ? item.content[0].text : item.content.map(part => ({ type: 'input_text' as const, text: part.text })) };
@@ -127,7 +125,6 @@ const clientItems = (items: readonly IRInputClientItemWithCallIds[]): CanonicalO
         : item.content.map(part => ({ type: 'input_text' as const, text: part.text }));
       return { type: 'message', role: item.role, content };
     }
-    // A single text part uses bare-string content; multipart user content retains its part boundaries.
     if (item.content.length === 1 && item.content[0].type === 'text') {
       return { type: 'message', role: 'user', content: item.content[0].text };
     }
@@ -140,12 +137,7 @@ const clientItems = (items: readonly IRInputClientItemWithCallIds[]): CanonicalO
       : { type: 'function_call_output', call_id: item.call_id, output, ...(item.is_error === true ? { status: 'incomplete' as const } : { status: 'completed' as const }) };
   }
   }
-});
-
-// Only the IR's top-level instruction belongs in Responses `instructions`.
-// Historical system and developer messages remain input messages at their
-// original positions.
-const isInstruction = (entry: IRInputClientItem): entry is IRInputInstructionItem => entry.type === 'instruction';
+};
 
 export const openaiResponsesConversationFromIR = (
   turns: readonly IRInputTurnWithCallIds[],
@@ -162,13 +154,14 @@ export const openaiResponsesConversationFromIR = (
       return assistantItems(item.items);
     }
     return item.items.flatMap((entry): CanonicalOpenAIResponsesInputItem[] => {
-      if (hoisting && isInstruction(entry)) {
+      // Only a top-level instruction is hoisted; historical system and developer messages stay in place.
+      if (hoisting && entry.type === 'instruction') {
         instructions = entry.content.map(part => part.text).join('');
         hoisting = false;
         return [];
       }
       hoisting = false;
-      return clientItems([entry]);
+      return [clientItem(entry)];
     });
   });
 
@@ -214,7 +207,6 @@ const toolFromIR = (tool: IRInputTool): OpenAIResponsesTool => {
 
 const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<CanonicalOpenAIResponsesPayload['tool_choice']> => {
   if (typeof choice === 'string') return choice;
-  // Responses expresses the permitted callable subset in tool_choice.allowed_tools.
   if (choice.type === 'allowed_tools') {
     return {
       type: 'allowed_tools',

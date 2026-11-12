@@ -262,7 +262,7 @@ export type IRInputMedia =
 // Messages, Responses, GenerateContent
 export interface IRInputReasoningItem {
   readonly type: 'reasoning'; // Messages, Responses, GenerateContent
-  readonly id?: string; // Responses, GenerateContent
+  readonly id?: string; // GenerateContent
   readonly summary?: readonly string[]; // Messages, Responses, GenerateContent
   readonly content?: readonly string[]; // Responses
 }
@@ -286,7 +286,7 @@ export interface IRInputCustomToolCallItem extends Pick<IRInputToolSelector, 'na
 export interface IRInputToolResultItem {
   readonly type: 'tool_result'; // All
   readonly call_id?: string; // All
-  readonly name?: string; // ChatCompletions, GenerateContent
+  readonly name?: string; // GenerateContent
   // Strings stay opaque; arrays preserve structured multimodal output.
   readonly output: string | readonly IRInputToolResultContentPart[]; // All
   readonly tool_kind?: 'function' | 'custom'; // ChatCompletions, Responses

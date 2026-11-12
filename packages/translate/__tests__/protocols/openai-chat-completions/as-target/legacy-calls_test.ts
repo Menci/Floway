@@ -38,8 +38,7 @@ test('two id-less answers naming the legacy function are refused as ambiguous', 
   assertThrows(() => chatLegacyCallsOf([legacy('lookup'), twoAnswers]), TranslateInputException);
 });
 
-test('a legacy call the next turn does not answer is refused', () => {
-  // A wire that states no id for the call cannot say which later answer means it.
+test('a non-tail legacy call without a matching result is refused', () => {
   assertThrows(() => chatLegacyCallsOf([legacy('lookup'), message('later')]), TranslateInputException);
 });
 

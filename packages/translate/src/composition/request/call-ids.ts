@@ -47,7 +47,7 @@ export const assignCallIds = <Restored>(
   const claimed = new Set<string>();
   for (const piece of turns) {
     if (piece.kind === 'restored') {
-      for (const call of restoredCalls(piece.turn)) if (call.callId !== undefined) claimed.add(call.callId);
+      for (const call of restoredCalls(piece.turn)) claimed.add(call.callId);
     } else if (piece.kind === 'assistant') {
       for (const item of piece.items) {
         if ((item.type === 'function_call' || item.type === 'custom_tool_call') && item.call_id !== undefined) claimed.add(item.call_id);

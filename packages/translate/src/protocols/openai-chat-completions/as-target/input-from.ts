@@ -79,7 +79,7 @@ const userContent = (item: Extract<IRInputClientItem, { type: 'message'; role: '
  * https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/chat/completions/completions.ts#L1893-L1908
  * https://github.com/vercel/ai/blob/c093ee7458ccd5dada05d8461041e47c24ee55c0/packages/google/src/convert-to-google-messages.ts#L137-L180
  */
-export const openaiChatCompletionsToolResultContent = (
+const openaiChatCompletionsToolResultContent = (
   callId: string,
   output: string | readonly IRInputToolResultContentPart[],
 ): { readonly content: string; readonly lifted: OpenAIChatCompletionsUserContentPart[] } => {
@@ -169,11 +169,10 @@ const openaiChatCompletionsClientItem = (
 ): OpenAIChatCompletionsMessage[] => {
   switch (item.type) {
   case 'message':
-    return item.role === 'user'
-      ? [{ role: 'user', content: userContent(item) }]
-      : [{ role: item.role, content: item.content.length === 1 ? item.content[0].text : item.content.length === 0 ? '' : item.content.map(part => ({ type: 'text' as const, text: part.text })) }];
-  case 'instruction':
-    return [{ role: 'system', content: item.content.length === 1 ? item.content[0].text : item.content.length === 0 ? '' : item.content.map(part => ({ type: 'text' as const, text: part.text })) }];
+  case 'instruction': {
+    if (item.type === 'message' && item.role === 'user') return [{ role: 'user', content: userContent(item) }];
+    return [{ role: item.type === 'instruction' ? 'system' : item.role, content: item.content.length === 1 ? item.content[0].text : item.content.length === 0 ? '' : item.content.map(part => ({ type: 'text' as const, text: part.text })) }];
+  }
   case 'tool_result': {
     const projected = openaiChatCompletionsToolResultContent(item.call_id, item.output);
     lift(projected.lifted);

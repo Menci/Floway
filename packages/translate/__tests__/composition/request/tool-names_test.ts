@@ -51,7 +51,6 @@ test('a call naming an undeclared group still gets a flat spelling and its pair'
 });
 
 test('a selector naming a group the request never declared is a caller error', () => {
-  // A selector must name a callable allocated from the request and conversation; an unmatched grouped identity is a caller input error.
   assertThrows(
     () => allocateToolNames({
       settings: { model: 'm', stream: true },
@@ -73,7 +72,6 @@ test('distinct structured identities with the same dotted spelling get distinct 
 });
 
 test('a selector naming a group this request does not declare is refused', () => {
-  // No declaration or history call allocates this grouped identity, so the selector cannot name an upstream callable.
   assertThrows(
     () => allocateToolNames({ settings: { model: 'm', stream: true }, tools: [{ type: 'function', name: 'web.run', parameters: { type: 'object' } }], tool_choice: { type: 'function', name: 'run', namespace: 'web' } }, []),
     TranslateInputException,

@@ -108,7 +108,6 @@ const userContent = (
     default: throw new TranslateInputException(`Invalid '${(part as { type: string }).type}' content part.`);
     }
   }
-  // Messages' user content is a non-empty block list in the same way.
   return blocks.length === 0 ? [{ type: 'text', text: '' }] : blocks;
 };
 
@@ -165,8 +164,7 @@ const parseArguments = (argumentsJson: string): unknown => {
   // serialize back as `null`. Parsing with raw-number preservation keeps the
   // caller's exact token.
   try {
-    const parsed = parseJSONWithRawNumbers(argumentsJson);
-    return parsed;
+    return parseJSONWithRawNumbers(argumentsJson);
   } catch {
     return { raw_arguments: argumentsJson };
   }
@@ -210,17 +208,12 @@ const toolChoiceForTools = (choice: IRInputToolChoice | undefined, tools: readon
 };
 
 /**
- * One segment's messages and the system blocks lifted from its instruction.
- *
- * Messages keeps instructions in its top-level system field, one block per
- * source text part so the boundaries
- * survive; later system messages stay inline at their position.
- *
- * Only the segment opening the whole conversation may hoist. Splitting at a
- * restored assistant turn must not promote a later system message merely because
- * it opens another segment.
+ * Only the first conversation segment may hoist an instruction or leading
+ * system/developer messages into top-level system blocks. Their text-part
+ * boundaries are preserved; later system messages stay in place, including
+ * after a restored assistant turn.
  */
-export interface AnthropicMessagesConversation {
+interface AnthropicMessagesConversation {
   readonly messages: AnthropicMessagesMessage[];
   readonly system: AnthropicMessagesTextBlockParam[];
 }
@@ -299,7 +292,7 @@ export const anthropicMessagesConversationFromIR = (
  */
 export const anthropicMessagesHeaderFromIR = (
   request: IRInputRequestHeader,
-  options: Pick<TranslateOptions, 'fallbackMaxOutputTokens'> = {},
+  options: Pick<TranslateOptions, 'fallbackMaxOutputTokens'>,
 ): Omit<AnthropicMessagesPayload, 'messages' | 'system'> => {
   const tools = request.tools;
   const choice = toolChoiceForTools(request.tool_choice, tools);

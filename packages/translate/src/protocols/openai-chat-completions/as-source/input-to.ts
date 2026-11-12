@@ -26,10 +26,8 @@ import type {
   OpenAIChatCompletionsPayload,
   OpenAIChatCompletionsTool,
   OpenAIChatCompletionsUserContentPart,
-  OpenAIChatCompletionsPayloadEx,
 } from '@floway-dev/protocols/openai-chat-completions';
 
-// Normalize Chat audio container names to the input IR's MIME representation.
 const AUDIO_MEDIA_TYPES: Readonly<Record<string, string>> = { wav: 'audio/wav', mp3: 'audio/mp3' };
 
 // Explicit empty user and assistant messages retain their turn boundaries.
@@ -165,8 +163,6 @@ const openaiChatCompletionsTurnToIR = (
 ): IRInputTurn => {
   if (turn.role === 'assistant') return { kind: 'assistant', items: assistantItems(turn, context, messageIndex) };
 
-  // Every client message in one turn contributes its items, in order, to the
-  // same IR turn; a target that groups them differently reads the item list.
   return { kind: 'client', items: turn.items.flatMap((message, index) => clientItems(message, context, messageIndex + index)) };
 };
 
@@ -262,9 +258,6 @@ const openaiChatCompletionsRequestToIR = (payload: OpenAIChatCompletionsPayload)
   settings: openaiChatCompletionsSettingsToIR(payload),
   ...openaiChatCompletionsToolsToIR(payload),
 });
-
-export const continuousUsageOf = (payload: OpenAIChatCompletionsPayloadEx): boolean =>
-  payload.stream_options?.include_usage === true && payload.stream_options?.continuous_usage_stats === true;
 
 const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload): IRInputSettings => {
   const format = payload.response_format;

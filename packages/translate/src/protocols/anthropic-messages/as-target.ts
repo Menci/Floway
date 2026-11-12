@@ -9,12 +9,12 @@ import type { InputAssistantTurnFor } from '../../round-trip/input-assistant-tur
 import type { TranslateOptions } from '../../types.ts';
 import type { AnthropicMessagesMessage, AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 
+// Restored tool calls supply IDs for matching later results.
 const callsOf = (turn: Extract<AnthropicMessagesMessage, { role: 'assistant' }>): readonly PendingCall[] =>
   Array.isArray(turn.content)
     ? turn.content.flatMap(block => block.type === 'tool_use' || block.type === 'server_tool_use' ? [{ callId: block.id, name: block.name }] : [])
     : [];
 
-/** Read pending call IDs from restored Messages tool_use blocks before writing later results. */
 export const anthropicMessagesTargetProtocol: TargetProtocol<
   'anthropicMessages', AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, ToolNameContext
 > = {

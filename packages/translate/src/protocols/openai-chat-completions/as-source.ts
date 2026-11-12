@@ -1,6 +1,6 @@
 import { restateOpenAIChatCompletionsError } from './as-source/error-body.ts';
 import { writeOpenAIChatCompletionsEvents } from './as-source/events.ts';
-import { continuousUsageOf, readOpenAIChatCompletionsRequest } from './as-source/input-to.ts';
+import { readOpenAIChatCompletionsRequest } from './as-source/input-to.ts';
 import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarOccurrences, verifyOpenAIChatCompletionsTurnDigest } from './as-source/round-trip.ts';
 import type { SourceProtocol } from '../../composition/index.ts';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
@@ -18,7 +18,7 @@ export const openaiChatCompletionsSourceProtocol: SourceProtocol<
   },
   error: restateOpenAIChatCompletionsError,
   writeEvents: (payload, records, roundTrip) => writeOpenAIChatCompletionsEvents(records, {
-    continuousUsageStats: continuousUsageOf(payload),
+    continuousUsageStats: payload.stream_options?.include_usage === true && payload.stream_options?.continuous_usage_stats === true,
     roundTrip,
   }),
 };

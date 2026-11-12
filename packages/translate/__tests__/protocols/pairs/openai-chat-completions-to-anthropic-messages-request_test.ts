@@ -668,8 +668,6 @@ test('a data URL is stated with the media type it declares', async () => {
 });
 
 test('content with a value that is not a URL is rejected rather than written', async () => {
-  // Messages states a URL as a URL, so a caller that named neither a URL nor
-  // inline bytes has stated something the target cannot carry.
   await assertRejects(
     () => buildWithTestSidecar(mkPayload({
       messages: [{

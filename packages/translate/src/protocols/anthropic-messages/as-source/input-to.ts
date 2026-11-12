@@ -119,9 +119,6 @@ const clientItems = (
   messageIdx: number,
 ): IRInputClientItem[] => {
   if (message.role === 'system') {
-    if (typeof message.content !== 'string' && message.content.some(block => block.type !== 'text')) {
-      throw new TranslateInputException('Only text system content is supported.');
-    }
     return [{ type: 'message', role: 'system', content: textPartsToIR(message.content as string | readonly AnthropicMessagesTextBlockParam[]) }];
   }
   if (typeof message.content === 'string') {
@@ -259,7 +256,7 @@ const anthropicMessagesSystemToIR = (system: AnthropicMessagesPayload['system'])
 
 const anthropicMessagesTurnToIR = (
   turn: AnthropicMessagesConversationTurn,
-  firstMessageIndex = 0,
+  firstMessageIndex: number,
 ): IRInputTurn[] => {
   if (turn.role === 'assistant') {
     const turns: IRInputTurn[] = [];

@@ -188,8 +188,6 @@ test('buildTargetPayload maps generation config and thinking controls', async ()
 });
 
 test('buildTargetPayload refuses a stated budget beside a stated level', async () => {
-  // GenerateContent rejects the pair itself, so translating it would have to
-  // pick a winner that a different model family disagrees with.
   await assertRejects(
     () => buildWithTestSidecar({
       contents: [],

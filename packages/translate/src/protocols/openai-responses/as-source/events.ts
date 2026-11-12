@@ -329,8 +329,6 @@ export const writeOpenAIResponsesEvents = async function* (
       };
     }
     if (unit.callId === undefined) throw new TypeError('Responses tool unit has no call ID');
-    // A call the request stated grouped is written as that pair; one without a
-    // group keeps its single name.
     if (unit.kind === 'custom_tool_call') {
       if (item.type !== 'custom_tool_call') throw new TypeError('Responses tool unit has the wrong IR item');
       return {
