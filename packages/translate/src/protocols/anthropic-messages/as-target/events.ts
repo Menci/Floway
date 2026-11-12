@@ -3,8 +3,8 @@ import { type AnthropicMessagesInputCounts, usageToIR } from './usage.ts';
 import { createIRBuilder, type IRItemHandle, type IRPartHandle } from '../../../ir/output/builder.ts';
 import type { IRRecord } from '../../../ir/output/records.ts';
 import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
-import { appendReadField, createReadFieldState, type ReadFieldState, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
+import { appendReadField, createReadFieldState, type ReadFieldState, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';
 import { unwrapCustomToolInput } from '../../openai-responses/common/custom-tool-wrap.ts';
 import {

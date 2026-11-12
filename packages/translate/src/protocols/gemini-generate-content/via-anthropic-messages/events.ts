@@ -1,5 +1,5 @@
-import { createRoundTripCoordinator } from '../../../round-trip/coordinator.ts';
 import type { SidecarCodec } from '../../../round-trip/codec.ts';
+import { createRoundTripCoordinator } from '../../../round-trip/coordinator.ts';
 import { readAnthropicMessagesEvents } from '../../anthropic-messages/as-target/events.ts';
 import { writeGeminiGenerateContentEvents } from '../as-source/events.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';

@@ -5,8 +5,8 @@ import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRWriteHand
 import type { IRErrorPayload } from '../../../ir/output/error.ts';
 import type { IRRecord } from '../../../ir/output/records.ts';
 import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
-import { appendReadField, createReadFieldState, type ReadFieldStates, type ReadFieldState, type TextFragmentId } from '../../../round-trip/reference/reference-builder.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
+import { appendReadField, createReadFieldState, type ReadFieldStates, type ReadFieldState, type TextFragmentId } from '../../../round-trip/reference/reference-builder.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { unwrapCustomToolInput } from '../../openai-responses/common/custom-tool-wrap.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
