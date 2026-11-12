@@ -24,6 +24,11 @@ export interface PendingCall {
   readonly callId: string;
 }
 
+export interface AssignCallIdsOptions {
+  readonly resultCallIds?: ReadonlyMap<IRInputToolResultItem, string>;
+  readonly maxGeneratedCallIdLength?: number;
+}
+
 /**
  * Allocate missing IDs in conversation order so id-less results answer pending calls.
  * Explicit result IDs must refer to a call present in the conversation. Restored native
@@ -32,7 +37,7 @@ export interface PendingCall {
 export const assignCallIds = <Restored>(
   turns: readonly (IRInputTurn | RestoredAssistantTurn<Restored>)[],
   restoredCalls: (turn: Restored) => readonly PendingCall[],
-  resultCallIds?: ReadonlyMap<IRInputToolResultItem, string>,
+  options: AssignCallIdsOptions = {},
 ): readonly (IRInputTurnWithCallIds | RestoredAssistantTurn<Restored>)[] => {
   const pending: PendingCall[] = [];
   let allocated = 0;
@@ -53,7 +58,11 @@ export const assignCallIds = <Restored>(
     let candidate: string;
     do {
       allocated += 1;
-      candidate = `${name}_call_${allocated}`;
+      const suffix = `_call_${allocated}`;
+      const prefix = options.maxGeneratedCallIdLength === undefined
+        ? name
+        : name.slice(0, Math.max(0, options.maxGeneratedCallIdLength - suffix.length));
+      candidate = `${prefix}${suffix}`;
     } while (claimed.has(candidate));
     claimed.add(candidate);
     return candidate;
@@ -83,7 +92,7 @@ export const assignCallIds = <Restored>(
     if (piece.kind === 'client') {
       const items: IRInputClientItemWithCallIds[] = piece.items.map((item): IRInputClientItemWithCallIds => {
         if (item.type !== 'tool_result') return item;
-        return { ...item, call_id: answer(resultCallIds?.get(item) ?? item.call_id, item.name).callId };
+        return { ...item, call_id: answer(options.resultCallIds?.get(item) ?? item.call_id, item.name).callId };
       });
       return { kind: 'client', items };
     }

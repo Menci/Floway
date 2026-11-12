@@ -25,6 +25,36 @@ test('a ProtoJSON null function-call args value reaches Messages unchanged', asy
   assertEquals(message.role === 'assistant' && Array.isArray(message.content) && message.content[0]?.type === 'tool_use' ? message.content[0].input : undefined, null);
 });
 
+test('function response media enters Messages tool results and tool results precede user text', async () => {
+  const result = await buildWithTestSidecar({
+    contents: [
+      { role: 'model', parts: [{ functionCall: { name: 'fetch', args: {} } }] },
+      {
+        role: 'user',
+        parts: [
+          { text: 'Here is the result' },
+          { functionResponse: { name: 'fetch', response: { status: 'ok' }, parts: [{ inlineData: { mimeType: 'image/png', data: 'aGVsbG8=' } }] } },
+        ],
+      },
+    ],
+  }, 'claude-test', noOptions);
+  const user = result.messages[1];
+  assertEquals(user, {
+    role: 'user',
+    content: [
+      {
+        type: 'tool_result',
+        tool_use_id: 'fetch_call_1',
+        content: [
+          { type: 'text', text: '{"status":"ok"}' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'aGVsbG8=' } },
+        ],
+      },
+      { type: 'text', text: 'Here is the result', cache_control: { type: 'ephemeral' } },
+    ],
+  });
+});
+
 test('buildTargetPayload preserves an empty thought as a thinking turn', async () => {
   const result = await buildWithTestSidecar({ contents: [{ role: 'model', parts: [{ text: '', thought: true }] }] }, 'claude-test', noOptions);
   assertEquals(result.messages, [{ role: 'assistant', content: [{ type: 'thinking', thinking: '', signature: '' }] }]);

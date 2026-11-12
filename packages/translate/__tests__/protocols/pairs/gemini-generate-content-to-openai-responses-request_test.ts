@@ -47,6 +47,20 @@ test('ProtoJSON null configuration members are treated as unset', async () => {
   assertEquals(nullScalars.tools?.[0]?.type === 'function' ? nullScalars.tools[0].parameters : undefined, { type: 'object', properties: {} });
 });
 
+test('generated Responses call IDs stay within the wire limit', async () => {
+  const name = 'f'.repeat(64);
+  const result = await buildWithTestSidecar({
+    contents: [
+      { role: 'model', parts: [{ functionCall: { name, args: {} } }] },
+      { role: 'user', parts: [{ functionResponse: { name, response: { ok: true } } }] },
+    ],
+  }, 'gpt-test');
+  const call = result.input.find(item => item.type === 'function_call');
+  const output = result.input.find(item => item.type === 'function_call_output');
+  assertEquals(call?.type === 'function_call' ? call.call_id.length : undefined, 64);
+  assertEquals(output?.type === 'function_call_output' ? output.call_id : undefined, call?.type === 'function_call' ? call.call_id : undefined);
+});
+
 test('buildTargetPayload translates LOW to reasoning.effort', async () => {
   const request = await buildWithTestSidecar({
     contents: [],

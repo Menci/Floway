@@ -16,11 +16,11 @@ export interface IRInputSettings {
   readonly max_visible_output_tokens?: number | null;
   readonly max_output_tokens?: number | null;
   readonly output_format?: IRInputOutputFormat;
-  // Readers normalize metadata to string pairs; target writers do not coerce it again.
-  readonly metadata?: Readonly<Record<string, string>>;
+  // Readers normalize non-null metadata to string pairs; target writers do not coerce it again.
+  readonly metadata?: Readonly<Record<string, string>> | null;
   readonly store?: boolean | null;
-  // Preserve service-tier strings; each target owns vocabulary mapping.
-  readonly service_tier?: string;
+  // Preserve service-tier strings and explicit null; each target owns vocabulary mapping.
+  readonly service_tier?: string | null;
   readonly parallel_tool_calls?: boolean | null;
   // Keep effort as an open string, independently of numeric budget. Protocol readers and writers own their thinking-mode mapping.
   readonly reasoning_effort?: string;
@@ -181,6 +181,9 @@ export type IRInputAssistantContentPart = IRInputTextPart | IRInputRefusalPart;
 export interface IRInputTextPart {
   readonly type: 'text';
   readonly text: string;
+  // Independently submitted text blocks retain their boundary when a target
+  // must flatten them into one string. Transport fragments leave this absent.
+  readonly block?: true;
 }
 
 // A refusal is model output, so only assistant history carries one. No protocol

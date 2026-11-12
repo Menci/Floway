@@ -1,6 +1,6 @@
 import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../composition/request/call-ids.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
-import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
+import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem, IRInputTextPart } from '../../../ir/input/types.ts';
 import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
@@ -45,10 +45,11 @@ const filePart = (media: IRInputMedia, filename?: string | null): OpenAIChatComp
   }
 };
 
+const flattenTextParts = (parts: readonly IRInputTextPart[]): string => parts.reduce((text, part, index) =>
+  `${text}${index > 0 && (parts[index - 1]?.block === true || part.block === true) ? '\n\n' : ''}${part.text}`, '');
+
 const userContent = (item: Extract<IRInputClientItem, { type: 'message'; role: 'user' }>): string | OpenAIChatCompletionsUserContentPart[] => {
-  // Adjacent text parts join with no separator: the parts are one run of text,
-  // and a separator would invent characters the caller never wrote.
-  if (item.content.every(part => part.type === 'text')) return item.content.map(part => part.text).join('');
+  if (item.content.every((part): part is IRInputTextPart => part.type === 'text')) return flattenTextParts(item.content);
   return item.content.map(part => {
     switch (part.type) {
     case 'text': return { type: 'text' as const, text: part.text };
@@ -73,7 +74,7 @@ export const openaiChatCompletionsToolResultContent = (
 ): { readonly content: string; readonly lifted: OpenAIChatCompletionsUserContentPart[] } => {
   if (typeof output === 'string') return { content: output, lifted: [] };
   if (output.some(part => part.type === 'file')) throw new TranslateInputException('Cannot translate file tool output to OpenAI Chat Completions.');
-  const text = output.flatMap(part => part.type === 'text' ? [part.text] : []).join('');
+  const text = flattenTextParts(output.flatMap(part => part.type === 'text' ? [part] : []));
   const images = output.flatMap(part => part.type === 'image' ? [imageUrlPart(part.image, part.detail)] : []);
   return images.length === 0
     ? { content: text, lifted: [] }
@@ -84,7 +85,7 @@ export const openaiChatCompletionsToolResultContent = (
 };
 
 const assistantMessage = (items: readonly IRInputAssistantItemWithCallIds[]): OpenAIChatCompletionsMessage[] => {
-  const text: string[] = [];
+  const text: IRInputTextPart[] = [];
   const refusals: string[] = [];
   const reasoning: string[] = [];
   const toolCalls: OpenAIChatCompletionsToolCall[] = [];
@@ -93,7 +94,7 @@ const assistantMessage = (items: readonly IRInputAssistantItemWithCallIds[]): Op
     switch (item.type) {
     case 'message':
       hasMessage = true;
-      for (const part of item.content) if (part.type === 'text') text.push(part.text); else refusals.push(part.refusal);
+      for (const part of item.content) if (part.type === 'text') text.push(part); else refusals.push(part.refusal);
       break;
     case 'reasoning':
       // We write readable reasoning as reasoning_text; input IR does not retain the source alias spelling.
@@ -119,7 +120,7 @@ const assistantMessage = (items: readonly IRInputAssistantItemWithCallIds[]): Op
   // null; a turn with neither is an explicitly empty message and keeps ''.
   return [{
     role: 'assistant',
-    content: text.length === 0 && (toolCalls.length > 0 || reasoning.length > 0) ? null : text.join(''),
+    content: text.length === 0 && (toolCalls.length > 0 || reasoning.length > 0) ? null : flattenTextParts(text),
     ...(refusals.length === 0 ? {} : { refusal: refusals.join('') }),
     ...(reasoning.length === 0 ? {} : { reasoning_text: reasoning.join('') }),
     ...(toolCalls.length === 0 ? {} : { tool_calls: toolCalls }),
@@ -274,7 +275,7 @@ export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): 
     ...(settings.top_p === undefined ? {} : { top_p: settings.top_p }),
     ...(settings.stop === undefined ? {} : { stop: [...settings.stop] }),
     ...(settings.seed === undefined ? {} : { seed: settings.seed }),
-    ...(settings.metadata === undefined ? {} : { metadata: { ...settings.metadata } }),
+    ...(settings.metadata === undefined ? {} : { metadata: settings.metadata === null ? null : { ...settings.metadata } }),
     ...(settings.store === undefined ? {} : { store: settings.store }),
     ...(settings.service_tier === undefined ? {} : { service_tier: settings.service_tier }),
     ...(settings.parallel_tool_calls == null ? {} : { parallel_tool_calls: settings.parallel_tool_calls }),

@@ -46,6 +46,31 @@ test('buildTargetPayload preserves unsafe JSON number tokens in function history
   assertEquals(JSON.stringify(tool.input), '{"n":1e400}');
 });
 
+test('top-level instructions and leading role messages share the Messages system field', async () => {
+  const result = await buildWithTestSidecar({
+    ...minimalPayload,
+    instructions: 'base',
+    input: [
+      { type: 'message', role: 'system', content: 'rule' },
+      { type: 'message', role: 'developer', content: 'dev' },
+      { type: 'message', role: 'user', content: 'question' },
+    ],
+  });
+  assertEquals(Array.isArray(result.target.system) ? result.target.system.map(block => block.text) : undefined, ['base', 'rule', 'dev']);
+  assertEquals(result.target.messages, [{ role: 'user', content: [{ type: 'text', text: 'question', cache_control: { type: 'ephemeral' } }] }]);
+});
+
+test('foreign encrypted reasoning is dropped instead of creating an unsigned thinking block', async () => {
+  const result = await buildWithTestSidecar({
+    ...minimalPayload,
+    input: [
+      { type: 'reasoning', id: 'rs_foreign', summary: [{ type: 'summary_text', text: 'trace' }], encrypted_content: 'foreign' },
+      { type: 'message', role: 'assistant', content: 'answer' },
+    ],
+  });
+  assertEquals(result.target.messages, [{ role: 'assistant', content: [{ type: 'text', text: 'answer', cache_control: { type: 'ephemeral' } }] }]);
+});
+
 test('buildTargetPayload preserves OpenAI Responses assistant refusal history as Anthropic Messages text', async () => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
@@ -1162,13 +1187,13 @@ test('buildTargetPayload preserves payload.instructions and leading system as se
   );
 
   assertEquals(result.target.system, [
-    { type: 'text', text: 'canonical top-level instructions', cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: 'canonical top-level instructions' },
+    { type: 'text', text: 'leading note', cache_control: { type: 'ephemeral' } },
   ]);
-  assertEquals(result.target.messages.length, 4);
-  assertEquals(result.target.messages[0], { role: 'system', content: [{ type: 'text', text: 'leading note' }] });
-  assertEquals(result.target.messages[1].role, 'user');
-  assertEquals(result.target.messages[2], { role: 'system', content: [{ type: 'text', text: 'mid-array note' }] });
-  assertEquals(result.target.messages[3].role, 'user');
+  assertEquals(result.target.messages.length, 3);
+  assertEquals(result.target.messages[0].role, 'user');
+  assertEquals(result.target.messages[1], { role: 'system', content: [{ type: 'text', text: 'mid-array note' }] });
+  assertEquals(result.target.messages[2].role, 'user');
 });
 
 test('buildTargetPayload throws when a system input message contains an image part', async () => {

@@ -112,6 +112,7 @@ const assistantItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IR
   }
   case 'reasoning':
   {
+    if (typeof item.encrypted_content === 'string') return undefined;
     const summary = item.summary.map(part => part.text);
     const content = (item.content ?? []).map(part => part.text);
     // No readable text means nothing any target could replay.
@@ -316,7 +317,7 @@ const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): 
         // A caller may hand the Chat-Completions-nested spelling to the
         // Responses field; its details are still the same schema.
           ...('json_schema' in format && typeof format.json_schema === 'object' && format.json_schema !== null
-            ? format.json_schema as Record<string, unknown>
+            ? klona(format.json_schema as Record<string, unknown>)
             : {}),
           type: 'json_schema',
           ...('name' in format && typeof format.name === 'string' ? { name: format.name } : {}),
@@ -337,9 +338,9 @@ const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): 
     ...(payload.frequency_penalty === undefined ? {} : { frequency_penalty: payload.frequency_penalty }),
     ...(payload.max_output_tokens === undefined ? {} : { max_output_tokens: payload.max_output_tokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
-    ...(payload.metadata == null ? {} : { metadata: payload.metadata }),
+    ...(payload.metadata === undefined ? {} : { metadata: payload.metadata === null ? null : klona(payload.metadata) }),
     ...(payload.store === undefined ? {} : { store: payload.store }),
-    ...(payload.service_tier == null ? {} : { service_tier: payload.service_tier }),
+    ...(payload.service_tier === undefined ? {} : { service_tier: payload.service_tier }),
     ...(payload.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: payload.parallel_tool_calls }),
     ...(payload.reasoning?.effort == null ? {} : { reasoning_effort: payload.reasoning.effort }),
     ...(payload.reasoning?.summary == null ? {} : { reasoning_summary: payload.reasoning.summary }),

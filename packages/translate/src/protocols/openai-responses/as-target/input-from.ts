@@ -244,7 +244,7 @@ export const openaiResponsesSettingsFromIR = (settings: IRInputSettings): Partia
     ...(settings.top_p === undefined ? {} : { top_p: settings.top_p }),
     ...(settings.presence_penalty === undefined ? {} : { presence_penalty: settings.presence_penalty }),
     ...(settings.frequency_penalty === undefined ? {} : { frequency_penalty: settings.frequency_penalty }),
-    ...(settings.metadata === undefined ? {} : { metadata: { ...settings.metadata } }),
+    ...(settings.metadata === undefined ? {} : { metadata: settings.metadata === null ? null : { ...settings.metadata } }),
     ...(settings.store === undefined ? {} : { store: settings.store }),
     ...(settings.service_tier === undefined ? {} : { service_tier: settings.service_tier }),
     ...(settings.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: settings.parallel_tool_calls }),

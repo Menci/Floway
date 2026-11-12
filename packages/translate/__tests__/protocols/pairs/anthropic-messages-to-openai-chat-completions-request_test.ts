@@ -10,7 +10,20 @@ import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils
 const buildWithTestSidecar = (payload: AnthropicMessagesPayload) =>
   buildTargetPayloadFor(pairs.messagesToChat[0], pairs.messagesToChat[1], { ...payload, stream: true }, { sidecarCodec: createTestSidecarCodec() });
 
-test('unmodeled structured tool-result blocks retain main opaque JSON behavior', async () => {
+test('independent text blocks retain paragraph boundaries when Chat flattens them', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [
+      { role: 'user', content: [{ type: 'text', text: 'alpha' }, { type: 'text', text: 'beta' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'gamma' }, { type: 'text', text: 'delta' }] },
+    ],
+  });
+  assertEquals(result.messages, [
+    { role: 'user', content: 'alpha\n\nbeta' },
+    { role: 'assistant', content: 'gamma\n\ndelta' },
+  ]);
+});
+
+test('unmodeled structured tool-result blocks remain individually opaque', async () => {
   const content = [{ type: 'browser_state', tabs: [] }];
   const result = await buildWithTestSidecar({
     model: 'm', max_tokens: 32, messages: [
@@ -18,7 +31,7 @@ test('unmodeled structured tool-result blocks retain main opaque JSON behavior',
       { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'c', content: content as never }] },
     ],
   });
-  assertEquals(result.messages.at(-1), { role: 'tool', tool_call_id: 'c', content: JSON.stringify(content) });
+  assertEquals(result.messages.at(-1), { role: 'tool', tool_call_id: 'c', content: JSON.stringify(content[0]) });
 });
 
 test('buildTargetPayload maps thinking.disabled to reasoning_effort none', async () => {

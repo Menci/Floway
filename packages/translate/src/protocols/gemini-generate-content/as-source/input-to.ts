@@ -16,6 +16,7 @@ import type {
   IRInputTurn,
   IRInputUserContentPart,
   IRInputClientItem,
+  IRInputToolResultContentPart,
 } from '../../../ir/input/types.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { geminiGenerateContentPartKind } from '@floway-dev/protocols/gemini-generate-content';
@@ -50,6 +51,15 @@ const inlinePart = (part: GeminiGenerateContentPart): IRInputUserContentPart => 
   }
 };
 
+const functionResponsePart = (
+  part: NonNullable<NonNullable<GeminiGenerateContentPart['functionResponse']>['parts']>[number],
+): IRInputToolResultContentPart => {
+  const media = { source_kind: 'base64' as const, media_type: part.inlineData.mimeType, data: part.inlineData.data };
+  return geminiGenerateContentInlineData({ inlineData: part.inlineData })?.kind === 'image'
+    ? { type: 'image', image: media }
+    : { type: 'file', file: media };
+};
+
 const userParts = (content: GeminiGenerateContentContent): IRInputClientItem[] => {
   const items: IRInputClientItem[] = [];
   const pending: IRInputUserContentPart[] = [];
@@ -71,13 +81,15 @@ const userParts = (content: GeminiGenerateContentContent): IRInputClientItem[] =
         // The target matches id-less results against both ordinary and native calls.
         name: response.name,
         ...(response.id === undefined ? {} : { call_id: response.id }),
-        output: JSON.stringify(response.response),
+        output: response.parts === undefined
+          ? JSON.stringify(response.response)
+          : [{ type: 'text', text: JSON.stringify(response.response) }, ...response.parts.map(functionResponsePart)],
       });
       return;
     }
     case 'text': {
       const text = geminiGenerateContentPartText(part);
-      if (text !== null) pending.push({ type: 'text', text });
+      if (text !== null) pending.push({ type: 'text', text, block: true });
       return;
     }
     case 'inline_data':
@@ -125,7 +137,7 @@ const assistantItems = (content: GeminiGenerateContentContent, contentIndex: num
         return;
       }
       const visible = geminiGenerateContentVisibleText(part);
-      if (visible !== null) pending.push({ type: 'text', text: visible });
+      if (visible !== null) pending.push({ type: 'text', text: visible, block: true });
       return;
     }
     case 'inline_data':

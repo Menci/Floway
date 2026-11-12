@@ -66,7 +66,7 @@ test('legacy matching consumes its uniquely named id-less result before modern m
   const assigned = assignCallIds([native, results], turn => [
     { callId: legacy.callIds.get(turn)!, name: 'legacy' },
     { callId: 'modern-id', name: 'modern' },
-  ], legacy.results);
+  ], { resultCallIds: legacy.results });
   const client = assigned[1];
   assertEquals(client.kind === 'client' ? client.items.map(item => item.type === 'tool_result' ? item.call_id : undefined) : [], ['modern-id', legacy.callIds.get(native.turn)]);
 });
@@ -79,7 +79,7 @@ test('legacy matching wins over an earlier pending modern call of the same name'
   const assigned = assignCallIds(turns, turn => [
     ...(turn.tool_calls ?? []).map(call => ({ callId: call.id, name: call.type === 'function' ? call.function.name : call.custom.name })),
     ...(turn.function_call == null ? [] : [{ callId: legacyCalls.callIds.get(turn)!, name: turn.function_call.name }]),
-  ], legacyCalls.results);
+  ], { resultCallIds: legacyCalls.results });
   const client = assigned[2];
   assertEquals(client.kind === 'client' && client.items[0].type === 'tool_result' ? client.items[0].call_id : undefined, legacyCalls.callIds.get(legacyTurn.turn));
 });

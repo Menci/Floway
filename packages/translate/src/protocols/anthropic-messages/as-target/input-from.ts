@@ -233,12 +233,12 @@ export const anthropicMessagesConversationFromIR = (
       messages.push({ role: 'assistant', content });
       continue;
     }
-    const turnBlocks: AnthropicMessagesUserContentBlock[] = [];
+    const toolResultBlocks: AnthropicMessagesUserContentBlock[] = [];
+    const userBlocks: AnthropicMessagesUserContentBlock[] = [];
     for (const item of turn.items) {
       if (item.type === 'instruction') {
         if (hoisting) {
           system.push(...systemContent(item.content));
-          hoisting = false;
           continue;
         }
         const blocks = systemContent(item.content);
@@ -257,11 +257,13 @@ export const anthropicMessagesConversationFromIR = (
         continue;
       }
       hoisting = false;
-      turnBlocks.push(...(item.type === 'tool_result'
-        ? [{ type: 'tool_result' as const, tool_use_id: item.call_id, content: toolResultContent(item.output), ...(item.is_error === true ? { is_error: true } : {}) }]
-        : userContent(item as Extract<IRInputClientItem, { type: 'message'; role: 'user' }>)));
+      if (item.type === 'tool_result') {
+        toolResultBlocks.push({ type: 'tool_result', tool_use_id: item.call_id, content: toolResultContent(item.output), ...(item.is_error === true ? { is_error: true } : {}) });
+      } else {
+        userBlocks.push(...userContent(item as Extract<IRInputClientItem, { type: 'message'; role: 'user' }>));
+      }
     }
-    append(turnBlocks);
+    append([...toolResultBlocks, ...userBlocks]);
   }
   return { messages, system };
 };
@@ -331,6 +333,6 @@ export const anthropicMessagesSettingsFromIR = (settings: IRInputSettings): Omit
     // Anthropic spells the accelerated lane as `speed: 'fast'`; every other tier
     // stays an open string on `service_tier`.
     // https://docs.claude.com/en/build-with-claude/fast-mode
-    ...(settings.service_tier === undefined ? {} : isFastServiceTier(settings.service_tier) ? { speed: 'fast' as const } : { service_tier: settings.service_tier }),
+    ...(settings.service_tier == null ? {} : isFastServiceTier(settings.service_tier) ? { speed: 'fast' as const } : { service_tier: settings.service_tier }),
   };
 };
