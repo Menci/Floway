@@ -55,13 +55,17 @@ test('normalizes every retained text part to input_text — assistant output_tex
   expect(userPart.type).toBe('input_text');
 });
 
-test('retains assistant refusal text in the compacted input spelling', () => {
+test('preserves retained assistant refusals without charging them as text', () => {
+  const refusal = { type: 'refusal' as const, refusal: 'x'.repeat(64_001 * 4) };
   const result = compactionResponse([
-    { type: 'message', role: 'assistant', content: [{ type: 'refusal', refusal: 'Cannot provide that.' }] },
+    { type: 'message', role: 'user', content: 'older' },
+    { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'reply' }, refusal] },
+    { type: 'message', role: 'user', content: 'recent' },
   ], generatedResult([compaction]));
 
-  expect(result.output[0]).toMatchObject({
-    type: 'message', role: 'assistant', content: [{ type: 'input_text', text: 'Cannot provide that.' }],
+  expect(shape(result)).toEqual(['message:user', 'message:assistant', 'message:user', 'compaction']);
+  expect(result.output[1]).toMatchObject({
+    type: 'message', role: 'assistant', content: [{ type: 'input_text', text: 'reply' }, refusal],
   });
 });
 
