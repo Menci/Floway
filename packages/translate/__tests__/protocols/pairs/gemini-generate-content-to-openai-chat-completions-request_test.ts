@@ -286,6 +286,7 @@ test('buildTargetPayload maps generation config and reasoning effort', async () 
     stream: true,
     stream_options: { include_usage: true, continuous_usage_stats: true },
     messages: [],
+    max_tokens: 512,
     max_completion_tokens: 512,
     temperature: 0.25,
     top_p: 0.8,

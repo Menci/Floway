@@ -107,6 +107,7 @@ test('buildTargetPayload merges adjacent assistant reasoning text and tool calls
   });
 
   assertEquals(result.target.model, 'gpt-test');
+  assertEquals(result.target.max_tokens, 256);
   assertEquals(result.target.max_completion_tokens, 256);
   assertEquals(result.target.metadata, { trace_id: 'trace_123' });
   assertEquals(result.target.store, false);
