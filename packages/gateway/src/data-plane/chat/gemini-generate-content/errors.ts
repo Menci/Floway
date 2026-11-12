@@ -1,5 +1,5 @@
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
-import type { ChatServeFailure, InputErrorDetails } from '../shared/errors.ts';
+import { inputErrorFields, type ChatServeFailure, type InputErrorDetails } from '../shared/errors.ts';
 import type { GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
 import { internalDebugErrorFields, type ApiErrorResult, type PerformanceTelemetryContext, type InternalDebugError } from '@floway-dev/provider';
 
@@ -45,28 +45,35 @@ export const geminiGenerateContentInternalErrorPayload = (status: number, error:
   };
 };
 
-const geminiGenerateContentRpcErrorResult = (status: number, message: string, performance?: PerformanceTelemetryContext): ApiErrorResult => ({
+// ProtoJSON Any wraps a Struct's arbitrary JSON in value.
+// https://protobuf.dev/programming-guides/json/#any
+const geminiGenerateContentRpcErrorResult = (
+  status: number,
+  message: string,
+  performance?: PerformanceTelemetryContext,
+  extension?: Record<string, unknown>,
+): ApiErrorResult => ({
   type: 'api-error',
   source: 'gateway',
   status,
   headers: new Headers({ 'content-type': 'application/json' }),
   body: new TextEncoder().encode(JSON.stringify({
-    error: { code: status, message, status: geminiGenerateContentStatusForHttpStatus(status) },
+    error: {
+      code: status,
+      message,
+      status: geminiGenerateContentStatusForHttpStatus(status),
+      ...(extension === undefined ? {} : { details: [{ '@type': 'type.googleapis.com/google.protobuf.Struct', value: extension }] }),
+    },
   })),
   ...(performance ? { performance } : {}),
 });
 
-// Translator surfaced a caller-input violation (unsupported content part,
-// disallowed role, missing required field, etc.). Render as a 400
-// INVALID_ARGUMENT envelope so the caller sees a Gemini-generateContent-shaped failure
-// instead of the internal-error 500 envelope. `performance` carries the
-// candidate's telemetry attribution when validation failed
-// during an attempt (see AttemptState.telemetry).
+// Validation failures retain the telemetry of the candidate whose attempt rejected the request.
 export const inputErrorResult = (
   error: InputErrorDetails,
   performance?: PerformanceTelemetryContext,
 ): ApiErrorResult =>
-  geminiGenerateContentRpcErrorResult(400, error.message, performance);
+  geminiGenerateContentRpcErrorResult(400, error.message, performance, inputErrorFields(error));
 
 // `endpoint` selects between `:generateContent` and `:countTokens` only in
 // the `model-unsupported` message string.
