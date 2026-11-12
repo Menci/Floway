@@ -1,4 +1,4 @@
-import { openaiChatCompletionsErrorFromIR } from './events.ts';
+import { openaiChatCompletionsErrorFromIR } from './error.ts';
 import { irErrorPayloadFromBody, restateError } from '../../../shared/api-error.ts';
 import type { ApiErrorTranslator } from '../../../types.ts';
 

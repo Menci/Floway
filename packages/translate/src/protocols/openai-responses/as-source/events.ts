@@ -1,10 +1,10 @@
+import { openaiResponsesErrorEventOf } from './error.ts';
 import { restoreNamespaceOutputItem, type NamespaceToolNames } from './namespace-tools.ts';
 import { createRandomOpenAIResponsesResponseId } from './response-id.ts';
 import { collectOpenAIResponsesTextPlacements, computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarItem } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
 import type { IRCollector } from '../../../ir/output/collector.ts';
-import type { IRErrorPayload } from '../../../ir/output/error.ts';
 import { irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/output/operation-paths.ts';
 import type { IRPath, IRRecord } from '../../../ir/output/records.ts';
 import { consumeIRRecords } from '../../../ir/output/stream.ts';
@@ -14,7 +14,6 @@ import { createIRUnitQueue } from '../../../ir/output/unit-queue.ts';
 import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
 import { appendEmittedField, createEmittedFieldState, type EmittedFieldState, type EmittedFieldStates } from '../../../round-trip/reference/reference-builder.ts';
-import { errorDetailsOf } from '../../../shared/api-error.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.ts';
 import { isCompleteJSONObject, isJSONRecord } from '../../../shared/json/object.ts';
@@ -176,17 +175,6 @@ const textOrRefusalPart = (state: IROutput, path: IRPath): Extract<MessagePart, 
   const part = item.content[path[5] as number];
   if (part.type !== 'text' && part.type !== 'refusal') throw new TypeError('Responses message output supports only text and refusal parts');
   return part;
-};
-
-export const openaiResponsesErrorEventOf = (error: IRErrorPayload): OpenAIResponsesStreamEventEx => {
-  const details = errorDetailsOf(error, ['message', 'code', 'param']);
-  return {
-    type: 'error',
-    message: error.message,
-    ...(error.code === undefined ? {} : { code: error.code }),
-    ...(error.param === undefined ? {} : { param: error.param }),
-    ...(details === undefined ? {} : { provider_specific_fields: details }),
-  };
 };
 
 export const writeOpenAIResponsesEvents = async function* (

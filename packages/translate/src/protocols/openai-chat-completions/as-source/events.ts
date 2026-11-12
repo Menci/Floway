@@ -1,7 +1,7 @@
+import { openaiChatCompletionsErrorFromIR } from './error.ts';
 import { collectOpenAIChatCompletionsTextPlacements, computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarDetails } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
-import type { IRErrorPayload } from '../../../ir/output/error.ts';
 import { irItemPath, irPartPath, irPathKey } from '../../../ir/output/operation-paths.ts';
 import type { IRRecord } from '../../../ir/output/records.ts';
 import { consumeIRRecords } from '../../../ir/output/stream.ts';
@@ -9,7 +9,6 @@ import type { IROutputItem, IROutputMessageItem, IROutputTokenLogprob } from '..
 import { createIRUnitIndexAllocator } from '../../../ir/output/unit-index.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
 import { appendEmittedField, createEmittedFieldState, type EmittedFieldStates, type EmittedFieldState } from '../../../round-trip/reference/reference-builder.ts';
-import { errorDetailsOf } from '../../../shared/api-error.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { isJSONRecord } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
@@ -23,17 +22,6 @@ import {
   type OpenAIChatCompletionsUsageEx,
   createOpenAIChatCompletionsEventAccumulator,
 } from '@floway-dev/protocols/openai-chat-completions';
-
-export const openaiChatCompletionsErrorFromIR = (error: IRErrorPayload) => {
-  const details = errorDetailsOf(error, ['message', 'type', 'code', 'param']);
-  return {
-    message: error.message,
-    ...(error.type === undefined ? {} : { type: error.type }),
-    ...(error.code === undefined ? {} : { code: error.code }),
-    ...(error.param === undefined ? {} : { param: error.param }),
-    ...(details === undefined ? {} : { provider_specific_fields: details }),
-  };
-};
 
 interface OpenAIChatCompletionsEventWriterOptions extends SourceEventWriterOptions<'openaiChatCompletions'> {
   // Replay identity belongs to the newly emitted target audio, not the source IR content.
