@@ -1,11 +1,10 @@
 import { jsonrepair } from 'jsonrepair';
 
 import type { OpenAIResponsesInterceptor, OpenAIResponsesInvocation } from './types.ts';
-import { truncatePreservingCodePoints } from '../../../shared/text.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { SidecarDomain } from '../../shared/sidecar-codec.ts';
 import type { InterceptorRun } from '@floway-dev/interceptor';
-import { eventFrame, isJsonObject, sumBillableUsage, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, isJsonObject, parseJSONWithRawNumbers, sumBillableUsage, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   createRandomOpenAIResponsesItemId,
   isOpenAIResponsesAssistantInputItem,
@@ -19,6 +18,7 @@ import {
   type OpenAIResponsesOutputItemEx,
   type OpenAIResponsesResultEx,
   type OpenAIResponsesErrorEx,
+  type OpenAIResponsesErrorPayload,
   type OpenAIResponsesStreamEventEx,
   type OpenAIResponsesTool,
   type OpenAIResponsesToolChoice,
@@ -152,14 +152,14 @@ type ActiveServerTool = Extract<ServerToolPrepareResult, { type: 'active' }> & {
 
 // How a single upstream turn ended, as observed while consuming its
 // stream. Carries the raw upstream `response` for failed/incomplete so
-// the loop can lift the upstream `error` / `incomplete_details`, plus a
-// `bare-error-pre-shell` variant for an `error` event that arrived
-// before any `response.created` (no model known yet). Distinct from
+// the loop can lift its error and usage. Error notifications remain separate
+// from a response resource, including when no resource follows. Distinct from
 // `SynthesizedTerminal`, which is the shim's own outgoing terminal.
 export type UpstreamTerminal =
   | { kind: 'completed' }
   | { kind: 'failed'; response: OpenAIResponsesResultEx }
   | { kind: 'incomplete'; response: OpenAIResponsesResultEx }
+  | { kind: 'error'; event: Extract<OpenAIResponsesStreamEventEx, { type: 'error' }> }
   | { kind: 'bare-error-pre-shell'; error: OpenAIResponsesErrorEx };
 
 export interface TurnSummary {
@@ -693,6 +693,7 @@ export const consumeTurnStreaming = async function* (
   let sawClientToolCall = false;
   let turnUsage: MergeUsage = {};
   let terminalStatus: UpstreamTerminal | undefined = undefined;
+  let errorEvent: Extract<OpenAIResponsesStreamEventEx, { type: 'error' }> | undefined;
 
   const openItems = new Map<number, number>();
   const openItemIds = new Map<number, string>();
@@ -748,26 +749,8 @@ export const consumeTurnStreaming = async function* (
     }
 
     if (event.type === 'error') {
-      const e = 'error' in event ? event.error : event;
-      const code = typeof e.code === 'string' && e.code.length > 0 ? e.code : 'server_error';
-      const failure: OpenAIResponsesErrorEx = { message: e.message, code, ...(e.provider_specific_fields === undefined ? {} : { provider_specific_fields: e.provider_specific_fields }) };
-      if (merge.lastSeenModel === null) {
-        terminalStatus = { kind: 'bare-error-pre-shell', error: failure };
-      } else {
-        terminalStatus = {
-          kind: 'failed',
-          response: {
-            id: merge.synthesizedResponseId,
-            object: 'response',
-            model: ensureModel(),
-            output: [],
-            status: 'failed',
-            error: failure,
-            incomplete_details: null,
-          },
-        };
-      }
-      turnUsage = {};
+      errorEvent = event;
+      yield stamp(event);
       continue;
     }
 
@@ -924,7 +907,9 @@ export const consumeTurnStreaming = async function* (
   }
 
   if (terminalStatus === undefined) {
-    if (merge.lastSeenModel === null) {
+    if (errorEvent !== undefined) {
+      terminalStatus = { kind: 'error', event: errorEvent };
+    } else if (merge.lastSeenModel === null) {
       terminalStatus = {
         kind: 'bare-error-pre-shell',
         error: { message: 'Upstream stream ended without a terminal event (no response.created observed)', code: 'server_error' },
@@ -948,7 +933,7 @@ export const consumeTurnStreaming = async function* (
   if (interceptedByUpstreamIndex.size > 0) {
     const unmatched = [...interceptedByUpstreamIndex.keys()];
     const priorKind = terminalStatus.kind;
-    const priorLabel = priorKind === 'bare-error-pre-shell' ? 'a pre-shell bare error' : `response.${priorKind}`;
+    const priorLabel = priorKind === 'error' ? 'an error event' : priorKind === 'bare-error-pre-shell' ? 'a pre-shell bare error' : `response.${priorKind}`;
     terminalStatus = {
       kind: 'failed',
       response: {
@@ -969,36 +954,23 @@ export const consumeTurnStreaming = async function* (
   return { dispatchedSlots, sawServerToolCall, sawClientToolCall, turnUsage, terminalStatus };
 };
 
-const MAX_BODY_EXCERPT_CHARS = 512;
-
-const buildErrorFromResult = (
+const errorEventFromResult = (
   result: Exclude<ExecuteResult<unknown>, { type: 'events' }>,
-): NonNullable<OpenAIResponsesResultEx['error']> => {
-  if (result.type === 'internal-error') return { message: result.error.message, code: 'server_error', provider_specific_fields: internalDebugErrorFields(result.error) };
-  const decoded = new TextDecoder('utf-8', { fatal: false }).decode(result.body);
-  let parsed: unknown = undefined;
-  try {
-    parsed = JSON.parse(decoded);
-  } catch {
-    parsed = undefined;
-  }
-  const err = typeof parsed === 'object' && parsed !== null ? (parsed as { error?: unknown }).error : undefined;
-  if (typeof err === 'object' && err !== null) {
-    const e = err as Record<string, unknown>;
-    const out: NonNullable<OpenAIResponsesResultEx['error']> = {
-      message: typeof e.message === 'string' ? e.message : `Upstream returned HTTP ${result.status}`,
-      code: typeof e.code === 'string' ? e.code : `upstream_${result.status}`,
-    };
-    if (typeof e.type === 'string') out.type = e.type;
-    if (e.provider_specific_fields !== undefined) out.provider_specific_fields = e.provider_specific_fields as Record<string, unknown>;
-    return out;
-  }
-  const truncated = truncatePreservingCodePoints(decoded, MAX_BODY_EXCERPT_CHARS);
-  const excerpt = truncated.length === decoded.length ? decoded : `${truncated}...`;
-  return {
-    message: excerpt.length > 0 ? `Upstream returned HTTP ${result.status}: ${excerpt}` : `Upstream returned HTTP ${result.status}`,
-    code: `upstream_${result.status}`,
+): Extract<OpenAIResponsesStreamEventEx, { type: 'error' }> => {
+  if (result.type === 'internal-error') return {
+    type: 'error', code: 'server_error', message: result.error.message, param: null,
+    provider_specific_fields: internalDebugErrorFields(result.error),
   };
+  const body = parseJSONWithRawNumbers(new TextDecoder().decode(result.body)) as Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>;
+  return { ...body, type: 'error' };
+};
+
+const responseErrorFromEvent = (
+  event: Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>,
+): OpenAIResponsesErrorEx | null => {
+  const { type: _type, sequence_number: _sequenceNumber, ...fields } = event;
+  const payload = ('error' in fields && isJsonObject(fields.error) ? fields.error : fields) as OpenAIResponsesErrorPayload;
+  return typeof payload.code === 'string' ? { ...payload, code: payload.code, message: payload.message } : null;
 };
 
 const invalidRequestEnvelope = (
@@ -1159,6 +1131,10 @@ async function* runMultiTurnLoop(args: {
         yield synthesizeTerminalEnvelope(merge, { kind: 'incomplete', incompleteDetails: turn.terminalStatus.response.incomplete_details }, active);
         return;
       }
+      if (turn.terminalStatus.kind === 'error') {
+        if (turn.sawServerToolCall) yield* materializeServerToolItems(turn.dispatchedSlots, merge, replayCodec);
+        return;
+      }
       if (turn.terminalStatus.kind === 'bare-error-pre-shell') {
         yield synthesizeTerminalEnvelope(merge, {
           kind: 'failed',
@@ -1211,7 +1187,12 @@ async function* runMultiTurnLoop(args: {
 
       const nextResult = await run();
       if (nextResult.type !== 'events') {
-        yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: buildErrorFromResult(nextResult) }, active);
+        const event = { ...errorEventFromResult(nextResult), sequence_number: merge.sequenceNumber++ };
+        yield eventFrame(event);
+        yield synthesizeTerminalEnvelope(merge, {
+          kind: 'failed',
+          error: responseErrorFromEvent(event),
+        }, active);
         return;
       }
       metadata.modelIdentity = nextResult.modelIdentity;
@@ -1228,13 +1209,18 @@ async function* runMultiTurnLoop(args: {
       midStreamError = error;
       throw error;
     }
+    const failure = {
+      type: 'error' as const,
+      code: 'server_error',
+      message: `Upstream stream failed mid-response: ${error instanceof Error ? error.message : String(error)}`,
+      param: null,
+      provider_specific_fields: internalDebugErrorFields(toInternalDebugError(error)),
+      sequence_number: merge.sequenceNumber++,
+    };
+    yield eventFrame(failure);
     yield synthesizeTerminalEnvelope(merge, {
       kind: 'failed',
-      error: {
-        code: 'server_error',
-        message: `Upstream stream failed mid-response: ${error instanceof Error ? error.message : String(error)}`,
-        provider_specific_fields: internalDebugErrorFields(toInternalDebugError(error)),
-      },
+      error: responseErrorFromEvent(failure),
     }, active);
   } finally {
     if (midStreamError === undefined) resolveFinalMetadata(metadata);

@@ -2774,42 +2774,31 @@ test('next-turn echo retains original arguments while execution repairs a traili
   assertEquals((backend.calls[0].request as WebSearchProviderRequest).query, 'q');
 });
 
-test('upstream sends bare `error` frame BEFORE any response.created: shim throws from the events iterator (no synthetic response.failed with empty identity)', async () => {
-  // A bare `{type:'error'}` arriving before any `response.created`
-  // produces no captured identity (id / model). Synthesizing a
-  // `response.failed` envelope would require those fields. The
-  // synthesizer throws instead of inventing values; the throw
-  // escapes the events generator and is surfaced upward by the
-  // source responder. The unreachable-in-practice path stays
-  // honest about the upstream protocol violation rather than
-  // silently lying about the served identity.
+test('upstream sends an error event before response.created: shim forwards it without inventing a response', async () => {
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation();
+  const error = {
+    type: 'error' as const,
+    message: 'upstream dropped before response shell',
+    code: null,
+    param: null,
+  };
   const errorOnlyTurn: ScriptedTurn = [
-    eventFrame<OpenAIResponsesStreamEventEx>({
-      type: 'error',
-      message: 'upstream dropped before response shell',
-    }),
+    eventFrame<OpenAIResponsesStreamEventEx>(error),
   ];
   const script = scriptedRun([errorOnlyTurn]);
 
   const result = await shim(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
-  let thrown: unknown = undefined;
-  try {
-    for await (const _ of result.events) { /* drain */ }
-  } catch (e) {
-    thrown = e;
-  }
-  assert(thrown instanceof Error);
+  const events = eventPayloads(await collectFrames(result.events));
+  assertEquals(events.length, 1);
+  const { sequence_number: sequenceNumber, ...forwarded } = events[0] as typeof error & { sequence_number: number };
+  assertEquals(forwarded, error);
+  assertEquals(sequenceNumber, 0);
 });
 
-test('upstream sends bare `error` frame AFTER response.created: shim emits response.failed with synthesized id + last-seen model', async () => {
-  // When model is captured before the bare error arrives, the shim
-  // can synthesize a wire-valid `response.failed` envelope. The
-  // synthesized id is the shim's own (`resp_shim_<uuid>`), and the
-  // model is the last-seen upstream model.
+test('upstream sends an error event after response.created: shim forwards both events without synthesizing a terminal resource', async () => {
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation();
@@ -2839,16 +2828,12 @@ test('upstream sends bare `error` frame AFTER response.created: shim emits respo
   const result = await shim(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
-  assertEquals(failed.type, 'response.failed');
-  assert(failed.response.id.startsWith('resp_shim_'));
-  assertEquals(failed.response.model, 'gpt-5.4-2025-01-20');
-  assertEquals(failed.response.status, 'failed');
-  assertEquals(failed.response.error?.message, 'mid-stream upstream blew up');
-  // Upstream-supplied code carries through verbatim.
-  assertEquals(failed.response.error?.code, 'server_error');
-  assert(failed.response.error?.provider_specific_fields === diagnostics);
-  assertFalse('type' in (failed.response.error as object));
+  assertEquals(events.map(event => event.type), ['response.created', 'error']);
+  const error = events[1] as Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>;
+  assert('message' in error);
+  assertEquals(error.message, 'mid-stream upstream blew up');
+  assertEquals(error.code, 'server_error');
+  assert(error.provider_specific_fields === diagnostics);
 });
 
 test('upstream iterator rejects before yielding any frame: shim surfaces the throw through the events iterator', async () => {
@@ -4352,12 +4337,38 @@ test('turn 1 pure-text response streams BEFORE upstream terminal (no TTFT regres
   while (!(await iter.next()).done) { /* drain */ }
 });
 
-test('mid-stream upstream error yields response.failed and closes the SSE stream', async () => {
-  // After turn 1 emits a web_search call, turn 2's run() returns an
-  // upstream-error envelope. The shim must yield a single terminal
-  // response.failed frame and end the iterator — switching the outer
-  // envelope to upstream-error is impossible: the outer envelope shape
-  // is locked once the first frame is yielded.
+test.each([
+  {
+    body: {
+      type: 'error',
+      message: 'You exceeded your current quota.',
+      code: null,
+      param: 'tools',
+      provider_specific_fields: { request_id: 'req_flat', retryable: true },
+    },
+    responseError: null,
+  },
+  {
+    body: {
+      type: 'error',
+      error: {
+        message: 'You exceeded your current quota.',
+        type: 'insufficient_quota',
+        code: 'insufficient_quota',
+        param: null,
+        provider_specific_fields: { request_id: 'req_nested', retryable: true },
+      },
+      trace_id: 'trace_nested',
+    },
+    responseError: {
+      message: 'You exceeded your current quota.',
+      type: 'insufficient_quota',
+      code: 'insufficient_quota',
+      param: null,
+      provider_specific_fields: { request_id: 'req_nested', retryable: true },
+    },
+  },
+] as const)('mid-stream HTTP error body becomes a lossless error event followed by response.failed: $body', async ({ body, responseError }) => {
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation();
@@ -4369,156 +4380,33 @@ test('mid-stream upstream error yields response.failed and closes the SSE stream
       const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
       })();
-      return {
-        type: 'events',
-        events: frames,
-        modelIdentity: testTelemetryModelIdentity,
-      };
+      return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
     }
     return {
       type: 'api-error',
       source: 'upstream',
-      status: 503,
+      status: 429,
       headers: new Headers({ 'content-type': 'application/json' }),
-      body: new TextEncoder().encode('{"error":"upstream temporarily unavailable"}'),
+      body: new TextEncoder().encode(JSON.stringify(body)),
     };
   };
 
   const result = await shim(inv, makeGatewayCtx(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
+  const errorIndex = events.findIndex(event => event.type === 'error');
+  assert(errorIndex >= 0);
+  const error = events[errorIndex] as Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>;
+  const { sequence_number: sequenceNumber, ...unstamped } = error;
+  assertEquals(unstamped, body);
+  assertEquals(typeof sequenceNumber, 'number');
 
-  const terminal = events[events.length - 1];
-  assertEquals(terminal.type, 'response.failed');
-  const failedEv = terminal as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
-  assertEquals(failedEv.response.status, 'failed');
-  assert(failedEv.response.error !== undefined);
-  // Pass-through code: the shim quotes upstream's HTTP status
-  // (`upstream_<status>`) when the body has no OpenAI-shaped error
-  // envelope. No normalization to a spec enum value.
-  assertEquals(failedEv.response.error?.code, 'upstream_503');
-  assert(failedEv.response.error?.message.includes('503'));
-  assertFalse(events.some(e => e.type === 'response.completed'));
+  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
+  assertEquals(failed.type, 'response.failed');
+  assertEquals(failed.response.status, 'failed');
+  assertEquals(failed.response.error, responseError);
+  assertFalse(events.some(event => event.type === 'response.completed'));
   assertEquals(runCalls, 2);
-});
-
-test('mid-stream 429 pass-through: code reflects upstream HTTP status (no spec-enum normalization)', async () => {
-  // The shim no longer normalizes upstream error codes to the
-  // OpenAPI `OpenAIResponsesErrorCode` enum. A 429 with no OpenAI-shaped
-  // body falls back to `upstream_429` — the HTTP status is the most
-  // honest signal, and downstream clients pattern-matching on
-  // upstream's actual code see it directly.
-  makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
-  const inv = makeInvocation();
-
-  let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
-    runCalls += 1;
-    if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
-        for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
-      })();
-      return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
-    }
-    return {
-      type: 'api-error',
-      source: 'upstream',
-      status: 429,
-      headers: new Headers({ 'content-type': 'text/plain' }),
-      body: new TextEncoder().encode('rate limited'),
-    };
-  };
-
-  const result = await shim(inv, makeGatewayCtx(), run);
-  assert(result.type === 'events');
-  const events = eventPayloads(await collectFrames(result.events));
-  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
-  assertEquals(failed.response.error?.code, 'upstream_429');
-});
-
-test('mid-stream 400 with non-OpenAI body falls back to upstream_400 code (no spec-enum normalization)', async () => {
-  // Without an OpenAI-shaped `error.code` in the body, the shim
-  // synthesizes `upstream_<status>` rather than mapping to a spec
-  // enum value. The body excerpt and status live in `error.message`
-  // so clients still see the upstream detail.
-  makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
-  const inv = makeInvocation();
-
-  let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
-    runCalls += 1;
-    if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
-        for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
-      })();
-      return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
-    }
-    return {
-      type: 'api-error',
-      source: 'upstream',
-      status: 400,
-      headers: new Headers({ 'content-type': 'text/plain' }),
-      body: new TextEncoder().encode('bad request'),
-    };
-  };
-
-  const result = await shim(inv, makeGatewayCtx(), run);
-  assert(result.type === 'events');
-  const events = eventPayloads(await collectFrames(result.events));
-  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
-  assertEquals(failed.response.error?.code, 'upstream_400');
-  // The HTTP status is preserved in the diagnostic message so clients
-  // pattern-matching for 4xx see it.
-  assert(failed.response.error?.message.includes('400'));
-  assert(failed.response.error?.message.includes('bad request'));
-  assertFalse('type' in (failed.response.error as object));
-});
-
-test('mid-stream upstream error with OpenAI-shaped JSON body forwards code/type/message verbatim', async () => {
-  // When upstream is OpenAI-compatible and gives us a standard error
-  // envelope, pass it through unchanged so SDKs see the same vocabulary
-  // they'd see hitting upstream directly.
-  makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
-  const inv = makeInvocation();
-
-  const diagnostics = { name: 'RateLimitError', cause: { limit: 'images' }, target_api: 'openaiResponses' };
-  let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
-    runCalls += 1;
-    if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
-        for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
-      })();
-      return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
-    }
-    return {
-      type: 'api-error',
-      source: 'upstream',
-      status: 429,
-      headers: new Headers({ 'content-type': 'application/json' }),
-      body: new TextEncoder().encode(JSON.stringify({
-        error: {
-          message: 'You exceeded your current quota.',
-          type: 'insufficient_quota',
-          code: 'insufficient_quota',
-          param: null,
-          provider_specific_fields: diagnostics,
-        },
-      })),
-    };
-  };
-
-  const result = await shim(inv, makeGatewayCtx(), run);
-  assert(result.type === 'events');
-  const events = eventPayloads(await collectFrames(result.events));
-  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
-  assertEquals(failed.response.error?.code, 'insufficient_quota');
-  assertEquals(failed.response.error?.type, 'insufficient_quota');
-  assertEquals(failed.response.error?.message, 'You exceeded your current quota.');
-  assertEquals(failed.response.error?.provider_specific_fields, diagnostics);
 });
 
 test('upstream response.incomplete forwards as response.incomplete with the same incomplete_details.reason', async () => {
@@ -6479,112 +6367,65 @@ test('consumeTurn surfaces upstream response.incomplete as terminalStatus.incomp
   assertEquals(result.summary.terminalStatus.kind, 'incomplete');
 });
 
-test('consumeTurn surfaces bare `error` event as terminalStatus.failed with a synthesized envelope', async () => {
+test.each([
+  { type: 'error' as const, message: 'upstream blew up', code: null, param: 'tools', vendor: { retryable: false } },
+  { type: 'error' as const, message: 'upstream stated an empty code', code: '', param: null },
+])('consumeTurn forwards a standalone error event without rewriting it: $message', async error => {
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEventEx>({
-        type: 'error',
-        message: 'upstream blew up',
-        code: 'server_error',
-      }),
+      eventFrame<OpenAIResponsesStreamEventEx>(error),
     ),
     state,
     true,
   );
-  assertEquals(result.summary.terminalStatus.kind, 'failed');
-  const ts = result.summary.terminalStatus as Extract<UpstreamTerminal, { kind: 'failed' }>;
-  assertEquals(ts.response.status, 'failed');
-  assertEquals(ts.response.error?.message, 'upstream blew up');
-  assertEquals(ts.response.error?.code, 'server_error');
-  // Synthesized envelope's id is the shim-synthesized response id
-  // — upstream's id is not exposed downstream.
-  assertEquals(ts.response.id, state.synthesizedResponseId);
+  assertEquals(result.summary.terminalStatus, { kind: 'error', event: error });
+  const forwarded = eventPayloads(result.downstreamFrames);
+  assertEquals(forwarded.map(event => event.type), ['response.created', 'error']);
+  const { sequence_number: _sequenceNumber, ...forwardedError } = forwarded[1] as typeof error & { sequence_number: number };
+  assertEquals(forwardedError, error);
 });
 
-test('consumeTurn defaults missing `error.code` to spec-defined `server_error` (no synthetic `unknown_upstream_error` literal)', async () => {
-  // A bare upstream `{type: 'error'}` frame without a `code` field
-  // falls back to the OpenAPI `OpenAIResponsesErrorCode` enum value
-  // `'server_error'`. The previous `'unknown_upstream_error'`
-  // synthetic literal is not in the enum and typed SDKs (openai-python
-  // `Literal[...]` with strict Pydantic validation, openai-node
-  // literal union, openai-go `OpenAIResponsesErrorCode string` named type)
-  // reject unknown values at parse time. Reference:
-  // https://github.com/openai/openai-openapi/blob/master/openapi.yaml
+test('consumeTurn keeps an error notification and the following native failed resource', async () => {
   const state = createMergeState();
+  const error = { type: 'error' as const, message: 'upstream blew up', code: null, param: 'tools' };
+  const failed: OpenAIResponsesResultEx = {
+    id: 'upstream_failed', object: 'response', model: 'test-model', output: [], status: 'failed',
+    error: { code: 'rate_limit_exceeded', message: error.message }, incomplete_details: null,
+    usage: { input_tokens: 4, output_tokens: 1, total_tokens: 5 },
+  };
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEventEx>({
-        type: 'error',
-        message: 'upstream blew up without a code',
-      }),
+      eventFrame<OpenAIResponsesStreamEventEx>(error),
+      eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.failed', response: failed }),
     ),
     state,
     true,
   );
   const ts = result.summary.terminalStatus as Extract<UpstreamTerminal, { kind: 'failed' }>;
-  assertEquals(ts.response.error?.code, 'server_error');
-  // No synthetic `type` — the spec's OpenAIResponsesError schema defines
-  // only `{code, message}` and the upstream `error` frame doesn't
-  // carry a `type` field on the wire either.
-  assertFalse('type' in (ts.response.error as object));
+  assertEquals(ts.response, failed);
+  assertEquals(result.summary.turnUsage, { input_tokens: 4, output_tokens: 1, total_tokens: 5 });
+  const forwarded = eventPayloads(result.downstreamFrames);
+  assertEquals(forwarded.map(event => event.type), ['response.created', 'error']);
+  const { sequence_number: _sequenceNumber, ...forwardedError } = forwarded.at(-1) as typeof error & { sequence_number: number };
+  assertEquals(forwardedError, error);
 });
 
-test('consumeTurn treats empty-string `error.code` as missing (same fallback as undefined)', async () => {
-  // `??` only handles null/undefined; an explicit `code: ''` would
-  // survive and reach the wire as the synthesized response.failed's
-  // `error.code`, where typed SDKs reject the empty string the same
-  // way they reject any non-enum value. Mirror `parseUpstreamErrorBody`'s
-  // `length > 0` guard for shape parity between the bare-error path
-  // and the upstream-error HTTP body path.
+test('consumeTurn returns a pre-shell error event without inventing a response resource', async () => {
   const state = createMergeState();
+  const error = { type: 'error' as const, message: 'upstream dropped before response shell', code: null, param: null };
   const result = await consumeTurn(
-    framesOf(
-      mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEventEx>({
-        type: 'error',
-        message: 'upstream blew up with empty code',
-        code: '',
-      }),
-    ),
+    framesOf(eventFrame<OpenAIResponsesStreamEventEx>(error)),
     state,
     true,
   );
-  const ts = result.summary.terminalStatus as Extract<UpstreamTerminal, { kind: 'failed' }>;
-  assertEquals(ts.response.error?.code, 'server_error');
-});
-
-test('consumeTurn surfaces bare `error` event arriving BEFORE response.created as terminalStatus `bare-error-pre-shell` (no synthesized response)', async () => {
-  // The success-path "no fallback" contract refuses to synthesize a
-  // wire-valid response envelope that lies about the served identity.
-  // The bare-error path's job is the opposite: surface upstream's
-  // failure verbatim. But when the failure happens before any
-  // identity is captured (truncated TLS, transport drop, intermediate
-  // proxy injection), we cannot synthesize a wire-valid
-  // `OpenAIResponsesResult` (id and model are required, not nullable). Use
-  // a distinct terminal status `bare-error-pre-shell` so the shim's
-  // outer loop can short-circuit to a non-events `upstream-error`
-  // result instead of fabricating empty-string identity fields.
-  const state = createMergeState();
-  const result = await consumeTurn(
-    framesOf(
-      eventFrame<OpenAIResponsesStreamEventEx>({
-        type: 'error',
-        message: 'upstream dropped before response shell',
-      }),
-    ),
-    state,
-    true,
-  );
-  assertEquals(result.summary.terminalStatus.kind, 'bare-error-pre-shell');
-  const ts = result.summary.terminalStatus as Extract<UpstreamTerminal, { kind: 'bare-error-pre-shell' }>;
-  assertEquals(ts.error.message, 'upstream dropped before response shell');
-  // Spec-defined fallback (no `code` on upstream's error frame). See
-  // the matching test above for the in-shell path; both default to
-  // `server_error` from the `OpenAIResponsesErrorCode` enum.
-  assertEquals(ts.error.code, 'server_error');
+  assertEquals(result.summary.terminalStatus, { kind: 'error', event: error });
+  const forwarded = eventPayloads(result.downstreamFrames);
+  assertEquals(forwarded.length, 1);
+  const { sequence_number: _sequenceNumber, ...forwardedError } = forwarded[0] as typeof error & { sequence_number: number };
+  assertEquals(forwardedError, error);
 });
 
 test('consumeTurnStreaming yields forwarded frames before upstream completes', async () => {
@@ -7448,8 +7289,10 @@ for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
       assertEquals(backend.calls.length, 1);
       if (target === 'anthropicMessages' && mode === 'required') {
         assertEquals(script.callCount(), 1);
+        const error = frames.find(frame => frame.type === 'event' && frame.event.type === 'error');
+        expect(error).toMatchObject({ event: { type: 'error', error: { message: expect.stringContaining('allowed_tools auto subset'), code: null } } });
         const failed = frames.find(frame => frame.type === 'event' && frame.event.type === 'response.failed');
-        expect(failed).toMatchObject({ event: { response: { status: 'failed', error: { message: expect.stringContaining('allowed_tools auto subset') } } } });
+        expect(failed).toMatchObject({ event: { response: { status: 'failed', error: null } } });
         return;
       }
       assertEquals(script.callCount(), 2);
@@ -7588,8 +7431,8 @@ test('server-tool loop preserves internal failure diagnostics on the failed reso
 
 test('consumeTurn retains namespaced diagnostics before a response shell is announced', async () => {
   const diagnostics = { name: 'UpstreamError', stack: 'UpstreamError: no response shell', cause: { connection: 'closed' } };
-  const result = await consumeTurn(framesOf(eventFrame<OpenAIResponsesStreamEventEx>({ type: 'error', error: { message: 'No response shell', code: 'connection_error', provider_specific_fields: diagnostics } })), createMergeState(), true);
-  assert(result.summary.terminalStatus.kind === 'bare-error-pre-shell');
-  assertEquals(result.summary.terminalStatus.error.code, 'connection_error');
-  assert(result.summary.terminalStatus.error.provider_specific_fields === diagnostics);
+  const error = { type: 'error' as const, error: { message: 'No response shell', code: 'connection_error', provider_specific_fields: diagnostics } };
+  const result = await consumeTurn(framesOf(eventFrame<OpenAIResponsesStreamEventEx>(error)), createMergeState(), true);
+  assert(result.summary.terminalStatus.kind === 'error');
+  assertEquals(result.summary.terminalStatus.event, error);
 });

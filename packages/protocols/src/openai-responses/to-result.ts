@@ -1,10 +1,9 @@
 import type { ClientResponseResource, ClientOpenAIResponsesStreamEvent } from './client-resource.ts';
 import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from './index.ts';
 import { reassembleOpenAIResponsesEvents } from './reassemble.ts';
-import { isOpenAIResponsesTerminalEvent } from './terminal-event.ts';
 import { type ProtocolFrame } from '../common/index.ts';
 
-export const OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE = 'OpenAI Responses stream ended without a terminal event.';
+export { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE } from './reassemble.ts';
 
 // Reassembly copies each response object through, so a stream whose frames
 // already carry the completed client resource collects into a completed
@@ -20,10 +19,7 @@ export async function collectOpenAIResponsesProtocolEventsToResult(frames: Async
       if (frame.type === 'done') continue;
 
       yield frame.event;
-      if (isOpenAIResponsesTerminalEvent(frame.event)) return;
     }
-
-    throw new Error(OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE);
   };
 
   return await reassembleOpenAIResponsesEvents(events());

@@ -4,12 +4,13 @@ import { beforeEach, expect, test } from 'vitest';
 import { respondOpenAIResponses, respondOpenAIResponsesFailure } from '../../../../src/data-plane/chat/openai-responses/respond.ts';
 import { OPENAI_RESPONSES_REASONING_INCLUDED_HEADER } from '../../../../src/data-plane/chat/openai-responses/response-headers.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
+import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import { eventFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, parseOpenAIResponsesStream, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { eventResult, internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
-import { testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { eventResult, internalErrorResult, toInternalDebugError, type EventResultMetadata } from '@floway-dev/provider';
+import { mockPerfTelemetryContext, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 beforeEach(() => { initRepo(new InMemoryRepo()); });
 
@@ -80,7 +81,123 @@ test('Responses SSE standalone error and failed response carry identical complet
   expect(failed.response.error).toEqual((error as { error: unknown }).error);
   const terminalOnly = await collectOpenAIResponsesProtocolEventsToResult((async function* () { yield eventFrame(failed); })());
   expect(terminalOnly.error).toEqual(failed.response.error);
-  await expect(collectOpenAIResponsesProtocolEventsToResult(parseOpenAIResponsesStream(new Response(wire).body!))).rejects.toThrow('Upstream SSE error');
+  await expect(collectOpenAIResponsesProtocolEventsToResult(parseOpenAIResponsesStream(new Response(wire).body!))).rejects.toMatchObject({ message: 'broken', cause: error });
+});
+
+test.each([false, true])('Responses HTTP consumes an upstream error followed by its failed resource when stream=%s', async wantsStream => {
+  const item = { type: 'reasoning' as const, id: 'rs_complete', summary: [] };
+  const error = { type: 'error' as const, sequence_number: 3, code: null, message: 'upstream failed', param: null, vendor: { detail: 'native' } };
+  const failed = {
+    id: 'resp_upstream', object: 'response' as const, model: 'm', status: 'failed' as const,
+    output: [item], error: { code: 'vendor_failure', message: error.message }, incomplete_details: null,
+    usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 },
+  };
+  const frames = async function* () {
+    yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.created', sequence_number: 0, response: { ...failed, status: 'in_progress', output: [], error: null } });
+    yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.added', sequence_number: 1, output_index: 0, item });
+    yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.done', sequence_number: 2, output_index: 0, item });
+    yield eventFrame<OpenAIResponsesStreamEventEx>(error);
+    yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.failed', sequence_number: 4, response: failed });
+  };
+  const app = new Hono().get('/', c => respondOpenAIResponses(c, eventResult(frames(), testTelemetryModelIdentity), wantsStream, mockChatGatewayCtx(), { model: 'm', input: [] }));
+  const response = await app.request('/');
+  expect(response.status).toBe(wantsStream ? 200 : 502);
+  if (!wantsStream) {
+    const { sequence_number: _sequenceNumber, ...body } = error;
+    expect(await response.json()).toEqual(body);
+    return;
+  }
+  const events = [];
+  for await (const frame of parseOpenAIResponsesStream(response.body!)) if (frame.type === 'event') events.push(frame.event);
+  expect(events.map(event => event.type)).toEqual(['response.created', 'response.output_item.added', 'response.output_item.done', 'error', 'response.failed']);
+  expect(events[3]).toEqual(error);
+  expect(events.map(event => event.sequence_number)).toEqual([0, 1, 2, 3, 4]);
+  const terminal = events.at(-1);
+  if (terminal?.type !== 'response.failed') throw new Error('Missing failed response');
+  const created = events[0];
+  if (created.type !== 'response.created') throw new Error('Missing created response');
+  expect(terminal.response.id).toBe(created.response.id);
+  expect(terminal.response).toMatchObject({
+    status: 'failed', output: [item], error: failed.error,
+    usage: { ...failed.usage, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } },
+  });
+  expect(terminal.response.id).not.toBe(failed.id);
+});
+
+test.each([
+  { type: 'error' as const, sequence_number: 0, code: null, message: 'native failure', param: null, vendor: { detail: 'flat' } },
+  { type: 'error' as const, sequence_number: 0, error: { code: 'vendor_failure', message: 'native failure', param: 'tools', vendor: { detail: 'nested' } }, trace: 'native-trace' },
+])('Responses HTTP preserves a standalone upstream error event %j', async error => {
+  for (const wantsStream of [false, true]) {
+    const frames = async function* () { yield eventFrame<OpenAIResponsesStreamEventEx>(error); yield doneFrame(); };
+    const app = new Hono().get('/', c => respondOpenAIResponses(c, eventResult(frames(), testTelemetryModelIdentity), wantsStream, mockChatGatewayCtx(), { model: 'm', input: [] }));
+    const response = await app.request('/');
+    expect(response.status).toBe(wantsStream ? 200 : 502);
+    if (wantsStream) {
+      const wire = await response.text();
+      expect(wire.split('data: [DONE]').length - 1).toBe(1);
+      const events = [];
+      for await (const frame of parseOpenAIResponsesStream(new Response(wire).body!)) if (frame.type === 'event') events.push(frame.event);
+      expect(events).toEqual([error]);
+    } else {
+      const { sequence_number: _sequenceNumber, ...body } = error;
+      expect(await response.json()).toEqual(body);
+    }
+  }
+});
+
+test.each([
+  { type: 'error' as const, sequence_number: 3, code: null, param: 'tools', message: 'rate limited', vendor: { retryable: true } },
+  { type: 'error' as const, sequence_number: 3, error: { code: null, param: null, message: 'rate limited', vendor: { retryable: true } }, trace: 'native-trace' },
+])('Responses non-streaming failure drains the failed resource, preserves error fields, and records usage once: %j', async error => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const background: Promise<unknown>[] = [];
+  const modelIdentity = { ...testTelemetryModelIdentity, upstream: 'continuation-upstream' };
+  const telemetry = mockPerfTelemetryContext({ keyId: 'key_test', upstream: modelIdentity.upstream, runtimeLocation: 'TEST' });
+  let resolveMetadata!: (metadata: EventResultMetadata) => void;
+  const finalMetadata = new Promise<EventResultMetadata>(resolve => { resolveMetadata = resolve; });
+  let readFailedResource = false;
+  const item = { type: 'reasoning' as const, id: 'rs_complete', summary: [] };
+  const failed = {
+    id: 'resp_aggregate', object: 'response' as const, model: 'm', status: 'failed' as const,
+    output: [item], error: null, incomplete_details: null,
+    usage: { input_tokens: 15, output_tokens: 2, total_tokens: 17 },
+  };
+  const frames = async function* () {
+    try {
+      yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.created', sequence_number: 0, response: { ...failed, status: 'in_progress', output: [] } });
+      yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.added', sequence_number: 1, output_index: 0, item });
+      yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.done', sequence_number: 2, output_index: 0, item });
+      yield eventFrame<OpenAIResponsesStreamEventEx>(error);
+      readFailedResource = true;
+      yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.failed', sequence_number: 4, response: failed });
+    } finally {
+      resolveMetadata({ modelIdentity, performance: telemetry, billableUsage: { input: 10, cacheRead: 3, cacheWrite: 2, cacheWrite1h: 0, output: 2 } });
+    }
+  };
+  const ctx = mockChatGatewayCtx({
+    backgroundScheduler: promise => { background.push(promise); },
+    attempt: { timing: { upstreamCallStartedAt: 0, firstOutputTokenAt: 1 }, telemetry },
+  });
+  const result = eventResult(frames(), testTelemetryModelIdentity, {
+    performance: telemetry,
+    finalMetadata,
+  });
+  const app = new Hono().get('/', c => respondOpenAIResponses(c, result, false, ctx, { model: 'm', input: [] }));
+  const response = await app.request('/');
+  expect(response.status).toBe(502);
+  expect(readFailedResource).toBe(true);
+  const { sequence_number: _sequenceNumber, ...body } = error;
+  expect(await response.json()).toEqual(body);
+  await Promise.all(background);
+  const usage = await repo.usage.listAll();
+  expect(usage).toHaveLength(1);
+  expect(usage[0]).toMatchObject({ requests: 1, upstream: modelIdentity.upstream });
+  expect(tokenCountsFromUsage(usage[0])).toEqual({ input: 10, input_cache_read: 3, input_cache_write: 2, output: 2 });
+  const performance = await repo.performance.listAll();
+  expect(performance).toHaveLength(1);
+  expect(performance[0]).toMatchObject({ requests: 1, errorsWithOutput: 1, errorsNoOutput: 0, ttftSamplesOk: 0, tpotSamples: 1 });
 });
 
 test('Responses collect failures preserve nested causes in the HTTP error namespace', async () => {

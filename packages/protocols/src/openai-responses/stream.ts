@@ -7,15 +7,14 @@ export interface ParseOpenAIResponsesStreamOptions {
   signal?: AbortSignal;
 }
 
-// Deny-list: anything that is not a wrapper (`response.queued` /
-// `response.created` / `response.in_progress`) and not terminal is treated as
-// content-bearing. Future OpenAI Responses event types fall through as structured by
-// default, which is safer than missing an allow-list entry and incorrectly
-// triggering the fast-path expansion below.
+// Lifecycle wrappers, resource terminals, and error notifications carry no
+// content deltas. Unknown event types count as structured content so a new
+// content event cannot accidentally trigger duplicate fast-path expansion.
 const isStructuredOpenAIResponsesEvent = (event: { type: string }): boolean =>
   event.type !== 'response.queued'
   && event.type !== 'response.created'
   && event.type !== 'response.in_progress'
+  && event.type !== 'error'
   && !isOpenAIResponsesTerminalEvent(event as OpenAIResponsesStreamEventEx);
 
 // Some OpenAI Responses upstreams emit the event type only via the SSE `event:`
@@ -49,9 +48,8 @@ const sequencer = () => {
 // a terminal `response.completed` / `response.incomplete` / `response.failed`,
 // skipping every content-bearing structured event. This parser expands the
 // terminal in place via `openaiResponsesResultToEvents` so downstream consumers
-// always observe one canonical full event sequence. `error` terminals carry
-// no `response` payload, so we cannot expand them; they continue to surface
-// as their original frame for downstream handlers.
+// always observe one canonical full event sequence. Error notifications pass
+// through before the terminal response and do not suppress its expansion.
 export const parseOpenAIResponsesStream = (
   body: ReadableStream<Uint8Array>,
   options: ParseOpenAIResponsesStreamOptions = {},

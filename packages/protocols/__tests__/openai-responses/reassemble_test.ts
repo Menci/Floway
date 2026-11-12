@@ -4,14 +4,7 @@ import type { OpenAIResponsesOutputItemEx, OpenAIResponsesResultEx, OpenAIRespon
 import { reassembleOpenAIResponsesEvents } from '../../src/openai-responses/reassemble.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
-type OpenAIResponsesReassembleEvent =
-  | OpenAIResponsesStreamEventEx
-  | {
-    type: 'error';
-    message?: string;
-  };
-
-function makeEvents<T = OpenAIResponsesReassembleEvent>(chunks: Array<{ event?: string; data: unknown }>): AsyncIterable<T> {
+function makeEvents<T = OpenAIResponsesStreamEventEx>(chunks: Array<{ event?: string; data: unknown }>): AsyncIterable<T> {
   return (async function* () {
     for (const chunk of chunks) {
       if (typeof chunk.data === 'string') continue;
@@ -95,10 +88,39 @@ test('reassembleOpenAIResponsesEvents handles incomplete event', async () => {
   assertEquals(result.status, 'incomplete');
 });
 
-test('reassembleOpenAIResponsesEvents throws on error event', async () => {
-  const body = makeEvents([{ event: 'error', data: { type: 'error', message: 'bad request' } }]);
+test.each([
+  { type: 'error', code: null, param: 'model', message: 'bad request', sequence_number: 1, request_id: 'req_flat' },
+  { type: 'error', code: null, param: null, message: 'bad request', error: null, sequence_number: 1, request_id: 'req_extension' },
+  { type: 'error', error: { code: 'rate_limit_exceeded', param: null, message: 'bad request', request_id: 'req_nested' }, sequence_number: 1 },
+] as const)('reassembleOpenAIResponsesEvents preserves standalone errors as the original cause', async error => {
+  const body = makeEvents([{ data: error }]);
+  const caught: unknown = await reassembleOpenAIResponsesEvents(body).catch((caught: unknown) => caught);
 
-  await assertRejects(() => reassembleOpenAIResponsesEvents(body), Error, 'bad request');
+  expect(caught).toBeInstanceOf(Error);
+  expect(caught).toMatchObject({ message: 'bad request' });
+  expect((caught as Error).cause).toBe(error);
+});
+
+test('reassembleOpenAIResponsesEvents drains through response.failed before returning the original error', async () => {
+  const failed: OpenAIResponsesResultEx = {
+    id: 'resp_failed', object: 'response', model: 'gpt-test', status: 'failed',
+    output: [{ type: 'reasoning', id: 'rs_complete', summary: [{ type: 'summary_text', text: 'Work before failure' }] }],
+    error: { code: 'rate_limit_exceeded', message: 'Limit reached' },
+    incomplete_details: null,
+    usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 },
+  };
+  const error = { type: 'error', code: null, param: 'model', message: 'Limit reached', sequence_number: 1 } satisfies OpenAIResponsesStreamEventEx;
+  let emittedFailed = false;
+  const events = async function* (): AsyncIterable<OpenAIResponsesStreamEventEx> {
+    yield { type: 'response.created', sequence_number: 0, response: { ...failed, status: 'in_progress', output: [], error: null, usage: null } };
+    yield error;
+    emittedFailed = true;
+    yield { type: 'response.failed', sequence_number: 2, response: failed };
+  };
+  const caught: unknown = await reassembleOpenAIResponsesEvents(events()).catch((caught: unknown) => caught);
+
+  expect(emittedFailed).toBe(true);
+  expect(caught).toMatchObject({ message: error.message, cause: error });
 });
 
 test('reassembleOpenAIResponsesEvents throws when stream ends without terminal event', async () => {
