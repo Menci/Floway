@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { parseClaudeCodeQuotaHeaders } from '../src/quota.ts';
+import { claudeCodeRateLimitedUntil, parseClaudeCodeQuotaHeaders } from '../src/quota.ts';
 
 // Captured from a real Anthropic /v1/messages?beta=true response on the
 // Sonnet 4.5 plan tier, 2026-06-19. Used as the primary parser fixture.
@@ -164,5 +164,78 @@ describe('parseClaudeCodeQuotaHeaders — coercion edge cases', () => {
     const snap = parseClaudeCodeQuotaHeaders(h);
     expect(snap.overage?.utilization).toBe(0.42);
     expect(snap.overage?.reset).toBe(new Date(1781805000 * 1000).toISOString());
+  });
+});
+
+describe('claudeCodeRateLimitedUntil', () => {
+  const now = Date.parse('2026-11-13T00:00:00Z');
+  const sessionReset = '2026-11-13T05:00:00.000Z';
+  const weekReset = '2026-11-18T00:00:00.000Z';
+  const snapshot = (headers: Record<string, string>, modelId?: string) => ({
+    fetchedAt: now,
+    modelId,
+    data: parseClaudeCodeQuotaHeaders(new Headers({
+      'anthropic-ratelimit-unified-status': 'rejected',
+      'anthropic-ratelimit-unified-reset': String(Date.parse(weekReset) / 1000),
+      ...headers,
+    })),
+  });
+
+  test.each(['seven_day_overage_included', 'seven_day_opus', 'seven_day_sonnet', 'future_model_limit', 'overage', ''])('a %s rejection only gates the observed model', claim => {
+    const entry = snapshot({ 'anthropic-ratelimit-unified-representative-claim': claim }, 'claude-fable-5-1');
+    expect(claudeCodeRateLimitedUntil(entry, now)).toBeNull();
+    expect(claudeCodeRateLimitedUntil(entry, now, 'claude-opus-5-5')).toBeNull();
+    expect(claudeCodeRateLimitedUntil(entry, now, 'claude-fable-5-1')).toBe(weekReset);
+    expect(claudeCodeRateLimitedUntil({ ...entry, modelId: undefined }, now, 'claude-fable-5-1')).toBeNull();
+  });
+
+  test('a shared rejection alongside Fable exhaustion uses the shared reset for sibling models', () => {
+    const entry = snapshot({
+      'anthropic-ratelimit-unified-representative-claim': 'seven_day_overage_included',
+      'anthropic-ratelimit-unified-5h-status': 'rejected',
+      'anthropic-ratelimit-unified-5h-reset': String(Date.parse(sessionReset) / 1000),
+    }, 'claude-fable-5-1');
+    expect(claudeCodeRateLimitedUntil(entry, now)).toBe(sessionReset);
+    expect(claudeCodeRateLimitedUntil(entry, now, 'claude-opus-5-5')).toBe(sessionReset);
+    expect(claudeCodeRateLimitedUntil(entry, now, 'claude-fable-5-1')).toBe(weekReset);
+    expect(claudeCodeRateLimitedUntil(entry, Date.parse(sessionReset), 'claude-opus-5-5')).toBeNull();
+    expect(claudeCodeRateLimitedUntil(entry, Date.parse(sessionReset), 'claude-fable-5-1')).toBe(weekReset);
+  });
+
+  test('concurrent shared limits wait for the last shared reset', () => {
+    const entry = snapshot({
+      'anthropic-ratelimit-unified-representative-claim': 'five_hour',
+      'anthropic-ratelimit-unified-reset': String(Date.parse(sessionReset) / 1000),
+      'anthropic-ratelimit-unified-7d-status': 'rejected',
+      'anthropic-ratelimit-unified-7d-reset': String(Date.parse(weekReset) / 1000),
+    });
+    expect(claudeCodeRateLimitedUntil(entry, now)).toBe(weekReset);
+  });
+
+  test.each(['allowed', 'allowed_warning'])('extra usage still serves requests when unified status is %s', status => {
+    const entry = snapshot({
+      'anthropic-ratelimit-unified-status': status,
+      'anthropic-ratelimit-unified-representative-claim': 'seven_day',
+      'anthropic-ratelimit-unified-7d-status': 'rejected',
+      'anthropic-ratelimit-unified-7d-reset': String(Date.parse(weekReset) / 1000),
+      'anthropic-ratelimit-unified-overage-status': 'allowed',
+    }, 'claude-fable-5-1');
+    expect(claudeCodeRateLimitedUntil(entry, now, 'claude-fable-5-1')).toBeNull();
+  });
+
+  test.each([String(now / 1000), String(now / 1000 - 1), 'invalid'])('an elapsed or unusable reset (%s) cannot gate a request', reset => {
+    const entry = snapshot({
+      'anthropic-ratelimit-unified-representative-claim': 'seven_day',
+      'anthropic-ratelimit-unified-reset': reset,
+    });
+    expect(claudeCodeRateLimitedUntil(entry, now)).toBeNull();
+  });
+
+  test('an undated rejection or missing snapshot cannot lock the account', () => {
+    const entry = snapshot({ 'anthropic-ratelimit-unified-representative-claim': 'seven_day' });
+    entry.data.reset = null;
+    expect(claudeCodeRateLimitedUntil(entry, now)).toBeNull();
+    expect(claudeCodeRateLimitedUntil(null, now)).toBeNull();
+    expect(claudeCodeRateLimitedUntil(undefined, now)).toBeNull();
   });
 });

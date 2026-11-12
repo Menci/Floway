@@ -10,6 +10,7 @@ import {
   actionableDisabledReason,
   findCredential,
   quotaWindows,
+  rateLimitedUntil,
   rawEntries,
   readProbeSnapshot,
   subscriptionLabel,
@@ -148,11 +149,26 @@ describe('probe snapshot', () => {
 
 describe('account status', () => {
   const rejectedAt = (reset: string | null) => findCredential(record({
-    accounts: [credential({ quotaSnapshot: { fetchedAt: 1, data: quotaData({ status: 'rejected', reset }) } })],
+    accounts: [credential({ quotaSnapshot: { fetchedAt: 1, data: quotaData({ status: 'rejected', reset, representativeClaim: 'seven_day' }) } })],
   }));
 
   it('treats a rejected plan window as exhausted while its limit is still running', () => {
     expect(accountStatus(rejectedAt('2026-07-28T15:00:00.000Z'), [], NOW)).toMatchObject({ tone: 'danger', reason: 'exhausted' });
+  });
+
+  it.each(['seven_day_overage_included', 'seven_day_opus', 'seven_day_sonnet', 'future_model_limit', null])('keeps a %s rejection out of the account status', representativeClaim => {
+    const account = credential({
+      quotaSnapshot: {
+        fetchedAt: 1,
+        data: quotaData({
+          status: 'rejected', reset: '2026-07-30T15:00:00.000Z', representativeClaim,
+          sevenDay: { status: 'allowed', utilization: 0.62, reset: '2026-07-30T15:00:00.000Z', surpassedThreshold: null },
+        }),
+      },
+    });
+    const lookup = findCredential(record({ accounts: [account] }));
+    expect(rateLimitedUntil(account.quotaSnapshot, NOW)).toBeNull();
+    expect(accountStatus(lookup, quotaWindows(account), NOW)).toEqual({ tone: 'success', reason: 'active' });
   });
 
   // The snapshot is held until a response replaces it, so a rejection dated in

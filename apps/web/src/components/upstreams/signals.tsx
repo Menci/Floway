@@ -193,10 +193,6 @@ const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code'
     };
   });
 
-  // `rejected` on the unified status is Anthropic saying it turned the request
-  // away. Whether that is a limit this row should state is the one question the
-  // shared rule answers, so the answer is the same here, on the account card,
-  // and at the router that decides whether to send the upstream any work.
   const until = rateLimitedUntil(credential?.quotaSnapshot, now);
   return until === null ? windows : windows.concat(blockedSignal(until, t, locale, now));
 };
