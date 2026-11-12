@@ -1,15 +1,16 @@
-// All OpenAI-compatible model-list paths terminate here. The request path is
-// deliberately absent from catalog selection: Codex, Claude Code, Pi, and OMP identify
-// their private discovery formats through User-Agent, while every other caller
-// receives Floway's public OpenAI/Anthropic superset.
+// All model-list paths terminate here, `/v1beta/models` included: the request
+// path is deliberately absent from catalog selection. Codex, Claude Code, Pi,
+// OMP, TypeSafe, and Gemini identify their private discovery formats through
+// the client's own telemetry headers, while every other caller receives
+// Floway's public OpenAI/Anthropic superset.
 
-import type { Context } from 'hono';
-
+import { isGeminiClient } from './gemini-client.ts';
+import { serveGeminiModels } from './gemini.ts';
 import { loadModels } from './load.ts';
 import { isOmpUserAgent, toOmpCatalog } from './omp-catalog.ts';
 import { isPiUserAgent, toPiCatalog } from './pi-catalog.ts';
 import { createModelsRefreshScheduler } from '../../execution/models-refresh.ts';
-import { effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
+import { type AuthedContext, effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
@@ -95,7 +96,12 @@ const toTypeSafeCatalog = (response: PublicModelsResponse) => ({
 const isTypeSafeUserAgent = (userAgent: string | undefined): boolean =>
   userAgent?.startsWith('typesafe-sdk/') ?? false;
 
-export const serveModels = async (c: Context): Promise<Response> => {
+export const serveModels = async (c: AuthedContext): Promise<Response> => {
+  // Gemini SDKs parse `{ models: [{ name: 'models/…' }] }` and nothing else,
+  // so they get the Gemini projection of the same catalog every other caller
+  // reads through this route. The handler owns its own error envelopes, so it
+  // runs ahead of the OpenAI-shaped error paths below.
+  if (isGeminiClient(c.req.raw.headers)) return await serveGeminiModels(c);
   try {
     const userAgent = c.req.header('user-agent');
     const suppliedEndpoint = (isPiUserAgent(userAgent) || isOmpUserAgent(userAgent)) ? c.req.query('endpoint') : undefined;

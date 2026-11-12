@@ -187,9 +187,9 @@ export const storedCatalogSize = (record: UpstreamRecord): number | null => {
 };
 
 // Public-facing model-id ordering, applied to the real-model slice of the
-// lists that cross a gateway boundary (data-plane /v1/models, /models,
-// /v1beta/models and the control-plane /api/models that backs the dashboard
-// models page). It orders that slice only: visible aliases are appended
+// lists that cross a gateway boundary (the data-plane model listing on
+// /v1/models, /models, and /v1beta/models, plus the control-plane /api/models
+// that backs the dashboard models page). It orders that slice only: visible aliases are appended
 // afterwards in alias `sortOrder`, and `/api/models?include_unlisted=true`
 // appends the unlisted rows after the listed ones.
 // Provider upstreams return models in arbitrary order; sorting here gives the

@@ -238,7 +238,7 @@ const en = {
       },
       apiDocs: {
         endpointsTitle: 'API Endpoints',
-        endpointsDescription: 'Every public data-plane route. Short paths are compatibility aliases of their /v1 counterparts unless a protocol is named explicitly.',
+        endpointsDescription: 'Every public data-plane route. Short paths are compatibility aliases of their /v1 counterparts unless a protocol is named explicitly. The model list answers the OpenAI/Anthropic shape to every caller and the Gemini `{ models }` shape to clients that identify as a Gemini SDK.',
         docsLink: 'Docs',
         columns: { method: 'Method', endpoint: 'Endpoint', description: 'Description', docs: 'Documentation' },
         authentication: {
@@ -249,7 +249,7 @@ const en = {
         },
         groups: { models: 'Model discovery', generation: 'Text and multimodal generation', media: 'Embeddings, images, and audio', rerank: 'Rerank protocols', decision: 'Decision protocols', search: 'Codex search' },
         endpointNames: {
-          openAiModels: 'OpenAI model list', geminiModels: 'Gemini model list', geminiModel: 'Gemini model details',
+          modelList: 'Model list (OpenAI, Anthropic, Gemini)', geminiModel: 'Gemini model details',
           openAiCompletions: 'OpenAI Completions', openAiChat: 'OpenAI Chat Completions',
           openAiResponses: 'OpenAI Responses', openAiCompact: 'OpenAI Responses compaction', openAiResponsesWs: 'OpenAI Responses WebSocket',
           anthropicMessages: 'Anthropic Messages', anthropicCount: 'Anthropic Count Tokens',

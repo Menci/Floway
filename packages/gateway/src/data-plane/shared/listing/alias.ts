@@ -349,10 +349,11 @@ export const synthesizeListedAliases = (input: ListedAliasInputs): InternalModel
     .filter((entry): entry is InternalModel => entry !== null);
 
 // Compose real-model rows with visible alias rows into a single `InternalModel[]`.
-// Shared merge point across the alias-aware listing endpoints (OpenAI
-// `/v1/models`, Gemini `/v1beta/models`, dashboard `/api/models`); the Codex
-// wire-shape branch in the shared models handler opts out by consuming the
-// real-only catalog directly. Callers project the returned rows onto their
+// Shared merge point across the alias-aware listing endpoints (the OpenAI and
+// Gemini projections of `/v1/models` and its `/models` and `/v1beta/models`
+// aliases, plus the dashboard's `/api/models`); the Codex wire-shape branch in
+// the shared models handler opts out by consuming the real-only catalog
+// directly. Callers project the returned rows onto their
 // wire shape with a single mapper that reads `.aliasedFrom` off the
 // discriminated union to decide whether to emit the alias sidecar. Collision
 // handling is spelled out at the file header.
