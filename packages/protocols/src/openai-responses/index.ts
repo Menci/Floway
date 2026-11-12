@@ -1450,3 +1450,4 @@ export { reassembleOpenAIResponsesEvents } from './reassemble.ts';
 export { openaiResponsesProtocolFrameToSSEFrame } from './to-sse.ts';
 
 export { canonicalizeOpenAIResponsesPayload } from './canonicalize-payload.ts';
+export { toOpenAIResponsesInputItem, toOpenAIResponsesInputItems } from './history.ts';

@@ -29,7 +29,8 @@ Protocol-native request normalization and Part data classification belong to
 6. **Assistant-turn round trips** — keep owner-specific sidecar validation, replay
    validation, and native stream coordination under `round-trip/`. Source replay
    inspection and carriers belong in `as-source/round-trip.ts`; native assistant-turn
-   shapes and output-to-input converters belong in `as-target/assistant-turn.ts`.
+   reference shapes and state alignment belong in `as-target/assistant-turn.ts`.
+   Native output-to-input payload normalization belongs in `@floway-dev/protocols`.
    Transport encoding is injected through `TranslateOptions.sidecarCodec`.
 7. **Protocol-independent utility** — keep it in `shared/`, with tests under
    `__tests__/shared/`. Protocol behavior belongs in its owning protocol directory.
