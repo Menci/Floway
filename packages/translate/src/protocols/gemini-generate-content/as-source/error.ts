@@ -3,7 +3,10 @@ import { errorDetailsOf } from '../../../shared/api-error.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import type { GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
 
-// https://ai.google.dev/api/rest/v1beta/Status
+/**
+ * Use the Google RPC status vocabulary for the numeric error code.
+ * https://ai.google.dev/api/rest/v1beta/Status
+ */
 const statusNameOf = (status: number): string => {
   switch (status) {
   case 400: return 'INVALID_ARGUMENT';
@@ -21,9 +24,13 @@ const statusNameOf = (status: number): string => {
   }
 };
 
+/**
+ * HTTP failures supply an upstream status; streaming failures derive a code from the error kind.
+ * Context overflow selects our local 400 code.
+ */
 export const geminiGenerateContentErrorFromIR = (error: IRErrorPayload, httpStatus?: number): GeminiGenerateContentErrorResponse['error'] => {
   const details = errorDetailsOf(error, ['message']);
-  // Arbitrary error fields use the source's Struct details container.
+  // Preserve unmodeled diagnostic fields in a chosen Struct Any inside details.
   // https://protobuf.dev/reference/protobuf/google.protobuf/#struct
   const extension = details === undefined ? {} : { details: [{ '@type': 'type.googleapis.com/google.protobuf.Struct', value: details }] };
   const kind = error.code ?? error.type;
