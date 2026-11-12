@@ -29,17 +29,17 @@ test.each([{ modernIds: ['legacy_call_1'] }, { modernIds: ['legacy_call_1', 'leg
     contents: [
       question,
       native,
-      { role: 'user', parts: [{ functionResponse: { name: 'lookup', response: 'LEGACY' } }] },
+      { role: 'user', parts: [{ functionResponse: { name: 'lookup', response: { label: 'LEGACY' } } }] },
       ...modernIds.flatMap((id, index): GeminiGenerateContentContent[] => [
         { role: 'model', parts: [{ functionCall: { id, name: `modern_${index}`, args: {} } }] },
-        { role: 'user', parts: [{ functionResponse: { id, name: `modern_${index}`, response: `MODERN_${index}` } }] },
+        { role: 'user', parts: [{ functionResponse: { id, name: `modern_${index}`, response: { label: `MODERN_${index}` } } }] },
       ]),
     ],
   }, { sidecarCodec: codec() });
   if (replay.type === 'input-error') throw new Error(replay.message);
   expect(replay.target.messages[1]).toMatchObject({ role: 'assistant', function_call: { name: 'lookup', arguments: '{}' } });
-  expect(replay.target.messages[2]).toEqual({ role: 'function', name: 'lookup', content: '"LEGACY"' });
+  expect(replay.target.messages[2]).toEqual({ role: 'function', name: 'lookup', content: '{"label":"LEGACY"}' });
   expect(replay.target.messages.slice(3).filter(message => message.role !== 'assistant')).toEqual(modernIds.map((id, index) => ({
-    role: 'tool', tool_call_id: id, content: `"MODERN_${index}"`,
+    role: 'tool', tool_call_id: id, content: `{"label":"MODERN_${index}"}`,
   })));
 });
