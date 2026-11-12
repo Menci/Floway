@@ -10,7 +10,7 @@ import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
-import { doneFrame, eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, isJsonObject, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { openaiResponsesProtocolFrameToSSEFrame, OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, collectOpenAIResponsesProtocolEventsToResult } from '@floway-dev/protocols/openai-responses';
 import { isOpenAIResponsesErrorEvent, isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientResponseResource, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesStreamEventEx, type OpenAIResponsesErrorEx } from '@floway-dev/protocols/openai-responses';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
@@ -75,7 +75,7 @@ export const respondOpenAIResponses = async (
         ctx.dump?.success(metadata.modelIdentity, usage);
         settle(ctx, metadata.performance, metadata.modelIdentity, usage, true);
         const { sequence_number: _sequenceNumber, ...body } = error.cause;
-        return Response.json(body, { status: 502 });
+        return Response.json(body, { status: openAIResponsesErrorHttpStatus(error.cause) });
       }
       recordFailedRequest(ctx, result.performance);
       return internalOpenAIResponsesErrorResponse(502, toInternalDebugError(error));
@@ -107,6 +107,36 @@ export const respondOpenAIResponses = async (
 };
 
 // --- error rendering ---
+
+const ERROR_HTTP_STATUS = new Map<string, number>([
+  ['invalid_request_error', 400],
+  ['invalid_prompt', 400],
+  ['authentication_error', 401],
+  ['invalid_api_key', 401],
+  ['permission_error', 403],
+  ['not_found_error', 404],
+  ['conflict_error', 409],
+  ['unprocessable_entity_error', 422],
+  ['rate_limit_error', 429],
+  ['rate_limit_exceeded', 429],
+  ['insufficient_quota', 429],
+  ['server_error', 500],
+  ['internal_error', 500],
+]);
+
+// OpenAI SDKs classify API failures by these HTTP categories.
+// https://github.com/openai/openai-node/blob/b579bcb3e586d22269ffe6fe504653a0e05acbe8/src/core/error.ts#L60-L94
+const openAIResponsesErrorHttpStatus = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>): number => {
+  const { type: _type, sequence_number: _sequenceNumber, ...fields } = event;
+  const payload = ('error' in fields && isJsonObject(fields.error) ? fields.error : fields) as Readonly<Record<string, unknown>>;
+  const details = isJsonObject(payload.provider_specific_fields) ? payload.provider_specific_fields : undefined;
+  for (const classification of [payload.code, payload.type, details?.code, details?.type]) {
+    if (typeof classification !== 'string') continue;
+    const status = ERROR_HTTP_STATUS.get(classification);
+    if (status !== undefined) return status;
+  }
+  return 502;
+};
 
 const internalOpenAIResponsesErrorResponse = (status: number, error: InternalDebugError): Response =>
   Response.json({
