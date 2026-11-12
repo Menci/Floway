@@ -1,12 +1,12 @@
-import type { IRUsage } from '../../../ir/types.ts';
+import type { IROutputUsage } from '../../../ir/output/types.ts';
 import { requireTokenCount } from '../../../shared/token-count.ts';
 import type { OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 
 type OpenAIResponsesUsage = NonNullable<OpenAIResponsesResultEx['usage']>;
 type OpenAIResponsesInputTokensDetails = NonNullable<OpenAIResponsesUsage['input_tokens_details']>;
 
-export const usageFromIR = (usage: IRUsage): OpenAIResponsesUsage => {
-  const count = (key: keyof IRUsage): number | undefined => usage[key] === undefined ? undefined : requireTokenCount(key, usage[key]);
+export const usageFromIR = (usage: IROutputUsage): OpenAIResponsesUsage => {
+  const count = (key: keyof IROutputUsage): number | undefined => usage[key] === undefined ? undefined : requireTokenCount(key, usage[key]);
   const input = count('input_tokens_inclusive') ?? 0;
   const output = count('output_tokens_inclusive') ?? 0;
   const inputDetails: Partial<OpenAIResponsesInputTokensDetails> = {};

@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
 
 import { translateToSourceEvents } from '../../../../src/protocols/anthropic-messages/via-openai-responses/events.ts';
-import { testOutputTranslation } from '../../../ir/translation-cases.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
+import { testOutputTranslation } from '../../fixtures.ts';
 import { parseAnthropicMessagesStream, collectAnthropicMessagesProtocolEventsToResult, anthropicMessagesProtocolFrameToSSEFrame } from '@floway-dev/protocols/anthropic-messages';
 import { parseOpenAIResponsesStream } from '@floway-dev/protocols/openai-responses';
 

@@ -1,14 +1,14 @@
 import { expect, it } from 'vitest';
 
-import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarCarrier } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
-import type { OpenAIResponsesAssistantTurn } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
+import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarItem } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
+import type { OpenAIResponsesSourceAssistantTurn } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
 import { buildTargetRequest as buildMessagesRequest } from '../../../src/protocols/openai-responses/via-anthropic-messages/request.ts';
 import { buildTargetRequest as buildChatRequest } from '../../../src/protocols/openai-responses/via-openai-chat-completions/request.ts';
 import { encodeRoundTripSidecar } from '../../../src/round-trip/sidecar.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
-const replayedTurn: OpenAIResponsesAssistantTurn = [
+const replayedTurn: OpenAIResponsesSourceAssistantTurn = [
   { type: 'function_call', call_id: 'native', name: 'run', namespace: 'web', arguments: '{}', status: 'completed' },
 ];
 
@@ -21,7 +21,7 @@ const request = (sidecar: string): CanonicalOpenAIResponsesPayload => ({
     { type: 'message', role: 'system', content: 'instructions' },
     { type: 'additional_tools', role: 'developer', tools: [{ type: 'function', name: 'web_run', parameters: { type: 'object', properties: {} } }] },
     { type: 'function_call', call_id: 'native', name: 'run', namespace: 'web', arguments: '{}', status: 'completed' },
-    createOpenAIResponsesSidecarCarrier('sidecar', sidecar),
+    createOpenAIResponsesSidecarItem('sidecar', sidecar),
     { type: 'function_call_output', call_id: 'native', output: 'native result' },
     { type: 'function_call', call_id: 'bare', name: 'run', namespace: 'web', arguments: '{}', status: 'completed' },
   ],
@@ -92,7 +92,7 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('bypasses ordin
   const source: CanonicalOpenAIResponsesPayload = {
     model: 'test',
     input: [
-      ...calls, createOpenAIResponsesSidecarCarrier('carrier', sidecar),
+      ...calls, createOpenAIResponsesSidecarItem('carrier', sidecar),
       { type: 'message', role: 'user', content: 'next' },
       { type: 'function_call', namespace: 'x', name: 'y.f', call_id: 'bare', arguments: '{}', status: 'completed' },
     ],
@@ -120,7 +120,7 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('allocates bare
     model: 'test',
     input: [
       { type: 'function_call', namespace: 'a.b', name: 'run', call_id: 'first', arguments: '{}' },
-      createOpenAIResponsesSidecarCarrier('carrier', sidecar),
+      createOpenAIResponsesSidecarItem('carrier', sidecar),
       { type: 'message', role: 'user', content: 'next' },
       { type: 'function_call', namespace: 'a_b', name: 'run', call_id: 'second', arguments: '{}' },
     ],
@@ -142,7 +142,7 @@ it.each(['additional_tools', 'tool_search_output'] as const)('restores assistant
     const turns: CanonicalOpenAIResponsesPayload['input'][] = ['first', 'second'].map(text => [
       { type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] },
     ]);
-    const carriers = await Promise.all(turns.map(async (turn, index) => createOpenAIResponsesSidecarCarrier(`carrier_${index}`, await encodeRoundTripSidecar(codec, {
+    const carriers = await Promise.all(turns.map(async (turn, index) => createOpenAIResponsesSidecarItem(`carrier_${index}`, await encodeRoundTripSidecar(codec, {
       v: 1,
       source: 'openaiResponses',
       target, targetTurn: nativeTurns[index], sourceTurnDigest: await computeOpenAIResponsesTurnDigest(turn),

@@ -1,4 +1,4 @@
-import type { IRErrorPayload } from '../../../ir/types.ts';
+import type { IRErrorPayload } from '../../../ir/output/error.ts';
 import { errorDetailsOf } from '../../../shared/api-error.ts';
 
 export const openaiChatCompletionsErrorFromIR = (error: IRErrorPayload) => {

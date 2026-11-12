@@ -1,4 +1,4 @@
-import type { IRUsage } from '../../../ir/types.ts';
+import type { IROutputUsage } from '../../../ir/output/types.ts';
 import { requireTokenCount } from '../../../shared/token-count.ts';
 import { type AnthropicMessagesUsageDeltaEx, splitAnthropicMessagesCacheCreationTokens } from '@floway-dev/protocols/anthropic-messages';
 import { splitInclusiveInputTokens } from '@floway-dev/protocols/common';
@@ -11,10 +11,10 @@ export interface AnthropicMessagesInputCounts {
   cacheWrite?: number;
 }
 
-export const usageToIR = (usage: Partial<AnthropicMessagesUsageDeltaEx> | null | undefined, counts: AnthropicMessagesInputCounts): IRUsage => {
-  const result: Partial<Record<keyof IRUsage, number>> = {};
+export const usageToIR = (usage: Partial<AnthropicMessagesUsageDeltaEx> | null | undefined, counts: AnthropicMessagesInputCounts): IROutputUsage => {
+  const result: Partial<Record<keyof IROutputUsage, number>> = {};
   if (usage == null) return result;
-  const put = (key: keyof IRUsage, value: number | undefined | null): void => { if (value != null) result[key] = requireTokenCount(key, value); };
+  const put = (key: keyof IROutputUsage, value: number | undefined | null): void => { if (value != null) result[key] = requireTokenCount(key, value); };
   if (usage.input_tokens != null) counts.input = requireTokenCount('input_tokens', usage.input_tokens);
   if (usage.cache_read_input_tokens != null) counts.cacheRead = requireTokenCount('cache_read_input_tokens', usage.cache_read_input_tokens);
   const hasCacheWrite = usage.cache_creation_input_tokens != null || usage.cache_creation != null;

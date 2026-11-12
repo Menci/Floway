@@ -1,6 +1,6 @@
-import { SidecarTaggedValue } from '../../src/round-trip/sidecar-tagged-value.ts';
+import { SidecarTaggedValue } from '../../src/round-trip/codec.ts';
+import type { SidecarCodec } from '../../src/round-trip/codec.ts';
 import { rawJSON } from '../../src/shared/json/raw-json.ts';
-import type { SidecarCodec } from '../../src/types.ts';
 
 const scopes = new Map<string, Map<string, unknown>>();
 let nextHandle = 0;

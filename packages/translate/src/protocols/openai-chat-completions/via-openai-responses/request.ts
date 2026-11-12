@@ -1,13 +1,13 @@
 import { klona } from 'klona/json';
 
 import { openaiChatCompletionsContentToOpenAIResponsesInputContent, openaiChatCompletionsContentToText } from './content.ts';
+import type { SidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
-import type { SidecarCodec } from '../../../types.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
-import { collectOpenAIChatCompletionsReplayContents, hasOpenAIChatCompletionsReasoning, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
+import { collectOpenAIChatCompletionsReplayContents, hasOpenAIChatCompletionsReasoning, findOpenAIChatCompletionsSidecarOccurrences, verifyOpenAIChatCompletionsTurnDigest } from '../as-source/round-trip.ts';
 import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesAssistantInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 const translateChatTools = (tools?: OpenAIChatCompletionsTool[] | null): OpenAIResponsesTool[] =>
   tools?.length
@@ -36,8 +36,8 @@ const translateChatToolChoice = (choice: NonNullable<OpenAIChatCompletionsPayloa
   };
 };
 
-const translateAssistantContent = (message: OpenAIChatCompletionsAssistantMessage): OpenAIResponsesInputContent[] => {
-  const content: OpenAIResponsesInputContent[] = [];
+const translateAssistantContent = (message: OpenAIChatCompletionsAssistantMessage): OpenAIResponsesAssistantInputContent[] => {
+  const content: OpenAIResponsesAssistantInputContent[] = [];
   let hasRefusalPart = false;
 
   if (typeof message.content === 'string') {
@@ -156,7 +156,7 @@ export const buildTargetRequest = async (
   };
 
   for (const turn of partitionOpenAIChatCompletionsTurns(payload.messages)) {
-    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('openaiChatCompletions', 'openaiResponses', turn.items[0], codec, findOpenAIChatCompletionsSidecarCarriers, verifyOpenAIChatCompletionsTurnDigest, collectOpenAIChatCompletionsReplayContents);
+    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('openaiChatCompletions', 'openaiResponses', turn.items[0], codec, findOpenAIChatCompletionsSidecarOccurrences, verifyOpenAIChatCompletionsTurnDigest, collectOpenAIChatCompletionsReplayContents);
     if (!roundTrip) {
       if (turn.role === 'assistant') translateAssistantMessage(turn.items[0]);
       else translateNonAssistantMessages(turn.items);

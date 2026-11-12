@@ -1,4 +1,4 @@
-import type { IRErrorPayload } from '../../../ir/types.ts';
+import type { IRErrorPayload } from '../../../ir/output/error.ts';
 import { errorDetailsOf } from '../../../shared/api-error.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import { geminiGenerateContentStatusForHttpStatus, type GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';

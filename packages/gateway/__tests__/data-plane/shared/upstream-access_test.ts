@@ -79,7 +79,7 @@ test.each(cases)('$name controls model visibility and upstream dispatch', async 
     assertEquals(listed.status, 200);
     const catalog = await listed.json();
 
-    const geminiListed = await requestApp('/v1beta/models', { headers: { 'x-api-key': apiKey.key } });
+    const geminiListed = await requestApp('/v1beta/models', { headers: { 'x-api-key': apiKey.key, 'user-agent': 'google-genai-sdk/1.0.0 gl-node/cross' } });
     assertEquals(geminiListed.status, 200);
     const geminiCatalog = await geminiListed.json();
     assertEquals(catalog.data.map((model: { id: string }) => model.id).sort(), models);

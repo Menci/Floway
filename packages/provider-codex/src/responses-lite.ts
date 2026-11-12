@@ -132,7 +132,9 @@ const removeInputImageDetails = <T extends { type: string }>(parts: T[]): T[] =>
 const removeLiteImageDetail = (item: CanonicalOpenAIResponsesInputItem): CanonicalOpenAIResponsesInputItem => {
   if (item.type === 'message' && Array.isArray(item.content)) {
     const content = removeInputImageDetails(item.content);
-    return content === item.content ? item : { ...item, content };
+    // The role conditions `content`'s shape, so an assistant turn keeps its
+    // refusal arm while a client role cannot gain one here.
+    return content === item.content ? item : { ...item, content } as CanonicalOpenAIResponsesInputItem;
   }
   if ((item.type === 'function_call_output' || item.type === 'custom_tool_call_output') && Array.isArray(item.output)) {
     const output = removeInputImageDetails(item.output);

@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../../../src/protocols/openai-responses/via-anthropic-messages/events.ts';
-import { fixtureFrames } from '../../../ir/translation-cases.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import { emptyNamespaceToolNames } from '../../../round-trip/test-helpers.ts';
+import { fixtureFrames } from '../../fixtures.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';

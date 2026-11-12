@@ -1,11 +1,11 @@
 import { klona } from 'klona/json';
 
+import type { SidecarCodec } from '../../../round-trip/codec.ts';
 import { roundTripAssistantTurn, warnDroppedUnrecognizedAssistantReasoning } from '../../../round-trip/resolve.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
-import type { SidecarCodec } from '../../../types.ts';
 import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
-import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest } from '../as-source/round-trip.ts';
+import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarOccurrences, verifyAnthropicMessagesTurnDigest } from '../as-source/round-trip.ts';
 import type {
   AnthropicMessagesAssistantContentBlock,
   AnthropicMessagesAssistantMessage,
@@ -290,7 +290,7 @@ export const buildTargetRequest = async (
   let messageIndex = 0;
   for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
     if (turn.role === 'assistant') {
-      const roundTrip = await roundTripAssistantTurn('anthropicMessages', 'openaiChatCompletions', turn.items, codec, findAnthropicMessagesSidecarCarriers, verifyAnthropicMessagesTurnDigest, collectAnthropicMessagesReplayContents);
+      const roundTrip = await roundTripAssistantTurn('anthropicMessages', 'openaiChatCompletions', turn.items, codec, findAnthropicMessagesSidecarOccurrences, verifyAnthropicMessagesTurnDigest, collectAnthropicMessagesReplayContents);
       if (roundTrip?.turn.function_call != null) {
         const modernIds = new Set(roundTrip.turn.tool_calls?.map(call => call.id));
         for (const message of turn.items) if (Array.isArray(message.content)) for (const block of message.content) {

@@ -1,23 +1,23 @@
 import { test } from 'vitest';
 
+import { fixtureFrames, type nativeResult } from './fixtures.ts';
 import { requireTrip } from './require-trip.ts';
 import { partitionAnthropicMessagesTurns } from '../../src/protocols/anthropic-messages/as-source/conversation-turns.ts';
-import { findAnthropicMessagesSidecarCarriers } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
-import { findGeminiGenerateContentSidecarCarriers } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
+import { findAnthropicMessagesSidecarOccurrences } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
+import { findGeminiGenerateContentSidecarOccurrences } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../../src/protocols/openai-chat-completions/as-source/conversation-turns.ts';
-import { findOpenAIChatCompletionsSidecarCarriers } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
-import { toOpenAIChatCompletionsInputAssistantTurn } from '../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
+import { findOpenAIChatCompletionsSidecarOccurrences } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
 import { partitionOpenAIResponsesTurns } from '../../src/protocols/openai-responses/as-source/conversation-turns.ts';
-import { findOpenAIResponsesSidecarCarriers } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
-import { toOpenAIResponsesInputAssistantTurn } from '../../src/protocols/openai-responses/as-target/assistant-turn.ts';
+import { findOpenAIResponsesSidecarOccurrences } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
 import { decodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import { requireJSONObject } from '../../src/shared/json/object.ts';
-import { collect, iterate } from '../ir/helpers.ts';
-import { fixtureFrames, type nativeResult } from '../ir/translation-cases.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
+import { collect, iterate } from '../shared/iterables.ts';
 import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentContent, type GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import { toOpenAIChatCompletionsInputAssistantMessage } from '@floway-dev/protocols/openai-chat-completions';
 import { collectOpenAIChatCompletionsProtocolEventsToResult, type OpenAIChatCompletionsAssistantMessageEx, type OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import { toOpenAIResponsesInputItems } from '@floway-dev/protocols/openai-responses';
 import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesInputItem, type CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals } from '@floway-dev/test-utils';
 import { routeAnthropicMessagesViaOpenAIChatCompletions, routeAnthropicMessagesViaOpenAIResponses, routeGeminiGenerateContentViaAnthropicMessages, routeGeminiGenerateContentViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIResponses, routeOpenAIChatCompletionsViaAnthropicMessages, routeOpenAIChatCompletionsViaOpenAIResponses, routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
@@ -135,12 +135,12 @@ const collectAssistantTurn = async (protocol: Protocol, frames: Parameters<typeo
   const events = iterate(frames);
   if (protocol === 'openai-responses') {
     const result = await collectOpenAIResponsesProtocolEventsToResult(events);
-    return { protocol, turn: toOpenAIResponsesInputAssistantTurn(result.output) };
+    return { protocol, turn: toOpenAIResponsesInputItems(result.output) };
   }
   if (protocol === 'openai-chat-completions') {
     const result = await collectOpenAIChatCompletionsProtocolEventsToResult(events);
     assert(result.choices[0] !== undefined);
-    return { protocol, turn: toOpenAIChatCompletionsInputAssistantTurn(result.choices[0].message) };
+    return { protocol, turn: toOpenAIChatCompletionsInputAssistantMessage(result.choices[0].message) };
   }
   if (protocol === 'anthropic-messages') {
     const result = await collectAnthropicMessagesProtocolEventsToResult(events);
@@ -169,10 +169,10 @@ const assistantText = (assistant: AssistantTurn): string => {
 };
 
 const sidecarPayload = (assistant: AssistantTurn): string | undefined => {
-  const candidates = assistant.protocol === 'openai-responses' ? findOpenAIResponsesSidecarCarriers(assistant.turn)
-    : assistant.protocol === 'openai-chat-completions' ? findOpenAIChatCompletionsSidecarCarriers(assistant.turn)
-      : assistant.protocol === 'anthropic-messages' ? findAnthropicMessagesSidecarCarriers([assistant.turn])
-        : findGeminiGenerateContentSidecarCarriers(assistant.turn);
+  const candidates = assistant.protocol === 'openai-responses' ? findOpenAIResponsesSidecarOccurrences(assistant.turn)
+    : assistant.protocol === 'openai-chat-completions' ? findOpenAIChatCompletionsSidecarOccurrences(assistant.turn)
+      : assistant.protocol === 'anthropic-messages' ? findAnthropicMessagesSidecarOccurrences([assistant.turn])
+        : findGeminiGenerateContentSidecarOccurrences(assistant.turn);
   assertEquals(candidates.length, 1);
   return candidates[0].data;
 };
