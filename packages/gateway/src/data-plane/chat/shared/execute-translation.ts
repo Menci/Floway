@@ -3,22 +3,13 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ChatTargetApi, ExecuteResult } from '@floway-dev/provider';
 import type { TranslateTrip, TranslateInputError } from '@floway-dev/translate';
 
-// Protocol-agnostic capture hook for the pre-translation (target-protocol)
-// upstream view. `executeTranslation` invokes it as it relays the inner
-// attempt's frames/bytes through `trip.events`; the call site constructs one
-// from its `(ctx.dump, targetApi)` via `captureFromDump`. The target protocol
-// is statically known at every call site (the enclosing `if`/`case` branch),
-// so the dashboard can render the captured frames with the right per-protocol
-// serializer without re-deriving it from the client path.
+// Capture target-protocol upstream data before translation so dumps use the target serializer.
 export interface TranslationUpstreamCapture {
   upstreamFrame(frame: ProtocolFrame<unknown>): void;
   upstreamApiError(error: { status: number; headers: Headers; body: Uint8Array }): void;
 }
 
-// `dump` is null when the api key opts out of dumps; returns `undefined` so
-// `executeTranslation` skips all upstream capture work (no tee, no api-error
-// copy) — zero per-request cost on that path. `targetApi` is stamped eagerly so
-// `meta.targetApi` is set even when the upstream stream produces zero frames.
+// Stamp the target API before reading frames so an empty upstream stream retains its protocol identity.
 export const captureFromDump = (
   dump: DumpAccumulator | null,
   targetApi: ChatTargetApi,
@@ -31,16 +22,8 @@ export const captureFromDump = (
   };
 };
 
-// On an upstream api-error, `trip.error` translates the source envelope so
-// the pair can rewrite the body into the source protocol's envelope — the
-// canonical case is `anthropic-messages-via-*` translating an upstream context-window
-// error into the Anthropic `prompt is too long:` shape Claude Code recognizes
-// for auto-compaction. Returning `undefined` passes the upstream body through verbatim.
-//
-// When `capture` is provided, the ORIGINAL target-protocol frames (events
-// path) or the verbatim upstream api-error envelope (api-error path) are tee'd
-// to the dump BEFORE translation/rewrite, so the dump records what the upstream
-// actually sent independent of what Floway translated it into.
+// Source error rendering may recognize an upstream failure; undefined preserves it verbatim.
+// Capture the target envelope before source rendering.
 export const executeTranslation = async <SP extends object, TP, SE, TE>(
   payload: SP,
   translator: (p: Omit<SP, 'stream'> & { readonly stream: true }) => Promise<TranslateTrip<TP, SE, TE> | TranslateInputError>,
@@ -61,15 +44,10 @@ export const executeTranslation = async <SP extends object, TP, SE, TE>(
       : teeUpstreamFrames(inner.events, capture.upstreamFrame);
     return { ...inner, events: trip.events(events) };
   }
-  // Capture the ORIGINAL upstream api-error envelope before the source
-  // protocol restates it. Fires for EVERY upstream api-error — even when the
-  // trip states none — because the verbatim target-protocol body is still the
-  // pre-translation view operators need to diagnose upstream behavior.
   if (inner.type === 'api-error' && inner.source === 'upstream') {
     capture?.upstreamApiError({ status: inner.status, headers: inner.headers, body: inner.body });
     const rewritten = trip.error(inner.status, inner.headers, inner.body);
-    // A restated failure is a JSON envelope, not bytes: the transport encodes
-    // it here, the only place a response body becomes wire form.
+    // Error renderers return JSON envelopes; this transport boundary encodes the response bytes.
     if (rewritten !== undefined) {
       return {
         ...inner,

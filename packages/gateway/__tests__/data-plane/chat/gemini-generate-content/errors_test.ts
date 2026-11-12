@@ -27,6 +27,7 @@ test.each([
   { name: 'neither field nor code', fields: {}, expected: undefined },
 ])('inputErrorResult preserves $name exactly', ({ fields, expected }) => {
   const result = inputErrorResult({ message: 'invalid input', ...fields });
+  // We preserve the translator's field and code in a Struct Any inside details.
   assertEquals(bodyOf(result).error, {
     code: 400,
     message: 'invalid input',

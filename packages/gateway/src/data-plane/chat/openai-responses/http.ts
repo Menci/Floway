@@ -50,8 +50,6 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   return finalizeGatewayResponse(effectiveCtx, response);
 };
 
-// Pre-stream throw dispatcher. The previous-response case renders its protocol envelope; anything else falls
-// through to the internal-error 502 path.
 const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
   if (error instanceof PreviousResponseNotFoundError) {
     const response = previousResponseNotFoundResponse(error.previousResponseId);
