@@ -51,7 +51,9 @@ export const chatLegacyCallsOf = <Restored extends ChatRestoredAssistantTurn>(
     if (piece.kind !== 'restored') continue;
     const name = piece.turn.function_call?.name;
     if (name === undefined) continue;
-    const candidates = turns.slice(index + 1).flatMap(turn => turn.kind !== 'client' ? [] : turn.items.flatMap(item =>
+    const nextLegacyOffset = turns.slice(index + 1).findIndex(turn => turn.kind === 'restored' && turn.turn.function_call !== undefined);
+    const end = nextLegacyOffset < 0 ? turns.length : index + 1 + nextLegacyOffset;
+    const candidates = turns.slice(index + 1, end).flatMap(turn => turn.kind !== 'client' ? [] : turn.items.flatMap(item =>
       item.type === 'tool_result' && item.call_id === undefined && item.name === name && !consumed.has(item) ? [item] : []));
     if (candidates.length > 1) {
       throw new TranslateInputException(`Cannot translate the answer to the legacy call '${name}': ${candidates.length} id-less results state that function name.`);

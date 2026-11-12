@@ -1,11 +1,11 @@
 import { expect, test } from 'vitest';
 
-import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import {
   routeOpenAIChatCompletionsViaAnthropicMessages,
   routeOpenAIChatCompletionsViaOpenAIResponses,
   routeOpenAIResponsesViaOpenAIChatCompletions,
 } from '../../../src/index.ts';
+import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 
 const options = { sidecarCodec: createTestSidecarCodec(), fallbackMaxOutputTokens: 16 };
 

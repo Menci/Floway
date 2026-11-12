@@ -90,7 +90,7 @@ test('hydrates a native JSON field from a replayed GenerateContent argument cand
     sourceTurnDigest: await hashRoundTripContent(JSON.stringify(checkMaterial)),
   });
   const trip = expectTrip(await routeGeminiGenerateContentViaAnthropicMessages({ model: 'model', contents: [{ role: 'model', parts: [{ functionCall: { name: 'lookup', args }, thoughtSignature: carrier }] }] }, context));
-  expect(trip.target.messages).toEqual([{ role: 'assistant', content: [{ type: 'tool_use', id: 'native-call', name: 'lookup', input: args }] }]);
+  expect(trip.target.messages).toEqual([{ role: 'assistant', content: [{ type: 'tool_use', id: 'native-call', name: 'native-tool', input: args }] }]);
 });
 
 test('exposes an authenticated missing reference as an internal error after replay verification', async () => {
@@ -147,10 +147,10 @@ test('preserves ordinary GenerateContent null-argument handling', async () => {
     { type: 'function_call', name: 'lookup', arguments: 'null' },
   ]);
   const messagesTrip = expectTrip(await routeGeminiGenerateContentViaAnthropicMessages(payload, context));
-  // Messages needs an argument object, so a `null` argument list keeps its raw
-  // text rather than becoming `input: null`.
+  // ProtoJSON null remains the source value instead of being wrapped in an
+  // invented argument object.
   expect(messagesTrip.target.messages).toMatchObject([
-    { role: 'assistant', content: [{ type: 'tool_use', name: 'lookup', input: { raw_arguments: 'null' } }] },
+    { role: 'assistant', content: [{ type: 'tool_use', name: 'lookup', input: null }] },
   ]);
 });
 
