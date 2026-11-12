@@ -7,7 +7,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
-export const translateToSourceEvents = (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>, customToolNames: ReadonlySet<string>, codec: SidecarCodec, namespaceToolNames: NamespaceToolNames, maxChoices = 1): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> => {
+export const translateToSourceEvents = (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>, customToolNames: ReadonlySet<string>, codec: SidecarCodec, namespaceToolNames: NamespaceToolNames): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> => {
   const stream = createRoundTripCoordinator('openaiResponses', 'openaiChatCompletions', codec);
-  return writeOpenAIResponsesEvents(readOpenAIChatCompletionsEvents(frames, { customToolNames, maxChoices, roundTrip: stream.reader }), { namespaceToolNames, roundTrip: stream.writer });
+  return writeOpenAIResponsesEvents(readOpenAIChatCompletionsEvents(frames, { customToolNames, roundTrip: stream.reader }), { namespaceToolNames, roundTrip: stream.writer });
 };

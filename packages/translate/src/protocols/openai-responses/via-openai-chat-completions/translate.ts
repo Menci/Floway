@@ -16,7 +16,7 @@ export const translate: Translator<
       error: () => undefined,
       target,
       events: frames => restoreNamespaceEvents(
-        translateToSourceEvents(frames, customToolNames, ctx.sidecarCodec, namespaceToolNames, target.n ?? 1),
+        translateToSourceEvents(frames, customToolNames, ctx.sidecarCodec, namespaceToolNames),
         namespaceToolNames,
       ),
     };

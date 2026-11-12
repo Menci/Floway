@@ -10,7 +10,7 @@ export const translate: Translator<
 > = async (src, ctx) => {
   try {
     const target = await buildTargetRequest(src, ctx.model, ctx.sidecarCodec);
-    return { type: 'trip', error: () => undefined, target, events: frames => translateToSourceEvents(frames, ctx.sidecarCodec, target.n ?? 1) };
+    return { type: 'trip', error: () => undefined, target, events: frames => translateToSourceEvents(frames, ctx.sidecarCodec) };
   } catch (error) {
     if (error instanceof TranslateInputException) return error.failure;
     throw error;

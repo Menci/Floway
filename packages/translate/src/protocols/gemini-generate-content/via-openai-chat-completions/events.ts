@@ -6,7 +6,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
-export const translateToSourceEvents = (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>, codec: SidecarCodec, maxChoices = 1): AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>> => {
+export const translateToSourceEvents = (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>, codec: SidecarCodec): AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>> => {
   const stream = createRoundTripCoordinator('geminiGenerateContent', 'openaiChatCompletions', codec);
-  return writeGeminiGenerateContentEvents(readOpenAIChatCompletionsEvents(frames, { maxChoices, roundTrip: stream.reader }), { roundTrip: stream.writer });
+  return writeGeminiGenerateContentEvents(readOpenAIChatCompletionsEvents(frames, { roundTrip: stream.reader }), { roundTrip: stream.writer });
 };

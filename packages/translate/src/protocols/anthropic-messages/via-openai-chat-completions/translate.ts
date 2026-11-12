@@ -14,7 +14,7 @@ export const translate: Translator<
     return {
       type: 'trip',
       target,
-      events: frames => translateToSourceEvents(frames, ctx.sidecarCodec, target.n ?? 1),
+      events: frames => translateToSourceEvents(frames, ctx.sidecarCodec),
       error: rewriteContextExceededToPromptTooLong,
     };
   } catch (error) {
