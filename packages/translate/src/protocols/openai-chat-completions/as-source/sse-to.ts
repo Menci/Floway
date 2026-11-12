@@ -1,13 +1,13 @@
+import { openaiChatCompletionsErrorFromIR } from './error.ts';
 import { collectOpenAIChatCompletionsTextViews, computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import { irItemPath, irPartPath, irPathKey } from '../../../ir/operation-paths.ts';
 import { createIROrdinalMapper } from '../../../ir/ordinal-mapper.ts';
 import { consumeIRRecords, type IRRecord } from '../../../ir/stream.ts';
-import { IRAbsent, type IRErrorPayload, type IRItem, type IRMessageItem, type IRTokenLogprob } from '../../../ir/types.ts';
+import { IRAbsent, type IRItem, type IRMessageItem, type IRTokenLogprob } from '../../../ir/types.ts';
 import { appendContent, createContentState, type ContentStates, type ContentState } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
-import { errorDetailsOf } from '../../../shared/api-error.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantState } from '../as-target/assistant-turn.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -19,17 +19,6 @@ import {
   type OpenAIChatCompletionsUsageEx,
   createOpenAIChatCompletionsEventAccumulator,
 } from '@floway-dev/protocols/openai-chat-completions';
-
-export const openaiChatCompletionsErrorFromIR = (error: IRErrorPayload) => {
-  const details = errorDetailsOf(error, ['message', 'type', 'code', 'param']);
-  return {
-    message: error.message,
-    ...(error.type === undefined ? {} : { type: error.type }),
-    ...(error.code === undefined ? {} : { code: error.code }),
-    ...(error.param === undefined ? {} : { param: error.param }),
-    ...(details === undefined ? {} : { provider_specific_fields: details }),
-  };
-};
 
 interface OpenAIChatCompletionsSSEOutputOptions extends RoundTripOutputOptions<'openaiChatCompletions'> {
   // Replay identity belongs to the newly emitted target audio, not the source IR content.

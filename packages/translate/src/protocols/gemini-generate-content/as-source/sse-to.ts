@@ -1,59 +1,26 @@
+import { geminiGenerateContentErrorFromIR } from './error.ts';
 import { collectGeminiGenerateContentTextViews, computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import type { IRCollector } from '../../../ir/collector.ts';
 import { irItemPath, irPartPath, irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/operation-paths.ts';
 import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/stream.ts';
-import { IRAbsent, type IR, type IRErrorPayload, type IRJSONObject, type IRSourceCitation, type IRTokenLogprob } from '../../../ir/types.ts';
+import { IRAbsent, type IR, type IRJSONObject, type IRSourceCitation, type IRTokenLogprob } from '../../../ir/types.ts';
 import { createIRUnitQueue, createIRUnitRegistry, type IRUnitQueue } from '../../../ir/unit-queue.ts';
 import { appendContent, createContentState, type ContentStates, type ContentState as ReferenceContentState } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
-import { errorDetailsOf } from '../../../shared/api-error.ts';
-import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import { isCompleteJSONObject, parseJSONObjectAtCompletion } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { GeminiGenerateContentAssistantState, GeminiGenerateContentInputAssistantTurn } from '../as-target/assistant-turn.ts';
 import { eventFrame, FAST_SERVICE_TIER, type EventFrame } from '@floway-dev/protocols/common';
 import {
   type GeminiGenerateContentCandidate,
-  type GeminiGenerateContentErrorResponse,
   type GeminiGenerateContentGroundingChunk,
   type GeminiGenerateContentPart,
   type GeminiGenerateContentResult,
   type GeminiGenerateContentStreamEvent,
   createGeminiGenerateContentEventAccumulator,
 } from '@floway-dev/protocols/gemini-generate-content';
-
-// https://ai.google.dev/api/rest/v1beta/Status
-const statusNameOf = (status: number): string => {
-  switch (status) {
-  case 400: return 'INVALID_ARGUMENT';
-  case 401: return 'UNAUTHENTICATED';
-  case 403: return 'PERMISSION_DENIED';
-  case 404: return 'NOT_FOUND';
-  case 408: return 'DEADLINE_EXCEEDED';
-  case 409: return 'ABORTED';
-  case 429: return 'RESOURCE_EXHAUSTED';
-  case 500: return 'INTERNAL';
-  case 501: return 'UNIMPLEMENTED';
-  case 503: return 'UNAVAILABLE';
-  case 504: return 'DEADLINE_EXCEEDED';
-  default: return 'UNKNOWN';
-  }
-};
-
-export const geminiGenerateContentErrorFromIR = (error: IRErrorPayload, httpStatus?: number): GeminiGenerateContentErrorResponse['error'] => {
-  const details = errorDetailsOf(error, ['message']);
-  // Arbitrary error fields use the source's Struct details container.
-  // https://protobuf.dev/reference/protobuf/google.protobuf/#struct
-  const extension = details === undefined ? {} : { details: [{ '@type': 'type.googleapis.com/google.protobuf.Struct', value: details }] };
-  const kind = error.code ?? error.type;
-  const code = httpStatus !== undefined && !isContextExceededError(error) ? httpStatus
-    : kind === 'rate_limit_exceeded' || kind === 'rate_limit_error' ? 429
-      : kind === 'invalid_prompt' || kind === 'invalid_request_error' || isContextExceededError(error) ? 400
-        : kind === 'overloaded_error' ? 503 : 500;
-  return { code, status: statusNameOf(code), message: error.message, ...extension };
-};
 
 interface GenerateContentUnit {
   readonly path: IRPath;

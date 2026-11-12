@@ -1,4 +1,4 @@
-import { geminiGenerateContentErrorFromIR } from './sse-to.ts';
+import { geminiGenerateContentErrorFromIR } from './error.ts';
 import { irErrorPayloadFromBody, restateError } from '../../../shared/api-error.ts';
 import type { ApiErrorTranslator } from '../../../types.ts';
 

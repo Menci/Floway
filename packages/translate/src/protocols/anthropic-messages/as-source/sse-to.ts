@@ -1,61 +1,27 @@
+import { anthropicMessagesErrorFromIR } from './error.ts';
 import { collectAnthropicMessagesTextViews, computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import type { IRCollector } from '../../../ir/collector.ts';
 import { isIRItemPath, isIRPartPath, irPathKey } from '../../../ir/operation-paths.ts';
 import { createIROrdinalMapper } from '../../../ir/ordinal-mapper.ts';
 import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/stream.ts';
-import { IRAbsent, type IR, type IRErrorPayload, type IRJSONObject } from '../../../ir/types.ts';
+import { IRAbsent, type IR, type IRJSONObject } from '../../../ir/types.ts';
 import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/unit-queue.ts';
 import { appendContent, createContentState, type ContentState, type ContentStates } from '../../../round-trip/reference/reference-builder.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/reference/text-provenance.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
-import { errorDetailsOf } from '../../../shared/api-error.ts';
-import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import { parseJSONObject, parseJSONObjectAtCompletion, requireJSONObject } from '../../../shared/json/object.ts';
 import type { AnthropicMessagesAssistantState, AnthropicMessagesInputAssistantTurn } from '../as-target/assistant-turn.ts';
 import {
   generateAnthropicId,
   createAnthropicMessagesEventAccumulator,
-  PROMPT_TOO_LONG_MESSAGE,
   type AnthropicMessagesAssistantContentBlock,
   type AnthropicMessagesContentBlockDeltaEvent,
-  type AnthropicMessagesErrorEventEx,
   type AnthropicMessagesResult,
   type AnthropicMessagesStreamEventEx,
   type AnthropicMessagesUsage,
 } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type EventFrame } from '@floway-dev/protocols/common';
-
-// https://platform.claude.com/docs/en/api/errors#http-errors
-const MESSAGES_ERROR_TYPES = [
-  'invalid_request_error',
-  'authentication_error',
-  'permission_error',
-  'not_found_error',
-  'rate_limit_error',
-  'api_error',
-  'overloaded_error',
-];
-
-const messagesError = (error: IRErrorPayload, contextExceeded: boolean): AnthropicMessagesErrorEventEx['error'] => {
-  const type = contextExceeded
-    ? 'invalid_request_error'
-    : error.type !== undefined && MESSAGES_ERROR_TYPES.includes(error.type) ? error.type : 'api_error';
-  const details = errorDetailsOf(error, type === error.type ? ['message', 'type'] : ['message']);
-  const extension = details === undefined ? {} : { provider_specific_fields: details };
-  return { type, message: contextExceeded ? PROMPT_TOO_LONG_MESSAGE : error.message, ...extension };
-};
-
-export const anthropicMessagesErrorFromIR = (error: IRErrorPayload): AnthropicMessagesErrorEventEx['error'] =>
-  messagesError(error, isContextExceededError(error));
-
-export const anthropicMessagesErrorEnvelope = (error: IRErrorPayload): { readonly body: unknown; readonly status: number | undefined } => {
-  const contextExceeded = isContextExceededError(error);
-  return {
-    body: { type: 'error', error: messagesError(error, contextExceeded) },
-    status: contextExceeded ? 400 : undefined,
-  };
-};
 
 interface MessagesUnit {
   readonly path: IRPath;

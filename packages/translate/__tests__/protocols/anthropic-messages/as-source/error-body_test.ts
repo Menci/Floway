@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { restateAnthropicMessagesError } from '../../../../src/protocols/anthropic-messages/as-source/error-body.ts';
-import { anthropicMessagesErrorFromIR } from '../../../../src/protocols/anthropic-messages/as-source/sse-to.ts';
+import { anthropicMessagesErrorFromIR } from '../../../../src/protocols/anthropic-messages/as-source/error.ts';
 import { errorPayloadFromWire } from '../../../../src/shared/api-error.ts';
 import { buildPromptTooLongBody, PROMPT_TOO_LONG_MESSAGE } from '@floway-dev/protocols/anthropic-messages';
 import { assert, assertEquals } from '@floway-dev/test-utils';
