@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
-import { createExternalImageFetcher, createExternalImageLoader } from '../../../../src/data-plane/chat/shared/external-image-loader.ts';
+import { createExternalImageFetcher } from '../../../../src/data-plane/chat/shared/external-image-fetcher.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
 
-test('external image loader follows relative redirects and memoizes one request chain', async () => {
+test('external image fetcher follows relative redirects and memoizes one request chain', async () => {
   const requested: string[] = [];
   initExternalResourceFetcher((url, signal) => {
     assertEquals(signal.aborted, false);
@@ -30,19 +30,17 @@ test('external image loader follows relative redirects and memoizes one request 
   assertEquals(requested, ['https://example.com/start', 'https://example.com/image.png']);
 });
 
-test('external image loader rejects unsafe URL syntax before egress', async () => {
+test('external image fetcher rejects unsafe URL syntax before egress', async () => {
   let requests = 0;
   initExternalResourceFetcher(() => {
     requests += 1;
     return Promise.resolve(new Response());
   });
-  const load = createExternalImageLoader();
   const fetchImage = createExternalImageFetcher();
 
   assertEquals(await fetchImage('file:///etc/passwd'), { type: 'invalid-url' });
-  assertEquals(await load('file:///etc/passwd'), null);
-  assertEquals(await load('https://user:secret@example.com/image.png'), null);
-  assertEquals(await load('not a URL'), null);
+  assertEquals(await fetchImage('https://user:secret@example.com/image.png'), { type: 'invalid-url' });
+  assertEquals(await fetchImage('not a URL'), { type: 'invalid-url' });
   assertEquals(requests, 0);
 });
 
@@ -56,7 +54,7 @@ test('external image fetcher reports non-success and oversized responses', async
   assertEquals(await fetchImage('https://example.com/oversized'), { type: 'too-large', limitBytes: 50 * 1024 * 1024 });
 });
 
-test('external image loader bounds redirect chains', async () => {
+test('external image fetcher bounds redirect chains', async () => {
   let requests = 0;
   initExternalResourceFetcher(_url => {
     requests += 1;
@@ -74,7 +72,7 @@ test('external image loader bounds redirect chains', async () => {
   assertEquals(requests, 6);
 });
 
-test('external image loader cancels a streamed body beyond the byte limit', async () => {
+test('external image fetcher cancels a streamed body beyond the byte limit', async () => {
   const chunk = new Uint8Array(1024 * 1024);
   let cancelled = false;
   initExternalResourceFetcher(() => Promise.resolve(new Response(new ReadableStream<Uint8Array>({
@@ -104,13 +102,13 @@ test('external image fetcher preserves transport failure detail', async () => {
   assertEquals(result.error, expected);
 });
 
-test('external image loader propagates downstream cancellation', async () => {
+test('external image fetcher propagates downstream cancellation', async () => {
   const controller = new AbortController();
   controller.abort(new Error('downstream cancelled'));
   initExternalResourceFetcher(() => Promise.reject(new Error('should not fetch')));
 
   await assertRejects(
-    () => createExternalImageLoader(controller.signal)('https://example.com/image.png'),
+    () => createExternalImageFetcher(controller.signal)('https://example.com/image.png'),
     Error,
     'downstream cancelled',
   );

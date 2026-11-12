@@ -131,13 +131,3 @@ export const createExternalImageFetcher = (downstreamSignal?: AbortSignal): Exte
     return request;
   };
 };
-
-type ExternalImageLoader = (url: string) => Promise<{ mediaType: string | null; data: Uint8Array } | null>;
-
-export const createExternalImageLoader = (downstreamSignal?: AbortSignal): ExternalImageLoader => {
-  const fetchImage = createExternalImageFetcher(downstreamSignal);
-  return async url => {
-    const result = await fetchImage(url);
-    return result.type === 'success' ? { mediaType: result.mediaType, data: result.data } : null;
-  };
-};
