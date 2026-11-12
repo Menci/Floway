@@ -21,19 +21,6 @@ test('ProtoJSON null scalar members are treated as unset', async () => {
   assertEquals(request.frequency_penalty, undefined);
 });
 
-test('independent text parts retain paragraph boundaries when Chat flattens them', async () => {
-  const request = await buildWithTestSidecar({
-    contents: [
-      { role: 'user', parts: [{ text: 'alpha' }, { text: 'beta' }] },
-      { role: 'model', parts: [{ text: 'gamma' }, { text: 'delta' }] },
-    ],
-  }, 'gpt-test');
-  assertEquals(request.messages, [
-    { role: 'user', content: 'alpha\n\nbeta' },
-    { role: 'assistant', content: 'gamma\n\ndelta' },
-  ]);
-});
-
 test('buildTargetPayload translates LOW to reasoning_effort', async () => {
   const request = await buildWithTestSidecar({
     contents: [],

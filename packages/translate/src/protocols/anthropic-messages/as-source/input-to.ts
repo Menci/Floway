@@ -45,7 +45,7 @@ const textPartsToIR = (content: string | readonly AnthropicMessagesTextBlockPara
   ? content === '' ? [] : [{ type: 'text', text: content }]
   : content.map(block => {
       if (block.type !== 'text') throw new TranslateInputException('Only text system content is supported.');
-      return { type: 'text', text: block.text, block: true };
+      return { type: 'text', text: block.text };
     });
 
 const base64Of = (text: string): string => {
@@ -87,7 +87,7 @@ const userContentPart = (
   at: MessagePosition,
 ): IRInputUserContentPart => {
   switch (block.type) {
-  case 'text': return { type: 'text', text: block.text, block: true };
+  case 'text': return { type: 'text', text: block.text };
   case 'image': return { type: 'image', image: imageMedia(block.source) };
   case 'document': return { type: 'file', file: documentMedia(block) };
   default: throw new TranslateInputException(`messages.${at.messageIdx}.content.${at.blockIdx}.type: '${(block as { type: string }).type}' content blocks are not supported in user content.`);
@@ -112,7 +112,7 @@ const toolResultPart = (block: AnthropicMessagesToolResultBlock['content']): IRI
       continue;
     }
     flushSearchResults();
-    if (part.type === 'text') parts.push({ type: 'text', text: part.text, block: true });
+    if (part.type === 'text') parts.push({ type: 'text', text: part.text });
     else if (part.type === 'image') parts.push({ type: 'image', image: imageMedia(part.source) });
     else if (part.type === 'document') parts.push({ type: 'file', file: documentMedia(part) });
     else parts.push({ type: 'text', text: JSON.stringify(part) });
@@ -232,7 +232,7 @@ const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'a
     }
     switch (block.type) {
     case 'text':
-      pending.push({ type: 'text', text: block.text, block: true });
+      pending.push({ type: 'text', text: block.text });
       break;
     case 'thinking':
       flushText();

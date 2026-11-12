@@ -10,19 +10,6 @@ import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils
 const buildWithTestSidecar = (payload: AnthropicMessagesPayload) =>
   buildTargetPayloadFor(pairs.messagesToChat[0], pairs.messagesToChat[1], { ...payload, stream: true }, { sidecarCodec: createTestSidecarCodec() });
 
-test('independent text blocks retain paragraph boundaries when Chat flattens them', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'm', max_tokens: 32, messages: [
-      { role: 'user', content: [{ type: 'text', text: 'alpha' }, { type: 'text', text: 'beta' }] },
-      { role: 'assistant', content: [{ type: 'text', text: 'gamma' }, { type: 'text', text: 'delta' }] },
-    ],
-  });
-  assertEquals(result.messages, [
-    { role: 'user', content: 'alpha\n\nbeta' },
-    { role: 'assistant', content: 'gamma\n\ndelta' },
-  ]);
-});
-
 test('unmodeled structured tool-result blocks remain individually opaque', async () => {
   const content = [{ type: 'browser_state', tabs: [] }];
   const result = await buildWithTestSidecar({

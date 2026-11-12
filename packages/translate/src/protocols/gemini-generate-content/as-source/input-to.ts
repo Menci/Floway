@@ -89,7 +89,7 @@ const userParts = (content: GeminiGenerateContentContent): IRInputClientItem[] =
     }
     case 'text': {
       const text = geminiGenerateContentPartText(part);
-      if (text !== null) pending.push({ type: 'text', text, block: true });
+      if (text !== null) pending.push({ type: 'text', text });
       return;
     }
     case 'inline_data':
@@ -137,7 +137,7 @@ const assistantItems = (content: GeminiGenerateContentContent, contentIndex: num
         return;
       }
       const visible = geminiGenerateContentVisibleText(part);
-      if (visible !== null) pending.push({ type: 'text', text: visible, block: true });
+      if (visible !== null) pending.push({ type: 'text', text: visible });
       return;
     }
     case 'inline_data':

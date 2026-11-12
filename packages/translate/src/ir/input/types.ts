@@ -181,9 +181,6 @@ export type IRInputAssistantContentPart = IRInputTextPart | IRInputRefusalPart;
 export interface IRInputTextPart {
   readonly type: 'text';
   readonly text: string;
-  // Independently submitted text blocks retain their boundary when a target
-  // must flatten them into one string. Transport fragments leave this absent.
-  readonly block?: true;
 }
 
 // A refusal is model output, so only assistant history carries one. No protocol

@@ -43,19 +43,6 @@ test('preserves an empty assistant turn between client turns', async () => {
   ]);
 });
 
-test('Responses text fragments remain contiguous when Chat flattens them', async () => {
-  const { target } = await buildWithTestSidecar({
-    model: 'model', input: [
-      { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'alpha' }, { type: 'input_text', text: 'beta' }] },
-      { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'gamma' }, { type: 'output_text', text: 'delta' }] },
-    ],
-  });
-  assertEquals(target.messages, [
-    { role: 'user', content: 'alphabeta' },
-    { role: 'assistant', content: 'gammadelta' },
-  ]);
-});
-
 test('preserves nullable controls and snapshots mutable source objects', async () => {
   const payload: OpenAIResponsesRequestPayloadEx = {
     model: 'model', input: 'hi', metadata: { trace: 'before' }, service_tier: null,
