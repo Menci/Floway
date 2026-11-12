@@ -51,23 +51,60 @@ test('mixed tool-result blocks keep documents formal and unknown blocks opaque',
   });
   const output = result.input.find(item => item.type === 'function_call_output');
   assertEquals(output?.type === 'function_call_output' ? output.output : undefined, [
-    { type: 'input_file', file_data: 'data:text/plain;base64,aGVsbG8=' },
+    { type: 'input_text', text: '<document>' },
+    { type: 'input_text', text: 'hel' },
+    { type: 'input_text', text: 'lo' },
+    { type: 'input_text', text: '</document>' },
     { type: 'input_text', text: JSON.stringify(unknown) },
   ]);
 });
 
 test.each([
-  ['string', 'hello', 'aGVsbG8='],
-  ['text blocks', [{ type: 'text' as const, text: 'hel' }, { type: 'text' as const, text: 'lo' }], 'aGVsbG8='],
-  ['empty text blocks', [], ''],
-] as const)('inline content document %s enters the IR as a text file', async (_name, content, data) => {
+  ['string', 'hello', [{ type: 'input_text' as const, text: 'hello' }]],
+  ['text blocks', [{ type: 'text' as const, text: 'hel' }, { type: 'text' as const, text: 'lo' }], [
+    { type: 'input_text' as const, text: 'hel' }, { type: 'input_text' as const, text: 'lo' },
+  ]],
+  ['empty text blocks', [], []],
+] as const)('inline content document %s retains its nested parts', async (_name, content, expected) => {
   const result = await buildWithTestSidecar({
     model: 'm', max_tokens: 32, messages: [{
       role: 'user', content: [{ type: 'document', source: { type: 'content', content: typeof content === 'string' ? content : [...content] } }],
     }],
   });
   assertEquals(result.input, [{
-    type: 'message', role: 'user', content: [{ type: 'input_file', file_data: `data:text/plain;base64,${data}` }],
+    type: 'message', role: 'user', content: [
+      { type: 'input_text', text: '<document>' },
+      ...expected,
+      { type: 'input_text', text: '</document>' },
+    ],
+  }]);
+});
+
+test('inline mixed document content retains text and image order inside tags', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [
+      {
+        role: 'user',
+        content: [{
+          type: 'document',
+          source: {
+            type: 'content',
+            content: [
+              { type: 'text', text: 'caption' },
+              { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
+            ],
+          },
+        }],
+      },
+    ],
+  });
+  assertEquals(result.input, [{
+    type: 'message', role: 'user', content: [
+      { type: 'input_text', text: '<document>' },
+      { type: 'input_text', text: 'caption' },
+      { type: 'input_image', image_url: 'data:image/png;base64,AAAA' },
+      { type: 'input_text', text: '</document>' },
+    ],
   }]);
 });
 

@@ -9,6 +9,19 @@ describe('input IR shape', () => {
     { type: 'image', image: { source_kind: 'base64', media_type: 'image/png', data: 'AAAA' } },
     { type: 'file', file: { source_kind: 'file', file_id: 'file_1' }, filename: 'a.pdf' },
     { type: 'file', file: { source_kind: 'base64', data: 'AAAA' } },
+    { type: 'document', document: { source: { source_kind: 'media', media: { source_kind: 'file', file_id: 'file_2' } } } },
+    {
+      type: 'document',
+      document: {
+        source: {
+          source_kind: 'content',
+          content: [
+            { type: 'text', text: 'caption' },
+            { type: 'image', image: { source_kind: 'base64', media_type: 'image/png', data: 'AAAA' } },
+          ],
+        },
+      },
+    },
     { type: 'audio', audio: { media_type: 'audio/wav', data: 'AAAA' } },
   ];
 
@@ -45,9 +58,10 @@ describe('input IR shape', () => {
     const parts: IRInputToolResultContentPart[] = [
       { type: 'text', text: 'caption' },
       { type: 'file', file: { source_kind: 'base64', media_type: 'application/pdf', data: 'AAAA' }, filename: 'r.pdf' },
+      { type: 'document', document: { source: { source_kind: 'text', media_type: 'text/plain', text: 'quoted' } } },
     ];
     const result: IRInputToolResultItem = { type: 'tool_result', call_id: 'call_1', output: parts };
-    expect(Array.isArray(result.output) && result.output.map(part => part.type)).toEqual(['text', 'file']);
+    expect(Array.isArray(result.output) && result.output.map(part => part.type)).toEqual(['text', 'file', 'document']);
   });
 
   test('a file may omit media type, while audio must state one', () => {

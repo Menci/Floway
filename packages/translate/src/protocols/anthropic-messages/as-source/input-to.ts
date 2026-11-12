@@ -11,6 +11,8 @@ import type {
   IRInputToolChoice,
   IRInputOutputFormat,
   IRInputAssistantItem,
+  IRInputDocument,
+  IRInputDocumentContentPart,
   IRInputMedia,
   IRInputTextPart,
   IRInputToolResultContentPart,
@@ -48,31 +50,22 @@ const textPartsToIR = (content: string | readonly AnthropicMessagesTextBlockPara
       return { type: 'text', text: block.text };
     });
 
-const base64Of = (text: string): string => {
-  const bytes = new TextEncoder().encode(text);
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
-};
-
-const documentMedia = (block: Extract<AnthropicMessagesUserContentBlock, { type: 'document' }>): IRInputMedia => {
+const documentFromBlock = (block: Extract<AnthropicMessagesUserContentBlock, { type: 'document' }>): IRInputDocument => {
   const source = block.source;
   switch (source.type) {
-  case 'base64': return { source_kind: 'base64', media_type: source.media_type, data: source.data };
-  case 'url': return { source_kind: 'url', url: source.url };
-  case 'file': return { source_kind: 'file', file_id: source.file_id };
-  // A `text` document source carries the document's bytes as plain text, while
-  // every target that accepts a file expects base64. Encoding here keeps the
-  // IR's media arms uniform.
-  case 'text': return { source_kind: 'base64', media_type: source.media_type, data: base64Of(source.data) };
+  case 'base64': return { source: { source_kind: 'media', media: { source_kind: 'base64', media_type: source.media_type, data: source.data } } };
+  case 'url': return { source: { source_kind: 'media', media: { source_kind: 'url', url: source.url } } };
+  case 'file': return { source: { source_kind: 'media', media: { source_kind: 'file', file_id: source.file_id } } };
+  case 'text': return { source: { source_kind: 'text', media_type: source.media_type, text: source.data } };
   case 'content': {
-    if (typeof source.content === 'string') return { source_kind: 'base64', media_type: 'text/plain', data: base64Of(source.content) };
-    if (source.content.every(content => content.type === 'text')) {
-      return { source_kind: 'base64', media_type: 'text/plain', data: base64Of(source.content.map(content => content.text).join('')) };
-    }
-    const content = source.content.length === 1 ? source.content[0] : undefined;
-    if (content?.type === 'image') return imageMedia(content.source);
-    throw new TranslateInputException('Cannot translate a multi-part inline content document as one file.');
+    const content: IRInputDocumentContentPart[] = typeof source.content === 'string'
+      ? [{ type: 'text', text: source.content }]
+      : source.content.map(part => {
+          if (part.type === 'text') return { type: 'text' as const, text: part.text };
+          if (part.type === 'image') return { type: 'image' as const, image: imageMedia(part.source) };
+          throw new TranslateInputException(`'${(part as { type: string }).type}' document content block is not supported.`);
+        });
+    return { source: { source_kind: 'content', content } };
   }
   }
 };
@@ -89,7 +82,7 @@ const userContentPart = (
   switch (block.type) {
   case 'text': return { type: 'text', text: block.text };
   case 'image': return { type: 'image', image: imageMedia(block.source) };
-  case 'document': return { type: 'file', file: documentMedia(block) };
+  case 'document': return { type: 'document', document: documentFromBlock(block) };
   default: throw new TranslateInputException(`messages.${at.messageIdx}.content.${at.blockIdx}.type: '${(block as { type: string }).type}' content blocks are not supported in user content.`);
   }
 };
@@ -114,7 +107,7 @@ const toolResultPart = (block: AnthropicMessagesToolResultBlock['content']): IRI
     flushSearchResults();
     if (part.type === 'text') parts.push({ type: 'text', text: part.text });
     else if (part.type === 'image') parts.push({ type: 'image', image: imageMedia(part.source) });
-    else if (part.type === 'document') parts.push({ type: 'file', file: documentMedia(part) });
+    else if (part.type === 'document') parts.push({ type: 'document', document: documentFromBlock(part) });
     else parts.push({ type: 'text', text: JSON.stringify(part) });
   }
   flushSearchResults();

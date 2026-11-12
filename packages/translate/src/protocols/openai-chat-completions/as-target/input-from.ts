@@ -1,7 +1,8 @@
 import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../composition/request/call-ids.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
-import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
+import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputDocument, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
 import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
+import { DOCUMENT_CLOSE_TAG, DOCUMENT_OPEN_TAG, utf8Base64 } from '../../../shared/document.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import type {
@@ -45,13 +46,26 @@ const filePart = (media: IRInputMedia, filename?: string | null): OpenAIChatComp
   }
 };
 
+const documentParts = (document: IRInputDocument): OpenAIChatCompletionsUserContentPart[] => {
+  const source = document.source;
+  const content = source.source_kind === 'media'
+    ? [filePart(source.media)]
+    : source.source_kind === 'text'
+      ? [filePart({ source_kind: 'base64', media_type: source.media_type, data: utf8Base64(source.text) })]
+      : source.content.map(part => part.type === 'text'
+          ? { type: 'text' as const, text: part.text }
+          : imageUrlPart(part.image, part.detail));
+  return [{ type: 'text', text: DOCUMENT_OPEN_TAG }, ...content, { type: 'text', text: DOCUMENT_CLOSE_TAG }];
+};
+
 const userContent = (item: Extract<IRInputClientItem, { type: 'message'; role: 'user' }>): string | OpenAIChatCompletionsUserContentPart[] => {
   if (item.content.every(part => part.type === 'text')) return item.content.map(part => part.text).join('');
-  return item.content.map(part => {
+  return item.content.flatMap(part => {
     switch (part.type) {
     case 'text': return { type: 'text' as const, text: part.text };
     case 'image': return imageUrlPart(part.image, part.detail);
     case 'file': return filePart(part.file, part.filename);
+    case 'document': return documentParts(part.document);
     case 'audio': return { type: 'input_audio' as const, input_audio: { data: part.audio.data, format: audioFormat(part.audio.media_type) } };
     }
   });
@@ -59,8 +73,8 @@ const userContent = (item: Extract<IRInputClientItem, { type: 'message'; role: '
 
 /**
  * A Chat `tool` message admits only text, while the input IR tool result may carry
- * images. The image parts are lifted into a user message that follows the
- * result, so a vision target still receives them.
+ * attachments. Image, file, and document parts are lifted into a user message
+ * that follows the result, so the target still receives them.
  *
  * https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/chat/completions/completions.ts#L1893-L1908
  * https://github.com/vercel/ai/blob/c093ee7458ccd5dada05d8461041e47c24ee55c0/packages/google/src/convert-to-google-messages.ts#L137-L180
@@ -70,15 +84,18 @@ export const openaiChatCompletionsToolResultContent = (
   output: string | readonly IRInputToolResultContentPart[],
 ): { readonly content: string; readonly lifted: OpenAIChatCompletionsUserContentPart[] } => {
   if (typeof output === 'string') return { content: output, lifted: [] };
-  if (output.some(part => part.type === 'file')) throw new TranslateInputException('Cannot translate file tool output to OpenAI Chat Completions.');
   const text = output.flatMap(part => part.type === 'text' ? [part.text] : []).join('');
-  const images = output.flatMap(part => part.type === 'image' ? [imageUrlPart(part.image, part.detail)] : []);
-  return images.length === 0
-    ? { content: text, lifted: [] }
-    : {
-        content: text === '' ? 'Image output is attached in the following user message.' : text,
-        lifted: [{ type: 'text', text: `Image output from tool call ${callId}:` }, ...images],
-      };
+  const lifted = output.flatMap(part => part.type === 'image'
+    ? [imageUrlPart(part.image, part.detail)]
+    : part.type === 'file' ? [filePart(part.file, part.filename)]
+      : part.type === 'document' ? documentParts(part.document) : []);
+  if (lifted.length === 0) return { content: text, lifted: [] };
+  const kinds = new Set(output.flatMap(part => part.type === 'image' || part.type === 'file' || part.type === 'document' ? [part.type] : []));
+  const noun = kinds.size > 1 ? 'Attachments' : kinds.has('image') ? 'Image output' : kinds.has('file') ? 'File output' : 'Document output';
+  return {
+    content: text === '' ? `${noun} is attached in the following user message.` : text,
+    lifted: [{ type: 'text', text: `${noun} from tool call ${callId}:` }, ...lifted],
+  };
 };
 
 const assistantMessage = (items: readonly IRInputAssistantItemWithCallIds[]): OpenAIChatCompletionsMessage[] => {
@@ -128,20 +145,20 @@ const clientMessages = (
   items: readonly IRInputClientItemWithCallIds[],
   legacyCallNames: ReadonlyMap<string, string>,
 ): OpenAIChatCompletionsMessage[] => {
-  // Images lifted out of consecutive tool results gather into one user message
+  // Attachments lifted out of consecutive tool results gather into one user message
   // after the run, so a tool-call group stays contiguous.
   const messages: OpenAIChatCompletionsMessage[] = [];
-  let pendingImages: OpenAIChatCompletionsUserContentPart[] = [];
-  const flushImages = (): void => {
-    if (pendingImages.length === 0) return;
-    messages.push({ role: 'user', content: pendingImages });
-    pendingImages = [];
+  let pendingAttachments: OpenAIChatCompletionsUserContentPart[] = [];
+  const flushAttachments = (): void => {
+    if (pendingAttachments.length === 0) return;
+    messages.push({ role: 'user', content: pendingAttachments });
+    pendingAttachments = [];
   };
   for (const item of items) {
-    if (item.type !== 'tool_result') flushImages();
-    messages.push(...openaiChatCompletionsClientItem(item, lifted => pendingImages.push(...lifted), legacyCallNames));
+    if (item.type !== 'tool_result') flushAttachments();
+    messages.push(...openaiChatCompletionsClientItem(item, lifted => pendingAttachments.push(...lifted), legacyCallNames));
   }
-  flushImages();
+  flushAttachments();
   return messages;
 };
 

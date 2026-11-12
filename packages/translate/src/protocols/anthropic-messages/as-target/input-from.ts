@@ -1,7 +1,7 @@
 import { parseDataURL, type ParsedDataURL } from './data-url.ts';
 import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds } from '../../../composition/request/call-ids.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
-import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputMedia, IRInputTextPart, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
+import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputDocument, IRInputMedia, IRInputTextPart, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
 import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { type TranslateOptions } from '../../../types.ts';
@@ -55,7 +55,7 @@ const imageBlock = (media: IRInputMedia): AnthropicMessagesImageBlock => ({ type
  * Inline documents remain bytes. The target requires a media type, so an
  * untyped raw base64 value receives the generic binary type at this boundary.
  */
-const documentBlock = (media: IRInputMedia): Extract<AnthropicMessagesUserContentBlock, { type: 'document' }> => {
+const mediaDocumentBlock = (media: IRInputMedia): Extract<AnthropicMessagesUserContentBlock, { type: 'document' }> => {
   switch (media.source_kind) {
   case 'url': {
     if (!media.url.startsWith('data:')) return { type: 'document', source: { type: 'url', url: media.url } };
@@ -71,6 +71,23 @@ const documentBlock = (media: IRInputMedia): Extract<AnthropicMessagesUserConten
   }
 };
 
+const documentBlock = (document: IRInputDocument): Extract<AnthropicMessagesUserContentBlock, { type: 'document' }> => {
+  const source = document.source;
+  if (source.source_kind === 'media') return mediaDocumentBlock(source.media);
+  if (source.source_kind === 'text') {
+    return { type: 'document', source: { type: 'text', media_type: source.media_type, data: source.text } };
+  }
+  return {
+    type: 'document',
+    source: {
+      type: 'content',
+      content: source.content.map(part => part.type === 'text'
+        ? { type: 'text' as const, text: part.text }
+        : imageBlock(part.image)),
+    },
+  };
+};
+
 const systemContent = (content: readonly IRInputTextPart[]): AnthropicMessagesTextBlockParam[] => content.map(part => ({ type: 'text', text: part.text }));
 
 const userContent = (
@@ -82,7 +99,10 @@ const userContent = (
     case 'text': blocks.push({ type: 'text', text: part.text }); break;
     case 'image': blocks.push(imageBlock(part.image)); break;
     case 'file':
-      blocks.push(documentBlock(part.file));
+      blocks.push(mediaDocumentBlock(part.file));
+      break;
+    case 'document':
+      blocks.push(documentBlock(part.document));
       break;
     case 'audio': throw new TranslateInputException(`Cannot translate an audio part of MIME type '${part.audio.media_type}' to Anthropic Messages.`);
     default: throw new TranslateInputException(`Invalid '${(part as { type: string }).type}' content part.`);
@@ -99,7 +119,8 @@ const toolResultContent = (
   const blocks: AnthropicMessagesToolResultContentBlock[] = [];
   for (const part of output) {
     if (part.type === 'text') { blocks.push({ type: 'text', text: part.text }); continue; }
-    if (part.type === 'file') { blocks.push(documentBlock(part.file)); continue; }
+    if (part.type === 'file') { blocks.push(mediaDocumentBlock(part.file)); continue; }
+    if (part.type === 'document') { blocks.push(documentBlock(part.document)); continue; }
     blocks.push(imageBlock(part.image));
   }
   // Messages spells an empty tool result as the empty string.

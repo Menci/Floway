@@ -21,6 +21,37 @@ test('unmodeled structured tool-result blocks remain individually opaque', async
   assertEquals(result.messages.at(-1), { role: 'tool', tool_call_id: 'c', content: JSON.stringify(content[0]) });
 });
 
+test('content-backed document tool output is lifted with its document tags', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'read', input: {} }] },
+      {
+        role: 'user',
+        content: [{
+          type: 'tool_result', tool_use_id: 'c', content: [{
+            type: 'document',
+            source: {
+              type: 'content',
+              content: [
+                { type: 'text', text: 'caption' },
+                { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
+              ],
+            },
+          }],
+        }],
+      },
+    ],
+  });
+  assertEquals(result.messages.at(-2), { role: 'tool', tool_call_id: 'c', content: 'Document output is attached in the following user message.' });
+  assertEquals(result.messages.at(-1)?.content, [
+    { type: 'text', text: 'Document output from tool call c:' },
+    { type: 'text', text: '<document>' },
+    { type: 'text', text: 'caption' },
+    { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
+    { type: 'text', text: '</document>' },
+  ]);
+});
+
 test('buildTargetPayload maps thinking.disabled to reasoning_effort none', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
@@ -672,7 +703,7 @@ test('rejects a metadata value the neutral model cannot state as a string pair',
   );
 });
 
-test('buildTargetPayload encodes a plain-text document source as base64', async () => {
+test('buildTargetPayload marks a plain-text document around its file part', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -683,7 +714,37 @@ test('buildTargetPayload encodes a plain-text document source as base64', async 
   });
   const part = result.messages[0].content;
   if (!Array.isArray(part)) throw new Error('expected a content array');
-  assertEquals(part[0], { type: 'file', file: { file_data: 'data:text/plain;base64,aGVsbG8gd29ybGQ=' } });
+  assertEquals(part, [
+    { type: 'text', text: '<document>' },
+    { type: 'file', file: { file_data: 'data:text/plain;base64,aGVsbG8gd29ybGQ=' } },
+    { type: 'text', text: '</document>' },
+  ]);
+});
+
+test('buildTargetPayload keeps mixed document content inside provenance tags', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'gpt-test', max_tokens: 256, messages: [
+      {
+        role: 'user',
+        content: [{
+          type: 'document',
+          source: {
+            type: 'content',
+            content: [
+              { type: 'text', text: 'caption' },
+              { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
+            ],
+          },
+        }],
+      },
+    ],
+  });
+  assertEquals(result.messages[0].content, [
+    { type: 'text', text: '<document>' },
+    { type: 'text', text: 'caption' },
+    { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
+    { type: 'text', text: '</document>' },
+  ]);
 });
 
 test.each([true, false])('maps disable_parallel_tool_use %s without changing declarations', async disabled => {

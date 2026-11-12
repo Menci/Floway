@@ -516,20 +516,20 @@ test('buildTargetPayload accepts null tool_choice', async () => {
   assertEquals(result.target.tool_choice, undefined);
 });
 
-test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetPayload rejects input_file in %s', async type => {
-  await assertRejects(
-    () => buildWithTestSidecar({
-      model: 'gpt-test',
-      input: [
-        ...(type === 'function_call_output'
-          ? [{ type: 'function_call' as const, call_id: 'call_1', name: 'lookup', arguments: '{}' }]
-          : [{ type: 'custom_tool_call' as const, call_id: 'call_1', name: 'lookup', input: '{}' }]),
-        { type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] },
-      ],
-    }),
-    Error,
-    'file tool output',
-  );
+test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetPayload lifts input_file from %s', async type => {
+  const result = await buildWithTestSidecar({
+    model: 'gpt-test',
+    input: [
+      ...(type === 'function_call_output'
+        ? [{ type: 'function_call' as const, call_id: 'call_1', name: 'lookup', arguments: '{}' }]
+        : [{ type: 'custom_tool_call' as const, call_id: 'call_1', name: 'lookup', input: '{}' }]),
+      { type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1', filename: 'result.txt' }] },
+    ],
+  });
+  assertEquals(result.target.messages.at(-1)?.content, [
+    { type: 'text', text: 'File output from tool call call_1:' },
+    { type: 'file', file: { file_id: 'file_1', filename: 'result.txt' } },
+  ]);
 });
 
 test('buildTargetPayload rejects file assistant content', async () => {

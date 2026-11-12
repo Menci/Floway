@@ -1,6 +1,7 @@
 import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../composition/request/call-ids.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
-import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem, IRInputInstructionItem } from '../../../ir/input/types.ts';
+import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputDocument, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem, IRInputInstructionItem } from '../../../ir/input/types.ts';
+import { DOCUMENT_CLOSE_TAG, DOCUMENT_OPEN_TAG, utf8Base64 } from '../../../shared/document.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import type {
@@ -44,22 +45,39 @@ const fileContent = (media: IRInputMedia, filename?: string | null): OpenAIRespo
   }
 };
 
+const documentContent = (document: IRInputDocument): OpenAIResponsesInputContent[] => {
+  const source = document.source;
+  if (source.source_kind === 'media') return [fileContent(source.media)];
+  if (source.source_kind === 'text') {
+    return [fileContent({ source_kind: 'base64', media_type: source.media_type, data: utf8Base64(source.text) })];
+  }
+  return [
+    { type: 'input_text', text: DOCUMENT_OPEN_TAG },
+    ...source.content.map(part => part.type === 'text'
+      ? { type: 'input_text' as const, text: part.text }
+      : inputContent(part.image, part.detail)),
+    { type: 'input_text', text: DOCUMENT_CLOSE_TAG },
+  ];
+};
+
 // Responses tool output admits text, images, and files, but not refusals, so it
 // is projected from the tool-result parts rather than the message-part union.
 const toolResultOutput = (output: string | readonly IRInputToolResultContentPart[]): string | OpenAIResponsesToolOutputContent[] => typeof output === 'string'
   ? output
-  : [...output].map(part => {
+  : [...output].flatMap(part => {
       if (part.type === 'text') return { type: 'input_text' as const, text: part.text };
       if (part.type === 'image') return inputContent(part.image, part.detail);
-      return fileContent(part.file, part.filename);
+      if (part.type === 'file') return fileContent(part.file, part.filename);
+      return documentContent(part.document);
     });
 
 // The content-array projection preserves IR part boundaries.
-const userContent = (item: Extract<IRInputClientItem, { type: 'message' }>): OpenAIResponsesInputContent[] => item.content.map(part => {
+const userContent = (item: Extract<IRInputClientItem, { type: 'message' }>): OpenAIResponsesInputContent[] => item.content.flatMap(part => {
   switch (part.type) {
   case 'text': return { type: 'input_text' as const, text: part.text };
   case 'image': return inputContent(part.image, part.detail);
   case 'file': return fileContent(part.file, part.filename);
+  case 'document': return documentContent(part.document);
   case 'audio': throw new TranslateInputException(`Cannot translate an audio part of MIME type '${part.audio.media_type}' to OpenAI Responses.`);
   }
 });

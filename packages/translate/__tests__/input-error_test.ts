@@ -14,7 +14,7 @@ const messages = {
       type: 'document' as const,
       source: {
         type: 'content' as const,
-        content: [{ type: 'text' as const, text: 'caption' }, { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/png' as const, data: 'AAAA' } }],
+        content: [{ type: 'unknown' } as never],
       },
     }],
   }],

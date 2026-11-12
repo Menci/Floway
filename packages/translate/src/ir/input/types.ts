@@ -174,6 +174,7 @@ export type IRInputUserContentPart =
   | IRInputTextPart
   | IRInputImagePart
   | IRInputFilePart
+  | IRInputDocumentPart
   | IRInputAudioPart;
 
 export type IRInputAssistantContentPart = IRInputTextPart | IRInputRefusalPart;
@@ -202,6 +203,26 @@ export interface IRInputFilePart {
   readonly file: IRInputMedia;
   readonly filename?: string | null;
 }
+
+export interface IRInputDocumentPart {
+  readonly type: 'document';
+  readonly document: IRInputDocument;
+}
+
+export interface IRInputDocument {
+  readonly source: IRInputDocumentSource;
+}
+
+export type IRInputDocumentSource =
+  | { readonly source_kind: 'media'; readonly media: IRInputMedia }
+  | { readonly source_kind: 'text'; readonly media_type: 'text/plain'; readonly text: string }
+  | { readonly source_kind: 'content'; readonly content: readonly IRInputDocumentContentPart[] };
+
+// Anthropic content-backed documents admit text and images only. Keeping the
+// nested sequence lets non-document targets mark its provenance without
+// pretending it was a byte file; a future GenerateContent target can project
+// the same sequence to text and inlineData parts.
+export type IRInputDocumentContentPart = IRInputTextPart | IRInputImagePart;
 
 export interface IRInputAudioPart {
   readonly type: 'audio';
@@ -263,4 +284,4 @@ export interface IRInputToolResultItem {
   readonly is_error?: boolean;
 }
 
-export type IRInputToolResultContentPart = IRInputTextPart | IRInputImagePart | IRInputFilePart;
+export type IRInputToolResultContentPart = IRInputTextPart | IRInputImagePart | IRInputFilePart | IRInputDocumentPart;
