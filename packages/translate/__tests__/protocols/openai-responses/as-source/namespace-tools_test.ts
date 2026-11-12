@@ -4,11 +4,13 @@ import { flattenNamespaceTools, restoreNamespaceEvents, restoreNamespaceOutputIt
 import { buildTargetRequest as buildMessagesRequest } from '../../../../src/protocols/openai-responses/via-anthropic-messages/request.ts';
 import { buildTargetRequest as buildChatRequest } from '../../../../src/protocols/openai-responses/via-openai-chat-completions/request.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
+import { requireTrip } from '../../require-trip.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesOutputItemEx, OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { routeOpenAIResponses, canonicalizeOpenAIResponsesPayload } from '@floway-dev/translate/openai-responses';
+import { routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
 const payload = (): OpenAIResponsesRequestPayloadEx => ({
   model: 'm',
@@ -46,6 +48,12 @@ test.each(['additional_tools', 'tool_search_output'] as const)('keeps %s as a us
     { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'lookup', input: {}, cache_control: { type: 'ephemeral' } }] },
   ]);
 });
+
+const canonicalPayload = () => {
+  const canonical = canonicalizeOpenAIResponsesPayload(payload());
+  if (!('input' in canonical)) throw new Error(canonical.error.message);
+  return canonical;
+};
 
 test('namespace setup preserves the original input and allocates historical names only when explicitly flattened', () => {
   const request: CanonicalOpenAIResponsesPayload = {
@@ -105,7 +113,7 @@ test('forced namespace choices use the declaration mapping', async () => {
 });
 
 test('restores function and custom calls across item events and terminal snapshots', async () => {
-  const prepared = flattenNamespaceTools(canonicalizeOpenAIResponsesPayload(payload()));
+  const prepared = flattenNamespaceTools(canonicalPayload());
   const output = [
     { type: 'function_call' as const, name: 'agents_spawn_2', call_id: 'spawn', arguments: '{"name":"agents_spawn_2"}', status: 'completed' },
     { type: 'custom_tool_call' as const, name: 'agents_audit', call_id: 'audit', input: 'agents_audit' },
@@ -127,7 +135,7 @@ test('restores function and custom calls across item events and terminal snapsho
 });
 
 test('restores all function/custom output item type combinations without retaining the replaced payload field', () => {
-  const names = flattenNamespaceTools(canonicalizeOpenAIResponsesPayload(payload())).names;
+  const names = flattenNamespaceTools(canonicalPayload()).names;
   const functionName = names.sourceToTarget.get('agents.spawn');
   const customName = names.sourceToTarget.get('agents.audit');
   if (functionName === undefined || customName === undefined) throw new Error('Expected flattened namespace tool names');
@@ -172,7 +180,7 @@ test('rejects function/custom ambiguity and distinct tuples with the same qualif
 });
 
 test('the complete Chat Completions trip restores the namespace after target tool calls', async () => {
-  const trip = await routeOpenAIResponses(payload()).viaOpenAIChatCompletions({ sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'm' });
+  const trip = await requireTrip(routeOpenAIResponsesViaOpenAIChatCompletions(payload(), { sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'm' }));
   const frames = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
     yield eventFrame({ id: 'chat1', object: 'chat.completion.chunk', model: 'm', created: 0, choices: [{  index: 0, delta: { tool_calls: [{ index: 0, id: 'call1', type: 'function', function: { name: 'agents_spawn_2', arguments: '{}' } }] }, finish_reason: null }] });
     yield eventFrame({ id: 'chat1', object: 'chat.completion.chunk', model: 'm', created: 0, choices: [{  index: 0, delta: {}, finish_reason: 'tool_calls' }] });
@@ -185,7 +193,7 @@ test('the complete Chat Completions trip restores the namespace after target too
 });
 
 test('the complete Anthropic Messages trip restores the namespace after target tool calls', async () => {
-  const trip = await routeOpenAIResponses(payload()).viaAnthropicMessages({ sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } });
+  const trip = await requireTrip(routeOpenAIResponsesViaAnthropicMessages(payload(), { sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } }));
   const frames = (async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
     yield eventFrame({ type: 'message_start', message: { container: null, diagnostics: null, stop_details: null, id: 'msg1', type: 'message', model: 'm', role: 'assistant', content: [], stop_reason: null, stop_sequence: null, usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 } } });
     yield eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'call1', name: 'agents_spawn_2', input: {} } });

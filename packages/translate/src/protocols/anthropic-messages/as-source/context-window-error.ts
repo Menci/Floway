@@ -1,6 +1,6 @@
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
-import type { TranslatedApiError } from '../../../types.ts';
-import { buildPromptTooLongBody } from '@floway-dev/protocols/anthropic-messages';
+import type { ApiErrorTranslator } from '../../../types.ts';
+import { PROMPT_TOO_LONG_MESSAGE } from '@floway-dev/protocols/anthropic-messages';
 
 const isContextExceededErrorText = (text: string): boolean => {
   try {
@@ -11,14 +11,14 @@ const isContextExceededErrorText = (text: string): boolean => {
   }
 };
 
-// Shared `TranslateTrip.apiError` implementation for the `anthropic-messages-via-*`
+// Shared `TranslateTrip.error` implementation for the `anthropic-messages-via-*`
 // pairs. Rewrites an upstream context-exceeded body into an Anthropic
 // prompt-too-long envelope; passes anything else through unchanged.
-export const rewriteContextExceededToPromptTooLong = (upstream: TranslatedApiError): TranslatedApiError | undefined => {
-  if (!isContextExceededErrorText(new TextDecoder().decode(upstream.body))) return undefined;
+export const rewriteContextExceededToPromptTooLong: ApiErrorTranslator = (_status, _headers, body) => {
+  if (!isContextExceededErrorText(new TextDecoder().decode(body))) return undefined;
   return {
     status: 400,
     headers: new Headers({ 'content-type': 'application/json' }),
-    body: buildPromptTooLongBody(),
+    body: { type: 'error', error: { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE } },
   };
 };

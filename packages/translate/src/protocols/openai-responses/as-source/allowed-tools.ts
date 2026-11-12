@@ -1,4 +1,4 @@
-import { TranslatorInputError } from '../../../translator-input-error.ts';
+import { TranslateInputException } from '../../../shared/input-error.ts';
 import type { OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 const validateCallableKinds = (tools: OpenAIResponsesTool[] | null | undefined): void => {
@@ -8,7 +8,7 @@ const validateCallableKinds = (tools: OpenAIResponsesTool[] | null | undefined):
     if ('namespace' in tool && tool.namespace !== undefined) continue;
     const prior = kinds.get(tool.name);
     if (prior !== undefined && prior !== tool.type) {
-      throw new TranslatorInputError(`Cannot translate distinct callable kinds sharing '${tool.name}'.`);
+      throw new TranslateInputException(`Cannot translate distinct callable kinds sharing '${tool.name}'.`);
     }
     kinds.set(tool.name, tool.type);
   }
@@ -29,7 +29,7 @@ export const restrictAllowedTools = (
     return { tools, choice };
   }
   if ((choice.mode !== 'auto' && choice.mode !== 'required') || !Array.isArray(choice.tools)) {
-    throw new TranslatorInputError('Cannot translate malformed allowed_tools mode or tools array.');
+    throw new TranslateInputException('Cannot translate malformed allowed_tools mode or tools array.');
   }
 
   const declared = new Map<string, Map<string, OpenAIResponsesTool[]>>();
@@ -52,21 +52,21 @@ export const restrictAllowedTools = (
       || (selector.type !== 'function' && selector.type !== 'custom')
       || typeof selector.name !== 'string' || selector.namespace !== undefined
       || Object.keys(selector).some(key => key !== 'type' && key !== 'name' && key !== 'namespace')) {
-      throw new TranslatorInputError('Cannot translate an allowed_tools selector that is not a flat function or custom tool.');
+      throw new TranslateInputException('Cannot translate an allowed_tools selector that is not a flat function or custom tool.');
     }
     const matches = declared.get(selector.type)?.get(selector.name);
     if (matches === undefined) {
-      throw new TranslatorInputError(`Cannot translate allowed_tools selector '${selector.name}' without a matching callable declaration.`);
+      throw new TranslateInputException(`Cannot translate allowed_tools selector '${selector.name}' without a matching callable declaration.`);
     }
     const kind = selectedKinds.get(selector.name);
     if (kind !== undefined && kind !== selector.type) {
-      throw new TranslatorInputError(`Cannot translate distinct allowed_tools callable kinds sharing '${selector.name}'.`);
+      throw new TranslateInputException(`Cannot translate distinct allowed_tools callable kinds sharing '${selector.name}'.`);
     }
     selectedKinds.set(selector.name, selector.type);
     for (const tool of matches) selected.add(tool);
   }
   if (selected.size === 0 && choice.mode === 'required') {
-    throw new TranslatorInputError('Cannot translate required allowed_tools with an empty callable subset.');
+    throw new TranslateInputException('Cannot translate required allowed_tools with an empty callable subset.');
   }
   const restricted = (tools ?? []).filter(tool => selected.has(tool));
   validateCallableKinds(restricted);

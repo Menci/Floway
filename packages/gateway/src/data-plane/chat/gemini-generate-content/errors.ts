@@ -1,29 +1,21 @@
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
-import type { ChatServeFailure } from '../shared/errors.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiGenerateContentStreamEvent, GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
-import { internalDebugErrorFields, type ExecuteResult, type PerformanceTelemetryContext, type InternalDebugError } from '@floway-dev/provider';
-import type { TranslatorInputError } from '@floway-dev/translate';
+import { inputErrorFields, type ChatServeFailure, type InputErrorDetails } from '../shared/errors.ts';
+import { geminiGenerateContentStatusForHttpStatus, type GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
+import { internalDebugErrorFields, type ApiErrorResult, type PerformanceTelemetryContext, type InternalDebugError } from '@floway-dev/provider';
 
 // Google RPC Status envelope, used by Gemini's `error` channel everywhere
 // (HTTP body, SSE-tunnelled error event).
-export const geminiGenerateContentStatusForHttpStatus = (status: number): string => {
+export const gatewayErrorStatus = (status: number): string => {
   switch (status) {
   case 400:
-    return 'INVALID_ARGUMENT';
   case 401:
-    return 'UNAUTHENTICATED';
   case 403:
-    return 'PERMISSION_DENIED';
   case 404:
-    return 'NOT_FOUND';
   case 429:
-    return 'RESOURCE_EXHAUSTED';
   case 500:
-    return 'INTERNAL';
   case 502:
   case 503:
-    return 'UNAVAILABLE';
+    return geminiGenerateContentStatusForHttpStatus(status)!;
   default:
     return 'INTERNAL';
   }
@@ -38,7 +30,7 @@ export const geminiGenerateContentInternalErrorPayload = (status: number, error:
     error: {
       code: status,
       message: error.message,
-      status: geminiGenerateContentStatusForHttpStatus(status),
+      status: gatewayErrorStatus(status),
       details: [
         ...(stack === undefined ? [] : [{ '@type': 'type.googleapis.com/google.rpc.DebugInfo', stackEntries: stack.split('\n') }]),
         { '@type': 'type.googleapis.com/google.protobuf.Struct', value: { type: error.type, ...fields } },
@@ -47,35 +39,42 @@ export const geminiGenerateContentInternalErrorPayload = (status: number, error:
   };
 };
 
-const geminiGenerateContentRpcErrorResult = (status: number, message: string, performance?: PerformanceTelemetryContext): ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>> => ({
+// ProtoJSON Any wraps a Struct's arbitrary JSON in value.
+// https://protobuf.dev/programming-guides/json/#any
+const geminiGenerateContentRpcErrorResult = (
+  status: number,
+  message: string,
+  performance?: PerformanceTelemetryContext,
+  extension?: Record<string, unknown>,
+): ApiErrorResult => ({
   type: 'api-error',
   source: 'gateway',
   status,
   headers: new Headers({ 'content-type': 'application/json' }),
   body: new TextEncoder().encode(JSON.stringify({
-    error: { code: status, message, status: geminiGenerateContentStatusForHttpStatus(status) },
+    error: {
+      code: status,
+      message,
+      status: gatewayErrorStatus(status),
+      ...(extension === undefined ? {} : { details: [{ '@type': 'type.googleapis.com/google.protobuf.Struct', value: extension }] }),
+    },
   })),
   ...(performance ? { performance } : {}),
 });
 
-// Translator surfaced a caller-input violation (unsupported content part,
-// disallowed role, missing required field, etc.). Render as a 400
-// INVALID_ARGUMENT envelope so the caller sees a Gemini-generateContent-shaped failure
-// instead of the internal-error 500 envelope. `performance` carries the
-// throwing candidate's telemetry attribution when the throw fired
-// mid-attempt (see AttemptState.telemetry).
-export const translatorInputErrorResult = (
-  error: TranslatorInputError,
+// Validation failures retain the telemetry of the candidate whose attempt rejected the request.
+export const inputErrorResult = (
+  error: InputErrorDetails,
   performance?: PerformanceTelemetryContext,
-): ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>> =>
-  geminiGenerateContentRpcErrorResult(400, error.message, performance);
+): ApiErrorResult =>
+  geminiGenerateContentRpcErrorResult(400, error.message, performance, inputErrorFields(error));
 
 // `endpoint` selects between `:generateContent` and `:countTokens` only in
 // the `model-unsupported` message string.
 export const renderGeminiGenerateContentFailure = (
   failure: ChatServeFailure,
   endpoint: 'generate' | 'countTokens',
-): ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>> => {
+): ApiErrorResult => {
   switch (failure.kind) {
   case 'routing-unavailable':
     return geminiGenerateContentRpcErrorResult(400, failure.message);

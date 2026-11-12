@@ -2,10 +2,11 @@ import { expect, test, vi } from 'vitest';
 
 import { computeGeminiGenerateContentTurnDigest } from '../../../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
+import { requireTrip } from '../../require-trip.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { createGeminiGenerateContentEventAccumulator, reassembleGeminiGenerateContentEvents } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { routeGeminiGenerateContent } from '@floway-dev/translate/gemini-generate-content';
+import { routeGeminiGenerateContentViaOpenAIChatCompletions } from '@floway-dev/translate';
 
 vi.mock('@floway-dev/protocols/gemini-generate-content', async importOriginal => {
   const actual = await importOriginal<typeof import('@floway-dev/protocols/gemini-generate-content')>();
@@ -33,9 +34,9 @@ const chatFrames = async function* (count: number): AsyncGenerator<ProtocolFrame
 test.each([2, 32])('reads only the ending candidate for %i interleaved choices', async count => {
   vi.mocked(createGeminiGenerateContentEventAccumulator).mockClear();
   const codec = createTestSidecarCodec();
-  const trip = await routeGeminiGenerateContent({
+  const trip = await requireTrip(routeGeminiGenerateContentViaOpenAIChatCompletions({
     contents: [{ role: 'user', parts: [{ text: 'question' }] }], generationConfig: { candidateCount: count },
-  }).viaOpenAIChatCompletions({ model: 'target', sidecarCodec: codec });
+  }, { model: 'target', sidecarCodec: codec }));
   const events = async function* () {
     for await (const frame of trip.events(chatFrames(count))) if (frame.type === 'event') yield frame.event;
   };

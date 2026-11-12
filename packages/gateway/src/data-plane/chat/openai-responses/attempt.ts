@@ -1,5 +1,6 @@
 import { klona } from 'klona/json';
 
+import { inputErrorResult } from './errors.ts';
 import { openaiResponsesInterceptors } from './interceptors/index.ts';
 import type { OpenAIResponsesAttemptResult, OpenAIResponsesInvocation } from './interceptors/types.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
@@ -11,17 +12,17 @@ import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts'
 import { anthropicMessagesAttempt } from '../anthropic-messages/attempt.ts';
 import { openaiChatCompletionsAttempt } from '../openai-chat-completions/attempt.ts';
 import { applyRulesToUpstreamOpenAIResponses } from '../shared/alias-rules.ts';
+import { captureFromDump, executeTranslation } from '../shared/execute-translation.ts';
 import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { providerStreamResultToExecuteResult } from '../shared/provider-stream-result.ts';
 import { SidecarDomain } from '../shared/sidecar-codec.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
-import { captureFromDump, traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type ModelCandidate, eventResult, readUpstreamApiError, providerModelOf, type ChatTargetApi, type ExecuteResult, type ProviderOpenAIResponsesResult, type OpenAIResponsesAction } from '@floway-dev/provider';
-import { routeOpenAIResponses } from '@floway-dev/translate/openai-responses';
+import { routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions, type TranslateInputError } from '@floway-dev/translate';
 
 // `/v1/responses` generate prefers the native OpenAI Responses target, then the
 // translated Anthropic Messages path, then the translated OpenAI Chat Completions path. The
@@ -41,40 +42,14 @@ interface OpenAIResponsesAttemptBaseArgs {
 export type OpenAIResponsesAttemptInvokeArgs = OpenAIResponsesAttemptBaseArgs;
 type OpenAIResponsesAttemptGenerateArgs = Omit<OpenAIResponsesAttemptInvokeArgs, 'action'>;
 
-// Single entry point for both `action: 'generate'` and `action: 'compact'`.
-// Envelope-drain branches on the caller's intent (`action` passed by value),
-// not on `invocation.action`. Interceptors are free to mutate `ctx.action`
-// to steer inner dispatch — and, by the project's interceptor convention,
-// they do not restore on the way out — so post-chain `invocation.action`
-// reflects whatever the last writer left it at. The shape of the result we
-// hand back is the caller's contract; keying off the caller's value is the
-// only place that contract lives.
+// Capture the caller's action before interceptors: invocation action selects upstream execution,
+// while caller action selects the returned resource shape.
 //
-// The module-boundary invariant `compact-shaped ⇒ targetApi='openaiResponses'`
-// at dispatch time is enforced in two places, each at the layer that owns
-// the corresponding piece of state:
+// Compact execution requires a native Responses target. On translated targets, the compact
+// shim pivots execution to generate and consumes compact input items before source reading.
 //
-//   - `invocation.action === 'compact'` is caught inside `dispatchOpenAIResponses`'s
-//     `case 'messages'` / `case 'openai-chat-completions'` arms — action is a
-//     OpenAI-Responses-level metadata field that the translators never see.
-//   - A `compaction_trigger` (or any other compact-shaped) item in input is
-//     caught by the translator itself — the `openai-responses-via-anthropic-messages` and
-//     `openai-responses-via-openai-chat-completions` translators reject any input-item
-//     variant they do not handle, so a compaction_trigger that slipped past
-//     the shim surfaces as a translator-level error rather than a silent
-//     drop.
-//
-// Both safety nets fire pre-upstream-call, live inside the chain (not after
-// the interceptor finally blocks), and stay independent of the shim's
-// presence.
-//
-// OpenAI Responses state and client affinity both belong to the native source edge,
-// outside this candidate attempt. Native serve passes the already-hydrated
-// candidate payload; translated inner OpenAI Responses
-// calls pass only their translated payload. Keeping this function free of
-// affinity decoding, state hydration, and persistence
-// prevents an inner OpenAI Responses target from owning another source protocol's
-// client-visible state.
+// Hydration, affinity and persistence belong to the native source edge, so translated inner
+// calls cannot own another source protocol's client state.
 export const openaiResponsesAttempt = {
   invoke: async (args: OpenAIResponsesAttemptInvokeArgs): Promise<OpenAIResponsesAttemptResult> => {
     const { action, ctx, candidate, headers: sourceHeaders } = args;
@@ -95,8 +70,10 @@ export const openaiResponsesAttempt = {
       targetApi,
       headers,
     };
-    const chainResult = await runInterceptors(invocation, ctx, openaiResponsesInterceptors, async () =>
-      await dispatchOpenAIResponses(invocation, ctx));
+    const chainResult = await runInterceptors(invocation, ctx, openaiResponsesInterceptors, async () => {
+      const result = await dispatchOpenAIResponses(invocation, ctx);
+      return result.type === 'input-error' ? inputErrorResult(result, ctx.attempt.telemetry) : result;
+    });
 
     if (chainResult.type !== 'events') return chainResult;
 
@@ -131,7 +108,7 @@ export const openaiResponsesAttempt = {
 const dispatchOpenAIResponses = async (
   invocation: OpenAIResponsesInvocation,
   ctx: ChatGatewayCtx,
-): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
+): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>> | TranslateInputError> => {
   const { candidate, targetApi } = invocation;
   switch (targetApi) {
   case 'openaiResponses': {
@@ -168,9 +145,9 @@ const dispatchOpenAIResponses = async (
       // unexpected-input-item guard.
       throw new Error(`openaiResponsesAttempt: action='compact' reached dispatch on targetApi='anthropicMessages' — the openai-responses-compact-shim must engage and pivot the action`);
     }
-    return await traverseTranslation(
+    return await executeTranslation(
       invocation.payload,
-      p => routeOpenAIResponses(p).viaAnthropicMessages({
+      p => routeOpenAIResponsesViaAnthropicMessages(p, {
         model: candidate.model.id,
         sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
@@ -185,9 +162,9 @@ const dispatchOpenAIResponses = async (
     if (invocation.action === 'compact') {
       throw new Error(`openaiResponsesAttempt: action='compact' reached dispatch on targetApi='openaiChatCompletions' — the openai-responses-compact-shim must engage and pivot the action`);
     }
-    return await traverseTranslation(
+    return await executeTranslation(
       invocation.payload,
-      p => routeOpenAIResponses(p).viaOpenAIChatCompletions({ model: candidate.model.id, sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
+      p => routeOpenAIResponsesViaOpenAIChatCompletions(p, { model: candidate.model.id, sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
       translated => openaiChatCompletionsAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
       }),

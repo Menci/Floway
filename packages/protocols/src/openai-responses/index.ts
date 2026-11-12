@@ -1448,3 +1448,5 @@ export { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, collectOpenAIResponsesProtoc
 export { createRandomOpenAIResponsesItemId, type GeneratedOpenAIResponsesItemType } from './item-id.ts';
 export { reassembleOpenAIResponsesEvents } from './reassemble.ts';
 export { openaiResponsesProtocolFrameToSSEFrame } from './to-sse.ts';
+
+export { canonicalizeOpenAIResponsesPayload } from './canonicalize-payload.ts';

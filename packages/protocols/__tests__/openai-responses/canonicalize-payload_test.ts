@@ -1,9 +1,7 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
-import { TranslatorInputError } from '../../../src/translator-input-error.ts';
-import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
-import { assertEquals, assertThrows } from '@floway-dev/test-utils';
-import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/translate/openai-responses';
+import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
+import { assert, assertEquals } from '@floway-dev/test-utils';
 
 test('canonicalizes string and implicit-message wire inputs', () => {
   assertEquals(canonicalizeOpenAIResponsesPayload({ model: 'gpt-test', input: 'hello' }), {
@@ -62,13 +60,11 @@ test('rejects a payload without a usable model at the canonical boundary', () =>
     { model: 42, input: 'hello' },
     { model: null, input: 'hello' },
   ]) {
-    const error = assertThrows(
-      () => canonicalizeOpenAIResponsesPayload(payload),
-      TranslatorInputError,
-      "Missing required parameter: 'model'.",
-    ) as TranslatorInputError;
-    assertEquals(error.param, 'model');
-    assertEquals(error.code, 'missing_required_parameter');
+    assertEquals(canonicalizeOpenAIResponsesPayload(payload), {
+      error: {
+        message: "Missing required parameter: 'model'.", param: 'model', code: 'missing_required_parameter',
+      },
+    });
   }
 });
 
@@ -84,15 +80,11 @@ test('rejects malformed untyped input items at the canonical boundary', () => {
     { role: 'user', content: [{ type: 'input_text', text: 'invalid breakpoint', prompt_cache_breakpoint: {} }] },
     { role: 'user', content: 'invalid phase', phase: 42 },
   ]) {
-    const error = assertThrows(
-      () => canonicalizeOpenAIResponsesPayload({
-        model: 'gpt-test',
-        input: [malformed] as unknown as OpenAIResponsesPayloadEx['input'],
-      }),
-      TranslatorInputError,
-      'valid role and content',
-    ) as TranslatorInputError;
-    assertEquals(error.param, 'input[0]');
+    assertEquals(canonicalizeOpenAIResponsesPayload({ model: 'gpt-test', input: [malformed] }), {
+      error: {
+        message: 'Untyped OpenAI Responses input items require a valid role and content.', param: 'input[0]',
+      },
+    });
   }
 });
 
@@ -102,6 +94,7 @@ test('canonicalizeOpenAIResponsesPayload preserves reasoning.context verbatim, i
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     reasoning: { effort: 'high', context: 'current_turn' },
   });
+  assert('input' in canonicalCurrent);
   assertEquals(canonicalCurrent.reasoning, { effort: 'high', context: 'current_turn' });
 
   // An unknown/future context string rides through the wire→canonical boundary
@@ -111,5 +104,12 @@ test('canonicalizeOpenAIResponsesPayload preserves reasoning.context verbatim, i
     input: 'hi',
     reasoning: { context: 'future_mode' },
   });
+  assert('input' in canonicalFuture);
   assertEquals(canonicalFuture.reasoning, { context: 'future_mode' });
+});
+
+test('unexpected getters retain their original error and evaluation order', () => {
+  const failure = new Error('unexpected getter failure', { cause: new Error('cause') });
+  expect(() => canonicalizeOpenAIResponsesPayload({ get model() { throw failure; } })).toThrow(failure);
+  expect(() => canonicalizeOpenAIResponsesPayload({ model: 'm', input: [null], get metadata() { throw failure; } })).toThrow(failure);
 });

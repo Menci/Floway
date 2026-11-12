@@ -1,4 +1,3 @@
-import { translatorInputErrorResult } from './errors.ts';
 import { geminiGenerateContentInternalRpcErrorResponse, geminiGenerateContentRpcErrorResponse, respondGeminiGenerateContent } from './respond.ts';
 import { geminiGenerateContentServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
@@ -10,7 +9,6 @@ import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/s
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { GeminiCountTokensPayload, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import { internalErrorResult, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
-import { TranslatorInputError } from '@floway-dev/translate';
 
 interface GeminiGenerateContentModelAction {
   readonly model: string;
@@ -50,8 +48,7 @@ const parseGeminiGenerateContentBodyBytes = <T>(requestBody: RequestBody, projec
 
 // Surfaces a pre-stream throw as a Gemini-generateContent-RPC envelope, routing through
 // `respondGeminiGenerateContent` so the dump records the failure exactly as the sibling
-// HTTP handlers do. `TranslatorInputError` renders a 400 INVALID_ARGUMENT
-// envelope (caller-input violation). A `ProviderModelsUnavailableError`
+// HTTP handlers do. A `ProviderModelsUnavailableError`
 // carrying an upstream HTTP body relays that body through the `api-error`
 // path with `source: 'upstream'`; everything else collapses to an
 // `internal-error` result rendered as the Gemini generateContent internal-error envelope
@@ -65,10 +62,6 @@ const respondWithGeminiGenerateContentError = async (
   ctx: ChatGatewayCtx,
   wantsStream: boolean,
 ): Promise<Response> => {
-  if (error instanceof TranslatorInputError) {
-    const response = await respondGeminiGenerateContent(c, translatorInputErrorResult(error, ctx.attempt.telemetry), wantsStream, ctx);
-    return finalizeGatewayResponse(ctx, response);
-  }
   if (error instanceof ProviderModelsUnavailableError && error.httpResponse) {
     const { status, headers, body } = error.httpResponse;
     const apiErrorResult = {

@@ -1,10 +1,11 @@
 import { expect, test } from 'vitest';
 
-import { routeOpenAIChatCompletions } from '../../../../src/protocols/openai-chat-completions/index.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import { collect, iterate } from '../../../shared/iterables.ts';
 import { fixtureFrames } from '../../fixtures.ts';
+import { requireTrip } from '../../require-trip.ts';
 import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
+import { routeOpenAIChatCompletionsViaAnthropicMessages, routeOpenAIChatCompletionsViaOpenAIResponses } from '@floway-dev/translate';
 
 const protocols = ['anthropic-messages', 'openai-responses'] as const;
 const flags = [undefined, false, true];
@@ -13,8 +14,8 @@ test.each(protocols)('ChatCompletions via %s captures continuous usage preferenc
   for (const include_usage of flags) for (const continuous_usage_stats of flags) {
     const src: OpenAIChatCompletionsPayloadEx = { model: 'model', messages: [], stream: true, stream_options: { include_usage, continuous_usage_stats } };
     const trip = protocol === 'anthropic-messages'
-      ? await routeOpenAIChatCompletions(src).viaAnthropicMessages({ sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'model', fallbackMaxOutputTokens: 100, loadRemoteImage: async () => { throw new Error('Unexpected image'); } })
-      : await routeOpenAIChatCompletions(src).viaOpenAIResponses({ sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'model' });
+      ? await requireTrip(routeOpenAIChatCompletionsViaAnthropicMessages(src, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'model', fallbackMaxOutputTokens: 100, loadRemoteImage: async () => { throw new Error('Unexpected image'); } }))
+      : await requireTrip(routeOpenAIChatCompletionsViaOpenAIResponses(src, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'model' }));
     src.stream_options!.include_usage = include_usage !== true;
     src.stream_options!.continuous_usage_stats = continuous_usage_stats !== true;
     const usage = protocol === 'anthropic-messages' ? { input_tokens: 10, output_tokens: 4 } : { input_tokens: 10, output_tokens: 4, total_tokens: 14 };
@@ -31,7 +32,7 @@ test.each(protocols)('ChatCompletions via %s captures continuous usage preferenc
 });
 
 test('ChatCompletions continuous usage reflects reported Responses counters without extra progress chunks', async () => {
-  const trip = await routeOpenAIChatCompletions({ model: 'model', messages: [], stream_options: { include_usage: true, continuous_usage_stats: true } }).viaOpenAIResponses({ sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'model' });
+  const trip = await requireTrip(routeOpenAIChatCompletionsViaOpenAIResponses({ model: 'model', messages: [], stream_options: { include_usage: true, continuous_usage_stats: true } }, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), model: 'model' }));
   const response = { id: 'resp', model: 'model', created_at: 1, status: 'in_progress', output: [], usage: null };
   const frames = [
     { type: 'response.created', response },
