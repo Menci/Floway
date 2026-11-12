@@ -10,6 +10,7 @@ export interface TextGroup<Part extends object> {
 }
 
 export interface TextPlacement {
+  /** Concatenated text channel in which offset locates this field. */
   readonly enclosingText: string;
   readonly offset: number;
 }
