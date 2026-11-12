@@ -17,6 +17,8 @@ const inputContent = (media: IRInputMedia, detail?: string | null): OpenAIRespon
     return { type: 'input_image', image_url: media.url, ...(detail == null ? {} : { detail }) };
   case 'file':
     return { type: 'input_image', file_id: media.file_id, ...(detail == null ? {} : { detail }) };
+  case 'data':
+    return { type: 'input_image', image_url: media.data.startsWith('data:') ? media.data : `data:application/octet-stream;base64,${media.data}`, ...(detail == null ? {} : { detail }) };
   case 'base64':
     return { type: 'input_image', image_url: `data:${media.media_type ?? 'application/octet-stream'};base64,${media.data}`, ...(detail == null ? {} : { detail }) };
   }
@@ -29,6 +31,8 @@ const fileContent = (media: IRInputMedia, filename?: string | null): OpenAIRespo
     return { type: 'input_file', file_url: media.url, ...name };
   case 'file':
     return { type: 'input_file', file_id: media.file_id, ...name };
+  case 'data':
+    return { type: 'input_file', file_data: media.data, ...name };
   case 'base64':
     // Responses accepts the bytes either raw or as a data URL; a MIME type the
     // source stated is carried in the data URL so the target can act on it.

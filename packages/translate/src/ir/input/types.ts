@@ -224,6 +224,7 @@ export interface IRInputAudio {
 // bare base64 remains untyped. Target writers choose the wire representation.
 export type IRInputMedia =
   | { readonly source_kind: 'url'; readonly url: string }
+  | { readonly source_kind: 'data'; readonly data: string }
   | { readonly source_kind: 'base64'; readonly media_type?: string; readonly data: string }
   | { readonly source_kind: 'file'; readonly file_id: string };
 

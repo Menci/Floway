@@ -20,12 +20,17 @@ const audioFormat = (mediaType: string): string => {
   throw new TranslateInputException(`Cannot translate audio MIME type '${mediaType}' to OpenAI Chat Completions.`);
 };
 
-const dataUrl = (media: Extract<IRInputMedia, { source_kind: 'base64' }>): string => `data:${media.media_type ?? 'application/octet-stream'};base64,${media.data}`;
+const dataUrl = (media: Extract<IRInputMedia, { source_kind: 'base64' }>, requireMediaType: boolean): string => media.media_type === undefined && !requireMediaType
+  ? media.data
+  : `data:${media.media_type ?? 'application/octet-stream'};base64,${media.data}`;
 
 const imageUrlPart = (media: IRInputMedia, detail?: string | null): OpenAIChatCompletionsUserContentPart => ({
   type: 'image_url',
   image_url: {
-    url: media.source_kind === 'url' ? media.url : media.source_kind === 'base64' ? dataUrl(media) : (() => { throw new TranslateInputException('Cannot translate file_id-only image content to OpenAI Chat Completions.'); })(),
+    url: media.source_kind === 'url' ? media.url
+      : media.source_kind === 'data' ? media.data.startsWith('data:') ? media.data : `data:application/octet-stream;base64,${media.data}`
+        : media.source_kind === 'base64' ? dataUrl(media, true)
+          : (() => { throw new TranslateInputException('Cannot translate file_id-only image content to OpenAI Chat Completions.'); })(),
     ...(detail == null ? {} : { detail }),
   },
 });
@@ -34,7 +39,8 @@ const filePart = (media: IRInputMedia, filename?: string | null): OpenAIChatComp
   const name = filename == null ? {} : { filename };
   switch (media.source_kind) {
   case 'file': return { type: 'file', file: { file_id: media.file_id, ...name } };
-  case 'base64': return { type: 'file', file: { file_data: dataUrl(media), ...name } };
+  case 'data': return { type: 'file', file: { file_data: media.data, ...name } };
+  case 'base64': return { type: 'file', file: { file_data: dataUrl(media, false), ...name } };
   case 'url': throw new TranslateInputException('Cannot translate a file URL to OpenAI Chat Completions.');
   }
 };

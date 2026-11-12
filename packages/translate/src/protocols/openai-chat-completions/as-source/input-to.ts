@@ -3,7 +3,7 @@ import { klona } from 'klona/json';
 import { partitionOpenAIChatCompletionsTurns, type OpenAIChatCompletionsConversationMessage, type OpenAIChatCompletionsConversationTurn } from './conversation-turns.ts';
 import type { OpenAIChatCompletionsSourceAssistantTurn } from './round-trip.ts';
 import type { SourceReading } from '../../../composition/reading.ts';
-import { mediaFromURL, mediaOrThrow } from '../../../ir/input/media.ts';
+import { mediaFromURL } from '../../../ir/input/media.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -78,7 +78,7 @@ const userContentPart = (part: OpenAIChatCompletionsUserContentPart): IRInputUse
   case 'image_url':
     return {
       type: 'image',
-      image: mediaOrThrow(mediaFromURL(part.image_url.url), part.image_url.url),
+      image: mediaFromURL(part.image_url.url),
       ...(part.image_url.detail === undefined ? {} : { detail: part.image_url.detail }),
     };
   case 'input_audio':
@@ -87,10 +87,9 @@ const userContentPart = (part: OpenAIChatCompletionsUserContentPart): IRInputUse
     const filename = part.file.filename === undefined ? {} : { filename: part.file.filename };
     if (part.file.file_id !== undefined) return { type: 'file', file: { source_kind: 'file', file_id: part.file.file_id }, ...filename };
     if (part.file.file_data !== undefined) {
-      const media = mediaOrThrow(mediaFromURL(part.file.file_data), part.file.file_data);
       return {
         type: 'file',
-        file: media.source_kind === 'base64' ? media : { source_kind: 'base64', data: part.file.file_data },
+        file: { source_kind: 'data', data: part.file.file_data },
         ...filename,
       };
     }

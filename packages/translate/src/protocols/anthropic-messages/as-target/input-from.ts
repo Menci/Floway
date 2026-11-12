@@ -1,4 +1,5 @@
 import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds } from '../../../composition/request/call-ids.ts';
+import { parseDataURL, type ParsedDataURL } from '../../../ir/input/media.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputMedia, IRInputTextPart, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
 import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
@@ -18,9 +19,20 @@ import type {
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/anthropic-messages';
 import { isFastServiceTier, parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
+const requiredMediaType = (media: ParsedDataURL): string => media.media_type ?? 'application/octet-stream';
+
+const inlineMedia = (media: Extract<IRInputMedia, { source_kind: 'data' | 'base64' }>): ParsedDataURL => {
+  if (media.source_kind === 'base64') return media;
+  return media.data.startsWith('data:') ? parseDataURL(media.data) : { data: media.data };
+};
+
 const imageSource = (media: IRInputMedia): AnthropicMessagesImageSource => {
   switch (media.source_kind) {
   case 'url': {
+    if (media.url.startsWith('data:')) {
+      const inline = parseDataURL(media.url);
+      return { type: 'base64', media_type: requiredMediaType(inline) as Extract<AnthropicMessagesImageSource, { type: 'base64' }>['media_type'], data: inline.data };
+    }
     // Messages remote images require HTTP(S) URLs; invalid schemes are translation input errors.
     const scheme = media.url.slice(0, media.url.indexOf(':')).toLowerCase();
     if (scheme !== 'http' && scheme !== 'https') {
@@ -29,36 +41,32 @@ const imageSource = (media: IRInputMedia): AnthropicMessagesImageSource => {
     return { type: 'url', url: media.url };
   }
   case 'file': return { type: 'file', file_id: media.file_id };
-  case 'base64':
-    if (media.media_type === undefined) throw new TranslateInputException('Anthropic Messages image input requires a media type.');
-    return { type: 'base64', media_type: media.media_type as Extract<AnthropicMessagesImageSource, { type: 'base64' }>['media_type'], data: media.data };
+  case 'data':
+  case 'base64': {
+    const inline = inlineMedia(media);
+    return { type: 'base64', media_type: requiredMediaType(inline) as Extract<AnthropicMessagesImageSource, { type: 'base64' }>['media_type'], data: inline.data };
+  }
   }
 };
 
 const imageBlock = (media: IRInputMedia): AnthropicMessagesImageBlock => ({ type: 'image', source: imageSource(media) });
 
-/** Messages text documents carry decoded characters; inline IR media carries base64 bytes. */
-const textOfBase64 = (data: string): string => {
-  const binary = atob(data);
-  const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
-  return new TextDecoder().decode(bytes);
-};
-
 /**
- * The wire distinguishes a plain-text document from a binary one and carries the
- * binary MIME type as a string, so the caller's media type travels verbatim and
- * the selected upstream decides whether it accepts it. Rewriting an unknown type
- * to PDF would describe the bytes wrongly.
+ * Inline documents remain bytes. The target requires a media type, so an
+ * untyped raw base64 value receives the generic binary type at this boundary.
  */
 const documentBlock = (media: IRInputMedia): AnthropicMessagesUserContentBlock => {
   switch (media.source_kind) {
-  case 'url': return { type: 'document', source: { type: 'url', url: media.url } };
+  case 'url': {
+    if (!media.url.startsWith('data:')) return { type: 'document', source: { type: 'url', url: media.url } };
+    const inline = parseDataURL(media.url);
+    return { type: 'document', source: { type: 'base64', media_type: requiredMediaType(inline), data: inline.data } };
+  }
   case 'file': return { type: 'document', source: { type: 'file', file_id: media.file_id } };
+  case 'data':
   case 'base64': {
-    if (media.media_type === undefined) throw new TranslateInputException('Anthropic Messages document input requires a media type.');
-    return media.media_type === 'text/plain'
-      ? { type: 'document', source: { type: 'text', media_type: 'text/plain', data: textOfBase64(media.data) } }
-      : { type: 'document', source: { type: 'base64', media_type: media.media_type, data: media.data } };
+    const inline = inlineMedia(media);
+    return { type: 'document', source: { type: 'base64', media_type: requiredMediaType(inline), data: inline.data } };
   }
   }
 };
