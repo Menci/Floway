@@ -88,9 +88,7 @@ const assistantMessage = (items: readonly IRInputAssistantItemWithCallIds[]): Op
       for (const part of item.content) if (part.type === 'text') text.push(part.text); else refusals.push(part.refusal);
       break;
     case 'reasoning':
-      // `reasoning_text` is the extension the gateway already emits for
-      // translated output; it is a target-only spelling here because no reader
-      // can identify which alias a Chat source meant.
+      // We write readable reasoning as reasoning_text; input IR does not retain the source alias spelling.
       if (item.summary !== undefined) reasoning.push(item.summary.join(''));
       if (item.content !== undefined) reasoning.push(item.content.join(''));
       break;
@@ -98,16 +96,12 @@ const assistantMessage = (items: readonly IRInputAssistantItemWithCallIds[]): Op
       toolCalls.push({
         id: item.call_id,
         type: 'function',
-        // Chat requires `arguments`, and the IR states an absent value for a
-        // call that takes no argument object at all; the empty object is that
-        // call's argument list written out.
+        // Chat requires argument text; omitted source arguments use an empty JSON object.
         function: { name: item.name, arguments: item.arguments ?? '{}' },
       });
       break;
     case 'custom_tool_call':
-      // Chat Completions must express a freeform tool call as a function call
-      // whose single argument is `input`; the surrounding route restores the
-      // custom shape on the response path.
+      // Freeform calls use the same function wrapper as their declarations; the response path restores the custom shape.
       toolCalls.push({ id: item.call_id, type: 'function', function: { name: item.name, arguments: JSON.stringify({ input: item.input }) } });
       break;
     }
@@ -181,13 +175,6 @@ export const openaiChatCompletionsConversationFromIR = (
   ? assistantMessage(turn.items)
   : clientMessages(turn.items, legacyCallNames));
 
-/**
- * Writes the settings onto a Chat Completions payload. `max_tokens` is
- * deprecated and incompatible with the o-series models, so the ceiling is
- * stated as `max_completion_tokens`.
- *
- * https://github.com/openai/openai-openapi/blob/master/openapi.yaml (max_tokens)
- */
 // OpenAI's strict-mode validators reject an object schema without `properties`,
 // which is a target-side constraint rather than something the IR states.
 const normalizeParameters = (schema: Readonly<Record<string, unknown>>): Record<string, unknown> => {
@@ -217,8 +204,7 @@ const toolFromIR = (tool: IRInputTool): OpenAIChatCompletionsTool => {
       name: tool.name,
       ...(tool.description === undefined ? {} : { description: tool.description }),
       ...(tool.parameters === undefined ? {} : { parameters: normalizeParameters(tool.parameters) }),
-      // Chat defaults a function tool to non-strict, so an omitted value states
-      // that default rather than letting the field go missing.
+      // Keep omitted strictness absent so the Chat target applies its own default.
       ...(tool.strict === undefined ? {} : { strict: tool.strict }),
     },
   };
@@ -254,11 +240,7 @@ export const openaiChatCompletionsHeaderFromIR = (request: IRInputRequestHeader)
     // A trip guarantees a streaming request; a request that says otherwise
     // cannot be carried by this side at all.
     stream: requireStreaming(request.settings),
-    // A streamed request asks the upstream for usage on every chunk, not only
-    // the last one. `include_usage` is the OpenAI-standard flag;
-    // `continuous_usage_stats` is the vLLM/SGLang extension that lets a
-    // translation state input tokens before any output exists. Upstreams that
-    // do not implement the extension ignore it.
+    // Request final usage and the vLLM extension for cumulative usage on each chunk.
     // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/generate/base/protocol.py#L241-L243
     stream_options: { include_usage: true, continuous_usage_stats: true } as OpenAIChatCompletionsStreamOptionsEx,
     ...(tools === undefined || tools.length === 0 ? {} : { tools: tools.map(toolFromIR) }),
@@ -276,6 +258,8 @@ export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): 
   const reasoningEffort = chatReasoningEffort(settings);
 
   return {
+    // Use the replacement cap spelling, which includes reasoning tokens.
+    // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/chat/completions/completions.ts
     ...(ceiling === undefined ? {} : { max_completion_tokens: ceiling }),
     ...(settings.temperature === undefined ? {} : { temperature: settings.temperature }),
     ...(settings.top_p === undefined ? {} : { top_p: settings.top_p }),

@@ -111,8 +111,7 @@ for (const target of ['chat', 'messages'] as const) {
 }
 
 test('requireCallableSelector rejects a namespace that is not a string', () => {
-  // The selector's namespace is carried into the IR as a string, so a member
-  // stating anything else is malformed rather than something to pass through.
+
   assertEquals(requireCallableSelector({ type: 'function', name: 'read', namespace: 'files' }).namespace, 'files');
   assertThrows(() => requireCallableSelector({ type: 'function', name: 'read', namespace: 42 }), TranslateInputException);
 });
@@ -138,9 +137,7 @@ test('Messages rejects an optional single-tool subset rather than forcing that c
 });
 
 test('a dotted selector is only read as a pair when that group is declared', async () => {
-  // A flat declaration may spell its name with a dot; that dot is not a group
-  // separator, and reading it as one bound the selector to a different callable
-  // — or refused a legal request.
+  // A dot in a flat declaration belongs to its name; treating it as a namespace separator selects a different callable.
   const flat = await buildChat(source({ type: 'function', name: 'a.b' }), createTestSidecarCodec());
   assertEquals(flat.target.tool_choice, { type: 'function', function: { name: 'a.b' } });
 });

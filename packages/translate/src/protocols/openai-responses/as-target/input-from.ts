@@ -50,9 +50,7 @@ const toolResultOutput = (output: string | readonly IRInputToolResultContentPart
       return fileContent(part.file, part.filename);
     });
 
-// Responses accepts a bare string or a part array. The array is the general
-// spelling, so it is used unconditionally: the IR states each part and the
-// target keeps them, without a writer having to know how the source phrased it.
+// The content-array projection preserves IR part boundaries.
 const userContent = (item: Extract<IRInputClientItem, { type: 'message' }>): OpenAIResponsesInputContent[] => item.content.map(part => {
   switch (part.type) {
   case 'text': return { type: 'input_text' as const, text: part.text };
@@ -87,9 +85,7 @@ const assistantItems = (items: readonly IRInputAssistantItemWithCallIds[]): Cano
       type: 'function_call',
       call_id: item.call_id,
       name: item.name,
-      // Responses requires `arguments`, and the IR states an absent value for a
-      // call that takes no argument object at all; the empty object is that
-      // call's argument list written out.
+      // Responses requires argument text; omitted source arguments use an empty JSON object.
       arguments: item.arguments ?? '{}',
       status: 'completed',
     };
@@ -109,9 +105,7 @@ const clientItems = (items: readonly IRInputClientItemWithCallIds[]): CanonicalO
     return { type: 'message', role: item.role, content };
   }
   case 'message': {
-    // One text part is what a plain prompt states, and Responses spells a
-    // text message as a bare string; several parts keep their array so the
-    // boundaries between them survive.
+    // A single text part uses bare-string content; multipart user content retains its part boundaries.
     if (item.content.length === 1 && item.content[0].type === 'text') {
       return { type: 'message', role: 'user', content: item.content[0].text };
     }
@@ -177,11 +171,6 @@ const requireSchema = (format: IRInputOutputFormat): Readonly<Record<string, unk
   return format.schema;
 };
 
-/**
- * Responses states the ceiling once and nests no schema details: `text.format`
- * is flat. `strict` stays absent when the source did not say, because an
- * omitted Responses tool/format strictness is not the same as `false`.
- */
 // OpenAI's strict-mode validators reject an object schema that states no
 // `properties`, which is a target-side constraint rather than something the IR
 // states.
@@ -216,8 +205,7 @@ const toolFromIR = (tool: IRInputTool): OpenAIResponsesTool => {
 
 const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<CanonicalOpenAIResponsesPayload['tool_choice']> => {
   if (typeof choice === 'string') return choice;
-  // Responses states a narrowed declaration set natively, which is how the IR's
-  // `allowed_tools` is expressed on this wire.
+  // Responses expresses the permitted callable subset in tool_choice.allowed_tools.
   if (choice.type === 'allowed_tools') {
     return {
       type: 'allowed_tools',
@@ -293,9 +281,7 @@ export const openaiResponsesSettingsFromIR = (settings: IRInputSettings): Partia
               format: format.type === 'json_schema'
                 ? {
                     type: 'json_schema' as const,
-                    // Responses requires both a name and a schema; the IR makes them
-                    // optional because Chat and Messages spell them differently. A
-                    // source without a schema cannot be expressed here at all.
+                    // Responses JSON Schema output requires a schema and a name; an omitted source name uses a stable fallback.
                     name: format.name ?? 'response',
                     schema: requireSchema(format),
                     ...(format.description === undefined ? {} : { description: format.description }),

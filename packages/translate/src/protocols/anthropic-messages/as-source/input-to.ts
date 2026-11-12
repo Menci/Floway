@@ -156,12 +156,7 @@ const clientItems = (
   return items;
 };
 
-// A server tool runs on Anthropic's own backend and its result is written into
-// the assistant message by the API, so the client never answers it. Every target
-// we write states one call and its result as a separate call/result pair anyway
-// (Chat's `tool` message follows its `tool_calls`), so the pair has to become a
-// turn boundary here.
-//
+// Server tools return results inside assistant content. Lower each call/result round into assistant and client turns to preserve source order.
 // https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool
 type ServerToolResultBlock = Extract<AnthropicMessagesAssistantInputContentBlock, {
   type: 'web_search_tool_result' | 'web_fetch_tool_result' | 'code_execution_tool_result'
@@ -180,9 +175,7 @@ const isServerToolResult = (block: AnthropicMessagesAssistantInputContentBlock):
   SERVER_TOOL_RESULT_TYPES.has(block.type);
 
 interface AnthropicMessagesAssistantSegments {
-  // One entry per run of assistant items, each followed by the tool results the
-  // server wrote into the same message. SourceReading the pairs in order reproduces
-  // the block sequence: an assistant turn, then the client turn that answers it.
+  // Each run of assistant items is followed by the server results it produced, preserving their source order.
   readonly segments: readonly {
     readonly assistant: readonly IRInputAssistantItem[];
     readonly serverResults: readonly IRInputClientItem[];
@@ -235,8 +228,7 @@ const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'a
       if (block.thinking !== '') assistant.push({ type: 'reasoning', summary: [block.thinking] });
       break;
     case 'redacted_thinking':
-      // The redacted payload is an opaque, vendor-signed blob; the sidecar is
-      // the only place that can carry it back to the same vendor.
+      // Opaque redacted thinking has no translatable input-IR representation.
       break;
     // A client tool and a server tool are the same fact to every target: a call
     // the rest of the conversation answers. Only the client answers a client
@@ -246,8 +238,7 @@ const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'a
       flushText();
       assistant.push({ type: 'function_call', call_id: block.id, name: block.name, arguments: JSON.stringify(block.input) });
       break;
-    // Hosted results other than the ones above have no plain-tool spelling and
-    // no cross-vendor counterpart.
+
     default:
       throw new TranslateInputException(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' assistant content blocks are not supported on this model`);
     }
@@ -290,9 +281,7 @@ const anthropicMessagesTurnToIR = (
   }];
 };
 
-// A Messages client declaration carries a JSON Schema under `input_schema` and
-// states both callable kinds with the same shape, so the arm is the neutral one
-// every target can express.
+// Both Messages client-tool declaration forms carry JSON Schema, so they use the function-tool IR arm.
 const toolToIR = (tool: AnthropicMessagesClientTool): IRInputTool => {
   return {
     type: 'function',
@@ -335,16 +324,9 @@ const anthropicMessagesToolsToIR = (payload: AnthropicMessagesPayload): Pick<IRI
   };
 };
 
-/**
- * Messages states one ceiling, `max_tokens`, and its structured-output schema
- * lives in `output_config.format`. `top_k` is also a GenerateContent sampling
- * knob.
- */
 const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload): IRInputSettings => {
   const format = payload.output_config?.format;
-  // Messages' structured-output schema is already strict by contract, so the
-  // fact is stated here rather than left for a target to invent. It states no
-  // name, while the OpenAI wires require one; this is the established spelling.
+  // Messages schemas are strict. We assign a stable name because the source format has none.
   // https://platform.claude.com/docs/en/build-with-claude/structured-outputs
   const outputFormat: IRInputOutputFormat | undefined = format?.type === 'json_schema'
     ? { type: 'json_schema', name: 'messages_response', schema: klona(format.schema), strict: true }
@@ -373,9 +355,7 @@ const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload): IRInp
   };
 };
 
-// Messages admits any JSON value as a metadata tag while the IR states string
-// pairs, so a value with no string spelling is a caller error rather than a
-// silent drop. `user_id: null` is Messages' way of stating no value at all.
+// Our metadata input extension is normalized to string values; null-valued entries are omitted and non-string values fail here.
 const metadataToIR = (metadata: AnthropicMessagesMetadataEx | undefined): Record<string, string> | undefined => {
   if (metadata === undefined) return undefined;
   const entries = Object.entries(metadata).flatMap(([key, value]): [string, string][] => {
@@ -386,13 +366,11 @@ const metadataToIR = (metadata: AnthropicMessagesMetadataEx | undefined): Record
   return entries.length === 0 ? undefined : Object.fromEntries(entries);
 };
 
-// Messages states the accelerated lane as `speed` and the general lane as
-// `service_tier`; every other protocol names both with the one tier string, so
-// `speed` wins when a request states both.
+// Messages speed takes precedence over service_tier when projecting onto the shared tier field.
 // https://docs.claude.com/en/build-with-claude/fast-mode
 const serviceTierToIR = (payload: AnthropicMessagesPayload): string | undefined => {
   if (payload.speed === 'fast') return FAST_SERVICE_TIER;
-  // `standard` is the default lane, which a target already assumes.
+
   if (payload.speed === 'standard') return undefined;
   return payload.service_tier ?? undefined;
 };

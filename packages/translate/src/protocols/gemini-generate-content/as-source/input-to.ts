@@ -111,9 +111,7 @@ const assistantItems = (content: GeminiGenerateContentContent, contentIndex: num
     case 'function_call': {
       const call = part.functionCall!;
       flush();
-      // An absent `functionCall.args` stays absent: `JSON.stringify(undefined)`
-      // is `undefined`, so the field is omitted exactly as before. An explicit
-      // `null` keeps `null`, because both OpenAI protocols distinguish the two.
+      // Omitted args leaves argument text absent; explicit null becomes the JSON text "null".
       items.push({ type: 'function_call', ...(call.id === undefined ? {} : { call_id: call.id }), name: call.name, arguments: JSON.stringify(call.args) });
       return;
     }
@@ -129,8 +127,7 @@ const assistantItems = (content: GeminiGenerateContentContent, contentIndex: num
       return;
     }
     case 'inline_data':
-      // A model part has no media variant on any target; the current routes
-      // reject it rather than flattening it.
+
       throw new TranslateInputException('"inline_data" parts are not supported in model content.');
     default:
       throw new TranslateInputException(`"${kind}" parts are not supported in model content.`);
@@ -145,10 +142,7 @@ const systemParts = (content: GeminiGenerateContentContent | undefined): IRInput
   return text === null ? [] : [{ type: 'text', text }];
 };
 
-// One IR turn per source turn. `partitionGeminiGenerateContentTurns` already
-// folds consecutive same-role contents into one turn, so handing back one turn
-// per content would re-split a grouping this reader had just made — the turn
-// boundary the partition draws is the boundary the IR keeps.
+// One partitioned source turn becomes one IR turn, including consecutive same-role contents.
 const turnToIRTurns = (
   turn: GeminiGenerateContentTurn,
   contentIndex: number,
@@ -171,19 +165,13 @@ const turnToIRTurns = (
       }),
     }];
 
-/** A GenerateContent system instruction is the conversation's leading prompt. */
 const geminiGenerateContentSystemToIR = (content: GeminiGenerateContentContent | undefined): IRInputTurn | undefined => {
   const parts = systemParts(content);
   return parts.length === 0 ? undefined : { kind: 'client', items: [{ type: 'prompt', role: 'system', content: parts }] };
 };
 
-// GenerateContent declares functions in groups and narrows them through
-// `toolConfig.functionCallingConfig`. The IR states that narrowing as
-// `allowed_tools`, keeping the complete declaration list separate from which
-// functions the model may call.
-// https://github.com/googleapis/googleapis/blob/master/google/ai/generativelanguage/v1beta/content.proto
-// (FunctionCallingConfig: `allowed_function_names` only applies to ANY and
-// VALIDATED, and limits which functions the model calls.)
+// GenerateContent restricts selectable functions through allowed_tools while retaining the complete declarations.
+// https://github.com/googleapis/googleapis/blob/bc7e3baa28fbb223fa93782e130260fab8205bfc/google/ai/generativelanguage/v1beta/content.proto
 const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequestHeader, 'tools' | 'tool_choice'> => {
   const declarations = payload.tools?.flatMap(group => group.functionDeclarations ?? []) ?? [];
   const config = payload.toolConfig?.functionCallingConfig;
@@ -249,7 +237,6 @@ export const readGeminiGenerateContentRequest = (payload: GeminiGenerateContentR
   };
 };
 
-/** GenerateContent keeps every sampling knob inside `generationConfig`. */
 const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest): IRInputSettings => {
   const config = payload.generationConfig;
   const budget = config?.thinkingConfig?.thinkingBudget;
@@ -258,18 +245,12 @@ const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest
   // different quantity the caller may state instead, so it travels on its own
   // field and each target decides what it can do with it.
   const statedLevel = geminiGenerateContentReasoningEffortToIR(config?.thinkingConfig);
-  // A stated level beside a stated budget is the one combination GenerateContent
-  // refuses outright: the two knobs are mutually exclusive, and no model accepts
-  // both. Neither can be preferred here, because which one a model understands
-  // depends on its family, and a tie-break would invert a caller who asked for
-  // one and got the other. Refusing keeps this reader's answer the one Google
-  // itself gives. An empty level names no tier, so it is not a statement.
+  // Reject a simultaneous budget and non-empty thinking level. The empty string is exempt from this conflict check.
   // https://github.com/cline/cline/issues/7957
   if (statedLevel !== undefined && statedLevel !== '' && budget !== undefined) {
     throw new TranslateInputException('Unable to submit request because thinking_budget and thinking_level are not supported together.');
   }
-  // A budget of zero is GenerateContent's off switch, which every target spells
-  // on the effort axis.
+  // A zero thinking budget maps to disabled reasoning.
   const effort = statedLevel ?? (budget === 0 ? 'none' : undefined);
   const schema = config === undefined ? undefined : geminiResponseSchema(config);
   const outputFormat: IRInputOutputFormat | undefined = schema !== undefined

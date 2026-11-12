@@ -302,9 +302,7 @@ test('Messages publishes cumulative usage progress before pulling the rest of th
 });
 
 test('Responses states a grouped call its group on the announcement and the snapshot alike', async () => {
-  // The request declared this call inside a group, so both the opening event and
-  // the terminal snapshot name it by the pair; an announcement that dropped the
-  // group would disagree with the snapshot the client already saw.
+
   const records: IRRecord[] = [
     { type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } },
     { type: 'write', kind: 'assign', path: ['model'], value: 'served' },

@@ -210,9 +210,6 @@ const clientItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, 
   }
 };
 
-// A Chat declaration states a function with a nested definition, a freeform
-// custom tool, or a hosted tool this IR does not carry (an interceptor rewrites
-// those before translation). Only the two callable arms are representable.
 const toolToIR = (tool: OpenAIChatCompletionsTool): IRInputTool => {
   if (tool.type === 'custom') {
     const format = tool.custom.format;
@@ -310,10 +307,7 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
     ...(payload.n == null ? {} : { choice_count: payload.n }),
     ...(payload.presence_penalty === undefined ? {} : { presence_penalty: payload.presence_penalty }),
     ...(payload.frequency_penalty === undefined ? {} : { frequency_penalty: payload.frequency_penalty }),
-    // `include_usage` alone asks for the final report; the vLLM/SGLang extension
-    // asks for one on every chunk. Both are the client's own rendering choice,
-    // so the field states what it asked for and a target never receives it.
-    // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/openai/serving_engine.py#L112-L121
+
   };
 };
 

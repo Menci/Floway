@@ -208,15 +208,12 @@ export const anthropicMessagesConversationFromIR = (
   const system: AnthropicMessagesTextBlockParam[] = [];
   let hoisting = leading;
   const messages: AnthropicMessagesMessage[] = [];
-  // Messages spells a single text block as a bare string, which is the shape a
-  // client sees for a plain user turn.
+
   const userMessage = (blocks: AnthropicMessagesUserContentBlock[]): AnthropicMessagesMessage => ({
     role: 'user',
     content: blocks.length === 1 && blocks[0].type === 'text' ? blocks[0].text : blocks,
   });
-  // One IR turn becomes one message: the items inside it belong together, and a
-  // turn boundary is what keeps two runs apart. The IR states that grouping, so
-  // the writer never re-derives it from item kinds.
+  // Turn boundaries control user-message grouping; item kinds do not create new client turns.
   const append = (blocks: AnthropicMessagesUserContentBlock[]): void => {
     if (blocks.length > 0) messages.push(userMessage(blocks));
   };
@@ -287,12 +284,6 @@ export const anthropicMessagesHeaderFromIR = (
   };
 };
 
-/**
- * Messages states one ceiling, `max_tokens`, and its structured-output schema
- * lives in `output_config.format`. It accepts neither `seed` nor Chat's
- * `max_completion_tokens` spelling, so a source that only stated the latter
- * still lands here as `max_tokens`.
- */
 export const anthropicMessagesSettingsFromIR = (settings: IRInputSettings): Omit<Partial<AnthropicMessagesPayload>, 'model'> => {
   const ceiling = settings.max_output_tokens ?? settings.max_visible_output_tokens;
   const format = settings.output_format;
@@ -300,12 +291,7 @@ export const anthropicMessagesSettingsFromIR = (settings: IRInputSettings): Omit
     ? { format: { type: 'json_schema' as const, schema: format.schema } }
     : undefined;
 
-  // Anthropic splits the single effort axis across two slots: `thinking` and
-  // `output_config.effort`. A stated budget is the more specific quantity, so it
-  // decides the thinking slot — zero being this axis's off switch — while the
-  // level states the effort. With no budget, an effort of `none` moves to the
-  // off switch, because this scale has no `none` of its own. Whether the target
-  // honours the off switch is the target's business.
+  // Messages separates thinking mode and budget from output_config.effort. Dynamic thinking takes precedence over a numeric budget.
   // https://platform.claude.com/docs/en/build-with-claude/effort
   const thinking = settings.reasoning_budget_dynamic === true
     ? { type: 'adaptive' as const }

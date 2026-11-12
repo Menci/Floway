@@ -351,11 +351,7 @@ test('buildTargetPayload drops redacted opaque blocks while keeping readable thi
   } as OpenAIChatCompletionsAssistantMessageEx);
 });
 
-// OpenAI strict-mode JSON Schema validators reject {type: 'object'} without a
-// `properties` field. Anthropic accepts that shape, so the input_schema must
-// be normalized before forwarding. The reverse direction in
-// `translate/src/protocols/openai-chat-completions/as-source/input-to.ts` already
-// defaults `parameters` to {type: 'object', properties: {}}. Ref:
+// OpenAI strict-mode validators require object schemas to state properties. The target writer supplies missing properties.
 // https://github.com/caozhiyuan/copilot-api/commit/ad57069826843c5d17d7b0e5ef2f75050128893c
 test('buildTargetPayload defaults missing input_schema.properties to {} for object tools', async () => {
   const result = await buildWithTestSidecar({
@@ -651,9 +647,7 @@ test('buildTargetPayload asks upstream for continuous streaming usage stats', as
 });
 
 test('rejects a metadata value the neutral model cannot state as a string pair', async () => {
-  // Messages admits any JSON value as a tag while every metadata-carrying
-  // target states string pairs, so a value with no string spelling fails at the
-  // reader rather than being dropped or coerced on the way to a target.
+  // Our input extension accepts arbitrary metadata values; the reader omits nulls and rejects non-string values.
   await assertRejects(
     () => buildWithTestSidecar({
       model: 'gpt-test',

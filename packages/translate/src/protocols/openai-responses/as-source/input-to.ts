@@ -165,8 +165,7 @@ const clientItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInp
       tool_kind: 'custom' as const,
       ...(item.status === 'incomplete' ? { is_error: true } : {}),
     }];
-  // A deferred inventory states declarations, which the request's tool list
-  // already carries; it is not something the model said.
+  // Deferred inventories contribute declarations to the request header; they are not conversational model output.
   case 'additional_tools':
   case 'tool_search_output':
     return [];
@@ -175,7 +174,6 @@ const clientItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInp
   }
 });
 
-/** The top-level `instructions` field as its own leading system item. */
 const openaiResponsesInstructionsToIR = (instructions: string | null | undefined): IRInputTurn | undefined => instructions
   ? { kind: 'client', items: [{ type: 'prompt', role: 'system', content: [{ type: 'text', text: instructions }] }] }
   : undefined;
@@ -183,18 +181,12 @@ const openaiResponsesInstructionsToIR = (instructions: string | null | undefined
 const openaiResponsesTurnToIR = (turn: OpenAIResponsesConversationTurn): IRInputTurn[] => {
   const items = turn.items;
   if (turn.role !== 'assistant') return [{ kind: 'client', items: clientItems(items) }];
-  // Every assistant item was dropped (an opaque reasoning carrier, say). The
-  // turn carried a boundary that must survive, so writers still see it as a
-  // separator but emit no message for it.
+  // Keep an assistant turn even when all its items are dropped, preserving its boundary between client turns.
   return [{ kind: 'assistant', items: assistantItems(items) }];
 };
 
-// Responses declares flat function and custom tools beside the hosted kinds.
-// A hosted tool runs on the vendor's own infrastructure and has no meaning in
-// another protocol, so a request that carries one cannot enter this IR.
 const toolToIR = (tool: Extract<OpenAIResponsesTool, { type: 'function' | 'custom' }>, namespace?: string): IRInputTool => {
-  // A declaration this protocol groups states its group beside the name inside
-  // it, and every other protocol reads that pair as the callable's identity.
+  // Preserve namespace/name identity here; flat-name targets allocate wire names later.
   const group = namespace ?? ('namespace' in tool && typeof tool.namespace === 'string' ? tool.namespace : undefined);
   const identity = group === undefined ? {} : { namespace: group };
   if (tool.type === 'custom') {
@@ -316,10 +308,6 @@ const openaiResponsesToolsToIR = (payload: CanonicalOpenAIResponsesPayload): Pic
   };
 };
 
-/**
- * Responses states the ceiling once, as `max_output_tokens`. Its `text.format`
- * carries the structured-output schema flat, unlike Chat's nested spelling.
- */
 const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): IRInputSettings => {
   const format = payload.text?.format;
   const outputFormat: IRInputOutputFormat | undefined = format === undefined || format === null ? undefined
