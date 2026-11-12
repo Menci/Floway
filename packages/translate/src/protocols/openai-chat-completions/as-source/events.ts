@@ -1,4 +1,3 @@
-import { isJsonObject } from '@floway-dev/protocols/common';
 import { openaiChatCompletionsErrorFromIR } from './error.ts';
 import { collectOpenAIChatCompletionsTextPlacements, computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarDetails } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
@@ -13,6 +12,7 @@ import { appendEmittedField, createEmittedFieldState, type EmittedFieldStates, t
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantTurnState } from '../as-target/assistant-turn.ts';
+import { isJsonObject } from '@floway-dev/protocols/common';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   type OpenAIChatCompletionsAnnotation,

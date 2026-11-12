@@ -1,4 +1,3 @@
-import { isJsonObject } from '@floway-dev/protocols/common';
 import { openaiResponsesErrorEventOf } from './error.ts';
 import { restoreNamespaceOutputItem, type NamespaceToolNames } from './namespace-tools.ts';
 import { createRandomOpenAIResponsesResponseId } from './response-id.ts';
@@ -20,6 +19,7 @@ import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.
 import { isCompleteJSONObject } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantTurnState } from '../as-target/assistant-turn.ts';
+import { isJsonObject } from '@floway-dev/protocols/common';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   createRandomOpenAIResponsesItemId,
