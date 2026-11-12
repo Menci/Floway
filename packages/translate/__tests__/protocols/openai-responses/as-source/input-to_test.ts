@@ -13,14 +13,12 @@ const source: OpenAIResponsesRequestPayloadEx = {
   }],
 };
 
-test('readable reasoning stays separate in IR beside an opaque encrypted field', async () => {
+test('foreign encrypted reasoning is dropped as one opaque item', async () => {
   const slot = readOpenAIResponsesRequest(source).turns[0];
-  expect(slot.toIRInputTurns()).toEqual([{
-    kind: 'assistant', items: [{ type: 'reasoning', summary: ['S'], content: ['C'] }],
-  }]);
+  expect(slot.toIRInputTurns()).toEqual([{ kind: 'assistant', items: [] }]);
   const trip = await routeOpenAIResponsesViaOpenAIChatCompletions(source, { sidecarCodec: createTestSidecarCodec() });
   if (trip.type !== 'trip') throw new Error(trip.message);
-  expect(trip.target.messages).toEqual([{ role: 'assistant', content: null, reasoning_text: 'SC' }]);
+  expect(trip.target.messages).toEqual([]);
   expect(JSON.stringify(trip.target)).not.toContain('opaque-vendor-data');
 });
 
