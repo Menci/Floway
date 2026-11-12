@@ -137,7 +137,7 @@ test('Gemini aliases use the same gateway-wide metadata and caller-scoped target
     visibleInModelsList: true, targets: [{ target_model_id: 'model-a', rules: {} }],
     announcedMetadata: null, sortOrder: 0, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
   });
-  const response = await requestApp('/v1beta/models', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/v1beta/models', { headers: { 'x-api-key': apiKey.key, 'user-agent': 'google-genai-sdk/1.0.0 gl-node/cross' } });
   assertEquals(response.status, 200);
   const body = await response.json() as { models: Array<{ baseModelId?: string; inputTokenLimit?: number }> };
   expect(body.models.find(model => model.baseModelId === 'mix')?.inputTokenLimit).toBe(100_000);

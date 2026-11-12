@@ -4,7 +4,7 @@ import { withInlineImagesCompressed } from '../../../src/interceptors/openai-res
 import type { OpenAIResponsesBoundaryCtx } from '../../../src/interceptors/openai-responses/types.ts';
 import { type ImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesInputImage, CanonicalOpenAIResponsesInputItem, OpenAIResponsesStreamEventEx, OpenAIResponsesToolOutputContent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesAssistantInputContent, OpenAIResponsesInputImage, CanonicalOpenAIResponsesInputItem, OpenAIResponsesStreamEventEx, OpenAIResponsesToolOutputContent } from '@floway-dev/protocols/openai-responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -38,7 +38,7 @@ const imageUrlOf = (item: CanonicalOpenAIResponsesInputItem): string | null | un
   return Array.isArray(content) ? content.find(part => part.type === 'input_image')?.image_url : undefined;
 };
 
-const contentOf = (item: CanonicalOpenAIResponsesInputItem): string | OpenAIResponsesInputContent[] | undefined =>
+const contentOf = (item: CanonicalOpenAIResponsesInputItem): string | OpenAIResponsesAssistantInputContent[] | undefined =>
   item.type === 'message'
     ? item.content
     : item.type === 'function_call_output' || item.type === 'custom_tool_call_output' ? item.output : undefined;

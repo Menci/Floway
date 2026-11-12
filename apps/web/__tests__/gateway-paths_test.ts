@@ -17,8 +17,8 @@ const repoRoot = resolve(import.meta.dirname, '../../..');
 const readRepoFile = (path: string) => readFileSync(resolve(repoRoot, path), 'utf8');
 
 // Hono path parameters carry an optional inline pattern, e.g.
-// `/v1beta/models/:modelAction{.+}`. A concrete sample is what the matchers
-// need, and Gemini's action form is the one that puts a colon inside a segment.
+// `/v1/models/:modelAction{.+}`. A concrete sample is what the matchers need,
+// and Gemini's action form is the one that puts a colon inside a segment.
 const SAMPLE_SEGMENT: Record<string, string> = {
   modelAction: 'gemini-2.5-pro:generateContent',
   modelId: 'gemini-2.5-pro',

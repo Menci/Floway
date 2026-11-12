@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { requireTrip } from './require-trip.ts';
-import type { IRJSONObject } from '../../src/ir/types.ts';
+import type { IRJSONObject } from '../../src/ir/common/json.ts';
 import { computeAnthropicMessagesTurnDigest } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
 import { computeGeminiGenerateContentTurnDigest } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
 import { computeOpenAIChatCompletionsTurnDigest } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';

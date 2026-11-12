@@ -55,6 +55,20 @@ test('normalizes every retained text part to input_text — assistant output_tex
   expect(userPart.type).toBe('input_text');
 });
 
+test('preserves retained assistant refusals without charging them as text', () => {
+  const refusal = { type: 'refusal' as const, refusal: 'x'.repeat(64_001 * 4) };
+  const result = compactionResponse([
+    { type: 'message', role: 'user', content: 'older' },
+    { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'reply' }, refusal] },
+    { type: 'message', role: 'user', content: 'recent' },
+  ], generatedResult([compaction]));
+
+  expect(shape(result)).toEqual(['message:user', 'message:assistant', 'message:user', 'compaction']);
+  expect(result.output[1]).toMatchObject({
+    type: 'message', role: 'assistant', content: [{ type: 'input_text', text: 'reply' }, refusal],
+  });
+});
+
 test('assigns final random ids to retained messages instead of reusing input ids', () => {
   const result = compactionResponse(
     [{ type: 'message', id: 'msg_input', role: 'user', content: 'hello' }],

@@ -21,11 +21,11 @@ Protocol-native request normalization and Part data classification belong to
    protocol's wire mapping in the matching `via-*` route. Retained files use
    functional names without another protocol name.
 5. **Output IR** — keep private types, its path schema, stream operations,
-   validation, accumulation, operation paths, and native ordinal mapping under
-   `ir/`. Native SSE adapters
-   belong to their protocol: `as-target/sse-from.ts` consumes upstream SSE and
-   `as-source/sse-to.ts` emits client SSE with its sidecar. The return path is
-   upstream SSE → IR SSE → client SSE with sidecar. IR stays internal to translate.
+   validation, accumulation, operation paths, and native unit index allocation under
+   `ir/output/`. Native SSE adapters
+   belong to their protocol: `as-target/events.ts` reads upstream protocol events and
+   `as-source/events.ts` writes client protocol events with its sidecar. The return path is
+   upstream events → IR records → client events with sidecar. IR stays internal to translate.
 6. **Assistant-turn round trips** — keep owner-specific sidecar validation, replay
    validation, and native stream coordination under `round-trip/`. Source replay
    inspection and carriers belong in `as-source/round-trip.ts`; native assistant-turn
@@ -36,7 +36,7 @@ Protocol-native request normalization and Part data classification belong to
 
 ## Current Production Subdirectories
 
-- `ir/` — output model, its path schema, and protocol-independent streaming state.
+- `ir/output/` — output model, its path schema, and protocol-independent streaming state.
 - `round-trip/` — authenticated assistant-turn sidecars, replay validation, and native stream coordination.
 - `protocols/anthropic-messages/as-source/` — interprets Messages requests and emits Messages SSE.
 - `protocols/anthropic-messages/as-target/` — maps requests to Messages and consumes Messages SSE.
