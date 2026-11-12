@@ -37,7 +37,7 @@ test('buildTargetPayload translates LOW to reasoning.effort', async () => {
     generationConfig: { thinkingConfig: { thinkingLevel: 'LOW', includeThoughts: true } },
   }, 'gpt-test');
 
-  assertEquals(request.reasoning, { effort: 'low', summary: 'detailed' });
+  assertEquals(request.reasoning, { effort: 'low' });
 });
 
 test('buildTargetPayload forwards an empty thinkingLevel verbatim', async () => {
@@ -46,7 +46,7 @@ test('buildTargetPayload forwards an empty thinkingLevel verbatim', async () => 
     generationConfig: { thinkingConfig: { thinkingLevel: '', includeThoughts: true } },
   }, 'gpt-test');
 
-  assertEquals(request.reasoning, { effort: '', summary: 'detailed' });
+  assertEquals(request.reasoning, { effort: '' });
 });
 
 test('buildTargetPayload preserves an explicit empty thinkingLevel beside a budget', async () => {
@@ -55,7 +55,7 @@ test('buildTargetPayload preserves an explicit empty thinkingLevel beside a budg
     generationConfig: { thinkingConfig: { thinkingBudget: 2048, thinkingLevel: '', includeThoughts: true } },
   }, 'gpt-test');
 
-  assertEquals(request.reasoning, { effort: '', summary: 'detailed' });
+  assertEquals(request.reasoning, { effort: '' });
 });
 
 test('buildTargetPayload maps instructions and multimodal user input without defaults', async () => {
@@ -247,7 +247,7 @@ test('buildTargetPayload maps generation config, JSON schema, and reasoning cont
         name: 'gemini_response', schema,
       },
     },
-    reasoning: { effort: 'medium', summary: 'detailed' },
+    reasoning: { effort: 'medium' },
   });
 
   assertEquals((await buildWithTestSidecar({ contents: [], generationConfig: { responseMimeType: 'application/json' } }, 'gpt-test')).text, { format: { type: 'json_object' } });
@@ -261,7 +261,7 @@ test('buildTargetPayload never invents reasoning.context from Gemini generateCon
     },
   }, 'gpt-test');
 
-  assertEquals(result.reasoning, { effort: 'high', summary: 'detailed' });
+  assertEquals(result.reasoning, { effort: 'high' });
   assertEquals(result.reasoning?.context, undefined);
   assertFalse('context' in (result.reasoning ?? {}));
 });
@@ -534,5 +534,5 @@ test('an orphaned tool choice is not stated', async () => {
 
 test.each([undefined, 1024, -1])('preserves includeThoughts without a thinking level for budget %s', async thinkingBudget => {
   const request = await buildWithTestSidecar({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget, includeThoughts: true } } }, 'm');
-  assertEquals(request.reasoning, { ...(thinkingBudget === 1024 ? { effort: 'low' } : {}), summary: 'detailed' });
+  assertEquals(request.reasoning, thinkingBudget === 1024 ? { effort: 'low' } : undefined);
 });

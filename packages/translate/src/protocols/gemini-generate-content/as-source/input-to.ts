@@ -271,10 +271,6 @@ const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest
     // A negative budget asks the model to choose its own and states no number.
     ...(budget === undefined || budget <= 0 ? {} : { reasoning_budget: budget }),
     ...(budget === undefined || budget >= 0 ? {} : { reasoning_budget_dynamic: true }),
-    // GenerateContent states readable reasoning as a boolean; the neutral
-    // spelling names how much of it the caller wants. A request that asked for
-    // no reasoning at all has nothing to summarize.
-    ...(effort !== 'none' && thinkingConfig?.includeThoughts === true ? { reasoning_summary: 'detailed' } : {}),
   };
 };
 

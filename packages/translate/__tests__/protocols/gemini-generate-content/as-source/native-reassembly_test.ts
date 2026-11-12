@@ -52,9 +52,10 @@ test.each([2, 32])('reads only the ending candidate for %i interleaved choices',
       sourceTurnDigest: await computeGeminiGenerateContentTurnDigest([{ role: 'model', parts: [{ text: `answer-${index}` }] }]),
     });
   }
-  expect(createGeminiGenerateContentEventAccumulator).toHaveBeenCalledTimes(1);
-  const creation = vi.mocked(createGeminiGenerateContentEventAccumulator).mock.results[0];
-  if (creation.type !== 'return') throw new Error('Expected the native accumulator');
-  expect(creation.value.result).not.toHaveBeenCalled();
-  expect(creation.value.candidate).toHaveBeenCalledTimes(count);
+  expect(createGeminiGenerateContentEventAccumulator).toHaveBeenCalledTimes(2);
+  for (const creation of vi.mocked(createGeminiGenerateContentEventAccumulator).mock.results) {
+    if (creation.type !== 'return') throw new Error('Expected a Gemini accumulator');
+    expect(creation.value.result).not.toHaveBeenCalled();
+    expect(creation.value.candidate).toHaveBeenCalledTimes(count);
+  }
 });

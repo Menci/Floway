@@ -16,5 +16,8 @@ export const geminiGenerateContentSourceProtocol: SourceProtocol<
     collectCandidates: collectGeminiGenerateContentReplayContents,
   },
   error: restateGeminiGenerateContentError,
-  writeEvents: (_payload, records, roundTrip) => writeGeminiGenerateContentEvents(records, { roundTrip }),
+  writeEvents: (payload, records, roundTrip) => writeGeminiGenerateContentEvents(records, {
+    includeThoughts: payload.generationConfig?.thinkingConfig?.includeThoughts === true,
+    roundTrip,
+  }),
 };
