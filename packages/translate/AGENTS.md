@@ -2,59 +2,62 @@
 
 `src/protocols/<protocol>/` owns translation entrypoints and protocol-specific
 code. `__tests__/protocols/` mirrors production ownership. Package callers
-import the package root and call
-`route<Source>Via<Target>(input, options)` to create an independent trip.
+import the pair's named export from the package root and call it with a source
+payload and `TranslateOptions`, receiving a `TranslateTrip` or a `TranslateInputError`.
 
 Protocol-native request normalization and Part data classification belong to
 `@floway-dev/protocols`; translation maps their failures at its own boundary.
 
 ## Categories
 
-1. **Single-pair helper** — keep it in
-   `protocols/<source>/via-<target>/`, beside its request and event translators.
+1. **Composition** — a route pairs a source and a target and states nothing else.
+   Anything a pair alone needs belongs to one of its sides; if it truly needs
+   both, it belongs in `composition/index.ts`.
 2. **Source-only helper** — keep it in `protocols/<protocol>/as-source/`.
    Only routes whose source is that protocol may import it.
 3. **Target-only helper** — keep it in `protocols/<protocol>/as-target/`.
    Only routes whose target is that protocol may import it.
-4. **Both directions** — keep it in `protocols/<protocol>/common/`.
-   Routes using that protocol as source or target may import it. Keep another
-   protocol's wire mapping in the matching `via-*` route. Retained files use
-   functional names without another protocol name.
-5. **Output IR** — keep private types, its path schema, stream operations,
+4. **IR** — keep private types, its path schema, stream operations,
    validation, accumulation, operation paths, and native unit index allocation under
-   `ir/output/`. Native SSE adapters
+   `ir/output/`, and the input model under `ir/input/`. A reading holds the
+   source's native assistant turns beside the IR it would produce, so it belongs
+   to composition rather than to the IR. Protocol event adapters
    belong to their protocol: `as-target/events.ts` reads upstream protocol events and
    `as-source/events.ts` writes client protocol events with its sidecar. The return path is
-   upstream events → IR records → client events with sidecar. IR stays internal to translate.
-6. **Assistant-turn round trips** — keep owner-specific sidecar validation, replay
+   upstream protocol events → output IR records → client protocol events with sidecar. IR stays internal to translate.
+5. **Assistant-turn round trips** — keep owner-specific sidecar validation, replay
    validation, and native stream coordination under `round-trip/`. Source replay
    inspection and carriers belong in `as-source/round-trip.ts`; native assistant-turn
    reference shapes and state alignment belong in `as-target/assistant-turn.ts`.
    Native output-to-input payload normalization belongs in `@floway-dev/protocols`.
    Transport encoding is injected through `TranslateOptions.sidecarCodec`.
-7. **Protocol-independent utility** — keep it in `shared/`, with tests under
+6. **Protocol-independent utility** — keep it in `shared/`, with tests under
    `__tests__/shared/`. Protocol behavior belongs in its owning protocol directory.
 
 ## Current Production Subdirectories
 
-- `ir/output/` — output model, its path schema, and protocol-independent streaming state.
+- `ir/common/` — the JSON value shape shared by both directions.
+- `ir/input/` — the request conversation model, its types, and the target-side
+  selection helpers.
+- `composition/` — what a trip needs before the IR is written: a
+  source conversation read into turn slots and resolved through exclusive native or IR paths.
+  `composition/request/` prepares those resolved turns for target writers by
+  allocating callable names and call IDs, then segmenting around restored turns.
+- `ir/output/` — the returned-stream model, its path schema, builder, record consumer, and protocol-independent streaming state.
 - `round-trip/` — authenticated assistant-turn sidecars, replay validation, and native stream coordination.
 - `protocols/anthropic-messages/as-source/` — interprets Messages requests and emits Messages SSE.
 - `protocols/anthropic-messages/as-target/` — maps requests to Messages and consumes Messages SSE.
 - `protocols/gemini-generate-content/as-source/` — interprets GenerateContent parts and schemas and emits GenerateContent SSE.
-- `protocols/openai-chat-completions/as-source/` — emits ChatCompletions SSE.
-- `protocols/openai-chat-completions/as-target/` — consumes ChatCompletions SSE.
-- `protocols/openai-chat-completions/common/` — reads scalar reasoning aliases and summary content.
-- `protocols/openai-responses/as-source/` — interprets Responses tools, restores event identities, and emits Responses SSE.
-- `protocols/openai-responses/as-target/` — consumes Responses SSE.
-- `protocols/openai-responses/common/` — owns wrapper formats used in both translation directions.
-- `protocols/<source>/via-<target>/` — owns request translation and composes native SSE adapters for one protocol pair.
-- `shared/` — cross-route coordinate conversion, error classification, JSON handling, and token validation.
+- `protocols/openai-chat-completions/as-source/` — interprets ChatCompletions requests and emits ChatCompletions SSE.
+- `protocols/openai-chat-completions/as-target/` — maps requests to ChatCompletions and consumes ChatCompletions SSE.
+- `protocols/openai-responses/as-source/` — interprets Responses requests, restores event identities, and emits Responses SSE.
+- `protocols/openai-responses/as-target/` — maps requests to Responses and consumes Responses SSE.
+- `composition/index.ts` — pairs one source protocol with one target protocol into a trip; the generic composition boundary.
+- `protocols/<protocol>/as-source.ts` — states that protocol as the side a request comes from.
+- `protocols/<protocol>/as-target.ts` — states that protocol as the side a request goes to.
+- `shared/` — cross-route coordinates, error classification, JSON handling, token validation, and callable wrapper formats.
 
 ## Rules
-
-- Inspect helpers by content and consumers. Keep most translation logic in the
-  owning `via-*` route; extract only cohesive logic shared by multiple routes.
 
 - Shallow wrappers that only rename or stringify must be inlined at every call
   site, not extracted. A helper that defines a format two or more routes must

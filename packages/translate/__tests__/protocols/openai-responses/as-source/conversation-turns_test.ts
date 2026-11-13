@@ -12,10 +12,10 @@ test.each(['additional_tools', 'tool_search_output'] as const)('%s belongs to th
     : { type, call_id: 'load', execution: 'client', tools: [] };
 
   expect(partitionOpenAIResponsesTurns([inventory, first, output, inventory, second, inventory])).toEqual([
-    { role: 'bare', items: [inventory] },
+    { role: 'client', items: [inventory] },
     { role: 'assistant', items: [first] },
-    { role: 'bare', items: [output, inventory] },
+    { role: 'client', items: [output, inventory] },
     { role: 'assistant', items: [second] },
-    { role: 'bare', items: [inventory] },
+    { role: 'client', items: [inventory] },
   ]);
 });

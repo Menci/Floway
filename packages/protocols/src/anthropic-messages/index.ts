@@ -73,13 +73,34 @@ export type AnthropicMessagesImageSource =
   | { type: 'file'; file_id: string };
 export interface AnthropicMessagesImageBlock { type: 'image'; source: AnthropicMessagesImageSource; cache_control?: AnthropicMessagesCacheControl | null; transformations?: { oversized_image?: 'downsize' | 'error' } | null }
 
+// The official snapshot pins a binary document's `media_type` to
+// `'application/pdf'`. Floway keeps this extension open so translation can
+// forward caller-provided MIME values for upstream validation without
+// relabelling non-PDF bytes as PDF.
+export type AnthropicMessagesDocumentBlockEx = {
+  type: 'document';
+  source: Omit<Extract<Native.DocumentBlockParam['source'], { type: 'base64' }>, 'media_type'> & { media_type: string };
+  cache_control?: AnthropicMessagesCacheControl | null;
+  citations?: Native.CitationsConfigParam | null;
+  context?: string | null;
+  title?: string | null;
+};
+
 export type AnthropicMessagesSearchResultBlock = Native.SearchResultBlockParam | Beta.BetaSearchResultBlockParam;
 
 export type AnthropicMessagesWebSearchResultBlock = Native.WebSearchResultBlock | Beta.BetaWebSearchResultBlock;
 
-export type AnthropicMessagesToolResultContentBlock = Exclude<NonNullable<AnthropicMessagesToolResultBlock['content']>, string>[number];
+type AnthropicMessagesNativeToolResultContentBlock =
+  | Exclude<NonNullable<Native.ToolResultBlockParam['content']>, string>[number]
+  | Exclude<NonNullable<Beta.BetaToolResultBlockParam['content']>, string>[number];
 
-export type AnthropicMessagesToolResultBlock = Native.ToolResultBlockParam | Beta.BetaToolResultBlockParam;
+export type AnthropicMessagesToolResultContentBlock = AnthropicMessagesNativeToolResultContentBlock | AnthropicMessagesDocumentBlockEx;
+
+export type AnthropicMessagesToolResultBlockEx = Omit<Native.ToolResultBlockParam, 'content'> & {
+  content?: string | AnthropicMessagesToolResultContentBlock[];
+};
+
+export type AnthropicMessagesToolResultBlock = Native.ToolResultBlockParam | Beta.BetaToolResultBlockParam | AnthropicMessagesToolResultBlockEx;
 
 export type AnthropicMessagesToolUseBlock = Native.ToolUseBlock;
 export type AnthropicMessagesToolUseBlockParam = Native.ToolUseBlockParam | Beta.BetaToolUseBlockParam;
@@ -132,7 +153,7 @@ export type AnthropicMessagesUserContentBlock = AnthropicMessagesInputContentBlo
 
 export type AnthropicMessagesAssistantContentBlock = Native.ContentBlock | Beta.BetaContentBlock;
 export type AnthropicMessagesAssistantInputContentBlock = Native.ContentBlockParam | Beta.BetaContentBlockParam;
-export type AnthropicMessagesInputContentBlock = AnthropicMessagesAssistantInputContentBlock;
+export type AnthropicMessagesInputContentBlock = AnthropicMessagesAssistantInputContentBlock | AnthropicMessagesDocumentBlockEx | AnthropicMessagesToolResultBlockEx;
 
 export interface AnthropicMessagesUserMessage extends Omit<Beta.BetaMessageParam, 'role' | 'content'> {
   role: 'user';

@@ -7,7 +7,6 @@ import { anthropicMessagesAttempt } from '../anthropic-messages/attempt.ts';
 import { openaiResponsesAttempt } from '../openai-responses/attempt.ts';
 import { applyRulesToUpstreamOpenAIChatCompletions } from '../shared/alias-rules.ts';
 import { captureFromDump, executeTranslation } from '../shared/execute-translation.ts';
-import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { providerStreamResultToExecuteResult } from '../shared/provider-stream-result.ts';
 import { SidecarDomain } from '../shared/sidecar-codec.ts';
@@ -68,10 +67,8 @@ const dispatchOpenAIChatCompletions = async (
     return await executeTranslation(
       invocation.payload,
       p => routeOpenAIChatCompletionsViaAnthropicMessages(p, {
-        model: candidate.model.id,
         sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
-        loadRemoteImage: createExternalImageLoader(ctx.abortSignal),
       }),
       translated => anthropicMessagesAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
@@ -82,7 +79,7 @@ const dispatchOpenAIChatCompletions = async (
   if (targetApi === 'openaiResponses') {
     return await executeTranslation(
       invocation.payload,
-      p => routeOpenAIChatCompletionsViaOpenAIResponses(p, { model: candidate.model.id, sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
+      p => routeOpenAIChatCompletionsViaOpenAIResponses(p, { sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
       translated => openaiResponsesAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
       }),

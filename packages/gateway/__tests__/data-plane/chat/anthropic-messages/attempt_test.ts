@@ -288,7 +288,7 @@ test('generate lets the target system-to-developer rewrite take precedence over 
   assertEquals(input[1], { type: 'message', role: 'developer', content: 'inline instructions' });
 });
 
-test('generate translate-to-responses branch rewrites a multi-block system prefix to developer', async () => {
+test('generate translate-to-responses keeps top-level instructions apart from rewritten inline system messages', async () => {
   installRepo();
   const observedBodies: Omit<OpenAIResponsesPayloadEx, 'model'>[] = [];
   const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
@@ -340,13 +340,9 @@ test('generate translate-to-responses branch rewrites a multi-block system prefi
   if (!observedBody) throw new Error('expected observed OpenAI Responses body');
   const input = observedBody.input;
   if (!Array.isArray(input)) throw new Error('expected OpenAI Responses input array');
-  assertEquals(input[0], {
-    type: 'message',
-    role: 'developer',
-    content: [{ type: 'input_text', text: 'base A' }, { type: 'input_text', text: 'base B' }],
-  });
-  assertEquals(input[1], { type: 'message', role: 'user', content: 'hello' });
-  assertEquals(input[2], { type: 'message', role: 'developer', content: 'inline instructions' });
+  assertEquals(observedBody.instructions, 'base Abase B');
+  assertEquals(input[0], { type: 'message', role: 'user', content: 'hello' });
+  assertEquals(input[1], { type: 'message', role: 'developer', content: 'inline instructions' });
 });
 
 test('countTokens proxies the upstream response as a plain result', async () => {

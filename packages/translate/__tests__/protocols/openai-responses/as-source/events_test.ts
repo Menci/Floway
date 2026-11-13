@@ -2,20 +2,10 @@ import { expect, test } from 'vitest';
 
 import { createIRBuilder } from '../../../../src/ir/output/builder.ts';
 import { writeOpenAIResponsesEvents } from '../../../../src/protocols/openai-responses/as-source/events.ts';
-import { flattenNamespaceTools } from '../../../../src/protocols/openai-responses/as-source/namespace-tools.ts';
 import { appendReadField, collectEmittedFieldPlacements, createReferenceBuilder, createReadFieldState, createFieldReferencer } from '../../../../src/round-trip/reference/reference-builder.ts';
 import type { RoundTripWriter } from '../../../../src/round-trip/writer.ts';
 
 test('collects sparse namespace-restored Responses state from emitted IR atoms', async () => {
-  const namespace = flattenNamespaceTools({
-    model: 'model',
-    input: [],
-    tools: [{ type: 'namespace', name: 'tools', description: '', tools: [{ type: 'custom', name: 'script' }, { type: 'function', name: 'lookup', parameters: { type: 'object' } }] }],
-  });
-  const flatScript = namespace.names.sourceToTarget.get('tools.script');
-  const flatLookup = namespace.names.sourceToTarget.get('tools.lookup');
-  if (flatScript === undefined || flatLookup === undefined) throw new Error('Namespace tools were not flattened');
-
   const references = createReferenceBuilder();
   const field = (parts: readonly string[]) => {
     const state = createReadFieldState('text');
@@ -42,9 +32,9 @@ test('collects sparse namespace-restored Responses state from emitted IR atoms',
   builder.assign(['model'], 'model');
   builder.event({ type: 'start', id: 'response' });
 
-  builder.initialize(['choices', 0, 'items', 0], { type: 'function_call', name: flatScript, arguments: '' });
-  builder.append(['choices', 0, 'items', 0, 'arguments'], '{"code":', [functionArguments.textFragmentIds[0]]);
-  builder.append(['choices', 0, 'items', 0, 'arguments'], '1}', [functionArguments.textFragmentIds[1]]);
+  builder.initialize(['choices', 0, 'items', 0], { type: 'custom_tool_call', namespace: 'tools', name: 'script', input: '' });
+  builder.append(['choices', 0, 'items', 0, 'input'], '{"code":', [functionArguments.textFragmentIds[0]]);
+  builder.append(['choices', 0, 'items', 0, 'input'], '1}', [functionArguments.textFragmentIds[1]]);
 
   builder.initialize(['choices', 0, 'items', 1], { type: 'message', content: [] });
   builder.initialize(['choices', 0, 'items', 1, 'content', 0], { type: 'text', text: '' });
@@ -59,9 +49,9 @@ test('collects sparse namespace-restored Responses state from emitted IR atoms',
   builder.append(['choices', 0, 'items', 2, 'summary', 0], 'C', [reasoningSummary.textFragmentIds[1]]);
   builder.append(['choices', 0, 'items', 2, 'content', 0], 'D', [reasoningContent.textFragmentIds[0]]);
 
-  builder.initialize(['choices', 0, 'items', 3], { type: 'custom_tool_call', call_id: 'lookup', name: flatLookup, input: '' });
-  builder.append(['choices', 0, 'items', 3, 'input'], '{"q":', [customInput.textFragmentIds[0]]);
-  builder.append(['choices', 0, 'items', 3, 'input'], '1}', [customInput.textFragmentIds[1]]);
+  builder.initialize(['choices', 0, 'items', 3], { type: 'function_call', namespace: 'tools', call_id: 'lookup', name: 'lookup', arguments: '' });
+  builder.append(['choices', 0, 'items', 3, 'arguments'], '{"q":', [customInput.textFragmentIds[0]]);
+  builder.append(['choices', 0, 'items', 3, 'arguments'], '1}', [customInput.textFragmentIds[1]]);
 
   builder.assign(['choices', 0, 'items', 0, 'call_id'], 'script');
   builder.event({ type: 'part_end', choice: 0, item: 1, part: 0 });
@@ -79,7 +69,7 @@ test('collects sparse namespace-restored Responses state from emitted IR atoms',
   builder.event({ type: 'choice_end', choice: 0, finish_reason: 'tool_calls' });
   builder.event({ type: 'finish', status: 'completed' });
 
-  for await (const _frame of writeOpenAIResponsesEvents((async function* () { yield* builder.drain(); })(), { roundTrip, namespaceToolNames: namespace.names })) {}
+  for await (const _frame of writeOpenAIResponsesEvents((async function* () { yield* builder.drain(); })(), { roundTrip })) {}
   if (prepared === undefined) throw new Error('Responses sidecar was not prepared');
   const [, , turn, state] = prepared;
 

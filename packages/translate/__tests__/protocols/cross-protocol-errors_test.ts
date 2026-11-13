@@ -24,11 +24,11 @@ import {
   type TranslateTrip,
 } from '@floway-dev/translate';
 
-const options = () => ({ model: 'm', sidecarCodec: createTestSidecarCodec('error-routes') });
-const chat = { model: 'm', messages: [{ role: 'user' as const, content: 'hello' }] };
-const responses = { model: 'm', input: 'hello' };
-const messages = { model: 'm', max_tokens: 16, messages: [{ role: 'user' as const, content: 'hello' }] };
-const gemini = { contents: [{ role: 'user' as const, parts: [{ text: 'hello' }] }] };
+const options = () => ({ sidecarCodec: createTestSidecarCodec('error-routes') });
+const chat = { stream: true, model: 'm', messages: [{ role: 'user' as const, content: 'hello' }] };
+const responses = { stream: true, model: 'm', input: 'hello' };
+const messages = { stream: true, model: 'm', max_tokens: 16, messages: [{ role: 'user' as const, content: 'hello' }] };
+const gemini = { model: 'm', contents: [{ role: 'user' as const, parts: [{ text: 'hello' }] }] };
 
 const failure = {
   message: 'bad field', type: 'invalid_request_error', code: 'invalid_prompt', param: 'temperature',
@@ -98,9 +98,9 @@ const verifyPhases = async <Payload, Source, Target>(
 
 const cases = [
   ['Chat via Responses', () => verifyPhases(routeOpenAIChatCompletionsViaOpenAIResponses(chat, options()), nestedEvent(failure), expectedChat)],
-  ['Chat via Messages', () => verifyPhases(routeOpenAIChatCompletionsViaAnthropicMessages(chat, { ...options(), loadRemoteImage: async () => null, fallbackMaxOutputTokens: 16 }), nestedEvent(failure), expectedChat)],
+  ['Chat via Messages', () => verifyPhases(routeOpenAIChatCompletionsViaAnthropicMessages(chat, { ...options(), fallbackMaxOutputTokens: 16 }), nestedEvent(failure), expectedChat)],
   ['Responses via Chat', () => verifyPhases(routeOpenAIResponsesViaOpenAIChatCompletions(responses, options()), chatEvent(failure), expectedResponses)],
-  ['Responses via Messages', () => verifyPhases(routeOpenAIResponsesViaAnthropicMessages(responses, { ...options(), loadRemoteImage: async () => null, fallbackMaxOutputTokens: 16 }), nestedEvent(failure), expectedResponses)],
+  ['Responses via Messages', () => verifyPhases(routeOpenAIResponsesViaAnthropicMessages(responses, { ...options(), fallbackMaxOutputTokens: 16 }), nestedEvent(failure), expectedResponses)],
   ['Messages via Chat', () => verifyPhases(routeAnthropicMessagesViaOpenAIChatCompletions(messages, options()), chatEvent(failure), expectedMessages)],
   ['Messages via Responses', () => verifyPhases(routeAnthropicMessagesViaOpenAIResponses(messages, options()), nestedEvent(failure), expectedMessages)],
   ['Gemini via Chat', () => verifyPhases(routeGeminiGenerateContentViaOpenAIChatCompletions(gemini, options()), chatEvent(failure), expectedGemini)],

@@ -56,6 +56,9 @@ type ResponsesPartState = ResponsesTextPartState | ResponsesImagePartState;
 interface ResponsesItemStateBase {
   readonly outputIndex: number;
   readonly id: string;
+  // The declaration group the item opened with, kept so a later snapshot cannot
+  // silently state a call from a different group under the same id.
+  readonly namespace?: string;
   item?: IRItemHandle;
   readonly parts: Map<number, ResponsesPartState>;
   readonly reasoning: Record<'summary' | 'content', ResponsesTextTarget[]>;
@@ -128,9 +131,9 @@ const irItemSeed = (item: OpenAIResponsesOutputItemEx): Record<string, unknown> 
   case 'reasoning':
     return undefined;
   case 'function_call':
-    return { type: 'function_call', ...(item.call_id === undefined ? {} : { call_id: item.call_id }), name: item.name, arguments: '' };
+    return { type: 'function_call', ...(item.call_id === undefined ? {} : { call_id: item.call_id }), name: item.name, ...(item.namespace === undefined ? {} : { namespace: item.namespace }), arguments: '' };
   case 'custom_tool_call':
-    return { type: 'custom_tool_call', ...(item.call_id === undefined ? {} : { call_id: item.call_id }), name: item.name, input: '' };
+    return { type: 'custom_tool_call', ...(item.call_id === undefined ? {} : { call_id: item.call_id }), name: item.name, ...(item.namespace === undefined ? {} : { namespace: item.namespace }), input: '' };
   default:
     return undefined;
   }
@@ -187,6 +190,9 @@ export const readOpenAIResponsesEvents = async function* (
     const base: ResponsesItemStateBase = {
       outputIndex,
       id,
+      ...(item.type === 'function_call' || item.type === 'custom_tool_call'
+        ? item.namespace === undefined ? {} : { namespace: item.namespace }
+        : {}),
       item: handle,
       parts: new Map(),
       reasoning: { summary: [], content: [] },
@@ -216,6 +222,10 @@ export const readOpenAIResponsesEvents = async function* (
     if (item.type !== state.type) throw new TypeError(`Responses output item type changed from ${state.type} to ${item.type}`);
     const id = itemId(item);
     if (id !== state.id) throw new TypeError(`Responses output item id changed from ${state.id} to ${String(id)}`);
+    // The group is part of what names the call, so it may not move between
+    // snapshots any more than the id may.
+    const namespace = item.type === 'function_call' || item.type === 'custom_tool_call' ? item.namespace : undefined;
+    if (namespace !== state.namespace) throw new TypeError(`Responses output item namespace changed from ${String(state.namespace)} to ${String(namespace)}`);
   };
 
   const ensureToolText = (state: ResponsesItemState): ResponsesTextTarget => {

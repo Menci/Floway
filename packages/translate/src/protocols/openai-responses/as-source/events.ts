@@ -1,5 +1,4 @@
 import { openaiResponsesErrorEventOf } from './error.ts';
-import { restoreNamespaceOutputItem, type NamespaceToolNames } from './namespace-tools.ts';
 import { createRandomOpenAIResponsesResponseId } from './response-id.ts';
 import { collectOpenAIResponsesTextPlacements, computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarItem } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
@@ -23,6 +22,7 @@ import { isJsonObject } from '@floway-dev/protocols/common';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   createRandomOpenAIResponsesItemId,
+  type CanonicalOpenAIResponsesPayload,
   type OpenAIResponsesAnnotation,
   type OpenAIResponsesOutputContentBlock,
   type OpenAIResponsesOutputItemEx,
@@ -53,7 +53,11 @@ type ResponsesOutputUnit = ResponsesOutputUnitBase & (
   | { readonly kind: 'function_call' | 'custom_tool_call'; toolContentState?: EmittedFieldState<'text'> }
 );
 
-type OpenAIResponsesEventWriterOptions = SourceEventWriterOptions<'openaiResponses'> & { namespaceToolNames: NamespaceToolNames };
+interface OpenAIResponsesEventWriterOptions extends SourceEventWriterOptions<'openaiResponses'> {
+  /** The declarations the client asked with, echoed back on every response object. */
+  echoedTools?: NonNullable<CanonicalOpenAIResponsesPayload['tools']>;
+  echoedToolChoice?: NonNullable<CanonicalOpenAIResponsesPayload['tool_choice']>;
+}
 
 const IMAGE_OUTPUT_FORMATS = { 'image/png': 'png', 'image/jpeg': 'jpeg', 'image/webp': 'webp' } as const;
 
@@ -182,6 +186,7 @@ export const writeOpenAIResponsesEvents = async function* (
   records: AsyncIterable<IRRecord>,
   options: OpenAIResponsesEventWriterOptions,
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+  const { echoedTools, echoedToolChoice } = options;
   let metadata = { id: '', model: '', created: 0 };
   let started = false;
   let sequence = 0;
@@ -326,10 +331,18 @@ export const writeOpenAIResponsesEvents = async function* (
     if (unit.callId === undefined) throw new TypeError('Responses tool unit has no call ID');
     if (unit.kind === 'custom_tool_call') {
       if (item.type !== 'custom_tool_call') throw new TypeError('Responses tool unit has the wrong IR item');
-      return { type: 'custom_tool_call', id, call_id: unit.callId, name: item.name, input: item.input, status };
+      return {
+        type: 'custom_tool_call', id, call_id: unit.callId, name: item.name,
+        ...(item.namespace == null ? {} : { namespace: item.namespace }),
+        input: item.input, status,
+      };
     }
     if (item.type !== 'function_call') throw new TypeError('Responses tool unit has the wrong IR item');
-    return { type: 'function_call', id, call_id: unit.callId, name: item.name, arguments: item.arguments, status };
+    return {
+      type: 'function_call', id, call_id: unit.callId, name: item.name,
+      ...(item.namespace == null ? {} : { namespace: item.namespace }),
+      arguments: item.arguments, status,
+    };
   };
 
   const response = (state: IROutput, status: OpenAIResponsesResultEx['status'], usage: OpenAIResponsesResultEx['usage']): OpenAIResponsesResultEx => ({
@@ -343,6 +356,12 @@ export const writeOpenAIResponsesEvents = async function* (
     error: null,
     incomplete_details: status === 'incomplete' ? { reason: finishReason === 'content_filter' ? 'content_filter' : 'max_output_tokens' } : null,
     ...(state.service_tier === undefined ? {} : { service_tier: state.service_tier }),
+    // The response echoes the declarations the client asked with, because a
+    // client that reads this field expects to see its own groups rather than
+    // the flattened names the request placed on the wire. The upstream states
+    // none of this, so it comes from the request this trip was built from.
+    ...(echoedTools === undefined ? {} : { tools: echoedTools }),
+    ...(echoedToolChoice === undefined ? {} : { tool_choice: echoedToolChoice }),
   });
 
   // Creates the output units that the IR structures initialized by a record will become.
@@ -486,13 +505,22 @@ export const writeOpenAIResponsesEvents = async function* (
     const resolvedCallId = callId === IRAbsent ? createRandomOpenAIResponsesItemId('function_call') : callId;
     unit.id = id;
     unit.callId = resolvedCallId;
+    // The announcement states the same pair the terminal snapshot does: a call
+    // the request declared grouped is named by its group here too.
     const added: OpenAIResponsesOutputItemEx = custom
-      ? { type: 'custom_tool_call', id, call_id: resolvedCallId, name: item.name, input: '', status: 'in_progress' }
-      : { type: 'function_call', id, call_id: resolvedCallId, name: item.name, arguments: '', status: 'in_progress' };
-    const restored = restoreNamespaceOutputItem(added, options.namespaceToolNames, 'in_progress');
+      ? {
+          type: 'custom_tool_call', id, call_id: resolvedCallId, name: item.name,
+          ...(item.namespace == null ? {} : { namespace: item.namespace }),
+          input: '', status: 'in_progress',
+        }
+      : {
+          type: 'function_call', id, call_id: resolvedCallId, name: item.name,
+          ...(item.namespace == null ? {} : { namespace: item.namespace }),
+          arguments: '', status: 'in_progress',
+        };
     const content = createEmittedFieldState(options.roundTrip.builder, 'text');
     unit.toolContentState = content;
-    nativeState[outputIndex] = restored.type === 'custom_tool_call' ? { input: content } : { arguments: content };
+    nativeState[outputIndex] = added.type === 'custom_tool_call' ? { input: content } : { arguments: content };
     const followUps: OpenAIResponsesStreamEventEx[] = [];
     appendPendingText(unit, [...unit.path, item.type === 'custom_tool_call' ? 'input' : 'arguments'], item.type === 'custom_tool_call' ? item.input : item.arguments);
     if (item.type === 'custom_tool_call') {
@@ -805,7 +833,7 @@ export const writeOpenAIResponsesEvents = async function* (
         return;
       }
       const status = record.status === 'completed' && finishReason === 'content_filter' ? 'incomplete' : record.status;
-      const nativeOutput = outputUnits.map(unit => restoreNamespaceOutputItem(outputItem(state, unit), options.namespaceToolNames, 'completed'));
+      const nativeOutput = outputUnits.map(unit => outputItem(state, unit));
       nativeState.length = nativeOutput.length;
       const sourceTurnDigest = await computeOpenAIResponsesTurnDigest(nativeOutput);
       const input = toOpenAIResponsesInputAssistantTurn<EmittedFieldStates>(nativeOutput, nativeState);

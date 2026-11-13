@@ -227,3 +227,65 @@ test.each(toolCases)('invalidates native $type provenance when its done snapshot
   expect(finalized.targetTurn).toEqual(captured.turn);
   expect(finalized).not.toHaveProperty('referencedContentHashes');
 });
+
+for (const { type, field } of toolCases) {
+  test(`accepts an unchanged ${type} identity across snapshots`, async () => {
+    const added = { ...toolItem(type, '', 'in_progress'), namespace: 'files' };
+    const done = { ...toolItem(type, '{}', 'completed'), namespace: 'files' };
+    const captured = await collectProvenance([
+      { type: 'response.created', response: response([], 'in_progress') },
+      { type: 'response.output_item.added', output_index: 0, item: added },
+      { type: 'response.output_item.done', output_index: 0, item: done },
+      { type: 'response.completed', response: response([done], 'completed') },
+    ], field);
+    expect(captured.turn[0]).toMatchObject({ type, name: 'lookup', namespace: 'files', call_id: 'call' });
+  });
+
+  test.each([
+    ['files', 'web'],
+    [undefined, 'files'],
+    ['files', undefined],
+  ])(`rejects ${type} namespace changing from %s to %s`, async (initial, final) => {
+    const added = { ...toolItem(type, '', 'in_progress'), ...(initial === undefined ? {} : { namespace: initial }) };
+    const done = { ...toolItem(type, '{}', 'completed'), ...(final === undefined ? {} : { namespace: final }) };
+    await expect(collectProvenance([
+      { type: 'response.created', response: response([], 'in_progress') },
+      { type: 'response.output_item.added', output_index: 0, item: added },
+      { type: 'response.output_item.done', output_index: 0, item: done },
+      { type: 'response.completed', response: response([done], 'completed') },
+    ], field)).rejects.toThrow(`namespace changed from ${String(initial)} to ${String(final)}`);
+  });
+
+  test(`rejects a ${type} name change in the done snapshot`, async () => {
+    const added = toolItem(type, '', 'in_progress');
+    const done = { ...toolItem(type, '{}', 'completed'), name: 'other' };
+    await expect(collectProvenance([
+      { type: 'response.created', response: response([], 'in_progress') },
+      { type: 'response.output_item.added', output_index: 0, item: added },
+      { type: 'response.output_item.done', output_index: 0, item: done },
+      { type: 'response.completed', response: response([done], 'completed') },
+    ], field)).rejects.toThrow('Responses snapshot conflicts with streamed value at ["choices",0,"items",0,"name"]');
+  });
+
+  test(`rejects a ${type} namespace change after the done snapshot`, async () => {
+    const added = { ...toolItem(type, '', 'in_progress'), namespace: 'files' };
+    const done = { ...toolItem(type, '{}', 'completed'), namespace: 'files' };
+    await expect(collectProvenance([
+      { type: 'response.created', response: response([], 'in_progress') },
+      { type: 'response.output_item.added', output_index: 0, item: added },
+      { type: 'response.output_item.done', output_index: 0, item: done },
+      { type: 'response.completed', response: response([{ ...done, namespace: 'web' }], 'completed') },
+    ], field)).rejects.toThrow('namespace changed from files to web');
+  });
+
+  test(`rejects a ${type} name change after the done snapshot`, async () => {
+    const added = toolItem(type, '', 'in_progress');
+    const done = toolItem(type, '{}', 'completed');
+    await expect(collectProvenance([
+      { type: 'response.created', response: response([], 'in_progress') },
+      { type: 'response.output_item.added', output_index: 0, item: added },
+      { type: 'response.output_item.done', output_index: 0, item: done },
+      { type: 'response.completed', response: response([{ ...done, name: 'other' }], 'completed') },
+    ], field)).rejects.toThrow('Responses terminal snapshot conflicts with closed output item 0');
+  });
+}

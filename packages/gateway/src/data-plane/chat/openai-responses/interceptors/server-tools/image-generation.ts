@@ -8,7 +8,7 @@ import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
 import type { AttemptState } from '../../../../shared/gateway-ctx.ts';
 import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromOpenAIImagesBody } from '../../../../shared/telemetry/usage.ts';
-import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-loader.ts';
+import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-fetcher.ts';
 import type { ServerToolHistoryExpansion, ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolSlotResult } from '../server-tool-shim.ts';
 import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
 import { decodeForgivingBase64, encodeHex, isImageMediaType, isJsonObject, mediaTypeEssence, parseSSEStream } from '@floway-dev/protocols/common';

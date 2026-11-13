@@ -205,7 +205,7 @@ test('Messages closes an earlier concurrent block immediately and the frontier b
   ]);
 });
 
-test.each([['ChatCompletions', writeOpenAIChatCompletionsEvents], ['Messages', writeAnthropicMessagesEvents], ['GenerateContent', writeGeminiGenerateContentEvents]] as const)('%s flattens reasoning content and summary in arrival order', async (name, writer) => {
+test.each([['ChatCompletions', writeOpenAIChatCompletionsEvents], ['Messages', writeAnthropicMessagesEvents], ['GenerateContent', (records: AsyncIterable<IRRecord>) => writeGeminiGenerateContentEvents(records, { includeThoughts: true })]] as const)('%s flattens reasoning content and summary in arrival order', async (name, writer) => {
   const item = { type: 'reasoning', id: 'r', summary: [] };
   const source = [responseStart, add(0, item), eventFrame({ type: 'response.content_part.added', output_index: 0, content_index: 0, part: { type: 'reasoning_text', text: '' } } as any), eventFrame({ type: 'response.reasoning_text.delta', output_index: 0, content_index: 0, delta: 'C' } as any), eventFrame({ type: 'response.reasoning_summary_part.added', output_index: 0, summary_index: 0, part: { type: 'summary_text', text: '' } } as any), eventFrame({ type: 'response.reasoning_summary_text.delta', output_index: 0, summary_index: 0, delta: 'S' } as any), eventFrame({ type: 'response.completed', response: response([{ ...item, content: [{ type: 'reasoning_text', text: 'C' }], summary: [{ type: 'summary_text', text: 'S' }] }]) } as any)];
   const frames: any[] = await collect<any>(writer(readOpenAIResponsesEvents(iterate(source))));
@@ -263,7 +263,7 @@ test('Responses closes only the addressed text part while a refusal remains open
 test('GenerateContent retains reasoning arrival order while it waits for a prior tool', async () => {
   const reasoning = { type: 'reasoning', id: 'r', content: [{ type: 'reasoning_text', text: 'C' }], summary: [] };
   const source = [responseStart, add(0, call(0)), args(0, '{"x":'), add(1, reasoning), eventFrame({ type: 'response.reasoning_summary_part.added', output_index: 1, summary_index: 0, part: { type: 'summary_text', text: 'S' } } as any), eventFrame({ type: 'response.output_item.done', output_index: 1, item: { ...reasoning, summary: [{ type: 'summary_text', text: 'S' }] } } as any), args(0, '1}'), endCall(0, '{"x":1}'), eventFrame({ type: 'response.completed', response: response([call(0, '{"x":1}', 'completed'), { ...reasoning, summary: [{ type: 'summary_text', text: 'S' }] }]) } as any)];
-  const frames = await collect(writeGeminiGenerateContentEvents(readOpenAIResponsesEvents(iterate(source))));
+  const frames = await collect(writeGeminiGenerateContentEvents(readOpenAIResponsesEvents(iterate(source)), { includeThoughts: true }));
   const parts = frames.flatMap(frame => (frame.event as any).candidates?.flatMap((candidate: any) => candidate.content?.parts ?? []) ?? []);
   expect(parts[0].functionCall.id).toBe('call_0');
   expect(parts.filter((part: any) => part.thought).map((part: any) => part.text).join('')).toBe('CS');
@@ -299,4 +299,30 @@ test('Messages publishes cumulative usage progress before pulling the rest of th
   });
   const final = output.findLast(frame => frame.event?.type === 'message_delta');
   expect(final).toMatchObject({ event: { delta: { stop_reason: 'end_turn' }, usage: { input_tokens: 10, output_tokens: 2 } } });
+});
+
+test('Responses states a grouped call its group on the announcement and the snapshot alike', async () => {
+
+  const records: IRRecord[] = [
+    { type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } },
+    { type: 'write', kind: 'assign', path: ['model'], value: 'served' },
+    { type: 'start', id: 'source' },
+    {
+      type: 'write',
+      kind: 'initialize',
+      path: ['choices', 0, 'items', 0],
+      value: { type: 'function_call', call_id: 'call_1', name: 'lookup', namespace: 'public', arguments: '' },
+    },
+    { type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'arguments'], value: '{}' },
+    { type: 'item_end', choice: 0, item: 0 },
+    { type: 'choice_end', choice: 0, finish_reason: 'tool_calls' },
+    { type: 'finish', status: 'completed' },
+  ];
+  const frames = await collect(writeOpenAIResponsesEvents(iterate(records)));
+
+  const callItems = frames.flatMap(frame => frame.type === 'event' ? [frame.event] : [])
+    .flatMap(event => 'item' in event && event.item != null && typeof event.item === 'object' ? [event.item] : [])
+    .filter(item => 'type' in item && (item.type === 'function_call' || item.type === 'custom_tool_call'));
+  expect(callItems.map(item => ('name' in item ? item.name : undefined))).toEqual(['lookup', 'lookup']);
+  expect(callItems.map(item => ('namespace' in item ? item.namespace : undefined))).toEqual(['public', 'public']);
 });

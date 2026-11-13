@@ -36,11 +36,11 @@ const jsonSchemaObject = (schema: unknown): Record<string, unknown> => {
 };
 
 export const geminiFunctionParameters = (declaration: GeminiGenerateContentFunctionDeclaration): Record<string, unknown> | undefined => {
-  if (declaration.parameters !== undefined && declaration.parametersJsonSchema !== undefined) throw new TranslateInputException('Gemini parameters and parametersJsonSchema are mutually exclusive.');
-  return declaration.parametersJsonSchema !== undefined ? jsonSchemaObject(declaration.parametersJsonSchema) : declaration.parameters === undefined ? undefined : geminiSchemaToJsonSchema(declaration.parameters);
+  if (declaration.parameters != null && declaration.parametersJsonSchema !== undefined) throw new TranslateInputException('Gemini parameters and parametersJsonSchema are mutually exclusive.');
+  return declaration.parametersJsonSchema !== undefined ? jsonSchemaObject(declaration.parametersJsonSchema) : declaration.parameters == null ? undefined : geminiSchemaToJsonSchema(declaration.parameters);
 };
 
 export const geminiResponseSchema = (config: GeminiGenerateContentGenerationConfig): Record<string, unknown> | undefined => {
-  if (config.responseSchema !== undefined && config.responseJsonSchema !== undefined) throw new TranslateInputException('Gemini responseSchema and responseJsonSchema are mutually exclusive.');
-  return config.responseJsonSchema !== undefined ? jsonSchemaObject(config.responseJsonSchema) : config.responseSchema === undefined ? undefined : geminiSchemaToJsonSchema(config.responseSchema);
+  if (config.responseSchema != null && config.responseJsonSchema !== undefined) throw new TranslateInputException('Gemini responseSchema and responseJsonSchema are mutually exclusive.');
+  return config.responseJsonSchema !== undefined ? jsonSchemaObject(config.responseJsonSchema) : config.responseSchema == null ? undefined : geminiSchemaToJsonSchema(config.responseSchema);
 };

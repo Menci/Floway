@@ -1,12 +1,13 @@
 import type { AnthropicMessagesInputAssistantTurnState } from './assistant-turn.ts';
 import { type AnthropicMessagesInputCounts, usageToIR } from './usage.ts';
+import type { ToolNameContext } from '../../../composition/request/tool-names.ts';
 import { createIRBuilder, type IRItemHandle, type IRPartHandle } from '../../../ir/output/builder.ts';
 import type { IRRecord } from '../../../ir/output/records.ts';
 import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendReadField, createReadFieldState, type ReadFieldState, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
+import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';
-import { unwrapCustomToolInput } from '../../openai-responses/common/custom-tool-wrap.ts';
 import {
   type AnthropicMessagesAssistantContentBlock,
   type AnthropicMessagesStreamEventEx,
@@ -63,7 +64,9 @@ interface MessagesBlockState {
 
 export const readAnthropicMessagesEvents = async function* (
   frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
-  options: { customToolNames?: ReadonlySet<string>; roundTrip: RoundTripReader<'anthropicMessages'> },
+  options: Partial<ToolNameContext> & {
+    roundTrip: RoundTripReader<'anthropicMessages'>;
+  },
 ): AsyncGenerator<IRRecord> {
   const ir = createIRBuilder();
   const blocks = new Map<number, MessagesBlockState>();
@@ -109,9 +112,12 @@ export const readAnthropicMessagesEvents = async function* (
       }
     } else if (block.type === 'tool_use') {
       custom = options.customToolNames?.has(block.name) === true;
+      // Restore allocated names, including bare names renamed to avoid collisions.
+      const identity = options.originalToolNames?.get(block.name);
+      const naming = identity ?? { name: block.name };
       item = ir.item(0, custom
-        ? { type: 'custom_tool_call', call_id: block.id, name: block.name, input: '' }
-        : { type: 'function_call', call_id: block.id, name: block.name, arguments: '' });
+        ? { type: 'custom_tool_call', call_id: block.id, ...naming, input: '' }
+        : { type: 'function_call', call_id: block.id, ...naming, arguments: '' });
     } else if (!UNTRANSLATED_BLOCK_TYPES.includes(block.type)) {
       throw new TypeError(`Cannot translate Messages content block ${block.type}`);
     }

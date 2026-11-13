@@ -7,7 +7,7 @@ import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 const createTrip = async () => {
   const trip = await routeOpenAIChatCompletionsViaOpenAIResponses({
     model: 'm', stream: true, messages: [{ role: 'user', content: 'hello' }],
-  }, { model: 'm', sidecarCodec: createTestSidecarCodec() });
+  }, { sidecarCodec: createTestSidecarCodec() });
   if (trip.type !== 'trip') throw new Error(trip.message);
   return trip;
 };

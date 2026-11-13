@@ -64,7 +64,6 @@ export const geminiGenerateContentAttempt = {
       // payload-mutators are applied inline here before translation; the
       // attempt-owned payload clone keeps the caller's source intact.
       const transCtx = {
-        model: candidate.model.id,
         sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       };
@@ -72,7 +71,9 @@ export const geminiGenerateContentAttempt = {
       stripUnsupportedPartFieldsFromPayload(cleaned);
       stripUnsupportedToolsFromPayload(cleaned);
       delete cleaned.safetySettings;
-      const trip = await routeGeminiGenerateContentViaAnthropicMessages(cleaned, transCtx);
+      // The model travels in the URL rather than the body, so the request this
+      // trip reads is the cleaned payload with the resolved model folded in.
+      const trip = await routeGeminiGenerateContentViaAnthropicMessages({ ...cleaned, model: candidate.model.id }, transCtx);
       if (trip.type === 'input-error') return inputErrorResult(trip, ctx.attempt.telemetry);
       const { stream: _stream, ...target } = trip.target;
       const anthropicMessagesResult = await anthropicMessagesAttempt.countTokens({
@@ -134,18 +135,15 @@ const dispatchGeminiGenerateContent = async (
   ctx: ChatGatewayCtx,
 ): Promise<ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>> | TranslateInputError> => {
   const { candidate, targetApi } = invocation;
-  // Gemini generateContent has no native upstream target today — every targetApi we
-  // pick is reached via translation. The dispatch threads each branch
-  // through `executeTranslation` so each inner attempt owns its own
-  // interceptor chain and rewrite.
+  // The model comes from the URL and is folded into the translation request.
+  const request = { ...invocation.payload, model: candidate.model.id };
   const transCtx = {
-    model: candidate.model.id,
     sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
     fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
   };
   if (targetApi === 'anthropicMessages') {
     return await executeTranslation(
-      invocation.payload,
+      request,
       p => routeGeminiGenerateContentViaAnthropicMessages(p, transCtx),
       translated => anthropicMessagesAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
@@ -155,7 +153,7 @@ const dispatchGeminiGenerateContent = async (
   }
   if (targetApi === 'openaiResponses') {
     return await executeTranslation(
-      invocation.payload,
+      request,
       p => routeGeminiGenerateContentViaOpenAIResponses(p, transCtx),
       translated => openaiResponsesAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
@@ -165,7 +163,7 @@ const dispatchGeminiGenerateContent = async (
   }
   if (targetApi === 'openaiChatCompletions') {
     return await executeTranslation(
-      invocation.payload,
+      request,
       p => routeGeminiGenerateContentViaOpenAIChatCompletions(p, transCtx),
       translated => openaiChatCompletionsAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,

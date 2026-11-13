@@ -1,5 +1,7 @@
-export type { RemoteImageData, RemoteImageLoader, TranslateTrip, TranslateInputError, TranslateOptions, Translator } from './types.ts';
-export { SidecarTaggedValue, type SidecarCodec } from './round-trip/codec.ts';
+export type { SidecarCodec } from './round-trip/codec.ts';
+export type { TranslateTrip, TranslateInputError, TranslateOptions, Translator } from './types.ts';
+export { SidecarTaggedValue } from './round-trip/codec.ts';
+
 export {
   routeAnthropicMessagesViaOpenAIChatCompletions,
   routeAnthropicMessagesViaOpenAIResponses,

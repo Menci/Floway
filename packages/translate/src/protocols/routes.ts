@@ -1,9 +1,35 @@
-export { translate as routeAnthropicMessagesViaOpenAIChatCompletions } from './anthropic-messages/via-openai-chat-completions/translate.ts';
-export { translate as routeAnthropicMessagesViaOpenAIResponses } from './anthropic-messages/via-openai-responses/translate.ts';
-export { translate as routeGeminiGenerateContentViaAnthropicMessages } from './gemini-generate-content/via-anthropic-messages/translate.ts';
-export { translate as routeGeminiGenerateContentViaOpenAIChatCompletions } from './gemini-generate-content/via-openai-chat-completions/translate.ts';
-export { translate as routeGeminiGenerateContentViaOpenAIResponses } from './gemini-generate-content/via-openai-responses/translate.ts';
-export { translate as routeOpenAIChatCompletionsViaAnthropicMessages } from './openai-chat-completions/via-anthropic-messages/translate.ts';
-export { translate as routeOpenAIChatCompletionsViaOpenAIResponses } from './openai-chat-completions/via-openai-responses/translate.ts';
-export { translate as routeOpenAIResponsesViaAnthropicMessages } from './openai-responses/via-anthropic-messages/translate.ts';
-export { translate as routeOpenAIResponsesViaOpenAIChatCompletions } from './openai-responses/via-openai-chat-completions/translate.ts';
+import { anthropicMessagesSourceProtocol } from './anthropic-messages/as-source.ts';
+import { anthropicMessagesTargetProtocol } from './anthropic-messages/as-target.ts';
+import { composeTranslation } from '../composition/index.ts';
+import { geminiGenerateContentSourceProtocol } from './gemini-generate-content/as-source.ts';
+import { openaiChatCompletionsSourceProtocol } from './openai-chat-completions/as-source.ts';
+import { openaiChatCompletionsTargetProtocol } from './openai-chat-completions/as-target.ts';
+import { openaiResponsesSourceProtocol } from './openai-responses/as-source.ts';
+import { openaiResponsesTargetProtocol } from './openai-responses/as-target.ts';
+
+export const routeAnthropicMessagesViaOpenAIChatCompletions =
+  composeTranslation(anthropicMessagesSourceProtocol, openaiChatCompletionsTargetProtocol);
+
+export const routeAnthropicMessagesViaOpenAIResponses =
+  composeTranslation(anthropicMessagesSourceProtocol, openaiResponsesTargetProtocol);
+
+export const routeGeminiGenerateContentViaAnthropicMessages =
+  composeTranslation(geminiGenerateContentSourceProtocol, anthropicMessagesTargetProtocol);
+
+export const routeGeminiGenerateContentViaOpenAIChatCompletions =
+  composeTranslation(geminiGenerateContentSourceProtocol, openaiChatCompletionsTargetProtocol);
+
+export const routeGeminiGenerateContentViaOpenAIResponses =
+  composeTranslation(geminiGenerateContentSourceProtocol, openaiResponsesTargetProtocol);
+
+export const routeOpenAIChatCompletionsViaAnthropicMessages =
+  composeTranslation(openaiChatCompletionsSourceProtocol, anthropicMessagesTargetProtocol);
+
+export const routeOpenAIChatCompletionsViaOpenAIResponses =
+  composeTranslation(openaiChatCompletionsSourceProtocol, openaiResponsesTargetProtocol);
+
+export const routeOpenAIResponsesViaAnthropicMessages =
+  composeTranslation(openaiResponsesSourceProtocol, anthropicMessagesTargetProtocol);
+
+export const routeOpenAIResponsesViaOpenAIChatCompletions =
+  composeTranslation(openaiResponsesSourceProtocol, openaiChatCompletionsTargetProtocol);

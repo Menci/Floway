@@ -56,13 +56,20 @@ const payloadCases: Array<{
     },
     message: 'Programmatic',
   },
+  {
+    name: 'deferred inventory tool',
+    payload: { input: [{ type: 'additional_tools', role: 'developer', tools: [{ type: 'function', name: 'lookup', parameters: {}, defer_loading: true }] }] },
+    message: 'Deferred',
+  },
+  {
+    name: 'programmatic inventory caller',
+    payload: { input: [{ type: 'tool_search_output', call_id: 'search', execution: 'client', tools: [{ type: 'function', name: 'lookup', parameters: {}, allowed_callers: ['programmatic'] }] }] },
+    message: 'Programmatic',
+  },
 ];
 
-const targetPayloadCases = ['OpenAI Chat Completions', 'Anthropic Messages'].flatMap(target =>
-  payloadCases.map(testCase => ({ target, ...testCase })));
-
-test.each(targetPayloadCases)('rejectProgrammaticOpenAIResponsesPayload rejects $name for $target', ({ target, payload, message }) => {
-  expect(() => rejectProgrammaticOpenAIResponsesPayload({ model: 'gpt-test', input: [], ...payload }, target)).toThrow(message);
+test.each(payloadCases)('rejectProgrammaticOpenAIResponsesPayload rejects $name', ({ payload, message }) => {
+  expect(() => rejectProgrammaticOpenAIResponsesPayload({ model: 'gpt-test', input: [], ...payload })).toThrow(message);
 });
 
 test('rejectProgramCaller accepts ordinary callers', () => {
@@ -74,5 +81,5 @@ test('rejectProgrammaticOpenAIResponsesPayload accepts ordinary function tooling
     model: 'gpt-test',
     input: [],
     tools: [{ type: 'function', name: 'lookup', parameters: {}, strict: true }],
-  }, 'Anthropic Messages')).not.toThrow();
+  })).not.toThrow();
 });

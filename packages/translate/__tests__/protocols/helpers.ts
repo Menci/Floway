@@ -5,7 +5,6 @@ import { writeGeminiGenerateContentEvents as writeGeminiGenerateContentEventsPro
 import { writeOpenAIChatCompletionsEvents as writeOpenAIChatCompletionsEventsProduction } from '../../src/protocols/openai-chat-completions/as-source/events.ts';
 import { readOpenAIChatCompletionsEvents as readOpenAIChatCompletionsEventsProduction } from '../../src/protocols/openai-chat-completions/as-target/events.ts';
 import { writeOpenAIResponsesEvents as writeOpenAIResponsesEventsProduction } from '../../src/protocols/openai-responses/as-source/events.ts';
-import { flattenNamespaceTools } from '../../src/protocols/openai-responses/as-source/namespace-tools.ts';
 import { readOpenAIResponsesEvents as readOpenAIResponsesEventsProduction } from '../../src/protocols/openai-responses/as-target/events.ts';
 import type { RoundTripReader } from '../../src/round-trip/reader.ts';
 import { createReferenceBuilder } from '../../src/round-trip/reference/reference-builder.ts';
@@ -19,7 +18,6 @@ const writer = <Protocol extends 'anthropicMessages' | 'geminiGenerateContent' |
   builder: createReferenceBuilder(),
   encodeSidecar: async () => 'test-sidecar',
 });
-const namespaceToolNames = flattenNamespaceTools({ model: 'test', input: [], tools: [] }).names;
 
 // These ordinary IR fixtures use independent mock participants. Provenance is
 // exercised by the native-reader and public-route tests sharing one coordinator.
@@ -44,7 +42,7 @@ export const writeAnthropicMessagesEvents = (records: Parameters<typeof writeAnt
   writeAnthropicMessagesEventsProduction(records, { ...options, roundTrip: writer<'anthropicMessages'>() });
 export const writeOpenAIChatCompletionsEvents = (records: Parameters<typeof writeOpenAIChatCompletionsEventsProduction>[0], options: Omit<Parameters<typeof writeOpenAIChatCompletionsEventsProduction>[1], 'roundTrip'> = {}) =>
   writeOpenAIChatCompletionsEventsProduction(records, { ...options, roundTrip: writer<'openaiChatCompletions'>() });
-export const writeOpenAIResponsesEvents = (records: Parameters<typeof writeOpenAIResponsesEventsProduction>[0], options: Omit<Parameters<typeof writeOpenAIResponsesEventsProduction>[1], 'roundTrip' | 'namespaceToolNames'> = {}) =>
-  writeOpenAIResponsesEventsProduction(records, { ...options, roundTrip: writer<'openaiResponses'>(), namespaceToolNames });
+export const writeOpenAIResponsesEvents = (records: Parameters<typeof writeOpenAIResponsesEventsProduction>[0], options: Omit<Parameters<typeof writeOpenAIResponsesEventsProduction>[1], 'roundTrip'> = {}) =>
+  writeOpenAIResponsesEventsProduction(records, { ...options, roundTrip: writer<'openaiResponses'>() });
 export const writeGeminiGenerateContentEvents = (records: Parameters<typeof writeGeminiGenerateContentEventsProduction>[0], options: Omit<Parameters<typeof writeGeminiGenerateContentEventsProduction>[1], 'roundTrip'> = {}) =>
   writeGeminiGenerateContentEventsProduction(records, { ...options, roundTrip: writer<'geminiGenerateContent'>() });

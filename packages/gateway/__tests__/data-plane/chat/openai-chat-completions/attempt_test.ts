@@ -186,11 +186,10 @@ test('generate translates through the Anthropic Messages target when only that e
   assertEquals(anthropicBeta, []);
 });
 
-test('generate injects the platform external-image loader into OpenAI-Chat-Completions-to-Anthropic-Messages translation', async () => {
+test('generate states a remote image URL to Anthropic Messages without fetching it', async () => {
   installRepo();
-  initExternalResourceFetcher(url => {
-    assertEquals(url.href, 'https://example.com/image.png');
-    return Promise.resolve(new Response(Uint8Array.of(1, 2, 3), { headers: { 'content-type': 'image/png' } }));
+  initExternalResourceFetcher(() => {
+    throw new Error('translation must not fetch images');
   });
   let observedBody: Omit<AnthropicMessagesPayload, 'model'> | undefined;
   const callAnthropicMessages = vi.fn(async (_model, body): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
@@ -216,7 +215,7 @@ test('generate injects the platform external-image loader into OpenAI-Chat-Compl
   assert(message?.role === 'user' && Array.isArray(message.content));
   const image = message.content.find(block => block.type === 'image');
   assert(image?.type === 'image');
-  assertEquals(image.source, { type: 'base64', media_type: 'image/png', data: 'AQID' });
+  assertEquals(image.source, { type: 'url', url: 'https://example.com/image.png' });
 });
 
 test('generate translates through the OpenAI Responses target when only that endpoint is exposed', async () => {
@@ -288,11 +287,12 @@ test('generate preserves translated instructions before rewriting inline system 
   await collectEvents(result.events);
   const observedBody = observedBodies[0];
   if (!observedBody) throw new Error('expected observed OpenAI Responses body');
-  assertEquals(observedBody.instructions, 'base instructions');
+  assertEquals(observedBody.instructions, undefined);
   const input = observedBody.input;
   if (!Array.isArray(input)) throw new Error('expected OpenAI Responses input array');
-  assertEquals(input[0], { type: 'message', role: 'user', content: 'hello' });
-  assertEquals(input[1], { type: 'message', role: 'developer', content: 'inline instructions' });
+  assertEquals(input[0], { type: 'message', role: 'developer', content: 'base instructions' });
+  assertEquals(input[1], { type: 'message', role: 'user', content: 'hello' });
+  assertEquals(input[2], { type: 'message', role: 'developer', content: 'inline instructions' });
 });
 
 test('generate propagates upstream response headers onto the EventResult so respond can forward them', async () => {

@@ -1,12 +1,20 @@
 import { expect, it } from 'vitest';
 
+import { readOpenAIResponsesRequest } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarItem } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
 import type { OpenAIResponsesSourceAssistantTurn } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
-import { buildTargetRequest as buildMessagesRequest } from '../../../src/protocols/openai-responses/via-anthropic-messages/request.ts';
-import { buildTargetRequest as buildChatRequest } from '../../../src/protocols/openai-responses/via-openai-chat-completions/request.ts';
+import type { SidecarCodec } from '../../../src/round-trip/codec.ts';
 import { encodeRoundTripSidecar } from '../../../src/round-trip/sidecar.ts';
+import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
+
+const buildChatRequest = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec) => ({
+  target: await buildTargetPayloadFor(pairs.responsesToChat[0], pairs.responsesToChat[1], { ...payload, stream: true }, { sidecarCodec: codec }),
+});
+const buildMessagesRequest = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec, options: { fallbackMaxOutputTokens?: number } = {}) => ({
+  target: await buildTargetPayloadFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], { ...payload, stream: true }, { sidecarCodec: codec, ...options }),
+});
 
 const replayedTurn: OpenAIResponsesSourceAssistantTurn = [
   { type: 'function_call', call_id: 'native', name: 'run', namespace: 'web', arguments: '{}', status: 'completed' },
@@ -63,13 +71,13 @@ it('keeps restored Messages history native while hoisting system and translating
     sourceTurnDigest: await computeOpenAIResponsesTurnDigest(replayedTurn),
   });
   const result = await buildMessagesRequest(request(sidecar), codec, {
-    loadRemoteImage: async () => null, fallbackMaxOutputTokens: undefined,
+    fallbackMaxOutputTokens: undefined,
   });
 
   expect(result.target.system).toEqual([{ type: 'text', text: 'instructions', cache_control: { type: 'ephemeral' } }]);
   expect(result.target.messages).toEqual([
     targetTurn,
-    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'native', content: 'native result', is_error: undefined }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'native', content: 'native result' }] },
     { role: 'assistant', content: [{ type: 'tool_use', id: 'bare', name: 'web_run_2', input: {}, cache_control: { type: 'ephemeral' } }] },
   ]);
 });
@@ -91,19 +99,26 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('bypasses ordin
   });
   const source: CanonicalOpenAIResponsesPayload = {
     model: 'test',
+    stream: true,
     input: [
       ...calls, createOpenAIResponsesSidecarItem('carrier', sidecar),
       { type: 'message', role: 'user', content: 'next' },
       { type: 'function_call', namespace: 'x', name: 'y.f', call_id: 'bare', arguments: '{}', status: 'completed' },
     ],
   };
-  const result = target === 'openaiChatCompletions'
-    ? await buildChatRequest(source, codec)
-    : await buildMessagesRequest(source, codec, { loadRemoteImage: async () => null, fallbackMaxOutputTokens: undefined });
-
-  expect(result.target.messages[0]).toEqual(native);
-  expect([...result.namespaceToolNames.sourceToTarget]).toEqual([['x.y.f', 'x_y_f']]);
-  expect([...result.namespaceToolNames.targetToSource]).toEqual([['x_y_f', { namespace: 'x', name: 'y.f', type: 'function_call' }]]);
+  const ctx = { sidecarCodec: codec, fallbackMaxOutputTokens: undefined };
+  const reading = readOpenAIResponsesRequest(source);
+  const irCall = (r: typeof reading, callId: string): { namespace?: string; name: string } | undefined => r.turns
+    .flatMap(turn => turn.toIRInputTurns())
+    .flatMap(turn => turn.items as readonly { type: string; call_id?: string; name: string; namespace?: string }[])
+    .find(item => (item.type === 'function_call' || item.type === 'custom_tool_call') && item.call_id === callId);
+  const target_ = target === 'openaiChatCompletions'
+    ? await buildTargetPayloadFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, ctx, reading)
+    : await buildTargetPayloadFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], source, ctx, reading);
+  // The reading keeps a grouped call's logical identity; flattening it into the
+  // single name this target's wire uses is the target's own step.
+  expect(irCall(reading, 'bare')).toMatchObject({ namespace: 'x', name: 'y.f' });
+  expect(target_.messages[0]).toEqual(native);
   expect(source.input[0]).toEqual(calls[0]);
   expect(source.input[1]).toEqual(calls[1]);
 });
@@ -118,6 +133,7 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('allocates bare
   });
   const source: CanonicalOpenAIResponsesPayload = {
     model: 'test',
+    stream: true,
     input: [
       { type: 'function_call', namespace: 'a.b', name: 'run', call_id: 'first', arguments: '{}' },
       createOpenAIResponsesSidecarItem('carrier', sidecar),
@@ -125,12 +141,21 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('allocates bare
       { type: 'function_call', namespace: 'a_b', name: 'run', call_id: 'second', arguments: '{}' },
     ],
   };
-  const result = target === 'openaiChatCompletions'
-    ? await buildChatRequest(source, codec)
-    : await buildMessagesRequest(source, codec, { loadRemoteImage: async () => null, fallbackMaxOutputTokens: undefined });
-
-  expect([...result.namespaceToolNames.sourceToTarget]).toEqual([['a.b.run', 'a_b_run'], ['a_b.run', 'a_b_run_2']]);
-  expect(result.target.messages).toHaveLength(3);
+  const ctx = { sidecarCodec: codec, fallbackMaxOutputTokens: undefined };
+  const reading = readOpenAIResponsesRequest(source);
+  const target_ = target === 'openaiChatCompletions'
+    ? await buildTargetPayloadFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, ctx, reading)
+    : await buildTargetPayloadFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], source, ctx, reading);
+  // Two groups spelling the same flat name must not collide on the wire, and
+  // which one takes the suffix follows the order the conversation states them.
+  const callNames = target === 'openaiChatCompletions'
+    ? (target_.messages as Array<{ tool_calls?: Array<{ function: { name: string } }> }>)
+        .flatMap(message => message.tool_calls?.map(call => call.function.name) ?? [])
+    : (target_.messages as Array<{ content: unknown }>).flatMap(message => Array.isArray(message.content)
+        ? message.content.flatMap(block => (block as { type: string; name?: string }).type === 'tool_use' ? [(block as { name: string }).name] : [])
+        : []);
+  expect(callNames).toEqual(['a_b_run', 'a_b_run_2']);
+  expect(target_.messages).toHaveLength(3);
 });
 
 it.each(['additional_tools', 'tool_search_output'] as const)('restores assistant turns independently across a user-side %s boundary', async type => {
@@ -151,12 +176,12 @@ it.each(['additional_tools', 'tool_search_output'] as const)('restores assistant
       ? { type, role: 'developer' as const, tools: [{ type: 'function' as const, name: 'lookup' }] }
       : { type, call_id: 'load', execution: 'client' as const, tools: [{ type: 'function' as const, name: 'lookup' }] };
     const source: CanonicalOpenAIResponsesPayload = {
-      model: 'test', input: [...turns[0], carriers[0], inventory, ...turns[1], carriers[1]],
+      model: 'test', stream: true, input: [...turns[0], carriers[0], inventory, ...turns[1], carriers[1]],
     };
     const original = structuredClone(source);
     const result = target === 'openaiChatCompletions'
-      ? await buildChatRequest(source, codec)
-      : await buildMessagesRequest(source, codec, { loadRemoteImage: async () => null, fallbackMaxOutputTokens: undefined });
+      ? { target: await buildTargetPayloadFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, { sidecarCodec: codec }) }
+      : await buildMessagesRequest(source, codec, { fallbackMaxOutputTokens: undefined });
 
     expect(result.target.messages).toEqual(nativeTurns);
     expect(result.target.tools).toHaveLength(1);
