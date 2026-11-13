@@ -2,8 +2,8 @@ import { DeleteRegular } from '@fluentui/react-icons';
 import { useId, useMemo } from 'react';
 import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 
-import type { EditorAuxData, RuntimeInfo, UpstreamEditorValues } from './data';
-import { modelPrefixIsValid, publicModelId } from './data';
+import type { EditorAuxData, RuntimeInfo, UpstreamEditLevel, UpstreamEditorValues } from './data';
+import { modelPrefixIsValid, modelsEditable, publicModelId } from './data';
 import { ApiPathsSection, ProviderConfigSection } from './provider-config';
 import { EditorSection } from './section';
 import type { UpstreamRecord } from '../../api/types';
@@ -29,7 +29,7 @@ const COMMON_COLO_LOCATIONS = [
   'SYD', 'AKL', 'GRU', 'JNB', 'DXB', 'BOM', 'DEL',
 ] as const;
 
-export const configReadOnly = (editLevel: 'off' | 'models' | 'full') => ({
+export const configReadOnly = (editLevel: UpstreamEditLevel) => ({
   connection: editLevel !== 'full',
   modelsFetch: editLevel === 'off',
 });
@@ -48,7 +48,7 @@ export function UpstreamConfigSidebar({
   discovered: UpstreamModelConfig[];
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
   onRefreshModels: () => void;
-  editLevel: 'off' | 'models' | 'full';
+  editLevel: UpstreamEditLevel;
   proxies: EditorAuxData['proxies'];
   record: UpstreamRecord;
   runtime: RuntimeInfo;
@@ -153,7 +153,7 @@ export function UpstreamConfigSidebar({
           <ModelPrefixEditor readOnly={immutable} />
         </EditorSection>
         <EditorSection title={t('dashboard.upstreamEditor.sections.disabledModels')} description={t('dashboard.upstreamEditor.disabledModelsHint')}>
-          <DisabledModelsCombobox catalogAvailable={catalogAvailable} discovered={discovered} readOnly={immutable} />
+          <DisabledModelsCombobox catalogAvailable={catalogAvailable} discovered={discovered} readOnly={!modelsEditable(editLevel)} />
         </EditorSection>
       </aside>
     </div>
