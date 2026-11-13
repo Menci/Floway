@@ -128,6 +128,7 @@ const assistantItems = (content: GeminiGenerateContentContent, contentIndex: num
     case 'text': {
       const thoughtText = geminiGenerateContentThoughtText(part);
       if (thoughtText !== null) {
+        if (thoughtText === '') return;
         flush();
         // Thought parts have no ID; their IR identity comes from their position.
         items.push({ type: 'reasoning', id: `gemini_reasoning_${contentIndex}_${partIndex}`, summary: [thoughtText] });

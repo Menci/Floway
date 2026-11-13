@@ -2,6 +2,36 @@ import { expect, test } from 'vitest';
 
 import { readAnthropicMessagesRequest } from '../../../../src/protocols/anthropic-messages/as-source/input-to.ts';
 
+test('empty thinking does not enter IR or split visible text', () => {
+  const reading = readAnthropicMessagesRequest({
+    model: 'm', max_tokens: 32, messages: [{
+      role: 'assistant', content: [
+        { type: 'text', text: 'before' },
+        { type: 'thinking', thinking: '', signature: 'opaque' },
+        { type: 'text', text: 'after' },
+        { type: 'thinking', thinking: 'reasoning', signature: 'opaque' },
+        { type: 'text', text: 'answer' },
+      ],
+    }],
+  });
+  expect(reading.turns[0].toIRInputTurns()).toEqual([{
+    kind: 'assistant', items: [
+      { type: 'message', content: [{ type: 'text', text: 'before' }, { type: 'text', text: 'after' }] },
+      { type: 'reasoning', summary: ['reasoning'] },
+      { type: 'message', content: [{ type: 'text', text: 'answer' }] },
+    ],
+  }]);
+});
+
+test('entirely empty thinking leaves no reasoning in input IR', () => {
+  const reading = readAnthropicMessagesRequest({
+    model: 'm', max_tokens: 32, messages: [{
+      role: 'assistant', content: [{ type: 'thinking', thinking: '', signature: 'opaque' }],
+    }],
+  });
+  expect(reading.turns[0].toIRInputTurns()).toEqual([]);
+});
+
 test('reads document metadata and nested part attributes into the IR', () => {
   const citation = {
     type: 'char_location' as const, cited_text: 'caption', document_index: 0, document_title: null,
