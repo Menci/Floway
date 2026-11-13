@@ -27,9 +27,11 @@ export interface EditorAuxData {
   runtime: RuntimeInfo;
 }
 
+export type UpstreamEditLevel = 'off' | 'models' | 'full';
+
 interface UpstreamEditorLoaderDataBase extends EditorAuxData {
   audit?: boolean;
-  editLevel: 'off' | 'models' | 'full';
+  editLevel: UpstreamEditLevel;
   record: UpstreamRecord;
   discovered: UpstreamModelConfig[] | null;
 }
@@ -118,6 +120,15 @@ export const canFetchModelCatalog = (record: UpstreamRecord, config: UpstreamEdi
     return isPersisted(record);
   }
 };
+
+// Turning a listed model on or off is a catalog edit rather than a structural
+// one: an editor who may change the catalog may set it, and only an audit-only
+// editor may not. The sidebar's disabled-models combobox and the workspace's
+// per-row switch are two presentations of that one field, so both read this
+// predicate instead of deriving read-only flags of their own -- each derived
+// from a different restriction (connection editability on one side, catalog
+// ownership on the other) and the two drifted apart.
+export const modelsEditable = (editLevel: UpstreamEditLevel): boolean => editLevel !== 'off';
 
 // Manual entries exist only for the kinds whose stored config carries a model
 // list. For the rest the catalog is the provider's, and the editor can only
