@@ -112,8 +112,8 @@ const assistantItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IR
   }
   case 'reasoning':
   {
-    const summary = item.summary.map(part => part.text);
-    const content = (item.content ?? []).map(part => part.text);
+    const summary = item.summary.flatMap(part => part.text === '' ? [] : [part.text]);
+    const content = (item.content ?? []).flatMap(part => part.text === '' ? [] : [part.text]);
     // No readable text means nothing any target could replay.
     if (summary.length === 0 && content.length === 0) return undefined;
     return { type: 'reasoning' as const, ...(summary.length === 0 ? {} : { summary }), ...(content.length === 0 ? {} : { content }) };

@@ -241,8 +241,9 @@ const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'a
       pending.push({ type: 'text', text: block.text });
       break;
     case 'thinking':
+      if (block.thinking === '') break;
       flushText();
-      if (block.thinking !== '') assistant.push({ type: 'reasoning', summary: [block.thinking] });
+      assistant.push({ type: 'reasoning', summary: [block.thinking] });
       break;
     case 'redacted_thinking':
       // Opaque redacted thinking has no translatable input-IR representation.

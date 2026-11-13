@@ -55,9 +55,9 @@ test('function response media enters Messages tool results and tool results prec
   });
 });
 
-test('buildTargetPayload preserves an empty thought as a thinking turn', async () => {
+test('buildTargetPayload omits empty thought history', async () => {
   const result = await buildWithTestSidecar({ contents: [{ role: 'model', parts: [{ text: '', thought: true }] }] }, 'claude-test', noOptions);
-  assertEquals(result.messages, [{ role: 'assistant', content: [{ type: 'thinking', thinking: '', signature: '' }] }]);
+  assertEquals(result.messages, []);
 });
 
 test('buildTargetPayload translates a named thinking level to the effort name', async () => {
