@@ -82,6 +82,33 @@ it('keeps restored Messages history native while hoisting system and translating
   ]);
 });
 
+it('preserves signed empty thinking in restored Messages history', async () => {
+  const codec = createTestSidecarCodec();
+  const sourceTurn = [
+    { type: 'reasoning', summary: [{ type: 'summary_text', text: '' }] },
+    { type: 'function_call', call_id: 'native', name: 'run', namespace: 'web', arguments: '{}', status: 'completed' },
+  ] satisfies OpenAIResponsesSourceAssistantTurn;
+  const targetTurn = {
+    role: 'assistant' as const,
+    content: [
+      { type: 'thinking' as const, thinking: '', signature: 'native-signature' },
+      { type: 'tool_use' as const, id: 'native', name: 'native_tool', input: {} },
+    ],
+  };
+  const sidecar = await encodeRoundTripSidecar(codec, {
+    v: 1, source: 'openaiResponses', target: 'anthropicMessages', targetTurn,
+    sourceTurnDigest: await computeOpenAIResponsesTurnDigest(sourceTurn),
+  });
+  const result = await buildMessagesRequest({
+    model: 'test', input: [
+      ...sourceTurn,
+      createOpenAIResponsesSidecarItem('sidecar', sidecar),
+      { type: 'function_call_output', call_id: 'native', output: 'done' },
+    ],
+  }, codec);
+  expect(result.target.messages[0]).toEqual(targetTurn);
+});
+
 it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('bypasses ordinary namespace validation for recognized %s history', async target => {
   const codec = createTestSidecarCodec();
   const native = target === 'openaiChatCompletions'

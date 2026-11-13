@@ -31,6 +31,39 @@ test('entirely opaque reasoning preserves an empty assistant turn', () => {
   expect(slot.toIRInputTurns()).toEqual([{ kind: 'assistant', items: [] }]);
 });
 
+test.each([
+  { summary: [''], content: [], expected: [] },
+  { summary: [], content: ['', ''], expected: [] },
+  { summary: ['', ''], content: [''], expected: [] },
+  { summary: [''], content: ['', 'body', ''], expected: [{ type: 'reasoning', content: ['body'] }] },
+  { summary: ['', 'summary', ''], content: [''], expected: [{ type: 'reasoning', summary: ['summary'] }] },
+])('filters empty reasoning text before producing input IR: %j', ({ summary, content, expected }) => {
+  const slot = readOpenAIResponsesRequest({
+    model: 'm', stream: true, input: [{
+      type: 'reasoning',
+      summary: summary.map(text => ({ type: 'summary_text', text })),
+      content: content.map(text => ({ type: 'reasoning_text', text })),
+      encrypted_content: 'opaque-vendor-data',
+    }],
+  }).turns[0];
+  expect(slot.toIRInputTurns()).toEqual([{ kind: 'assistant', items: expected }]);
+});
+
+test('empty reasoning summaries do not create Messages thinking blocks beside a tool call', async () => {
+  const trip = await routeOpenAIResponsesViaAnthropicMessages({
+    model: 'm', stream: true, input: [
+      { type: 'message', role: 'user', content: 'hi' },
+      { type: 'reasoning', summary: [{ type: 'summary_text', text: '' }], encrypted_content: 'opaque-vendor-data' },
+      { type: 'function_call', call_id: 'c', name: 'read', arguments: '{}' },
+      { type: 'function_call_output', call_id: 'c', output: 'done' },
+    ],
+  }, { sidecarCodec: createTestSidecarCodec() });
+  if (trip.type !== 'trip') throw new Error(trip.message);
+  expect(trip.target.messages[1]).toEqual({
+    role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'read', input: {} }],
+  });
+});
+
 test('an incomplete custom result reaches Messages with its failure marker', async () => {
   const trip = await routeOpenAIResponsesViaAnthropicMessages({
     model: 'm', stream: true, input: [
