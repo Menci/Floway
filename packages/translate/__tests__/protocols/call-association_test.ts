@@ -56,6 +56,84 @@ const group = (kind: 'function' | 'custom'): OpenAIResponsesTool => ({
   tools: [kind === 'function' ? { type: 'function', name: 'run', parameters: { type: 'object', properties: {} } } : { type: 'custom', name: 'run', format: { type: 'text' } }],
 });
 
+test.each([
+  { initial: 'web_run', final: 'plain', name: 'plain', namespace: undefined },
+  { initial: 'plain', final: 'web_run', name: 'run', namespace: 'web' },
+  { initial: 'web_run', final: 'files_run', name: 'run', namespace: 'files' },
+  { initial: 'plain', final: 'other', name: 'other', namespace: undefined },
+  { initial: 'web_run', final: 'plain', name: 'plain', namespace: undefined, delayedId: true },
+  { initial: 'plain', final: 'web_run', name: 'run', namespace: 'web', delayedId: true },
+  { initial: 'web_run', final: 'files_run', name: 'run', namespace: 'files', delayedId: true },
+])('keeps callable identity when a Chat tool name changes from $initial to $final', async ({ initial, final, name, namespace, delayedId }) => {
+  const source: OpenAIResponsesRequestPayloadEx = {
+    model: 'm', stream: true, input: 'start',
+    tools: [
+      group('function'),
+      { type: 'namespace', name: 'files', description: '', tools: [{ type: 'function', name: 'run', parameters: { type: 'object', properties: {} } }] },
+      { type: 'function', name: 'plain', parameters: { type: 'object', properties: {} } },
+      { type: 'function', name: 'other', parameters: { type: 'object', properties: {} } },
+    ],
+  };
+  const trip = expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions(source, { sidecarCodec: createTestSidecarCodec() }));
+  const frames: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [
+    eventFrame({
+      id: 'chat', object: 'chat.completion.chunk', created: 1, model: 'm',
+      choices: [{ index: 0, delta: { tool_calls: [{ index: 0, ...(delayedId ? {} : { id: 'c' }), type: 'function', function: { name: initial, arguments: '' } }] }, finish_reason: null }],
+    }),
+    eventFrame({
+      id: 'chat', object: 'chat.completion.chunk', created: 1, model: 'm',
+      choices: [{ index: 0, delta: { tool_calls: [{ index: 0, ...(delayedId ? { id: 'c' } : {}), function: { name: final, arguments: '{}' } }] }, finish_reason: 'tool_calls' }],
+    }),
+    doneFrame(),
+  ];
+  const events: OpenAIResponsesStreamEventEx[] = [];
+  for await (const frame of trip.events(iterate(frames))) if (frame.type === 'event') events.push(frame.event);
+  const done = events.find(event => event.type === 'response.output_item.done' && event.item.type === 'function_call');
+  const completed = events.find(event => event.type === 'response.completed');
+  if (done?.type !== 'response.output_item.done' || completed?.type !== 'response.completed') throw new Error('Expected completed tool call');
+  if (delayedId) {
+    const added = events.find(event => event.type === 'response.output_item.added' && event.item.type === 'function_call');
+    expect(added?.type === 'response.output_item.added' ? added.item : undefined).toMatchObject({ type: 'function_call', name });
+    if (namespace === undefined) expect(added?.type === 'response.output_item.added' ? added.item : undefined).not.toHaveProperty('namespace');
+    else expect(added?.type === 'response.output_item.added' ? added.item : undefined).toHaveProperty('namespace', namespace);
+  }
+  const finalCall = completed.response.output.find(item => item.type === 'function_call');
+  for (const call of [done.item, finalCall]) {
+    expect(call).toMatchObject({ type: 'function_call', name, arguments: '{}' });
+    if (namespace === undefined) expect(call).not.toHaveProperty('namespace');
+    else expect(call).toHaveProperty('namespace', namespace);
+  }
+});
+
+test('clears a grouped custom-tool namespace when its Chat name becomes ungrouped', async () => {
+  const source: OpenAIResponsesRequestPayloadEx = {
+    model: 'm', stream: true, input: 'start',
+    tools: [group('custom'), { type: 'custom', name: 'plain', format: { type: 'text' } }],
+  };
+  const trip = expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions(source, { sidecarCodec: createTestSidecarCodec() }));
+  const frames: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [
+    eventFrame({
+      id: 'chat', object: 'chat.completion.chunk', created: 1, model: 'm',
+      choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'c', type: 'function', function: { name: 'web_run', arguments: '' } }] }, finish_reason: null }],
+    }),
+    eventFrame({
+      id: 'chat', object: 'chat.completion.chunk', created: 1, model: 'm',
+      choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { name: 'plain', arguments: '{"input":"raw"}' } }] }, finish_reason: 'tool_calls' }],
+    }),
+    doneFrame(),
+  ];
+  const events: OpenAIResponsesStreamEventEx[] = [];
+  for await (const frame of trip.events(iterate(frames))) if (frame.type === 'event') events.push(frame.event);
+  const done = events.find(event => event.type === 'response.output_item.done' && event.item.type === 'custom_tool_call');
+  const completed = events.find(event => event.type === 'response.completed');
+  if (done?.type !== 'response.output_item.done' || completed?.type !== 'response.completed') throw new Error('Expected completed custom tool call');
+  const finalCall = completed.response.output.find(item => item.type === 'custom_tool_call');
+  for (const call of [done.item, finalCall]) {
+    expect(call).toMatchObject({ type: 'custom_tool_call', name: 'plain', input: 'raw' });
+    expect(call).not.toHaveProperty('namespace');
+  }
+});
+
 test.each([['chat', 'function'], ['chat', 'custom'], ['messages', 'function'], ['messages', 'custom']] as const)('native %s %s calls share logical aliases with declarations, selectors and ordinary history', async (target, kind) => {
   const options = { sidecarCodec: createTestSidecarCodec() };
   const source: OpenAIResponsesRequestPayloadEx = { model: 'm', stream: true, input: 'start', tools: [group(kind)] };

@@ -442,17 +442,16 @@ export const readOpenAIChatCompletionsEvents = async function* (
         tool.pendingTextFragmentIds = [];
       }
     } else if (tool.item !== undefined) {
+      if (tool.name !== tool.emittedName) {
+        // A rename updates both parts of the identity; null clears an earlier namespace.
+        const naming = namingOf(tool.name);
+        tool.item.assign('name', naming.name);
+        tool.item.assign('namespace', naming.namespace ?? null);
+        tool.emittedName = tool.name;
+      }
       if (tool.id !== undefined && !tool.callIdAssigned) {
         tool.item.assign('call_id', tool.id);
         tool.callIdAssigned = true;
-      }
-      if (tool.name !== tool.emittedName) {
-        // A rename has to state the same pair the opening did, or a grouped call
-        // would end up with a flat name beside the group's namespace.
-        const naming = namingOf(tool.name);
-        tool.item.assign('name', naming.name);
-        if (naming.namespace !== undefined) tool.item.assign('namespace', naming.namespace);
-        tool.emittedName = tool.name;
       }
       if (fragment !== undefined && fragment !== '' && !tool.wrapped) tool.item.append(tool.custom ? 'input' : 'arguments', fragment, textFragmentId === undefined ? undefined : [textFragmentId]);
       if (fragment !== undefined && tool.wrapped) tool.pendingInput += fragment;

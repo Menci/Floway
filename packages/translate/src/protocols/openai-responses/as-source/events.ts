@@ -333,14 +333,14 @@ export const writeOpenAIResponsesEvents = async function* (
       if (item.type !== 'custom_tool_call') throw new TypeError('Responses tool unit has the wrong IR item');
       return {
         type: 'custom_tool_call', id, call_id: unit.callId, name: item.name,
-        ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+        ...(item.namespace == null ? {} : { namespace: item.namespace }),
         input: item.input, status,
       };
     }
     if (item.type !== 'function_call') throw new TypeError('Responses tool unit has the wrong IR item');
     return {
       type: 'function_call', id, call_id: unit.callId, name: item.name,
-      ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+      ...(item.namespace == null ? {} : { namespace: item.namespace }),
       arguments: item.arguments, status,
     };
   };
@@ -510,12 +510,12 @@ export const writeOpenAIResponsesEvents = async function* (
     const added: OpenAIResponsesOutputItemEx = custom
       ? {
           type: 'custom_tool_call', id, call_id: resolvedCallId, name: item.name,
-          ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+          ...(item.namespace == null ? {} : { namespace: item.namespace }),
           input: '', status: 'in_progress',
         }
       : {
           type: 'function_call', id, call_id: resolvedCallId, name: item.name,
-          ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+          ...(item.namespace == null ? {} : { namespace: item.namespace }),
           arguments: '', status: 'in_progress',
         };
     const content = createEmittedFieldState(options.roundTrip.builder, 'text');
