@@ -1,7 +1,7 @@
 import { getRepo } from '../../repo/index.ts';
 import { modelsRefreshInputHash } from '../../repo/models-refresh-inputs.ts';
 import type { StoredUpstreamRecord } from '../../repo/types.ts';
-import type { FlagDefaults, Provider, ProviderModule, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { FlagDefaults, Provider, ProviderModule, UpstreamMetricIdentity, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { azureProviderModule } from '@floway-dev/provider-azure';
 import { claudeCodeProviderModule } from '@floway-dev/provider-claude-code';
 import { codexProviderModule } from '@floway-dev/provider-codex';
@@ -39,6 +39,13 @@ export const createPreviewProvider = (record: UpstreamRecord): Provider =>
 
 export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
   providersByKind[kind].defaultFlags;
+
+export const resetMetricForKind = (kind: UpstreamProviderKind, identity: UpstreamMetricIdentity) => {
+  const display = providersByKind[kind].resolveUpstreamMetricDisplay?.(identity, { quotaDisplay: 'remaining' });
+  if (display?.resetValue === undefined) return null;
+  const { name, labelKey, labelValues, windowSeconds, resetValue } = display;
+  return { name, labelKey, labelValues, windowSeconds, resetValue };
+};
 
 // The upstream scope is a required argument across the catalog-assembly chain
 // (this, `enumerateAddressableModelIds`, `enumerateModelCandidates`) so a

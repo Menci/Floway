@@ -9,9 +9,20 @@ import {
   telemetryHourKey,
   type TelemetryBucketGranularity,
 } from '@floway-dev/protocols/browser';
+import { normalizeUpstreamMetricIdentity, upstreamMetricIdentityKey, type UpstreamMetricIdentity } from '@floway-dev/provider/browser';
 
 export type DashboardPreset = 'today' | '7d' | '30d';
-export type DashboardRange = DashboardPreset | CalendarDateRange;
+export interface DashboardResetRange {
+  kind: 'reset-cycle';
+  cycle: 'current' | 'previous';
+  upstreamId: string;
+  metric: UpstreamMetricIdentity;
+  start: number;
+  end: number;
+}
+export type DashboardRange = DashboardPreset | CalendarDateRange | DashboardResetRange;
+export const isResetRange = (range: DashboardRange): range is DashboardResetRange => typeof range !== 'string' && 'kind' in range;
+export const isCalendarRange = (range: DashboardRange): range is CalendarDateRange => typeof range !== 'string' && !isResetRange(range);
 export type DashboardGranularity = Exclude<TelemetryBucketGranularity, 'all' | 'week' | 'month' | 'year'>;
 
 export interface DashboardBucketFrame {
@@ -39,6 +50,15 @@ export const validateDashboardInterval = (start: number, end: number): void => {
 };
 
 export const dashboardInterval = (range: DashboardRange, nowMs: number): { start: number; end: number } => {
+  if (isResetRange(range)) {
+    if (!Number.isSafeInteger(range.start) || !Number.isSafeInteger(range.end) || range.start < 0 || range.end <= range.start) throw new RangeError('Invalid reset cycle interval');
+    const start = Math.floor(range.start / TELEMETRY_HOUR_MS) * TELEMETRY_HOUR_MS;
+    const end = range.cycle === 'current'
+      ? Math.floor(range.end / TELEMETRY_HOUR_MS) * TELEMETRY_HOUR_MS + TELEMETRY_HOUR_MS
+      : Math.floor(range.end / TELEMETRY_HOUR_MS) * TELEMETRY_HOUR_MS;
+    validateDashboardInterval(start, end);
+    return { start, end };
+  }
   if (typeof range !== 'string') {
     validateCalendarRange(range);
     return {
@@ -58,15 +78,20 @@ export const dashboardInterval = (range: DashboardRange, nowMs: number): { start
 };
 
 export const dashboardRangeIsCurrent = (range: DashboardRange, nowMs: number): boolean => {
+  if (isResetRange(range)) return true;
   if (typeof range === 'string') return true;
   const today = calendarDate(new Date(nowMs));
   return range.start <= today && today <= range.end;
 };
 
-export const sameDashboardRange = (left: DashboardRange, right: DashboardRange): boolean =>
-  typeof left === 'string' || typeof right === 'string'
-    ? left === right
-    : left.start === right.start && left.end === right.end;
+export const sameDashboardRange = (left: DashboardRange, right: DashboardRange): boolean => {
+  if (typeof left === 'string' || typeof right === 'string') return left === right;
+  if (isResetRange(left) || isResetRange(right)) return isResetRange(left) && isResetRange(right)
+    && left.cycle === right.cycle && left.upstreamId === right.upstreamId
+    && upstreamMetricIdentityKey(left.metric) === upstreamMetricIdentityKey(right.metric)
+    && left.start === right.start && left.end === right.end;
+  return left.start === right.start && left.end === right.end;
+};
 
 const floorCalendarBucket = (ms: number, granularity: DashboardGranularity): Date => {
   const date = new Date(ms);
@@ -132,7 +157,9 @@ export const dashboardGranularity = (range: DashboardRange, nowMs: number): Dash
   for (const granularity of AUTO_GRANULARITIES) {
     if (framesForInterval(interval, granularity, AUTO_BUCKET_TARGET).length <= AUTO_BUCKET_TARGET) return granularity;
   }
-  const days = telemetryDayOrdinal(range.end) - telemetryDayOrdinal(range.start) + 1;
+  const days = isCalendarRange(range)
+    ? telemetryDayOrdinal(range.end) - telemetryDayOrdinal(range.start) + 1
+    : Math.ceil((interval.end - interval.start) / (24 * TELEMETRY_HOUR_MS));
   return `${Math.ceil(days / AUTO_BUCKET_TARGET)}d`;
 };
 
@@ -158,6 +185,18 @@ export const dashboardBucketMapper = (range: DashboardRange, nowMs: number) => {
 };
 
 export const parseDashboardRange = (search: URLSearchParams): DashboardRange => {
+  if (search.get('r') === 'reset-current' || search.get('r') === 'reset-previous') {
+    const identity = JSON.parse(search.get('rm') ?? 'null') as UpstreamMetricIdentity | null;
+    if (identity === null || typeof identity !== 'object') throw new TypeError('A reset cycle requires a metric identity');
+    const upstreamId = search.get('ru');
+    if (!upstreamId || !search.has('start') || !search.has('end')) throw new TypeError('A reset cycle requires an upstream and boundaries');
+    const range: DashboardResetRange = {
+      kind: 'reset-cycle', cycle: search.get('r') === 'reset-current' ? 'current' : 'previous', upstreamId,
+      metric: normalizeUpstreamMetricIdentity(identity.name, identity.labels), start: Number(search.get('start')), end: Number(search.get('end')),
+    };
+    dashboardInterval(range, range.end);
+    return range;
+  }
   if (search.get('r') === 'custom') {
     const range = { start: search.get('start') ?? '', end: search.get('end') ?? '' };
     validateCalendarRange(range);
@@ -168,6 +207,15 @@ export const parseDashboardRange = (search: URLSearchParams): DashboardRange => 
 };
 
 export const serializeDashboardRange = (search: URLSearchParams, range: DashboardRange): void => {
+  if (isResetRange(range)) {
+    dashboardInterval(range, range.end);
+    search.set('r', `reset-${range.cycle}`);
+    search.set('ru', range.upstreamId);
+    search.set('rm', JSON.stringify(normalizeUpstreamMetricIdentity(range.metric.name, range.metric.labels)));
+    search.set('start', String(range.start));
+    search.set('end', String(range.end));
+    return;
+  }
   if (typeof range === 'string') {
     if (range !== 'today') search.set('r', range);
   } else {

@@ -1175,6 +1175,17 @@ const zhHansCN = {
         currentUserOnly: '仅自己',
         range: {
           oneDay: '最近一天', sevenDays: '7 天', thirtyDays: '30 天', custom: '自定义', choose: '选择日期区间',
+          currentReset: '本重置周期', previousReset: '上一重置周期',
+          byCycle: '按周期',
+        },
+        resetCycle: {
+          label: '周期', choose: '选择重置周期', view: '查看统计',
+          previousWaiting: '上一周期需要记录到两个不在同一小时的重置。此指标目前仅可查看本周期。',
+        },
+        resetMetric: {
+          label: '重置指标',
+          hint: '所选指标的剩余额度从非 100% 回到 100% 时开始新周期。统计按小时汇总，重置所在小时计入新周期。',
+          waiting: '尚未记录到此指标的重置。剩余额度从非 100% 回到 100% 时开始新周期；记录到两个不在同一小时的重置后，可查看上一周期。',
         },
       },
       usage: {

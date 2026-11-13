@@ -1814,6 +1814,19 @@ class MemoryAgentSetupRepo implements AgentSetupRepository {
 export class InMemoryRepo implements Repo {
   private upstreamMetricRecords: import('../../src/repo/types.ts').UpstreamMetricRecord[] = [];
   upstreamMetrics: import('../../src/repo/types.ts').UpstreamMetricsRepo = {
+    listIdentities: async (upstreamId, end) => [...new Map(this.upstreamMetricRecords
+      .filter(record => record.upstreamId === upstreamId && record.timestamp < end)
+      .map(record => [upstreamMetricIdentityKey(record), { name: record.name, labels: record.labels }])).values()],
+    queryResetStarts: async (upstreamId, identity, resetValue, end) => {
+      const key = upstreamMetricIdentityKey(identity);
+      const records = this.upstreamMetricRecords.filter(record => record.upstreamId === upstreamId && upstreamMetricIdentityKey(record) === key && record.timestamp < end).toSorted((a, b) => a.timestamp - b.timestamp);
+      const fullValue = (timestamp: number) => typeof resetValue === 'number' ? resetValue : this.upstreamMetricRecords.find(record => record.upstreamId === upstreamId && record.timestamp === timestamp && upstreamMetricIdentityKey(record) === upstreamMetricIdentityKey(resetValue) && record.value > 0)?.value;
+      return records.filter((record, index) => {
+        const previous = records[index - 1];
+        const previousFull = previous === undefined ? undefined : fullValue(previous.timestamp);
+        return previous !== undefined && previousFull !== undefined && previous.value !== previousFull && record.value === fullValue(record.timestamp);
+      }).slice(-2).reverse().map(record => record.timestamp);
+    },
     listAll: async () => this.upstreamMetricRecords.toSorted((a, b) => a.timestamp - b.timestamp || a.upstreamId.localeCompare(b.upstreamId) || upstreamMetricIdentityKey(a).localeCompare(upstreamMetricIdentityKey(b))),
     set: async record => {
       const identity = normalizeUpstreamMetricIdentity(record.name, record.labels);

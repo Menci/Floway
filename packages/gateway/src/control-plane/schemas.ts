@@ -906,3 +906,8 @@ export const upstreamMetricsQuery = z.object({
   end: z.string().regex(/^-?\d+$/).transform(Number).pipe(z.number().int()),
   step: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().positive()),
 }).refine(query => query.end > query.start, { message: 'Metrics interval end must be later than start' });
+
+export const upstreamResetCyclesQuery = z.object({
+  upstream_id: z.string().min(1),
+  end: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().safe().positive()),
+});

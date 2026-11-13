@@ -5,12 +5,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dashboardBucketFrames } from '../../src/components/charts/dashboard-time';
 import { parsePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../src/components/performance/overview';
 import DashboardMonitorPerformance from '../../src/routes/dashboard-monitor-performance';
+import { resetCycles, resetLoadedAt } from '../components/telemetry/reset-fixture';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
 
 stubLocalStorage();
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 const loadedAt = Date.UTC(2026, 7, 5, 12);
 const bucket = dashboardBucketFrames('today', loadedAt).at(-2)!.key;
@@ -52,7 +53,7 @@ const overview: PerformanceOverviewResponse = {
   keys: [],
 };
 
-const renderPage = (search: string) => {
+const renderPage = (search: string, cycles: typeof resetCycles | null = null) => {
   const state = parsePerformanceUrlState(new URLSearchParams(search));
   const router = createMemoryRouter([{
     path: '/',
@@ -60,9 +61,10 @@ const renderPage = (search: string) => {
       loaderData={{
         currentUserId: '1',
         error: null,
-        loadedAt,
+        loadedAt: cycles === null ? loadedAt : resetLoadedAt,
         overview,
         regionAvailable: true,
+        resetCycles: cycles,
         state,
       }}
       matches={[] as never}
@@ -74,6 +76,32 @@ const renderPage = (search: string) => {
 };
 
 const urlSearch = (router: ReturnType<typeof renderPage>['router']) => new URLSearchParams(router.state.location.search);
+
+it('uses reset boundaries for a single upstream performance query and hides the selector in calendar mode', async () => {
+  vi.spyOn(Date, 'now').mockReturnValue(resetLoadedAt);
+  const requests: URL[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = new URL(String(input), 'http://localhost');
+    if (url.pathname === '/api/upstream-reset-cycles') return Response.json(resetCycles);
+    if (url.pathname === '/api/performance/overview') { requests.push(url); return Response.json(overview); }
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  }));
+  const { router } = renderPage('fu=up-1', resetCycles);
+  expect(screen.queryByRole('combobox', { name: 'Reset metric' })).toBeNull();
+  fireEvent.click(screen.getByRole('radio', { name: 'By cycle' }));
+  fireEvent.click(screen.getByRole('combobox', { name: 'Cycle' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Previous reset cycle' }));
+  fireEvent.click(screen.getByRole('button', { name: 'View statistics' }));
+  await waitFor(() => expect(requests.at(-1)?.searchParams.get('start')).toBe('2026-11-11T05'));
+  expect(requests.at(-1)?.searchParams.get('end')).toBe('2026-11-11T10');
+  expect(requests.at(-1)?.searchParams.getAll('filter_upstream')).toEqual(['up-1']);
+  await waitFor(() => expect(urlSearch(router).get('r')).toBe('reset-previous'));
+  expect(screen.getByRole('radio', { name: 'By cycle' }).getAttribute('aria-checked')).toBe('true');
+  expect(screen.queryByRole('combobox', { name: 'Reset metric' })).toBeNull();
+  fireEvent.click(screen.getByRole('radio', { name: '7 Days' }));
+  await waitFor(() => expect(urlSearch(router).get('r')).toBe('7d'));
+  expect(screen.queryByRole('combobox', { name: 'Reset metric' })).toBeNull();
+});
 
 describe('Performance table state', () => {
   it('labels each table column with the percentile chosen for its metric', () => {

@@ -1,12 +1,12 @@
 import type { UpstreamMetricRecord, UpstreamMetricsRepo } from './types.ts';
 import type { SqlDatabase } from '@floway-dev/platform';
-import { normalizeUpstreamMetricIdentity, type UpstreamMetricLabels } from '@floway-dev/provider';
+import { normalizeUpstreamMetricIdentity, type UpstreamMetricIdentity, type UpstreamMetricLabels } from '@floway-dev/provider';
 
 export const UPSTREAM_METRICS_INTERVAL_MS = 60_000;
 const columns = 'upstream_id AS upstreamId, metric_name AS name, metric_labels AS labelsJson, timestamp, value';
 type SqlUpstreamMetricRecord = Omit<UpstreamMetricRecord, 'labels'> & { labelsJson: string };
 
-const encodeIdentity = ({ name, labels }: UpstreamMetricRecord) => {
+const encodeIdentity = ({ name, labels }: UpstreamMetricIdentity) => {
   const normalized = normalizeUpstreamMetricIdentity(name, labels);
   return { name: normalized.name, labelsJson: JSON.stringify(normalized.labels) };
 };
@@ -18,6 +18,39 @@ const decodeRecords = (records: SqlUpstreamMetricRecord[]): UpstreamMetricRecord
 
 export class SqlUpstreamMetricsRepo implements UpstreamMetricsRepo {
   constructor(private db: SqlDatabase) {}
+
+  async listIdentities(upstreamId: string, end: number): Promise<UpstreamMetricIdentity[]> {
+    const { results } = await this.db.prepare(`
+      SELECT DISTINCT metric_name AS name, metric_labels AS labelsJson
+      FROM upstream_metrics WHERE upstream_id = ? AND timestamp < ?
+      ORDER BY metric_name, metric_labels
+    `).bind(upstreamId, end).all<{ name: string; labelsJson: string }>();
+    return results.map(({ name, labelsJson }) => normalizeUpstreamMetricIdentity(name, JSON.parse(labelsJson)));
+  }
+
+  async queryResetStarts(upstreamId: string, identity: UpstreamMetricIdentity, resetValue: number | UpstreamMetricIdentity, end: number): Promise<number[]> {
+    const metric = encodeIdentity(identity);
+    const allowance = typeof resetValue === 'number' ? null : encodeIdentity(resetValue);
+    const full = allowance === null ? '?' : `(SELECT value FROM upstream_metrics allowance
+      WHERE allowance.upstream_id = sample.upstream_id AND allowance.metric_name = ? AND allowance.metric_labels = ?
+        AND allowance.bucket = sample.bucket AND allowance.timestamp = sample.timestamp AND allowance.value > 0)`;
+    const bindings = allowance === null ? [resetValue as number] : [allowance.name, allowance.labelsJson];
+    const { results } = await this.db.prepare(`
+      WITH observations AS (
+        SELECT timestamp, value, ${full} AS full_value FROM upstream_metrics sample
+        WHERE upstream_id = ? AND metric_name = ? AND metric_labels = ? AND timestamp < ?
+      ), transitions AS (
+        SELECT timestamp, value, full_value,
+          LAG(value) OVER (ORDER BY timestamp) AS previous_value,
+          LAG(full_value) OVER (ORDER BY timestamp) AS previous_full_value
+        FROM observations
+      )
+      SELECT timestamp FROM transitions
+      WHERE value = full_value AND previous_value <> previous_full_value
+      ORDER BY timestamp DESC LIMIT 2
+    `).bind(...bindings, upstreamId, metric.name, metric.labelsJson, end).all<{ timestamp: number }>();
+    return results.map(record => record.timestamp);
+  }
 
   async record(record: UpstreamMetricRecord): Promise<void> {
     const identity = encodeIdentity(record);

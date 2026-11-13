@@ -51,6 +51,12 @@ test('preserves full and exhausted legacy windows without inverting their raw va
   expect(metrics.find(metric => metric.labels.window === 'weekly')?.value).toBe(100);
 });
 
+test('keeps unnamed observed percentage windows without assigning a known duration', () => {
+  const display = resolveUpstreamMetricDisplay({ name: 'quota.remaining_percent', labels: { window: 'unlisted_window' } }, { quotaDisplay: 'used' })!;
+  expect(display).toMatchObject({ name: 'quota.remaining_percent{window="unlisted_window"}', labelKey: null, windowSeconds: null, resetValue: 100 });
+  expect(display.toDisplayValue(75)).toBe(25);
+});
+
 test('records zero and changed included allowances separately from remaining balance', () => {
   for (const allowance_usd of [0, 60, 120]) {
     const base = accountUsage();

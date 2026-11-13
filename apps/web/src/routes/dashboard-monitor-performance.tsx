@@ -30,7 +30,8 @@ import { buildPerformanceChart, performanceBuckets } from '../components/perform
 import { PerformanceTable } from '../components/performance/table';
 import { TelemetryFilterFields, TelemetryGroupByField, type TelemetryDimension } from '../components/telemetry/dimension-controls';
 import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
-import { TelemetryTimeRange } from '../components/telemetry/time-range';
+import { TelemetryRangeControls } from '../components/telemetry/range-controls';
+import { loadTelemetryResetCycles, singleTelemetryUpstream, type UpstreamResetCycles } from '../components/telemetry/reset-cycles';
 import { useTelemetryPolling } from '../components/telemetry/use-poll';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
@@ -58,6 +59,7 @@ interface LoaderData {
   overview: PerformanceOverviewResponse | null;
   state: PerformanceUrlState;
   regionAvailable: boolean | null;
+  resetCycles: UpstreamResetCycles | null;
 }
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
@@ -69,7 +71,9 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     userDimensionAvailable: true,
   });
   const loadedAt = Date.now();
-  const requestedState = { ...parsed, ...scoped };
+  const cycles = await loadTelemetryResetCycles(singleTelemetryUpstream(scoped.filters.upstream, 'performance'), parsed.range, loadedAt);
+  if (cycles.error) return { currentUserId: String(user.id), error: cycles.error, loadedAt, overview: null, state: { ...parsed, ...scoped }, regionAvailable: null, resetCycles: null };
+  const requestedState = { ...parsed, ...scoped, range: cycles.data.range };
   const query = buildPerformanceQuery(requestedState.range, requestedState.groupBy, requestedState.filters, loadedAt);
   const [initialOverview, runtime] = await Promise.all([
     callApi(() => api.api.performance.overview.$get({ query })),
@@ -95,6 +99,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     overview: overview.data ?? null,
     regionAvailable,
     state,
+    resetCycles: cycles.data.resetCycles,
   };
 }
 
@@ -106,6 +111,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const rewrite = useEntryRewrite();
   const initialState = loaderData.state;
   const [regionAvailable, setRegionAvailable] = useState(loaderData.regionAvailable);
+  const [resetCycles, setResetCycles] = useState(loaderData.resetCycles);
   const [query, setQuery] = useState(() => ({
     filters: initialState.filters,
     groupBy: initialState.groupBy,
@@ -129,7 +135,11 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   // A background poll must not clear a failure the operator has not read.
   const reload = useCallback(async (signal: AbortSignal, { background, requestedAt }: { background: boolean; requestedAt: number }) => {
     if (!background) setError(null);
-    const search = buildPerformanceQuery(query.range, query.groupBy, query.filters, requestedAt);
+    const cycles = await loadTelemetryResetCycles(singleTelemetryUpstream(query.filters.upstream, 'performance'), query.range, requestedAt, signal);
+    if (signal.aborted) return false;
+    if (cycles.error) { setError(cycles.error); return false; }
+    const activeQuery = cycles.data.range === query.range ? query : { ...query, range: cycles.data.range };
+    const search = buildPerformanceQuery(activeQuery.range, query.groupBy, query.filters, requestedAt);
     if (regionAvailable !== null) {
       const result = await callApi(() => api.api.performance.overview.$get(
         { query: search },
@@ -141,7 +151,8 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
         return false;
       }
       setOverview(result.data);
-      return true;
+      setResetCycles(cycles.data.resetCycles);
+      return activeQuery === query ? true : activeQuery;
     }
 
     const discovery = pendingRegionAvailableRef.current === null
@@ -167,16 +178,16 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       nextRegionAvailable = pendingRegionAvailableRef.current;
     }
     const normalization = normalizePerformanceDimensionsForRuntime({
-      ...query,
+      ...activeQuery,
       hidden: [] as string[],
     }, nextRegionAvailable);
     const committedQuery = normalization.changed
       ? {
           filters: normalization.state.filters,
           groupBy: normalization.state.groupBy,
-          range: query.range,
+          range: activeQuery.range,
         }
-      : query;
+      : activeQuery;
     let result;
     if (normalization.changed) {
       result = await callApi(() => api.api.performance.overview.$get(
@@ -200,7 +211,8 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     setRegionAvailable(nextRegionAvailable);
     setBreakdownGroup(current => normalizePerformanceBreakdownForRuntime(current, nextRegionAvailable));
     setOverview(result.data);
-    return normalization.changed ? committedQuery : true;
+    setResetCycles(cycles.data.resetCycles);
+    return committedQuery === query ? true : committedQuery;
   }, [query, regionAvailable]);
 
   const onQueryCommit = useCallback((previous: typeof query, next: typeof query) => {
@@ -320,16 +332,15 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
               groupByLabel={t('dashboard.performance.groupBy.label')}
               onGroupByChange={changeGroupBy}
             />
-            <div className="ml-auto flex-none">
-              <TelemetryTimeRange
-                addressOf={range => addressOf({ range })}
-                ariaLabel={t('dashboard.performance.range.label')}
-                loadedAt={loadedAt}
-                onChange={changeRange}
-                onEditingChange={setEditingRange}
-                range={loadedQuery.range}
-              />
-            </div>
+            <TelemetryRangeControls
+              addressOf={range => addressOf({ range })}
+              ariaLabel={t('dashboard.performance.range.label')}
+              loadedAt={loadedAt}
+              onChange={changeRange}
+              onEditingChange={setEditingRange}
+              range={loadedQuery.range}
+              resetCycles={resetCycles}
+            />
           </div>
           <div className="flex items-end gap-3 min-w-0 flex-wrap">
             <TelemetryFilterFields

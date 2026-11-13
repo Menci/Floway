@@ -1,8 +1,10 @@
 import { COPILOT_DEFAULT_FLAGS } from './defaults.ts';
 import { createCopilotProvider } from './provider.ts';
+import { resolveUpstreamMetricDisplay } from './upstream-metrics.ts';
 import type { ProviderModule } from '@floway-dev/provider';
 
 export const copilotProviderModule: ProviderModule = {
+  resolveUpstreamMetricDisplay,
   create: createCopilotProvider,
   defaultFlags: COPILOT_DEFAULT_FLAGS,
 };

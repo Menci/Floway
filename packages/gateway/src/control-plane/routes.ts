@@ -11,13 +11,13 @@ import { createAlias, deleteAlias, listAliases, updateAlias } from './model-alia
 import { controlPlaneModels } from './models/routes.ts';
 import { performanceOverview } from './performance/routes.ts';
 import { createProxy, deleteProxy, listAllBackoffs, listProxies, listProxyBackoffs, listProxyOptions, resetProxyBackoffs, testProxy, updateProxy } from './proxies/routes.ts';
-import { accessRecordBody, upstreamMetricsQuery, upstreamOptionsQuery, authLoginBody, changeOwnPasswordBody, updateOwnPreferencesBody, claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexImportExchangeBody, codexImportPreviewBody, codexOAuthAuthorizeUrlBody, codexOAuthRefreshBody, codexRateLimitResetConsumeBody, codexRateLimitResetCreditsBody, copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody, createAliasBody, createGroupBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, importBody, modelsQuery, ollamaUsageBody, performanceQuery, previewModelsBody, proxyOptionsQuery, resetBackoffBody, reorderAccessRecordsBody, reorderUpstreamsBody, resolveAccessBody, rotateKeyBody, siteSettingsBody, testProxyBody, tokenUsageOverviewQuery, tokenUsageQuery, updateAliasBody, updateGroupBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody, webSearchConfigSchema, webSearchUsageQuery } from './schemas.ts';
+import { accessRecordBody, upstreamMetricsQuery, upstreamOptionsQuery, authLoginBody, changeOwnPasswordBody, updateOwnPreferencesBody, claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexImportExchangeBody, codexImportPreviewBody, codexOAuthAuthorizeUrlBody, codexOAuthRefreshBody, codexRateLimitResetConsumeBody, codexRateLimitResetCreditsBody, copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody, createAliasBody, createGroupBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, importBody, modelsQuery, ollamaUsageBody, performanceQuery, previewModelsBody, proxyOptionsQuery, resetBackoffBody, reorderAccessRecordsBody, reorderUpstreamsBody, resolveAccessBody, rotateKeyBody, siteSettingsBody, testProxyBody, tokenUsageOverviewQuery, tokenUsageQuery, updateAliasBody, updateGroupBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody, webSearchConfigSchema, webSearchUsageQuery, upstreamResetCyclesQuery } from './schemas.ts';
 import { getWebSearchConfigRoute, putWebSearchConfigRoute, testWebSearchConfigRoute } from './search-config/routes.ts';
 import { webSearchUsage } from './search-usage/routes.ts';
 import { getSiteSettings, putSiteSettings } from './site-settings/routes.ts';
 import { tokenUsageOverview } from './token-usage/overview.ts';
 import { tokenUsage } from './token-usage/routes.ts';
-import { upstreamMetrics } from './upstream-metrics/routes.ts';
+import { upstreamMetrics, upstreamResetCycles } from './upstream-metrics/routes.ts';
 import { claudeCodeOAuthAuthorizeUrl, claudeCodeOAuthExchange, claudeCodeOAuthRefresh, claudeCodeProbe, claudeCodeSetupTokenAuthorizeUrl, claudeCodeSetupTokenExchange } from './upstreams/claude-code.ts';
 import { codexImportExchange, codexImportPreview, codexOAuthAuthorizeUrl, codexOAuthRefresh, codexRateLimitResetConsume, codexRateLimitResetCredits } from './upstreams/codex.ts';
 import { copilotOAuthDeviceLoginPoll, copilotOAuthDeviceLoginStart, copilotQuota } from './upstreams/copilot.ts';
@@ -62,6 +62,7 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
   .get('/api/search-usage', zValidator('query', webSearchUsageQuery), webSearchUsage)
   .get('/api/performance/overview', zValidator('query', performanceQuery), performanceOverview)
   .get('/api/upstream-metrics', zValidator('query', upstreamMetricsQuery), upstreamMetrics)
+  .get('/api/upstream-reset-cycles', zValidator('query', upstreamResetCyclesQuery), upstreamResetCycles)
   .get('/api/models', zValidator('query', modelsQuery), controlPlaneModels)
   .get('/api/upstreams', listUpstreams)
   .get('/api/upstreams/blueprint', adminOnlyMiddleware, getUpstreamBlueprint)
