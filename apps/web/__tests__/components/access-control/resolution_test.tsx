@@ -41,6 +41,16 @@ test('aborts stale requests and ignores a late result after the target changes',
   expect(result().data.values['Model.Use']).toBe(false);
 });
 
+test('disabling keeps the result for an unchanged target and drops it once the target changes', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => response(true)));
+  const { rerender } = renderInApp(<Harness enabled principal={principal} scope={scope} />);
+  await waitFor(() => expect(result().data?.values['Model.Use']).toBe(true));
+  rerender(<Harness enabled={false} principal={principal} scope={scope} />);
+  expect(result()).toMatchObject({ data: { values: { 'Model.Use': true } }, pending: false });
+  rerender(<Harness enabled={false} principal={principal} scope={{ kind: 'upstreams' }} />);
+  expect(result()).toEqual({ data: null, error: null, pending: false });
+});
+
 test('disabled or root selections never request inherited values', () => {
   const fetch = vi.fn();
   vi.stubGlobal('fetch', fetch);

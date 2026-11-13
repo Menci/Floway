@@ -20,7 +20,7 @@ import { DialogShell } from '../ui/dialog-shell';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
 import { useDiscardGuard } from '../ui/use-discard-guard';
-import type { AccessPrincipal, AccessScope, AccessValues } from '@floway-dev/gateway/browser';
+import type { AccessPrincipal, AccessResolution, AccessScope, AccessValues } from '@floway-dev/gateway/browser';
 
 const { Button, DialogActions, DialogTitle, Field, Tab, TabList } = fluentComponents;
 const JsonEditor = lazy(() => import('../ui/json-editor').then(module => ({ default: module.JsonEditor })));
@@ -60,21 +60,31 @@ export function AccessRecordDialog({ data, principalData, initialPrincipal, init
   const formValues = useWatch({ control }) as FormValues;
   const selectedPrincipal = formValues.principal;
   const principal = useMemo(() => parsePrincipal(selectedPrincipal), [selectedPrincipal]);
-  const { data: resolution, error: resolutionError } = useAccessResolution({ enabled: open, principal, scope, excludeRecordId: record?.id });
+  const resolution = useAccessResolution({ enabled: open, principal, scope, excludeRecordId: record?.id });
+  // Permission fields depend on both the scope and its inherited values, which
+  // resolve one request later. The fields keep showing the last settled target
+  // until its replacement resolves, so a target never renders without its
+  // inherited values. Explicit values outside the new scope are dropped at the
+  // same moment, so the outgoing fields keep theirs until they disappear.
+  // While stale they are disabled, and saving does nothing, so no decision is
+  // made against inherited values of a target that is no longer selected.
+  const [settled, setSettled] = useState<{ scope: AccessScope | null; data: AccessResolution | null; error: string | null } | null>(null);
+  if (!resolution.pending && (settled?.scope !== scope || settled.data !== resolution.data || settled.error !== resolution.error)) {
+    setSettled({ scope, data: resolution.data, error: resolution.error });
+    if (settled?.scope !== scope) {
+      const nextPermissions = scopePermissions(scope);
+      setValues(current => Object.fromEntries(Object.entries(current).filter(([permission]) => nextPermissions.includes(permission as Permission))) as AccessValues);
+    }
+  }
   const administratorBypass = principal?.kind === 'user' && data.users.some(user => user.id === principal.id && user.isAdmin);
   const close = useCallback(() => onOpenChange(false), [onOpenChange]);
   const { discardConfirmation, requestClose } = useDiscardGuard({
     onClose: close,
     values: { formValues, scope, scopeJson, values },
   });
-  const permissions = useMemo(() => scopePermissions(scope), [scope]);
-  const applyScope = (next: AccessScope | null) => {
-    setScope(next);
-    const nextPermissions = scopePermissions(next);
-    setValues(current => Object.fromEntries(Object.entries(current).filter(([permission]) => nextPermissions.includes(permission as Permission))) as AccessValues);
-  };
+  const permissions = useMemo(() => settled === null ? [] : scopePermissions(settled.scope), [settled]);
   const changeScope = (next: AccessScope | null) => {
-    applyScope(next);
+    setScope(next);
     setScopeJson(JSON.stringify(next, null, 2));
     setScopeError(null);
   };
@@ -82,7 +92,7 @@ export function AccessRecordDialog({ data, principalData, initialPrincipal, init
     setScopeJson(next);
     const parsed = scopeSchema.nullable().safeParse(parseJson(next));
     if (!parsed.success) return;
-    applyScope(parsed.data);
+    setScope(parsed.data);
     setScopeError(null);
   };
 
@@ -104,7 +114,7 @@ export function AccessRecordDialog({ data, principalData, initialPrincipal, init
   };
 
   const save = async (form: FormValues) => {
-    if (saving) return;
+    if (saving || resolution.pending) return;
     const parsed = scopeMode === 'json' ? parseJsonScope() : { scope };
     if (parsed === null) return;
     const finalScope = validateVisualScope(parsed.scope, setScopeError, t('dashboard.accessControl.validation.scopeRequired'));
@@ -167,8 +177,9 @@ export function AccessRecordDialog({ data, principalData, initialPrincipal, init
     </Field>
 
     {permissions.length > 0 && <PermissionFields
+      busy={resolution.pending}
       disabled={saving}
-      inherited={resolution?.values}
+      inherited={settled?.data?.values}
       onChange={(permission, value) => setValues(current => {
         if (value !== undefined) return { ...current, [permission]: value };
         const next = { ...current };
@@ -178,7 +189,7 @@ export function AccessRecordDialog({ data, principalData, initialPrincipal, init
       permissions={permissions}
       values={values}
     />}
-    {resolutionError && <OutcomeMessageBar>{resolutionError}</OutcomeMessageBar>}
+    {settled?.error && <OutcomeMessageBar>{settled.error}</OutcomeMessageBar>}
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
   </DialogShell></Suspense></>;
 }

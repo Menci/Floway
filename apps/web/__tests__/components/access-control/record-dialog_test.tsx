@@ -120,11 +120,11 @@ test('updates permission controls from each valid JSON scope draft', async () =>
   const editor = screen.getByRole('textbox', { name: 'JSON' });
 
   fireEvent.change(editor, { target: { value: JSON.stringify({ kind: 'groups' }) } });
-  expect(screen.queryByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.User.Audit') })).toBeNull();
+  await vi.waitFor(() => expect(screen.queryByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.User.Audit') })).toBeNull());
   expect(screen.getByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.Permission.Audit') })).toBeTruthy();
 
   fireEvent.change(editor, { target: { value: JSON.stringify({ kind: 'group', groupId: 3 }) } });
-  const userAudit = screen.getByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.User.Audit') });
+  const userAudit = await screen.findByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.User.Audit') });
   fireEvent.click(within(userAudit).getByRole('radio', { name: i18n.t('dashboard.accessControl.states.on') }));
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.accessControl.actions.save') })); });
 
@@ -181,12 +181,57 @@ test('resolves group inheritance through the same API as personal inheritance', 
   expect(body).toEqual({ principal: { kind: 'group', id: 3 }, scope: record.scope, excludeRecordId: record.id });
 });
 
+test('switching scope keeps the settled permission fields disabled until the new inherited values resolve', async () => {
+  const pending: Array<(response: Response) => void> = [];
+  vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const { scope } = JSON.parse(init!.body as string) as { scope: { kind: string } };
+    if (scope.kind === 'upstream') return Response.json({ values: { 'Model.Use': true, 'Upstream.Audit': false, 'Upstream.Edit': 'off' }, records: [], decisions: [] });
+    return await new Promise<Response>(resolve => { pending.push(resolve); });
+  }));
+  await renderDialog({ record });
+  const modelUse = screen.getByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.Model.Use') });
+  await vi.waitFor(() => expect(within(modelUse).getByRole<HTMLInputElement>('radio', { name: i18n.t('dashboard.accessControl.states.on') }).checked).toBe(true));
+  const fields = () => [...document.querySelectorAll('[data-permission-field]')].map(field => field.getAttribute('data-permission-field'));
+  const snapshots: string[] = [];
+  const observer = new MutationObserver(() => {
+    snapshots.push(`${fields().join(',')}|${document.querySelector('[data-inheritance-unknown]') === null ? 'known' : 'unknown'}`);
+  });
+  observer.observe(screen.getByRole('dialog'), { childList: true, subtree: true, attributes: true });
+
+  fireEvent.click(screen.getByRole('tab', { name: 'JSON' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'JSON' }), { target: { value: JSON.stringify({ kind: 'upstreams' }) } });
+  await vi.waitFor(() => expect(pending).toHaveLength(1));
+  expect(fields()).toEqual(['Model.Use', 'Upstream.Audit', 'Upstream.Edit']);
+  expect(within(modelUse).getByRole<HTMLInputElement>('radio', { name: i18n.t('dashboard.accessControl.states.on') }).checked).toBe(true);
+  const editor = document.querySelector('[data-permission-editor]')!;
+  expect(editor.getAttribute('aria-busy')).toBe('true');
+  expect(within(editor as HTMLElement).getAllByRole<HTMLInputElement>('radio').every(input => input.disabled)).toBe(true);
+  const save = screen.getByRole<HTMLButtonElement>('button', { name: i18n.t('dashboard.accessControl.actions.save') });
+  expect(save.disabled).toBe(false);
+  await act(async () => { fireEvent.click(save); });
+  expect(vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false);
+
+  fireEvent.change(screen.getByRole('textbox', { name: 'JSON' }), { target: { value: JSON.stringify({ kind: 'groups' }) } });
+  await vi.waitFor(() => expect(pending).toHaveLength(2));
+  await act(async () => { pending[1]!(Response.json({ values: { 'Permission.Audit': true }, records: [], decisions: [] })); });
+  await vi.waitFor(() => expect(fields()).toEqual(['Permission.Audit']));
+  observer.disconnect();
+
+  const audit = screen.getByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.Permission.Audit') });
+  expect(within(audit).getByRole<HTMLInputElement>('radio', { name: i18n.t('dashboard.accessControl.states.on') }).checked).toBe(true);
+  expect(document.querySelector('[data-permission-editor]')!.getAttribute('aria-busy')).toBe('false');
+  expect(within(audit).getAllByRole<HTMLInputElement>('radio').every(input => !input.disabled)).toBe(true);
+  expect(snapshots.every(snapshot => snapshot.endsWith('|known'))).toBe(true);
+  expect(new Set(snapshots.map(snapshot => snapshot.split('|')[0]))).toEqual(new Set(['Model.Use,Upstream.Audit,Upstream.Edit', 'Permission.Audit']));
+});
+
 test('moving a fixed rule into a model boundary uses the available append order', async () => {
   const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => Response.json(init?.method === 'PUT' ? { ...record, ...JSON.parse(init.body as string) } : { values: { 'Model.Use': true }, records: [], decisions: [] }));
   vi.stubGlobal('fetch', fetch);
   await renderDialog({ record, suggestedSortOrder: 99 });
   fireEvent.click(screen.getByRole('tab', { name: 'JSON' }));
   fireEvent.change(screen.getByRole('textbox', { name: 'JSON' }), { target: { value: JSON.stringify({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } }) } });
+  await vi.waitFor(() => expect(document.querySelector('[data-permission-editor]')!.getAttribute('aria-busy')).toBe('false'));
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save rule' })); });
   const write = fetch.mock.calls.find(([, init]) => init?.method === 'PUT')!;
   expect(JSON.parse(write[1]!.body as string).sortOrder).toBe(99);
