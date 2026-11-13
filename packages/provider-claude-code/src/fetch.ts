@@ -3,7 +3,7 @@ import { ClaudeCodeOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { pickClaudeCodeHeaders } from './headers.ts';
 import { logWarn, logInfo } from './log.ts';
 import type { ClaudeCodeProviderData } from './models.ts';
-import { parseClaudeCodeQuotaHeaders, type ClaudeCodeQuotaSnapshot } from './quota.ts';
+import { claudeCodeRateLimitedUntil, parseClaudeCodeQuotaHeaders, type ClaudeCodeQuotaSnapshot } from './quota.ts';
 import {
   readClaudeCodeUpstreamState,
   replaceSoleAccount,
@@ -114,38 +114,7 @@ const observedClaudeCodeMessagesStream = async function* (
   }
 };
 
-// `anthropic-ratelimit-unified-status: rejected` paired with a future
-// `unified-reset` timestamp means the upstream's primary plan window is
-// exhausted and a fresh request would 429 right away; short-circuit at
-// the gate so we don't burn an OAuth refresh on a request that has no
-// chance.
-//
-// Note 1: `overage.status: rejected` (typically paired with
-// `overage-disabled-reason: out_of_credits`) is NOT a short-circuit
-// signal. It only reports that the account has no extra-usage credits
-// to spill into once the primary window runs out — which is the steady
-// state for any plan-tier account that hasn't bought extra credits, so
-// blocking on it would refuse every request to such accounts. The
-// primary `status` already reflects whether the upstream will actually
-// reject the next request.
-//
-// Note 2: a primary `status: rejected` WITHOUT a `reset` is treated as
-// non-gating. Sub2api `ratelimit_service.go:953-961` flags this exact
-// shape as "likely not a real rate limit" (e.g. an "Extra usage required"
-// body sentinel) and passes it through verbatim — without a reset we'd
-// otherwise lock the account out indefinitely because the next request
-// never fires to refresh the snapshot.
-const isRateLimitedNow = (
-  snapshot: ClaudeCodeQuotaSnapshot | null,
-  now: Date,
-): snapshot is ClaudeCodeQuotaSnapshot => {
-  if (!snapshot) return false;
-  if (snapshot.status !== 'rejected') return false;
-  if (!snapshot.reset) return false;
-  return new Date(snapshot.reset).getTime() > now.getTime();
-};
-
-const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuotaSnapshot): Promise<void> => {
+const persistQuotaSnapshot = async (upstreamId: string, modelId: string, snapshot: ClaudeCodeQuotaSnapshot): Promise<void> => {
   // Stamped before the write: the mutator is replayed on a lost race and must
   // return the same document each time, and this records when the snapshot was
   // observed rather than which attempt landed it.
@@ -159,7 +128,7 @@ const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuot
     previousAccount = state.accounts[0];
     return replaceSoleAccount(state, account => ({
       ...account,
-      quotaSnapshot: { fetchedAt, data: snapshot },
+      quotaSnapshot: { fetchedAt, modelId, data: snapshot },
     }));
   });
   await recordUpstreamMetrics(upstreamId, claudeCodeQuotaMetrics(snapshot), fetchedAt);
@@ -176,6 +145,7 @@ const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuot
       to_status: snapshot.status,
       reset_at_iso: snapshot.reset,
       representative_claim: snapshot.representativeClaim,
+      model: modelId,
     });
   }
 };
@@ -194,12 +164,13 @@ const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuot
 // — and tests can observe it by awaiting a microtask flush.
 const persistQuotaFromHeadersFireAndForget = (
   upstreamId: string,
+  modelId: string,
   headers: Headers,
   waitUntil: ((promise: Promise<unknown>) => void) | undefined,
 ): void => {
   const snapshot = parseClaudeCodeQuotaHeaders(headers);
   if (Object.keys(snapshot.raw).length === 0) return;
-  const persist = persistQuotaSnapshot(upstreamId, snapshot).catch(error => {
+  const persist = persistQuotaSnapshot(upstreamId, modelId, snapshot).catch(error => {
     logWarn('claude_code_quota_persist_failed', {
       upstream_id: upstreamId,
       error: String(error),
@@ -397,12 +368,12 @@ export const callClaudeCodeAnthropicMessages = async (
     ));
   }
 
+  // A cached quota deadline avoids refreshing credentials for a deferred request.
   const now = new Date();
-  const quotaData = account.quotaSnapshot === null ? null : account.quotaSnapshot.data;
-  if (isRateLimitedNow(quotaData, now)) {
-    const resetIso = quotaData.reset;
+  const resetIso = claudeCodeRateLimitedUntil(account.quotaSnapshot, now.getTime(), upstreamModelId);
+  if (resetIso !== null) {
     return syntheticReturn(upstreamModelId, synthetic429(
-      resetIso ? `Claude Code upstream rate-limited until ${resetIso}` : 'Claude Code upstream rate-limited',
+      `Claude Code upstream rate-limited until ${resetIso}`,
       resetIso,
       now,
     ));
@@ -473,7 +444,7 @@ const performUpstreamCall = async (
     // limited gate above stays accurate as the window evolves. Other
     // statuses (4xx/5xx outside 429) carry no quota signal so we skip them.
     if (response.ok || response.status === 429) {
-      persistQuotaFromHeadersFireAndForget(opts.upstreamId, response.headers, waitUntil);
+      persistQuotaFromHeadersFireAndForget(opts.upstreamId, upstreamModelId, response.headers, waitUntil);
     }
     // 400 / 403 may carry the credential-class terminal sentinels — the
     // detector is body-shape-defensive and only flips on a real match, so

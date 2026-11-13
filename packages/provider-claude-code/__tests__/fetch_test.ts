@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { callClaudeCodeAnthropicMessages } from '../src/fetch.ts';
 import { CLAUDE_CODE_HEADERS_HAIKU, CLAUDE_CODE_HEADERS_SONNET_OPUS } from '../src/headers.ts';
+import { parseClaudeCodeQuotaHeaders } from '../src/quota.ts';
 import type {
   ClaudeCodeAccessTokenEntry,
   ClaudeCodeAccountCredential,
@@ -147,7 +148,7 @@ describe('callClaudeCodeAnthropicMessages — pre-fetch gates', () => {
     }
   });
 
-  test('rejected quota status → synthetic 429 with retry-after', async () => {
+  test.each(['five_hour', 'seven_day'])('rejected shared %s quota → synthetic 429 with retry-after', async representativeClaim => {
     const resetIso = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     seedAccount({
       accessToken: freshAccessTokenEntry,
@@ -158,7 +159,7 @@ describe('callClaudeCodeAnthropicMessages — pre-fetch gates', () => {
           reset: resetIso,
           fallbackAvailable: null,
           fallbackPercentage: null,
-          representativeClaim: null,
+          representativeClaim,
           overage: null,
           fiveHour: null,
           sevenDay: null,
@@ -166,6 +167,7 @@ describe('callClaudeCodeAnthropicMessages — pre-fetch gates', () => {
         },
       },
     });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const result = await callClaudeCodeAnthropicMessages({
       upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
     });
@@ -174,6 +176,71 @@ describe('callClaudeCodeAnthropicMessages — pre-fetch gates', () => {
       expect(result.response.status).toBe(429);
       expect(result.response.headers.get('retry-after')).toBeTruthy();
     }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  // Claude Code 2.1.322 maps the per-model seven_day_overage_included claim to 7d_oi.
+  // https://registry.npmjs.org/@anthropic-ai/claude-code-darwin-arm64/-/claude-code-darwin-arm64-2.1.322.tgz
+  test.each([false, true])('Fable 429 does not block sibling models (5h headers present: %s)', async includeFiveHour => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const resetSeconds = Math.floor(Date.now() / 1000) + 6 * 24 * 60 * 60;
+    const quotaHeaders = {
+      'anthropic-ratelimit-unified-status': 'rejected',
+      'anthropic-ratelimit-unified-representative-claim': 'seven_day_overage_included',
+      'anthropic-ratelimit-unified-reset': String(resetSeconds),
+      'anthropic-ratelimit-unified-7d-status': 'allowed',
+      'anthropic-ratelimit-unified-7d-utilization': '0.62',
+      'anthropic-ratelimit-unified-7d-reset': String(resetSeconds),
+      'anthropic-ratelimit-unified-7d_oi-status': 'rejected',
+      'anthropic-ratelimit-unified-7d_oi-utilization': '1.0',
+      'anthropic-ratelimit-unified-7d_oi-reset': String(resetSeconds),
+      'anthropic-ratelimit-unified-overage-status': 'rejected',
+      'anthropic-ratelimit-unified-overage-disabled-reason': 'out_of_credits',
+      'retry-after': String(6 * 24 * 60 * 60),
+      ...(includeFiveHour ? { 'anthropic-ratelimit-unified-5h-status': 'allowed' } : {}),
+    };
+    const fableModel = stubProviderModel({ ...sonnetModel, id: 'public-fable-alias', providerData: { upstreamModelId: 'claude-fable-5-1' } });
+    const upstreamBody = { error: { type: 'rate_limit_error', message: 'Fable weekly allowance exhausted' } };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(errorJson(429, upstreamBody, quotaHeaders));
+    const pending: Promise<unknown>[] = [];
+    const call = { ...noopUpstreamCallOptions(), waitUntil: (promise: Promise<unknown>) => { pending.push(promise); } };
+    const first = await callClaudeCodeAnthropicMessages({ upstreamId, model: fableModel, body: minimalBody, shaped: false, call });
+    expect(first.ok).toBe(false);
+    if (!first.ok) {
+      expect(first.response.status).toBe(429);
+      expect(first.response.headers.get('retry-after')).toBe(quotaHeaders['retry-after']);
+      expect(await first.response.json()).toEqual(upstreamBody);
+    }
+    await Promise.all(pending);
+    expect(readQuotaEntry()).toMatchObject({ modelId: 'claude-fable-5-1', data: { status: 'rejected', representativeClaim: 'seven_day_overage_included' } });
+
+    const again = await callClaudeCodeAnthropicMessages({ upstreamId, model: fableModel, body: minimalBody, shaped: false, call });
+    expect(again.ok).toBe(false);
+    if (!again.ok) expect(again.response.status).toBe(429);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    for (const modelId of ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5']) {
+      fetchSpy.mockResolvedValueOnce(sseResponse(200, {}));
+      const model = stubProviderModel({ ...sonnetModel, id: modelId, providerData: { upstreamModelId: modelId } });
+      expect((await callClaudeCodeAnthropicMessages({ upstreamId, model, body: minimalBody, shaped: false, call })).ok).toBe(true);
+      const wireBody = await readJsonRequest(fetchSpy.mock.calls.at(-1)![1] as RequestInit) as AnthropicMessagesPayload;
+      expect(wireBody.model).toBe(modelId);
+    }
+    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    await Promise.all(pending);
+  });
+
+  test.each(['seven_day_overage_included', 'seven_day_opus', 'seven_day_sonnet', 'future_model_limit'])('a persisted %s rejection without a model cannot lock the account', async claim => {
+    const data = parseClaudeCodeQuotaHeaders(new Headers({
+      'anthropic-ratelimit-unified-status': 'rejected',
+      'anthropic-ratelimit-unified-representative-claim': claim,
+      'anthropic-ratelimit-unified-reset': String(Math.floor(Date.now() / 1000) + 3600),
+    }));
+    seedAccount({ accessToken: freshAccessTokenEntry, quotaSnapshot: { fetchedAt: Date.now(), data } });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse(200, {}));
+    const result = await callClaudeCodeAnthropicMessages({ upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions() });
+    expect(result.ok).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
 

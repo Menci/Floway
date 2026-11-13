@@ -23,6 +23,8 @@
 // Reset values arrive as unix-seconds timestamps; we convert to ISO 8601
 // so the dashboard renders them without extra knowledge.
 
+import type { ClaudeCodeQuotaSnapshotEntry } from './state.ts';
+
 const HEADER_PREFIX = 'anthropic-ratelimit-';
 
 export interface ClaudeCodeQuotaWindow {
@@ -57,6 +59,35 @@ export interface ClaudeCodeQuotaSnapshot {
   sevenDay: ClaudeCodeQuotaSevenDay | null;
   raw: Record<string, string>;
 }
+
+// Omitting modelId checks shared limits; supplying it also includes that model's
+// quota observation.
+//
+// five_hour and seven_day are shared claims; seven_day_overage_included is
+// Fable's weekly model allowance.
+// https://registry.npmjs.org/@anthropic-ai/claude-code-darwin-arm64/-/claude-code-darwin-arm64-2.1.322.tgz
+export const claudeCodeRateLimitedUntil = (
+  snapshot: ClaudeCodeQuotaSnapshotEntry | null | undefined,
+  now: number,
+  modelId?: string,
+): string | null => {
+  // Overage reports extra-usage credits separately from subscription quota.
+  // https://registry.npmjs.org/@anthropic-ai/claude-code-darwin-arm64/-/claude-code-darwin-arm64-2.1.322.tgz
+  if (snapshot?.data.status !== 'rejected') return null;
+  const { data } = snapshot;
+
+  const resets: (string | null)[] = [];
+  for (const window of [data.fiveHour, data.sevenDay]) {
+    if (window?.status === 'rejected') resets.push(window.reset);
+  }
+  if (data.representativeClaim === 'five_hour' || data.representativeClaim === 'seven_day'
+    || (modelId !== undefined && snapshot.modelId === modelId)) {
+    resets.push(data.reset);
+  }
+  // Responses refresh the snapshot; reset times bound the cached rejection's lifetime.
+  return resets.reduce<string | null>((latest, reset) =>
+    reset !== null && Date.parse(reset) > (latest === null ? now : Date.parse(latest)) ? reset : latest, null);
+};
 
 const parseUnixSecondsToIso = (raw: string | null): string | null => {
   if (raw === null) return null;

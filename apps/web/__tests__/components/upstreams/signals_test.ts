@@ -129,19 +129,22 @@ describe('upstream readout by provider', () => {
     })).toBe('ChatGPT Pro | 88% 5h');
   });
 
-  it('states a Claude Code refusal from the status Anthropic reports it under', () => {
-    const rowFor = (reset: string | null) => rowOf({
+  it('states a Claude Code shared refusal without promoting model limits to account limits', () => {
+    const rowFor = (reset: string | null, representativeClaim: string | null = 'seven_day') => rowOf({
       kind: 'claude-code',
       config: { accounts: [{ accountUuid: 'uuid-1', subscriptionType: 'max', rateLimitTier: 'default_claude_max_20x' }] },
       state: {
         accounts: [{
           accountUuid: 'uuid-1',
-          quotaSnapshot: { fetchedAt: Date.parse(OBSERVED), data: { status: 'rejected', reset, raw: {} } },
+          quotaSnapshot: { fetchedAt: Date.parse(OBSERVED), data: { status: 'rejected', reset, representativeClaim, raw: {} } },
         }],
       },
     });
 
     expect(rowFor('2026-07-28T15:00:00.000Z')).toBe('Claude Max 20x | Rate limited 3h');
+    for (const claim of ['seven_day_overage_included', 'seven_day_opus', 'seven_day_sonnet', 'future_model_limit', null]) {
+      expect(rowFor('2026-07-28T15:00:00.000Z', claim)).toBe('Claude Max 20x');
+    }
     // The snapshot holds until a response replaces it, so a rejection whose
     // reset has passed is the steady state of an upstream serving again -- the
     // data plane stops gating on it at exactly this instant.
