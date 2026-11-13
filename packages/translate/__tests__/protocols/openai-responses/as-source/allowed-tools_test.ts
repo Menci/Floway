@@ -202,3 +202,33 @@ for (const allowed of [false, true]) {
       : { type: 'function', function: { name: expected } });
   });
 }
+
+test.each(['chat', 'messages'] as const)('redeclared callables reach %s once with the latest declaration in the first slot', async target => {
+  const tools = (description: string): OpenAIResponsesTool[] => [
+    { type: 'namespace', name: 'agents', description: '', tools: [{ type: 'function', name: 'wait', parameters: { type: 'object' } }] },
+    { type: 'function', name: 'exec', description, parameters: { type: 'object' } },
+  ];
+  const payload: OpenAIResponsesRequestPayloadEx = {
+    model: 'm', stream: true,
+    tools: [...tools('first'), { type: 'function', name: 'read', parameters: { type: 'object' } }],
+    input: [
+      { type: 'additional_tools', role: 'developer', tools: tools('second') },
+      { type: 'message', role: 'user', content: 'hi' },
+      { type: 'additional_tools', role: 'developer', tools: tools('latest') },
+    ],
+    tool_choice: { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'namespace', name: 'agents' }] },
+  };
+  const codec = createTestSidecarCodec();
+  if (target === 'chat') {
+    const { target: wire } = await buildChat(payload, codec);
+    assertEquals(wire.tools?.map(tool => tool.type === 'function' ? [tool.function.name, tool.function.description] : []), [
+      ['agents_wait', undefined], ['exec', 'latest'], ['read', undefined],
+    ]);
+    assertEquals(wire.tool_choice, { type: 'allowed_tools', allowed_tools: { mode: 'auto', tools: [{ type: 'function', function: { name: 'agents_wait' } }] } });
+  } else {
+    const { target: wire } = await buildMessages({ ...payload, tool_choice: 'auto' }, codec);
+    assertEquals(wire.tools?.map(tool => 'name' in tool ? [tool.name, 'description' in tool ? tool.description : undefined] : []), [
+      ['agents_wait', undefined], ['exec', 'latest'], ['read', undefined],
+    ]);
+  }
+});
