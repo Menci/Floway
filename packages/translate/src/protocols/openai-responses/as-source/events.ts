@@ -329,20 +329,18 @@ export const writeOpenAIResponsesEvents = async function* (
       };
     }
     if (unit.callId === undefined) throw new TypeError('Responses tool unit has no call ID');
-    // A call the request stated grouped is written as that pair; one without a
-    // group keeps its single name.
     if (unit.kind === 'custom_tool_call') {
       if (item.type !== 'custom_tool_call') throw new TypeError('Responses tool unit has the wrong IR item');
       return {
         type: 'custom_tool_call', id, call_id: unit.callId, name: item.name,
-        ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+        ...(item.namespace == null ? {} : { namespace: item.namespace }),
         input: item.input, status,
       };
     }
     if (item.type !== 'function_call') throw new TypeError('Responses tool unit has the wrong IR item');
     return {
       type: 'function_call', id, call_id: unit.callId, name: item.name,
-      ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+      ...(item.namespace == null ? {} : { namespace: item.namespace }),
       arguments: item.arguments, status,
     };
   };
@@ -512,12 +510,12 @@ export const writeOpenAIResponsesEvents = async function* (
     const added: OpenAIResponsesOutputItemEx = custom
       ? {
           type: 'custom_tool_call', id, call_id: resolvedCallId, name: item.name,
-          ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+          ...(item.namespace == null ? {} : { namespace: item.namespace }),
           input: '', status: 'in_progress',
         }
       : {
           type: 'function_call', id, call_id: resolvedCallId, name: item.name,
-          ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+          ...(item.namespace == null ? {} : { namespace: item.namespace }),
           arguments: '', status: 'in_progress',
         };
     const content = createEmittedFieldState(options.roundTrip.builder, 'text');
@@ -691,14 +689,14 @@ export const writeOpenAIResponsesEvents = async function* (
     registerUnits(record, state);
     const unit = units.forRecord(record, state);
     if (unit !== undefined && unit.kind !== 'image' && record.type === 'write' && record.kind === 'append') {
-      if (unit.opened) appendUnitText(unit, record.path, record.value, record.textFragmentIds);
+      if (unit.opened) appendUnitText(unit, record.path, record.value, record.referencePieceIds);
       else {
         const text = collector.value<string>(record.path);
         if (text === undefined) throw new Error('Missing Responses pending text');
         const fields = unit.pendingText ??= new Map();
         const key = irPathKey(record.path);
         const atoms = fields.get(key) ?? [];
-        atoms.push(provenanceSpanForAppend(text, record.value, record.textFragmentIds));
+        atoms.push(provenanceSpanForAppend(text, record.value, record.referencePieceIds));
         fields.set(key, atoms);
       }
     }

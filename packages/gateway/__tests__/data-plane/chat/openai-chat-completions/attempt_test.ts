@@ -287,11 +287,12 @@ test('generate preserves translated instructions before rewriting inline system 
   await collectEvents(result.events);
   const observedBody = observedBodies[0];
   if (!observedBody) throw new Error('expected observed OpenAI Responses body');
-  assertEquals(observedBody.instructions, 'base instructions');
+  assertEquals(observedBody.instructions, undefined);
   const input = observedBody.input;
   if (!Array.isArray(input)) throw new Error('expected OpenAI Responses input array');
-  assertEquals(input[0], { type: 'message', role: 'user', content: 'hello' });
-  assertEquals(input[1], { type: 'message', role: 'developer', content: 'inline instructions' });
+  assertEquals(input[0], { type: 'message', role: 'developer', content: 'base instructions' });
+  assertEquals(input[1], { type: 'message', role: 'user', content: 'hello' });
+  assertEquals(input[2], { type: 'message', role: 'developer', content: 'inline instructions' });
 });
 
 test('generate propagates upstream response headers onto the EventResult so respond can forward them', async () => {

@@ -9,6 +9,175 @@ import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils
 const buildWithTestSidecar = (payload: AnthropicMessagesPayload) =>
   buildTargetPayloadFor(pairs.messagesToResponses[0], pairs.messagesToResponses[1], { ...payload, stream: true }, { sidecarCodec: createTestSidecarCodec() });
 
+test('server tool errors become incomplete Responses results', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [{
+      role: 'assistant', content: [
+        { type: 'server_tool_use', id: 's', name: 'web_search', input: {} },
+        { type: 'web_search_tool_result', tool_use_id: 's', content: { type: 'web_search_tool_result_error', error_code: 'too_many_requests' } },
+      ],
+    }],
+  });
+  const output = result.input.find(item => item.type === 'function_call_output');
+  assertEquals(output?.type === 'function_call_output' ? output.status : undefined, 'incomplete');
+});
+
+test('plain-text document tool results keep their document boundary', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'read', input: {} }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'c', content: [{ type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'hello' } }] as never }] },
+    ],
+  });
+  const output = result.input.find(item => item.type === 'function_call_output');
+  assertEquals(output?.type === 'function_call_output' ? output.output : undefined, [
+    { type: 'input_text', text: '<document>' },
+    { type: 'input_text', text: 'hello' },
+    { type: 'input_text', text: '</document>' },
+  ]);
+});
+
+test('preserves metadata on a document inside a Responses tool result', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'read', input: {} }] },
+      {
+        role: 'user', content: [{
+          type: 'tool_result', tool_use_id: 'c', content: [{
+            type: 'document', title: 'Report', context: 'USD',
+            citations: { enabled: true }, cache_control: { type: 'ephemeral', ttl: '5m' },
+            source: { type: 'content', content: [{ type: 'text', text: 'revenue' }] },
+          }],
+        }],
+      },
+    ],
+  });
+  const output = result.input.find(item => item.type === 'function_call_output');
+  assertEquals(output?.type === 'function_call_output' ? output.output : undefined, [
+    { type: 'input_text', text: '<document>\n<title>Report</title>\n<context>USD</context>' },
+    { type: 'input_text', text: 'revenue' },
+    { type: 'input_text', text: '</document>', prompt_cache_breakpoint: { mode: 'explicit' } },
+  ]);
+});
+
+test('mixed tool-result blocks keep documents formal and unknown blocks opaque', async () => {
+  const unknown = { type: 'tool_reference' as const, tool_name: 'read' };
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'read', input: {} }] },
+      {
+        role: 'user',
+        content: [{
+          type: 'tool_result', tool_use_id: 'c', content: [
+            { type: 'document', source: { type: 'content', content: [{ type: 'text', text: 'hel' }, { type: 'text', text: 'lo' }] } },
+            unknown,
+          ],
+        }],
+      },
+    ],
+  });
+  const output = result.input.find(item => item.type === 'function_call_output');
+  assertEquals(output?.type === 'function_call_output' ? output.output : undefined, [
+    { type: 'input_text', text: '<document>' },
+    { type: 'input_text', text: 'hel' },
+    { type: 'input_text', text: 'lo' },
+    { type: 'input_text', text: '</document>' },
+    { type: 'input_text', text: JSON.stringify(unknown) },
+  ]);
+});
+
+test.each([
+  ['string', 'hello', [{ type: 'input_text' as const, text: 'hello' }]],
+  ['text blocks', [{ type: 'text' as const, text: 'hel' }, { type: 'text' as const, text: 'lo' }], [
+    { type: 'input_text' as const, text: 'hel' }, { type: 'input_text' as const, text: 'lo' },
+  ]],
+  ['empty text blocks', [], []],
+] as const)('inline content document %s retains its nested parts', async (_name, content, expected) => {
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [{
+      role: 'user', content: [{ type: 'document', source: { type: 'content', content: typeof content === 'string' ? content : [...content] } }],
+    }],
+  });
+  assertEquals(result.input, [{
+    type: 'message', role: 'user', content: [
+      { type: 'input_text', text: '<document>' },
+      ...expected,
+      { type: 'input_text', text: '</document>' },
+    ],
+  }]);
+});
+
+test('inline mixed document content retains text and image order inside tags', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [
+      {
+        role: 'user',
+        content: [{
+          type: 'document',
+          source: {
+            type: 'content',
+            content: [
+              { type: 'text', text: 'caption' },
+              { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
+            ],
+          },
+        }],
+      },
+    ],
+  });
+  assertEquals(result.input, [{
+    type: 'message', role: 'user', content: [
+      { type: 'input_text', text: '<document>' },
+      { type: 'input_text', text: 'caption' },
+      { type: 'input_image', image_url: 'data:image/png;base64,AAAA' },
+      { type: 'input_text', text: '</document>' },
+    ],
+  }]);
+});
+
+test('projects document metadata and cache breakpoints while dropping unsupported citation controls', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [{
+      role: 'user', content: [{
+        type: 'document', title: 'Report <1>', context: 'A & B',
+        citations: { enabled: true }, cache_control: { type: 'ephemeral', ttl: '1h' },
+        source: {
+          type: 'content', content: [
+            { type: 'text', text: 'caption', cache_control: { type: 'ephemeral', ttl: '5m' } },
+            { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' }, cache_control: null },
+          ],
+        },
+      }],
+    }],
+  });
+  assertEquals(result.input, [{
+    type: 'message', role: 'user', content: [
+      { type: 'input_text', text: '<document>\n<title>Report &lt;1&gt;</title>\n<context>A &amp; B</context>' },
+      { type: 'input_text', text: 'caption', prompt_cache_breakpoint: { mode: 'explicit' } },
+      { type: 'input_image', image_url: 'data:image/png;base64,AAAA', prompt_cache_breakpoint: null },
+      { type: 'input_text', text: '</document>', prompt_cache_breakpoint: { mode: 'explicit' } },
+    ],
+  }]);
+});
+
+test('keeps metadata around a Responses file without inventing a filename', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [{
+      role: 'user', content: [{
+        type: 'document', title: 'Report',
+        source: { type: 'base64', media_type: 'application/pdf', data: 'AAAA' },
+      }],
+    }],
+  });
+  assertEquals(result.input, [{
+    type: 'message', role: 'user', content: [
+      { type: 'input_text', text: '<document>\n<title>Report</title>' },
+      { type: 'input_file', file_data: 'data:application/pdf;base64,AAAA' },
+      { type: 'input_text', text: '</document>' },
+    ],
+  }]);
+});
+
 test('keeps search result runs between the text and images around them', async () => {
   const first = { type: 'search_result' as const, source: 'https://example.com/1', title: 'First', content: [{ type: 'text' as const, text: 'one' }] };
   const second = { ...first, source: 'https://example.com/2', title: 'Second' };
@@ -341,7 +510,7 @@ test('buildTargetPayload omits temperature when the source omitted it', async ()
   assertFalse('temperature' in result);
 });
 
-test('buildTargetPayload prepends multi-block top-level system as a leading input system message preserving block boundaries', async () => {
+test('buildTargetPayload writes multi-block top-level system through Responses instructions', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -352,16 +521,8 @@ test('buildTargetPayload prepends multi-block top-level system as a leading inpu
     messages: [{ role: 'user', content: 'hi' }],
   });
 
-  assertFalse('instructions' in result);
-  const input = result.input as Array<{ type: string; role?: string; content?: unknown }>;
-  assertEquals(input[0], {
-    type: 'message',
-    role: 'system',
-    content: [
-      { type: 'input_text', text: 'Alpha' },
-      { type: 'input_text', text: 'Beta' },
-    ],
-  });
+  assertEquals(result.instructions, 'AlphaBeta');
+  assertEquals(result.input, [{ type: 'message', role: 'user', content: 'hi' }]);
 });
 
 test('buildTargetPayload keeps a single-block top-level system in canonical `instructions` slot', async () => {
@@ -557,7 +718,7 @@ test('buildTargetPayload preserves in-array system text blocks as separate input
   });
 });
 
-test('buildTargetPayload hoists a leading in-array system message and keeps later ones in place', async () => {
+test('buildTargetPayload keeps in-array system messages in place', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -570,15 +731,14 @@ test('buildTargetPayload hoists a leading in-array system message and keeps late
     ],
   });
 
-  // The leading run is what the request states before its first turn, so it is
-  // the prompt; a system message after a turn happened stays where it was.
-  assertEquals(result.instructions, 'mid-array A');
+  assertEquals(result.instructions, undefined);
   const input = result.input as Array<{ type: string; role?: string }>;
-  assertEquals(input.length, 4);
-  assertEquals(input[0].role, 'user');
-  assertEquals(input[1].role, 'assistant');
-  assertEquals(input[2].role, 'system');
-  assertEquals(input[3].role, 'user');
+  assertEquals(input.length, 5);
+  assertEquals(input[0].role, 'system');
+  assertEquals(input[1].role, 'user');
+  assertEquals(input[2].role, 'assistant');
+  assertEquals(input[3].role, 'system');
+  assertEquals(input[4].role, 'user');
 });
 
 test('buildTargetPayload rejects an unknown message role', async () => {

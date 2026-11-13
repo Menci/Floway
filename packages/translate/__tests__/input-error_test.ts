@@ -8,7 +8,16 @@ import * as translate from '@floway-dev/translate';
 const options = { sidecarCodec: createTestSidecarCodec() };
 const messages = {
   model: 'm', stream: true, max_tokens: 32,
-  messages: [{ role: 'user' as const, content: [{ type: 'document' as const, source: { type: 'content' as const, content: [] } }] }],
+  messages: [{
+    role: 'user' as const,
+    content: [{
+      type: 'document' as const,
+      source: {
+        type: 'content' as const,
+        content: [{ type: 'unknown' } as never],
+      },
+    }],
+  }],
 };
 const chat = {
   model: 'm', stream: true,
@@ -48,4 +57,25 @@ test('an unexpected codec failure retains its original error and cause', async (
     role: 'assistant', content: 'history', reasoning_details: createOpenAIChatCompletionsSidecarDetails('sidecar'),
   };
   await expect(translate.routeOpenAIChatCompletionsViaAnthropicMessages({ model: 'm', stream: true, messages: [turn] }, { sidecarCodec: codec })).rejects.toBe(failure);
+});
+
+test.each([
+  translate.routeAnthropicMessagesViaOpenAIChatCompletions,
+  translate.routeAnthropicMessagesViaOpenAIResponses,
+])('a target that cannot express document image transformations returns an input error', async route => {
+  const result = await route({
+    model: 'm', max_tokens: 32, stream: true, messages: [{
+      role: 'user', content: [{
+        type: 'document',
+        source: {
+          type: 'content', content: [{
+            type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' },
+            transformations: { oversized_image: 'downsize' },
+          }],
+        },
+      }],
+    }],
+  }, options);
+  expect(result).toMatchObject({ type: 'input-error', message: 'Cannot translate document image transformations to this protocol.' });
+  expect(result).not.toBeInstanceOf(Error);
 });

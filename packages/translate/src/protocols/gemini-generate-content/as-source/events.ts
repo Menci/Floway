@@ -49,6 +49,7 @@ interface TextSegment {
 }
 
 interface GeminiGenerateContentEventWriterOptions extends SourceEventWriterOptions<'geminiGenerateContent'> {
+  includeThoughts?: boolean;
   parseToolArguments?: (text: string) => IRJSONObject;
 }
 
@@ -80,13 +81,21 @@ export const writeGeminiGenerateContentEvents = async function* (
   const appendPendingContent = (content: EmittedFieldState, text: string, spans: readonly TextProvenanceSpan[]): void =>
     replayTextProvenance(text, spans, (value, textFragmentIds) => appendEmittedField(options.roundTrip.builder, content, value, textFragmentIds));
 
+  const frameOf = (event: GeminiGenerateContentResult): EventFrame<GeminiGenerateContentStreamEvent> =>
+    eventFrame({ responseId: metadata.id, modelVersion: metadata.model, ...event });
   const emit = (event: GeminiGenerateContentResult): EventFrame<GeminiGenerateContentStreamEvent> => {
-    const frame = eventFrame({ responseId: metadata.id, modelVersion: metadata.model, ...event });
+    const frame = frameOf(event);
     nativeAccumulator.accept(frame.event);
     return frame;
   };
   const emitPart = (choice: number, part: GeminiGenerateContentPart): EventFrame<GeminiGenerateContentStreamEvent> =>
     emit({ candidates: [{ index: choice, content: { role: 'model', parts: [part] } }] });
+  const renderPart = (choice: number, part: GeminiGenerateContentPart): EventFrame<GeminiGenerateContentStreamEvent> => {
+    if (part.thought !== true || options.includeThoughts === true) return emitPart(choice, part);
+    const full = frameOf({ candidates: [{ index: choice, content: { role: 'model', parts: [part] } }] });
+    nativeAccumulator.accept(full.event);
+    return frameOf({ candidates: [{ index: choice, content: { role: 'model', parts: [{ text: '', thought: true }] } }] });
+  };
   const addUnit = (choice: number, unit: GenerateContentUnit): void => {
     let queue = queues.get(choice);
     if (queue === undefined) { queue = createIRUnitQueue(); queues.set(choice, queue); }
@@ -284,8 +293,8 @@ export const writeGeminiGenerateContentEvents = async function* (
         if (wait) break;
         queue.dropHead();
         unit.opened = true;
-        if (part !== undefined) yield emitPart(choice, part);
-        for (const pendingPart of drainPendingText(choice, collector)) yield emitPart(choice, pendingPart);
+        if (part !== undefined) yield renderPart(choice, part);
+        for (const pendingPart of drainPendingText(choice, collector)) yield renderPart(choice, pendingPart);
         if (closed) units.delete(unit.path);
       }
       if (queue.head === undefined) queues.delete(choice);
@@ -365,7 +374,7 @@ export const writeGeminiGenerateContentEvents = async function* (
       if (field !== undefined) {
         const text = collector.value<string>(record.path);
         if (text === undefined) throw new Error('Missing GenerateContent pending field');
-        (pendingUnit[field] ??= []).push(provenanceSpanForAppend(text, record.value, record.textFragmentIds));
+        (pendingUnit[field] ??= []).push(provenanceSpanForAppend(text, record.value, record.referencePieceIds));
       }
     }
     yield* openPendingUnits(record, state, collector);
@@ -390,12 +399,12 @@ export const writeGeminiGenerateContentEvents = async function* (
           queue.values.push({
             unit,
             source: record.path,
-            span: provenanceSpanForAppend(source, record.value, record.textFragmentIds),
+            span: provenanceSpanForAppend(source, record.value, record.referencePieceIds),
             thought: kind === 'thought',
           });
         } else {
-          const part = appendText(choice, record.path, record.value, kind === 'thought', record.textFragmentIds);
-          if (part !== undefined) yield emitPart(choice, part);
+          const part = appendText(choice, record.path, record.value, kind === 'thought', record.referencePieceIds);
+          if (part !== undefined) yield renderPart(choice, part);
         }
       }
     }

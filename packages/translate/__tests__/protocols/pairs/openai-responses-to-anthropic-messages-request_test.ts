@@ -46,6 +46,24 @@ test('buildTargetPayload preserves unsafe JSON number tokens in function history
   assertEquals(JSON.stringify(tool.input), '{"n":1e400}');
 });
 
+test('top-level instructions stay separate from leading historical role messages', async () => {
+  const result = await buildWithTestSidecar({
+    ...minimalPayload,
+    instructions: 'base',
+    input: [
+      { type: 'message', role: 'system', content: 'rule' },
+      { type: 'message', role: 'developer', content: 'dev' },
+      { type: 'message', role: 'user', content: 'question' },
+    ],
+  });
+  assertEquals(result.target.system, [{ type: 'text', text: 'base', cache_control: { type: 'ephemeral' } }]);
+  assertEquals(result.target.messages, [
+    { role: 'system', content: [{ type: 'text', text: 'rule' }] },
+    { role: 'system', content: [{ type: 'text', text: 'dev' }] },
+    { role: 'user', content: [{ type: 'text', text: 'question', cache_control: { type: 'ephemeral' } }] },
+  ]);
+});
+
 test('buildTargetPayload preserves OpenAI Responses assistant refusal history as Anthropic Messages text', async () => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
@@ -107,6 +125,15 @@ test('buildTargetPayload rejects an agent_message that no interceptor lowered', 
   );
 });
 
+test('an empty namespace description does not prefix a child description', async () => {
+  const result = await buildWithTestSidecar({
+    ...minimalPayload,
+    tools: [{ type: 'namespace', name: 'group', description: '', tools: [{ type: 'function', name: 'f', description: 'meaning', parameters: { type: 'object' } }] }],
+  });
+  const tool = result.target.tools?.[0];
+  assertEquals(tool !== undefined && 'description' in tool ? tool.description : undefined, 'meaning');
+});
+
 test.each([
   { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },
   { name: 'program_output', input: [{ type: 'program_output', id: 'prog_out_1', call_id: 'call_prog_1', result: '1', status: 'completed' }] },
@@ -140,23 +167,32 @@ test('buildTargetPayload wires OpenAI Responses tooling guards', async () => {
 
 test('buildTargetPayload accepts null tool_choice', async () => {
   const result = await buildWithTestSidecar({ ...minimalPayload, tool_choice: null });
-  assertEquals(result.target.tool_choice, { type: 'auto', disable_parallel_tool_use: false });
+  assertEquals(result.target.tool_choice, undefined);
 });
 
-test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetPayload rejects input_file in %s', async type => {
-  await assertRejects(
-    () => buildWithTestSidecar({
-      ...minimalPayload,
-      input: [
-        ...(type === 'function_call_output'
-          ? [{ type: 'function_call' as const, call_id: 'call_1', name: 'lookup', arguments: '{}' }]
-          : [{ type: 'custom_tool_call' as const, call_id: 'call_1', name: 'lookup', input: '{}' }]),
-        { type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] },
-      ],
-    }),
-    Error,
-    'file tool output',
-  );
+test('buildTargetPayload preserves required tool choice without declarations', async () => {
+  const result = await buildWithTestSidecar({ ...minimalPayload, tools: null, tool_choice: 'required' });
+  assertEquals(result.target.tool_choice, { type: 'any' });
+});
+
+test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetPayload maps input_file in %s to a document', async type => {
+  const result = await buildWithTestSidecar({
+    ...minimalPayload,
+    input: [
+      ...(type === 'function_call_output'
+        ? [{ type: 'function_call' as const, call_id: 'call_1', name: 'lookup', arguments: '{}' }]
+        : [{ type: 'custom_tool_call' as const, call_id: 'call_1', name: 'lookup', input: '{}' }]),
+      { type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] },
+    ],
+  });
+  const user = result.target.messages.find(message => message.role === 'user');
+  assertEquals(user, {
+    role: 'user',
+    content: [{
+      type: 'tool_result', tool_use_id: 'call_1', content: [{ type: 'document', source: { type: 'file', file_id: 'file_1' } }],
+      cache_control: { type: 'ephemeral' },
+    }],
+  });
 });
 
 test.each([
@@ -736,7 +772,8 @@ test('buildTargetPayload preserves out-of-range numeric tool arguments as raw JS
   assertEquals(JSON.stringify(toolUse.input), '{"value":1e400}');
 });
 
-test.each(['not json', '[1,2,3]'])('buildTargetPayload keeps raw_arguments fallback for invalid or non-object tool arguments', async argumentsJson => {
+test('buildTargetPayload keeps raw_arguments fallback for malformed tool arguments', async () => {
+  const argumentsJson = 'not json';
   const result = await buildWithTestSidecar({
     ...minimalPayload,
     input: [{ type: 'function_call', call_id: 'call_1', name: 'tool', arguments: argumentsJson, status: 'completed' }],
@@ -748,6 +785,18 @@ test.each(['not json', '[1,2,3]'])('buildTargetPayload keeps raw_arguments fallb
   const toolUse = assistantMessage.content[0];
   assert(toolUse.type === 'tool_use');
   assertEquals(toolUse.input, { raw_arguments: argumentsJson });
+});
+
+test('buildTargetPayload preserves a valid non-object JSON argument value', async () => {
+  const result = await buildWithTestSidecar({
+    ...minimalPayload,
+    input: [{ type: 'function_call', call_id: 'call_1', name: 'tool', arguments: '[1,2,3]', status: 'completed' }],
+  });
+  const assistantMessage = result.target.messages[0];
+  assert(assistantMessage.role === 'assistant' && Array.isArray(assistantMessage.content));
+  const toolUse = assistantMessage.content[0];
+  assert(toolUse.type === 'tool_use');
+  assertEquals(toolUse.input, [1, 2, 3]);
 });
 
 test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetPayload maps multimodal %s into tool_result image and text blocks', async type => {
@@ -1131,13 +1180,13 @@ test('buildTargetPayload preserves payload.instructions and leading system as se
   );
 
   assertEquals(result.target.system, [
-    { type: 'text', text: 'canonical top-level instructions' },
-    { type: 'text', text: 'leading note', cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: 'canonical top-level instructions', cache_control: { type: 'ephemeral' } },
   ]);
-  assertEquals(result.target.messages.length, 3);
-  assertEquals(result.target.messages[0].role, 'user');
-  assertEquals(result.target.messages[1], { role: 'system', content: [{ type: 'text', text: 'mid-array note' }] });
-  assertEquals(result.target.messages[2].role, 'user');
+  assertEquals(result.target.messages.length, 4);
+  assertEquals(result.target.messages[0], { role: 'system', content: [{ type: 'text', text: 'leading note' }] });
+  assertEquals(result.target.messages[1].role, 'user');
+  assertEquals(result.target.messages[2], { role: 'system', content: [{ type: 'text', text: 'mid-array note' }] });
+  assertEquals(result.target.messages[3].role, 'user');
 });
 
 test('buildTargetPayload throws when a system input message contains an image part', async () => {
@@ -1207,10 +1256,6 @@ test('buildTargetPayload throws when a non-leading developer input message conta
     "Invalid 'input_image' content part in developer message",
   );
 });
-
-// (Native native↔native only — OpenAI Responses no longer carries thinking-mode
-// extension fields; alias overlays land on the Anthropic Messages target payload at the wire
-// call via `applyRulesToUpstreamAnthropicMessages`.)
 
 test('keeps an empty assistant message as the turn that separates two client runs', async () => {
   // Dropping it would leave two adjacent user messages, which this wire merges

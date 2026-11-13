@@ -9,14 +9,28 @@ describe('input IR shape', () => {
     { type: 'image', image: { source_kind: 'base64', media_type: 'image/png', data: 'AAAA' } },
     { type: 'file', file: { source_kind: 'file', file_id: 'file_1' }, filename: 'a.pdf' },
     { type: 'file', file: { source_kind: 'base64', data: 'AAAA' } },
+    { type: 'document', document: { source: { source_kind: 'media', media: { source_kind: 'file', file_id: 'file_2' } } } },
+    {
+      type: 'document',
+      document: {
+        source: {
+          source_kind: 'content',
+          content: [
+            { type: 'text', text: 'caption' },
+            { type: 'image', image: { source_kind: 'base64', media_type: 'image/png', data: 'AAAA' } },
+          ],
+        },
+      },
+    },
     { type: 'audio', audio: { media_type: 'audio/wav', data: 'AAAA' } },
   ];
 
   test('a conversation carries user and assistant turns in order', () => {
     const clientItems: IRInputClientItem[] = [
-      { type: 'prompt', role: 'system', content: [{ type: 'text', text: 'be brief' }] },
-      { type: 'prompt', role: 'developer', content: [{ type: 'text', text: 'tools are strict' }] },
-      { type: 'message', content: userParts },
+      { type: 'instruction', content: [{ type: 'text', text: 'top-level instruction' }] },
+      { type: 'message', role: 'system', content: [{ type: 'text', text: 'be brief' }] },
+      { type: 'message', role: 'developer', content: [{ type: 'text', text: 'tools are strict' }] },
+      { type: 'message', role: 'user', content: userParts },
       { type: 'tool_result', call_id: 'call_1', output: 'ok' },
       { type: 'tool_result', call_id: 'call_2', output: [{ type: 'text', text: 'see' }, { type: 'image', image: { source_kind: 'url', url: 'https://example.com/b.png' } }], is_error: true },
     ];
@@ -31,7 +45,7 @@ describe('input IR shape', () => {
     const turns = [user, assistant];
 
     expect(turns.map(turn => turn.kind)).toEqual(['client', 'assistant']);
-    expect(user.items.map(item => item.type)).toEqual(['prompt', 'prompt', 'message', 'tool_result', 'tool_result']);
+    expect(user.items.map(item => item.type)).toEqual(['instruction', 'message', 'message', 'message', 'tool_result', 'tool_result']);
     expect(assistant.items.map(item => item.type)).toEqual(['reasoning', 'message', 'function_call', 'custom_tool_call']);
   });
 
@@ -44,9 +58,10 @@ describe('input IR shape', () => {
     const parts: IRInputToolResultContentPart[] = [
       { type: 'text', text: 'caption' },
       { type: 'file', file: { source_kind: 'base64', media_type: 'application/pdf', data: 'AAAA' }, filename: 'r.pdf' },
+      { type: 'document', document: { source: { source_kind: 'text', media_type: 'text/plain', text: 'quoted' } } },
     ];
     const result: IRInputToolResultItem = { type: 'tool_result', call_id: 'call_1', output: parts };
-    expect(Array.isArray(result.output) && result.output.map(part => part.type)).toEqual(['text', 'file']);
+    expect(Array.isArray(result.output) && result.output.map(part => part.type)).toEqual(['text', 'file', 'document']);
   });
 
   test('a file may omit media type, while audio must state one', () => {

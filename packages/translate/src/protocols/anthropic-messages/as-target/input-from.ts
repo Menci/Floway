@@ -1,6 +1,7 @@
+import { parseDataURL, type ParsedDataURL } from './data-url.ts';
+import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds } from '../../../composition/request/call-ids.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
-import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputMedia, IRInputTextPart, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
-import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds } from '../../../request/call-ids.ts';
+import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputDocument, IRInputMedia, IRInputTextPart, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
 import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { type TranslateOptions } from '../../../types.ts';
@@ -18,9 +19,20 @@ import type {
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/anthropic-messages';
 import { isFastServiceTier, parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
+const requiredMediaType = (media: ParsedDataURL): string => media.media_type ?? 'application/octet-stream';
+
+const inlineMedia = (media: Extract<IRInputMedia, { source_kind: 'data' | 'base64' }>): ParsedDataURL => {
+  if (media.source_kind === 'base64') return media;
+  return media.data.startsWith('data:') ? parseDataURL(media.data) : { data: media.data };
+};
+
 const imageSource = (media: IRInputMedia): AnthropicMessagesImageSource => {
   switch (media.source_kind) {
   case 'url': {
+    if (media.url.startsWith('data:')) {
+      const inline = parseDataURL(media.url);
+      return { type: 'base64', media_type: requiredMediaType(inline) as Extract<AnthropicMessagesImageSource, { type: 'base64' }>['media_type'], data: inline.data };
+    }
     // Messages remote images require HTTP(S) URLs; invalid schemes are translation input errors.
     const scheme = media.url.slice(0, media.url.indexOf(':')).toLowerCase();
     if (scheme !== 'http' && scheme !== 'https') {
@@ -29,44 +41,72 @@ const imageSource = (media: IRInputMedia): AnthropicMessagesImageSource => {
     return { type: 'url', url: media.url };
   }
   case 'file': return { type: 'file', file_id: media.file_id };
-  case 'base64':
-    if (media.media_type === undefined) throw new TranslateInputException('Anthropic Messages image input requires a media type.');
-    return { type: 'base64', media_type: media.media_type as Extract<AnthropicMessagesImageSource, { type: 'base64' }>['media_type'], data: media.data };
+  case 'data':
+  case 'base64': {
+    const inline = inlineMedia(media);
+    return { type: 'base64', media_type: requiredMediaType(inline) as Extract<AnthropicMessagesImageSource, { type: 'base64' }>['media_type'], data: inline.data };
+  }
   }
 };
 
 const imageBlock = (media: IRInputMedia): AnthropicMessagesImageBlock => ({ type: 'image', source: imageSource(media) });
 
-/** Messages text documents carry decoded characters; inline IR media carries base64 bytes. */
-const textOfBase64 = (data: string): string => {
-  const binary = atob(data);
-  const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
-  return new TextDecoder().decode(bytes);
+/**
+ * Inline documents remain bytes. The target requires a media type, so an
+ * untyped raw base64 value receives the generic binary type at this boundary.
+ */
+const mediaDocumentBlock = (media: IRInputMedia): Extract<AnthropicMessagesUserContentBlock, { type: 'document' }> => {
+  switch (media.source_kind) {
+  case 'url': {
+    if (!media.url.startsWith('data:')) return { type: 'document', source: { type: 'url', url: media.url } };
+    const inline = parseDataURL(media.url);
+    return { type: 'document', source: { type: 'base64', media_type: requiredMediaType(inline), data: inline.data } };
+  }
+  case 'file': return { type: 'document', source: { type: 'file', file_id: media.file_id } };
+  case 'data':
+  case 'base64': {
+    const inline = inlineMedia(media);
+    return { type: 'document', source: { type: 'base64', media_type: requiredMediaType(inline), data: inline.data } };
+  }
+  }
 };
 
-/**
- * The wire distinguishes a plain-text document from a binary one and carries the
- * binary MIME type as a string, so the caller's media type travels verbatim and
- * the selected upstream decides whether it accepts it. Rewriting an unknown type
- * to PDF would describe the bytes wrongly.
- */
-const documentBlock = (media: IRInputMedia): AnthropicMessagesUserContentBlock => {
-  switch (media.source_kind) {
-  case 'url': return { type: 'document', source: { type: 'url', url: media.url } };
-  case 'file': return { type: 'document', source: { type: 'file', file_id: media.file_id } };
-  case 'base64': {
-    if (media.media_type === undefined) throw new TranslateInputException('Anthropic Messages document input requires a media type.');
-    return media.media_type === 'text/plain'
-      ? { type: 'document', source: { type: 'text', media_type: 'text/plain', data: textOfBase64(media.data) } }
-      : { type: 'document', source: { type: 'base64', media_type: media.media_type, data: media.data } };
+const documentBlock = (document: IRInputDocument): Extract<AnthropicMessagesUserContentBlock, { type: 'document' }> => {
+  const source = document.source;
+  const properties = {
+    ...(document.title === undefined ? {} : { title: document.title }),
+    ...(document.context === undefined ? {} : { context: document.context }),
+    ...(document.citations === undefined ? {} : { citations: document.citations }),
+    ...(document.cache_control === undefined ? {} : { cache_control: document.cache_control }),
+  };
+  if (source.source_kind === 'media') return { ...mediaDocumentBlock(source.media), ...properties };
+  if (source.source_kind === 'text') {
+    return { type: 'document', source: { type: 'text', media_type: source.media_type, data: source.text }, ...properties };
   }
-  }
+  return {
+    type: 'document',
+    source: {
+      type: 'content',
+      content: source.content.map(part => part.type === 'text'
+        ? {
+            type: 'text' as const, text: part.text,
+            ...(part.citations === undefined ? {} : { citations: part.citations as AnthropicMessagesTextBlockParam['citations'] }),
+            ...(part.cache_control === undefined ? {} : { cache_control: part.cache_control }),
+          }
+        : {
+            ...imageBlock(part.image),
+            ...(part.transformations === undefined ? {} : { transformations: part.transformations }),
+            ...(part.cache_control === undefined ? {} : { cache_control: part.cache_control }),
+          }),
+    },
+    ...properties,
+  };
 };
 
 const systemContent = (content: readonly IRInputTextPart[]): AnthropicMessagesTextBlockParam[] => content.map(part => ({ type: 'text', text: part.text }));
 
 const userContent = (
-  item: Extract<IRInputClientItem, { type: 'message' }>,
+  item: Extract<IRInputClientItem, { type: 'message'; role: 'user' }>,
 ): AnthropicMessagesUserContentBlock[] => {
   const blocks: AnthropicMessagesUserContentBlock[] = [];
   for (const part of item.content) {
@@ -74,13 +114,15 @@ const userContent = (
     case 'text': blocks.push({ type: 'text', text: part.text }); break;
     case 'image': blocks.push(imageBlock(part.image)); break;
     case 'file':
-      blocks.push(documentBlock(part.file));
+      blocks.push(mediaDocumentBlock(part.file));
+      break;
+    case 'document':
+      blocks.push(documentBlock(part.document));
       break;
     case 'audio': throw new TranslateInputException(`Cannot translate an audio part of MIME type '${part.audio.media_type}' to Anthropic Messages.`);
     default: throw new TranslateInputException(`Invalid '${(part as { type: string }).type}' content part.`);
     }
   }
-  // Messages' user content is a non-empty block list in the same way.
   return blocks.length === 0 ? [{ type: 'text', text: '' }] : blocks;
 };
 
@@ -91,7 +133,8 @@ const toolResultContent = (
   const blocks: AnthropicMessagesToolResultContentBlock[] = [];
   for (const part of output) {
     if (part.type === 'text') { blocks.push({ type: 'text', text: part.text }); continue; }
-    if (part.type === 'file') throw new TranslateInputException('Cannot translate file tool output to Anthropic Messages.');
+    if (part.type === 'file') { blocks.push(mediaDocumentBlock(part.file)); continue; }
+    if (part.type === 'document') { blocks.push(documentBlock(part.document)); continue; }
     blocks.push(imageBlock(part.image));
   }
   // Messages spells an empty tool result as the empty string.
@@ -110,8 +153,7 @@ const assistantBlocks = (items: readonly IRInputAssistantItemWithCallIds[]): Ant
         : { type: 'text', text: part.refusal });
     case 'reasoning': {
       // Project readable reasoning summaries into Messages thinking blocks; opaque signed replay state uses sidecars.
-      const thinking = (item.summary ?? []).join('');
-      return thinking === '' ? [] : [{ type: 'thinking', thinking, signature: '' }];
+      return item.summary === undefined ? [] : [{ type: 'thinking', thinking: item.summary.join(''), signature: '' }];
     }
     case 'function_call':
       return [{
@@ -130,19 +172,14 @@ const assistantBlocks = (items: readonly IRInputAssistantItemWithCallIds[]): Ant
   return blocks;
 };
 
-// Messages needs an object, so a call whose arguments are not an object keeps
-// the raw text under `raw_arguments` rather than dropping the history. A JSON
-// `null`, an array, and malformed text all take that path: none of them is an
-// argument object, and discarding the call would lose what the model said.
-const parseArguments = (argumentsJson: string): Record<string, unknown> => {
+// Messages accepts any JSON tool input. Malformed JSON keeps its raw text under
+// `raw_arguments` so the historical call is not discarded.
+const parseArguments = (argumentsJson: string): unknown => {
   // An out-of-range JSON number such as `1e400` parses to `Infinity` and would
   // serialize back as `null`. Parsing with raw-number preservation keeps the
   // caller's exact token.
   try {
-    const parsed = parseJSONWithRawNumbers(argumentsJson);
-    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : { raw_arguments: argumentsJson };
+    return parseJSONWithRawNumbers(argumentsJson);
   } catch {
     return { raw_arguments: argumentsJson };
   }
@@ -180,23 +217,18 @@ const toolChoiceFromIR = (choice: IRInputToolChoice, tools: readonly IRInputTool
 
 const toolChoiceForTools = (choice: IRInputToolChoice | undefined, tools: readonly IRInputTool[] | undefined): IRInputToolChoice | undefined => {
   if (tools !== undefined && tools.length > 0) return choice;
-  if (choice === 'none' || choice === 'auto') return choice;
+  if (choice === 'none' || choice === 'auto' || choice === 'required') return choice;
   if (typeof choice === 'object' && choice.type === 'allowed_tools' && choice.mode === 'auto') return 'none';
   return undefined;
 };
 
 /**
- * One segment's messages and the system blocks a leading prompt run lifts.
- *
- * Messages keeps the system prompt in its own top-level field. A leading system
- * run is lifted there, one block per source text part so the boundaries
- * survive; later system messages stay inline at their position.
- *
- * Only the segment opening the whole conversation may hoist. Splitting at a
- * restored assistant turn must not promote a later inline prompt merely because
- * it opens another segment.
+ * Only the first conversation segment may hoist an instruction or leading
+ * system/developer messages into top-level system blocks. Their text-part
+ * boundaries are preserved; later system messages stay in place, including
+ * after a restored assistant turn.
  */
-export interface AnthropicMessagesConversation {
+interface AnthropicMessagesConversation {
   readonly messages: AnthropicMessagesMessage[];
   readonly system: AnthropicMessagesTextBlockParam[];
 }
@@ -230,25 +262,38 @@ export const anthropicMessagesConversationFromIR = (
       messages.push({ role: 'assistant', content });
       continue;
     }
-    const turnBlocks: AnthropicMessagesUserContentBlock[] = [];
+    const toolResultBlocks: AnthropicMessagesUserContentBlock[] = [];
+    const userBlocks: AnthropicMessagesUserContentBlock[] = [];
     for (const item of turn.items) {
-      if (item.type === 'prompt') {
+      if (item.type === 'instruction') {
+        if (hoisting) {
+          system.push(...systemContent(item.content));
+          hoisting = false;
+          continue;
+        }
+        const blocks = systemContent(item.content);
+        messages.push({ role: 'system', content: blocks.length === 0 ? '' : blocks });
+        continue;
+      }
+      if (item.type === 'message' && item.role !== 'user') {
         if (hoisting) {
           system.push(...systemContent(item.content));
           continue;
         }
         // Messages states a system message's content as a non-empty block list
-        // or a bare string; an empty prompt run is the empty string.
+        // or a bare string; an empty message is the empty string.
         const blocks = systemContent(item.content);
         messages.push({ role: 'system', content: blocks.length === 0 ? '' : blocks });
         continue;
       }
       hoisting = false;
-      turnBlocks.push(...(item.type === 'tool_result'
-        ? [{ type: 'tool_result' as const, tool_use_id: item.call_id, content: toolResultContent(item.output), ...(item.is_error === true ? { is_error: true } : {}) }]
-        : userContent(item)));
+      if (item.type === 'tool_result') {
+        toolResultBlocks.push({ type: 'tool_result', tool_use_id: item.call_id, content: toolResultContent(item.output), ...(item.is_error === true ? { is_error: true } : {}) });
+      } else {
+        userBlocks.push(...userContent(item as Extract<IRInputClientItem, { type: 'message'; role: 'user' }>));
+      }
     }
-    append(turnBlocks);
+    append([...toolResultBlocks, ...userBlocks]);
   }
   return { messages, system };
 };
@@ -262,13 +307,13 @@ export const anthropicMessagesConversationFromIR = (
  */
 export const anthropicMessagesHeaderFromIR = (
   request: IRInputRequestHeader,
-  options: Pick<TranslateOptions, 'fallbackMaxOutputTokens'> = {},
+  options: Pick<TranslateOptions, 'fallbackMaxOutputTokens'>,
 ): Omit<AnthropicMessagesPayload, 'messages' | 'system'> => {
   const tools = request.tools;
   const choice = toolChoiceForTools(request.tool_choice, tools);
   const selected = choice === undefined ? undefined : toolChoiceFromIR(choice, tools ?? []);
-  const parallel = request.settings.parallel_tool_calls;
-  const toolChoice = parallel === undefined || selected?.type === 'none'
+  const parallel = request.settings.parallel_tool_calls ?? undefined;
+  const toolChoice = tools === undefined || tools.length === 0 || parallel === undefined || selected?.type === 'none'
     ? selected
     : { ...(selected ?? { type: 'auto' as const }), disable_parallel_tool_use: !parallel };
   return {
@@ -309,8 +354,8 @@ export const anthropicMessagesSettingsFromIR = (settings: IRInputSettings): Omit
 
   return {
     ...(ceiling == null ? {} : { max_tokens: ceiling }),
-    ...(settings.temperature === undefined ? {} : { temperature: settings.temperature }),
-    ...(settings.top_p === undefined ? {} : { top_p: settings.top_p }),
+    ...(settings.temperature == null ? {} : { temperature: settings.temperature }),
+    ...(settings.top_p == null ? {} : { top_p: settings.top_p }),
     ...(settings.top_k === undefined ? {} : { top_k: settings.top_k }),
     ...(settings.stop === undefined ? {} : { stop_sequences: [...settings.stop] }),
     ...(thinking === undefined ? {} : { thinking }),
@@ -318,6 +363,6 @@ export const anthropicMessagesSettingsFromIR = (settings: IRInputSettings): Omit
     // Anthropic spells the accelerated lane as `speed: 'fast'`; every other tier
     // stays an open string on `service_tier`.
     // https://docs.claude.com/en/build-with-claude/fast-mode
-    ...(settings.service_tier === undefined ? {} : isFastServiceTier(settings.service_tier) ? { speed: 'fast' as const } : { service_tier: settings.service_tier }),
+    ...(settings.service_tier == null ? {} : isFastServiceTier(settings.service_tier) ? { speed: 'fast' as const } : { service_tier: settings.service_tier }),
   };
 };

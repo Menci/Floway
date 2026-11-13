@@ -668,8 +668,6 @@ test('a data URL is stated with the media type it declares', async () => {
 });
 
 test('content with a value that is not a URL is rejected rather than written', async () => {
-  // Messages states a URL as a URL, so a caller that named neither a URL nor
-  // inline bytes has stated something the target cannot carry.
   await assertRejects(
     () => buildWithTestSidecar(mkPayload({
       messages: [{
@@ -1212,6 +1210,11 @@ test('translates legacy declarations and forced choice into Messages tooling', a
   });
   assertEquals(result.tools?.map(tool => 'name' in tool ? tool.name : undefined), ['lookup']);
   assertEquals(result.tool_choice, { type: 'tool', name: 'lookup' });
+});
+
+test('preserves required tool choice without declarations', async () => {
+  const result = await buildWithTestSidecar({ model: 'model', stream: true, messages: [], tool_choice: 'required' });
+  assertEquals(result.tool_choice, { type: 'any' });
 });
 
 test.each([true, false])('maps parallel_tool_calls %s into Messages tool choice', async parallel => {

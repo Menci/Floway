@@ -17,6 +17,49 @@ const buildWithTestSidecar = (
   options: { fallbackMaxOutputTokens?: number },
 ) => buildTargetPayloadFor(pairs.geminiToMessages[0], pairs.geminiToMessages[1], { ...payload, model }, { sidecarCodec: createTestSidecarCodec(), ...options });
 
+test('a ProtoJSON null function-call args value reaches Messages unchanged', async () => {
+  const result = await buildWithTestSidecar({
+    contents: [{ role: 'model', parts: [{ functionCall: { name: 'f', args: null as never } }] }],
+  }, 'claude-test', noOptions);
+  const message = result.messages[0];
+  assertEquals(message.role === 'assistant' && Array.isArray(message.content) && message.content[0]?.type === 'tool_use' ? message.content[0].input : undefined, null);
+});
+
+test('function response media enters Messages tool results and tool results precede user text', async () => {
+  const result = await buildWithTestSidecar({
+    contents: [
+      { role: 'model', parts: [{ functionCall: { name: 'fetch', args: {} } }] },
+      {
+        role: 'user',
+        parts: [
+          { text: 'Here is the result' },
+          { functionResponse: { name: 'fetch', response: { status: 'ok' }, parts: [{ inlineData: { mimeType: 'image/png', data: 'aGVsbG8=' } }] } },
+        ],
+      },
+    ],
+  }, 'claude-test', noOptions);
+  const user = result.messages[1];
+  assertEquals(user, {
+    role: 'user',
+    content: [
+      {
+        type: 'tool_result',
+        tool_use_id: 'fetch_call_1',
+        content: [
+          { type: 'text', text: '{"status":"ok"}' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'aGVsbG8=' } },
+        ],
+      },
+      { type: 'text', text: 'Here is the result', cache_control: { type: 'ephemeral' } },
+    ],
+  });
+});
+
+test('buildTargetPayload preserves an empty thought as a thinking turn', async () => {
+  const result = await buildWithTestSidecar({ contents: [{ role: 'model', parts: [{ text: '', thought: true }] }] }, 'claude-test', noOptions);
+  assertEquals(result.messages, [{ role: 'assistant', content: [{ type: 'thinking', thinking: '', signature: '' }] }]);
+});
+
 test('buildTargetPayload translates a named thinking level to the effort name', async () => {
   const request = await buildWithTestSidecar({
     contents: [],
@@ -103,9 +146,10 @@ test.each(['audio/wav', 'audio/mp3', 'audio/mpeg'])('buildTargetPayload rejects 
 test('buildTargetPayload forwards a non-audio inline MIME type from Gemini as a Messages document', async () => {
   // GenerateContent states any MIME type inline; the document's media type
   // travels verbatim so the selected upstream decides whether it accepts it.
-  // A `text` source states characters, not the base64 the IR carries.
+  // The target accepts inline bytes, so text data remains base64 instead of
+  // being decoded under an assumed charset.
   const request = await buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'text/plain', data: 'ZGF0YQ==' } }] }] }, 'claude-test', noOptions);
-  assertEquals(request.messages, [{ role: 'user', content: [{ type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'data' } }] }]);
+  assertEquals(request.messages, [{ role: 'user', content: [{ type: 'document', source: { type: 'base64', media_type: 'text/plain', data: 'ZGF0YQ==' } }] }]);
 });
 
 test('buildTargetPayload prefers limits.max_output_tokens over the gateway default when payload omits maxOutputTokens', async () => {
@@ -144,8 +188,6 @@ test('buildTargetPayload maps generation config and thinking controls', async ()
 });
 
 test('buildTargetPayload refuses a stated budget beside a stated level', async () => {
-  // GenerateContent rejects the pair itself, so translating it would have to
-  // pick a winner that a different model family disagrees with.
   await assertRejects(
     () => buildWithTestSidecar({
       contents: [],

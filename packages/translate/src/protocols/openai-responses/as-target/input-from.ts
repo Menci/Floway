@@ -1,6 +1,8 @@
+import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../composition/request/call-ids.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
-import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem, IRInputPromptItem } from '../../../ir/input/types.ts';
-import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../request/call-ids.ts';
+import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputCacheControl, IRInputDocument, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
+import { requireKnownCustomToolFormat } from '../../../shared/custom-tool.ts';
+import { DOCUMENT_CLOSE_TAG, documentImage, documentOpening } from '../../../shared/document.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import type {
@@ -17,6 +19,8 @@ const inputContent = (media: IRInputMedia, detail?: string | null): OpenAIRespon
     return { type: 'input_image', image_url: media.url, ...(detail == null ? {} : { detail }) };
   case 'file':
     return { type: 'input_image', file_id: media.file_id, ...(detail == null ? {} : { detail }) };
+  case 'data':
+    return { type: 'input_image', image_url: media.data.startsWith('data:') ? media.data : `data:application/octet-stream;base64,${media.data}`, ...(detail == null ? {} : { detail }) };
   case 'base64':
     return { type: 'input_image', image_url: `data:${media.media_type ?? 'application/octet-stream'};base64,${media.data}`, ...(detail == null ? {} : { detail }) };
   }
@@ -29,6 +33,8 @@ const fileContent = (media: IRInputMedia, filename?: string | null): OpenAIRespo
     return { type: 'input_file', file_url: media.url, ...name };
   case 'file':
     return { type: 'input_file', file_id: media.file_id, ...name };
+  case 'data':
+    return { type: 'input_file', file_data: media.data, ...name };
   case 'base64':
     // Responses accepts the bytes either raw or as a data URL; a MIME type the
     // source stated is carried in the data URL so the target can act on it.
@@ -40,22 +46,45 @@ const fileContent = (media: IRInputMedia, filename?: string | null): OpenAIRespo
   }
 };
 
+const withDocumentCache = (part: OpenAIResponsesInputContent, cache: IRInputCacheControl | null | undefined): OpenAIResponsesInputContent =>
+  cache === undefined ? part : { ...part, prompt_cache_breakpoint: cache === null ? null : { mode: 'explicit' } };
+
+const documentContent = (document: IRInputDocument): OpenAIResponsesInputContent[] => {
+  const source = document.source;
+  if (source.source_kind === 'media' && document.title == null && document.context == null) {
+    return [withDocumentCache(fileContent(source.media), document.cache_control)];
+  }
+  const content: OpenAIResponsesInputContent[] = source.source_kind === 'media'
+    ? [fileContent(source.media)]
+    : source.source_kind === 'text'
+      ? [{ type: 'input_text', text: source.text }]
+      : source.content.map(part => withDocumentCache(part.type === 'text'
+          ? { type: 'input_text', text: part.text }
+          : inputContent(documentImage(part), part.detail), part.cache_control));
+  return [
+    { type: 'input_text', text: documentOpening(document) },
+    ...content,
+    withDocumentCache({ type: 'input_text', text: DOCUMENT_CLOSE_TAG }, document.cache_control),
+  ];
+};
+
 // Responses tool output admits text, images, and files, but not refusals, so it
 // is projected from the tool-result parts rather than the message-part union.
 const toolResultOutput = (output: string | readonly IRInputToolResultContentPart[]): string | OpenAIResponsesToolOutputContent[] => typeof output === 'string'
   ? output
-  : [...output].map(part => {
+  : [...output].flatMap(part => {
       if (part.type === 'text') return { type: 'input_text' as const, text: part.text };
       if (part.type === 'image') return inputContent(part.image, part.detail);
-      return fileContent(part.file, part.filename);
+      if (part.type === 'file') return fileContent(part.file, part.filename);
+      return documentContent(part.document);
     });
 
-// The content-array projection preserves IR part boundaries.
-const userContent = (item: Extract<IRInputClientItem, { type: 'message' }>): OpenAIResponsesInputContent[] => item.content.map(part => {
+const userContent = (item: Extract<IRInputClientItem, { type: 'message' }>): OpenAIResponsesInputContent[] => item.content.flatMap(part => {
   switch (part.type) {
   case 'text': return { type: 'input_text' as const, text: part.text };
   case 'image': return inputContent(part.image, part.detail);
   case 'file': return fileContent(part.file, part.filename);
+  case 'document': return documentContent(part.document);
   case 'audio': throw new TranslateInputException(`Cannot translate an audio part of MIME type '${part.audio.media_type}' to OpenAI Responses.`);
   }
 });
@@ -66,8 +95,7 @@ const assistantItems = (items: readonly IRInputAssistantItemWithCallIds[]): Cano
     return {
       type: 'message',
       role: 'assistant',
-      // Responses spelling of an empty assistant history message.
-      content: item.content.length === 0 || item.content.every(part => part.type === 'text' && part.text === '')
+      content: item.content.every(part => part.type === 'text' && part.text === '')
         ? ''
         : item.content.map(part => part.type === 'text'
             ? { type: 'output_text' as const, text: part.text }
@@ -94,18 +122,17 @@ const assistantItems = (items: readonly IRInputAssistantItemWithCallIds[]): Cano
   }
 });
 
-const clientItems = (items: readonly IRInputClientItemWithCallIds[]): CanonicalOpenAIResponsesInputItem[] => items.map(item => {
+const clientItem = (item: IRInputClientItemWithCallIds): CanonicalOpenAIResponsesInputItem => {
   switch (item.type) {
-  case 'prompt': {
-    // A prompt boundary states its text plainly: one part is that string, and
-    // several keep their array so the boundaries between them survive.
-    const content = item.content.length === 1
-      ? item.content[0].text
-      : item.content.map(part => ({ type: 'input_text' as const, text: part.text }));
-    return { type: 'message', role: item.role, content };
-  }
+  case 'instruction':
+    return { type: 'message', role: 'system', content: item.content.length === 1 ? item.content[0].text : item.content.map(part => ({ type: 'input_text' as const, text: part.text })) };
   case 'message': {
-    // A single text part uses bare-string content; multipart user content retains its part boundaries.
+    if (item.role !== 'user') {
+      const content = item.content.length === 1
+        ? item.content[0].text
+        : item.content.map(part => ({ type: 'input_text' as const, text: part.text }));
+      return { type: 'message', role: item.role, content };
+    }
     if (item.content.length === 1 && item.content[0].type === 'text') {
       return { type: 'message', role: 'user', content: item.content[0].text };
     }
@@ -118,23 +145,16 @@ const clientItems = (items: readonly IRInputClientItemWithCallIds[]): CanonicalO
       : { type: 'function_call_output', call_id: item.call_id, output, ...(item.is_error === true ? { status: 'incomplete' as const } : { status: 'completed' as const }) };
   }
   }
-});
-
-// A leading system or developer run states the request's prompt, which
-// Responses keeps in its own top-level slot. Every later system message stays
-// inline as an ordinary input item.
-const isHoistablePrompt = (entry: IRInputClientItem): entry is IRInputPromptItem =>
-  entry.type === 'prompt';
+};
 
 export const openaiResponsesConversationFromIR = (
   turns: readonly IRInputTurnWithCallIds[],
-  hoistSystem: boolean,
+  leading: boolean,
 ): Pick<CanonicalOpenAIResponsesPayload, 'instructions' | 'input'> => {
-  const instructions: string[] = [];
-  // A conversation's own leading prompt is the first turn of the first segment.
-  // Later segments continue an exchange that already started, so their leading
-  // prompt (if any) stays inline where the caller placed it.
-  let hoisting = hoistSystem;
+  let instructions: string | undefined;
+  // Only the first segment can contain the request's top-level instruction.
+  // A later segment continues conversation history, so every item stays inline.
+  let hoisting = leading;
 
   const input = turns.flatMap(item => {
     if (item.kind === 'assistant') {
@@ -142,28 +162,18 @@ export const openaiResponsesConversationFromIR = (
       return assistantItems(item.items);
     }
     return item.items.flatMap((entry): CanonicalOpenAIResponsesInputItem[] => {
-      if (hoisting && isHoistablePrompt(entry)) {
-        // Responses states the slot as one string. A single text part is one
-        // string; several parts cannot be merged without losing the boundaries
-        // the source drew, so the run stays inline with each part its own
-        // `input_text` block.
-        const parts = entry.content.filter(part => part.text !== '');
-        if (parts.length === 1) {
-          instructions.push(parts[0].text);
-          return [];
-        }
-        if (parts.length > 1) {
-          hoisting = false;
-          return [{ type: 'message', role: entry.role, content: parts.map(part => ({ type: 'input_text' as const, text: part.text })) }];
-        }
+      // Only a top-level instruction is hoisted; historical system and developer messages stay in place.
+      if (hoisting && entry.type === 'instruction') {
+        instructions = entry.content.map(part => part.text).join('');
+        hoisting = false;
         return [];
       }
       hoisting = false;
-      return clientItems([entry]);
+      return [clientItem(entry)];
     });
   });
 
-  return { instructions: instructions.length === 0 ? undefined : instructions.join('\n\n'), input };
+  return { instructions, input };
 };
 
 const requireSchema = (format: IRInputOutputFormat): Readonly<Record<string, unknown>> => {
@@ -181,13 +191,14 @@ const normalizeParameters = (schema: Readonly<Record<string, unknown>> | undefin
 
 const toolFromIR = (tool: IRInputTool): OpenAIResponsesTool => {
   if (tool.type === 'custom') {
+    const format = requireKnownCustomToolFormat(tool.format);
     return {
       type: 'custom',
       name: tool.name,
       ...(tool.description === undefined ? {} : { description: tool.description }),
-      ...(tool.format === undefined ? {} : {
-        format: tool.format.type === 'grammar'
-          ? { type: 'grammar', definition: tool.format.definition, syntax: tool.format.syntax }
+      ...(format === undefined ? {} : {
+        format: format.type === 'grammar'
+          ? { type: 'grammar', definition: format.definition, syntax: format.syntax }
           : { type: 'text' },
       }),
     };
@@ -205,7 +216,6 @@ const toolFromIR = (tool: IRInputTool): OpenAIResponsesTool => {
 
 const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<CanonicalOpenAIResponsesPayload['tool_choice']> => {
   if (typeof choice === 'string') return choice;
-  // Responses expresses the permitted callable subset in tool_choice.allowed_tools.
   if (choice.type === 'allowed_tools') {
     return {
       type: 'allowed_tools',
@@ -253,7 +263,7 @@ export const openaiResponsesSettingsFromIR = (settings: IRInputSettings): Partia
     ...(settings.top_p === undefined ? {} : { top_p: settings.top_p }),
     ...(settings.presence_penalty === undefined ? {} : { presence_penalty: settings.presence_penalty }),
     ...(settings.frequency_penalty === undefined ? {} : { frequency_penalty: settings.frequency_penalty }),
-    ...(settings.metadata === undefined ? {} : { metadata: { ...settings.metadata } }),
+    ...(settings.metadata === undefined ? {} : { metadata: settings.metadata === null ? null : { ...settings.metadata } }),
     ...(settings.store === undefined ? {} : { store: settings.store }),
     ...(settings.service_tier === undefined ? {} : { service_tier: settings.service_tier }),
     ...(settings.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: settings.parallel_tool_calls }),

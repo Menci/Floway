@@ -1,6 +1,7 @@
-import type { RestoredAssistantTurn, SourceCallIdentity } from '../composition/reading.ts';
-import type { IRInputRequestHeader, IRInputTool, IRInputToolChoice, IRInputToolSelector, IRInputTurn } from '../ir/input/types.ts';
-import { TranslateInputException } from '../shared/input-error.ts';
+import type { IRInputTurnWithCallIds } from './call-ids.ts';
+import type { IRInputRequestHeader, IRInputTool, IRInputToolChoice, IRInputToolSelector } from '../../ir/input/types.ts';
+import { TranslateInputException } from '../../shared/input-error.ts';
+import type { RestoredAssistantTurn } from '../reading.ts';
 
 /** Records allocated custom-call names and their original identities for the target event reader. */
 export interface ToolNameContext {
@@ -14,36 +15,6 @@ const customNamesOf = (request: IRInputRequestHeader): ReadonlySet<string> =>
 
 const callableKey = ({ type, namespace, name }: IRInputToolSelector): string => JSON.stringify([type, namespace, name]);
 
-export interface NativeCallNames<Turn> {
-  readonly ids: (turn: Turn) => readonly (string | undefined)[];
-  readonly rename: (turn: Turn, names: readonly string[]) => Turn;
-}
-
-const nativeCallIdentities = <Turn>(
-  turn: RestoredAssistantTurn<Turn>,
-  native: NativeCallNames<Turn>,
-): readonly SourceCallIdentity[] => {
-  const calls = native.ids(turn.turn);
-  const remaining = new Set(turn.callIdentities);
-  const byId = new Map(turn.callIdentities.flatMap(identity => identity.call_id === undefined ? [] : [[identity.call_id, identity] as const]));
-  const matched = calls.map(callId => {
-    const identity = callId === undefined ? undefined : byId.get(callId);
-    if (identity !== undefined) remaining.delete(identity);
-    return identity;
-  });
-  const unmatched = matched.flatMap((identity, index) => identity === undefined ? [index] : []);
-  // Legacy Chat names no id. Once modern ids are removed, the one remaining
-  // source call is its identity; no wire spelling or position invents a match.
-  if (unmatched.length === 1 && remaining.size === 1) {
-    const [identity] = remaining;
-    if (calls[unmatched[0]] === undefined || identity.call_id === undefined) matched[unmatched[0]] = identity;
-  }
-  return matched.map(identity => {
-    if (identity === undefined) throw new Error('Authenticated native call has no unique source identity.');
-    return identity;
-  });
-};
-
 /**
  * States this target's request and conversation with wireNames callable names.
  *
@@ -55,9 +26,8 @@ const nativeCallIdentities = <Turn>(
  */
 export const allocateToolNames = <Restored>(
   request: IRInputRequestHeader,
-  inputTurns: readonly (IRInputTurn | RestoredAssistantTurn<Restored>)[],
-  native: NativeCallNames<Restored>,
-): { readonly request: IRInputRequestHeader; readonly turns: readonly (IRInputTurn | RestoredAssistantTurn<Restored>)[]; readonly context: ToolNameContext } => {
+  inputTurns: readonly (IRInputTurnWithCallIds | RestoredAssistantTurn<Restored>)[],
+): { readonly request: IRInputRequestHeader; readonly turns: readonly (IRInputTurnWithCallIds | RestoredAssistantTurn<Restored>)[]; readonly context: ToolNameContext } => {
   const declared = new Set<string>();
   for (const tool of request.tools ?? []) {
     const key = callableKey(tool);
@@ -67,7 +37,7 @@ export const allocateToolNames = <Restored>(
   }
   const callables = [
     ...(request.tools ?? []),
-    ...inputTurns.flatMap(turn => turn.kind === 'restored' ? turn.callIdentities : turn.items.flatMap(item =>
+    ...inputTurns.flatMap(turn => turn.kind === 'restored' ? [] : turn.items.flatMap(item =>
       item.type === 'function_call' || item.type === 'custom_tool_call'
         ? [{ type: item.type === 'function_call' ? 'function' as const : 'custom' as const, namespace: item.namespace, name: item.name }]
         : [])),
@@ -110,11 +80,8 @@ export const allocateToolNames = <Restored>(
   return {
     request: allocatedRequest,
     context: { customToolNames: customNamesOf(allocatedRequest), originalToolNames },
-    turns: inputTurns.map((turn): IRInputTurn | RestoredAssistantTurn<Restored> => {
-      if (turn.kind === 'restored') {
-        const names = nativeCallIdentities(turn, native).map(wireNameOf);
-        return names.length === 0 ? turn : { ...turn, turn: native.rename(turn.turn, names) };
-      }
+    turns: inputTurns.map((turn): IRInputTurnWithCallIds | RestoredAssistantTurn<Restored> => {
+      if (turn.kind === 'restored') return turn;
       if (turn.kind === 'assistant') {
         return {
           kind: 'assistant',

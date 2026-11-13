@@ -28,6 +28,27 @@ test('preserves a refusal-only assistant turn between client turns', async () =>
   ]);
 });
 
+test('preserves an empty assistant turn between client turns', async () => {
+  const { target } = await buildWithTestSidecar({
+    model: 'model', input: [
+      { type: 'message', role: 'user', content: 'A' },
+      { type: 'message', role: 'assistant', content: [] },
+      { type: 'message', role: 'user', content: 'B' },
+    ],
+  });
+  assertEquals(target.messages, [
+    { role: 'user', content: 'A' },
+    { role: 'assistant', content: '' },
+    { role: 'user', content: 'B' },
+  ]);
+});
+
+test('preserves nullable metadata and service tier controls', async () => {
+  const { target } = await buildWithTestSidecar({ model: 'model', input: 'hi', metadata: null, service_tier: null });
+  assertEquals(target.metadata, null);
+  assertEquals(target.service_tier, null);
+});
+
 test('buildTargetPayload accepts an implicit message discriminator', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
@@ -107,6 +128,7 @@ test('buildTargetPayload merges adjacent assistant reasoning text and tool calls
   });
 
   assertEquals(result.target.model, 'gpt-test');
+  assertEquals(result.target.max_tokens, 256);
   assertEquals(result.target.max_completion_tokens, 256);
   assertEquals(result.target.metadata, { trace_id: 'trace_123' });
   assertEquals(result.target.store, false);
@@ -208,6 +230,18 @@ test('buildTargetPayload reshapes flat json_schema text format into OpenAI Chat 
       strict: true,
       schema,
     },
+  });
+});
+
+test('buildTargetPayload preserves null json_schema strictness', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'gpt-test',
+    input: 'Hi',
+    text: { format: { type: 'json_schema', name: 'result', schema: {}, strict: null } },
+  });
+  assertEquals(result.target.response_format, {
+    type: 'json_schema',
+    json_schema: { name: 'result', schema: {}, strict: null },
   });
 });
 
@@ -325,7 +359,7 @@ test.each(['auto', 'none'] as const)('buildTargetPayload omits orphan string too
   assertEquals(result.target.tool_choice, undefined);
 });
 
-test('buildTargetPayload omits a required tool choice that has no declaration to demand', async () => {
+test('buildTargetPayload retains a required tool choice without declarations', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'Hi' }],
@@ -342,7 +376,7 @@ test('buildTargetPayload omits a required tool choice that has no declaration to
     text: null,
   });
 
-  assertEquals(result.target.tool_choice, undefined);
+  assertEquals(result.target.tool_choice, 'required');
 });
 
 test('buildTargetPayload wraps custom tools as single-string function tools and records their names', async () => {
@@ -482,20 +516,20 @@ test('buildTargetPayload accepts null tool_choice', async () => {
   assertEquals(result.target.tool_choice, undefined);
 });
 
-test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetPayload rejects input_file in %s', async type => {
-  await assertRejects(
-    () => buildWithTestSidecar({
-      model: 'gpt-test',
-      input: [
-        ...(type === 'function_call_output'
-          ? [{ type: 'function_call' as const, call_id: 'call_1', name: 'lookup', arguments: '{}' }]
-          : [{ type: 'custom_tool_call' as const, call_id: 'call_1', name: 'lookup', input: '{}' }]),
-        { type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] },
-      ],
-    }),
-    Error,
-    'file tool output',
-  );
+test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetPayload lifts input_file from %s', async type => {
+  const result = await buildWithTestSidecar({
+    model: 'gpt-test',
+    input: [
+      ...(type === 'function_call_output'
+        ? [{ type: 'function_call' as const, call_id: 'call_1', name: 'lookup', arguments: '{}' }]
+        : [{ type: 'custom_tool_call' as const, call_id: 'call_1', name: 'lookup', input: '{}' }]),
+      { type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1', filename: 'result.txt' }] },
+    ],
+  });
+  assertEquals(result.target.messages.at(-1)?.content, [
+    { type: 'text', text: 'File output from tool call call_1:' },
+    { type: 'file', file: { file_id: 'file_1', filename: 'result.txt' } },
+  ]);
 });
 
 test('buildTargetPayload rejects file assistant content', async () => {
@@ -852,8 +886,6 @@ test.each(['system', 'developer'] as const)('preserves %s text part boundaries',
 });
 
 test.each(['system', 'developer'] as const)('collapses an empty %s message to the empty string', async role => {
-  // An empty part array is not a legal Chat body; the empty string states the
-  // same message in the spelling this wire accepts.
   const result = await buildWithTestSidecar({ model: 'gpt-test', input: [{ type: 'message', role, content: '' }] });
   assertEquals(result.target.messages, [{ role, content: '' }]);
 });

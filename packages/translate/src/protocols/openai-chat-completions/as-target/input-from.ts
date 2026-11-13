@@ -1,7 +1,8 @@
+import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../composition/request/call-ids.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
-import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
-import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../request/call-ids.ts';
+import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputDocument, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
 import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
+import { DOCUMENT_CLOSE_TAG, documentImage, documentOpening } from '../../../shared/document.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import type {
@@ -20,12 +21,17 @@ const audioFormat = (mediaType: string): string => {
   throw new TranslateInputException(`Cannot translate audio MIME type '${mediaType}' to OpenAI Chat Completions.`);
 };
 
-const dataUrl = (media: Extract<IRInputMedia, { source_kind: 'base64' }>): string => `data:${media.media_type ?? 'application/octet-stream'};base64,${media.data}`;
+const dataUrl = (media: Extract<IRInputMedia, { source_kind: 'base64' }>, requireMediaType: boolean): string => media.media_type === undefined && !requireMediaType
+  ? media.data
+  : `data:${media.media_type ?? 'application/octet-stream'};base64,${media.data}`;
 
 const imageUrlPart = (media: IRInputMedia, detail?: string | null): OpenAIChatCompletionsUserContentPart => ({
   type: 'image_url',
   image_url: {
-    url: media.source_kind === 'url' ? media.url : media.source_kind === 'base64' ? dataUrl(media) : (() => { throw new TranslateInputException('Cannot translate file_id-only image content to OpenAI Chat Completions.'); })(),
+    url: media.source_kind === 'url' ? media.url
+      : media.source_kind === 'data' ? media.data.startsWith('data:') ? media.data : `data:application/octet-stream;base64,${media.data}`
+        : media.source_kind === 'base64' ? dataUrl(media, true)
+          : (() => { throw new TranslateInputException('Cannot translate file_id-only image content to OpenAI Chat Completions.'); })(),
     ...(detail == null ? {} : { detail }),
   },
 });
@@ -34,20 +40,32 @@ const filePart = (media: IRInputMedia, filename?: string | null): OpenAIChatComp
   const name = filename == null ? {} : { filename };
   switch (media.source_kind) {
   case 'file': return { type: 'file', file: { file_id: media.file_id, ...name } };
-  case 'base64': return { type: 'file', file: { file_data: dataUrl(media), ...name } };
+  case 'data': return { type: 'file', file: { file_data: media.data, ...name } };
+  case 'base64': return { type: 'file', file: { file_data: dataUrl(media, false), ...name } };
   case 'url': throw new TranslateInputException('Cannot translate a file URL to OpenAI Chat Completions.');
   }
 };
 
-const userContent = (item: Extract<IRInputClientItem, { type: 'message' }>): string | OpenAIChatCompletionsUserContentPart[] => {
-  // Adjacent text parts join with no separator: the parts are one run of text,
-  // and a separator would invent characters the caller never wrote.
+const documentParts = (document: IRInputDocument): OpenAIChatCompletionsUserContentPart[] => {
+  const source = document.source;
+  const content = source.source_kind === 'media'
+    ? [filePart(source.media)]
+    : source.source_kind === 'text'
+      ? [{ type: 'text' as const, text: source.text }]
+      : source.content.map(part => part.type === 'text'
+          ? { type: 'text' as const, text: part.text }
+          : imageUrlPart(documentImage(part), part.detail));
+  return [{ type: 'text', text: documentOpening(document) }, ...content, { type: 'text', text: DOCUMENT_CLOSE_TAG }];
+};
+
+const userContent = (item: Extract<IRInputClientItem, { type: 'message'; role: 'user' }>): string | OpenAIChatCompletionsUserContentPart[] => {
   if (item.content.every(part => part.type === 'text')) return item.content.map(part => part.text).join('');
-  return item.content.map(part => {
+  return item.content.flatMap(part => {
     switch (part.type) {
     case 'text': return { type: 'text' as const, text: part.text };
     case 'image': return imageUrlPart(part.image, part.detail);
     case 'file': return filePart(part.file, part.filename);
+    case 'document': return documentParts(part.document);
     case 'audio': return { type: 'input_audio' as const, input_audio: { data: part.audio.data, format: audioFormat(part.audio.media_type) } };
     }
   });
@@ -55,26 +73,29 @@ const userContent = (item: Extract<IRInputClientItem, { type: 'message' }>): str
 
 /**
  * A Chat `tool` message admits only text, while the input IR tool result may carry
- * images. The image parts are lifted into a user message that follows the
- * result, so a vision target still receives them.
+ * attachments. Image, file, and document parts are lifted into a user message
+ * that follows the result, so the target still receives them.
  *
  * https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/chat/completions/completions.ts#L1893-L1908
  * https://github.com/vercel/ai/blob/c093ee7458ccd5dada05d8461041e47c24ee55c0/packages/google/src/convert-to-google-messages.ts#L137-L180
  */
-export const openaiChatCompletionsToolResultContent = (
+const openaiChatCompletionsToolResultContent = (
   callId: string,
   output: string | readonly IRInputToolResultContentPart[],
 ): { readonly content: string; readonly lifted: OpenAIChatCompletionsUserContentPart[] } => {
   if (typeof output === 'string') return { content: output, lifted: [] };
-  if (output.some(part => part.type === 'file')) throw new TranslateInputException('Cannot translate file tool output to OpenAI Chat Completions.');
   const text = output.flatMap(part => part.type === 'text' ? [part.text] : []).join('');
-  const images = output.flatMap(part => part.type === 'image' ? [imageUrlPart(part.image, part.detail)] : []);
-  return images.length === 0
-    ? { content: text, lifted: [] }
-    : {
-        content: text === '' ? 'Image output is attached in the following user message.' : text,
-        lifted: [{ type: 'text', text: `Image output from tool call ${callId}:` }, ...images],
-      };
+  const lifted = output.flatMap(part => part.type === 'image'
+    ? [imageUrlPart(part.image, part.detail)]
+    : part.type === 'file' ? [filePart(part.file, part.filename)]
+      : part.type === 'document' ? documentParts(part.document) : []);
+  if (lifted.length === 0) return { content: text, lifted: [] };
+  const kinds = new Set(output.flatMap(part => part.type === 'image' || part.type === 'file' || part.type === 'document' ? [part.type] : []));
+  const noun = kinds.size > 1 ? 'Attachments' : kinds.has('image') ? 'Image output' : kinds.has('file') ? 'File output' : 'Document output';
+  return {
+    content: text === '' ? `${noun} is attached in the following user message.` : text,
+    lifted: [{ type: 'text', text: `${noun} from tool call ${callId}:` }, ...lifted],
+  };
 };
 
 const assistantMessage = (items: readonly IRInputAssistantItemWithCallIds[]): OpenAIChatCompletionsMessage[] => {
@@ -82,9 +103,11 @@ const assistantMessage = (items: readonly IRInputAssistantItemWithCallIds[]): Op
   const refusals: string[] = [];
   const reasoning: string[] = [];
   const toolCalls: OpenAIChatCompletionsToolCall[] = [];
+  let hasMessage = false;
   for (const item of items) {
     switch (item.type) {
     case 'message':
+      hasMessage = true;
       for (const part of item.content) if (part.type === 'text') text.push(part.text); else refusals.push(part.refusal);
       break;
     case 'reasoning':
@@ -106,7 +129,7 @@ const assistantMessage = (items: readonly IRInputAssistantItemWithCallIds[]): Op
       break;
     }
   }
-  if (text.length === 0 && refusals.length === 0 && toolCalls.length === 0 && reasoning.length === 0) return [];
+  if (!hasMessage && toolCalls.length === 0 && reasoning.length === 0) return [];
   // A turn carrying reasoning or tool calls with no text spells its content as
   // null; a turn with neither is an explicitly empty message and keeps ''.
   return [{
@@ -122,20 +145,20 @@ const clientMessages = (
   items: readonly IRInputClientItemWithCallIds[],
   legacyCallNames: ReadonlyMap<string, string>,
 ): OpenAIChatCompletionsMessage[] => {
-  // Images lifted out of consecutive tool results gather into one user message
+  // Attachments lifted out of consecutive tool results gather into one user message
   // after the run, so a tool-call group stays contiguous.
   const messages: OpenAIChatCompletionsMessage[] = [];
-  let pendingImages: OpenAIChatCompletionsUserContentPart[] = [];
-  const flushImages = (): void => {
-    if (pendingImages.length === 0) return;
-    messages.push({ role: 'user', content: pendingImages });
-    pendingImages = [];
+  let pendingAttachments: OpenAIChatCompletionsUserContentPart[] = [];
+  const flushAttachments = (): void => {
+    if (pendingAttachments.length === 0) return;
+    messages.push({ role: 'user', content: pendingAttachments });
+    pendingAttachments = [];
   };
   for (const item of items) {
-    if (item.type !== 'tool_result') flushImages();
-    messages.push(...openaiChatCompletionsClientItem(item, lifted => pendingImages.push(...lifted), legacyCallNames));
+    if (item.type !== 'tool_result') flushAttachments();
+    messages.push(...openaiChatCompletionsClientItem(item, lifted => pendingAttachments.push(...lifted), legacyCallNames));
   }
-  flushImages();
+  flushAttachments();
   return messages;
 };
 
@@ -146,13 +169,10 @@ const openaiChatCompletionsClientItem = (
 ): OpenAIChatCompletionsMessage[] => {
   switch (item.type) {
   case 'message':
-    return [{ role: 'user', content: userContent(item) }];
-  case 'prompt':
-    // A single text part collapses to the string spelling Chat accepts for
-    // text-only system/developer messages; several parts keep their array so
-    // block boundaries survive. An empty list is not a legal body on this wire,
-    // so it becomes the empty string.
-    return [{ role: item.role, content: item.content.length === 1 ? item.content[0].text : item.content.length === 0 ? '' : item.content.map(part => ({ type: 'text' as const, text: part.text })) }];
+  case 'instruction': {
+    if (item.type === 'message' && item.role === 'user') return [{ role: 'user', content: userContent(item) }];
+    return [{ role: item.type === 'instruction' ? 'system' : item.role, content: item.content.length === 1 ? item.content[0].text : item.content.length === 0 ? '' : item.content.map(part => ({ type: 'text' as const, text: part.text })) }];
+  }
   case 'tool_result': {
     const projected = openaiChatCompletionsToolResultContent(item.call_id, item.output);
     lift(projected.lifted);
@@ -233,7 +253,7 @@ const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<OpenAIChatComp
  */
 export const openaiChatCompletionsHeaderFromIR = (request: IRInputRequestHeader): Omit<OpenAIChatCompletionsPayload, 'messages'> => {
   const tools = request.tools;
-  const choice = tools === undefined || tools.length === 0 ? undefined : request.tool_choice;
+  const choice = tools === undefined || tools.length === 0 ? request.tool_choice === 'required' ? 'required' : undefined : request.tool_choice;
   return {
     ...openaiChatCompletionsSettingsFromIR(request.settings),
     model: request.settings.model,
@@ -258,17 +278,20 @@ export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): 
   const reasoningEffort = chatReasoningEffort(settings);
 
   return {
-    // Use the replacement cap spelling, which includes reasoning tokens.
+    // State both cap spellings. OpenAI uses the replacement
+    // `max_completion_tokens`, while compatible targets such as Ollama still
+    // read only `max_tokens`.
     // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/chat/completions/completions.ts
-    ...(ceiling === undefined ? {} : { max_completion_tokens: ceiling }),
+    // https://github.com/ollama/ollama/blob/c1db5f9/openai/openai.go
+    ...(ceiling === undefined ? {} : { max_tokens: ceiling, max_completion_tokens: ceiling }),
     ...(settings.temperature === undefined ? {} : { temperature: settings.temperature }),
     ...(settings.top_p === undefined ? {} : { top_p: settings.top_p }),
     ...(settings.stop === undefined ? {} : { stop: [...settings.stop] }),
     ...(settings.seed === undefined ? {} : { seed: settings.seed }),
-    ...(settings.metadata === undefined ? {} : { metadata: { ...settings.metadata } }),
+    ...(settings.metadata === undefined ? {} : { metadata: settings.metadata === null ? null : { ...settings.metadata } }),
     ...(settings.store === undefined ? {} : { store: settings.store }),
     ...(settings.service_tier === undefined ? {} : { service_tier: settings.service_tier }),
-    ...(settings.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: settings.parallel_tool_calls }),
+    ...(settings.parallel_tool_calls == null ? {} : { parallel_tool_calls: settings.parallel_tool_calls }),
     ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
     ...(settings.prompt_cache_key === undefined ? {} : { prompt_cache_key: settings.prompt_cache_key }),
     ...(settings.prompt_cache_retention === undefined ? {} : { prompt_cache_retention: settings.prompt_cache_retention }),

@@ -1,8 +1,8 @@
 import { openaiResponsesConversationFromIR, openaiResponsesHeaderFromIR } from './input-from.ts';
 import { type RestoredAssistantTurn } from '../../../composition/reading.ts';
+import type { IRInputTurnWithCallIds } from '../../../composition/request/call-ids.ts';
+import { segmentTurns } from '../../../composition/request/segments.ts';
 import type { IRInputRequestHeader } from '../../../ir/input/types.ts';
-import type { IRInputTurnWithCallIds } from '../../../request/call-ids.ts';
-import { segmentTurns } from '../../../request/segments.ts';
 import type { CanonicalOpenAIResponsesInputItem, CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 /**
@@ -18,7 +18,7 @@ export const openaiResponsesPayloadFromSegments = (
   for (const piece of segmentTurns(turns)) {
     if (piece.kind === 'restored') { input.push(...piece.turn); continue; }
     const segment = openaiResponsesConversationFromIR(piece.turns, piece.leading);
-    if (segment.instructions != null) instructions ??= segment.instructions;
+    if (segment.instructions != null) instructions = segment.instructions;
     input.push(...segment.input);
   }
 

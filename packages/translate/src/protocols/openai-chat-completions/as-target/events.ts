@@ -1,11 +1,11 @@
 import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantTurnState } from './assistant-turn.ts';
 import { usageToIR } from './usage.ts';
+import type { ToolNameContext } from '../../../composition/request/tool-names.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
 import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRWriteHandle, type IRRelativePath } from '../../../ir/output/builder.ts';
 import type { IRErrorPayload } from '../../../ir/output/error.ts';
 import type { IRRecord } from '../../../ir/output/records.ts';
 import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
-import type { ToolNameContext } from '../../../request/tool-names.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendReadField, createReadFieldState, type ReadFieldStates, type ReadFieldState, type TextFragmentId } from '../../../round-trip/reference/reference-builder.ts';
 import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
@@ -442,17 +442,16 @@ export const readOpenAIChatCompletionsEvents = async function* (
         tool.pendingTextFragmentIds = [];
       }
     } else if (tool.item !== undefined) {
+      if (tool.name !== tool.emittedName) {
+        // A rename updates both parts of the identity; null clears an earlier namespace.
+        const naming = namingOf(tool.name);
+        tool.item.assign('name', naming.name);
+        tool.item.assign('namespace', naming.namespace ?? null);
+        tool.emittedName = tool.name;
+      }
       if (tool.id !== undefined && !tool.callIdAssigned) {
         tool.item.assign('call_id', tool.id);
         tool.callIdAssigned = true;
-      }
-      if (tool.name !== tool.emittedName) {
-        // A rename has to state the same pair the opening did, or a grouped call
-        // would end up with a flat name beside the group's namespace.
-        const naming = namingOf(tool.name);
-        tool.item.assign('name', naming.name);
-        if (naming.namespace !== undefined) tool.item.assign('namespace', naming.namespace);
-        tool.emittedName = tool.name;
       }
       if (fragment !== undefined && fragment !== '' && !tool.wrapped) tool.item.append(tool.custom ? 'input' : 'arguments', fragment, textFragmentId === undefined ? undefined : [textFragmentId]);
       if (fragment !== undefined && tool.wrapped) tool.pendingInput += fragment;

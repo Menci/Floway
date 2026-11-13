@@ -4,14 +4,13 @@ export type OpenAIChatCompletionsConversationMessage = OpenAIChatCompletionsMess
 export type OpenAIChatCompletionsConversationTurn =
   | { role: 'assistant'; items: [OpenAIChatCompletionsAssistantMessage | OpenAIChatCompletionsAssistantMessageEx] }
   | { role: 'client'; items: Exclude<OpenAIChatCompletionsMessage, { role: 'assistant' }>[] };
-// Each assistant message forms its own turn; adjacent nonprompt client messages form one client run.
+// Each assistant message forms its own turn; adjacent user/tool/function messages form one client run.
 export const partitionOpenAIChatCompletionsTurns = (messages: readonly OpenAIChatCompletionsConversationMessage[]): OpenAIChatCompletionsConversationTurn[] => {
   const turns: OpenAIChatCompletionsConversationTurn[] = [];
   for (const message of messages) {
     const previous = turns.at(-1);
-    // A system or developer message is a prompt boundary of its own: a target
-    // that hoists it into a top-level slot, or keeps it inline, needs it to stay
-    // separate from the client content around it.
+    // A system or developer message keeps its own boundary and role instead of
+    // joining the client content around it.
     if (message.role === 'assistant') {
       turns.push({ role: 'assistant', items: [message] });
       continue;

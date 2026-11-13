@@ -5,10 +5,9 @@ export type OpenAIResponsesConversationTurn = {
   readonly items: CanonicalOpenAIResponsesInputItem[];
 };
 
-// A system or developer message is a prompt boundary of its own: a target that
-// hoists it into a top-level slot, or keeps it inline, needs it to stay separate
-// from the client content around it.
-const isPromptBoundary = (item: CanonicalOpenAIResponsesInputItem): boolean =>
+// A system or developer message keeps its own boundary and role instead of
+// joining the client content around it.
+const isRoleMessageBoundary = (item: CanonicalOpenAIResponsesInputItem): boolean =>
   item.type === 'message' && (item.role === 'system' || item.role === 'developer');
 
 export const partitionOpenAIResponsesTurns = (input: readonly CanonicalOpenAIResponsesInputItem[]): OpenAIResponsesConversationTurn[] => {
@@ -16,7 +15,7 @@ export const partitionOpenAIResponsesTurns = (input: readonly CanonicalOpenAIRes
   for (const item of input) {
     const role = isOpenAIResponsesAssistantInputItem(item) ? 'assistant' : 'client';
     const previous = turns.at(-1);
-    if (isPromptBoundary(item) || previous?.role !== role || previous.items.some(isPromptBoundary)) {
+    if (isRoleMessageBoundary(item) || previous?.role !== role || previous.items.some(isRoleMessageBoundary)) {
       turns.push({ role, items: [item] });
       continue;
     }

@@ -59,3 +59,37 @@ test('native Chat custom results preserve their result shape on Responses', asyn
   if (trip.type !== 'trip') throw new Error(trip.message);
   expect(trip.target.input.at(-1)).toEqual({ type: 'custom_tool_call_output', call_id: 'c', output: 'done' });
 });
+
+test.each([
+  { type: 'future_format', syntax: 'lark', definition: 'start: "ok"' },
+  { type: 'grammar', syntax: 'lark' },
+])('preserves unrecognized custom format in IR and rejects it at target writing: %j', async format => {
+  const payload: OpenAIResponsesRequestPayloadEx = {
+    model: 'm', stream: true, input: [],
+    tools: [{ type: 'custom', name: 'edit', format }],
+  };
+  const tool = readOpenAIResponsesRequest(payload).request.tools?.[0];
+  expect(tool).toEqual({ type: 'custom', name: 'edit', format: { type: 'unrecognized', value: format } });
+
+  for (const route of [routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions]) {
+    const result = await route(payload, { sidecarCodec: createTestSidecarCodec() });
+    expect(result).toMatchObject({ type: 'input-error', message: 'Cannot translate an unrecognized custom tool format.' });
+    expect(result).not.toBeInstanceOf(Error);
+  }
+});
+
+test('an allowed-tools subset does not hide an unrecognized tool declaration', async () => {
+  const payload: OpenAIResponsesRequestPayloadEx = {
+    model: 'm', stream: true, input: [],
+    tools: [
+      { type: 'function', name: 'read', parameters: { type: 'object', properties: {} }, strict: false },
+      { type: 'custom', name: 'edit', format: { type: 'future_format' } },
+    ],
+    tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: 'read' }] },
+  };
+  expect(readOpenAIResponsesRequest(payload).request.tools).toHaveLength(2);
+  for (const route of [routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions]) {
+    const result = await route(payload, { sidecarCodec: createTestSidecarCodec() });
+    expect(result).toMatchObject({ type: 'input-error', message: 'Cannot translate an unrecognized custom tool format.' });
+  }
+});

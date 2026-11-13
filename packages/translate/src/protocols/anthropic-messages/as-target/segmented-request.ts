@@ -1,9 +1,9 @@
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from './cache-breakpoints.ts';
 import { anthropicMessagesConversationFromIR, anthropicMessagesHeaderFromIR } from './input-from.ts';
 import { type RestoredAssistantTurn } from '../../../composition/reading.ts';
+import type { IRInputTurnWithCallIds } from '../../../composition/request/call-ids.ts';
+import { segmentTurns } from '../../../composition/request/segments.ts';
 import type { IRInputRequestHeader } from '../../../ir/input/types.ts';
-import type { IRInputTurnWithCallIds } from '../../../request/call-ids.ts';
-import { segmentTurns } from '../../../request/segments.ts';
 import type { TranslateOptions } from '../../../types.ts';
 import type { AnthropicMessagesMessage, AnthropicMessagesPayload, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
 
@@ -14,7 +14,7 @@ import type { AnthropicMessagesMessage, AnthropicMessagesPayload, AnthropicMessa
 export const anthropicMessagesPayloadFromSegments = (
   request: IRInputRequestHeader,
   turns: readonly (IRInputTurnWithCallIds | RestoredAssistantTurn<AnthropicMessagesMessage>)[],
-  options: Pick<TranslateOptions, 'fallbackMaxOutputTokens'> = {},
+  options: Pick<TranslateOptions, 'fallbackMaxOutputTokens'>,
 ): AnthropicMessagesPayload => {
   const system: AnthropicMessagesTextBlockParam[] = [];
   const messages: AnthropicMessagesMessage[] = [];
@@ -25,8 +25,8 @@ export const anthropicMessagesPayloadFromSegments = (
       restored.add(piece.turn);
       continue;
     }
-    // Only a conversation's first segment may lift its leading prompt into the
-    // top-level `system` slot, and segmentation is what says which that is.
+    // Only the first segment may project its instruction or leading
+    // system/developer messages into the top-level `system` slot.
     const segment = anthropicMessagesConversationFromIR(piece.turns, piece.leading);
     system.push(...segment.system);
     messages.push(...segment.messages);

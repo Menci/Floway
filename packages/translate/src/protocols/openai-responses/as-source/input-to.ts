@@ -5,7 +5,6 @@ import { partitionOpenAIResponsesTurns, type OpenAIResponsesConversationTurn } f
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from './programmatic-tooling.ts';
 import type { OpenAIResponsesSourceAssistantTurn } from './round-trip.ts';
 import type { SourceReading } from '../../../composition/reading.ts';
-import { mediaFromURL, mediaOrThrow } from '../../../ir/input/media.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -35,7 +34,7 @@ import type {
 } from '@floway-dev/protocols/openai-responses';
 
 const imageMedia = (part: Extract<OpenAIResponsesInputContent, { type: 'input_image' }>): IRInputMedia => {
-  if (typeof part.image_url === 'string') return mediaOrThrow(mediaFromURL(part.image_url), part.image_url);
+  if (typeof part.image_url === 'string') return { source_kind: 'url', url: part.image_url };
   if (typeof part.file_id === 'string') return { source_kind: 'file', file_id: part.file_id };
   throw new TranslateInputException('An OpenAI Responses input_image requires image_url or file_id.');
 };
@@ -44,12 +43,7 @@ const fileMedia = (part: Extract<OpenAIResponsesInputContent, { type: 'input_fil
   if (typeof part.file_id === 'string') return { source_kind: 'file', file_id: part.file_id };
   if (typeof part.file_url === 'string') return { source_kind: 'url', url: part.file_url };
   if (typeof part.file_data === 'string') {
-    // `file_data` is either raw base64 or a data URL; a data URL also states the
-    // media type a target may need. A data URL this cannot decode is not raw
-    // base64 — labelling it so would send the URL text itself as the payload.
-    const media = mediaFromURL(part.file_data);
-    if (media === undefined) throw new TranslateInputException('An OpenAI Responses input_file states a data URL this translation cannot decode.');
-    return media.source_kind === 'base64' ? media : { source_kind: 'base64', data: part.file_data };
+    return { source_kind: 'data', data: part.file_data };
   }
   throw new TranslateInputException('An OpenAI Responses input_file requires file_id, file_url, or file_data.');
 };
@@ -72,7 +66,7 @@ const userContent = (content: string | OpenAIResponsesInputContent[]): IRInputUs
   ? content === '' ? [] : [{ type: 'text', text: content }]
   : content.map(userContentPart);
 
-const promptPartsToIR = (message: OpenAIResponsesInputMessageEx): IRInputTextPart[] => typeof message.content === 'string'
+const textPartsToIR = (message: OpenAIResponsesInputMessageEx): IRInputTextPart[] => typeof message.content === 'string'
   ? message.content === '' ? [] : [{ type: 'text', text: message.content }]
   : message.content.map(part => {
       if (part.type !== 'input_text' && part.type !== 'output_text') {
@@ -142,9 +136,9 @@ const clientItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInp
   switch (item.type) {
   case 'message':
     switch (item.role) {
-    case 'user': return [{ type: 'message' as const, content: userContent(item.content) }];
+    case 'user': return [{ type: 'message' as const, role: 'user' as const, content: userContent(item.content) }];
     case 'system':
-    case 'developer': return [{ type: 'prompt' as const, role: item.role, content: promptPartsToIR(item) }];
+    case 'developer': return [{ type: 'message' as const, role: item.role, content: textPartsToIR(item) }];
     default: throw new TranslateInputException(`Invalid role '${item.role}' in input message.`);
     }
   case 'function_call_output': {
@@ -175,7 +169,7 @@ const clientItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInp
 });
 
 const openaiResponsesInstructionsToIR = (instructions: string | null | undefined): IRInputTurn | undefined => instructions
-  ? { kind: 'client', items: [{ type: 'prompt', role: 'system', content: [{ type: 'text', text: instructions }] }] }
+  ? { kind: 'client', items: [{ type: 'instruction', content: [{ type: 'text', text: instructions }] }] }
   : undefined;
 
 const openaiResponsesTurnToIR = (turn: OpenAIResponsesConversationTurn): IRInputTurn[] => {
@@ -190,16 +184,18 @@ const toolToIR = (tool: Extract<OpenAIResponsesTool, { type: 'function' | 'custo
   const group = namespace ?? ('namespace' in tool && typeof tool.namespace === 'string' ? tool.namespace : undefined);
   const identity = group === undefined ? {} : { namespace: group };
   if (tool.type === 'custom') {
-    const format = tool.format as { type?: unknown; definition?: unknown; syntax?: unknown } | undefined;
+    const format = tool.format;
     return {
       type: 'custom',
       name: tool.name,
       ...identity,
       ...(tool.description == null ? {} : { description: tool.description }),
-      ...(format === undefined || typeof format.type !== 'string' ? {} : {
-        format: format.type === 'grammar' && typeof format.definition === 'string'
-          ? { type: 'grammar', definition: format.definition, syntax: String(format.syntax ?? '') }
-          : { type: 'text' },
+      ...(format === undefined ? {} : {
+        format: format.type === 'text'
+          ? { type: 'text' }
+          : format.type === 'grammar' && typeof format.definition === 'string' && typeof format.syntax === 'string'
+            ? { type: 'grammar', definition: format.definition, syntax: format.syntax }
+            : { type: 'unrecognized', value: format },
       }),
     };
   }
@@ -229,15 +225,20 @@ const selectionToIR = (selection: IRInputToolSelector, declarations: readonly IR
 // A selector may name a whole group, which selects each callable it holds.
 const selectorOf = (payload: CanonicalOpenAIResponsesPayload, selector: Record<string, unknown>, declarations: readonly IRInputTool[]): IRInputToolSelector[] => {
   if (typeof selector !== 'object' || selector?.type !== 'namespace') return [selectionToIR(requireCallableSelector(selector), declarations)];
+  if (typeof selector.name !== 'string' || Object.keys(selector).some(key => key !== 'type' && key !== 'name')) {
+    throw new TranslateInputException('Cannot translate namespace selector extensions.');
+  }
   if (!toolInventories(payload).some(tool => tool.type === 'namespace' && tool.name === selector.name)) {
     throw new TranslateInputException(`Cannot translate group selector '${String(selector.name)}' without a matching declaration.`);
   }
   return declarations.flatMap(({ type, namespace, name }) => namespace === selector.name ? [{ type, namespace, name }] : []);
 };
 
-const toolChoiceToIR = (payload: CanonicalOpenAIResponsesPayload, declarations: readonly IRInputTool[]): IRInputToolChoice => {
-  const choice = payload.tool_choice;
-  if (choice == null) throw new TranslateInputException('Cannot translate a missing tool choice.');
+const toolChoiceToIR = (
+  payload: CanonicalOpenAIResponsesPayload,
+  choice: NonNullable<CanonicalOpenAIResponsesPayload['tool_choice']>,
+  declarations: readonly IRInputTool[],
+): IRInputToolChoice => {
   if (typeof choice === 'string') {
     if (choice === 'auto' || choice === 'none' || choice === 'required') return choice;
     // Any other bare string is a hosted selector, which names a callable this
@@ -275,11 +276,12 @@ const toolGroupToIR = (tool: OpenAIResponsesTool): IRInputTool[] => {
       }
       // A group's own description qualifies each child's, the way one merged
       // declaration states it.
-      const childDescription = child.description ?? undefined;
+      const parentDescription = tool.description === '' ? undefined : tool.description;
+      const childDescription = child.description === '' ? undefined : child.description;
       return [toolToIR(
-        tool.description === undefined
+        parentDescription === undefined
           ? child
-          : { ...child, description: childDescription === undefined ? tool.description : `${tool.description}\n\n${childDescription}` },
+          : { ...child, description: childDescription === undefined ? parentDescription : `${parentDescription}\n\n${childDescription}` },
         tool.name,
       )];
     });
@@ -305,7 +307,7 @@ const latestDeclarations = (tools: readonly IRInputTool[]): IRInputTool[] =>
 const openaiResponsesToolsToIR = (payload: CanonicalOpenAIResponsesPayload): Pick<IRInputRequestHeader, 'tools' | 'tool_choice'> => {
   const declarations = latestDeclarations(toolInventories(payload).flatMap(toolGroupToIR));
   const tools = declarations.length === 0 ? undefined : declarations;
-  const toolChoice = payload.tool_choice == null ? undefined : toolChoiceToIR(payload, declarations);
+  const toolChoice = payload.tool_choice == null ? undefined : toolChoiceToIR(payload, payload.tool_choice, declarations);
   return {
     ...(tools === undefined ? {} : { tools }),
     ...(toolChoice === undefined ? {} : { tool_choice: toolChoice }),
@@ -328,23 +330,23 @@ const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): 
           ...('schema' in format && format.schema !== undefined && format.schema !== null && typeof format.schema === 'object'
             ? { schema: klona(format.schema) as Record<string, unknown> }
             : {}),
-          ...('strict' in format && typeof format.strict === 'boolean' ? { strict: format.strict } : {}),
+          ...('strict' in format && format.strict !== undefined ? { strict: format.strict } : {}),
         }
       : { type: format.type };
 
   return {
     model: payload.model,
     stream: payload.stream === true,
-    ...(payload.temperature == null ? {} : { temperature: payload.temperature }),
-    ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
+    ...(payload.temperature === undefined ? {} : { temperature: payload.temperature }),
+    ...(payload.top_p === undefined ? {} : { top_p: payload.top_p }),
     ...(payload.presence_penalty === undefined ? {} : { presence_penalty: payload.presence_penalty }),
     ...(payload.frequency_penalty === undefined ? {} : { frequency_penalty: payload.frequency_penalty }),
     ...(payload.max_output_tokens === undefined ? {} : { max_output_tokens: payload.max_output_tokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
-    ...(payload.metadata == null ? {} : { metadata: payload.metadata }),
-    ...(payload.store == null ? {} : { store: payload.store }),
-    ...(payload.service_tier == null ? {} : { service_tier: payload.service_tier }),
-    ...(payload.parallel_tool_calls == null ? {} : { parallel_tool_calls: payload.parallel_tool_calls }),
+    ...(payload.metadata === undefined ? {} : { metadata: payload.metadata }),
+    ...(payload.store === undefined ? {} : { store: payload.store }),
+    ...(payload.service_tier === undefined ? {} : { service_tier: payload.service_tier }),
+    ...(payload.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: payload.parallel_tool_calls }),
     ...(payload.reasoning?.effort == null ? {} : { reasoning_effort: payload.reasoning.effort }),
     ...(payload.reasoning?.summary == null ? {} : { reasoning_summary: payload.reasoning.summary }),
     ...(payload.prompt_cache_key === undefined ? {} : { prompt_cache_key: payload.prompt_cache_key }),
@@ -368,23 +370,18 @@ export const readOpenAIResponsesRequest = (source: OpenAIResponsesRequestPayload
   if (!('input' in canonical)) throw new TranslateInputException(canonical.error.message, canonical.error);
   rejectProgrammaticOpenAIResponsesPayload(canonical);
 
-  const prompt = openaiResponsesInstructionsToIR(canonical.instructions);
+  const instruction = openaiResponsesInstructionsToIR(canonical.instructions);
   return {
     request: {
       settings: openaiResponsesSettingsToIR(canonical),
       ...openaiResponsesToolsToIR(canonical),
     },
     turns: [
-      ...(prompt === undefined ? [] : [{ kind: 'client' as const, toIRInputTurns: () => [prompt] }]),
+      ...(instruction === undefined ? [] : [{ kind: 'client' as const, toIRInputTurns: () => [instruction] }]),
       ...partitionOpenAIResponsesTurns(canonical.input).map(turn => turn.role === 'assistant'
         ? {
             kind: 'assistant' as const,
             assistantTurn: turn.items,
-            readCallIdentities: () => turn.items.flatMap(item => item.type === 'function_call' || item.type === 'custom_tool_call' ? [{
-              type: item.type === 'function_call' ? 'function' as const : 'custom' as const,
-              name: item.name, call_id: item.call_id,
-              ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
-            }] : []),
             toIRInputTurns: () => openaiResponsesTurnToIR(turn),
           }
         : { kind: 'client' as const, toIRInputTurns: () => openaiResponsesTurnToIR(turn) }),

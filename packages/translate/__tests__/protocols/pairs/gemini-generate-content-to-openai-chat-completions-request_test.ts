@@ -11,6 +11,16 @@ const buildWithTestSidecar = (
   model: string,
 ) => buildTargetPayloadFor(pairs.geminiToChat[0], pairs.geminiToChat[1], { ...payload, model }, { sidecarCodec: createTestSidecarCodec() });
 
+test('ProtoJSON null scalar members are treated as unset', async () => {
+  const request = await buildWithTestSidecar({
+    contents: [],
+    generationConfig: { candidateCount: null as never, presencePenalty: null as never, frequencyPenalty: null as never },
+  }, 'gpt-test');
+  assertEquals(request.n, undefined);
+  assertEquals(request.presence_penalty, undefined);
+  assertEquals(request.frequency_penalty, undefined);
+});
+
 test('buildTargetPayload translates LOW to reasoning_effort', async () => {
   const request = await buildWithTestSidecar({
     contents: [],
@@ -286,6 +296,7 @@ test('buildTargetPayload maps generation config and reasoning effort', async () 
     stream: true,
     stream_options: { include_usage: true, continuous_usage_stats: true },
     messages: [],
+    max_tokens: 512,
     max_completion_tokens: 512,
     temperature: 0.25,
     top_p: 0.8,
@@ -621,9 +632,6 @@ test('VALIDATED restricts calls without changing declarations while leaving the 
 });
 
 test('a call with no argument object is written with an empty one', async () => {
-  // GenerateContent states no `args` for a call that takes none, and the IR
-  // keeps it absent. Chat requires `arguments`, so the empty object is how that
-  // call's argument list is spelled on the wire.
   const request = await buildWithTestSidecar({ contents: [{ role: 'model', parts: [{ functionCall: { name: 'f' } }] }] }, 'gpt-test');
 
   const call = request.messages.flatMap(message => message.role === 'assistant' && message.tool_calls !== undefined ? message.tool_calls : [])[0];

@@ -1,29 +1,23 @@
-import type { IRInputRequestHeader, IRInputToolSelector, IRInputTurn } from '../ir/input/types.ts';
-
-export interface SourceCallIdentity extends IRInputToolSelector {
-  readonly call_id?: string;
-}
+import type { IRInputRequestHeader, IRInputTurn } from '../ir/input/types.ts';
 
 export interface RestoredAssistantTurn<Turn> {
   readonly kind: 'restored';
   readonly turn: Turn;
-  readonly callIdentities: readonly SourceCallIdentity[];
 }
 
-/** Native turns authenticate sidecars; naming facts are read separately while restored turns bypass lazy IR conversion. */
+/** Native turns authenticate sidecars and bypass lazy IR conversion. */
 export type SourceTurnSlot<AssistantTurn> =
   | { readonly kind: 'client'; readonly toIRInputTurns: () => IRInputTurn[] }
   | {
     readonly kind: 'assistant';
     readonly assistantTurn: AssistantTurn;
-    readonly readCallIdentities: () => readonly SourceCallIdentity[];
     readonly toIRInputTurns: () => IRInputTurn[];
   };
 
 /**
  * A request read into what a writer consumes.
  *
- * The request's own prompt field opens `turns` when the protocol has one. It is
+ * The request's own instruction field opens `turns` when the protocol has one. It is
  * a client turn rather than a field of its own, which is what lets a writer
  * place it by position the same way it places every other turn.
  */
@@ -40,12 +34,12 @@ export const resolveReading = async <AssistantTurn, Resolved>(
   const append = (input: readonly IRInputTurn[]): void => {
     for (const turn of input) {
       const previous = turns.at(-1);
-      // Prompts retain their own boundary for target-side hoisting. Other
+      // Instructions and system/developer messages retain their source boundaries. Other
       // adjacent client pieces belong to the same turn, including server
       // results followed by the client's next message.
       if (previous?.kind === 'client' && turn.kind === 'client'
-        && !previous.items.some(item => item.type === 'prompt')
-        && !turn.items.some(item => item.type === 'prompt')) {
+        && !previous.items.some(item => item.type === 'instruction' || item.type === 'message' && item.role !== 'user')
+        && !turn.items.some(item => item.type === 'instruction' || item.type === 'message' && item.role !== 'user')) {
         turns[turns.length - 1] = { kind: 'client', items: [...previous.items, ...turn.items] };
       } else {
         turns.push(turn);
@@ -62,7 +56,7 @@ export const resolveReading = async <AssistantTurn, Resolved>(
       append(turn.toIRInputTurns());
       continue;
     }
-    turns.push({ kind: 'restored', turn: result, callIdentities: turn.readCallIdentities() });
+    turns.push({ kind: 'restored', turn: result });
   }
   return turns;
 };

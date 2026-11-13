@@ -10,13 +10,64 @@ const buildWithTestSidecar = (
   model: string,
 ) => buildTargetPayloadFor(pairs.geminiToResponses[0], pairs.geminiToResponses[1], { ...payload, model }, { sidecarCodec: createTestSidecarCodec() });
 
+test('ProtoJSON null configuration members are treated as unset', async () => {
+  const absentConfig = await buildWithTestSidecar({ contents: [], generationConfig: null as never }, 'gpt-test');
+  assertEquals(absentConfig.reasoning, undefined);
+
+  const nullAllowedNames = await buildWithTestSidecar({
+    contents: [], tools: [{ functionDeclarations: [{ name: 'f' }] }],
+    toolConfig: { functionCallingConfig: { mode: 'ANY', allowedFunctionNames: null as never } },
+  }, 'gpt-test');
+  assertEquals(nullAllowedNames.tool_choice, 'required');
+
+  const nullBudget = await buildWithTestSidecar({
+    contents: [], generationConfig: { thinkingConfig: { thinkingLevel: 'LOW', thinkingBudget: null as never } },
+  }, 'gpt-test');
+  assertEquals(nullBudget.reasoning, { effort: 'low' });
+
+  const nullLevel = await buildWithTestSidecar({
+    contents: [], generationConfig: { thinkingConfig: { thinkingLevel: null as never, thinkingBudget: 1024 } },
+  }, 'gpt-test');
+  assertEquals(nullLevel.reasoning, { effort: 'low' });
+
+  const nullScalars = await buildWithTestSidecar({
+    contents: [{ role: null as never, parts: [{ text: 'hello' }] }],
+    generationConfig: {
+      candidateCount: null as never,
+      presencePenalty: null as never,
+      frequencyPenalty: null as never,
+      responseSchema: null as never,
+    },
+    tools: [{ functionDeclarations: [{ name: 'lookup', parameters: null as never }] }],
+  }, 'gpt-test');
+  assertEquals(nullScalars.input, [{ type: 'message', role: 'user', content: 'hello' }]);
+  assertFalse('presence_penalty' in nullScalars);
+  assertFalse('frequency_penalty' in nullScalars);
+  assertEquals(nullScalars.text, undefined);
+  assertEquals(nullScalars.tools?.[0]?.type === 'function' ? nullScalars.tools[0].parameters : undefined, { type: 'object', properties: {} });
+});
+
+test('generated Responses call IDs stay within the wire limit', async () => {
+  const name = 'f'.repeat(64);
+  const result = await buildWithTestSidecar({
+    contents: [
+      { role: 'model', parts: [{ functionCall: { name, args: {} } }] },
+      { role: 'user', parts: [{ functionResponse: { name, response: { ok: true } } }] },
+    ],
+  }, 'gpt-test');
+  const call = result.input.find(item => item.type === 'function_call');
+  const output = result.input.find(item => item.type === 'function_call_output');
+  assertEquals(call?.type === 'function_call' ? call.call_id.length : undefined, 64);
+  assertEquals(output?.type === 'function_call_output' ? output.call_id : undefined, call?.type === 'function_call' ? call.call_id : undefined);
+});
+
 test('buildTargetPayload translates LOW to reasoning.effort', async () => {
   const request = await buildWithTestSidecar({
     contents: [],
     generationConfig: { thinkingConfig: { thinkingLevel: 'LOW', includeThoughts: true } },
   }, 'gpt-test');
 
-  assertEquals(request.reasoning, { effort: 'low', summary: 'detailed' });
+  assertEquals(request.reasoning, { effort: 'low' });
 });
 
 test('buildTargetPayload forwards an empty thinkingLevel verbatim', async () => {
@@ -25,7 +76,7 @@ test('buildTargetPayload forwards an empty thinkingLevel verbatim', async () => 
     generationConfig: { thinkingConfig: { thinkingLevel: '', includeThoughts: true } },
   }, 'gpt-test');
 
-  assertEquals(request.reasoning, { effort: '', summary: 'detailed' });
+  assertEquals(request.reasoning, { effort: '' });
 });
 
 test('buildTargetPayload preserves an explicit empty thinkingLevel beside a budget', async () => {
@@ -34,7 +85,7 @@ test('buildTargetPayload preserves an explicit empty thinkingLevel beside a budg
     generationConfig: { thinkingConfig: { thinkingBudget: 2048, thinkingLevel: '', includeThoughts: true } },
   }, 'gpt-test');
 
-  assertEquals(request.reasoning, { effort: '', summary: 'detailed' });
+  assertEquals(request.reasoning, { effort: '' });
 });
 
 test('buildTargetPayload maps instructions and multimodal user input without defaults', async () => {
@@ -226,7 +277,7 @@ test('buildTargetPayload maps generation config, JSON schema, and reasoning cont
         name: 'gemini_response', schema,
       },
     },
-    reasoning: { effort: 'medium', summary: 'detailed' },
+    reasoning: { effort: 'medium' },
   });
 
   assertEquals((await buildWithTestSidecar({ contents: [], generationConfig: { responseMimeType: 'application/json' } }, 'gpt-test')).text, { format: { type: 'json_object' } });
@@ -240,7 +291,7 @@ test('buildTargetPayload never invents reasoning.context from Gemini generateCon
     },
   }, 'gpt-test');
 
-  assertEquals(result.reasoning, { effort: 'high', summary: 'detailed' });
+  assertEquals(result.reasoning, { effort: 'high' });
   assertEquals(result.reasoning?.context, undefined);
   assertFalse('context' in (result.reasoning ?? {}));
 });
@@ -493,9 +544,6 @@ test.each([undefined, []])('preserves an empty model turn with parts %j', async 
 });
 
 test('a call with no argument object is written with an empty one', async () => {
-  // GenerateContent states no `args` for a call that takes none, and the IR
-  // keeps it absent. This wire requires `arguments`, so the empty object is how
-  // that call's argument list is spelled on the wire.
   const request = await buildWithTestSidecar({ contents: [{ role: 'model', parts: [{ functionCall: { name: 'f' } }] }] }, 'gpt-test');
 
   const call = request.input.find(item => item.type === 'function_call');
@@ -513,5 +561,5 @@ test('an orphaned tool choice is not stated', async () => {
 
 test.each([undefined, 1024, -1])('preserves includeThoughts without a thinking level for budget %s', async thinkingBudget => {
   const request = await buildWithTestSidecar({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget, includeThoughts: true } } }, 'm');
-  assertEquals(request.reasoning, { ...(thinkingBudget === 1024 ? { effort: 'low' } : {}), summary: 'detailed' });
+  assertEquals(request.reasoning, thinkingBudget === 1024 ? { effort: 'low' } : undefined);
 });

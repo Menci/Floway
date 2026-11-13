@@ -2,8 +2,8 @@ import { readOpenAIChatCompletionsEvents } from './as-target/events.ts';
 import { chatLegacyCallsOf } from './as-target/legacy-calls.ts';
 import { openaiChatCompletionsPayloadFromSegments } from './as-target/segmented-request.ts';
 import type { TargetProtocol } from '../../composition/index.ts';
-import { assignCallIds, type PendingCall } from '../../request/call-ids.ts';
-import { allocateToolNames, type ToolNameContext } from '../../request/tool-names.ts';
+import { assignCallIds, type PendingCall } from '../../composition/request/call-ids.ts';
+import { allocateToolNames, type ToolNameContext } from '../../composition/request/tool-names.ts';
 import type { InputAssistantTurnFor } from '../../round-trip/input-assistant-turn.ts';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -34,29 +34,13 @@ export const openaiChatCompletionsTargetProtocol: TargetProtocol<
   // This wire addresses a callable by one bare name, so every grouped
   // declaration and call is stated under the flat spelling it computes.
   write: (request, turns) => {
-    const flattened = allocateToolNames(request, turns, {
-      ids: turn => [
-        ...(turn.function_call == null ? [] : [undefined]),
-        ...(turn.tool_calls ?? []).map(call => call.id),
-      ],
-      rename: (turn, names) => {
-        let index = 0;
-        return {
-          ...turn,
-          ...(turn.function_call == null ? {} : { function_call: { ...turn.function_call, name: names[index++]! } }),
-          ...(turn.tool_calls === undefined ? {} : {
-            tool_calls: turn.tool_calls.map(call => call.type === 'function'
-              ? { ...call, function: { ...call.function, name: names[index++]! } }
-              : { ...call, custom: { ...call.custom, name: names[index++]! } }),
-          }),
-        };
-      },
-    });
-    const legacy = chatLegacyCallsOf(flattened.turns);
+    const legacy = chatLegacyCallsOf(turns);
+    const assigned = assignCallIds(turns, turn => callsOf(turn, legacy.callIds), { resultCallIds: legacy.results });
+    const flattened = allocateToolNames(request, assigned);
     return {
       payload: openaiChatCompletionsPayloadFromSegments(
         flattened.request,
-        assignCallIds(flattened.turns, turn => callsOf(turn, legacy.callIds)),
+        flattened.turns,
         legacy.names,
       ),
       context: flattened.context,

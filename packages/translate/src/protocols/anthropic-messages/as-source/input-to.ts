@@ -3,7 +3,6 @@ import { klona } from 'klona/json';
 import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn } from './conversation-turns.ts';
 import type { AnthropicMessagesSourceAssistantTurn } from './round-trip.ts';
 import type { SourceReading, SourceTurnSlot } from '../../../composition/reading.ts';
-import { mediaFromURL, mediaOrThrow } from '../../../ir/input/media.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputRequestHeader,
@@ -12,6 +11,8 @@ import type {
   IRInputToolChoice,
   IRInputOutputFormat,
   IRInputAssistantItem,
+  IRInputDocument,
+  IRInputDocumentContentPart,
   IRInputMedia,
   IRInputTextPart,
   IRInputToolResultContentPart,
@@ -37,38 +38,52 @@ import { FAST_SERVICE_TIER } from '@floway-dev/protocols/common';
 const imageMedia = (source: AnthropicMessagesImageBlock['source']): IRInputMedia => {
   switch (source.type) {
   case 'base64': return { source_kind: 'base64', media_type: source.media_type, data: source.data };
-  case 'url': return mediaOrThrow(mediaFromURL(source.url), source.url);
+  case 'url': return { source_kind: 'url', url: source.url };
   case 'file': return { source_kind: 'file', file_id: source.file_id };
   }
 };
 
-const promptPartsToIR = (content: string | readonly AnthropicMessagesTextBlockParam[]): IRInputTextPart[] => typeof content === 'string'
+const textPartsToIR = (content: string | readonly AnthropicMessagesTextBlockParam[]): IRInputTextPart[] => typeof content === 'string'
   ? content === '' ? [] : [{ type: 'text', text: content }]
   : content.map(block => {
       if (block.type !== 'text') throw new TranslateInputException('Only text system content is supported.');
       return { type: 'text', text: block.text };
     });
 
-const base64Of = (text: string): string => {
-  const bytes = new TextEncoder().encode(text);
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
-};
-
-const documentMedia = (block: Extract<AnthropicMessagesUserContentBlock, { type: 'document' }>): IRInputMedia => {
-  const source = block.source;
-  switch (source.type) {
-  case 'base64': return { source_kind: 'base64', media_type: source.media_type, data: source.data };
-  case 'url': return { source_kind: 'url', url: source.url };
-  case 'file': return { source_kind: 'file', file_id: source.file_id };
-  // A `text` document source carries the document's bytes as plain text, while
-  // every target that accepts a file expects base64. Encoding here keeps the
-  // IR's media arms uniform.
-  case 'text': return { source_kind: 'base64', media_type: source.media_type, data: base64Of(source.data) };
-  case 'content':
-    throw new TranslateInputException('Cannot translate an inline content document; supply a base64, URL, text, or file source.');
+const documentFromBlock = (block: Extract<AnthropicMessagesUserContentBlock, { type: 'document' }>): IRInputDocument => {
+  const native = block.source;
+  let source: IRInputDocument['source'];
+  switch (native.type) {
+  case 'base64': source = { source_kind: 'media', media: { source_kind: 'base64', media_type: native.media_type, data: native.data } }; break;
+  case 'url': source = { source_kind: 'media', media: { source_kind: 'url', url: native.url } }; break;
+  case 'file': source = { source_kind: 'media', media: { source_kind: 'file', file_id: native.file_id } }; break;
+  case 'text': source = { source_kind: 'text', media_type: native.media_type, text: native.data }; break;
+  case 'content': {
+    const content: IRInputDocumentContentPart[] = typeof native.content === 'string'
+      ? [{ type: 'text', text: native.content }]
+      : native.content.map(part => {
+          const cache = part.cache_control === undefined ? {} : { cache_control: part.cache_control };
+          if (part.type === 'text') return {
+            type: 'text', text: part.text, ...cache,
+            ...(part.citations === undefined ? {} : { citations: part.citations }),
+          };
+          if (part.type === 'image') return {
+            type: 'image', image: imageMedia(part.source), ...cache,
+            ...(part.transformations === undefined ? {} : { transformations: part.transformations }),
+          };
+          throw new TranslateInputException(`'${(part as { type: string }).type}' document content block is not supported.`);
+        });
+    source = { source_kind: 'content', content };
+    break;
   }
+  }
+  return {
+    source,
+    ...(block.title === undefined ? {} : { title: block.title }),
+    ...(block.context === undefined ? {} : { context: block.context }),
+    ...(block.citations === undefined ? {} : { citations: block.citations }),
+    ...(block.cache_control === undefined ? {} : { cache_control: block.cache_control }),
+  };
 };
 
 interface MessagePosition {
@@ -83,7 +98,7 @@ const userContentPart = (
   switch (block.type) {
   case 'text': return { type: 'text', text: block.text };
   case 'image': return { type: 'image', image: imageMedia(block.source) };
-  case 'document': return { type: 'file', file: documentMedia(block) };
+  case 'document': return { type: 'document', document: documentFromBlock(block) };
   default: throw new TranslateInputException(`messages.${at.messageIdx}.content.${at.blockIdx}.type: '${(block as { type: string }).type}' content blocks are not supported in user content.`);
   }
 };
@@ -108,7 +123,8 @@ const toolResultPart = (block: AnthropicMessagesToolResultBlock['content']): IRI
     flushSearchResults();
     if (part.type === 'text') parts.push({ type: 'text', text: part.text });
     else if (part.type === 'image') parts.push({ type: 'image', image: imageMedia(part.source) });
-    else throw new TranslateInputException(`'${(part as { type: string }).type}' tool result content blocks are not supported.`);
+    else if (part.type === 'document') parts.push({ type: 'document', document: documentFromBlock(part) });
+    else parts.push({ type: 'text', text: JSON.stringify(part) });
   }
   flushSearchResults();
   return parts;
@@ -119,20 +135,17 @@ const clientItems = (
   messageIdx: number,
 ): IRInputClientItem[] => {
   if (message.role === 'system') {
-    if (typeof message.content !== 'string' && message.content.some(block => block.type !== 'text')) {
-      throw new TranslateInputException('Only text system content is supported.');
-    }
-    return [{ type: 'prompt', role: 'system', content: promptPartsToIR(message.content as string | readonly AnthropicMessagesTextBlockParam[]) }];
+    return [{ type: 'message', role: 'system', content: textPartsToIR(message.content as string | readonly AnthropicMessagesTextBlockParam[]) }];
   }
   if (typeof message.content === 'string') {
-    return [{ type: 'message', content: message.content === '' ? [] : [{ type: 'text', text: message.content }] }];
+    return [{ type: 'message', role: 'user', content: message.content === '' ? [] : [{ type: 'text', text: message.content }] }];
   }
 
   const items: IRInputClientItem[] = [];
   const pending: IRInputUserContentPart[] = [];
   const flush = (): void => {
     if (pending.length === 0) return;
-    items.push({ type: 'message', content: [...pending] });
+    items.push({ type: 'message', role: 'user', content: [...pending] });
     pending.length = 0;
   };
 
@@ -215,6 +228,10 @@ const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'a
         type: 'tool_result',
         call_id: result.tool_use_id,
         output: JSON.stringify(result.content),
+        ...(typeof result.content === 'object' && result.content !== null && !Array.isArray(result.content)
+          && 'type' in result.content && typeof result.content.type === 'string' && result.content.type.endsWith('_error')
+          ? { is_error: true }
+          : {}),
       });
       flushSegment();
       continue;
@@ -249,13 +266,13 @@ const assistantSegments = (message: Extract<AnthropicMessagesMessage, { role: 'a
 
 const anthropicMessagesSystemToIR = (system: AnthropicMessagesPayload['system']): IRInputTurn | undefined => {
   if (system === undefined) return undefined;
-  const content = promptPartsToIR(system);
-  return content.length === 0 ? undefined : { kind: 'client', items: [{ type: 'prompt', role: 'system', content }] };
+  const content = textPartsToIR(system);
+  return content.length === 0 ? undefined : { kind: 'client', items: [{ type: 'instruction', content }] };
 };
 
 const anthropicMessagesTurnToIR = (
   turn: AnthropicMessagesConversationTurn,
-  firstMessageIndex = 0,
+  firstMessageIndex: number,
 ): IRInputTurn[] => {
   if (turn.role === 'assistant') {
     const turns: IRInputTurn[] = [];
@@ -320,7 +337,7 @@ const anthropicMessagesToolsToIR = (payload: AnthropicMessagesPayload): Pick<IRI
   const toolChoice = payload.tool_choice == null ? undefined : toolChoiceToIR(payload.tool_choice, declarations);
   return {
     ...(declarations.length === 0 ? {} : { tools: declarations }),
-    ...(toolChoice === undefined ? {} : { tool_choice: toolChoice }),
+    ...(toolChoice === undefined || declarations.length === 0 && toolChoice === 'required' ? {} : { tool_choice: toolChoice }),
   };
 };
 
@@ -387,7 +404,7 @@ const reasoningEffortToIR = (payload: AnthropicMessagesPayload): string | undefi
 /**
  * A Messages request read into the turns a writer consumes.
  *
- * Messages states its prompt in a top-level field and its conversation in
+ * Messages states its instruction in a top-level field and its conversation in
  * `messages`; both enter the IR, and the request-wide fields come from the same
  * payload.
  *
@@ -405,8 +422,8 @@ export const readAnthropicMessagesRequest = (payload: AnthropicMessagesPayload):
   const turns: SourceTurnSlot<AnthropicMessagesSourceAssistantTurn>[] = [];
   let messageIndex = 0;
 
-  const prompt = anthropicMessagesSystemToIR(payload.system);
-  if (prompt !== undefined) turns.push({ kind: 'client', toIRInputTurns: () => [prompt] });
+  const instruction = anthropicMessagesSystemToIR(payload.system);
+  if (instruction !== undefined) turns.push({ kind: 'client', toIRInputTurns: () => [instruction] });
 
   for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
     const firstMessageIndex = messageIndex;
@@ -415,9 +432,6 @@ export const readAnthropicMessagesRequest = (payload: AnthropicMessagesPayload):
       turns.push({
         kind: 'assistant',
         assistantTurn: turn.items,
-        readCallIdentities: () => turn.items.flatMap(message => typeof message.content === 'string' ? [] : message.content.flatMap(block => block.type === 'tool_use' || block.type === 'server_tool_use'
-          ? [{ type: 'function' as const, name: block.name, call_id: block.id }]
-          : [])),
         toIRInputTurns: () => anthropicMessagesTurnToIR(turn, firstMessageIndex),
       });
       continue;

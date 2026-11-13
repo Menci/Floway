@@ -3,10 +3,14 @@ import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesPayloadEx } from
 
 export const rejectProgrammaticOpenAIResponsesPayload = (payload: OpenAIResponsesPayloadEx): void => {
   const toolChoice = payload.tool_choice;
-  if (payload.tools?.some(hasProgrammaticCaller) === true || (toolChoice !== null && typeof toolChoice === 'object' && toolChoice.type === 'programmatic_tool_calling')) {
+  const tools = [
+    ...(payload.tools ?? []),
+    ...(Array.isArray(payload.input) ? payload.input.flatMap(item => item.type === 'additional_tools' || item.type === 'tool_search_output' ? item.tools : []) : []),
+  ];
+  if (tools.some(hasProgrammaticCaller) || (toolChoice !== null && typeof toolChoice === 'object' && toolChoice.type === 'programmatic_tool_calling')) {
     throw new TranslateInputException('Programmatic OpenAI Responses tooling cannot be translated.');
   }
-  if (payload.tools?.some(hasDeferredTool) === true) {
+  if (tools.some(hasDeferredTool)) {
     throw new TranslateInputException('Deferred OpenAI Responses tooling cannot be translated.');
   }
 };

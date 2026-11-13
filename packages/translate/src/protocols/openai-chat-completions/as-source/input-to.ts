@@ -3,7 +3,6 @@ import { klona } from 'klona/json';
 import { partitionOpenAIChatCompletionsTurns, type OpenAIChatCompletionsConversationMessage, type OpenAIChatCompletionsConversationTurn } from './conversation-turns.ts';
 import type { OpenAIChatCompletionsSourceAssistantTurn } from './round-trip.ts';
 import type { SourceReading } from '../../../composition/reading.ts';
-import { mediaFromURL, mediaOrThrow } from '../../../ir/input/media.ts';
 import type {
   IRInputAssistantContentPart,
   IRInputAssistantItem,
@@ -27,14 +26,12 @@ import type {
   OpenAIChatCompletionsPayload,
   OpenAIChatCompletionsTool,
   OpenAIChatCompletionsUserContentPart,
-  OpenAIChatCompletionsPayloadEx,
 } from '@floway-dev/protocols/openai-chat-completions';
 
-// Normalize Chat audio container names to the input IR's MIME representation.
 const AUDIO_MEDIA_TYPES: Readonly<Record<string, string>> = { wav: 'audio/wav', mp3: 'audio/mp3' };
 
 // Explicit empty user and assistant messages retain their turn boundaries.
-// Empty prompt text contributes no text to the prompt.
+// A caller can explicitly keep or omit an empty text part.
 const textPartsToIR = (value: string, options: { keepEmpty?: boolean } = {}): IRInputTextPart[] => value === '' && options.keepEmpty === false ? [] : [{ type: 'text', text: value }];
 
 interface OpenAIChatCompletionsInputContext {
@@ -78,7 +75,7 @@ const userContentPart = (part: OpenAIChatCompletionsUserContentPart): IRInputUse
   case 'image_url':
     return {
       type: 'image',
-      image: mediaOrThrow(mediaFromURL(part.image_url.url), part.image_url.url),
+      image: { source_kind: 'url', url: part.image_url.url },
       ...(part.image_url.detail === undefined ? {} : { detail: part.image_url.detail }),
     };
   case 'input_audio':
@@ -87,10 +84,9 @@ const userContentPart = (part: OpenAIChatCompletionsUserContentPart): IRInputUse
     const filename = part.file.filename === undefined ? {} : { filename: part.file.filename };
     if (part.file.file_id !== undefined) return { type: 'file', file: { source_kind: 'file', file_id: part.file.file_id }, ...filename };
     if (part.file.file_data !== undefined) {
-      const media = mediaOrThrow(mediaFromURL(part.file.file_data), part.file.file_data);
       return {
         type: 'file',
-        file: media.source_kind === 'base64' ? media : { source_kind: 'base64', data: part.file.file_data },
+        file: { source_kind: 'data', data: part.file.file_data },
         ...filename,
       };
     }
@@ -116,14 +112,15 @@ const assistantItems = (turn: Extract<OpenAIChatCompletionsConversationTurn, { r
     : (message.content ?? []).map(part => part.type === 'text'
         ? { type: 'text' as const, text: part.text }
         : { type: 'refusal' as const, refusal: part.refusal });
-  if (message.refusal !== undefined && message.refusal !== null && !content.some(part => part.type === 'refusal')) {
+  if (message.refusal !== undefined && message.refusal !== null) {
     content.push({ type: 'refusal', refusal: message.refusal });
   }
 
   // A null content with nothing else to say is an explicitly empty assistant
   // message; with tool calls or a refusal it is simply absent.
   const legacyCall = message.function_call ?? undefined;
-  const emptyMessage = message.content == null && message.refusal == null && (message.tool_calls?.length ?? 0) === 0 && legacyCall === undefined;
+  const emptyMessage = Array.isArray(message.content) && message.content.length === 0
+    || message.content == null && message.refusal == null && (message.tool_calls?.length ?? 0) === 0 && legacyCall === undefined;
   const items: IRInputAssistantItem[] = emptyMessage
     ? [{ type: 'message', content: [{ type: 'text', text: '' }] }]
     : content.length > 0 ? [{ type: 'message', content }] : [];
@@ -166,8 +163,6 @@ const openaiChatCompletionsTurnToIR = (
 ): IRInputTurn => {
   if (turn.role === 'assistant') return { kind: 'assistant', items: assistantItems(turn, context, messageIndex) };
 
-  // Every client message in one turn contributes its items, in order, to the
-  // same IR turn; a target that groups them differently reads the item list.
   return { kind: 'client', items: turn.items.flatMap((message, index) => clientItems(message, context, messageIndex + index)) };
 };
 
@@ -176,7 +171,7 @@ const clientItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, 
   case 'system':
   case 'developer':
     return [{
-      type: 'prompt',
+      type: 'message',
       role: message.role,
       // A non-text part in system/developer content has no representation on
       // any target, so it is rejected here rather than dropped silently.
@@ -190,6 +185,7 @@ const clientItems = (message: Exclude<OpenAIChatCompletionsConversationMessage, 
   case 'user':
     return [{
       type: 'message',
+      role: 'user',
       content: message.content == null ? [{ type: 'text', text: '' }] : typeof message.content === 'string' ? textPartsToIR(message.content) : message.content.map(userContentPart),
     }];
   case 'tool': {
@@ -218,9 +214,11 @@ const toolToIR = (tool: OpenAIChatCompletionsTool): IRInputTool => {
       name: tool.custom.name,
       ...(tool.custom.description === undefined ? {} : { description: tool.custom.description }),
       ...(format === undefined ? {} : {
-        format: format.type === 'grammar'
-          ? { type: 'grammar', definition: format.grammar.definition, syntax: format.grammar.syntax }
-          : { type: 'text' },
+        format: format.type === 'text'
+          ? { type: 'text' }
+          : format.type === 'grammar'
+            ? { type: 'grammar', definition: format.grammar.definition, syntax: format.grammar.syntax }
+            : { type: 'unrecognized', value: format },
       }),
     };
   }
@@ -263,9 +261,6 @@ const openaiChatCompletionsRequestToIR = (payload: OpenAIChatCompletionsPayload)
   ...openaiChatCompletionsToolsToIR(payload),
 });
 
-export const continuousUsageOf = (payload: OpenAIChatCompletionsPayloadEx): boolean =>
-  payload.stream_options?.include_usage === true && payload.stream_options?.continuous_usage_stats === true;
-
 const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload): IRInputSettings => {
   const format = payload.response_format;
   const outputFormat: IRInputOutputFormat | undefined = format === undefined ? undefined
@@ -277,24 +272,24 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
           ...(format.json_schema.schema === undefined ? {} : { schema: klona(format.json_schema.schema) }),
           // The tool-side and format-side `strict` share a spelling; an omitted
           // format strictness stays absent so the target applies its own default.
-          ...(format.json_schema.strict == null ? {} : { strict: format.json_schema.strict }),
+          ...(format.json_schema.strict === undefined ? {} : { strict: format.json_schema.strict }),
         }
       : { type: format.type };
 
   return {
     model: payload.model,
     stream: payload.stream === true,
-    ...(payload.temperature == null ? {} : { temperature: payload.temperature }),
-    ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
+    ...(payload.temperature === undefined ? {} : { temperature: payload.temperature }),
+    ...(payload.top_p === undefined ? {} : { top_p: payload.top_p }),
     ...(payload.stop == null ? {} : { stop: typeof payload.stop === 'string' ? [payload.stop] : [...payload.stop] }),
     ...(payload.seed == null ? {} : { seed: payload.seed }),
     ...(payload.max_tokens === undefined ? {} : { max_visible_output_tokens: payload.max_tokens }),
     ...(payload.max_completion_tokens === undefined ? {} : { max_output_tokens: payload.max_completion_tokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
     ...(payload.metadata == null ? {} : { metadata: payload.metadata }),
-    ...(payload.store == null ? {} : { store: payload.store }),
+    ...(payload.store === undefined ? {} : { store: payload.store }),
     ...(payload.service_tier == null ? {} : { service_tier: payload.service_tier }),
-    ...(payload.parallel_tool_calls == null ? {} : { parallel_tool_calls: payload.parallel_tool_calls }),
+    ...(payload.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: payload.parallel_tool_calls }),
     ...(payload.reasoning_effort == null ? {} : { reasoning_effort: payload.reasoning_effort }),
     ...(payload.prompt_cache_key === undefined ? {} : { prompt_cache_key: payload.prompt_cache_key }),
     ...(payload.prompt_cache_retention === undefined ? {} : { prompt_cache_retention: payload.prompt_cache_retention }),
@@ -323,15 +318,6 @@ export const readOpenAIChatCompletionsRequest = (payload: OpenAIChatCompletionsP
         ? {
             kind: 'assistant' as const,
             assistantTurn: turn.items[0],
-            readCallIdentities: () => {
-              const message = turn.items[0];
-              return [
-                ...(message.function_call == null ? [] : [{ type: 'function' as const, name: message.function_call.name, call_id: context.legacyIds[at]! }]),
-                ...(message.tool_calls ?? []).map(call => call.type === 'custom'
-                  ? { type: 'custom' as const, name: call.custom.name, call_id: call.id }
-                  : { type: 'function' as const, name: call.function.name, call_id: call.id }),
-              ];
-            },
             toIRInputTurns: () => [openaiChatCompletionsTurnToIR(turn, context, at)],
           }
         : { kind: 'client' as const, toIRInputTurns: () => [openaiChatCompletionsTurnToIR(turn, context, at)] };

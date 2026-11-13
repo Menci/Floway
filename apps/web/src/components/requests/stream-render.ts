@@ -38,7 +38,11 @@ export const detectCollectKind = (path: string): CollectKind | null => {
   if (path.includes('/responses')) return 'openai-responses';
   if (path.includes('/chat/completions')) return 'openai-chat-completions';
   if (path.includes('/completions')) return 'openai-completions';
-  if (path.includes('/v1beta/') || path.includes(':generateContent')) return 'gemini-generate-content';
+  // A Gemini turn carries its action in the model path segment
+  // (`…:generateContent`), optionally followed by `?alt=sse`. The listing
+  // paths end at `/models`, so the action name discriminates regardless of
+  // whether the turn arrived under `v1` or `v1beta`.
+  if (/:(?:generateContent|streamGenerateContent|countTokens)(?:\?|$)/.test(path)) return 'gemini-generate-content';
   return null;
 };
 

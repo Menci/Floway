@@ -166,7 +166,7 @@ test('buildTargetPayload preserves explicit null prompt cache and safety fields'
   assertEquals(result.safety_identifier, null);
 });
 
-test('buildTargetPayload hoists only the initial contiguous system prefix', async () => {
+test('buildTargetPayload keeps historical system and developer messages inline', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     messages: [
@@ -179,8 +179,10 @@ test('buildTargetPayload hoists only the initial contiguous system prefix', asyn
     ],
   });
 
-  assertEquals(result.instructions, 'sys-1\n\nsys-2');
+  assertEquals(result.instructions, undefined);
   assertEquals(result.input, [
+    { type: 'message', role: 'system', content: 'sys-1' },
+    { type: 'message', role: 'system', content: 'sys-2' },
     { type: 'message', role: 'user', content: 'u1' },
     { type: 'message', role: 'developer', content: 'dev-late' },
     { type: 'message', role: 'system', content: 'sys-late' },
@@ -192,7 +194,7 @@ test('buildTargetPayload hoists only the initial contiguous system prefix', asyn
   ]);
 });
 
-test('buildTargetPayload hoists a leading developer prefix beside a system one', async () => {
+test('buildTargetPayload preserves leading developer and system message roles', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     messages: [
@@ -202,10 +204,12 @@ test('buildTargetPayload hoists a leading developer prefix beside a system one',
     ],
   });
 
-  // A developer message is the same prompt boundary a system message is, so a
-  // leading run of either kind is what `instructions` states.
-  assertEquals(result.instructions, 'dev-1\n\nsys-1');
-  assertEquals(result.input, [{ type: 'message', role: 'user', content: 'u1' }]);
+  assertEquals(result.instructions, undefined);
+  assertEquals(result.input, [
+    { type: 'message', role: 'developer', content: 'dev-1' },
+    { type: 'message', role: 'system', content: 'sys-1' },
+    { type: 'message', role: 'user', content: 'u1' },
+  ]);
 });
 
 test('buildTargetPayload preserves explicit tool strict and defaults omission to false', async () => {
