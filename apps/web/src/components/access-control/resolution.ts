@@ -13,16 +13,12 @@ export const useAccessResolution = ({ enabled, excludeRecordId, principal, revis
   const principalKind = principal?.kind;
   const principalId = principal?.id;
   const scopeJson = scope === null ? null : JSON.stringify(scope);
-  const request = useMemo(() => enabled && principalKind !== undefined && principalId !== undefined && scopeJson !== null && scope?.kind !== 'self' ? {
+  const target = useMemo(() => principalKind !== undefined && principalId !== undefined && scopeJson !== null && scope?.kind !== 'self' ? {
     json: { principal: { kind: principalKind, id: principalId }, scope: JSON.parse(scopeJson) as Exclude<AccessScope, { kind: 'self' }>, ...(excludeRecordId === undefined ? {} : { excludeRecordId }) },
     revision,
-  } : null, [enabled, excludeRecordId, principalId, principalKind, revision, scopeJson, scope?.kind]);
+  } : null, [excludeRecordId, principalId, principalKind, revision, scopeJson, scope?.kind]);
+  const request = enabled ? target : null;
   const [result, setResult] = useState<{ request: typeof request; data: AccessResolution | null; error: string | null } | null>(null);
-  // Closing the dialog disables the request, but the surface is still mounted
-  // for its exit motion. Throwing the last resolution away in that frame makes
-  // every permission field flash "Inherit (unknown)". The last result is only
-  // dropped when the principal or scope actually changes.
-  const [lastRequest, setLastRequest] = useState<typeof request>(null);
   useEffect(() => {
     if (request === null) return;
     const controller = new AbortController();
@@ -32,9 +28,9 @@ export const useAccessResolution = ({ enabled, excludeRecordId, principal, revis
     });
     return () => controller.abort();
   }, [request]);
-  if (request !== lastRequest && request !== null) setLastRequest(request);
-  const current = result === null ? null
-    : request === null ? result.request === lastRequest ? result : null
-      : result.request === request ? result : null;
+  // Disabling keeps the result for an unchanged target: a closing dialog stays
+  // mounted for its exit motion, and dropping the result in that frame would
+  // flash every permission field to "Inherit (unknown)".
+  const current = result?.request === target ? result : null;
   return { data: current?.data ?? null, error: current?.error ?? null, pending: request !== null && current === null };
 };
