@@ -73,18 +73,33 @@ const mediaDocumentBlock = (media: IRInputMedia): Extract<AnthropicMessagesUserC
 
 const documentBlock = (document: IRInputDocument): Extract<AnthropicMessagesUserContentBlock, { type: 'document' }> => {
   const source = document.source;
-  if (source.source_kind === 'media') return mediaDocumentBlock(source.media);
+  const properties = {
+    ...(document.title === undefined ? {} : { title: document.title }),
+    ...(document.context === undefined ? {} : { context: document.context }),
+    ...(document.citations === undefined ? {} : { citations: document.citations }),
+    ...(document.cache_control === undefined ? {} : { cache_control: document.cache_control }),
+  };
+  if (source.source_kind === 'media') return { ...mediaDocumentBlock(source.media), ...properties };
   if (source.source_kind === 'text') {
-    return { type: 'document', source: { type: 'text', media_type: source.media_type, data: source.text } };
+    return { type: 'document', source: { type: 'text', media_type: source.media_type, data: source.text }, ...properties };
   }
   return {
     type: 'document',
     source: {
       type: 'content',
       content: source.content.map(part => part.type === 'text'
-        ? { type: 'text' as const, text: part.text }
-        : imageBlock(part.image)),
+        ? {
+            type: 'text' as const, text: part.text,
+            ...(part.citations === undefined ? {} : { citations: part.citations as AnthropicMessagesTextBlockParam['citations'] }),
+            ...(part.cache_control === undefined ? {} : { cache_control: part.cache_control }),
+          }
+        : {
+            ...imageBlock(part.image),
+            ...(part.transformations === undefined ? {} : { transformations: part.transformations }),
+            ...(part.cache_control === undefined ? {} : { cache_control: part.cache_control }),
+          }),
     },
+    ...properties,
   };
 };
 

@@ -214,9 +214,11 @@ const toolToIR = (tool: OpenAIChatCompletionsTool): IRInputTool => {
       name: tool.custom.name,
       ...(tool.custom.description === undefined ? {} : { description: tool.custom.description }),
       ...(format === undefined ? {} : {
-        format: format.type === 'grammar'
-          ? { type: 'grammar', definition: format.grammar.definition, syntax: format.grammar.syntax }
-          : { type: 'text' },
+        format: format.type === 'text'
+          ? { type: 'text' }
+          : format.type === 'grammar'
+            ? { type: 'grammar', definition: format.grammar.definition, syntax: format.grammar.syntax }
+            : { type: 'unrecognized', value: format },
       }),
     };
   }

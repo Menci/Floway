@@ -184,16 +184,18 @@ const toolToIR = (tool: Extract<OpenAIResponsesTool, { type: 'function' | 'custo
   const group = namespace ?? ('namespace' in tool && typeof tool.namespace === 'string' ? tool.namespace : undefined);
   const identity = group === undefined ? {} : { namespace: group };
   if (tool.type === 'custom') {
-    const format = tool.format as { type?: unknown; definition?: unknown; syntax?: unknown } | undefined;
+    const format = tool.format;
     return {
       type: 'custom',
       name: tool.name,
       ...identity,
       ...(tool.description == null ? {} : { description: tool.description }),
-      ...(format === undefined || typeof format.type !== 'string' ? {} : {
-        format: format.type === 'grammar' && typeof format.definition === 'string'
-          ? { type: 'grammar', definition: format.definition, syntax: String(format.syntax ?? '') }
-          : { type: 'text' },
+      ...(format === undefined ? {} : {
+        format: format.type === 'text'
+          ? { type: 'text' }
+          : format.type === 'grammar' && typeof format.definition === 'string' && typeof format.syntax === 'string'
+            ? { type: 'grammar', definition: format.definition, syntax: format.syntax }
+            : { type: 'unrecognized', value: format },
       }),
     };
   }

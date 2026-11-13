@@ -85,6 +85,10 @@ export type IRInputCustomToolFormat =
     readonly type: 'grammar'; // ChatCompletions, Responses
     readonly definition: string; // ChatCompletions, Responses
     readonly syntax: string; // ChatCompletions, Responses
+  }
+  | {
+    readonly type: 'unrecognized'; // ChatCompletions, Responses
+    readonly value: object; // ChatCompletions, Responses
   };
 
 // `allowed_tools` restricts calls without changing the visible declarations.
@@ -204,6 +208,16 @@ export interface IRInputDocumentPart {
 // Messages
 export interface IRInputDocument {
   readonly source: IRInputDocumentSource; // Messages
+  readonly title?: string | null; // Messages
+  readonly context?: string | null; // Messages
+  readonly citations?: { readonly enabled?: boolean } | null; // Messages
+  readonly cache_control?: IRInputCacheControl | null; // Messages
+}
+
+// Messages
+export interface IRInputCacheControl {
+  readonly type: 'ephemeral'; // Messages
+  readonly ttl?: '5m' | '1h'; // Messages
 }
 
 // Messages
@@ -222,9 +236,17 @@ export type IRInputDocumentSource =
     readonly content: readonly IRInputDocumentContentPart[]; // Messages
   };
 
-// Content-backed documents contain text and images, not file parts.
 // Messages
-export type IRInputDocumentContentPart = IRInputTextPart | IRInputImagePart;
+export type IRInputDocumentContentPart = (
+  | (IRInputTextPart & {
+    readonly citations?: readonly object[] | null; // Messages
+  })
+  | (IRInputImagePart & {
+    readonly transformations?: { readonly oversized_image?: 'downsize' | 'error' } | null; // Messages
+  })
+) & {
+  readonly cache_control?: IRInputCacheControl | null; // Messages
+};
 
 // ChatCompletions, GenerateContent
 export interface IRInputAudioPart {

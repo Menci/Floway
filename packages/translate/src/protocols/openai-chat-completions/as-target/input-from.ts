@@ -2,7 +2,7 @@ import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputCl
 import { requireStreaming } from '../../../ir/input/streaming.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputDocument, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
 import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
-import { DOCUMENT_CLOSE_TAG, DOCUMENT_OPEN_TAG, utf8Base64 } from '../../../shared/document.ts';
+import { DOCUMENT_CLOSE_TAG, documentImage, documentOpening } from '../../../shared/document.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import type {
@@ -51,11 +51,11 @@ const documentParts = (document: IRInputDocument): OpenAIChatCompletionsUserCont
   const content = source.source_kind === 'media'
     ? [filePart(source.media)]
     : source.source_kind === 'text'
-      ? [filePart({ source_kind: 'base64', media_type: source.media_type, data: utf8Base64(source.text) })]
+      ? [{ type: 'text' as const, text: source.text }]
       : source.content.map(part => part.type === 'text'
           ? { type: 'text' as const, text: part.text }
-          : imageUrlPart(part.image, part.detail));
-  return [{ type: 'text', text: DOCUMENT_OPEN_TAG }, ...content, { type: 'text', text: DOCUMENT_CLOSE_TAG }];
+          : imageUrlPart(documentImage(part), part.detail));
+  return [{ type: 'text', text: documentOpening(document) }, ...content, { type: 'text', text: DOCUMENT_CLOSE_TAG }];
 };
 
 const userContent = (item: Extract<IRInputClientItem, { type: 'message'; role: 'user' }>): string | OpenAIChatCompletionsUserContentPart[] => {

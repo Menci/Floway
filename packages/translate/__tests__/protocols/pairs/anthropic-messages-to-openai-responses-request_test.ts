@@ -22,7 +22,7 @@ test('server tool errors become incomplete Responses results', async () => {
   assertEquals(output?.type === 'function_call_output' ? output.status : undefined, 'incomplete');
 });
 
-test('document tool results enter the IR as files', async () => {
+test('plain-text document tool results keep their document boundary', async () => {
   const result = await buildWithTestSidecar({
     model: 'm', max_tokens: 32, messages: [
       { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'read', input: {} }] },
@@ -30,7 +30,34 @@ test('document tool results enter the IR as files', async () => {
     ],
   });
   const output = result.input.find(item => item.type === 'function_call_output');
-  assertEquals(output?.type === 'function_call_output' ? output.output : undefined, [{ type: 'input_file', file_data: 'data:text/plain;base64,aGVsbG8=' }]);
+  assertEquals(output?.type === 'function_call_output' ? output.output : undefined, [
+    { type: 'input_text', text: '<document>' },
+    { type: 'input_text', text: 'hello' },
+    { type: 'input_text', text: '</document>' },
+  ]);
+});
+
+test('preserves metadata on a document inside a Responses tool result', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'read', input: {} }] },
+      {
+        role: 'user', content: [{
+          type: 'tool_result', tool_use_id: 'c', content: [{
+            type: 'document', title: 'Report', context: 'USD',
+            citations: { enabled: true }, cache_control: { type: 'ephemeral', ttl: '5m' },
+            source: { type: 'content', content: [{ type: 'text', text: 'revenue' }] },
+          }],
+        }],
+      },
+    ],
+  });
+  const output = result.input.find(item => item.type === 'function_call_output');
+  assertEquals(output?.type === 'function_call_output' ? output.output : undefined, [
+    { type: 'input_text', text: '<document>\n<title>Report</title>\n<context>USD</context>' },
+    { type: 'input_text', text: 'revenue' },
+    { type: 'input_text', text: '</document>', prompt_cache_breakpoint: { mode: 'explicit' } },
+  ]);
 });
 
 test('mixed tool-result blocks keep documents formal and unknown blocks opaque', async () => {
@@ -103,6 +130,49 @@ test('inline mixed document content retains text and image order inside tags', a
       { type: 'input_text', text: '<document>' },
       { type: 'input_text', text: 'caption' },
       { type: 'input_image', image_url: 'data:image/png;base64,AAAA' },
+      { type: 'input_text', text: '</document>' },
+    ],
+  }]);
+});
+
+test('projects document metadata and cache breakpoints while dropping unsupported citation controls', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [{
+      role: 'user', content: [{
+        type: 'document', title: 'Report <1>', context: 'A & B',
+        citations: { enabled: true }, cache_control: { type: 'ephemeral', ttl: '1h' },
+        source: {
+          type: 'content', content: [
+            { type: 'text', text: 'caption', cache_control: { type: 'ephemeral', ttl: '5m' } },
+            { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' }, cache_control: null },
+          ],
+        },
+      }],
+    }],
+  });
+  assertEquals(result.input, [{
+    type: 'message', role: 'user', content: [
+      { type: 'input_text', text: '<document>\n<title>Report &lt;1&gt;</title>\n<context>A &amp; B</context>' },
+      { type: 'input_text', text: 'caption', prompt_cache_breakpoint: { mode: 'explicit' } },
+      { type: 'input_image', image_url: 'data:image/png;base64,AAAA', prompt_cache_breakpoint: null },
+      { type: 'input_text', text: '</document>', prompt_cache_breakpoint: { mode: 'explicit' } },
+    ],
+  }]);
+});
+
+test('keeps metadata around a Responses file without inventing a filename', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [{
+      role: 'user', content: [{
+        type: 'document', title: 'Report',
+        source: { type: 'base64', media_type: 'application/pdf', data: 'AAAA' },
+      }],
+    }],
+  });
+  assertEquals(result.input, [{
+    type: 'message', role: 'user', content: [
+      { type: 'input_text', text: '<document>\n<title>Report</title>' },
+      { type: 'input_file', file_data: 'data:application/pdf;base64,AAAA' },
       { type: 'input_text', text: '</document>' },
     ],
   }]);

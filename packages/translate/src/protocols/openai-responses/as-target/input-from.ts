@@ -1,7 +1,8 @@
 import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../composition/request/call-ids.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
-import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputDocument, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
-import { DOCUMENT_CLOSE_TAG, DOCUMENT_OPEN_TAG, utf8Base64 } from '../../../shared/document.ts';
+import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputCacheControl, IRInputDocument, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
+import { requireKnownCustomToolFormat } from '../../../shared/custom-tool.ts';
+import { DOCUMENT_CLOSE_TAG, documentImage, documentOpening } from '../../../shared/document.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import type {
@@ -45,18 +46,25 @@ const fileContent = (media: IRInputMedia, filename?: string | null): OpenAIRespo
   }
 };
 
+const withDocumentCache = (part: OpenAIResponsesInputContent, cache: IRInputCacheControl | null | undefined): OpenAIResponsesInputContent =>
+  cache === undefined ? part : { ...part, prompt_cache_breakpoint: cache === null ? null : { mode: 'explicit' } };
+
 const documentContent = (document: IRInputDocument): OpenAIResponsesInputContent[] => {
   const source = document.source;
-  if (source.source_kind === 'media') return [fileContent(source.media)];
-  if (source.source_kind === 'text') {
-    return [fileContent({ source_kind: 'base64', media_type: source.media_type, data: utf8Base64(source.text) })];
+  if (source.source_kind === 'media' && document.title == null && document.context == null) {
+    return [withDocumentCache(fileContent(source.media), document.cache_control)];
   }
+  const content: OpenAIResponsesInputContent[] = source.source_kind === 'media'
+    ? [fileContent(source.media)]
+    : source.source_kind === 'text'
+      ? [{ type: 'input_text', text: source.text }]
+      : source.content.map(part => withDocumentCache(part.type === 'text'
+          ? { type: 'input_text', text: part.text }
+          : inputContent(documentImage(part), part.detail), part.cache_control));
   return [
-    { type: 'input_text', text: DOCUMENT_OPEN_TAG },
-    ...source.content.map(part => part.type === 'text'
-      ? { type: 'input_text' as const, text: part.text }
-      : inputContent(part.image, part.detail)),
-    { type: 'input_text', text: DOCUMENT_CLOSE_TAG },
+    { type: 'input_text', text: documentOpening(document) },
+    ...content,
+    withDocumentCache({ type: 'input_text', text: DOCUMENT_CLOSE_TAG }, document.cache_control),
   ];
 };
 
@@ -183,13 +191,14 @@ const normalizeParameters = (schema: Readonly<Record<string, unknown>> | undefin
 
 const toolFromIR = (tool: IRInputTool): OpenAIResponsesTool => {
   if (tool.type === 'custom') {
+    const format = requireKnownCustomToolFormat(tool.format);
     return {
       type: 'custom',
       name: tool.name,
       ...(tool.description === undefined ? {} : { description: tool.description }),
-      ...(tool.format === undefined ? {} : {
-        format: tool.format.type === 'grammar'
-          ? { type: 'grammar', definition: tool.format.definition, syntax: tool.format.syntax }
+      ...(format === undefined ? {} : {
+        format: format.type === 'grammar'
+          ? { type: 'grammar', definition: format.definition, syntax: format.syntax }
           : { type: 'text' },
       }),
     };

@@ -52,6 +52,32 @@ test('content-backed document tool output is lifted with its document tags', asy
   ]);
 });
 
+test('lifts a tool-result document with metadata while dropping unsupported cache and citation controls', async () => {
+  const result = await buildWithTestSidecar({
+    model: 'm', max_tokens: 32, messages: [
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'read', input: {} }] },
+      {
+        role: 'user', content: [{
+          type: 'tool_result', tool_use_id: 'c', content: [{
+            type: 'document', title: 'Report <1>', context: 'A & B',
+            citations: { enabled: true }, cache_control: { type: 'ephemeral', ttl: '1h' },
+            source: { type: 'base64', media_type: 'application/pdf', data: 'AAAA' },
+          }],
+        }],
+      },
+    ],
+  });
+  assertEquals(result.messages.at(-2), { role: 'tool', tool_call_id: 'c', content: 'Document output is attached in the following user message.' });
+  assertEquals(result.messages.at(-1), {
+    role: 'user', content: [
+      { type: 'text', text: 'Document output from tool call c:' },
+      { type: 'text', text: '<document>\n<title>Report &lt;1&gt;</title>\n<context>A &amp; B</context>' },
+      { type: 'file', file: { file_data: 'data:application/pdf;base64,AAAA' } },
+      { type: 'text', text: '</document>' },
+    ],
+  });
+});
+
 test('buildTargetPayload maps thinking.disabled to reasoning_effort none', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
@@ -703,7 +729,7 @@ test('rejects a metadata value the neutral model cannot state as a string pair',
   );
 });
 
-test('buildTargetPayload marks a plain-text document around its file part', async () => {
+test('buildTargetPayload marks a plain-text document around its text', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -716,7 +742,7 @@ test('buildTargetPayload marks a plain-text document around its file part', asyn
   if (!Array.isArray(part)) throw new Error('expected a content array');
   assertEquals(part, [
     { type: 'text', text: '<document>' },
-    { type: 'file', file: { file_data: 'data:text/plain;base64,aGVsbG8gd29ybGQ=' } },
+    { type: 'text', text: 'hello world' },
     { type: 'text', text: '</document>' },
   ]);
 });

@@ -51,23 +51,39 @@ const textPartsToIR = (content: string | readonly AnthropicMessagesTextBlockPara
     });
 
 const documentFromBlock = (block: Extract<AnthropicMessagesUserContentBlock, { type: 'document' }>): IRInputDocument => {
-  const source = block.source;
-  switch (source.type) {
-  case 'base64': return { source: { source_kind: 'media', media: { source_kind: 'base64', media_type: source.media_type, data: source.data } } };
-  case 'url': return { source: { source_kind: 'media', media: { source_kind: 'url', url: source.url } } };
-  case 'file': return { source: { source_kind: 'media', media: { source_kind: 'file', file_id: source.file_id } } };
-  case 'text': return { source: { source_kind: 'text', media_type: source.media_type, text: source.data } };
+  const native = block.source;
+  let source: IRInputDocument['source'];
+  switch (native.type) {
+  case 'base64': source = { source_kind: 'media', media: { source_kind: 'base64', media_type: native.media_type, data: native.data } }; break;
+  case 'url': source = { source_kind: 'media', media: { source_kind: 'url', url: native.url } }; break;
+  case 'file': source = { source_kind: 'media', media: { source_kind: 'file', file_id: native.file_id } }; break;
+  case 'text': source = { source_kind: 'text', media_type: native.media_type, text: native.data }; break;
   case 'content': {
-    const content: IRInputDocumentContentPart[] = typeof source.content === 'string'
-      ? [{ type: 'text', text: source.content }]
-      : source.content.map(part => {
-          if (part.type === 'text') return { type: 'text' as const, text: part.text };
-          if (part.type === 'image') return { type: 'image' as const, image: imageMedia(part.source) };
+    const content: IRInputDocumentContentPart[] = typeof native.content === 'string'
+      ? [{ type: 'text', text: native.content }]
+      : native.content.map(part => {
+          const cache = part.cache_control === undefined ? {} : { cache_control: part.cache_control };
+          if (part.type === 'text') return {
+            type: 'text', text: part.text, ...cache,
+            ...(part.citations === undefined ? {} : { citations: part.citations }),
+          };
+          if (part.type === 'image') return {
+            type: 'image', image: imageMedia(part.source), ...cache,
+            ...(part.transformations === undefined ? {} : { transformations: part.transformations }),
+          };
           throw new TranslateInputException(`'${(part as { type: string }).type}' document content block is not supported.`);
         });
-    return { source: { source_kind: 'content', content } };
+    source = { source_kind: 'content', content };
+    break;
   }
   }
+  return {
+    source,
+    ...(block.title === undefined ? {} : { title: block.title }),
+    ...(block.context === undefined ? {} : { context: block.context }),
+    ...(block.citations === undefined ? {} : { citations: block.citations }),
+    ...(block.cache_control === undefined ? {} : { cache_control: block.cache_control }),
+  };
 };
 
 interface MessagePosition {
