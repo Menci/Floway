@@ -5,6 +5,7 @@
 import { withToolArgumentWhitespaceAborted } from './abort-on-tool-argument-whitespace.ts';
 import { withCacheControlMarkersAttached } from './attach-cache-control-markers.ts';
 import { withInlineImagesCompressed } from './compress-images.ts';
+import { withEquivalentOutputLimitsNormalized } from './normalize-output-limits.ts';
 import { withInitiatorHeaderSet } from './set-initiator-header.ts';
 import { withVisionHeaderSet } from './set-vision-header.ts';
 import type { CopilotOpenAIChatCompletionsBoundaryInterceptor } from './types.ts';
@@ -15,6 +16,7 @@ import type { CopilotOpenAIChatCompletionsBoundaryInterceptor } from './types.ts
 // attachment is a payload mutator, so it sits with the other payload mutators
 // and before any header derivation.
 export const COPILOT_OPENAI_CHAT_COMPLETIONS_BOUNDARY = [
+  withEquivalentOutputLimitsNormalized,
   withInlineImagesCompressed,
   withToolArgumentWhitespaceAborted,
   withCacheControlMarkersAttached,

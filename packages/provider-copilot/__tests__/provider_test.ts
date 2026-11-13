@@ -594,7 +594,9 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
       const opts = noopUpstreamCallOptions();
       const anthropicMessagesOpts = noopAnthropicMessagesUpstreamCallOptions();
 
-      await provider.callOpenAIChatCompletions(byId.get('gpt-chat')!, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+      await provider.callOpenAIChatCompletions(byId.get('gpt-chat')!, {
+        messages: [{ role: 'user', content: 'hi' }], max_tokens: 32000, max_completion_tokens: 32000,
+      }, undefined, opts);
       await provider.callOpenAIResponses(byId.get('gpt-resp')!, { input: [] }, 'generate', undefined, opts);
       await provider.callAnthropicMessages(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
       await provider.callAnthropicMessagesCountTokens(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
@@ -603,6 +605,8 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
   );
 
   assertEquals(bodies['/chat/completions'].stream, true);
+  assertEquals(bodies['/chat/completions'].max_completion_tokens, 32000);
+  assertEquals('max_tokens' in bodies['/chat/completions'], false);
   assertEquals(bodies['/responses'].stream, true);
   assertEquals(bodies['/v1/messages'].stream, true);
   assertEquals('stream' in bodies['/v1/messages/count_tokens'], false);

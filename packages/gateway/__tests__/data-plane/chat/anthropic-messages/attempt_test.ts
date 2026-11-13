@@ -200,10 +200,13 @@ test('generate translate-to-responses branch routes through openaiResponsesAttem
   assertEquals(upstreamHeaders?.has('anthropic-beta'), false);
 });
 
-test('generate does not carry Anthropic Messages beta metadata through translation to OpenAI Chat Completions', async () => {
+test('generate preserves custom Chat output caps without forwarding Anthropic Messages beta metadata', async () => {
   installRepo();
   let upstreamHeaders: Headers | undefined;
-  const callOpenAIChatCompletions = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+  const callOpenAIChatCompletions = vi.fn(async (_model, body, _signal, opts): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+    const payload = body as { max_tokens?: number; max_completion_tokens?: number };
+    assertEquals(payload.max_tokens, 32);
+    assertEquals(payload.max_completion_tokens, 32);
     upstreamHeaders = opts?.headers;
     return {
       ok: true,
@@ -227,6 +230,7 @@ test('generate does not carry Anthropic Messages beta metadata through translati
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
+  assertEquals(callOpenAIChatCompletions.mock.calls.length, 1);
   assertEquals(upstreamHeaders?.has('anthropic-beta'), false);
 });
 
