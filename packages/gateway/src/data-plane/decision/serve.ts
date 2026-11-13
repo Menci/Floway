@@ -42,7 +42,7 @@ const settleDecision = (
   const quantities: UsageQuantities = {};
   if (usage?.inputTokens !== undefined) quantities.input_tokens = parseDecimalString(String(usage.inputTokens));
   const pricingFacts = usage?.inputTokens === undefined ? {} : { inputTokens: usage.inputTokens };
-  ctx.backgroundScheduler(recordUsage(ctx.apiKeyId, identity, quantities, pricingFacts).catch(error => {
+  ctx.backgroundScheduler(recordUsage(ctx.apiKeyId, identity, quantities, pricingFacts, ctx.requestStartedAt).catch(error => {
     console.error('Failed to record decision usage:', error);
   }));
   recordPerformance(ctx, performanceContext, failed, 0, performance.now());

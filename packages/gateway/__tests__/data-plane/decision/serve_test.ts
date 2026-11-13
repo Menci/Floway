@@ -1,8 +1,9 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import type { Repo } from '../../../src/repo/types.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { flushBackground } from '../../test-utils/background-tracker.ts';
 import type { DecisionTarget, ModelPricing } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -95,6 +96,55 @@ test('/v1/systemone forwards a System One request and records input tokens', asy
   const performance = await repo.performance.listAll();
   assertEquals(performance[0]?.operation, 'decision');
   assertEquals(performance[0]?.requests, 1);
+});
+
+test.each([
+  ['/v1/systemone', { model: 'public-decision', state: openAIShape.input, questions: { is_bug: { type: 'noul', instructions: 'Is this a bug?' } } }],
+  ['/v1/decisions', openAIShape],
+] as const)('%s keeps start-time prices when a request finishes in another window', async (path, body) => {
+  const { apiKey, repo } = await setupAppTest();
+  const timeWindow = { timeZone: 'UTC', weekdays: [5], start: '01:00', end: '02:00' };
+  await saveDecisionUpstream(repo, { protocol: 'typesafe-systemone' }, {
+    entries: [
+      { rates: { input_tokens: '1' } },
+      { selector: { timeWindow }, rates: { input_tokens: '2' } },
+    ],
+  });
+  const startedAt = Date.parse('2026-10-16T01:59:59.999Z');
+  const finishedAt = Date.parse('2026-10-16T02:00:05Z');
+  vi.useFakeTimers({ toFake: ['Date'] });
+  try {
+    vi.setSystemTime(startedAt);
+    await withMockedFetch(
+      () => {
+        assertEquals(Date.now(), startedAt);
+        vi.setSystemTime(finishedAt);
+        return jsonResponse({
+          answers: { is_bug: { type: 'noul', noul: 0.92 } },
+          usage: { input_tokens: 12 },
+        });
+      },
+      async () => {
+        const response = await requestAppWithWarmModels(path, {
+          method: 'POST',
+          headers: requestHeaders(apiKey.key),
+          body: JSON.stringify(body),
+        });
+        assertEquals(response.status, 200);
+        await response.arrayBuffer();
+        assertEquals(Date.now(), finishedAt);
+      },
+    );
+    await flushBackground();
+    const usage = await repo.usage.listAll();
+    assertEquals(usage.length, 1);
+    assertEquals(usage[0].requests, 1);
+    assertEquals(usage[0].hour, '2026-10-16T02');
+    assertEquals(usage[0].pricingSelector, { timeWindow });
+    assertEquals(usage[0].metrics, [{ metric: 'input_tokens', quantity: '12', unitPrice: '2' }]);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test('/v1/systemone rejects an unknown model with 404 and a wrong-kind model with 400', async () => {

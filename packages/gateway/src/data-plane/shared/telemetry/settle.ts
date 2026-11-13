@@ -29,7 +29,7 @@ export const settle = (
   failed: boolean,
   requestFinishedAt: number = performance.now(),
 ): void => {
-  ctx.backgroundScheduler(recordTokenUsage(ctx.apiKeyId, identity, usage).catch(error => {
+  ctx.backgroundScheduler(recordTokenUsage(ctx.apiKeyId, identity, usage, ctx.requestStartedAt).catch(error => {
     console.error('Failed to record usage:', error);
   }));
   recordPerformance(ctx, telemetry, failed, usage?.output ?? 0, requestFinishedAt);
@@ -49,6 +49,7 @@ export const settleUsageMeasurement = (
     identity,
     measurement.quantities,
     measurement.pricingFacts,
+    ctx.requestStartedAt,
   ).catch(error => {
     console.error('Failed to record usage:', error);
   }));
