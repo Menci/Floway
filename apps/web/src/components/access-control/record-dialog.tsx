@@ -66,6 +66,8 @@ export function AccessRecordDialog({ data, principalData, initialPrincipal, init
   // until its replacement resolves, so a target never renders without its
   // inherited values. Explicit values outside the new scope are dropped at the
   // same moment, so the outgoing fields keep theirs until they disappear.
+  // While stale they are disabled, and saving does nothing, so no decision is
+  // made against inherited values of a target that is no longer selected.
   const [settled, setSettled] = useState<{ scope: AccessScope | null; data: AccessResolution | null; error: string | null } | null>(null);
   if (!resolution.pending && (settled?.scope !== scope || settled.data !== resolution.data || settled.error !== resolution.error)) {
     setSettled({ scope, data: resolution.data, error: resolution.error });
@@ -112,7 +114,7 @@ export function AccessRecordDialog({ data, principalData, initialPrincipal, init
   };
 
   const save = async (form: FormValues) => {
-    if (saving) return;
+    if (saving || resolution.pending) return;
     const parsed = scopeMode === 'json' ? parseJsonScope() : { scope };
     if (parsed === null) return;
     const finalScope = validateVisualScope(parsed.scope, setScopeError, t('dashboard.accessControl.validation.scopeRequired'));
@@ -175,6 +177,7 @@ export function AccessRecordDialog({ data, principalData, initialPrincipal, init
     </Field>
 
     {permissions.length > 0 && <PermissionFields
+      busy={resolution.pending}
       disabled={saving}
       inherited={settled?.data?.values}
       onChange={(permission, value) => setValues(current => {

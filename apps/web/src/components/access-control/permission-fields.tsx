@@ -25,7 +25,8 @@ const useStyles = makeStyles({
   },
 });
 
-export function PermissionFields({ disabled, inherited, onChange, permissions, values }: {
+export function PermissionFields({ busy, disabled, inherited, onChange, permissions, values }: {
+  busy: boolean;
   disabled: boolean;
   inherited?: AccessValues;
   onChange: (permission: AccessPermission, value: Value) => void;
@@ -34,10 +35,10 @@ export function PermissionFields({ disabled, inherited, onChange, permissions, v
 }) {
   const { t } = useTranslation();
   const styles = useStyles();
-  return <fieldset className="m-0 p-0 border-0 min-w-0" data-permission-editor="radio">
+  return <fieldset aria-busy={busy} className="m-0 p-0 border-0 min-w-0" data-permission-editor="radio">
     <legend className="p-0 mb-2 text-[14px] leading-5 font-normal">{t('dashboard.accessControl.fields.permissions')}</legend>
     <div className={styles.grid}>{permissions.map(permission => <PermissionField
-      disabled={disabled} inherited={inherited?.[permission]} key={permission} levelColumns={permissions.includes('Upstream.Edit')}
+      disabled={disabled || busy} inherited={inherited?.[permission]} key={permission} levelColumns={permissions.includes('Upstream.Edit')}
       onChange={value => onChange(permission, value)} permission={permission} value={values[permission]}
     />)}</div>
   </fieldset>;
