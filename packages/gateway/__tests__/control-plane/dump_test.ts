@@ -1,9 +1,12 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../src/dump/registry.ts';
 import { fakeMeta as baseFakeMeta, fakeRunRecord, installDumpStubs } from '../dump/test-fixtures.ts';
 import { requestApp, setupAppTest } from '../test-utils/app.ts';
+import { testLogStreamStore } from '../test-utils/log-stream.ts';
+import { runStreamId } from '@floway-dev/dump';
 import type { DumpStore, DumpMetadata, DumpRecord, StoredDumpRecord } from '@floway-dev/dump/types';
+import { initLogStreamStore, readLogStream } from '@floway-dev/platform';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const fakeMeta = (id: string, completedAt: number): DumpMetadata =>
@@ -253,4 +256,45 @@ test('GET /api/dump/keys/:keyId/stream delivers a frame appended between snapsho
   // was armed before the publish, so the buffered-subscribe path delivered
   // it.
   assertEquals((parseSseFrame(appended).data as { id: string }).id, '01HZZ0000000000000000000A2');
+});
+
+test('live record reads are framed, seekable, key-scoped and never create an unknown stream', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const store = testLogStreamStore();
+  initLogStreamStore(store);
+  const first = new TextEncoder().encode('{"before":"中"}\n');
+  const second = new TextEncoder().encode('{"after":"β"}\n');
+  const stream = await store.open(runStreamId(apiKey.id, 'active'));
+  await stream.append(0, first); await stream.append(first.byteLength, second); await stream.end();
+  const open = vi.spyOn(store, 'open');
+  const response = await requestApp(`/api/dump/keys/${apiKey.id}/records/active/live?offset=${first.byteLength}`, { headers: { 'x-api-key': apiKey.key } });
+  expect(response.status).toBe(200);
+  const chunks: Uint8Array[] = [];
+  for await (const bytes of readLogStream(response)) chunks.push(bytes);
+  expect(chunks.map(bytes => new TextDecoder().decode(bytes)).join('')).toBe(new TextDecoder().decode(second));
+  const missing = await requestApp(`/api/dump/keys/${apiKey.id}/records/absent/live`, { headers: { 'x-api-key': apiKey.key } });
+  expect(missing.status).toBe(404);
+  expect(open).not.toHaveBeenCalled();
+  const invalid = await requestApp(`/api/dump/keys/${apiKey.id}/records/active/live?offset=-1`, { headers: { 'x-api-key': apiKey.key } });
+  expect(invalid.status).toBe(400);
+  await store.open(runStreamId('foreign-key', 'foreign'));
+  const foreign = await requestApp(`/api/dump/keys/${apiKey.id}/records/foreign/live`, { headers: { 'x-api-key': apiKey.key } });
+  expect(foreign.status).toBe(404);
+});
+
+test('live readers require authentication, key ownership and enabled retention before attaching', async () => {
+  const { repo, apiKey, adminSession } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const store = testLogStreamStore();
+  const stream = await store.open(runStreamId(apiKey.id, 'private'));
+  await stream.end();
+  initLogStreamStore(store);
+  const get = vi.spyOn(store, 'get');
+  const path = `/api/dump/keys/${apiKey.id}/records/private/live`;
+  expect((await requestApp(path, {})).status).toBe(401);
+  expect((await requestApp(path, { headers: { 'x-floway-session': adminSession } })).status).toBe(404);
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: null });
+  expect((await requestApp(path, { headers: { 'x-api-key': apiKey.key } })).status).toBe(404);
+  expect(get).not.toHaveBeenCalled();
 });

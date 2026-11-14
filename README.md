@@ -45,6 +45,27 @@ pnpm install
 pnpm run dev:node
 ```
 
+Pipeline owns the stage-event format and object-space encoding. `@floway-dev/dump` owns
+run recording, stream references, durable NDJSON writing, transient byte streams and metadata
+publication. Gateway supplies storage/broker ports and applies request admission, model
+attribution, HTTP byte measurement and retention policy. Credential-redacted encoded batches flow to durable
+storage with backpressure and to a LogStream at the same byte positions. Three same-offset
+append attempts tolerate lost acknowledgements; persistent live failure leaves durable
+recording active. Empty heartbeats renew the acknowledged position independently of a
+blocked durable writer.
+
+Closing waits for owned readers, deferred outcomes and queued events before assembling
+metadata. The artifact and metadata notification are published before the live stream ends.
+Encoding, metadata or publication failures abort incomplete writes, stop leases and retain
+original errors. Run IDs are assigned at entry; listing remains ordered by completion time
+and ID. The Collected view uses the selected recorded client stream and its `stream.end`
+event to establish recording completion.
+
+The authenticated `GET /api/dump/keys/:keyId/records/:recordId/live?offset=0` endpoint attaches
+to an existing per-key stream through the platform framed byte protocol. Active-run
+discovery, reconnect/list semantics and live dashboard interactions remain separate design
+work; completed records retain the same run-only format.
+
 ## License
 
 MIT

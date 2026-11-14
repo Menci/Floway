@@ -26,8 +26,15 @@ export interface DumpListOptions {
   limit: number;
 }
 
+export interface DumpRunWrite {
+  readonly id: string;
+  readonly startedAt: number;
+  readonly events: ReadableStream<Uint8Array>;
+  readonly metadata: Promise<DumpMetadata>;
+}
+
 export interface DumpStore {
-  put(keyId: string, record: StoredDumpRecord): Promise<void>;
+  putRun(keyId: string, record: DumpRunWrite): Promise<void>;
   list(keyId: string, options: DumpListOptions): Promise<DumpMetadata[]>;
   get(keyId: string, recordId: DumpRecordId): Promise<StoredDumpRecord | null>;
   deleteExpiredBatch(keyId: string, now: number, limit: number): Promise<number>;

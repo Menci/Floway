@@ -1,5 +1,8 @@
+export type FileBody = Uint8Array | ReadableStream<Uint8Array>;
+
 export interface FileStore {
-  put(key: string, body: Uint8Array): Promise<void>;
+  /** Consumes the body and publishes the complete object atomically at EOF. */
+  put(key: string, body: FileBody): Promise<void>;
   get(key: string): Promise<Uint8Array | null>;
   deleteKeys(keys: readonly string[]): Promise<void>;
 }
@@ -18,8 +21,9 @@ export const getFileStore = (): FileStore => {
 export class MemoryFileStore implements FileStore {
   private readonly files = new Map<string, Uint8Array>();
 
-  async put(key: string, body: Uint8Array): Promise<void> {
-    this.files.set(key, body.slice());
+  async put(key: string, body: FileBody): Promise<void> {
+    const bytes = body instanceof Uint8Array ? body.slice() : new Uint8Array(await new Response(body).arrayBuffer());
+    this.files.set(key, bytes);
   }
 
   async get(key: string): Promise<Uint8Array | null> {

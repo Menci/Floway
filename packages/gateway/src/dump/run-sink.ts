@@ -4,8 +4,8 @@ import { attemptTtftMs, type AttemptTiming } from '../data-plane/shared/attempt-
 import type { RequestBody } from '../data-plane/shared/request-body.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
-import { createRunRecorder, type DumpMetadata, type RunRecorder, type StreamRecording } from '@floway-dev/dump';
-import type { BackgroundScheduler } from '@floway-dev/platform';
+import { createRunRecorder, runStreamId, type RunRecorder, type StreamRecording } from '@floway-dev/dump';
+import { getLogStreamStore, type BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
@@ -18,6 +18,7 @@ interface RequestSnapshot {
 }
 
 export class RunDump {
+  readonly id: string;
   private readonly attribution = new DumpAttribution();
   private readonly recorder: RunRecorder;
   readonly sink: RunRecorder['sink'];
@@ -32,9 +33,13 @@ export class RunDump {
     private readonly wantsStream: boolean,
     private readonly timing: AttemptTiming,
   ) {
+    this.id = ulid(startedAt);
     this.recorder = createRunRecorder({
-      write: record => getDumpStore().put(apiKey.id, record),
+      id: this.id, startedAt,
+      write: record => getDumpStore().putRun(apiKey.id, record),
       publish: meta => getDumpBroker().publish(apiKey.id, meta),
+      openLive: () => getLogStreamStore().open(runStreamId(apiKey.id, this.id)),
+      background: backgroundScheduler,
     });
     this.sink = this.recorder.sink;
   }
@@ -120,25 +125,20 @@ export class RunDump {
   }
 
   private async write(status: number | null, responseBytes: number, responseStreamError: string | null): Promise<void> {
-    if (this.runDrain !== null) {
-      try { await this.runDrain(); } catch (error) { this.failed(error); }
-    }
-    const completedAt = Date.now();
-    const recordId = ulid(completedAt);
-    const meta: DumpMetadata = await this.attribution.metadata({
-      id: recordId,
-      startedAt: this.startedAt,
-      completedAt,
-      method: this.requestSnapshot.method,
-      path: this.requestSnapshot.path,
-      status,
-      requestBytes: this.requestSnapshot.bodyByteLength,
-      responseBytes,
-      ttftMs: this.wantsStream ? attemptTtftMs(this.timing) : null,
-      fallbackError: streamReadError(this.requestSnapshot.streamError, responseStreamError),
+    await this.recorder.finish(async () => {
+      if (this.runDrain !== null) {
+        try { await this.runDrain(); } catch (error) { this.failed(error); }
+      }
+      await this.recorder.flush();
+      const completedAt = Date.now();
+      return await this.attribution.metadata({
+        id: this.id, startedAt: this.startedAt, completedAt,
+        method: this.requestSnapshot.method, path: this.requestSnapshot.path, status,
+        requestBytes: this.requestSnapshot.bodyByteLength, responseBytes,
+        ttftMs: this.wantsStream ? attemptTtftMs(this.timing) : null,
+        fallbackError: streamReadError(this.requestSnapshot.streamError, responseStreamError),
+      });
     });
-
-    await this.recorder.finish(meta);
   }
 }
 
