@@ -76,7 +76,6 @@ export function RequestDetailPanel({ collected, upstreamCollected, error, record
 
 function RecordDetail({ record, collected, upstreamCollected }: { record: DumpEdgeRecord; collected: CollectedStream | null; upstreamCollected: CollectedStream | null }) {
   const { t } = useTranslation();
-  const locale = useLocale();
   const [source, setSource] = useState<Source>('response');
   const [view, setView] = useState('collected');
   const [detailsOpen, setDetailsOpen] = useState(false);
