@@ -38,8 +38,8 @@ const ultraCapabilities: CodexCatalogCapabilities = {
 };
 
 describe('assembleCodexCatalog', () => {
-  test('uses the primary Codex provider default for a prefixed model without a matching client entry', () => {
-    const provider = { ...stubModelCandidate().provider, kind: 'codex' as const };
+  test('uses the primary ChatGPT provider default for a prefixed model without a matching client entry', () => {
+    const provider = { ...stubModelCandidate().provider, kind: 'chatgpt' as const };
     const model = {
       ...chat('codex/future-model', 'Future', 600000),
       providerModels: {
@@ -53,9 +53,9 @@ describe('assembleCodexCatalog', () => {
     expect(out.models[0]).toMatchObject({ slug: 'codex/future-model', context_window: 80000, max_context_window: 600000 });
   });
 
-  test('a secondary Codex provider cannot replace the primary provider budget', () => {
+  test('a secondary ChatGPT provider cannot replace the primary provider budget', () => {
     const primary = stubModelCandidate().provider;
-    const secondary = { ...primary, upstreamId: 'secondary', kind: 'codex' as const };
+    const secondary = { ...primary, upstreamId: 'secondary', kind: 'chatgpt' as const };
     const model = {
       ...chat('gpt-5.5', 'Primary', 200000),
       providerModels: {

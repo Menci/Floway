@@ -1,8 +1,8 @@
 import type { UpstreamMetricsMetadata } from './data';
 import type { TFunction } from '../../i18n/translation';
 import { resolveUpstreamMetricDisplaySeries, type UpstreamMetricDisplay, type UpstreamMetricDisplayOptions, type UpstreamMetricDisplaySeries, type UpstreamMetricLabelKey, type UpstreamMetricSample } from '@floway-dev/provider/browser';
+import { resolveUpstreamMetricDisplays as chatgptDisplays } from '@floway-dev/provider-chatgpt/browser';
 import { resolveUpstreamMetricDisplays as claudeCodeDisplays } from '@floway-dev/provider-claude-code/browser';
-import { resolveUpstreamMetricDisplays as codexDisplays } from '@floway-dev/provider-codex/browser';
 import { resolveUpstreamMetricDisplays as copilotDisplays } from '@floway-dev/provider-copilot/browser';
 import { resolveUpstreamMetricDisplays as ollamaDisplays } from '@floway-dev/provider-ollama/browser';
 
@@ -58,7 +58,7 @@ const decodeProviderMetrics = (
   options: UpstreamMetricDisplayOptions,
 ): UpstreamMetricDisplaySeries[] => {
   switch (kind) {
-  case 'codex': return codexDisplays(samples, options);
+  case 'chatgpt': return chatgptDisplays(samples, options);
   case 'copilot': return copilotDisplays(samples, options);
   case 'claude-code': return claudeCodeDisplays(samples, options);
   case 'ollama': return ollamaDisplays(samples, options);

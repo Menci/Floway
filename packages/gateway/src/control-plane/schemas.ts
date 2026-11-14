@@ -402,13 +402,13 @@ const upstreamBaseFields = {
 export const createUpstreamBody = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('custom'), ...upstreamBaseFields, config: customConfigSchema }),
   z.object({ kind: z.literal('azure'), ...upstreamBaseFields, config: azureConfigSchema }),
-  // Copilot / Codex / Claude Code carry OAuth-derived credentials that the
+  // Copilot / ChatGPT / Claude Code carry OAuth-derived credentials that the
   // create page populates via the corresponding OAuth-exchange helper
   // before Save. `state` is accepted here as an opaque payload; the
   // per-kind assertXxxUpstreamRecord in the handler narrows it once the
   // request lands.
   z.object({ kind: z.literal('copilot'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().optional() }),
-  z.object({ kind: z.literal('codex'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().optional() }),
+  z.object({ kind: z.literal('chatgpt'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().optional() }),
   z.object({ kind: z.literal('claude-code'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().optional() }),
   z.object({ kind: z.literal('ollama'), ...upstreamBaseFields, config: ollamaConfigSchema }),
 ]);
@@ -423,7 +423,7 @@ export const createUpstreamBody = z.discriminatedUnion('kind', [
 // without this field the schema would silently strip it and the API would
 // look like it had accepted the change.
 export const updateUpstreamBody = z.object({
-  kind: z.enum(['custom', 'azure', 'copilot', 'codex', 'claude-code', 'ollama']).optional(),
+  kind: z.enum(['custom', 'azure', 'copilot', 'chatgpt', 'claude-code', 'ollama']).optional(),
   name: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   usage_refresh_interval_minutes: z.number().int().nonnegative().optional(),
@@ -435,7 +435,7 @@ export const updateUpstreamBody = z.object({
   hue: upstreamHueSchema.optional(),
   // Patches only carry field diffs, not per-kind shape validation — the
   // handler dispatches on the existing row's kind and enforces the shape
-  // there (Copilot/Codex/Claude Code reject a config patch outright, since
+  // there (Copilot/ChatGPT/Claude Code reject a config patch outright, since
   // OAuth-managed slices belong to the action endpoints; the rest run
   // through `assertXxxUpstreamRecord`). `z.record(z.unknown())` blocks
   // primitives / arrays / null from reaching the handler as `config`.
@@ -467,7 +467,7 @@ export const upstreamRecordEnvelope = z.object({
 
 const recordOnlyBody = z.object({ record: upstreamRecordEnvelope });
 
-// Shared authorize-url contract for the codex and claude-code authorize-url
+// Shared authorize-url contract for the ChatGPT and claude-code authorize-url
 // endpoints: the draft record plus the SPA-held PKCE challenge/state pair.
 const oauthAuthorizeUrlBody = z.object({ record: upstreamRecordEnvelope, challenge: z.string().min(1), state: z.string().min(1) });
 
@@ -480,7 +480,7 @@ export const copilotOAuthDeviceLoginPollBody = z.object({
 
 export const copilotQuotaBody = recordOnlyBody;
 
-// --- codex OAuth (record-body contract) ---
+// --- ChatGPT OAuth (record-body contract) ---
 //
 // PKCE state is fully SPA-held: the dashboard mints `{verifier, challenge,
 // state}` in the browser via Web Crypto, stores `{verifier, state}` in
@@ -488,15 +488,15 @@ export const copilotQuotaBody = recordOnlyBody;
 // them into the upstream's authorize URL. The server never sees the
 // verifier until the callback comes back as `{code, verifier}` on exchange.
 
-export const codexOAuthAuthorizeUrlBody = oauthAuthorizeUrlBody;
+export const chatgptOAuthAuthorizeUrlBody = oauthAuthorizeUrlBody;
 
 // Preview takes no record: it reads a pasted document and reports what is in
 // it, without touching any upstream.
-export const codexImportPreviewBody = z.object({
+export const chatgptImportPreviewBody = z.object({
   raw_json: z.string().min(1),
 });
 
-export const codexImportExchangeBody = z.object({
+export const chatgptImportExchangeBody = z.object({
   record: upstreamRecordEnvelope,
   json: z.object({
     raw_json: z.string().min(1),
@@ -523,11 +523,11 @@ export const codexImportExchangeBody = z.object({
   { message: 'Provide exactly one of json, callback, or manual' },
 );
 
-export const codexOAuthRefreshBody = recordOnlyBody;
+export const chatgptOAuthRefreshBody = recordOnlyBody;
 
-export const codexRateLimitResetCreditsBody = recordOnlyBody;
+export const chatgptRateLimitResetCreditsBody = recordOnlyBody;
 
-export const codexRateLimitResetConsumeBody = z.object({
+export const chatgptRateLimitResetConsumeBody = z.object({
   record: upstreamRecordEnvelope,
   credit_id: z.string().min(1),
   idempotency_key: z.string().min(1),

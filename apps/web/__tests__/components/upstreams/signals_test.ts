@@ -70,10 +70,10 @@ describe('upstream readout by provider', () => {
 
   it('stacks what a reading reports on their own lines', () => {
     const detail = readoutOf({
-      kind: 'codex',
+      kind: 'chatgpt',
       config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'plus' }] },
       state: { accounts: [] },
-      codex_quota: { plus: { observed_at: OBSERVED, primary_used_percent: 25, primary_window_minutes: 300 } },
+      chatgpt_quota: { plus: { observed_at: OBSERVED, primary_used_percent: 25, primary_window_minutes: 300 } },
     }).signals[0]?.detail;
     // A window with no reset still states the reading and when it was taken, and the
     // two are lines rather than one run.
@@ -103,12 +103,12 @@ describe('upstream readout by provider', () => {
   // limit rather than inferring it from a percentage that can read low while it
   // holds, and states how long the wait still has to run rather than when it
   // ends. Hours are the largest unit it uses.
-  it('states a Codex rate limit last, as the time it still has to run', () => {
+  it('states a ChatGPT rate limit last, as the time it still has to run', () => {
     const rowFor = (until: string) => rowOf({
-      kind: 'codex',
+      kind: 'chatgpt',
       config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'pro' }] },
       state: { accounts: [] },
-      codex_quota: {
+      chatgpt_quota: {
         premium: { observed_at: OBSERVED, primary_used_percent: 12, primary_window_minutes: 300, ratelimited_until: until },
       },
     });
@@ -120,12 +120,12 @@ describe('upstream readout by provider', () => {
     expect(rowFor('2026-07-28T12:00:01.000Z')).toBe('ChatGPT Pro | 88% 5h | Rate limited 1m');
   });
 
-  it('lets an elapsed Codex rate limit go rather than holding it on the row', () => {
+  it('lets an elapsed ChatGPT rate limit go rather than holding it on the row', () => {
     expect(rowOf({
-      kind: 'codex',
+      kind: 'chatgpt',
       config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'pro' }] },
       state: { accounts: [] },
-      codex_quota: { premium: { observed_at: OBSERVED, primary_used_percent: 12, primary_window_minutes: 300, ratelimited_until: '2020-01-01T00:00:00.000Z' } },
+      chatgpt_quota: { premium: { observed_at: OBSERVED, primary_used_percent: 12, primary_window_minutes: 300, ratelimited_until: '2020-01-01T00:00:00.000Z' } },
     })).toBe('ChatGPT Pro | 88% 5h');
   });
 
@@ -159,12 +159,12 @@ describe('upstream readout by provider', () => {
     expect(readoutOf({ kind: 'copilot', state: null })).toEqual({ plan: 'Copilot', signals: [] });
   });
 
-  it('names a Codex window by the length its header states, under the ChatGPT plan', () => {
+  it('names a ChatGPT window by the length its header states, under the ChatGPT plan', () => {
     const record = {
-      kind: 'codex',
+      kind: 'chatgpt',
       config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'pro' }] },
       state: { accounts: [] },
-      codex_quota: {
+      chatgpt_quota: {
         pro: {
           observed_at: OBSERVED,
           primary_used_percent: 25, primary_window_minutes: 300,
@@ -177,28 +177,28 @@ describe('upstream readout by provider', () => {
 
   it('forwards a ChatGPT plan this dashboard has not seen', () => {
     expect(readoutOf({
-      kind: 'codex',
+      kind: 'chatgpt',
       config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'ultra' }] },
       state: { accounts: [] },
     }).plan).toBe('ChatGPT ultra');
   });
 
-  it('falls back to a Codex window position when no length came with it', () => {
+  it('falls back to a ChatGPT window position when no length came with it', () => {
     const record = {
-      kind: 'codex',
+      kind: 'chatgpt',
       config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'plus' }] },
       state: { accounts: [] },
-      codex_quota: { plus: { observed_at: OBSERVED, primary_used_percent: 25 } },
+      chatgpt_quota: { plus: { observed_at: OBSERVED, primary_used_percent: 25 } },
     };
     expect(rowOf(record)).toBe('ChatGPT Plus | 75% Primary');
   });
 
-  it('states the Codex limit observed last rather than every key the map holds', () => {
+  it('states the ChatGPT limit observed last rather than every key the map holds', () => {
     const record = {
-      kind: 'codex',
+      kind: 'chatgpt',
       config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'plus' }] },
       state: { accounts: [] },
-      codex_quota: {
+      chatgpt_quota: {
         stale: { observed_at: '2026-07-20T00:00:00.000Z', primary_used_percent: 90, primary_window_minutes: 300 },
         current: { observed_at: OBSERVED, primary_used_percent: 12, primary_window_minutes: 300 },
       },
@@ -206,12 +206,12 @@ describe('upstream readout by provider', () => {
     expect(rowOf(record)).toBe('ChatGPT Plus | 88% 5h');
   });
 
-  it('carries the Codex credit balance beside the windows', () => {
+  it('carries the ChatGPT credit balance beside the windows', () => {
     const withCredits = (credits: Record<string, unknown>) => readoutOf({
-      kind: 'codex',
+      kind: 'chatgpt',
       config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'plus' }] },
       state: { accounts: [] },
-      codex_quota: { plus: { observed_at: OBSERVED, ...credits } },
+      chatgpt_quota: { plus: { observed_at: OBSERVED, ...credits } },
     }).signals.map(signal => signal.value);
 
     expect(withCredits({ credits_has_credits: true, credits_balance: 42 })).toEqual(['42 credits']);
@@ -270,7 +270,7 @@ describe('upstream readout by provider', () => {
   // groups `business` with its enterprise plans.
   it('names a ChatGPT plan as Codex itself displays it', () => {
     const planFor = (planType: string) => readoutOf({
-      kind: 'codex',
+      kind: 'chatgpt',
       config: { accounts: [{ chatgptAccountId: 'acct_1', planType }] },
       state: { accounts: [] },
     }).plan;

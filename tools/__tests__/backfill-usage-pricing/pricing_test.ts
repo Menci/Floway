@@ -24,7 +24,7 @@ test('configured pricing and provider pricing resolve through their owning sourc
   assertEquals(azure.status, 'priced');
   assertEquals(azure.status === 'priced' ? azure.pricing.entries[0]?.rates.input_tokens : null, '0.01');
 
-  assertEquals(resolveUsagePricing(upstream('codex', {}), { model: 'gpt-5.4', modelKey: 'gpt-5.4' }).status, 'priced');
+  assertEquals(resolveUsagePricing(upstream('chatgpt', {}), { model: 'gpt-5.4', modelKey: 'gpt-5.4' }).status, 'priced');
   assertEquals(resolveUsagePricing(upstream('claude-code', {}), { model: 'claude-sonnet-4-6', modelKey: 'claude-sonnet-4-6' }).status, 'priced');
   assertEquals(resolveUsagePricing(upstream('copilot', {}), { model: 'gpt-5.4', modelKey: 'gpt-5.4' }).status, 'priced');
   assertEquals(resolveUsagePricing(upstream('ollama', { models: [] }), { model: 'gpt-oss:120b', modelKey: 'gpt-oss:120b' }).status, 'priced');

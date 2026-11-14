@@ -344,9 +344,9 @@ test('Upstream.Edit.Full returns raw configuration, accepts full patches, and li
   assertEquals(await proxies.json(), [{ id: 'proxy_a', name: 'Proxy A' }]);
 });
 
-test('Codex JSON import preview is available to a signed-in non-admin', async () => {
+test('ChatGPT JSON import preview is available to a signed-in non-admin', async () => {
   const { apiKey } = await setupAppTest();
-  const response = await requestApp('/api/upstreams/codex/import/preview', {
+  const response = await requestApp('/api/upstreams/chatgpt/import/preview', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
     body: JSON.stringify({ raw_json: JSON.stringify({ accounts: [] }) }),

@@ -9,7 +9,7 @@ const timestamp = '2026-04-29T00:00:00.000Z';
 
 test('serialized records exclude route-layer response projections and redacted access tokens', () => {
   expectTypeOf<'modelsCache' extends keyof FullSerializedUpstreamRecord ? true : false>().toEqualTypeOf<false>();
-  expectTypeOf<'codex_quota' extends keyof FullSerializedUpstreamRecord ? true : false>().toEqualTypeOf<false>();
+  expectTypeOf<'chatgpt_quota' extends keyof FullSerializedUpstreamRecord ? true : false>().toEqualTypeOf<false>();
   type ClaudeState = Extract<RedactedSerializedUpstreamRecord, { kind: 'claude-code' }>['state'];
   type AccessToken = ClaudeState['accounts'][number]['accessToken'];
   expectTypeOf<'token' extends keyof NonNullable<AccessToken> ? true : false>().toEqualTypeOf<false>();
@@ -208,10 +208,10 @@ const claudeCodeBase = (overrides: { config?: unknown; state?: unknown }): Upstr
   state: overrides.state ?? null,
 } as unknown as UpstreamRecord);
 
-const codexBase = (overrides: { config?: unknown; state?: unknown }): UpstreamRecord => ({
+const chatgptBase = (overrides: { config?: unknown; state?: unknown }): UpstreamRecord => ({
   id: 'up_cx_test',
-  kind: 'codex',
-  name: 'Codex',
+  kind: 'chatgpt',
+  name: 'ChatGPT',
   enabled: true,
   usageRefreshIntervalMinutes: 0,
   sortOrder: 0,
@@ -254,8 +254,8 @@ test('upstreamRecordToJson throws when claude-code state.accounts is not an arra
   expect(() => upstreamRecordToJson(record)).toThrow(/accounts must be an array/);
 });
 
-test('upstreamRecordToJson exposes Codex capability and bearer timing without the bearer', () => {
-  const result = upstreamRecordToJson(codexBase({
+test('upstreamRecordToJson exposes ChatGPT capability and bearer timing without the bearer', () => {
+  const result = upstreamRecordToJson(chatgptBase({
     config: {
       accounts: [{ email: null, chatgptAccountId: null, chatgptUserId: null, planType: null }],
     },
@@ -280,26 +280,26 @@ test('upstreamRecordToJson exposes Codex capability and bearer timing without th
   assertEquals(JSON.stringify(result).includes('bearer-secret'), false);
 });
 
-test('upstreamRecordToJson throws when codex state.accessToken is a string', () => {
-  const record = codexBase({
+test('upstreamRecordToJson throws when ChatGPT state.accessToken is a string', () => {
+  const record = chatgptBase({
     state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: null, state: 'active', state_updated_at: timestamp, openaiDeviceId: 'device', accessToken: 'not-an-object', quotaSnapshot: null }] },
   });
   expect(() => upstreamRecordToJson(record)).toThrow(/accessToken must be a plain object/);
 });
 
-test('upstreamRecordToJson throws when codex config.accounts is not an array', () => {
-  const record = codexBase({ config: { accounts: 'not-an-array' } });
+test('upstreamRecordToJson throws when ChatGPT config.accounts is not an array', () => {
+  const record = chatgptBase({ config: { accounts: 'not-an-array' } });
   expect(() => upstreamRecordToJson(record)).toThrow(/accounts must be an array/);
 });
 
-test('upstreamRecordToJson throws when codex state.accounts is not an array', () => {
-  const record = codexBase({
+test('upstreamRecordToJson throws when ChatGPT state.accounts is not an array', () => {
+  const record = chatgptBase({
     state: { accounts: 'not-an-array' },
   });
   expect(() => upstreamRecordToJson(record)).toThrow(/accounts must be an array/);
 });
 
 test('persisted subscription upstreams require credential state', () => {
-  expect(() => upstreamRecordToJson(codexBase({}))).toThrow(/CodexUpstreamState must be a plain object/);
+  expect(() => upstreamRecordToJson(chatgptBase({}))).toThrow(/ChatGPTUpstreamState must be a plain object/);
   expect(() => upstreamRecordToFullJson(claudeCodeBase({}))).toThrow(/ClaudeCodeUpstreamState must be a plain object/);
 });
