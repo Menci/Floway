@@ -246,7 +246,7 @@ test.each(['Visual', 'JSON'])('locks the complete %s form through a save and res
   if (mode === 'JSON') fireEvent.click(screen.getByRole('tab', { name: mode }));
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save rule' })); });
   const principal = screen.getByRole<HTMLInputElement>('combobox', { name: 'Applies to' });
-  expect(principal.disabled).toBe(true);
+  await waitFor(() => expect(principal.disabled).toBe(true));
   expect(screen.getAllByRole<HTMLInputElement>('radio').every(input => input.disabled)).toBe(true);
   expect(screen.getAllByRole<HTMLButtonElement>('tab').every(tab => tab.disabled)).toBe(true);
   if (mode === 'JSON') expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'JSON' }).readOnly).toBe(true);

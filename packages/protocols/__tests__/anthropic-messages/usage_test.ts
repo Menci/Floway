@@ -111,7 +111,7 @@ test('Anthropic Messages usage snapshots preserve nullable iterations and share 
   const snapshot = anthropicMessagesUsageSnapshot({ output_tokens: 0, iterations: source });
   expect(snapshot.iterations).toBe(source);
   expect(snapshot.iterations?.[0].cache_creation).toBe(source[0].cache_creation);
-  expect(snapshot.iterations?.[0].provider_metadata).toBe(source[0].provider_metadata);
+  expect((snapshot.iterations?.[0] as typeof source[number]).provider_metadata).toBe(source[0].provider_metadata);
 
   expect(snapshot.iterations).toEqual([{
     type: 'compaction' as const,
