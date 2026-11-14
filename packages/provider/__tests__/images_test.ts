@@ -12,7 +12,7 @@ test('serializeOpenAIImagesEditsRequest preserves reference fields and encodes m
   const serialized = await serializeOpenAIImagesEditsRequest({
     images: [
       { type: 'reference', reference: { image_url: 'https://example.test/image.png', detail: 'future-field' } },
-      { type: 'upload', file: new File(['inline'], 'inline.png', { type: 'image/png' }) },
+      { type: 'upload', file: { bytes: new TextEncoder().encode('inline'), name: 'inline.png', type: 'image/png' } },
     ],
     mask: { type: 'reference', reference: { file_id: 'file-mask' } },
     parameters: { prompt: 'edit', background: null },
@@ -32,7 +32,7 @@ test('serializeOpenAIImagesEditsRequest preserves reference fields and encodes m
 
 test('serializeOpenAIImagesEditsJsonPayload forces upload sources into data URLs', async () => {
   const body = await serializeOpenAIImagesEditsJsonPayload({
-    images: [{ type: 'upload', file: new File(['image'], 'image.png', { type: 'image/png' }) }],
+    images: [{ type: 'upload', file: { bytes: new TextEncoder().encode('image'), name: 'image.png', type: 'image/png' } }],
     parameters: { prompt: 'edit' },
   }, 'gpt-image-2');
   assertEquals(body, {
@@ -43,15 +43,16 @@ test('serializeOpenAIImagesEditsJsonPayload forces upload sources into data URLs
 });
 
 test('serializeOpenAIImagesEditsRequest uses the singular field for one upload and the array field for many', async () => {
-  const first = new File(['first'], 'first.png', { type: 'image/png' });
-  const second = new File(['second'], 'second.png', { type: 'image/png' });
+  const first = { bytes: new TextEncoder().encode('first'), name: 'first.png', type: 'image/png' };
+  const second = { bytes: new TextEncoder().encode('second'), name: 'second.png', type: 'image/png' };
   const single = await serializeOpenAIImagesEditsRequest({
     images: [{ type: 'upload', file: first }],
     parameters: { prompt: 'single' },
   }, 'gpt-image');
   assertEquals(single instanceof FormData, true);
   const singleForm = single as FormData;
-  assertEquals(singleForm.get('image'), first);
+  assertEquals((singleForm.get('image') as File).name, first.name);
+  assertEquals(new Uint8Array(await (singleForm.get('image') as File).arrayBuffer()), first.bytes);
   assertEquals(singleForm.getAll('image[]'), []);
 
   const multiple = await serializeOpenAIImagesEditsRequest({
@@ -60,7 +61,8 @@ test('serializeOpenAIImagesEditsRequest uses the singular field for one upload a
   }, 'gpt-image');
   assertEquals(multiple instanceof FormData, true);
   const multipleForm = multiple as FormData;
-  assertEquals(multipleForm.getAll('image[]'), [first, second]);
+  assertEquals(multipleForm.getAll('image[]').map(value => (value as File).name), [first.name, second.name]);
+  assertEquals(await Promise.all(multipleForm.getAll('image[]').map(async value => new Uint8Array(await (value as File).arrayBuffer()))), [first.bytes, second.bytes]);
   assertEquals(multipleForm.get('image'), null);
   assertEquals(multipleForm.get('model'), 'gpt-image');
 });

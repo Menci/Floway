@@ -1,4 +1,5 @@
-import type { DumpMetadata, DumpRecordId, DumpWriteRecord, PreparedDumpRequestBody, StoredDumpRecord } from './types.ts';
+import type { DumpWriteRecord, PreparedDumpRequestBody, StoredDumpRecord } from './types.ts';
+import type { DumpMetadata, DumpRecordId } from '@floway-dev/dump/types';
 
 // Per-API-key request dump storage contract: metadata in SQL, bodies in the
 // FileStore. Request bytes are prepared before the terminal write; reads

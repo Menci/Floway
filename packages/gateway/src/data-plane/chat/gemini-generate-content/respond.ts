@@ -176,7 +176,7 @@ const isGeminiGenerateContentTerminalFrame = (frame: ProtocolFrame<GeminiGenerat
 const observeGeminiGenerateContentFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
   const completion = createGeminiGenerateContentCandidateCompletion();
   for await (const frame of frames) {
-    ctx.dump?.frame(frame);
+    await ctx.dump?.frame(frame);
     const failed = frame.type === 'event' && isGeminiGenerateContentErrorEvent(frame.event);
     if (failed) state.failed = true;
     if (frame.type === 'event') completion.observe(frame.event);
@@ -196,7 +196,7 @@ const geminiGenerateContentSseFrames = async function* (frames: AsyncIterable<Pr
   } catch (error) {
     state.failed = true;
     const event = geminiGenerateContentStreamErrorEvent(error);
-    ctx.dump?.frame(eventFrame(event));
+    await ctx.dump?.frame(eventFrame(event));
     yield geminiGenerateContentProtocolFrameToSSEFrame(eventFrame(event))!;
   }
 };

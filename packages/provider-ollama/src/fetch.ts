@@ -27,8 +27,6 @@ const ollamaFetchInternal = async (
 
 export const ollamaFetchOpenAIChatCompletions = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/v1/chat/completions', init, options);
-export const ollamaFetchDecision = (config: OllamaUpstreamConfig, path: string, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  ollamaFetchInternal(config, path, init, options);
 export const ollamaFetchOpenAIResponses = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/v1/responses', init, options);
 export const ollamaFetchOpenAIResponsesCompact = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>

@@ -1,10 +1,12 @@
 import { redactHeaderPairs } from './header-redact';
+import { redactRunHeaders } from './run-redact';
 import type { DumpRecord } from '@floway-dev/gateway/browser';
 
 // The dump API serves headers verbatim so the dashboard's reveal affordance
 // keeps working, but an exported file leaves the operator's machine, so every
 // credential header is masked to its redacted form before serialization.
 const redactRecord = (record: DumpRecord): DumpRecord => {
+  if (record.shape === 'run') return { ...record, events: redactRunHeaders(record.events) };
   const capture = record.capture === undefined ? undefined : {
     ...record.capture,
     exchanges: record.capture.exchanges.map(exchange => ({

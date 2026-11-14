@@ -2,10 +2,13 @@ import { ArrowDownloadRegular, EyeOffRegular, EyeRegular, FlashRegular, InfoRegu
 import { lazy, Suspense, useMemo, useState } from 'react';
 
 import { contentTypeOf, renderBody } from './body-render';
-import { EventList } from './events';
+import { EventList, RenderedEventList } from './events';
 import { downloadRecords } from './export';
 import { errorLabel, requestSeverity } from './format';
 import { isSensitiveHeader, REDACTED_HEADER_VALUE, redactHeaderPairs, redactHeaderValue } from './header-redact';
+import { redactRunHeaders } from './run-redact';
+import { renderRunEvents } from './run-render';
+import { RunStages } from './run-stages';
 import { collectKindFromTargetApi, detectCollectKind, type CollectedStream } from './stream-render';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
@@ -19,7 +22,8 @@ import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { PANEL_BAND_CLASS } from '../ui/panel';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
-import type { DumpRecord, DumpResponseBody } from '@floway-dev/gateway/browser';
+import type { DumpMetadata } from '@floway-dev/dump/browser';
+import type { DumpRecord, DumpResponseBody, DumpRunRecord, DumpEdgeRecord } from '@floway-dev/gateway/browser';
 
 const BodyEditor = lazy(() => import('../ui/body-editor'));
 const { Button, DialogActions, DialogTitle, Option, Spinner, Text, Tooltip } = fluentComponents;
@@ -66,12 +70,12 @@ export function RequestDetailPanel({ collected, upstreamCollected, error, record
   if (!shown.recordId) return <EmptyStateLine className="p-4">{t('dashboard.requests.selectPrompt')}</EmptyStateLine>;
   if (shown.error) return <OutcomeMessageBar className="!m-4">{shown.error}</OutcomeMessageBar>;
   if (!shown.record) return null;
+  if (shown.record.shape === 'run') return <RunRecordDetail key={shown.record.meta.id} record={shown.record} />;
   return <RecordDetail key={shown.record.meta.id} record={shown.record} collected={shown.collected} upstreamCollected={shown.upstreamCollected} />;
 }
 
-function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRecord; collected: CollectedStream | null; upstreamCollected: CollectedStream | null }) {
+function RecordDetail({ record, collected, upstreamCollected }: { record: DumpEdgeRecord; collected: CollectedStream | null; upstreamCollected: CollectedStream | null }) {
   const { t } = useTranslation();
-  const locale = useLocale();
   const [source, setSource] = useState<Source>('response');
   const [view, setView] = useState('collected');
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -133,18 +137,7 @@ function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRe
         {Object.entries(labels).map(([value, label]) => <Option key={value} value={value}>{label}</Option>)}
       </Dropdown>
       <HttpStatusBadge severity={requestSeverity(status, record.meta.error)}>{status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>
-      <Tooltip content={t('dashboard.requests.duration', { value: formatDuration(record.meta.durationMs, locale) })} relationship="description">
-        <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
-          <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.meta.durationMs, locale)}</Text>
-        </span>
-      </Tooltip>
-      {record.meta.ttftMs != null && (
-        <Tooltip content={t('dashboard.requests.ttft', { value: formatDuration(record.meta.ttftMs, locale) })} relationship="description">
-          <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
-            <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.meta.ttftMs, locale)}</Text>
-          </span>
-        </Tooltip>
-      )}
+      <RecordTiming meta={record.meta} />
       <Button size="small" appearance="subtle" icon={diagnostics.length ? <WarningRegular /> : <InfoRegular />} onClick={() => setDetailsOpen(true)}>
         {diagnostics.length ? t('dashboard.requests.diagnostics', { count: String(diagnostics.length) }) : t('dashboard.requests.metadata')}
       </Button>
@@ -166,5 +159,50 @@ function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRe
       <div className="flex items-center justify-between gap-2"><Text weight="semibold">{t('dashboard.requests.headers', { count: String(headers.length) })}</Text><CopyButton text={redactHeaderPairs(headers).map(([name, value]) => `${name}: ${value}`).join('\n')} /></div>
       <HeaderTable key={`${source}-${index}`} headers={headers} revealable={!upstream} />
     </DialogShell>
+  </div>;
+}
+
+function RecordTiming({ meta }: { meta: DumpMetadata }) {
+  const { t } = useTranslation();
+  const locale = useLocale();
+  return <>
+    <Tooltip content={t('dashboard.requests.duration', { value: formatDuration(meta.durationMs, locale) })} relationship="description">
+      <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
+        <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(meta.durationMs, locale)}</Text>
+      </span>
+    </Tooltip>
+    {meta.ttftMs != null && (
+      <Tooltip content={t('dashboard.requests.ttft', { value: formatDuration(meta.ttftMs, locale) })} relationship="description">
+        <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
+          <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(meta.ttftMs, locale)}</Text>
+        </span>
+      </Tooltip>
+    )}
+  </>;
+}
+
+function RunRecordDetail({ record }: { record: DumpRunRecord }) {
+  const { t } = useTranslation();
+  const [view, setView] = useState('stages');
+  const redacted = useMemo(() => redactRunHeaders(record.events), [record.events]);
+  const count = useMemo(() => redacted.split('\n').filter(Boolean).length, [redacted]);
+  const events = useMemo(() => view === 'events' ? renderRunEvents(redacted).map(event => ({
+    event: `${event.type} ${event.subject ?? ''}`.trim(), text: event.text, parseError: event.parseError,
+  })) : [], [redacted, view]);
+  const failure = errorLabel(record.meta.error);
+  return <div className="h-full min-h-0 flex flex-col">
+    <div className={`${PANEL_BAND_CLASS} flex items-center gap-2 min-w-0 shrink-0 border-b border-[var(--winui-divider-stroke-default)]`}>
+      <Dropdown clearable={false} size="small" className="flex-1" aria-label={t('dashboard.requests.run')} selectedOptions={[view]} value={t(view === 'stages' ? 'dashboard.requests.stages' : 'dashboard.requests.events', { count })} onOptionSelect={(_, data) => setView(data.optionValue!)}>
+        <Option value="stages">{t('dashboard.requests.stages')}</Option>
+        <Option value="events">{t('dashboard.requests.events', { count })}</Option>
+      </Dropdown>
+      <HttpStatusBadge severity={requestSeverity(record.meta.status, record.meta.error)}>{record.meta.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>
+      <RecordTiming meta={record.meta} />
+      <TooltipIconButton icon={<ArrowDownloadRegular />} label={t('dashboard.requests.exportRecord')} onClick={() => downloadRecords([record])} />
+    </div>
+    {failure && <OutcomeMessageBar>{failure}</OutcomeMessageBar>}
+    <div className="flex-1 min-h-0">
+      {view === 'stages' ? <RunStages ndjson={redacted} /> : <RenderedEventList events={events} copyText={redacted} toolbarStart={<Text>{t('dashboard.requests.events', { count })}</Text>} emptyText={t('dashboard.requests.noRunEvents')} />}
+    </div>
   </div>;
 }

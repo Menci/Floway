@@ -1,6 +1,7 @@
 import { AZURE_DEFAULT_FLAGS } from './defaults.ts';
 import { createAzureProvider } from './provider.ts';
 import type { ProviderModule } from '@floway-dev/provider';
+export { createAzurePipelines } from './pipelines.ts';
 
 export const azureProviderModule: ProviderModule = {
   create: createAzureProvider,

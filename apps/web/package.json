@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@floway-dev/agent-setup": "workspace:*",
+    "@floway-dev/dump": "workspace:*",
+    "@floway-dev/pipeline": "workspace:*",
     "@floway-dev/protocols": "workspace:*",
     "@floway-dev/provider": "workspace:*",
     "@floway-dev/provider-claude-code": "workspace:*",
@@ -52,6 +54,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@floway-dev/dump": "workspace:*",
     "@floway-dev/gateway": "workspace:*",
     "@react-router/dev": "8.3.0",
     "@testing-library/react": "^16.3.0",

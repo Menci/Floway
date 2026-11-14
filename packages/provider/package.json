@@ -10,6 +10,7 @@
     "./model": { "import": "./src/model.ts", "types": "./src/model.ts" },
     "./model-config": { "import": "./src/model-config.ts", "types": "./src/model-config.ts" },
     "./model-prefix": { "import": "./src/model-prefix.ts", "types": "./src/model-prefix.ts" },
+    "./pipeline": { "import": "./src/pipeline.ts", "types": "./src/pipeline.ts" },
     "./browser": { "import": "./src/browser.ts", "types": "./src/browser.ts" }
   },
   "scripts": {
@@ -18,6 +19,7 @@
   "dependencies": {
     "@discoveryjs/json-ext": "1.1.0",
     "@floway-dev/http": "workspace:*",
+    "@floway-dev/pipeline": "workspace:*",
     "@floway-dev/protocols": "workspace:*",
     "@noble/hashes": "^2.2.0",
     "klona": "2.0.6"

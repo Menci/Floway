@@ -141,7 +141,7 @@ export const chatgptModelContextWindow = (model: ProviderModel): ChatGPTContextW
   };
 };
 
-export const chatgptModelUsesResponsesLite = (model: ProviderModel): boolean => {
+export const chatgptModelUsesResponsesLite = (model: Pick<ProviderModel, 'id' | 'providerData'>): boolean => {
   const providerData = model.providerData;
   if (providerData === undefined) return false;
   if (!isPlainRecord(providerData)) {

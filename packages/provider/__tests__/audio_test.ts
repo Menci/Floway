@@ -4,10 +4,7 @@ import { serializeModelPathOpenAIAudioTranscriptionRequest, serializeModelFieldO
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 test('serializeModelFieldOpenAIAudioTranscriptionRequest preserves ordered fields and file metadata while replacing model', async () => {
-  const file = new File([new Uint8Array([1, 2, 3, 4])], 'meeting.wav', {
-    type: 'audio/wav',
-    lastModified: 1_700_000_000_000,
-  });
+  const file = { bytes: new Uint8Array([1, 2, 3, 4]), name: 'meeting.wav', type: 'audio/wav', lastModified: 1_700_000_000_000 };
   const form = serializeModelFieldOpenAIAudioTranscriptionRequest({
     entries: [
       { name: 'file', value: file },
@@ -34,7 +31,7 @@ test('serializeModelPathOpenAIAudioTranscriptionRequest omits model fields selec
   const form = serializeModelPathOpenAIAudioTranscriptionRequest({
     entries: [
       { name: 'model', value: 'public-model' },
-      { name: 'file', value: new File(['audio'], 'meeting.wav', { type: 'audio/wav' }) },
+      { name: 'file', value: { bytes: new TextEncoder().encode('audio'), name: 'meeting.wav', type: 'audio/wav' } },
       { name: 'response_format', value: 'json' },
     ],
   });

@@ -29,13 +29,13 @@ import { chatFromOllamaRaw } from './chat-from-raw.ts';
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
 import { OLLAMA_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchOllamaCatalog, type OllamaCatalog } from './fetch-models.ts';
-import { ollamaFetchDecision, ollamaFetchOpenAIAudioTranscriptions, ollamaFetchOpenAIChatCompletions, ollamaFetchOpenAICompletions, ollamaFetchOpenAIEmbeddings, ollamaFetchAnthropicMessages, ollamaFetchAnthropicMessagesCountTokens, ollamaFetchOpenAIResponses, ollamaFetchOpenAIResponsesCompact } from './fetch.ts';
+import { ollamaFetchOpenAIAudioTranscriptions, ollamaFetchOpenAIChatCompletions, ollamaFetchOpenAICompletions, ollamaFetchOpenAIEmbeddings, ollamaFetchAnthropicMessages, ollamaFetchAnthropicMessagesCountTokens, ollamaFetchOpenAIResponses, ollamaFetchOpenAIResponsesCompact } from './fetch.ts';
+import { createOllamaPipelines } from './pipelines.ts';
 import { pricingForOllamaModelKey } from './pricing.ts';
 import { readOllamaUpstreamState } from './state.ts';
 import { scheduleOllamaUsageProbe, runOllamaScheduledTask } from './usage-probe.ts';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
-import { DEFAULT_DECISION_PATHS, serializeDecisionRequest, type CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResultEx, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { headersForAnthropicMessagesCall, jsonRequestBody, publicModelId, resolveEffectiveFlags, serializeModelFieldOpenAIAudioTranscriptionRequest, streamingProviderCall, type FetchInit, type FlagId, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
@@ -223,19 +223,6 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       return { response, modelKey: rawModelId };
     },
     callRerank: rejectUnsupported('callRerank'),
-    callDecision: async (model: ProviderModel, request: CanonicalDecisionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => {
-      const target = model.decisionTarget;
-      if (target === undefined) throw new Error(`Decision model ${model.id} has no outbound target`);
-      const rawModelId = rawModelIdOf(model);
-      const body = serializeDecisionRequest(target.protocol, rawModelId, request);
-      const response = await ollamaFetchDecision(
-        config,
-        target.path ?? DEFAULT_DECISION_PATHS[target.protocol],
-        { method: 'POST', body: jsonRequestBody(body), signal },
-        { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
-      );
-      return { response, modelKey: rawModelId, target };
-    },
   };
 
   return {
@@ -246,6 +233,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     modelsCache: record.modelsCache,
+    pipelines: createOllamaPipelines(record.id, config, state),
     instance,
   };
 };

@@ -163,6 +163,12 @@ importers:
       '@floway-dev/agent-setup':
         specifier: workspace:*
         version: link:../../packages/agent-setup
+      '@floway-dev/dump':
+        specifier: workspace:*
+        version: link:../../packages/dump
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../../packages/pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../../packages/protocols
@@ -399,6 +405,9 @@ importers:
       '@floway-dev/interceptor':
         specifier: workspace:*
         version: link:../interceptor
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/platform':
         specifier: workspace:*
         version: link:../platform
@@ -475,6 +484,12 @@ importers:
 
   packages/http:
     dependencies:
+      '@discoveryjs/json-ext':
+        specifier: 1.1.0
+        version: 1.1.0(patch_hash=481fc61758af35cca4b19ff47a4f7515c1750ef5fef628a5e2e80fb602f3e4bd)
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@noble/hashes':
         specifier: ^2.2.0
         version: 2.2.0
@@ -550,6 +565,9 @@ importers:
       '@floway-dev/http':
         specifier: workspace:*
         version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -566,9 +584,15 @@ importers:
 
   packages/provider-azure:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
       '@floway-dev/interceptor':
         specifier: workspace:*
         version: link:../interceptor
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -582,9 +606,15 @@ importers:
 
   packages/provider-chatgpt:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
       '@floway-dev/interceptor':
         specifier: workspace:*
         version: link:../interceptor
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -623,9 +653,15 @@ importers:
 
   packages/provider-copilot:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
       '@floway-dev/interceptor':
         specifier: workspace:*
         version: link:../interceptor
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/platform':
         specifier: workspace:*
         version: link:../platform
@@ -651,6 +687,12 @@ importers:
 
   packages/provider-custom:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -664,6 +706,12 @@ importers:
 
   packages/provider-ollama:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -698,6 +746,12 @@ importers:
 
   packages/test-utils:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../provider

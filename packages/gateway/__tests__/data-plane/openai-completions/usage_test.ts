@@ -6,7 +6,7 @@ import { assertEquals } from '@floway-dev/test-utils';
 test('tokenUsageFromOpenAICompletionsUsage maps the OpenAI bare shape to bare input + output', () => {
   assertEquals(
     tokenUsageFromOpenAICompletionsUsage({ prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 }, undefined, false, 'up/model'),
-    { input: 12, output: 3 },
+    { input: 12, input_cache_read: 0, input_cache_write: 0, output: 3, tier: null },
   );
 });
 
@@ -19,7 +19,7 @@ test('tokenUsageFromOpenAICompletionsUsage splits prompt_tokens into cache_read 
       { prompt_tokens: 100, completion_tokens: 7, total_tokens: 107, prompt_tokens_details: { cached_tokens: 80 } },
       undefined, false, 'up/model',
     ),
-    { input: 20, input_cache_read: 80, output: 7 },
+    { input: 20, input_cache_read: 80, input_cache_write: 0, output: 7, tier: null },
   );
 });
 
@@ -32,7 +32,7 @@ test('tokenUsageFromOpenAICompletionsUsage reads DeepSeek prompt_cache_hit_token
       { prompt_tokens: 200, completion_tokens: 5, total_tokens: 205, prompt_cache_hit_tokens: 128, prompt_cache_miss_tokens: 72 },
       undefined, false, 'up/model',
     ),
-    { input: 72, input_cache_read: 128, output: 5 },
+    { input: 72, input_cache_read: 128, input_cache_write: 0, output: 5, tier: null },
   );
 });
 
@@ -42,7 +42,7 @@ test('tokenUsageFromOpenAICompletionsUsage reads the flat top-level cached_token
       { prompt_tokens: 50, completion_tokens: 3, total_tokens: 53, cached_tokens: 32 },
       undefined, false, 'up/model',
     ),
-    { input: 18, input_cache_read: 32, output: 3 },
+    { input: 18, input_cache_read: 32, input_cache_write: 0, output: 3, tier: null },
   );
 });
 
@@ -73,15 +73,15 @@ test('tokenUsageFromOpenAICompletionsUsage runs serviceTier through billableServ
   // aggregate with rows that have no tier; null/undefined stays null.
   assertEquals(
     tokenUsageFromOpenAICompletionsUsage({ prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 }, 'priority', false, 'up/model'),
-    { input: 5, output: 2, tier: 'priority' },
+    { input: 5, input_cache_read: 0, input_cache_write: 0, output: 2, tier: 'priority' },
   );
   assertEquals(
     tokenUsageFromOpenAICompletionsUsage({ prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 }, 'default', false, 'up/model'),
-    { input: 5, output: 2 },
+    { input: 5, input_cache_read: 0, input_cache_write: 0, output: 2, tier: null },
   );
   assertEquals(
     tokenUsageFromOpenAICompletionsUsage({ prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 }, null, false, 'up/model'),
-    { input: 5, output: 2 },
+    { input: 5, input_cache_read: 0, input_cache_write: 0, output: 2, tier: null },
   );
 });
 
@@ -93,7 +93,7 @@ test('tokenUsageFromOpenAICompletionsUsage folds the cache counts back in on the
       { prompt_tokens: 479, completion_tokens: 373, total_tokens: 14164, prompt_tokens_details: { cached_tokens: 13312 } },
       undefined, false, 'up/model',
     ),
-    { input: 479, input_cache_read: 13312, output: 373 },
+    { input: 479, input_cache_read: 13312, input_cache_write: 0, output: 373, tier: null },
   );
 });
 
@@ -103,7 +103,7 @@ test('tokenUsageFromOpenAICompletionsUsage folds on the flag when the totals wit
       { prompt_tokens: 479, completion_tokens: 373, prompt_tokens_details: { cached_tokens: 13312 } },
       undefined, true, 'up/model',
     ),
-    { input: 479, input_cache_read: 13312, output: 373 },
+    { input: 479, input_cache_read: 13312, input_cache_write: 0, output: 373, tier: null },
   );
 });
 
@@ -111,4 +111,10 @@ test('tokenUsageFromOpenAICompletionsUsage returns null on malformed input', () 
   assertEquals(tokenUsageFromOpenAICompletionsUsage(null, undefined, false, 'up/model'), null);
   assertEquals(tokenUsageFromOpenAICompletionsUsage({}, undefined, false, 'up/model'), null);
   assertEquals(tokenUsageFromOpenAICompletionsUsage({ prompt_tokens: 'no' }, undefined, false, 'up/model'), null);
+});
+
+test('tokenUsageFromOpenAICompletionsUsage retains a measured zero', () => {
+  expect(tokenUsageFromOpenAICompletionsUsage({ prompt_tokens: 0, completion_tokens: 0 }, null, false, 'up/model')).toEqual({
+    input: 0, input_cache_read: 0, input_cache_write: 0, output: 0, tier: null,
+  });
 });

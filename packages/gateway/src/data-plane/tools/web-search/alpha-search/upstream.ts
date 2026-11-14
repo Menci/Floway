@@ -3,7 +3,7 @@ import { enumerateModelCandidates } from '../../../providers/resolution.ts';
 import { filterInboundHeadersForProvider } from '../../../shared/inbound-headers.ts';
 import type { WebSearchConfig } from '../types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { identityWrapUpstreamCall, providerModelOf } from '@floway-dev/provider';
+import { identityWrapUpstreamCall, providerModelOf, type ModelCandidate } from '@floway-dev/provider';
 
 export type AlphaSearchDispatcher = (body: Record<string, unknown>, signal: AbortSignal | undefined, headers: Headers) => Promise<Response>;
 
@@ -14,19 +14,23 @@ export class AlphaSearchModelNotFoundError extends Error {
   }
 }
 
-export const resolveAlphaSearchDispatcher = async ({
-  config,
-  subject,
-  upstreamIds,
-  scheduler,
-  runtimeLocation,
-}: {
+interface AlphaSearchResolution {
   config: Pick<WebSearchConfig['passthroughOpenAiSearch'], 'upstreamId' | 'model'>;
   subject: User;
   upstreamIds: readonly string[] | null;
   scheduler: BackgroundScheduler;
   runtimeLocation: string;
-}): Promise<AlphaSearchDispatcher> => {
+}
+
+/** The operator's pinned search candidate. The configured model is private, so a key outside
+ *  its scope and a model that is missing share one answer. */
+export const resolveAlphaSearchCandidate = async ({
+  config,
+  subject,
+  upstreamIds,
+  scheduler,
+  runtimeLocation,
+}: AlphaSearchResolution): Promise<ModelCandidate> => {
   if (upstreamIds !== null && !upstreamIds.includes(config.upstreamId)) {
     throw new AlphaSearchModelNotFoundError();
   }
@@ -46,7 +50,11 @@ export const resolveAlphaSearchDispatcher = async ({
   if (candidate.provider.kind !== 'chatgpt' && candidate.provider.kind !== 'custom') {
     throw new Error('Selected upstream does not support OpenAI search passthrough');
   }
+  return candidate;
+};
 
+export const resolveAlphaSearchDispatcher = async (resolution: AlphaSearchResolution): Promise<AlphaSearchDispatcher> => {
+  const candidate = await resolveAlphaSearchCandidate(resolution);
   return async (body, signal, headers) => {
     const { model: _callerModel, ...request } = body;
     // TODO: pin SearchRequest.id to one provider account when ChatGPT upstreams
@@ -57,7 +65,7 @@ export const resolveAlphaSearchDispatcher = async ({
       signal,
       {
         fetcher: candidate.fetcher,
-        waitUntil: scheduler,
+        waitUntil: resolution.scheduler,
         headers: filterInboundHeadersForProvider(headers, candidate.provider),
         wrapUpstreamCall: identityWrapUpstreamCall,
       },

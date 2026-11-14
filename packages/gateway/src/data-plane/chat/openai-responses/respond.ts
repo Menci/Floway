@@ -151,7 +151,7 @@ const internalOpenAIResponsesErrorResponse = (status: number, error: InternalDeb
 
 const observeOpenAIResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>, state: SourceStreamState, ctx: GatewayCtx) {
   for await (const frame of frames) {
-    ctx.dump?.frame(frame);
+    await ctx.dump?.frame(frame);
     if (frame.type === 'done') continue;
     const failed = frame.event.type === 'error' || frame.event.type === 'response.failed';
     const terminal = isOpenAIResponsesTerminalEvent(frame.event);
@@ -181,13 +181,13 @@ const openaiResponsesSseFrames = async function* (frames: AsyncIterable<Protocol
     // SDKs raise on the nested error payload; terminal consumers receive the same diagnostics.
     // https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/core/streaming.ts#L69-L71
     const errorEvent: ClientOpenAIResponsesStreamEvent = { type: 'error', error: failure };
-    ctx.dump?.frame(eventFrame(errorEvent));
+    await ctx.dump?.frame(eventFrame(errorEvent));
     yield sseFrame(JSON.stringify(errorEvent), 'error');
     if (announced !== undefined) {
       // A stream failure also terminates its announced response resource.
       // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L430
       const failedFrame = eventFrame<ClientOpenAIResponsesStreamEvent>({ type: 'response.failed', response: { ...announced, status: 'failed', error: failure } });
-      ctx.dump?.frame(failedFrame);
+      await ctx.dump?.frame(failedFrame);
       yield openaiResponsesProtocolFrameToSSEFrame(failedFrame);
     }
   }

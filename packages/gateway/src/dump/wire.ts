@@ -7,27 +7,11 @@ import type {
   StoredDumpResponseBody,
   StoredDumpUpstreamResponse,
 } from './types.ts';
+import { redactRunCredentials, redactSensitiveHeaders } from '@floway-dev/dump';
 import { encodeBase64, isTextualMediaType } from '@floway-dev/protocols/common';
 
 const contentTypeOf = (headers: ReadonlyArray<readonly [string, string]>): string =>
   headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? '';
-
-const SENSITIVE_HEADERS = new Set([
-  'api-key',
-  'authorization',
-  'cookie',
-  'proxy-authorization',
-  'set-cookie',
-  'x-api-key',
-  'x-goog-api-key',
-]);
-
-const REDACTED_HEADER_VALUE = '[redacted]';
-
-// The owner of a key may read the dump, but the upstream credentials in it
-// belong to an operator who granted Model.Use, not to that key owner.
-const redactSensitiveHeaders = (headers: ReadonlyArray<readonly [string, string]>): Array<[string, string]> =>
-  headers.map(([name, value]) => [name, SENSITIVE_HEADERS.has(name.toLowerCase()) ? REDACTED_HEADER_VALUE : value]);
 
 // Wire encoding decision: textual content-types try UTF-8 first and fall
 // back to base64 when the bytes do not decode cleanly (a content-type
@@ -63,33 +47,43 @@ export const upstreamResponseToWire = (
 };
 
 // Converts stored bytes to the JSON representation served by the control plane.
-export const dumpRecordToWire = (record: StoredDumpRecord): DumpRecord => ({
-  ...(record.capture === undefined ? {} : {
-    capture: {
-      ...record.capture,
-      exchanges: record.capture.exchanges.map(exchange => ({
-        ...exchange,
-        request: { ...exchange.request, headers: redactSensitiveHeaders(exchange.request.headers) },
-        response: exchange.response === null ? null : {
-          ...exchange.response,
-          headers: redactSensitiveHeaders(exchange.response.headers),
-        },
-      })),
+export const dumpRecordToWire = (record: StoredDumpRecord): DumpRecord => {
+  if (record.shape === 'run') {
+    return {
+      shape: 'run',
+      meta: record.meta,
+      events: redactRunCredentials(new TextDecoder('utf-8', { fatal: true }).decode(record.events)),
+    };
+  }
+  return {
+    shape: 'edge',
+    ...(record.capture === undefined ? {} : {
+      capture: {
+        ...record.capture,
+        exchanges: record.capture.exchanges.map(exchange => ({
+          ...exchange,
+          request: { ...exchange.request, headers: redactSensitiveHeaders(exchange.request.headers) },
+          response: exchange.response === null ? null : {
+            ...exchange.response,
+            headers: redactSensitiveHeaders(exchange.response.headers),
+          },
+        })),
+      },
+    }),
+    meta: record.meta,
+    request: {
+      method: record.request.method,
+      path: record.request.path,
+      headers: record.request.headers,
+      body: encodeBodyForWire(record.request.body, contentTypeOf(record.request.headers)),
     },
-  }),
-  meta: record.meta,
-  request: {
-    method: record.request.method,
-    path: record.request.path,
-    headers: record.request.headers,
-    body: encodeBodyForWire(record.request.body, contentTypeOf(record.request.headers)),
-  },
-  response: {
-    status: record.response.status,
-    headers: record.response.headers,
-    body: responseBodyToWire(record.response.body, contentTypeOf(record.response.headers)),
-    ...(record.response.upstream !== undefined ? {
-      upstream: upstreamResponseToWire(record.response.upstream),
-    } : {}),
-  },
-});
+    response: {
+      status: record.response.status,
+      headers: record.response.headers,
+      body: responseBodyToWire(record.response.body, contentTypeOf(record.response.headers)),
+      ...(record.response.upstream !== undefined ? {
+        upstream: upstreamResponseToWire(record.response.upstream),
+      } : {}),
+    },
+  };
+};

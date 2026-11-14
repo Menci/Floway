@@ -139,7 +139,7 @@ const makeCandidate = (overrides: {
       inboundHeaderAllowlist: [],
       disabledPublicModelIds: [],
       modelPrefix: null,
-      modelsCache: null,
+      modelsCache: null, pipelines: {},
       instance: provider,
     },
     model: stubInternalModel({

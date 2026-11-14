@@ -16,7 +16,7 @@ const stubCandidate = (id: string, upstream = 'up'): ModelCandidate =>
       inboundHeaderAllowlist: [],
       disabledPublicModelIds: [],
       modelPrefix: null,
-      modelsCache: null,
+      modelsCache: null, pipelines: {},
       instance: stubProvider(),
     },
   });
