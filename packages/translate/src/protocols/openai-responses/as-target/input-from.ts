@@ -72,7 +72,7 @@ const documentContent = (document: IRInputDocument): OpenAIResponsesInputContent
 // is projected from the tool-result parts rather than the message-part union.
 const toolResultOutput = (output: string | readonly IRInputToolResultContentPart[]): string | OpenAIResponsesToolOutputContent[] => typeof output === 'string'
   ? output
-  : [...output].flatMap(part => {
+  : output.flatMap(part => {
       if (part.type === 'text') return { type: 'input_text' as const, text: part.text };
       if (part.type === 'image') return inputContent(part.image, part.detail);
       if (part.type === 'file') return fileContent(part.file, part.filename);
@@ -184,9 +184,9 @@ const requireSchema = (format: IRInputOutputFormat): Readonly<Record<string, unk
 // OpenAI's strict-mode validators reject an object schema that states no
 // `properties`, which is a target-side constraint rather than something the IR
 // states.
-const normalizeParameters = (schema: Readonly<Record<string, unknown>> | undefined): Record<string, unknown> => {
-  const target: Record<string, unknown> = schema === undefined ? { type: 'object' } : { ...schema };
-  return target.type === 'object' && target.properties === undefined ? { ...target, properties: {} } : target;
+const normalizeParameters = (schema: Readonly<Record<string, unknown>> | undefined): Readonly<Record<string, unknown>> => {
+  if (schema === undefined) return { type: 'object', properties: {} };
+  return schema.type === 'object' && schema.properties === undefined ? { ...schema, properties: {} } : schema;
 };
 
 const toolFromIR = (tool: IRInputTool): OpenAIResponsesTool => {
@@ -263,7 +263,7 @@ export const openaiResponsesSettingsFromIR = (settings: IRInputSettings): Partia
     ...(settings.top_p === undefined ? {} : { top_p: settings.top_p }),
     ...(settings.presence_penalty === undefined ? {} : { presence_penalty: settings.presence_penalty }),
     ...(settings.frequency_penalty === undefined ? {} : { frequency_penalty: settings.frequency_penalty }),
-    ...(settings.metadata === undefined ? {} : { metadata: settings.metadata === null ? null : { ...settings.metadata } }),
+    ...(settings.metadata === undefined ? {} : { metadata: settings.metadata }),
     ...(settings.store === undefined ? {} : { store: settings.store }),
     ...(settings.service_tier === undefined ? {} : { service_tier: settings.service_tier }),
     ...(settings.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: settings.parallel_tool_calls }),
@@ -275,7 +275,7 @@ export const openaiResponsesSettingsFromIR = (settings: IRInputSettings): Partia
     }),
     ...(settings.prompt_cache_key === undefined ? {} : { prompt_cache_key: settings.prompt_cache_key }),
     ...(settings.prompt_cache_retention === undefined ? {} : { prompt_cache_retention: settings.prompt_cache_retention }),
-    ...(settings.prompt_cache_options == null ? {} : { prompt_cache_options: { ...settings.prompt_cache_options } }),
+    ...(settings.prompt_cache_options == null ? {} : { prompt_cache_options: settings.prompt_cache_options }),
     ...(settings.safety_identifier === undefined ? {} : { safety_identifier: settings.safety_identifier }),
     ...(settings.user == null ? {} : { user: settings.user }),
     // Responses requests token probabilities through its includable output data.

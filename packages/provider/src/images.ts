@@ -1,6 +1,4 @@
 import { base64ToBytes, bytesToBase64, parseBase64ImageDataUrl } from './image-helpers.ts';
-import { jsonRequestBody } from './json-request.ts';
-import type { ReplayableBody } from './options.ts';
 import { multipartBody as httpMultipartBody, type HttpFile, type HttpFormEntry, type HttpBody, type HttpBodyEncoding } from '@floway-dev/http/request-content';
 import type { OpenAIImageEditReference } from '@floway-dev/protocols/openai-images';
 
@@ -95,17 +93,4 @@ export const prepareOpenAIImagesEditsBody = async (request: OpenAIImagesEditsReq
   return entries === null
     ? { body: await serializeOpenAIImagesEditsJsonPayload(request, model), encoding: 'json' }
     : { body: httpMultipartBody(entries), encoding: 'multipart' };
-};
-
-export const serializeOpenAIImagesEditsRequest = async (request: OpenAIImagesEditsRequest, model: string): Promise<FormData | ReplayableBody> => {
-  const entries = multipartEntries(request, model);
-  if (entries !== null) {
-    const form = new FormData();
-    for (const { name, value } of entries) {
-      if (typeof value === 'string') form.append(name, value);
-      else form.append(name, new File([value.bytes as Uint8Array<ArrayBuffer>], value.name, { type: value.type, lastModified: value.lastModified }));
-    }
-    return form;
-  }
-  return jsonRequestBody(await serializeOpenAIImagesEditsJsonPayload(request, model));
 };

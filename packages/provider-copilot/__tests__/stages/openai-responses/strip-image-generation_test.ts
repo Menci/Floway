@@ -1,0 +1,262 @@
+import { expect, test } from 'vitest';
+
+import { stripImageGenerationFromPayload } from '../../../src/stages/openai-responses/strip-image-generation.ts';
+import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
+import { assert, assertEquals, assertFalse } from '@floway-dev/test-utils';
+
+test('stripImageGenerationFromPayload removes image_generation tools', () => {
+  let payload = {
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'user', content: 'draw this' }],
+    tools: [
+      { type: 'image_generation' },
+      {
+        type: 'function',
+        name: 'lookup',
+        parameters: { type: 'object' },
+        strict: false,
+      },
+    ],
+    tool_choice: 'auto',
+  } as CanonicalOpenAIResponsesPayload;
+
+  payload = stripImageGenerationFromPayload(payload);
+
+  assertEquals(payload.tools?.length, 1);
+  assertEquals(payload.tools?.[0].type, 'function');
+  assertEquals(payload.tool_choice, 'auto');
+});
+
+test('stripImageGenerationFromPayload removes forced image_generation tool_choice', () => {
+  let payload = {
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'user', content: 'draw this' }],
+    tools: [{ type: 'image_generation' }],
+    tool_choice: { type: 'image_generation' },
+  } as CanonicalOpenAIResponsesPayload;
+
+  payload = stripImageGenerationFromPayload(payload);
+
+  assertFalse('tools' in payload);
+  assertFalse('tool_choice' in payload);
+});
+
+test('forced image generation cannot expose a surviving input-carried client tool', () => {
+  let payload: CanonicalOpenAIResponsesPayload = {
+    model: 'gpt-test',
+    input: [{
+      type: 'additional_tools', role: 'developer',
+      tools: [
+        { type: 'image_generation' },
+        { type: 'function', name: 'lookup', parameters: {} },
+      ],
+    }],
+    tool_choice: { type: 'image_generation' },
+  };
+
+  payload = stripImageGenerationFromPayload(payload);
+
+  assertEquals(payload.tool_choice, 'none');
+  const item = payload.input[0];
+  assert(item.type === 'additional_tools');
+  assertEquals(item.tools, [{ type: 'function', name: 'lookup', parameters: {} }]);
+});
+
+test('stripImageGenerationFromPayload removes required tool_choice when no tools remain', () => {
+  let payload = {
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'user', content: 'draw this' }],
+    tools: [{ type: 'image_generation' }],
+    tool_choice: 'required',
+  } as CanonicalOpenAIResponsesPayload;
+
+  payload = stripImageGenerationFromPayload(payload);
+
+  assertFalse('tools' in payload);
+  assertFalse('tool_choice' in payload);
+});
+
+test('stripImageGenerationFromPayload preserves Copilot-accepted hosted and deferred tools', () => {
+  // Codex uses `tool_search` and `namespace` for client-executed deferred tool
+  // discovery and Copilot accepts `web_search`; the Copilot OpenAI Responses target
+  // must still see those entries even after image_generation is dropped.
+  let payload = {
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'user', content: 'search the web' }],
+    tools: [
+      {
+        type: 'function',
+        name: 'lookup',
+        parameters: { type: 'object' },
+        strict: false,
+      },
+      { type: 'web_search' },
+      { type: 'tool_search', execution: 'x', description: 'y', parameters: {} },
+      { type: 'namespace', name: 'ns', description: '', tools: [] },
+      { type: 'image_generation', output_format: 'png' },
+    ],
+    tool_choice: 'auto',
+  } as CanonicalOpenAIResponsesPayload;
+
+  payload = stripImageGenerationFromPayload(payload);
+
+  assertEquals(payload.tools?.map(tool => tool.type), ['function', 'web_search', 'tool_search', 'namespace']);
+  assertEquals(payload.tool_choice, 'auto');
+});
+
+test('stripImageGenerationFromPayload preserves forced non-image hosted and deferred tool_choices', () => {
+  for (const type of ['web_search', 'tool_search', 'namespace'] as const) {
+    let payload = {
+      model: 'gpt-test',
+      input: [{ type: 'message', role: 'user', content: 'search' }],
+      tools: [{ type }],
+      tool_choice: { type },
+    } as CanonicalOpenAIResponsesPayload;
+
+    payload = stripImageGenerationFromPayload(payload);
+
+    assertEquals(payload.tools, [{ type }]);
+    assertEquals(payload.tool_choice, { type });
+  }
+});
+
+test('stripImageGenerationFromPayload preserves custom Freeform tools for downstream wrapping', () => {
+  let payload = {
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'user', content: 'do x' }],
+    tools: [
+      {
+        type: 'function',
+        name: 'lookup',
+        parameters: { type: 'object' },
+        strict: false,
+      },
+      { type: 'custom', name: 'freeform_other', description: 'x' },
+    ],
+    tool_choice: { type: 'custom', name: 'freeform_other' },
+  } as CanonicalOpenAIResponsesPayload;
+
+  payload = stripImageGenerationFromPayload(payload);
+
+  assertEquals(payload.tools?.length, 2);
+  assertEquals(payload.tools?.[1].type, 'custom');
+  assertEquals(payload.tool_choice, { type: 'custom', name: 'freeform_other' });
+});
+
+test('strips image generation from input tool carriers without changing their positions', () => {
+  let payload: CanonicalOpenAIResponsesPayload = {
+    model: 'gpt-test',
+    tools: [],
+    tool_choice: 'required',
+    input: [
+      { type: 'additional_tools', role: 'developer', id: 'at_1', tools: [{ type: 'image_generation' }] },
+      { type: 'message', role: 'user', content: 'hi' },
+      { type: 'tool_search_output', call_id: 'search_1', tools: [{ type: 'image_generation' }, { type: 'web_search' }] },
+    ],
+  };
+
+  payload = stripImageGenerationFromPayload(payload);
+
+  assertEquals(payload.input, [
+    { type: 'additional_tools', role: 'developer', id: 'at_1', tools: [] },
+    { type: 'message', role: 'user', content: 'hi' },
+    { type: 'tool_search_output', call_id: 'search_1', tools: [{ type: 'web_search' }] },
+  ]);
+  assertEquals(payload.tool_choice, 'required');
+});
+
+test('drops required tool choice when input only supplied removed image generation', () => {
+  let payload: CanonicalOpenAIResponsesPayload = {
+    model: 'gpt-test',
+    input: [{ type: 'additional_tools', role: 'developer', tools: [{ type: 'image_generation' }] }],
+    tool_choice: 'required',
+  };
+
+  payload = stripImageGenerationFromPayload(payload);
+
+  assertEquals(payload.input, [{ type: 'additional_tools', role: 'developer', tools: [] }]);
+  assertFalse('tool_choice' in payload);
+});
+
+test('removes filtered hosted selectors from allowed_tools without dropping client tools', () => {
+  let payload: CanonicalOpenAIResponsesPayload = {
+    model: 'gpt-test',
+    input: [{
+      type: 'additional_tools', role: 'developer',
+      tools: [
+        { type: 'image_generation' },
+        { type: 'function', name: 'lookup', parameters: {} },
+      ],
+    }],
+    tool_choice: {
+      type: 'allowed_tools', mode: 'required',
+      tools: [{ type: 'image_generation' }, { type: 'function', name: 'lookup' }],
+    },
+  };
+
+  payload = stripImageGenerationFromPayload(payload);
+
+  assertEquals(payload.tool_choice, { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: 'lookup' }] });
+});
+
+test('keeps an unsatisfiable required allowed_tools choice explicit', () => {
+  let payload: CanonicalOpenAIResponsesPayload = {
+    model: 'gpt-test',
+    input: [{ type: 'tool_search_output', tools: [{ type: 'image_generation' }] }],
+    tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: 'image_generation' }] },
+  };
+
+  payload = stripImageGenerationFromPayload(payload);
+
+  assertEquals(payload.tool_choice, { type: 'allowed_tools', mode: 'required', tools: [] });
+});
+
+test('auto allowed_tools cannot expose tools excluded by the original selector', () => {
+  let payload: CanonicalOpenAIResponsesPayload = {
+    model: 'gpt-test',
+    input: [{
+      type: 'additional_tools', role: 'developer',
+      tools: [
+        { type: 'image_generation' },
+        { type: 'function', name: 'lookup', parameters: {} },
+      ],
+    }],
+    tool_choice: { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'image_generation' }] },
+  };
+
+  payload = stripImageGenerationFromPayload(payload);
+
+  assertEquals(payload.tool_choice, 'none');
+  const item = payload.input[0];
+  assert(item.type === 'additional_tools');
+  assertEquals(item.tools, [{ type: 'function', name: 'lookup', parameters: {} }]);
+});
+
+test('leaves unrelated allowed_tools choices unchanged', () => {
+  let payload: CanonicalOpenAIResponsesPayload = {
+    model: 'gpt-test', input: [],
+    tool_choice: { type: 'allowed_tools', mode: 'auto', tools: [] },
+  };
+
+  payload = stripImageGenerationFromPayload(payload);
+
+  assertEquals(payload.tool_choice, { type: 'allowed_tools', mode: 'auto', tools: [] });
+});
+
+test('filtering a frozen request shares unchanged carriers and schemas', () => {
+  const schema = Object.freeze({ type: 'object' });
+  const callable = Object.freeze({ type: 'function' as const, name: 'lookup', parameters: schema });
+  const kept = Object.freeze({ type: 'message' as const, role: 'user' as const, content: 'hello' });
+  const tools = Object.freeze([{ type: 'image_generation' as const }, callable]);
+  const carrier = Object.freeze({ type: 'additional_tools' as const, role: 'developer' as const, tools });
+  const source = Object.freeze({ model: 'test', input: Object.freeze([kept, carrier]) }) as unknown as CanonicalOpenAIResponsesPayload;
+  const filtered = stripImageGenerationFromPayload(source);
+  expect(filtered).not.toBe(source);
+  expect(filtered.input[0]).toBe(kept);
+  const changed = filtered.input[1];
+  expect(changed).not.toBe(carrier);
+  assert(changed.type === 'additional_tools');
+  expect(changed.tools[0]).toBe(callable);
+  expect(carrier.tools).toHaveLength(2);
+  expect(stripImageGenerationFromPayload(filtered)).toBe(filtered);
+});

@@ -6,13 +6,9 @@ import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
 
 const MIGRATION = '0084_dump_upstream_body.sql';
 
-// The upstream body column is additive: nullable, and the three spilled-files
-// triggers from 0066 are rebuilt to cover the new descriptor. The rebuilt
-// triggers' behavior is exercised end-to-end by the dump-store round-trip
-// tests (an upstream file is staged, adopted to `owned`, and rehydrated); this
-// test asserts the migration itself: the column appears, it is nullable, and
-// the rebuilt triggers are present by name.
-test('0089 adds a nullable response_upstream_body_descriptor column', () => {
+// Historical upstream-body storage remains in the schema; the run-only migration
+// retires its records and files. The column and registry triggers still exist.
+test('0084 adds a nullable response_upstream_body_descriptor column', () => {
   const before = new DatabaseSync(':memory:');
   for (const [filename, sql] of migrationSqlByFilename) {
     if (filename === MIGRATION) break;
@@ -29,7 +25,7 @@ test('0089 adds a nullable response_upstream_body_descriptor column', () => {
   const col = columnsAfter.find(c => c.name === 'response_upstream_body_descriptor');
   expect(col).toBeDefined();
   expect(col!.notnull).toBe(0); // nullable
-  // The rebuilt triggers are present (rebuilt, not dropped) after 0089.
+  // The rebuilt registry triggers survive the later run-only migration.
   for (const trigger of [
     'dump_records_validate_spilled_files',
     'dump_records_adopt_spilled_files',

@@ -1,5 +1,6 @@
 import { isEncryptedReasoningDetail } from './reasoning-details.ts';
 import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
+import { withKeysChanged } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 
 export const analyzeOpenAIChatCompletionsAffinity = async (
@@ -36,25 +37,27 @@ export const analyzeOpenAIChatCompletionsAffinity = async (
       degrades: projections.some(projection => projection.kind === 'remove' && projection.degrades),
       preferred: projections.every(projection => projection.preferred),
       materialize: () => {
-        const candidatePayload = structuredClone(payload);
+        const patches = new Map<number, Record<string, unknown>>();
+        const patchOf = (index: number) => patches.get(index) ?? patches.set(index, {}).get(index)!;
         for (const { index, projection } of opaqueProjections) {
-          const message = candidatePayload.messages[index] as OpenAIChatCompletionsAssistantMessageEx;
-          if (projection.kind === 'preserve') message.reasoning_opaque = projection.value;
-          else if (projection.kind === 'remove') delete message.reasoning_opaque;
+          patchOf(index).reasoning_opaque = projection.kind === 'preserve' ? projection.value : undefined;
         }
         for (const { index, details, projections } of detailProjections) {
-          const message = candidatePayload.messages[index] as OpenAIChatCompletionsAssistantMessageEx;
           const reasoningDetails = details.flatMap((detail, detailIndex) => {
             const projection = projections.get(detailIndex);
-            if (projection === undefined) return [structuredClone(detail)];
+            if (projection === undefined) return [detail];
             if (projection.kind === 'remove') return [];
             if (!isEncryptedReasoningDetail(detail)) throw new Error(`Recorded encrypted reasoning detail is missing at index ${detailIndex}`);
             return [{ ...detail, data: projection.value }];
           });
-          if (reasoningDetails.length === 0) delete message.reasoning_details;
-          else message.reasoning_details = reasoningDetails;
+          patchOf(index).reasoning_details = reasoningDetails.length === 0 ? undefined : reasoningDetails;
         }
-        return candidatePayload;
+        if (patches.size === 0) return payload;
+        const messages = payload.messages.map((message, index) => {
+          const patch = patches.get(index);
+          return patch === undefined ? message : withKeysChanged(message, patch);
+        });
+        return withKeysChanged(payload, { messages });
       },
     };
   });

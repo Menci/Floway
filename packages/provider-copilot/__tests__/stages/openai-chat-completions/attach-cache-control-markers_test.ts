@@ -1,0 +1,122 @@
+import { test } from 'vitest';
+
+import { type CopilotCacheableMessage, copilotOpenAIChatCompletionsAttachCacheControlMarkers } from '../../../src/stages/openai-chat-completions/attach-cache-control-markers.ts';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
+import { applyProviderStage, type OpenAIChatCompletionsProbe, type ExecuteResult, eventResult } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertFalse, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>> =>
+  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {})(), testTelemetryModelIdentity));
+
+const invocation = (messages: OpenAIChatCompletionsMessage[]): OpenAIChatCompletionsProbe => ({
+  payload: { model: 'gpt-test', messages },
+  headers: new Headers(),
+  model: stubProviderModel({ endpoints: { openaiChatCompletions: {} } }),
+});
+
+const markedIndexes = (messages: readonly OpenAIChatCompletionsMessage[]): number[] =>
+  messages.flatMap((m, i) => ((m as CopilotCacheableMessage).copilot_cache_control ? [i] : []));
+
+test('OpenAI Chat Completions cache markers attach to first two systems and last two non-systems', async () => {
+  const ctx = invocation([
+    { role: 'system', content: 'system A' },
+    { role: 'system', content: 'system B' },
+    { role: 'user', content: 'user 1' },
+    { role: 'assistant', content: 'assistant 1' },
+    { role: 'user', content: 'user 2' },
+    { role: 'assistant', content: 'assistant 2' },
+  ]);
+
+  await applyProviderStage(copilotOpenAIChatCompletionsAttachCacheControlMarkers, ctx, okEvents);
+
+  assertEquals(markedIndexes(ctx.payload.messages), [0, 1, 4, 5]);
+  for (const index of [0, 1, 4, 5]) {
+    assertEquals((ctx.payload.messages[index] as CopilotCacheableMessage).copilot_cache_control, { type: 'ephemeral' });
+  }
+});
+
+test('OpenAI Chat Completions cache markers handle a single system message', async () => {
+  const ctx = invocation([
+    { role: 'system', content: 'only system' },
+  ]);
+
+  await applyProviderStage(copilotOpenAIChatCompletionsAttachCacheControlMarkers, ctx, okEvents);
+
+  assertEquals(markedIndexes(ctx.payload.messages), [0]);
+});
+
+test('OpenAI Chat Completions cache markers attach to last two non-systems when no system message exists', async () => {
+  const ctx = invocation([
+    { role: 'user', content: 'user 1' },
+    { role: 'assistant', content: 'assistant 1' },
+    { role: 'user', content: 'user 2' },
+    { role: 'assistant', content: 'assistant 2' },
+  ]);
+
+  await applyProviderStage(copilotOpenAIChatCompletionsAttachCacheControlMarkers, ctx, okEvents);
+
+  assertEquals(markedIndexes(ctx.payload.messages), [2, 3]);
+});
+
+test('OpenAI Chat Completions cache markers skip empty string content', async () => {
+  const ctx = invocation([
+    { role: 'system', content: '' },
+    { role: 'user', content: '' },
+  ]);
+
+  await applyProviderStage(copilotOpenAIChatCompletionsAttachCacheControlMarkers, ctx, okEvents);
+
+  assertEquals(markedIndexes(ctx.payload.messages), []);
+});
+
+test('OpenAI Chat Completions cache markers skip empty array content', async () => {
+  const ctx = invocation([
+    { role: 'system', content: [] },
+    { role: 'user', content: [] },
+  ]);
+
+  await applyProviderStage(copilotOpenAIChatCompletionsAttachCacheControlMarkers, ctx, okEvents);
+
+  assertEquals(markedIndexes(ctx.payload.messages), []);
+});
+
+test('OpenAI Chat Completions cache markers only mark first two of five systems', async () => {
+  const ctx = invocation([
+    { role: 'system', content: 'system A' },
+    { role: 'system', content: 'system B' },
+    { role: 'system', content: 'system C' },
+    { role: 'system', content: 'system D' },
+    { role: 'system', content: 'system E' },
+    { role: 'user', content: 'user 1' },
+  ]);
+
+  await applyProviderStage(copilotOpenAIChatCompletionsAttachCacheControlMarkers, ctx, okEvents);
+
+  // First two systems + last (and only) non-system.
+  assertEquals(markedIndexes(ctx.payload.messages), [0, 1, 5]);
+  assertFalse((ctx.payload.messages[2] as CopilotCacheableMessage).copilot_cache_control);
+  assertFalse((ctx.payload.messages[3] as CopilotCacheableMessage).copilot_cache_control);
+  assertFalse((ctx.payload.messages[4] as CopilotCacheableMessage).copilot_cache_control);
+});
+
+test('OpenAI Chat Completions cache markers are independent object instances per message', async () => {
+  const ctx = invocation([
+    { role: 'system', content: 'system A' },
+    { role: 'system', content: 'system B' },
+    { role: 'user', content: 'user 1' },
+  ]);
+
+  await applyProviderStage(copilotOpenAIChatCompletionsAttachCacheControlMarkers, ctx, okEvents);
+
+  const a = (ctx.payload.messages[0] as CopilotCacheableMessage).copilot_cache_control;
+  const b = (ctx.payload.messages[1] as CopilotCacheableMessage).copilot_cache_control;
+  const c = (ctx.payload.messages[2] as CopilotCacheableMessage).copilot_cache_control;
+
+  assert(a);
+  assert(b);
+  assert(c);
+  assertFalse(a === b, 'system A and system B markers must be distinct objects');
+  assertFalse(a === c, 'system A and user 1 markers must be distinct objects');
+  assertFalse(b === c, 'system B and user 1 markers must be distinct objects');
+});

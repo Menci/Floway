@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import { createTestSidecarCodec } from './sidecar-codec.ts';
 import { SidecarTaggedValue } from '../../src/round-trip/codec.ts';
 
-test.each([65_536, 65_537])('the test codec snapshots application tag %s values and owns every array', async tag => {
+test.each([65_536, 65_537])('the test codec snapshots application tag %s values and decodes them frozen', async tag => {
   const parts: unknown[] = [0, [1, 2, 3]];
   const reference = new SidecarTaggedValue(tag, parts);
   const codec = createTestSidecarCodec();
@@ -17,9 +17,7 @@ test.each([65_536, 65_537])('the test codec snapshots application tag %s values 
   if (typeof first !== 'object' || first === null || !('reference' in first) || !(first.reference instanceof SidecarTaggedValue)) throw new Error('Expected a preserved SidecarTaggedValue');
   expect(first.reference).toEqual(new SidecarTaggedValue(tag, [0, [1, 2, 3]]));
   if (!Array.isArray(first.reference.value)) throw new Error('Expected tagged value arrays');
-  first.reference.value.push(8);
-  const decodedRange = first.reference.value[1];
-  if (typeof decodedRange !== 'object' || decodedRange === null || !Array.isArray(decodedRange)) throw new Error('Expected the decoded fixture range');
-  decodedRange[2] = 100;
+  expect(Object.isFrozen(first.reference.value)).toBe(true);
+  expect(Object.isFrozen(first.reference.value[1])).toBe(true);
   expect(await codec.decode(data)).toEqual({ reference: new SidecarTaggedValue(tag, [0, [1, 2, 3]]) });
 });

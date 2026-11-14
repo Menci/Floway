@@ -5,7 +5,7 @@ import type { ModelPricing } from '@floway-dev/protocols/common';
 import { parseRerankRequest } from '@floway-dev/protocols/rerank';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { callProviderPipeline, assertEquals, assertExists, assertRejects, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { collectChatProviderPipeline, callProviderPipeline, assertEquals, assertExists, assertRejects, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 interface BuildOptions {
   ingressHeadersRules?: { key: string; value: string | null }[];
@@ -68,7 +68,7 @@ test('Custom writes every configured header value and passes admitted client val
           'x-override': 'client-override',
         }),
       });
-      await provider.instance.callOpenAIChatCompletions(model, { messages: [] }, undefined, opts);
+      await collectChatProviderPipeline(provider, 'openaiChatCompletions', model, { messages: [] }, undefined, opts);
     },
   );
 
@@ -410,10 +410,10 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
       assertExists(model);
       const opts = noopUpstreamCallOptions();
       const anthropicMessagesOpts = noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
-      await provider.callOpenAIChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-      await provider.callOpenAIResponses(model, { input: [] }, 'generate', undefined, opts);
-      await provider.callAnthropicMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
-      await provider.callAnthropicMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
+      await collectChatProviderPipeline(instance, 'openaiChatCompletions', model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+      await collectChatProviderPipeline(instance, 'openaiResponses', model, { input: [] }, undefined, opts);
+      await collectChatProviderPipeline(instance, 'anthropicMessages', model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
+      await collectChatProviderPipeline(instance, 'anthropicMessagesCountTokens', model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
       await callProviderPipeline(instance, 'openaiEmbeddings', model, { input: 'hi' }, undefined, opts);
     },
   );
@@ -479,7 +479,7 @@ test('Custom provider falls back to `name` when display_name is missing (loose O
   );
 });
 
-test('Custom provider callOpenAIImagesGenerations posts JSON with model re-injected', async () => {
+test('Custom provider openaiImagesGenerations pipeline posts JSON with model re-injected', async () => {
   let forwarded: { url: string; body: { model?: unknown; prompt?: unknown } } | undefined;
   await withMockedFetch(
     async request => {
@@ -496,7 +496,7 @@ test('Custom provider callOpenAIImagesGenerations posts JSON with model re-injec
       const [model] = await provider.instance.getProvidedModels(directFetcher);
       const result = await callProviderPipeline(provider, 'openaiImagesGenerations', model, { prompt: 'hi' }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
-      assertEquals(result.response.status, 200);
+      assertEquals(result.response!.status, 200);
     },
   );
   assertExists(forwarded);
@@ -524,7 +524,7 @@ test('Custom provider callAlphaSearch posts JSON to /v1/alpha/search with the up
         { id: 'search-session', commands: { search_query: [{ q: 'Floway' }] } },
         undefined,
         noopUpstreamCallOptions());
-      assertEquals(result.response.status, 200);
+      assertEquals(result.response!.status, 200);
       assertEquals(result.modelKey, 'gpt-search');
     },
   );

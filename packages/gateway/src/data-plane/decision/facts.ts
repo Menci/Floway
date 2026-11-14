@@ -20,7 +20,7 @@ export interface DecisionFacts extends GatewayFacts {
   /** Which dialect the attempt spoke, so the edge knows what it is rendering from. */
   'response.decision.targetProtocol': DecisionProtocol;
   /** What the client is actually sent, in its own dialect. */
-  'response.decision.rendered': JsonObject;
+  'response.decision.rendered': object;
 }
 
 export type Fields<K extends keyof DecisionFacts> = { [P in K]: DecisionFacts[P] };

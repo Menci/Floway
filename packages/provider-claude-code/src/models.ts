@@ -10,7 +10,7 @@
 // 4.6+ and Fable 5+ return with the alias already (no date),
 // so the alias derivation is the identity. The catalog id we publish is
 // always the alias; the original /v1/models id rides on
-// `providerData.upstreamModelId` so the wire fetch in `fetch.ts` and the
+// `providerData.upstreamModelId` so the wire fetch in `backend.ts` and the
 // pricing table key by the per-revision id.
 
 import { CLAUDE_CODE_HEADERS_SONNET_OPUS } from './headers.ts';

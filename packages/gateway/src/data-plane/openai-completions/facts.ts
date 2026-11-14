@@ -29,7 +29,7 @@ export interface OpenAICompletionsFacts extends GatewayFacts {
   /** What the client is actually sent, in its own protocol — a JSON body, or the SSE frames
    *  of a stream. The edge provides it, so a dump shows what the client received rather than
    *  the gateway's own reading of it. */
-  'response.openaiCompletions.rendered': Record<string, unknown> | AsyncIterable<SseFrame>;
+  'response.openaiCompletions.rendered': object | AsyncIterable<SseFrame>;
 }
 
 export type Fields<K extends keyof OpenAICompletionsFacts> = { [P in K]: OpenAICompletionsFacts[P] };

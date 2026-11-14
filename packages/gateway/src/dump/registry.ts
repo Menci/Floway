@@ -1,5 +1,5 @@
-import type { DumpStore } from './store-contract.ts';
 import { DUMP_DISABLED_REASON, type DumpBroker } from '@floway-dev/dump';
+import type { DumpStore } from '@floway-dev/dump/types';
 
 let _store: DumpStore | null = null;
 let _broker: DumpBroker | null = null;

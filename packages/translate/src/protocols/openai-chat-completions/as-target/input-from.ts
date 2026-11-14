@@ -197,10 +197,8 @@ export const openaiChatCompletionsConversationFromIR = (
 
 // OpenAI's strict-mode validators reject an object schema without `properties`,
 // which is a target-side constraint rather than something the IR states.
-const normalizeParameters = (schema: Readonly<Record<string, unknown>>): Record<string, unknown> => {
-  const target = { ...schema };
-  return target.type === 'object' && target.properties === undefined ? { ...target, properties: {} } : target;
-};
+const normalizeParameters = (schema: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> =>
+  schema.type === 'object' && schema.properties === undefined ? { ...schema, properties: {} } : schema;
 
 const toolFromIR = (tool: IRInputTool): OpenAIChatCompletionsTool => {
   if (tool.type === 'custom') {
@@ -288,14 +286,14 @@ export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): 
     ...(settings.top_p === undefined ? {} : { top_p: settings.top_p }),
     ...(settings.stop === undefined ? {} : { stop: [...settings.stop] }),
     ...(settings.seed === undefined ? {} : { seed: settings.seed }),
-    ...(settings.metadata === undefined ? {} : { metadata: settings.metadata === null ? null : { ...settings.metadata } }),
+    ...(settings.metadata === undefined ? {} : { metadata: settings.metadata }),
     ...(settings.store === undefined ? {} : { store: settings.store }),
     ...(settings.service_tier === undefined ? {} : { service_tier: settings.service_tier }),
     ...(settings.parallel_tool_calls == null ? {} : { parallel_tool_calls: settings.parallel_tool_calls }),
     ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
     ...(settings.prompt_cache_key === undefined ? {} : { prompt_cache_key: settings.prompt_cache_key }),
     ...(settings.prompt_cache_retention === undefined ? {} : { prompt_cache_retention: settings.prompt_cache_retention }),
-    ...(settings.prompt_cache_options === undefined ? {} : { prompt_cache_options: settings.prompt_cache_options === null ? null : { ...settings.prompt_cache_options } }),
+    ...(settings.prompt_cache_options === undefined ? {} : { prompt_cache_options: settings.prompt_cache_options }),
     ...(settings.safety_identifier === undefined ? {} : { safety_identifier: settings.safety_identifier }),
     ...(settings.user === undefined ? {} : { user: settings.user }),
     ...(settings.logprobs === undefined ? {} : { logprobs: settings.logprobs }),

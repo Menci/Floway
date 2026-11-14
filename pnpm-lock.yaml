@@ -402,9 +402,6 @@ importers:
       '@floway-dev/http':
         specifier: workspace:*
         version: link:../http
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
       '@floway-dev/pipeline':
         specifier: workspace:*
         version: link:../pipeline
@@ -456,9 +453,6 @@ importers:
       jsonrepair:
         specifier: ^3.14.0
         version: 3.14.0
-      klona:
-        specifier: 2.0.6
-        version: 2.0.6(patch_hash=86c99277c7bbba3650a877ecb839518955a3fdb068579ba6ec957d107e310dd2)
       nanoid:
         specifier: ^5.1.16
         version: 5.1.16
@@ -503,12 +497,6 @@ importers:
       '@peculiar/x509':
         specifier: ^1.14.3
         version: 1.14.3
-
-  packages/interceptor:
-    devDependencies:
-      '@floway-dev/test-utils':
-        specifier: workspace:*
-        version: link:../test-utils
 
   packages/pipeline:
     dependencies:
@@ -587,9 +575,6 @@ importers:
       '@floway-dev/http':
         specifier: workspace:*
         version: link:../http
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
       '@floway-dev/pipeline':
         specifier: workspace:*
         version: link:../pipeline
@@ -609,9 +594,6 @@ importers:
       '@floway-dev/http':
         specifier: workspace:*
         version: link:../http
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
       '@floway-dev/pipeline':
         specifier: workspace:*
         version: link:../pipeline
@@ -631,9 +613,12 @@ importers:
 
   packages/provider-claude-code:
     dependencies:
-      '@floway-dev/interceptor':
+      '@floway-dev/http':
         specifier: workspace:*
-        version: link:../interceptor
+        version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -656,9 +641,6 @@ importers:
       '@floway-dev/http':
         specifier: workspace:*
         version: link:../http
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
       '@floway-dev/pipeline':
         specifier: workspace:*
         version: link:../pipeline
@@ -752,6 +734,9 @@ importers:
       '@floway-dev/pipeline':
         specifier: workspace:*
         version: link:../pipeline
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../provider
@@ -761,9 +746,6 @@ importers:
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
-      klona:
-        specifier: 2.0.6
-        version: 2.0.6(patch_hash=86c99277c7bbba3650a877ecb839518955a3fdb068579ba6ec957d107e310dd2)
     devDependencies:
       '@floway-dev/test-utils':
         specifier: workspace:*

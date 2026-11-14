@@ -74,7 +74,7 @@ test('the opaque fixture codec independently snapshots JSON values, raw numbers,
   expect(decoded.targetTurn.content).toBe('original');
   expect(decoded.sourceTurnDigest[0]).toBe(1);
   expect(JSON.stringify(decoded.targetTurn.provider_specific_fields)).toBe('{"amount":1e400}');
-  decoded.targetTurn.content = 'edited output';
+  expect(Object.isFrozen(decoded.targetTurn)).toBe(true);
   decoded.sourceTurnDigest[0] = 10;
   const second = await decodeRoundTripSidecar(codec, 'openaiResponses', encoded);
   if (second?.target !== 'openaiChatCompletions') throw new Error('Expected Chat history');

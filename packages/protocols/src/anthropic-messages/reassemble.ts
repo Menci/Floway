@@ -7,7 +7,7 @@ import type {
   AnthropicMessagesUsage,
   AnthropicMessagesUsageDelta,
 } from './index.ts';
-import { cloneAnthropicMessagesUsageIterations, splitAnthropicMessagesCacheCreationTokens, usageDeltaKeys } from './usage.ts';
+import { splitAnthropicMessagesCacheCreationTokens, usageDeltaKeys } from './usage.ts';
 import { parsePartialJSONWithRawNumbers } from '../common/json.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
@@ -42,12 +42,7 @@ const applyAnthropicMessagesUsageDelta = (usage: AnthropicMessagesUsage, update:
   if (!update) return;
   for (const key of usageDeltaKeys) {
     const value = update[key];
-    if (value != null) Object.defineProperty(usage, key, {
-      value: key === 'iterations' ? cloneAnthropicMessagesUsageIterations(update.iterations!) : value,
-      enumerable: true,
-      writable: true,
-      configurable: true,
-    });
+    if (value != null) Object.defineProperty(usage, key, { value, enumerable: true, writable: true, configurable: true });
   }
 };
 

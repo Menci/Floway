@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { geminiFunctionParameters, geminiResponseSchema, geminiSchemaToJsonSchema } from '../../../../src/protocols/gemini-generate-content/as-source/schema.ts';
+import { deepFreeze } from '../../../shared/deep-freeze.ts';
 
 test('converts Google Schema validation keywords while preserving literal data', () => {
   const source = {
@@ -51,37 +52,34 @@ test('rejects mutually exclusive Gemini schema fields', () => {
   expect(() => geminiResponseSchema({ responseSchema: { type: 'OBJECT' }, responseJsonSchema: {} })).toThrow('mutually exclusive');
 });
 
-test('raw JSON Schema outputs own every mutable descendant across translation trips', () => {
-  const schema = JSON.parse('{"type":"object","properties":{"value":{"enum":["original"],"default":{"nested":[1]}}},"__proto__":{"preserved":[2]}}') as Record<string, unknown>;
+test('raw JSON Schema outputs share the frozen caller schema', () => {
+  const schema = deepFreeze(JSON.parse('{"type":"object","properties":{"value":{"enum":["original"],"default":{"nested":[1]}}},"__proto__":{"preserved":[2]}}') as Record<string, unknown>);
   const original = JSON.stringify(schema);
   const response = geminiResponseSchema({ responseJsonSchema: schema })!;
   const parameters = geminiFunctionParameters({ name: 'lookup', parametersJsonSchema: schema })!;
-  const value = (response.properties as Record<string, Record<string, unknown>>).value;
-  (value.enum as string[]).push('changed');
-  ((value.default as { nested: number[] }).nested).push(3);
-  (response.__proto__ as { preserved: number[] }).preserved.push(4);
+  expect(response).toBe(schema);
+  expect(parameters).toBe(schema);
   expect(JSON.stringify(schema)).toBe(original);
-  expect(JSON.stringify(parameters)).toBe(original);
   expect(Object.hasOwn(response, '__proto__')).toBe(true);
   expect(Object.getPrototypeOf(response)).toBe(Object.prototype);
 });
 
-test('Google Schema outputs own literal fields without converting their data as schemas', () => {
-  const schema = {
+test('Google Schema outputs share literal fields without converting their data as schemas', () => {
+  const schema = deepFreeze({
     type: 'OBJECT',
     required: ['value'],
     properties: {
       value: { type: 'STRING', enum: ['original'], default: { nested: [1] }, example: { type: 'OBJECT', nested: [2] } },
     },
-  };
+  });
   const original = JSON.stringify(schema);
   const response = geminiResponseSchema({ responseSchema: schema })!;
   const parameters = geminiFunctionParameters({ name: 'lookup', parameters: schema })!;
   const value = (response.properties as Record<string, Record<string, unknown>>).value;
-  (response.required as string[]).push('other');
-  (value.enum as string[]).push('changed');
-  ((value.default as { nested: number[] }).nested).push(3);
-  ((value.example as { nested: number[] }).nested).push(4);
+  expect(response.required).toBe(schema.required);
+  expect(value.enum).toBe(schema.properties.value.enum);
+  expect(value.default).toBe(schema.properties.value.default);
+  expect(value.example).toBe(schema.properties.value.example);
   expect(JSON.stringify(schema)).toBe(original);
   expect(parameters).toEqual({
     type: 'object', required: ['value'],

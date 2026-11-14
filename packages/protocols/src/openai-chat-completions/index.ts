@@ -175,6 +175,14 @@ export interface OpenAIChatCompletionsStreamEvent {
   usage?: OpenAIChatCompletionsUsage | null;
 }
 
+// A stream the gateway ends with its own error writes one error event in place of a chunk,
+// carrying internal diagnostics under the provider-extension field.
+export interface OpenAIChatCompletionsErrorEvent {
+  error: { message: string; type?: string; provider_specific_fields?: unknown };
+}
+
+export type ClientOpenAIChatCompletionsStreamEvent = OpenAIChatCompletionsStreamEvent | OpenAIChatCompletionsErrorEvent;
+
 export * from './errors.ts';
 export { parseOpenAIChatCompletionsStream, type ParseOpenAIChatCompletionsStreamOptions } from './stream.ts';
 export { collectOpenAIChatCompletionsProtocolEventsToResult } from './to-result.ts';

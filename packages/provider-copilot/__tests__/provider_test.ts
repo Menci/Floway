@@ -11,7 +11,7 @@ import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-m
 import { parseDecisionRequest } from '@floway-dev/protocols/decision';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, initProviderRepo } from '@floway-dev/provider';
-import { callProviderPipeline, assertEquals, assertRejects, assertThrows, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { collectChatProviderPipeline, callProviderPipeline, assertEquals, assertRejects, assertThrows, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const mergeVariantsControl = vi.hoisted<{
   override: ((merged: CopilotRawModel[]) => CopilotRawModel[]) | null;
@@ -277,7 +277,7 @@ test('Copilot provider owns the claude-* Anthropic Messages capability workaroun
       assertEquals(providerModel.id, 'claude-haiku-chat-listed');
       assertEquals(providerModel.endpoints, { anthropicMessages: {} });
 
-      await provider.callAnthropicMessages(providerModel, {
+      await collectChatProviderPipeline(instance, 'anthropicMessages', providerModel, {
         max_tokens: 100,
         messages: [{ role: 'user', content: 'hello' }],
       }, undefined, noopAnthropicMessagesUpstreamCallOptions());
@@ -333,7 +333,7 @@ test('Copilot provider selects raw variants that support the target endpoint', a
     },
     async () => {
       const [providerModel] = await provider.getProvidedModels(directFetcher);
-      await provider.callOpenAIResponses(providerModel, {
+      await collectChatProviderPipeline(instance, 'openaiResponses', providerModel, {
         input: [{
           type: 'additional_tools',
           role: 'developer',
@@ -345,7 +345,7 @@ test('Copilot provider selects raw variants that support the target endpoint', a
           }],
         }],
         reasoning: { effort: 'xhigh' },
-      }, 'generate', undefined, noopUpstreamCallOptions());
+      }, undefined, noopUpstreamCallOptions());
     },
   );
 
@@ -356,12 +356,12 @@ test('Copilot provider selects raw variants that support the target endpoint', a
   );
 });
 
-test('Copilot provider runs the OpenAI Responses boundary chain on the compact path', async () => {
-  // The compact-path boundary registers payload mutators (strip-service-tier,
+test('Copilot provider runs the OpenAI Responses vendor stages on the compact path', async () => {
+  // The compact pipeline carries payload rebuilds (strip-service-tier,
   // strip-image-generation, ...) plus header derivers (set-vision-header,
-  // set-initiator-header). Driving callOpenAIResponses with action='compact'
+  // set-initiator-header). Driving the openaiResponsesCompact pipeline
   // through a real upstream stub exercises the integration end-to-end: the
-  // payload mutators reach the wire body, the header derivers reach the wire
+  // payload rebuilds reach the wire body, the header derivers reach the wire
   // request headers, and the compact-shaped envelope still comes back through
   // `compactionResponse`.
   const { copilotUpstream } = await setupCopilotTest();
@@ -401,10 +401,10 @@ test('Copilot provider runs the OpenAI Responses boundary chain on the compact p
     },
     async () => {
       const [providerModel] = await provider.getProvidedModels(directFetcher);
-      // service_tier is set so withServiceTierStripped has something to strip;
-      // an input_image is included so withVisionHeaderSet fires; the last
-      // input item is a user message so withInitiatorHeaderSet picks 'user'.
-      const result = await provider.callOpenAIResponses(providerModel, {
+      // service_tier is set so copilotOpenAIResponsesStripServiceTier has something to strip;
+      // an input_image is included so copilotOpenAIResponsesSetVisionHeader fires; the last
+      // input item is a user message so copilotOpenAIResponsesSetInitiatorHeader picks 'user'.
+      const result = await collectChatProviderPipeline(instance, 'openaiResponsesCompact', providerModel, {
         input: [
           {
             type: 'additional_tools',
@@ -426,11 +426,11 @@ test('Copilot provider runs the OpenAI Responses boundary chain on the compact p
           },
         ],
         service_tier: 'priority',
-      }, 'compact', undefined, noopUpstreamCallOptions());
+      }, undefined, noopUpstreamCallOptions());
 
-      if (!result.ok) throw new Error('expected ok compaction result');
-      if (result.action !== 'compact') throw new Error(`expected compact action tag, got ${result.action}`);
-      assertEquals(result.result.object, 'response.compaction');
+      if (!(result.output !== null && 'kind' in result.output)) throw new Error('expected ok compaction result');
+      if (result.output === null || !('kind' in result.output) || result.output.kind !== 'value') throw new Error('expected compact value');
+      assertEquals(result.output.body.object, 'response.compaction');
     },
   );
 
@@ -594,10 +594,10 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
       const opts = noopUpstreamCallOptions();
       const anthropicMessagesOpts = noopAnthropicMessagesUpstreamCallOptions();
 
-      await provider.callOpenAIChatCompletions(byId.get('gpt-chat')!, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-      await provider.callOpenAIResponses(byId.get('gpt-resp')!, { input: [] }, 'generate', undefined, opts);
-      await provider.callAnthropicMessages(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
-      await provider.callAnthropicMessagesCountTokens(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
+      await collectChatProviderPipeline(instance, 'openaiChatCompletions', byId.get('gpt-chat')!, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+      await collectChatProviderPipeline(instance, 'openaiResponses', byId.get('gpt-resp')!, { input: [] }, undefined, opts);
+      await collectChatProviderPipeline(instance, 'anthropicMessages', byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
+      await collectChatProviderPipeline(instance, 'anthropicMessagesCountTokens', byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
       await callProviderPipeline(instance, 'openaiEmbeddings', byId.get('emb-mini')!, { input: 'hi' }, undefined, opts);
     },
   );
@@ -615,10 +615,8 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
   const provider = instance.instance;
   const visionHeaders: (string | null)[] = [];
 
-  // The vision-detection interceptor runs inside `provider.callAnthropicMessages`, so
-  // it must walk into nested `tool_result.content` to find the image.
   const driveAnthropicMessages = async (providerModel: Awaited<ReturnType<typeof instance.instance.getProvidedModels>>[number], body: Omit<AnthropicMessagesPayload, 'model'>): Promise<void> => {
-    await provider.callAnthropicMessages(providerModel, body, undefined, noopAnthropicMessagesUpstreamCallOptions());
+    await collectChatProviderPipeline(instance, 'anthropicMessages', providerModel, body, undefined, noopAnthropicMessagesUpstreamCallOptions());
   };
 
   await withMockedFetch(
@@ -693,12 +691,8 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
 });
 
 test('Copilot Anthropic Messages boundary chain does NOT fire on the OpenAI Chat Completions wire (translated path)', async () => {
-  // Boundary isolation: each provider call method runs only its own protocol
-  // boundary chain. The Anthropic-Messages-only `withClaudeAgentHeadersSet` interceptor
-  // would set x-interaction-type to 'messages-proxy' for Claude Code SDK
-  // metadata, but it MUST NOT run when the translated path calls Copilot's
-  // openai-chat-completions wire — that path runs `COPILOT_OPENAI_CHAT_COMPLETIONS_BOUNDARY`,
-  // which has no Anthropic-Messages-source headers in it.
+  // The operation chain selects wire-specific stages. Claude Code metadata must
+  // not install Anthropic Messages headers on a Chat Completions request.
   const { copilotUpstream } = await setupCopilotTest();
   const instance = createCopilotProvider(copilotUpstream);
   const provider = instance.instance;
@@ -723,21 +717,15 @@ test('Copilot Anthropic Messages boundary chain does NOT fire on the OpenAI Chat
     },
     async () => {
       const [providerModel] = await provider.getProvidedModels(directFetcher);
-      // Even with a Claude-Code-shaped metadata blob, the openai-chat-completions
-      // boundary chain has no Anthropic-Messages-source interceptor, so the
-      // messages-proxy intent must not appear on the wire.
-      await provider.callOpenAIChatCompletions(providerModel, {
+      await collectChatProviderPipeline(instance, 'openaiChatCompletions', providerModel, {
         messages: [{ role: 'user', content: 'hi' }],
         metadata: { user_id: JSON.stringify({ device_id: 'dev-1', session_id: 'sess-1' }) },
       }, undefined, noopUpstreamCallOptions());
     },
   );
 
-  // The openai-chat-completions wire defaults to `conversation-agent` (set by
-  // `copilotAuthedFetch` in `packages/provider-copilot/src/auth.ts`). The
-  // Anthropic-Messages-boundary `withClaudeAgentHeadersSet` would overwrite it to
-  // `messages-proxy` if it had run — its absence is the
-  // proof that the Anthropic Messages boundary chain did NOT fire on this wire.
+  // Authentication sets conversation-agent; the Anthropic-only header stage
+  // would overwrite it to messages-proxy if it ran on this operation.
   assertEquals(observedInteractionType, ['conversation-agent']);
 });
 
@@ -965,7 +953,7 @@ test('readCopilotUpstreamState round-trips a persisted state with both knownMode
 //
 // The catalog merges `claude-opus-4.6` and `claude-opus-4.6-fast` into one
 // public id; `speed: "fast"` on the request picks the `-fast` raw variant,
-// `withSpeedFast` strips the field from the wire, and the response stream
+// `copilotAnthropicMessagesSpeedFast` strips the field from the wire, and the response stream
 // gets `usage.speed = 'fast'` stamped before it leaves the provider.
 // ---------------------------------------------------------------------------
 
@@ -1018,7 +1006,8 @@ const betaIntent = ['context-1m-2025-08-07', 'advanced-tool-use-2025-11-20', 'un
 
 test('Copilot consumes Anthropic Messages beta intent before serializing its supported wire subset', async () => {
   const { copilotUpstream } = await setupCopilotTest();
-  const provider = createCopilotProvider(copilotUpstream).instance;
+  const instance = createCopilotProvider(copilotUpstream);
+  const provider = instance.instance;
   let upstreamModel: unknown;
   let upstreamBeta: string | null = null;
 
@@ -1041,13 +1030,8 @@ test('Copilot consumes Anthropic Messages beta intent before serializing its sup
     },
     async () => {
       const [providerModel] = await provider.getProvidedModels(directFetcher);
-      const result = await provider.callAnthropicMessages(
-        providerModel,
-        { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
-        undefined,
-        noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: betaIntent }),
-      );
-      assertEquals(result.modelKey, 'claude-opus-4.6-1m');
+      const result = await collectChatProviderPipeline(instance, 'anthropicMessages', providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: betaIntent }));
+      assertEquals(result.facts['response.provider.modelKey'], 'claude-opus-4.6-1m');
     },
   );
 
@@ -1057,7 +1041,8 @@ test('Copilot consumes Anthropic Messages beta intent before serializing its sup
 
 test('Copilot count_tokens consumes and serializes the same Anthropic Messages beta intent', async () => {
   const { copilotUpstream } = await setupCopilotTest();
-  const provider = createCopilotProvider(copilotUpstream).instance;
+  const instance = createCopilotProvider(copilotUpstream);
+  const provider = instance.instance;
   let upstreamModel: unknown;
   let upstreamBeta: string | null = null;
 
@@ -1078,13 +1063,8 @@ test('Copilot count_tokens consumes and serializes the same Anthropic Messages b
     },
     async () => {
       const [providerModel] = await provider.getProvidedModels(directFetcher);
-      const result = await provider.callAnthropicMessagesCountTokens(
-        providerModel,
-        { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
-        undefined,
-        noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: betaIntent }),
-      );
-      assertEquals(result.modelKey, 'claude-opus-4.6-1m');
+      const result = await collectChatProviderPipeline(instance, 'anthropicMessagesCountTokens', providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: betaIntent }));
+      assertEquals(result.facts['response.provider.modelKey'], 'claude-opus-4.6-1m');
     },
   );
 
@@ -1116,17 +1096,12 @@ test('Copilot provider routes speed=fast to the -fast raw variant and stamps usa
       const [providerModel] = await provider.getProvidedModels(directFetcher);
       assertEquals(providerModel.id, 'claude-opus-4-6');
 
-      const result = await provider.callAnthropicMessages(
-        providerModel,
-        { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }], speed: 'fast' },
-        undefined,
-        noopAnthropicMessagesUpstreamCallOptions(),
-      );
+      const result = await collectChatProviderPipeline(instance, 'anthropicMessages', providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }], speed: 'fast' }, undefined, noopAnthropicMessagesUpstreamCallOptions());
 
-      if (!result.ok) throw new Error(`expected ok stream, got ${JSON.stringify(result.response)}`);
+      if (!(result.output !== null && 'kind' in result.output)) throw new Error(`expected ok stream, got ${JSON.stringify(result.response)}`);
 
       const frames = [];
-      for await (const frame of result.events) frames.push(frame);
+      for (const frame of result.frames) frames.push(frame);
 
       const messageStart = frames.find(f => f.type === 'event' && f.event.type === 'message_start');
       if (messageStart?.type !== 'event' || messageStart.event.type !== 'message_start') {
@@ -1140,7 +1115,7 @@ test('Copilot provider routes speed=fast to the -fast raw variant and stamps usa
       }
       assertEquals('speed' in messageDelta.event.usage!, false);
 
-      assertEquals(result.modelKey, 'claude-opus-4.6-fast');
+      assertEquals(result.facts['response.provider.modelKey'], 'claude-opus-4.6-fast');
     },
   );
 
@@ -1174,23 +1149,18 @@ test('Copilot provider returns HTTP 400 invalid_request_error when speed=fast hi
     async () => {
       const [providerModel] = await provider.getProvidedModels(directFetcher);
 
-      const result = await provider.callAnthropicMessages(
-        providerModel,
-        { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }], speed: 'fast' },
-        undefined,
-        noopAnthropicMessagesUpstreamCallOptions(),
-      );
+      const result = await collectChatProviderPipeline(instance, 'anthropicMessages', providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }], speed: 'fast' }, undefined, noopAnthropicMessagesUpstreamCallOptions());
 
-      if (result.ok) throw new Error('expected 400 error, got ok stream');
-      assertEquals(result.response.status, 400);
-      const body = (await result.response.json()) as { type: string; error: { type: string; message: string } };
+      if ((result.output !== null && 'kind' in result.output)) throw new Error('expected 400 error, got ok stream');
+      assertEquals(result.response!.status, 400);
+      const body = (await result.response!.json()) as { type: string; error: { type: string; message: string } };
       // Byte-identical to the wire string Anthropic emits on real api.anthropic.com
       // for the same failure mode — recorded verbatim from a live response in
       // https://github.com/Yeachan-Heo/gajae-code/blob/main/packages/ai/test/anthropic-fast-mode.test.ts
       assertEquals(body.type, 'error');
       assertEquals(body.error.type, 'invalid_request_error');
       assertEquals(body.error.message, "'claude-haiku-4-5' does not support the `speed` parameter.");
-      assertEquals(result.modelKey, providerModel.id);
+      assertEquals(result.facts['response.provider.modelKey'], providerModel.id);
     },
   );
 
@@ -1223,12 +1193,7 @@ test('Copilot provider passes unknown speed values to the upstream verbatim so t
       // does not own rejecting it and must not strip it either — let
       // Copilot surface whatever error its strict validator returns.
       const speedValue = 'priority' as AnthropicMessagesPayload['speed'];
-      await provider.callAnthropicMessages(
-        providerModel,
-        { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }], speed: speedValue },
-        undefined,
-        noopAnthropicMessagesUpstreamCallOptions(),
-      );
+      await collectChatProviderPipeline(instance, 'anthropicMessages', providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }], speed: speedValue }, undefined, noopAnthropicMessagesUpstreamCallOptions());
     },
   );
 
@@ -1428,7 +1393,8 @@ test('Copilot image edits keeps multipart uploads free of a JSON content-type', 
 // the SSE body, so a streaming call snapshots at stream start.
 test('Copilot provider persists the quota snapshot a data-plane response carries', async () => {
   const harness = await setupCopilotTest();
-  const provider = createCopilotProvider(harness.copilotUpstream).instance;
+  const instance = createCopilotProvider(harness.copilotUpstream);
+  const provider = instance.instance;
 
   await withMockedFetch(
     request => {
@@ -1454,7 +1420,7 @@ test('Copilot provider persists the quota snapshot a data-plane response carries
     },
     async () => {
       const [model] = await provider.getProvidedModels(directFetcher);
-      await provider.callOpenAIChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
+      await collectChatProviderPipeline(instance, 'openaiChatCompletions', model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
       // The persist is fire-and-forget: on workerd `waitUntil` keeps it alive
       // past the response, and here it settles on the host event loop.
       await vi.waitFor(() => {
@@ -1471,10 +1437,10 @@ test('Copilot provider persists the quota snapshot a data-plane response carries
   assertEquals(snapshot?.data.reset_at, '2026-09-01T00:00:00Z');
 });
 
-test('Copilot provider returns the upstream response when passive quota headers are malformed', async () => {
+test('Copilot provider relays the upstream stream and warns about malformed passive quota headers', async () => {
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
   const harness = await setupCopilotTest();
-  const provider = createCopilotProvider(harness.copilotUpstream).instance;
-  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const instance = createCopilotProvider(harness.copilotUpstream);
 
   await withMockedFetch(
     request => {
@@ -1498,15 +1464,18 @@ test('Copilot provider returns the upstream response when passive quota headers 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [model] = await provider.getProvidedModels(directFetcher);
-      const result = await provider.callOpenAIChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
-      assertEquals(result.ok, true);
+      const [model] = await instance.instance.getProvidedModels(directFetcher);
+      const result = await collectChatProviderPipeline(instance, 'openaiChatCompletions', model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
+      assertEquals(result.output !== null && 'kind' in result.output && result.output.kind, 'stream');
+      assertEquals(result.frames, [{ type: 'done' }]);
+      assertEquals(warning.mock.calls.length, 1);
+      assertEquals(warning.mock.calls[0][0], 'Failed to parse Copilot quota snapshot for up_copilot:');
+      assertEquals(warning.mock.calls[0][1].message, 'Invalid Copilot quota entitlement');
+      warning.mockRestore();
     },
   );
 
   assertEquals(readCopilotUpstreamState(harness.getCurrentState()).quotaSnapshot, null);
-  assertEquals(warn.mock.calls.length, 1);
-  warn.mockRestore();
 });
 
 // `/models` and every 4xx we have observed come back without the header
@@ -1514,7 +1483,8 @@ test('Copilot provider returns the upstream response when passive quota headers 
 // no upside, so the slot is left exactly as it was.
 test('Copilot provider leaves the persisted snapshot alone when a response carries no quota headers', async () => {
   const harness = await setupCopilotTest();
-  const provider = createCopilotProvider(harness.copilotUpstream).instance;
+  const instance = createCopilotProvider(harness.copilotUpstream);
+  const provider = instance.instance;
 
   await withMockedFetch(
     request => {
@@ -1535,7 +1505,7 @@ test('Copilot provider leaves the persisted snapshot alone when a response carri
     },
     async () => {
       const [model] = await provider.getProvidedModels(directFetcher);
-      await provider.callOpenAIChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
+      await collectChatProviderPipeline(instance, 'openaiChatCompletions', model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
     },
   );
 
@@ -1591,10 +1561,10 @@ test('Copilot provider merges the -fast raw variant and reaches it through servi
       const sol = models.find(model => model.id === 'gpt-5.6-sol')!;
       const opts = noopUpstreamCallOptions();
 
-      await provider.callOpenAIResponses(sol, { input: [] }, 'generate', undefined, opts);
-      await provider.callOpenAIResponses(sol, { input: [], service_tier: 'priority' }, 'generate', undefined, opts);
-      await provider.callOpenAIResponses(sol, { input: [], service_tier: 'fast' }, 'generate', undefined, opts);
-      await provider.callOpenAIResponses(sol, { input: [], service_tier: 'flex' }, 'generate', undefined, opts);
+      await collectChatProviderPipeline(instance, 'openaiResponses', sol, { input: [] }, undefined, opts);
+      await collectChatProviderPipeline(instance, 'openaiResponses', sol, { input: [], service_tier: 'priority' }, undefined, opts);
+      await collectChatProviderPipeline(instance, 'openaiResponses', sol, { input: [], service_tier: 'fast' }, undefined, opts);
+      await collectChatProviderPipeline(instance, 'openaiResponses', sol, { input: [], service_tier: 'flex' }, undefined, opts);
     },
   );
 

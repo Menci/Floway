@@ -7,6 +7,7 @@ import { hashRoundTripContent } from '../../../src/round-trip/hash.ts';
 import { restoreAssistantTurn } from '../../../src/round-trip/reference/restore.ts';
 import { ContentReference } from '../../../src/round-trip/reference/types.ts';
 import { rawJSON } from '../../../src/shared/json/raw-json.ts';
+import { deepFreeze } from '../../shared/deep-freeze.ts';
 
 describe('restoreAssistantTurn', () => {
   it('keeps ordinary reference-shaped JSON objects and literal arrays as data', async () => {
@@ -47,26 +48,26 @@ describe('restoreAssistantTurn', () => {
     expect(hydrated.value[0].parts?.[0]).toBe(part);
   });
 
-  it('restores text and JSON reference leaves in place while retaining their containers', async () => {
+  it('rebuilds the paths holding text and JSON reference leaves and shares the rest', async () => {
     const candidate = { value: 1, nested: { label: 'restored' } };
-    const text = { type: 'text' as const, text: new ContentReference('text', [[0, 1, 7]]), citations: null };
-    const tool = { type: 'tool_use' as const, id: 'call', name: 'lookup', input: new ContentReference('json', [1]) };
-    const blocks = [text, tool];
-    const turn: AnthropicMessagesReferenceableInputAssistantTurn<ContentReference> = { role: 'assistant', content: blocks };
+    const textReference = new ContentReference('text', [[0, 1, 7]]);
+    const jsonReference = new ContentReference('json', [1]);
+    const literal = { type: 'text' as const, text: 'literal', citations: null };
+    const text = { type: 'text' as const, text: textReference, citations: null };
+    const tool = { type: 'tool_use' as const, id: 'call', name: 'lookup', input: jsonReference };
+    const turn: AnthropicMessagesReferenceableInputAssistantTurn<ContentReference> = deepFreeze({ role: 'assistant', content: [literal, text, tool] });
     const hydrated = await restoreAssistantTurn('anthropicMessages', ['[answer]', candidate], turn, [
       await hashRoundTripContent('[answer]'), await hashRoundTripContent(JSON.stringify(candidate)),
     ]);
     if (!hydrated.ok) throw new Error('Expected reference hydration');
-    expect(hydrated.value).toBe(turn);
-    expect(hydrated.value.content).toBe(blocks);
-    expect(hydrated.value.content[0]).toBe(text);
-    expect(hydrated.value.content[1]).toBe(tool);
-    expect(text.text).toBe('answer');
-    expect(tool.input).toEqual(candidate);
-    expect(tool.input).not.toBe(candidate);
+    expect(hydrated.value).toEqual({ role: 'assistant', content: [literal, { ...text, text: 'answer' }, { ...tool, input: candidate }] });
+    expect(hydrated.value.content[0]).toBe(literal);
+    expect(hydrated.value.content[2]).not.toBe(candidate);
+    expect(text.text).toBe(textReference);
+    expect(tool.input).toBe(jsonReference);
   });
 
-  it('preserves raw JSON and byte atom identities inside the consumed turn', async () => {
+  it('preserves raw JSON and byte atom identities inside the restored turn', async () => {
     const bytes = new Uint8Array([1, 2, 3]);
     const number = rawJSON.rawJSON('9007199254740993');
     const metadata = { bytes, number, nested: [{ kind: 'text', parts: [0] }] };
@@ -77,7 +78,7 @@ describe('restoreAssistantTurn', () => {
     };
     const hydrated = await restoreAssistantTurn('openaiChatCompletions', ['answer'], turn, [await hashRoundTripContent('answer')]);
     if (!hydrated.ok) throw new Error('Expected reference hydration');
-    expect(hydrated.value).toBe(turn);
+    expect(hydrated.value).not.toBe(turn);
     expect(hydrated.value.content).toBe('answer');
     expect(hydrated.value.provider_specific_fields).toBe(metadata);
     expect(metadata.bytes).toBe(bytes);

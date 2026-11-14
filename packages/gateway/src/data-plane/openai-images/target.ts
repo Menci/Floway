@@ -11,7 +11,7 @@ const ENDPOINT = {
 /** A candidate that cannot serve *this* request is not a candidate. One family covers two
  *  endpoints and an upstream may expose either without the other, so which one is asked for is
  *  what narrows the list. */
-export const narrowing = (request: CanonicalOpenAIImagesRequest) => ({
+export const narrowing = (request: Pick<CanonicalOpenAIImagesRequest, 'operation'>) => ({
   kind: 'image' as const,
   reject: (candidate: ModelCandidate) => candidate.model.endpoints[ENDPOINT[request.operation]] === undefined
     ? `the upstream does not expose the OpenAI Images ${request.operation} endpoint`

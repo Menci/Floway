@@ -15,8 +15,8 @@ const testUser: User = {
   deletedAt: null,
 };
 
-// Shared minimal GatewayCtx for tests that exercise serve / respond /
-// interceptor code in isolation. Defaults satisfy every required field; pass
+// Shared minimal GatewayCtx for tests that exercise stage code in
+// isolation. Defaults satisfy every required field; pass
 // `overrides` to nudge what each test cares about. Callers that need a
 // downstream abort controller should construct one and spread
 // `{ abortSignal: controller.signal, downstreamAbortController: controller }`

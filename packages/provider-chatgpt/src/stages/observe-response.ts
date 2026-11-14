@@ -1,4 +1,4 @@
-import { classifyChatGPTHttpResponse, classifyChatGPTUnauthorizedResponse, decodeChatGPTUpstreamError } from '../fetch.ts';
+import { classifyChatGPTUnauthorizedResponse, decodeChatGPTUpstreamError, writeChatGPTQuotaObservation } from '../backend.ts';
 import { chatgptCall, type ChatGPTHttpFacts, type ChatGPTOperation, type ChatGPTPipelineConfig } from '../pipeline-facts.ts';
 import { exchangeResponse, takeHttpResponse, type HttpResponseFacts } from '@floway-dev/http/pipeline';
 import { defer, defineStage, move, setRelease, type Deferred } from '@floway-dev/pipeline';
@@ -22,12 +22,18 @@ export const observeChatGPTResponse = (config: ChatGPTPipelineConfig, operation:
     let classified: Response;
     let failureBody: unknown = null;
     if (exchange.status === 401) {
-      const parsed = decodeChatGPTUpstreamError(await response.text());
       if (exchange.body !== null) setRelease(exchange.body, async () => {});
+      const parsed = decodeChatGPTUpstreamError(await response.text());
       failureBody = parsed.body;
+      if (call.account.refresh_token === null) pending.push(call.effects.persistTerminalState('session_terminated', parsed.message));
       classified = await classifyChatGPTUnauthorizedResponse(call, response, parsed);
     } else {
-      classified = await classifyChatGPTHttpResponse({ ...call, call: { ...call.call, waitUntil: work => { pending.push(work); } } }, response, operation === 'alphaSearch' ? 'always' : 'when-present');
+      classified = response;
+      if (response.ok || response.status === 429) {
+        const policy = operation === 'alphaSearch' || operation === 'openaiResponses' || operation === 'openaiResponsesCompact' ? 'always' : 'when-present';
+        const work = writeChatGPTQuotaObservation(call, response, response.status === 429, policy);
+        if (work !== null) pending.push(work);
+      }
     }
     const retained = classified === response ? exchange : takeHttpResponse(classified);
     return move({ ...back, 'response.http.exchange': retained, 'response.http.body': retained.body, 'response.chatgpt.background': defer(Promise.all(pending)), 'response.chatgpt.failureBody': failureBody });

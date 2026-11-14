@@ -13,6 +13,7 @@ import { readOpenAIChatCompletionsRequest } from '../../../src/protocols/openai-
 import { readOpenAIResponsesRequest } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
+import { deepFreeze } from '../../shared/deep-freeze.ts';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
@@ -165,27 +166,20 @@ test.each([{ include: [] }, { include: null }])('Responses include $include stat
   });
 });
 
-test('request settings own cache options separately from source and target mutations', async () => {
-  const source = {
+test('request settings carry frozen cache options through both directions', async () => {
+  const source = deepFreeze({
     model: 'm', stream: true, messages: [], prompt_cache_options: { mode: 'explicit', ttl: '30m' },
-  } satisfies OpenAIChatCompletionsPayload;
+  } satisfies OpenAIChatCompletionsPayload);
   const reading = readOpenAIChatCompletionsRequest(source);
-  source.prompt_cache_options.mode = 'source-mutated';
-  expect(reading.request.settings.prompt_cache_options).toEqual({ mode: 'explicit', ttl: '30m' });
+  expect(reading.request.settings.prompt_cache_options).toBe(source.prompt_cache_options);
   const target = await buildTargetPayloadFor(pairs.chatToResponses[0], pairs.chatToResponses[1], source, options, reading);
   expect(target.prompt_cache_options).toEqual({ mode: 'explicit', ttl: '30m' });
-  if (target.prompt_cache_options === undefined) throw new Error('Expected cache options.');
-  target.prompt_cache_options.mode = 'target-mutated';
-  expect(reading.request.settings.prompt_cache_options).toEqual({ mode: 'explicit', ttl: '30m' });
 
-  const reverseSource = { ...target, prompt_cache_options: { mode: 'explicit', ttl: '30m', prewarm: false } };
+  const reverseSource = deepFreeze({ ...target, prompt_cache_options: { mode: 'explicit', ttl: '30m', prewarm: false } });
   const reverseReading = readOpenAIResponsesRequest(reverseSource);
-  reverseSource.prompt_cache_options.mode = 'source-mutated';
   const reverseTarget = await buildTargetPayloadFor(pairs.responsesToChat[0], pairs.responsesToChat[1], reverseSource, options, reverseReading);
   expect(reverseTarget.prompt_cache_options).toEqual({ mode: 'explicit', ttl: '30m' });
-  if (reverseTarget.prompt_cache_options == null) throw new Error('Expected cache options.');
-  reverseTarget.prompt_cache_options.mode = 'target-mutated';
-  expect(reverseReading.request.settings.prompt_cache_options).toEqual({ mode: 'explicit', ttl: '30m' });
+  expect(reverseSource.prompt_cache_options).toEqual({ mode: 'explicit', ttl: '30m', prewarm: false });
 });
 
 test.each(['auto', 'none'] as const)('orphan Messages %s stays in source IR and is omitted by both OpenAI writers', async type => {

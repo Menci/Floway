@@ -1,5 +1,3 @@
-import { klona } from 'klona/json';
-
 import { requireCallableSelector } from './allowed-tools.ts';
 import { partitionOpenAIResponsesTurns, type OpenAIResponsesConversationTurn } from './conversation-turns.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from './programmatic-tooling.ts';
@@ -204,7 +202,7 @@ const toolToIR = (tool: Extract<OpenAIResponsesTool, { type: 'function' | 'custo
     name: tool.name,
     ...identity,
     ...(tool.description == null ? {} : { description: tool.description }),
-    ...(tool.parameters == null ? {} : { parameters: klona(tool.parameters) }),
+    ...(tool.parameters == null ? {} : { parameters: tool.parameters }),
     ...(tool.strict == null ? {} : { strict: tool.strict }),
   };
 };
@@ -328,7 +326,7 @@ const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): 
           ...('name' in format && typeof format.name === 'string' ? { name: format.name } : {}),
           ...('description' in format && typeof format.description === 'string' ? { description: format.description } : {}),
           ...('schema' in format && format.schema !== undefined && format.schema !== null && typeof format.schema === 'object'
-            ? { schema: klona(format.schema) as Record<string, unknown> }
+            ? { schema: format.schema as Readonly<Record<string, unknown>> }
             : {}),
           ...('strict' in format && format.strict !== undefined ? { strict: format.strict } : {}),
         }

@@ -1,5 +1,3 @@
-import { klona } from 'klona/json';
-
 import { partitionOpenAIChatCompletionsTurns, type OpenAIChatCompletionsConversationMessage, type OpenAIChatCompletionsConversationTurn } from './conversation-turns.ts';
 import type { OpenAIChatCompletionsSourceAssistantTurn } from './round-trip.ts';
 import type { SourceReading } from '../../../composition/reading.ts';
@@ -226,7 +224,7 @@ const toolToIR = (tool: OpenAIChatCompletionsTool): IRInputTool => {
     type: 'function',
     name: tool.function.name,
     ...(tool.function.description === undefined ? {} : { description: tool.function.description }),
-    ...(tool.function.parameters === undefined ? {} : { parameters: klona(tool.function.parameters) }),
+    ...(tool.function.parameters === undefined ? {} : { parameters: tool.function.parameters }),
     ...(tool.function.strict == null ? {} : { strict: tool.function.strict }),
   };
 };
@@ -269,7 +267,7 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
           type: 'json_schema',
           ...(format.json_schema.name === undefined ? {} : { name: format.json_schema.name }),
           ...(format.json_schema.description === undefined ? {} : { description: format.json_schema.description }),
-          ...(format.json_schema.schema === undefined ? {} : { schema: klona(format.json_schema.schema) }),
+          ...(format.json_schema.schema === undefined ? {} : { schema: format.json_schema.schema }),
           // The tool-side and format-side `strict` share a spelling; an omitted
           // format strictness stays absent so the target applies its own default.
           ...(format.json_schema.strict === undefined ? {} : { strict: format.json_schema.strict }),
@@ -281,7 +279,7 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
     stream: payload.stream === true,
     ...(payload.temperature === undefined ? {} : { temperature: payload.temperature }),
     ...(payload.top_p === undefined ? {} : { top_p: payload.top_p }),
-    ...(payload.stop == null ? {} : { stop: typeof payload.stop === 'string' ? [payload.stop] : [...payload.stop] }),
+    ...(payload.stop == null ? {} : { stop: typeof payload.stop === 'string' ? [payload.stop] : payload.stop }),
     ...(payload.seed == null ? {} : { seed: payload.seed }),
     ...(payload.max_tokens === undefined ? {} : { max_visible_output_tokens: payload.max_tokens }),
     ...(payload.max_completion_tokens === undefined ? {} : { max_output_tokens: payload.max_completion_tokens }),
@@ -293,7 +291,7 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
     ...(payload.reasoning_effort == null ? {} : { reasoning_effort: payload.reasoning_effort }),
     ...(payload.prompt_cache_key === undefined ? {} : { prompt_cache_key: payload.prompt_cache_key }),
     ...(payload.prompt_cache_retention === undefined ? {} : { prompt_cache_retention: payload.prompt_cache_retention }),
-    ...(payload.prompt_cache_options === undefined ? {} : { prompt_cache_options: klona(payload.prompt_cache_options) }),
+    ...(payload.prompt_cache_options === undefined ? {} : { prompt_cache_options: payload.prompt_cache_options }),
     ...(payload.safety_identifier === undefined ? {} : { safety_identifier: payload.safety_identifier }),
     ...(payload.user === undefined ? {} : { user: payload.user }),
     ...(payload.logprobs === undefined ? {} : { logprobs: payload.logprobs }),

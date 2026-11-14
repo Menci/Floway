@@ -1,5 +1,5 @@
 import type { Fields } from './facts.ts';
-import { isFailure } from '../pipeline/facts.ts';
+import { isFailure, renderFailure, mintedErrorEnvelope } from '../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { renderErrorEnvelope, type JsonObject } from '@floway-dev/protocols/common';
@@ -33,11 +33,12 @@ export const emitDecision = defineStage<
     const forwardable = headers.filter(([name]) => isForwardableUpstreamHeader(name));
     const forClient = forwardable.length === headers.length ? headers : move(forwardable);
     if (isFailure(answer)) {
+      const failure = renderFailure(answer, mintedErrorEnvelope);
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.decision.rendered': move(renderErrorEnvelope(answer.message, answer.body)),
-        'response.http.status': answer.status,
+        'response.decision.rendered': move(failure.body),
+        'response.http.status': failure.status,
       };
     }
     const source = back['ingress.decision.sourceProtocol'];

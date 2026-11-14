@@ -34,15 +34,12 @@ export const wrapOpenAIResponsesStatefulOutput = (
 // at the stateful half and completes that resource itself.
 export const wrapOpenAIResponsesClientEgress = (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
-  ctx: GatewayCtx,
+  ctx: ChatGatewayCtx,
   request: CanonicalOpenAIResponsesPayload,
   responseId?: string,
-): AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> => {
-  if (!('affinity' in ctx) || !('store' in ctx)) throw new Error('OpenAI Responses output requires chat context');
-  const chatCtx = ctx as ChatGatewayCtx;
-  return wrapResponseResourceCompletion(wrapOpenAIResponsesStatefulOutput(frames, chatCtx, responseId), {
+): AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> =>
+  wrapResponseResourceCompletion(wrapOpenAIResponsesStatefulOutput(frames, ctx, responseId), {
     request,
     createdAt: openaiResponsesCreatedAt(ctx),
-    stored: chatCtx.store.writesState,
+    stored: ctx.store.writesState,
   });
-};

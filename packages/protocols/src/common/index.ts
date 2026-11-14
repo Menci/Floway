@@ -18,3 +18,4 @@ export * from './preferences.ts';
 export { renderErrorEnvelope, upstreamErrorMessage } from './error-envelope.ts';
 export { isJsonObject, isRawNumber, jsonInteger, parseJsonNumber, parseJSONWithRawNumbers, type JsonNumber, type JsonObject } from './json.ts';
 export { captureExtras } from './reassemble-extras.ts';
+export { mapKeepingIdentity, withIndexesChanged, withKeysChanged } from './rebuild.ts';

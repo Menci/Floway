@@ -1,10 +1,7 @@
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
-import { captureExtras, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiGenerateContentCandidate as WireCandidate, GeminiGenerateContentPart, GeminiGenerateContentContent, GeminiGenerateContentResult as WireResult, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
+import { captureExtras, eventFrame, mapKeepingIdentity, withIndexesChanged, withKeysChanged, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiGenerateContentCandidate, GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_KEYS } from '@floway-dev/protocols/gemini-generate-content';
-
-interface GeminiGenerateContentCandidateWithParts extends WireCandidate { index: number; content: GeminiGenerateContentContent & { parts: GeminiGenerateContentPart[] } }
-interface GeminiGenerateContentResult extends Omit<WireResult, 'candidates'> { candidates?: Array<WireCandidate & { index: number }> }
 
 // Gemini generateContent pays one upstream event of TTFT/inter-event latency. Within one event
 // repeated snapshots collapse to one signature on the element's first
@@ -33,8 +30,7 @@ export const wrapGeminiGenerateContentAffinityEgress = async function* (
   options: AffinityEgressOptions,
 ): AsyncGenerator<ProtocolFrame<GeminiGenerateContentStreamEvent>> {
   const anchoredCandidates = new Set<number>();
-  const suppressedEvents = new WeakSet<GeminiGenerateContentResult>();
-  let pending: GeminiGenerateContentResult | undefined;
+  let pending: PendingEvent | undefined;
   const iterator = frames[Symbol.asyncIterator]();
   let sourceCompleted = false;
 
@@ -45,15 +41,8 @@ export const wrapGeminiGenerateContentAffinityEgress = async function* (
         result = await iterator.next();
       } catch (error) {
         if (pending !== undefined) {
-          const wrapped = await wrapGeminiGenerateContentEventAffinity(
-            pending,
-            undefined,
-            anchoredCandidates,
-            suppressedEvents,
-            options,
-            false,
-          );
-          if (!suppressedEvents.has(wrapped)) yield eventFrame(wrapped);
+          const flushed = await flushPending(pending, anchoredCandidates, options, false);
+          if (flushed !== undefined) yield eventFrame(flushed);
           pending = undefined;
         }
         throw error;
@@ -65,15 +54,8 @@ export const wrapGeminiGenerateContentAffinityEgress = async function* (
       const frame = result.value;
       if (frame.type !== 'event') {
         if (pending !== undefined) {
-          const wrapped = await wrapGeminiGenerateContentEventAffinity(
-            pending,
-            undefined,
-            anchoredCandidates,
-            suppressedEvents,
-            options,
-            frame.type === 'done',
-          );
-          if (!suppressedEvents.has(wrapped)) yield eventFrame(wrapped);
+          const flushed = await flushPending(pending, anchoredCandidates, options, frame.type === 'done');
+          if (flushed !== undefined) yield eventFrame(flushed);
           pending = undefined;
         }
         yield frame;
@@ -81,86 +63,132 @@ export const wrapGeminiGenerateContentAffinityEgress = async function* (
       }
       if ('error' in frame.event) {
         if (pending !== undefined) {
-          const wrapped = await wrapGeminiGenerateContentEventAffinity(
-            pending,
-            undefined,
-            anchoredCandidates,
-            suppressedEvents,
-            options,
-            false,
-          );
-          if (!suppressedEvents.has(wrapped)) yield eventFrame(wrapped);
+          const flushed = await flushPending(pending, anchoredCandidates, options, false);
+          if (flushed !== undefined) yield eventFrame(flushed);
         }
         yield frame;
         return;
       }
 
-      const next = cloneGeminiGenerateContentEvent(frame.event);
-      if (pending !== undefined) {
-        const wrapped = await wrapGeminiGenerateContentEventAffinity(
-          pending,
-          next,
-          anchoredCandidates,
-          suppressedEvents,
-          options,
-          false,
-        );
-        if (!suppressedEvents.has(wrapped)) yield eventFrame(wrapped);
+      if (pending === undefined) {
+        pending = { event: frame.event, suppressed: false };
+        continue;
       }
-      pending = next;
+      const pass = await passOverEventPair(pending, frame.event, anchoredCandidates, options, false);
+      if (!pass.current.suppressed) yield eventFrame(pass.current.event);
+      pending = pass.next;
     }
   } finally {
     if (!sourceCompleted) await iterator.return?.();
   }
 
   if (pending !== undefined) {
-    const wrapped = await wrapGeminiGenerateContentEventAffinity(
-      pending,
-      undefined,
-      anchoredCandidates,
-      suppressedEvents,
-      options,
-      false,
-    );
-    if (!suppressedEvents.has(wrapped)) yield eventFrame(wrapped);
+    const flushed = await flushPending(pending, anchoredCandidates, options, false);
+    if (flushed !== undefined) yield eventFrame(flushed);
   }
 };
 
-const cloneGeminiGenerateContentEvent = (event: WireResult): GeminiGenerateContentResult => {
-  const { candidates, ...rest } = event;
-  return {
-    ...rest,
-    ...(candidates === undefined ? {} : {
-      candidates: candidates.map(candidate => ({
-        ...candidate, index: candidate.index ?? 0,
-        ...(candidate.content === undefined ? {} : { content: { ...candidate.content, ...(candidate.content.parts === undefined ? {} : { parts: candidate.content.parts.map(part => ({ ...part })) }) } }),
-      })),
-    }),
-  };
-};
+/** One event, and whether the pass that produced it already decided it is not to be emitted. */
+interface PendingEvent {
+  readonly event: GeminiGenerateContentResult;
+  readonly suppressed: boolean;
+}
 
-const hasContentParts = (candidate: WireCandidate & { index: number }): candidate is GeminiGenerateContentCandidateWithParts => candidate.content?.parts !== undefined;
-
-const wrapGeminiGenerateContentEventAffinity = async (
-  current: GeminiGenerateContentResult,
-  next: GeminiGenerateContentResult | undefined,
+/** The last pass an event gets: there is no successor, so nothing can move forward out of it.
+ *  Returns what to emit, or nothing where the event was suppressed. */
+const flushPending = async (
+  pending: PendingEvent,
   anchoredCandidates: Set<number>,
-  suppressedEvents: WeakSet<GeminiGenerateContentResult>,
   options: AffinityEgressOptions,
   successfulTerminalBoundary: boolean,
-): Promise<GeminiGenerateContentResult> => {
-  const currentHadCandidates = (current.candidates?.length ?? 0) > 0;
-  const nextHadCandidates = (next?.candidates?.length ?? 0) > 0;
-  const removedCandidates = new WeakSet<WireCandidate>();
+): Promise<GeminiGenerateContentResult | undefined> => {
+  const pass = await passOverEventPair(pending, undefined, anchoredCandidates, options, successfulTerminalBoundary);
+  return pass.current.suppressed ? undefined : pass.current.event;
+};
 
-  for (const candidate of current.candidates ?? []) {
-    if (!hasContentParts(candidate)) continue;
-    const nextCandidate = next?.candidates?.find((nextCandidate): nextCandidate is GeminiGenerateContentCandidateWithParts => nextCandidate.index === candidate.index && hasContentParts(nextCandidate));
-    normalizeElementSignatures(candidate);
-    if (nextCandidate !== undefined) normalizeElementSignatures(nextCandidate);
-    relocateSignatureOnlyForward(candidate, nextCandidate, removedCandidates);
-    relocateSignatureOnlyBackward(candidate, nextCandidate, removedCandidates);
-    relocateContinuationSignature(candidate, nextCandidate);
+/** A candidate that carries Parts. Only these take part in signature relocation; a candidate
+ *  without content passes through untouched. */
+type CandidateWithParts = GeminiGenerateContentCandidate & {
+  readonly index: number;
+  readonly content: GeminiGenerateContentContent & { parts: GeminiGenerateContentPart[] };
+};
+
+const hasContentParts = (candidate: GeminiGenerateContentCandidate): candidate is CandidateWithParts =>
+  candidate.index !== undefined && candidate.content?.parts !== undefined;
+
+/** ProtoJSON omits a field holding its default value, so a candidate without `index` is
+ *  candidate 0; the window pairs candidates by index, so it is stated explicitly.
+ *  https://protobuf.dev/programming-guides/json/#json-options */
+const withExplicitIndexes = (candidates: readonly GeminiGenerateContentCandidate[]): readonly GeminiGenerateContentCandidate[] =>
+  mapKeepingIdentity(candidates, candidate => candidate.index === undefined ? { ...candidate, index: 0 } : candidate);
+
+interface CandidatePair {
+  readonly current: CandidateWithParts;
+  readonly next: CandidateWithParts | undefined;
+  readonly currentRemoved: boolean;
+  readonly nextRemoved: boolean;
+}
+
+/** A candidate with different Parts, or the same candidate where they did not change. */
+const withParts = (
+  candidate: CandidateWithParts,
+  parts: readonly GeminiGenerateContentPart[],
+): CandidateWithParts =>
+  parts === candidate.content.parts
+    ? candidate
+    : { ...candidate, content: { ...candidate.content, parts: parts as GeminiGenerateContentPart[] } };
+
+/** An event with different candidates. An event that declared none keeps declaring none: the
+ *  absent key and the empty array say different things to a client. */
+const withCandidates = (
+  event: GeminiGenerateContentResult,
+  candidates: readonly GeminiGenerateContentCandidate[],
+): GeminiGenerateContentResult =>
+  event.candidates === undefined || candidates === event.candidates
+    ? event
+    : { ...event, candidates: candidates as GeminiGenerateContentCandidate[] };
+
+/**
+ * One pass of the sliding window: the held event, the one behind it, and what becomes of both.
+ *
+ * Every rewrite here is a rebuild. A frame this transducer was handed belongs to the layer that
+ * produced it, and the events it hands on are new objects that share everything the pass did not
+ * touch — so a Part no rule spoke about is the same Part, and the pass costs what it changed
+ * rather than a copy of the event.
+ */
+const passOverEventPair = async (
+  pending: PendingEvent,
+  nextEvent: GeminiGenerateContentResult | undefined,
+  anchoredCandidates: Set<number>,
+  options: AffinityEgressOptions,
+  successfulTerminalBoundary: boolean,
+): Promise<{ readonly current: PendingEvent; readonly next: PendingEvent | undefined }> => {
+  const current = pending.event;
+  const currentHadCandidates = (current.candidates?.length ?? 0) > 0;
+  const nextHadCandidates = (nextEvent?.candidates?.length ?? 0) > 0;
+
+  // The two arrays under construction. Their elements are replaced, never written into: what
+  // goes back is whatever the rules built, and an untouched candidate goes back as itself.
+  const builtCurrent = [...withExplicitIndexes(current.candidates ?? [])];
+  const builtNext = nextEvent === undefined ? undefined : [...withExplicitIndexes(nextEvent.candidates ?? [])];
+  const removedCurrent = new Set<number>();
+  const removedNext = new Set<number>();
+
+  for (let position = 0; position < builtCurrent.length; position += 1) {
+    const held = builtCurrent[position];
+    if (!hasContentParts(held)) continue;
+    const nextPosition = builtNext?.findIndex(entry => entry.index === held.index && hasContentParts(entry)) ?? -1;
+    const relocated = relocateContinuationSignature(relocateSignatureOnlyBackward(relocateSignatureOnlyForward({
+      current: normalizeElementSignatures(held),
+      next: nextPosition >= 0 ? normalizeElementSignatures(builtNext![nextPosition] as CandidateWithParts) : undefined,
+      currentRemoved: false,
+      nextRemoved: false,
+    })));
+    let candidate = relocated.current;
+    const nextCandidate = relocated.next;
+    if (relocated.currentRemoved) removedCurrent.add(position);
+    if (relocated.nextRemoved && nextPosition >= 0) removedNext.add(nextPosition);
+
     const firstIndexes = firstElementIndexes(candidate.content.parts);
     const firstHasNatural = firstIndexes.some(index => candidate.content.parts[index].thoughtSignature !== undefined);
     const signatureOnlyNatural = firstIndexes.length === 0
@@ -176,150 +204,192 @@ const wrapGeminiGenerateContentEventAffinity = async (
       && candidate.content.parts.slice(lastFirstContentIndex + 1).some(hasPartContent);
     const firstElementClosed = startsAnotherElementInCurrentEvent
       || candidate.finishReason !== undefined
-      || (next !== undefined && nextCandidate === undefined)
-      || (nextCandidate !== undefined && nextContent === undefined && !removedCandidates.has(nextCandidate))
+      || (nextEvent !== undefined && nextCandidate === undefined)
+      || (nextCandidate !== undefined && nextContent === undefined && !relocated.nextRemoved)
       || (nextCandidate !== undefined && nextContent !== undefined && !continuesInNextEvent)
-      || (next === undefined && successfulTerminalBoundary);
+      || (nextEvent === undefined && successfulTerminalBoundary);
 
+    const wrapped: GeminiGenerateContentPart[] = [];
     for (const part of candidate.content.parts) {
-      if (part.thoughtSignature === undefined) continue;
-      part.thoughtSignature = await options.codec.wrap(part.thoughtSignature, options.affinity, 'gemini-generate-content.part.thoughtSignature');
-    }
-
-    if (anchoredCandidates.has(candidate.index)) continue;
-    if (firstHasNatural || signatureOnlyNatural) {
-      anchoredCandidates.add(candidate.index);
-    } else if (firstContentIndex !== undefined && firstElementClosed) {
-      candidate.content.parts[firstContentIndex] = {
-        ...candidate.content.parts[firstContentIndex],
-        thoughtSignature: await options.codec.wrap(undefined, options.affinity, 'gemini-generate-content.part.thoughtSignature'),
-      };
-      anchoredCandidates.add(candidate.index);
-    } else if (candidate.finishReason !== undefined) {
-      candidate.content.parts.push({
-        thoughtSignature: await options.codec.wrap(
-          undefined,
-          options.affinity,
-          'gemini-generate-content.part.thoughtSignature',
-        ),
+      wrapped.push(part.thoughtSignature === undefined ? part : {
+        ...part,
+        thoughtSignature: await options.codec.wrap(part.thoughtSignature, options.affinity, 'gemini-generate-content.part.thoughtSignature'),
       });
-      anchoredCandidates.add(candidate.index);
     }
+    candidate = withParts(candidate, wrapped);
+
+    if (!anchoredCandidates.has(candidate.index)) {
+      if (firstHasNatural || signatureOnlyNatural) {
+        anchoredCandidates.add(candidate.index);
+      } else if (firstContentIndex !== undefined && firstElementClosed) {
+        candidate = withParts(candidate, withIndexesChanged(candidate.content.parts, new Map([[firstContentIndex, {
+          ...candidate.content.parts[firstContentIndex],
+          thoughtSignature: await options.codec.wrap(undefined, options.affinity, 'gemini-generate-content.part.thoughtSignature'),
+        }]])));
+        anchoredCandidates.add(candidate.index);
+      } else if (candidate.finishReason !== undefined) {
+        candidate = withParts(candidate, [...candidate.content.parts, {
+          thoughtSignature: await options.codec.wrap(undefined, options.affinity, 'gemini-generate-content.part.thoughtSignature'),
+        }]);
+        anchoredCandidates.add(candidate.index);
+      }
+    }
+
+    builtCurrent[position] = candidate;
+    if (nextPosition >= 0 && nextCandidate !== undefined) builtNext![nextPosition] = nextCandidate;
   }
 
-  if (next?.candidates !== undefined) {
-    next.candidates = next.candidates.filter(candidate => !removedCandidates.has(candidate));
+  const keptCurrent = builtCurrent.filter((_candidate, position) => !removedCurrent.has(position));
+  const keptNext = builtNext?.filter((_candidate, position) => !removedNext.has(position));
+  const currentEmptied = currentHadCandidates && keptCurrent.length === 0;
+  const nextEmptied = nextHadCandidates && keptNext?.length === 0;
+
+  let currentOut = withCandidates(current, keptCurrent);
+  let nextOut = nextEvent === undefined ? undefined : withCandidates(nextEvent, keptNext ?? []);
+  let currentSuppressed = pending.suppressed;
+  let nextSuppressed = false;
+
+  // An event whose every candidate moved into its neighbour has nothing left to say on its own,
+  // so what it was carrying beside them moves too and the event itself is not emitted.
+  if (currentEmptied && nextOut !== undefined && !nextEmptied) {
+    nextOut = mergedEventMetadata(currentOut, nextOut, nextOut);
+    currentOut = withoutEventMetadata(currentOut);
+    currentSuppressed = true;
+  } else if (nextEmptied && nextOut !== undefined && !currentEmptied) {
+    currentOut = mergedEventMetadata(currentOut, nextOut, currentOut);
+    nextOut = withoutEventMetadata(nextOut);
+    nextSuppressed = true;
   }
-  if (current.candidates !== undefined) {
-    current.candidates = current.candidates.filter(candidate => !removedCandidates.has(candidate));
-  }
-  const currentEmptied = currentHadCandidates && current.candidates?.length === 0;
-  const nextEmptied = nextHadCandidates && next?.candidates?.length === 0;
-  if (currentEmptied && next !== undefined && !nextEmptied) {
-    mergeEventMetadata(current, next, next);
-    clearEventMetadata(current);
-    suppressedEvents.add(current);
-  } else if (nextEmptied && next !== undefined && !currentEmptied) {
-    mergeEventMetadata(current, next, current);
-    clearEventMetadata(next);
-    suppressedEvents.add(next);
-  }
-  return current;
+
+  return {
+    current: { event: currentOut, suppressed: currentSuppressed },
+    next: nextOut === undefined ? undefined : { event: nextOut, suppressed: nextSuppressed },
+  };
 };
 
-const normalizeElementSignatures = (candidate: GeminiGenerateContentCandidateWithParts): void => {
+/** Every signature a logical element carries, collapsed onto that element's first
+ *  content-bearing Part, and the signature-only Parts that leaves behind dropped. */
+const normalizeElementSignatures = (candidate: CandidateWithParts): CandidateWithParts => {
   const parts = candidate.content.parts;
-  const signatureParts = new Set(parts.filter(part => part.thoughtSignature !== undefined));
-  for (const indexes of logicalElementGroups(parts)) normalizeElementSignature(parts, indexes);
-  removeRelocatedSignatureParts(candidate, signatureParts);
+  const carriedSignature = new Set(parts.flatMap((part, index) => part.thoughtSignature === undefined ? [] : [index]));
+  // The groups are index lists read off the Parts as they arrived, and collapsing a signature
+  // never changes how many Parts there are, so they stay valid across the fold.
+  let folded: readonly GeminiGenerateContentPart[] = parts;
+  for (const indexes of logicalElementGroups(parts)) folded = normalizeElementSignature(folded, indexes);
+  return withParts(candidate, keptAfterRelocation(folded, carriedSignature));
 };
 
-const normalizeElementSignature = (parts: GeminiGenerateContentPart[], indexes: readonly number[]): void => {
+const normalizeElementSignature = (
+  parts: readonly GeminiGenerateContentPart[],
+  indexes: readonly number[],
+): readonly GeminiGenerateContentPart[] => {
   const signatures = indexes.flatMap(index => {
     const signature = parts[index].thoughtSignature;
     return signature === undefined ? [] : [signature];
   });
-  if (signatures.length === 0) return;
+  if (signatures.length === 0) return parts;
   const targetIndex = indexes.find(index => hasPartContent(parts[index])) ?? indexes.at(-1);
   if (targetIndex === undefined) throw new Error('Gemini generateContent signature group has no target Part');
-  for (const index of indexes) delete parts[index].thoughtSignature;
-  parts[targetIndex].thoughtSignature = signatures[signatures.length - 1];
+  const rewrites = new Map<number, GeminiGenerateContentPart>(
+    indexes.map(index => [index, withKeysChanged(parts[index], { thoughtSignature: undefined })]),
+  );
+  rewrites.set(targetIndex, withKeysChanged(parts[targetIndex], { thoughtSignature: signatures[signatures.length - 1] }));
+  return parts.map((part, index) => rewrites.get(index) ?? part);
 };
 
-const relocateSignatureOnlyForward = (
-  current: GeminiGenerateContentCandidateWithParts,
-  next: GeminiGenerateContentCandidateWithParts | undefined,
-  removedCandidates: WeakSet<WireCandidate>,
-): void => {
+const relocateSignatureOnlyForward = (pair: CandidatePair): CandidatePair => {
+  const { current, next } = pair;
   if (
     next === undefined
     || current.finishReason !== undefined
     || current.content.parts.some(hasPartContent)
-  ) return;
-  const relocated = new Set(current.content.parts.filter(part => part.thoughtSignature !== undefined));
-  const signature = relocated.values().next().value?.thoughtSignature;
+  ) return pair;
+  const relocated = new Set(current.content.parts.flatMap((part, index) => part.thoughtSignature === undefined ? [] : [index]));
+  const signature = current.content.parts.find(part => part.thoughtSignature !== undefined)?.thoughtSignature;
   const targetIndex = firstElementIndexes(next.content.parts).find(index => hasPartContent(next.content.parts[index]));
-  if (signature === undefined || targetIndex === undefined) return;
-  next.content.parts[targetIndex].thoughtSignature ??= signature;
-  for (const part of relocated) delete part.thoughtSignature;
-  removeRelocatedSignatureParts(current, relocated, removedCandidates);
-  if (current.content.parts.length === 0) transferCandidateMetadataForward(current, next);
+  if (signature === undefined || targetIndex === undefined) return pair;
+
+  // A target that already carries one keeps it: this moves a signature into a gap, never over
+  // an upstream's own.
+  const carried = next.content.parts[targetIndex].thoughtSignature !== undefined ? next : withParts(
+    next,
+    withIndexesChanged(next.content.parts, new Map([[targetIndex, withKeysChanged(next.content.parts[targetIndex], { thoughtSignature: signature })]])),
+  );
+  const strippedParts = keptAfterRelocation(
+    current.content.parts.map(part => part.thoughtSignature === undefined ? part : withKeysChanged(part, { thoughtSignature: undefined })),
+    relocated,
+  );
+  const stripped = withParts(current, strippedParts);
+  return strippedParts.length > 0
+    ? { ...pair, current: stripped, next: carried }
+    : { ...pair, current: stripped, next: withForwardedCandidateMetadata(stripped, carried), currentRemoved: true };
 };
 
-const relocateSignatureOnlyBackward = (
-  current: GeminiGenerateContentCandidateWithParts,
-  next: GeminiGenerateContentCandidateWithParts | undefined,
-  removedCandidates: WeakSet<WireCandidate>,
-): void => {
+const relocateSignatureOnlyBackward = (pair: CandidatePair): CandidatePair => {
+  const { current, next } = pair;
   if (
     next === undefined
     || current.finishReason !== undefined
     || next.content.parts.some(hasPartContent)
-  ) return;
+  ) return pair;
   const targetIndex = firstContentIndexOfLastElement(current.content.parts);
-  if (targetIndex === undefined) return;
-  const signatureOnly = next.content.parts.find(part => part.thoughtSignature !== undefined);
-  if (signatureOnly?.thoughtSignature === undefined) return;
+  if (targetIndex === undefined) return pair;
+  const signatureIndex = next.content.parts.findIndex(part => part.thoughtSignature !== undefined);
+  const signature = signatureIndex < 0 ? undefined : next.content.parts[signatureIndex].thoughtSignature;
+  if (signature === undefined) return pair;
 
-  current.content.parts[targetIndex] = {
-    ...current.content.parts[targetIndex],
-    thoughtSignature: signatureOnly.thoughtSignature,
-  };
-  delete signatureOnly.thoughtSignature;
-  removeRelocatedSignatureParts(next, new Set([signatureOnly]), removedCandidates);
-  if (next.content.parts.length === 0) {
-    transferCandidateMetadata(current, next);
-    delete next.finishReason;
-  }
+  const anchored = withParts(
+    current,
+    withIndexesChanged(current.content.parts, new Map([[targetIndex, withKeysChanged(current.content.parts[targetIndex], { thoughtSignature: signature })]])),
+  );
+  const strippedParts = keptAfterRelocation(
+    withIndexesChanged(next.content.parts, new Map([[signatureIndex, withKeysChanged(next.content.parts[signatureIndex], { thoughtSignature: undefined })]])),
+    new Set([signatureIndex]),
+  );
+  const stripped = withParts(next, strippedParts);
+  return strippedParts.length > 0
+    ? { ...pair, current: anchored, next: stripped }
+    : {
+        ...pair,
+        current: withCandidateMetadataFrom(anchored, stripped),
+        next: withKeysChanged(stripped, { finishReason: undefined }),
+        nextRemoved: true,
+      };
 };
 
-const relocateContinuationSignature = (
-  current: GeminiGenerateContentCandidateWithParts,
-  next: GeminiGenerateContentCandidateWithParts | undefined,
-): void => {
-  if (next === undefined || current.finishReason !== undefined) return;
+const relocateContinuationSignature = (pair: CandidatePair): CandidatePair => {
+  const { current, next } = pair;
+  if (next === undefined || current.finishReason !== undefined) return pair;
   const targetIndex = firstContentIndexOfLastElement(current.content.parts);
-  const nextPart = firstContentPart(next.content.parts);
+  const nextIndex = next.content.parts.findIndex(hasPartContent);
+  const nextPart = nextIndex < 0 ? undefined : next.content.parts[nextIndex];
   if (
     targetIndex === undefined
     || nextPart?.thoughtSignature === undefined
     || !sameLogicalElement(current.content.parts[targetIndex], nextPart)
-  ) return;
-  current.content.parts[targetIndex] = {
-    ...current.content.parts[targetIndex],
-    thoughtSignature: nextPart.thoughtSignature,
+  ) return pair;
+  return {
+    ...pair,
+    current: withParts(
+      current,
+      withIndexesChanged(current.content.parts, new Map([[targetIndex, withKeysChanged(current.content.parts[targetIndex], { thoughtSignature: nextPart.thoughtSignature })]])),
+    ),
+    next: withParts(
+      next,
+      withIndexesChanged(next.content.parts, new Map([[nextIndex, withKeysChanged(nextPart, { thoughtSignature: undefined })]])),
+    ),
   };
-  delete nextPart.thoughtSignature;
 };
 
-const removeRelocatedSignatureParts = (
-  candidate: GeminiGenerateContentCandidateWithParts,
-  relocated: ReadonlySet<GeminiGenerateContentPart>,
-  removedCandidates?: WeakSet<WireCandidate>,
-): void => {
-  candidate.content.parts = candidate.content.parts.filter(part =>
-    !relocated.has(part) || hasPartContent(part) || part.thoughtSignature !== undefined);
-  if (candidate.content.parts.length === 0) removedCandidates?.add(candidate);
+/** What survives a relocation: a Part it emptied is dropped, and a Part it never touched stays
+ *  whatever it was. Membership is by position rather than by object, because the Parts handed
+ *  in here have already been rebuilt. */
+const keptAfterRelocation = (
+  parts: readonly GeminiGenerateContentPart[],
+  relocated: ReadonlySet<number>,
+): readonly GeminiGenerateContentPart[] => {
+  const kept = parts.filter((part, index) => !relocated.has(index) || hasPartContent(part) || part.thoughtSignature !== undefined);
+  return kept.length === parts.length ? parts : kept;
 };
 
 const hasPartContent = (part: GeminiGenerateContentPart): boolean => {
@@ -377,51 +447,68 @@ const firstContentIndexOfLastElement = (parts: readonly GeminiGenerateContentPar
 const firstContentPart = (parts: readonly GeminiGenerateContentPart[]): GeminiGenerateContentPart | undefined =>
   parts.find(hasPartContent);
 
-const mergeEventMetadata = (
+/** Everything an event carries beside its candidates, folded from the two into one — the later
+ *  event's word wins where both have one. The result replaces `target`'s own metadata rather
+ *  than adding to it, so a field neither event set is absent rather than stale. */
+const mergedEventMetadata = (
   earlier: GeminiGenerateContentResult,
   later: GeminiGenerateContentResult,
   target: GeminiGenerateContentResult,
-): void => {
+): GeminiGenerateContentResult => {
   const extras: Record<string, unknown> = {};
   captureExtras(earlier as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_RESULT_KEYS, extras);
   captureExtras(later as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_RESULT_KEYS, extras);
   const usageMetadata = later.usageMetadata ?? earlier.usageMetadata;
   const modelVersion = later.modelVersion ?? earlier.modelVersion;
   const responseId = later.responseId ?? earlier.responseId;
-  for (const key of Object.keys(target)) if (key !== 'candidates') delete (target as Record<string, unknown>)[key];
-  Object.assign(target, {
+  return {
+    ...(target.candidates !== undefined ? { candidates: target.candidates } : {}),
     ...(usageMetadata !== undefined ? { usageMetadata } : {}),
     ...(modelVersion !== undefined ? { modelVersion } : {}),
     ...(responseId !== undefined ? { responseId } : {}),
     ...extras,
-  });
+  } as GeminiGenerateContentResult;
 };
 
-const clearEventMetadata = (event: GeminiGenerateContentResult): void => {
-  for (const key of Object.keys(event)) if (key !== 'candidates') delete (event as Record<string, unknown>)[key];
-};
+/** The candidates alone. What the event was carrying beside them has moved to its neighbour. */
+const withoutEventMetadata = (event: GeminiGenerateContentResult): GeminiGenerateContentResult =>
+  (event.candidates !== undefined ? { candidates: event.candidates } : {}) as GeminiGenerateContentResult;
 
-const mergeCandidateExtras = (
-  earlier: GeminiGenerateContentCandidateWithParts,
-  later: GeminiGenerateContentCandidateWithParts,
-  target: GeminiGenerateContentCandidateWithParts,
-): void => {
+/** The same fold one level down, over a candidate's non-standard keys. */
+const mergedCandidateExtras = (
+  earlier: CandidateWithParts,
+  later: CandidateWithParts,
+  target: CandidateWithParts,
+): CandidateWithParts => {
   const extras: Record<string, unknown> = {};
   captureExtras(earlier as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, extras);
   captureExtras(later as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, extras);
-  for (const key of Object.keys(target)) {
-    if (!GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS.has(key as keyof GeminiGenerateContentCandidateWithParts)) delete (target as unknown as Record<string, unknown>)[key];
-  }
-  Object.assign(target, extras);
+  const known = Object.fromEntries(
+    Object.entries(target).filter(([key]) => GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS.has(key as keyof GeminiGenerateContentCandidate)),
+  );
+  return { ...known, ...extras } as CandidateWithParts;
 };
 
-const transferCandidateMetadata = (current: GeminiGenerateContentCandidateWithParts, next: GeminiGenerateContentCandidateWithParts): void => {
-  mergeCandidateExtras(current, next, current);
-  if (next.content.role !== undefined) current.content.role = next.content.role;
-  if (next.finishReason !== undefined) current.finishReason = next.finishReason;
+/** `next` had everything taken out of it, so what it was saying about the turn is said by
+ *  `current` instead. */
+const withCandidateMetadataFrom = (
+  current: CandidateWithParts,
+  next: CandidateWithParts,
+): CandidateWithParts => {
+  const merged = mergedCandidateExtras(current, next, current);
+  return withKeysChanged(merged, {
+    ...(next.content.role !== undefined ? { content: { ...merged.content, role: next.content.role } } : {}),
+    ...(next.finishReason !== undefined ? { finishReason: next.finishReason } : {}),
+  });
 };
 
-const transferCandidateMetadataForward = (current: GeminiGenerateContentCandidateWithParts, next: GeminiGenerateContentCandidateWithParts): void => {
-  mergeCandidateExtras(current, next, next);
-  if (next.content.role === undefined && current.content.role !== undefined) next.content.role = current.content.role;
+/** The same, in the other direction: `current` was emptied into `next`. */
+const withForwardedCandidateMetadata = (
+  current: CandidateWithParts,
+  next: CandidateWithParts,
+): CandidateWithParts => {
+  const merged = mergedCandidateExtras(current, next, next);
+  return next.content.role === undefined && current.content.role !== undefined
+    ? withKeysChanged(merged, { content: { ...merged.content, role: current.content.role } })
+    : merged;
 };

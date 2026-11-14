@@ -23,7 +23,7 @@ test('creates one reusable sidecar codec factory from the authenticated key with
     c.set('apiKey', apiKey);
     c.set('user', user);
     const ctx = createChatGatewayCtxFromHono(c, {
-      wantsStream: false, requestBody: { bytes: new Uint8Array(), streamError: null },
+      wantsStream: false, dump: null, requestBody: { bytes: new Uint8Array(), streamError: null },
       backgroundScheduler: promise => { void promise; },
     }, key => createNonOpenAIResponsesSourceStore(key.id));
     const factory = ctx.sidecarCodecFactory;

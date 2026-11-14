@@ -10,7 +10,7 @@ export const buildUpstreamCallOptions = (
   ctx: GatewayCtx,
   headers: Headers,
 ): UpstreamCallOptions => ({
-  fetcher: ctx.dump?.http?.wrapFetcher(candidate.fetcher, candidate.provider.upstreamId) ?? candidate.fetcher,
+  fetcher: candidate.fetcher,
   waitUntil: ctx.backgroundScheduler,
   headers: filterInboundHeadersForProvider(headers, candidate.provider),
   wrapUpstreamCall: stampUpstreamCallStart(ctx.attempt.timing),

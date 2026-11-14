@@ -1,8 +1,7 @@
 import type { Fields } from './facts.ts';
-import { isFailure } from '../pipeline/facts.ts';
+import { isFailure, mintedErrorEnvelope, renderFailure } from '../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import { renderErrorEnvelope } from '@floway-dev/protocols/common';
 import { renderOpenAIEmbeddingsResponse } from '@floway-dev/protocols/openai-embeddings';
 
 /**
@@ -42,7 +41,7 @@ export const emitOpenAIEmbeddings = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.openaiEmbeddings.rendered': move(renderErrorEnvelope(answer.message, answer.body)),
+        'response.openaiEmbeddings.rendered': move(renderFailure(answer, mintedErrorEnvelope).body),
         // The upstream's own status, or the gateway's own when it refused before dialling.
         // A client is not owed the upstream's exact bytes; it is owed the truth about what
         // happened, and a 429 arriving as a 200 is not that.

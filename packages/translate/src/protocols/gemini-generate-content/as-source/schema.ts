@@ -1,5 +1,3 @@
-import { klona } from 'klona/json';
-
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { jsonInteger } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentFunctionDeclaration, GeminiGenerateContentGenerationConfig, GeminiGenerateContentSchema } from '@floway-dev/protocols/gemini-generate-content';
@@ -14,7 +12,7 @@ export const geminiSchemaToJsonSchema = (schema: GeminiGenerateContentSchema): R
   const propertyNames = properties === undefined ? [] : [...new Set([...(propertyOrdering ?? []), ...Object.keys(properties)])];
   const orderedProperties = properties === undefined ? undefined : Object.fromEntries(propertyNames.filter(name => Object.hasOwn(properties, name)).map(name => [name, geminiSchemaToJsonSchema(properties[name])]));
   const result: Record<string, unknown> = {
-    ...klona(fields),
+    ...fields,
     type: Object.hasOwn(types, type) ? types[type] : type,
     ...(orderedProperties === undefined ? {} : { properties: new Proxy(orderedProperties, { ownKeys: target => [...propertyNames.filter(name => Object.hasOwn(target, name)), ...Reflect.ownKeys(target).filter(name => typeof name !== 'string' || !propertyNames.includes(name))] }) }),
     ...(items === undefined ? {} : { items: geminiSchemaToJsonSchema(items) }),
@@ -28,19 +26,19 @@ export const geminiSchemaToJsonSchema = (schema: GeminiGenerateContentSchema): R
   return nullable === true ? { anyOf: [result, { type: 'null' }] } : result;
 };
 
-const jsonSchemaObject = (schema: unknown): Record<string, unknown> => {
+const jsonSchemaObject = (schema: unknown): Readonly<Record<string, unknown>> => {
   if (schema === true) return {};
   if (schema === false) return { not: {} };
   if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) throw new TranslateInputException('The target protocol requires an object JSON Schema.');
-  return klona(schema as Record<string, unknown>);
+  return schema as Readonly<Record<string, unknown>>;
 };
 
-export const geminiFunctionParameters = (declaration: GeminiGenerateContentFunctionDeclaration): Record<string, unknown> | undefined => {
+export const geminiFunctionParameters = (declaration: GeminiGenerateContentFunctionDeclaration): Readonly<Record<string, unknown>> | undefined => {
   if (declaration.parameters != null && declaration.parametersJsonSchema !== undefined) throw new TranslateInputException('Gemini parameters and parametersJsonSchema are mutually exclusive.');
   return declaration.parametersJsonSchema !== undefined ? jsonSchemaObject(declaration.parametersJsonSchema) : declaration.parameters == null ? undefined : geminiSchemaToJsonSchema(declaration.parameters);
 };
 
-export const geminiResponseSchema = (config: GeminiGenerateContentGenerationConfig): Record<string, unknown> | undefined => {
+export const geminiResponseSchema = (config: GeminiGenerateContentGenerationConfig): Readonly<Record<string, unknown>> | undefined => {
   if (config.responseSchema != null && config.responseJsonSchema !== undefined) throw new TranslateInputException('Gemini responseSchema and responseJsonSchema are mutually exclusive.');
   return config.responseJsonSchema !== undefined ? jsonSchemaObject(config.responseJsonSchema) : config.responseSchema == null ? undefined : geminiSchemaToJsonSchema(config.responseSchema);
 };

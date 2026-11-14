@@ -95,11 +95,11 @@ export const referenceAssistantTurn = async <Protocol extends keyof InputAssista
     referencedContentHashes.push(hash);
   }
 
-  for (const reference of selected.values()) reference.parts = reference.parts.map((part): ContentReferenceSegment => Array.isArray(part)
+  const compacted = new Map([...selected].map(([field, reference]) => [field, new ContentReference(reference.kind, reference.parts.map((part): ContentReferenceSegment => Array.isArray(part)
     ? [compactIndices[part[0]], part[1], part[2]]
-    : compactIndices[part]);
+    : compactIndices[part]))]));
   const visit = (value: unknown, state: unknown): unknown => {
-    if (isReadFieldState(state)) return selected.get(state) ?? value;
+    if (isReadFieldState(state)) return compacted.get(state) ?? value;
     if (Array.isArray(state)) {
       if (!Array.isArray(value)) throw new TypeError('ReferenceBuilder state array does not match its assistant turn');
       const result = value.slice();

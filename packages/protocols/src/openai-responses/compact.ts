@@ -28,7 +28,7 @@ export type CanonicalOpenAIResponsesCompactPayload = Omit<OpenAIResponsesCompact
   input: CanonicalOpenAIResponsesInputItem[];
 };
 
-// Project a (possibly-wider) ResponsesPayload-shaped object into the strict
+// Project a (possibly-wider) OpenAIResponsesPayload-shaped object into the strict
 // compact wire shape. Every native-compact provider terminal calls this
 // before dispatching to its upstream's `/responses/compact` endpoint, so a
 // post-chain action pivot that arrived carrying generate-only fields

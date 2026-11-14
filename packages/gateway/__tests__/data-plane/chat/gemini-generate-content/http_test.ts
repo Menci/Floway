@@ -5,11 +5,12 @@ import type { AuthVars } from '../../../../src/middleware/auth.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import { stubChatProviderPipelines } from '../../../test-utils/chat-provider-pipelines.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { type ModelCandidate, directFetcher, type UpstreamCallOptions } from '@floway-dev/provider';
+import { assert, assertEquals, stubProvider, stubInternalModel, type ProviderCallResult, type ProviderStreamResult } from '@floway-dev/test-utils';
 
 const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
 vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
@@ -104,7 +105,7 @@ const makeCandidate = (overrides: {
   const targetApi = overrides.targetApi ?? 'openaiChatCompletions';
   // When the test fixes `endpoints` directly, use it verbatim — that lets a
   // test pin a wrong-endpoint shape the picker rejects. Otherwise synthesize
-  // a single-endpoint map from `targetApi` so the gemini serve layer's
+  // a single-endpoint map from `targetApi` so the Gemini generateContent serve layer's
   // picker (openai-chat-completions first, then messages, then responses) lands on
   // the requested wire.
   const endpoints = overrides.endpoints ?? (targetApi === 'openaiChatCompletions'
@@ -112,15 +113,16 @@ const makeCandidate = (overrides: {
     : targetApi === 'anthropicMessages'
       ? { anthropicMessages: {} }
       : { openaiResponses: {} });
-  const provider = stubProvider({
+  const calls = {
     callOpenAIChatCompletions: overrides.callOpenAIChatCompletions,
     callAnthropicMessages: overrides.callAnthropicMessages,
     callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
-  });
+  };
+  const provider = stubProvider();
   return {
     provider: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, pipelines: {}, instance: provider,
+      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, pipelines: stubChatProviderPipelines(calls), instance: provider,
     },
     model: stubInternalModel({ endpoints }, upstream),
     fetcher: directFetcher,
@@ -283,7 +285,7 @@ test.each([
 test('generateContent retries a translation input failure and records the successful candidate', async () => {
   const repo = installRepo();
   const recordFailure = vi.spyOn(repo.performance, 'recordZeroOutputError');
-  const recordSuccess = vi.spyOn(repo.performance, 'recordNeutral');
+  const recordSuccess = vi.spyOn(repo.performance, 'recordSample');
   const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
     throw new Error('Unsupported input must fail before the upstream call');
   });
@@ -310,8 +312,8 @@ test('generateContent retries a translation input failure and records the succes
   assertEquals(recordSuccess.mock.calls.length, 1);
   assertEquals(recordSuccess.mock.calls[0][0].upstream, 'up_chat');
   const rows = await repo.performance.listAll();
-  assertEquals(rows.map(row => ({ requests: row.requests, errors: row.errorsNoOutput, neutral: row.neutral })), [
-    { requests: 1, errors: 0, neutral: 1 },
+  assertEquals(rows.map(row => ({ requests: row.requests, errors: row.errorsNoOutput, samples: row.ttftSamplesOk })), [
+    { requests: 1, errors: 0, samples: 1 },
   ]);
 });
 

@@ -1,7 +1,8 @@
 import type { GatewayCtx } from '../../src/data-plane/shared/gateway-ctx.ts';
 import { takeHttpResponse } from '@floway-dev/http/pipeline';
 import { compose, defineStage, isSecret, move, type Pipeline } from '@floway-dev/pipeline';
-import { directFetcher, identityWrapUpstreamCall, type ProviderCallResult, type ProviderModelFacts, type ProviderOperation, type ProviderOperationPayloads, type ProviderResponse, type ProviderRerankResponse, type ProviderRequest, type UpstreamCallOptions } from '@floway-dev/provider';
+import { directFetcher, identityWrapUpstreamCall, type ProviderModelFacts, type ProviderOperation, type ProviderOperationPayloads, type ProviderResponse, type ProviderRerankResponse, type ProviderRequest, type UpstreamCallOptions } from '@floway-dev/provider';
+import { type ProviderCallResult } from '@floway-dev/test-utils';
 
 export const stubProviderPipeline = <O extends ProviderOperation>(
   operation: O,

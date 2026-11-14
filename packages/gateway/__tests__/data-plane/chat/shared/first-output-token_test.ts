@@ -5,7 +5,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 const eventFrame = <T>(event: T): ProtocolFrame<T> => ({ type: 'event', event });
 
-describe('firstOutputTokenSignal — messages', () => {
+describe('firstOutputTokenSignal — anthropicMessages', () => {
   it('accepts text_delta', () => {
     expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_delta', delta: { type: 'text_delta', text: 'hi' } }), 'anthropicMessages')).toEqual({ type: 'decode' });
   });
@@ -35,13 +35,13 @@ describe('firstOutputTokenSignal — messages', () => {
   });
 });
 
-describe('firstOutputTokenSignal — responses', () => {
+describe('firstOutputTokenSignal — openaiResponses', () => {
   it.each(['response.created', 'response.queued', 'response.in_progress', 'response.completed'])('rejects response lifecycle metadata: %s', type => {
     expect(firstOutputTokenSignal(eventFrame({ type }), 'openaiResponses')).toBeNull();
   });
 });
 
-describe('firstOutputTokenSignal — openai-chat-completions', () => {
+describe('firstOutputTokenSignal — openaiChatCompletions', () => {
   it('accepts chunk with delta.content', () => {
     expect(firstOutputTokenSignal(eventFrame({ choices: [{ delta: { content: 'hi' } }] }), 'openaiChatCompletions')).toEqual({ type: 'decode' });
   });

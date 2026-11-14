@@ -94,7 +94,7 @@ test('Anthropic Messages usage snapshots collect full usage delta extensions', (
   expect(mergeAnthropicMessagesUsageSnapshot(start, delta)).toEqual({ ...start, output_tokens: 2, service_tier: 'standard', speed: 'standard', cache_creation: { ephemeral_1h_input_tokens: 9 } });
 });
 
-test('Anthropic Messages usage snapshots preserve nullable iterations and isolate all nested iteration data', () => {
+test('Anthropic Messages usage snapshots preserve nullable iterations and share unchanged nested iteration data', () => {
   expect(anthropicMessagesUsageSnapshot({ output_tokens: 0, iterations: null })).toEqual({ output_tokens: 0, iterations: null });
 
   const source = [{
@@ -109,8 +109,9 @@ test('Anthropic Messages usage snapshots preserve nullable iterations and isolat
     },
   }];
   const snapshot = anthropicMessagesUsageSnapshot({ output_tokens: 0, iterations: source });
-  source[0].cache_creation.ephemeral_5m_input_tokens = 9;
-  source[0].provider_metadata.attempts[0].regions.push('eu-west');
+  expect(snapshot.iterations).toBe(source);
+  expect(snapshot.iterations?.[0].cache_creation).toBe(source[0].cache_creation);
+  expect((snapshot.iterations?.[0] as typeof source[number]).provider_metadata).toBe(source[0].provider_metadata);
 
   expect(snapshot.iterations).toEqual([{
     type: 'compaction' as const,
@@ -126,7 +127,9 @@ test('Anthropic Messages usage snapshots preserve nullable iterations and isolat
   expect(mergeAnthropicMessagesUsageSnapshot(snapshot, { output_tokens: 1, iterations: null }).iterations).toEqual(snapshot.iterations);
 });
 
-test('Anthropic Messages usage snapshot merges isolate opaque nested iteration data from the delta', () => {
+test('Anthropic Messages usage snapshot merges carry the delta-s opaque iterations by reference', () => {
+  // Nothing reads inside an iteration entry and nothing writes one, so the array travels
+  // whole rather than being copied at each hop.
   const iterations = [{
     type: 'message' as const,
     model: 'claude-test',
@@ -140,18 +143,6 @@ test('Anthropic Messages usage snapshot merges isolate opaque nested iteration d
     },
   }];
   const merged = mergeAnthropicMessagesUsageSnapshot({ output_tokens: 0 }, { output_tokens: 1, iterations });
-  iterations[0].provider_metadata.attempts[0].warnings[0] = 'mutated';
 
-  expect(merged.iterations).toEqual([{
-    type: 'message' as const,
-    model: 'claude-test',
-    input_tokens: 1,
-    output_tokens: 1,
-    cache_creation: null,
-    cache_creation_input_tokens: 0,
-    cache_read_input_tokens: 0,
-    provider_metadata: {
-      attempts: [{ warnings: ['slow'] }],
-    },
-  }]);
+  expect(merged.iterations).toBe(iterations);
 });

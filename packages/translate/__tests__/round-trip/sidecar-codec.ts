@@ -1,6 +1,7 @@
 import { SidecarTaggedValue } from '../../src/round-trip/codec.ts';
 import type { SidecarCodec } from '../../src/round-trip/codec.ts';
 import { rawJSON } from '../../src/shared/json/raw-json.ts';
+import { deepFreeze } from '../shared/deep-freeze.ts';
 
 const scopes = new Map<string, Map<string, unknown>>();
 let nextHandle = 0;
@@ -25,6 +26,7 @@ export const createTestSidecarCodec = (scope = 'test-codec-scope'): SidecarCodec
       store.set(handle, snapshot(payload));
       return handle;
     },
-    decode: async handle => snapshot(store.get(handle)),
+    // Decoded sidecars are frozen so translation proves it never writes into them.
+    decode: async handle => deepFreeze(snapshot(store.get(handle))),
   };
 };

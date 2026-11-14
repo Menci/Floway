@@ -1,9 +1,8 @@
 import type { User } from '../../../../repo/types.ts';
 import { enumerateModelCandidates } from '../../../providers/resolution.ts';
-import { filterInboundHeadersForProvider } from '../../../shared/inbound-headers.ts';
 import type { WebSearchConfig } from '../types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { identityWrapUpstreamCall, providerModelOf, type ModelCandidate } from '@floway-dev/provider';
+import type { ModelCandidate } from '@floway-dev/provider';
 
 export type AlphaSearchDispatcher = (body: Record<string, unknown>, signal: AbortSignal | undefined, headers: Headers) => Promise<Response>;
 
@@ -51,25 +50,4 @@ export const resolveAlphaSearchCandidate = async ({
     throw new Error('Selected upstream does not support OpenAI search passthrough');
   }
   return candidate;
-};
-
-export const resolveAlphaSearchDispatcher = async (resolution: AlphaSearchResolution): Promise<AlphaSearchDispatcher> => {
-  const candidate = await resolveAlphaSearchCandidate(resolution);
-  return async (body, signal, headers) => {
-    const { model: _callerModel, ...request } = body;
-    // TODO: pin SearchRequest.id to one provider account when ChatGPT upstreams
-    // support account pools. The current ChatGPT provider has one active account.
-    const result = await candidate.provider.instance.callAlphaSearch(
-      providerModelOf(candidate),
-      request,
-      signal,
-      {
-        fetcher: candidate.fetcher,
-        waitUntil: resolution.scheduler,
-        headers: filterInboundHeadersForProvider(headers, candidate.provider),
-        wrapUpstreamCall: identityWrapUpstreamCall,
-      },
-    );
-    return result.response;
-  };
 };
