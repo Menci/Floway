@@ -1,4 +1,5 @@
-import type { ModelEndpoints, ModelKind, RerankTarget } from '@floway-dev/protocols/common';
+import type { DecisionTarget, ModelEndpoints, ModelKind, RerankTarget } from '@floway-dev/protocols/browser';
+import type { UpstreamProviderKind } from '@floway-dev/provider/browser';
 
 // The path each endpoint is addressed by, unversioned: the editor labels its
 // checkboxes and its per-path overrides with the public route rather than with
@@ -13,6 +14,7 @@ export const ENDPOINT_PATHS = {
   openaiImagesGenerations: '/images/generations',
   openaiImagesEdits: '/images/edits',
   openaiAudioTranscriptions: '/audio/transcriptions',
+  decision: '/decisions',
 } as const satisfies Record<keyof ModelEndpoints, string>;
 
 export const CHAT_ENDPOINT_KEYS = ['openaiCompletions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages'] as const satisfies readonly (keyof ModelEndpoints)[];
@@ -34,6 +36,11 @@ export const endpointOptionsFor = (
 // operator confirms or changes it.
 const INITIAL_RERANK_TARGET: RerankTarget = { protocol: 'cohere-v2' };
 
+// A new decision row starts on the System One contract, which most providers
+// serve; the operator changes the dialect when the target speaks OpenAI
+// Decisions. An upstream that knows its own dialect fills the same default in.
+const INITIAL_DECISION_TARGET: DecisionTarget = { protocol: 'typesafe-systemone' };
+
 // What a discovered model declares when it names no kind of its own, or names
 // `chat`. The gateway hands both the upstream's configured map unchanged
 // (autoModelEndpoints, packages/provider-custom/src/provider.ts) and the auto
@@ -50,13 +57,20 @@ export const configuredEndpoints = (configured: ModelEndpoints): ModelEndpoints 
 // conversion. Chat and image models may be served by more than one endpoint, so
 // a selection already made inside the family is kept and only an empty one
 // falls back to the family default.
+// `providerKind` decides which per-model targets the operator may author: only a
+// custom upstream leaves the wire dialect open, so Azure, Ollama, and Copilot
+// rows never carry one.
 export const shapeForKind = (
   kind: ModelKind,
-  current: { endpoints: ModelEndpoints; rerankTarget?: RerankTarget },
-): { endpoints: ModelEndpoints; rerankTarget?: RerankTarget } => {
+  current: { endpoints: ModelEndpoints; rerankTarget?: RerankTarget; decisionTarget?: DecisionTarget },
+  providerKind: UpstreamProviderKind,
+): { endpoints: ModelEndpoints; rerankTarget?: RerankTarget; decisionTarget?: DecisionTarget } => {
   if (kind === 'embedding') return { endpoints: { openaiEmbeddings: {} } };
   if (kind === 'transcription') return { endpoints: { openaiAudioTranscriptions: {} } };
   if (kind === 'rerank') return { endpoints: { rerank: {} }, rerankTarget: current.rerankTarget ?? INITIAL_RERANK_TARGET };
+  if (kind === 'decision') return providerKind === 'custom'
+    ? { endpoints: { decision: {} }, decisionTarget: current.decisionTarget ?? INITIAL_DECISION_TARGET }
+    : { endpoints: { decision: {} } };
   const family = kind === 'image' ? IMAGE_ENDPOINT_KEYS : CHAT_ENDPOINT_KEYS;
   const kept: ModelEndpoints = {};
   for (const key of family) if (current.endpoints[key]) kept[key] = current.endpoints[key];

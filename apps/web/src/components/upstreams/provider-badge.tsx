@@ -15,9 +15,9 @@ import { useBadgeHue } from '../ui/badge-hue';
 import { Chip } from '../ui/chip';
 import { MaskedIcon } from '../ui/masked-icon';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
-import type { UpstreamProviderKind } from '@floway-dev/provider/model';
+import type { UpstreamProviderKind } from '@floway-dev/provider/browser';
 
-const { Tooltip, makeStyles } = fluentComponents;
+const { Tooltip, makeStyles, mergeClasses } = fluentComponents;
 
 const providerLabels: Record<UpstreamProviderKind, string> = {
   custom: 'Custom',
@@ -29,6 +29,17 @@ const providerLabels: Record<UpstreamProviderKind, string> = {
 };
 
 const useStyles = makeStyles({
+  // 7px outer spacing and a 6px icon-label gap, counting the 1px outline.
+  // Fluent's native Tag distributes its icon and label padding asymmetrically.
+  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-tags/library/src/components/Tag/useTagStyles.styles.ts
+  badge: {
+    display: 'inline-flex',
+    columnGap: '6px',
+    paddingLeft: '6px',
+    paddingRight: '6px',
+    '& .fui-Tag__icon': { padding: 0, margin: 0, flexShrink: 0 },
+    '& .fui-Tag__primaryText': { paddingLeft: 0, paddingRight: 0 },
+  },
   // A mask over a background-color disappears under forced colours; opting the
   // mask box out keeps the `currentColor` the chip already resolved.
   // https://drafts.csswg.org/css-color-adjust-1/#forced-colors-properties
@@ -56,12 +67,13 @@ export function ProviderBadge({ label, title, to, upstream }: {
   upstream: { hue: number; kind: UpstreamProviderKind };
 }) {
   const { t } = useTranslation();
+  const styles = useStyles();
   const hue = useBadgeHue(hueBadgeTone(upstream.hue));
   const visibleLabel = label ?? t(`provider.${upstream.kind}`, providerLabel(upstream.kind));
 
   const chip = (measureRef?: RefCallback<HTMLElement>) => (
     <Chip
-      className={hue.className}
+      className={mergeClasses(hue.className, styles.badge)}
       style={hue.style}
       icon={<ProviderIcon kind={upstream.kind} className="h-4 w-4" />}
       textRef={measureRef}

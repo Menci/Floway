@@ -12,10 +12,15 @@ import { generateSessionToken } from './session-tokens.ts';
 import { SqlSpilledFilesRepo } from './spilled-files-sql.ts';
 import { runStatements } from './sql-batch.ts';
 import type {
+  AccessRecordsRepo,
   ApiKey,
   ApiKeyRepo,
   ApiKeyUpdate,
   ExpirationSweepsRepo,
+  Group,
+  GroupMembership,
+  GroupWithMembers,
+  GroupsRepo,
   AgentSetupMutation,
   AgentSetupRecord,
   AgentSetupRenewal,
@@ -42,6 +47,8 @@ import type {
   ScheduledMaintenanceRepo,
   SpilledFilesRepo,
   StoredUpstreamRecord,
+  SiteSettings,
+  SiteSettingsRepo,
   WebSearchConfigRepo,
   WebSearchUsageRecord,
   WebSearchUsageRepo,
@@ -53,6 +60,8 @@ import type {
   UsageOverviewResult,
   UsageRepo,
   User,
+  UserDirectory,
+  UserPreferencesRepo,
   UsersRepo,
 } from './types.ts';
 import {
@@ -66,15 +75,30 @@ import {
   encodeUpstreamModelsCache,
 } from './upstream-codecs.ts';
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
+import { SqlUpstreamMetricsRepo } from './upstream-metrics-sql.ts';
 import { parseUpstreamHue, parseUpstreamKind } from './upstream-parse.ts';
 import { usageMetricRows } from './usage-metrics.ts';
 import { querySqlUsageOverview } from './usage-overview-sql.ts';
+import {
+  accessScopeDepth,
+  accessScopeKey,
+  accessScopeOrderGroup,
+  canonicalAccessScope,
+  AccessRecordConflictError,
+  sameModelOrderBoundary,
+  type AccessPrincipal,
+  type AccessRecord,
+  type AccessRecordInput,
+  type AccessScope,
+  type AccessValues,
+  validateAccessRecordInput,
+} from '../access-control/types.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { parseServerSecret } from '../shared/server-secret.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
-import { addDecimalStrings, canonicalPricingSelectorKey, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, type AliasSelection, type AnnouncedMetadata } from '@floway-dev/protocols/common';
+import { addDecimalStrings, canonicalPricingSelectorKey, defaultUserPreferences, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, parseStoredUserPreferences, serializeUserPreferences, type AliasSelection, type AnnouncedMetadata, type UserPreferences } from '@floway-dev/protocols/common';
 import type { ProxyFallbackEntry, ModelPrefixConfig, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
 import { normalizeModelPrefix, parsePerformanceOperation, UpstreamGoneError } from '@floway-dev/provider';
 
@@ -87,12 +111,13 @@ interface ApiKeyRow {
   created_at: string;
   last_used_at: string | null;
   upstream_ids: string | null;
+  randomize_upstreams: number;
   deleted_at: string | null;
   dump_retention_seconds: number | null;
   responses_retention_seconds: number;
 }
 
-const API_KEY_COLUMNS = 'id, user_id, name, key, server_secret, created_at, last_used_at, upstream_ids, deleted_at, dump_retention_seconds, responses_retention_seconds';
+const API_KEY_COLUMNS = 'id, user_id, name, key, server_secret, created_at, last_used_at, upstream_ids, randomize_upstreams, deleted_at, dump_retention_seconds, responses_retention_seconds';
 
 const serializeUpstreamIds = (value: readonly string[] | null): string | null => (value === null ? null : JSON.stringify(value));
 
@@ -124,6 +149,7 @@ const toApiKey = (row: ApiKeyRow): ApiKey => ({
   createdAt: row.created_at,
   lastUsedAt: row.last_used_at ?? undefined,
   upstreamIds: parseUpstreamIds(row.upstream_ids, `api_keys.id=${row.id}`),
+  randomizeUpstreams: row.randomize_upstreams === 1,
   deletedAt: row.deleted_at,
   dumpRetentionSeconds: row.dump_retention_seconds,
   openaiResponsesRetentionSeconds: row.responses_retention_seconds,
@@ -181,7 +207,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
   async save(key: ApiKey): Promise<void> {
     await this.db
       .prepare(
-        `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            user_id = excluded.user_id,
            name = excluded.name,
@@ -189,6 +215,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
            server_secret = excluded.server_secret,
            last_used_at = excluded.last_used_at,
            upstream_ids = excluded.upstream_ids,
+           randomize_upstreams = excluded.randomize_upstreams,
            deleted_at = excluded.deleted_at,
            dump_retention_seconds = excluded.dump_retention_seconds,
            responses_retention_seconds = excluded.responses_retention_seconds`,
@@ -202,6 +229,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
         key.createdAt,
         key.lastUsedAt ?? null,
         serializeUpstreamIds(key.upstreamIds),
+        key.randomizeUpstreams ? 1 : 0,
         key.deletedAt,
         key.dumpRetentionSeconds,
         key.openaiResponsesRetentionSeconds,
@@ -214,6 +242,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
     const hasKey = sqliteBoolean(patch.key !== undefined);
     const hasLastUsedAt = sqliteBoolean(patch.lastUsedAt !== undefined);
     const hasUpstreamIds = sqliteBoolean(patch.upstreamIds !== undefined);
+    const hasRandomizeUpstreams = sqliteBoolean(patch.randomizeUpstreams !== undefined);
     const hasDumpRetention = sqliteBoolean(patch.dumpRetentionSeconds !== undefined);
     const hasOpenAIResponsesRetention = sqliteBoolean(patch.openaiResponsesRetentionSeconds !== undefined);
     const row = await this.db
@@ -223,6 +252,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
              key = CASE WHEN ? THEN ? ELSE key END,
              last_used_at = CASE WHEN ? THEN ? ELSE last_used_at END,
              upstream_ids = CASE WHEN ? THEN ? ELSE upstream_ids END,
+             randomize_upstreams = CASE WHEN ? THEN ? ELSE randomize_upstreams END,
              dump_retention_seconds = CASE WHEN ? THEN ? ELSE dump_retention_seconds END,
              responses_retention_seconds = CASE WHEN ? THEN ? ELSE responses_retention_seconds END
          WHERE id = ? AND deleted_at IS NULL
@@ -233,6 +263,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
         hasKey ? 1 : 0, patch.key ?? null,
         hasLastUsedAt ? 1 : 0, patch.lastUsedAt ?? null,
         hasUpstreamIds ? 1 : 0, hasUpstreamIds ? serializeUpstreamIds(patch.upstreamIds!) : null,
+        hasRandomizeUpstreams ? 1 : 0, patch.randomizeUpstreams ? 1 : 0,
         hasDumpRetention ? 1 : 0, patch.dumpRetentionSeconds ?? null,
         hasOpenAIResponsesRetention ? 1 : 0, patch.openaiResponsesRetentionSeconds ?? null,
         id,
@@ -267,19 +298,17 @@ interface UserRow {
   username: string;
   password_hash: string | null;
   is_admin: number;
-  upstream_ids: string | null;
   created_at: string;
   deleted_at: string | null;
 }
 
-const USER_COLUMNS = 'id, username, password_hash, is_admin, upstream_ids, created_at, deleted_at';
+const USER_COLUMNS = 'id, username, password_hash, is_admin, created_at, deleted_at';
 
 const toUser = (row: UserRow): User => ({
   id: row.id,
   username: row.username,
   passwordHash: row.password_hash,
   isAdmin: row.is_admin === 1,
-  upstreamIds: parseUpstreamIds(row.upstream_ids, `users.id=${row.id}`),
   createdAt: row.created_at,
   deletedAt: row.deleted_at,
 });
@@ -323,15 +352,14 @@ class SqlUsersRepo implements UsersRepo {
     // pick distinct ids.
     const row = await this.db
       .prepare(
-        `INSERT INTO users (id, username, password_hash, is_admin, upstream_ids, created_at, deleted_at)
-         SELECT COALESCE(MAX(id), 0) + 1, ?, ?, ?, ?, ?, ? FROM users
+        `INSERT INTO users (id, username, password_hash, is_admin, created_at, deleted_at)
+         SELECT COALESCE(MAX(id), 0) + 1, ?, ?, ?, ?, ? FROM users
          RETURNING id`,
       )
       .bind(
         template.username,
         template.passwordHash,
         template.isAdmin ? 1 : 0,
-        serializeUpstreamIds(template.upstreamIds),
         template.createdAt,
         template.deletedAt,
       )
@@ -340,15 +368,14 @@ class SqlUsersRepo implements UsersRepo {
     return { ...template, id: row.id };
   }
 
-  async save(user: User): Promise<void> {
-    await this.db
+  async save(user: User, groupIds?: readonly number[]): Promise<void> {
+    const save = this.db
       .prepare(
-        `INSERT INTO users (${USER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO users (${USER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            username = excluded.username,
            password_hash = excluded.password_hash,
            is_admin = excluded.is_admin,
-           upstream_ids = excluded.upstream_ids,
            deleted_at = excluded.deleted_at`,
       )
       .bind(
@@ -356,11 +383,10 @@ class SqlUsersRepo implements UsersRepo {
         user.username,
         user.passwordHash,
         user.isAdmin ? 1 : 0,
-        serializeUpstreamIds(user.upstreamIds),
         user.createdAt,
         user.deletedAt,
-      )
-      .run();
+      );
+    await runStatements(this.db, [save, ...(groupIds === undefined ? [] : userGroupStatements(this.db, user.id, groupIds))]);
   }
 
   async softDelete(id: number): Promise<boolean> {
@@ -373,6 +399,346 @@ class SqlUsersRepo implements UsersRepo {
 
   async deleteAll(): Promise<void> {
     await this.db.prepare('DELETE FROM users').run();
+  }
+}
+
+interface GroupRow {
+  id: number;
+  name: string;
+  hue: number;
+  created_at: string;
+  deleted_at: string | null;
+}
+
+const GROUP_COLUMNS = 'id, name, hue, created_at, deleted_at';
+const toGroup = (row: GroupRow): Group => ({
+  id: row.id,
+  name: row.name,
+  hue: row.hue,
+  createdAt: row.created_at,
+  deletedAt: row.deleted_at,
+});
+
+const userGroupStatements = (db: SqlDatabase, userId: number, groupIds: readonly number[]) => {
+  const ids = JSON.stringify(groupIds);
+  return [
+    db.prepare(`DELETE FROM group_members WHERE user_id = ?
+      AND group_id NOT IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`).bind(userId, ids),
+    db.prepare(`INSERT OR IGNORE INTO group_members (group_id, user_id, created_at)
+      SELECT DISTINCT CAST(value AS INTEGER), ?, ? FROM json_each(?)`)
+      .bind(userId, new Date().toISOString(), ids),
+  ];
+};
+
+const saveGroupStatement = (db: SqlDatabase, group: Group) => db.prepare(
+  `INSERT INTO groups (${GROUP_COLUMNS}) VALUES (?, ?, ?, ?, ?)
+   ON CONFLICT (id) DO UPDATE SET name = excluded.name, hue = excluded.hue, deleted_at = excluded.deleted_at`,
+).bind(group.id, group.name, group.hue, group.createdAt, group.deletedAt);
+
+const groupMemberStatements = (db: SqlDatabase, groupId: number, userIds: readonly number[]) => {
+  const ids = JSON.stringify(userIds);
+  return [
+    db.prepare(`DELETE FROM group_members WHERE group_id = ?
+      AND user_id NOT IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`).bind(groupId, ids),
+    db.prepare(`INSERT OR IGNORE INTO group_members (group_id, user_id, created_at)
+      SELECT ?, CAST(value AS INTEGER), ? FROM json_each(?) GROUP BY value`)
+      .bind(groupId, new Date().toISOString(), ids),
+  ];
+};
+
+class SqlGroupsRepo implements GroupsRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async list(): Promise<Group[]> {
+    const { results } = await this.db.prepare(`SELECT ${GROUP_COLUMNS} FROM groups WHERE deleted_at IS NULL ORDER BY id`).all<GroupRow>();
+    return results.map(toGroup);
+  }
+
+  async listIncludingDeleted(): Promise<Group[]> {
+    const { results } = await this.db.prepare(`SELECT ${GROUP_COLUMNS} FROM groups ORDER BY id`).all<GroupRow>();
+    return results.map(toGroup);
+  }
+
+  async getById(id: number): Promise<Group | null> {
+    const row = await this.db.prepare(`SELECT ${GROUP_COLUMNS} FROM groups WHERE id = ? AND deleted_at IS NULL`).bind(id).first<GroupRow>();
+    return row ? toGroup(row) : null;
+  }
+
+  async findByName(name: string): Promise<Group | null> {
+    const row = await this.db.prepare(`SELECT ${GROUP_COLUMNS} FROM groups WHERE name = ? AND deleted_at IS NULL`).bind(name).first<GroupRow>();
+    return row ? toGroup(row) : null;
+  }
+
+  async create(name: string, hue: number): Promise<Group> {
+    const now = new Date().toISOString();
+    const row = await this.db.prepare(
+      `INSERT INTO groups (id, name, hue, created_at, deleted_at)
+       SELECT COALESCE(MAX(id), 0) + 1, ?, ?, ?, NULL FROM groups
+       RETURNING ${GROUP_COLUMNS}`,
+    ).bind(name, hue, now).first<GroupRow>();
+    if (!row) throw new Error('groups.create: insert returned no rows');
+    return toGroup(row);
+  }
+
+  async save(group: Group): Promise<void> {
+    await saveGroupStatement(this.db, group).run();
+  }
+
+  async restore(groups: readonly GroupWithMembers[]): Promise<void> {
+    if (groups.length === 0) return;
+    if (!this.db.batch) throw new Error('groups.restore requires atomic SQL batch support');
+    // Release the imported IDs' names inside the same batch so valid renames
+    // and name swaps never depend on the order of records in the backup.
+    await this.db.batch([
+      this.db.prepare('UPDATE groups SET deleted_at = ? WHERE id IN (SELECT value FROM json_each(?))')
+        .bind(new Date().toISOString(), JSON.stringify(groups.map(group => group.id))),
+      ...groups.flatMap(group => [saveGroupStatement(this.db, group), ...groupMemberStatements(this.db, group.id, group.memberIds)]),
+    ]);
+  }
+
+  async softDelete(id: number): Promise<boolean> {
+    const existing = await this.getById(id);
+    if (!existing) return false;
+    await runStatements(this.db, [
+      this.db.prepare('DELETE FROM group_members WHERE group_id = ?').bind(id),
+      this.db.prepare('UPDATE groups SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL').bind(new Date().toISOString(), id),
+    ]);
+    return true;
+  }
+
+  async listMemberships(): Promise<Map<number, number[]>> {
+    const { results } = await this.db.prepare('SELECT group_id, user_id FROM group_members ORDER BY group_id, user_id').all<{ group_id: number; user_id: number }>();
+    const members = new Map<number, number[]>();
+    for (const row of results) {
+      const ids = members.get(row.group_id);
+      if (ids) ids.push(row.user_id);
+      else members.set(row.group_id, [row.user_id]);
+    }
+    return members;
+  }
+
+  async setMember(groupId: number, userId: number, included: boolean): Promise<void> {
+    if (included) {
+      await this.db.prepare(`INSERT OR IGNORE INTO group_members (group_id, user_id, created_at)
+        SELECT groups.id, users.id, ? FROM groups CROSS JOIN users
+        WHERE groups.id = ? AND users.id = ? AND groups.deleted_at IS NULL AND users.deleted_at IS NULL`)
+        .bind(new Date().toISOString(), groupId, userId).run();
+    } else {
+      await this.db.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').bind(groupId, userId).run();
+    }
+  }
+
+  async replaceUserGroups(userId: number, groupIds: readonly number[]): Promise<void> {
+    await runStatements(this.db, userGroupStatements(this.db, userId, groupIds));
+  }
+
+  async listMemberIds(groupId: number): Promise<number[]> {
+    const { results } = await this.db.prepare('SELECT user_id FROM group_members WHERE group_id = ? ORDER BY user_id')
+      .bind(groupId).all<{ user_id: number }>();
+    return results.map(row => row.user_id);
+  }
+
+  async listIdsByUserId(userId: number): Promise<number[]> {
+    const { results } = await this.db.prepare(
+      `SELECT group_members.group_id
+       FROM group_members JOIN groups ON groups.id = group_members.group_id
+       WHERE group_members.user_id = ? AND groups.deleted_at IS NULL
+       ORDER BY group_members.group_id`,
+    ).bind(userId).all<{ group_id: number }>();
+    return results.map(row => row.group_id);
+  }
+
+  async listIdsByUserIds(userIds: readonly number[]): Promise<Map<number, number[]>> {
+    const result = new Map<number, number[]>(userIds.map(id => [id, []]));
+    if (userIds.length === 0) return result;
+    const { results } = await this.db.prepare(
+      `SELECT group_members.user_id, group_members.group_id
+       FROM group_members JOIN groups ON groups.id = group_members.group_id
+       WHERE group_members.user_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+         AND groups.deleted_at IS NULL
+       ORDER BY group_members.user_id, group_members.group_id`,
+    ).bind(JSON.stringify([...new Set(userIds)])).all<{ user_id: number; group_id: number }>();
+    for (const row of results) result.get(row.user_id)!.push(row.group_id);
+    return result;
+  }
+
+  async replaceMembers(groupId: number, userIds: readonly number[]): Promise<void> {
+    await runStatements(this.db, groupMemberStatements(this.db, groupId, userIds));
+  }
+
+  async deleteMembershipsByUserId(userId: number): Promise<number> {
+    const result = await this.db.prepare('DELETE FROM group_members WHERE user_id = ?').bind(userId).run();
+    return result.meta.changes!;
+  }
+
+  async deleteAll(): Promise<void> {
+    await runStatements(this.db, [this.db.prepare('DELETE FROM group_members'), this.db.prepare('DELETE FROM groups')]);
+  }
+}
+
+interface AccessRecordRow {
+  id: number;
+  principal_type: string;
+  principal_id: number;
+  scope_json: string;
+  sort_order: number;
+  values_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+const ACCESS_RECORD_COLUMNS = 'id, principal_type, principal_id, scope_json, sort_order, values_json, created_at, updated_at';
+
+const parseAccessRecord = (row: AccessRecordRow): AccessRecord => {
+  if (row.principal_type !== 'user' && row.principal_type !== 'group') throw new Error(`Unknown access principal type ${row.principal_type}`);
+  const input: AccessRecordInput = {
+    principal: { kind: row.principal_type, id: row.principal_id },
+    scope: JSON.parse(row.scope_json) as AccessScope,
+    sortOrder: row.sort_order,
+    values: JSON.parse(row.values_json) as AccessValues,
+  };
+  validateAccessRecordInput(input);
+  return { id: row.id, ...input, createdAt: row.created_at, updatedAt: row.updated_at };
+};
+
+class SqlAccessRecordsRepo implements AccessRecordsRepo {
+  constructor(private db: SqlDatabase) {}
+
+  private assertOrderAvailable(input: AccessRecordInput, existing: readonly AccessRecord[], excludingId?: number): void {
+    if (existing.some(record => record.id !== excludingId && accessScopeKey(record.scope) === accessScopeKey(input.scope))) {
+      throw new AccessRecordConflictError('Access record already exists for this principal and scope');
+    }
+    if (input.scope.kind !== 'upstreamModel') return;
+    const duplicateOrder = existing.find(record =>
+      record.id !== excludingId
+      && accessScopeDepth(record.scope) === accessScopeDepth(input.scope)
+      && accessScopeOrderGroup(record.scope) === accessScopeOrderGroup(input.scope)
+      && record.sortOrder === input.sortOrder);
+    if (duplicateOrder) throw new AccessRecordConflictError(`Access record sortOrder ${input.sortOrder} is already used at this scope level`);
+  }
+
+  async list(): Promise<AccessRecord[]> {
+    const { results } = await this.db.prepare(`SELECT ${ACCESS_RECORD_COLUMNS} FROM access_records ORDER BY principal_type, principal_id, sort_order, id`).all<AccessRecordRow>();
+    return results.map(parseAccessRecord);
+  }
+
+  async getById(id: number): Promise<AccessRecord | null> {
+    const row = await this.db.prepare(`SELECT ${ACCESS_RECORD_COLUMNS} FROM access_records WHERE id = ?`).bind(id).first<AccessRecordRow>();
+    return row ? parseAccessRecord(row) : null;
+  }
+
+  listByPrincipal(principal: AccessPrincipal): Promise<AccessRecord[]> {
+    return this.listByPrincipals([principal]);
+  }
+
+  async listByPrincipals(principals: readonly AccessPrincipal[]): Promise<AccessRecord[]> {
+    if (principals.length === 0) return [];
+    const { results } = await this.db.prepare(
+      `WITH wanted(principal_type, principal_id) AS MATERIALIZED (
+         SELECT json_extract(value, '$.kind'), CAST(json_extract(value, '$.id') AS INTEGER)
+         FROM json_each(?)
+       )
+       SELECT ${ACCESS_RECORD_COLUMNS} FROM access_records
+       JOIN wanted USING (principal_type, principal_id)
+       ORDER BY principal_type, principal_id, sort_order, id`,
+    ).bind(JSON.stringify(principals)).all<AccessRecordRow>();
+    return results.map(parseAccessRecord);
+  }
+
+  async save(input: AccessRecordInput): Promise<AccessRecord> {
+    validateAccessRecordInput(input);
+    const scope = canonicalAccessScope(input.scope);
+    const existing = await this.listByPrincipal(input.principal);
+    const current = existing.find(record => accessScopeKey(record.scope) === accessScopeKey(scope));
+    this.assertOrderAvailable({ ...input, scope }, existing, current?.id);
+    const now = new Date().toISOString();
+    const scopeJson = JSON.stringify(scope);
+    const row = await this.db.prepare(
+      `INSERT INTO access_records (principal_type, principal_id, scope_json, scope_key, sort_order, values_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (principal_type, principal_id, scope_key) DO UPDATE SET
+         scope_json = excluded.scope_json,
+         sort_order = excluded.sort_order,
+         values_json = excluded.values_json,
+         updated_at = excluded.updated_at
+       RETURNING ${ACCESS_RECORD_COLUMNS}`,
+    ).bind(input.principal.kind, input.principal.id, scopeJson, accessScopeKey(scope), input.sortOrder, JSON.stringify(input.values), now, now)
+      .first<AccessRecordRow>();
+    if (!row) throw new Error('accessRecords.save: write returned no rows');
+    return parseAccessRecord(row);
+  }
+
+  async replace(id: number, input: AccessRecordInput): Promise<AccessRecord | null> {
+    validateAccessRecordInput(input);
+    const current = await this.getById(id);
+    if (current === null) return null;
+    const sortOrder = sameModelOrderBoundary(current, input) ? current.sortOrder : input.sortOrder;
+    const next = { ...input, scope: canonicalAccessScope(input.scope) };
+    this.assertOrderAvailable({ ...next, sortOrder }, await this.listByPrincipal(input.principal), id);
+    // An edit must not undo a drag committed while its dialog was open. Read
+    // the surviving rank from the row again at the atomic write boundary.
+    const row = await this.db.prepare(
+      `UPDATE access_records SET
+         principal_type = ?, principal_id = ?, scope_json = ?, scope_key = ?,
+         sort_order = CASE
+           WHEN principal_type = ? AND principal_id = ?
+             AND json_extract(scope_json, '$.kind') = 'upstreamModel'
+             AND json_extract(scope_json, '$.upstreamId') = ?
+           THEN sort_order ELSE ? END,
+         values_json = ?, updated_at = ?
+       WHERE id = ?
+       RETURNING ${ACCESS_RECORD_COLUMNS}`,
+    ).bind(
+      input.principal.kind,
+      input.principal.id,
+      JSON.stringify(next.scope),
+      accessScopeKey(next.scope),
+      input.principal.kind,
+      input.principal.id,
+      input.scope.kind === 'upstreamModel' ? input.scope.upstreamId : null,
+      sortOrder,
+      JSON.stringify(input.values),
+      new Date().toISOString(),
+      id,
+    ).first<AccessRecordRow>();
+    return row ? parseAccessRecord(row) : null;
+  }
+
+  async reorderModel(upstreamId: string, expectedIds: readonly number[], ids: readonly number[]): Promise<AccessRecord[] | null> {
+    // Materialize the boundary and its original order before updating any row.
+    // A single guarded statement prevents partial ranks and stale drag snapshots.
+    const { results } = await this.db.prepare(
+      `WITH current_ids AS MATERIALIZED (
+         SELECT id FROM access_records
+         WHERE json_extract(scope_json, '$.kind') = 'upstreamModel'
+           AND json_extract(scope_json, '$.upstreamId') = ?
+         ORDER BY sort_order, id
+       ), valid_order AS MATERIALIZED (
+         SELECT json_group_array(id) = ? AS valid FROM current_ids
+       ), ranks AS (
+         SELECT CAST(value AS INTEGER) AS id, CAST(key AS INTEGER) AS rank FROM json_each(?)
+       )
+       UPDATE access_records SET
+         sort_order = (SELECT rank FROM ranks WHERE ranks.id = access_records.id), updated_at = ?
+       WHERE id IN (SELECT id FROM current_ids) AND (SELECT valid FROM valid_order)
+       RETURNING ${ACCESS_RECORD_COLUMNS}`,
+    ).bind(upstreamId, JSON.stringify(expectedIds), JSON.stringify(ids), new Date().toISOString()).all<AccessRecordRow>();
+    return results.length === 0 ? null : results.map(parseAccessRecord);
+  }
+
+  async delete(id: number): Promise<boolean> {
+    const result = await this.db.prepare('DELETE FROM access_records WHERE id = ?').bind(id).run();
+    return (result.meta.changes ?? 0) > 0;
+  }
+
+  async deleteByPrincipal(principal: AccessPrincipal): Promise<number> {
+    const result = await this.db.prepare('DELETE FROM access_records WHERE principal_type = ? AND principal_id = ?')
+      .bind(principal.kind, principal.id).run();
+    return result.meta.changes ?? 0;
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.db.prepare('DELETE FROM access_records').run();
   }
 }
 
@@ -827,6 +1193,66 @@ const toWebSearchUsageRecord = (row: { provider: string; key_id: string; action:
   };
 };
 
+class SqlUserPreferencesRepo implements UserPreferencesRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async get(userId: number): Promise<UserPreferences> {
+    const row = await this.db
+      .prepare('SELECT preferences_json FROM user_preferences WHERE user_id = ?')
+      .bind(userId)
+      .first<{ preferences_json: string }>();
+    return row === null ? { ...defaultUserPreferences } : parseStoredUserPreferences(row.preferences_json, `user_preferences.user_id=${userId}`);
+  }
+
+  async save(userId: number, preferences: UserPreferences): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO user_preferences (user_id, preferences_json, updated_at)
+         VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+         ON CONFLICT (user_id) DO UPDATE SET
+           preferences_json = excluded.preferences_json,
+           updated_at = excluded.updated_at`,
+      )
+      .bind(userId, serializeUserPreferences(preferences))
+      .run();
+  }
+
+  async listAll(): Promise<Array<{ userId: number; preferences: UserPreferences }>> {
+    const { results } = await this.db
+      .prepare('SELECT user_id, preferences_json FROM user_preferences ORDER BY user_id')
+      .all<{ user_id: number; preferences_json: string }>();
+    return results.map(row => ({
+      userId: row.user_id,
+      preferences: parseStoredUserPreferences(row.preferences_json, `user_preferences.user_id=${row.user_id}`),
+    }));
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.db.prepare('DELETE FROM user_preferences').run();
+  }
+}
+
+class SqlSiteSettingsRepo implements SiteSettingsRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async get(): Promise<SiteSettings> {
+    const row = await this.db
+      .prepare('SELECT site_name FROM site_settings WHERE id = 1')
+      .first<{ site_name: string | null }>();
+    if (!row) throw new Error('site_settings singleton row missing');
+    return { siteName: row.site_name };
+  }
+
+  async save(settings: SiteSettings): Promise<void> {
+    await this.db
+      .prepare(`UPDATE site_settings
+         SET site_name = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+         WHERE id = 1`)
+      .bind(settings.siteName)
+      .run();
+  }
+}
+
 class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
   constructor(private db: SqlDatabase) {}
 
@@ -882,14 +1308,14 @@ const MODELS_CACHE_EPOCH_SQL = `CASE
   ELSE 0
 END`;
 
-const UPSTREAM_COLUMNS = 'id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue';
+const UPSTREAM_COLUMNS = 'id, provider, name, enabled, usage_refresh_interval_minutes, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue';
 
 class SqlUpstreamRepo implements UpstreamRepo {
   constructor(private db: SqlDatabase) {}
 
   async list(): Promise<StoredUpstreamRecord[]> {
     const { results } = await this.db
-      .prepare(`SELECT ${UPSTREAM_COLUMNS} FROM upstreams ORDER BY sort_order, created_at`)
+      .prepare(`SELECT ${UPSTREAM_COLUMNS} FROM upstreams ORDER BY sort_order, created_at, id`)
       .all<UpstreamRow>();
     return results.map(toUpstreamRecord);
   }
@@ -902,15 +1328,69 @@ class SqlUpstreamRepo implements UpstreamRepo {
     return row ? toUpstreamRecord(row) : null;
   }
 
+  async reorder(
+    expectedIds: readonly string[],
+    assignments: readonly { id: string; sortOrder: number }[],
+  ): Promise<StoredUpstreamRecord[] | null> {
+    const assignmentIds = assignments.map(assignment => assignment.id);
+    if (new Set(assignmentIds).size !== assignmentIds.length || assignmentIds.some(id => !expectedIds.includes(id))) return null;
+    const { results } = await this.db.prepare(
+      `WITH current_ids AS MATERIALIZED (
+         SELECT id FROM upstreams ORDER BY sort_order, created_at, id
+       ), valid_order AS MATERIALIZED (
+         SELECT json_group_array(id) = ? AS valid FROM current_ids
+       ), assignments AS MATERIALIZED (
+         SELECT
+           CAST(json_extract(value, '$.id') AS TEXT) AS id,
+           CAST(json_extract(value, '$.sortOrder') AS INTEGER) AS sort_order
+         FROM json_each(?)
+       )
+       UPDATE upstreams SET
+         sort_order = (SELECT sort_order FROM assignments WHERE assignments.id = upstreams.id),
+         updated_at = ?
+       WHERE id IN (SELECT id FROM assignments) AND (SELECT valid FROM valid_order)
+       RETURNING ${UPSTREAM_COLUMNS}`,
+    ).bind(JSON.stringify(expectedIds), JSON.stringify(assignments), new Date().toISOString()).all<UpstreamRow>();
+    if (results.length !== assignments.length) return null;
+    const byId = new Map(results.map(row => [row.id, toUpstreamRecord(row)]));
+    return assignments.map(({ id }) => byId.get(id)!);
+  }
+
+  async insertAtEndForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
+    const row = await this.db
+      .prepare(`INSERT INTO upstreams (id, provider, name, enabled, usage_refresh_interval_minutes, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue)
+        VALUES (?, ?, ?, ?, ?, (SELECT coalesce(max(sort_order), -1) + 1 FROM upstreams), ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (id) DO NOTHING RETURNING ${UPSTREAM_COLUMNS}`)
+      .bind(
+        upstream.id,
+        upstream.kind,
+        upstream.name,
+        upstream.enabled ? 1 : 0,
+        upstream.usageRefreshIntervalMinutes,
+        upstream.createdAt,
+        upstream.updatedAt,
+        serializeStoredConfig(upstream.config),
+        serializeStoredState(upstream.state),
+        JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
+        JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
+        JSON.stringify(normalizeProxyFallbackList(upstream.proxyFallbackList)),
+        upstream.modelPrefix === null ? null : JSON.stringify(upstream.modelPrefix),
+        upstream.hue,
+      )
+      .first<UpstreamRow>();
+    return row === null ? null : toUpstreamRecord(row);
+  }
+
   async insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
     const row = await this.db
-      .prepare(`INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING
+      .prepare(`INSERT INTO upstreams (id, provider, name, enabled, usage_refresh_interval_minutes, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING
         RETURNING ${UPSTREAM_COLUMNS}`)
       .bind(
         upstream.id,
         upstream.kind,
         upstream.name,
         upstream.enabled ? 1 : 0,
+        upstream.usageRefreshIntervalMinutes,
         upstream.sortOrder,
         upstream.createdAt,
         upstream.updatedAt,
@@ -962,6 +1442,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            provider = ?,
            name = ?,
            enabled = ?,
+           usage_refresh_interval_minutes = ?,
            sort_order = ?,
            updated_at = ?,
            config_version = ?,
@@ -976,6 +1457,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            AND provider = ?
            AND name = ?
            AND enabled = ?
+           AND usage_refresh_interval_minutes = ?
            AND sort_order = ?
            AND updated_at = ?
            AND config_version = ?
@@ -992,6 +1474,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         upstream.kind,
         upstream.name,
         upstream.enabled ? 1 : 0,
+        upstream.usageRefreshIntervalMinutes,
         upstream.sortOrder,
         upstream.updatedAt,
         configVersion,
@@ -1007,6 +1490,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         previous.kind,
         previous.name,
         previous.enabled ? 1 : 0,
+        previous.usageRefreshIntervalMinutes,
         previous.sortOrder,
         previous.updatedAt,
         previous.configVersion,
@@ -1131,6 +1615,7 @@ interface UpstreamRow {
   provider: string;
   name: string;
   enabled: number;
+  usage_refresh_interval_minutes: number;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -1158,6 +1643,7 @@ const toUpstreamRecord = (row: UpstreamRow): StoredUpstreamRecord => {
     modelsCache: parseModelsCache(row),
     name: row.name,
     enabled: row.enabled !== 0,
+    usageRefreshIntervalMinutes: row.usage_refresh_interval_minutes,
     sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -1684,12 +2170,17 @@ class SqlAgentSetupRepo implements AgentSetupRepository {
 }
 
 export class SqlRepo implements Repo {
+  upstreamMetrics: SqlUpstreamMetricsRepo;
   users: UsersRepo;
+  userPreferences: UserPreferencesRepo;
+  groups: GroupsRepo;
+  accessRecords: AccessRecordsRepo;
   sessions: SessionsRepo;
   apiKeys: ApiKeyRepo;
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
+  siteSettings: SiteSettingsRepo;
   webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
@@ -1702,13 +2193,56 @@ export class SqlRepo implements Repo {
   scheduledMaintenance: ScheduledMaintenanceRepo;
   agentSetup: AgentSetupRepository;
 
-  constructor(db: SqlDatabase) {
+  async readUserDirectory(): Promise<UserDirectory> {
+    // One SQLite statement gives users, groups and membership the same read
+    // snapshot, including when another request creates or deletes a group.
+    const { results } = await this.db.prepare(`
+      SELECT 'user' AS kind, id, json_object(
+        'id', id, 'username', username, 'password_hash', password_hash,
+        'is_admin', is_admin,
+        'created_at', created_at, 'deleted_at', deleted_at
+      ) AS record FROM users WHERE deleted_at IS NULL
+      UNION ALL
+      SELECT 'group' AS kind, id, json_object(
+        'id', id, 'name', name, 'hue', hue, 'created_at', created_at, 'deleted_at', deleted_at
+      ) AS record FROM groups WHERE deleted_at IS NULL
+      UNION ALL
+      SELECT 'memberships' AS kind, 0 AS id, json_group_array(json_object(
+        'groupId', group_id, 'userId', user_id, 'createdAt', created_at
+      )) AS record FROM (
+        SELECT group_members.group_id, group_members.user_id, group_members.created_at
+        FROM group_members
+        JOIN groups ON groups.id = group_members.group_id
+        JOIN users ON users.id = group_members.user_id
+        WHERE groups.deleted_at IS NULL AND users.deleted_at IS NULL
+        ORDER BY group_members.group_id, group_members.user_id
+      )
+      ORDER BY kind, id
+    `).all<{ kind: 'user' | 'group' | 'memberships'; record: string }>();
+    const users: User[] = [];
+    const groups: Group[] = [];
+    const memberships: GroupMembership[] = [];
+    for (const row of results) {
+      if (row.kind === 'user') users.push(toUser(JSON.parse(row.record) as UserRow));
+      else if (row.kind === 'group') {
+        groups.push(toGroup(JSON.parse(row.record) as GroupRow));
+      } else memberships.push(...JSON.parse(row.record) as GroupMembership[]);
+    }
+    return { users, groups, memberships };
+  }
+
+  constructor(private readonly db: SqlDatabase) {
+    this.upstreamMetrics = new SqlUpstreamMetricsRepo(db);
     this.users = new SqlUsersRepo(db);
+    this.userPreferences = new SqlUserPreferencesRepo(db);
+    this.groups = new SqlGroupsRepo(db);
+    this.accessRecords = new SqlAccessRecordsRepo(db);
     this.sessions = new SqlSessionsRepo(db);
     this.apiKeys = new SqlApiKeyRepo(db);
     this.usage = new SqlUsageRepo(db);
     this.webSearchUsage = new SqlWebSearchUsageRepo(db);
     this.performance = new SqlPerformanceRepo(db);
+    this.siteSettings = new SqlSiteSettingsRepo(db);
     this.webSearchConfig = new SqlWebSearchConfigRepo(db);
     this.upstreams = new SqlUpstreamRepo(db);
     this.proxies = new SqlProxyRepo(db);

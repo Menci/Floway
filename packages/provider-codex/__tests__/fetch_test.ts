@@ -6,7 +6,7 @@ import { callCodexAlphaSearch, callCodexOpenAIImagesGenerations, callCodexOpenAI
 import * as responsesLite from '../src/responses-lite.ts';
 import type { CodexAccessTokenEntry, CodexAccountCredential, CodexQuotaSnapshotEntryMap, CodexUpstreamState } from '../src/state.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectOpenAIResponsesProtocolEventsToResult, type OpenAIResponsesInputItem, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { type OpenAIResponsesCompactionItemEx, collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -35,6 +35,7 @@ const makeRecord = (state: CodexUpstreamState): UpstreamRecord => ({
   kind: 'codex',
   name: 'Codex',
   enabled: true,
+  usageRefreshIntervalMinutes: 0,
   sortOrder: 0,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -70,6 +71,7 @@ beforeEach(() => {
   vi.useRealTimers();
   currentRecord = makeRecord({ accounts: [{ ...activeAccount }] });
   initProviderRepo(() => ({
+    recordUpstreamMetric: async () => {},
     upstreams: createUpstreamStateRepoStub(() => currentRecord, state => {
       currentRecord = { ...currentRecord, state: state as CodexUpstreamState };
     }),
@@ -137,14 +139,17 @@ describe('callCodexOpenAIResponses — gates', () => {
       expect(await result.response.text()).toMatch(/session_terminated/);
     }
   });
-  test('continues to upstream when a cached rate-limited quota snapshot is still open', async () => {
+  test('replaces the same family after success despite a future cached restriction, preserving other families', async () => {
+    const until = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString();
+    const unrelated = { fetchedAt: 1, data: { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'other', primary_used_percent: 100, ratelimited_until: until } };
     seedAccountState({
       accessToken: farFutureAccessToken,
       quotaSnapshot: {
         premium: {
           fetchedAt: new Date('2026-06-05T00:00:00.000Z').getTime(),
-          data: { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'premium', ratelimited_until: '2026-06-05T01:00:00.000Z' },
+          data: { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'premium', primary_used_percent: 100, primary_reset_after_at: until, ratelimited_until: until },
         },
+        other: unrelated,
       },
     });
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
@@ -154,6 +159,32 @@ describe('callCodexOpenAIResponses — gates', () => {
     });
     expect(result.ok).toBe(true);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+    await flushMicrotasks();
+    expect(readQuotaEntry()?.premium.data.primary_used_percent).toBe(42);
+    expect(readQuotaEntry()?.premium.data.ratelimited_until).toBeUndefined();
+    expect(readQuotaEntry()?.other).toEqual(unrelated);
+  });
+
+  test('preserves a real 429 response despite a future cached restriction', async () => {
+    const until = new Date(Date.now() + 3600_000).toISOString();
+    seedAccountState({
+      accessToken: farFutureAccessToken, quotaSnapshot: {
+        premium: { fetchedAt: Date.now(), data: { observed_at: new Date().toISOString(), primary_used_percent: 100, primary_reset_after_at: until, ratelimited_until: until } },
+      },
+    });
+    const body = { error: { type: 'usage_limit_reached', message: 'controlled upstream rejection' } };
+    const upstream = errorJson(429, body, { 'retry-after': '60', 'x-upstream-request-id': 'fixture-429', 'x-codex-active-limit': 'premium', 'x-codex-primary-used-percent': '100', 'x-codex-primary-reset-after-seconds': '60' });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(upstream);
+    const result = await callCodexOpenAIResponses({
+      upstreamId, account: activeAccount, model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('Expected upstream rejection');
+    expect(result.response.status).toBe(429);
+    expect(result.response.headers.get('retry-after')).toBe('60');
+    expect(result.response.headers.get('x-upstream-request-id')).toBe('fixture-429');
+    expect(await result.response.text()).toBe(JSON.stringify(body));
   });
 });
 
@@ -233,11 +264,11 @@ describe('callCodexOpenAIResponses — token freshness', () => {
 
 describe('Codex terminal output recovery', () => {
   test.each([false, true])('restores native compaction before stream and result consumption with Responses Lite=%s', async useResponsesLite => {
-    const item: OpenAIResponsesOutputItem = {
+    const item: OpenAIResponsesCompactionItemEx = {
       type: 'compaction', id: 'cmp_native', encrypted_content: 'OPAQUE_NATIVE_BLOB',
       metadata: { turn_id: 'turn_native' }, internal_chat_message_metadata_passthrough: { turn_id: 'turn_native' },
     };
-    const terminal: OpenAIResponsesResult = {
+    const terminal: OpenAIResponsesResultEx = {
       id: 'resp_native', object: 'response', model: model.id, status: 'completed', output: [],
       error: null, incomplete_details: null, usage: { input_tokens: 15, output_tokens: 25, total_tokens: 40 },
     };
@@ -254,12 +285,12 @@ describe('Codex terminal output recovery', () => {
       const effects = makeEffects();
       const result = await callCodexOpenAIResponses({
         upstreamId, account: activeAccount, model: { ...model, providerData: { useResponsesLite } },
-        body: { input: [{ type: 'compaction_trigger' } as unknown as OpenAIResponsesInputItem], stream },
+        body: { input: [{ type: 'compaction_trigger' } as unknown as CanonicalOpenAIResponsesInputItem], stream },
         headers: new Headers(), effects, call: noopUpstreamCallOptions(),
       });
       if (!result.ok) throw new Error('expected a successful native compaction stream');
       if (stream) {
-        const frames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [];
+        const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
         for await (const frame of result.events) frames.push(frame);
         expect(frames[0]).toMatchObject({ event: { response: { output: [], status: 'in_progress' } } });
         expect(frames[3]).toMatchObject({ event: { type: 'response.compaction.compacting', item_id: item.id } });
@@ -275,13 +306,13 @@ describe('Codex terminal output recovery', () => {
     }
   });
 
-  test.each([false, true])('recovers an omitted assistant message after restored callable identities with Responses Lite=%s', async useResponsesLite => {
+  test.each([false, true])('recovers an omitted assistant message without changing callable items with Responses Lite=%s', async useResponsesLite => {
     seedFreshAccessToken();
     const wireCall = {
       type: 'function_call', id: 'fc_0', call_id: 'call_0', name: 'lookup', arguments: '{}', status: 'completed',
       ...(useResponsesLite ? { namespace: 'functions' } : {}),
     };
-    const message: OpenAIResponsesOutputItem = {
+    const message: OpenAIResponsesOutputItemEx = {
       type: 'message', id: 'msg_1', role: 'assistant', status: 'completed',
       content: [{ type: 'output_text', text: 'summary answer', annotations: [] }],
     };
@@ -303,9 +334,7 @@ describe('Codex terminal output recovery', () => {
     });
     if (!result.ok) throw new Error('expected a successful summary stream');
     const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
-    const expectedCall = { ...wireCall };
-    delete expectedCall.namespace;
-    expect(collected.output).toEqual([expectedCall, message]);
+    expect(collected.output).toEqual([wireCall, message]);
   });
 });
 
@@ -322,7 +351,7 @@ describe('Codex private Responses wire selection', () => {
             { type: 'message' as const, role: 'user' as const, content: 'hello' },
             // The CLI emits this only with its opt-in reasoning_effort_override feature.
             // https://github.com/openai/codex/blob/6b9826e3aa83b1a5947db50f4332cb9c65f1b340/codex-rs/core/src/session/reasoning_effort.rs#L16-L85
-            { type: 'configuration_update', reasoning: { effort: 'disabled' } } as unknown as OpenAIResponsesInputItem,
+            { type: 'configuration_update', reasoning: { effort: 'disabled' } } as unknown as CanonicalOpenAIResponsesInputItem,
           ],
           instructions: 'Base', tools: [tool], parallel_tool_calls: true,
           reasoning: { effort: 'future_effort', context: 'current_turn' },
@@ -346,8 +375,8 @@ describe('Codex private Responses wire selection', () => {
         const wire = await readJsonRequest(init as RequestInit) as Record<string, unknown>;
         const wireHeaders = new Headers(init?.headers);
         expect(wireHeaders.get(CODEX_RESPONSES_LITE_HEADER)).toBe(useResponsesLite ? 'true' : null);
-        expect(wireHeaders.get('user-agent')).toBe('codex_cli_rs/0.156.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10');
-        expect(wireHeaders.get('version')).toBe('0.156.0');
+        expect(wireHeaders.get('user-agent')).toBe('codex_cli_rs/0.159.3 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10');
+        expect(wireHeaders.get('version')).toBe('0.159.3');
         expect(headers.get(CODEX_RESPONSES_LITE_HEADER)).toBe(marker ?? null);
         expect(body).toEqual(original);
         expect(wire.text).toEqual(body.text);
@@ -375,7 +404,7 @@ describe('Codex private Responses wire selection', () => {
           expect(wire.tool_choice).toBe('auto');
           expect(wire.stream).toBe(true);
           expect(wire.store).toBe(false);
-          expect(result.headers?.get(CODEX_RESPONSES_LITE_HEADER)).toBeNull();
+          expect(result.headers?.get(CODEX_RESPONSES_LITE_HEADER)).toBe('true');
           expect(result.headers?.get('x-upstream-custom')).toBe('retained');
           for await (const _frame of result.events) { /* Drain the actual parser. */ }
         } else {
@@ -386,21 +415,15 @@ describe('Codex private Responses wire selection', () => {
     }
   });
 
-  test.each(['generate', 'compact'] as const)('%s rejects malformed model data and identity collisions before any fetch', async action => {
+  test.each(['generate', 'compact'] as const)('%s rejects malformed model data before any fetch', async action => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const call = action === 'generate' ? callCodexOpenAIResponses : callCodexOpenAIResponsesCompact;
     const opts = { upstreamId, account: activeAccount, body: { input: [] }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions() };
     await expect(call({ ...opts, model: { ...model, providerData: { useResponsesLite: 'false' } } })).rejects.toThrow('useResponsesLite is not a boolean');
-    await expect(call({
-      ...opts, model: liteModel,
-      body: {
-        input: [], tools: [tool, { type: 'namespace', name: 'functions', description: '', tools: [tool] }],
-      },
-    })).rejects.toThrow('cannot preserve distinct callable identities');
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  test.each([true, false])('restores known calls and echoes before streaming=%s consumption and preserves future data', async stream => {
+  test.each([true, false])('projects moved top-level fields while preserving upstream calls through streaming=%s', async stream => {
     seedFreshAccessToken();
     const wireCall = { type: 'function_call' as const, id: 'fc_1', call_id: 'call_1', name: 'lookup', namespace: 'functions', arguments: '{}', status: 'completed' as const, future: 'retained' };
     const opaque = { type: 'reasoning', id: 'rs_opaque', summary: [], encrypted_content: 'opaque+encrypted==' };
@@ -425,40 +448,60 @@ describe('Codex private Responses wire selection', () => {
     });
     if (!result.ok) throw new Error('expected successful Responses stream');
     expect(result.headers?.get('content-type')).toBe('text/event-stream');
-    expect(result.headers?.has(CODEX_RESPONSES_LITE_HEADER)).toBe(false);
+    expect(result.headers?.has(CODEX_RESPONSES_LITE_HEADER)).toBe(true);
     expect(upstream.headers.get(CODEX_RESPONSES_LITE_HEADER)).toBe('true');
-    const expectedCall = { ...wireCall } as Record<string, unknown>;
-    delete expectedCall.namespace;
     if (stream) {
-      const frames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [];
+      const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
       for await (const frame of result.events) frames.push(frame);
-      expect(frames[0]).toMatchObject({ type: 'event', event: { item: expectedCall } });
+      expect(frames[0]).toMatchObject({ type: 'event', event: { item: wireCall } });
       expect(frames[1]).toEqual({ type: 'event', event: future });
-      expect(frames[2]).toMatchObject({ type: 'event', event: { item: expectedCall } });
-      expect(frames[3]).toMatchObject({
-        type: 'event',
-        event: {
-          response: {
-            ...wireResponse, output: [expectedCall, opaque], instructions: body.instructions, tools: body.tools,
-            parallel_tool_calls: false, reasoning: wireResponse.reasoning,
-          },
-        },
-      });
+      expect(frames[2]).toMatchObject({ type: 'event', event: { item: wireCall } });
+      expect(frames[3]).toMatchObject({ type: 'event', event: { response: { ...wireResponse, tools: body.tools, instructions: body.instructions } } });
       expect(frames[4]).toEqual({ type: 'done' });
     } else {
       const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
-      expect(collected).toMatchObject({
-        ...wireResponse, output: [expectedCall, opaque], instructions: body.instructions, tools: body.tools,
-        parallel_tool_calls: false, reasoning: wireResponse.reasoning,
-      });
+      expect(collected).toMatchObject({ ...wireResponse, tools: body.tools, instructions: body.instructions });
     }
+  });
+
+  test('preserves the Lite upstream response for an existing positional tool prefix', async () => {
+    seedFreshAccessToken();
+    const tool = { type: 'namespace' as const, name: 'functions', description: '', tools: [{ type: 'function' as const, name: 'lookup', parameters: { type: 'object' } }] };
+    const item = { type: 'function_call' as const, id: 'fc_lite', call_id: 'call_lite', name: 'lookup', arguments: '{}', status: 'completed' as const };
+    const resource: OpenAIResponsesResultEx = {
+      id: 'resp_lite', object: 'response', model: liteModel.id, status: 'completed', output: [item],
+      tools: [tool], instructions: null, error: null, incomplete_details: null,
+    };
+    const events: OpenAIResponsesStreamEventEx[] = [
+      { type: 'response.output_item.added', output_index: 0, item },
+      { type: 'response.function_call_arguments.done', item_id: item.id, output_index: 0, arguments: '{}' },
+      { type: 'response.output_item.done', output_index: 0, item },
+      { type: 'response.completed', response: resource },
+    ];
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseEventsResponse(events));
+    const result = await callCodexOpenAIResponses({
+      upstreamId, account: activeAccount, model: liteModel,
+      body: {
+        input: [
+          { type: 'additional_tools', role: 'developer', tools: [tool] },
+          { type: 'message', role: 'developer', content: [{ type: 'input_text', text: 'Caller base instructions' }], internal_chat_message_metadata_passthrough: { content_item_kinds: ['model.base_instructions'] } },
+          { type: 'message', role: 'user', content: 'Call the tool.' },
+        ],
+        instructions: '',
+      },
+      headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+    });
+    if (!result.ok) throw new Error('expected successful Lite response');
+    const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
+    for await (const frame of result.events) frames.push(frame);
+    expect(frames).toEqual([...events.map((event, sequence_number) => ({ type: 'event', event: { ...event, sequence_number } })), { type: 'done' }]);
   });
 
   test.each([true, false])('keeps effective settings through native SSE with omitted preferences=%s', async omitted => {
     for (const useResponsesLite of [true, false]) {
       seedFreshAccessToken();
       const reasoning = { effort: 'medium', summary: 'detailed', context: 'all_turns', mode: 'future_mode' };
-      const resource: OpenAIResponsesResult = {
+      const resource: OpenAIResponsesResultEx = {
         id: 'resp_effective', object: 'response', model: model.id, status: 'completed', output: [], error: null, incomplete_details: null,
         parallel_tool_calls: false, reasoning,
       };
@@ -485,7 +528,7 @@ describe('Codex private Responses wire selection', () => {
     }
   });
 
-  test.each(['top-level', 'input', 'mixed'] as const)('restores echoed compact %s prefixes before the next real provider dispatch', async source => {
+  test.each(['top-level', 'input', 'mixed'] as const)('preserves the complete compact %s output window', async source => {
     seedFreshAccessToken();
     const opaque = { type: 'compaction', id: 'cmp_item', encrypted_content: 'opaque+encrypted==' };
     const body: responsesLite.CodexResponsesBody = {
@@ -496,35 +539,22 @@ describe('Codex private Responses wire selection', () => {
         { type: 'message', role: 'user', content: 'Continue' },
       ],
     };
-    const wires: Record<string, unknown>[] = [];
+    let sentInput: unknown[] | undefined;
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
       const wire = await readJsonRequest(init as RequestInit) as Record<string, unknown>;
-      wires.push(wire);
+      sentInput = wire.input as unknown[];
       expect(new Headers(init?.headers).get(CODEX_RESPONSES_LITE_HEADER)).toBe('true');
-      if (String(url).endsWith('/compact')) {
-        // This exact generated-prefix echo is a stipulated backend fixture.
-        return Response.json({ id: 'cmp_resource', object: 'response.compaction', output: [...wire.input as unknown[], opaque] });
-      }
-      return sseEventsResponse([]);
+      expect(String(url)).toContain('/compact');
+      return Response.json({ id: 'cmp_resource', object: 'response.compaction', output: [...wire.input as unknown[], opaque] });
     });
     const opts = { upstreamId, account: activeAccount, model: liteModel, headers: new Headers({ 'thread-id': 'compact-replay-thread' }), effects: makeEffects(), call: noopUpstreamCallOptions() };
     const compact = await callCodexOpenAIResponsesCompact({ ...opts, body });
     if (!compact.ok) throw new Error('expected successful compact response');
-    expect(compact.result.output).toEqual([...body.input, opaque]);
-    const replay = await callCodexOpenAIResponses({
-      ...opts, body: { ...body, instructions: 'New instructions', input: compact.result.output as OpenAIResponsesInputItem[] },
-    });
-    if (!replay.ok) throw new Error('expected successful replay');
-    for await (const _frame of replay.events) { /* Drain the actual parser. */ }
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
-    expect(wires[1]!.input).toEqual([
-      (wires[0]!.input as unknown[])[0],
-      expect.objectContaining({ type: 'message', content: [{ type: 'input_text', text: 'New instructions' }] }),
-      ...body.input.filter(item => item.type !== 'additional_tools'), opaque,
-    ]);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(compact.result.output).toEqual([...sentInput!, opaque]);
   });
 
-  test('repairs compact function/custom identities without touching opaque output', async () => {
+  test('leaves callable and opaque compact output items unchanged', async () => {
     seedFreshAccessToken();
     const opaque = { type: 'compaction', id: 'cmp_original', encrypted_content: 'opaque+encrypted==' };
     const upstream = {
@@ -540,15 +570,10 @@ describe('Codex private Responses wire selection', () => {
       body: { input: [], tools: [{ type: 'custom', name: 'patch' }] }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
     });
     if (!result.ok) throw new Error('expected successful compact response');
-    expect(result.result).toEqual({
-      ...upstream,
-      output: [
-        { type: 'custom_tool_call', name: 'patch', call_id: 'c1', input: 'apply', status: 'completed' }, opaque,
-      ],
-    });
+    expect(result.result).toEqual(upstream);
   });
 
-  test.each(['generate', 'compact'] as const)('%s reuses prepared bytes, metadata choice, identities and inverse map across 401 retry', async action => {
+  test.each(['generate', 'compact'] as const)('%s reuses prepared bytes and metadata choice across 401 retry', async action => {
     seedFreshAccessToken();
     const selectedModel = { ...liteModel, providerData: { useResponsesLite: true } };
     const encode = vi.spyOn(responsesLite, 'encodeCodexResponsesLiteRequest');
@@ -1227,6 +1252,8 @@ describe('callCodexOpenAIResponses — upstream classification', () => {
   test('429 → quota with ratelimited_until, return upstream 429', async () => {
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(429, { error: { type: 'usage_limit_reached', message: 'cap reached', resets_in_seconds: 7200 } }, {
+      'x-codex-primary-used-percent': '100',
+      'x-codex-secondary-used-percent': '35',
       'x-codex-active-limit': 'premium',
       'x-codex-primary-reset-after-seconds': '3600',
       'x-codex-secondary-reset-after-seconds': '7200',
@@ -1239,7 +1266,7 @@ describe('callCodexOpenAIResponses — upstream classification', () => {
     if (!result.ok) expect(result.response.status).toBe(429);
     await flushMicrotasks();
     const stored = readQuotaEntry();
-    expect(stored?.premium.data.ratelimited_until).toBeTruthy();
+    expect(stored?.premium.data.ratelimited_until).toBe(new Date(Date.parse(stored!.premium.data.observed_at) + 3600 * 1000).toISOString());
   });
 
   test('5xx passes through without touching state', async () => {
@@ -1467,7 +1494,7 @@ describe('callCodexOpenAIImagesGenerations', () => {
 // body shape (no `stream`, no `store`), unary JSON decoding — plus the 401
 // retry on the unary endpoint to confirm the retry decision is taken from
 // the bare response status (no SSE wrap in the path).
-const compactJsonResponse = (overrides?: Partial<OpenAIResponsesResult>): Response =>
+const compactJsonResponse = (overrides?: Partial<OpenAIResponsesResultEx>): Response =>
   new Response(JSON.stringify({
     id: 'resp_x',
     object: 'response.compaction',
@@ -1579,6 +1606,8 @@ describe('callCodexOpenAIResponsesCompact', () => {
   test('429 → quota with ratelimited_until, return upstream 429', async () => {
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(429, { error: { type: 'usage_limit_reached', message: 'cap reached' } }, {
+      'x-codex-primary-used-percent': '100',
+      'x-codex-secondary-used-percent': '35',
       'x-codex-active-limit': 'premium',
       'x-codex-primary-reset-after-seconds': '3600',
       'x-codex-secondary-reset-after-seconds': '7200',
@@ -1591,7 +1620,7 @@ describe('callCodexOpenAIResponsesCompact', () => {
     if (!result.ok) expect(result.response.status).toBe(429);
     await flushMicrotasks();
     const stored = readQuotaEntry();
-    expect(stored?.premium.data.ratelimited_until).toBeTruthy();
+    expect(stored?.premium.data.ratelimited_until).toBe(new Date(Date.parse(stored!.premium.data.observed_at) + 3600 * 1000).toISOString());
   });
 
   test('5xx passes through verbatim without touching state', async () => {

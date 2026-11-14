@@ -78,7 +78,7 @@ export const listCss = `
   content: '';
   position: absolute;
   inset-inline-start: 0;
-${selectionPill('1.5px')}
+${selectionPill('1.5px', 'list')}
   background-color: var(--winui-accent-fill-default);
   pointer-events: none;
   opacity: 0;

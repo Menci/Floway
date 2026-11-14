@@ -1,7 +1,7 @@
 import { formatHostForUri } from './bytes.ts';
 import { DEFAULT_DIAL_DEADLINE_MS } from './constants.ts';
+import { ProxyDialError } from './dial-error.ts';
 import { connectOrDialError } from './dial-target.ts';
-import { ProxyDialError } from './errors.ts';
 import { dialHttpConnect } from './protocols/http-connect.ts';
 import { dialReality } from './protocols/reality.ts';
 import { dialShadowsocks2022 } from './protocols/shadowsocks-2022.ts';
@@ -11,7 +11,7 @@ import { dialTrojan } from './protocols/trojan.ts';
 import { dialVlessTcpTls, dialVlessWsTls } from './protocols/vless.ts';
 import type { ProxyConfig } from './proxy-config.ts';
 import type { DialedSocket, DialOptions, DialResult, DialTarget, ProxyRequestTarget } from './types.ts';
-import { fetchOnStream, signalAbortReason, userspaceTls, type DuplexStream, type HttpRequest, type TlsStream } from '@floway-dev/http';
+import { fetchOnStream, signalAbortReason, type DuplexStream, type HttpRequest, type TlsStream } from '@floway-dev/http';
 
 /**
  * Open a transport-only duplex byte stream to `target.host:target.port`
@@ -105,7 +105,7 @@ export type RunProxiedRequestOptions = DialOptions;
 export type RunDirectConnectRequestOptions = DialOptions;
 
 /**
- * Compose `dial` → optional `userspaceTls` → `fetchOnStream` into a single
+ * Compose `dial` → optional TLS upgrade → `fetchOnStream` into a single
  * call that returns a real HTTP `Response` whose body is the upstream's
  * response body (decrypted, transfer-encoding decoded).
  *
@@ -165,13 +165,13 @@ const runRequestOnStream = async (
 ): Promise<Response> => {
   let stream: DuplexStream = { readable: dialed.readable, writable: dialed.writable };
   try {
-    // Route DialResult.prefix to the next byte sink: as the userspace-TLS
-    // outer prefix when wrapping, otherwise as the fetch-body prefix.
+    // Route DialResult.prefix to the next byte sink: into the TLS upgrade
+    // when wrapping, otherwise into the fetch-body prefix.
     let fetchPrefix: Uint8Array | undefined;
     if (target.tls) {
       let tls: TlsStream;
       try {
-        tls = await userspaceTls(stream, {
+        tls = await options.socketDial.startTls(stream, {
           host: target.sni ?? target.host,
           verifyHost: target.verifyHost ?? target.sni ?? target.host,
           alpn: target.alpn,
@@ -181,8 +181,8 @@ const runRequestOnStream = async (
       } catch (cause) {
         // The dialer's framing pump can surface a typed ProxyDialError
         // (CONNECT 4xx, VLESS bad-version, SS auth fail, …) into the
-        // userspace-TLS handshake as the underlying transport error.
-        // Preserve the original stage rather than mis-tagging it as inner-tls.
+        // handshake as the underlying transport error. Preserve the original
+        // stage rather than mis-tagging it as inner-tls.
         if (cause instanceof ProxyDialError) throw cause;
         throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
       }
@@ -202,13 +202,13 @@ const runRequestOnStream = async (
       const hostValue = target.port === defaultPort ? hostUriPart : `${hostUriPart}:${target.port}`;
       headers = [['Host', hostValue], ...headers];
     }
-    return await fetchOnStream(stream, { ...request, headers }, fetchPrefix);
+    return await fetchOnStream(stream, { ...request, headers }, fetchPrefix, options.contentDecoders);
   } catch (err) {
     // Any throw past `dial()` means the active stream will never be returned
     // to the caller. Cancel the topmost layer (the post-TLS readable when
-    // userspaceTls succeeded, otherwise the dialed readable) so the cancel
-    // cascade reaches every wrapper's teardown — userspaceTls's plainReadable
-    // cancel hook ends the TLS layer and closes the transport writer; each
+    // the upgrade succeeded, otherwise the dialed readable) so the cancel
+    // cascade reaches every wrapper's teardown — a userspace TLS layer ends
+    // and closes the transport writer, a native one destroys its socket; each
     // protocol's IIFE / framing pump observes the underlying read failure
     // and closes the socket.
     void stream.readable.cancel(err).catch(() => {});

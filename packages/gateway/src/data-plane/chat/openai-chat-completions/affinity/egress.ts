@@ -1,6 +1,7 @@
+import { isEncryptedReasoningDetail } from './reasoning-details.ts';
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { openaiChatCompletionsErrorPayloadMessage, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { openaiChatCompletionsErrorPayloadMessage, type OpenAIChatCompletionsAssistantDeltaEx, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 interface ChoiceState {
   opaque?: string;
@@ -29,6 +30,14 @@ const eventWithChoices = (
 const hasOptionalChunkFields = (event: OpenAIChatCompletionsStreamEvent): boolean =>
   Object.keys(event).some(key => !REQUIRED_CHUNK_KEYS.has(key));
 
+const wrapReasoningDetails = async (value: unknown, options: AffinityEgressOptions): Promise<unknown> => {
+  if (!Array.isArray(value)) return value;
+  return await Promise.all(value.map(async detail => {
+    if (!isEncryptedReasoningDetail(detail)) return detail;
+    return { ...detail, data: await options.codec.wrap(detail.data, options.affinity, 'openai-chat-completions.reasoning_details.reasoning.encrypted.data') };
+  }));
+};
+
 export const wrapOpenAIChatCompletionsAffinityEgress = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
   options: AffinityEgressOptions,
@@ -49,7 +58,7 @@ export const wrapOpenAIChatCompletionsAffinityEgress = async function* (
             state.finished = true;
             return {
               index,
-              delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity, 'openai-chat-completions.reasoning_opaque') },
+              delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity, 'openai-chat-completions.reasoning_opaque') } as OpenAIChatCompletionsAssistantDeltaEx,
               finish_reason: null,
             } satisfies StreamingChoice;
           }));
@@ -80,11 +89,14 @@ export const wrapOpenAIChatCompletionsAffinityEgress = async function* (
       const state = previous === undefined || previous.finished ? { finished: false } : previous;
       choices.set(index, state);
 
-      const { reasoning_opaque: opaque, ...delta } = sourceDelta;
+      const { reasoning_opaque: opaque, ...sourceVisibleDelta } = sourceDelta as OpenAIChatCompletionsAssistantDeltaEx;
       if (typeof opaque === 'string') state.opaque = opaque;
+      const delta = Object.hasOwn(sourceVisibleDelta, 'reasoning_details')
+        ? { ...sourceVisibleDelta, reasoning_details: await wrapReasoningDetails(sourceVisibleDelta.reasoning_details, options) }
+        : sourceVisibleDelta;
       const hasVisibleProjection = Object.keys(delta).length > 0 || Object.keys(choiceExtras).length > 0;
 
-      if (finishReason === null) {
+      if (finishReason == null) {
         if (hasVisibleProjection) visibleChoices.push({ index, ...choiceExtras, delta, finish_reason: null } as StreamingChoice);
         continue;
       }
@@ -101,7 +113,7 @@ export const wrapOpenAIChatCompletionsAffinityEgress = async function* (
 
     const wrappedChoices = await Promise.all(finishingChoices.map(async ({ index, state }) => ({
       index,
-      delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity, 'openai-chat-completions.reasoning_opaque') },
+      delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity, 'openai-chat-completions.reasoning_opaque') } as OpenAIChatCompletionsAssistantDeltaEx,
       finish_reason: null,
     })));
     yield eventFrame(eventWithChoices(frame.event, wrappedChoices, false));

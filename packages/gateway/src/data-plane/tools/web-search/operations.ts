@@ -37,6 +37,27 @@ export const isSearchContextSize = (v: unknown): v is keyof typeof CONTEXT_SIZE_
 export const maxResultsForContextSize = (size: keyof typeof CONTEXT_SIZE_TO_MAX_RESULTS | undefined): number =>
   CONTEXT_SIZE_TO_MAX_RESULTS[size ?? DEFAULT_SEARCH_CONTEXT_SIZE];
 
+// Codex documents `response_length` as the result-count control.
+// https://github.com/openai/codex/blob/2f19a57704fb7b1db032bc38cf995034254eaebb/codex-rs/ext/web-search/web_run_description.md#L25-L27
+// Probes against gpt-6-luna show `medium` and an omitted value produce an
+// identical result set. `short` trims both the result count and the rendered
+// text, while `long` keeps the `medium` count and expands each result's text.
+// The local adapters express that ranking budget as a result-count cap; the
+// numbers reuse the context-size slots and are caps, not a promise that a
+// provider returns exactly that many hits.
+export const SEARCH_RESPONSE_LENGTHS = ['short', 'medium', 'long'] as const;
+export type SearchResponseLength = typeof SEARCH_RESPONSE_LENGTHS[number];
+export const isSearchResponseLength = (value: unknown): value is SearchResponseLength =>
+  typeof value === 'string' && (SEARCH_RESPONSE_LENGTHS as readonly string[]).includes(value);
+
+export const maxResultsForResponseLength = (length: SearchResponseLength): number => {
+  switch (length) {
+  case 'short': return CONTEXT_SIZE_TO_MAX_RESULTS.low;
+  case 'medium': return CONTEXT_SIZE_TO_MAX_RESULTS.medium;
+  case 'long': return CONTEXT_SIZE_TO_MAX_RESULTS.high;
+  }
+};
+
 // Per-snippet char cap on a search result's rendered text. Providers like
 // Tavily can return multi-KB snippets per hit; without this cap a single
 // noisy query can blow the upstream context window. Independent of the
@@ -66,6 +87,10 @@ export type WebSearchOperation =
     /** Original index inside the `search_query` array. */
     arrayIndex: number;
     query: string;
+    /** OpenAI `SearchQuery.domains`, an allow-list for this query. */
+    domains?: string[];
+    /** OpenAI `SearchQuery.recency`, in days. */
+    recencyDays?: number;
     /** When set, dispatch returns this verbatim instead of hitting the backend. */
     error?: string;
     errorKind?: WebSearchOperationErrorKind;
@@ -124,7 +149,7 @@ const missingArgError = (field: string): string =>
 const SUPPORTED_KEYS: ReadonlySet<string> = new Set(['search_query', 'open', 'find']);
 
 const LOCAL_SUPPORTED_COMMAND_FIELDS: Readonly<Record<'search_query' | 'open' | 'find', ReadonlySet<string>>> = {
-  search_query: new Set(['q']),
+  search_query: new Set(['q', 'recency', 'domains']),
   open: new Set(['ref_id']),
   find: new Set(['ref_id', 'pattern']),
 };
@@ -144,10 +169,14 @@ const assertObjectHasOnly = (
   path: string,
 ): void => {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return;
-  for (const key of Object.keys(value)) {
+  for (const [key, field] of Object.entries(value)) {
+    // Clients serialize absent optional fields as explicit nulls.
+    if (field === null) continue;
     if (!allowed.has(key)) throw new UnsupportedLocalWebSearchFeatureError(`${path}.${key}`);
   }
 };
+
+const SUPPORTED_SCALAR_COMMANDS: ReadonlySet<string> = new Set(['response_length']);
 
 // The local Tavily, Jina, and Microsoft Web IQ adapters implement the
 // common text-search/open/find subset. OpenAI's complete command object remains
@@ -161,6 +190,11 @@ export const assertLocalWebSearchSupport = (
   commands: Record<string, unknown>,
 ): void => {
   for (const [key, value] of Object.entries(commands)) {
+    if (value === null) continue;
+    if (SUPPORTED_SCALAR_COMMANDS.has(key)) {
+      if (!isSearchResponseLength(value)) throw new UnsupportedLocalWebSearchFeatureError(`commands.${key}`);
+      continue;
+    }
     if (!SUPPORTED_KEYS.has(key)) throw new UnsupportedLocalWebSearchFeatureError(`commands.${key}`);
     if (!Array.isArray(value)) continue;
     const allowed = LOCAL_SUPPORTED_COMMAND_FIELDS[key as keyof typeof LOCAL_SUPPORTED_COMMAND_FIELDS];
@@ -188,12 +222,31 @@ export const parseWebSearchOperations = (args: Record<string, unknown> | null): 
       ops.push({ kind: 'wrong-type', subProperty: 'search_query', actualType: describeJsonType(searchQuery) });
     } else {
       for (let i = 0; i < searchQuery.length; i++) {
-        const q = stringField(searchQuery[i], 'q');
+        const entry = searchQuery[i];
+        const q = stringField(entry, 'q');
         if (q === '') {
           ops.push({ kind: 'search', arrayIndex: i, query: '', error: missingArgError('q'), errorKind: 'missing-arg' });
           continue;
         }
-        ops.push({ kind: 'search', arrayIndex: i, query: q });
+        const domainsValue = entry !== null && typeof entry === 'object'
+          ? (entry as Record<string, unknown>).domains
+          : undefined;
+        const domains = Array.isArray(domainsValue)
+          ? domainsValue.filter((domain): domain is string => typeof domain === 'string')
+          : undefined;
+        const recencyValue = entry !== null && typeof entry === 'object'
+          ? (entry as Record<string, unknown>).recency
+          : undefined;
+        const recencyDays = typeof recencyValue === 'number' && Number.isInteger(recencyValue) && recencyValue >= 0
+          ? recencyValue
+          : undefined;
+        ops.push({
+          kind: 'search',
+          arrayIndex: i,
+          query: q,
+          ...(domains !== undefined && domains.length > 0 ? { domains } : {}),
+          ...(recencyDays !== undefined ? { recencyDays } : {}),
+        });
       }
     }
   }
@@ -245,7 +298,7 @@ export const parseWebSearchOperations = (args: Record<string, unknown> | null): 
 
   // Keys outside the implemented set surface as unsupported ops.
   for (const key of Object.keys(args)) {
-    if (SUPPORTED_KEYS.has(key)) continue;
+    if (SUPPORTED_KEYS.has(key) || SUPPORTED_SCALAR_COMMANDS.has(key)) continue;
     const value = args[key];
     if (Array.isArray(value)) {
       for (let i = 0; i < value.length; i++) {
@@ -272,6 +325,9 @@ interface PageCacheEntry {
 // against. `pageCache` is shared across `open` and `find` so a find op can
 // reuse a body a prior open already fetched without a second round-trip.
 export interface WebSearchExecutionSession {
+  // Codex `SearchCommands.response_length`, applied to every search in this
+  // request when present.
+  responseLength?: SearchResponseLength;
   // Memoized lazy resolver. The first backend dispatch pays the
   // load+resolve cost; later dispatches reuse the cached result. Replay-only
   // paths (OpenAI Responses shim echoing prior items with no live op) never call
@@ -549,18 +605,42 @@ interface SearchQueryOutcome {
   sources?: { type: 'url'; url: string }[];
 }
 
+const intersectAllowedDomains = (
+  filters: readonly string[] | undefined,
+  queryDomains: readonly string[] | undefined,
+): string[] | undefined => {
+  if (queryDomains === undefined) return filters === undefined ? undefined : [...filters];
+  if (filters === undefined) return [...queryDomains];
+  // Both lists are allow-lists. Intersecting them preserves the operator's
+  // policy when a caller narrows the same dimension.
+  const allowed = new Set(filters);
+  return queryDomains.filter(domain => allowed.has(domain));
+};
+
 const runOneSearchQuery = async (
-  query: string,
+  op: Extract<WebSearchOperation, { kind: 'search' }>,
   session: WebSearchExecutionSession,
   active: { provider: WebSearchProvider; providerName: WebSearchProviderName },
 ): Promise<SearchQueryOutcome> => {
   try {
+    const allowedDomains = intersectAllowedDomains(session.filters.allowedDomains, op.domains);
+    // Every provider treats an empty allow-list as "no filter". An empty
+    // intersection therefore has to short-circuit: letting it through would
+    // discard both the caller's query-level domains and the operator policy.
+    // The upstream answers an unsatisfiable domain filter with a normal empty
+    // result set, so mirror that rather than inventing an error string.
+    if (allowedDomains?.length === 0) {
+      return { results: [] };
+    }
     const searchRequest = {
-      query,
-      maxResults: session.filters.maxResults,
-      allowedDomains: session.filters.allowedDomains,
+      query: op.query,
+      maxResults: session.responseLength !== undefined
+        ? maxResultsForResponseLength(session.responseLength)
+        : session.filters.maxResults,
+      allowedDomains,
       blockedDomains: session.filters.blockedDomains,
       userLocation: session.filters.userLocation,
+      ...(op.recencyDays !== undefined ? { recencyDays: op.recencyDays } : {}),
       ...(session.signal !== undefined ? { signal: session.signal } : {}),
     };
     const result = await runWebSearchAndRecordUsage({
@@ -608,7 +688,7 @@ const runBackendSearch = async (
   if ('unavailable' in active) {
     return searchIr(op.query, [errorSnippet('Search error', searchFailedText(active.unavailable))]);
   }
-  const { results, sources } = await runOneSearchQuery(op.query, session, active);
+  const { results, sources } = await runOneSearchQuery(op, session, active);
   return searchIr(op.query, results, sources);
 };
 
@@ -625,7 +705,7 @@ export const runBackendSearchMulti = async (
   if ('unavailable' in active) {
     return searchIrFromQueries(queries, [errorSnippet('Search error', searchFailedText(active.unavailable))]);
   }
-  const perQuery = await Promise.all(ops.map(op => runOneSearchQuery(op.query, session, active)));
+  const perQuery = await Promise.all(ops.map(op => runOneSearchQuery(op, session, active)));
   const mergedResults = perQuery.flatMap(r => r.results);
   const mergedSources = session.includeSearchActionSources
     ? perQuery.flatMap(r => r.sources ?? [])
@@ -640,6 +720,34 @@ type FetchAndCacheResult =
   | { ok: false; output: string };
 
 export type WebSearchPageFetchMap = Map<string, FetchAndCacheResult>;
+
+const comparablePageUrl = (value: string): string => {
+  try {
+    const url = new URL(value);
+    // Fragments are never sent to the server and providers routinely omit them
+    // from the URL they report after fetching.
+    url.hash = '';
+    return url.href;
+  } catch {
+    return value;
+  }
+};
+
+const claimFetchOutcome = <Outcome extends { url: string }>(
+  outcomes: readonly Outcome[],
+  claimed: Set<number>,
+  requestedUrl: string,
+): Outcome | undefined => {
+  let index = outcomes.findIndex((outcome, outcomeIndex) => !claimed.has(outcomeIndex) && outcome.url === requestedUrl);
+  if (index === -1) {
+    const comparable = comparablePageUrl(requestedUrl);
+    index = outcomes.findIndex((outcome, outcomeIndex) =>
+      !claimed.has(outcomeIndex) && comparablePageUrl(outcome.url) === comparable);
+  }
+  if (index === -1) return undefined;
+  claimed.add(index);
+  return outcomes[index];
+};
 
 const runBatchFetch = async (
   needFetch: string[],
@@ -673,21 +781,53 @@ const runBatchFetch = async (
       return perUrl;
     }
 
-    const failureByUrl = new Map(result.failures.map(f => [f.url, f]));
-    const pageByUrl = new Map(result.pages.map(p => [p.url, p]));
+    type ProviderOutcome =
+      | { type: 'failure'; value: typeof result.failures[number] }
+      | { type: 'page'; value: typeof result.pages[number] };
+    const outcomes = new Map<string, ProviderOutcome>();
+    const unmatchedUrls: string[] = [];
+    const claimedFailures = new Set<number>();
+    const claimedPages = new Set<number>();
+
     for (const url of needFetch) {
-      const failure = failureByUrl.get(url);
-      if (failure) {
+      const failure = claimFetchOutcome(result.failures, claimedFailures, url);
+      if (failure !== undefined) {
+        outcomes.set(url, { type: 'failure', value: failure });
+        continue;
+      }
+      const page = claimFetchOutcome(result.pages, claimedPages, url);
+      if (page !== undefined) {
+        outcomes.set(url, { type: 'page', value: page });
+        continue;
+      }
+      unmatchedUrls.push(url);
+    }
+
+    // A provider may report the post-redirect URL rather than the URL it was
+    // asked to fetch. Pair it only when the remaining request and outcome are
+    // unique; guessing across multiple redirects could attach the wrong page.
+    const remainingFailures = result.failures.filter((_, index) => !claimedFailures.has(index));
+    const remainingPages = result.pages.filter((_, index) => !claimedPages.has(index));
+    if (unmatchedUrls.length === 1 && remainingFailures.length + remainingPages.length === 1) {
+      const url = unmatchedUrls.pop()!;
+      if (remainingFailures.length === 1) outcomes.set(url, { type: 'failure', value: remainingFailures[0] });
+      else outcomes.set(url, { type: 'page', value: remainingPages[0] });
+    }
+
+    for (const url of needFetch) {
+      const outcome = outcomes.get(url);
+      if (outcome?.type === 'failure') {
+        const failure = outcome.value;
         perUrl.set(url, { ok: false, output: openFailedText(url, failure.message ?? failure.errorCode) });
         continue;
       }
-      const page = pageByUrl.get(url);
-      if (!page) {
+      if (outcome?.type !== 'page') {
         // URL silently dropped by the provider — surface as explicit error
         // so the model doesn't see a phantom empty page.
         perUrl.set(url, { ok: false, output: openFailedText(url, 'No page returned') });
         continue;
       }
+      const page = outcome.value;
       const entry: PageCacheEntry = {
         content: page.content,
         truncated: page.truncated,

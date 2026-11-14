@@ -167,6 +167,16 @@ describe('assertClaudeCodeUpstreamState', () => {
       accounts: [{ ...goodAccount, quotaSnapshot: { fetchedAt: 1, data: fullQuotaSnapshot, extra: 1 } }],
     })).toThrow(/extra/);
   });
+  test('preserves the observed model on quota snapshots', () => {
+    const quotaSnapshot = { fetchedAt: 1, modelId: 'claude-fable-5-1', data: fullQuotaSnapshot };
+    const state = readClaudeCodeUpstreamState({ accounts: [{ ...goodAccount, quotaSnapshot }] });
+    expect(state.accounts[0].quotaSnapshot).toEqual(quotaSnapshot);
+  });
+  test.each(['', null, 123])('rejects invalid quota snapshot model %s', modelId => {
+    expect(() => assertClaudeCodeUpstreamState({
+      accounts: [{ ...goodAccount, quotaSnapshot: { fetchedAt: 1, modelId, data: fullQuotaSnapshot } }],
+    })).toThrow(/modelId/);
+  });
   test('rejects quotaSnapshot.data missing required fields', () => {
     expect(() => assertClaudeCodeUpstreamState({
       accounts: [{ ...goodAccount, quotaSnapshot: { fetchedAt: 1, data: { status: 'allowed' } } }],

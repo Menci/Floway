@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { withTopLevelCacheControlApplied } from '../../../src/interceptors/anthropic-messages/apply-top-level-cache-control.ts';
 import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
@@ -10,8 +10,8 @@ import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@fl
 
 const stubRequest = {};
 
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
-  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>> =>
+  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {})(), testTelemetryModelIdentity));
 
 const invocation = (payload: AnthropicMessagesPayload & { cache_control?: { type: 'ephemeral' } }): AnthropicMessagesBoundaryCtx => ({
   payload,
@@ -75,14 +75,14 @@ test('walks past trailing non-cacheable blocks to find the last cacheable one', 
     cache_control: { type: 'ephemeral' },
     messages: [
       { role: 'user', content: [{ type: 'text', text: 'q' }] },
-      { role: 'assistant', content: [{ type: 'thinking', thinking: 'pondering' }] },
+      { role: 'assistant', content: [{ signature: '', type: 'thinking', thinking: 'pondering' }] },
     ],
   });
 
   await withTopLevelCacheControlApplied(ctx, stubRequest, okEvents);
 
   assertEquals((ctx.payload as { cache_control?: unknown }).cache_control, undefined);
-  assertEquals(ctx.payload.messages[1].content, [{ type: 'thinking', thinking: 'pondering' }]);
+  assertEquals(ctx.payload.messages[1].content, [{ signature: '', type: 'thinking', thinking: 'pondering' }]);
   assertEquals(ctx.payload.messages[0].content, [{ type: 'text', text: 'q', cache_control: { type: 'ephemeral' } }]);
 });
 
@@ -91,13 +91,13 @@ test('drops top-level cache_control when no cacheable block exists', async () =>
     model: 'claude-test',
     max_tokens: 10,
     cache_control: { type: 'ephemeral' },
-    messages: [{ role: 'assistant', content: [{ type: 'thinking', thinking: 'no text yet' }] }],
+    messages: [{ role: 'assistant', content: [{ signature: '', type: 'thinking', thinking: 'no text yet' }] }],
   });
 
   await withTopLevelCacheControlApplied(ctx, stubRequest, okEvents);
 
   assertEquals((ctx.payload as { cache_control?: unknown }).cache_control, undefined);
-  assertEquals(ctx.payload.messages[0].content, [{ type: 'thinking', thinking: 'no text yet' }]);
+  assertEquals(ctx.payload.messages[0].content, [{ signature: '', type: 'thinking', thinking: 'no text yet' }]);
 });
 
 test('no-op when payload has no top-level cache_control', async () => {

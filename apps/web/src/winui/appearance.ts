@@ -193,6 +193,11 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
   // subset the dashboard renders today, so a later component arrives stamped.
   return {
     ...components,
+    Avatar: wrapFluent(components.Avatar, (props: React.ComponentProps<typeof components.Avatar>) => ({
+      ...props,
+      'data-winui-avatar-color': props.color ?? 'neutral',
+      style: { '--floway-person-picture-size': `${props.size ?? 32}px`, ...props.style },
+    })),
     AccordionHeader: winuiChevron(components.AccordionHeader),
     MessageBar: stampIntent(components.MessageBar),
     Button: stamp(components.Button, appearance('secondary', rootIsPrimary)),

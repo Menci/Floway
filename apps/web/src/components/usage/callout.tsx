@@ -1,6 +1,6 @@
 import { formatCompactDecimalCount, formatRatePercent } from './format';
 import { bucketKeyForCallout, summarizeCounters } from './plot';
-import type { CalloutPoint, UsageChartModel } from './types';
+import type { CalloutPoint, CalloutRow, UsageChartModel } from './types';
 import { useTranslation } from '../../i18n/translation';
 import { formatUsd } from '../../lib/decimal-display';
 import { formatCount } from '../../lib/format-number';
@@ -9,18 +9,27 @@ import { ChartCalloutTable } from '../charts/callout-table';
 import { formatCalloutTitle } from '../charts/dashboard-time';
 import { ScrollArea } from '../ui/scroll-area';
 
+// Zero-height bar segments only preserve stack position. A line point at 0% is
+// a measured value and remains visible in its callout.
+const calloutRows = (chart: UsageChartModel, point: CalloutPoint): CalloutRow[] =>
+  (chart.plot.form === 'area' ? point.rows.filter(row => row.value > 0) : point.rows)
+    .sort((a, b) => b.value - a.value);
+
+// A point the dataset has no reading for leaves the body empty, and an empty
+// body renders as a blank box rather than as a callout. The native hover hides
+// that box through the shared chart frame; a chart drawing its own tooltip has
+// no such rule, so it asks this before mounting one.
+export const hasUsageCallout = (chart: UsageChartModel, point: CalloutPoint | null): point is CalloutPoint =>
+  point !== null && calloutRows(chart, point).length > 0;
+
 export function UsageChartCallout({ chart, labelByTime, point, valueFormatter }: { chart: UsageChartModel; labelByTime: Map<number, string>; point: CalloutPoint | null; valueFormatter: (value: number) => string }) {
   const { t } = useTranslation();
   const locale = useLocale();
-  if (!point?.rows.length) return null;
+  if (!hasUsageCallout(chart, point)) return null;
   const bucketKey = bucketKeyForCallout(point.x, chart.buckets);
   const bucketDetails = chart.kind === 'token' && bucketKey ? chart.details.get(bucketKey) : undefined;
-  // Zero-height bar segments only preserve stack position. A line point at 0%
-  // is a measured value and remains visible in its callout.
-  const rows = (chart.plot.form === 'area' ? point.rows.filter(row => row.value > 0) : point.rows)
-    .sort((a, b) => b.value - a.value);
-  if (rows.length === 0) return null;
-  const title = formatCalloutTitle(point.x, labelByTime, chart.range, locale);
+  const rows = calloutRows(chart, point);
+  const title = formatCalloutTitle(point.x, labelByTime, locale);
   return (
     <ScrollArea axes="horizontal" className="max-w-[min(650px,calc(100vw-48px))] min-w-[220px]" contentClassName="grid gap-1">
       {chart.kind === 'token' && bucketDetails ? (

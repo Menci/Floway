@@ -1,7 +1,7 @@
 import type { FlagId, FlagOverrides } from './flags.ts';
 import type { UpstreamChatModelConfig, UpstreamModelConfig } from './model-config.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
-import type { AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPricing, OpaqueBlobCompatibilityScope, PublicModelLimits, RerankTarget } from '@floway-dev/protocols/common';
+import type { AliasSelection, AliasTarget, DecisionTarget, ModelKind, ModelEndpoints, ModelPricing, OpaqueBlobCompatibilityScope, PublicModelLimits, RerankTarget } from '@floway-dev/protocols/common';
 
 export const ALL_PROVIDER_KINDS = ['copilot', 'custom', 'azure', 'codex', 'claude-code', 'ollama'] as const;
 export type UpstreamProviderKind = typeof ALL_PROVIDER_KINDS[number];
@@ -68,6 +68,7 @@ export interface UpstreamRecord {
   kind: UpstreamProviderKind;
   name: string;
   enabled: boolean;
+  usageRefreshIntervalMinutes: number;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -171,11 +172,9 @@ export interface InternalAliasedFrom {
 // Per-upstream projection returned by every provider's `getProvidedModels` and
 // the shape every provider's `callXxx(model, ...)` takes at dispatch time.
 // Carries the same metadata as `InternalModel` plus `providerData` (opaque
-// provider-private invocation data, not a universal upstream-id field —
-// Copilot uses it for raw variants, Claude Code for a dated wire id, and other
-// providers may omit it or carry a different private shape), `enabledFlags`
-// (the effective flag set for the model on the emitting upstream, already
-// resolved through every layer), and `flagOverrides` (optional dashboard-only
+// provider-private invocation data whose shape is owned by the emitting
+// provider), `enabledFlags` (the effective flag set for the model on the
+// emitting upstream, already resolved through every layer), and `flagOverrides` (optional dashboard-only
 // view of the per-model layer that fed into `enabledFlags`). Providers only
 // ever see their own emission — the surrounding `InternalModel` map is
 // assembled by the registry.
@@ -187,14 +186,14 @@ export interface ProviderModel extends ModelMetadata {
   opaqueBlobCompatibilityScope: OpaqueBlobCompatibilityScope;
   providerData?: unknown;
   rerankTarget?: RerankTarget;
+  decisionTarget?: DecisionTarget;
   enabledFlags: ReadonlySet<FlagId>;
   // Provider's per-model flag call as a sparse override — each entry
   // states the provider's opinion for that flag on this specific
   // model. Absent when the provider has no per-model call on this
   // model; when present, the map is non-empty (producers elide empty
   // overlays before emission). Populated only for providers with a
-  // per-model rule (e.g., Copilot's Claude < 4.8 system-rewrite clause); other
-  // providers leave it undefined.
+  // per-model rule; other providers leave it undefined.
   //
   // The data plane consumes the already-resolved `enabledFlags` and
   // never re-layers this. The field exists so the dashboard's

@@ -1,5 +1,5 @@
 import type { CopilotAnthropicMessagesBoundaryInterceptor } from './types.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 /**
@@ -19,7 +19,7 @@ import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
  *     Anthropic itself would, rather than the gateway lying about which
  *     field the upstream rejected.
  *   - When the caller asked for Fast Mode, stamp `usage.speed = 'fast'`
- *     onto every `message_start` and `message_delta` frame on the way out
+ *     onto the initial `message_start` frame on the way out
  *     so downstream sees the marker the billing path (`speed` → tier='fast'
  *     → the `serviceTier: 'fast'` pricing entry) and Anthropic-compatible clients expect.
  *
@@ -46,8 +46,8 @@ export const withSpeedFast: CopilotAnthropicMessagesBoundaryInterceptor = async 
 };
 
 const stampFastSpeedOntoUsage = async function* (
-  frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
-): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+  frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
+): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   for await (const frame of frames) {
     if (frame.type === 'done') {
       yield frame;
@@ -61,13 +61,6 @@ const stampFastSpeedOntoUsage = async function* (
           ...event.message,
           usage: { ...event.message.usage, speed: 'fast' },
         },
-      });
-      continue;
-    }
-    if (event.type === 'message_delta' && event.usage) {
-      yield eventFrame({
-        ...event,
-        usage: { ...event.usage, speed: 'fast' },
       });
       continue;
     }

@@ -46,9 +46,10 @@ import { sha256, sha512 } from '@noble/hashes/sha2.js';
 import { setCryptoImplementation, makeTLSClient } from '@reclaimprotocol/tls';
 import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 
-import { base64UrlDecodeBytes, copy, utf8Bytes, randomBytes, hexDecode } from '../bytes.ts';
+import { copy, randomBytes } from '../bytes.ts';
+import { ProxyDialError } from '../dial-error.ts';
 import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../dial-target.ts';
-import { ProxyDialError } from '../errors.ts';
+import { base64UrlDecodeBytes, utf8Bytes, hexDecode } from '../encoding.ts';
 import type { RealityProxyConfig } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { vlessFrameOverStream } from './vless-core.ts';

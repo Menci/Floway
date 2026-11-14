@@ -3,7 +3,7 @@ import { COMPACTION_TRIGGER, compactionResponse } from './compaction.ts';
 import { assertCopilotUpstreamRecord } from './config.ts';
 import { COPILOT_DEFAULT_FLAGS, defaultFlagsForCopilotModel } from './defaults.ts';
 import { fetchCopilotModels } from './fetch-models.ts';
-import { copilotFetchOpenAIChatCompletions, copilotFetchOpenAIEmbeddings, copilotFetchAnthropicMessages, copilotFetchAnthropicMessagesCountTokens, copilotFetchOpenAIResponses, type CopilotDataPlaneFetchOptions } from './fetch.ts';
+import { copilotFetchOpenAIChatCompletions, copilotFetchOpenAIEmbeddings, copilotFetchAnthropicMessages, copilotFetchAnthropicMessagesCountTokens, copilotFetchOpenAIImagesEdits, copilotFetchOpenAIImagesGenerations, copilotFetchOpenAIResponses, copilotFetchDecision, type CopilotDataPlaneFetchOptions } from './fetch.ts';
 import { COPILOT_ANTHROPIC_MESSAGES_BOUNDARY, COPILOT_ANTHROPIC_MESSAGES_COUNT_TOKENS_BOUNDARY } from './interceptors/anthropic-messages/index.ts';
 import type { AnthropicMessagesBoundaryCtx } from './interceptors/anthropic-messages/types.ts';
 import { COPILOT_OPENAI_CHAT_COMPLETIONS_BOUNDARY } from './interceptors/openai-chat-completions/index.ts';
@@ -14,17 +14,19 @@ import { emptyKnownModels, mergeKnownModels, projectKnownModels } from './known-
 import { mergeCopilotVariants } from './merge-variants.ts';
 import { CONTEXT_1M_BETA, copilotModelSupportsFastVariant } from './model-selection.ts';
 import { copilotVariantIndex } from './model-variants.ts';
-import { copilotOpenAIEmbeddingsBody, rawModelFor, rawModelSupportsEndpoint } from './operation-model.ts';
+import { copilotDecisionTarget, copilotOpenAIEmbeddingsBody, rawModelFor, rawModelSupportsEndpoint } from './operation-model.ts';
 import { createCopilotPipelines } from './pipelines.ts';
 import { pricingForCopilotPublicModelId } from './pricing.ts';
+import { runCopilotScheduledTask } from './scheduled.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import type { CopilotRawModel } from './types.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
-import { parseAnthropicMessagesStream, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { parseAnthropicMessagesStream, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type ModelEndpoints, type ProtocolFrame, isFastServiceTier, kindForEndpoints } from '@floway-dev/protocols/common';
+import { DEFAULT_DECISION_PATHS, serializeDecisionRequest, type CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import { parseOpenAIChatCompletionsStream, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { parseOpenAIResponsesStream, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
-import { eventResult, getProviderRepo, headersForAnthropicMessagesCall, jsonRequestBody, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FetchInit, type FlagOverrides, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { parseOpenAIResponsesStream, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
+import { eventResult, getProviderRepo, headersForAnthropicMessagesCall, jsonRequestBody, serializeOpenAIImagesEditsRequest, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FetchInit, type FlagOverrides, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -68,12 +70,26 @@ const copilotModelEndpoints = (rawModels: readonly CopilotRawModel[]): ModelEndp
     return { openaiChatCompletions: {} };
   }
 
-  return rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiEmbeddings')) ? { openaiEmbeddings: {} } : {};
+  if (rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiEmbeddings'))) return { openaiEmbeddings: {} };
+  // Image models are their own family too, but unlike the chat collapse above
+  // they advertise two independently routable surfaces: the gateway serves
+  // `/v1/images/generations` and `/v1/images/edits` as separate inbound routes,
+  // so a model that declares both must carry both keys. Copilot's live
+  // `gpt-image-2.5-flare` entry lists both paths and serves real requests on
+  // each, and declaring only one would make the other route reject the model.
+  const imageEndpoints: ModelEndpoints = {
+    ...(rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiImagesGenerations')) ? { openaiImagesGenerations: {} } : {}),
+    ...(rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiImagesEdits')) ? { openaiImagesEdits: {} } : {}),
+  };
+  if (Object.keys(imageEndpoints).length > 0) return imageEndpoints;
+  // A decision model is a family of one: no other endpoint family shares its
+  // row, so this branch never competes with the chat/embeddings collapse above.
+  return rawModels.some(model => rawModelSupportsEndpoint(model, 'decision')) ? { decision: {} } : {};
 };
 
 const chatReasoningEffort = (body: Omit<OpenAIChatCompletionsPayload, 'model'>): string | undefined => (body.reasoning_effort && body.reasoning_effort !== 'none' ? body.reasoning_effort : undefined);
 
-const anthropicMessagesReasoningEffort = (body: Omit<AnthropicMessagesPayload, 'model'>): string | undefined => body.output_config?.effort;
+const anthropicMessagesReasoningEffort = (body: Omit<AnthropicMessagesPayload, 'model'>): string | undefined => body.output_config?.effort ?? undefined;
 
 const openaiResponsesReasoningEffort = (body: Omit<CanonicalOpenAIResponsesPayload, 'model'>): string | undefined => (body.reasoning?.effort && body.reasoning.effort !== 'none' ? body.reasoning.effort : undefined);
 
@@ -116,6 +132,7 @@ const finalizeCopilotModels = (
       kind: kindForEndpoints(endpoints),
       endpoints,
       providerData: { rawModels: variants } satisfies CopilotProviderData,
+      ...(endpoints.decision ? { decisionTarget: copilotDecisionTarget(variants) } : {}),
       ...(pricing ? { pricing } : {}),
       ...((mergedModel.owned_by?.toLowerCase() === 'openai' || /^(?:gpt-|o[134](?:-|$)|codex-)/.test(mergedModel.id))
         ? { opaqueBlobCompatibilityScope: { bindToUpstream: true, key: 'openai' } }
@@ -240,6 +257,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
   };
 
   const instance: ProviderInstance = {
+    runScheduledTask: options => runCopilotScheduledTask(record, options),
     callAlphaSearch: rejectUnsupported('callAlphaSearch'),
     getProvidedModels: async fetcher => {
       const fresh = await getProviderRepo().upstreams.getById(copilot.id);
@@ -320,11 +338,11 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       // /v1/responses/compact, so the compact branch drives the same
       // /responses upstream with stream:false + a compaction_trigger input
       // item and reshapes the envelope via `compactionResponse`. Every
-      // payload/header workaround in the chain — force-store-false,
-      // strip-service-tier, strip-image-generation, inline-image
-      // compression, vision/initiator headers — applies to both branches
-      // identically. The item-id membrane also normalizes the compact value
-      // envelope, while the whitespace guard only inspects generate streams.
+      // payload/header workaround in the chain — strip-service-tier,
+      // strip-image-generation, inline-image compression, vision/initiator
+      // headers — applies to both branches identically. The item-id membrane
+      // also normalizes the compact value envelope, while the whitespace
+      // guard only inspects generate streams.
       return await runInterceptors<OpenAIResponsesBoundaryCtx, object, ProviderOpenAIResponsesResult>(
         ctx, {}, COPILOT_OPENAI_RESPONSES_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
@@ -344,7 +362,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
               { extraHeaders: [...ctx.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall, waitUntil: opts.waitUntil },
             );
             if (!response.ok) return { action: 'compact', ok: false, response, modelKey: rawModel.id };
-            const generated = (await response.json()) as OpenAIResponsesResult;
+            const generated = (await response.json()) as OpenAIResponsesResultEx;
             return { action: 'compact', ok: true, result: compactionResponse(input, generated), modelKey: rawModel.id };
           }
           default:
@@ -397,7 +415,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
         reasoningEffort: anthropicMessagesReasoningEffort(body),
         fast: body.speed === 'fast',
       });
-      const result = await runInterceptors<AnthropicMessagesBoundaryCtx, object, ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>>(
+      const result = await runInterceptors<AnthropicMessagesBoundaryCtx, object, ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>>(
         ctx, {}, COPILOT_ANTHROPIC_MESSAGES_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
           return await liftStream(callStreaming(copilotFetchAnthropicMessages, wireBody, signal, rawModel, headersForAnthropicMessagesCall([...ctx.headers], ctx.anthropicBeta), parseAnthropicMessagesStream, opts));
@@ -421,12 +439,39 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       return { response, modelKey: rawModel.id };
     },
     callOpenAIEmbeddings: (model, body, signal, opts) => call(copilotFetchOpenAIEmbeddings, copilotOpenAIEmbeddingsBody(body), signal, rawModelFor(model, 'openaiEmbeddings'), [...opts.headers], opts),
-    // Copilot has no /images/* upstream; catalog never emits a kind='image'
-    // model, so these stubs are unreachable.
-    callOpenAIImagesGenerations: rejectUnsupported('callOpenAIImagesGenerations'),
-    callOpenAIImagesEdits: rejectUnsupported('callOpenAIImagesEdits'),
+    callOpenAIImagesGenerations: (model, body, signal, opts) =>
+      call(copilotFetchOpenAIImagesGenerations, body, signal, rawModelFor(model, 'openaiImagesGenerations'), [...opts.headers], opts),
+    callOpenAIImagesEdits: async (model, request, signal, opts) => {
+      const rawModel = rawModelFor(model, 'openaiImagesEdits');
+      // `serializeOpenAIImagesEditsRequest` yields multipart when every source
+      // is an upload or an inlined data URL, and JSON references otherwise.
+      // Copilot accepts both encodings. A `reference` source carrying a remote
+      // URL is the one shape it refuses with
+      // `400 external image URLs are not supported`; that response is relayed
+      // to the caller unchanged rather than pre-empted here.
+      const body = await serializeOpenAIImagesEditsRequest(request, rawModel.id);
+      const response = await copilotFetchOpenAIImagesEdits(
+        upstreamConfig,
+        { method: 'POST', body, signal },
+        { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall, waitUntil: opts.waitUntil },
+      );
+      return { response, modelKey: rawModel.id };
+    },
     callOpenAIAudioTranscriptions: rejectUnsupported('callOpenAIAudioTranscriptions'),
     callRerank: rejectUnsupported('callRerank'),
+    callDecision: async (model: ProviderModel, request: CanonicalDecisionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => {
+      const target = model.decisionTarget;
+      if (target === undefined) throw new Error(`Decision model ${model.id} has no outbound target`);
+      const rawModel = rawModelFor(model, 'decision');
+      const body = serializeDecisionRequest(target.protocol, rawModel.id, request);
+      const response = await copilotFetchDecision(
+        upstreamConfig,
+        target.path ?? DEFAULT_DECISION_PATHS[target.protocol],
+        { method: 'POST', body: jsonRequestBody(body), signal },
+        { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
+      );
+      return { response, modelKey: rawModel.id, target };
+    },
   };
 
   return {

@@ -60,7 +60,7 @@ export type StoredDumpResponseBody =
   | { type: 'none' };
 
 // The pre-translation (target-protocol) view of what the upstream returned.
-// Present only for turns that traversed a translation (`traverseTranslation`)
+// Present only for turns that traversed a translation (`executeTranslation`)
 // and only when the inner attempt produced events or an upstream api-error.
 // Native turns and gateway-synthesized errors have no upstream view.
 export interface StoredDumpUpstreamResponse {

@@ -1,14 +1,15 @@
 // GET /api/token-usage — query per-key or per-user usage records.
 //
 // The required `view` query parameter selects between two shapes: `self-by-key`
-// returns the actor's own keys, while `all-by-user` aggregates across users and
-// is reserved for administrators.
+// returns the actor's own keys, while `all-by-user` aggregates the user and
+// upstream cells visible through Audit grants.
 
 import { aggregateUsageByUserForDisplay, aggregateUsageForDisplay } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { tokenUsageQuery } from '../schemas.ts';
 import { buildKeyToUserMap } from '../shared/key-to-user.ts';
+import { loadTelemetryOverviewIdentity, telemetryIdentityMetadata, telemetryRecordVisible } from '../shared/telemetry-overview.ts';
 import { resolveUsageView } from '../shared/usage-view.ts';
 import type { TokenUsageByKeyResponse, TokenUsageByUserResponse } from '../usage-types.ts';
 
@@ -27,18 +28,17 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
   const repo = getRepo();
 
   if (resolved.view === 'all-by-user') {
-    const [rawRecords, users, keys] = await Promise.all([
+    const [rawRecords, keys, identity] = await Promise.all([
       repo.usage.query({ start, end }),
-      repo.users.listIncludingDeleted(),
       repo.apiKeys.listIncludingDeleted(),
+      loadTelemetryOverviewIdentity(c),
     ]);
     const keyToUser = buildKeyToUserMap(keys);
-    const records = aggregateUsageByUserForDisplay(rawRecords, keyToUser);
+    const visibleRecords = rawRecords.filter(record => telemetryRecordVisible(identity, record.keyId, record.upstream, keyToUser));
+    const records = aggregateUsageByUserForDisplay(visibleRecords, keyToUser);
 
     if (query.include_user_metadata !== '1') return c.json(records);
-    const userMetadata = users
-      .map(u => ({ id: u.id, username: u.username }))
-      .sort((a, b) => a.id - b.id);
+    const userMetadata = telemetryIdentityMetadata(identity, records.map(record => record.userId)).users;
     return c.json({ view: 'all-by-user', records, users: userMetadata } satisfies TokenUsageByUserResponse);
   }
 

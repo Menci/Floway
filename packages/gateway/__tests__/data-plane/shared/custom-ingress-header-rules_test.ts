@@ -77,7 +77,7 @@ const CASES: RouteCase[] = [
     upstreamPath: '/v1/chat/completions',
     upstreamResponse: () => sseOpenAIChatCompletionsResponse({
       id: 'chatcmpl_1', model: 'chat-model', created: 1,
-      choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+      choices: [{ logprobs: null, index: 0, message: { refusal: null, role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
       usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
     }),
   },
@@ -89,7 +89,7 @@ const CASES: RouteCase[] = [
     upstreamPath: '/v1/chat/completions',
     upstreamResponse: () => sseOpenAIChatCompletionsResponse({
       id: 'chatcmpl_2', model: 'chat-model', created: 1,
-      choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+      choices: [{ logprobs: null, index: 0, message: { refusal: null, role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
       usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
     }),
   },
@@ -101,7 +101,7 @@ const CASES: RouteCase[] = [
     upstreamPath: '/v1/chat/completions',
     upstreamResponse: () => sseOpenAIChatCompletionsResponse({
       id: 'chatcmpl_3', model: 'chat-model', created: 1,
-      choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+      choices: [{ logprobs: null, index: 0, message: { refusal: null, role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
       usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
     }),
   },
@@ -125,7 +125,19 @@ const CASES: RouteCase[] = [
     upstreamPath: '/v1/chat/completions',
     upstreamResponse: () => sseOpenAIChatCompletionsResponse({
       id: 'chatcmpl_4', model: 'chat-model', created: 1,
-      choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+      choices: [{ logprobs: null, index: 0, message: { refusal: null, role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }),
+  },
+  {
+    name: '/v1 Gemini translates onto a Chat Completions upstream',
+    path: '/v1/models/chat-model:generateContent',
+    contentType: 'application/json',
+    body: () => JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] }),
+    upstreamPath: '/v1/chat/completions',
+    upstreamResponse: () => sseOpenAIChatCompletionsResponse({
+      id: 'chatcmpl_4v1', model: 'chat-model', created: 1,
+      choices: [{ logprobs: null, index: 0, message: { refusal: null, role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
       usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
     }),
   },

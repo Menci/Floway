@@ -6,7 +6,7 @@
 // sequences and feed crafted server responses (including malformed framing)
 // to exercise dial-side error handling.
 
-import type { DialedSocket, SocketDial } from '../../src/types.ts';
+import type { DialedSocket, SocketDial, TlsUpgradeOptions } from '../../src/types.ts';
 
 export interface FakeServer {
   /**
@@ -25,6 +25,14 @@ export interface FakeServer {
 
 export interface FakeSocketDial {
   socketDial: SocketDial;
+  /** Options each TLS upgrade was asked for, in call order. */
+  tlsUpgrades: Array<{ opts: TlsUpgradeOptions }>;
+  /**
+   * Answer the next TLS upgrade with a fresh fake duplex, or fail it with
+   * the given error. An upgrade with nothing staged rejects.
+   */
+  acceptNextUpgrade(): void;
+  failNextUpgrade(err: unknown): void;
   /** Awaits the next connect call (or the first if not yet observed). */
   awaitConnect(): Promise<FakeServer>;
   /** Throw when the dialer connects, simulating a TCP-level failure. */
@@ -38,9 +46,22 @@ export const makeFakeSocketDial = (): FakeSocketDial => {
   const serverReady = new Promise<FakeServer>(resolve => { resolveServer = resolve; });
 
   let pendingConnectError: unknown = null;
+  let pendingUpgrade: { accept: true; socket: DialedSocket } | { accept: false; error: unknown } | null = null;
   let connectCount = 0;
+  const tlsUpgrades: Array<{ opts: TlsUpgradeOptions }> = [];
 
   const socketDial: SocketDial = {
+    // The upgrade is not a real handshake: the fixture records what the
+    // dialer asked for and hands back another fake duplex, so protocol tests
+    // can drive both legs without a TLS stack.
+    startTls: async (_transport, opts) => {
+      tlsUpgrades.push({ opts });
+      const outcome = pendingUpgrade;
+      pendingUpgrade = null;
+      if (outcome === null) throw new Error('fake socket dial: no TLS upgrade was staged');
+      if (!outcome.accept) throw outcome.error;
+      return outcome.socket;
+    },
     connect: async () => {
       connectCount++;
       if (pendingConnectError) {
@@ -58,8 +79,13 @@ export const makeFakeSocketDial = (): FakeSocketDial => {
 
   return {
     socketDial,
+    tlsUpgrades,
     awaitConnect: async () => server ?? await serverReady,
     failNextConnect: err => { pendingConnectError = err; },
+    acceptNextUpgrade: () => {
+      pendingUpgrade = { accept: true, socket: makeFakeSocket().socket };
+    },
+    failNextUpgrade: err => { pendingUpgrade = { accept: false, error: err }; },
     connectCount: () => connectCount,
   };
 };

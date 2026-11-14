@@ -7,7 +7,7 @@ import type {
   AnnouncedMetadata,
   ModelAlias,
   ModelKind,
-} from '@floway-dev/protocols/common';
+} from '@floway-dev/protocols/browser';
 
 type AliasWriteBody = InferRequestType<typeof api.api.aliases.$post>['json'];
 

@@ -12,7 +12,7 @@ export { providerModelFacts } from './pipeline.ts';
 export { mergeHttpHeaders, replaceHttpHeader, withHttpContentType } from './http-headers.ts';
 
 export type { InternalDebugError } from './error.ts';
-export { toInternalDebugError } from './error.ts';
+export { internalDebugErrorFields, toInternalDebugError } from './error.ts';
 
 export type {
   ApiErrorResult,
@@ -54,6 +54,7 @@ export type {
   ProviderInstance,
   ProviderCallResult,
   ProviderRerankCallResult,
+  ProviderDecisionCallResult,
   ProviderModule,
   AnthropicMessagesUpstreamCallOptions,
   ProviderOpenAIResponsesResult,
@@ -68,6 +69,13 @@ export type { OpenAIAudioTranscriptionFormEntry, OpenAIAudioTranscriptionRequest
 export { serializeModelFieldOpenAIAudioTranscriptionRequest, serializeModelPathOpenAIAudioTranscriptionRequest } from './audio.ts';
 export type { ProviderStreamParser } from './streaming.ts';
 export { streamingProviderCall } from './streaming.ts';
+
+export { formatUpstreamMetricIdentity, groupUpstreamMetricSamples, quotaPercentDisplay, recordUpstreamMetric, recordUpstreamMetrics, resolveUpstreamMetricDisplaySeries, upstreamMetricAxisPriority } from './upstream-metrics.ts';
+export type { GroupedUpstreamMetricSamples, UpstreamMetrics, UpstreamMetricDisplay, UpstreamMetricDisplayOptions, UpstreamMetricDisplaySeries, UpstreamMetricLabelKey, UpstreamMetricObservation, UpstreamMetricSample, UpstreamMetricUnit } from './upstream-metrics.ts';
+export { normalizeUpstreamMetricIdentity, upstreamMetricIdentityKey } from './upstream-metric-identity.ts';
+export type { UpstreamMetricIdentity, UpstreamMetricLabels, UpstreamMetricLabelValue } from './upstream-metric-identity.ts';
+export { runScheduledUsageRefresh } from './scheduled.ts';
+export type { ProviderScheduledOptions } from './scheduled.ts';
 
 export type { ProviderRepo, UpstreamsRepoSlim } from './repo.ts';
 export { getProviderRepo, initProviderRepo, UpstreamGoneError } from './repo.ts';

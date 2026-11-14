@@ -40,7 +40,7 @@
 import type { OpenAIChatCompletionsInterceptor } from './types.ts';
 import { asJsonObject, type JsonObject, readJsonNumber } from '../../../../shared/json-helpers.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 import { providerModelOf } from '@floway-dev/provider';
 
 const synthesizeFromItems = (items: OpenAIChatCompletionsReasoningItem[] | null | undefined): string | undefined => {
@@ -53,8 +53,9 @@ const rewriteOutboundMessage = (message: OpenAIChatCompletionsMessage): OpenAICh
   // `reasoning_opaque` is the OpenAI-canonical signature for cross-turn
   // reasoning replay; DeepSeek doesn't accept it, so it's dropped on the
   // floor when we project assistant messages onto `reasoning_content`.
-  const { reasoning_text, reasoning_opaque: _opaque, reasoning_items, ...rest } = message;
-  const text = typeof reasoning_text === 'string' ? reasoning_text : synthesizeFromItems(reasoning_items);
+  if (message.role !== 'assistant') return message;
+  const { reasoning_text, reasoning_opaque: _opaque, reasoning_items, ...rest } = message as OpenAIChatCompletionsAssistantMessageEx;
+  const text = typeof reasoning_text === 'string' ? reasoning_text : synthesizeFromItems(reasoning_items as OpenAIChatCompletionsReasoningItem[] | null | undefined);
   if (text === undefined) return rest as OpenAIChatCompletionsMessage;
   return { ...rest, reasoning_content: text } as OpenAIChatCompletionsMessage;
 };
@@ -83,7 +84,7 @@ const rewriteOutboundPayload = (payload: OpenAIChatCompletionsPayload): OpenAICh
 const rewriteInboundDeltas = (chunk: OpenAIChatCompletionsStreamEvent): OpenAIChatCompletionsStreamEvent => {
   let changed = false;
   const choices = chunk.choices.map(choice => {
-    const delta = choice.delta as OpenAIChatCompletionsStreamEvent['choices'][number]['delta'];
+    const delta = choice.delta as OpenAIChatCompletionsAssistantDeltaEx;
     if (typeof delta.reasoning_content !== 'string') return choice;
 
     const { reasoning_content, ...rest } = delta;

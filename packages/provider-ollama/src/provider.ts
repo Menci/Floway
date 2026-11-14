@@ -29,15 +29,16 @@ import { chatFromOllamaRaw } from './chat-from-raw.ts';
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
 import { OLLAMA_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchOllamaCatalog, type OllamaCatalog } from './fetch-models.ts';
-import { ollamaFetchOpenAIAudioTranscriptions, ollamaFetchOpenAIChatCompletions, ollamaFetchOpenAICompletions, ollamaFetchOpenAIEmbeddings, ollamaFetchAnthropicMessages, ollamaFetchAnthropicMessagesCountTokens, ollamaFetchOpenAIResponses, ollamaFetchOpenAIResponsesCompact } from './fetch.ts';
+import { ollamaFetchDecision, ollamaFetchOpenAIAudioTranscriptions, ollamaFetchOpenAIChatCompletions, ollamaFetchOpenAICompletions, ollamaFetchOpenAIEmbeddings, ollamaFetchAnthropicMessages, ollamaFetchAnthropicMessagesCountTokens, ollamaFetchOpenAIResponses, ollamaFetchOpenAIResponsesCompact } from './fetch.ts';
 import { createOllamaPipelines } from './pipelines.ts';
 import { pricingForOllamaModelKey } from './pricing.ts';
 import { readOllamaUpstreamState } from './state.ts';
-import { scheduleOllamaUsageProbe } from './usage-probe.ts';
+import { scheduleOllamaUsageProbe, runOllamaScheduledTask } from './usage-probe.ts';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
+import { DEFAULT_DECISION_PATHS, serializeDecisionRequest, type CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
-import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
+import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResultEx, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { headersForAnthropicMessagesCall, jsonRequestBody, publicModelId, resolveEffectiveFlags, serializeModelFieldOpenAIAudioTranscriptionRequest, streamingProviderCall, type FetchInit, type FlagId, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 // providerData carries the raw upstream id verbatim — the same value /api/tags
@@ -49,6 +50,9 @@ const rawModelIdOf = (model: ProviderModel): string => model.providerData as str
 // kind/endpoints projection — the others are request-time signals.
 const CHAT_ENDPOINTS: ModelEndpoints = { openaiCompletions: {}, openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} };
 const EMBEDDING_ENDPOINTS: ModelEndpoints = { openaiEmbeddings: {} };
+// Ollama serves decision models over the System One contract.
+// https://docs.ollama.com/capabilities/decision
+const DECISION_ENDPOINTS: ModelEndpoints = { decision: {} };
 
 const finalizeOllamaModels = (
   catalog: OllamaCatalog,
@@ -56,7 +60,9 @@ const finalizeOllamaModels = (
 ): ProviderModel[] => {
   const models: ProviderModel[] = [];
   for (const raw of catalog.data) {
-    const endpoints = raw.capabilities.has('embedding') ? EMBEDDING_ENDPOINTS : CHAT_ENDPOINTS;
+    const endpoints = raw.capabilities.has('embedding')
+      ? EMBEDDING_ENDPOINTS
+      : raw.capabilities.has('decision') ? DECISION_ENDPOINTS : CHAT_ENDPOINTS;
     const limits: ProviderModel['limits'] = {};
     if (raw.contextLength !== undefined) limits.max_context_window_tokens = raw.contextLength;
     const model: ProviderModel = {
@@ -69,6 +75,7 @@ const finalizeOllamaModels = (
       providerData: raw.id,
       enabledFlags,
       opaqueBlobCompatibilityScope: { bindToUpstream: true },
+      ...(endpoints.decision ? { decisionTarget: { protocol: 'typesafe-systemone' as const } } : {}),
     };
     if (raw.modifiedAt !== undefined) model.created = raw.modifiedAt;
     const pricing = pricingForOllamaModelKey(raw.id);
@@ -85,21 +92,15 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
   const upstreamFlags = resolveEffectiveFlags([OLLAMA_DEFAULT_FLAGS, record.flagOverrides]);
   const state = readOllamaUpstreamState(record.state);
 
-  // Ollama Cloud moves the account's session and weekly windows on inference
-  // calls, and exposes them nowhere but its usage endpoint, so each such call
-  // arms a debounced background refresh. The account behind the key is armed by
-  // the same calls behind its own, much longer interval. Token counting never
-  // reaches a model and leaves the windows untouched, so it arms neither.
+  // Cloud inference arms a paired usage/balance refresh. Account identity has
+  // its own longer cadence. Token counting consumes neither, so it arms neither.
   const armProbes = (opts: UpstreamCallOptions): void => {
     scheduleOllamaUsageProbe(record.id, config, state, opts.fetcher, opts.waitUntil);
     scheduleOllamaAccountProbe(record.id, config, state, opts.fetcher, opts.waitUntil);
   };
 
-  // Arms once the upstream round-trip has produced a response, so the usage
-  // probe reads windows that already account for this call. A rate-limited
-  // response arms it too — that is exactly when an operator wants the windows
-  // on screen. A transport that threw never reached the account and arms
-  // nothing.
+  // Rate-limited responses also trigger a refresh so the balances explaining
+  // the refusal can appear in the dashboard.
   const withProbes = <T>(opts: UpstreamCallOptions, dispatched: Promise<T>): Promise<T> =>
     dispatched.then(result => {
       armProbes(opts);
@@ -121,6 +122,9 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       providerData: model.upstreamModelId,
       enabledFlags,
       opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
+      // Ollama serves every decision model over System One; the dialect is not
+      // the operator's to choose.
+      ...(kind === 'decision' ? { decisionTarget: { protocol: 'typesafe-systemone' as const } } : {}),
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
     const pricing = model.pricing ?? pricingForOllamaModelKey(model.upstreamModelId);
@@ -170,6 +174,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     Promise.reject(new Error(`Ollama provider does not implement ${capability}`));
 
   const instance: ProviderInstance = {
+    runScheduledTask: options => runOllamaScheduledTask(record, options),
     callAlphaSearch: rejectUnsupported('callAlphaSearch'),
     getProvidedModels: async fetcher => {
       const catalog = await fetchOllamaCatalog(config, fetcher);
@@ -197,7 +202,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
           { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         ));
         return response.ok
-          ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResult, modelKey: rawModelId }
+          ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResultEx, modelKey: rawModelId }
           : { action: 'compact', ok: false, response, modelKey: rawModelId };
       }
       default:
@@ -219,6 +224,19 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       return { response, modelKey: rawModelId };
     },
     callRerank: rejectUnsupported('callRerank'),
+    callDecision: async (model: ProviderModel, request: CanonicalDecisionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => {
+      const target = model.decisionTarget;
+      if (target === undefined) throw new Error(`Decision model ${model.id} has no outbound target`);
+      const rawModelId = rawModelIdOf(model);
+      const body = serializeDecisionRequest(target.protocol, rawModelId, request);
+      const response = await ollamaFetchDecision(
+        config,
+        target.path ?? DEFAULT_DECISION_PATHS[target.protocol],
+        { method: 'POST', body: jsonRequestBody(body), signal },
+        { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
+      );
+      return { response, modelKey: rawModelId, target };
+    },
   };
 
   return {

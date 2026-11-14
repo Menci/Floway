@@ -2,7 +2,8 @@ import type { AttemptTiming } from './attempt-timing.ts';
 import type { RequestBody } from './request-body.ts';
 import { openDumpAccumulator } from '../../dump/accumulator.ts';
 import type { TurnDump } from '../../dump/turn-dump.ts';
-import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
+import type { User } from '../../repo/types.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
@@ -17,8 +18,10 @@ export interface AttemptState {
 
 export interface GatewayCtx {
   readonly apiKeyId: string;
+  readonly user: User;
   readonly requestStartedAt: number;
   readonly upstreamIds: readonly string[] | null;
+  readonly randomizeUpstreams: boolean;
   readonly abortSignal?: AbortSignal;
   readonly wantsStream: boolean;
   readonly downstreamAbortController?: AbortController;
@@ -84,8 +87,10 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
   if (opts.model !== undefined) dump?.requestedModel(opts.model);
   return {
     apiKeyId: apiKey.id,
+    user: userFromContext(c),
     requestStartedAt: Date.now(),
     upstreamIds,
+    randomizeUpstreams: apiKey.randomizeUpstreams,
     abortSignal: controller?.signal,
     wantsStream: opts.wantsStream,
     downstreamAbortController: controller,

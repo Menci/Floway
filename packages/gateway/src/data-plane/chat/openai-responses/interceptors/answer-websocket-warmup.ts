@@ -1,7 +1,7 @@
 import type { OpenAIResponsesInterceptor } from './types.ts';
 import { telemetryModelIdentity } from '../../../shared/telemetry/attribution.ts';
 import { syntheticEventsFromResult } from '../items/output.ts';
-import type { OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 import { eventResult, providerModelOf } from '@floway-dev/provider';
 
 // Codex opens every session with a WebSocket prewarm: a `response.create` that
@@ -28,7 +28,7 @@ import { eventResult, providerModelOf } from '@floway-dev/provider';
 export const answerWebSocketWarmup: OpenAIResponsesInterceptor = async (ctx, _gatewayCtx, run) => {
   // TODO: In the pipeline architecture, answer generate:false locally only for WebSocket requests.
   if (ctx.payload.generate !== false) return await run();
-  const result: OpenAIResponsesResult = {
+  const result: OpenAIResponsesResultEx = {
     // Replaced by the client-output boundary's own response id.
     id: '',
     object: 'response',

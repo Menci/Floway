@@ -18,8 +18,7 @@
 // but not byte-for-byte identical with arbitrary inputs — query order,
 // and percent-encoding may vary.
 
-import { base64UrlDecodeBytes, base64UrlEncodeBytes, utf8Bytes } from './bytes.ts';
-import { ProxyUriError } from './errors.ts';
+import { base64UrlDecodeBytes, base64UrlEncodeBytes, utf8Bytes } from './encoding.ts';
 import {
   type HttpProxyConfig,
   type ProxyConfig,
@@ -33,6 +32,7 @@ import {
   type VlessTcpTlsProxyConfig,
   type VlessWsTlsProxyConfig,
 } from './proxy-config.ts';
+import { ProxyUriError } from './uri-error.ts';
 
 const SS_METHOD_SET: ReadonlySet<string> = new Set<SsMethod>([
   'aes-128-gcm',
@@ -238,8 +238,8 @@ const parseVless = (
   // via `socketDial(tls=true)`, which ties SNI to the URL host; neither
   // surface accepts an SNI override on the wire, so a `?sni=` query param
   // is silently dropped to avoid round-tripping a field the dialer cannot
-  // honour. REALITY keeps `?sni=` as the spoofed front domain because its
-  // userspace TLS stack drives the SNI directly.
+  // honour. REALITY keeps `?sni=` as the spoofed front domain because it
+  // drives the ClientHello itself.
   if (type === 'tcp' && security === 'tls') {
     const config: VlessTcpTlsProxyConfig = {
       kind: 'vless-tcp',

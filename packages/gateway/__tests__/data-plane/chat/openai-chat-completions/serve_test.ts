@@ -65,15 +65,15 @@ const makePayload = (overrides: Partial<OpenAIChatCompletionsPayload> = {}): Ope
 const makeOpenAIChatCompletionsEvents = (): readonly OpenAIChatCompletionsStreamEvent[] => [
   {
     id: 'chatcmpl_test', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-    choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+    choices: [{  index: 0, delta: { role: 'assistant' }, finish_reason: null }],
   },
   {
     id: 'chatcmpl_test', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-    choices: [{ index: 0, delta: { content: 'hi' }, finish_reason: null }],
+    choices: [{  index: 0, delta: { content: 'hi' }, finish_reason: null }],
   },
   {
     id: 'chatcmpl_test', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+    choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
   },
 ];
 

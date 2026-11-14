@@ -1,4 +1,4 @@
-import type { MouseEvent, ReactElement } from 'react';
+import type { AriaAttributes, MouseEvent, ReactElement } from 'react';
 
 import { useDangerActionClasses } from './danger';
 import { useRouteAddress } from './route-link';
@@ -6,7 +6,7 @@ import { fluentComponents } from '../../fluent';
 
 const { Button, Tooltip, mergeClasses } = fluentComponents;
 
-interface IconButtonProps {
+interface IconButtonProps extends Pick<AriaAttributes, 'aria-expanded' | 'aria-controls'> {
   className?: string;
   danger?: boolean;
   disabled?: boolean;
@@ -43,7 +43,7 @@ function AddressedIconButton({ to, ...props }: IconButtonProps & { to: string })
   return <IconButton {...props} {...address} />;
 }
 
-function IconButton({ className, danger = false, disabled = false, disabledFocusable = false, href, icon, label, onClick }: IconButtonProps & {
+function IconButton({ 'aria-expanded': expanded, 'aria-controls': controls, className, danger = false, disabled = false, disabledFocusable = false, href, icon, label, onClick }: IconButtonProps & {
   href?: string;
   onClick?: (event: MouseEvent<HTMLElement>) => void;
 }) {
@@ -51,6 +51,8 @@ function IconButton({ className, danger = false, disabled = false, disabledFocus
   const shared = {
     appearance: 'subtle',
     'aria-label': label,
+    'aria-expanded': expanded,
+    'aria-controls': controls,
     className: mergeClasses(danger && dangerClasses.button, className),
     disabled,
     disabledFocusable,

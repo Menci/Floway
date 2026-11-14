@@ -20,7 +20,7 @@ export const prepareCopilotEmbeddings = () => {
       const { 'request.provider.model': model, 'request.provider.payload': payload, 'request.copilot.session': session, ...rest } = facts;
       const modelKey = rawModelFor(model, 'openaiEmbeddings').id;
       const admitted = facts['request.http.headers'].map(([name, value]): [string, string] => [name, isSecret(value) ? value.reveal() : value]);
-      const headers = [...copilotRequestHeaders({ ...session, token: session.token.reveal() }, undefined, admitted)]
+      const headers = [...copilotRequestHeaders({ ...session, token: session.token.reveal() }, undefined, admitted, true)]
         .map(([name, value]): [string, string | Secret<string>] => [name, name === 'authorization' ? secret(value) : value]);
       const back = await next(move({
         ...rest,

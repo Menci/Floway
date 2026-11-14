@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from '../../src/lib/decimal-display';
+import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, formatUsdNumber, sumDecimalStrings } from '../../src/lib/decimal-display';
 import { NO_READING } from '../../src/lib/no-reading';
 
 describe('decimal display', () => {
@@ -17,5 +17,10 @@ describe('decimal display', () => {
     expect(decimalStringToPlottableNumber('9007199254740993')).toBe(9_007_199_254_740_992);
     expect(() => decimalStringToPlottableNumber(`0.${'0'.repeat(323)}1`)).toThrow(RangeError);
     expect(() => decimalStringToPlottableNumber(`1${'0'.repeat(400)}`)).toThrow(RangeError);
+  });
+
+  it('uses the narrow dollar symbol across locales', () => {
+    expect(formatUsdNumber(1234.56, 'en-US')).toBe('$1,234.56');
+    expect(formatUsdNumber(1234.56, 'zh-Hans')).toBe('$1,234.56');
   });
 });

@@ -8,16 +8,15 @@ export const CUSTOM_DEFAULT_FLAGS: FlagDefaults = {
   'anthropic-messages-web-search-shim': true,
   'openai-responses-web-search-shim': true,
   'openai-responses-image-generation-shim': true,
-  // Custom targets are OpenAI-compatible and typically expose a native
-  // /responses/compact endpoint (or don't need compaction at all), so the
-  // shim stays off by default. Operator can turn it on for a specific
-  // upstream that lacks native compact.
-  'openai-responses-compact-shim': false,
-  'openai-responses-compact-decrypt': true,
+  'openai-responses-compact-shim': true,
+  'openai-responses-compact-decrypt': false,
   'openai-responses-collaboration-shim': true,
+  'openai-responses-agent-message-shim': false,
+  'serialize-stream-items': false,
   'disable-reasoning-on-forced-tool-choice': false,
   'empty-tools-tool-choice-none': false,
   'rewrite-mid-conv-system-to-user': false,
+  'rewrite-disallowed-mid-conv-system-to-user': false,
   'rewrite-developer-to-system': false,
   'rewrite-system-to-developer': false,
   // `x-anthropic-billing-header:` from Claude Code clients is meaningful
@@ -26,4 +25,5 @@ export const CUSTOM_DEFAULT_FLAGS: FlagDefaults = {
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
   'usage-exclusive-cached-tokens': false,
+  'openai-responses-store-false': false,
 };

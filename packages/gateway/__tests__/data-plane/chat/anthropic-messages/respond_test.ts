@@ -6,9 +6,9 @@ import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gate
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { eventResult, type ExecuteResult } from '@floway-dev/provider';
+import { toInternalDebugError, internalErrorResult, eventResult, type ExecuteResult } from '@floway-dev/provider';
 import { assert, assertEquals, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 // --- header forwarding ---
@@ -33,23 +33,24 @@ const forwardedHeadersFixture = (): Headers => new Headers({
 
 const makeRespondCtx = (): ChatGatewayCtx => mockChatGatewayCtx({ apiKeyId: 'key_respond_test' });
 
-const anthropicMessagesEventsForRespond = (): readonly AnthropicMessagesStreamEvent[] => [
+const anthropicMessagesEventsForRespond = (): readonly AnthropicMessagesStreamEventEx[] => [
   {
     type: 'message_start',
     message: {
+      container: null, diagnostics: null, stop_details: null,
       id: 'msg_1', type: 'message', role: 'assistant', content: [], model: 'claude-test',
       stop_reason: null, stop_sequence: null,
-      usage: { input_tokens: 3, output_tokens: 0 },
+      usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 3, output_tokens: 0 },
     },
   },
-  { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+  { type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } },
   { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
   { type: 'content_block_stop', index: 0 },
-  { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } },
+  { type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } },
   { type: 'message_stop' },
 ];
 
-const anthropicMessagesProtocolFrames = async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+const anthropicMessagesProtocolFrames = async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   for (const event of anthropicMessagesEventsForRespond()) yield eventFrame(event);
   yield doneFrame();
 };
@@ -59,7 +60,7 @@ const callRespond = async (wantsStream: boolean): Promise<Response> => {
   const app = new Hono();
   let captured: Response | undefined;
   app.get('/', async c => {
-    const result: ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>> = eventResult(
+    const result: ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> = eventResult(
       anthropicMessagesProtocolFrames(),
       testTelemetryModelIdentity,
       { headers: forwardedHeadersFixture() },
@@ -125,3 +126,40 @@ test('respondAnthropicMessages forwards upstream headers and strips hop-by-hop /
 // A generator whose next() resolves only when emit() supplies the next event.
 // Lets a test interleave "upstream emitted frame X" with "downstream cancels",
 // so the streaming finally block fires while message_stop is still in flight.
+
+test.each([false, true])('anthropic-messages internal failures preserve transport shape and namespaced diagnostics (stream=%s)', async stream => {
+  const cause = new TypeError('nested');
+  cause.stack = 'TypeError: nested\n  at nested';
+  const failure = new Error('broken', { cause });
+  failure.stack = 'Error: broken\n  at render';
+  const diagnostic = { name: 'Error', stack: failure.stack, cause: { name: 'TypeError', message: 'nested', stack: cause.stack }, target_api: 'anthropicMessages' };
+  const app = new Hono().get('/', c => respondAnthropicMessages(c, stream
+    ? eventResult((async function* () { throw failure; })(), testTelemetryModelIdentity)
+    : internalErrorResult(503, toInternalDebugError(failure, 'anthropicMessages')), stream, mockChatGatewayCtx()));
+  const response = await app.request('/');
+  assertEquals(response.status, stream ? 200 : 503);
+  const text = await response.text();
+  const body = stream ? JSON.parse(text.split('\n').find(line => line.startsWith('data: '))!.slice(6)) : JSON.parse(text);
+  assertEquals(body, { type: 'error', error: { type: 'internal_error', message: 'broken', provider_specific_fields: stream ? { name: diagnostic.name, stack: diagnostic.stack, cause: diagnostic.cause } : diagnostic } });
+  if (stream) assertEquals(text.includes('event: error'), true);
+});
+
+test('anthropic-messages absent optional diagnostics stay absent and upstream errors preserve their payload', async () => {
+  const app = new Hono().get('/', c => respondAnthropicMessages(c, internalErrorResult(502, { type: 'internal_error', name: 'Error', message: 'minimal' }), false, mockChatGatewayCtx()));
+  assertEquals(await (await app.request('/')).json(), { type: 'error', error: { type: 'internal_error', message: 'minimal', provider_specific_fields: { name: 'Error' } } });
+  const raw = '{"error":{"message":"native","stack":"provider-owned","custom":true}}';
+  const native = new Hono().get('/', c => respondAnthropicMessages(c, { type: 'api-error', source: 'upstream', status: 429, headers: new Headers({ 'content-type': 'application/json', 'x-native': 'trace' }), body: new TextEncoder().encode(raw) }, false, mockChatGatewayCtx()));
+  const response = await native.request('/');
+  assertEquals(response.status, 429);
+  assertEquals(response.headers.get('x-native'), 'trace');
+  assertEquals(await response.text(), raw);
+});
+
+test('anthropic-messages collecting a broken stream retains the nested error cause in an HTTP 502', async () => {
+  const cause = new TypeError('nested'); cause.stack = 'TypeError: nested';
+  const failure = new Error('broken', { cause }); failure.stack = 'Error: broken';
+  const app = new Hono().get('/', c => respondAnthropicMessages(c, eventResult((async function* () { throw failure; })(), testTelemetryModelIdentity), false, mockChatGatewayCtx()));
+  const response = await app.request('/');
+  assertEquals(response.status, 502);
+  assertEquals(await response.json(), { type: 'error', error: { type: 'internal_error', message: 'broken', provider_specific_fields: { name: 'Error', stack: failure.stack, cause: { name: 'TypeError', message: 'nested', stack: cause.stack } } } });
+});

@@ -8,6 +8,7 @@ import type { OpenAIResponsesBoundaryCtx } from './interceptors/openai-responses
 import { codexImageProviderModel, codexPlanSupportsImages, codexRawToProviderModel, fetchCodexCatalog } from './models.ts';
 import { createCodexPipelines } from './pipelines.ts';
 import { assertCodexUpstreamState, findCodexAccountIndex, persistCodexRefreshTokenRotation, persistCodexTerminalState } from './state.ts';
+import { runCodexScheduledTask } from './usage-probe.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type UpstreamRecord } from '@floway-dev/provider';
 
@@ -72,6 +73,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
   };
 
   const instance: ProviderInstance = {
+    runScheduledTask: options => runCodexScheduledTask(record, options),
     getProvidedModels: async fetcher => {
       // A model-list refresh is the first thing a brand-new Codex upstream
       // does, and it is the only place outside the data plane that mints an
@@ -160,6 +162,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     },
     callOpenAIAudioTranscriptions: () => unsupportedCallResult(),
     callRerank: () => Promise.reject(new Error('Codex provider does not support callRerank')),
+    callDecision: () => Promise.reject(new Error('Codex provider does not support callDecision')),
   };
 
   return {

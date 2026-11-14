@@ -24,7 +24,10 @@
     "@discoveryjs/json-ext": "1.1.0",
     "@floway-dev/pipeline": "workspace:*",
     "@noble/hashes": "^2.2.0",
-    "@reclaimprotocol/tls": "0.1.2",
+    "@reclaimprotocol/tls": "0.1.5",
     "@scure/base": "^2.2.0"
+  },
+  "devDependencies": {
+    "@peculiar/x509": "^1.14.3"
   }
 }

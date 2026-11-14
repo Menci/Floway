@@ -5,7 +5,7 @@ import type { OpenAIChatCompletionsInvocation } from '../../../../../src/data-pl
 import { billableUsageFromOpenAIChatCompletionsUsage } from '../../../../../src/data-plane/chat/openai-chat-completions/usage.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ExecuteResult, eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
@@ -88,12 +88,12 @@ test('folds on the flag when the totals witness nothing', async () => {
 });
 
 test('leaves a normalized chunk billable instead of underflowing', async () => {
-  const raw = HYPER_USAGE as unknown as NonNullable<OpenAIChatCompletionsStreamEvent['usage']>;
+  const raw = HYPER_USAGE as unknown as OpenAIChatCompletionsUsageEx;
   expect(() => billableUsageFromOpenAIChatCompletionsUsage(raw, null)).toThrowError(RangeError);
 
   const usage = await run(invocation(new Set()), HYPER_USAGE);
   assertEquals(
-    billableUsageFromOpenAIChatCompletionsUsage(usage as unknown as NonNullable<OpenAIChatCompletionsStreamEvent['usage']>, null),
+    billableUsageFromOpenAIChatCompletionsUsage(usage as unknown as OpenAIChatCompletionsUsageEx, null),
     { input: 479, cacheRead: 13312, cacheWrite: 0, cacheWrite1h: 0, output: 373 },
   );
 });

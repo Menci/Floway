@@ -1,0 +1,36 @@
+import { useEffect, useMemo, useState } from 'react';
+
+import { api, callApi } from '../../api/client';
+import type { AccessPrincipal, AccessRecord, AccessResolution, AccessScope } from '@floway-dev/gateway/browser';
+
+export const useAccessResolution = ({ enabled, excludeRecordId, principal, revision, scope }: {
+  enabled: boolean;
+  excludeRecordId?: number;
+  principal: AccessPrincipal | null;
+  revision?: readonly AccessRecord[] | null;
+  scope: AccessScope | null;
+}) => {
+  const principalKind = principal?.kind;
+  const principalId = principal?.id;
+  const scopeJson = scope === null ? null : JSON.stringify(scope);
+  const target = useMemo(() => principalKind !== undefined && principalId !== undefined && scopeJson !== null && scope?.kind !== 'self' ? {
+    json: { principal: { kind: principalKind, id: principalId }, scope: JSON.parse(scopeJson) as Exclude<AccessScope, { kind: 'self' }>, ...(excludeRecordId === undefined ? {} : { excludeRecordId }) },
+    revision,
+  } : null, [excludeRecordId, principalId, principalKind, revision, scopeJson, scope?.kind]);
+  const request = enabled ? target : null;
+  const [result, setResult] = useState<{ request: typeof request; data: AccessResolution | null; error: string | null } | null>(null);
+  useEffect(() => {
+    if (request === null) return;
+    const controller = new AbortController();
+    void callApi(() => api.api['access-resolve'].$post({ json: request.json }, { init: { signal: controller.signal } })).then(result => {
+      if (controller.signal.aborted) return;
+      setResult(result.error ? { request, data: null, error: result.error.message } : { request, data: result.data, error: null });
+    });
+    return () => controller.abort();
+  }, [request]);
+  // Disabling keeps the result for an unchanged target: a closing dialog stays
+  // mounted for its exit motion, and dropping the result in that frame would
+  // flash every permission field to "Inherit (unknown)".
+  const current = result?.request === target ? result : null;
+  return { data: current?.data ?? null, error: current?.error ?? null, pending: request !== null && current === null };
+};

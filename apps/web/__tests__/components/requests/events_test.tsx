@@ -3,14 +3,14 @@ import { describe, expect, it } from 'vitest';
 
 import { EventList } from '../../../src/components/requests/events';
 import { renderInApp } from '../../render';
-import type { DumpStreamEvent } from '@floway-dev/gateway/dump-types';
+import type { DumpStreamEvent } from '@floway-dev/gateway/browser';
 
 const events: DumpStreamEvent[] = Array.from({ length: 120 }, (_, i) => ({
   ts: i * 15,
   frame: {
     type: 'event', event: {
       id: 'demo', object: 'chat.completion.chunk', created: 1, model: 'm',
-      choices: [{ index: 0, delta: { content: i === 99 ? 'needle <script>alert(1)</script>' : `chunk ${i + 1}` }, finish_reason: null }],
+      choices: [{  index: 0, delta: { content: i === 99 ? 'needle <script>alert(1)</script>' : `chunk ${i + 1}` }, finish_reason: null }],
     },
   },
 }));

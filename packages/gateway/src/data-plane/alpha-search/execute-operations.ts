@@ -10,14 +10,16 @@ import { defineStage, move } from '@floway-dev/pipeline';
  * as they run, in units no model prices.
  */
 export const executeSearchOperations = defineStage<
-  Fields<'request.search.operations' | 'request.search.filters'>,
+  Fields<'request.search.operations' | 'request.search.filters' | 'request.search.responseLength'>,
   Fields<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers' | 'response.http.status'>,
   SearchServices
 >({
   name: 'executeSearchOperations',
   return: { provides: ['response.search.alphaSearch', 'response.usage.billable', 'response.http.headers', 'response.http.status'] },
   execute: async (facts, use) => {
+    const responseLength = facts['request.search.responseLength'];
     const session: WebSearchExecutionSession = {
+      ...(responseLength === null ? {} : { responseLength }),
       getProvider: use.searchProvider,
       filters: facts['request.search.filters'],
       apiKeyId: use.gateway.apiKeyId,

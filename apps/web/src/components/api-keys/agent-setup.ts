@@ -26,9 +26,12 @@ export const blankAgentSetupDraft = (): AgentSetupConfiguration => ({
     optOutAiAttribution: false,
     disableAutoMemory: false,
     disableAgentView: false,
+    disableArtifact: false,
     modelDiscovery: true,
   },
   codex: { model: null, reasoningEffort: null },
+  pi: { provider: '', model: null, thinkingLevel: null, retry: { enabled: null, maxRetries: null } },
+  omp: { provider: '', model: null, retry: { enabled: null, maxRetries: null } },
 });
 
 export const cloneAgentSetupConfiguration = (
@@ -46,7 +49,10 @@ export const detectAgentSetupPlatform = (
 
 const copyChangedFields = <T extends object>(target: T, current: T, baseline: T) => {
   for (const key of Object.keys(current) as (keyof T)[]) {
-    if (!Object.is(current[key], baseline[key])) target[key] = current[key];
+    const value = current[key];
+    if (value !== null && typeof value === 'object') {
+      copyChangedFields(target[key] as object, value, baseline[key] as object);
+    } else if (!Object.is(value, baseline[key])) target[key] = value;
   }
 };
 
@@ -58,6 +64,8 @@ export const applyLocalAgentSetupChanges = (
   const merged = cloneAgentSetupConfiguration(server);
   copyChangedFields(merged.claudeCode, local.claudeCode, baseline.claudeCode);
   copyChangedFields(merged.codex, local.codex, baseline.codex);
+  copyChangedFields(merged.pi, local.pi, baseline.pi);
+  copyChangedFields(merged.omp, local.omp, baseline.omp);
   return merged;
 };
 
@@ -104,6 +112,7 @@ export const buildAgentClaudeSnippet = (
   ...(settings.optOutAiAttribution ? { attribution: claudeAttributionOptOut } : {}),
   ...(settings.disableAutoMemory ? { autoMemoryEnabled: false } : {}),
   ...(settings.disableAgentView ? { disableAgentView: true } : {}),
+  ...(settings.disableArtifact ? { enableArtifact: false, disableArtifact: true } : {}),
 }, null, 2);
 
 // JSON string literals are valid TOML basic strings, so JSON.stringify keeps

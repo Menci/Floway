@@ -37,7 +37,7 @@ import type { CopilotAnthropicMessagesBoundaryInterceptor, CopilotAnthropicMessa
 //   cacheable block is cleaned in the same pass. withSpeedFast strips the
 //   client's `speed` field (already consumed by callAnthropicMessages for raw-variant
 //   selection) and post-`run()` stamps `usage.speed='fast'` onto outbound
-//   message_start/message_delta events when Fast Mode was requested. The
+//   message_start events when Fast Mode was requested. The
 //   header lane closes by normalizing admitted caller beta intent, then adding
 //   tokens required by the final thinking and context-management shape.
 //   `withInitiatorHeaderSet` re-derives x-initiator from the final last-message

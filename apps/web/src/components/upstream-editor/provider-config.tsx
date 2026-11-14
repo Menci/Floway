@@ -35,7 +35,7 @@ import { SwitchSetting } from '../ui/switch-setting';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { isOllamaCloudBaseUrl } from '../upstreams/ollama-usage';
 import { ProviderIcon, providerLabel } from '../upstreams/provider-badge';
-import type { UpstreamProviderKind } from '@floway-dev/provider/model';
+import type { UpstreamProviderKind } from '@floway-dev/provider/browser';
 
 const {
   Button,
@@ -64,27 +64,31 @@ type ValuesForKind<K extends UpstreamProviderKind> = Omit<UpstreamEditorValues, 
 const DEVICE_FLOW_SLOW_DOWN_SECONDS = 5;
 
 export function ProviderConfigSection({
+  readOnly = false,
+  modelsFetchReadOnly = readOnly,
   record,
   onPatch,
   onRefreshModels,
 }: {
+  readOnly?: boolean;
+  modelsFetchReadOnly?: boolean;
   record: UpstreamRecord;
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
   onRefreshModels: () => void;
 }) {
-  if (record.kind === 'custom') return <CustomConfig record={record} onRefreshModels={onRefreshModels} />;
-  if (record.kind === 'azure') return <AzureConfig record={record} />;
-  if (record.kind === 'ollama') return <OllamaConfig record={record} />;
-  if (record.kind === 'copilot') return <CopilotConfig record={record} onPatch={onPatch} />;
-  return <OAuthConfig record={record} onPatch={onPatch} />;
+  if (record.kind === 'custom') return <CustomConfig modelsFetchReadOnly={modelsFetchReadOnly} onRefreshModels={onRefreshModels} readOnly={readOnly} />;
+  if (record.kind === 'azure') return <AzureConfig readOnly={readOnly} />;
+  if (record.kind === 'ollama') return <OllamaConfig readOnly={readOnly} record={record} />;
+  if (record.kind === 'copilot') return <CopilotConfig onPatch={onPatch} readOnly={readOnly} record={record} />;
+  return <OAuthConfig onPatch={onPatch} readOnly={readOnly} record={record} />;
 }
 
-export function ApiPathsSection({ record }: { record: UpstreamRecord }) {
+export function ApiPathsSection({ readOnly, record }: { readOnly: boolean; record: UpstreamRecord }) {
   if (record.kind !== 'custom') return null;
-  return <CustomApiPaths />;
+  return <CustomApiPaths readOnly={readOnly} />;
 }
 
-function CustomConfig({ onRefreshModels, record }: { onRefreshModels: () => void; record: Extract<UpstreamRecord, { kind: 'custom' }> }) {
+function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { modelsFetchReadOnly: boolean; onRefreshModels: () => void; readOnly: boolean }) {
   const { t } = useTranslation();
   const { control, setValue } = useFormContext<ValuesForKind<'custom'>>();
   const authStyle = useWatch({ control, name: 'config.authStyle' });
@@ -109,6 +113,7 @@ function CustomConfig({ onRefreshModels, record }: { onRefreshModels: () => void
               onBlur={field.onBlur}
               onChange={(_, data) => field.onChange(data.value)}
               placeholder="https://api.openai.com"
+              readOnly={readOnly}
               ref={field.ref}
               value={field.value}
             />
@@ -117,7 +122,7 @@ function CustomConfig({ onRefreshModels, record }: { onRefreshModels: () => void
       </Field>
       <Controller control={control} name="config.authStyle" render={({ field }) => (
         <Field label={t('dashboard.upstreamEditor.fields.authStyle')}>
-          <Dropdown value={authStyleLabel(field.value)} selectedOptions={[field.value]} onOptionSelect={(_, data) => {
+          <Dropdown readOnly={readOnly} value={authStyleLabel(field.value)} selectedOptions={[field.value]} onOptionSelect={(_, data) => {
             field.onChange(data.optionValue);
             if (data.optionValue === 'none') setValue('config.apiKey', '', { shouldDirty: true });
           }}>
@@ -127,11 +132,12 @@ function CustomConfig({ onRefreshModels, record }: { onRefreshModels: () => void
           </Dropdown>
         </Field>
       )} />
-      {authStyle !== 'none' && <SecretField secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} />}
+      {authStyle !== 'none' && <SecretField readOnly={readOnly} />}
       <Controller control={control} name="config.modelsFetch.enabled" render={({ field }) => (
         <Switch
           checked={field.value}
           label={t('dashboard.upstreamEditor.fields.fetchModels')}
+          readOnly={modelsFetchReadOnly}
           onChange={(_, data) => {
             field.onChange(data.checked);
             if (data.checked) onRefreshModels();
@@ -140,21 +146,21 @@ function CustomConfig({ onRefreshModels, record }: { onRefreshModels: () => void
       )} />
       {fetchesCatalog && (
         <Field label={t('dashboard.upstreamEditor.fields.catalogPath')}>
-          <Controller control={control} name="config.modelsFetch.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="/v1/models" ref={field.ref} value={field.value ?? ''} />} />
+          <Controller control={control} name="config.modelsFetch.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="/v1/models" readOnly={readOnly} ref={field.ref} value={field.value ?? ''} />} />
         </Field>
       )}
-      <CustomIngressHeaderRules />
+      <CustomIngressHeaderRules readOnly={readOnly} />
     </div>
   );
 }
 
-function CustomApiPaths() {
+function CustomApiPaths({ readOnly }: { readOnly: boolean }) {
   const { t } = useTranslation();
   const monoLabel = useMonoLabelClass();
   const { control } = useFormContext<ValuesForKind<'custom'>>();
   return (
     <div className="grid gap-4">
-      <EndpointPicker />
+      <EndpointPicker readOnly={readOnly} />
       <EditorSection
         hint={t('dashboard.upstreamEditor.pathOverridesHint')}
         level={3}
@@ -174,6 +180,7 @@ function CustomApiPaths() {
                     onBlur={field.onBlur}
                     onChange={(_, data) => field.onChange(data.value)}
                     placeholder={`/v1${path}`}
+                    readOnly={readOnly}
                     ref={field.ref}
                     value={field.value ?? ''}
                   />
@@ -187,18 +194,18 @@ function CustomApiPaths() {
   );
 }
 
-function AzureConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'azure' }> }) {
+function AzureConfig({ readOnly }: { readOnly: boolean }) {
   const { t } = useTranslation();
   const { control } = useFormContext<ValuesForKind<'azure'>>();
   return <div className="grid gap-4">
     <Field label={t('dashboard.upstreamEditor.fields.endpoint')}>
-      <Controller control={control} name="config.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://resource.openai.azure.com/openai/v1" ref={field.ref} value={field.value} />} />
+      <Controller control={control} name="config.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://resource.openai.azure.com/openai/v1" readOnly={readOnly} ref={field.ref} value={field.value} />} />
     </Field>
-    <SecretField secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} />
+    <SecretField readOnly={readOnly} />
   </div>;
 }
 
-function OllamaConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'ollama' }> }) {
+function OllamaConfig({ readOnly, record }: { readOnly: boolean; record: Extract<UpstreamRecord, { kind: 'ollama' }> }) {
   const { t } = useTranslation();
   const { control, setValue } = useFormContext<ValuesForKind<'ollama'>>();
   const values = useWatch<UpstreamEditorValues>() as UpstreamEditorValues;
@@ -220,19 +227,19 @@ function OllamaConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'oll
   }, [config.baseUrl, config.cloudUsage, setValue]);
 
   // The card reads an account, so it needs both halves: the option, and a key
-  // to authenticate with. The stored key answers for a saved upstream — the
-  // form blanks the secret field and keeps it — and the typed one lets a new
-  // key be tried before saving.
-  const keySet = record.config.apiKeySet === true || Boolean(record.config.apiKey) || Boolean(config.apiKey);
+  // to authenticate with. The field carries the stored key, so the edited value
+  // is the only answer.
+  const keySet = Boolean(config.apiKey);
   return <div className="grid gap-4">
     <Field label={t('dashboard.upstreamEditor.fields.baseUrl')}>
-      <Controller control={control} name="config.baseUrl" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://ollama.com" ref={field.ref} value={field.value} />} />
+      <Controller control={control} name="config.baseUrl" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://ollama.com" readOnly={readOnly} ref={field.ref} value={field.value} />} />
     </Field>
-    <SecretField secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} optional />
+    <SecretField optional readOnly={readOnly} />
     <Controller control={control} name="config.cloudUsage" render={({ field }) => (
       <SwitchSetting
         checked={field.value === true}
         description={t('dashboard.upstreamEditor.ollama.cloudUsageHint')}
+        disabled={readOnly}
         label={t('dashboard.upstreamEditor.ollama.cloudUsage')}
         onChange={checked => {
           chosenByOperator.current = true;
@@ -240,17 +247,16 @@ function OllamaConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'oll
         }}
       />
     )} />
-    {config.cloudUsage === true && keySet && <OllamaUsageCard record={record} probeRecord={previewRecord(record, values)} />}
+    {config.cloudUsage === true && keySet && <OllamaUsageCard readOnly={readOnly} record={record} probeRecord={previewRecord(record, values)} />}
   </div>;
 }
 
-function SecretField({ optional, secretSet }: { optional?: boolean; secretSet: boolean }) {
+function SecretField({ optional, readOnly }: { optional?: boolean; readOnly: boolean }) {
   const { t } = useTranslation();
   const { control } = useFormContext<ValuesForKind<'custom' | 'azure' | 'ollama'>>();
   const [visible, setVisible] = useState(false);
   return <Field
     label={`${t('dashboard.upstreamEditor.fields.apiKey')}${optional ? ` (${t('dashboard.upstreamEditor.optional')})` : ''}`}
-    hint={secretSet ? t('dashboard.upstreamEditor.secretKeep') : undefined}
   >
     <Controller
       control={control}
@@ -261,7 +267,8 @@ function SecretField({ optional, secretSet }: { optional?: boolean; secretSet: b
           value={field.value ?? ''}
           onBlur={field.onBlur}
           onChange={(_, data) => field.onChange(data.value)}
-          placeholder={secretSet ? '••••••••' : 'sk-...'}
+          placeholder="sk-..."
+          readOnly={readOnly}
           contentAfter={
             <TooltipIconButton
               icon={visible ? <EyeOffRegular /> : <EyeRegular />}
@@ -277,7 +284,7 @@ function SecretField({ optional, secretSet }: { optional?: boolean; secretSet: b
 
 const endpointOptions = endpointOptionsFor(CHAT_ENDPOINT_KEYS);
 
-function EndpointPicker() {
+function EndpointPicker({ readOnly }: { readOnly: boolean }) {
   const { t } = useTranslation();
   const monoLabel = useMonoLabelClass();
   const { control, getValues, setValue } = useFormContext<UpstreamEditorValues>();
@@ -292,6 +299,7 @@ function EndpointPicker() {
           key={key}
           checked={selected}
           label={{ children: label, className: monoLabel }}
+          readOnly={readOnly}
           onChange={(_, data) => {
             const latestConfig = getValues('config') as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
             const next = { ...latestConfig.endpoints };
@@ -310,7 +318,8 @@ function ReadyToSaveHint({ kind }: { kind: UpstreamProviderKind }) {
   </OutcomeMessageBar>;
 }
 
-function CopilotConfig({ record, onPatch }: {
+function CopilotConfig({ onPatch, readOnly, record }: {
+  readOnly: boolean;
   record: Extract<UpstreamRecord, { kind: 'copilot' }>;
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
 }) {
@@ -388,7 +397,7 @@ function CopilotConfig({ record, onPatch }: {
           name={field.name}
           onBlur={field.onBlur}
           onChange={(_, data) => field.onChange(data.value)}
-          readOnly={busy || flow !== null || Boolean(config.user.login)}
+          readOnly={readOnly || busy || flow !== null || Boolean(config.user.login)}
           ref={field.ref}
           required
           value={field.value}
@@ -398,22 +407,23 @@ function CopilotConfig({ record, onPatch }: {
     {config.user.login
       ? <>
           <AccountSummary kind="copilot" title={config.user.name ?? config.user.login} subtitle={`${config.githubHost}/${config.user.login}`} />
-          {isPersisted(record) ? <CopilotQuotaCard record={record} /> : <ReadyToSaveHint kind="copilot" />}
+          {isPersisted(record) ? <CopilotQuotaCard readOnly={readOnly} record={record} /> : !readOnly && <ReadyToSaveHint kind="copilot" />}
         </>
       : <>
           {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
-          {!flow ? <Button appearance="primary" disabled={githubHostEmpty} disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <PlugConnectedRegular />} onClick={() => void start()}>{t('dashboard.upstreamEditor.copilot.connect')}</Button> : <>
+          {!readOnly && (!flow ? <Button appearance="primary" disabled={githubHostEmpty} disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <PlugConnectedRegular />} onClick={() => void start()}>{t('dashboard.upstreamEditor.copilot.connect')}</Button> : <>
             <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.copilot.deviceCode')}</Text>
             <code className="mono-display tracking-[0.25em] text-fui-fg1">{flow.user_code}</code>
             <Link href={flow.verification_uri} target="_blank" rel="noopener noreferrer">{flow.verification_uri}</Link>
             <Spinner className="justify-self-start" label={t('dashboard.upstreamEditor.copilot.waiting')} labelPosition="after" size="tiny" />
-          </>}
+          </>)}
         </>}
   </div>;
 }
 
 type OAuthKind = 'codex' | 'claude-code';
-function OAuthConfig({ record, onPatch }: {
+function OAuthConfig({ onPatch, readOnly, record }: {
+  readOnly: boolean;
   record: Extract<UpstreamRecord, { kind: OAuthKind }>;
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
 }) {
@@ -478,21 +488,22 @@ function OAuthConfig({ record, onPatch }: {
 
   return <div className="grid gap-4">
     {hasAccount && (record.kind === 'codex'
-      ? <CodexAccountCard record={{ ...record, kind: 'codex', config: config as Extract<UpstreamRecord, { kind: 'codex' }>['config'], state: values.state as Extract<UpstreamRecord, { kind: 'codex' }>['state'] }} />
+      ? <CodexAccountCard readOnly={readOnly} record={{ ...record, kind: 'codex', config: config as Extract<UpstreamRecord, { kind: 'codex' }>['config'], state: values.state as Extract<UpstreamRecord, { kind: 'codex' }>['state'] }} />
       : <ClaudeCodeAccountCard
           onRefreshQuota={() => void probeQuota()}
           probing={probing}
+          readOnly={readOnly}
           record={{ ...record, kind: 'claude-code', config: config as Extract<UpstreamRecord, { kind: 'claude-code' }>['config'], state: values.state as Extract<UpstreamRecord, { kind: 'claude-code' }>['state'] }}
         />)}
-    {hasAccount && !isPersisted(record) && <ReadyToSaveHint kind={record.kind} />}
-    {hasAccount && <div className="flex flex-wrap items-center gap-2">
+    {hasAccount && !readOnly && !isPersisted(record) && <ReadyToSaveHint kind={record.kind} />}
+    {hasAccount && !readOnly && <div className="flex flex-wrap items-center gap-2">
       <Button appearance="primary" disabledFocusable={refreshing} icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={() => void refreshCredential()}>
         {t('dashboard.upstreamEditor.oauth.refresh')}
       </Button>
       <Button onClick={() => setOpen(value => !value)}>{open ? t('common.cancel') : t('dashboard.upstreamEditor.oauth.reimport')}</Button>
     </div>}
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
-    {open && (record.kind === 'codex'
+    {open && !readOnly && (record.kind === 'codex'
       ? <CodexImportForm
           hasAccount={hasAccount}
           onImported={patch => { onPatch(patch, isPersisted(record)); setOpen(false); }}

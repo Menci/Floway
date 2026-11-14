@@ -1,6 +1,6 @@
 import type { Fields } from './facts.ts';
 import { webSearchFiltersFromSettings } from './protocol.ts';
-import { assertLocalWebSearchSupport, UnsupportedLocalWebSearchFeatureError, parseWebSearchOperations } from '../tools/web-search/operations.ts';
+import { assertLocalWebSearchSupport, isSearchResponseLength, UnsupportedLocalWebSearchFeatureError, parseWebSearchOperations } from '../tools/web-search/operations.ts';
 import { move, defineStage } from '@floway-dev/pipeline';
 
 /** Both in-band answers a local run can give: Codex reads `output`, so a command it asked for
@@ -21,7 +21,7 @@ const inBandOutput = (facts: Fields<'request.search.alphaSearch'>, output: strin
  */
 export const parseSearchOperations = defineStage<
   Fields<'request.search.alphaSearch'>,
-  Fields<'request.search.operations' | 'request.search.filters'>,
+  Fields<'request.search.operations' | 'request.search.filters' | 'request.search.responseLength'>,
   Fields<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers' | 'response.http.status'>,
   Fields<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers' | 'response.http.status'>,
   Fields<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers' | 'response.http.status'>
@@ -31,7 +31,7 @@ export const parseSearchOperations = defineStage<
     request: {
       needs: ['request.search.alphaSearch'],
       consumes: ['request.search.alphaSearch'],
-      provides: ['request.search.operations', 'request.search.filters'],
+      provides: ['request.search.operations', 'request.search.filters', 'request.search.responseLength'],
     },
     response: { needs: [], consumes: [], provides: [] },
   },
@@ -56,6 +56,7 @@ export const parseSearchOperations = defineStage<
       ...rest,
       'request.search.operations': move(parsed.ops),
       'request.search.filters': move(webSearchFiltersFromSettings(request.settings)),
+      'request.search.responseLength': isSearchResponseLength(commands.response_length) ? commands.response_length : null,
     });
   },
 });

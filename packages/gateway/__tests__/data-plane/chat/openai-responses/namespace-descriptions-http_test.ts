@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { buildCustomUpstreamRecord, requestAppWithWarmModels as requestApp, setupAppTest, sseResponse } from '../../../test-utils/app.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
-import type { OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
 type TargetApi = 'openaiChatCompletions' | 'anthropicMessages';
@@ -30,17 +30,17 @@ const toolCallResponse = (target: TargetApi, name: string): Response => {
   if (target === 'openaiChatCompletions') {
     const base = { id: 'chat_test', object: 'chat.completion.chunk', created: 0, model: 'model' };
     return sseResponse([
-      { data: { ...base, choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'call_read', type: 'function', function: { name, arguments: '{}' } }] }, finish_reason: null }] } },
-      { data: { ...base, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } } },
+      { data: { ...base, choices: [{  index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'call_read', type: 'function', function: { name, arguments: '{}' } }] }, finish_reason: null }] } },
+      { data: { ...base, choices: [{  index: 0, delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } } },
       { data: '[DONE]' },
     ]);
   }
   return sseResponse([
-    { data: { type: 'message_start', message: { id: 'msg_test', type: 'message', role: 'assistant', model: 'model', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } } },
+    { data: { type: 'message_start', message: { container: null, diagnostics: null, stop_details: null, id: 'msg_test', type: 'message', role: 'assistant', model: 'model', content: [], stop_reason: null, stop_sequence: null, usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 } } } },
     { data: { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'call_read', name, input: {} } } },
     { data: { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{}' } } },
     { data: { type: 'content_block_stop', index: 0 } },
-    { data: { type: 'message_delta', delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 1 } } },
+    { data: { type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'tool_use', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } } },
     { data: { type: 'message_stop' } },
   ]);
 };
@@ -55,6 +55,7 @@ for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
         const choice = { type: 'allowed_tools', mode, tools: [selector] };
         const input = [{ type: 'message', role: 'user', content: 'Read my account.' }];
         const payload = { model: 'model', stream: false, store: false, tool_choice: choice, ...(representation !== 'Standard' ? { input: [{ type: 'additional_tools', role: 'developer', tools: [namespace] }, ...input] } : { input, tools: [namespace] }) };
+        const unrepresentable = target === 'anthropicMessages' && mode === 'auto' && selection === 'callable';
         const wire: WireRequest[] = [];
         await withMockedFetch(async request => {
           if (new URL(request.url).pathname === '/v1/models') return Response.json({ data: [{ id: 'model' }] });
@@ -64,7 +65,14 @@ for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
           return toolCallResponse(target, 'payments_read');
         }, async () => {
           const response = await requestApp('/v1/responses', { method: 'POST', headers: { authorization: `Bearer ${apiKey.key}`, 'content-type': 'application/json' }, body: JSON.stringify(payload) });
-          const resource = await response.json() as OpenAIResponsesResult;
+          if (unrepresentable) {
+            assertEquals(response.status, 400);
+            const failure = await response.json() as { error: { message: string } };
+            assert(failure.error.message.includes('cannot express an allowed_tools auto subset'));
+            await flushBackground();
+            return;
+          }
+          const resource = await response.json() as OpenAIResponsesResultEx;
           assertEquals(response.status, 200);
           assertEquals(resource.status, 'completed');
           assertEquals(resource.tool_choice, choice);
@@ -73,11 +81,17 @@ for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
           assertEquals([call.name, call.namespace], ['read', 'payments']);
           await flushBackground();
         });
+        if (unrepresentable) {
+          assertEquals(wire.length, 0, 'an unrepresentable selector must fail before contacting the provider');
+          return;
+        }
         assertEquals(wire.length, 1, 'the final provider serializer must actually run once');
         const selected = selection === 'namespace' ? namespace.tools : namespace.tools.slice(0, 1);
-        assertEquals(wire[0].tools?.map(tool => tool.function?.name ?? tool.name), selected.map(tool => `payments_${tool.name}`));
-        assertEquals(wire[0].tools?.map(tool => tool.function?.description ?? tool.description), selected.map(tool => `${namespace.description}\n\n${tool.description}`));
-        assertEquals(wire[0].tool_choice, target === 'openaiChatCompletions' ? mode : { type: mode === 'required' ? 'any' : 'auto' });
+        assertEquals(wire[0].tools?.map(tool => tool.function?.name ?? tool.name), namespace.tools.map(tool => `payments_${tool.name}`));
+        assertEquals(wire[0].tools?.map(tool => tool.function?.description ?? tool.description), namespace.tools.map(tool => `${namespace.description}\n\n${tool.description}`));
+        assertEquals(wire[0].tool_choice, target === 'openaiChatCompletions'
+          ? { type: 'allowed_tools', allowed_tools: { mode, tools: selected.map(tool => ({ type: 'function', function: { name: `payments_${tool.name}` } })) } }
+          : selection === 'callable' ? { type: 'tool', name: 'payments_read' } : { type: mode === 'required' ? 'any' : 'auto' });
       });
     }
   }

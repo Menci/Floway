@@ -1,10 +1,12 @@
 import type { InferResponseType } from 'hono/client';
 
 import { api, callApi, type ApiResult } from './client';
+import type { UserPreferences } from '@floway-dev/protocols/browser';
 
 type MeResponse = InferResponseType<typeof api.auth.me.$get, 200>;
 export type LoginResponse = InferResponseType<typeof api.auth.login.$post, 200>;
 type ChangeOwnPasswordResponse = InferResponseType<typeof api.api.users.me.password.$patch, 200>;
+type UpdateOwnPreferencesResponse = InferResponseType<typeof api.api.users.me.preferences.$patch, 200>;
 export type AuthUser = MeResponse['user'];
 
 export const getCurrentSession = (): Promise<ApiResult<MeResponse>> =>
@@ -15,3 +17,6 @@ export const login = (body: { username: string; password: string }): Promise<Api
 
 export const changeOwnPassword = (body: { currentPassword: string; newPassword: string }): Promise<ApiResult<ChangeOwnPasswordResponse>> =>
   callApi(() => api.api.users.me.password.$patch({ json: body }));
+
+export const updateOwnPreferences = (body: Partial<UserPreferences>): Promise<ApiResult<UpdateOwnPreferencesResponse>> =>
+  callApi(() => api.api.users.me.preferences.$patch({ json: body }));

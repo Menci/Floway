@@ -7,7 +7,7 @@ import type {
   ChatModelInfo,
   ModelKind,
   PublicModelLimits,
-} from '@floway-dev/protocols/common';
+} from '@floway-dev/protocols/browser';
 
 const intersectArrays = <T>(arrays: readonly (readonly T[])[]) => {
   if (!arrays.length) return [];

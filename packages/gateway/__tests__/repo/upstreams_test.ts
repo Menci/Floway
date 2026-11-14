@@ -13,6 +13,7 @@ import { assert, assertEquals, assertRejects, assertThrows } from '@floway-dev/t
 const upstream = (overrides: Partial<UpstreamRecord> & Pick<UpstreamRecord, 'id' | 'kind' | 'createdAt' | 'sortOrder'>): UpstreamRecord => ({
   name: overrides.id,
   enabled: true,
+  usageRefreshIntervalMinutes: 0,
   updatedAt: overrides.createdAt,
   config: { nested: { value: overrides.id }, endpoints: { openaiChatCompletions: {} } },
   state: null,
@@ -69,6 +70,7 @@ test('memory upstream repo inserts, replaces, lists, deletes, and clears rows', 
     ...custom,
     name: 'Custom A Updated',
     enabled: false,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 0,
     createdAt: '2099-01-01T00:00:00.000Z',
     updatedAt: '2026-05-21T10:00:04.000Z',
@@ -157,6 +159,51 @@ test('memory upstream repo sorts flag overrides by key when inserting rows', asy
   assertEquals((await repo.getById('up_copilot_fixes'))?.flagOverrides, { 'rewrite-developer-to-system': false, 'anthropic-messages-web-search-shim': true, 'vendor-deepseek': true });
 });
 
+const exerciseUpstreamReorder = async (repo: UpstreamRepo) => {
+  for (const [id, sortOrder] of [['a', 10], ['b', 20], ['c', 40]] as const) {
+    await saveUpstreamForTest(repo, upstream({ id, kind: 'custom', sortOrder, createdAt: `2026-05-21T10:00:${sortOrder}.000Z` }));
+  }
+
+  const reordered = await repo.reorder(
+    ['a', 'b', 'c'],
+    [{ id: 'c', sortOrder: 20 }, { id: 'b', sortOrder: 40 }],
+  );
+  assertEquals(reordered?.map(record => [record.id, record.sortOrder]), [['c', 20], ['b', 40]]);
+  assertEquals((await repo.list()).map(record => [record.id, record.sortOrder]), [['a', 10], ['c', 20], ['b', 40]]);
+
+  assertEquals(await repo.reorder(
+    ['a', 'b', 'c'],
+    [{ id: 'b', sortOrder: 20 }, { id: 'c', sortOrder: 40 }],
+  ), null);
+  assertEquals((await repo.list()).map(record => [record.id, record.sortOrder]), [['a', 10], ['c', 20], ['b', 40]]);
+};
+
+const exerciseAtomicAppend = async (repo: UpstreamRepo) => {
+  await saveUpstreamForTest(repo, upstream({ id: 'first', kind: 'custom', sortOrder: 10, createdAt: '2026-05-21T10:00:00.000Z' }));
+  const append = (id: string) => repo.insertAtEndForModels(upstream({ id, kind: 'custom', sortOrder: -100, createdAt: `2026-05-21T10:00:0${id}.000Z` }));
+  const [a, b] = await Promise.all([append('1'), append('2')]);
+  assert(a !== null);
+  assert(b !== null);
+  assertEquals(new Set([a.sortOrder, b.sortOrder]), new Set([11, 12]));
+  assertEquals((await repo.list()).map(record => record.sortOrder), [10, 11, 12]);
+};
+
+test('memory upstream repo atomically reorders a current snapshot', async () => {
+  await exerciseUpstreamReorder(new InMemoryRepo().upstreams);
+});
+
+test('SQL upstream repo atomically reorders a current snapshot', async () => {
+  await exerciseUpstreamReorder(new SqlRepo(await createSqliteTestDb()).upstreams);
+});
+
+test('memory upstream repo atomically assigns append ranks', async () => {
+  await exerciseAtomicAppend(new InMemoryRepo().upstreams);
+});
+
+test('SQL upstream repo atomically assigns append ranks', async () => {
+  await exerciseAtomicAppend(new SqlRepo(await createSqliteTestDb()).upstreams);
+});
+
 const exerciseSqlUpstreamRepo = async (repo: UpstreamRepo) => {
   const custom = upstream({
     id: 'up_custom_sql',
@@ -203,6 +250,7 @@ const exerciseSqlUpstreamRepo = async (repo: UpstreamRepo) => {
     ...custom,
     name: 'Custom SQL Updated',
     enabled: false,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 0,
     createdAt: '2099-01-01T00:00:00.000Z',
     updatedAt: '2026-05-21T10:00:04.000Z',
@@ -242,6 +290,7 @@ test('SQL upstream repo rejects malformed stored upstream JSON', async () => {
     provider: 'custom',
     name: 'Bad Config',
     enabled: 1,
+    usage_refresh_interval_minutes: 0,
     sort_order: 0,
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
@@ -266,6 +315,7 @@ test('SQL upstream repo rejects malformed stored flag overrides JSON', async () 
     provider: 'custom',
     name: 'Bad Fixes',
     enabled: 1,
+    usage_refresh_interval_minutes: 0,
     sort_order: 0,
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
@@ -290,6 +340,7 @@ test('SQL upstream repo rejects array-shaped flag_overrides with helpful message
     provider: 'custom',
     name: 'Array Fixes',
     enabled: 1,
+    usage_refresh_interval_minutes: 0,
     sort_order: 0,
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
@@ -318,6 +369,7 @@ test('SQL upstream repo rejects non-boolean value in flag_overrides with helpful
     provider: 'custom',
     name: 'Non-boolean Fixes',
     enabled: 1,
+    usage_refresh_interval_minutes: 0,
     sort_order: 0,
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
@@ -346,6 +398,7 @@ test('SQL upstream repo rejects malformed stored model_prefix_json', async () =>
     provider: 'custom',
     name: 'Bad Prefix JSON',
     enabled: 1,
+    usage_refresh_interval_minutes: 0,
     sort_order: 0,
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
@@ -370,6 +423,7 @@ test('SQL upstream repo rejects shape-invalid model_prefix_json', async () => {
     provider: 'custom',
     name: 'Bad Prefix Shape',
     enabled: 1,
+    usage_refresh_interval_minutes: 0,
     sort_order: 0,
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
@@ -396,6 +450,7 @@ test('SQL upstream repo round-trips a non-null model_prefix', async () => {
     kind: 'custom',
     name: 'Prefix Round-Trip',
     enabled: true,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 0,
     createdAt: now,
     updatedAt: now,
@@ -441,6 +496,7 @@ test('SQL upstream repo rejects a stored hue outside the circle', async () => {
     provider: 'custom',
     name: 'Bad Hue',
     enabled: 1,
+    usage_refresh_interval_minutes: 0,
     sort_order: 0,
     created_at: '2026-07-01T00:00:00.000Z',
     updated_at: '2026-07-01T00:00:00.000Z',
@@ -957,6 +1013,7 @@ type FakeUpstreamRow = {
   provider: string;
   name: string;
   enabled: number;
+  usage_refresh_interval_minutes: number;
   sort_order: number;
   created_at: string;
   updated_at: string;

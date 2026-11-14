@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { RunStages } from '../../../src/components/requests/run-stages';
 import { renderInApp } from '../../render';
-import { encodeRun, streamFact, toNdjson } from '@floway-dev/pipeline';
+import { encodeRun, streamFact, toNdjson } from '@floway-dev/pipeline/browser';
 
 vi.mock('../../../src/components/ui/body-editor', () => ({
   default: ({ text, toolbarStart }: { text: string; toolbarStart: React.ReactNode }) => <div>{toolbarStart}<pre data-testid="state">{text}</pre></div>,

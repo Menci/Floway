@@ -1,6 +1,6 @@
 import { resolveCopilotRawModel, type ModelSelectionHints } from './model-selection.ts';
 import type { CopilotRawModel } from './types.ts';
-import type { ModelEndpointKey } from '@floway-dev/protocols/common';
+import type { DecisionProtocol, DecisionTarget, ModelEndpointKey } from '@floway-dev/protocols/common';
 import type { ProviderModel } from '@floway-dev/provider';
 
 interface CopilotProviderData { readonly rawModels: readonly CopilotRawModel[] }
@@ -29,9 +29,37 @@ const copilotPathToModelEndpoint = (path: string): ModelEndpointKey | undefined 
   case '/images/edits':
   case '/v1/images/edits':
     return 'openaiImagesEdits';
+  case '/systemone':
+  case '/v1/systemone':
+  case '/decisions':
+  case '/v1/decisions':
+    return 'decision';
   default:
     return undefined;
   }
+};
+
+// Copilot names the dialect each decision model serves through the path it
+// advertises: `/v1/systemone` speaks System One and `/v1/decisions` speaks
+// OpenAI Decisions. The two are exclusive per model — calling the other one
+// answers 400 `no_available_model_endpoints` — so the advertised path is the
+// only authority for the target dialect.
+const COPILOT_DECISION_PATH_PROTOCOL: Readonly<Record<string, DecisionProtocol>> = {
+  '/systemone': 'typesafe-systemone',
+  '/v1/systemone': 'typesafe-systemone',
+  '/decisions': 'openai-decisions',
+  '/v1/decisions': 'openai-decisions',
+};
+
+export const copilotDecisionTarget = (variants: readonly CopilotRawModel[]): DecisionTarget => {
+  const advertised = variants.flatMap(variant => variant.supported_endpoints ?? []);
+  const protocols = [...new Set(advertised.flatMap(path => COPILOT_DECISION_PATH_PROTOCOL[path] ?? []))];
+  if (protocols.length !== 1) {
+    throw new Error(
+      `Copilot decision model advertises ${protocols.length === 0 ? 'no decision path' : `multiple decision dialects (${protocols.join(', ')})`} in supported_endpoints ${JSON.stringify(advertised)}`,
+    );
+  }
+  return { protocol: protocols[0] };
 };
 
 export const rawModelSupportsEndpoint = (model: CopilotRawModel, endpoint: ModelEndpointKey): boolean => {
@@ -43,6 +71,13 @@ export const rawModelSupportsEndpoint = (model: CopilotRawModel, endpoint: Model
     return model.supported_endpoints === undefined && model.capabilities?.type === 'chat';
   }
   if (endpoint === 'openaiEmbeddings') return model.supported_endpoints === undefined && model.capabilities?.type === 'embeddings';
+  // A decision model declares `capabilities.type: "decisions"`. The advertised
+  // path alone cannot decide this: the same family is reached over
+  // `/v1/systemone` and `/v1/decisions`, and a catalog that omits
+  // `supported_endpoints` (or lists a path this map does not know yet) would
+  // otherwise fall through to the chat fallback and be routed to
+  // /v1/chat/completions. The declared type is the authority.
+  if (endpoint === 'decision') return model.capabilities?.type === 'decisions';
   return false;
 };
 

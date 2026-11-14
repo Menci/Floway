@@ -3,11 +3,12 @@ import { app } from '../../src/app.ts';
 import type { WebSearchConfig } from '../../src/data-plane/tools/web-search/types.ts';
 import { modelsRefreshTarget, refreshModels } from '../../src/execution/models-refresh.ts';
 import { getRepo, initRepo } from '../../src/repo/index.ts';
-import type { ApiKey } from '../../src/repo/types.ts';
+import type { ApiKey, User } from '../../src/repo/types.ts';
 import { initBackgroundSchedulerResolver } from '../../src/runtime/background.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { saveUpstreamForTest } from '../repo/upstreams.ts';
 import { createInMemoryImageProcessor, initEnv, initExternalResourceFetcher, initFileStore, initImageProcessor, initSocketDial, MemoryFileStore } from '@floway-dev/platform';
+import type { UserPreferences } from '@floway-dev/protocols/common';
 import type { ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 
@@ -22,6 +23,7 @@ interface SetupOptions {
   githubAccount?: CopilotAccountFixture;
   copilotUpstream?: UpstreamRecord;
   webSearchConfig?: WebSearchConfig;
+  userPreferences?: UserPreferences;
 }
 
 interface AppTestContext {
@@ -52,6 +54,15 @@ const processFetch = globalThis.fetch;
 
 const TEST_UPSTREAM_TIMESTAMP = '2026-03-15T00:00:00.000Z';
 
+export const testAdminUser: User = {
+  id: 1,
+  username: 'admin',
+  passwordHash: null,
+  isAdmin: true,
+  createdAt: '1970-01-01T00:00:00.000Z',
+  deletedAt: null,
+};
+
 // The gateway's default egress is direct_connect, whose seam is a SocketDial.
 // These suites dispatch every upstream call through a mocked `globalThis.fetch`,
 // so the fixtures they build pin the fetch transport explicitly — otherwise the
@@ -71,6 +82,7 @@ export const buildCopilotUpstreamRecord = (githubAccount: CopilotAccountFixture,
     kind: 'copilot',
     name: githubAccount.user.login ? `GitHub Copilot (${githubAccount.user.login})` : 'GitHub Copilot',
     enabled: true,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 0,
     createdAt: TEST_UPSTREAM_TIMESTAMP,
     updatedAt: TEST_UPSTREAM_TIMESTAMP,
@@ -97,6 +109,7 @@ export const buildCodexUpstreamRecord = (overrides: Partial<UpstreamRecord> = {}
     kind: 'codex',
     name: 'Codex',
     enabled: true,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 200,
     createdAt: TEST_UPSTREAM_TIMESTAMP,
     updatedAt: TEST_UPSTREAM_TIMESTAMP,
@@ -150,6 +163,7 @@ export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {
     kind: 'custom',
     name: 'Custom Provider',
     enabled: true,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 100,
     createdAt: TEST_UPSTREAM_TIMESTAMP,
     updatedAt: TEST_UPSTREAM_TIMESTAMP,
@@ -176,7 +190,10 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   // they actually dial. Installing a refusing dial keeps the default transport
   // reachable — a test that asserts on the empty-policy path gets a real
   // `tcp connect to <host>:<port> failed` rather than a missing-platform crash.
-  initSocketDial({ connect: (host, port) => Promise.reject(new Error(`refused by the app-test SocketDial: ${host}:${port}`)) });
+  initSocketDial({
+    connect: (host, port) => Promise.reject(new Error(`refused by the app-test SocketDial: ${host}:${port}`)),
+    startTls: () => Promise.reject(new Error('refused by the app-test SocketDial: TLS upgrade')),
+  });
   // Route background promises through the shared tracker so flushBackground()
   // can deterministically await them — see test-utils/background-tracker.ts.
   initBackgroundSchedulerResolver(_c => trackBackground);
@@ -192,14 +209,20 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   // The default API key is owned by a non-admin user so tests can assert
   // "non-admin via API key" behavior straight away. Tests that need an
   // admin caller use `adminSession` (sessions belong to user 1).
+  if (options.userPreferences !== undefined) await repo.userPreferences.save(1, options.userPreferences);
   await repo.users.save({
     id: 2,
     username: 'tester',
     passwordHash: null,
     isAdmin: false,
-    upstreamIds: null,
     createdAt: '2026-03-15T00:00:00.000Z',
     deletedAt: null,
+  });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: 2 },
+    scope: { kind: 'upstreams' },
+    sortOrder: 0,
+    values: { 'Model.Use': true },
   });
 
   const apiKey = options.apiKey ?? {
@@ -210,6 +233,7 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
     serverSecret: '00'.repeat(32),
     createdAt: '2026-03-15T00:00:00.000Z',
     upstreamIds: null,
+    randomizeUpstreams: false,
     deletedAt: null,
     dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: 30 * 24 * 60 * 60,
@@ -269,6 +293,7 @@ export function sseAnthropicMessagesResponse(response: Record<string, unknown>):
       data: {
         type: 'message_start',
         message: {
+          container: null, diagnostics: null, stop_details: null,
           id: response.id,
           type: response.type ?? 'message',
           role: response.role ?? 'assistant',
@@ -297,8 +322,8 @@ export function sseAnthropicMessagesResponse(response: Record<string, unknown>):
     event: 'message_delta',
     data: {
       type: 'message_delta',
-      delta: { stop_reason: response.stop_reason ?? 'end_turn', stop_sequence: response.stop_sequence ?? null },
-      usage: { output_tokens: (response.usage as Record<string, unknown>).output_tokens as number },
+      delta: { container: null, stop_details: null, stop_reason: response.stop_reason ?? 'end_turn', stop_sequence: response.stop_sequence ?? null },
+      usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: (response.usage as Record<string, unknown>).output_tokens as number },
     },
   });
   chunks.push({ event: 'message_stop', data: { type: 'message_stop' } });
@@ -319,7 +344,7 @@ export function sseOpenAIChatCompletionsResponse(response: Record<string, unknow
     object: 'chat.completion.chunk',
     created,
     model,
-    choices: [{ index: 0, delta, finish_reason: withFinishReason ? finishReason : null }],
+    choices: [{  index: 0, delta, finish_reason: withFinishReason ? finishReason : null }],
   });
 
   const chunks: SSEChunk[] = [{ data: baseChunk({ role: message.role ?? 'assistant' }) }];

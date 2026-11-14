@@ -4,9 +4,13 @@ const en = {
   translation: {
     app: {
       title: 'Floway',
-      documentTitle: '{{title}} | Floway',
+      documentTitle: '{{title}} | {{siteName}}',
     },
     common: {
+      calendar: {
+        previousMonth: 'Previous month', nextMonth: 'Next month', previousYear: 'Previous year', nextYear: 'Next year',
+        previousDecade: 'Previous decade', previousCentury: 'Previous century', nextDecade: 'Next decade', nextCentury: 'Next century', chooseDecade: '{0}, choose a decade', chooseYear: '{0}, choose a year', chooseMonth: '{0}, choose a month',
+      },
       bodyViewer: {
         options: 'Body options',
         find: 'Find in body',
@@ -88,8 +92,10 @@ const en = {
         requests: 'Requests',
         usage: 'Usage',
         performance: 'Performance',
-        users: 'Users',
+        users: 'Users & Groups',
+        permissions: 'Permissions',
         backupRestore: 'Backup / Restore',
+        siteSettings: 'Site settings',
         settings: 'Settings',
       },
       logout: {
@@ -114,7 +120,7 @@ const en = {
         performance:
             'Monitor latency, throughput, and upstream performance signals',
         users:
-            'Manage console users, permissions, telemetry access, and upstream scopes',
+            'Manage console users, groups, and upstream access',
         backupRestore:
             'Download a full copy of everything this gateway holds, or restore it from an earlier export',
         unavailable: 'This view could not be loaded',
@@ -150,6 +156,12 @@ const en = {
         },
       },
       models: {
+        // Shared by every editor that states a model's token limits.
+        limits: {
+          context: 'Context window',
+          prompt: 'Prompt tokens',
+          output: 'Output tokens',
+        },
         badges: {
           context: 'Context <strong>{{value}}</strong>',
           prompt: 'Prompt <strong>{{value}}</strong>',
@@ -179,14 +191,44 @@ const en = {
           },
         },
       },
+      siteSettings: {
+        description: 'Manage global preferences for this site',
+        name: 'Site name',
+        nameHint: 'Shown beside the mark and in the browser title. Leave blank to use the built-in name.',
+        namePlaceholder: 'Floway',
+        save: 'Save',
+        updated: 'Site name updated',
+        validation: {
+          tooLong: 'Enter at most {{max}} characters.',
+        },
+      },
       settings: {
-        description: 'Manage your Floway account security',
-        changePassword: 'Change password',
+        description: 'Manage your Floway preferences and account security',
+        appearance: 'Appearance',
+        security: 'Security',
+        preferences: {
+          quotaDisplay: {
+            title: 'Quota display',
+            description: 'How quota values are displayed',
+            remaining: 'Remaining',
+            used: 'Usage',
+          },
+          language: {
+            description: 'Language used by the dashboard',
+            browser: 'Follow browser',
+          },
+          save: 'Save preferences',
+          saved: 'Preferences saved.',
+        },
         currentPassword: 'Current password',
         newPassword: 'New password',
         confirmPassword: 'Confirm password',
-        otherDevices: 'Other devices currently logged in as you will be signed out.',
-        save: 'Change password',
+        otherDevices: 'Other sessions are signed out after the change.',
+        password: {
+          title: 'Password',
+          description: 'Change the account password',
+          submit: 'Change password',
+        },
         passwordUpdated: 'Password updated. Other devices have been signed out.',
         validation: {
           currentPasswordRequired: 'Current password is required.',
@@ -196,7 +238,7 @@ const en = {
       },
       apiDocs: {
         endpointsTitle: 'API Endpoints',
-        endpointsDescription: 'Every public data-plane route. Short paths are compatibility aliases of their /v1 counterparts unless a protocol is named explicitly.',
+        endpointsDescription: 'Every public data-plane route. Short paths are compatibility aliases of their /v1 counterparts unless a protocol is named explicitly. The model list answers the OpenAI/Anthropic shape to every caller and the Gemini `{ models }` shape to clients that identify as a Gemini SDK.',
         docsLink: 'Docs',
         columns: { method: 'Method', endpoint: 'Endpoint', description: 'Description', docs: 'Documentation' },
         authentication: {
@@ -205,19 +247,23 @@ const en = {
           baseUrl: 'Base URL',
           warning: 'Dashboard session tokens and ADMIN_KEY are not data-plane credentials.',
         },
-        groups: { models: 'Model discovery', generation: 'Text and multimodal generation', media: 'Embeddings, images, and audio', rerank: 'Rerank protocols', search: 'Codex search' },
+        groups: { models: 'Model discovery', generation: 'Text and multimodal generation', media: 'Embeddings, images, and audio', rerank: 'Rerank protocols', decision: 'Decision protocols', search: 'Codex search' },
         endpointNames: {
-          openAiModels: 'OpenAI model list', geminiModels: 'Gemini model list', geminiModel: 'Gemini model details',
+          modelList: 'Model list (OpenAI, Anthropic, Gemini)', geminiModel: 'Gemini model details',
           openAiCompletions: 'OpenAI Completions', openAiChat: 'OpenAI Chat Completions',
           openAiResponses: 'OpenAI Responses', openAiCompact: 'OpenAI Responses compaction', openAiResponsesWs: 'OpenAI Responses WebSocket',
           anthropicMessages: 'Anthropic Messages', anthropicCount: 'Anthropic Count Tokens',
           geminiGenerateContentGenerate: 'Gemini generateContent', geminiGenerateContentStream: 'Gemini streamGenerateContent (SSE)', geminiGenerateContentCount: 'Gemini countTokens',
           openAiEmbeddings: 'OpenAI Embeddings', openAiImageGeneration: 'OpenAI Image Generations', openAiImageEdit: 'OpenAI Image Edits', openAiTranscription: 'OpenAI Audio Transcriptions',
           cohereV1Rerank: 'Cohere Rerank v1', cohereV2Rerank: 'Cohere Rerank v2', jinaRerank: 'Jina Rerank', voyageRerank: 'Voyage Rerank',
+          typesafeSystemOne: 'System One decisions',
+          openAiDecisions: 'OpenAI Decisions',
           codexSearch: 'Codex alpha search',
         },
       },
       users: {
+        search: 'Search users',
+        tabs: { users: 'Users', groups: 'Groups' },
         empty: 'No users found',
         actions: {
           create: 'New user',
@@ -225,7 +271,7 @@ const en = {
           resetPasswordNamed: 'Reset the password of user {{name}}',
           delete: 'Delete user',
           deleteNamed: 'Delete user {{name}}',
-          refresh: 'Refresh users',
+          refresh: 'Refresh users and groups',
           save: 'Save changes',
         },
         toast: {
@@ -249,17 +295,10 @@ const en = {
         table: {
           label: 'Floway users',
           username: 'Username',
-          role: 'Role',
-          upstreams: 'Upstream access',
           created: 'Created',
-          actions: 'Actions',
+          groups: 'Groups',
         },
-        role: { admin: 'Administrator', operator: 'Operator' },
-        upstreams: {
-          all: 'All upstreams',
-          count_one: '{{count, number}} upstream',
-          count_other: '{{count, number}} upstreams',
-        },
+        role: { admin: 'Administrator' },
         dialog: {
           createTitle: 'New user',
           editTitle: 'Edit {{username}}',
@@ -286,9 +325,31 @@ const en = {
         delete: {
           title: 'Delete user',
           message:
-              'Delete {{username}}? Their sessions will be revoked and their API keys will stop working. This cannot be undone.',
+              'Delete {{username}}? Their sessions will be revoked and their API keys will stop working.',
         },
         createdDefaultKey: 'A Default API key is created with each new user.',
+      },
+      groupsManagement: {
+        createdAt: 'Created {{date}}',
+        more_one: 'Show {{count, number}} more group',
+        more_other: 'Show {{count, number}} more groups',
+        remove: { title: 'Remove member', message: 'Remove {{username}} from {{group}}?', confirm: 'Remove' },
+        empty: 'No groups found',
+        search: 'Search groups',
+        searchJoin: 'Search and join a group',
+        noMatches: 'No matching groups',
+        allJoined: 'Already in every group',
+        invalidName: 'Enter a name between 1 and 64 characters',
+        actions: { create: 'New group', save: 'Save changes', edit: 'Edit group', delete: 'Delete group', add: 'Add member', remove: 'Remove {{username}} from group', leave: 'Leave {{name}}' },
+        members: { joined: 'Joined', count_one: '{{count, number}} member', count_other: '{{count, number}} members', empty: 'This group has no members', allAdded: 'All users are already members', noMatches: 'No matching users' },
+        dialog: { createTitle: 'New group', editTitle: 'Edit {{name}}' },
+        fields: { name: 'Name', members: 'Members', hue: 'Color' },
+        delete: { title: 'Delete group', message: 'Delete {{name}}?' },
+        toast: {
+          create: { pending: 'Creating group {{name}}', success: 'Created group {{name}}' },
+          edit: { pending: 'Saving group {{name}}', success: 'Saved group {{name}}' },
+          delete: { pending: 'Deleting group {{name}}', success: 'Deleted group {{name}}' },
+        },
       },
       upstreamAccess: {
         title: 'Limit available upstreams',
@@ -300,8 +361,7 @@ const en = {
         modelCount_one: '{{count, number}} model',
         modelCount_other: '{{count, number}} models',
         modelCountUnknown: 'Count unavailable',
-        upstreamDisabled: 'Upstream disabled',
-        emptyWarning: 'No upstreams are selected. No upstreams will be available while this limit is on.',
+        emptyWarning: 'No upstreams are selected.',
       },
       apiKeys: {
         empty: 'No API keys yet. Create one to call Floway.',
@@ -342,8 +402,8 @@ const en = {
         table: {
           title: 'API Keys',
           name: 'Name',
-          key: 'Key',
           upstreams: 'Upstreams',
+          upstreamOrder: 'Upstream order',
           created: 'Created',
           lastUsed: 'Last Used',
           actions: 'Actions',
@@ -370,6 +430,8 @@ const en = {
           openaiResponsesRetentionHint: 'How long this key\'s OpenAI Responses items stay available for a follow-up request to reference by id (off persists nothing)',
           retentionHint:
               'When enabled, model-invoking requests through this key are captured for the configured window',
+          randomizeUpstreams: 'Randomize upstream order',
+          randomizeUpstreamsHint: 'Shuffle the upstream order for each new request, while preserving upstream affinity for existing sessions',
         },
         validation: {
           nameRequired: 'Name is required.',
@@ -381,6 +443,7 @@ const en = {
           summary: '{{first}} +{{count, number}}',
           inheritsTitle: 'Inherits the global upstream order',
         },
+        upstreamOrder: { configured: 'Priority order', random: 'Random' },
         retention: {
           offCapture: 'Off (do not capture)',
           offPersist: 'Off (do not persist)',
@@ -406,23 +469,26 @@ const en = {
           usingKey: 'This uses the <strong>{{name}}</strong> API key.',
           claudeCode: 'Claude Code',
           codex: 'Codex',
+          pi: 'Pi',
+          omp: 'OMP',
           claudeHint: 'Merge the env block into <path>~/.claude/settings.json</path> or <path>.claude/settings.json</path>.',
           codexConfigHint: 'Merge into <path>~/.codex/config.toml</path>.',
           codexConfigHintWindows: 'Merge into <path>%USERPROFILE%\\.codex\\config.toml</path>.',
           codexAuthHint: 'Store the Floway provider token beside that config, leaving the official account login alone.',
         },
         agentSetup: {
-          agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', timedOut: 'The gateway did not answer in time.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway.', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count, number}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links.', disableAutoMemory: 'Disable auto memory', disableAutoMemoryHint: 'Stop Claude Code from reading or writing its auto memory directory.', disableAgentView: 'Disable agent view', disableAgentViewHint: 'Turn off background agents and agent view, including `claude agents`, `--bg`, and `/background`.',
+          agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', timedOut: 'The gateway did not answer in time.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', providerName: 'Provider ID', defaultThinkingLevel: 'Default thinking level', defaultThinkingHint: 'Applies to all Pi providers. Select a default model to limit the choices to its supported thinking levels.', unsupportedThinking: 'This model exposes more thinking options than Pi can represent.', keepExisting: 'Keep existing setting', maxRetries: 'Maximum retries', piMaxRetriesHint: '0 disables retries. Leave blank to keep the current setting. Applies to all Pi providers; Pi defaults to 3 retries.', ompMaxRetriesHint: '0 disables retries. Leave blank to keep the current setting. Applies to all OMP providers; OMP defaults to 10 retries.', providerHint: 'Leave blank to use floway. Use a different ID for each Floway connection, such as floway-home or floway-work. IDs use lowercase letters, numbers, dots, hyphens, and underscores.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway.', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count, number}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links.', disableAutoMemory: 'Disable auto memory', disableAutoMemoryHint: 'Stop Claude Code from reading or writing its auto memory directory.', disableAgentView: 'Disable agent view', disableAgentViewHint: 'Turn off background agents and agent view, including `claude agents`, `--bg`, and `/background`.', disableArtifact: 'Disable Artifacts', disableArtifactHint: 'Turn off the Artifact, ArtifactData, and ArtifactComments tools by setting `enableArtifact` to false.', piModelHint: 'Sets Pi’s startup model across all providers. The Floway extension refreshes available models at startup and when the model picker opens. Setup installs or updates Pi when needed.',
+          ompModelHint: 'Sets OMP’s startup model across all providers. OMP loads current Floway models at startup; use /floway-refresh to refresh them. Setup installs or updates OMP when needed.',
         },
         rotate: {
           title: 'Rotate API Key',
           message:
-              'Choose a replacement for {{name}}. The old key stops working immediately.',
+              'Rotate {{name}}? The old key stops working immediately.',
         },
         delete: {
           title: 'Delete API Key',
           message:
-              'Delete key {{name}}? This cannot be undone and the key stops working immediately.',
+              'Delete key {{name}}? It stops working immediately.',
         },
       },
       upstreams: {
@@ -431,6 +497,7 @@ const en = {
           create: 'New upstream',
           refresh: 'Refresh upstreams',
           delete: 'Delete upstream',
+          metricsNamed: 'Usage and metrics for {{name}}',
           editNamed: 'Edit upstream {{name}}',
           copyNamed: 'Copy upstream {{name}}',
           deleteNamed: 'Delete upstream {{name}}',
@@ -444,15 +511,14 @@ const en = {
           details: 'Details',
           models: 'Models',
           enabled: 'Enabled',
-          actions: 'Actions',
         },
         // Whatever an upstream publishes about itself beyond its identity. Only
         // the providers whose upstream reports usage contribute any.
         signals: {
           plan: '{{plan}}:',
           percent: '{{percent, number}}%',
-          detailSeparator: ' - ',
           until: 'until {{date}}',
+          remaining: '{{label}}: {{percent, number}}% remaining',
           used: '{{label}}: {{percent, number}}% used',
           resets: 'Resets {{time}}',
           observed: 'Observed {{time}}',
@@ -461,8 +527,14 @@ const en = {
           rateLimitedDetail: 'This upstream is refusing requests until {{time}}',
           credits: '{{balance, number}} credits',
           creditsDetail: 'Credit balance on the ChatGPT account',
-          cost: 'Charged to this account',
-          costLast4Weeks: 'Charged to this account in the last 4 weeks',
+          costRange: '{{from}} to {{until}}: credits consumed by model requests.',
+          costRangeSelf: '{{from}} to {{until}}: credits this account consumed through model requests, including plan and purchased credits.',
+        },
+        copilotQuota: {
+          premiumInteractions: { allowance: 'Allowance', remaining: 'Remaining', usage: 'Usage' },
+          chat: { allowance: 'Chat allowance', remaining: 'Chat remaining', usage: 'Chat usage' },
+          completions: { allowance: 'Completions allowance', remaining: 'Completions remaining', usage: 'Completions usage' },
+          other: { allowance: '{{name}} allowance', remaining: '{{name}} remaining', usage: '{{name}} usage' },
         },
         providers: {
           custom: 'OpenAI- or Anthropic-compatible endpoint',
@@ -506,7 +578,7 @@ const en = {
         },
         delete: {
           title: 'Delete upstream',
-          message: 'Delete upstream {{name}}? This cannot be undone.',
+          message: 'Delete upstream {{name}}?',
         },
         toast: {
           reload: { pending: 'Refreshing upstreams' },
@@ -525,7 +597,6 @@ const en = {
         documentTitleCopy: 'Copy upstream',
         optional: 'optional',
         unsaved: 'Unsaved changes',
-        secretKeep: 'Leave blank to keep unchanged.',
         pathOverridesHint:
             'Leave an entry blank to use its default /v1 path.',
         disabledModelsHint:
@@ -593,8 +664,12 @@ const en = {
         proxy: {
           directFetch: 'Direct (Fetch)',
           directConnect: 'Direct (TCP connect)',
-          empty: 'Without a fallback entry, traffic uses direct TCP connect.',
-          add: 'Add fallback entry',
+          description: 'If you need a proxy, configure proxy routing before starting OAuth or sending upstream requests.',
+          empty: 'No proxy routes configured. TCP connect will be used.',
+          unmatched: 'When no rules match, traffic will fall back to TCP connect.',
+          order: 'All proxy and direct egress rules will be tried from top to bottom.',
+          orderColo: 'All proxy and direct egress rules matching the current colo will be tried from top to bottom.',
+          add: 'Add egress rule',
           colo: 'Current Cloudflare colo: {{colo}}',
           colos: 'Colo whitelist',
           allColos: 'All colos',
@@ -657,6 +732,10 @@ const en = {
               label: 'OpenAI Responses Collaboration Shim',
               description: 'Uses plaintext Codex collaboration messages through an ordinary tool namespace. Enabled by default for every provider; disable it for an upstream or model that should use its native collaboration contract.',
             },
+            'openai-responses-agent-message-shim': {
+              label: 'OpenAI Responses Agent Message Shim',
+              description: 'Codex sends sub-agent tasks and inter-agent messages as `agent_message` input items, which some OpenAI Responses-compatible upstreams drop or reject.\nEnable this option to rewrite them into ordinary user messages that are explicitly framed as coming from another agent before forwarding to the upstream.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.',
+            },
             'openai-responses-compact-shim': {
               label: 'OpenAI Responses Context Compaction Shim',
               description:
@@ -666,6 +745,10 @@ const en = {
               label: 'OpenAI Responses Context Compaction Decryption',
               description:
                   'When native context compaction returns an opaque compaction item, Floway sends that item back to the same model with an exact-repeat instruction, then replaces it with a gateway-readable compaction item containing the recovered plaintext.\nThis adds one billed generation request per compaction item and applies only when the context compaction shim is disabled.',
+            },
+            'serialize-stream-items': {
+              label: 'Serialize Streamed Content Block Lifecycles',
+              description: 'Buffer item / block lifecycles in Responses / Messages streams into a strictly serial order. For example, Open₀ → Open₁ → Delta₁ → Delta₀ → Close₀ becomes Open₀ → Delta₀ → Close₀ → Open₁ → Delta₁. This handling still applies automatically to clients identified as requiring it when the flag is off.',
             },
             'disable-reasoning-on-forced-tool-choice': {
               label: 'Disable Reasoning for Forced Tool Calls',
@@ -680,7 +763,12 @@ const en = {
             'rewrite-mid-conv-system-to-user': {
               label: 'Rewrite Inline system Roles to user',
               description:
-                  'Some upstreams only allow the `system` role at the beginning of a conversation and reject inline `system` messages interleaved between `user` or `assistant` messages (for example, DeepSeek-R1).\nWhen this option is enabled, consecutive `system` messages at the beginning of the conversation are preserved, while later interleaved `system` roles are rewritten to `user`. Message content remains unchanged.\nFor Anthropic Messages API upstreams, this option is treated as enabled because system prompts can only appear in the top-level `system` field.',
+                  'Some upstreams do not support inline `system` messages (for example, older Claude deployments and many OpenAI-compatible chat templates).\nWhen this option is enabled, Floway rewrites every inline `system` role to `user`. Message content remains unchanged.',
+            },
+            'rewrite-disallowed-mid-conv-system-to-user': {
+              label: 'Rewrite Disallowed system Roles to user',
+              description:
+                  'Some models, such as Claude, allow inline `system` messages only at a turn boundary: a content-bearing system group must follow a `user` turn or a server-tool continuation, then precede an `assistant` turn or end the request.\nWhen this option is enabled, Floway preserves valid inline system messages and rewrites only content-bearing system messages in disallowed positions to `user`. Directive-only system messages remain unchanged.',
             },
             'rewrite-developer-to-system': {
               label: 'Rewrite developer Roles to system',
@@ -695,7 +783,7 @@ const en = {
             'strip-billing-attribution': {
               label: 'Remove Claude Code Billing Attribution',
               description:
-                  'Claude Code adds `x-anthropic-billing-header` to the system prompt so Anthropic can determine billing attribution. This marker serves no purpose for **non-official Anthropic upstreams** and is likely to **break prefix caching**.\nEnable this option when the upstream is not an official Anthropic service to remove the marker from the system prompt.\nDo **not** enable it for official Anthropic upstreams such as Claude Code, or billing attribution may be affected.',
+                  'Claude Code adds `x-anthropic-billing-header` to the system prompt and sends the `claude-code-20250219` beta flag so Anthropic bills the request as Claude Code usage. Only a **Claude Code subscription** upstream needs these markers. Elsewhere they are likely to **break prefix caching**, and on the Anthropic API with an API key they bill the request as Claude Code, which the monthly API credits of Max and Team plans do not cover, so the request fails with “credit balance is too low”.\nEnable this option for every upstream other than a Claude Code subscription, including the Anthropic API with an API key, to remove both markers.\nDo **not** enable it for a Claude Code subscription upstream, or the request falls off plan billing.',
             },
             'strip-prompt-cache-key': {
               label: 'Remove Prompt Cache Key',
@@ -707,6 +795,11 @@ const en = {
               description:
                   'The OpenAI API counts cached tokens as part of the input token total, but some upstreams report them separately, so that the input token count covers only what the cache did not serve. This is the Anthropic convention.\nEnable this option to add the cache read and cache write counts back into the input token total, so that usage and cost are recorded correctly.\nWhen the upstream reports a `total_tokens` that settles the question, Floway follows it and this option is not needed. Enable it for an upstream whose totals leave the two conventions indistinguishable.',
             },
+            'openai-responses-store-false': {
+              label: 'Request Stateful Upstreams to Use Stateless Mode',
+              description:
+                  'When connecting to upstreams using the OpenAI Responses protocol, always specify `{"store": false}` to disable stateful features, regardless of how downstream clients set their `store` parameter.\nFloway does not use stateful features on the upstream direction. Disabling upstream states may help control data residency.',
+            },
           },
         },
         models: {
@@ -716,6 +809,10 @@ const en = {
           editWithUi: 'Edit with UI',
           yamlHint: 'Manual models only. Auto-discovered models resolve from the upstream and are not listed here.',
           yamlTitle: 'Models YAML',
+          decisionPath: 'Path override',
+          decisionPathHint: 'Leave blank to use the protocol default.',
+          decisionProtocol: 'Decision protocol',
+          decisionTarget: 'Decision target',
           rerankPath: 'Path override',
           rerankPathHint: 'Leave blank to use the protocol default.',
           rerankProtocol: 'Rerank protocol',
@@ -730,7 +827,7 @@ const en = {
           cacheFetchedNow: 'Fetched just now',
           cacheFetched: 'Fetched {{time}}',
           cacheFailed: 'Last fetch failed',
-          cacheErrorDetail: '{{time}} - {{message}}',
+          cacheErrorDetail: '{{time}}\n{{message}}',
           copyError: 'Copy full error',
           listingFailed: 'Could not fetch the model list from the upstream.',
           listingFailedWithDetail:
@@ -743,8 +840,7 @@ const en = {
           id: 'Model ID',
           source: 'Config',
           kind: 'Kind',
-          kindValue: { chat: 'Chat', embedding: 'Embedding', image: 'Image', transcription: 'Transcription', rerank: 'Rerank' },
-          actions: 'Actions',
+          kindValue: { chat: 'Chat', embedding: 'Embedding', image: 'Image', transcription: 'Transcription', rerank: 'Rerank', decision: 'Decision' },
           copy: 'Copy model ID',
           editNamed: 'Edit model {{name}}',
           back: 'Back to models',
@@ -764,9 +860,6 @@ const en = {
           opaqueBlobCompatibilityKey: 'Compatibility key',
           endpoints: 'Supported endpoints',
           capabilities: 'Capabilities and limits',
-          contextWindow: 'Context window',
-          promptTokens: 'Prompt tokens',
-          outputTokens: 'Output tokens',
           imageInput: 'Image input',
           imageDetailOriginal: 'Image detail "original"',
           reasoning: 'Reasoning',
@@ -800,10 +893,8 @@ const en = {
           priceNotSet: 'Not set',
           pricingBase: 'Base',
           serviceTier: 'Service tier',
-          serviceTierHint: 'Blank selects the Base rate.',
           operator: 'Operator',
           inputTokens: 'Input token threshold',
-          inputTokensHint: 'Blank applies at every input size.',
           addPricingEntry: 'Add pricing entry',
           removePricingEntry: 'Remove pricing entry',
           noPricingEntries: 'No pricing configured',
@@ -839,20 +930,24 @@ const en = {
           rerankTargetRequired: 'Select a Rerank target for this endpoint.',
           rerankTargetUnexpected: 'Remove the Rerank target from a model that does not use the Rerank endpoint.',
           rerankPathInvalid: 'The Rerank path override must start with / and cannot contain //, /./, or /../.',
+          decisionTargetUnexpected: 'Remove the Decision target from a model that does not use the Decision endpoint.',
+          decisionPathInvalid: 'The Decision path override must start with / and cannot contain //, /./, or /../.',
           invalidConfiguration: 'This model contains a configuration that cannot be saved.',
           delete: 'Delete manual model',
           deleteNamed: 'Delete manual model {{name}}',
           deleteTitle: 'Delete model',
-          deleteMessage: 'Delete {{name}}? This cannot be undone.',
+          deleteMessage: 'Delete {{name}}?',
           deleteConfirm: 'Delete model',
         },
+        quotaUsedPercent: '{{percent, number}}% used',
+        quotaRemainingPercent: '{{percent, number}}% remaining',
         copilot: {
           quota: {
             title: 'Quota',
             load: 'Load',
             refresh: 'Refresh',
-            used: '{{used, number}} / {{entitlement, number}}',
-            usedPercent: '{{percent, number}}% used',
+            amount: '{{amount}} / {{entitlement}}',
+            remainingPercent: '{{percent, number}}% remaining',
             unlimited: 'Unlimited',
             unavailable: 'Not included in this plan',
             resets: 'Resets on {{date}}',
@@ -897,7 +992,7 @@ const en = {
             empty: 'No reset cards are available for this ChatGPT subscription.',
             status: { available: 'Available', expired: 'Expired', redeemed: 'Redeemed', redeeming: 'Redeeming' },
             confirmTitle: 'Use this reset card?',
-            confirmMessage: 'Use “{{title}}” now? This resets the eligible Codex rate-limit windows and cannot be undone.',
+            confirmMessage: 'Use “{{title}}” now? This resets the eligible Codex rate-limit windows.',
             refreshWarning: 'The card was processed, but Floway could not refresh all details. Refresh reset cards to check their current state.',
             loadError: 'Could not load reset cards. Try refreshing again.',
             redeemError: 'Could not confirm the reset. Retry to check the same redemption safely.',
@@ -977,14 +1072,32 @@ const en = {
             'uuid-mismatch': 'Configured account missing from state - re-import to recover',
           },
         },
+        usageRefresh: {
+          title: 'Background usage refresh',
+          description: '0 or blank disables background refresh. No additional model usage is incurred.',
+          claudeCodeRequirement: 'Requires OAuth sign-in.',
+          ollamaRequirement: 'Requires “Fetch account usage” to be enabled.',
+          interval: 'Refresh interval (minutes)',
+          invalid: 'Enter a nonnegative whole number of minutes.',
+        },
         ollama: {
           cloudUsage: 'Fetch account usage',
-          cloudUsageHint: "Read this Ollama Cloud account's usage windows after the calls this upstream serves. A self-hosted Ollama serves no such endpoint.",
+          cloudUsageHint: 'Update account balances and period usage after model requests. Requires an Ollama Cloud API key.',
           usage: {
-            title: 'Usage',
+            recentUsage_one: 'Last {{count, number}} day usage',
+            recentUsage_other: 'Last {{count, number}} days usage',
+            usedCreditsHint: '{{from}} to {{until}}: plan credits used this period. Team subscriptions share these credits.',
+            allowance: 'Period plan credits {{amount}}',
+            resets: 'Resets {{time}}',
+            balance: { included: 'Included balance', purchased: 'Purchased balance' },
+            balanceHint: {
+              included: 'Remaining plan credits. Reset monthly and used first for model requests.',
+              purchased: 'Remaining purchased credits. Used after plan credits run out.',
+            },
+            title: 'Balance',
             load: 'Load',
             refresh: 'Refresh',
-            usedPercent: '{{percent, number}}% used',
+            remainingPercent: '{{percent, number}}% remaining',
             // Ollama states the session allowance resets every five hours and
             // the other weekly; the endpoint reports neither the length nor a
             // reset time. https://ollama.com/pricing
@@ -994,7 +1107,6 @@ const en = {
             },
             observed: 'Observed {{time}}',
             empty: 'No usage observed yet. One arrives with the first request this upstream serves, or refresh to fetch one now.',
-            unreadable: 'Ollama reported no usage windows in a shape this dashboard understands.',
             backgroundFailed: 'The last background refresh failed: {{message}}',
           },
         },
@@ -1030,7 +1142,7 @@ const en = {
         },
         fetchDirty: {
           title: 'Save changes before fetching models?',
-          message: 'Model discovery uses the saved upstream configuration. Save these changes to fetch its models.',
+          message: 'Model discovery uses the saved upstream configuration.',
           saveAndFetch: 'Save and fetch models',
           unsavedCredential: 'Apply credential changes using the provider controls before saving.',
         },
@@ -1042,8 +1154,8 @@ const en = {
         streamDisconnected: 'The request stream disconnected.',
         unknownModel: 'Unknown model',
         status: { success: 'Successful request', warning: 'Request warning', error: 'Failed request' },
-        duration: 'Duration: {{value, number}}ms',
-        ttft: 'Time to first token: {{value, number}}ms',
+        duration: 'Duration: {{value}}',
+        ttft: 'Time to first token: {{value}}',
         requestBytes: 'Request payload: {{value, number}} bytes',
         responseBytes: 'Response payload: {{value, number}} bytes',
         selectPrompt: 'Select a request to inspect its details',
@@ -1124,7 +1236,12 @@ const en = {
           toggleHint: 'Click to toggle. Shift-click or double-click to isolate.',
         },
       },
-      telemetry: { currentUserOnly: 'Only me' },
+      telemetry: {
+        currentUserOnly: 'Only me',
+        range: {
+          oneDay: 'Last Day', sevenDays: '7 Days', thirtyDays: '30 Days', custom: 'Custom', choose: 'Choose date range',
+        },
+      },
       usage: {
         empty: 'No usage records in this range',
         callout: { requests: 'Req', cost: 'Cost', total: 'Total', cached: 'Cached', cachedRate: 'Cached%', prefill: 'Prefill', output: 'Output' },
@@ -1142,12 +1259,7 @@ const en = {
           selected_one: '{{count, number}} selected',
           selected_other: '{{count, number}} selected',
         },
-        range: {
-          label: 'Usage range',
-          today: 'Last Day',
-          sevenDays: '7 Days',
-          thirtyDays: '30 Days',
-        },
+        range: { label: 'Usage range' },
         actions: { refresh: 'Refresh usage' },
         charts: {
           search: 'Search Usage',
@@ -1163,6 +1275,22 @@ const en = {
           cached: 'Cached Input',
           cachedRate: 'Cached Rate',
           cacheCreation: 'Cache Write',
+        },
+      },
+      upstreamTelemetry: { usage: 'Usage', metrics: 'Metrics' },
+      upstreamMetrics: {
+        empty: 'No upstream metric observations in this range',
+        value: 'Value',
+        windows: { seconds: '{{count, number}}-second', minutes: '{{count, number}}-minute', hours: '{{count, number}}-hour', days: '{{count, number}}-day' },
+        metrics: {
+          window: '{{name}} {{window}}',
+          usage: '{{window}} usage', remaining: '{{window}} remaining',
+          namedUsage: '{{window}} {{name}} usage', namedRemaining: '{{window}} {{name}} remaining',
+          includedAllowance: 'Included allowance',
+          extraUsage: 'Extra usage',
+          sessionUsage: 'Session usage', sessionRemaining: 'Session remaining',
+          credits: 'Credit balance',
+          past24HoursCost: 'Past 24 hours cost', past7DaysCost: 'Past 7 days cost', past30DaysCost: 'Past month cost', includedBalance: 'Included balance', purchasedBalance: 'Purchased balance',
         },
       },
       performance: {
@@ -1185,12 +1313,7 @@ const en = {
           userId: 'User',
           keyId: 'API Key',
         },
-        range: {
-          label: 'Performance range',
-          today: 'Last Day',
-          sevenDays: '7 Days',
-          thirtyDays: '30 Days',
-        },
+        range: { label: 'Performance range' },
         percentile: { label: 'Percentile' },
         summary: {
           requests: 'Requests',
@@ -1206,10 +1329,65 @@ const en = {
         tables: {
           requests: 'Requests',
           errors: 'Errors',
-          ttftP95: 'TTFT p95',
-          speedP95: 'Worst 5% speed',
+          ttft: 'TTFT {{percentile}}',
+          speed: 'Worst {{tail, number}}% speed',
         },
       },
+      accessControl: {
+        description: 'Resource access for users and groups',
+        tableLabel: 'Permission rules',
+        search: 'Search rules',
+        noMatches: 'No matching rules',
+        filters: { allPrincipals: 'All visible principals', noPrincipals: 'No matching users or groups', clearPrincipal: 'Clear user or group filter' },
+        columns: { 'Model.Use': 'Use models', 'Upstream.Audit': 'Audit upstream', 'Upstream.Edit': 'Edit upstream', 'User.Audit': 'Audit users', 'Permission.Audit': 'Audit permissions' },
+        pagination: { previous: 'Previous page', next: 'Next page', range: '{{from, number}} - {{to, number}} / {{total, number}}' },
+        actions: { add: 'New rule', edit: 'Edit rule', delete: 'Delete rule', save: 'Save rule', refresh: 'Refresh permissions', clearFilters: 'Clear filters', removeScopeSegment: 'Remove last scope segment', reorder: 'Reorder rule', column: 'Actions' },
+        effective: {
+          label: 'Show effective',
+          activeAssignment: 'Active assignment',
+          checked: 'Checked:',
+          checkedDescription: 'Shows this user or group’s rules at the current scope, inherited from ancestors, or matched by wildcard patterns.',
+          unchecked: 'Unchecked:',
+          uncheckedDescription: 'Shows this user or group’s rules at the current scope and its descendants.',
+        },
+        overridden: {
+          label: 'Overridden assignment',
+          sameScope: '<sentence>Overridden by <rule/> for <principal/></sentence>',
+          otherScope: '<sentence>Overridden by <rule/> for <principal/> <location>at <scope/></location></sentence>',
+        },
+        fields: { principal: 'Applies to', scope: 'Scope', permissions: 'Permissions' },
+        permissionWithLevel: '{{permission}} ({{level}})',
+        scope: {
+          visual: 'Visual', json: 'JSON', kind: 'Resource type', instance: 'Resource', model: 'Model', unknown: 'Unknown {{id}}',
+          unknownLabel: 'Unknown', unknownUpstreamId: 'Unknown upstream ID "{{id}}"', unknownUserId: 'Unknown user ID "{{id}}"', unknownGroupId: 'Unknown group ID "{{id}}"',
+          noMatches: 'No matching resources',
+          kinds: { self: 'Self', upstream: 'Upstream', user: 'User', group: 'Group' },
+        },
+        principal: { user: 'User: {{name}}', group: 'Group: {{name}}' },
+        permissions: {
+          'Model.Use': 'Use models',
+          'Upstream.Audit': 'Attribute upstream telemetry',
+          'Upstream.Edit': 'Edit upstream',
+          'User.Audit': 'Attribute user telemetry',
+          'Permission.Audit': 'Audit granted and effective permissions',
+        },
+        states: { inherit: 'Inherit', inheritOn: 'Inherit (on)', inheritOff: 'Inherit (off)', inheritModels: 'Inherit (models)', inheritFull: 'Inherit (full)', on: 'On', off: 'Off', models: 'Models only', full: 'Full' },
+        inheritance: {
+          currentlyInherited: 'Currently inherited', explicitAssignment: 'Explicit assignment',
+          inheritedValue: 'Inherited value: {{value}}', tooltip: '{{description}} ({{source}})', unknown: 'Inherit (unknown)',
+        },
+        dialog: { createTitle: 'New rule', editTitle: 'Edit rule' },
+        toast: {
+          create: { pending: 'Creating rule', success: 'Created rule' },
+          edit: { pending: 'Saving rule', success: 'Saved rule' },
+          delete: { pending: 'Deleting rule', success: 'Deleted rule' },
+        },
+        validation: { scopeRequired: 'Select a scope.', emptyRecord: 'Set at least one permission to On, Off, Models, or Full.' },
+        delete: { title: 'Delete rule', groupTitle: 'Delete group rule', message: 'Delete this rule for {{name}}?', groupMessage: 'Delete this rule for {{name}}? It applies to the whole group.' },
+        empty: 'No rules',
+        administratorBypass: 'Administrators have full access and are not limited by access rules.',
+      },
+
       backupRestore: {
         export: {
           heading: 'Export',
@@ -1255,6 +1433,8 @@ const en = {
             usage_other: '{{count, number}} usage records',
             searchUsage_one: '{{count, number}} search-usage record',
             searchUsage_other: '{{count, number}} search-usage records',
+            upstreamMetrics_one: '{{count, number}} upstream metric observation',
+            upstreamMetrics_other: '{{count, number}} upstream metric observations',
             performance_one: '{{count, number}} performance record',
             performance_other: '{{count, number}} performance records',
           },
@@ -1270,11 +1450,12 @@ const en = {
             usage: 'Usage Records',
             searchUsage: 'Search Usage',
             performance: 'Performance',
+            upstreamMetrics: 'Upstream Metrics',
           },
         },
         confirmTitle: 'Confirm Import',
         confirmMessage:
-            'This will import data from the selected backup file. In replace mode, all existing data will be deleted first. Continue?',
+            'All existing data will be deleted first.',
       },
       searchConfig: {
         heading: 'Search Provider',
@@ -1314,20 +1495,20 @@ const en = {
       modelAliases: {
         description: 'Create virtual model IDs that route to one or more target models with optional locked request rules',
         listTitle: 'Aliases', empty: 'No aliases configured. Create one to expose a virtual model ID.',
-        columns: { alias: 'Alias', kind: 'Kind', targets: 'Targets', selection: 'Selection', visibility: 'Models list', actions: 'Actions' },
+        columns: { alias: 'Alias', kind: 'Kind', targets: 'Targets', selection: 'Selection', visibility: 'Models list' },
         actions: { create: 'New alias', refresh: 'Refresh aliases', save: 'Save', delete: 'Delete', addTarget: 'Add target', editNamed: 'Edit alias {{name}}', copyNamed: 'Copy alias {{name}}', deleteNamed: 'Delete alias {{name}}' },
         dialog: { createTitle: 'Create alias', editTitle: 'Edit alias: {{name}}', copyTitle: 'Copy alias: {{name}}' },
         copy: { nameSuffix: '{{name}} copy' },
         form: { name: 'Alias ID', namePlaceholder: 'my-alias-id', displayName: 'Display name', displayPlaceholder: 'Optional display name', kind: 'Kind', selection: 'Selection', visible: 'Visible in /v1/models', visibleHint: 'A hidden alias stays out of the listing but can still be requested by name' },
-        kind: { chat: 'Chat', embedding: 'Embedding', image: 'Image', rerank: 'Rerank', transcription: 'Transcription' },
+        kind: { chat: 'Chat', embedding: 'Embedding', image: 'Image', rerank: 'Rerank', transcription: 'Transcription', decision: 'Decision' },
         selection: { first: 'First available', random: 'Random' },
         visibility: { visible: 'Visible', hidden: 'Hidden' },
         target: { heading: 'Models', description: 'Targets are tried in order when using First available. Select a suggestion or enter any model ID.', label: 'Target {{number, number}}', modelId: 'Target model ID', placeholder: 'target model id', toggle: 'Toggle target rules', reorder: 'Reorder target', remove: 'Remove target', count_one: '{{count, number}} target', count_other: '{{count, number}} targets' },
         rules: { effort: 'Reasoning effort', budget: 'Reasoning budget tokens', adaptive: 'Adaptive reasoning', adaptiveAuto: 'Auto (defer to model)', adaptiveOn: 'On (force adaptive)', adaptiveOff: 'Off (force non-adaptive)', summary: 'Reasoning summary', verbosity: 'Verbosity', serviceTier: 'Service tier' },
-        metadata: { heading: 'Announce metadata manually', description: 'Capabilities reported for this alias by /v1/models', manual: 'Announce metadata manually', limits: 'Token limits', context: 'Context window', prompt: 'Prompt tokens', output: 'Output tokens', imageInput: 'Image input', imageDetailOriginal: 'Image detail "original"', reasoning: 'Reasoning', effortEnabled: 'Effort levels', budgetEnabled: 'Budget tokens', adaptive: 'Adaptive', mandatory: 'Mandatory', efforts: 'Supported efforts', effortsHint: 'Comma-separated; order is preserved.', defaultEffort: 'Default effort', minBudget: 'Minimum budget', maxBudget: 'Maximum budget' },
+        metadata: { heading: 'Announce metadata manually', description: 'Capabilities reported for this alias by /v1/models', manual: 'Announce metadata manually', limits: 'Token limits', imageInput: 'Image input', imageDetailOriginal: 'Image detail "original"', reasoning: 'Reasoning', effortEnabled: 'Effort levels', budgetEnabled: 'Budget tokens', adaptive: 'Adaptive', mandatory: 'Mandatory', efforts: 'Supported efforts', effortsHint: 'Comma-separated; order is preserved.', defaultEffort: 'Default effort', minBudget: 'Minimum budget', maxBudget: 'Maximum budget' },
         warnings: { label: 'Alias warning', shadow: 'Alias ID shadows the real model {{id}} {{display}}.', noTarget: 'No target currently resolves to a model on this gateway.', unknownTarget: '{{id}} does not currently resolve to an enabled model.', wrongKind: '{{id}} is a {{actual}} model, but this alias is {{expected}}.', notAdvertisedEffort: 'Target does not advertise reasoning effort.', unsupportedEffort: 'Target advertises effort levels: {{values}}.', adaptiveBudgetConflict: 'Adaptive reasoning cannot be combined with a fixed budget.', notAdvertisedBudget: 'Target does not advertise a reasoning budget.', budgetBelow: 'Below target minimum ({{value, number}}).', budgetAbove: 'Above target maximum ({{value, number}}).', notAdvertisedAdaptive: 'Target does not advertise adaptive reasoning.', ruleAdvisory: 'One or more rules may not be supported by this target.' },
         validation: { nameRequired: 'Enter an alias ID.', duplicate: 'An alias with this ID already exists.', targetRequired: 'Enter a target model ID.', budget: 'Reasoning budget must be a non-negative integer.', adaptiveBudget: 'Adaptive reasoning cannot be combined with a fixed budget.', metadataNumber: 'Enter a whole number of tokens, zero or greater.', metadataRange: 'Maximum budget must be greater than or equal to minimum budget.' },
-        delete: { title: 'Delete alias', message: 'Delete alias {{name}}? This cannot be undone.' },
+        delete: { title: 'Delete alias', message: 'Delete alias {{name}}?' },
         toast: { save: { pending: 'Saving alias {{name}}', success: 'Saved alias {{name}}' }, delete: { pending: 'Deleting alias {{name}}', success: 'Deleted alias {{name}}' } },
         errors: { message: 'Could not complete the alias operation: {{message}}', models: 'Model catalog unavailable: {{message}}' },
       },
@@ -1335,7 +1516,6 @@ const en = {
         description:
             'Outbound proxies referenced by per-upstream fallback lists',
         listTitle: 'Proxies',
-        columns: { actions: 'Actions' },
         empty: 'No proxies configured. Add a proxy to route outbound traffic.',
         unknownAddress: 'Unrecognized address',
         addTitle: 'Add proxy',
@@ -1417,7 +1597,7 @@ const en = {
         },
         delete: {
           title: 'Delete proxy',
-          message: 'Delete proxy {{name}}? This cannot be undone.',
+          message: 'Delete proxy {{name}}?',
           conflict: 'Cannot delete: proxy is referenced by upstreams.',
           conflictWithIds: 'Referenced by upstream IDs: {{ids}}',
         },
@@ -1435,6 +1615,8 @@ const en = {
         },
         backoff: {
           title: 'Backoff',
+          summary_one: 'This proxy is in backoff for {{count, number}} upstream.',
+          summary_other: 'This proxy is in backoff for {{count, number}} upstreams.',
           remaining: 'resumes in {{duration}}',
           expiring: 'resuming',
           failures_one: '{{count, number}} failure',

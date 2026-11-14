@@ -5,13 +5,15 @@ import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { ProviderModel, UpstreamModelsCache, UpstreamProviderKind, UpstreamRecord } from './model.ts';
 import type { Fetcher } from './options.ts';
 import type { ProviderPipelines } from './pipeline.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
-import type { ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
+import type { ProviderScheduledOptions } from './scheduled.ts';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import type { DecisionTarget, ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
+import type { CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAICompletionsPayload } from '@floway-dev/protocols/openai-completions';
 import type { OpenAIEmbeddingsPayload } from '@floway-dev/protocols/openai-embeddings';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { CanonicalRerankRequest } from '@floway-dev/protocols/rerank';
 
 // Action tag threaded through the OpenAI Responses pipeline. `generate` is a normal
@@ -19,9 +21,10 @@ import type { CanonicalRerankRequest } from '@floway-dev/protocols/rerank';
 // turn that some upstreams expose natively (`/v1/responses/compact`,
 // chatgpt.com's RemoteCompactionV2 over /codex/responses) and others have to
 // simulate. The same `callOpenAIResponses` method dispatches on this tag, and
-// interceptors are free to flip it (the openai-responses-compact-shim turns 'compact'
-// into 'generate' so the inner upstream call runs an ordinary summarization
-// turn against the SUMMARIZATION_PROMPT).
+// interceptors are free to flip it (the openai-responses-compact-shim turns
+// 'compact' into 'generate' so the inner upstream call can summarize through
+// an appended cache-sharing user request, with one legacy system-prompt retry
+// when the first response contains no assistant text).
 export type OpenAIResponsesAction = 'generate' | 'compact';
 
 export type InboundHeaderMatcher = string | RegExp;
@@ -55,6 +58,12 @@ export interface ProviderRerankCallResult extends ProviderCallResult {
   target: RerankTarget;
 }
 
+// The target rides back so the serve layer knows which dialect shaped the
+// response and can pick the matching parser.
+export interface ProviderDecisionCallResult extends ProviderCallResult {
+  target: DecisionTarget;
+}
+
 // Streaming endpoints (Anthropic Messages / OpenAI Responses / OpenAI Chat Completions) return decoded
 // protocol frames directly — the provider drives the upstream fetch, parses
 // the SSE wire via @floway-dev/protocols, and emits the typed event stream.
@@ -83,9 +92,9 @@ export type ProviderStreamResult<TEvent> =
 // post-chain caller intent), not the result tag.
 // The `ok: false` contract is identical to ProviderStreamResult above.
 export type ProviderOpenAIResponsesResult =
-  | { action: 'generate'; ok: true; events: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>; modelKey: string; headers?: Headers }
+  | { action: 'generate'; ok: true; events: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>; modelKey: string; headers?: Headers }
   | { action: 'generate'; ok: false; response: Response; modelKey: string }
-  | { action: 'compact'; ok: true; result: OpenAIResponsesCompactionResult; modelKey: string }
+  | { action: 'compact'; ok: true; result: OpenAIResponsesCompactionResultEx; modelKey: string }
   | { action: 'compact'; ok: false; response: Response; modelKey: string };
 
 // Per-call options the gateway threads through to the provider.
@@ -131,6 +140,7 @@ export interface AnthropicMessagesUpstreamCallOptions extends UpstreamCallOption
 }
 
 export interface ProviderInstance {
+  runScheduledTask(options: ProviderScheduledOptions): Promise<void>;
   // Catalog refresh fetches a single resource and never enters the per-request
   // latency budget, so it takes the per-upstream fetcher directly instead of
   // the broader `UpstreamCallOptions` bag the data-plane `call*` methods use.
@@ -144,7 +154,7 @@ export interface ProviderInstance {
   callOpenAICompletions(model: ProviderModel, body: Omit<OpenAICompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callOpenAIChatCompletions(model: ProviderModel, body: Omit<OpenAIChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
   callOpenAIResponses(model: ProviderModel, body: Omit<CanonicalOpenAIResponsesPayload, 'model'>, action: OpenAIResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderOpenAIResponsesResult>;
-  callAnthropicMessages(model: ProviderModel, body: Omit<AnthropicMessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: AnthropicMessagesUpstreamCallOptions): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
+  callAnthropicMessages(model: ProviderModel, body: Omit<AnthropicMessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: AnthropicMessagesUpstreamCallOptions): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
   // count_tokens is non-streaming JSON; the gateway relays the upstream
   // Response verbatim.
   callAnthropicMessagesCountTokens(model: ProviderModel, body: Omit<AnthropicMessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: AnthropicMessagesUpstreamCallOptions): Promise<ProviderCallResult>;
@@ -153,6 +163,7 @@ export interface ProviderInstance {
   callOpenAIImagesEdits(model: ProviderModel, request: OpenAIImagesEditsRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callOpenAIAudioTranscriptions(model: ProviderModel, request: OpenAIAudioTranscriptionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callRerank(model: ProviderModel, request: CanonicalRerankRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderRerankCallResult>;
+  callDecision(model: ProviderModel, request: CanonicalDecisionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderDecisionCallResult>;
 }
 
 // Static, module-shaped surface each provider package exports. The gateway

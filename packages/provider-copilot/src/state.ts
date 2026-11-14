@@ -5,6 +5,7 @@
 // concurrent write intact.
 
 import type { CopilotKnownModels } from './known-models.ts';
+import { assertCanonicalCopilotQuotaUnlimited } from './quota-entitlement.ts';
 import type { CopilotQuotaSnapshot, CopilotSeat } from './quota.ts';
 
 // Short-lived Copilot session token minted by exchanging the operator-supplied
@@ -126,6 +127,20 @@ const assertCopilotQuotaSnapshotEntry = (value: unknown, where: string): void =>
   }
   if (typeof obj.data !== 'object' || obj.data === null || Array.isArray(obj.data)) {
     throw new TypeError(`${where}.data must be a plain object`);
+  }
+  const data = obj.data as Record<string, unknown>;
+  if (typeof data.quotas !== 'object' || data.quotas === null || Array.isArray(data.quotas)) {
+    throw new TypeError(`${where}.data.quotas must be a plain object`);
+  }
+  for (const [quota, value] of Object.entries(data.quotas)) {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      throw new TypeError(`${where}.data.quotas.${quota} must be a plain object`);
+    }
+    const detail = value as Record<string, unknown>;
+    if (typeof detail.entitlement !== 'number' || typeof detail.unlimited !== 'boolean') {
+      throw new TypeError(`${where}.data.quotas.${quota} must include numeric entitlement and boolean unlimited`);
+    }
+    assertCanonicalCopilotQuotaUnlimited(detail.entitlement, detail.unlimited);
   }
 };
 

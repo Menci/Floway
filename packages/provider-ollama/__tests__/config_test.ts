@@ -9,6 +9,7 @@ const baseRecord: UpstreamRecord = {
   kind: 'ollama',
   name: 'Ollama Cloud',
   enabled: true,
+  usageRefreshIntervalMinutes: 0,
   sortOrder: 0,
   createdAt: '2026-06-19T00:00:00.000Z',
   updatedAt: '2026-06-19T00:00:00.000Z',
@@ -86,5 +87,24 @@ test('assertOllamaUpstreamRecord rejects rerank models', () => {
     }),
     Error,
     'rerank models require a custom upstream',
+  );
+});
+
+test('assertOllamaUpstreamRecord rejects an operator-authored decision target', () => {
+  assertThrows(
+    () => assertOllamaUpstreamRecord({
+      ...baseRecord,
+      config: {
+        ...(baseRecord.config as Record<string, unknown>),
+        models: [{
+          upstreamModelId: 'nimble',
+          kind: 'decision',
+          endpoints: { decision: {} },
+          decisionTarget: { protocol: 'typesafe-systemone' },
+        }],
+      },
+    }),
+    Error,
+    'decision target is not configurable on this upstream',
   );
 });

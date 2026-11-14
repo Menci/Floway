@@ -1,5 +1,6 @@
 import { connect } from 'cloudflare:sockets';
 
+import { userspaceTls } from '@floway-dev/http';
 import { normalizeDialHost, throwAbort, type DialedSocket, type SocketDial } from '@floway-dev/platform';
 
 // workerd reports every non-2xx outbound CONNECT proxy status with this same
@@ -87,4 +88,13 @@ export const cloudflareSocketDial: SocketDial = {
       },
     };
   },
+
+  // Upgrades land on sockets this dialer opened with `secureTransport` 'on'
+  // or 'off', and workerd's `startTls()` requires 'starttls' at connect time;
+  // where a plaintext handshake already ran, it also fails once bytes have
+  // been exchanged (issue #2712). So every upgrade runs in userspace, and the
+  // `secureTransport: 'on'` branch above is the only place TLS is left to
+  // workerd.
+  // https://github.com/cloudflare/workerd/issues/2712
+  startTls: userspaceTls,
 };

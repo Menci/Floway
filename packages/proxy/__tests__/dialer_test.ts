@@ -50,6 +50,9 @@ const stubSocketDial: SocketDial = {
   connect: async () => {
     throw new Error('stub socket dial — tests should not reach here');
   },
+  startTls: async () => {
+    throw new Error('stub socket dial — tests should not reach here');
+  },
 };
 
 const baseOptions = (): DialOptions => ({ socketDial: stubSocketDial });
@@ -142,8 +145,7 @@ describe('runProxiedRequest — post-dial teardown', () => {
   it('cancels the dialed readable when the inner-TLS step throws past the dial', async () => {
     // Track every cancel attempt directly on the readable so the assertion
     // doesn't depend on cancel-hook semantics (the hook doesn't fire once
-    // the underlying source is already done/errored, which userspaceTls's
-    // pump leaves the EOFed source in by the time the catch runs).
+    // the underlying source is already done or errored).
     let cancelCalls = 0;
     let lastCancelReason: unknown = undefined;
     vi.mocked(dialSocks5).mockImplementationOnce(async () => {
@@ -173,17 +175,20 @@ describe('runProxiedRequest — post-dial teardown', () => {
 });
 
 describe('runDirectConnectRequest', () => {
-  const makeSocketDial = (responseHead: string, connect: () => void = () => {}): {
+  const makeSocketDial = (responseHead: string, connect: () => void = () => {}, startTls = vi.fn(async () => noopStream())): {
     socketDial: SocketDial;
     written: () => string;
     closeCalls: () => number;
+    startTls: ReturnType<typeof vi.fn>;
   } => {
     let writeBuf = new Uint8Array(0);
     let closes = 0;
     return {
       written: () => new TextDecoder().decode(writeBuf),
       closeCalls: () => closes,
+      startTls,
       socketDial: {
+        startTls,
         connect: async () => {
           connect();
           return {
@@ -298,8 +303,51 @@ describe('runDirectConnectRequest', () => {
     expect(direct.closeCalls()).toBe(1);
   });
 
+  it('passes an IPv4 literal through as both the TLS host and verification identity', async () => {
+    const cause = new Error('certificate rejected');
+    const direct = makeSocketDial('', () => {}, vi.fn(async () => { throw cause; }));
+
+    const failure = runDirectConnectRequest(
+      { host: '192.0.2.10', port: 443, tls: true },
+      { method: 'GET', path: '/v1/models', headers: [] },
+      { socketDial: direct.socketDial },
+    );
+
+    await expect(failure).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'inner-tls',
+      cause,
+    });
+    expect(direct.startTls).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        host: '192.0.2.10',
+        verifyHost: '192.0.2.10',
+      }),
+    );
+    expect(direct.closeCalls()).toBe(1);
+  });
+
+  it('preserves an IPv6 literal as the verification identity', async () => {
+    const direct = makeSocketDial('', () => {}, vi.fn(async () => { throw new Error('stop after options'); }));
+
+    await expect(runDirectConnectRequest(
+      { host: '2001:db8::1', port: 443, tls: true },
+      { method: 'GET', path: '/', headers: [] },
+      { socketDial: direct.socketDial },
+    )).rejects.toMatchObject({ stage: 'inner-tls' });
+    expect(direct.startTls).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        host: '2001:db8::1',
+        verifyHost: '2001:db8::1',
+      }),
+    );
+  });
+
   it('bounds the raw TCP connect with the direct-connect dial deadline', async () => {
     const socketDial: SocketDial = {
+      ...stubSocketDial,
       connect: async (_host, _port, options) => {
         return await new Promise<never>((_, reject) => {
           options?.signal?.addEventListener('abort', () => reject(options.signal!.reason), { once: true });
@@ -325,7 +373,7 @@ describe('runDirectConnectRequest', () => {
 // mocked to return a duplex whose write-side captures the request line +
 // headers; the canned response keeps fetchOnStream from hanging.
 //
-// All cases pin target.tls=false to keep the test off userspaceTls, which
+// All cases pin target.tls=false to keep the test off the TLS upgrade, which
 // won't complete a handshake against a canned response stream. We cover
 // the tls=false default branch (port 80 → omit) and the non-default branch
 // (port 8080 → include); the tls=true default branch (port 443 → omit)

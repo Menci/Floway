@@ -14,6 +14,7 @@ test('returns the HTTP reply while quota persistence rejects the deferred drain 
       getById: async () => null,
       saveState: async () => { writes++; throw error; },
     },
+    recordUpstreamMetric: async () => { throw new Error('quota persistence failed before metrics'); },
   }));
   const exchange = move({
     type: 'response' as const,

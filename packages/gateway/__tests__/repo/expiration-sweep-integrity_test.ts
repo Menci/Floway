@@ -182,6 +182,7 @@ test('drained completion cannot remove a queue whose domain still has rows', asy
     serverSecret: 'aa'.repeat(32),
     createdAt: '2026-01-01T00:00:00Z',
     upstreamIds: null,
+    randomizeUpstreams: false,
     deletedAt: null,
     dumpRetentionSeconds: 3600,
     openaiResponsesRetentionSeconds: 0,

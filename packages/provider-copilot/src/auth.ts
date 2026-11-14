@@ -225,14 +225,19 @@ export interface CopilotAuth {
   githubToken: string;
 }
 
-export const copilotRequestHeaders = (entry: CopilotTokenEntry, initHeaders: HeadersInit | undefined, attached: HttpHeaderLines | undefined): Headers => {
+export const copilotRequestHeaders = (entry: CopilotTokenEntry, initHeaders: HeadersInit | undefined, attached: HttpHeaderLines | undefined, jsonBody: boolean): Headers => {
   // x-request-id and x-agent-task-id share a single per-call UUID, mirroring
   // VSCode Copilot Chat's "one id ties the request to its background task" pattern.
   const requestId = crypto.randomUUID();
 
   const headers = new Headers(initHeaders);
   headers.set('Authorization', `Bearer ${entry.token}`);
-  headers.set('Content-Type', 'application/json');
+  // Content-Type follows the body. A multipart body has to reach the runtime
+  // untouched so it can generate the boundary itself — pinning
+  // `application/json` over it makes Copilot reject `/v1/images/edits` with
+  // `400 Failed to decode image edit request` before it reads a single part.
+  // A bodyless GET (the catalog) carries no Content-Type, matching VSCode.
+  if (jsonBody) headers.set('Content-Type', 'application/json');
   headers.set('editor-version', EDITOR_VERSION);
   headers.set('editor-plugin-version', EDITOR_PLUGIN_VERSION);
   headers.set('editor-device-id', getEditorDeviceId());
@@ -276,7 +281,8 @@ export async function copilotAuthedFetch(path: string, init: FetchInit, auth: Co
   const entry = await getCopilotToken(auth.id, auth.githubHost, auth.githubToken, options.fetcher, signal);
 
   if (ownedInit === undefined) throw new Error('Copilot request ownership missing before dispatch');
-  const headers = copilotRequestHeaders(entry, ownedInit.headers, options.headers);
+  const body = ownedInit.body;
+  const headers = copilotRequestHeaders(entry, ownedInit.headers, options.headers, body !== undefined && body !== null && !(body instanceof FormData));
 
   const request = { ...ownedInit, headers };
   ownedInit = undefined;

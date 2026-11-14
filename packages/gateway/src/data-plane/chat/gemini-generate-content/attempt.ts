@@ -1,18 +1,19 @@
-import { geminiGenerateContentStatusForHttpStatus } from './errors.ts';
+import { inputErrorResult, geminiGenerateContentInternalErrorPayload, gatewayErrorStatus } from './errors.ts';
 import { geminiGenerateContentCountTokensInterceptors, geminiGenerateContentInterceptors } from './interceptors/index.ts';
 import { stripUnsupportedPartFieldsFromPayload } from './interceptors/strip-unsupported-part-fields.ts';
 import { stripUnsupportedToolsFromPayload } from './interceptors/strip-unsupported-tools.ts';
 import { anthropicMessagesAttempt } from '../anthropic-messages/attempt.ts';
 import { openaiChatCompletionsAttempt } from '../openai-chat-completions/attempt.ts';
 import { openaiResponsesAttempt } from '../openai-responses/attempt.ts';
+import { captureFromDump, executeTranslation } from '../shared/execute-translation.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
+import { SidecarDomain } from '../shared/sidecar-codec.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
-import { captureFromDump, traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import { type ModelCandidate, plainResult, type ExecuteResult, type GeminiGenerateContentInvocation, type PlainResult } from '@floway-dev/provider';
-import { translateGeminiGenerateContentViaOpenAIChatCompletions, translateGeminiGenerateContentViaAnthropicMessages, translateGeminiGenerateContentViaOpenAIResponses } from '@floway-dev/translate';
+import { type ModelCandidate, plainResult, toInternalDebugError, type ApiErrorResult, type ExecuteResult, type GeminiGenerateContentInvocation, type PlainResult } from '@floway-dev/provider';
+import { routeGeminiGenerateContentViaAnthropicMessages, routeGeminiGenerateContentViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIResponses, type TranslateInputError } from '@floway-dev/translate';
 
 // Gemini generateContent has no native upstream target in the provider API; prefer OpenAI Chat Completions
 // Completions, then Anthropic Messages, then OpenAI Responses for generate. countTokens has
@@ -42,49 +43,12 @@ export const geminiGenerateContentAttempt = {
     const targetApi = geminiGenerateContentGenerateTarget.pick(candidate.model.endpoints);
     const invocation: GeminiGenerateContentInvocation = { payload, candidate, targetApi, headers };
     return await runInterceptors(invocation, ctx, geminiGenerateContentInterceptors, async () => {
-      // Gemini generateContent has no native upstream target today — every targetApi we
-      // pick is reached via translation. The dispatch threads each branch
-      // through `traverseTranslation` so each inner attempt owns its own
-      // interceptor chain and rewrite.
-      const transCtx = {
-        model: candidate.model.id,
-        fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
-      };
-      if (targetApi === 'anthropicMessages') {
-        return await traverseTranslation(
-          invocation.payload,
-          p => translateGeminiGenerateContentViaAnthropicMessages(p, transCtx),
-          translated => anthropicMessagesAttempt.generate({
-            payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
-          }),
-          captureFromDump(ctx.dump, targetApi),
-        );
-      }
-      if (targetApi === 'openaiResponses') {
-        return await traverseTranslation(
-          invocation.payload,
-          p => translateGeminiGenerateContentViaOpenAIResponses(p, transCtx),
-          translated => openaiResponsesAttempt.generate({
-            payload: translated, ctx, candidate, headers: invocation.headers,
-          }),
-          captureFromDump(ctx.dump, targetApi),
-        );
-      }
-      if (targetApi === 'openaiChatCompletions') {
-        return await traverseTranslation(
-          invocation.payload,
-          p => translateGeminiGenerateContentViaOpenAIChatCompletions(p, transCtx),
-          translated => openaiChatCompletionsAttempt.generate({
-            payload: translated, ctx, candidate, headers: invocation.headers,
-          }),
-          captureFromDump(ctx.dump, targetApi),
-        );
-      }
-      throw new Error(`geminiGenerateContentAttempt.generate: unexpected targetApi '${targetApi as string}'`);
+      const result = await dispatchGeminiGenerateContent(invocation, ctx);
+      return result.type === 'input-error' ? inputErrorResult(result, ctx.attempt.telemetry) : result;
     });
   },
 
-  countTokens: async (args: GeminiGenerateContentAttemptCountTokensArgs): Promise<PlainResult> => {
+  countTokens: async (args: GeminiGenerateContentAttemptCountTokensArgs): Promise<ApiErrorResult | PlainResult> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
     const payload = structuredClone(sourcePayload);
     const headers = new Headers(sourceHeaders);
@@ -100,14 +64,17 @@ export const geminiGenerateContentAttempt = {
       // payload-mutators are applied inline here before translation; the
       // attempt-owned payload clone keeps the caller's source intact.
       const transCtx = {
-        model: candidate.model.id,
+        sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       };
       const cleaned = invocation.payload;
       stripUnsupportedPartFieldsFromPayload(cleaned);
       stripUnsupportedToolsFromPayload(cleaned);
       delete cleaned.safetySettings;
-      const trip = await translateGeminiGenerateContentViaAnthropicMessages(cleaned, transCtx);
+      // The model travels in the URL rather than the body, so the request this
+      // trip reads is the cleaned payload with the resolved model folded in.
+      const trip = await routeGeminiGenerateContentViaAnthropicMessages({ ...cleaned, model: candidate.model.id }, transCtx);
+      if (trip.type === 'input-error') return inputErrorResult(trip, ctx.attempt.telemetry);
       const { stream: _stream, ...target } = trip.target;
       const anthropicMessagesResult = await anthropicMessagesAttempt.countTokens({
         payload: target, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
@@ -153,21 +120,56 @@ const reshapeAnthropicMessagesCountAsGeminiGenerateContent = (anthropicMessagesR
 const geminiGenerateContentErrorPlainResult = (status: number, message: string, upstream?: string): PlainResult => plainResult(
   status,
   new Headers({ 'content-type': 'application/json' }),
-  new TextEncoder().encode(JSON.stringify({ error: { code: status, message, status: geminiGenerateContentStatusForHttpStatus(status) } })),
+  new TextEncoder().encode(JSON.stringify({ error: { code: status, message, status: gatewayErrorStatus(status) } })),
   upstream,
 );
 
 const geminiGenerateContentInternalPlainResult = (status: number, error: Error): PlainResult => plainResult(
   status,
   new Headers({ 'content-type': 'application/json' }),
-  new TextEncoder().encode(JSON.stringify({
-    error: {
-      code: status,
-      message: error.message,
-      status: geminiGenerateContentStatusForHttpStatus(status),
-      type: 'internal_error',
-      name: error.name,
-      stack: error.stack,
-    },
-  })),
+  new TextEncoder().encode(JSON.stringify(geminiGenerateContentInternalErrorPayload(status, toInternalDebugError(error)))),
 );
+
+const dispatchGeminiGenerateContent = async (
+  invocation: GeminiGenerateContentInvocation,
+  ctx: ChatGatewayCtx,
+): Promise<ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>> | TranslateInputError> => {
+  const { candidate, targetApi } = invocation;
+  // The model comes from the URL and is folded into the translation request.
+  const request = { ...invocation.payload, model: candidate.model.id };
+  const transCtx = {
+    sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
+    fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
+  };
+  if (targetApi === 'anthropicMessages') {
+    return await executeTranslation(
+      request,
+      p => routeGeminiGenerateContentViaAnthropicMessages(p, transCtx),
+      translated => anthropicMessagesAttempt.generate({
+        payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
+      }),
+      captureFromDump(ctx.dump, targetApi),
+    );
+  }
+  if (targetApi === 'openaiResponses') {
+    return await executeTranslation(
+      request,
+      p => routeGeminiGenerateContentViaOpenAIResponses(p, transCtx),
+      translated => openaiResponsesAttempt.generate({
+        payload: translated, ctx, candidate, headers: invocation.headers,
+      }),
+      captureFromDump(ctx.dump, targetApi),
+    );
+  }
+  if (targetApi === 'openaiChatCompletions') {
+    return await executeTranslation(
+      request,
+      p => routeGeminiGenerateContentViaOpenAIChatCompletions(p, transCtx),
+      translated => openaiChatCompletionsAttempt.generate({
+        payload: translated, ctx, candidate, headers: invocation.headers,
+      }),
+      captureFromDump(ctx.dump, targetApi),
+    );
+  }
+  throw new Error(`geminiGenerateContentAttempt.generate: unexpected targetApi '${targetApi as string}'`);
+};

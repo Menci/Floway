@@ -4,7 +4,7 @@ import { withRoleCompatibilityApplied } from '../../../../../src/data-plane/chat
 import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
-import type { OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
@@ -12,10 +12,10 @@ const gatewayCtx = mockChatGatewayCtx();
 const okEvents = () => Promise.resolve(eventResult((async function* () { yield doneFrame(); })(), testTelemetryModelIdentity));
 
 const applyRoles = async (
-  input: OpenAIResponsesInputItem[],
+  input: CanonicalOpenAIResponsesInputItem[],
   enabledFlags: ReadonlySet<FlagId>,
   targetApi: OpenAIResponsesInvocation['targetApi'] = 'openaiResponses',
-): Promise<OpenAIResponsesInputItem[]> => {
+): Promise<CanonicalOpenAIResponsesInputItem[]> => {
   const invocation: OpenAIResponsesInvocation = {
     payload: { model: 'test-model', input },
     candidate: stubModelCandidate({ enabledFlags }),
@@ -28,7 +28,7 @@ const applyRoles = async (
 };
 
 test('leaves roles unchanged without flags or at a translated target', async () => {
-  const input: OpenAIResponsesInputItem[] = [
+  const input: CanonicalOpenAIResponsesInputItem[] = [
     { type: 'message', role: 'system', content: 'rules' },
     { type: 'message', role: 'developer', content: 'developer rules' },
   ];
@@ -73,7 +73,7 @@ test('uses non-message items as the boundary before rewriting later system', asy
 });
 
 test('keeps a leading-only system run and an empty input unchanged', async () => {
-  const leading: OpenAIResponsesInputItem[] = [
+  const leading: CanonicalOpenAIResponsesInputItem[] = [
     { type: 'message', role: 'system', content: 'base A' },
     { type: 'message', role: 'system', content: 'base B' },
   ];

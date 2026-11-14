@@ -4,7 +4,10 @@
 // HttpProtocolErrorCode (or success body) so a regression points to the
 // exact RFC clause.
 
-import { describe, expect, it } from 'vitest';
+import { Duplex } from 'node:stream';
+import { brotliCompressSync, createBrotliDecompress, gzipSync } from 'node:zlib';
+
+import { describe, expect, it, vi } from 'vitest';
 
 import { collectBody, collectBodyBytes, makeFakeDuplex, respondAndEnd } from './test-utils.ts';
 import { parseHttpResponse, toWebResponse } from '../src/parser.ts';
@@ -909,6 +912,32 @@ describe('toWebResponse', () => {
       code: 'UNSUPPORTED_CONTENT_ENCODING',
       message: expect.stringContaining('br'),
     });
+  });
+
+  it('decodes stacked content codings in reverse application order', async () => {
+    const text = '{"error":{"type":"rate_limit_error"}}';
+    const compressed = brotliCompressSync(gzipSync(text));
+    const fake = makeFakeDuplex();
+    fake.respond(`HTTP/1.1 429 Too Many Requests\r\nContent-Encoding: gzip, Br\r\nContent-Length: ${compressed.length}\r\n\r\n`);
+    fake.respond(compressed);
+    fake.endResponse();
+    const response = toWebResponse(await parseHttpResponse(fake.readable), new Map([
+      ['br', () => Duplex.toWeb(createBrotliDecompress()) as unknown as ReadableWritablePair<Uint8Array, Uint8Array>],
+    ]));
+    expect(response.status).toBe(429);
+    expect(await response.text()).toBe(text);
+    expect(response.headers.get('content-encoding')).toBeNull();
+    expect(response.headers.get('content-length')).toBeNull();
+  });
+
+  it('preserves a codec initialization failure and cancels its input', async () => {
+    const failure = new Error('codec initialization failed');
+    const cancel = vi.fn();
+    const body = new ReadableStream<Uint8Array>({ cancel });
+    expect(() => toWebResponse({
+      status: 429, statusText: 'Too Many Requests', headers: new Headers({ 'content-encoding': 'br' }), headerLines: [], body,
+    }, new Map([['br', () => { throw failure; }]]))).toThrow(failure);
+    expect(cancel).toHaveBeenCalledWith(failure);
   });
 
   it('throws BAD_STATUS_LINE when handed a status the Fetch standard refuses to model', () => {

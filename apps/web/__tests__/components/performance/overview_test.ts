@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPerformanceQuery, normalizePerformanceDimensionsForRuntime, parsePerformanceUrlState, performanceLabels, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/overview';
+import { buildPerformanceQuery, normalizePerformanceBreakdownForRuntime, normalizePerformanceDimensionsForRuntime, parsePerformanceUrlState, performanceLabels, performancePercentileTailOf, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/overview';
 import { buildPerformanceChart } from '../../../src/components/performance/plot';
 
 const emptyOverview = (): PerformanceOverviewResponse => ({
@@ -8,6 +8,7 @@ const emptyOverview = (): PerformanceOverviewResponse => ({
   axes: { none: [], keyId: [], userId: [], model: [], upstream: [], operation: [], runtimeLocation: [] },
   dimensionValues: { models: [], upstreams: [], operations: [], runtimeLocations: [], keyIds: [], userIds: [] },
   users: [],
+  upstreams: [],
   keys: [],
 });
 
@@ -44,19 +45,63 @@ describe('performance overview query', () => {
     expect(performanceValue(record, 'tokPerSec', 'p95')).toBe(50);
   });
 
+  it('reads the percentile it is given, so each table column can carry its own', () => {
+    const record = { ttftMsP50: 100, ttftMsP99: 300, tpotUsP50: 10_000, tpotUsP99: 40_000 } as Parameters<typeof performanceValue>[0];
+
+    expect(performanceValue(record, 'ttft', 'p50')).toBe(100);
+    expect(performanceValue(record, 'ttft', 'p99')).toBe(300);
+    expect(performanceValue(record, 'tokPerSec', 'p50')).toBe(100);
+    expect(performanceValue(record, 'tokPerSec', 'p99')).toBe(25);
+  });
+
+  it('names the share of readings below each percentile for the speed label', () => {
+    expect(performancePercentileTailOf('p50')).toBe(50);
+    expect(performancePercentileTailOf('p95')).toBe(5);
+    expect(performancePercentileTailOf('p99')).toBe(1);
+  });
+
   it('round-trips non-default dashboard state through the URL', () => {
-    const state = parsePerformanceUrlState(new URLSearchParams('m=tokPerSec&pct=p99&g=upstream&r=30d&fm=&fm=gpt-5&fm=gpt-5&fm=claude-opus-4-7&hide=a%252Cb,c'));
+    const state = parsePerformanceUrlState(new URLSearchParams('m=tokPerSec&ttft_p=p99&speed_p=p50&tab=upstream&sort=errors&dir=ascending&g=upstream&r=30d&fm=&fm=gpt-5&fm=gpt-5&fm=claude-opus-4-7&hide=a%252Cb,c'));
     const serialized = serializePerformanceUrlState({ ...state, hidden: ['a,b', '100%', '模型', 'duplicate', 'duplicate'] });
     expect(parsePerformanceUrlState(serialized)).toMatchObject({
       metric: 'tokPerSec',
-      percentile: 'p99',
+      percentiles: { ttft: 'p99', tokPerSec: 'p50' },
+      breakdown: 'upstream',
+      sort: { key: 'errors', direction: 'ascending' },
       groupBy: 'upstream',
       range: '30d',
       filters: { model: ['gpt-5', 'claude-opus-4-7'] },
       hidden: ['100%', 'a,b', 'duplicate', 'duplicate', '模型'],
     });
     expect(serialized.get('m')).toBe('tokPerSec');
+    expect(serialized.get('ttft_p')).toBe('p99');
+    expect(serialized.get('speed_p')).toBe('p50');
+    expect(serialized.get('tab')).toBe('upstream');
+    expect(serialized.get('sort')).toBe('errors');
+    expect(serialized.get('dir')).toBe('ascending');
     expect(serialized.getAll('fm')).toEqual(['gpt-5', 'claude-opus-4-7']);
+  });
+
+  it('keeps one percentile per metric', () => {
+    const state = parsePerformanceUrlState(new URLSearchParams('ttft_p=p99&speed_p=p50'));
+
+    expect(state.percentiles).toEqual({ ttft: 'p99', tokPerSec: 'p50' });
+    expect(parsePerformanceUrlState(serializePerformanceUrlState(state)).percentiles).toEqual({ ttft: 'p99', tokPerSec: 'p50' });
+  });
+
+  it('reads the table breakdown and sort from the URL', () => {
+    const state = parsePerformanceUrlState(new URLSearchParams('tab=operation&sort=speed&dir=ascending'));
+
+    expect(state.breakdown).toBe('operation');
+    expect(state.sort).toEqual({ key: 'speed', direction: 'ascending' });
+    expect(serializePerformanceUrlState(state).toString()).toBe('tab=operation&sort=speed&dir=ascending');
+  });
+
+  it('omits a default sort and direction from the URL', () => {
+    const state = parsePerformanceUrlState(new URLSearchParams());
+
+    expect(state.sort).toEqual({ key: 'requests', direction: 'descending' });
+    expect(serializePerformanceUrlState(state).toString()).toBe('');
   });
 
   it('restores hidden series from the original comma format', () => {
@@ -84,7 +129,7 @@ describe('performance overview query', () => {
   });
 
   it('removes Region state outside the Cloudflare runtime', () => {
-    const state = parsePerformanceUrlState(new URLSearchParams('g=runtimeLocation&fm=gpt-5&fr=SJC&hide=SJC'));
+    const state = parsePerformanceUrlState(new URLSearchParams('g=runtimeLocation&tab=runtimeLocation&fm=gpt-5&fr=SJC&hide=SJC'));
     expect(normalizePerformanceDimensionsForRuntime(state, false)).toMatchObject({
       changed: true,
       state: {
@@ -94,6 +139,8 @@ describe('performance overview query', () => {
       },
     });
     expect(normalizePerformanceDimensionsForRuntime(state, true)).toEqual({ changed: false, state });
+    expect(normalizePerformanceBreakdownForRuntime(state.breakdown, false)).toBe('model');
+    expect(normalizePerformanceBreakdownForRuntime(state.breakdown, true)).toBe(state.breakdown);
   });
 });
 
@@ -113,7 +160,7 @@ describe('performance chart series', () => {
     tpotUsP95: 20_000,
     tpotUsP99: 30_000,
   });
-  const buckets = [{ key: 'bucket-1', label: 'Bucket 1', date: new Date(0) }];
+  const buckets = [{ key: 'bucket-1', label: 'Bucket 1', date: new Date(0), start: 0, end: 3_600_000 }];
 
   it('uses stable group ids when two API keys have the same name', () => {
     const overview = emptyOverview();
@@ -124,7 +171,7 @@ describe('performance chart series', () => {
     const chart = buildPerformanceChart(
       [record('key-1'), record('key-2')],
       'ttft',
-      'p95',
+      { ttft: 'p95', tokPerSec: 'p95' },
       'keyId',
       performanceLabels(overview, []),
       buckets,
@@ -142,7 +189,7 @@ describe('performance chart series', () => {
     const chart = buildPerformanceChart(
       [record('up-1')],
       'ttft',
-      'p95',
+      { ttft: 'p95', tokPerSec: 'p95' },
       'upstream',
       performanceLabels(overview, [{ id: 'up-1', name: 'Copilot seat', hue: 217 }]),
       buckets,

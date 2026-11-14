@@ -1,8 +1,8 @@
 // GET /api/search-usage — query per-key or per-user web search usage records.
 //
 // Mirrors the token-usage endpoint: the required `view` query parameter selects
-// between `self-by-key` (the actor's own keys) and `all-by-user` (cross-user
-// aggregate, administrators only).
+// between `self-by-key` (the actor's own keys) and `all-by-user` (users visible
+// through User.Audit).
 
 import { aggregateWebSearchUsageByKey, aggregateWebSearchUsageByUser } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
@@ -10,6 +10,7 @@ import { getRepo } from '../../repo/index.ts';
 import { WEB_SEARCH_PROVIDER_NAMES, isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import type { webSearchUsageQuery } from '../schemas.ts';
 import { buildKeyToUserMap } from '../shared/key-to-user.ts';
+import { loadTelemetryOverviewIdentity, telemetryIdentityMetadata, telemetryRecordVisible } from '../shared/telemetry-overview.ts';
 import { resolveUsageView } from '../shared/usage-view.ts';
 import type { SearchUsageByKeyResponse, SearchUsageByUserResponse } from '../usage-types.ts';
 
@@ -33,17 +34,17 @@ export const webSearchUsage = async (c: CtxWithQuery<typeof webSearchUsageQuery>
   const repo = getRepo();
 
   if (resolved.view === 'all-by-user') {
-    const [rawRecords, users, keys] = await Promise.all([
+    const [rawRecords, keys, identity] = await Promise.all([
       repo.webSearchUsage.query({ provider, start, end }),
-      repo.users.listIncludingDeleted(),
       repo.apiKeys.listIncludingDeleted(),
+      loadTelemetryOverviewIdentity(c),
     ]);
-    const records = aggregateWebSearchUsageByUser(rawRecords, buildKeyToUserMap(keys));
+    const keyToUser = buildKeyToUserMap(keys);
+    const visibleRecords = rawRecords.filter(record => telemetryRecordVisible(identity, record.keyId, null, keyToUser));
+    const records = aggregateWebSearchUsageByUser(visibleRecords, keyToUser);
 
     if (query.include_user_metadata !== '1') return c.json(records);
-    const userMetadata = users
-      .map(u => ({ id: u.id, username: u.username }))
-      .sort((a, b) => a.id - b.id);
+    const userMetadata = telemetryIdentityMetadata(identity, records.map(record => record.userId)).users;
     return c.json({
       view: 'all-by-user',
       records,

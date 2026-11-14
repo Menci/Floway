@@ -4,38 +4,11 @@ import { providerEntry } from '../pipeline/provider-entry.ts';
 import { providerUsage } from '../pipeline/provider-usage.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { dialFailure, spentBody } from '../pipeline/upstream-body.ts';
-import { enumerateModelCandidates } from '../providers/resolution.ts';
-import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { telemetryModelIdentity } from '../shared/telemetry/attribution.ts';
+import { AlphaSearchModelNotFoundError, resolveAlphaSearchCandidate } from '../tools/web-search/alpha-search/upstream.ts';
 import { exchangeResponse } from '@floway-dev/http/pipeline';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { type ModelCandidate, type ProviderRequest, type ProviderResponse, type ProviderOperationPayloads } from '@floway-dev/provider';
-
-/**
- * A misconfigured pin is the operator's to see with its stack, the way the gateway surfaces
- * any internal failure. It is not a failure value: a failure value exists so an earlier stage
- * can fail over it, and there is no earlier stage here with anywhere to go.
- */
-const resolvePinnedUpstream = async (pinned: PinnedSearchUpstream, gateway: GatewayCtx): Promise<ModelCandidate> => {
-  if (gateway.upstreamIds !== null && !gateway.upstreamIds.includes(pinned.upstreamId)) {
-    throw new Error('Selected OpenAI search upstream is outside this API key scope');
-  }
-  const { candidates } = await enumerateModelCandidates({
-    upstreamIds: [pinned.upstreamId],
-    model: pinned.model,
-    kind: 'chat',
-    scheduler: gateway.backgroundScheduler,
-    runtimeLocation: gateway.runtimeLocation,
-  });
-  const candidate = candidates.find(value => value.provider.upstreamId === pinned.upstreamId);
-  if (candidate === undefined) {
-    throw new Error(`Selected OpenAI search model ${pinned.model} is unavailable`);
-  }
-  if (candidate.provider.kind !== 'codex' && candidate.provider.kind !== 'custom') {
-    throw new Error('Selected upstream does not support OpenAI search passthrough');
-  }
-  return candidate;
-};
 
 /** Codex projects one per-turn metadata snapshot onto several surfaces, and `SearchRequest`
  *  carries no field for it — so on this endpoint the header is the whole of that surface, and
@@ -76,7 +49,28 @@ export const callSearchUpstream = (pinned: PinnedSearchUpstream) => defineStage<
     response: { needs: ['response.http.exchange', 'response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls', 'response.http.body'], consumes: ['response.http.exchange', 'response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls'], provides: ['response.search.alphaSearch', 'response.usage.billable', 'response.http.headers', 'response.http.status', 'response.http.body'] },
   },
   execute: async (facts, next, use) => {
-    const candidate = await resolvePinnedUpstream(pinned, use.gateway);
+    // A misconfigured pin is the operator's to see with its stack, the way the gateway
+    // surfaces any internal failure; only a model the key cannot reach is the client's answer.
+    let candidate: ModelCandidate;
+    try {
+      candidate = await resolveAlphaSearchCandidate({
+        config: pinned,
+        subject: use.gateway.user,
+        upstreamIds: use.gateway.upstreamIds,
+        scheduler: use.gateway.backgroundScheduler,
+        runtimeLocation: use.gateway.runtimeLocation,
+      });
+    } catch (error) {
+      if (!(error instanceof AlphaSearchModelNotFoundError)) throw error;
+      return move({
+        ...facts,
+        'response.search.alphaSearch': { status: 404, message: error.message },
+        'response.usage.billable': [],
+        'response.http.headers': [],
+        'response.http.status': 404,
+        'response.http.body': null,
+      });
+    }
     // The caller's model is dropped: this endpoint is pinned to the operator's model, and the
     // provider stamps that one on the way out.
     // TODO: pin SearchRequest.id to one provider account when Codex upstreams support account

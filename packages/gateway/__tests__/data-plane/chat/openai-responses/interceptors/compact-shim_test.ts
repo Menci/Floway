@@ -1,18 +1,18 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { SUMMARY_PREFIX, expandShimCompactionItems, isOpenAIResponsesCompactShimItem, withOpenAIResponsesCompactShim } from '../../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
 import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesInputItem, type OpenAIResponsesOutputItem, type OpenAIResponsesPayload, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { type OpenAIResponsesCompactionItemEx, collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesPayloadEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { eventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubCtx = mockChatGatewayCtx();
 
 const makeInvocation = (
-  payload: Partial<OpenAIResponsesPayload> = {},
+  payload: Partial<OpenAIResponsesPayloadEx> = {},
   options: { action?: 'generate' | 'compact'; flagOn?: boolean; decryptFlagOn?: boolean; targetApi?: 'openaiResponses' | 'anthropicMessages' | 'openaiChatCompletions' } = {},
 ): OpenAIResponsesInvocation => {
   const enabledFlags = new Set<FlagId>();
@@ -27,8 +27,8 @@ const makeInvocation = (
   };
 };
 
-const fakeUpstreamRun = (summaryText: string): () => Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
-  const response: OpenAIResponsesResult = {
+const fakeUpstreamRun = (summaryText: string): () => Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
+  const response: OpenAIResponsesResultEx = {
     id: 'resp_fake_upstream',
     object: 'response',
     model: 'test-upstream-model',
@@ -45,7 +45,7 @@ const fakeUpstreamRun = (summaryText: string): () => Promise<ExecuteResult<Proto
     usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
   };
   return () => Promise.resolve(eventResult(
-    (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+    (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
       yield eventFrame({ type: 'response.output_item.added', sequence_number: 0, output_index: 0, item: response.output[0] });
       yield eventFrame({ type: 'response.output_item.done', sequence_number: 1, output_index: 0, item: response.output[0] });
       yield eventFrame({ type: 'response.completed', sequence_number: 2, response });
@@ -119,13 +119,13 @@ test('inbound: foreign compaction blob (valid base64url but wrong shape) round-t
 
 // ── Outbound summarization (withOpenAIResponsesCompactShim) ────────────────────────
 
-test('compact + flag on: pivots to generate, drives upstream summarization, returns compaction envelope', async () => {
+test('compact + flag on: appends one cache-sharing user prompt and returns a compaction envelope', async () => {
   const inv = makeInvocation(
     { input: [{ type: 'message', role: 'user', content: 'long conversation history' }] },
     { action: 'compact' },
   );
 
-  let seenPayload: OpenAIResponsesPayload | undefined;
+  let seenPayload: OpenAIResponsesPayloadEx | undefined;
   let seenAction: 'generate' | 'compact' | undefined;
   const result = await withOpenAIResponsesCompactShim(inv, stubCtx, () => {
     seenPayload = inv.payload;
@@ -141,16 +141,16 @@ test('compact + flag on: pivots to generate, drives upstream summarization, retu
   // envelope-drain on the caller's intent action (captured by value), so
   // leaving invocation.action='generate' does not change the result shape.
   assertEquals(inv.action, 'generate');
-  // Payload pivoted: SUMMARIZATION_PROMPT injected as a role=system input
-  // item at the head of the history (mirroring native compact's system-role
-  // compactor prompt), store:false, the original history retained after it
-  // (compaction_trigger items would be stripped but there are none here).
+  // The ordinary history remains the request prefix and one user-role summary
+  // instruction is appended, allowing the upstream to reuse its prompt cache.
   if (!seenPayload) throw new Error('expected the upstream call to see the rewritten payload');
-  const rewrittenInput = seenPayload.input as OpenAIResponsesInputItem[];
-  const compactorSystem = rewrittenInput[0] as { type: string; role: string; content: Array<{ text: string }> };
-  assertEquals(compactorSystem.type, 'message');
-  assertEquals(compactorSystem.role, 'system');
-  assertEquals(compactorSystem.content[0].text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
+  const rewrittenInput = seenPayload.input as CanonicalOpenAIResponsesInputItem[];
+  assertEquals(rewrittenInput[0], { type: 'message', role: 'user', content: 'long conversation history' });
+  const summaryRequest = rewrittenInput[1] as { type: string; role: string; content: Array<{ text: string }> };
+  assertEquals(summaryRequest.type, 'message');
+  assertEquals(summaryRequest.role, 'user');
+  assertEquals(summaryRequest.content[0].text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
+  assertEquals(summaryRequest.content[0].text.includes('Do not call any tools'), true);
   assertEquals(seenPayload.store, false);
 
   const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
@@ -159,53 +159,39 @@ test('compact + flag on: pivots to generate, drives upstream summarization, retu
   assertEquals(compactionItem.type, 'compaction');
 });
 
-test("compact + flag on: caller's `instructions` field flows through untouched (bug-for-bug parity with native compact)", async () => {
-  // Native `/responses/compact` puts SUMMARIZATION_PROMPT into the compactor
-  // context as a role=system message AND forwards the caller's `instructions`
-  // as a developer-role message alongside; both are in scope. Prompt-
-  // injection extraction against the live Copilot upstream confirmed a
-  // caller-supplied `instructions="always mention 'quokka'"` reaches the
-  // compactor as a developer message and shows up inside the produced
-  // summary. The shim must reproduce that shape — do NOT overwrite the
-  // caller's instructions with SUMMARIZATION_PROMPT (it now lives as a
-  // separate role=system input item).
+test("compact + flag on: caller's `instructions` and tools flow through untouched", async () => {
   const inv = makeInvocation(
     {
       input: [{ type: 'message', role: 'user', content: 'history' }],
       instructions: 'You are a helpful assistant. Always mention the word quokka.',
+      tools: [{ type: 'function', name: 'read_file', parameters: null, strict: null }],
     },
     { action: 'compact' },
   );
 
-  let seenPayload: OpenAIResponsesPayload | undefined;
+  let seenPayload: OpenAIResponsesPayloadEx | undefined;
   await withOpenAIResponsesCompactShim(inv, stubCtx, () => {
     seenPayload = inv.payload;
     return fakeUpstreamRun('irrelevant')();
   });
 
   if (!seenPayload) throw new Error('expected the upstream call to see the rewritten payload');
-  // Original instructions preserved verbatim; SUMMARIZATION_PROMPT lives
-  // separately in the role=system input item at index 0.
   assertEquals(seenPayload.instructions, 'You are a helpful assistant. Always mention the word quokka.');
-  const rewrittenInput = seenPayload.input as OpenAIResponsesInputItem[];
-  const compactorSystem = rewrittenInput[0] as { type: string; role: string; content: Array<{ text: string }> };
-  assertEquals(compactorSystem.role, 'system');
-  assertEquals(compactorSystem.content[0].text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
+  assertEquals(seenPayload.tools, [{ type: 'function', name: 'read_file', parameters: null, strict: null }]);
+  const rewrittenInput = seenPayload.input as CanonicalOpenAIResponsesInputItem[];
+  assertEquals(rewrittenInput[0], { type: 'message', role: 'user', content: 'history' });
+  assertEquals(rewrittenInput[1]?.type, 'message');
+  if (rewrittenInput[1]?.type !== 'message') throw new Error('expected summary request message');
+  assertEquals(rewrittenInput[1].role, 'user');
 });
 
-test('compact + flag on: caller with no `instructions` still gets SUMMARIZATION_PROMPT as a role=system input item and instructions stays absent', async () => {
-  // Baseline: when the caller sends no `instructions` field, the shim still
-  // injects SUMMARIZATION_PROMPT via the role=system input item — matching
-  // native compact, which always has its system-role compactor prompt in
-  // scope regardless of whether the caller supplies a developer message.
-  // The `instructions` slot stays unset so a downstream translator does not
-  // synthesize a phantom developer message from thin air.
+test('compact + flag on: caller with no `instructions` keeps the field absent', async () => {
   const inv = makeInvocation(
     { input: [{ type: 'message', role: 'user', content: 'history' }] },
     { action: 'compact' },
   );
 
-  let seenPayload: OpenAIResponsesPayload | undefined;
+  let seenPayload: OpenAIResponsesPayloadEx | undefined;
   await withOpenAIResponsesCompactShim(inv, stubCtx, () => {
     seenPayload = inv.payload;
     return fakeUpstreamRun('irrelevant')();
@@ -213,11 +199,11 @@ test('compact + flag on: caller with no `instructions` still gets SUMMARIZATION_
 
   if (!seenPayload) throw new Error('expected the upstream call to see the rewritten payload');
   assertEquals(seenPayload.instructions, undefined);
-  const rewrittenInput = seenPayload.input as OpenAIResponsesInputItem[];
-  const compactorSystem = rewrittenInput[0] as { type: string; role: string; content: Array<{ text: string }> };
-  assertEquals(compactorSystem.type, 'message');
-  assertEquals(compactorSystem.role, 'system');
-  assertEquals(compactorSystem.content[0].text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
+  const rewrittenInput = seenPayload.input as CanonicalOpenAIResponsesInputItem[];
+  assertEquals(rewrittenInput[0], { type: 'message', role: 'user', content: 'history' });
+  assertEquals(rewrittenInput[1]?.type, 'message');
+  if (rewrittenInput[1]?.type !== 'message') throw new Error('expected summary request message');
+  assertEquals(rewrittenInput[1].role, 'user');
 });
 
 test('compact + flag on: synthesized encrypted_content decodes to a user message containing the summary prefixed with the handoff prompt', async () => {
@@ -262,8 +248,8 @@ test('compact + flag on: upstream `output_text` SDK alias is dropped from the sy
   // upstream's summary plaintext, which a downstream SDK reading
   // `output_text` on a compaction envelope would surface in place of the
   // opaque-blob contract `encrypted_content` is supposed to carry.
-  const runWithOutputText = (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
-    const response: OpenAIResponsesResult = {
+  const runWithOutputText = (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
+    const response: OpenAIResponsesResultEx = {
       id: 'resp_fake_upstream',
       object: 'response',
       model: 'test-upstream-model',
@@ -275,13 +261,12 @@ test('compact + flag on: upstream `output_text` SDK alias is dropped from the sy
         status: 'completed',
         content: [{ type: 'output_text', text: 'THE SUMMARY', annotations: [] }],
       }],
-      output_text: 'THE SUMMARY',
       error: null,
       incomplete_details: null,
       usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
     };
     return Promise.resolve(eventResult(
-      (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+      (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
         yield eventFrame({ type: 'response.completed', sequence_number: 0, response });
         yield doneFrame();
       })(),
@@ -291,7 +276,7 @@ test('compact + flag on: upstream `output_text` SDK alias is dropped from the sy
   const result = await withOpenAIResponsesCompactShim(inv, stubCtx, runWithOutputText);
   if (result.type !== 'events') throw new Error('expected events branch');
   const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
-  assertEquals(collected.output_text, undefined);
+  assertEquals(Object.hasOwn(collected, 'output_text'), false);
 });
 
 test('compact + flag on: upstream incomplete status propagates onto the synthesized envelope', async () => {
@@ -304,8 +289,8 @@ test('compact + flag on: upstream incomplete status propagates onto the synthesi
   // the upstream returns `status: 'incomplete'` with `incomplete_details`
   // populated. The synthesized envelope must surface that — not pretend the
   // turn ran to completion.
-  const runIncomplete = (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
-    const response: OpenAIResponsesResult = {
+  const runIncomplete = (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
+    const response: OpenAIResponsesResultEx = {
       id: 'resp_fake_upstream',
       object: 'response',
       model: 'test-upstream-model',
@@ -322,7 +307,7 @@ test('compact + flag on: upstream incomplete status propagates onto the synthesi
       usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
     };
     return Promise.resolve(eventResult(
-      (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+      (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
         yield eventFrame({ type: 'response.completed', sequence_number: 0, response });
         yield doneFrame();
       })(),
@@ -347,7 +332,7 @@ test('compact + flag on: compaction_trigger items are stripped before the upstre
     { action: 'compact' },
   );
 
-  let seenPayload: OpenAIResponsesPayload | undefined;
+  let seenPayload: OpenAIResponsesPayloadEx | undefined;
   await withOpenAIResponsesCompactShim(inv, stubCtx, () => {
     seenPayload = inv.payload;
     return fakeUpstreamRun('s')();
@@ -357,13 +342,7 @@ test('compact + flag on: compaction_trigger items are stripped before the upstre
   assertEquals(items.every(i => i.type !== 'compaction_trigger'), true);
 });
 
-test('compact + flag on: history ending on an assistant message gets a synthetic terminal user prompt appended', async () => {
-  // Anthropic Messages rejects assistant prefill: a conversation that
-  // ends on an assistant turn returns 400 `This model does not support
-  // assistant message prefill`. The shim normalizes by appending a
-  // synthetic user-role nudge so the summarization call always ends on
-  // a user message — harmless on OpenAI-style upstreams and load-bearing
-  // for translated Anthropic ones.
+test('compact + flag on: history ending on an assistant message gets the cache-sharing user prompt appended', async () => {
   const inv = makeInvocation(
     {
       input: [
@@ -374,20 +353,134 @@ test('compact + flag on: history ending on an assistant message gets a synthetic
     { action: 'compact' },
   );
 
-  let seenPayload: OpenAIResponsesPayload | undefined;
+  let seenPayload: OpenAIResponsesPayloadEx | undefined;
   await withOpenAIResponsesCompactShim(inv, stubCtx, () => {
     seenPayload = inv.payload;
     return fakeUpstreamRun('s')();
   });
   if (!seenPayload) throw new Error('expected the upstream call to fire');
   const items = seenPayload.input as Array<{ type: string; role?: string; content?: Array<{ type: string; text: string }> }>;
-  // [SUMMARIZATION_PROMPT system, user 'hi', assistant 'hello back', synthetic user nudge]
-  assertEquals(items.length, 4);
-  assertEquals(items[0].role, 'system');
+  assertEquals(items.length, 3);
+  assertEquals(items[0].role, 'user');
+  assertEquals(items[1].role, 'assistant');
   const tail = items[items.length - 1];
   assertEquals(tail.type, 'message');
   assertEquals(tail.role, 'user');
   assertEquals(tail.content?.[0].type, 'input_text');
+});
+
+test('compact + flag on: empty cache-sharing output warns, retries the legacy system summarizer, and combines usage', async () => {
+  const inv = makeInvocation(
+    {
+      input: [{ type: 'message', role: 'user', content: 'history' }],
+      tools: [{ type: 'function', name: 'read_file', parameters: null, strict: null }],
+    },
+    { action: 'compact' },
+  );
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const seenInputs: CanonicalOpenAIResponsesInputItem[][] = [];
+  let calls = 0;
+
+  const result = await withOpenAIResponsesCompactShim(inv, stubCtx, async () => {
+    calls += 1;
+    seenInputs.push(inv.payload.input);
+    const result = await fakeUpstreamRun(calls === 1 ? '   ' : 'LEGACY SUMMARY')();
+    if (result.type !== 'events') return result;
+    return {
+      ...result,
+      finalMetadata: Promise.resolve({
+        modelIdentity: testTelemetryModelIdentity,
+        billableUsage: { input: 10, cacheRead: calls === 1 ? 8 : 0, cacheWrite: 0, cacheWrite1h: 0, output: 20 },
+      }),
+    };
+  });
+
+  assertEquals(calls, 2);
+  assertEquals(warn.mock.calls, [[
+    'Floway: OpenAI Responses compact shim cache-sharing summarization returned no assistant text; retrying with the legacy system-prompt summarizer',
+  ]]);
+  warn.mockRestore();
+
+  assertEquals(seenInputs[0]?.map(item => item.type), ['message', 'message']);
+  assertEquals(seenInputs[1]?.map(item => item.type), ['message', 'message', 'message']);
+  const legacySystem = seenInputs[1]?.[0];
+  if (legacySystem?.type !== 'message') throw new Error('expected legacy system message');
+  assertEquals(legacySystem.role, 'system');
+  assertEquals(seenInputs[1]?.[1], { type: 'message', role: 'user', content: 'history' });
+  const legacyTail = seenInputs[1]?.[2];
+  if (legacyTail?.type !== 'message') throw new Error('expected legacy terminal user message');
+  assertEquals(legacyTail.role, 'user');
+  assertEquals(inv.payload.tools, [{ type: 'function', name: 'read_file', parameters: null, strict: null }]);
+
+  if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
+  const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
+  assertEquals(collected.usage, { input_tokens: 20, output_tokens: 40, total_tokens: 60 });
+  assertEquals((await result.finalMetadata)?.billableUsage, {
+    input: 20,
+    cacheRead: 8,
+    cacheWrite: 0,
+    cacheWrite1h: 0,
+    output: 40,
+  });
+});
+
+test('compact + flag on: tool-only cache-sharing output falls back without executing or preserving the tool call', async () => {
+  const inv = makeInvocation(
+    {
+      input: [{ type: 'message', role: 'user', content: 'history' }],
+      tools: [{ type: 'function', name: 'read_file', parameters: null, strict: null }],
+    },
+    { action: 'compact' },
+  );
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  let calls = 0;
+
+  const result = await withOpenAIResponsesCompactShim(inv, stubCtx, () => {
+    calls += 1;
+    if (calls === 2) return fakeUpstreamRun('LEGACY SUMMARY')();
+
+    const response: OpenAIResponsesResultEx = {
+      id: 'resp_tool_only',
+      object: 'response',
+      model: 'test-upstream-model',
+      status: 'completed',
+      output: [{
+        type: 'function_call',
+        id: 'fc_1',
+        call_id: 'call_1',
+        name: 'read_file',
+        arguments: '{"path":"secret"}',
+        status: 'completed',
+      } as unknown as never],
+      error: null,
+      incomplete_details: null,
+      usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+    };
+    return Promise.resolve(eventResult(
+      (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+        yield eventFrame({ type: 'response.completed', sequence_number: 0, response });
+        yield doneFrame();
+      })(),
+      testTelemetryModelIdentity,
+    ));
+  });
+
+  assertEquals(calls, 2);
+  assertEquals(warn.mock.calls.length, 1);
+  warn.mockRestore();
+  if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
+  const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
+  assertEquals(collected.output.map(item => item.type), ['compaction']);
+  const compaction = collected.output[0] as { encrypted_content: string };
+  const decoded = JSON.parse(
+    new TextDecoder().decode(
+      Uint8Array.from(
+        atob(compaction.encrypted_content.replace(/-/g, '+').replace(/_/g, '/')),
+        character => character.charCodeAt(0),
+      ),
+    ),
+  );
+  assertEquals(decoded[0].content[0].text, `${SUMMARY_PREFIX}\nLEGACY SUMMARY`);
 });
 
 test('compact + flag off: passes through to run() unchanged', async () => {
@@ -417,7 +510,7 @@ test('compact decrypt: replays mixed compaction items individually and preserves
     { action: 'compact', flagOn: false, decryptFlagOn: true },
   );
 
-  const nativeResponse: OpenAIResponsesResult = {
+  const nativeResponse: OpenAIResponsesResultEx = {
     id: 'resp_native_compact',
     object: 'response.compaction',
     model: 'test-upstream-model',
@@ -439,7 +532,7 @@ test('compact decrypt: replays mixed compaction items individually and preserves
     if (calls === 1) {
       assertEquals(inv.action, 'compact');
       return eventResult(
-        (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+        (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
           yield eventFrame({ type: 'response.completed', sequence_number: 0, response: nativeResponse });
           yield doneFrame();
         })(),
@@ -505,7 +598,7 @@ test('compact decrypt: replays mixed compaction items individually and preserves
 
   const expanded = expandShimCompactionItems({
     model: 'm',
-    input: collected.output.slice(1) as OpenAIResponsesInputItem[],
+    input: collected.output.slice(1) as CanonicalOpenAIResponsesInputItem[],
   });
   assertEquals(expanded.input, [
     {
@@ -538,7 +631,7 @@ test('gateway-owned compaction expands on an ordinary generate request even when
     { flagOn: false },
   );
 
-  let seenInput: OpenAIResponsesInputItem[] | undefined;
+  let seenInput: CanonicalOpenAIResponsesInputItem[] | undefined;
   await withOpenAIResponsesCompactShim(inv, stubCtx, () => {
     seenInput = inv.payload.input;
     return fakeUpstreamRun('done')();
@@ -559,7 +652,7 @@ test('compact decrypt: preserves a generate response envelope for the compaction
   const result = await withOpenAIResponsesCompactShim(inv, stubCtx, () => {
     calls += 1;
     if (calls === 1) {
-      const response: OpenAIResponsesResult = {
+      const response: OpenAIResponsesResultEx = {
         id: 'resp_trigger',
         object: 'response',
         model: 'test-upstream-model',
@@ -570,7 +663,7 @@ test('compact decrypt: preserves a generate response envelope for the compaction
         usage: { input_tokens: 80, output_tokens: 30, total_tokens: 110 },
       };
       return Promise.resolve(eventResult(
-        (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+        (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
           yield eventFrame({ type: 'response.completed', sequence_number: 0, response });
           yield doneFrame();
         })(),
@@ -598,15 +691,15 @@ test('compact decrypt: decrypts provider-restored native compaction output with 
     { flagOn: false, decryptFlagOn: true },
   );
 
-  const nativeCompactionItem: OpenAIResponsesOutputItem = {
+  const nativeCompactionItem = {
     type: 'compaction',
     id: 'cmp_native_capture',
     encrypted_content: 'OPAQUE_CAPTURE_BLOB',
     metadata: { turn_id: 'turn-123' },
     internal_chat_message_metadata_passthrough: { turn_id: 'turn-123' },
-  };
+  } as OpenAIResponsesCompactionItemEx;
 
-  const inProgressEnvelope: OpenAIResponsesResult = {
+  const inProgressEnvelope: OpenAIResponsesResultEx = {
     id: 'resp_capture',
     object: 'response',
     model: 'test-upstream-model',
@@ -616,7 +709,7 @@ test('compact decrypt: decrypts provider-restored native compaction output with 
     incomplete_details: null,
   };
 
-  const completedEnvelope: OpenAIResponsesResult = {
+  const completedEnvelope: OpenAIResponsesResultEx = {
     id: 'resp_capture',
     object: 'response',
     model: 'test-upstream-model',
@@ -632,7 +725,7 @@ test('compact decrypt: decrypts provider-restored native compaction output with 
     calls += 1;
     if (calls === 1) {
       return eventResult(
-        (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+        (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
           yield eventFrame({ type: 'response.created', sequence_number: 0, response: inProgressEnvelope });
           yield eventFrame({ type: 'response.in_progress', sequence_number: 1, response: inProgressEnvelope });
           yield eventFrame({
@@ -693,13 +786,7 @@ test('compact decrypt: decrypts provider-restored native compaction output with 
   if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
   const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
   assertEquals(collected.output.length, 1);
-  const decryptedItem = collected.output[0] as unknown as {
-    type: string;
-    id: string;
-    encrypted_content: string;
-    metadata?: Record<string, unknown>;
-    internal_chat_message_metadata_passthrough?: Record<string, unknown>;
-  };
+  const decryptedItem = collected.output[0] as OpenAIResponsesCompactionItemEx;
   assertEquals(decryptedItem.type, 'compaction');
   assertEquals(decryptedItem.id, 'cmp_native_capture');
   assertEquals(decryptedItem.metadata, { turn_id: 'turn-123' });
@@ -707,7 +794,7 @@ test('compact decrypt: decrypts provider-restored native compaction output with 
 
   const expanded = expandShimCompactionItems({
     model: 'test-model',
-    input: [decryptedItem as unknown as OpenAIResponsesInputItem],
+    input: [decryptedItem as unknown as CanonicalOpenAIResponsesInputItem],
   });
   const expandedUserMessage = expanded.input[0] as {
     type: string;
@@ -740,22 +827,20 @@ test('generate + compaction_trigger + flag off + messages target: shim simulates
     { action: 'generate', flagOn: false, targetApi: 'anthropicMessages' },
   );
 
-  let seenPayload: OpenAIResponsesPayload | undefined;
+  let seenPayload: OpenAIResponsesPayloadEx | undefined;
   const result = await withOpenAIResponsesCompactShim(inv, stubCtx, () => {
     seenPayload = inv.payload;
     return fakeUpstreamRun('CONDENSED SUMMARY')();
   });
 
-  // The shim should have engaged: the upstream sees the summarization
-  // prompt (as a role=system input item at the head of the history) and a
-  // stripped (no compaction_trigger) history, and the result is the
-  // synthesized `response.compaction` envelope.
+  // The shim should have engaged: the upstream sees the ordinary history as
+  // its prefix, one appended summary request, and no compaction_trigger.
   if (!seenPayload) throw new Error('expected the upstream call to fire');
-  const innerItems = seenPayload.input as OpenAIResponsesInputItem[];
-  const head = innerItems[0] as { type: string; role: string; content: Array<{ text: string }> };
-  assertEquals(head.type, 'message');
-  assertEquals(head.role, 'system');
-  assertEquals(head.content[0].text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
+  const innerItems = seenPayload.input as CanonicalOpenAIResponsesInputItem[];
+  assertEquals(innerItems[0], { type: 'message', role: 'user', content: 'real history' });
+  const tail = innerItems.at(-1);
+  if (tail?.type !== 'message') throw new Error('expected summary request message');
+  assertEquals(tail.role, 'user');
   assertEquals(innerItems.every(i => i.type !== 'compaction_trigger'), true);
 
   if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
@@ -776,7 +861,7 @@ test('generate + compaction_trigger + flag off + responses target: shim passes t
 
   let runCalled = false;
   let seenAction: 'generate' | 'compact' | undefined;
-  let seenPayload: OpenAIResponsesPayload | undefined;
+  let seenPayload: OpenAIResponsesPayloadEx | undefined;
   await withOpenAIResponsesCompactShim(inv, stubCtx, () => {
     runCalled = true;
     seenAction = inv.action;
@@ -803,17 +888,18 @@ test('generate + compaction_trigger + flag on + messages target: shim simulates 
     { action: 'generate', targetApi: 'anthropicMessages' },
   );
 
-  let seenPayload: OpenAIResponsesPayload | undefined;
+  let seenPayload: OpenAIResponsesPayloadEx | undefined;
   const result = await withOpenAIResponsesCompactShim(inv, stubCtx, () => {
     seenPayload = inv.payload;
     return fakeUpstreamRun('CONDENSED SUMMARY')();
   });
 
   if (!seenPayload) throw new Error('expected the upstream call to fire');
-  const innerItems = seenPayload.input as OpenAIResponsesInputItem[];
-  const head = innerItems[0] as { type: string; role: string; content: Array<{ text: string }> };
-  assertEquals(head.role, 'system');
-  assertEquals(head.content[0].text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
+  const innerItems = seenPayload.input as CanonicalOpenAIResponsesInputItem[];
+  assertEquals(innerItems[0], { type: 'message', role: 'user', content: 'real history' });
+  const tail = innerItems.at(-1);
+  if (tail?.type !== 'message') throw new Error('expected summary request message');
+  assertEquals(tail.role, 'user');
   if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
   const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
   assertEquals(collected.object, 'response.compaction');
@@ -852,7 +938,7 @@ test('compact + flag on: upstream api-error propagates', async () => {
     { action: 'compact' },
   );
 
-  const errorResult: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>> = {
+  const errorResult: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>> = {
     type: 'api-error',
     source: 'upstream',
     status: 502,

@@ -45,11 +45,17 @@ export const analyzeAnthropicMessagesAffinity = async (
               // signature issued by the upstream that produced it. If affinity
               // selects another candidate, remove the complete block rather
               // than forwarding the visible thinking without its signature.
+              // A marker that never wrapped a signature has nothing to pair with,
+              // so only the marker is removed.
               // https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking#preserving-thinking-blocks
-              replacements.set(
-                location.blockIndex,
-                projection.kind === 'preserve' ? { ...block, signature: projection.value } : null,
-              );
+              if (projection.kind === 'preserve') replacements.set(location.blockIndex, { ...block, signature: projection.value });
+              else if (projection.degrades) replacements.set(location.blockIndex, null);
+              else {
+                // The wire block may omit a signature the SDK type requires.
+                const unsigned: Partial<typeof block> = { ...block };
+                delete unsigned.signature;
+                replacements.set(location.blockIndex, unsigned as typeof block);
+              }
             } else {
               replacements.set(
                 location.blockIndex,

@@ -4,7 +4,7 @@ import {
   decimalStringIsZero,
   decimalStringToNumber,
   type DecimalString,
-} from '@floway-dev/protocols/common';
+} from '@floway-dev/protocols/browser';
 
 const splitDecimal = (value: DecimalString): [integer: string, fraction: string] => {
   const [integer, fraction = ''] = value.split('.');
@@ -60,3 +60,14 @@ export const formatUsd = (value: DecimalString | null): string => {
   if (decimalStringIsZero(value)) return '$0';
   return `$${toFixed(value, usdFractionDigits(boundary => compareDecimalStrings(value, boundary) >= 0))}`;
 };
+
+export const formatUsdNumber = (
+  value: number,
+  locale: string,
+  options: Pick<Intl.NumberFormatOptions, 'minimumFractionDigits' | 'maximumFractionDigits'> = {},
+): string => new Intl.NumberFormat(locale, {
+  style: 'currency',
+  currency: 'USD',
+  currencyDisplay: 'narrowSymbol',
+  ...options,
+}).format(value);

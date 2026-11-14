@@ -55,3 +55,16 @@ export const CONTROL_ROW_CLASS = '!min-h-[34px]';
 // TIGHT_STACK_CLASS states rather than at a field-to-field distance, and a
 // second column keeps the 8px of the form grid the list sits in.
 export const CHECKBOX_LIST_CLASS = 'gap-x-2 gap-y-1';
+
+// WinUI Gallery's settings page, transcribed: a 4px card spacing and a
+// BodyStrong section heading whose 30px above / 6px below is what separates one
+// group of cards from the next.
+// https://github.com/microsoft/WinUI-Gallery/blob/f4dc3eb367f4bcecac1793829d9a221e924e5bfb/WinUIGallery/Pages/SettingsPage.xaml#L9-L21
+// https://github.com/microsoft/WinUI-Gallery/blob/f4dc3eb367f4bcecac1793829d9a221e924e5bfb/WinUIGallery/Pages/SettingsPage.xaml#L36-L41
+//
+// The measure is the dashboard's, not the gallery's 1064: every single-column
+// form page here uses 960, and these rows hold nothing wider than a dropdown.
+export const SETTINGS_PAGE_CLASS = 'grid gap-1 min-w-0';
+// A section heading inside SETTINGS_PAGE_CLASS; the margins are its own so the
+// grid gap above it stays the card-to-card step.
+export const SETTINGS_SECTION_HEADER_CLASS = 'mt-[30px] mb-[6px] px-px first:mt-0';

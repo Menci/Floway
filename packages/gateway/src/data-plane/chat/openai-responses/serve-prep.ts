@@ -9,7 +9,7 @@ import { selectAffinityCandidates } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure, tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { ModelCandidate, ExecuteResult } from '@floway-dev/provider';
 
 // Thrown when a request names a `previous_response_id` that the store cannot
@@ -60,11 +60,10 @@ export const expandPreviousResponseId = async (
 };
 
 export type OpenAIResponsesServePlan =
-  | { readonly kind: 'failure'; readonly result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>> }
+  | { readonly kind: 'failure'; readonly result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>> }
   | {
     readonly kind: 'ready';
     readonly affinitySelection: AffinityCandidateSelection<CanonicalOpenAIResponsesPayload>;
-    readonly privatePayloads: ReadonlyMap<string, unknown>;
     readonly candidates: readonly ModelCandidate[];
   };
 
@@ -84,7 +83,9 @@ export const prepareOpenAIResponsesServePlan = async (args: {
   const store = ctx.store;
   const prepared = await expandPreviousResponseId(payload, store);
   const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
+    subject: ctx.user,
     upstreamIds: ctx.upstreamIds,
+    randomizeUpstreams: ctx.randomizeUpstreams,
     model: prepared.model,
     kind: 'chat',
     scheduler: ctx.backgroundScheduler,
@@ -100,7 +101,7 @@ export const prepareOpenAIResponsesServePlan = async (args: {
     if (failure === null) throw error;
     return { kind: 'failure', result: renderOpenAIResponsesFailure(failure) };
   }
-  const affinity = await analyzeOpenAIResponsesAffinity(hydrated.payload, ctx.affinity.codec);
+  const affinity = await analyzeOpenAIResponsesAffinity(hydrated, ctx.affinity.codec);
   const selection = selectAffinityCandidates(viable, affinity);
   if ('kind' in selection) return { kind: 'failure', result: renderOpenAIResponsesFailure(selection) };
   // Stage the user-supplied input from the original payload — not the
@@ -116,5 +117,5 @@ export const prepareOpenAIResponsesServePlan = async (args: {
       result: renderOpenAIResponsesFailure(noViableCandidateFailure(sawModel, prepared.model, failedUpstreams)),
     };
   }
-  return { kind: 'ready', affinitySelection: selection, privatePayloads: hydrated.privatePayloads, candidates: selection.candidates };
+  return { kind: 'ready', affinitySelection: selection, candidates: selection.candidates };
 };

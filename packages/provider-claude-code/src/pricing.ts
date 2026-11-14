@@ -18,9 +18,12 @@ const fastPricing = (rates: PriceVector, fastRates: PriceVector): ModelPricing =
 
 const OPUS_RATES = { input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', input_cache_write_1h_tokens: '10', output_tokens: '25' };
 const SONNET_PRICING = tokenBasePricing({ input_tokens: '3', input_cache_read_tokens: '0.3', input_cache_write_tokens: '3.75', input_cache_write_1h_tokens: '6', output_tokens: '15' });
-// Sonnet 5 and 5.5 share Anthropic's published standard rates, including the
-// five-minute and one-hour cache-write prices.
+// Sonnet 5.5 cuts cache reads to 0.05x while retaining Sonnet 5's remaining
+// rates. Keep the two cards separate so a change to either model cannot
+// silently alter the other.
 // https://platform.claude.com/docs/en/models/sonnet-5-5/overview
+const SONNET_5_5_PRICING = tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', input_cache_write_1h_tokens: '4', output_tokens: '10' });
+// https://platform.claude.com/docs/en/models/sonnet-5/overview
 const SONNET_5_PRICING = tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', input_cache_write_1h_tokens: '4', output_tokens: '10' });
 const OPUS_PRICING = tokenBasePricing(OPUS_RATES);
 const OPUS_FAST6X_PRICING = fastPricing(OPUS_RATES, { input_tokens: '30', input_cache_read_tokens: '3', input_cache_write_tokens: '37.5', input_cache_write_1h_tokens: '60', output_tokens: '150' });
@@ -28,6 +31,13 @@ const OPUS_FAST2X_PRICING = fastPricing(OPUS_RATES, { input_tokens: '10', input_
 const OPUS_5_5_PRICING = fastPricing(
   { input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', input_cache_write_1h_tokens: '8', output_tokens: '20' },
   { input_tokens: '8', input_cache_read_tokens: '0.4', input_cache_write_tokens: '10', input_cache_write_1h_tokens: '16', output_tokens: '40' },
+);
+const HAIKU_5_5_PRICING = modelPricing(
+  tokenPricingEntry({ input_tokens: '0.1', input_cache_read_tokens: '0.01', input_cache_write_tokens: '0.125', input_cache_write_1h_tokens: '0.2', output_tokens: '0.5' }),
+  tokenPricingEntry(
+    { input_tokens: '0.5', input_cache_read_tokens: '0.05', input_cache_write_tokens: '0.625', input_cache_write_1h_tokens: '1', output_tokens: '2.5' },
+    { inputTokens: { operator: 'gt', value: 100000 } },
+  ),
 );
 const FABLE_5_1_PRICING = tokenBasePricing({ input_tokens: '10', input_cache_read_tokens: '0.25', input_cache_write_tokens: '12.5', input_cache_write_1h_tokens: '20', output_tokens: '50' });
 
@@ -42,15 +52,30 @@ const CLAUDE_CODE_MODEL_PRICING: Record<string, ModelPricing> = {
   'claude-opus-4-6': OPUS_FAST6X_PRICING,
   // Claude Code accepts the same id returned by Anthropic's model catalog.
   // https://support.claude.com/en/articles/11940350-claude-code-model-configuration
-  'claude-sonnet-5-5': SONNET_5_PRICING,
+  'claude-sonnet-5-5': SONNET_5_5_PRICING,
   'claude-sonnet-5': SONNET_5_PRICING,
   'claude-sonnet-4-6': SONNET_PRICING,
+  // Haiku 5.5 prices the whole request at its long-context rate when the
+  // prompt exceeds 100,000 input tokens.
+  // https://platform.claude.com/docs/en/models/haiku-5-5/overview
+  // https://github.com/anomalyco/models.dev/blob/bde18f10ee3da7d5eb4cc07bfd3d374a93a8f025/providers/anthropic/models/claude-haiku-5-5.toml
+  'claude-haiku-5-5': HAIKU_5_5_PRICING,
   // Fable 5.1 keeps Fable 5's base rates while cutting cache reads to 0.025×.
   // https://platform.claude.com/docs/en/models/fable-5-1/overview
   // https://platform.claude.com/docs/en/about-claude/pricing
   // https://github.com/anomalyco/models.dev/blob/bf06cd2a3ae2922acd435ddc441ca5874f93ee8a/providers/anthropic/models/claude-fable-5-1.toml
   'claude-fable-5-1': FABLE_5_1_PRICING,
   'claude-fable-5': tokenBasePricing({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', input_cache_write_1h_tokens: '20', output_tokens: '50' }),
+  // Mythos is Anthropic's gated cyber-defence family; the subscription catalog
+  // lists it only for organizations verified through the Trusted Access
+  // program, but the public card fixes its rates. 5.1 matches Fable 5.1's card
+  // exactly — $10/$50 with cache reads cut to 0.025× — while 5 keeps the
+  // standard 0.1× read multiplier and Fable 5's rates.
+  // https://platform.claude.com/docs/en/models/mythos-5/overview
+  // https://platform.claude.com/docs/en/models/mythos-5-1/overview
+  // https://platform.claude.com/docs/en/about-claude/pricing
+  'claude-mythos-5-1': FABLE_5_1_PRICING,
+  'claude-mythos-5': tokenBasePricing({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', input_cache_write_1h_tokens: '20', output_tokens: '50' }),
   'claude-sonnet-4-5-20250929': SONNET_PRICING,
   'claude-opus-4-5-20251101': OPUS_PRICING,
   'claude-haiku-4-5-20251001': tokenBasePricing({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', input_cache_write_1h_tokens: '2', output_tokens: '5' }),

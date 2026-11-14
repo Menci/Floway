@@ -1,6 +1,6 @@
 import type { AlphaSearchRequest, AlphaSearchResponse } from './protocol.ts';
 import type { GatewayFacts, Failure } from '../pipeline/facts.ts';
-import type { WebSearchOperation, WebSearchFilters } from '../tools/web-search/operations.ts';
+import type { SearchResponseLength, WebSearchOperation, WebSearchFilters } from '../tools/web-search/operations.ts';
 
 /** Search's own keys. They extend the shared space and never merge into it, so a stage
  *  written against the gateway alone cannot name one. */
@@ -10,6 +10,9 @@ export interface SearchFacts extends GatewayFacts {
    *  reads Codex's request again, which is why the stage that provides them consumes it. */
   'request.search.operations': readonly WebSearchOperation[];
   'request.search.filters': WebSearchFilters;
+  /** Codex's `commands.response_length`, which sizes every search the operations run; null
+   *  when the client left the backend's default in place. */
+  'request.search.responseLength': SearchResponseLength | null;
   'response.search.alphaSearch': AlphaSearchResponse | Failure;
   /** What the client is actually sent, in Codex's protocol. The edge provides it, so a dump
    *  shows the bytes the client received rather than the gateway's own form. */

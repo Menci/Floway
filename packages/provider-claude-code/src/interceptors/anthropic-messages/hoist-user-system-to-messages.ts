@@ -1,5 +1,5 @@
 import type { AnthropicMessagesBoundaryCtx } from './types.ts';
-import type { AnthropicMessagesMessage, AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesMessage, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
 
 // Synthetic assistant turn that closes the hoisted user/assistant pair so the
 // upstream's role-alternation guard stays satisfied. The text is visible to
@@ -32,7 +32,7 @@ export const hoistUserSystemToMessages = async <TResult>(
   _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const system: string | AnthropicMessagesTextBlock[] | undefined = ctx.payload.system;
+  const system: string | AnthropicMessagesTextBlockParam[] | undefined = ctx.payload.system;
   let captured = '';
   if (typeof system === 'string') {
     captured = system;

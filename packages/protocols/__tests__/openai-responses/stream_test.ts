@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { type SseFrame } from '../../src/common/sse.ts';
-import type { OpenAIResponsesResult } from '../../src/openai-responses/index.ts';
+import type { OpenAIResponsesResultEx } from '../../src/openai-responses/index.ts';
 import { parseOpenAIResponsesStream } from '../../src/openai-responses/stream.ts';
 import { sseFrame, sseFrameBody } from '../common/test-utils.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
@@ -14,12 +14,11 @@ const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
 
 const parse = (...frames: SseFrame[]) => parseOpenAIResponsesStream(sseFrameBody(...frames));
 
-const makeResponse = (status: OpenAIResponsesResult['status'], overrides: Partial<OpenAIResponsesResult> = {}): OpenAIResponsesResult => ({
+const makeResponse = (status: OpenAIResponsesResultEx['status'], overrides: Partial<OpenAIResponsesResultEx> = {}): OpenAIResponsesResultEx => ({
   id: 'resp_fast',
   object: 'response',
   model: 'gpt-test',
   status,
-  output_text: 'hello',
   output: [
     {
       type: 'message',
@@ -48,7 +47,6 @@ test('parseOpenAIResponsesStream parses OpenAI Responses SSE frames into protoco
           object: 'response',
           model: 'gpt-test',
           output: [],
-          output_text: '',
           status: 'in_progress',
         },
         sequence_number: 0,
@@ -79,7 +77,6 @@ test('parseOpenAIResponsesStream parses OpenAI Responses SSE frames into protoco
         object: 'response',
         model: 'gpt-test',
         output: [],
-        output_text: '',
         status: 'in_progress',
       },
       sequence_number: 0,
@@ -162,7 +159,7 @@ test('parseOpenAIResponsesStream passes structured upstream events through uncha
   const frames = await collect(parse(
     sseFrame(
       JSON.stringify({
-        response: { ...makeResponse('in_progress'), output: [], output_text: '' },
+        response: { ...makeResponse('in_progress'), output: [] },
         sequence_number: 0,
       }),
       'response.created',
@@ -223,7 +220,7 @@ test('parseOpenAIResponsesStream fills in sequence_number when upstream omits it
   const frames = await collect(parse(
     sseFrame(
       JSON.stringify({
-        response: { ...makeResponse('in_progress'), output: [], output_text: '' },
+        response: { ...makeResponse('in_progress'), output: [] },
       }),
       'response.created',
     ),
@@ -256,7 +253,7 @@ test('parseOpenAIResponsesStream advances its counter past upstream-provided seq
   const frames = await collect(parse(
     sseFrame(
       JSON.stringify({
-        response: { ...makeResponse('in_progress'), output: [], output_text: '' },
+        response: { ...makeResponse('in_progress'), output: [] },
         sequence_number: 5,
       }),
       'response.created',
@@ -278,7 +275,6 @@ test('parseOpenAIResponsesStream advances its counter past upstream-provided seq
 test('parseOpenAIResponsesStream fast-paths response.failed terminal with error preserved on terminal only', async () => {
   const failed = makeResponse('failed', {
     output: [],
-    output_text: '',
     error: { type: 'server_error', code: 'server_error', message: 'upstream failed' },
   });
   // The in-progress wrapper must carry `error: null` per spec
@@ -300,9 +296,9 @@ test('parseOpenAIResponsesStream fast-paths response.failed terminal with error 
   // Error payload must only be a real value on the terminal response.failed;
   // the synthesized created/in_progress carry `error: null` per spec
   // (Response.error is required-nullable).
-  assertEquals((events[0] as { response: OpenAIResponsesResult }).response.error, null);
-  assertEquals((events[1] as { response: OpenAIResponsesResult }).response.error, null);
-  assertEquals((events[2] as { response: OpenAIResponsesResult }).response.error?.message, 'upstream failed');
+  assertEquals((events[0] as { response: OpenAIResponsesResultEx }).response.error, null);
+  assertEquals((events[1] as { response: OpenAIResponsesResultEx }).response.error, null);
+  assertEquals((events[2] as { response: OpenAIResponsesResultEx }).response.error?.message, 'upstream failed');
 });
 
 // Asserts that when `response.failed` carries partial output, the fast-path
@@ -311,7 +307,6 @@ test('parseOpenAIResponsesStream fast-paths response.failed terminal with error 
 // work rather than losing it.
 test('parseOpenAIResponsesStream fast-paths response.failed terminal with partial output synthesised before the error', async () => {
   const failed = makeResponse('failed', {
-    output_text: 'partial',
     output: [
       {
         type: 'message',
@@ -336,7 +331,7 @@ test('parseOpenAIResponsesStream fast-paths response.failed terminal with partia
 
 test('parseOpenAIResponsesStream fast-paths response.incomplete terminal', async () => {
   const incomplete = makeResponse('incomplete', {
-    incomplete_details: { reason: 'max_output_tokens' } as OpenAIResponsesResult['incomplete_details'],
+    incomplete_details: { reason: 'max_output_tokens' } as OpenAIResponsesResultEx['incomplete_details'],
   });
   const frames = await collect(parse(
     sseFrame(JSON.stringify({ response: { ...incomplete, status: 'in_progress' }, sequence_number: 0 }), 'response.created'),
@@ -349,7 +344,7 @@ test('parseOpenAIResponsesStream fast-paths response.incomplete terminal', async
   assertEquals(eventTypes.includes('response.output_item.added'), true);
 });
 
-test('parseOpenAIResponsesStream passes raw error terminal through (no .response to expand)', async () => {
+test('parseOpenAIResponsesStream passes raw error notifications through', async () => {
   const frames = await collect(parse(
     sseFrame(JSON.stringify({ message: 'connection reset', code: 'ECONNRESET' }), 'error'),
     sseFrame('[DONE]'),
@@ -359,6 +354,26 @@ test('parseOpenAIResponsesStream passes raw error terminal through (no .response
   assertEquals(eventTypes, ['error']);
   const errorEvent = frames[0];
   assertEquals(errorEvent.type === 'event' && (errorEvent.event as { message?: string }).message, 'connection reset');
+});
+
+test('parseOpenAIResponsesStream preserves error notifications and expands the following failed resource', async () => {
+  const error = { type: 'error', code: null, param: 'model', message: 'Limit reached', sequence_number: 1, request_id: 'req_failed' };
+  const failed = makeResponse('failed', { error: { code: 'rate_limit_exceeded', message: 'Limit reached' } });
+  const frames = await collect(parse(
+    sseFrame(JSON.stringify({ type: 'response.created', response: { ...failed, status: 'in_progress', output: [], error: null }, sequence_number: 0 })),
+    sseFrame(JSON.stringify(error), 'error'),
+    sseFrame(JSON.stringify({ type: 'response.failed', response: failed, sequence_number: 2 })),
+    sseFrame('[DONE]'),
+  ));
+
+  assertEquals(frames[1], { type: 'event', event: error });
+  assertEquals(frames.map(frame => frame.type === 'event' ? frame.event.type : frame.type), [
+    'response.created', 'error', 'response.in_progress', 'response.output_item.added',
+    'response.content_part.added', 'response.output_text.delta', 'response.output_text.done',
+    'response.content_part.done', 'response.output_item.done', 'response.failed', 'done',
+  ]);
+  const terminal = frames.at(-2);
+  assertEquals(terminal?.type === 'event' && 'response' in terminal.event && terminal.event.response, failed);
 });
 
 test('parseOpenAIResponsesStream fast-paths when ping interleaves the wrappers', async () => {

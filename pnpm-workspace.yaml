@@ -13,7 +13,7 @@ onlyBuiltDependencies:
   - unrs-resolver
   - workerd
 
-# The @fluentui/react-charts patch carries four fixes, all in code the package
+# The @fluentui/react-charts patch carries six fixes, all in code the package
 # ships prebuilt, so none of them can be reached from a prop:
 #
 #   - CartesianChart measures its parent in an effect and publishes the result
@@ -25,7 +25,20 @@ onlyBuiltDependencies:
 #     and `containerHeight - margins.top` is negative until it arrives. A
 #     negative `width`/`height` on an SVG `rect` is an error, so the values are
 #     clamped at zero.
+#   - That same rect answers a pointer that is not over a series, and its width
+#     was the x of the last *nice tick* rather than the axis end — the two agree
+#     only when the window happens to end on a tick. Everything past that tick
+#     fell outside the hover target, so the right of the plot (and, above or
+#     below the plotted band, the whole of it) went dead to the pointer while
+#     the chart's own vertical line and callout never appeared. The width now
+#     comes from the scale's range, which is the plot's own right edge.
 #   - LineChart pushes two elements into `pointsForLine` without a key.
+#   - LineChart anchors its hover callout on the highlighted data point and only
+#     re-anchors when that point changes, so the callout jumps between points and
+#     then stands still while the pointer keeps travelling inside one point's
+#     span. Its AreaChart sibling anchors on the pointer instead. The callout now
+#     follows the pointer on hover and keeps the data point as the anchor for a
+#     keyboard focus, which has no pointer to follow.
 #   - The date axis rounds its domain outward twice — unconditionally through
 #     d3's `nice()`, and again by 10% per side in markers mode — so the first
 #     and last of the `tickValues` we pass land inside the plot instead of at
@@ -38,19 +51,46 @@ onlyBuiltDependencies:
 #     domain currently"), so both roundings are gated on the caller not having
 #     supplied ticks.
 #
+# https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/charts/react-charts/library/src/components/AreaChart/AreaChart.tsx#L1127-L1130
 # https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/charts/react-charts/library/src/utilities/utilities.ts#L463-L468
 # https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/charts/react-charts/library/src/utilities/utilities.ts#L2232-L2265
 # https://github.com/d3/d3/blob/ca958d45217b4c15332d971b935451a6d4c978f4/docs/d3-scale/time.md#L111-L124
 # https://www.w3.org/TR/SVG2/shapes.html#RectElement
+# Raw JSON integer tokens must survive cloning and streaming serialization.
+# https://tc39.es/proposal-json-parse-with-source/#sec-json.rawjson
+# Signed sidecars preserve lone-surrogate strings and keys with CBOR Tag 273.
+# https://www.iana.org/assignments/cbor-tags/tags.csv
+# https://github.com/svaarala/cbor-specs/blob/b85ac24ada38c1bdeb8e141be416d8d290dcd41b/cbor-nonutf8-string-tags.rst
+# https://github.com/Menci/Floway/blob/54a8e2c783ed2ff1c166270c228821fa32aea252/patches/cbor-x%401.6.6.patch
 patchedDependencies:
+  'cbor-x@1.6.6': patches/cbor-x@1.6.6.patch
+  '@discoveryjs/json-ext@1.1.0': patches/@discoveryjs__json-ext@1.1.0.patch
+  'klona@2.0.6': patches/klona@2.0.6.patch
   '@fluentui/react-charts@9.3.22': patches/@fluentui__react-charts@9.3.22.patch
-  '@reclaimprotocol/tls@0.1.2': patches/@reclaimprotocol__tls@0.1.2.patch
+  '@reclaimprotocol/tls@0.1.5': patches/@reclaimprotocol__tls@0.1.5.patch
   'overlayscrollbars@2.13.0': patches/overlayscrollbars@2.13.0.patch
+
+# Charts imports these runtime packages but omits them from its manifest.
+# Keep resolution independent of whichever dependency happened to be hoisted.
+# https://github.com/microsoft/fluentui/blob/cbee28ba42d268404e9b9663a6a3a33e205c66d1/packages/charts/react-charts/library/src/components/DeclarativeChart/DeclarativeChart.tsx#L17
+# https://github.com/microsoft/fluentui/blob/cbee28ba42d268404e9b9663a6a3a33e205c66d1/packages/charts/react-charts/library/src/components/Legends/OverflowMenu.tsx#L5
+# https://github.com/microsoft/fluentui/blob/cbee28ba42d268404e9b9663a6a3a33e205c66d1/packages/tokens/package.json
+# https://github.com/microsoft/fluentui/blob/cbee28ba42d268404e9b9663a6a3a33e205c66d1/packages/react-components/react-menu/library/package.json
+packageExtensions:
+  '@fluentui/react-charts@9.3.22':
+    dependencies:
+      '@fluentui/tokens': 1.0.0-alpha.23
+      '@fluentui/react-menu': 9.25.1
 
 # @react-router/dev pulls in a standalone HTTP server we never run — the SPA is
 # served by Workers Static Assets in production and by the Node target in the
 # docker-compose topology.
 overrides:
+  # Require correct cancellation and error propagation through the Node/Web stream bridge.
+  # https://developers.cloudflare.com/workers/runtime-apis/nodejs/streams/
+  # Exercise D1's cursor expansion guard in local statistics regression tests.
+  # https://github.com/sqlite/sqlite/blob/version-3.54.1/src/select.c#L5672-L5682
+  'workerd@1.20260405.1': 1.20261108.1
   '@react-router/dev>@react-router/serve': '-'
   # monaco-editor 0.54.0 pins dompurify at exactly 3.1.7, which is behind every
   # advisory published since. 3.4.12 is the first release no advisory still

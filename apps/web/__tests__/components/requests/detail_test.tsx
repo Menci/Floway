@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { RequestDetailPanel } from '../../../src/components/requests/detail';
 import { renderInApp } from '../../render';
-import type { DumpEdgeRecord, DumpRunRecord } from '@floway-dev/gateway/dump-types';
+import type { DumpEdgeRecord, DumpRunRecord } from '@floway-dev/gateway/browser';
 
 vi.mock('../../../src/components/ui/body-editor', () => ({ default: ({ text, toolbarStart }: { text: string; toolbarStart?: ReactNode }) => <>{toolbarStart}<pre data-testid="body-content">{text}</pre></> }));
 

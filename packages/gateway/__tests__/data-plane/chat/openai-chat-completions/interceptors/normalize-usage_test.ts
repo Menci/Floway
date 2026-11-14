@@ -4,7 +4,7 @@ import { withUsageNormalized } from '../../../../../src/data-plane/chat/openai-c
 import type { OpenAIChatCompletionsInvocation } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
@@ -37,7 +37,7 @@ const runWithFrames = async (...frames: ProtocolFrame<OpenAIChatCompletionsStrea
   return await collectFrames(result);
 };
 
-const usageRecord = (usage: NonNullable<OpenAIChatCompletionsStreamEvent['usage']>): Record<string, unknown> => usage as unknown as Record<string, unknown>;
+const usageRecord = (usage: OpenAIChatCompletionsUsageEx): Record<string, unknown> => usage as unknown as Record<string, unknown>;
 
 test('leaves a spec-compliant carrier usage chunk untouched', async () => {
   const frames = await runWithFrames(
@@ -70,7 +70,7 @@ test('relocates usage from a non-empty choices chunk onto a synthesized carrier'
       object: 'chat.completion.chunk',
       created: 1,
       model: 'gpt-test',
-      choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
       usage: {
         prompt_tokens: 100,
         completion_tokens: 20,
@@ -84,7 +84,7 @@ test('relocates usage from a non-empty choices chunk onto a synthesized carrier'
 
   const first = frames[0];
   if (first.type !== 'event') throw new Error('expected event frame');
-  assertEquals(first.event.choices, [{ index: 0, delta: {}, finish_reason: 'stop' }]);
+  assertEquals(first.event.choices, [{  index: 0, delta: {}, finish_reason: 'stop' }]);
   assertEquals(first.event.usage, undefined);
 
   const carrier = frames[1];
@@ -131,7 +131,7 @@ test('leaves chunks without usage untouched', async () => {
     created: 1,
     model: 'gpt-test',
     choices: [
-      { index: 0, delta: { content: 'hi' }, finish_reason: null },
+      {  index: 0, delta: { content: 'hi' }, finish_reason: null },
     ],
   } satisfies OpenAIChatCompletionsStreamEvent);
 

@@ -49,6 +49,9 @@ const socketDial = {
       });
     });
   }),
+  // This suite dials plain HTTP; a TLS upgrade here would need a certificate
+  // the local upstream does not serve.
+  startTls: (): Promise<never> => Promise.reject(new Error('not supported by this suite')),
 };
 
 let server: Server | undefined;

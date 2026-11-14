@@ -1,0 +1,1075 @@
+diff --git a/decode.js b/decode.js
+index e165032d096486d1c761357bcf44aa4b286dd20a..17418faba7b3a098ad311654f82a2db675e480ff 100644
+--- a/decode.js
++++ b/decode.js
+@@ -102,7 +102,7 @@ export class Decoder {
+ 		}
+ 		let res = {}
+ 		//map.forEach((v,k) => res[Object.keys(this._keyMap)[Object.values(this._keyMap).indexOf(k)] || k] = v)
+-		map.forEach((v,k) => res[safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k)] =  v)
++		map.forEach((v,k) => setObjectProperty(res, safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k), v))
+ 		return res
+ 	}
+ 	
+@@ -322,13 +322,13 @@ export function read() {
+ 							if (currentDecoder.keyMap) {
+ 								while((key = read()) != STOP_CODE) {
+ 									if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-									object[safeKey(currentDecoder.decodeKey(key))] = read()
++									setObjectProperty(object, safeKey(currentDecoder.decodeKey(key)), read())
+ 								}
+ 							}
+ 							else {
+ 								while ((key = read()) != STOP_CODE) {
+ 									if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-									object[safeKey(key)] = read()
++									setObjectProperty(object, safeKey(key), read())
+ 								}
+ 							}
+ 							return object
+@@ -400,8 +400,8 @@ export function read() {
+ 			if (token > (srcEnd - position) / 2) throw endOfCBORError() // each entry needs at least two bytes
+ 			if (currentDecoder.mapsAsObjects) {
+ 				let object = {}
+-				if (currentDecoder.keyMap) for (let i = 0; i < token; i++) object[safeKey(currentDecoder.decodeKey(read()))] = read()
+-				else for (let i = 0; i < token; i++) object[safeKey(read())] = read()
++				if (currentDecoder.keyMap) for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(read())), read())
++				else for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(read()), read())
+ 				return object
+ 			} else {
+ 				if (restoreMapsAsObject) {
+@@ -431,11 +431,11 @@ export function read() {
+ 						let object = {}
+ 						if (currentDecoder.keyMap) for (let i = 2; i < length; i++) {
+ 							let key = currentDecoder.decodeKey(structure[i - 2])
+-							object[safeKey(key)] = read()
++							setObjectProperty(object, safeKey(key), read())
+ 						}
+ 						else for (let i = 2; i < length; i++) {
+ 							let key = structure[i - 2]
+-							object[safeKey(key)] = read()
++							setObjectProperty(object, safeKey(key), read())
+ 						}
+ 						return object
+ 					}
+@@ -529,8 +529,8 @@ function createStructureReader(structure) {
+ 		if (this.slowReads++ >= inlineObjectReadThreshold) { // create a fast compiled reader
+ 			let array = this.length == length ? this : this.slice(0, length)
+ 			compiledReader = currentDecoder.keyMap 
+-			? new Function('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
+-			: new Function('r', 'return {' + array.map(key => validName.test(key) ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}')
++			? new Function('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) && k !== '__proto__' ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
++			: new Function('r', 'return {' + array.map(key => validName.test(key) && key !== '__proto__' ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}')
+ 			if (this.compiledReader)
+ 				compiledReader.next = this.compiledReader // if there is an existing one, we store multiple readers as a linked list because it is usually pretty rare to have multiple readers (of different length) for the same structure
+ 			compiledReader.propertyCount = length
+@@ -538,9 +538,9 @@ function createStructureReader(structure) {
+ 			return compiledReader(read)
+ 		}
+ 		let object = {}
+-		if (currentDecoder.keyMap) for (let i = 0; i < length; i++) object[safeKey(currentDecoder.decodeKey(this[i]))] = read()
++		if (currentDecoder.keyMap) for (let i = 0; i < length; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(this[i])), read())
+ 		else for (let i = 0; i < length; i++) {
+-			object[safeKey(this[i])] = read();
++			setObjectProperty(object, safeKey(this[i]), read());
+ 		}
+ 		return object
+ 	}
+@@ -548,9 +548,24 @@ function createStructureReader(structure) {
+ 	return readObject
+ }
+ 
++function setObjectProperty(object, key, value) {
++	if (key === '__proto__') {
++		Object.defineProperty(object, key, {value, enumerable: true, writable: true, configurable: true})
++	} else {
++		object[key] = value
++	}
++}
++function assignObjectProperties(target, ...sources) {
++	for (const source of sources) {
++		if (source == null) continue
++		for (const key of Reflect.ownKeys(Object(source))) {
++			if (Object.prototype.propertyIsEnumerable.call(source, key)) setObjectProperty(target, key, source[key])
++		}
++	}
++	return target
++}
+ function safeKey(key) {
+-	// protect against prototype pollution
+-	if (typeof key === 'string') return key === '__proto__' ? '__proto_' : key
++	if (typeof key === 'string') return key
+ 	if (typeof key === 'number' || typeof key === 'boolean' || typeof key === 'bigint') return key.toString();
+ 	if (key == null) return key + '';
+ 	// protect against expensive (DoS) string conversions
+@@ -995,7 +1010,7 @@ currentExtensions[LEGACY_RECORD_INLINE_ID] = (data) => {
+ 	let object = {}
+ 	for (let i = 2; i < length; i++) {
+ 		let key = structure[i - 2]
+-		object[safeKey(key)] = data[i]
++		setObjectProperty(object, safeKey(key), data[i])
+ 	}
+ 	return object
+ }
+@@ -1010,6 +1025,31 @@ currentExtensions[15] = (value) => {
+ 	return new Tag(value, 15)
+ }
+ let glbl = { Error, RegExp }
++// CBOR Tag 273 specifies this WTF-8 string representation: https://github.com/svaarala/cbor-specs/blob/b85ac24ada38c1bdeb8e141be416d8d290dcd41b/cbor-nonutf8-string-tags.rst
++currentExtensions[273] = function decodeWtf8(bytes) {
++	const units = [];
++	let result = '';
++	for (let index = 0; index < bytes.length;) {
++		const first = bytes[index++];
++		let codePoint;
++		if (first < 0x80) codePoint = first;
++		else if (first < 0xe0) codePoint = ((first & 0x1f) << 6) | (bytes[index++] & 0x3f);
++		else if (first < 0xf0) {
++			codePoint = ((first & 0x0f) << 12) | ((bytes[index] & 0x3f) << 6) | (bytes[index + 1] & 0x3f);
++			index += 2;
++		} else {
++			codePoint = ((first & 0x07) << 18) | ((bytes[index] & 0x3f) << 12) | ((bytes[index + 1] & 0x3f) << 6) | (bytes[index + 2] & 0x3f);
++			index += 3;
++		}
++		if (codePoint < 0x10000) units.push(codePoint);
++		else {
++			codePoint -= 0x10000;
++			units.push(0xd800 + (codePoint >> 10), 0xdc00 + (codePoint & 0x3ff));
++		}
++		if (units.length >= 0x1000) { result += String.fromCharCode(...units); units.length = 0; }
++	}
++	return result + String.fromCharCode(...units);
++}
+ currentExtensions[27] = (data) => { // http://cbor.schmorp.de/generic-object
+ 	return (glbl[data[0]] || Error)(data[1], data[2])
+ }
+@@ -1098,7 +1138,7 @@ currentExtensions[28] = (read) => {
+ 			referenceMap.set(id, { target })
+ 			targetProperties = read()
+ 		}
+-		return Object.assign(target, targetProperties)
++		return assignObjectProperties(target, targetProperties)
+ 	}
+ 	refEntry.target = targetProperties // the placeholder wasn't used, replace with the deserialized one
+ 	return targetProperties // no cycle, can just use the returned read object
+@@ -1127,7 +1167,7 @@ function combine(a, b) {
+ 		return a + b
+ 	if (a instanceof Array)
+ 		return a.concat(b)
+-	return Object.assign({}, a, b)
++	return assignObjectProperties({}, a, b)
+ }
+ function getPackedValues() {
+ 	if (!packedValues) {
+diff --git a/dist/decode-no-eval.cjs b/dist/decode-no-eval.cjs
+index a3559829b352716acbf07e0e1961966081c38426..83b502e0644d7285e1e223cb10585932598792da 100644
+--- a/dist/decode-no-eval.cjs
++++ b/dist/decode-no-eval.cjs
+@@ -103,7 +103,7 @@
+ 			}
+ 			let res = {};
+ 			//map.forEach((v,k) => res[Object.keys(this._keyMap)[Object.values(this._keyMap).indexOf(k)] || k] = v)
+-			map.forEach((v,k) => res[safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k)] =  v);
++			map.forEach((v,k) => setObjectProperty(res, safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k), v));
+ 			return res
+ 		}
+ 		
+@@ -323,13 +323,13 @@
+ 								if (currentDecoder.keyMap) {
+ 									while((key = read()) != STOP_CODE) {
+ 										if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-										object[safeKey(currentDecoder.decodeKey(key))] = read();
++										setObjectProperty(object, safeKey(currentDecoder.decodeKey(key)), read());
+ 									}
+ 								}
+ 								else {
+ 									while ((key = read()) != STOP_CODE) {
+ 										if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-										object[safeKey(key)] = read();
++										setObjectProperty(object, safeKey(key), read());
+ 									}
+ 								}
+ 								return object
+@@ -401,8 +401,8 @@
+ 				if (token > (srcEnd - position) / 2) throw endOfCBORError() // each entry needs at least two bytes
+ 				if (currentDecoder.mapsAsObjects) {
+ 					let object = {};
+-					if (currentDecoder.keyMap) for (let i = 0; i < token; i++) object[safeKey(currentDecoder.decodeKey(read()))] = read();
+-					else for (let i = 0; i < token; i++) object[safeKey(read())] = read();
++					if (currentDecoder.keyMap) for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(read())), read());
++					else for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(read()), read());
+ 					return object
+ 				} else {
+ 					if (restoreMapsAsObject) {
+@@ -432,11 +432,11 @@
+ 							let object = {};
+ 							if (currentDecoder.keyMap) for (let i = 2; i < length; i++) {
+ 								let key = currentDecoder.decodeKey(structure[i - 2]);
+-								object[safeKey(key)] = read();
++								setObjectProperty(object, safeKey(key), read());
+ 							}
+ 							else for (let i = 2; i < length; i++) {
+ 								let key = structure[i - 2];
+-								object[safeKey(key)] = read();
++								setObjectProperty(object, safeKey(key), read());
+ 							}
+ 							return object
+ 						}
+@@ -530,8 +530,8 @@
+ 			if (this.slowReads++ >= inlineObjectReadThreshold) { // create a fast compiled reader
+ 				let array = this.length == length ? this : this.slice(0, length);
+ 				compiledReader = currentDecoder.keyMap 
+-				? new BlockedFunction ('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
+-				: new BlockedFunction ('r', 'return {' + array.map(key => validName.test(key) ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}');
++				? new BlockedFunction ('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) && k !== '__proto__' ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
++				: new BlockedFunction ('r', 'return {' + array.map(key => validName.test(key) && key !== '__proto__' ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}');
+ 				if (this.compiledReader)
+ 					compiledReader.next = this.compiledReader; // if there is an existing one, we store multiple readers as a linked list because it is usually pretty rare to have multiple readers (of different length) for the same structure
+ 				compiledReader.propertyCount = length;
+@@ -539,9 +539,9 @@
+ 				return compiledReader(read)
+ 			}
+ 			let object = {};
+-			if (currentDecoder.keyMap) for (let i = 0; i < length; i++) object[safeKey(currentDecoder.decodeKey(this[i]))] = read();
++			if (currentDecoder.keyMap) for (let i = 0; i < length; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(this[i])), read());
+ 			else for (let i = 0; i < length; i++) {
+-				object[safeKey(this[i])] = read();
++				setObjectProperty(object, safeKey(this[i]), read());
+ 			}
+ 			return object
+ 		}
+@@ -549,9 +549,24 @@
+ 		return readObject
+ 	}
+ 
++	function setObjectProperty(object, key, value) {
++		if (key === '__proto__') {
++			Object.defineProperty(object, key, {value, enumerable: true, writable: true, configurable: true});
++		} else {
++			object[key] = value;
++		}
++	}
++	function assignObjectProperties(target, ...sources) {
++		for (const source of sources) {
++			if (source == null) continue
++			for (const key of Reflect.ownKeys(Object(source))) {
++				if (Object.prototype.propertyIsEnumerable.call(source, key)) setObjectProperty(target, key, source[key]);
++			}
++		}
++		return target
++	}
+ 	function safeKey(key) {
+-		// protect against prototype pollution
+-		if (typeof key === 'string') return key === '__proto__' ? '__proto_' : key
++		if (typeof key === 'string') return key
+ 		if (typeof key === 'number' || typeof key === 'boolean' || typeof key === 'bigint') return key.toString();
+ 		if (key == null) return key + '';
+ 		// protect against expensive (DoS) string conversions
+@@ -920,7 +935,7 @@
+ 		let object = {};
+ 		for (let i = 2; i < length; i++) {
+ 			let key = structure[i - 2];
+-			object[safeKey(key)] = data[i];
++			setObjectProperty(object, safeKey(key), data[i]);
+ 		}
+ 		return object
+ 	};
+@@ -935,7 +950,32 @@
+ 		return new Tag(value, 15)
+ 	};
+ 	let glbl = { Error, RegExp };
+-	currentExtensions[27] = (data) => { // http://cbor.schmorp.de/generic-object
++	// CBOR Tag 273 specifies this WTF-8 string representation: https://github.com/svaarala/cbor-specs/blob/b85ac24ada38c1bdeb8e141be416d8d290dcd41b/cbor-nonutf8-string-tags.rst
++	currentExtensions[273] = function decodeWtf8(bytes) {
++		const units = [];
++		let result = '';
++		for (let index = 0; index < bytes.length;) {
++			const first = bytes[index++];
++			let codePoint;
++			if (first < 0x80) codePoint = first;
++			else if (first < 0xe0) codePoint = ((first & 0x1f) << 6) | (bytes[index++] & 0x3f);
++			else if (first < 0xf0) {
++				codePoint = ((first & 0x0f) << 12) | ((bytes[index] & 0x3f) << 6) | (bytes[index + 1] & 0x3f);
++				index += 2;
++			} else {
++				codePoint = ((first & 0x07) << 18) | ((bytes[index] & 0x3f) << 12) | ((bytes[index + 1] & 0x3f) << 6) | (bytes[index + 2] & 0x3f);
++				index += 3;
++			}
++			if (codePoint < 0x10000) units.push(codePoint);
++			else {
++				codePoint -= 0x10000;
++				units.push(0xd800 + (codePoint >> 10), 0xdc00 + (codePoint & 0x3ff));
++			}
++			if (units.length >= 0x1000) { result += String.fromCharCode(...units); units.length = 0; }
++		}
++		return result + String.fromCharCode(...units);
++	}
++	currentExtensions[27] = (data) => { // http://cbor.schmorp.de/generic-object
+ 		return (glbl[data[0]] || Error)(data[1], data[2])
+ 	};
+ 	const packedTable = (read) => {
+@@ -1023,7 +1063,7 @@
+ 				referenceMap.set(id, { target });
+ 				targetProperties = read();
+ 			}
+-			return Object.assign(target, targetProperties)
++			return assignObjectProperties(target, targetProperties)
+ 		}
+ 		refEntry.target = targetProperties; // the placeholder wasn't used, replace with the deserialized one
+ 		return targetProperties // no cycle, can just use the returned read object
+@@ -1052,7 +1092,7 @@
+ 			return a + b
+ 		if (a instanceof Array)
+ 			return a.concat(b)
+-		return Object.assign({}, a, b)
++		return assignObjectProperties({}, a, b)
+ 	}
+ 	function getPackedValues() {
+ 		if (!packedValues) {
+diff --git a/dist/index-no-eval.cjs b/dist/index-no-eval.cjs
+index 4866836e63f0a459f3d2a25f8eadeb6e78a738ff..b811fedb06bc6edc4e4edc9619454ed12a73af46 100644
+--- a/dist/index-no-eval.cjs
++++ b/dist/index-no-eval.cjs
+@@ -99,7 +99,7 @@
+ 			}
+ 			let res = {};
+ 			//map.forEach((v,k) => res[Object.keys(this._keyMap)[Object.values(this._keyMap).indexOf(k)] || k] = v)
+-			map.forEach((v,k) => res[safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k)] =  v);
++			map.forEach((v,k) => setObjectProperty(res, safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k), v));
+ 			return res
+ 		}
+ 		
+@@ -314,13 +314,13 @@
+ 								if (currentDecoder.keyMap) {
+ 									while((key = read()) != STOP_CODE) {
+ 										if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-										object[safeKey(currentDecoder.decodeKey(key))] = read();
++										setObjectProperty(object, safeKey(currentDecoder.decodeKey(key)), read());
+ 									}
+ 								}
+ 								else {
+ 									while ((key = read()) != STOP_CODE) {
+ 										if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-										object[safeKey(key)] = read();
++										setObjectProperty(object, safeKey(key), read());
+ 									}
+ 								}
+ 								return object
+@@ -392,8 +392,8 @@
+ 				if (token > (srcEnd - position$1) / 2) throw endOfCBORError() // each entry needs at least two bytes
+ 				if (currentDecoder.mapsAsObjects) {
+ 					let object = {};
+-					if (currentDecoder.keyMap) for (let i = 0; i < token; i++) object[safeKey(currentDecoder.decodeKey(read()))] = read();
+-					else for (let i = 0; i < token; i++) object[safeKey(read())] = read();
++					if (currentDecoder.keyMap) for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(read())), read());
++					else for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(read()), read());
+ 					return object
+ 				} else {
+ 					if (restoreMapsAsObject) {
+@@ -423,11 +423,11 @@
+ 							let object = {};
+ 							if (currentDecoder.keyMap) for (let i = 2; i < length; i++) {
+ 								let key = currentDecoder.decodeKey(structure[i - 2]);
+-								object[safeKey(key)] = read();
++								setObjectProperty(object, safeKey(key), read());
+ 							}
+ 							else for (let i = 2; i < length; i++) {
+ 								let key = structure[i - 2];
+-								object[safeKey(key)] = read();
++								setObjectProperty(object, safeKey(key), read());
+ 							}
+ 							return object
+ 						}
+@@ -521,8 +521,8 @@
+ 			if (this.slowReads++ >= inlineObjectReadThreshold) { // create a fast compiled reader
+ 				let array = this.length == length ? this : this.slice(0, length);
+ 				compiledReader = currentDecoder.keyMap 
+-				? new BlockedFunction ('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
+-				: new BlockedFunction ('r', 'return {' + array.map(key => validName.test(key) ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}');
++				? new BlockedFunction ('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) && k !== '__proto__' ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
++				: new BlockedFunction ('r', 'return {' + array.map(key => validName.test(key) && key !== '__proto__' ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}');
+ 				if (this.compiledReader)
+ 					compiledReader.next = this.compiledReader; // if there is an existing one, we store multiple readers as a linked list because it is usually pretty rare to have multiple readers (of different length) for the same structure
+ 				compiledReader.propertyCount = length;
+@@ -530,9 +530,9 @@
+ 				return compiledReader(read)
+ 			}
+ 			let object = {};
+-			if (currentDecoder.keyMap) for (let i = 0; i < length; i++) object[safeKey(currentDecoder.decodeKey(this[i]))] = read();
++			if (currentDecoder.keyMap) for (let i = 0; i < length; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(this[i])), read());
+ 			else for (let i = 0; i < length; i++) {
+-				object[safeKey(this[i])] = read();
++				setObjectProperty(object, safeKey(this[i]), read());
+ 			}
+ 			return object
+ 		}
+@@ -540,9 +540,24 @@
+ 		return readObject
+ 	}
+ 
++	function setObjectProperty(object, key, value) {
++		if (key === '__proto__') {
++			Object.defineProperty(object, key, {value, enumerable: true, writable: true, configurable: true});
++		} else {
++			object[key] = value;
++		}
++	}
++	function assignObjectProperties(target, ...sources) {
++		for (const source of sources) {
++			if (source == null) continue
++			for (const key of Reflect.ownKeys(Object(source))) {
++				if (Object.prototype.propertyIsEnumerable.call(source, key)) setObjectProperty(target, key, source[key]);
++			}
++		}
++		return target
++	}
+ 	function safeKey(key) {
+-		// protect against prototype pollution
+-		if (typeof key === 'string') return key === '__proto__' ? '__proto_' : key
++		if (typeof key === 'string') return key
+ 		if (typeof key === 'number' || typeof key === 'boolean' || typeof key === 'bigint') return key.toString();
+ 		if (key == null) return key + '';
+ 		// protect against expensive (DoS) string conversions
+@@ -876,7 +891,7 @@
+ 		let object = {};
+ 		for (let i = 2; i < length; i++) {
+ 			let key = structure[i - 2];
+-			object[safeKey(key)] = data[i];
++			setObjectProperty(object, safeKey(key), data[i]);
+ 		}
+ 		return object
+ 	};
+@@ -891,7 +906,32 @@
+ 		return new Tag(value, 15)
+ 	};
+ 	let glbl = { Error, RegExp };
+-	currentExtensions[27] = (data) => { // http://cbor.schmorp.de/generic-object
++	// CBOR Tag 273 specifies this WTF-8 string representation: https://github.com/svaarala/cbor-specs/blob/b85ac24ada38c1bdeb8e141be416d8d290dcd41b/cbor-nonutf8-string-tags.rst
++	currentExtensions[273] = function decodeWtf8(bytes) {
++		const units = [];
++		let result = '';
++		for (let index = 0; index < bytes.length;) {
++			const first = bytes[index++];
++			let codePoint;
++			if (first < 0x80) codePoint = first;
++			else if (first < 0xe0) codePoint = ((first & 0x1f) << 6) | (bytes[index++] & 0x3f);
++			else if (first < 0xf0) {
++				codePoint = ((first & 0x0f) << 12) | ((bytes[index] & 0x3f) << 6) | (bytes[index + 1] & 0x3f);
++				index += 2;
++			} else {
++				codePoint = ((first & 0x07) << 18) | ((bytes[index] & 0x3f) << 12) | ((bytes[index + 1] & 0x3f) << 6) | (bytes[index + 2] & 0x3f);
++				index += 3;
++			}
++			if (codePoint < 0x10000) units.push(codePoint);
++			else {
++				codePoint -= 0x10000;
++				units.push(0xd800 + (codePoint >> 10), 0xdc00 + (codePoint & 0x3ff));
++			}
++			if (units.length >= 0x1000) { result += String.fromCharCode(...units); units.length = 0; }
++		}
++		return result + String.fromCharCode(...units);
++	}
++	currentExtensions[27] = (data) => { // http://cbor.schmorp.de/generic-object
+ 		return (glbl[data[0]] || Error)(data[1], data[2])
+ 	};
+ 	const packedTable = (read) => {
+@@ -979,7 +1019,7 @@
+ 				referenceMap.set(id, { target });
+ 				targetProperties = read();
+ 			}
+-			return Object.assign(target, targetProperties)
++			return assignObjectProperties(target, targetProperties)
+ 		}
+ 		refEntry.target = targetProperties; // the placeholder wasn't used, replace with the deserialized one
+ 		return targetProperties // no cycle, can just use the returned read object
+@@ -1008,7 +1048,7 @@
+ 			return a + b
+ 		if (a instanceof Array)
+ 			return a.concat(b)
+-		return Object.assign({}, a, b)
++		return assignObjectProperties({}, a, b)
+ 	}
+ 	function getPackedValues() {
+ 		if (!packedValues) {
+@@ -1212,7 +1252,54 @@
+ 		return ((multiplier * float32Number + (float32Number > 0 ? 0.5 : -0.5)) >> 0) / multiplier
+ 	}
+ 
+-	let textEncoder;
++	// CBOR Tag 273 specifies this WTF-8 string representation: https://github.com/svaarala/cbor-specs/blob/b85ac24ada38c1bdeb8e141be416d8d290dcd41b/cbor-nonutf8-string-tags.rst
++	function writeWtf8(value, makeRoom) {
++		let length = 0;
++		for (let index = 0; index < value.length; index++) {
++			let codePoint = value.charCodeAt(index);
++			if (codePoint >= 0xd800 && codePoint <= 0xdbff) {
++				const low = value.charCodeAt(index + 1);
++				if (low >= 0xdc00 && low <= 0xdfff) {
++					codePoint = 0x10000 + ((codePoint & 0x03ff) << 10) + (low & 0x03ff);
++					index++;
++				}
++			}
++			length += codePoint < 0x80 ? 1 : codePoint < 0x800 ? 2 : codePoint < 0x10000 ? 3 : 4;
++		}
++		if (position + length + 8 > safeEnd) target = makeRoom(position + length + 8);
++		target[position++] = 0xd9;
++		target[position++] = 0x01;
++		target[position++] = 0x11;
++		if (length < 0x18) target[position++] = 0x40 | length;
++		else if (length < 0x100) { target[position++] = 0x58; target[position++] = length; }
++		else if (length < 0x10000) { target[position++] = 0x59; targetView.setUint16(position, length); position += 2; }
++		else { target[position++] = 0x5a; targetView.setUint32(position, length); position += 4; }
++		for (let index = 0; index < value.length; index++) {
++			let codePoint = value.charCodeAt(index);
++			if (codePoint >= 0xd800 && codePoint <= 0xdbff) {
++				const low = value.charCodeAt(index + 1);
++				if (low >= 0xdc00 && low <= 0xdfff) {
++					codePoint = 0x10000 + ((codePoint & 0x03ff) << 10) + (low & 0x03ff);
++					index++;
++				}
++			}
++			if (codePoint < 0x80) target[position++] = codePoint;
++			else if (codePoint < 0x800) {
++				target[position++] = 0xc0 | codePoint >> 6;
++				target[position++] = 0x80 | codePoint & 0x3f;
++			} else if (codePoint < 0x10000) {
++				target[position++] = 0xe0 | codePoint >> 12;
++				target[position++] = 0x80 | codePoint >> 6 & 0x3f;
++				target[position++] = 0x80 | codePoint & 0x3f;
++			} else {
++				target[position++] = 0xf0 | codePoint >> 18;
++				target[position++] = 0x80 | codePoint >> 12 & 0x3f;
++				target[position++] = 0x80 | codePoint >> 6 & 0x3f;
++				target[position++] = 0x80 | codePoint & 0x3f;
++			}
++		}
++	}
++let textEncoder;
+ 	try {
+ 		textEncoder = new TextEncoder();
+ 	} catch (error) {}
+@@ -1473,6 +1560,7 @@
+ 				var type = typeof value;
+ 				var length;
+ 				if (type === 'string') {
++					if (!value.isWellFormed()) { writeWtf8(value, makeRoom); return; }
+ 					if (packedObjectMap) {
+ 						let packedPosition = packedObjectMap[value];
+ 						if (packedPosition >= 0) {
+diff --git a/dist/index.js b/dist/index.js
+index b4f561063aeabdde5f44d219b7f240eff835caaf..8fc103a65892225887bcf89568a6260dd99a95b9 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -98,7 +98,7 @@
+ 			}
+ 			let res = {};
+ 			//map.forEach((v,k) => res[Object.keys(this._keyMap)[Object.values(this._keyMap).indexOf(k)] || k] = v)
+-			map.forEach((v,k) => res[safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k)] =  v);
++			map.forEach((v,k) => setObjectProperty(res, safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k), v));
+ 			return res
+ 		}
+ 		
+@@ -313,13 +313,13 @@
+ 								if (currentDecoder.keyMap) {
+ 									while((key = read()) != STOP_CODE) {
+ 										if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-										object[safeKey(currentDecoder.decodeKey(key))] = read();
++										setObjectProperty(object, safeKey(currentDecoder.decodeKey(key)), read());
+ 									}
+ 								}
+ 								else {
+ 									while ((key = read()) != STOP_CODE) {
+ 										if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-										object[safeKey(key)] = read();
++										setObjectProperty(object, safeKey(key), read());
+ 									}
+ 								}
+ 								return object
+@@ -391,8 +391,8 @@
+ 				if (token > (srcEnd - position$1) / 2) throw endOfCBORError() // each entry needs at least two bytes
+ 				if (currentDecoder.mapsAsObjects) {
+ 					let object = {};
+-					if (currentDecoder.keyMap) for (let i = 0; i < token; i++) object[safeKey(currentDecoder.decodeKey(read()))] = read();
+-					else for (let i = 0; i < token; i++) object[safeKey(read())] = read();
++					if (currentDecoder.keyMap) for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(read())), read());
++					else for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(read()), read());
+ 					return object
+ 				} else {
+ 					if (restoreMapsAsObject) {
+@@ -422,11 +422,11 @@
+ 							let object = {};
+ 							if (currentDecoder.keyMap) for (let i = 2; i < length; i++) {
+ 								let key = currentDecoder.decodeKey(structure[i - 2]);
+-								object[safeKey(key)] = read();
++								setObjectProperty(object, safeKey(key), read());
+ 							}
+ 							else for (let i = 2; i < length; i++) {
+ 								let key = structure[i - 2];
+-								object[safeKey(key)] = read();
++								setObjectProperty(object, safeKey(key), read());
+ 							}
+ 							return object
+ 						}
+@@ -520,8 +520,8 @@
+ 			if (this.slowReads++ >= inlineObjectReadThreshold) { // create a fast compiled reader
+ 				let array = this.length == length ? this : this.slice(0, length);
+ 				compiledReader = currentDecoder.keyMap 
+-				? new Function('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
+-				: new Function('r', 'return {' + array.map(key => validName.test(key) ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}');
++				? new Function('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) && k !== '__proto__' ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
++				: new Function('r', 'return {' + array.map(key => validName.test(key) && key !== '__proto__' ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}');
+ 				if (this.compiledReader)
+ 					compiledReader.next = this.compiledReader; // if there is an existing one, we store multiple readers as a linked list because it is usually pretty rare to have multiple readers (of different length) for the same structure
+ 				compiledReader.propertyCount = length;
+@@ -529,9 +529,9 @@
+ 				return compiledReader(read)
+ 			}
+ 			let object = {};
+-			if (currentDecoder.keyMap) for (let i = 0; i < length; i++) object[safeKey(currentDecoder.decodeKey(this[i]))] = read();
++			if (currentDecoder.keyMap) for (let i = 0; i < length; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(this[i])), read());
+ 			else for (let i = 0; i < length; i++) {
+-				object[safeKey(this[i])] = read();
++				setObjectProperty(object, safeKey(this[i]), read());
+ 			}
+ 			return object
+ 		}
+@@ -539,9 +539,24 @@
+ 		return readObject
+ 	}
+ 
++	function setObjectProperty(object, key, value) {
++		if (key === '__proto__') {
++			Object.defineProperty(object, key, {value, enumerable: true, writable: true, configurable: true});
++		} else {
++			object[key] = value;
++		}
++	}
++	function assignObjectProperties(target, ...sources) {
++		for (const source of sources) {
++			if (source == null) continue
++			for (const key of Reflect.ownKeys(Object(source))) {
++				if (Object.prototype.propertyIsEnumerable.call(source, key)) setObjectProperty(target, key, source[key]);
++			}
++		}
++		return target
++	}
+ 	function safeKey(key) {
+-		// protect against prototype pollution
+-		if (typeof key === 'string') return key === '__proto__' ? '__proto_' : key
++		if (typeof key === 'string') return key
+ 		if (typeof key === 'number' || typeof key === 'boolean' || typeof key === 'bigint') return key.toString();
+ 		if (key == null) return key + '';
+ 		// protect against expensive (DoS) string conversions
+@@ -875,7 +890,7 @@
+ 		let object = {};
+ 		for (let i = 2; i < length; i++) {
+ 			let key = structure[i - 2];
+-			object[safeKey(key)] = data[i];
++			setObjectProperty(object, safeKey(key), data[i]);
+ 		}
+ 		return object
+ 	};
+@@ -890,7 +905,32 @@
+ 		return new Tag(value, 15)
+ 	};
+ 	let glbl = { Error, RegExp };
+-	currentExtensions[27] = (data) => { // http://cbor.schmorp.de/generic-object
++	// CBOR Tag 273 specifies this WTF-8 string representation: https://github.com/svaarala/cbor-specs/blob/b85ac24ada38c1bdeb8e141be416d8d290dcd41b/cbor-nonutf8-string-tags.rst
++	currentExtensions[273] = function decodeWtf8(bytes) {
++		const units = [];
++		let result = '';
++		for (let index = 0; index < bytes.length;) {
++			const first = bytes[index++];
++			let codePoint;
++			if (first < 0x80) codePoint = first;
++			else if (first < 0xe0) codePoint = ((first & 0x1f) << 6) | (bytes[index++] & 0x3f);
++			else if (first < 0xf0) {
++				codePoint = ((first & 0x0f) << 12) | ((bytes[index] & 0x3f) << 6) | (bytes[index + 1] & 0x3f);
++				index += 2;
++			} else {
++				codePoint = ((first & 0x07) << 18) | ((bytes[index] & 0x3f) << 12) | ((bytes[index + 1] & 0x3f) << 6) | (bytes[index + 2] & 0x3f);
++				index += 3;
++			}
++			if (codePoint < 0x10000) units.push(codePoint);
++			else {
++				codePoint -= 0x10000;
++				units.push(0xd800 + (codePoint >> 10), 0xdc00 + (codePoint & 0x3ff));
++			}
++			if (units.length >= 0x1000) { result += String.fromCharCode(...units); units.length = 0; }
++		}
++		return result + String.fromCharCode(...units);
++	}
++	currentExtensions[27] = (data) => { // http://cbor.schmorp.de/generic-object
+ 		return (glbl[data[0]] || Error)(data[1], data[2])
+ 	};
+ 	const packedTable = (read) => {
+@@ -978,7 +1018,7 @@
+ 				referenceMap.set(id, { target });
+ 				targetProperties = read();
+ 			}
+-			return Object.assign(target, targetProperties)
++			return assignObjectProperties(target, targetProperties)
+ 		}
+ 		refEntry.target = targetProperties; // the placeholder wasn't used, replace with the deserialized one
+ 		return targetProperties // no cycle, can just use the returned read object
+@@ -1007,7 +1047,7 @@
+ 			return a + b
+ 		if (a instanceof Array)
+ 			return a.concat(b)
+-		return Object.assign({}, a, b)
++		return assignObjectProperties({}, a, b)
+ 	}
+ 	function getPackedValues() {
+ 		if (!packedValues) {
+@@ -1211,7 +1251,54 @@
+ 		return ((multiplier * float32Number + (float32Number > 0 ? 0.5 : -0.5)) >> 0) / multiplier
+ 	}
+ 
+-	let textEncoder;
++	// CBOR Tag 273 specifies this WTF-8 string representation: https://github.com/svaarala/cbor-specs/blob/b85ac24ada38c1bdeb8e141be416d8d290dcd41b/cbor-nonutf8-string-tags.rst
++	function writeWtf8(value, makeRoom) {
++		let length = 0;
++		for (let index = 0; index < value.length; index++) {
++			let codePoint = value.charCodeAt(index);
++			if (codePoint >= 0xd800 && codePoint <= 0xdbff) {
++				const low = value.charCodeAt(index + 1);
++				if (low >= 0xdc00 && low <= 0xdfff) {
++					codePoint = 0x10000 + ((codePoint & 0x03ff) << 10) + (low & 0x03ff);
++					index++;
++				}
++			}
++			length += codePoint < 0x80 ? 1 : codePoint < 0x800 ? 2 : codePoint < 0x10000 ? 3 : 4;
++		}
++		if (position + length + 8 > safeEnd) target = makeRoom(position + length + 8);
++		target[position++] = 0xd9;
++		target[position++] = 0x01;
++		target[position++] = 0x11;
++		if (length < 0x18) target[position++] = 0x40 | length;
++		else if (length < 0x100) { target[position++] = 0x58; target[position++] = length; }
++		else if (length < 0x10000) { target[position++] = 0x59; targetView.setUint16(position, length); position += 2; }
++		else { target[position++] = 0x5a; targetView.setUint32(position, length); position += 4; }
++		for (let index = 0; index < value.length; index++) {
++			let codePoint = value.charCodeAt(index);
++			if (codePoint >= 0xd800 && codePoint <= 0xdbff) {
++				const low = value.charCodeAt(index + 1);
++				if (low >= 0xdc00 && low <= 0xdfff) {
++					codePoint = 0x10000 + ((codePoint & 0x03ff) << 10) + (low & 0x03ff);
++					index++;
++				}
++			}
++			if (codePoint < 0x80) target[position++] = codePoint;
++			else if (codePoint < 0x800) {
++				target[position++] = 0xc0 | codePoint >> 6;
++				target[position++] = 0x80 | codePoint & 0x3f;
++			} else if (codePoint < 0x10000) {
++				target[position++] = 0xe0 | codePoint >> 12;
++				target[position++] = 0x80 | codePoint >> 6 & 0x3f;
++				target[position++] = 0x80 | codePoint & 0x3f;
++			} else {
++				target[position++] = 0xf0 | codePoint >> 18;
++				target[position++] = 0x80 | codePoint >> 12 & 0x3f;
++				target[position++] = 0x80 | codePoint >> 6 & 0x3f;
++				target[position++] = 0x80 | codePoint & 0x3f;
++			}
++		}
++	}
++let textEncoder;
+ 	try {
+ 		textEncoder = new TextEncoder();
+ 	} catch (error) {}
+@@ -1472,6 +1559,7 @@
+ 				var type = typeof value;
+ 				var length;
+ 				if (type === 'string') {
++					if (!value.isWellFormed()) { writeWtf8(value, makeRoom); return; }
+ 					if (packedObjectMap) {
+ 						let packedPosition = packedObjectMap[value];
+ 						if (packedPosition >= 0) {
+diff --git a/dist/node.cjs b/dist/node.cjs
+index 91d80ca3a96e56199dcca453606f9ebcabe20e9c..d29dcecf725d676c6830134d02f9d25b0cc11e44 100644
+--- a/dist/node.cjs
++++ b/dist/node.cjs
+@@ -102,7 +102,7 @@ class Decoder {
+ 		}
+ 		let res = {};
+ 		//map.forEach((v,k) => res[Object.keys(this._keyMap)[Object.values(this._keyMap).indexOf(k)] || k] = v)
+-		map.forEach((v,k) => res[safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k)] =  v);
++		map.forEach((v,k) => setObjectProperty(res, safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k), v));
+ 		return res
+ 	}
+ 	
+@@ -319,13 +319,13 @@ function read() {
+ 							if (currentDecoder.keyMap) {
+ 								while((key = read()) != STOP_CODE) {
+ 									if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-									object[safeKey(currentDecoder.decodeKey(key))] = read();
++									setObjectProperty(object, safeKey(currentDecoder.decodeKey(key)), read());
+ 								}
+ 							}
+ 							else {
+ 								while ((key = read()) != STOP_CODE) {
+ 									if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-									object[safeKey(key)] = read();
++									setObjectProperty(object, safeKey(key), read());
+ 								}
+ 							}
+ 							return object
+@@ -397,8 +397,8 @@ function read() {
+ 			if (token > (srcEnd - position$1) / 2) throw endOfCBORError() // each entry needs at least two bytes
+ 			if (currentDecoder.mapsAsObjects) {
+ 				let object = {};
+-				if (currentDecoder.keyMap) for (let i = 0; i < token; i++) object[safeKey(currentDecoder.decodeKey(read()))] = read();
+-				else for (let i = 0; i < token; i++) object[safeKey(read())] = read();
++				if (currentDecoder.keyMap) for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(read())), read());
++				else for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(read()), read());
+ 				return object
+ 			} else {
+ 				if (restoreMapsAsObject) {
+@@ -428,11 +428,11 @@ function read() {
+ 						let object = {};
+ 						if (currentDecoder.keyMap) for (let i = 2; i < length; i++) {
+ 							let key = currentDecoder.decodeKey(structure[i - 2]);
+-							object[safeKey(key)] = read();
++							setObjectProperty(object, safeKey(key), read());
+ 						}
+ 						else for (let i = 2; i < length; i++) {
+ 							let key = structure[i - 2];
+-							object[safeKey(key)] = read();
++							setObjectProperty(object, safeKey(key), read());
+ 						}
+ 						return object
+ 					}
+@@ -526,8 +526,8 @@ function createStructureReader(structure) {
+ 		if (this.slowReads++ >= inlineObjectReadThreshold) { // create a fast compiled reader
+ 			let array = this.length == length ? this : this.slice(0, length);
+ 			compiledReader = currentDecoder.keyMap 
+-			? new Function('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
+-			: new Function('r', 'return {' + array.map(key => validName.test(key) ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}');
++			? new Function('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) && k !== '__proto__' ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
++			: new Function('r', 'return {' + array.map(key => validName.test(key) && key !== '__proto__' ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}');
+ 			if (this.compiledReader)
+ 				compiledReader.next = this.compiledReader; // if there is an existing one, we store multiple readers as a linked list because it is usually pretty rare to have multiple readers (of different length) for the same structure
+ 			compiledReader.propertyCount = length;
+@@ -535,9 +535,9 @@ function createStructureReader(structure) {
+ 			return compiledReader(read)
+ 		}
+ 		let object = {};
+-		if (currentDecoder.keyMap) for (let i = 0; i < length; i++) object[safeKey(currentDecoder.decodeKey(this[i]))] = read();
++		if (currentDecoder.keyMap) for (let i = 0; i < length; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(this[i])), read());
+ 		else for (let i = 0; i < length; i++) {
+-			object[safeKey(this[i])] = read();
++			setObjectProperty(object, safeKey(this[i]), read());
+ 		}
+ 		return object
+ 	}
+@@ -545,9 +545,24 @@ function createStructureReader(structure) {
+ 	return readObject
+ }
+ 
++function setObjectProperty(object, key, value) {
++	if (key === '__proto__') {
++		Object.defineProperty(object, key, {value, enumerable: true, writable: true, configurable: true});
++	} else {
++		object[key] = value;
++	}
++}
++function assignObjectProperties(target, ...sources) {
++	for (const source of sources) {
++		if (source == null) continue
++		for (const key of Reflect.ownKeys(Object(source))) {
++			if (Object.prototype.propertyIsEnumerable.call(source, key)) setObjectProperty(target, key, source[key]);
++		}
++	}
++	return target
++}
+ function safeKey(key) {
+-	// protect against prototype pollution
+-	if (typeof key === 'string') return key === '__proto__' ? '__proto_' : key
++	if (typeof key === 'string') return key
+ 	if (typeof key === 'number' || typeof key === 'boolean' || typeof key === 'bigint') return key.toString();
+ 	if (key == null) return key + '';
+ 	// protect against expensive (DoS) string conversions
+@@ -916,7 +931,7 @@ currentExtensions[LEGACY_RECORD_INLINE_ID] = (data) => {
+ 	let object = {};
+ 	for (let i = 2; i < length; i++) {
+ 		let key = structure[i - 2];
+-		object[safeKey(key)] = data[i];
++		setObjectProperty(object, safeKey(key), data[i]);
+ 	}
+ 	return object
+ };
+@@ -931,6 +946,31 @@ currentExtensions[15] = (value) => {
+ 	return new Tag(value, 15)
+ };
+ let glbl = { Error, RegExp };
++// CBOR Tag 273 specifies this WTF-8 string representation: https://github.com/svaarala/cbor-specs/blob/b85ac24ada38c1bdeb8e141be416d8d290dcd41b/cbor-nonutf8-string-tags.rst
++currentExtensions[273] = function decodeWtf8(bytes) {
++	const units = [];
++	let result = '';
++	for (let index = 0; index < bytes.length;) {
++		const first = bytes[index++];
++		let codePoint;
++		if (first < 0x80) codePoint = first;
++		else if (first < 0xe0) codePoint = ((first & 0x1f) << 6) | (bytes[index++] & 0x3f);
++		else if (first < 0xf0) {
++			codePoint = ((first & 0x0f) << 12) | ((bytes[index] & 0x3f) << 6) | (bytes[index + 1] & 0x3f);
++			index += 2;
++		} else {
++			codePoint = ((first & 0x07) << 18) | ((bytes[index] & 0x3f) << 12) | ((bytes[index + 1] & 0x3f) << 6) | (bytes[index + 2] & 0x3f);
++			index += 3;
++		}
++		if (codePoint < 0x10000) units.push(codePoint);
++		else {
++			codePoint -= 0x10000;
++			units.push(0xd800 + (codePoint >> 10), 0xdc00 + (codePoint & 0x3ff));
++		}
++		if (units.length >= 0x1000) { result += String.fromCharCode(...units); units.length = 0; }
++	}
++	return result + String.fromCharCode(...units);
++}
+ currentExtensions[27] = (data) => { // http://cbor.schmorp.de/generic-object
+ 	return (glbl[data[0]] || Error)(data[1], data[2])
+ };
+@@ -1019,7 +1059,7 @@ currentExtensions[28] = (read) => {
+ 			referenceMap.set(id, { target });
+ 			targetProperties = read();
+ 		}
+-		return Object.assign(target, targetProperties)
++		return assignObjectProperties(target, targetProperties)
+ 	}
+ 	refEntry.target = targetProperties; // the placeholder wasn't used, replace with the deserialized one
+ 	return targetProperties // no cycle, can just use the returned read object
+@@ -1048,7 +1088,7 @@ function combine(a, b) {
+ 		return a + b
+ 	if (a instanceof Array)
+ 		return a.concat(b)
+-	return Object.assign({}, a, b)
++	return assignObjectProperties({}, a, b)
+ }
+ function getPackedValues() {
+ 	if (!packedValues) {
+@@ -1256,6 +1296,53 @@ function roundFloat32(float32Number) {
+ 	return ((multiplier * float32Number + (float32Number > 0 ? 0.5 : -0.5)) >> 0) / multiplier
+ }
+ 
++// CBOR Tag 273 specifies this WTF-8 string representation: https://github.com/svaarala/cbor-specs/blob/b85ac24ada38c1bdeb8e141be416d8d290dcd41b/cbor-nonutf8-string-tags.rst
++function writeWtf8(value, makeRoom) {
++	let length = 0;
++	for (let index = 0; index < value.length; index++) {
++		let codePoint = value.charCodeAt(index);
++		if (codePoint >= 0xd800 && codePoint <= 0xdbff) {
++			const low = value.charCodeAt(index + 1);
++			if (low >= 0xdc00 && low <= 0xdfff) {
++				codePoint = 0x10000 + ((codePoint & 0x03ff) << 10) + (low & 0x03ff);
++				index++;
++			}
++		}
++		length += codePoint < 0x80 ? 1 : codePoint < 0x800 ? 2 : codePoint < 0x10000 ? 3 : 4;
++	}
++	if (position + length + 8 > safeEnd) target = makeRoom(position + length + 8);
++	target[position++] = 0xd9;
++	target[position++] = 0x01;
++	target[position++] = 0x11;
++	if (length < 0x18) target[position++] = 0x40 | length;
++	else if (length < 0x100) { target[position++] = 0x58; target[position++] = length; }
++	else if (length < 0x10000) { target[position++] = 0x59; targetView.setUint16(position, length); position += 2; }
++	else { target[position++] = 0x5a; targetView.setUint32(position, length); position += 4; }
++	for (let index = 0; index < value.length; index++) {
++		let codePoint = value.charCodeAt(index);
++		if (codePoint >= 0xd800 && codePoint <= 0xdbff) {
++			const low = value.charCodeAt(index + 1);
++			if (low >= 0xdc00 && low <= 0xdfff) {
++				codePoint = 0x10000 + ((codePoint & 0x03ff) << 10) + (low & 0x03ff);
++				index++;
++			}
++		}
++		if (codePoint < 0x80) target[position++] = codePoint;
++		else if (codePoint < 0x800) {
++			target[position++] = 0xc0 | codePoint >> 6;
++			target[position++] = 0x80 | codePoint & 0x3f;
++		} else if (codePoint < 0x10000) {
++			target[position++] = 0xe0 | codePoint >> 12;
++			target[position++] = 0x80 | codePoint >> 6 & 0x3f;
++			target[position++] = 0x80 | codePoint & 0x3f;
++		} else {
++			target[position++] = 0xf0 | codePoint >> 18;
++			target[position++] = 0x80 | codePoint >> 12 & 0x3f;
++			target[position++] = 0x80 | codePoint >> 6 & 0x3f;
++			target[position++] = 0x80 | codePoint & 0x3f;
++		}
++	}
++}
+ let textEncoder;
+ try {
+ 	textEncoder = new TextEncoder();
+@@ -1517,6 +1604,7 @@ class Encoder extends Decoder {
+ 			var type = typeof value;
+ 			var length;
+ 			if (type === 'string') {
++				if (!value.isWellFormed()) { writeWtf8(value, makeRoom); return; }
+ 				if (packedObjectMap) {
+ 					let packedPosition = packedObjectMap[value];
+ 					if (packedPosition >= 0) {
+diff --git a/encode.js b/encode.js
+index 3814b24a2128e7a8b80722fe534c75ba289947f9..6c8224f5084333b026bb229be8e358d224fb8f77 100644
+--- a/encode.js
++++ b/encode.js
+@@ -1,4 +1,51 @@
+ import { Decoder, mult10, Tag, typedArrays, addExtension as decodeAddExtension } from './decode.js'
++// CBOR Tag 273 specifies this WTF-8 string representation: https://github.com/svaarala/cbor-specs/blob/b85ac24ada38c1bdeb8e141be416d8d290dcd41b/cbor-nonutf8-string-tags.rst
++function writeWtf8(value, makeRoom) {
++	let length = 0;
++	for (let index = 0; index < value.length; index++) {
++		let codePoint = value.charCodeAt(index);
++		if (codePoint >= 0xd800 && codePoint <= 0xdbff) {
++			const low = value.charCodeAt(index + 1);
++			if (low >= 0xdc00 && low <= 0xdfff) {
++				codePoint = 0x10000 + ((codePoint & 0x03ff) << 10) + (low & 0x03ff);
++				index++;
++			}
++		}
++		length += codePoint < 0x80 ? 1 : codePoint < 0x800 ? 2 : codePoint < 0x10000 ? 3 : 4;
++	}
++	if (position + length + 8 > safeEnd) target = makeRoom(position + length + 8);
++	target[position++] = 0xd9;
++	target[position++] = 0x01;
++	target[position++] = 0x11;
++	if (length < 0x18) target[position++] = 0x40 | length;
++	else if (length < 0x100) { target[position++] = 0x58; target[position++] = length; }
++	else if (length < 0x10000) { target[position++] = 0x59; targetView.setUint16(position, length); position += 2; }
++	else { target[position++] = 0x5a; targetView.setUint32(position, length); position += 4; }
++	for (let index = 0; index < value.length; index++) {
++		let codePoint = value.charCodeAt(index);
++		if (codePoint >= 0xd800 && codePoint <= 0xdbff) {
++			const low = value.charCodeAt(index + 1);
++			if (low >= 0xdc00 && low <= 0xdfff) {
++				codePoint = 0x10000 + ((codePoint & 0x03ff) << 10) + (low & 0x03ff);
++				index++;
++			}
++		}
++		if (codePoint < 0x80) target[position++] = codePoint;
++		else if (codePoint < 0x800) {
++			target[position++] = 0xc0 | codePoint >> 6;
++			target[position++] = 0x80 | codePoint & 0x3f;
++		} else if (codePoint < 0x10000) {
++			target[position++] = 0xe0 | codePoint >> 12;
++			target[position++] = 0x80 | codePoint >> 6 & 0x3f;
++			target[position++] = 0x80 | codePoint & 0x3f;
++		} else {
++			target[position++] = 0xf0 | codePoint >> 18;
++			target[position++] = 0x80 | codePoint >> 12 & 0x3f;
++			target[position++] = 0x80 | codePoint >> 6 & 0x3f;
++			target[position++] = 0x80 | codePoint & 0x3f;
++		}
++	}
++}
+ let textEncoder
+ try {
+ 	textEncoder = new TextEncoder()
+@@ -262,6 +309,7 @@ export class Encoder extends Decoder {
+ 			var type = typeof value
+ 			var length
+ 			if (type === 'string') {
++				if (!value.isWellFormed()) { writeWtf8(value, makeRoom); return; }
+ 				if (packedObjectMap) {
+ 					let packedPosition = packedObjectMap[value]
+ 					if (packedPosition >= 0) {
