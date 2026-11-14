@@ -4,7 +4,7 @@ import { CLAUDE_AGENT_USER_AGENT } from '../../../src/auth.ts';
 import { COPILOT_ANTHROPIC_MESSAGES_BOUNDARY } from '../../../src/interceptors/anthropic-messages/index.ts';
 import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
@@ -12,8 +12,8 @@ import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@fl
 
 const stubRequest = {};
 
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
-  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>> =>
+  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {})(), testTelemetryModelIdentity));
 
 const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundaryCtx => ({
   payload,
@@ -41,7 +41,7 @@ test('Claude Code SDK compact request: Claude-agent overrides compact intent, bo
     messages: [{ role: 'user', content: COMPACT_LAST_MESSAGE_TEXT }],
   });
 
-  await runInterceptors<AnthropicMessagesBoundaryCtx, object, ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>>(
+  await runInterceptors<AnthropicMessagesBoundaryCtx, object, ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>>(
     ctx,
     stubRequest,
     COPILOT_ANTHROPIC_MESSAGES_BOUNDARY,

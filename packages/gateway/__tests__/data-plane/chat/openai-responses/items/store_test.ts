@@ -18,7 +18,7 @@ const installRepo = (): InMemoryRepo => {
   void repo.apiKeys.save({
     id: 'key-a', userId: 1, name: 'OpenAI Responses test key', key: 'raw-responses-test',
     serverSecret: '99'.repeat(32), createdAt: '2026-01-01T00:00:00.000Z',
-    upstreamIds: null, deletedAt: null, dumpRetentionSeconds: null,
+    upstreamIds: null, randomizeUpstreams: false, deletedAt: null, dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: TEST_OPENAI_RESPONSES_RETENTION_SECONDS,
   });
   return repo;
@@ -327,29 +327,9 @@ describe('OpenAIResponsesStatefulStore', () => {
     expect(await repo.openaiResponsesItems.lookupMany('key-a', snapshot.itemIds, 0)).toHaveLength(snapshot.itemIds.length);
   });
 
-  test('per-attempt private payloads reset on each beginAttempt', () => {
-    const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), true);
-    store.beginAttempt(new Map([['item', { first: true }]]));
-
-    expect(store.getPrivatePayload('item')).toEqual({ first: true });
-
-    store.registerPrivatePayload('ws_aabbccdd', { value: 2 });
-    expect(store.getPrivatePayload('ws_aabbccdd')).toEqual({ value: 2 });
-
-    store.beginAttempt(new Map());
-    expect(store.getPrivatePayload('item')).toBeUndefined();
-    expect(store.getPrivatePayload('ws_aabbccdd')).toBeUndefined();
-  });
-
-  test('non-OpenAI-Responses-source store holds request-private tool state but persists and reads nothing', async () => {
-    // Translated sources (Anthropic Messages/Gemini generateContent/OpenAI Chat Completions) still run the server-tool shim,
-    // whose per-attempt private-payload scratchpad lives on the store; the
-    // no-backing store keeps that working without any durable state.
+  test('non-OpenAI-Responses-source store persists and reads nothing', async () => {
     const store = createNonOpenAIResponsesSourceStore('key-a');
     expect(store.writesState).toBe(false);
-    store.beginAttempt(new Map());
-    store.registerPrivatePayload('ws_aabbccdd', { ir: 'search result' });
-    expect(store.getPrivatePayload('ws_aabbccdd')).toEqual({ ir: 'search result' });
     expect(store.getItemById('anything')).toBeUndefined();
     expect(await store.loadSnapshot('resp_x')).toBeNull();
   });

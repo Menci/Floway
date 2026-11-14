@@ -3,11 +3,13 @@ import { ChevronDown12Regular } from '@fluentui/react-icons';
 import { Children, createElement, forwardRef } from 'react';
 import type { ComponentProps, ElementType, MouseEvent, ReactNode, Ref } from 'react';
 
+import { FieldClearIcon } from './field-clear-icon';
 import { useScrollAreaHost } from './scroll-area';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 
 const {
+  Button,
   Checkbox: FluentCheckbox,
   Combobox: FluentCombobox,
   Dropdown: FluentDropdown,
@@ -15,6 +17,7 @@ const {
   Option,
   Switch: FluentSwitch,
   Textarea: FluentTextarea,
+  Tooltip,
   mergeClasses,
   useMergedRefs,
 } = fluentComponents;
@@ -25,6 +28,10 @@ const {
 // refuses the change at the source.
 interface ReadOnlyProp {
   readOnly?: boolean;
+}
+
+interface ClearActionProp {
+  clearAction?: { label: string; onClear: () => void };
 }
 
 // The caller's own slot spreads first and the refusal lands on top of it, so a
@@ -66,8 +73,9 @@ export const LISTBOX_POSITIONING = {
 // fill reaches 97.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L582-L586
 const EXPAND_ICON = <ChevronDown12Regular />;
+const CLEAR_ICON = <FieldClearIcon />;
 
-type ListboxRenderFunction = (
+export type ListboxRenderFunction = (
   ListboxComponent: ElementType<ListboxProps>,
   listboxProps: Omit<ListboxProps, 'as'>,
 ) => ReactNode;
@@ -122,7 +130,7 @@ function ScrollableListbox({
           https://w3c.github.io/aria/#mustContain */}
       <div className="floway-combobox-listbox-content">
         {Children.toArray(children).length === 0
-          ? <Option disabled value="">{emptyMessage ?? t(freeform ? 'common.noSuggestions' : 'common.noOptions')}</Option>
+          ? <Option checkIcon={null} disabled value="">{emptyMessage ?? t(freeform ? 'common.noSuggestions' : 'common.noOptions')}</Option>
           : children}
       </div>
     </div>,
@@ -132,7 +140,7 @@ function ScrollableListbox({
 // MUI and Ant Design suppress the message outright on a free-text field, taking
 // an empty suggestion list for a non-failure. A row stating there is nothing to
 // suggest announces no failure either, and keeps the control from changing shape.
-const listboxRenderer = (freeform: boolean, emptyMessage: string | undefined): ListboxRenderFunction =>
+export const listboxRenderer = (freeform: boolean, emptyMessage: string | undefined): ListboxRenderFunction =>
   (ListboxComponent, listboxProps) => (
     <ScrollableListbox ListboxComponent={ListboxComponent} emptyMessage={emptyMessage} freeform={freeform} listboxProps={listboxProps} />
   );
@@ -173,11 +181,26 @@ export const Input = forwardRef<HTMLInputElement, ComponentProps<typeof FluentIn
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L358-L359
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Combobox/useCombobox.tsx#L216
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Dropdown/useDropdown.tsx#L165
-export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof FluentCombobox>, 'appearance' | 'listbox'> & ListWidthProp & EmptyMessageProp & ReadOnlyProp>(
-  ({ className, emptyMessage, expandIcon, listWidth, onOptionSelect, positioning, readOnly, ...props }, ref) => (
+export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof FluentCombobox>, 'appearance' | 'listbox'> & ListWidthProp & EmptyMessageProp & ReadOnlyProp & ClearActionProp>(
+  ({ className, clearAction, emptyMessage, expandIcon, listWidth, onOptionSelect, positioning, readOnly, ...props }, ref) => (
     <FluentCombobox
       {...props}
       aria-readonly={readOnly === true ? true : undefined}
+      clearable={clearAction ? false : props.clearable}
+      clearIcon={clearAction && !readOnly ? {
+        children: (_: ElementType, { className: clearClassName, style }: ComponentProps<'span'>) => <Tooltip content={clearAction.label} relationship="label"><Button
+          appearance="subtle"
+          aria-label={clearAction.label}
+          className={clearClassName}
+          data-combobox-clear-action=""
+          disabled={props.disabled}
+          icon={CLEAR_ICON}
+          onClick={event => { event.stopPropagation(); clearAction.onClear(); }}
+          onMouseDown={event => event.preventDefault()}
+          size="small"
+          style={{ ...style, display: 'inline-flex', marginInlineEnd: 'var(--spacingHorizontalXS)' }}
+        /></Tooltip>,
+      } : props.clearIcon === undefined ? { children: CLEAR_ICON } : props.clearIcon}
       expandIcon={expandIcon === undefined ? EXPAND_ICON : expandIcon}
       input={{ ...slotProps(props.input), readOnly }}
       onOptionSelect={readOnly === true ? undefined : onOptionSelect}
@@ -194,7 +217,12 @@ export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof
     <FluentDropdown
       {...props}
       aria-readonly={readOnly === true ? true : undefined}
+      clearButton={props.clearable === true && props.clearButton === undefined ? { children: CLEAR_ICON } : props.clearButton}
       expandIcon={expandIcon === undefined ? EXPAND_ICON : expandIcon}
+      // `readOnly` has to withdraw the popup as well as the selection: leaving
+      // it open would show a list of choices that the control is about to
+      // refuse, which reads as enabled until the second click does nothing.
+      open={readOnly === true ? false : props.open}
       onOptionSelect={readOnly === true ? undefined : onOptionSelect}
       positioning={positioning ?? LISTBOX_POSITIONING}
       listbox={listboxFor(listWidth, false, emptyMessage)}

@@ -13,8 +13,10 @@ import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/an
 // both: `max_tokens` to 128000 and `temperature` to 1. We mirror the same
 // unconditional fill but cap `max_tokens` to the model's advertised output
 // limit when present (`limits.max_output_tokens`), falling back to the
-// gateway-wide ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS (8192) — sub2api's hardcoded
-// 128000 ignores per-model output caps which we don't want to reproduce.
+// gateway-wide ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS (32768). The fallback
+// avoids prematurely stopping modern Claude responses when the client sends
+// no cap; sub2api's hardcoded 128000 ignores per-model output limits which we
+// don't want to reproduce.
 //
 // Positioned at the head of the chain so the rest of the re-mimicry steps
 // see a fully-formed payload. Caller-supplied values are never overwritten.

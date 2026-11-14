@@ -15,7 +15,8 @@ const overview: PerformanceOverviewResponse = {
   series: [],
   axes: { none: [], keyId: [], userId: [], model: [], upstream: [], operation: [], runtimeLocation: [] },
   dimensionValues: { models: [], upstreams: [], operations: [], runtimeLocations: ['LOCAL'], keyIds: [], userIds: [] },
-  users: [],
+  users: [{ id: 5, username: 'Dana' }],
+  upstreams: [],
   keys: [],
 };
 
@@ -31,14 +32,14 @@ const renderPage = (regionAvailable: boolean | null, groupBy: 'model' | 'runtime
         regionAvailable,
         state: {
           metric: 'ttft',
-          percentile: 'p95',
+          percentiles: { ttft: 'p95', tokPerSec: 'p95' },
+          breakdown: 'model',
+          sort: { key: 'requests', direction: 'descending' },
           groupBy,
           range: 'today',
           filters: { model: [], upstream: [], operation: [], runtimeLocation: [], userId: [], keyId: [] },
           hidden: [],
         },
-        upstreams: [],
-        view: 'self-by-key',
       }}
       matches={[] as never}
       params={{}}
@@ -48,6 +49,38 @@ const renderPage = (regionAvailable: boolean | null, groupBy: 'model' | 'runtime
 };
 
 describe('Performance Region dimensions', () => {
+  it('offers every auditable user, including one without samples in the window', () => {
+    renderPage(false);
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'User' }));
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Dana' })).toBeTruthy();
+  });
+
+  it('does not turn an unauthorized URL user filter into a dropdown option', () => {
+    const state = {
+      metric: 'ttft' as const,
+      percentiles: { ttft: 'p95' as const, tokPerSec: 'p95' as const },
+      breakdown: 'model' as const,
+      sort: { key: 'requests' as const, direction: 'descending' as const },
+      groupBy: 'model' as const,
+      range: 'today' as const,
+      filters: { model: [], upstream: [], operation: [], runtimeLocation: [], userId: ['999'], keyId: [] },
+      hidden: [],
+    };
+    const router = createMemoryRouter([{
+      path: '/',
+      Component: () => <DashboardMonitorPerformance
+        loaderData={{ currentUserId: '1', error: null, loadedAt: Date.UTC(2026, 7, 5, 12), overview, regionAvailable: false, state }}
+        matches={[] as never}
+        params={{}}
+      />,
+    }], { initialEntries: ['/'] });
+    renderInApp(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'User' }));
+    expect(screen.queryByRole('menuitemcheckbox', { name: 'user 999' })).toBeNull();
+  });
+
   it('hides Region controls and breakdowns outside Cloudflare', () => {
     renderPage(false);
 

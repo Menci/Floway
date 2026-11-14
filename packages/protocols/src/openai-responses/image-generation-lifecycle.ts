@@ -1,17 +1,18 @@
-import type { OpenAIResponsesOutputImageGenerationCall, OpenAIResponsesStreamEvent } from './index.ts';
+import type { OpenAIResponsesOutputImageGenerationCallEx, OpenAIResponsesStreamEventEx } from './index.ts';
 
 export const imageGenerationCallLifecycleEvents = (
-  item: OpenAIResponsesOutputImageGenerationCall,
+  item: OpenAIResponsesOutputImageGenerationCallEx,
   outputIndex: number,
 ): {
-  startFrames: OpenAIResponsesStreamEvent[];
-  endFrames: OpenAIResponsesStreamEvent[];
+  startFrames: OpenAIResponsesStreamEventEx[];
+  endFrames: OpenAIResponsesStreamEventEx[];
 } => {
   const itemId = item.id;
-  const inProgressItem: OpenAIResponsesOutputImageGenerationCall = {
+  const inProgressItem: OpenAIResponsesOutputImageGenerationCallEx = {
     type: 'image_generation_call',
     id: itemId,
     status: 'in_progress',
+    result: null,
   };
   return {
     startFrames: [

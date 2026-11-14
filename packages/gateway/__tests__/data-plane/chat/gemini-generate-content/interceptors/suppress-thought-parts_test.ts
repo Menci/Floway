@@ -56,7 +56,7 @@ test('drops thought parts and suppresses candidates that become empty without a 
     },
   ];
 
-  const res = await suppressThoughtParts(invocation({}), stubCtx, streamingResult(upstream));
+  const res = await suppressThoughtParts(invocation({ contents: [] }), stubCtx, streamingResult(upstream));
   if (res.type !== 'events') throw new Error('expected events');
 
   assertEquals(await collect(res.events), [
@@ -84,7 +84,7 @@ test('preserves an empty candidate when it carries a finishReason', async () => 
     },
   ];
 
-  const res = await suppressThoughtParts(invocation({}), stubCtx, streamingResult(upstream));
+  const res = await suppressThoughtParts(invocation({ contents: [] }), stubCtx, streamingResult(upstream));
   if (res.type !== 'events') throw new Error('expected events');
 
   assertEquals(await collect(res.events), [
@@ -119,7 +119,7 @@ test('passes thought parts through when includeThoughts is opted in', async () =
   ];
 
   const res = await suppressThoughtParts(
-    invocation({ generationConfig: { thinkingConfig: { includeThoughts: true } } }),
+    invocation({ contents: [], generationConfig: { thinkingConfig: { includeThoughts: true } } }),
     stubCtx,
     streamingResult(upstream),
   );
@@ -133,7 +133,7 @@ test('passes error frames through unchanged', async () => {
     { error: { code: 500, message: 'oops', status: 'INTERNAL' } },
   ];
 
-  const res = await suppressThoughtParts(invocation({}), stubCtx, streamingResult(upstream));
+  const res = await suppressThoughtParts(invocation({ contents: [] }), stubCtx, streamingResult(upstream));
   if (res.type !== 'events') throw new Error('expected events');
 
   assertEquals(await collect(res.events), upstream);
@@ -144,7 +144,7 @@ test('preserves usageMetadata-only frames that have no candidates', async () => 
     { usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 5, totalTokenCount: 8 } },
   ];
 
-  const res = await suppressThoughtParts(invocation({}), stubCtx, streamingResult(upstream));
+  const res = await suppressThoughtParts(invocation({ contents: [] }), stubCtx, streamingResult(upstream));
   if (res.type !== 'events') throw new Error('expected events');
 
   assertEquals(await collect(res.events), upstream);

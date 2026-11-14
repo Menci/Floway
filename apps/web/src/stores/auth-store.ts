@@ -4,6 +4,7 @@ import type { StoreApi } from 'zustand';
 import { getCurrentSession, type AuthUser, type LoginResponse } from '../api/auth';
 import { api, callApiNoContent, type GlobalError } from '../api/client';
 import { clearSessionToken, getSessionToken, onSessionInvalidated, setSessionToken } from '../auth/session';
+import type { UserPreferences } from '@floway-dev/protocols/browser';
 
 // ../auth/session.ts owns the token. The store holds only what the gateway
 // answered for one, and holds the two together, so a cached user can never be
@@ -21,6 +22,8 @@ interface AuthStore {
   initialize: () => Promise<AuthUser | null>;
   refresh: () => Promise<AuthUser | null>;
   primeFromLogin: (login: LoginResponse) => void;
+  /** Writes preferences the server has already accepted into the cached user. */
+  replacePreferences: (preferences: UserPreferences) => void;
 }
 
 let sessionRequest: {
@@ -105,6 +108,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       session: { token: login.token, user: login.user },
       error: null,
     });
+  },
+
+  replacePreferences: preferences => {
+    const { session } = get();
+    if (session === null) return;
+    set({ session: { ...session, user: { ...session.user, preferences } } });
   },
 }));
 

@@ -23,7 +23,7 @@ export const withAnthropicBetaNormalized = async <TResult>(
   ctx.anthropicBeta = [...new Set(ctx.anthropicBeta.filter(beta => ALLOWED_ANTHROPIC_BETAS.has(beta)))];
 
   const isAdaptiveThinking = ctx.payload.thinking?.type === 'adaptive';
-  if (!callerSuppliedBeta && ctx.payload.thinking?.budget_tokens && !isAdaptiveThinking) {
+  if (!callerSuppliedBeta && (ctx.payload.thinking?.type === 'enabled' ? ctx.payload.thinking.budget_tokens : undefined) && !isAdaptiveThinking) {
     ctx.anthropicBeta.push(INTERLEAVED_THINKING_BETA);
   }
 

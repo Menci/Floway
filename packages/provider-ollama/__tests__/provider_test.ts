@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import { CREDIT_BALANCE, USAGE_TOTALS } from './usage-fixture.ts';
 import { createOllamaProvider } from '../src/provider.ts';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, assertExists, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
@@ -7,6 +8,7 @@ import { assertEquals, assertExists, jsonResponse, noopAnthropicMessagesUpstream
 // A cloud upstream writes its usage snapshot after the calls it serves, so the
 // provider needs a repo to write into wherever those calls are exercised.
 initProviderRepo(() => ({
+  recordUpstreamMetric: async () => {},
   upstreams: {
     getById: async () => null,
     saveState: async () => {},
@@ -18,6 +20,7 @@ const buildRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
   kind: 'ollama',
   name: 'Ollama',
   enabled: true,
+  usageRefreshIntervalMinutes: 0,
   sortOrder: 0,
   createdAt: '2026-06-19T00:00:00.000Z',
   updatedAt: '2026-06-19T00:00:00.000Z',
@@ -238,7 +241,8 @@ test('Anthropic Messages methods serialize typed anthropic-beta metadata only on
       }
       // A cloud call arms the background usage probe. It is not a wire call
       // of the protocol under test, so it stays out of the beta record.
-      if (path === '/api/usage') return jsonResponse({ limits: {} });
+      if (path === '/api/usage') return jsonResponse(USAGE_TOTALS);
+      if (path === '/api/balance') return jsonResponse(CREDIT_BALANCE);
       if (path === '/api/me') return jsonResponse({ Plan: 'free' });
       betas[path] = request.headers.get('anthropic-beta');
       if (path === '/v1/messages') {

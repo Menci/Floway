@@ -23,8 +23,7 @@ import {
 } from './quota.ts';
 import {
   encodeCodexResponsesLiteRequest,
-  restoreCodexResponsesCompactionResult,
-  restoreCodexResponsesFrames,
+  projectMovedCodexResponsesFields,
   type CodexResponsesBody,
   type CodexResponsesLiteRequest,
 } from './responses-lite.ts';
@@ -32,12 +31,12 @@ import { restoreCodexResponsesOutput } from './responses-output.ts';
 import type { CodexAccessTokenEntry, CodexAccountCredential } from './state.ts';
 import { isEventStreamMediaType } from '@floway-dev/protocols/common';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResult, OpenAIResponsesInputItem, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResultEx, CanonicalOpenAIResponsesInputItem, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { parseOpenAIResponsesStream, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { jsonRequestBody, serializeOpenAIImagesEditsJsonPayload, type OpenAIImagesEditsRequest, type ProviderCallResult, type ProviderModel, type ProviderStreamResult, type ReplayableBody, streamingProviderCall, type UpstreamCallOptions } from '@floway-dev/provider';
 
 export type ProviderCompactionResult =
-  | { ok: true; result: OpenAIResponsesCompactionResult; modelKey: string }
+  | { ok: true; result: OpenAIResponsesCompactionResultEx; modelKey: string }
   | { ok: false; response: Response; modelKey: string };
 
 // Hooks for repo-side state transitions. Refresh-token rotations and
@@ -88,15 +87,11 @@ export interface CallCodexOpenAIImagesEditsOptions extends CodexBackendCallBase 
 
 type CodexOpenAIResponsesBody = CodexResponsesBody;
 
-export const callCodexOpenAIResponses = async (opts: CallCodexOpenAIResponsesOptions): Promise<ProviderStreamResult<OpenAIResponsesStreamEvent>> => {
+export const callCodexOpenAIResponses = async (opts: CallCodexOpenAIResponsesOptions): Promise<ProviderStreamResult<OpenAIResponsesStreamEventEx>> => {
   const prepared = prepareCodexResponsesRequest(opts, 'generate');
   const ready = await prepareCodexCall(opts);
   if (!ready.ok) return { ok: false, modelKey: opts.model.id, response: ready.response };
-  const result = await performStreamingOpenAIResponsesCall(opts, prepared, ready.accessToken, false);
-  if (!result.ok || !result.headers?.has(CODEX_RESPONSES_LITE_HEADER)) return result;
-  const headers = new Headers(result.headers);
-  headers.delete(CODEX_RESPONSES_LITE_HEADER);
-  return { ...result, headers };
+  return await performStreamingOpenAIResponsesCall(opts, prepared, ready.accessToken, false);
 };
 
 export const callCodexOpenAIResponsesCompact = async (opts: CallCodexOpenAIResponsesCompactOptions): Promise<ProviderCompactionResult> => {
@@ -322,8 +317,8 @@ const deriveSessionIdFromInput = (body: CodexOpenAIResponsesBody): string | null
   return sha256JsonUuid(seed, `${instructions}`);
 };
 
-const seedUpToFirstUserMessage = (input: readonly OpenAIResponsesInputItem[]): readonly OpenAIResponsesInputItem[] | null => {
-  const collected: OpenAIResponsesInputItem[] = [];
+const seedUpToFirstUserMessage = (input: readonly CanonicalOpenAIResponsesInputItem[]): readonly CanonicalOpenAIResponsesInputItem[] | null => {
+  const collected: CanonicalOpenAIResponsesInputItem[] = [];
   for (const item of input) {
     collected.push(item);
     if (isUserMessageItem(item)) return collected;
@@ -331,7 +326,7 @@ const seedUpToFirstUserMessage = (input: readonly OpenAIResponsesInputItem[]): r
   return null;
 };
 
-const isUserMessageItem = (item: OpenAIResponsesInputItem): boolean =>
+const isUserMessageItem = (item: CanonicalOpenAIResponsesInputItem): boolean =>
   item.type === 'message' && item.role === 'user';
 
 const buildCodexTurnMetadata = (
@@ -395,7 +390,8 @@ const buildCodexClientMetadata = (identity: CodexRequestIdentity, turnMetadataJs
 interface PreparedCodexResponsesRequest {
   identity: CodexRequestIdentity;
   turnMetadataJson: CodexTurnMetadataJson;
-  lite?: CodexResponsesLiteRequest;
+  responsesLite: boolean;
+  movedFields: CodexResponsesLiteRequest['movedFields'];
   body: ReplayableBody;
 }
 
@@ -414,14 +410,14 @@ const prepareCodexResponsesRequest = (
       : { requestKind: 'turn' };
   const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
   const standard = { ...opts.body, client_metadata: clientMetadata };
-  const lite = codexModelUsesResponsesLite(opts.model)
-    ? encodeCodexResponsesLiteRequest(standard, identity.threadId)
-    : undefined;
-  const wire = lite?.body ?? standard;
+  const responsesLite = codexModelUsesResponsesLite(opts.model);
+  const encoded = responsesLite ? encodeCodexResponsesLiteRequest(standard, identity.threadId) : undefined;
+  const wire = encoded?.body ?? standard;
   return {
     identity,
     turnMetadataJson,
-    lite,
+    responsesLite,
+    movedFields: encoded?.movedFields ?? {},
     body: jsonRequestBody(action === 'compact'
       ? buildCodexOpenAIResponsesCompactBody(wire, opts.model.id)
       : buildCodexOpenAIResponsesBody(wire, opts.model.id, identity, turnMetadataJson.body)),
@@ -453,8 +449,8 @@ const buildCodexOpenAIResponsesBody = (
 };
 
 // Codex's private compact endpoint accepts these create-only fields in addition
-// to the public compact payload. Encode before projecting so relocated tool
-// and instruction carriers reach the wire.
+// to the public compact payload. Encode before projecting so tool and
+// instruction carriers reach the wire.
 // https://github.com/openai/codex/blob/3d2ee51ca2d5db578f328aa75e20aa22c0197c9a/codex-rs/core/src/client.rs#L651-L678
 const CODEX_COMPACT_EXTENSION_FIELDS = ['tools', 'parallel_tool_calls', 'reasoning', 'text'] as const;
 
@@ -700,7 +696,7 @@ const performStreamingOpenAIResponsesCall = async (
   prepared: PreparedCodexResponsesRequest,
   accessToken: CodexAccessTokenEntry,
   alreadyRetried: boolean,
-): Promise<ProviderStreamResult<OpenAIResponsesStreamEvent>> => {
+): Promise<ProviderStreamResult<OpenAIResponsesStreamEventEx>> => {
   const upstreamFetch = dispatchCodexHttpCall(opts, {
     accessToken: accessToken.token,
     path: CODEX_OPENAI_RESPONSES_PATH,
@@ -708,17 +704,16 @@ const performStreamingOpenAIResponsesCall = async (
     body: prepared.body,
     identity: prepared.identity,
     turnMetadataJson: prepared.turnMetadataJson.header,
-    responsesLite: prepared.lite !== undefined,
+    responsesLite: prepared.responsesLite,
   }).then(ensureSseContentType);
 
-  const lite = prepared.lite;
   const result = await streamingProviderCall(
     upstreamFetch,
     (stream, parserOpts) => {
       const frames = parseOpenAIResponsesStream(stream, parserOpts);
-      return restoreCodexResponsesOutput(lite === undefined
+      return restoreCodexResponsesOutput(Object.keys(prepared.movedFields).length === 0
         ? frames
-        : restoreCodexResponsesFrames(frames, lite.callableIdentities, lite.requestEchoes));
+        : projectMovedCodexResponsesFields(frames, prepared.movedFields));
     },
     opts.model.id,
     opts.signal,
@@ -752,7 +747,7 @@ const performUnaryCompactCall = async (
     body: prepared.body,
     identity: prepared.identity,
     turnMetadataJson: prepared.turnMetadataJson.header,
-    responsesLite: prepared.lite !== undefined,
+    responsesLite: prepared.responsesLite,
   });
 
   const attempt = await retryCodexAccess401(
@@ -769,13 +764,11 @@ const performUnaryCompactCall = async (
 
   if (!response.ok) return { ok: false, modelKey: opts.model.id, response };
 
-  const result = await response.json() as OpenAIResponsesCompactionResult;
+  const result = await response.json() as OpenAIResponsesCompactionResultEx;
   return {
     ok: true,
     modelKey: opts.model.id,
-    result: prepared.lite === undefined
-      ? result
-      : restoreCodexResponsesCompactionResult(result, prepared.lite.callableIdentities, prepared.lite.generatedPrefix),
+    result,
   };
 };
 

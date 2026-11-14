@@ -1,4 +1,4 @@
-import type { DumpErrorMeta, DumpMetadata } from '@floway-dev/gateway/dump-types';
+import type { DumpErrorMeta, DumpMetadata } from '@floway-dev/gateway/browser';
 
 export type RequestSeverity = 'success' | 'warning' | 'error';
 

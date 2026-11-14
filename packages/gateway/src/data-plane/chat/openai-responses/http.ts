@@ -1,4 +1,4 @@
-import { openaiResponsesInputErrorResult } from './errors.ts';
+import { inputErrorResult } from './errors.ts';
 import { createOpenAIResponsesHttpStore } from './items/store.ts';
 import { respondOpenAIResponses, respondOpenAIResponsesFailure } from './respond.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
@@ -11,9 +11,9 @@ import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared
 import { settle } from '../../shared/telemetry/settle.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesRequestPayload } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
+import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
-import { canonicalizeOpenAIResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
 
 // OpenAI's verbatim previous_response_not_found envelope. Codex compares this
 // body byte-for-byte against upstream — see the cross-references on
@@ -50,25 +50,17 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   return finalizeGatewayResponse(effectiveCtx, response);
 };
 
-// Pre-stream throw dispatcher. `PreviousResponseNotFoundError` and the
-// translator-input case render protocol-shaped 400s; anything else falls
-// through to the internal-error 502 path.
 const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
   if (error instanceof PreviousResponseNotFoundError) {
     const response = previousResponseNotFoundResponse(error.previousResponseId);
     ctx?.dump?.error('gateway');
     return ctx ? finalizeGatewayResponse(ctx, response) : response;
   }
-  if (error instanceof TranslatorInputError) {
-    const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
-    const response = respondOpenAIResponsesFailure(openaiResponsesInputErrorResult(error, effectiveCtx.attempt.telemetry), effectiveCtx);
-    return finalizeGatewayResponse(effectiveCtx, response);
-  }
   return await respondWithInternalError(c, error, requestBody, ctx);
 };
 
-const parsePayload = (requestBody: RequestBody): CanonicalOpenAIResponsesPayload =>
-  canonicalizeOpenAIResponsesPayload(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as OpenAIResponsesRequestPayload);
+const parsePayload = (requestBody: RequestBody) =>
+  canonicalizeOpenAIResponsesPayload(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as OpenAIResponsesRequestPayloadEx);
 
 export const openaiResponsesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {
@@ -76,6 +68,10 @@ export const openaiResponsesHttp = {
     let ctx: ChatGatewayCtx | undefined;
     try {
       const payload = parsePayload(requestBody);
+      if (!('input' in payload)) {
+        const errorCtx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
+        return finalizeGatewayResponse(errorCtx, respondOpenAIResponsesFailure(inputErrorResult(payload.error), errorCtx));
+      }
       const wantsStream = payload.stream === true;
       ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, (apiKey, requestStartedAt) => createOpenAIResponsesHttpStore(apiKey, requestStartedAt, payload.store ?? undefined));
       const result = await openaiResponsesServe.generate({ payload, ctx, headers: inboundHeaders(c) });
@@ -91,6 +87,10 @@ export const openaiResponsesHttp = {
     let ctx: ChatGatewayCtx | undefined;
     try {
       const payload = parsePayload(requestBody);
+      if (!('input' in payload)) {
+        const errorCtx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
+        return finalizeGatewayResponse(errorCtx, respondOpenAIResponsesFailure(inputErrorResult(payload.error), errorCtx));
+      }
       ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, (apiKey, requestStartedAt) => createOpenAIResponsesHttpStore(apiKey, requestStartedAt, payload.store ?? undefined));
       const result = await openaiResponsesServe.compact({ payload, ctx, headers: inboundHeaders(c) });
       if (result.type === 'result') {

@@ -159,6 +159,12 @@ export const createJinaWebSearchProvider = (apiKey: string, deps?: { fetch?: typ
     }
 
     const limit = Math.min(request.maxResults ?? DEFAULT_WEB_SEARCH_RESULT_COUNT, JINA_SEARCH_MAX_COUNT);
+    // Jina's search endpoint has no publish-date parameter. `recencyDays` is
+    // deliberately dropped: failing the search or deterministically filtering
+    // to an empty set would be worse than returning slightly less relevant
+    // results. Query-level `domains` flow through the existing `X-Site`
+    // allow-list above.
+    // https://jina.ai/reader/#search
     const params = new URLSearchParams({
       q: validatedQuery.query,
       count: String(limit),

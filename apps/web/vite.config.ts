@@ -6,7 +6,9 @@ import { reactRouter } from '@react-router/dev/vite';
 import MagicString from 'magic-string';
 import { defineConfig, runnerImport, type Plugin } from 'vite';
 
+import { assertLegacyCss, legacyCssBuild } from './css-compatibility';
 import { wranglerProxiedPaths } from './gateway-paths';
+import { supportedLanguages } from './src/i18n/languages';
 
 // Part of the app's CSS is authored in TypeScript, because its rules spend
 // values the running app spends too: the WinUI layer under src/winui
@@ -103,9 +105,9 @@ const prismComponentsEsm = (): Plugin => ({
   enforce: 'pre',
   transform(code, id) {
     const path = id.split('?', 1)[0]!.replaceAll('\\', '/');
-    if (!/\/prismjs\/components\/prism-[^/]+\.js$/.test(path)) return;
+    if (!/\/prismjs\/components\/prism-(?!core\.js$)[^/]+\.js$/.test(path)) return;
     const transformed = new MagicString(code);
-    transformed.prepend('import Prism from "prismjs";\n');
+    transformed.prepend('import Prism from "prismjs/components/prism-core";\n');
     return {
       code: transformed.toString(),
       map: transformed.generateMap({ hires: true, includeContent: true, source: id }),
@@ -143,16 +145,6 @@ const sourceMapOutput = {
   sourcemapExcludeSources: true,
 } as const;
 
-// React Router's Environment API resolves the shared CSS pipeline from the
-// root build and the client minifier from the client environment. Both must
-// carry the same pre-Color-Level-4 policy: Chrome 61 predates alpha hex, and
-// esbuild uses that target to serialize alpha with legacy rgba().
-// https://vite.dev/config/build-options.html#build-csstarget
-const legacyCssBuild = {
-  cssMinify: 'esbuild',
-  cssTarget: 'chrome61',
-} as const;
-
 // A Node builtin reaching the browser graph resolves, by default, to a stub
 // that throws on first property access, behind a warning a passing build
 // scrolls away. What it costs is not one broken import: a route module that
@@ -177,6 +169,80 @@ const browserSafeGraph = (): Plugin => ({
   },
 });
 
+const browserBundleAssertions = (): Plugin => ({
+  name: 'floway-browser-bundle-assertions',
+  apply: 'build',
+  applyToEnvironment: environment => environment.name === 'client',
+  generateBundle(_, bundle) {
+    const chunks = Object.values(bundle).filter(output => output.type === 'chunk');
+    const moduleIds = (chunk: (typeof chunks)[number]) => Object.keys(chunk.modules).map(id => id.replaceAll('\\', '/'));
+    const isApplicationBundle = chunks.some(chunk => moduleIds(chunk).some(id => id.endsWith('/src/entry.client.tsx')));
+    if (!isApplicationBundle) throw new Error('The client build emitted no application entry module');
+
+    const galleryChunks = chunks.filter(chunk =>
+      moduleIds(chunk).some(id => id.endsWith('/src/routes/dashboard-winui-gallery.tsx')));
+    if (galleryChunks.length > 0) {
+      throw new Error(`The WinUI gallery reached the production build: ${galleryChunks.map(chunk => chunk.fileName).join(', ')}`);
+    }
+
+    const chunksByFile = new Map(chunks.map(chunk => [chunk.fileName, chunk]));
+    const shellChunks = new Set<(typeof chunks)[number]>();
+    const addStaticImports = (chunk: (typeof chunks)[number]): void => {
+      if (shellChunks.has(chunk)) return;
+      shellChunks.add(chunk);
+      for (const imported of chunk.imports) {
+        const importedChunk = chunksByFile.get(imported);
+        if (importedChunk) addStaticImports(importedChunk);
+      }
+    };
+    for (const entry of chunks.filter(chunk => chunk.isEntry && !chunk.isDynamicEntry)) addStaticImports(entry);
+    if (shellChunks.size === 0) throw new Error('The client build emitted no application entry chunk');
+
+    const localeModule = /\/src\/i18n\/locales\/([^/]+)\.ts$/u;
+    const localeChunks = new Map<string, string>();
+    for (const chunk of chunks) {
+      const locales = moduleIds(chunk).flatMap(id => localeModule.exec(id)?.[1] ?? []);
+      if (locales.length > 1) {
+        throw new Error(`${chunk.fileName} bundles several locales: ${locales.toSorted().join(', ')}`);
+      }
+      for (const locale of locales) {
+        const existing = localeChunks.get(locale);
+        if (existing) throw new Error(`${locale} is duplicated across ${existing} and ${chunk.fileName}`);
+        localeChunks.set(locale, chunk.fileName);
+      }
+      if (shellChunks.has(chunk) && locales.length > 0) {
+        throw new Error(`The application shell bundles translations: ${locales.join(', ')}`);
+      }
+    }
+    const expectedLocales = [...supportedLanguages].toSorted();
+    const actualLocales = [...localeChunks.keys()].toSorted();
+    if (JSON.stringify(actualLocales) !== JSON.stringify(expectedLocales)) {
+      throw new Error(`The client build must contain exactly ${expectedLocales.join(', ')} locale chunks; found ${actualLocales.join(', ')}`);
+    }
+
+    const monacoModule = /\/node_modules\/(?:\.pnpm\/[^/]+\/node_modules\/)?monaco-(?:editor|yaml)\//u;
+    const monacoChunks = chunks.filter(chunk => moduleIds(chunk).some(id => monacoModule.test(id)));
+    const preloadedMonaco = monacoChunks.filter(chunk => shellChunks.has(chunk));
+    if (preloadedMonaco.length > 0) {
+      throw new Error(`Monaco is preloaded by the application shell: ${preloadedMonaco.map(chunk => chunk.fileName).join(', ')}`);
+    }
+    if (monacoChunks.length === 0) throw new Error('The client build contains no lazy Monaco chunk');
+  },
+});
+
+const browserCssCompatibility = (): Plugin => ({
+  name: 'floway-browser-css-compatibility',
+  apply: 'build',
+  applyToEnvironment: environment => environment.name === 'client',
+  async generateBundle(_, bundle) {
+    for (const output of Object.values(bundle)) {
+      if (output.type !== 'asset' || !output.fileName.endsWith('.css')) continue;
+      const css = typeof output.source === 'string' ? output.source : new TextDecoder().decode(output.source);
+      await assertLegacyCss(output.fileName, css);
+    }
+  },
+});
+
 export default defineConfig({
   build: legacyCssBuild,
   // React Router discovers route modules lazily. Pre-bundle their browser
@@ -194,7 +260,7 @@ export default defineConfig({
       'monaco-editor',
       'monaco-yaml',
       'overlayscrollbars',
-      'prismjs',
+      'prismjs/components/prism-core',
       'react',
       'react-dom/client',
       'react-hook-form',
@@ -216,6 +282,11 @@ export default defineConfig({
     // window. Excluding them keeps them on the plugin pipeline in dev, as they
     // already are in the build. The list mirrors that module's imports.
     exclude: [
+      'prismjs/components/prism-markup',
+      'prismjs/components/prism-css',
+      'prismjs/components/prism-clike',
+      'prismjs/components/prism-regex',
+      'prismjs/components/prism-javascript',
       'prismjs/components/prism-bash',
       'prismjs/components/prism-json',
       'prismjs/components/prism-markdown',
@@ -226,6 +297,8 @@ export default defineConfig({
   },
   plugins: [
     browserSafeGraph(),
+    browserBundleAssertions(),
+    browserCssCompatibility(),
     prismComponentsEsm(),
     typescriptStylesheets(),
     reactRouter(),
@@ -253,17 +326,16 @@ export default defineConfig({
   // (https://github.com/nodejs/node/blob/v22.23.2/lib/net.js#L2192-L2196),
   // which orders `::1` first per RFC 6724. `connect` forces AI_ADDRCONFIG
   // (https://github.com/nodejs/node/blob/v22.23.2/lib/net.js#L1376-L1380),
-  // which drops every IPv6 candidate on a host whose only IPv6 address sits on
-  // loopback -- every default container. So the server listens on `::1` while
+  // which drops every IPv6 candidate in the affected container configuration.
+  // So the server listens on `::1` while
   // the fetch can only reach 127.0.0.1, and `resolvedUrls` names neither: Vite
   // builds it from the configured hostname rather than from the
   // `server.address()` it already holds. A GitHub runner resolves `localhost`
-  // to IPv4 on both sides, which is why `verify` never sees this.
+  // to IPv4 on both sides, which is why CI does not reproduce this.
   //
   // Pinning the literal takes name resolution out of the path, so the two sides
-  // agree by construction rather than by agreeing on an answer. IPv4 because it
-  // is the loopback that exists everywhere -- a container with IPv6 disabled
-  // still has 127.0.0.1.
+  // agree by construction rather than by agreeing on an answer. The reproduced
+  // container environment has IPv4 loopback even with IPv6 disabled.
   //
   // Remove this once react-router requests prerenders from the bound address
   // rather than from `resolvedUrls`:
@@ -285,10 +357,6 @@ export default defineConfig({
         // comment that names them: the ErrorBoundary in src/root.tsx restores
         // its trace through src/lib/source-mapped-stack.ts, and the same
         // comment is what lets devtools resolve a frame on a live instance.
-        // Three build checks -- scripts/check-monaco-lazy.ts,
-        // scripts/check-gallery-dev-only.ts and
-        // scripts/check-locales-split.ts -- read the same files to derive
-        // chunk membership from each map's module list.
         sourcemap: true,
         rolldownOptions: {
           output: {

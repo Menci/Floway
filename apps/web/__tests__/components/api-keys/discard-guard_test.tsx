@@ -17,6 +17,7 @@ const apiKey: ApiKey = {
   name: 'First key',
   key: 'sk-first',
   upstream_ids: null,
+  randomize_upstreams: false,
   created_at: '2026-01-01T00:00:00.000Z',
   last_used_at: null,
   dump_retention_seconds: null,
@@ -33,7 +34,6 @@ const renderKeyDialog = (onOpenChange: (open: boolean) => void) => renderInApp(
       onSaved={vi.fn()}
       open
       upstreams={[]}
-      userUpstreamIds={null}
     />
   </OutcomeToastProvider>,
 );

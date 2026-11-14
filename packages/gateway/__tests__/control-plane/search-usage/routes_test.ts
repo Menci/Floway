@@ -12,6 +12,7 @@ const seedWebSearchUsage = async (repo: import('../../repo/memory.ts').InMemoryR
     serverSecret: '00'.repeat(32),
     createdAt: '2026-03-15T00:00:00.000Z',
     upstreamIds: null,
+    randomizeUpstreams: false,
     deletedAt: null,
     dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: 0,
@@ -112,12 +113,14 @@ test('/api/search-usage all-by-user view with include_user_metadata=1 includes u
   assertEquals(body.users.find((u: { id: number }) => u.id === 2).username, 'tester');
 });
 
-test('/api/search-usage rejects all-by-user from a non-admin user', async () => {
-  const { apiKey } = await setupAppTest();
+test('/api/search-usage all-by-user follows a non-admin User.Audit scope', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await seedWebSearchUsage(repo, apiKey.id);
   const response = await requestApp('/api/search-usage?start=2026-03-15T00&end=2026-03-16T00&view=all-by-user', {
     headers: { 'x-api-key': apiKey.key },
   });
-  assertEquals(response.status, 403);
+  assertEquals(response.status, 200);
+  assertEquals((await response.json()).map((record: { userId: number }) => record.userId), [2]);
 });
 
 test('/api/search-usage filters by provider and rejects invalid provider', async () => {

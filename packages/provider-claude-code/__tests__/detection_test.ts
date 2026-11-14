@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { isClaudeCodeShapedRequest, parseMetadataUserID } from '../src/detection.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
 
 const validUserIdLegacy
   = 'user_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
@@ -16,7 +16,7 @@ const validUserIdJson = JSON.stringify({
 
 const baseHeaders = (overrides: Record<string, string> = {}): Headers => {
   const init: Record<string, string> = {
-    'user-agent': 'claude-cli/2.1.181 (external, cli)',
+    'user-agent': 'claude-cli/2.1.280 (external, cli)',
     'x-app': 'cli',
     'anthropic-beta': 'oauth-2025-04-20',
     'anthropic-version': '2023-06-01',
@@ -29,7 +29,7 @@ const bodyWithSystem = (systemText: string, userId: string = validUserIdLegacy):
   model: 'claude-sonnet-4-5-20250929',
   max_tokens: 1024,
   messages: [{ role: 'user', content: 'hi' }],
-  system: [{ type: 'text', text: systemText } satisfies AnthropicMessagesTextBlock],
+  system: [{ type: 'text', text: systemText } satisfies AnthropicMessagesTextBlockParam],
   metadata: { user_id: userId },
 });
 
@@ -71,7 +71,7 @@ describe('parseMetadataUserID', () => {
 describe('isClaudeCodeShapedRequest — UA gate', () => {
   test('accepts canonical UA', () => {
     expect(isClaudeCodeShapedRequest({
-      headers: baseHeaders({ 'user-agent': 'claude-cli/2.1.181' }),
+      headers: baseHeaders({ 'user-agent': 'claude-cli/2.1.280' }),
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
     })).toBe(true);
   });
@@ -132,14 +132,14 @@ describe('isClaudeCodeShapedRequest — billing-block fast path', () => {
   test('accepts a request whose first system block is the billing header', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
-      body: bodyWithSystem('x-anthropic-billing-header: cc_version=2.1.181.abc; cc_entrypoint=cli; cch=00000;'),
+      body: bodyWithSystem('x-anthropic-billing-header: cc_version=2.1.280.abc; cc_entrypoint=cli; cch=00000;'),
     })).toBe(true);
   });
 
   test('rejects a billing-like header missing cc_entrypoint=cli', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
-      body: bodyWithSystem('x-anthropic-billing-header: cc_version=2.1.181.abc; some_other_marker=1;'),
+      body: bodyWithSystem('x-anthropic-billing-header: cc_version=2.1.280.abc; some_other_marker=1;'),
     })).toBe(false);
   });
 });

@@ -16,7 +16,7 @@ import type {
   TrojanProxyConfig,
   VlessTcpTlsProxyConfig,
   VlessWsTlsProxyConfig,
-} from '@floway-dev/proxy/proxy-config';
+} from '@floway-dev/proxy/browser';
 
 const { Field, Option } = fluentComponents;
 

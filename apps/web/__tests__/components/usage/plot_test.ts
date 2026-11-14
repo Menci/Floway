@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from 'vitest';
 
-import { dashboardBucketKeyForUtcHour, type ChartBucket } from '../../../src/components/charts/dashboard-time';
+import type { ChartBucket } from '../../../src/components/charts/dashboard-time';
 import { buildSearchChart, buildTokenChart, summarizeCounters, summarizeUsage } from '../../../src/components/usage/plot';
 import type { ChartPlot, DisplayUsageRecord } from '../../../src/components/usage/types';
 
@@ -15,9 +15,11 @@ const areaPlot = (plot: ChartPlot) => {
 
 const RECORD_HOUR = '2026-07-28T04';
 const bucket: ChartBucket = {
-  key: dashboardBucketKeyForUtcHour('today', RECORD_HOUR),
+  key: RECORD_HOUR,
   label: '12:00 - 13:00',
   date: new Date(`${RECORD_HOUR}:00:00.000Z`),
+  start: Date.parse(`${RECORD_HOUR}:00:00.000Z`),
+  end: Date.parse(`${RECORD_HOUR}:00:00.000Z`) + 3_600_000,
 };
 
 const record = (metrics: DisplayUsageRecord['metrics'], group = 'key-1'): DisplayUsageRecord => ({
@@ -156,6 +158,8 @@ test('repeated local hours remain independent chart points', () => {
     key: hour,
     label: '01:00',
     date: new Date(`${hour}:00:00.000Z`),
+    start: Date.parse(`${hour}:00:00.000Z`),
+    end: Date.parse(`${hour}:00:00.000Z`) + 3_600_000,
   }));
   const records = buckets.map(({ key }, index) => ({
     bucket: key,

@@ -95,12 +95,11 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
   try {
     // The shared resolver returns every candidate of the requested kind:
     // unprefixed + prefixed addressable surfaces fan out across upstreams,
-    // a dated-suffix retry catches `-YYYYMMDD` ids the catalog only lists
-    // in base form, and the kind filter rejects models of the wrong
-    // family before they reach the endpoint check below. Iteration order
-    // follows configured sort_order across upstreams, with the unprefixed
-    // branch pushed before the prefixed one within a single upstream.
-    // The first candidate whose endpoint-key check passes wins.
+    // and the kind filter rejects models of the wrong family before they
+    // reach the endpoint check below. Iteration order follows configured
+    // sort_order across upstreams, with the unprefixed branch pushed before
+    // the prefixed one within a single upstream. The first candidate whose
+    // endpoint-key check passes wins.
     //
     // Alias resolution is a top-of-chain step inside the resolver: an alias
     // id walks every target in `selection` order, tags each returned
@@ -109,7 +108,9 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     // whatever rules a target carries are inert here — the alias flow only
     // changes which id the gateway addresses upstream.
     const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
+      subject: ctx.user,
       upstreamIds: ctx.upstreamIds,
+      randomizeUpstreams: ctx.randomizeUpstreams,
       model,
       kind,
       scheduler: ctx.backgroundScheduler,
@@ -117,10 +118,9 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     });
     if (candidates.length === 0) {
       ctx.dump?.error('gateway');
-      // `sawModel === false` means no upstream catalog knew the inbound id
-      // at all (404); `sawModel === true` with zero candidates means the
-      // id is known but every match was the wrong kind for this endpoint
-      // (400), which mirrors the empty-viable case below.
+      // `sawModel` includes only Model.Use-permitted catalogs. With no candidates,
+      // false keeps hidden/missing ids at 404; true identifies wrong-kind matches
+      // (400), like the empty-viable case below.
       return sawModel
         ? passthroughApiError(c, appendFailedUpstreams(`Model ${model} does not support the ${sourceApi} endpoint.`, failedUpstreams), 400)
         : passthroughApiError(c, appendFailedUpstreams(`Model ${model} is not available on any configured upstream.`, failedUpstreams), 404);

@@ -48,7 +48,7 @@ const mergedChatMetadata = (
 // The provider model is stored verbatim under that entry so dispatch hands
 // the same reference back to the provider's `callXxx`.
 export const internalModelFromProviderModel = (providerModel: ProviderModel, upstreamId: string): InternalModel => {
-  const { providerData, upstreamModelId: _upstreamModelId, enabledFlags, flagOverrides, rerankTarget, endpoints, ...metadata } = providerModel;
+  const { providerData, upstreamModelId: _upstreamModelId, enabledFlags, flagOverrides, rerankTarget: _rerankTarget, decisionTarget: _decisionTarget, endpoints, ...metadata } = providerModel;
   const providerModels = { [upstreamId]: providerModel };
   const chat = mergedChatMetadata(providerModel.chat, providerModels);
   return {
@@ -187,9 +187,9 @@ export const storedCatalogSize = (record: UpstreamRecord): number | null => {
 };
 
 // Public-facing model-id ordering, applied to the real-model slice of the
-// lists that cross a gateway boundary (data-plane /v1/models, /models,
-// /v1beta/models and the control-plane /api/models that backs the dashboard
-// models page). It orders that slice only: visible aliases are appended
+// lists that cross a gateway boundary (the data-plane model listing on
+// /v1/models, /models, and /v1beta/models, plus the control-plane /api/models
+// that backs the dashboard models page). It orders that slice only: visible aliases are appended
 // afterwards in alias `sortOrder`, and `/api/models?include_unlisted=true`
 // appends the unlisted rows after the listed ones.
 // Provider upstreams return models in arbitrary order; sorting here gives the
@@ -232,10 +232,10 @@ export const getModelsFromProviders = (
   providers: readonly GatewayProvider[],
   scheduleRefresh: ModelsRefreshScheduler,
 ): { models: InternalModel[]; upstreamsByPublicId: Map<string, Provider[]>; failedUpstreams: readonly string[] } => {
-  if (providers.length === 0) {
-    throw new Error('No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard');
-  }
-
+  // An empty provider set is a normal state: a fresh gateway, a principal
+  // whose upstream cap resolved to nothing, or every upstream disabled. The
+  // catalog it yields is empty, and every listing surface reports that as an
+  // empty list rather than a failure.
   const { models, upstreamsByPublicId, failedUpstreams } = collectProviderModels(providers, scheduleRefresh);
 
   // TODO: surface `failedUpstreams` on each listing endpoint's wire response

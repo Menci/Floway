@@ -1,26 +1,23 @@
-import type { OpenAIResponsesResult, OpenAIResponsesStreamEvent } from './index.ts';
+import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from './index.ts';
 
-type OpenAIResponsesReassembleEvent =
-  | OpenAIResponsesStreamEvent
-  | {
-    type: 'error';
-    message?: string;
-  };
+export const OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE = 'OpenAI Responses stream ended without a terminal event.';
 
-export async function reassembleOpenAIResponsesEvents(events: AsyncIterable<OpenAIResponsesReassembleEvent>): Promise<OpenAIResponsesResult> {
+export async function reassembleOpenAIResponsesEvents(events: AsyncIterable<OpenAIResponsesStreamEventEx>): Promise<OpenAIResponsesResultEx> {
+  let error: Extract<OpenAIResponsesStreamEventEx, { type: 'error' }> | undefined;
   for await (const event of events) {
-    const rawEvent = event as unknown as Record<string, unknown>;
-    const type = rawEvent.type as string;
-
-    if (type === 'error') {
-      const message = (rawEvent.message as string | undefined) ?? JSON.stringify(event);
-      throw new Error(`Upstream SSE error: ${message}`);
+    if (event.type === 'error') {
+      error = event;
     }
 
-    if (type === 'response.completed' || type === 'response.incomplete' || type === 'response.failed') {
-      return rawEvent.response as OpenAIResponsesResult;
+    if (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
+      if (event.type === 'response.failed' && error !== undefined) throw new Error(errorMessage(error), { cause: error });
+      return event.response;
     }
   }
 
-  throw new Error('SSE stream ended without a terminal response event');
+  if (error !== undefined) throw new Error(errorMessage(error), { cause: error });
+  throw new Error(OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE);
 }
+
+const errorMessage = (error: Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>): string =>
+  'message' in error ? error.message : error.error.message;

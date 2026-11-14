@@ -1,7 +1,7 @@
 import type { CopilotOpenAIResponsesBoundaryInterceptor } from './types.ts';
 import { checkWhitespaceOverflow } from '../shared/whitespace-overflow.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 /**
  * Copilot has been observed to emit only whitespace (`\r`, `\n`, `\t`) inside
@@ -23,15 +23,15 @@ import type { OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-re
  */
 const ABORT_MESSAGE = 'Tool call arguments contained excessive whitespace, indicating a degenerate response.';
 
-const isArgumentsDelta = (event: OpenAIResponsesStreamEvent): event is OpenAIResponsesStreamEvent & { type: 'response.function_call_arguments.delta'; output_index: number; delta: string } =>
+const isArgumentsDelta = (event: OpenAIResponsesStreamEventEx): event is OpenAIResponsesStreamEventEx & { type: 'response.function_call_arguments.delta'; output_index: number; delta: string } =>
   event.type === 'response.function_call_arguments.delta';
 
-const errorEvent = (): OpenAIResponsesStreamEvent =>
+const errorEvent = (): OpenAIResponsesStreamEventEx =>
   ({
     type: 'error',
     message: ABORT_MESSAGE,
     code: 'api_error',
-  }) as OpenAIResponsesStreamEvent;
+  }) as OpenAIResponsesStreamEventEx;
 
 export const withToolArgumentWhitespaceAborted: CopilotOpenAIResponsesBoundaryInterceptor = async (_invocation, _env, run) => {
   const result = await run();
@@ -41,7 +41,7 @@ export const withToolArgumentWhitespaceAborted: CopilotOpenAIResponsesBoundaryIn
 
   return {
     ...result,
-    events: (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+    events: (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
       const whitespaceByIndex = new Map<number, number>();
 
       for await (const frame of result.events) {

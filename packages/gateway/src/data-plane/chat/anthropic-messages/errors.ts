@@ -1,9 +1,8 @@
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
-import type { ChatServeFailure } from '../shared/errors.ts';
-import { generateAnthropicId, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { inputErrorFields, type ChatServeFailure, type InputErrorDetails } from '../shared/errors.ts';
+import { generateAnthropicId, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
-import type { TranslatorInputError } from '@floway-dev/translate';
+import type { ApiErrorResult, ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
 
 // Anthropic Messages error envelope used to render pre-stream
 // `ChatServeFailure`s. These are gateway-synthesized rather than received
@@ -16,37 +15,33 @@ const anthropicErrorResult = (
   type: string,
   message: string,
   performance?: PerformanceTelemetryContext,
-): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>> => ({
+  extension?: Record<string, unknown>,
+): ApiErrorResult => ({
   type: 'api-error',
   source: 'gateway',
   status,
   headers: new Headers({ 'content-type': 'application/json' }),
   body: new TextEncoder().encode(JSON.stringify({
     type: 'error',
-    error: { type, message },
+    error: { type, message, ...(extension === undefined ? {} : { provider_specific_fields: extension }) },
     request_id: generateAnthropicId('req'),
   })),
   ...(performance ? { performance } : {}),
 });
 
-// Translator surfaced a caller-input violation (unsupported content part,
-// disallowed role, missing required field, etc.). Render as a 400
-// invalid_request_error so the caller sees a protocol-shaped failure
-// instead of the internal-error 502 envelope. `performance` carries the
-// throwing candidate's telemetry attribution when the throw fired
-// mid-attempt (see AttemptState.telemetry).
-export const translatorInputErrorResult = (
-  error: TranslatorInputError,
+// Validation failures retain the telemetry of the candidate whose attempt rejected the request.
+export const inputErrorResult = (
+  error: InputErrorDetails,
   performance?: PerformanceTelemetryContext,
-): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>> =>
-  anthropicErrorResult(400, 'invalid_request_error', error.message, performance);
+): ApiErrorResult =>
+  anthropicErrorResult(400, 'invalid_request_error', error.message, performance, inputErrorFields(error));
 
 // `endpoint` selects between `/messages` and `/messages/count_tokens` only in
 // the `model-unsupported` message string.
 export const renderAnthropicMessagesFailure = (
   failure: ChatServeFailure,
   endpoint: 'generate' | 'countTokens',
-): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>> => {
+): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> => {
   const endpointPath = endpoint === 'countTokens' ? '/messages/count_tokens' : '/messages';
   switch (failure.kind) {
   case 'routing-unavailable':

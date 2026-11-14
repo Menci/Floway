@@ -3,7 +3,7 @@ import { FormProvider, useForm } from 'react-hook-form';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { UpstreamRecord } from '../../../src/api/types';
-import { UpstreamConfigSidebar } from '../../../src/components/upstream-editor/config-sidebar';
+import { UpstreamConfigSidebar, configReadOnly } from '../../../src/components/upstream-editor/config-sidebar';
 import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/data';
 import { ProviderConfigSection } from '../../../src/components/upstream-editor/provider-config';
@@ -43,7 +43,7 @@ const ConfigProbe = ({ record }: { record: UpstreamRecord }) => {
 
 // The colo whitelist only renders on the Cloudflare runtime, so the proxy case
 // needs the sidebar the editor mounts it from.
-const SidebarProbe = ({ record }: { record: UpstreamRecord }) => {
+const SidebarProbe = ({ editLevel = 'full', record }: { editLevel?: 'off' | 'models' | 'full'; record: UpstreamRecord }) => {
   const form = useForm<UpstreamEditorValues>({ defaultValues: valuesFromRecord(record) });
   return (
     <FormProvider {...form}>
@@ -53,6 +53,7 @@ const SidebarProbe = ({ record }: { record: UpstreamRecord }) => {
         discovered={[]}
         onPatch={vi.fn()}
         onRefreshModels={vi.fn()}
+        editLevel={editLevel}
         proxies={[]}
         record={record}
         runtime={{ kind: 'cloudflare', runtimeLocation: 'HKG' }}
@@ -60,6 +61,26 @@ const SidebarProbe = ({ record }: { record: UpstreamRecord }) => {
     </FormProvider>
   );
 };
+
+it('keeps Full-only values focusable and selectable in a models-only editor', () => {
+  renderInApp(<SidebarProbe editLevel="models" record={customRecord({ enabled: true })} />);
+  const baseUrl = screen.getByDisplayValue('https://api.example.com') as HTMLInputElement;
+  const name = screen.getByRole('textbox', { name: i18n.t('dashboard.upstreamEditor.fields.name') }) as HTMLInputElement;
+  const prefix = screen.getByRole('textbox', { name: i18n.t('dashboard.upstreamEditor.sections.prefix') }) as HTMLInputElement;
+  expect(baseUrl.readOnly).toBe(true);
+  expect(baseUrl.disabled).toBe(false);
+  expect(name.readOnly).toBe(true);
+  expect(name.disabled).toBe(false);
+  expect(prefix.readOnly).toBe(true);
+  expect(prefix.disabled).toBe(false);
+  expect(baseUrl.closest('[inert]')).toBeNull();
+  const catalogSwitch = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('dashboard.upstreamEditor.fields.fetchModels') });
+  expect(catalogSwitch.hasAttribute('disabled')).toBe(false);
+  expect(catalogSwitch.checked).toBe(true);
+  expect(configReadOnly('models')).toEqual({ connection: true, modelsFetch: false });
+  fireEvent.click(catalogSwitch);
+  expect(catalogSwitch.checked).toBe(false);
+});
 
 // The page reads formState.isDirty to decide whether leaving prompts, so each
 // case ends where it started and asks that flag.
@@ -75,6 +96,19 @@ const editAndUndo = (value: string, edited: string) => {
 // editor prompted about unsaved changes on a record that was back at its saved
 // state. Each case is paired with the same record carrying the optional value,
 // which is the arrangement that always worked.
+it('keeps path overrides and endpoint checkboxes read-only without Full', () => {
+  renderInApp(<SidebarProbe editLevel="off" record={customRecord({ enabled: true })} />);
+  const endpoint = screen.getAllByRole('checkbox')[0] as HTMLInputElement;
+  expect(endpoint.readOnly).toBe(true);
+  const override = screen.getByPlaceholderText('/v1/chat/completions') as HTMLInputElement;
+  expect(override.readOnly).toBe(true);
+  const disabledModels = screen.getByRole('combobox', { name: i18n.t('dashboard.upstreamEditor.sections.disabledModels') }) as HTMLInputElement;
+  expect(disabledModels.getAttribute('aria-readonly')).toBe('true');
+  const catalogSwitch = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('dashboard.upstreamEditor.fields.fetchModels') });
+  expect(catalogSwitch.checked).toBe(true);
+  expect(configReadOnly('off')).toEqual({ connection: true, modelsFetch: true });
+});
+
 describe('upstream editor dirtiness across an edit and its undo', () => {
   it('settles clean when the catalog path is absent from the stored config', () => {
     renderInApp(<ConfigProbe record={customRecord({ enabled: true })} />);

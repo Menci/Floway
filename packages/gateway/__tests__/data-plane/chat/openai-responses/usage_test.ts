@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
 import { billableUsageFromOpenAIResponsesResult } from '../../../../src/data-plane/chat/openai-responses/usage.ts';
-import type { OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals } from '@floway-dev/test-utils';
 
-const result = (usage: OpenAIResponsesResult['usage'], serviceTier?: string): OpenAIResponsesResult => ({
+const result = (usage: OpenAIResponsesResultEx['usage'], serviceTier?: string): OpenAIResponsesResultEx => ({
   id: 'resp_1', object: 'response', model: 'm', output: [], status: 'completed',
   error: null, incomplete_details: null,
   ...(usage !== undefined ? { usage } : {}),

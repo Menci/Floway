@@ -16,10 +16,22 @@ test('Copilot Claude pricing uses explicit base and fast entries', () => {
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-5'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '50' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-5-5'), { inputTokens: 0 }).rates, published({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-5-5'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' }));
-  assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-sonnet-5-5'), { inputTokens: 0 }).rates, published({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' }));
-  assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-sonnet-5-5'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' }));
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-sonnet-5-5'), { inputTokens: 0 }).rates, published({ input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '10' }));
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-sonnet-5-5'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '10' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-fable-5-1'), { inputTokens: 0 }).rates, published({ input_tokens: '10', input_cache_read_tokens: '0.25', input_cache_write_tokens: '12.5', output_tokens: '50' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-fable-5-1'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '10', input_cache_read_tokens: '0.25', input_cache_write_tokens: '12.5', output_tokens: '50' }));
+});
+
+test('Copilot Haiku 5.5 pricing switches above 100k input tokens', () => {
+  const pricing = pricingForCopilotPublicModelId('claude-haiku-5-5');
+  assertEquals(
+    priceRequest(pricing, { inputTokens: 100000 }).rates,
+    published({ input_tokens: '0.1', input_cache_read_tokens: '0.01', input_cache_write_tokens: '0.125', output_tokens: '0.5' }),
+  );
+  assertEquals(
+    priceRequest(pricing, { inputTokens: 100001 }).rates,
+    published({ input_tokens: '0.5', input_cache_read_tokens: '0.05', input_cache_write_tokens: '0.625', output_tokens: '2.5' }),
+  );
 });
 
 test('Copilot GPT-5.6 pricing resolves standard short and long entries', () => {
@@ -93,6 +105,16 @@ test('Copilot Gemini 3.6, 3.7 and 3.8 Flash share one rate across every prompt l
   }
   // 3.5 Flash is not swept up by the shared rule.
   assertEquals(priceRequest(pricingForCopilotPublicModelId('gemini-3.5-flash'), { inputTokens: 0 }).rates, published({ input_tokens: '1.5', input_cache_read_tokens: '0.15', output_tokens: '9' }));
+});
+
+test('Copilot Gemini 4 Argon keeps one band across its whole 1M-token window', () => {
+  const base = published({ input_tokens: '2', input_cache_read_tokens: '0.1', output_tokens: '10' });
+  const pricing = pricingForCopilotPublicModelId('gemini-4-argon');
+  assertEquals(priceRequest(pricing, { inputTokens: 0 }).rates, base);
+  // Google sells Batch, Flex and Priority lanes for this model, but Copilot's
+  // billing surface names no tier for it; an unserved tier must not invent one.
+  assertEquals(priceRequest(pricing, { serviceTier: 'priority', inputTokens: 0 }).rates, base);
+  assertEquals(priceRequest(pricing, { inputTokens: 1048576 }).rates, base);
 });
 
 test('Copilot pricing resolves exact and regex model families', () => {
@@ -174,4 +196,23 @@ test('Copilot GPT-6 Sol and Luna price Standard and the anticipated Fast mode la
     assertEquals(priceRequest(pricing, { serviceTier: 'priority', inputTokens: 272000 }).rates, published(rates.priorityShort));
     assertEquals(priceRequest(pricing, { serviceTier: 'priority', inputTokens: 272001 }).rates, published(rates.priorityLong));
   }
+});
+
+test('Copilot prices the models its live catalog added since the last refresh', () => {
+  const rates = (id: string) => priceRequest(pricingForCopilotPublicModelId(id), { inputTokens: 0 }).rates;
+
+  const terra = pricingForCopilotPublicModelId('gpt-6.1-terra');
+  assertEquals(priceRequest(terra, { inputTokens: 272000 }).rates, published({ input_tokens: '1', input_cache_read_tokens: '0.05', input_cache_write_tokens: '1.25', output_tokens: '5' }));
+  assertEquals(priceRequest(terra, { inputTokens: 272001 }).rates, published({ input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '7.5' }));
+  // Copilot publishes no `-fast` sibling for Terra, so the lane stays unreachable.
+  assertEquals(priceRequest(terra, { serviceTier: 'priority', inputTokens: 0 }).rates, published({ input_tokens: '1', input_cache_read_tokens: '0.05', input_cache_write_tokens: '1.25', output_tokens: '5' }));
+
+  assertEquals(rates('mai-code-2'), published({ input_tokens: '1', input_cache_read_tokens: '0.05', output_tokens: '5' }));
+
+  assertEquals(rates('gpt-image-2.5-flare'), published({ input_tokens: '5', input_cache_read_tokens: '1.25', input_image_tokens: '8', output_image_tokens: '30' }));
+
+  // MAI-Code-2-Flash and microsoft-decision-1 quote zero on every metric, and a
+  // promotional zero is Copilot's charge rather than a vendor rate.
+  assertEquals(pricingForCopilotPublicModelId('mai-code-2-flash'), null);
+  assertEquals(pricingForCopilotPublicModelId('microsoft-decision-1'), null);
 });

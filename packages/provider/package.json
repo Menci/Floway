@@ -9,7 +9,8 @@
     "./join": { "import": "./src/join.ts", "types": "./src/join.ts" },
     "./model": { "import": "./src/model.ts", "types": "./src/model.ts" },
     "./model-config": { "import": "./src/model-config.ts", "types": "./src/model-config.ts" },
-    "./model-prefix": { "import": "./src/model-prefix.ts", "types": "./src/model-prefix.ts" }
+    "./model-prefix": { "import": "./src/model-prefix.ts", "types": "./src/model-prefix.ts" },
+    "./browser": { "import": "./src/browser.ts", "types": "./src/browser.ts" }
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

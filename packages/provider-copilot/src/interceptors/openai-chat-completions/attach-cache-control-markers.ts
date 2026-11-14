@@ -35,9 +35,7 @@ import type { OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-
  * - https://github.com/caozhiyuan/copilot-api/blob/9be0eb602f1ffee7597741c9af9bc66a68e1a241/src/routes/messages/api-flows.ts#L381-L432
  */
 
-export interface CopilotCacheableMessage extends OpenAIChatCompletionsMessage {
-  copilot_cache_control?: { type: 'ephemeral' };
-}
+export type CopilotCacheableMessage = OpenAIChatCompletionsMessage & { copilot_cache_control?: { type: 'ephemeral' } };
 
 const COPILOT_CONTEXT_CACHE_SYSTEM_MARKER_LIMIT = 2;
 const COPILOT_CONTEXT_CACHE_NON_SYSTEM_MARKER_LIMIT = 2;

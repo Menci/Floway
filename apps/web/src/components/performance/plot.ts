@@ -7,10 +7,10 @@ import {
   type PerformanceGroupBy,
   type PerformanceMetric,
   type PerformanceLabels,
-  type PerformancePercentile,
+  type PerformancePercentiles,
   type PerformanceRange,
 } from './overview';
-import { dashboardBucketFrames, dashboardBucketKeyForUtcHour, formatAxisDate, type ChartBucket } from '../charts/dashboard-time';
+import { dashboardBucketFrames, formatBucketInterval, type ChartBucket } from '../charts/dashboard-time';
 import { hueForSeriesSlot } from '../charts/palette';
 import { withUniqueSeriesLegends, type ChartSeries } from '../charts/series-legends';
 import { lineSeries } from '../charts/series-plot';
@@ -28,7 +28,7 @@ export interface PerformancePlot {
 export const buildPerformanceChart = (
   records: PerformanceDisplayRecord[],
   metric: PerformanceMetric,
-  percentile: PerformancePercentile,
+  percentiles: PerformancePercentiles,
   groupBy: PerformanceGroupBy,
   labels: PerformanceLabels,
   buckets: ChartBucket[],
@@ -43,7 +43,7 @@ export const buildPerformanceChart = (
       : hueForSeriesSlot(slot),
   })));
   const values = new Map(records.map(record => [
-    `${range === 'today' ? dashboardBucketKeyForUtcHour(range, record.bucket) : record.bucket}\0${record.group}`,
+    `${record.bucket}\0${record.group}`,
     record,
   ]));
   return {
@@ -54,8 +54,8 @@ export const buildPerformanceChart = (
       new Map(entries.flatMap(entry => {
         const record = values.get(`${bucket.key}\0${entry.id}`);
         return record ? [[entry.id, {
-          outputSpeed: performanceValue(record, 'tokPerSec', percentile),
-          ttft: performanceValue(record, 'ttft', percentile),
+          outputSpeed: performanceValue(record, 'tokPerSec', percentiles.tokPerSec),
+          ttft: performanceValue(record, 'ttft', percentiles.ttft),
         }] as const] : [];
       })),
     ])),
@@ -66,7 +66,7 @@ export const buildPerformanceChart = (
       lineChartData: entries.flatMap(entry => {
         const data = buckets.flatMap(bucket => {
           const value = values.get(`${bucket.key}\0${entry.id}`);
-          const y = value ? performanceValue(value, metric, percentile) : null;
+          const y = value ? performanceValue(value, metric, percentiles[metric]) : null;
           return y === null || y <= 0 ? [] : [{ x: bucket.date, y }];
         });
         return data.length ? [lineSeries(entry, data.map(point => ({ ...point, markerSize: 3 })))] : [];
@@ -75,9 +75,5 @@ export const buildPerformanceChart = (
   };
 };
 
-export const performanceBuckets = (range: PerformanceRange, now: number, locale: string): ChartBucket[] =>
-  dashboardBucketFrames(range, now).map(({ date, key }) => ({
-    key,
-    date,
-    label: formatAxisDate(date, range, locale),
-  }));
+export const performanceBuckets = (range: PerformanceRange, now: number): ChartBucket[] =>
+  dashboardBucketFrames(range, now).map(frame => ({ ...frame, label: formatBucketInterval(frame) }));

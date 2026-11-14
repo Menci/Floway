@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { blendHex } from '../../src/lib/color';
 import { listCss } from '../../src/winui/controls/list.css';
+import { scopeExpressionCss } from '../../src/winui/controls/scope-expression.css';
 import { winuiTokenCss } from '../../src/winui/tokens';
 
 // These are folded constants with the recipe stated beside them, which leaves
@@ -60,6 +61,21 @@ const rgbBytes = (hex: string) => {
 };
 
 describe('folded winui derivations', () => {
+  it('keeps syntax-colored scope interactions proportional to the plain text ramp', () => {
+    const schemes = declarationsByScheme(winuiTokenCss);
+    for (const [state, fill] of [['hover', 'secondary'], ['pressed', 'tertiary']] as const) {
+      const ratios = [...scopeExpressionCss.matchAll(new RegExp(`--floway-scope-expression-${state}-opacity: calc\\((\\d+) / (\\d+)\\)`, 'g'))]
+        .map(([, numerator, denominator]) => Number(numerator) / Number(denominator));
+      expect(ratios).toHaveLength(schemes.length);
+      schemes.forEach((scheme, index) => {
+        const primary = parse(resolve(scheme, '--winui-text-fill-primary'))!;
+        const target = parse(resolve(scheme, `--winui-text-fill-${fill}`))!;
+        expect(ratios[index]).toBeCloseTo((target.alpha ?? 1) / (primary.alpha ?? 1), 5);
+      });
+      expect(scopeExpressionCss).toContain(`button.floway-scope-expression-part:${state === 'pressed' ? 'active' : state} .floway-scope-expression-regex {\n  opacity: var(--floway-scope-expression-${state}-opacity);\n}`);
+    }
+  });
+
   it('keeps every accent tint the wash its recipe states', () => {
     const schemes = declarationsByScheme(winuiTokenCss);
     const weights = statedTintWeights(winuiTokenCss);

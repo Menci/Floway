@@ -2,7 +2,7 @@ import type { TokenUsage } from '../../../../repo/types.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { Interceptor } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { EventResultMetadata, ExecuteResult, OpenAIResponsesInvocation, TelemetryModelIdentity } from '@floway-dev/provider';
 
 export type { OpenAIResponsesInvocation };
@@ -16,8 +16,8 @@ export type { OpenAIResponsesInvocation };
 // The non-streaming result is parameterized because `/responses/compact`
 // answers with `CompactResource` rather than the response resource, and its
 // own completion narrows the type further.
-export type OpenAIResponsesAttemptResult<Result = OpenAIResponsesResult> =
-  | ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>
+export type OpenAIResponsesAttemptResult<Result = OpenAIResponsesResultEx> =
+  | ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>
   | {
     readonly type: 'result';
     readonly result: Result;
@@ -29,5 +29,5 @@ export type OpenAIResponsesAttemptResult<Result = OpenAIResponsesResult> =
 export type OpenAIResponsesInterceptor = Interceptor<
   OpenAIResponsesInvocation,
   ChatGatewayCtx,
-  ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>
+  ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>
 >;

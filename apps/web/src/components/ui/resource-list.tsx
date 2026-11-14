@@ -19,12 +19,12 @@ const EDGE_INSET = 'var(--floway-panel-inset)';
 
 const useStyles = makeStyles({
   table: {
-    '& .fui-TableRow': { height: `var(${ROW_HEIGHT})` },
+    '& .fui-TableRow:not([data-table-expansion-row])': { height: `var(${ROW_HEIGHT})` },
     // By type rather than by position: a DataGrid row carries Tabster's focus
     // dummies, `i` elements outside layout that an unrestricted
     // first-of-type/last-of-type would land on instead.
-    '& .fui-TableRow > :is(th, td, div):first-of-type': { paddingInlineStart: EDGE_INSET },
-    '& .fui-TableRow > :is(th, td, div):last-of-type': { paddingInlineEnd: EDGE_INSET },
+    '& .fui-TableRow:not([data-table-expansion-row]) > :is(th, td, div):first-of-type': { paddingInlineStart: EDGE_INSET },
+    '& .fui-TableRow:not([data-table-expansion-row]) > :is(th, td, div):last-of-type': { paddingInlineEnd: EDGE_INSET },
     // Fluent fixes the selection column at 44 and styles it apart from an
     // ordinary cell, so it never took the trailing padding either.
     '& .fui-TableSelectionCell': {
@@ -35,15 +35,16 @@ const useStyles = makeStyles({
     },
     // The last row's edge and the card's own would otherwise stack into one
     // heavier line a pixel above the corner; the narrow-width list that stands
-    // in for a table draws the same separator.
-    '& :is(.fui-TableBody:not([data-reordering]) .fui-TableRow, .fui-List > .fui-ListItem):last-child': {
+    // in for a table draws the same separator. Only the final body reaches the
+    // panel edge; earlier bodies are internal reorder segments.
+    '& .fui-TableBody:last-of-type:not([data-reordering]) .fui-TableRow:last-child, & .fui-List > .fui-ListItem:last-child, & .fui-TableBody:last-of-type:not([data-reordering]) .fui-TableRow:has(+ [data-table-expansion-row]:last-child)': {
       borderBottomStyle: 'none',
     },
     // A reorder gesture moves the rows without moving the markup, so the row
     // against the card's edge is no longer the last one in the document. The
     // two selectors are mutually exclusive rather than one overriding the
     // other, which leaves nothing for the atom order to decide.
-    '& .fui-TableBody[data-reordering] .fui-TableRow[data-reorder-edge="last"]': {
+    '& .fui-TableBody:last-of-type[data-reordering] .fui-TableRow[data-reorder-edge="last"]': {
       borderBottomStyle: 'none',
     },
   },
@@ -86,6 +87,7 @@ export function ResourceListActions(props: ResourceListActionsProps) {
   const createButton = createLabel !== undefined && (
     <Button
       appearance="primary"
+      className="flex-none whitespace-nowrap"
       disabled={busy}
       icon={<AddRegular />}
       onClick={'onCreate' in props ? props.onCreate : undefined}
@@ -96,11 +98,12 @@ export function ResourceListActions(props: ResourceListActionsProps) {
   );
 
   return (
-    <div aria-busy={refreshing} className="flex items-center gap-2 flex-none">
+    <div aria-busy={refreshing} className="flex items-center gap-2 flex-none max-w-full">
       <Tooltip content={refreshLabel} relationship="label">
         <Button
           appearance={appearance}
           aria-label={refreshLabel}
+          className="flex-none"
           disabled={disabled}
           disabledFocusable={refreshing}
           icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}

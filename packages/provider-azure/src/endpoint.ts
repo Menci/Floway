@@ -59,6 +59,16 @@ export const azureOpenAiV1BaseUrl = (endpoint: string): string => {
   return trimTrailingSlash(url.href);
 };
 
+// Microsoft-Decision-1's decision endpoint lives on the resource host, not
+// under the OpenAI v1 base: <host>/providers/microsoft/v1/systemone. Every
+// admitted endpoint shape reduces to its resource host here.
+// https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-microsoft-decision
+export const azureResourceRootUrl = (endpoint: string): string => {
+  const url = new URL(trimTrailingSlash(endpoint));
+  url.pathname = '';
+  return trimTrailingSlash(url.href);
+};
+
 export const azureAnthropicBaseUrl = (endpoint: string): string => {
   const url = new URL(trimTrailingSlash(endpoint));
   if (url.hostname.endsWith('.openai.azure.com')) {

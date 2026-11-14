@@ -22,6 +22,7 @@ const REORDER_OPACITY = 0.8;
 // took returns over this while the item is still travelling to its slot.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L530-L533
 const DRAG_RETURN_MS = 200;
+const DRAG_ACTIVATION_PX = 4;
 
 // The gesture addresses the list through the DOM rather than through a ref the
 // caller threads down: a handle sits inside the item it moves, the item inside
@@ -91,6 +92,9 @@ interface ItemBox {
 interface Gesture {
   pointerId: number;
   list: HTMLElement;
+  /** Pointer coordinate before a start callback can reflow the list. */
+  startY: number;
+  activated: boolean;
   /** Where the pointer was when the item was picked up. */
   originY: number;
   from: number;
@@ -163,7 +167,7 @@ const slotOffsets = (items: readonly ItemBox[], from: number, to: number): Map<n
   return offsets;
 };
 
-const measure = (handle: HTMLElement, from: number, pointerId: number, originY: number): Gesture => {
+const measure = (handle: HTMLElement, from: number, pointerId: number, startY: number, originY: number): Gesture => {
   const list = handle.closest<HTMLElement>(`[${LIST_ATTRIBUTE}]`);
   // Both halves are rendered by the same call site from the same hook, so
   // neither absence is a list that cannot be dragged: it is the contract having
@@ -181,7 +185,7 @@ const measure = (handle: HTMLElement, from: number, pointerId: number, originY: 
   if (positionOf(items, from) === -1) {
     throw new Error(`A reorder handle for index ${from} found no item carrying that index.`);
   }
-  return { from, items, list, originY, pointerId };
+  return { activated: false, from, items, list, originY, pointerId, startY };
 };
 
 // Clamped where it is painted rather than where it is accumulated, so a drag
@@ -231,7 +235,7 @@ const siblingHandles = (handle: HTMLElement): HTMLElement[] => {
  * `onReorder` then commits the rendered order without another visible move.
  * `position` gives an item's previewed rank, for a list that shows one.
  */
-export function useReorderList({ busy = false, disabled = false, length, onDrop, onDropError, onReorder }: {
+export function useReorderList({ busy = false, disabled = false, grabOnly = false, length, onDragStart, onDrop, onDropError, onReorder }: {
   /**
    * The list's own write is in flight. The grip reads as unavailable but keeps
    * focus, so a keyboard move does not throw the operator back to the document
@@ -239,7 +243,10 @@ export function useReorderList({ busy = false, disabled = false, length, onDrop,
    */
   busy?: boolean;
   disabled?: boolean;
+  /** Render a pick-up state that cannot move an item, for a one-item segment. */
+  grabOnly?: boolean;
   length: number;
+  onDragStart?: () => void;
   /** Starts an asynchronous write as soon as the pointer is released. */
   onDrop?: (from: number, to: number) => Promise<void>;
   /** Runs after the visual preview has rolled back from a rejected write. */
@@ -253,7 +260,7 @@ export function useReorderList({ busy = false, disabled = false, length, onDrop,
   const [preview, setPreview] = useState<Preview | null>(null);
   // A handle is dead while the list is locked, and a list of one has nowhere to
   // move its item to.
-  const locked = busy || disabled || length < 2;
+  const locked = busy || disabled || (length < 2 && !grabOnly);
   // The list can be replaced under a gesture -- these pages poll -- and an index
   // the new list does not have would move the wrong row.
   const live = preview !== null && preview.from < length && preview.to < length ? preview : null;
@@ -294,6 +301,10 @@ export function useReorderList({ busy = false, disabled = false, length, onDrop,
     const onMove = (event: PointerEvent) => {
       const gesture = gestureRef.current;
       if (!gesture || event.pointerId !== gesture.pointerId) return;
+      if (!gesture.activated) {
+        if (Math.abs(event.clientY - gesture.startY) < DRAG_ACTIVATION_PX) return;
+        gesture.activated = true;
+      }
       paint(gesture, event.clientY - gesture.originY);
       const to = indexAt(gesture, event);
       setPreview(current => current?.to === to ? current : { from: gesture.from, items: gesture.items, settling: false, to });
@@ -302,7 +313,8 @@ export function useReorderList({ busy = false, disabled = false, length, onDrop,
     const onUp = (event: PointerEvent) => {
       const gesture = gestureRef.current;
       if (!gesture || event.pointerId !== gesture.pointerId) return;
-      const to = indexAt(gesture, event);
+      const activated = gesture.activated || Math.abs(event.clientY - gesture.startY) >= DRAG_ACTIVATION_PX;
+      const to = activated ? indexAt(gesture, event) : gesture.from;
       // The row leaves the pointer and travels the rest of the way to its slot.
       // Dropping the drag attribute and writing the destination in one style
       // recalculation is what makes that a transition rather than a jump: the
@@ -386,7 +398,11 @@ export function useReorderList({ busy = false, disabled = false, length, onDrop,
       [HANDLE_ATTRIBUTE]: '',
       onPointerDown: event => {
         if (inert || live || !event.isPrimary || event.button !== 0) return;
-        const gesture = measure(event.currentTarget, index, event.pointerId, event.clientY);
+        // Keep the grab point relative to the handle when the start callback reflows the list.
+        const grabOffset = event.clientY - event.currentTarget.getBoundingClientRect().top;
+        onDragStart?.();
+        const originY = event.currentTarget.getBoundingClientRect().top + grabOffset;
+        const gesture = measure(event.currentTarget, index, event.pointerId, event.clientY, originY);
         gestureRef.current = gesture;
         gesture.list.setAttribute(REORDERING_ATTRIBUTE, '');
         paint(gesture, 0);
@@ -428,7 +444,7 @@ export function useReorderList({ busy = false, disabled = false, length, onDrop,
 
     const index = Number(handle.closest(`[${ITEM_ATTRIBUTE}]`)?.getAttribute(ITEM_ATTRIBUTE) ?? -1);
     const to = index + step;
-    if (locked || index < 0 || index >= length || to < 0 || to >= length) return;
+    if (locked || grabOnly || index < 0 || index >= length || to < 0 || to >= length) return;
     event.preventDefault();
     onReorder(index, to);
   };

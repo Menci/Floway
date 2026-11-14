@@ -34,6 +34,7 @@ export const agentSetupPublicRoutes = createAgentSetupPublicRoutes({
     const key = await getRepo().apiKeys.getById(apiKeyId);
     return key?.userId === userId ? { name: key.name, secret: key.key } : null;
   },
+
 });
 
 // Authenticated routes mounted inside the control plane behind auth.

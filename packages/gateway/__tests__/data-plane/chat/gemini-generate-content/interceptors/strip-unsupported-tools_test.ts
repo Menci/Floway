@@ -21,6 +21,7 @@ const invocation = (payload: GeminiGenerateContentPayload): GeminiGenerateConten
 
 test('strips non-functionDeclarations capabilities and drops groups that become empty', async () => {
   const input = invocation({
+    contents: [],
     tools: [
       {
         functionDeclarations: [
@@ -33,9 +34,9 @@ test('strips non-functionDeclarations capabilities and drops groups that become 
         googleSearch: {},
         googleSearchRetrieval: {},
         codeExecution: {},
-        computerUse: {},
+        computerUse: { environment: 'ENVIRONMENT_BROWSER' },
         urlContext: {},
-        fileSearch: {},
+        fileSearch: { fileSearchStoreNames: [] },
         mcpServers: [{ name: 'server' }],
         googleMaps: {},
       },
@@ -47,6 +48,7 @@ test('strips non-functionDeclarations capabilities and drops groups that become 
   await stripUnsupportedTools(input, stubCtx, okEvents);
 
   assertEquals(input.payload, {
+    contents: [],
     tools: [
       {
         functionDeclarations: [
@@ -63,6 +65,7 @@ test('strips non-functionDeclarations capabilities and drops groups that become 
 
 test('removes the tools field entirely when every group becomes empty', async () => {
   const input = invocation({
+    contents: [],
     tools: [
       { googleSearch: {} },
       { codeExecution: {} },
@@ -71,7 +74,7 @@ test('removes the tools field entirely when every group becomes empty', async ()
 
   await stripUnsupportedTools(input, stubCtx, okEvents);
 
-  assertEquals(input.payload, {});
+  assertEquals(input.payload, { contents: [] });
 });
 
 test('is a no-op when tools is absent', async () => {

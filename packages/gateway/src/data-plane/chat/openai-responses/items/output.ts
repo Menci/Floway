@@ -2,12 +2,12 @@ import { hashOpenAIResponsesItem, openaiResponsesItemId } from './identity.ts';
 import type { OpenAIResponsesStatefulStore } from './store.ts';
 import type { StoredOpenAIResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { isOpenAIResponsesCompactionItem, openaiResponsesResultToEvents, type OpenAIResponsesCompactionResult, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesCompactionItem, openaiResponsesResultToEvents, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 // Complete output items become reusable at their first done frame, so each row
 // commits before that frame is yielded. Later done frames remain
 // visible but cannot replace the durable item. The response snapshot commits
-// separately before a successful terminal frame. Failed/error terminals keep
+// separately before a successful terminal frame. Failed responses keep
 // completed item rows but never a snapshot.
 //
 // One client response can span several upstream calls behind the server-tool
@@ -15,41 +15,37 @@ import { isOpenAIResponsesCompactionItem, openaiResponsesResultToEvents, type Op
 // to every queued/created/in-progress and terminal response envelope without
 // changing any output item.
 export const wrapOpenAIResponsesClientOutput = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   args: {
     readonly store: OpenAIResponsesStatefulStore;
     readonly responseId: string;
   },
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   const { store, responseId } = args;
   const finalizedOutputIds = new Map<number, string>();
   let sawCompactionItem = false;
 
-  const finalizedRow = async (item: OpenAIResponsesOutputItem): Promise<StoredOpenAIResponsesItem> => {
+  const finalizedRow = async (item: OpenAIResponsesOutputItemEx): Promise<StoredOpenAIResponsesItem> => {
     const id = openaiResponsesItemId(item);
     if (id === null) throw new TypeError(`OpenAI Responses ${item.type} output has no id`);
-    const privatePayload = store.getPrivatePayload(id);
     const row: StoredOpenAIResponsesItem = {
       id,
       apiKeyId: store.apiKeyId,
-      payload: {
-        item,
-        ...(privatePayload !== undefined ? { private: privatePayload } : {}),
-      },
+      payload: { item },
       itemHash: await hashOpenAIResponsesItem(item),
       refreshedAt: Date.now(),
     };
     return row;
   };
 
-  const persistFinalizedItem = async (item: OpenAIResponsesOutputItem, outputIndex: number): Promise<void> => {
+  const persistFinalizedItem = async (item: OpenAIResponsesOutputItemEx, outputIndex: number): Promise<void> => {
     if (finalizedOutputIds.has(outputIndex)) return;
     const row = await finalizedRow(item);
     await store.persistOutputItem(row);
     finalizedOutputIds.set(outputIndex, row.id);
   };
 
-  const clientEnvelope = (response: OpenAIResponsesResult): OpenAIResponsesResult => ({
+  const clientEnvelope = (response: OpenAIResponsesResultEx): OpenAIResponsesResultEx => ({
     ...response,
     id: responseId,
   });
@@ -79,8 +75,10 @@ export const wrapOpenAIResponsesClientOutput = async function* (
       if (store.writesState) {
         // Persisted snapshots require the lifecycle that made each item
         // reusable. A terminal-only item has not reached that boundary.
-        event.response.output.forEach((_item, outputIndex) => {
-          if (!finalizedOutputIds.has(outputIndex)) {
+        const finalizedIds = new Set(finalizedOutputIds.values());
+        event.response.output.forEach((item, outputIndex) => {
+          const id = openaiResponsesItemId(item);
+          if ((id === null || !finalizedIds.has(id)) && !finalizedOutputIds.has(outputIndex)) {
             throw new TypeError(`OpenAI Responses terminal output_index ${outputIndex} arrived before output_item.done`);
           }
         });
@@ -97,11 +95,6 @@ export const wrapOpenAIResponsesClientOutput = async function* (
       yield eventFrame({ ...event, response: clientEnvelope(event.response) });
       return;
     }
-    if (event.type === 'error') {
-      yield frame;
-      return;
-    }
-
     yield frame;
   }
 };
@@ -109,7 +102,7 @@ export const wrapOpenAIResponsesClientOutput = async function* (
 // A non-streaming compact result enters the same persistence path as a live
 // stream. Every complete item gets an added/done pair before the terminal
 // envelope, followed by the regular done sentinel.
-export const syntheticEventsFromResult = async function* (result: OpenAIResponsesResult): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+export const syntheticEventsFromResult = async function* (result: OpenAIResponsesResultEx): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   yield* openaiResponsesResultToEvents(result, { genericOutputItems: true });
   yield doneFrame();
 };
@@ -119,6 +112,6 @@ export const syntheticEventsFromResult = async function* (result: OpenAIResponse
 // upstream answered 200, and there is no spelling for a failed one. Widening it
 // back to `OpenAIResponsesResult` is safe because the expansion reads no
 // response-only field — it spreads whatever the body carried.
-export const syntheticEventsFromCompaction = async function* (result: OpenAIResponsesCompactionResult): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> {
-  yield* openaiResponsesResultToEvents(result as unknown as OpenAIResponsesResult, { genericOutputItems: true, terminal: 'response.completed' });  yield doneFrame();
+export const syntheticEventsFromCompaction = async function* (result: OpenAIResponsesCompactionResultEx): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+  yield* openaiResponsesResultToEvents(result as unknown as OpenAIResponsesResultEx, { genericOutputItems: true, terminal: 'response.completed' });  yield doneFrame();
 };

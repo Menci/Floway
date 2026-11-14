@@ -12,9 +12,9 @@
 // content type. Only `role: 'assistant'` is rewritten; user/system/developer
 // messages keep `input_text` because that IS the correct type on those roles.
 
-import type { OpenAIResponsesInputContent, OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesAssistantInputContent, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 
-const normalizeAssistantContentBlocks = (content: string | OpenAIResponsesInputContent[]): string | OpenAIResponsesInputContent[] => {
+const normalizeAssistantContentBlocks = (content: string | OpenAIResponsesAssistantInputContent[]): string | OpenAIResponsesAssistantInputContent[] => {
   if (typeof content === 'string') return content;
   let mutated = false;
   const next = content.map(block => {
@@ -25,13 +25,13 @@ const normalizeAssistantContentBlocks = (content: string | OpenAIResponsesInputC
   return mutated ? next : content;
 };
 
-const normalizeItem = (item: OpenAIResponsesInputItem): OpenAIResponsesInputItem => {
+const normalizeItem = (item: CanonicalOpenAIResponsesInputItem): CanonicalOpenAIResponsesInputItem => {
   if (item.type !== 'message' || item.role !== 'assistant') return item;
   const next = normalizeAssistantContentBlocks(item.content);
-  return next === item.content ? item : { ...item, content: next };
+  return next === item.content ? item : { ...item, content: next } as CanonicalOpenAIResponsesInputItem;
 };
 
-export const normalizeAssistantInputText = (input: OpenAIResponsesInputItem[]): OpenAIResponsesInputItem[] => {
+export const normalizeAssistantInputText = (input: CanonicalOpenAIResponsesInputItem[]): CanonicalOpenAIResponsesInputItem[] => {
   let mutated = false;
   const next = input.map(item => {
     const replaced = normalizeItem(item);

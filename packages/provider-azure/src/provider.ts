@@ -1,13 +1,14 @@
 import { assertAzureUpstreamRecord } from './config.ts';
 import { AZURE_DEFAULT_FLAGS } from './defaults.ts';
-import { azureFetchOpenAIAudioTranscriptions, azureFetchOpenAIChatCompletions, azureFetchOpenAICompletions, azureFetchOpenAIEmbeddings, azureFetchOpenAIImagesEdits, azureFetchOpenAIImagesGenerations, azureFetchAnthropicMessages, azureFetchAnthropicMessagesCountTokens, azureFetchOpenAIResponses, azureFetchOpenAIResponsesCompact } from './fetch.ts';
+import { azureFetchDecision, azureFetchOpenAIAudioTranscriptions, azureFetchOpenAIChatCompletions, azureFetchOpenAICompletions, azureFetchOpenAIEmbeddings, azureFetchOpenAIImagesEdits, azureFetchOpenAIImagesGenerations, azureFetchAnthropicMessages, azureFetchAnthropicMessagesCountTokens, azureFetchOpenAIResponses, azureFetchOpenAIResponsesCompact } from './fetch.ts';
 import { AZURE_OPENAI_RESPONSES_BOUNDARY } from './interceptors/openai-responses/index.ts';
 import type { OpenAIResponsesBoundaryCtx } from './interceptors/openai-responses/types.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
+import { DEFAULT_DECISION_PATHS, serializeDecisionRequest, type CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
-import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
+import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResultEx, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { headersForAnthropicMessagesCall, jsonRequestBody, serializeModelPathOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, type FetchInit, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 
 const upstreamModelIdOf = (model: ProviderModel): string => (model.providerData as { upstreamModelId: string }).upstreamModelId;
@@ -46,6 +47,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
   };
 
   const instance: ProviderInstance = {
+    runScheduledTask: async () => {},
     callAlphaSearch: () => Promise.reject(new Error('Azure provider does not support callAlphaSearch')),
     getProvidedModels() {
       return Promise.resolve(azure.config.models.map(model => {
@@ -64,6 +66,9 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
           providerData: { upstreamModelId: model.upstreamModelId },
           enabledFlags: effective,
           opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
+          // A Foundry decision deployment answers the System One contract; the
+          // dialect is not the operator's to choose.
+          ...(kind === 'decision' ? { decisionTarget: { protocol: 'typesafe-systemone' as const } } : {}),
         };
       }));
     },
@@ -94,7 +99,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
               { extraHeaders: [...ctx.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
             );
             return response.ok
-              ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResult, modelKey: upstreamModelId }
+              ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResultEx, modelKey: upstreamModelId }
               : { action: 'compact', ok: false, response, modelKey: upstreamModelId };
           }
           default:
@@ -121,6 +126,19 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
       return { response, modelKey: upstreamModelId };
     },
     callRerank: () => Promise.reject(new Error('Azure provider does not support callRerank')),
+    callDecision: async (model: ProviderModel, request: CanonicalDecisionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => {
+      const target = model.decisionTarget;
+      if (target === undefined) throw new Error(`Decision model ${model.id} has no outbound target`);
+      const upstreamModelId = upstreamModelIdOf(model);
+      const body = serializeDecisionRequest(target.protocol, upstreamModelId, request);
+      const response = await azureFetchDecision(
+        azure.config,
+        target.path ?? DEFAULT_DECISION_PATHS[target.protocol],
+        { method: 'POST', body: jsonRequestBody(body), signal },
+        { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
+      );
+      return { response, modelKey: upstreamModelId, target };
+    },
   };
 
   return {

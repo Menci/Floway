@@ -9,6 +9,7 @@ import { renderInApp } from '../../render';
 
 const apiKey: ApiKey = {
   id: 'empty', name: 'Empty key', key: 'sk-empty', upstream_ids: [],
+  randomize_upstreams: false,
   created_at: '2026-01-01T00:00:00.000Z', last_used_at: null,
   dump_retention_seconds: null, responses_retention_seconds: 0,
 };
@@ -22,7 +23,7 @@ describe('API key upstream limits', () => {
     const onSaved = vi.fn(async () => {});
     renderInApp(<OutcomeToastProvider><KeyDialog
       {...(mode === 'create' ? { mode } : { mode, apiKey })}
-      models={[]} onOpenChange={vi.fn()} onSaved={onSaved} open upstreams={[]} userUpstreamIds={[]}
+      models={[]} onOpenChange={vi.fn()} onSaved={onSaved} open upstreams={[]}
     /></OutcomeToastProvider>);
     const toggle = screen.getByRole('switch', { name: i18n.t('dashboard.upstreamAccess.title') });
     if (mode === 'create') {
@@ -46,6 +47,29 @@ describe('API key upstream limits', () => {
     expect(onSaved).toHaveBeenCalledTimes(2);
     expect(fetch).toHaveBeenLastCalledWith(mode === 'create' ? '/api/keys' : '/api/keys/empty', expect.objectContaining({
       body: expect.stringContaining('"upstream_ids":null'),
+    }));
+  });
+
+  it('saves randomized upstream order', async () => {
+    const fetch = vi.fn(async () => Response.json({ ...apiKey, randomize_upstreams: true }));
+    vi.stubGlobal('fetch', fetch);
+    renderInApp(<OutcomeToastProvider><KeyDialog
+      apiKey={apiKey}
+      mode="edit"
+      models={[]}
+      onOpenChange={vi.fn()}
+      onSaved={vi.fn(async () => {})}
+      open
+      upstreams={[]}
+    /></OutcomeToastProvider>);
+
+    const toggle = screen.getByRole('switch', { name: i18n.t('dashboard.apiKeys.form.randomizeUpstreams') });
+    expect((toggle as HTMLInputElement).checked).toBe(false);
+    await act(async () => { toggle.click(); });
+    await act(async () => { screen.getByRole('button', { name: i18n.t('dashboard.apiKeys.actions.save') }).click(); });
+
+    expect(fetch).toHaveBeenLastCalledWith('/api/keys/empty', expect.objectContaining({
+      body: expect.stringContaining('"randomize_upstreams":true'),
     }));
   });
 });

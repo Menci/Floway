@@ -6,10 +6,10 @@
 
 import { findCredential, planLabel as claudeCodePlanLabel, quotaWindows, rateLimitedUntil, WINDOW_MINUTES } from './claude-code-account';
 import { latestCredits, latestQuotaEntry, planLabel as codexPlanLabel, quotaEntries } from './codex-account';
-import { copilotQuota, readBuckets } from './copilot-quota';
+import { copilotQuota, copilotQuotaName, readBuckets } from './copilot-quota';
 import { planLabel as copilotPlanLabel } from './copilot-seat';
 import { planLabel as ollamaPlanLabel } from './ollama-account';
-import { activityCostText, isZeroActivityCost, readActivityCost, readWindows } from './ollama-usage';
+import { activityCostHint, activityCostText, includedCreditsHint, includedCreditsUsed, readWindows } from './ollama-usage';
 import { providerLabel } from './provider-badge';
 import { quotaRingTone, WALL_CLOCK_REFRESH_MS, windowLengthLabel } from './subscription-quota';
 import type { UpstreamRecord } from '../../api/types';
@@ -19,7 +19,10 @@ import { formatRemaining } from '../../lib/format-duration';
 import { dateTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
+import { useUserPreferences } from '../../lib/use-preferences';
 import { ProgressRing } from '../ui/progress-ring';
+import type { QuotaDisplay } from '@floway-dev/protocols/browser';
+import { readOllamaAccountUsage } from '@floway-dev/provider-ollama/browser';
 
 const { Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 
@@ -59,7 +62,7 @@ const useStyles = makeStyles({
 // scanned down the numbers.
 export interface UpstreamSignal {
   key: string;
-  /** A percentage this reading fills a ring with, or null for an amount. */
+  /** Used percentage for the reading and its severity, or null for an amount. */
   percent: number | null;
   value: string;
   label: string | null;
@@ -81,24 +84,24 @@ export interface UpstreamReadout {
 }
 
 // The tooltip carries what the row has no width for -- the window's own name,
-// when it resets, when the reading was taken -- as one line, because a Fluent
-// tooltip renders its content as a single run of text. The glue between the
-// facts is the locale's, as it is for every other string this app composes:
-// zh-Hans separates them with a full-width comma, not a spaced hyphen.
-const detailText = (t: TFunction, parts: (string | null)[]): string =>
-  parts.filter(part => part !== null).join(t('dashboard.upstreams.signals.detailSeparator'));
+// when it resets, when the reading was taken -- one fact per line, so a reading
+// whose window and instant are both stated stays readable instead of running into
+// one long measure the tooltip then has to wrap on its own.
+const detailText = (parts: (string | null)[]): string =>
+  parts.filter(part => part !== null).join('\n');
 
-const meterDetail = (t: TFunction, label: string, percent: number, resetAt: string | null, observedAt: string | number | null, locale: string): string =>
-  detailText(t, [
-    t('dashboard.upstreams.signals.used', { label, percent: Math.round(percent) }),
+const shownPercent = (t: TFunction, usedPercent: number, quotaDisplay: QuotaDisplay): string =>
+  t('dashboard.upstreams.signals.percent', { percent: quotaDisplay === 'used' ? Math.round(usedPercent) : 100 - Math.round(usedPercent) });
+
+const meterDetail = (t: TFunction, label: string, usedPercent: number, quotaDisplay: QuotaDisplay, resetAt: string | null, observedAt: string | number | null, locale: string): string =>
+  detailText([
+    t(quotaDisplay === 'used' ? 'dashboard.upstreams.signals.used' : 'dashboard.upstreams.signals.remaining', {
+      label,
+      percent: quotaDisplay === 'used' ? Math.round(usedPercent) : 100 - Math.round(usedPercent),
+    }),
     resetAt === null ? null : t('dashboard.upstreams.signals.resets', { time: dateTime(resetAt, locale) }),
     observedAt === null ? null : t('dashboard.upstreams.signals.observed', { time: dateTime(observedAt, locale) }),
   ]);
-
-// As the upstream reported it: an overage-permitted bucket runs past 100, and
-// only the ring beside the number is clamped.
-const percentValue = (t: TFunction, percent: number): string =>
-  t('dashboard.upstreams.signals.percent', { percent: Math.round(percent) });
 
 // Last on the line: the windows are what an operator reads at a glance, and this
 // says how long the wait still has to run rather than when it ends -- an instant
@@ -115,7 +118,7 @@ const blockedSignal = (until: string, t: TFunction, locale: string, now: number)
   blocked: true,
 });
 
-const copilotSignals = (record: Extract<UpstreamRecord, { kind: 'copilot' }>, t: TFunction, locale: string): UpstreamSignal[] => {
+const copilotSignals = (record: Extract<UpstreamRecord, { kind: 'copilot' }>, t: TFunction, locale: string, quotaDisplay: QuotaDisplay): UpstreamSignal[] => {
   const quota = copilotQuota(record);
   if (quota === null) return [];
   // Only what is capped: the editor card stands a row in for a seat with nothing
@@ -128,13 +131,13 @@ const copilotSignals = (record: Extract<UpstreamRecord, { kind: 'copilot' }>, t:
     .map(bucket => ({
       key: bucket.id,
       percent: bucket.usedPercent,
-      value: percentValue(t, bucket.usedPercent),
+      value: shownPercent(t, bucket.usedPercent, quotaDisplay),
       label: quota.reset_at == null ? null : t('dashboard.upstreams.signals.until', { date: shortDate(quota.reset_at, locale) }),
-      detail: meterDetail(t, bucket.label, bucket.usedPercent, quota.reset_at ?? null, quota.observed_at, locale),
+      detail: meterDetail(t, copilotQuotaName(t, bucket.id, 'allowance'), bucket.usedPercent, quotaDisplay, quota.reset_at ?? null, quota.observed_at, locale),
     }));
 };
 
-const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFunction, locale: string, now: number): UpstreamSignal[] => {
+const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFunction, locale: string, now: number, quotaDisplay: QuotaDisplay): UpstreamSignal[] => {
   const entry = latestQuotaEntry(quotaEntries(record.codex_quota, now));
   const credits = latestCredits(record.codex_quota);
   const signals: UpstreamSignal[] = entry === null ? [] : entry.windows.map(item => {
@@ -142,13 +145,13 @@ const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFu
     // so an unlabelled window falls back to the position it arrived in.
     const label = item.windowMinutes === null
       ? t(`dashboard.upstreams.signals.window.${item.key}`)
-      : windowLengthLabel(item.windowMinutes);
+      : windowLengthLabel(item.windowMinutes, locale);
     return {
       key: item.key,
       percent: item.percent,
-      value: percentValue(t, item.percent),
+      value: shownPercent(t, item.percent, quotaDisplay),
       label,
-      detail: meterDetail(t, label, item.percent, item.resetAt, entry.observedAt, locale),
+      detail: meterDetail(t, label, item.percent, quotaDisplay, item.resetAt, entry.observedAt, locale),
     };
   });
 
@@ -173,73 +176,81 @@ const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFu
   return signals.concat(blockedSignal(entry.rateLimitedUntil, t, locale, now));
 };
 
-const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code' }>, t: TFunction, locale: string, now: number): UpstreamSignal[] => {
+const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code' }>, t: TFunction, locale: string, now: number, quotaDisplay: QuotaDisplay): UpstreamSignal[] => {
   const lookup = findCredential(record);
   const credential = lookup.kind === 'present' ? lookup.credential : null;
   const windows: UpstreamSignal[] = quotaWindows(credential).map(row => {
-    const length = windowLengthLabel(WINDOW_MINUTES[row.key]);
+    const length = windowLengthLabel(WINDOW_MINUTES[row.key], locale);
     // Anthropic reports the Sonnet allowance as a second window of the same
     // length, so the model it covers is what tells the two apart.
     const label = row.key === 'sevenDaySonnet' ? `${length} Sonnet` : length;
     return {
       key: row.key,
       percent: row.percent,
-      value: percentValue(t, row.percent),
+      value: shownPercent(t, row.percent, quotaDisplay),
       label,
-      detail: meterDetail(t, label, row.percent, row.resetAt, row.fetchedAt, locale),
+      detail: meterDetail(t, label, row.percent, quotaDisplay, row.resetAt, row.fetchedAt, locale),
     };
   });
 
-  // `rejected` on the unified status is Anthropic saying it turned the request
-  // away. Whether that is a limit this row should state is the one question the
-  // shared rule answers, so the answer is the same here, on the account card,
-  // and at the router that decides whether to send the upstream any work.
   const until = rateLimitedUntil(credential?.quotaSnapshot, now);
   return until === null ? windows : windows.concat(blockedSignal(until, t, locale, now));
 };
 
-const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: TFunction, locale: string): UpstreamSignal[] => {
+const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: TFunction, locale: string, quotaDisplay: QuotaDisplay): UpstreamSignal[] => {
   const probe = record.state?.usageProbe ?? null;
   const observation = probe?.observation ?? null;
   if (observation === null) return [];
 
-  const signals: UpstreamSignal[] = readWindows(observation.data).map(item => {
-    const label = windowLengthLabel(item.minutes);
+  const usage = readOllamaAccountUsage(observation.data);
+  const signals: UpstreamSignal[] = readWindows(usage.included).map(item => {
+    const label = windowLengthLabel(item.minutes, locale);
     return {
       key: item.key,
       percent: item.percent,
-      value: percentValue(t, item.percent),
+      value: shownPercent(t, item.percent, quotaDisplay),
       label,
-      // Ollama reports no reset instant for either window.
-      detail: meterDetail(t, label, item.percent, null, observation.fetchedAt, locale),
+      detail: meterDetail(t, label, item.percent, quotaDisplay, item.resetsAt, observation.fetchedAt, locale),
     };
   });
 
-  const cost = readActivityCost(observation.data);
-  if (cost !== null && !isZeroActivityCost(cost.amount)) {
+  if (usage.included.kind === 'credits') {
+    const included = usage.included;
+    const used = includedCreditsUsed(included);
+    const percent = included.allowanceUsd === 0 ? 0 : 100 * used / included.allowanceUsd;
+    signals.push({
+      key: 'included',
+      percent,
+      value: shownPercent(t, percent, quotaDisplay),
+      label: `${activityCostText(quotaDisplay === 'used' ? used : included.balanceUsd)} / ${activityCostText(included.allowanceUsd)}`,
+      detail: detailText([includedCreditsHint(included, t, locale), t('dashboard.upstreamEditor.ollama.usage.resets', { time: dateTime(included.until, locale) })]),
+    });
+    return signals;
+  }
+
+  const cost = usage.activity;
+  if (cost.usageUsd !== null && cost.usageUsd !== 0) {
     signals.push({
       key: 'cost',
       percent: null,
-      value: activityCostText(cost.amount),
+      value: activityCostText(cost.usageUsd),
       label: null,
-      detail: cost.period === 'last_4_weeks'
-        ? t('dashboard.upstreams.signals.costLast4Weeks')
-        : t('dashboard.upstreams.signals.cost'),
+      detail: activityCostHint(cost, t, locale),
     });
   }
   return signals;
 };
 
-const upstreamSignals = (record: UpstreamRecord, t: TFunction, locale: string, now: number): UpstreamSignal[] => {
+const upstreamSignals = (record: UpstreamRecord, t: TFunction, locale: string, now: number, quotaDisplay: QuotaDisplay): UpstreamSignal[] => {
   switch (record.kind) {
   // An operator-configured endpoint publishes no account of its own to report on.
   case 'custom':
   case 'azure':
     return [];
-  case 'copilot': return copilotSignals(record, t, locale);
-  case 'codex': return codexSignals(record, t, locale, now);
-  case 'claude-code': return claudeCodeSignals(record, t, locale, now);
-  case 'ollama': return ollamaSignals(record, t, locale);
+  case 'copilot': return copilotSignals(record, t, locale, quotaDisplay);
+  case 'codex': return codexSignals(record, t, locale, now, quotaDisplay);
+  case 'claude-code': return claudeCodeSignals(record, t, locale, now, quotaDisplay);
+  case 'ollama': return ollamaSignals(record, t, locale, quotaDisplay);
   }
 };
 
@@ -259,9 +270,9 @@ const upstreamPlan = (record: UpstreamRecord): string | null => {
   }
 };
 
-export const upstreamReadout = (record: UpstreamRecord, t: TFunction, locale: string, now: number): UpstreamReadout => ({
+export const upstreamReadout = (record: UpstreamRecord, t: TFunction, locale: string, now: number, quotaDisplay: QuotaDisplay): UpstreamReadout => ({
   plan: upstreamPlan(record) ?? t(`provider.${record.kind}`, providerLabel(record.kind)),
-  signals: upstreamSignals(record, t, locale, now),
+  signals: upstreamSignals(record, t, locale, now, quotaDisplay),
 });
 
 export function UpstreamSignals({ record }: { record: UpstreamRecord }) {
@@ -271,7 +282,8 @@ export function UpstreamSignals({ record }: { record: UpstreamRecord }) {
   // A rate limit is stated as the time it still has to run, so the readout
   // counts down on the wall clock rather than only when the record changes.
   const now = useNow(WALL_CLOCK_REFRESH_MS);
-  const { plan, signals } = upstreamReadout(record, t, locale, now);
+  const preferences = useUserPreferences();
+  const { plan, signals } = upstreamReadout(record, t, locale, now, preferences.quotaDisplay);
 
   return <div className="flex items-baseline gap-x-1.5 min-w-0">
     <Text size={200} className="text-fui-fg3 flex-none" weight="medium" wrap={false}>
@@ -280,9 +292,9 @@ export function UpstreamSignals({ record }: { record: UpstreamRecord }) {
     <div className="flex items-baseline gap-x-3 min-w-0">
       {signals.map(signal => <Tooltip content={signal.detail} key={signal.key} relationship="description">
         <span className={mergeClasses('winui-focus-rect inline-flex items-baseline gap-1 min-w-0', styles.signal)} tabIndex={0}>
-          {signal.percent !== null && <ProgressRing percent={signal.percent} tone={quotaRingTone(signal.percent)} />}
-          <Text size={200} className={signal.blocked === true ? styles.blocked : styles.value} weight="medium" wrap={false}>{signal.value}</Text>
-          {signal.label !== null && <Text size={200} className={styles.label} truncate wrap={false}>{signal.label}</Text>}
+          {signal.percent !== null && <ProgressRing percent={preferences.quotaDisplay === 'used' ? signal.percent : 100 - signal.percent} tone={quotaRingTone(signal.percent)} />}
+          <Text size={200} className={mergeClasses('tabular-nums', signal.blocked === true ? styles.blocked : styles.value)} weight="medium" wrap={false}>{signal.value}</Text>
+          {signal.label !== null && <Text size={200} className={mergeClasses('tabular-nums', styles.label)} truncate wrap={false}>{signal.label}</Text>}
         </span>
       </Tooltip>)}
     </div>

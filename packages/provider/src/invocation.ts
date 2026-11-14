@@ -64,12 +64,15 @@ export const providerModelOf = (candidate: ModelCandidate): ProviderModel => {
 // the attempt picked for this candidate, and a mutable `Headers` instance
 // carried into the boundary chain — so workarounds that only need to set
 // or drop a header stay at the owning interceptor boundary instead of
-// widening the provider call signature.
+// widening the provider call signature. `anthropicBeta` is the typed
+// `anthropic-beta` flag set (mutable, so an interceptor can drop a flag the
+// selected upstream must not see) handed to the native Anthropic Messages call.
 export interface AnthropicMessagesInvocation {
   payload: AnthropicMessagesPayload;
   readonly candidate: ModelCandidate;
   readonly targetApi: ChatTargetApi;
   readonly headers: Headers;
+  anthropicBeta: readonly string[];
 }
 
 export interface OpenAIResponsesInvocation {

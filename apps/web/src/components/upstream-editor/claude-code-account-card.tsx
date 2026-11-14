@@ -5,6 +5,7 @@ import { useTranslation } from '../../i18n/translation';
 import { dateTime, relativeTime } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
+import { useUserPreferences } from '../../lib/use-preferences';
 import { StatusBadge } from '../ui/status-badge';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { shortAccountId } from '../upstreams/account-id';
@@ -27,12 +28,14 @@ const {
   MessageBar, MessageBarBody, Spinner, Text, Tooltip,
 } = fluentComponents;
 
-export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
+export function ClaudeCodeAccountCard({ onRefreshQuota, probing, readOnly = false, record }: {
   onRefreshQuota: () => void;
   probing: boolean;
+  readOnly?: boolean;
   record: ClaudeCodeRecord;
 }) {
   const { t } = useTranslation();
+  const preferences = useUserPreferences();
   const locale = useLocale();
   const now = useNow(WALL_CLOCK_REFRESH_MS);
   const account = record.config.accounts[0];
@@ -87,9 +90,9 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
       <Text size={200} className="text-fui-fg2">
         {windows.length ? t('dashboard.upstreamEditor.claudeCode.windows') : t('dashboard.upstreamEditor.claudeCode.noSnapshot')}
       </Text>
-      <Button appearance="subtle" disabledFocusable={probing} icon={probing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefreshQuota} size="small">
+      {!readOnly && <Button appearance="subtle" disabledFocusable={probing} icon={probing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefreshQuota} size="small">
         {t('dashboard.upstreamEditor.claudeCode.refreshQuota')}
-      </Button>
+      </Button>}
     </div>
 
     {windows.length > 0 && <div className="grid gap-3">
@@ -98,6 +101,7 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
           key={row.key}
           label={t(`dashboard.upstreamEditor.claudeCode.window.${row.key}`)}
           percent={row.percent}
+          quotaDisplay={preferences.quotaDisplay}
           right={row.status && <Text size={200} className="text-fui-fg3">{row.status}</Text>}
           footer={<div className="flex flex-wrap items-baseline justify-between gap-x-3">
             {row.resetAt && <Text size={200} className="text-fui-fg3">

@@ -8,6 +8,7 @@ import type {
   ClaudeCodeQuotaWindow,
   UpstreamRecord,
 } from '../../api/types';
+import { claudeCodeRateLimitedUntil } from '@floway-dev/provider-claude-code/browser';
 
 export type ClaudeCodeRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>;
 
@@ -146,34 +147,16 @@ type ClaudeCodeDangerStatus =
 
 export type AccountStatus = ClaudeCodeDangerStatus | UsageHeavyOrActive;
 
-// When the account stops refusing work, or null if it is not refusing any, on
-// the same terms the data plane uses to decide whether to send it any: a
-// rejection dated in the past has lifted, and one reported without a date at all
-// is not treated as a limit, because the snapshot is only rewritten by a
-// response and an upstream nobody calls would otherwise stay locked out forever.
-// Both surfaces that show this state read it here, so neither can disagree with
-// the router.
-//
-// It answers with the instant rather than a yes, because every caller that wants
-// the answer also wants to say how long the wait has left.
 export const rateLimitedUntil = (
   quota: ClaudeCodeAccountCredentialSummary['quotaSnapshot'] | null | undefined,
   now: number,
-): string | null => {
-  const data = quota?.data;
-  if (data?.status !== 'rejected' || !data.reset) return null;
-  return Date.parse(data.reset) > now ? data.reset : null;
-};
+): string | null => claudeCodeRateLimitedUntil(quota, now);
 
 export const accountStatus = (lookup: CredentialLookup, windows: WindowRow[], now: number): AccountStatus => {
   if (lookup.kind === 'uuid-mismatch') return { tone: 'danger', reason: 'uuid-mismatch' };
   const { credential } = lookup;
   if (credential.state === 'session_terminated') return { tone: 'danger', reason: 'session-terminated', detail: credential.stateMessage };
   if (credential.state === 'refresh_failed') return { tone: 'danger', reason: 'refresh-failed', detail: credential.stateMessage };
-  // `rejected` on the primary status means a limit was hit; overage is a
-  // separate optional window. The snapshot is held until a response replaces
-  // it, so this asks whether the limit is still running rather than whether one
-  // was ever reported -- the data plane draws the line at the same instant.
   if (rateLimitedUntil(credential.quotaSnapshot, now) !== null) return { tone: 'danger', reason: 'exhausted' };
   return usageStatusFromHeaviest(heaviestPercent(windows.map(row => row.percent)));
 };

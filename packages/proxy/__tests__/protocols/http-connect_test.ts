@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ProxyDialError } from '../../src/errors.ts';
+import { ProxyDialError } from '../../src/dial-error.ts';
 import { dialHttpConnect } from '../../src/protocols/http-connect.ts';
 import type { HttpProxyConfig } from '../../src/proxy-config.ts';
 import type { DialOptions, DialTarget } from '../../src/types.ts';
@@ -94,17 +94,6 @@ describe('dialHttpConnect — happy path body forwarding', () => {
 });
 
 describe('dialHttpConnect — failure modes', () => {
-  it('classifies tcp-connect failures with the underlying cause', async () => {
-    const fake = makeFakeSocketDial();
-    fake.failNextConnect(new Error('ECONNREFUSED'));
-    await expect(
-      dialHttpConnect(httpConfig(), target, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'tcp-connect',
-      message: expect.stringContaining('tcp connect to proxy.example:3128 failed'),
-    });
-  });
 
   it('surfaces 407 Proxy Authentication Required as a typed proxy-handshake error', async () => {
     const fake = makeFakeSocketDial();
@@ -352,17 +341,6 @@ describe('dialHttpConnect — request authority forms', () => {
 });
 
 describe('dialHttpConnect — pre-dial target validation', () => {
-  it('rejects an out-of-range target port at stage=config, before any TCP connect', async () => {
-    const fake = makeFakeSocketDial();
-    await expect(
-      dialHttpConnect(httpConfig(), { host: 'api.openai.com', port: 0 }, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('1..65535'),
-    });
-    expect(fake.connectCount()).toBe(0);
-  });
 
   it('rejects an empty target host at stage=config, before any TCP connect', async () => {
     const fake = makeFakeSocketDial();

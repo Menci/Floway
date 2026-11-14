@@ -1,12 +1,13 @@
 import { assertCustomUpstreamRecord, type CustomUpstreamConfig } from './config.ts';
 import { CUSTOM_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchCustomModels, type CustomModelsResponse, type CustomRawModel } from './fetch-models.ts';
-import { customFetchAlphaSearch, customFetchOpenAIAudioTranscriptions, customFetchOpenAIChatCompletions, customFetchOpenAICompletions, customFetchOpenAIEmbeddings, customFetchOpenAIImagesEdits, customFetchOpenAIImagesGenerations, customFetchAnthropicMessages, customFetchAnthropicMessagesCountTokens, customFetchRerank, customFetchOpenAIResponses, customFetchOpenAIResponsesCompact } from './fetch.ts';
+import { customFetchAlphaSearch, customFetchOpenAIAudioTranscriptions, customFetchOpenAIChatCompletions, customFetchOpenAICompletions, customFetchDecision, customFetchOpenAIEmbeddings, customFetchOpenAIImagesEdits, customFetchOpenAIImagesGenerations, customFetchAnthropicMessages, customFetchAnthropicMessagesCountTokens, customFetchRerank, customFetchOpenAIResponses, customFetchOpenAIResponsesCompact } from './fetch.ts';
 import { inferEndpointsFromModelId } from './infer-endpoints.ts';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
+import { DEFAULT_DECISION_PATHS, serializeDecisionRequest, type CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
-import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
+import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResultEx, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
 import { headersForAnthropicMessagesCall, jsonRequestBody, serializeModelFieldOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FetchInit, type FlagId, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 
@@ -84,7 +85,7 @@ const finalizeCustomModels = (
     // A catalog kind alone cannot choose between the six incompatible rerank
     // wires. The auto row remains visible in the dashboard's fetch result, but
     // only a manual row with rerankTarget enters the routable provider catalog.
-    if (rawModel.kind === 'rerank') continue;
+    if (rawModel.kind === 'rerank' || rawModel.kind === 'decision') continue;
     const endpoints = autoModelEndpoints(rawModel, configuredEndpoints);
     const kind = kindForEndpoints(endpoints);
     models.push({
@@ -125,6 +126,7 @@ export const projectCustomModels = (
       enabledFlags,
       opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
       ...(model.rerankTarget ? { rerankTarget: model.rerankTarget } : {}),
+      ...(model.decisionTarget ? { decisionTarget: model.decisionTarget } : {}),
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
     if (model.pricing) internal.pricing = model.pricing;
@@ -214,6 +216,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
   };
 
   const instance: ProviderInstance = {
+    runScheduledTask: async () => {},
     getProvidedModels: async fetcher => {
       if (!config.modelsFetch.enabled) return projectCustomModels(record);
       const response = await fetchCustomModels(config, fetcher);
@@ -238,7 +241,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
           { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         );
         return response.ok
-          ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResult, modelKey: rawModelId }
+          ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResultEx, modelKey: rawModelId }
           : { action: 'compact', ok: false, response, modelKey: rawModelId };
       }
       default:
@@ -270,6 +273,19 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
       const response = await customFetchRerank(
         config,
         target.path ?? DEFAULT_RERANK_PATHS[target.protocol],
+        { method: 'POST', body: jsonRequestBody(body), signal },
+        { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
+      );
+      return { response, modelKey: rawModelId, target };
+    },
+    callDecision: async (model: ProviderModel, request: CanonicalDecisionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => {
+      const target = model.decisionTarget;
+      if (target === undefined) throw new Error(`Decision model ${model.id} has no outbound target`);
+      const rawModelId = rawModelIdOf(model);
+      const body = serializeDecisionRequest(target.protocol, rawModelId, request);
+      const response = await customFetchDecision(
+        config,
+        target.path ?? DEFAULT_DECISION_PATHS[target.protocol],
         { method: 'POST', body: jsonRequestBody(body), signal },
         { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       );

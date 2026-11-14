@@ -8,13 +8,13 @@ import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy } from '../test-policy.ts';
 
 describe('OpenAI Responses stored-item hydration', () => {
-  test('replaces an arbitrary item reference with its exact producer payload and private state', async () => {
+  test('replaces an arbitrary item reference with its exact producer payload', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
     void repo.apiKeys.save({
       id: 'key-a', userId: 1, name: 'OpenAI Responses test key', key: 'raw-responses-test',
       serverSecret: '99'.repeat(32), createdAt: '2026-01-01T00:00:00.000Z',
-      upstreamIds: null, deletedAt: null, dumpRetentionSeconds: null,
+      upstreamIds: null, randomizeUpstreams: false, deletedAt: null, dumpRetentionSeconds: null,
       openaiResponsesRetentionSeconds: TEST_OPENAI_RESPONSES_RETENTION_SECONDS,
     });
     const id = 'rs_producer';
@@ -23,7 +23,6 @@ describe('OpenAI Responses stored-item hydration', () => {
       apiKeyId: 'key-a',
       payload: {
         item: { type: 'reasoning', id, summary: [], encrypted_content: 'wrapped' },
-        private: { replay: true },
       },
       itemHash: 'hash',
       refreshedAt: Date.now(),
@@ -35,8 +34,7 @@ describe('OpenAI Responses stored-item hydration', () => {
 
     const hydrated = hydrateOpenAIResponsesPayload(payload, store);
 
-    expect(hydrated.payload.input).toEqual([row.payload.item]);
-    expect(hydrated.privatePayloads.get(row.id)).toEqual({ replay: true });
+    expect(hydrated.input).toEqual([row.payload.item]);
   });
 
   test('rejects any missing item reference without an id-format prefilter', () => {

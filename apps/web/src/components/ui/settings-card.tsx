@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
 
+import { ExpanderRegion } from './expander-region';
 import { Switch } from './fluent-form-controls';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
@@ -212,6 +213,11 @@ const useStyles = makeStyles({
   // Opening changes nothing else: the header's Checked states repaint it in the
   // same brushes its unchecked ones do.
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L420-L501
+  // The row's click target is a stretched overlay (see expanderDisclosure), so a
+  // clickable row must be the containing block for it. Without this the overlay
+  // resolves against the nearest positioned ancestor above the card -- the page
+  // itself -- and swallows every click on the page.
+  clickable: { position: 'relative' },
   expanderHeader: {
     position: 'relative',
     backgroundColor: 'var(--winui-card-background-fill-default)',
@@ -334,39 +340,6 @@ const useStyles = makeStyles({
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedIcon.cpp#L432-L444
     '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
   },
-  // Expander's open and close, asymmetric in duration as the source is: 333ms
-  // opening, 167ms closing. CSS states one duration per property rather than
-  // per direction, so each direction's values sit on the rule becoming active.
-  //
-  // What travels is the region's own height, a simplification of ours: WinUI
-  // translates the content under a composition clip. Animating the height
-  // reflows everything below for the length of the transition, and the close
-  // runs on the fast-out-slow-in spline rather than WinUI's
-  // cubic-bezier(1, 1, 0, 1). Nothing sources that substituted spline.
-  //
-  // The reduce branch departs from shipped WinUI, which keeps sliding: the
-  // Expander authors its motion as a VisualState storyboard, and the animations
-  // gate only reaches Transition and Dynamic storyboards. A region growing from
-  // nothing to full height is motion animation by WCAG's definition, so the
-  // preference is honoured here.
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander.xaml#L62-L90
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/vsm/VisualStateManagerActuator.cpp#L590-L609
-  // https://github.com/w3c/wcag/blob/900ea026b967bc306a2cdbe0c586330a508d6759/guidelines/terms/21/motion-animation.html
-  contentFrame: {
-    display: 'grid',
-    gridTemplateRows: '0fr',
-    transitionDuration: 'var(--winui-collapse-animation-duration)',
-    transitionProperty: 'grid-template-rows',
-    transitionTimingFunction: 'var(--winui-control-fast-out-slow-in-easing)',
-    '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
-  },
-  contentFrameOpen: {
-    gridTemplateRows: '1fr',
-    transitionDuration: 'var(--winui-expand-animation-duration)',
-    transitionTimingFunction: 'var(--winui-control-fast-out-slow-in-easing)',
-    '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
-  },
-  contentClip: { minHeight: 0, overflow: 'hidden' },
   chevronOpen: {
     rotate: '180deg',
     transitionDuration: 'var(--winui-expand-animation-duration)',
@@ -385,9 +358,11 @@ const useStyles = makeStyles({
     alignItems: 'center',
     columnGap: '12px',
     display: 'flex',
+    flexShrink: 0,
     height: '36px',
     justifyContent: 'flex-end',
     minWidth: 0,
+    whiteSpace: 'nowrap',
     // Wrapped, this row is the one control that was packing itself against the
     // trailing edge; a stretched box would have kept it there.
     [WRAPPED]: { justifyContent: 'flex-start' },
@@ -398,6 +373,7 @@ const useStyles = makeStyles({
   // itself.
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L715-L724
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L7-L8
+  readout: { flexShrink: 0, whiteSpace: 'nowrap' },
   readoutDisabled: { color: 'var(--winui-text-fill-disabled)' },
 });
 
@@ -421,22 +397,44 @@ export function SettingsSwitch({ checked, disabled, label, onChange }: {
   const styles = useStyles();
   const { t } = useTranslation();
   return <span className={styles.switchRow}>
-    <Text className={disabled === true ? styles.readoutDisabled : undefined}>{t(checked ? 'common.on' : 'common.off')}</Text>
+    <Text className={mergeClasses(styles.readout, disabled === true && styles.readoutDisabled)}>{t(checked ? 'common.on' : 'common.off')}</Text>
     <Switch aria-label={label} checked={checked} disabled={disabled} onChange={(_, data) => onChange(data.checked)} />
   </span>;
 }
 
-export function SettingsCard({ action, description, header, icon }: {
+// SettingsCard's IsClickEnabled: the whole row becomes the button and an
+// ActionIcon names where it goes. A row with an `action` keeps that control as
+// its own click target, so the two are mutually exclusive -- a switch inside a
+// clickable card would otherwise fire both.
+// https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.Properties.cs#L55-L62
+// https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L459-L474
+export function SettingsCard({ action, description, header, icon, onClick }: {
   action?: ReactNode;
   description?: string;
   header: ReactNode;
   icon?: ReactNode;
+  /** Makes the row itself the control that runs this action. */
+  onClick?: () => void;
 }) {
   const styles = useStyles();
+  if (onClick !== undefined && action !== undefined) {
+    throw new Error('A SettingsCard row carries either an action or its own click, not both');
+  }
   return <div className={styles.row}>
-    <div className={styles.card}>
+    <div className={mergeClasses(styles.card, onClick !== undefined && styles.interactive, onClick !== undefined && styles.clickable)}>
+      {onClick !== undefined && <button
+        aria-label={typeof header === 'string' ? header : undefined}
+        className={styles.expanderDisclosure}
+        onClick={onClick}
+        type="button"
+      />}
       <CardText description={description} header={header} icon={icon} />
       {action !== undefined && <span className={styles.action}>{action}</span>}
+      {onClick !== undefined && <span aria-hidden className={styles.chevron}>
+        <svg className={styles.chevronGlyph} fill="currentColor" height="16" viewBox="0 0 16 16" width="16">
+          <path d="M6 3.5a.5.5 0 0 1 .85-.35l4.5 4.5a.5.5 0 0 1 0 .7l-4.5 4.5a.5.5 0 1 1-.7-.7L10.29 8 6.15 3.85A.5.5 0 0 1 6 3.5Z" />
+        </svg>
+      </span>}
     </div>
   </div>;
 }
@@ -510,14 +508,8 @@ export function SettingsExpander({ action, children, defaultOpen = false, descri
         </svg>
       </span>
     </div>
-    <div className={mergeClasses(styles.contentFrame, open && styles.contentFrameOpen)}>
-      <div className={styles.contentClip}>
-        {/* Closed, the region is inert rather than hidden: `hidden` is
-            `display: none`, which takes the content out of flow in the same
-            frame the row starts collapsing, leaving nothing to animate
-            towards. `inert` withdraws it without touching layout. */}
-        <div aria-labelledby={headerId} className={styles.content} id={contentId} inert={!open} role="group">{children}</div>
-      </div>
-    </div>
+    <ExpanderRegion open={open}>
+      <div aria-labelledby={headerId} className={styles.content} id={contentId} role="group">{children}</div>
+    </ExpanderRegion>
   </div>;
 }

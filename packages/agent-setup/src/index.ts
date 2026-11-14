@@ -2,7 +2,8 @@
 // route factories to its persistence and auth; everything else here supports
 // implementing the repository contract and typing the configuration.
 
-export { type AgentSetupConfiguration, agentSetupConfigurationSchema } from './configuration.ts';
+export { type AgentSetupConfiguration, agentSetupConfigurationSchema, agentSetupProviderSchema } from './configuration.ts';
+export { InvalidAgentSetupEndpointError, normalizeAgentSetupEndpoint } from './extension-endpoint.ts';
 export {
   type AgentSetupControlDeps,
   type AgentSetupPublicDeps,

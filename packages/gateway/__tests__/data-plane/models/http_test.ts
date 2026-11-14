@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
+import type { OmpModel } from '../../../src/data-plane/models/omp-catalog.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, flushAsyncWork, requestApp as requestAppCold, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelKind } from '@floway-dev/protocols/common';
@@ -582,21 +583,33 @@ test('public model list endpoints hide malformed upstream response bodies', asyn
   );
 });
 
-test('/v1/models surfaces the actionable "no upstream configured" hint when no provider is configured', async () => {
+test('model discovery returns empty catalogs when no provider is configured', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
 
-  const response = await requestAppWithWarmModels('/v1/models', {
-    headers: { 'x-api-key': apiKey.key },
-  });
-
-  assertEquals(response.status, 502);
-  assertEquals(await response.json(), {
-    error: {
-      message: 'No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard',
-      type: 'api_error',
-    },
+  const cases = [
+    { path: '/v1/models', body: { object: 'list', has_more: false, first_id: null, last_id: null, data: [] } },
+    { path: '/models', body: { object: 'list', has_more: false, first_id: null, last_id: null, data: [] } },
+    { path: '/api/models', body: { object: 'list', has_more: false, first_id: null, last_id: null, data: [] } },
+    { path: '/v1beta/models', userAgent: 'google-genai-sdk/1.0.0 gl-node/cross', body: { models: [] } },
+    { path: '/v1/models', userAgent: 'google-genai-sdk/1.0.0 gl-node/cross', body: { models: [] } },
+    { path: '/models', userAgent: 'codex_cli_rs/987.654.321', body: { models: [] } },
+    { path: '/models', userAgent: 'claude-code/2.1.206', body: { data: [], first_id: null, has_more: false, last_id: null } },
+    { path: '/models', userAgent: 'pi/0.68.0', body: { models: [] } },
+    { path: '/v1/models', userAgent: 'omp/18.8.4', body: { api: 'floway:floway', models: [], wireApis: {}, streamOptions: {}, payloadRemovals: {} } },
+    { path: '/v1/models', userAgent: 'typesafe-sdk/0.7.5', body: { models: [] } },
+  ];
+  await withMockedFetch(request => {
+    if (new URL(request.url).hostname === 'raw.githubusercontent.com') return new Response(null, { status: 404 });
+    throw new Error(`Unexpected fetch ${request.url}`);
+  }, async () => {
+    for (const { path, userAgent, body } of cases) {
+      const headers = { 'x-api-key': apiKey.key, ...(userAgent === undefined ? {} : { 'user-agent': userAgent }) };
+      const response = await requestAppWithWarmModels(path, { headers });
+      assertEquals(response.status, 200);
+      assertEquals(await response.json(), body);
+    }
   });
 });
 
@@ -1056,6 +1069,188 @@ test('/v1/models serves Anthropic-shape rows without a [1m] suffix when no model
       assertEquals(body.data[0].type, 'model');
       assertEquals(body.data[0].max_input_tokens, 200_000);
       assertEquals(body.data[0].capabilities, null);
+    },
+  );
+});
+
+test('/v1/models keeps the configured public endpoint when OMP connects through a reverse proxy', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
+    config: {
+      baseUrl: 'https://upstream.example', authStyle: 'bearer', apiKey: 'upstream-key', ingressHeadersRules: [],
+      endpoints: {}, modelsFetch: { enabled: false },
+      models: [
+        { upstreamModelId: 'response-model', kind: 'chat', endpoints: { openaiResponses: {} }, chat: { reasoning: { effort: { supported: ['low'], default: 'low' } } } },
+        { upstreamModelId: 'budget-model', kind: 'chat', endpoints: { anthropicMessages: {} }, chat: { reasoning: { budget_tokens: { min: 1024 } } } },
+      ],
+    },
+  }));
+  await withMockedFetch(() => { throw new Error('configured models require no upstream fetch'); }, async () => {
+    const endpoint = 'https://public.example/gateway';
+    const response = await requestAppWithWarmModels(`http://internal:8788/v1/models?endpoint=${encodeURIComponent(endpoint)}`, {
+      headers: { 'x-api-key': apiKey.key, 'user-agent': 'omp/18.8.4' },
+    });
+    assertEquals(response.status, 200);
+    const body = await response.json() as { models: OmpModel[] };
+    assertEquals(body.models.find(model => model.id === 'response-model')!.baseUrl, `${endpoint}/v1`);
+    assertEquals(body.models.find(model => model.id === 'budget-model')!.baseUrl, endpoint);
+    for (const userAgent of ['pi/1.1.0 (linux; node/v22.19.0; x64)', 'omp/18.8.4']) {
+      const named = await requestAppWithWarmModels(`/v1/models?provider=personal&endpoint=${encodeURIComponent(endpoint)}`, {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': userAgent },
+      });
+      assertEquals(named.status, 200);
+      const catalog = await named.json() as { api?: string; models: { provider?: string; api: string; id: string }[] };
+      if (userAgent.startsWith('pi/')) assertEquals(catalog.models.map(model => model.provider), ['personal', 'personal']);
+      else assertEquals(catalog.api, 'floway:personal');
+      const invalidProvider = await requestAppWithWarmModels('/v1/models?provider=UPPER', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': userAgent },
+      });
+      assertEquals(invalidProvider.status, 400);
+    }
+
+    const invalid = await requestAppWithWarmModels('/v1/models?endpoint=ftp%3A%2F%2Fpublic.example', {
+      headers: { 'x-api-key': apiKey.key, 'user-agent': 'omp/18.8.4' },
+    });
+    assertEquals(invalid.status, 400);
+  });
+});
+
+test('/v1/models serves omp-tailored catalog to omp/* callers and preserves precedence for other callers', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  clearInProcessCopilotTokenCache();
+
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
+    id: 'up_omp_test',
+    name: 'OMP Test Provider',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://omp-test.example.com',
+      authStyle: 'bearer',
+      ingressHeadersRules: [],
+      apiKey: 'sk-omp-test',
+      endpoints: {},
+      modelsFetch: { enabled: false },
+      models: [
+        {
+          upstreamModelId: 'test-chat',
+          publicModelId: 'test-chat',
+          kind: 'chat',
+          endpoints: { openaiChatCompletions: {} },
+          limits: { max_context_window_tokens: 128_000, max_prompt_tokens: 100_000, max_output_tokens: 4_096 },
+          chat: { modalities: { input: ['text', 'image'], output: ['text'] } },
+        },
+        {
+          upstreamModelId: 'test-embed',
+          publicModelId: 'test-embed',
+          kind: 'embedding',
+          endpoints: { openaiEmbeddings: {} },
+          limits: { max_context_window_tokens: 8_192 },
+        },
+        {
+          upstreamModelId: 'test-image',
+          publicModelId: 'test-image',
+          kind: 'image',
+          endpoints: { openaiImagesGenerations: {} },
+        },
+        {
+          upstreamModelId: 'test-rerank',
+          publicModelId: 'test-rerank',
+          kind: 'rerank',
+          endpoints: { rerank: {} },
+          rerankTarget: { protocol: 'cohere-v1' },
+          limits: { max_context_window_tokens: 4_096 },
+        },
+      ],
+    },
+  }));
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'raw.githubusercontent.com') {
+        return new Response(null, { status: 404 });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const ompResponse = await requestAppWithWarmModels('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'omp/18.8.4' },
+      });
+      assertEquals(ompResponse.status, 200);
+      const ompBody = await ompResponse.json() as { api: string; models: OmpModel[] };
+      assertEquals(ompBody.api, 'floway:floway');
+      assertEquals(ompBody.models.map(model => model.id), ['test-image', 'test-embed', 'test-chat']);
+      const chat = ompBody.models.find(model => model.id === 'test-chat')!;
+      assertEquals(chat.api, 'floway:floway');
+      assertEquals(chat.contextWindow, 128_000);
+      assertEquals(chat.maxTokens, 4_096);
+      assertEquals(chat.input, ['text', 'image']);
+      for (const userAgent of ['not-omp/18.8.4', 'floway-omp/1', 'openai-python/1.42.0']) {
+        const response = await requestAppWithWarmModels('/v1/models', { headers: { 'x-api-key': apiKey.key, 'user-agent': userAgent } });
+        const body = await response.json() as { data: Array<{ id: string }> };
+        assertEquals(body.data.map(model => model.id), ['test-rerank', 'test-image', 'test-embed', 'test-chat']);
+      }
+
+      const claudeCodeResp = await requestAppWithWarmModels('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'claude-code/2.1.206' },
+      });
+      assertEquals(claudeCodeResp.status, 200);
+      const claudeCodeBody = (await claudeCodeResp.json()) as { object?: unknown; data: Array<{ id: string; type: string }> };
+      assertEquals(claudeCodeBody.object, undefined);
+      assertEquals(claudeCodeBody.data.length, 4);
+
+      const codexResp = await requestAppWithWarmModels('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'codex-tui/0.1.0' },
+      });
+      assertEquals(codexResp.status, 200);
+      const codexBody = (await codexResp.json()) as { object?: unknown; models: Array<{ slug: string }> };
+      assertEquals(codexBody.object, undefined);
+      assertEquals(Array.isArray(codexBody.models), true);
+    },
+  );
+});
+
+test('the TypeSafe SDK user agent receives the { models } catalog its parsers require', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  clearInProcessCopilotTokenCache();
+
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
+    id: 'up_typesafe',
+    name: 'Decision Provider',
+    config: {
+      baseUrl: 'https://decision.example.com',
+      authStyle: 'bearer',
+      ingressHeadersRules: [],
+      apiKey: 'sk-decision',
+      endpoints: {},
+      modelsFetch: { enabled: false },
+      models: [{
+        upstreamModelId: 'jev-1.13',
+        publicModelId: 'jev-1.13',
+        kind: 'decision',
+        endpoints: { decision: {} },
+        decisionTarget: { protocol: 'typesafe-systemone' },
+      }],
+    },
+  }));
+
+  // The warm helper only runs under an installed fetch mock.
+  await withMockedFetch(
+    () => { throw new Error('a manual custom model needs no fetch'); },
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'typesafe-sdk/0.7.5' },
+      });
+      assertEquals(response.status, 200);
+      const body = (await response.json()) as { models: Array<{ name: string; description: string; release_date: string }> };
+      assertEquals(body.models.map(model => model.name), ['jev-1.13']);
+      // All three fields are required by both SDKs; a model with no date keeps the
+      // epoch sentinel rather than omitting the key.
+      assertEquals(body.models[0].description, 'jev-1.13');
+      assertEquals(body.models[0].release_date, '1970-01-01');
     },
   );
 });

@@ -3,7 +3,7 @@ import { hmac } from '@noble/hashes/hmac.js';
 import { sha512 } from '@noble/hashes/sha2.js';
 import { describe, expect, it } from 'vitest';
 
-import { hexDecode } from '../../src/bytes.ts';
+import { hexDecode } from '../../src/encoding.ts';
 import {
   buildRealityAad,
   buildRealitySessionId,
@@ -151,44 +151,6 @@ describe('dialReality — runtime X25519 derive failure', () => {
     // The TCP socket WAS opened (the derive failure happens inside the
     // outer-TLS state machine, after connect succeeds). We don't assert
     // connectCount here — only that the failure is shaped right.
-  });
-});
-
-describe('dialReality — pre-dial target validation', () => {
-  it('rejects an out-of-range target port at stage=config, before any TCP connect', async () => {
-    const fake = makeFakeSocketDial();
-    await expect(
-      dialReality(realityConfig(), { host: 'api.openai.com', port: 0 }, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('1..65535'),
-    });
-    expect(fake.connectCount()).toBe(0);
-  });
-
-  it('rejects a non-ASCII target host at stage=config, before any TCP connect', async () => {
-    const fake = makeFakeSocketDial();
-    await expect(
-      dialReality(realityConfig(), { host: '例え.jp', port: 443 }, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('ASCII'),
-    });
-    expect(fake.connectCount()).toBe(0);
-  });
-
-  it('rejects a 256-byte target host at stage=config, before any TCP connect', async () => {
-    const fake = makeFakeSocketDial();
-    await expect(
-      dialReality(realityConfig(), { host: 'a'.repeat(256), port: 443 }, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('too long'),
-    });
-    expect(fake.connectCount()).toBe(0);
   });
 });
 

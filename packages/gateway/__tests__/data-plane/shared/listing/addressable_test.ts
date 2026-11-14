@@ -1,15 +1,19 @@
 import { describe, expect, test } from 'vitest';
 
-import { enumerateAddressableModelIds } from '../../../../src/data-plane/shared/listing/addressable.ts';
+import { enumerateAddressableModelIds as enumerateAddressableModelIdsRaw } from '../../../../src/data-plane/shared/listing/addressable.ts';
 import { createModelsRefreshScheduler } from '../../../../src/execution/models-refresh.ts';
 import { saveUpstreamForTest } from '../../../repo/upstreams.ts';
-import { buildCustomUpstreamRecord, setupAppTest, warmModelsForTest } from '../../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, setupAppTest, testAdminUser, warmModelsForTest } from '../../../test-utils/app.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const noBackground = (promise: Promise<unknown>): void => {
   promise.catch(err => console.error('[background]', err));
 };
 const scheduleRefresh = createModelsRefreshScheduler('TEST', noBackground);
+const enumerateAddressableModelIds = (
+  upstreamFilter: readonly string[] | null,
+  scheduler: typeof scheduleRefresh,
+) => enumerateAddressableModelIdsRaw(testAdminUser, upstreamFilter, scheduler);
 
 describe('enumerateAddressableModelIds', () => {
   test('returns the listed catalog as listed entries when no provider contributes addressable-only forms', async () => {
@@ -62,7 +66,7 @@ describe('enumerateAddressableModelIds', () => {
         expect(byId.get('gpt-5.4')?.unlisted).toBe(true);
         // The addressable-only entry still resolves to the same `InternalModel`
         // as the canonical listed id, so consumers find one consistent row.
-        expect(byId.get('gpt-5.4')?.model).toBe(byId.get('cust/gpt-5.4')?.model);
+        expect(byId.get('gpt-5.4')?.model).toStrictEqual(byId.get('cust/gpt-5.4')?.model);
       },
     );
   });
@@ -123,11 +127,10 @@ describe('enumerateAddressableModelIds', () => {
     );
   });
 
-  test('throws "no upstream configured" when the upstream cap is empty — surfacing the same hint /v1/models has always raised', async () => {
+  test('returns an empty surface when the upstream cap is empty', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
 
-    await expect(enumerateAddressableModelIds(null, scheduleRefresh))
-      .rejects.toThrow('No upstream provider configured');
+    await expect(enumerateAddressableModelIds(null, scheduleRefresh)).resolves.toEqual([]);
   });
 });

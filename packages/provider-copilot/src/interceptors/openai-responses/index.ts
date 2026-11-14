@@ -5,7 +5,6 @@
 import { withToolArgumentWhitespaceAborted } from './abort-on-tool-argument-whitespace.ts';
 import { withInlineImagesCompressed } from './compress-images.ts';
 import { withEmptyNamespaceDescriptionsFilled } from './fill-empty-namespace-descriptions.ts';
-import { withStoreForcedFalse } from './force-store-false.ts';
 import { withCopilotOpenAIResponsesItemIdMembrane } from './item-id-membrane.ts';
 import { withInitiatorHeaderSet } from './set-initiator-header.ts';
 import { withVisionHeaderSet } from './set-vision-header.ts';
@@ -26,7 +25,6 @@ export const COPILOT_OPENAI_RESPONSES_BOUNDARY = [
   withEmptyNamespaceDescriptionsFilled,
   withServiceTierStripped,
   withImageGenerationStripped,
-  withStoreForcedFalse,
   withCopilotOpenAIResponsesItemIdMembrane,
   withToolArgumentWhitespaceAborted,
   withVisionHeaderSet,

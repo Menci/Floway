@@ -168,6 +168,15 @@ textarea {
   font: inherit;
 }
 
+/* A numeric field holds its width as digits change, so the caret, the unit
+   beside it and the column it sits in stay put while a value is typed. Rates
+   and counts declare their input mode; a token limit is a plain `number`. */
+input[type='number'],
+input[inputmode='numeric'],
+input[inputmode='decimal'] {
+  font-variant-numeric: tabular-nums;
+}
+
 code,
 kbd,
 pre,

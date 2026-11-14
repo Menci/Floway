@@ -18,6 +18,7 @@ const invocation = (
   candidate: stubModelCandidate({ enabledFlags }),
   targetApi: 'anthropicMessages',
   headers: new Headers(),
+  anthropicBeta: [],
 });
 
 const base = { model: 'm', messages: [], max_tokens: 1 };

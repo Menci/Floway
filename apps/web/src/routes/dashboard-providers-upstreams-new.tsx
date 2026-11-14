@@ -11,7 +11,7 @@ import {
 import { UpstreamEditorPage } from '../components/upstream-editor/page';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 import { pickDistinctHue } from '../lib/hue';
-import { ALL_PROVIDER_KINDS } from '@floway-dev/provider/model';
+import { ALL_PROVIDER_KINDS } from '@floway-dev/provider/browser';
 
 export const handle = dashboardWorkspaceHandle;
 
@@ -38,7 +38,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     // server does not.
     hue: pickDistinctHue(upstreamsResult.data.map(upstream => upstream.hue)),
   };
-  return { ...aux, mode: 'create' as const, record, discovered: null };
+  return { ...aux, editLevel: 'full' as const, mode: 'create' as const, record, discovered: null };
 }
 
 export const shouldRevalidate = revalidateOnPathnameChange;

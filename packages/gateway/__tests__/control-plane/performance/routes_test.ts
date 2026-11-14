@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
-import { requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
+import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('/api/performance/overview modelRows carry backend-aggregated base-model percentiles', async () => {
@@ -93,6 +94,7 @@ test('/api/performance/overview narrows the whole aggregate to the actor under g
     serverSecret: '00'.repeat(32),
     createdAt: '2026-04-30T00:00:00.000Z',
     upstreamIds: null,
+    randomizeUpstreams: false,
     deletedAt: null,
     dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: 0,
@@ -132,6 +134,7 @@ test('/api/performance/overview keeps API-key axes actor-scoped under a cross-us
     serverSecret: '00'.repeat(32),
     createdAt: '2026-04-30T00:00:00.000Z',
     upstreamIds: null,
+    randomizeUpstreams: false,
     deletedAt: null,
     dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: 0,
@@ -153,9 +156,10 @@ test('/api/performance/overview keeps API-key axes actor-scoped under a cross-us
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  // Both users' rows feed the model breakdown...
-  assertEquals(body.axes.model.map((r: { requests: number }) => r.requests), [2]);
-  // ...while the key dimension still names only the actor's own key.
+  // The model breakdown contains only cells visible through the actor's
+  // default self User.Audit grant.
+  assertEquals(body.axes.model.map((r: { requests: number }) => r.requests), [1]);
+  // The key dimension likewise names only the actor's own key.
   assertEquals(body.axes.keyId.map((r: { group: string }) => r.group), [apiKey.id]);
   assertEquals(body.dimensionValues.keyIds, [apiKey.id]);
 });
@@ -199,6 +203,7 @@ test('/api/performance/overview aggregates over every user\'s keys', async () =>
     serverSecret: '00'.repeat(32),
     createdAt: '2026-04-30T00:00:00.000Z',
     upstreamIds: null,
+    randomizeUpstreams: false,
     deletedAt: null,
     dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: 0,
@@ -226,8 +231,9 @@ test('/api/performance/overview aggregates over every user\'s keys', async () =>
   assertEquals(body.axes.model[0].requests, 2);
 });
 
-test('/api/performance/overview gives a non-admin the global aggregate without per-user attribution', async () => {
+test('/api/performance/overview keeps only the none axis global for a non-admin', async () => {
   const { repo, apiKey } = await setupAppTest();
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'copilot:1', name: 'Self visible' }));
   await repo.apiKeys.save({
     id: 'key_admin_owned',
     userId: 1,
@@ -236,6 +242,7 @@ test('/api/performance/overview gives a non-admin the global aggregate without p
     serverSecret: '00'.repeat(32),
     createdAt: '2026-04-30T00:00:00.000Z',
     upstreamIds: null,
+    randomizeUpstreams: false,
     deletedAt: null,
     dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: 0,
@@ -258,31 +265,31 @@ test('/api/performance/overview gives a non-admin the global aggregate without p
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  // Both users' rows land in the aggregate...
+  assertEquals(body.axes.none[0].requests, 2);
+  // Resource and user breakdowns remain scoped to visible cells.
   assertEquals(body.axes.model.length, 1);
-  assertEquals(body.axes.model[0].requests, 2);
-  // ...but nothing in the payload names who produced them.
-  assertEquals(body.axes.userId, []);
-  assertEquals(body.users, []);
-  assertEquals(body.dimensionValues.userIds, []);
+  assertEquals(body.axes.model[0].requests, 1);
+  assertEquals(body.axes.userId.map((row: { group: string; requests: number }) => [row.group, row.requests]), [['2', 1]]);
+  assertEquals(body.users.map((user: { id: number }) => user.id), [2]);
+  assertEquals(body.dimensionValues.userIds, [2]);
+  assertEquals(body.upstreams, [{ id: 'copilot:1', name: 'Self visible', hue: 210 }]);
 });
 
-test('/api/performance/overview rejects group_by=userId from a non-admin', async () => {
+test('/api/performance/overview permits group_by=userId for visible users', async () => {
   const { apiKey } = await setupAppTest();
 
   const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&group_by=userId', { headers: { 'x-api-key': apiKey.key } });
 
-  assertEquals(response.status, 403);
-  assertEquals(await response.json(), { error: 'group_by=userId requires administrator privileges' });
+  assertEquals(response.status, 200);
 });
 
-test('/api/performance/overview rejects filter_user_id from a non-admin', async () => {
+test('/api/performance/overview treats a hidden filter_user_id as an empty visible query', async () => {
   const { apiKey } = await setupAppTest();
 
   const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=1', { headers: { 'x-api-key': apiKey.key } });
 
-  assertEquals(response.status, 403);
-  assertEquals(await response.json(), { error: 'filter_user_id requires administrator privileges' });
+  assertEquals(response.status, 200);
+  assertEquals((await response.json()).series, []);
 });
 
 test('/api/performance/overview narrows an administrator to their own keys under group_by=keyId too', async () => {
@@ -295,6 +302,7 @@ test('/api/performance/overview narrows an administrator to their own keys under
     serverSecret: '00'.repeat(32),
     createdAt: '2026-04-30T00:00:00.000Z',
     upstreamIds: null,
+    randomizeUpstreams: false,
     deletedAt: null,
     dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: 0,
@@ -359,6 +367,7 @@ test('/api/performance/overview userRows split rows per user', async () => {
     serverSecret: '00'.repeat(32),
     createdAt: '2026-04-30T00:00:00.000Z',
     upstreamIds: null,
+    randomizeUpstreams: false,
     deletedAt: null,
     dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: 0,
@@ -396,6 +405,7 @@ test('/api/performance/overview series stays per-model under a cross-user breakd
     serverSecret: '00'.repeat(32),
     createdAt: '2026-04-30T00:00:00.000Z',
     upstreamIds: null,
+    randomizeUpstreams: false,
     deletedAt: null,
     dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: 0,
@@ -428,7 +438,7 @@ test('/api/performance/overview series stays per-model under a cross-user breakd
   assertEquals(body.dimensionValues.userIds.sort((a: number, b: number) => a - b), [1, 2]);
 });
 
-test('/api/performance/overview leaves dimensionValues.userIds empty for a non-admin', async () => {
+test('/api/performance/overview includes userIds revealed by User.Audit', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.performance.recordSample({
     hour: '2026-04-30T10',
@@ -446,14 +456,10 @@ test('/api/performance/overview leaves dimensionValues.userIds empty for a non-a
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  // Self-view rows all belong to the actor; the dashboard hides the user
-  // dropdown for this view, and the backend confirms it by never surfacing
-  // a single-element list that would encourage a downstream client to
-  // render it.
-  assertEquals(body.dimensionValues.userIds, []);
+  assertEquals(body.dimensionValues.userIds, [2]);
 });
 
-test('/api/performance/overview delegates every dashboard axis to one overview read', async () => {
+test('/api/performance/overview reads the visible view and explicit global baseline', async () => {
   const { repo, apiKey } = await setupAppTest();
   let queryCount = 0;
   const originalQuery = repo.performance.queryOverview.bind(repo.performance);
@@ -478,7 +484,7 @@ test('/api/performance/overview delegates every dashboard axis to one overview r
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  assertEquals(queryCount, 1);
+  assertEquals(queryCount, 2);
   assertEquals(body.series[0].group, 'claude-sonnet-4-5');
   assertEquals(body.axes.none[0].bucket, 'all');
   assertEquals(body.axes.model[0].group, 'claude-sonnet-4-5');
@@ -626,6 +632,7 @@ test('/api/performance/overview surfaces soft-deleted keys metadata to their own
     serverSecret: '00'.repeat(32),
     createdAt: '2026-04-30T11:00:00.000Z',
     upstreamIds: null,
+    randomizeUpstreams: false,
     deletedAt: null,
     dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: 0,
@@ -687,4 +694,40 @@ test('/api/performance/overview returns operationRows grouped by operation value
     { group: 'chat', requests: 1, neutral: 0 },
     { group: 'embeddings', requests: 2, neutral: 2 },
   ]);
+});
+
+test('/api/performance/overview merges calendar bucket histograms before calculating percentiles', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const sample = {
+    keyId: apiKey.id, model: 'gpt-5', upstream: 'copilot:1', operation: 'chat' as const,
+    runtimeLocation: 'LOCAL', tpotUs: 500, success: true,
+  };
+  for (let index = 0; index < 90; index++) await repo.performance.recordSample({ ...sample, hour: '2026-04-30T10', ttftMs: 100 });
+  for (let index = 0; index < 10; index++) await repo.performance.recordSample({ ...sample, hour: '2026-05-01T02', ttftMs: 300 });
+  for (const hour of ['2026-04-30T09', '2026-05-03T16']) await repo.performance.recordSample({ ...sample, hour, ttftMs: 10_000 });
+
+  for (const [bucket, key] of [['week', '2026-04-27'], ['2d', '2026-04-30']] as const) {
+    const response = await requestApp(`/api/performance/overview?start=2026-04-30T10&end=2026-05-03T16&bucket=${bucket}&timezone=Asia%2FSingapore`, { headers: { 'x-api-key': apiKey.key } });
+    assertEquals(response.status, 200);
+    const body = await response.json();
+    assertEquals(body.series.length, 1);
+    assertEquals(body.series[0].bucket, key);
+    assertEquals(body.series[0].requests, 100);
+    assertEquals(body.series[0].ttftMsP95, 200 + 100 * 5 / 11);
+  }
+});
+
+test('telemetry overviews reject invalid or reversed custom timestamps', async () => {
+  const { apiKey } = await setupAppTest();
+  for (const endpoint of ['performance', 'token-usage']) {
+    for (const query of [
+      'start=2026-04-31T00&end=2026-05-02T00',
+      'start=2026-05-02T00&end=2026-05-01T00',
+      'start=2026-05-01T00%3A30&end=2026-05-02T00',
+      ...['0d', '-2d', '1.5d', '02d', '9007199254740992d'].map(bucket => `start=2026-05-01T00&end=2026-05-02T00&bucket=${bucket}`),
+    ]) {
+      const response = await requestApp(`/api/${endpoint}/overview?${query}`, { headers: { 'x-api-key': apiKey.key } });
+      assertEquals(response.status, 400);
+    }
+  }
 });

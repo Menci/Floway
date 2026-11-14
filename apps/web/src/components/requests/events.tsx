@@ -12,7 +12,7 @@ import { PANEL_BAND_CLASS } from '../ui/panel';
 import { useScrollAreaHost } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
-import type { DumpStreamEvent } from '@floway-dev/gateway/dump-types';
+import type { DumpStreamEvent } from '@floway-dev/gateway/browser';
 
 const { Button, Menu, MenuItem, MenuItemCheckbox, MenuList, MenuPopover, MenuTrigger, Text, mergeClasses } = fluentComponents;
 
@@ -93,7 +93,7 @@ export function EventList({ events, kind, toolbarStart }: { events: DumpStreamEv
     </div>
     {searchOpen && <div className={`${PANEL_BAND_CLASS} flex items-center gap-2 shrink-0`}>
       <Input ref={inputRef} className="flex-1" aria-label={t('dashboard.requests.findEvents')} placeholder={t('dashboard.requests.findEvents')} value={query} onChange={(_, data) => changeQuery(data.value)} />
-      <Text size={200} className="text-fui-fg3">{filtered.length} / {events.length}</Text>
+      <Text size={200} className="text-fui-fg3 tabular-nums">{filtered.length} / {events.length}</Text>
       <TooltipIconButton icon={<DismissRegular />} label={t('common.dismiss')} onClick={() => { setSearchOpen(false); changeQuery(''); }} />
     </div>}
     {filtered.length === 0 ? <EmptyStateLine className="p-4">{t('dashboard.requests.noEventMatches')}</EmptyStateLine> : <div {...hostProps} className={mergeClasses(hostProps.className, 'flex-1 min-h-0')}>

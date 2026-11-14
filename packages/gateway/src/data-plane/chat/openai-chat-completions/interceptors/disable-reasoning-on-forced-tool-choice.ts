@@ -1,4 +1,3 @@
-
 import type { OpenAIChatCompletionsInterceptor } from './types.ts';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import { providerModelOf } from '@floway-dev/provider';

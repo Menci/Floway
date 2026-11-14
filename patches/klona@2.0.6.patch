@@ -1,0 +1,54 @@
+diff --git a/json/index.js b/json/index.js
+index 1999090325647c93fb86dd63b30ef5e8ad37d0a5..5bd16d5750ff8e6ccb27859c8439352ba8bf0c15 100644
+--- a/json/index.js
++++ b/json/index.js
+@@ -1,6 +1,8 @@
+ function klona(val) {
+ 	var k, out, tmp;
+ 
++	if (typeof JSON.isRawJSON === 'function' && JSON.isRawJSON(val)) return val;
++
+ 	if (Array.isArray(val)) {
+ 		out = Array(k=val.length);
+ 		while (k--) out[k] = (tmp=val[k]) && typeof tmp === 'object' ? klona(tmp) : tmp;
+@@ -21,6 +23,13 @@ function klona(val) {
+ 				out[k] = (tmp=val[k]) && typeof tmp === 'object' ? klona(tmp) : tmp;
+ 			}
+ 		}
++		var keys = Object.keys(val), outputKeys = Object.keys(out);
++		if (keys.some((key, index) => key !== outputKeys[index])) {
++			return new Proxy(out, {
++				ownKeys: target => keys.filter(key => Object.prototype.hasOwnProperty.call(target, key))
++					.concat(Reflect.ownKeys(target).filter(key => !keys.includes(key)))
++			});
++		}
+ 		return out;
+ 	}
+ 
+diff --git a/json/index.mjs b/json/index.mjs
+index eae543d57aac0620e291eee9ad4be4e3b31aee8f..71dda47ff1fe5994538d1b009f5e6ad3fe525deb 100644
+--- a/json/index.mjs
++++ b/json/index.mjs
+@@ -1,6 +1,8 @@
+ export function klona(val) {
+ 	var k, out, tmp;
+ 
++	if (typeof JSON.isRawJSON === 'function' && JSON.isRawJSON(val)) return val;
++
+ 	if (Array.isArray(val)) {
+ 		out = Array(k=val.length);
+ 		while (k--) out[k] = (tmp=val[k]) && typeof tmp === 'object' ? klona(tmp) : tmp;
+@@ -21,6 +23,13 @@ export function klona(val) {
+ 				out[k] = (tmp=val[k]) && typeof tmp === 'object' ? klona(tmp) : tmp;
+ 			}
+ 		}
++		var keys = Object.keys(val), outputKeys = Object.keys(out);
++		if (keys.some((key, index) => key !== outputKeys[index])) {
++			return new Proxy(out, {
++				ownKeys: target => keys.filter(key => Object.prototype.hasOwnProperty.call(target, key))
++					.concat(Reflect.ownKeys(target).filter(key => !keys.includes(key)))
++			});
++		}
+ 		return out;
+ 	}
+ 

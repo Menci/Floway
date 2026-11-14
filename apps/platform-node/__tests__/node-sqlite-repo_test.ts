@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { applyMigrations } from '../src/migrate.ts';
 import { createNodeSqliteDatabase } from '../src/node-sqlite-database.ts';
@@ -28,10 +28,36 @@ const seedKey = (repo: SqlRepo): Promise<void> => repo.apiKeys.save({
   serverSecret: '00'.repeat(32),
   createdAt: '2026-07-26T00:00:00.000Z',
   upstreamIds: null,
+  randomizeUpstreams: false,
   deletedAt: null,
   dumpRetentionSeconds: null,
   openaiResponsesRetentionSeconds: 0,
 });
+
+test('group restores and directory snapshots use native SQLite transactions and JSON', () => withRepo(async repo => {
+  const first = await repo.groups.create('Ops', 120);
+  const second = await repo.groups.create('Research', 210);
+  await repo.groups.restore([
+    { ...first, name: second.name, memberIds: [1] },
+    { ...second, name: first.name, memberIds: [] },
+  ]);
+  const before = await repo.readUserDirectory();
+  expect(before.users.map(user => user.id)).toEqual([1]);
+  expect(before.groups).toEqual([
+    { ...first, name: second.name },
+    { ...second, name: first.name },
+  ]);
+  expect(before.memberships).toEqual([{ groupId: first.id, userId: 1, createdAt: expect.any(String) }]);
+  await expect(repo.groups.restore([
+    { ...first, name: 'Duplicate', memberIds: [] },
+    { ...second, name: 'duplicate', memberIds: [1] },
+  ])).rejects.toThrow('UNIQUE constraint failed');
+  expect(await repo.readUserDirectory()).toEqual(before);
+  await repo.groups.create('\u00c4', 120);
+  await repo.groups.create('\u00e4', 120);
+  expect((await repo.groups.findByName('\u00c4'))?.name).toBe('\u00c4');
+  expect((await repo.groups.findByName('\u00e4'))?.name).toBe('\u00e4');
+}));
 
 test('api key update lands every patched column and leaves the rest alone', () => withRepo(async repo => {
   await seedKey(repo);
@@ -82,6 +108,7 @@ test('repository JSON codecs round-trip upstream, alias, and OpenAI Responses st
     kind: 'custom' as const,
     name: 'Node upstream',
     enabled: true,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 0,
     createdAt: '2026-08-05T00:00:00.000Z',
     updatedAt: '2026-08-05T00:00:00.000Z',

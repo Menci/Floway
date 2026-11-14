@@ -1,5 +1,7 @@
 import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
 import { upstreamErrorMessage as errorMessage } from './shared.ts';
+import { fullUpstreamActionError } from '../../access-control/upstream-edit.ts';
+import { userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
@@ -133,7 +135,9 @@ const actionFailure = (error: unknown): { status: 400 | 404 | 502; message: stri
 // `record.id !== ''` the produced patch is targeted-persisted, otherwise it is
 // only returned for the front-end to merge into its draft.
 export const codexOAuthAuthorizeUrl = async (c: CtxWithJson<typeof codexOAuthAuthorizeUrlBody>) => {
-  const { challenge, state } = c.req.valid('json');
+  const { record, challenge, state } = c.req.valid('json');
+  const accessError = await fullUpstreamActionError(userFromContext(c), record.id);
+  if (accessError) return c.json({ error: accessError.error }, accessError.status);
   return c.json({ authorize_url: buildCodexAuthorizeUrl({ state, codeChallenge: challenge }) });
 };
 
@@ -153,6 +157,8 @@ export const codexImportPreview = async (c: CtxWithJson<typeof codexImportPrevie
 export const codexImportExchange = async (c: CtxWithJson<typeof codexImportExchangeBody>) => {
   const body = c.req.valid('json');
   const { record } = body;
+  const accessError = await fullUpstreamActionError(userFromContext(c), record.id);
+  if (accessError) return c.json({ error: accessError.error }, accessError.status);
   if (record.kind !== 'codex') return c.json({ error: 'Upstream is not a Codex upstream' }, 400);
 
   let ingestion: { config: CodexUpstreamConfig; state: CodexUpstreamState };
@@ -201,6 +207,8 @@ export const codexImportExchange = async (c: CtxWithJson<typeof codexImportExcha
 
 export const codexOAuthRefresh = async (c: CtxWithJson<typeof codexOAuthRefreshBody>) => {
   const { record } = c.req.valid('json');
+  const accessError = await fullUpstreamActionError(userFromContext(c), record.id);
+  if (accessError) return c.json({ error: accessError.error }, accessError.status);
   if (record.kind !== 'codex') return c.json({ error: 'Upstream is not a Codex upstream' }, 400);
   // Refresh is a stateful action on a persisted row — it delegates to
   // `ensureCodexAccessToken` which reads state from DB, mints, and
@@ -262,6 +270,8 @@ export const codexOAuthRefresh = async (c: CtxWithJson<typeof codexOAuthRefreshB
 
 export const codexRateLimitResetCredits = async (c: CtxWithJson<typeof codexRateLimitResetCreditsBody>) => {
   const { record } = c.req.valid('json');
+  const accessError = await fullUpstreamActionError(userFromContext(c), record.id);
+  if (accessError) return c.json({ error: accessError.error }, accessError.status);
   try {
     const access = await codexActionAccess({ record, request: c.req.raw });
     const resetCredits = await withCodexResetAccess({
@@ -283,6 +293,8 @@ export const codexRateLimitResetCredits = async (c: CtxWithJson<typeof codexRate
 
 export const codexRateLimitResetConsume = async (c: CtxWithJson<typeof codexRateLimitResetConsumeBody>) => {
   const { record, credit_id: creditId, idempotency_key: idempotencyKey } = c.req.valid('json');
+  const accessError = await fullUpstreamActionError(userFromContext(c), record.id);
+  if (accessError) return c.json({ error: accessError.error }, accessError.status);
   let access: Awaited<ReturnType<typeof codexActionAccess>>;
   try {
     access = await codexActionAccess({ record, request: c.req.raw });

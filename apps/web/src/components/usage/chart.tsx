@@ -1,14 +1,17 @@
 import { AreaChart, LineChart, type CustomizedCalloutData } from '@fluentui/react-charts';
-import { useCallback, useLayoutEffect, useMemo, type ComponentProps } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 
-import { UsageChartCallout } from './callout';
+import { hasUsageCallout, UsageChartCallout } from './callout';
 import type { CalloutPoint, UsageChartModel } from './types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
-import { useLocale } from '../../lib/use-locale';
-import { chartTickValues, formatAxisDate } from '../charts/dashboard-time';
+import { AssumedChartHover } from '../charts/assumed-hover';
+import { chartTickValues, formatAxisDate, type ChartBucket } from '../charts/dashboard-time';
 import { useChartFrame } from '../charts/frame-styles';
 import { ChartHost } from '../charts/host';
+import { chartMargins, chartPlotWidth, chartTickCount } from '../charts/layout';
+import { chartHoverPointer, LinkedChartAssumedHover, nearestChartPoint, useLinkedChartHover, type ChartHoverPointer } from '../charts/linked-hover';
+import { FluentChartPointMarkers } from '../charts/point-markers';
 import { visibleSeriesData } from '../charts/series-selection';
 
 const { makeStyles } = fluentComponents;
@@ -31,17 +34,28 @@ const useAreaBoundaryStyles = makeStyles({
   },
 });
 
-const chartMargins = { top: 16, right: 20, bottom: 42, left: 54 } as const;
-
 export function UsageChart({ chart, hidden, valueFormatter }: { chart: UsageChartModel; hidden: Set<string>; valueFormatter: (value: number) => string }) {
   const { t } = useTranslation();
   const areaBoundaryStyles = useAreaBoundaryStyles();
   const chartRootStyles = useChartFrame();
-  const locale = useLocale();
   const entryByLegend = useMemo(() => new Map(chart.entries.map(entry => [entry.legend, entry])), [chart.entries]);
   const visibleData = useMemo(() => visibleSeriesData(chart.entries, chart.plot.data, hidden), [chart.entries, chart.plot.data, hidden]);
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
-  const dateFormatter = useCallback((date: Date) => formatAxisDate(date, chart.range, locale), [chart.range, locale]);
+  const { assumedHover, pointerStore, report } = useLinkedChartHover();
+  const [realHover, setRealHover] = useState(false);
+  const pointerRef = useRef<ChartHoverPointer | null>(null);
+  const realBucketRef = useRef<ChartBucket | null>(null);
+  const first = chart.buckets[0]?.date.getTime();
+  const last = chart.buckets.at(-1)?.date.getTime();
+  // A line form drops the buckets a series has no reading in, so the times the
+  // plot can answer for are the ones its series actually carry.
+  const plottedTimes = useMemo(() => [...new Set(visibleData.lineChartData?.flatMap(series =>
+    series.data.flatMap(point => point.x instanceof Date ? [point.x.getTime()] : [])) ?? [])].sort((left, right) => left - right), [visibleData]);
+  const pointAt = useCallback((xRatio: number) => {
+    if (first === undefined || last === undefined) return null;
+    return nearestChartPoint(plottedTimes, first + xRatio * (last - first), candidate => candidate);
+  }, [first, last, plottedTimes]);
+  const positionOf = useCallback((time: number) => first === undefined || last === undefined || first === last ? null : (time - first) / (last - first), [first, last]);
 
   const renderCallout = useCallback((point: CalloutPoint | null) => (
     <UsageChartCallout chart={chart} labelByTime={labelByTime} point={point} valueFormatter={valueFormatter} />
@@ -51,25 +65,55 @@ export function UsageChart({ chart, hidden, valueFormatter }: { chart: UsageChar
   // can ask for a callout carrying legends from the dataset it just replaced.
   // Such a row is dropped rather than substituted -- a table describing the
   // data must not name a series the data does not have.
-  const lineCallout = useCallback((data?: CustomizedCalloutData) => renderCallout(data ? {
-    x: data.x,
-    rows: data.values.flatMap(value => {
-      const entry = entryByLegend.get(value.legend);
-      return entry ? [{ id: entry.id, label: entry.label, color: value.color, value: Number(value.y) }] : [];
-    }),
-  } : null), [entryByLegend, renderCallout]);
+  const reportRealHover = useCallback((bucket: ChartBucket | null) => {
+    realBucketRef.current = bucket;
+    setRealHover(bucket !== null);
+    if (bucket === null) {
+      report(null);
+      return;
+    }
+    // The reported position must be one this plot reads back as the point on
+    // screen, which a pointer left behind by the mouse is not once a keyboard
+    // focus moves the hover elsewhere.
+    const timestamp = bucket.date.getTime();
+    const retained = pointerRef.current !== null && pointAt(pointerRef.current.xRatio) === timestamp ? pointerRef.current : null;
+    const position = positionOf(timestamp);
+    report(retained ?? (position === null ? null : { xRatio: position, yRatio: 0.5 }));
+  }, [pointAt, positionOf, report]);
+
+  const lineCallout = useCallback((data?: CustomizedCalloutData) => {
+    if (!data) return null;
+    const point = {
+      x: data.x,
+      rows: data.values.flatMap(value => {
+        const entry = entryByLegend.get(value.legend);
+        return entry ? [{ id: entry.id, label: entry.label, color: value.color, value: Number(value.y) }] : [];
+      }),
+    };
+    const timestamp = data.x instanceof Date ? data.x.getTime() : Number(data.x);
+    const bucket = chart.buckets.find(candidate => candidate.date.getTime() === timestamp);
+    return bucket && hasUsageCallout(chart, point)
+      ? <UsageRealHover bucket={bucket} onChange={reportRealHover}>{renderCallout(point)}</UsageRealHover>
+      : renderCallout(point);
+  }, [chart, entryByLegend, renderCallout, reportRealHover]);
 
   const hasData = visibleData.lineChartData?.some(series => series.data.length > 0) ?? false;
 
   return (
-    <ChartHost className={areaBoundaryStyles.root} emptyText={t('dashboard.usage.empty')} hasData={hasData}>
+    <ChartHost className={areaBoundaryStyles.root} emptyText={t('dashboard.usage.empty')} hasData={hasData}
+      onMouseEnter={() => setRealHover(true)} onMouseLeave={() => { pointerRef.current = null; reportRealHover(null); }}
+      onMouseMove={event => {
+        const pointer = chartHoverPointer(event.currentTarget, event.clientX, event.clientY);
+        pointerRef.current = pointer;
+        if (realBucketRef.current !== null) report(pointer);
+      }}>
       {({ element, size }) => {
-        const tickCount = Math.max(2, Math.min(chart.buckets.length <= 24 ? 6 : 7, Math.floor(Math.max(0, size.width - chartMargins.left - chartMargins.right) / 120)));
+        const tickCount = chartTickCount(chartPlotWidth(size.width), chart.buckets.length <= 24 ? 6 : 7);
         const tickValues = chartTickValues(chart.buckets, tickCount).map(bucket => bucket.date);
 
-        return chart.plot.form === 'area' ? (
+        const renderedChart = chart.plot.form === 'area' ? (
           <StackedAreaChart
-            customDateTimeFormatter={dateFormatter}
+            customDateTimeFormatter={formatAxisDate}
             data={visibleData}
             element={element}
             enablePerfOptimization
@@ -86,7 +130,7 @@ export function UsageChart({ chart, hidden, valueFormatter }: { chart: UsageChar
           />
         ) : (
           <LineChart
-            customDateTimeFormatter={dateFormatter}
+            customDateTimeFormatter={formatAxisDate}
             data={visibleData}
             enablePerfOptimization
             height={size.height}
@@ -101,9 +145,45 @@ export function UsageChart({ chart, hidden, valueFormatter }: { chart: UsageChar
             yMinValue={0}
           />
         );
+        const assumedCallout = (assumed: ChartBucket) => {
+          if (realHover || first === undefined || last === undefined) return null;
+          const timestamp = assumed.date.getTime();
+          const point = {
+            x: assumed.date,
+            rows: visibleData.lineChartData?.flatMap(series => {
+              const entry = entryByLegend.get(series.legend);
+              const value = series.data.find(candidate => candidate.x instanceof Date && candidate.x.getTime() === timestamp);
+              return entry && value ? [{ id: entry.id, label: entry.label, color: series.color!, value: Number(value.y) }] : [];
+            }) ?? [],
+          };
+          const callout = hasUsageCallout(chart, point) ? renderCallout(point) : null;
+          const x = chartMargins.left + (last === first ? 0.5 : (timestamp - first) / (last - first)) * chartPlotWidth(size.width);
+          return <AssumedChartHover bottom={chartMargins.bottom} element={element} pointerStore={pointerStore} top={chartMargins.top} x={x}>
+            {callout}
+          </AssumedChartHover>;
+        };
+        return <>
+          {renderedChart}
+          <FluentChartPointMarkers data={visibleData} element={element} form={chart.plot.form} />
+          <LinkedChartAssumedHover hover={assumedHover} resolve={pointer => {
+            const nearest = pointAt(pointer.xRatio);
+            return nearest === null ? null : chart.buckets.find(bucket => bucket.date.getTime() === nearest) ?? null;
+          }}>{assumedCallout}</LinkedChartAssumedHover>
+        </>;
       }}
     </ChartHost>
   );
+}
+
+function UsageRealHover({ bucket, children, onChange }: {
+  bucket: ChartBucket;
+  children: ReactNode;
+  onChange: (bucket: ChartBucket | null) => void;
+}) {
+  useEffect(() => {
+    onChange(bucket);
+  }, [bucket, onChange]);
+  return children;
 }
 
 // Fluent emits each stacked band right after its own boundary line, and the

@@ -23,7 +23,7 @@ type CustomValues = Omit<UpstreamEditorValues, 'config'> & {
   config: Extract<UpstreamRecord, { kind: 'custom' }>['config'];
 };
 
-export function CustomIngressHeaderRules() {
+export function CustomIngressHeaderRules({ readOnly = false }: { readOnly?: boolean } = {}) {
   const { t } = useTranslation();
   const { control } = useFormContext<CustomValues>();
   const { append, fields, remove } = useFieldArray({ control, name: 'config.ingressHeadersRules' });
@@ -45,6 +45,7 @@ export function CustomIngressHeaderRules() {
         isBlankRow={index === fields.length - 1}
         key={field.id}
         onRemove={() => remove(index)}
+        readOnly={readOnly}
       />)}
     </div>
   </EditorSection>;
@@ -55,11 +56,13 @@ function IngressHeaderRuleRow({
   index,
   isBlankRow,
   onRemove,
+  readOnly,
 }: {
   appendBlank: () => void;
   index: number;
   isBlankRow: boolean;
   onRemove: () => void;
+  readOnly: boolean;
 }) {
   const { t } = useTranslation();
   const { control, trigger } = useFormContext<CustomValues>();
@@ -106,6 +109,7 @@ function IngressHeaderRuleRow({
             if (isBlankRow && data.value.trim() !== '') appendBlank();
           }}
           placeholder="x-client-request-id"
+          readOnly={readOnly}
           ref={field.ref}
           spellCheck={false}
           value={field.value}
@@ -140,6 +144,7 @@ function IngressHeaderRuleRow({
               if (data.optionValue === EMPTY_OPTION) field.onChange('');
             }}
             placeholder={valueDisabled ? undefined : placeholder}
+            readOnly={readOnly}
             ref={field.ref}
             selectedOptions={field.value === null ? [PASSTHROUGH_OPTION] : field.value === '' ? [EMPTY_OPTION] : []}
             spellCheck={false}
@@ -151,12 +156,12 @@ function IngressHeaderRuleRow({
         </Field>;
       }}
     />
-    <TooltipIconButton
+    {!readOnly && <TooltipIconButton
       danger
       disabled={isBlankRow}
       icon={<DeleteRegular />}
       label={t('dashboard.upstreamEditor.headers.remove', { number: rowNumber })}
       onClick={onRemove}
-    />
+    />}
   </div>;
 }

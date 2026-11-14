@@ -18,15 +18,17 @@
 import type { Hono } from 'hono';
 import { z } from 'zod';
 
-import { type AuthVars, apiKeyFromContext, effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import { type AuthVars, apiKeyFromContext, effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson, zValidator } from '../../middleware/zod-validator.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { mountPublicRoute } from '../public-route.ts';
+import { passthroughApiError } from '../shared/passthrough-serve.ts';
 import { relayFetchedResponse } from '../tools/web-search/alpha-search/relay-response.ts';
-import { resolveAlphaSearchDispatcher } from '../tools/web-search/alpha-search/upstream.ts';
+import { AlphaSearchModelNotFoundError, resolveAlphaSearchDispatcher } from '../tools/web-search/alpha-search/upstream.ts';
+import type { AlphaSearchDispatcher } from '../tools/web-search/alpha-search/upstream.ts';
 import { loadWebSearchConfig } from '../tools/web-search/config.ts';
-import { assertLocalWebSearchSupport, executeOperationToText, maxResultsForContextSize, parseWebSearchOperations, startBatchFetch, UnsupportedLocalWebSearchFeatureError, type WebSearchExecutionSession, type WebSearchFilters } from '../tools/web-search/operations.ts';
+import { assertLocalWebSearchSupport, executeOperationToText, isSearchResponseLength, maxResultsForContextSize, parseWebSearchOperations, startBatchFetch, UnsupportedLocalWebSearchFeatureError, type WebSearchExecutionSession, type WebSearchFilters } from '../tools/web-search/operations.ts';
 import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
 import type { ConfiguredWebSearchProvider } from '../tools/web-search/types.ts';
 import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
@@ -94,12 +96,20 @@ const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Pro
   const body = c.req.valid('json');
   const webSearchConfig = await loadWebSearchConfig();
   if (webSearchConfig.passthroughOpenAiSearch.enabled) {
-    const dispatcher = await resolveAlphaSearchDispatcher({
-      config: webSearchConfig.passthroughOpenAiSearch,
-      upstreamIds: effectiveUpstreamIdsFromContext(c),
-      scheduler: backgroundSchedulerFromContext(c),
-      runtimeLocation: getRuntimeLocation(c.req.raw),
-    });
+    let dispatcher: AlphaSearchDispatcher;
+    try {
+      dispatcher = await resolveAlphaSearchDispatcher({
+        config: webSearchConfig.passthroughOpenAiSearch,
+        subject: userFromContext(c),
+        upstreamIds: effectiveUpstreamIdsFromContext(c),
+        scheduler: backgroundSchedulerFromContext(c),
+        runtimeLocation: getRuntimeLocation(c.req.raw),
+      });
+    } catch (error) {
+      // The configured model is private; missing models and grants share a response.
+      if (error instanceof AlphaSearchModelNotFoundError) return passthroughApiError(c, error.message, 404);
+      throw error;
+    }
     const headers = new Headers();
     const turnMetadata = c.req.header('x-codex-turn-metadata');
     if (turnMetadata !== undefined) headers.set('x-codex-turn-metadata', turnMetadata);
@@ -116,8 +126,10 @@ const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Pro
     throw error;
   }
 
+  const responseLength = body.commands?.response_length;
   let configuredProvider: Promise<ConfiguredWebSearchProvider> | undefined;
   const session: WebSearchExecutionSession = {
+    ...(isSearchResponseLength(responseLength) ? { responseLength } : {}),
     getProvider: () => {
       configuredProvider ??= Promise.resolve(resolveConfiguredWebSearchProvider(webSearchConfig));
       return configuredProvider;

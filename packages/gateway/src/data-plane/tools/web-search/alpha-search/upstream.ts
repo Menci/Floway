@@ -1,3 +1,4 @@
+import type { User } from '../../../../repo/types.ts';
 import { enumerateModelCandidates } from '../../../providers/resolution.ts';
 import { filterInboundHeadersForProvider } from '../../../shared/inbound-headers.ts';
 import type { WebSearchConfig } from '../types.ts';
@@ -6,22 +7,33 @@ import { identityWrapUpstreamCall, providerModelOf } from '@floway-dev/provider'
 
 export type AlphaSearchDispatcher = (body: Record<string, unknown>, signal: AbortSignal | undefined, headers: Headers) => Promise<Response>;
 
+export class AlphaSearchModelNotFoundError extends Error {
+  constructor() {
+    super('Search model not found.');
+    this.name = 'AlphaSearchModelNotFoundError';
+  }
+}
+
 export const resolveAlphaSearchDispatcher = async ({
   config,
+  subject,
   upstreamIds,
   scheduler,
   runtimeLocation,
 }: {
   config: Pick<WebSearchConfig['passthroughOpenAiSearch'], 'upstreamId' | 'model'>;
+  subject: User;
   upstreamIds: readonly string[] | null;
   scheduler: BackgroundScheduler;
   runtimeLocation: string;
 }): Promise<AlphaSearchDispatcher> => {
   if (upstreamIds !== null && !upstreamIds.includes(config.upstreamId)) {
-    throw new Error('Selected OpenAI search upstream is outside this API key scope');
+    throw new AlphaSearchModelNotFoundError();
   }
   const { candidates } = await enumerateModelCandidates({
+    subject,
     upstreamIds: [config.upstreamId],
+    randomizeUpstreams: false,
     model: config.model,
     kind: 'chat',
     scheduler,
@@ -29,7 +41,7 @@ export const resolveAlphaSearchDispatcher = async ({
   });
   const candidate = candidates.find(value => value.provider.upstreamId === config.upstreamId);
   if (candidate === undefined) {
-    throw new Error(`Selected OpenAI search model ${config.model} is unavailable`);
+    throw new AlphaSearchModelNotFoundError();
   }
   if (candidate.provider.kind !== 'codex' && candidate.provider.kind !== 'custom') {
     throw new Error('Selected upstream does not support OpenAI search passthrough');

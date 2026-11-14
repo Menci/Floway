@@ -1,8 +1,20 @@
 import { aggregatePerformanceForDisplay } from './performance-overview-oracle.ts';
 import { partitionTelemetryOverviewRecords } from './telemetry-overview-oracle.ts';
+import {
+  accessScopeDepth,
+  accessScopeKey,
+  accessScopeOrderGroup,
+  AccessRecordConflictError,
+  sameModelOrderBoundary,
+  type AccessPrincipal,
+  type AccessRecord,
+  type AccessRecordInput,
+  validateAccessRecordInput,
+} from '../../src/access-control/types.ts';
 import { buildKeyToUserMap } from '../../src/control-plane/shared/key-to-user.ts';
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
+import { groupNameKey } from '../../src/repo/group-names.ts';
 import { MODEL_CATALOG_REVISION, storedModelErrorMessage } from '../../src/repo/models-cache-contract.ts';
 import { matchesModelsRefreshInputs } from '../../src/repo/models-refresh-inputs.ts';
 import {
@@ -20,6 +32,7 @@ import type {
   ApiKey,
   ApiKeyRepo,
   ApiKeyUpdate,
+  AccessRecordsRepo,
   ExpirationDomain,
   ExpirationSweepCompletion,
   ExpirationSweepClaim,
@@ -29,6 +42,9 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
+  Group,
+  GroupWithMembers,
+  GroupsRepo,
   ModelsRefreshFailureInput,
   ModelsRefreshSuccessInput,
   ModelAliasesRepo,
@@ -48,6 +64,8 @@ import type {
   OpenAIResponsesItemsRepo,
   OpenAIResponsesSnapshotsRepo,
   ScheduledMaintenanceRepo,
+  SiteSettings,
+  SiteSettingsRepo,
   SpilledFilesRepo,
   WebSearchConfigRepo,
   WebSearchUsageRecord,
@@ -65,6 +83,9 @@ import type {
   UsageOverviewResult,
   UsageRepo,
   User,
+  UserDirectory,
+  GroupMembership,
+  UserPreferencesRepo,
   UsersRepo,
 } from '../../src/repo/types.ts';
 import { serializeStoredConfig, serializeStoredState } from '../../src/repo/upstream-json.ts';
@@ -72,15 +93,14 @@ import { usageMetricRows } from '../../src/repo/usage-metrics.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-histogram.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../../src/shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
-import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, multiplyDecimalStrings, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, type BillingMetric, type DecimalString, type PricingSelector } from '@floway-dev/protocols/common';
-import { UpstreamGoneError, type UpstreamRecord } from '@floway-dev/provider';
+import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, defaultUserPreferences, multiplyDecimalStrings, parseUserPreferences, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, type BillingMetric, type DecimalString, type PricingSelector, type UserPreferences } from '@floway-dev/protocols/common';
+import { normalizeUpstreamMetricIdentity, upstreamMetricIdentityKey, UpstreamGoneError, type UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
   id: SEED_ADMIN_USER_ID,
   username: 'admin',
   passwordHash: null,
   isAdmin: true,
-  upstreamIds: null,
   createdAt: new Date(0).toISOString(),
   deletedAt: null,
 };
@@ -92,10 +112,15 @@ const SEED_ADMIN_USER: User = {
 const usernamesMatch = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
 class MemoryUsersRepo implements UsersRepo {
+  constructor(private groups: GroupsRepo) {}
   private users: User[] = [{ ...SEED_ADMIN_USER }];
 
+  snapshot(): User[] {
+    return this.users.filter(u => u.deletedAt === null).map(u => ({ ...u }));
+  }
+
   list(): Promise<User[]> {
-    return Promise.resolve(this.users.filter(u => u.deletedAt === null).map(u => ({ ...u })));
+    return Promise.resolve(this.snapshot());
   }
 
   listIncludingDeleted(): Promise<User[]> {
@@ -121,7 +146,7 @@ class MemoryUsersRepo implements UsersRepo {
     return Promise.resolve({ ...user });
   }
 
-  async save(user: User): Promise<void> {
+  async save(user: User, groupIds?: readonly number[]): Promise<void> {
     // Match SQL's partial unique index `WHERE deleted_at IS NULL`: a clash is
     // only meaningful when the new row is also active. A soft-deleted import
     // can carry a username already in use by an active row without colliding.
@@ -130,6 +155,7 @@ class MemoryUsersRepo implements UsersRepo {
     const i = this.users.findIndex(u => u.id === user.id);
     if (i >= 0) this.users[i] = { ...user };
     else this.users.push({ ...user });
+    if (groupIds !== undefined) await this.groups.replaceUserGroups(user.id, groupIds);
   }
 
   async softDelete(id: number): Promise<boolean> {
@@ -141,6 +167,269 @@ class MemoryUsersRepo implements UsersRepo {
 
   deleteAll(): Promise<void> {
     this.users = [];
+    return Promise.resolve();
+  }
+}
+
+class MemoryUserPreferencesRepo implements UserPreferencesRepo {
+  private readonly preferences = new Map<number, UserPreferences>();
+
+  get(userId: number): Promise<UserPreferences> {
+    const stored = this.preferences.get(userId);
+    return Promise.resolve(stored === undefined ? { ...defaultUserPreferences } : parseUserPreferences(stored));
+  }
+
+  save(userId: number, preferences: UserPreferences): Promise<void> {
+    this.preferences.set(userId, parseUserPreferences(preferences));
+    return Promise.resolve();
+  }
+
+  listAll(): Promise<Array<{ userId: number; preferences: UserPreferences }>> {
+    return Promise.resolve([...this.preferences].map(([userId, preferences]) => ({ userId, preferences: parseUserPreferences(preferences) })));
+  }
+
+  deleteAll(): Promise<void> {
+    this.preferences.clear();
+    return Promise.resolve();
+  }
+}
+
+class MemoryGroupsRepo implements GroupsRepo {
+  private groups: Group[] = [];
+  private members = new Map<number, Map<number, string>>();
+
+  snapshot(): Group[] {
+    return this.groups.filter(group => group.deletedAt === null).map(group => ({ ...group }));
+  }
+
+  snapshotMemberships(): GroupMembership[] {
+    const active = new Set(this.groups.filter(group => group.deletedAt === null).map(group => group.id));
+    return [...this.members].filter(([groupId]) => active.has(groupId))
+      .flatMap(([groupId, members]) => [...members].map(([userId, createdAt]) => ({ groupId, userId, createdAt })))
+      .toSorted((a, b) => a.groupId - b.groupId || a.userId - b.userId);
+  }
+
+  list(): Promise<Group[]> {
+    return Promise.resolve(this.snapshot());
+  }
+
+  listIncludingDeleted(): Promise<Group[]> {
+    return Promise.resolve(this.groups.map(group => ({ ...group })));
+  }
+
+  getById(id: number): Promise<Group | null> {
+    const group = this.groups.find(candidate => candidate.id === id && candidate.deletedAt === null);
+    return Promise.resolve(group ? { ...group } : null);
+  }
+
+  findByName(name: string): Promise<Group | null> {
+    const group = this.groups.find(candidate => groupNameKey(candidate.name) === groupNameKey(name) && candidate.deletedAt === null);
+    return Promise.resolve(group ? { ...group } : null);
+  }
+
+  async create(name: string, hue: number): Promise<Group> {
+    if (this.groups.some(group => groupNameKey(group.name) === groupNameKey(name) && group.deletedAt === null)) {
+      throw new Error(`group name taken: ${name}`);
+    }
+    const group: Group = {
+      id: this.groups.reduce((maximum, candidate) => Math.max(maximum, candidate.id), 0) + 1,
+      name,
+      hue,
+      createdAt: new Date().toISOString(),
+      deletedAt: null,
+    };
+    this.groups.push(group);
+    return { ...group };
+  }
+
+  async save(group: Group): Promise<void> {
+    const collision = this.groups.find(candidate => groupNameKey(candidate.name) === groupNameKey(group.name) && candidate.deletedAt === null && candidate.id !== group.id);
+    if (collision && group.deletedAt === null) throw new Error(`group name taken: ${group.name}`);
+    const index = this.groups.findIndex(candidate => candidate.id === group.id);
+    if (index < 0) this.groups.push({ ...group });
+    else this.groups[index] = { ...group };
+  }
+
+  async restore(groups: readonly GroupWithMembers[]): Promise<void> {
+    const records = new Map(this.groups.map(group => [group.id, group]));
+    for (const { memberIds: _memberIds, ...group } of groups) records.set(group.id, group);
+    const names = new Set<string>();
+    for (const group of records.values()) {
+      if (group.deletedAt !== null) continue;
+      const key = groupNameKey(group.name);
+      if (names.has(key)) throw new Error(`group name taken: ${group.name}`);
+      names.add(key);
+    }
+    this.groups = [...records.values()];
+    for (const group of groups) this.replaceMemberSnapshot(group.id, group.memberIds);
+  }
+
+  softDelete(id: number): Promise<boolean> {
+    const index = this.groups.findIndex(group => group.id === id && group.deletedAt === null);
+    if (index < 0) return Promise.resolve(false);
+    this.groups[index] = { ...this.groups[index], deletedAt: new Date().toISOString() };
+    this.members.delete(id);
+    return Promise.resolve(true);
+  }
+
+  listMemberIds(groupId: number): Promise<number[]> {
+    return Promise.resolve([...(this.members.get(groupId)?.keys() ?? [])].toSorted((a, b) => a - b));
+  }
+
+  async listMemberships(): Promise<Map<number, number[]>> {
+    return new Map([...this.members].map(([id, members]) => [id, [...members.keys()].toSorted((a, b) => a - b)]));
+  }
+
+  async setMember(groupId: number, userId: number, included: boolean): Promise<void> {
+    const members = new Map(this.members.get(groupId));
+    if (included) {
+      if (!members.has(userId)) members.set(userId, new Date().toISOString());
+    } else members.delete(userId);
+    this.members.set(groupId, members);
+  }
+
+  async replaceUserGroups(userId: number, groupIds: readonly number[]): Promise<void> {
+    for (const group of this.groups) await this.setMember(group.id, userId, groupIds.includes(group.id));
+  }
+
+  listIdsByUserId(userId: number): Promise<number[]> {
+    const active = new Set(this.groups.filter(group => group.deletedAt === null).map(group => group.id));
+    return Promise.resolve([...this.members.entries()]
+      .filter(([groupId, userIds]) => active.has(groupId) && userIds.has(userId))
+      .map(([groupId]) => groupId)
+      .toSorted((a, b) => a - b));
+  }
+
+  async listIdsByUserIds(userIds: readonly number[]): Promise<Map<number, number[]>> {
+    const active = new Set(this.groups.filter(group => group.deletedAt === null).map(group => group.id));
+    return new Map(userIds.map(userId => [userId, [...this.members.entries()]
+      .filter(([groupId, members]) => active.has(groupId) && members.has(userId))
+      .map(([groupId]) => groupId)
+      .toSorted((a, b) => a - b)]));
+  }
+
+  replaceMembers(groupId: number, userIds: readonly number[]): Promise<void> {
+    this.replaceMemberSnapshot(groupId, userIds);
+    return Promise.resolve();
+  }
+
+  private replaceMemberSnapshot(groupId: number, userIds: readonly number[]): void {
+    const previous = new Map(this.members.get(groupId));
+    const now = new Date().toISOString();
+    this.members.set(groupId, new Map(userIds.map(userId => [userId, previous.get(userId) ?? now])));
+  }
+
+  deleteMembershipsByUserId(userId: number): Promise<number> {
+    let changes = 0;
+    for (const members of this.members.values()) {
+      if (members.delete(userId)) changes++;
+    }
+    return Promise.resolve(changes);
+  }
+
+  deleteAll(): Promise<void> {
+    this.groups = [];
+    this.members.clear();
+    return Promise.resolve();
+  }
+}
+
+const principalKey = (principal: AccessPrincipal): string => `${principal.kind}:${principal.id}`;
+
+class MemoryAccessRecordsRepo implements AccessRecordsRepo {
+  private nextId = 1;
+  private records: AccessRecord[] = [];
+
+  list(): Promise<AccessRecord[]> {
+    return Promise.resolve(this.records.map(record => structuredClone(record)));
+  }
+
+  getById(id: number): Promise<AccessRecord | null> {
+    const record = this.records.find(candidate => candidate.id === id);
+    return Promise.resolve(record ? structuredClone(record) : null);
+  }
+
+  listByPrincipal(principal: AccessPrincipal): Promise<AccessRecord[]> {
+    return this.listByPrincipals([principal]);
+  }
+
+  listByPrincipals(principals: readonly AccessPrincipal[]): Promise<AccessRecord[]> {
+    const keys = new Set(principals.map(principalKey));
+    return Promise.resolve(this.records
+      .filter(record => keys.has(principalKey(record.principal)))
+      .map(record => structuredClone(record)));
+  }
+
+  async save(input: AccessRecordInput): Promise<AccessRecord> {
+    validateAccessRecordInput(input);
+    const now = new Date().toISOString();
+    const scopeKey = accessScopeKey(input.scope);
+    const index = this.records.findIndex(record => principalKey(record.principal) === principalKey(input.principal) && accessScopeKey(record.scope) === scopeKey);
+    const duplicateOrder = this.records.find((record, recordIndex) =>
+      input.scope.kind === 'upstreamModel' && recordIndex !== index
+      && principalKey(record.principal) === principalKey(input.principal)
+      && accessScopeDepth(record.scope) === accessScopeDepth(input.scope)
+      && accessScopeOrderGroup(record.scope) === accessScopeOrderGroup(input.scope)
+      && record.sortOrder === input.sortOrder);
+    if (duplicateOrder) throw new AccessRecordConflictError(`Access record sortOrder ${input.sortOrder} is already used at this scope level`);
+    const record: AccessRecord = index < 0
+      ? { id: this.nextId++, ...structuredClone(input), createdAt: now, updatedAt: now }
+      : { ...this.records[index], ...structuredClone(input), updatedAt: now };
+    if (index < 0) this.records.push(record);
+    else this.records[index] = record;
+    return structuredClone(record);
+  }
+
+  async replace(id: number, input: AccessRecordInput): Promise<AccessRecord | null> {
+    validateAccessRecordInput(input);
+    const index = this.records.findIndex(record => record.id === id);
+    if (index < 0) return null;
+    const sortOrder = sameModelOrderBoundary(this.records[index]!, input) ? this.records[index]!.sortOrder : input.sortOrder;
+    const duplicateScope = this.records.find((record, recordIndex) =>
+      recordIndex !== index
+      && principalKey(record.principal) === principalKey(input.principal)
+      && accessScopeKey(record.scope) === accessScopeKey(input.scope));
+    if (duplicateScope) throw new AccessRecordConflictError('Access record already exists for this principal and scope');
+    const duplicateOrder = this.records.find((record, recordIndex) =>
+      input.scope.kind === 'upstreamModel' && recordIndex !== index
+      && principalKey(record.principal) === principalKey(input.principal)
+      && accessScopeDepth(record.scope) === accessScopeDepth(input.scope)
+      && accessScopeOrderGroup(record.scope) === accessScopeOrderGroup(input.scope)
+      && record.sortOrder === sortOrder);
+    if (duplicateOrder) throw new AccessRecordConflictError(`Access record sortOrder ${sortOrder} is already used at this scope level`);
+    const next = { ...this.records[index], ...structuredClone(input), sortOrder, updatedAt: new Date().toISOString() };
+    this.records[index] = next;
+    return structuredClone(next);
+  }
+
+  reorderModel(upstreamId: string, expectedIds: readonly number[], ids: readonly number[]): Promise<AccessRecord[] | null> {
+    const segment = this.records.filter(record => record.scope.kind === 'upstreamModel' && record.scope.upstreamId === upstreamId)
+      .toSorted((left, right) => left.sortOrder - right.sortOrder || left.id - right.id);
+    if (JSON.stringify(segment.map(record => record.id)) !== JSON.stringify(expectedIds)) return Promise.resolve(null);
+    const now = new Date().toISOString();
+    const ranks = new Map(ids.map((id, rank) => [id, rank]));
+    const updated = segment.map(record => ({ ...record, sortOrder: ranks.get(record.id)!, updatedAt: now }));
+    const byId = new Map(updated.map(record => [record.id, record]));
+    this.records = this.records.map(record => byId.get(record.id) ?? record);
+    return Promise.resolve(structuredClone(updated));
+  }
+
+  delete(id: number): Promise<boolean> {
+    const length = this.records.length;
+    this.records = this.records.filter(record => record.id !== id);
+    return Promise.resolve(this.records.length < length);
+  }
+
+  deleteByPrincipal(principal: AccessPrincipal): Promise<number> {
+    const length = this.records.length;
+    const key = principalKey(principal);
+    this.records = this.records.filter(record => principalKey(record.principal) !== key);
+    return Promise.resolve(length - this.records.length);
+  }
+
+  deleteAll(): Promise<void> {
+    this.records = [];
+    this.nextId = 1;
     return Promise.resolve();
   }
 }
@@ -362,10 +651,6 @@ const aggregateMemoryOverview = (
   const axes: UsageOverviewAxis[] = ['series', 'none', 'keyId', 'userId', 'model', 'upstream'];
   const result = new Map<UsageOverviewAxis, UsageOverviewRecord[]>();
   for (const axis of axes) {
-    if (axis === 'userId' && !opts.isAdmin) {
-      result.set(axis, []);
-      continue;
-    }
     const aggregates = new Map<string, UsageOverviewRecord>();
     for (const record of records) {
       if (axis === 'keyId' && !visibleKeyIds.has(record.keyId)) continue;
@@ -439,20 +724,25 @@ class MemoryUsageRepo implements UsageRepo {
     const records = [...this.store.values()]
       .filter(record => record.hour >= opts.start && record.hour < opts.end)
       .map(record => this.toRecord(record));
-    const scoped = !opts.isAdmin || opts.groupBy === 'keyId'
+    const scoped = opts.groupBy === 'keyId'
       ? records.filter(record => keyToUser.get(record.keyId) === opts.actorUserId)
       : records;
+    const visibleUserIds = new Set(opts.visibleUserIds);
+    const visibleUpstreams = new Set(opts.visibleUpstreams);
+    const authorized = scoped.filter(record => opts.isAdmin
+      || visibleUserIds.has(memoryUsageUserIdForKey(record.keyId, keyToUser))
+      || (record.upstream !== null && visibleUpstreams.has(record.upstream)));
     const visibleKeyIds = new Set([...keyToUser]
       .filter(([, userId]) => userId === opts.actorUserId)
       .map(([keyId]) => keyId));
-    const partitioned = partitionTelemetryOverviewRecords(scoped, {
+    const partitioned = partitionTelemetryOverviewRecords(authorized, {
       keyId: {
         value: record => record.keyId,
         includeFacet: record => visibleKeyIds.has(record.keyId),
       },
       userId: {
         value: record => String(memoryUsageUserIdForKey(record.keyId, keyToUser)),
-        includeFacet: () => opts.isAdmin,
+        includeFacet: () => true,
       },
       model: { value: record => record.model },
       upstream: { value: record => usageUpstreamDimensionValue(record.upstream) },
@@ -623,14 +913,19 @@ class MemoryPerformanceRepo implements PerformanceRepo {
     const scoped = opts.groupBy === 'keyId'
       ? records.filter(record => visibleKeyIds.has(record.keyId))
       : records;
-    const partitioned = partitionTelemetryOverviewRecords(scoped, {
+    const visibleUserIds = new Set(opts.visibleUserIds);
+    const visibleUpstreams = new Set(opts.visibleUpstreams);
+    const authorized = scoped.filter(record => opts.isAdmin
+      || visibleUserIds.has(keyToUser.get(record.keyId) ?? tokenUsageUnattributedUserId)
+      || visibleUpstreams.has(record.upstream));
+    const partitioned = partitionTelemetryOverviewRecords(authorized, {
       model: { value: record => record.model },
       upstream: { value: record => record.upstream },
       operation: { value: record => record.operation },
       runtimeLocation: { value: record => record.runtimeLocation },
       userId: {
         value: record => keyToUser.get(record.keyId)?.toString() ?? null,
-        includeFacet: () => opts.isAdmin,
+        includeFacet: () => true,
       },
       keyId: {
         value: record => record.keyId,
@@ -656,7 +951,7 @@ class MemoryPerformanceRepo implements PerformanceRepo {
     }, keyToUser, visibleKeyIds);
     return {
       series,
-      axes: { ...axes, userId: opts.isAdmin ? axes.userId : [] },
+      axes,
       dimensionValues: {
         models: partitioned.dimensionValues.model,
         upstreams: partitioned.dimensionValues.upstream,
@@ -721,6 +1016,19 @@ class MemoryPerformanceRepo implements PerformanceRepo {
   }
 }
 
+class MemorySiteSettingsRepo implements SiteSettingsRepo {
+  private settings: SiteSettings = { siteName: null };
+
+  get(): Promise<SiteSettings> {
+    return Promise.resolve({ ...this.settings });
+  }
+
+  save(settings: SiteSettings): Promise<void> {
+    this.settings = { ...settings };
+    return Promise.resolve();
+  }
+}
+
 class MemoryWebSearchConfigRepo implements WebSearchConfigRepo {
   private config: unknown | null = null;
 
@@ -738,12 +1046,34 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   private store = new Map<string, StoredUpstreamRecord>();
 
   list(): Promise<StoredUpstreamRecord[]> {
-    return Promise.resolve([...this.store.values()].map(cloneUpstreamRecord).sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt)));
+    return Promise.resolve([...this.store.values()].map(cloneUpstreamRecord).sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)));
   }
 
   getById(id: string): Promise<StoredUpstreamRecord | null> {
     const found = this.store.get(id);
     return Promise.resolve(found ? cloneUpstreamRecord(found) : null);
+  }
+
+  async reorder(
+    expectedIds: readonly string[],
+    assignments: readonly { id: string; sortOrder: number }[],
+  ): Promise<StoredUpstreamRecord[] | null> {
+    const current = await this.list();
+    if (JSON.stringify(current.map(record => record.id)) !== JSON.stringify(expectedIds)) return null;
+    const assignmentIds = assignments.map(assignment => assignment.id);
+    if (new Set(assignmentIds).size !== assignmentIds.length || assignmentIds.some(id => !this.store.has(id))) return null;
+    const now = new Date().toISOString();
+    const updated = assignments.map(({ id, sortOrder }) => {
+      const record = this.store.get(id)!;
+      return cloneUpstreamRecord({ ...record, sortOrder, updatedAt: now });
+    });
+    for (const record of updated) this.store.set(record.id, record);
+    return updated.map(cloneUpstreamRecord);
+  }
+
+  insertAtEndForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
+    const sortOrder = Math.max(-1, ...[...this.store.values()].map(record => record.sortOrder)) + 1;
+    return this.insertForModels({ ...upstream, sortOrder });
   }
 
   insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
@@ -1482,12 +1812,43 @@ class MemoryAgentSetupRepo implements AgentSetupRepository {
 }
 
 export class InMemoryRepo implements Repo {
+  private upstreamMetricRecords: import('../../src/repo/types.ts').UpstreamMetricRecord[] = [];
+  upstreamMetrics: import('../../src/repo/types.ts').UpstreamMetricsRepo = {
+    listAll: async () => this.upstreamMetricRecords.toSorted((a, b) => a.timestamp - b.timestamp || a.upstreamId.localeCompare(b.upstreamId) || upstreamMetricIdentityKey(a).localeCompare(upstreamMetricIdentityKey(b))),
+    set: async record => {
+      const identity = normalizeUpstreamMetricIdentity(record.name, record.labels);
+      const identityKey = upstreamMetricIdentityKey(identity);
+      this.upstreamMetricRecords = this.upstreamMetricRecords.filter(row => row.upstreamId !== record.upstreamId || upstreamMetricIdentityKey(row) !== identityKey || Math.floor(row.timestamp / 60_000) !== Math.floor(record.timestamp / 60_000));
+      this.upstreamMetricRecords.push({ ...record, ...identity });
+    },
+    deleteAll: async () => { this.upstreamMetricRecords = []; },
+    record: async record => {
+      const identityKey = upstreamMetricIdentityKey(record);
+      const bucket = Math.floor(record.timestamp / 60_000);
+      const current = this.upstreamMetricRecords.find(row => row.upstreamId === record.upstreamId && upstreamMetricIdentityKey(row) === identityKey && Math.floor(row.timestamp / 60_000) === bucket);
+      if (current !== undefined && current.timestamp > record.timestamp) return;
+      await this.upstreamMetrics.set(record);
+    },
+    query: async (upstreamId, start, end, step) => {
+      const latest = new Map<string, import('../../src/repo/types.ts').UpstreamMetricRecord>();
+      for (const record of this.upstreamMetricRecords) {
+        if (record.upstreamId !== upstreamId || record.timestamp < start || record.timestamp >= end) continue;
+        const key = `${upstreamMetricIdentityKey(record)}\0${Math.floor((record.timestamp - start) / step)}`;
+        if ((latest.get(key)?.timestamp ?? -Infinity) < record.timestamp) latest.set(key, record);
+      }
+      return [...latest.values()].toSorted((a, b) => a.timestamp - b.timestamp);
+    },
+  };
   apiKeys: ApiKeyRepo;
-  users: UsersRepo;
+  users: MemoryUsersRepo;
+  userPreferences: UserPreferencesRepo;
+  groups: MemoryGroupsRepo;
+  accessRecords: AccessRecordsRepo;
   sessions: SessionsRepo;
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
+  siteSettings: SiteSettingsRepo;
   webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
@@ -1500,8 +1861,19 @@ export class InMemoryRepo implements Repo {
   scheduledMaintenance: ScheduledMaintenanceRepo;
   agentSetup: AgentSetupRepository;
 
+  readUserDirectory(): Promise<UserDirectory> {
+    const users = this.users.snapshot();
+    const userIds = new Set(users.map(user => user.id));
+    const groups = this.groups.snapshot();
+    const memberships = this.groups.snapshotMemberships().filter(member => userIds.has(member.userId));
+    return Promise.resolve({ users, groups, memberships });
+  }
+
   constructor() {
-    this.users = new MemoryUsersRepo();
+    this.groups = new MemoryGroupsRepo();
+    this.users = new MemoryUsersRepo(this.groups);
+    this.accessRecords = new MemoryAccessRecordsRepo();
+    this.userPreferences = new MemoryUserPreferencesRepo();
     this.sessions = new MemorySessionsRepo();
     this.expirationSweeps = new MemoryExpirationSweepsRepo();
     this.scheduledMaintenance = new MemoryScheduledMaintenanceRepo();
@@ -1509,6 +1881,7 @@ export class InMemoryRepo implements Repo {
     this.usage = new MemoryUsageRepo(this.apiKeys);
     this.webSearchUsage = new MemoryWebSearchUsageRepo();
     this.performance = new MemoryPerformanceRepo(this.apiKeys);
+    this.siteSettings = new MemorySiteSettingsRepo();
     this.webSearchConfig = new MemoryWebSearchConfigRepo();
     this.upstreams = new MemoryUpstreamRepo();
     this.proxies = new MemoryProxyRepo(this.upstreams);

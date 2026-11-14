@@ -18,7 +18,8 @@ export interface OpenAICompletionsPayload {
 // final placeholder choice carrying only `index` (no `text`, no
 // `finish_reason`) alongside the usage block — so `text` and
 // `finish_reason` are optional, matching that shape on the typed surface.
-// `logprobs` is opaque to the gateway — passed through as-is.
+// `logprobs` accepts provider extensions; reassembly accumulates the standard
+// per-token arrays while keeping extension values opaque.
 interface OpenAICompletionsChoiceStreaming {
   index: number;
   text?: string;

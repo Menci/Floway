@@ -1,7 +1,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
-import type { AnthropicMessagesPayload, AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
 
 // Three-block `system` array we send to Anthropic on the re-mimicry path,
 // plus the per-request fingerprint helper that feeds the billing block.
@@ -24,7 +24,7 @@ import type { AnthropicMessagesPayload, AnthropicMessagesTextBlock } from '@flow
 // mutation also poisons Anthropic's prompt cache (claude-code issues
 // #40652, #50085, #68900). We ship the placeholder unconditionally.
 
-export const IDENTITY_BLOCK: AnthropicMessagesTextBlock = {
+export const IDENTITY_BLOCK: AnthropicMessagesTextBlockParam = {
   type: 'text',
   text: "You are Claude Code, Anthropic's official CLI for Claude.",
 };
@@ -55,7 +55,7 @@ export const IDENTITY_BLOCK: AnthropicMessagesTextBlock = {
 // binary at a local capture sink (`ANTHROPIC_BASE_URL` → 401 echo) and
 // reading back the wire-shape `system` array. When CC bumps and changes
 // any of these lines, re-capture against the current binary.
-export const DEFAULT_TEMPLATE_BLOCK: AnthropicMessagesTextBlock = {
+export const DEFAULT_TEMPLATE_BLOCK: AnthropicMessagesTextBlockParam = {
   type: 'text',
   text: `You are an interactive agent that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.
 
@@ -125,7 +125,7 @@ export const computeCcVersionFingerprint = (version: string, body: AnthropicMess
 // Billing-attribution block we drop at `system[0]` on the re-mimicry path.
 // Sits BEFORE the cache breakpoint on `system[2]` so the per-request
 // fingerprint bytes don't invalidate the cached identity+template prefix.
-export const buildBillingBlock = (version: string, fingerprint: string): AnthropicMessagesTextBlock => ({
+export const buildBillingBlock = (version: string, fingerprint: string): AnthropicMessagesTextBlockParam => ({
   type: 'text',
   text: `x-anthropic-billing-header: cc_version=${version}.${fingerprint}; cc_entrypoint=cli; cch=00000;`,
 });

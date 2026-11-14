@@ -13,14 +13,14 @@ import type { OpenAIResponsesInterceptor } from './types.ts';
 import { asJsonObject, type JsonObject, readJsonNumber } from '../../../../shared/json-helpers.ts';
 import { foldsExclusiveCacheTokens } from '../../../shared/telemetry/usage.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
-import type { OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf } from '@floway-dev/provider';
 
 const rewriteInboundUsage = (
-  event: OpenAIResponsesStreamEvent,
+  event: OpenAIResponsesStreamEventEx,
   declaredExclusive: boolean,
   identity: string,
-): OpenAIResponsesStreamEvent => {
+): OpenAIResponsesStreamEventEx => {
   if (!('response' in event)) return event;
   const response = asJsonObject(event.response);
   const usage = asJsonObject(response?.usage);
@@ -45,7 +45,7 @@ const rewriteInboundUsage = (
 
   const nextUsage: JsonObject = { ...usage, input_tokens: inputTokens + cacheRead + cacheWrite };
   const nextResponse: JsonObject = { ...response, usage: nextUsage };
-  return { ...event, response: nextResponse } as unknown as OpenAIResponsesStreamEvent;
+  return { ...event, response: nextResponse } as unknown as OpenAIResponsesStreamEventEx;
 };
 
 export const withExclusiveCachedTokensNormalized: OpenAIResponsesInterceptor = async (ctx, _gatewayCtx, run) => {

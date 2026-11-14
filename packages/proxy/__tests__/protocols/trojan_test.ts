@@ -195,40 +195,63 @@ describe('buildTrojanRequestHeader — total framing layout', () => {
   });
 });
 
-describe('dialTrojan — pre-dial target validation', () => {
-  it('rejects an out-of-range target port at stage=config, before any TCP connect', async () => {
+describe('dialTrojan — outer TLS', () => {
+  it('upgrades the plaintext proxy connection with the configured SNI', async () => {
     const fake = makeFakeSocketDial();
-    await expect(
-      dialTrojan(trojanConfig(), { host: 'api.openai.com', port: 0 }, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('1..65535'),
-    });
-    expect(fake.connectCount()).toBe(0);
+    fake.acceptNextUpgrade();
+
+    const result = await dialTrojan(
+      trojanConfig({ sni: 'front.example' }),
+      target443,
+      { socketDial: fake.socketDial },
+    );
+
+    expect(fake.tlsUpgrades).toHaveLength(1);
+    expect(fake.tlsUpgrades[0]!.opts).toMatchObject({ host: 'front.example' });
+    // The Trojan header belongs to the tunneled leg, not the TLS handshake.
+    expect(new TextDecoder().decode(result.prefix!.subarray(0, 56))).toBe(PASSWORD_SHA224_HEX);
   });
 
-  it('rejects a non-ASCII target host at stage=config, before any TCP connect', async () => {
+  it('falls back to the proxy host for SNI when none is configured', async () => {
     const fake = makeFakeSocketDial();
-    await expect(
-      dialTrojan(trojanConfig(), { host: '例え.jp', port: 443 }, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('ASCII'),
-    });
-    expect(fake.connectCount()).toBe(0);
+    fake.acceptNextUpgrade();
+
+    await dialTrojan(trojanConfig(), target443, { socketDial: fake.socketDial });
+
+    expect(fake.tlsUpgrades[0]!.opts.host).toBe('proxy.example');
   });
 
-  it('rejects a 256-byte target host at stage=config, before any TCP connect', async () => {
+  it('passes the operator insecure flag through to the upgrade', async () => {
     const fake = makeFakeSocketDial();
-    await expect(
-      dialTrojan(trojanConfig(), { host: 'a'.repeat(256), port: 443 }, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('too long'),
-    });
-    expect(fake.connectCount()).toBe(0);
+    fake.acceptNextUpgrade();
+
+    await dialTrojan(trojanConfig({ allowInsecure: true }), target443, { socketDial: fake.socketDial });
+
+    expect(fake.tlsUpgrades[0]!.opts.insecure).toBe(true);
+  });
+
+  it('tags a failed outer handshake as stage=outer-tls', async () => {
+    const cause = new Error('certificate rejected');
+    const fake = makeFakeSocketDial();
+    fake.failNextUpgrade(cause);
+
+    await expect(dialTrojan(trojanConfig(), target443, { socketDial: fake.socketDial }))
+      .rejects.toMatchObject({
+        name: 'ProxyDialError',
+        stage: 'outer-tls',
+        cause,
+      });
+  });
+
+  it('rebuilds a header for the target every dial, even with a shared config', async () => {
+    const fake = makeFakeSocketDial();
+    fake.acceptNextUpgrade();
+    const first = await dialTrojan(trojanConfig(), { host: 'one.example', port: 443 }, { socketDial: fake.socketDial });
+
+    fake.acceptNextUpgrade();
+    const second = await dialTrojan(trojanConfig(), { host: 'two.example', port: 443 }, { socketDial: fake.socketDial });
+
+    expect(new TextDecoder().decode(first.prefix!)).toContain('one.example');
+    expect(new TextDecoder().decode(second.prefix!)).toContain('two.example');
   });
 });

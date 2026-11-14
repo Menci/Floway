@@ -133,6 +133,35 @@ test('dumpRecordToWire maps the upstream stream body when present', () => {
   assertEquals(wire.meta.targetApi, 'openaiResponses');
 });
 
+test('dumpRecordToWire redacts upstream credentials from exchange and legacy headers', () => {
+  const wire = dumpRecordToWire(baseStored({
+    capture: {
+      exchanges: [{
+        upstreamId: 'u',
+        request: {
+          url: 'https://upstream.test',
+          method: 'POST',
+          headers: [['authorization', 'Bearer secret'], ['content-type', 'application/json']],
+          body: { encoding: 'utf8', data: '{}' },
+        },
+        response: { status: 200, headers: [['x-api-key', 'secret'], ['x-request-id', 'trace']], body: { encoding: 'utf8', data: '{}' }, complete: true, error: null },
+        error: null,
+      }],
+      response: { body: { encoding: 'utf8', data: '{}' }, complete: true, error: null },
+    },
+    response: {
+      status: 200,
+      headers: [],
+      body: { type: 'none' },
+      upstream: { status: 200, headers: [['set-cookie', 'secret']], body: { type: 'none' } },
+    },
+  }));
+
+  assertEquals(wire.capture?.exchanges[0]?.request.headers, [['authorization', '[redacted]'], ['content-type', 'application/json']]);
+  assertEquals(wire.capture?.exchanges[0]?.response?.headers, [['x-api-key', '[redacted]'], ['x-request-id', 'trace']]);
+  assertEquals(wire.response.upstream?.headers, [['set-cookie', '[redacted]']]);
+});
+
 test('dumpRecordToWire maps the upstream bytes body using its own content-type', () => {
   const wire = dumpRecordToWire(baseStored({
     meta: { ...baseStored().meta, targetApi: 'openaiChatCompletions' },

@@ -1,4 +1,3 @@
-import { translatorInputErrorResult } from './errors.ts';
 import { geminiGenerateContentInternalRpcErrorResponse, geminiGenerateContentRpcErrorResponse, respondGeminiGenerateContent } from './respond.ts';
 import { geminiGenerateContentServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
@@ -8,9 +7,8 @@ import { inboundHeaders } from '../../shared/inbound-headers.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
 import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/store.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import type { GeminiGenerateContentContent, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiCountTokensPayload, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import { internalErrorResult, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
-import { TranslatorInputError } from '@floway-dev/translate';
 
 interface GeminiGenerateContentModelAction {
   readonly model: string;
@@ -18,11 +16,11 @@ interface GeminiGenerateContentModelAction {
 }
 
 // The Gemini generateContent wire API encodes both the model id and the action in one path
-// segment (e.g. `models/gemini-2.5-pro:streamGenerateContent`). The Hono route
-// captures everything after `/v1beta/models/` in a single `modelAction` param;
-// we split on the trailing `:` here so each entry sees just the action and
-// the resolved model id (with a leading `models/` prefix tolerated, as Google
-// SDKs send it).
+// segment (e.g. `models/gemini-2.5-pro:streamGenerateContent`). Both the
+// `v1` and `v1beta` routes capture everything after `/models/` in a single
+// `modelAction` param; we split on the trailing `:` here so each entry sees
+// just the action and the resolved model id (with a leading `models/` prefix
+// tolerated, as Google SDKs send it).
 const parseGeminiGenerateContentModelAction = (modelAction: string | undefined): GeminiGenerateContentModelAction | Response => {
   if (!modelAction) return geminiGenerateContentRpcErrorResponse(404, 'Missing Gemini model action.');
   const separator = modelAction.lastIndexOf(':');
@@ -34,8 +32,9 @@ const parseGeminiGenerateContentModelAction = (modelAction: string | undefined):
 // `generateContentRequest` envelope (Google's SDK shape). Normalize both to a
 // single `GeminiGenerateContentPayload` for the rest of the chain.
 const parseGeminiGenerateContentCountTokensPayload = (body: unknown): GeminiGenerateContentPayload => {
-  const shape = (body ?? {}) as { contents?: GeminiGenerateContentContent[]; generateContentRequest?: GeminiGenerateContentPayload };
-  return shape.generateContentRequest ?? { contents: shape.contents };
+  const shape = body as GeminiCountTokensPayload;
+  if (shape.generateContentRequest !== undefined) return shape.generateContentRequest;
+  return { contents: shape.contents ?? [] };
 };
 
 const parseGeminiGenerateContentBodyBytes = <T>(requestBody: RequestBody, project: (body: unknown) => T): T | Response => {
@@ -49,8 +48,7 @@ const parseGeminiGenerateContentBodyBytes = <T>(requestBody: RequestBody, projec
 
 // Surfaces a pre-stream throw as a Gemini-generateContent-RPC envelope, routing through
 // `respondGeminiGenerateContent` so the dump records the failure exactly as the sibling
-// HTTP handlers do. `TranslatorInputError` renders a 400 INVALID_ARGUMENT
-// envelope (caller-input violation). A `ProviderModelsUnavailableError`
+// HTTP handlers do. A `ProviderModelsUnavailableError`
 // carrying an upstream HTTP body relays that body through the `api-error`
 // path with `source: 'upstream'`; everything else collapses to an
 // `internal-error` result rendered as the Gemini generateContent internal-error envelope
@@ -64,10 +62,6 @@ const respondWithGeminiGenerateContentError = async (
   ctx: ChatGatewayCtx,
   wantsStream: boolean,
 ): Promise<Response> => {
-  if (error instanceof TranslatorInputError) {
-    const response = await respondGeminiGenerateContent(c, translatorInputErrorResult(error, ctx.attempt.telemetry), wantsStream, ctx);
-    return finalizeGatewayResponse(ctx, response);
-  }
   if (error instanceof ProviderModelsUnavailableError && error.httpResponse) {
     const { status, headers, body } = error.httpResponse;
     const apiErrorResult = {
@@ -85,10 +79,11 @@ const respondWithGeminiGenerateContentError = async (
   return finalizeGatewayResponse(ctx, response);
 };
 
-// Single entry for `/v1beta/models/:modelAction`. Splits the model and action
-// once, then dispatches to the matching sub-handler. Keeping the parse here
-// means the sub-handlers see a validated `(model, action)` pair and never
-// need to re-emit "Unknown Gemini model action" on already-validated input.
+// Single entry for `/v1/models/:modelAction` and `/v1beta/models/:modelAction`.
+// Splits the model and action once, then dispatches to the matching
+// sub-handler. Keeping the parse here means the sub-handlers see a validated
+// `(model, action)` pair and never need to re-emit "Unknown Gemini model
+// action" on already-validated input.
 export const geminiGenerateContentHttp = async (c: AuthedContext): Promise<Response> => {
   const parsed = parseGeminiGenerateContentModelAction(c.req.param('modelAction'));
   if (parsed instanceof Response) return parsed;

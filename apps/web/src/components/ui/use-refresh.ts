@@ -6,7 +6,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 export interface RefreshControl {
   cancel: () => void;
   refresh: () => Promise<void>;
+  refreshInBackground: () => Promise<void>;
   poll: (options: { background: boolean }) => Promise<void>;
+  backgroundRefreshing: boolean;
   refreshing: boolean;
 }
 
@@ -24,6 +26,7 @@ export const useRefresh = (
   reload: (signal: AbortSignal, options: { background: boolean }) => Promise<void>,
 ): RefreshControl => {
   const [refreshing, setRefreshing] = useState(false);
+  const [backgroundRefreshing, setBackgroundRefreshing] = useState(false);
   const controllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => () => controllerRef.current?.abort(), []);
@@ -32,13 +35,14 @@ export const useRefresh = (
     controllerRef.current?.abort();
     controllerRef.current = null;
     setRefreshing(false);
+    setBackgroundRefreshing(false);
   }, []);
 
   const poll = useCallback(async ({ background }: { background: boolean }) => {
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
-    setRefreshing(true);
+    if (background) setBackgroundRefreshing(true); else setRefreshing(true);
     try {
       await reload(controller.signal, { background });
     } finally {
@@ -47,13 +51,18 @@ export const useRefresh = (
       if (controllerRef.current === controller) {
         controllerRef.current = null;
         setRefreshing(false);
+        setBackgroundRefreshing(false);
       }
     }
   }, [reload]);
 
   const refresh = useCallback(() => poll({ background: false }), [poll]);
+  // A refresh the operator did not ask for must not take the page's controls
+  // away. It keeps the current rows on screen and reports itself only where a
+  // refresh indicator belongs.
+  const refreshInBackground = useCallback(() => poll({ background: true }), [poll]);
 
-  return { cancel, poll, refresh, refreshing };
+  return { backgroundRefreshing, cancel, poll, refresh, refreshInBackground, refreshing };
 };
 
 const sameQuery = <Query extends Record<string, unknown>>(left: Query, right: Query): boolean =>
