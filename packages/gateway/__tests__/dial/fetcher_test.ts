@@ -16,6 +16,9 @@ const stubSocketDial: SocketDial = {
   connect: async () => {
     throw new Error('stub socket dial — runProxied is mocked, this should not be called');
   },
+  startTls: async () => {
+    throw new Error('stub socket dial — runProxied is mocked, this should not be called');
+  },
 };
 
 describe('createFetcher', () => {

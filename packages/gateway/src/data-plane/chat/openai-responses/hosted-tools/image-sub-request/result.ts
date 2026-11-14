@@ -1,6 +1,6 @@
-import type { HostedToolOutputItem, HostedToolTerminal } from '../types.ts';
+import type { HostedToolOutputItem, HostedToolSlotResult } from '../types.ts';
 import type { OpenAIImagesStreamEvent } from '@floway-dev/protocols/openai-images';
-import type { OpenAIResponsesOutputImageGenerationCall } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesInputImageGenerationCall, OpenAIResponsesOutputImageGenerationCallEx } from '@floway-dev/protocols/openai-responses';
 
 export type ImageError = { type: string; code: string; message: string; retryable: boolean };
 
@@ -57,6 +57,17 @@ export const errorFromBody = (body: string, status: number): { type?: string; co
   return { message: `Image backend returned HTTP ${status}`, code: `upstream_${status}` };
 };
 
+// The fields a call's replay data records: what the call was asked to do. A
+// history item whose inputs differ is not the call the carrier was signed for.
+export const imageReplayInputs = (item: Pick<OpenAIResponsesInputImageGenerationCall, 'action' | 'revised_prompt' | 'size' | 'quality' | 'output_format' | 'background'>) => ({
+  action: item.action,
+  revised_prompt: item.revised_prompt,
+  size: item.size,
+  quality: item.quality,
+  output_format: item.output_format,
+  background: item.background,
+});
+
 // Build the completed/failed `image_generation_call` output item plus its
 // closing events. On success the final bytes ride `output_item.done.item.result`
 // and a `response.image_generation_call.completed` closes the item; on failure
@@ -72,18 +83,19 @@ export const imageTerminal = (
   prompt: string,
   action: 'generate' | 'edit',
   outcome: ImageOutcome,
-): HostedToolTerminal => {
+): HostedToolSlotResult => {
   if (!outcome.ok) {
-    const item: HostedToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCall, 'id'> = {
+    const item: HostedToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCallEx, 'id'> = {
       type: 'image_generation_call',
       status: 'failed',
+      result: null,
       revised_prompt: prompt,
       error: { message: outcome.error.message, code: outcome.error.code, type: outcome.error.type },
     };
-    return { item, endEvents: [] };
+    return { item, endEvents: [], replayData: imageReplayInputs(item) };
   }
 
-  const item: HostedToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCall, 'id'> = {
+  const item: HostedToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCallEx, 'id'> = {
     type: 'image_generation_call',
     status: 'completed',
     action,
@@ -91,7 +103,7 @@ export const imageTerminal = (
     revised_prompt: prompt,
     ...outcome.echo,
   };
-  return { item, endEvents: [{ type: 'response.image_generation_call.completed' }] };
+  return { item, endEvents: [{ type: 'response.image_generation_call.completed' }], replayData: imageReplayInputs(item) };
 };
 
 // Native image events become the hosted lifecycle without transport reframing.

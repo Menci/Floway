@@ -1,8 +1,8 @@
 import type { Counted, Fields } from './facts.ts';
-import { isFailure, renderFailure } from '../../../pipeline/facts.ts';
+import { isFailure } from '../../../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../../../shared/upstream-response.ts';
 import type { ChatServices } from '../../services.ts';
-import { mintGeminiGenerateContentFailure } from '../errors.ts';
+import { renderGeminiGenerateContentFailure } from '../errors.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 
 /**
@@ -36,7 +36,7 @@ export const emitGeminiGenerateContentTokenCount = defineStage<
     const forClient = forwardable.length === headers.length ? headers : move(forwardable);
 
     if (isFailure(answer)) {
-      const failure = renderFailure(answer, mintGeminiGenerateContentFailure);
+      const failure = renderGeminiGenerateContentFailure(answer);
       return {
         ...rest,
         'response.http.headers': forClient,

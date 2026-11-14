@@ -1,4 +1,4 @@
-import { createRunReader, type DumpEvent } from '@floway-dev/pipeline';
+import { createRunReader, type DumpEvent } from '@floway-dev/pipeline/browser';
 
 type Stored = Extract<DumpEvent, { type: 'object' }>['nodes'][number];
 type FactState = Readonly<Record<string, Stored>>;

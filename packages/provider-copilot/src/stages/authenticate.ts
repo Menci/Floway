@@ -1,12 +1,12 @@
 import { getCopilotToken, isCopilotTokenFetchError, type CopilotAuth } from '../auth.ts';
 import { rawModelFor } from '../operation-model.ts';
-import type { EmbeddingsRequest, CopilotRequest } from '../pipeline-facts.ts';
+import type { CopilotOperation, CopilotOperationRequest, CopilotRequest } from '../pipeline-facts.ts';
 import { takeHttpResponse } from '@floway-dev/http/pipeline';
 import { defineStage, move, secret, type Handed } from '@floway-dev/pipeline';
 import type { ProviderResponse, ProviderServices } from '@floway-dev/provider';
 
-export const authenticateCopilot = (auth: CopilotAuth) => {
-  const authenticate = defineStage<EmbeddingsRequest, CopilotRequest, ProviderResponse, ProviderResponse, ProviderResponse, ProviderServices>({
+export const authenticateCopilot = <O extends CopilotOperation>(auth: CopilotAuth, operation: O) => {
+  const authenticate = defineStage<CopilotOperationRequest<O>, CopilotRequest<O>, ProviderResponse, ProviderResponse, ProviderResponse, ProviderServices>({
     name: 'authenticateCopilot',
     through: {
       request: {
@@ -29,7 +29,7 @@ export const authenticateCopilot = (auth: CopilotAuth) => {
           ...facts,
           'response.http.exchange': exchange,
           'response.http.body': exchange.body,
-          'response.provider.modelKey': rawModelFor(facts['request.provider.model'], 'openaiEmbeddings').id,
+          'response.provider.modelKey': rawModelFor(facts['request.provider.model'], operation).id,
           'response.provider.called': false,
           'response.provider.previousCalls': [],
         });

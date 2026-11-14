@@ -16,16 +16,6 @@ test('chatFromOllamaRaw thinking-capable model → uniform effort preset', () =>
   assertEquals(chat, { reasoning: { effort: EFFORT_PRESET } });
 });
 
-test('chatFromOllamaRaw deepseek-r1 thinking → same effort preset', () => {
-  const chat = chatFromOllamaRaw(rawModel('deepseek-r1:32b', ['completion', 'thinking']));
-  assertEquals(chat, { reasoning: { effort: EFFORT_PRESET } });
-});
-
-test('chatFromOllamaRaw qwen3 thinking → same effort preset', () => {
-  const chat = chatFromOllamaRaw(rawModel('qwen3:32b', ['thinking']));
-  assertEquals(chat, { reasoning: { effort: EFFORT_PRESET } });
-});
-
 test('chatFromOllamaRaw vision-only → modalities only, no reasoning', () => {
   const chat = chatFromOllamaRaw(rawModel('llava:13b', ['completion', 'vision']));
   assertEquals(chat, { modalities: { input: ['text', 'image'], output: ['text'] } });

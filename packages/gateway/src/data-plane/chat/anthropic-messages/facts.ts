@@ -7,7 +7,7 @@ import type { SseFrame } from '@floway-dev/protocols/common';
 export interface AnthropicMessagesFacts extends ChatFacts {
   /** What the client is actually sent — an object when it asked for one, SSE frames when it
    *  asked to stream. The edge provides it, so a dump shows what the client received. */
-  'response.chat.anthropicMessages.rendered': Record<string, unknown> | AsyncIterable<SseFrame>;
+  'response.chat.anthropicMessages.rendered': object | AsyncIterable<SseFrame>;
   /** What the upstream will have reported once the frames run out, and `null` when nothing
    *  streamed. Settling from this is the epilogue's job, after the drain. */
   'response.chat.anthropicMessages.streamedUsage': Deferred<StreamOutcome> | null;

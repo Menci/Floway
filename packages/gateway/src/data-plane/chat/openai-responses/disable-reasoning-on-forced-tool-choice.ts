@@ -1,6 +1,6 @@
 import type { Chat } from '../facts.ts';
 import { defineStage, transform, move } from '@floway-dev/pipeline';
-import type { OpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 /** The reasoning sentinel a forced tool choice needs. `required` or a named tool is forced;
  *  `auto` and `none` leave the model free to reason. The `reasoning` object is replaced
@@ -39,7 +39,7 @@ export const disableReasoningOnForcedToolChoiceForOpenAIResponses = defineStage<
   })),
 });
 
-const isForcedOpenAIResponsesToolChoice = (choice: OpenAIResponsesPayload['tool_choice']): boolean => {
+const isForcedOpenAIResponsesToolChoice = (choice: CanonicalOpenAIResponsesPayload['tool_choice']): boolean => {
   if (choice === undefined || choice === null) return false;
   if (typeof choice === 'string') return choice === 'required';
   return true;

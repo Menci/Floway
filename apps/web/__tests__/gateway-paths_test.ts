@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { isGatewayPath } from '../../platform-node/src/static-web.ts';
 import { wranglerProxiedPaths } from '../gateway-paths';
-import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
+import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/browser';
 
 // Three hosting topologies each restate the set of paths that belong to the
 // gateway, in three syntaxes, and none can consult the others at run time.
@@ -17,8 +17,8 @@ const repoRoot = resolve(import.meta.dirname, '../../..');
 const readRepoFile = (path: string) => readFileSync(resolve(repoRoot, path), 'utf8');
 
 // Hono path parameters carry an optional inline pattern, e.g.
-// `/v1beta/models/:modelAction{.+}`. A concrete sample is what the matchers
-// need, and Gemini's action form is the one that puts a colon inside a segment.
+// `/v1/models/:modelAction{.+}`. A concrete sample is what the matchers need,
+// and Gemini's action form is the one that puts a colon inside a segment.
 const SAMPLE_SEGMENT: Record<string, string> = {
   modelAction: 'gemini-2.5-pro:generateContent',
   modelId: 'gemini-2.5-pro',

@@ -3,7 +3,7 @@ import type { WebSearchExecutionSession } from '../../../../tools/web-search/ope
 import type { ModelCandidate } from '@floway-dev/provider';
 
 export interface WebSearchRuntime {
-  readonly session: Omit<WebSearchExecutionSession, 'filters' | 'includeSearchActionSources'>;
+  readonly session: Omit<WebSearchExecutionSession, 'filters' | 'includeSearchActionSources' | 'responseLength'>;
   readonly alpha?: { readonly resolveCandidate: () => Promise<ModelCandidate>; readonly sessionId: string };
 }
 

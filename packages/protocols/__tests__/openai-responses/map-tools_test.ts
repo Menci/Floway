@@ -49,7 +49,7 @@ test('maps tools in every OpenAI Responses request container without mutating th
 });
 
 test('preserves nullable top-level tools', () => {
-  const payload: CanonicalOpenAIResponsesPayload = { model: 'gpt-test', tools: null, input: [] };
+  const payload: CanonicalOpenAIResponsesPayload = { model: 'gpt-test', tools: null, input: [] } as unknown as CanonicalOpenAIResponsesPayload;
   assertEquals(mapOpenAIResponsesTools(payload, tool => tool), payload);
 });
 

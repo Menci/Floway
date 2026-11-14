@@ -1,6 +1,6 @@
 import type { AlphaSearchDispatcher } from './upstream.ts';
 import { type WebSearchCallIR, UNSUPPORTED_LOCAL_WEB_SEARCH_FEATURE_ERROR_NAME, unsupportedLocalWebSearchFeatureIr } from '../operations.ts';
-import type { OpenAIResponsesInputItem, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
 
 interface UpstreamErrorDetails {
   message: string;
@@ -38,7 +38,7 @@ export const executeAlphaSearch = async ({
   sessionId: string;
   commands: Record<string, unknown>;
   settings: Record<string, unknown>;
-  input: OpenAIResponsesInputItem[];
+  input: CanonicalOpenAIResponsesInputItem[];
   action: OpenAIResponsesWebSearchAction;
   signal: AbortSignal | undefined;
 }): Promise<WebSearchCallIR> => {

@@ -187,7 +187,7 @@ function TextInputSection() {
   return <Section id="text-input" title="Text input">
     <Hint>Hover, click into and tab through each field to reach hover, focus-visible and the focused underline.</Hint>
     <Row label="input - appearances">
-      <StateLabel state="outline (rest)"><Input defaultValue="https://api.githubcopilot.com" /></StateLabel>
+      <StateLabel state="outline (rest)"><Input defaultValue="https://api.example.com" /></StateLabel>
       <StateLabel state="filled-darker"><Input appearance="filled-darker" defaultValue="gpt-5-codex" /></StateLabel>
       <StateLabel state="filled-lighter"><Input appearance="filled-lighter" defaultValue="gpt-5-codex" /></StateLabel>
     </Row>
@@ -197,7 +197,7 @@ function TextInputSection() {
       <StateLabel state="read-only"><Input defaultValue="gpt-5-codex" readOnly /></StateLabel>
       <StateLabel state="invalid">
         <Field validationMessage="Enter an absolute https:// URL." validationState="error">
-          <Input defaultValue="api.githubcopilot" />
+          <Input defaultValue="api.example" />
         </Field>
       </StateLabel>
       <StateLabel state="with contentBefore"><Input contentBefore={<KeyRegular />} defaultValue="sk-floway-…" /></StateLabel>
@@ -240,8 +240,8 @@ function ChoiceSection() {
       </Field>
     </Row>
     <Row label="radio group - vertical">
-      <RadioGroup defaultValue="copilot">
-        <Radio label="GitHub Copilot" value="copilot" />
+      <RadioGroup defaultValue="custom">
+        <Radio label="Custom HTTP" value="custom" />
         <Radio label="Azure AI Foundry" value="azure" />
         <Radio disabled label="Ollama (disabled)" value="ollama" />
       </RadioGroup>
@@ -291,26 +291,26 @@ function SelectSection() {
     <Row label="dropdown">
       <StateLabel state="rest">
         <Dropdown placeholder="Pick an upstream">
-          <Option text="GitHub Copilot" value="copilot">GitHub Copilot</Option>
+          <Option text="Custom HTTP" value="custom">Custom HTTP</Option>
           <Option text="Azure AI Foundry" value="azure">Azure AI Foundry</Option>
           <Option disabled text="Ollama (offline)" value="ollama">Ollama (offline)</Option>
         </Dropdown>
       </StateLabel>
       <StateLabel state="selected value">
-        <Dropdown defaultSelectedOptions={['copilot']} defaultValue="GitHub Copilot">
-          <Option text="GitHub Copilot" value="copilot">GitHub Copilot</Option>
+        <Dropdown defaultSelectedOptions={['custom']} defaultValue="Custom HTTP">
+          <Option text="Custom HTTP" value="custom">Custom HTTP</Option>
           <Option text="Azure AI Foundry" value="azure">Azure AI Foundry</Option>
         </Dropdown>
       </StateLabel>
       <StateLabel state="disabled">
-        <Dropdown disabled defaultValue="GitHub Copilot">
-          <Option text="GitHub Copilot" value="copilot">GitHub Copilot</Option>
+        <Dropdown disabled defaultValue="Custom HTTP">
+          <Option text="Custom HTTP" value="custom">Custom HTTP</Option>
         </Dropdown>
       </StateLabel>
       <StateLabel state="invalid">
         <Field validationMessage="Choose the upstream this alias routes to." validationState="error">
           <Dropdown placeholder="Pick an upstream">
-            <Option text="GitHub Copilot" value="copilot">GitHub Copilot</Option>
+            <Option text="Custom HTTP" value="custom">Custom HTTP</Option>
           </Dropdown>
         </Field>
       </StateLabel>
@@ -343,12 +343,12 @@ function FieldSection() {
     <Row label="validation states">
       <StateLabel state="rest">
         <Field hint="Shown in the upstream list." label="Display name">
-          <Input defaultValue="Copilot (work)" />
+          <Input defaultValue="Work upstream" />
         </Field>
       </StateLabel>
       <StateLabel state="error">
         <Field label="Base URL" validationMessage="Enter an absolute https:// URL." validationState="error">
-          <Input defaultValue="api.githubcopilot" />
+          <Input defaultValue="api.example" />
         </Field>
       </StateLabel>
       <StateLabel state="warning">
@@ -388,7 +388,7 @@ function CardSection() {
         <Card appearance={appearance} className="w-[220px]">
           <CardHeader
             description={<Text size={200} className="text-fui-fg2">12 models, 2 aliases</Text>}
-            header={<Text weight="semibold">Copilot (work)</Text>}
+            header={<Text weight="semibold">Work upstream</Text>}
             image={<ServerRegular fontSize={24} />}
           />
         </Card>
@@ -416,7 +416,7 @@ function DialogSection() {
         </DialogTrigger>
         <DialogSurface>
           <DialogBody>
-            <DialogTitle>Delete “Copilot (work)”?</DialogTitle>
+            <DialogTitle>Delete “Work upstream”?</DialogTitle>
             <DialogContent>
               <Text>Aliases pointing at this upstream stop resolving. Recorded usage is kept.</Text>
             </DialogContent>
@@ -571,7 +571,7 @@ function MenuSection() {
           <MenuList>
             <MenuGroup>
               <MenuGroupHeader>Upstreams</MenuGroupHeader>
-              <MenuItem>GitHub Copilot</MenuItem>
+              <MenuItem>Custom HTTP</MenuItem>
               <MenuItem>Azure AI Foundry</MenuItem>
             </MenuGroup>
             <MenuDivider />
@@ -757,7 +757,7 @@ function MessageBarSection() {
       <MessageBar intent={intent} className="!w-full">
         <MessageBarBody>
           <MessageBarTitle>Model catalog</MessageBarTitle>
-          Copilot returned 12 models; 2 of them are not addressable by any alias.
+          The upstream returned 12 models; 2 of them are not addressable by any alias.
         </MessageBarBody>
         <MessageBarActions
           containerAction={<Button appearance="transparent" aria-label="Dismiss" icon={<DismissRegular />} />}
@@ -773,7 +773,7 @@ function MessageBarSection() {
       <MessageBar intent="error" layout="multiline" className="!w-full">
         <MessageBarBody>
           <MessageBarTitle>Upstream refused the request</MessageBarTitle>
-          HTTP 401 from api.githubcopilot.com. The stored credential no longer authenticates.
+          HTTP 401 from api.example.com. The stored credential no longer authenticates.
         </MessageBarBody>
         <MessageBarActions><Button size="small">Re-authenticate</Button></MessageBarActions>
       </MessageBar>
@@ -834,7 +834,7 @@ const TOAST_SETTLE_MS = 1500;
 const TOAST_LIMIT = 3;
 
 const wrappingBody = 'The catalog came back with 128 models. 12 of them declare an endpoint set no protocol here speaks, 3 are addressable only through an alias another upstream already claims, and the rest were recorded against the prices published at the moment of the fetch.';
-const wrappingTitle = 'The upstream catalog refresh could not reach api.githubcopilot.com';
+const wrappingTitle = 'The upstream catalog refresh could not reach api.example.com';
 const unbrokenToken = 'https://models.inference.example.invalid/v2/deployments/gpt-5-codex-preview-2026-07-31-eastus2-provisioned/chat/completions';
 
 function ToastSection() {
@@ -851,7 +851,7 @@ function ToastSection() {
 
   const saved = <Toast>
     <ToastTitle action={<Button appearance="transparent" size="small">Undo</Button>}>Upstream saved</ToastTitle>
-    <ToastBody subtitle="Copilot (work)">12 models are now addressable.</ToastBody>
+    <ToastBody subtitle="Work upstream">12 models are now addressable.</ToastBody>
     <ToastFooter><Link>Open the upstream</Link></ToastFooter>
   </Toast>;
 
@@ -972,11 +972,11 @@ function ListSection() {
   return <Section id="list" title="List">
     <Hint>Hover and arrow through the navigable list; selection is driven by the checkboxes in the selectable one.</Hint>
     <Row label="selectable list">
-      <List className="!w-full" selectionMode="multiselect" defaultSelectedItems={['copilot']}>
-        <ListItem value="copilot" aria-label="Copilot (work)">
+      <List className="!w-full" selectionMode="multiselect" defaultSelectedItems={['custom']}>
+        <ListItem value="custom" aria-label="Work upstream">
           <div className="flex w-full items-center gap-3">
             <ServerRegular />
-            <Text>Copilot (work)</Text>
+            <Text>Work upstream</Text>
             <StatusBadge tone="success" className="!ml-auto">Online</StatusBadge>
           </div>
         </ListItem>
@@ -1032,13 +1032,13 @@ function BadgeTagSection() {
       <CounterBadge dot />
     </Row>
     <Row label="tag - rest, dismissible and disabled">
-      <Tag>copilot</Tag>
+      <Tag>custom</Tag>
       <Tag appearance="brand">openaiResponses</Tag>
       <Tag appearance="outline">openaiEmbeddings</Tag>
       <Tag appearance="filled">rerank</Tag>
       <Tag disabled>archived</Tag>
       <Tag dismissible dismissIcon={{ 'aria-label': 'Remove tag' }}>gpt-5-codex</Tag>
-      <Tag shape="circular" icon={<ServerRegular />}>Copilot (work)</Tag>
+      <Tag shape="circular" icon={<ServerRegular />}>Work upstream</Tag>
       <Tag size="extra-small">small</Tag>
     </Row>
     <Row label="interaction tag - selectable primary with a secondary dismiss">

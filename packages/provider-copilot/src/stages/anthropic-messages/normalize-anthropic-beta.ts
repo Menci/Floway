@@ -30,7 +30,7 @@ export const copilotAnthropicMessagesNormalizeAnthropicBeta = defineStage<Messag
     beta = [...new Set(beta.filter(beta => ALLOWED_ANTHROPIC_BETAS.has(beta)))];
 
     const isAdaptiveThinking = payload.thinking?.type === 'adaptive';
-    if (!callerSuppliedBeta && payload.thinking?.budget_tokens && !isAdaptiveThinking) {
+    if (!callerSuppliedBeta && (payload.thinking?.type === 'enabled' ? payload.thinking.budget_tokens : undefined) && !isAdaptiveThinking) {
       beta = [...beta, INTERLEAVED_THINKING_BETA];
     }
 

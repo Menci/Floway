@@ -31,7 +31,7 @@ export const selectCopilotChatModel = <O extends ChatProviderOperation>(operatio
       }
       modelKey = rawModelFor(model, 'anthropicMessages', {
         context1m: (facts as ProviderOperationRequest<'anthropicMessages'>)['request.provider.anthropicBeta'].includes(CONTEXT_1M_BETA),
-        reasoningEffort: body.output_config?.effort,
+        reasoningEffort: body.output_config?.effort ?? undefined,
         fast: operation === 'anthropicMessages' && body.speed === 'fast',
       }).id;
     } else if (operation === 'openaiChatCompletions') {

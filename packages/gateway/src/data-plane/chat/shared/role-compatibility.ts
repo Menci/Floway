@@ -1,4 +1,3 @@
-
 export interface RoleRewrite {
   readonly systemToDeveloper: boolean;
   readonly developerToSystem: boolean;

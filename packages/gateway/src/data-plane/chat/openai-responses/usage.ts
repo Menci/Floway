@@ -1,6 +1,6 @@
 import type { ChatBillableUsage } from '../shared/usage.ts';
 import { billableServiceTier, splitInclusiveInputTokens } from '@floway-dev/protocols/common';
-import { openaiResponsesResultFromStreamEvent, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { openaiResponsesResultFromStreamEvent, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 // service_tier reports the tier actually served and therefore selects the
 // matching pricing entry rather than the tier originally requested.
@@ -8,7 +8,7 @@ import { openaiResponsesResultFromStreamEvent, type OpenAIResponsesResult, type 
 // Takes the two fields it reads rather than a whole result, so a compaction
 // body can be priced through the same helper.
 export const billableUsageFromOpenAIResponsesResult = (
-  response: { readonly usage?: OpenAIResponsesResult['usage']; readonly service_tier?: OpenAIResponsesResult['service_tier'] },
+  response: { readonly usage?: OpenAIResponsesResultEx['usage']; readonly service_tier?: OpenAIResponsesResultEx['service_tier'] },
 ): ChatBillableUsage | null => {
   const usage = response.usage;
   if (!usage) return null;
@@ -30,7 +30,7 @@ export const billableUsageFromOpenAIResponsesResult = (
   };
 };
 
-export const billableUsageFromOpenAIResponsesEvent = (event: OpenAIResponsesStreamEvent): ChatBillableUsage | null => {
+export const billableUsageFromOpenAIResponsesEvent = (event: OpenAIResponsesStreamEventEx): ChatBillableUsage | null => {
   const response = openaiResponsesResultFromStreamEvent(event);
   return response === null ? null : billableUsageFromOpenAIResponsesResult(response);
 };

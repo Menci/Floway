@@ -26,11 +26,11 @@ import { initRepo } from '../../../src/repo/index.ts';
 import { chatFixtureHttpServices, stubChatProviderPipelines } from '../../test-utils/chat-provider-pipelines.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { compose, move, run, type Pipeline } from '@floway-dev/pipeline';
-import { PROMPT_TOO_LONG_MESSAGE, type AnthropicMessagesPayload, type AnthropicMessagesResult, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { PROMPT_TOO_LONG_MESSAGE, type AnthropicMessagesPayload, type AnthropicMessagesResult, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ModelEndpoints } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentResult } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsResult, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { directFetcher, type FlagId, type ModelCandidate } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult } from '@floway-dev/test-utils';
 
@@ -50,7 +50,7 @@ const resolves = (candidates: readonly ModelCandidate[]): void => {
 
 interface Calls {
   readonly callOpenAIChatCompletions?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
-  readonly callAnthropicMessages?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
+  readonly callAnthropicMessages?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
   readonly callOpenAIResponses?: (model: unknown, body: unknown) => Promise<ProviderOpenAIResponsesResult>;
 }
 
@@ -99,7 +99,7 @@ const openaiChatCompletionsTurn = (text: string): ProviderStreamResult<OpenAICha
   })(),
 });
 
-const anthropicMessagesTurn = (text: string): ProviderStreamResult<AnthropicMessagesStreamEvent> => ({
+const anthropicMessagesTurn = (text: string): ProviderStreamResult<AnthropicMessagesStreamEventEx> => ({
   ok: true,
   modelKey: 'k',
   headers: new Headers(),
@@ -110,17 +110,17 @@ const anthropicMessagesTurn = (text: string): ProviderStreamResult<AnthropicMess
         id: 'msg_1', type: 'message', role: 'assistant', content: [], model: MODEL,
         stop_reason: null, stop_sequence: null, usage: { input_tokens: 3, output_tokens: 0 },
       },
-    } as AnthropicMessagesStreamEvent);
-    yield eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } } as AnthropicMessagesStreamEvent);
-    yield eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } } as AnthropicMessagesStreamEvent);
-    yield eventFrame({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEvent);
-    yield eventFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 2 } } as AnthropicMessagesStreamEvent);
-    yield eventFrame({ type: 'message_stop' } as AnthropicMessagesStreamEvent);
+    } as AnthropicMessagesStreamEventEx);
+    yield eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } } as AnthropicMessagesStreamEventEx);
+    yield eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } } as AnthropicMessagesStreamEventEx);
+    yield eventFrame({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEventEx);
+    yield eventFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 2 } } as AnthropicMessagesStreamEventEx);
+    yield eventFrame({ type: 'message_stop' } as AnthropicMessagesStreamEventEx);
     yield doneFrame();
   })(),
 });
 
-const openaiResponsesResult = (text: string): OpenAIResponsesResult => ({
+const openaiResponsesResult = (text: string): OpenAIResponsesResultEx => ({
   id: 'resp_1',
   object: 'response',
   model: MODEL,
@@ -139,17 +139,18 @@ const openaiResponsesTurn = (text: string): ProviderOpenAIResponsesResult => ({
   modelKey: 'k',
   headers: new Headers(),
   events: (async function* () {
+    yield eventFrame({ type: 'response.created', sequence_number: 0, response: { ...openaiResponsesResult(''), status: 'in_progress' } } as OpenAIResponsesStreamEventEx);
     yield eventFrame({
       type: 'response.output_item.added',
       sequence_number: 1,
       output_index: 0,
       item: { type: 'message', id: 'msg_1', role: 'assistant', status: 'in_progress', content: [] },
-    } as OpenAIResponsesStreamEvent);
+    } as OpenAIResponsesStreamEventEx);
     yield eventFrame({
       type: 'response.output_text.delta',
       sequence_number: 2, item_id: 'msg_1', output_index: 0, content_index: 0, delta: text,
-    } as OpenAIResponsesStreamEvent);
-    yield eventFrame({ type: 'response.completed', sequence_number: 3, response: openaiResponsesResult(text) } as OpenAIResponsesStreamEvent);
+    } as OpenAIResponsesStreamEventEx);
+    yield eventFrame({ type: 'response.completed', sequence_number: 3, response: openaiResponsesResult(text) } as OpenAIResponsesStreamEventEx);
     yield doneFrame();
   })(),
 });
@@ -240,13 +241,13 @@ const anthropicMessagesText = (rendered: unknown): string | undefined => {
 };
 
 const openaiResponsesText = (rendered: unknown): string | undefined => {
-  const item = (rendered as OpenAIResponsesResult).output.find(output => output.type === 'message');
+  const item = (rendered as OpenAIResponsesResultEx).output.find(output => output.type === 'message');
   const part = item?.type === 'message' ? item.content[0] : undefined;
   return part?.type === 'output_text' ? part.text : undefined;
 };
 
 const geminiGenerateContentText = (rendered: unknown): string | undefined =>
-  (rendered as GeminiGenerateContentResult).candidates?.[0]?.content.parts.map(part => part.text ?? '').join('');
+  (rendered as GeminiGenerateContentResult).candidates?.[0]?.content?.parts?.map(part => part.text ?? '').join('');
 
 beforeEach(() => {
   vi.mocked(enumerateModelCandidates).mockReset();
@@ -395,17 +396,12 @@ describe('the fork over wires', () => {
     expect(facts['response.http.status']).toBe(400);
     expect(facts['response.chat.anthropicMessages.rendered']).toEqual({
       type: 'error',
-      error: { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE },
+      error: { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE, provider_specific_fields: { code: 'context_length_exceeded' } },
     });
     await drain();
   });
 
-  // A refusal a pair says nothing about keeps the status the upstream sent and loses the
-  // envelope it came in. The object was the *target* protocol's — an OpenAI `{error:{message}}`
-  // reaching a client that reads Anthropic — and answering one protocol in another's words is
-  // what the pair exists to prevent. What crosses is the status and the sentence; the client's
-  // own edge writes the shape.
-  it('carries a refusal the pair does not speak about without its foreign envelope', async () => {
+  it('translates an unclassified upstream refusal while preserving its status and message', async () => {
     const callOpenAIChatCompletions = vi.fn(async () => ({
       ok: false as const, modelKey: 'k', response: Response.json({ error: { message: 'no' } }, { status: 403 }),
     }));
@@ -416,9 +412,7 @@ describe('the fork over wires', () => {
     expect(facts['response.http.status']).toBe(403);
     const rendered = facts['response.chat.anthropicMessages.rendered'] as { type: string; error: { type: string; message: string } };
     expect(rendered.type).toBe('error');
-    expect(rendered.error.type).toBe('permission_error');
-    // The upstream's own words survive as the sentence, which is all that can be kept of a
-    // body written in a protocol this client does not read.
+    expect(rendered.error.type).toBe('api_error');
     expect(rendered.error.message).toContain('no');
     await drain();
   });
@@ -432,7 +426,7 @@ describe('the fork over wires', () => {
 
     expect(facts['response.chat.anthropicMessages.rendered']).toEqual({
       type: 'error',
-      error: { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE },
+      error: { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE, provider_specific_fields: { code: 'context_length_exceeded' } },
     });
     await drain();
   });
@@ -542,11 +536,13 @@ describe('a rule that speaks about one protocol-s wire', () => {
       from: { request: 'request.chat.anthropicMessages', response: 'response.chat.anthropicMessages' },
       to: { request: 'request.chat.openaiChatCompletions', response: 'response.chat.openaiChatCompletions' },
       trip: () => { throw new Error('not dialled'); },
+      refuseInput: error => ({ error: { message: error.message } }),
     });
     const arriving = handOff({
       from: { request: 'request.chat.openaiChatCompletions', response: 'response.chat.openaiChatCompletions' },
       to: { request: 'request.chat.anthropicMessages', response: 'response.chat.anthropicMessages' },
       trip: () => { throw new Error('not dialled'); },
+      refuseInput: error => ({ error: { message: error.message } }),
     });
 
     expect(() => compose('leaving', [leaving, ...anthropicMessagesWire('r')]))

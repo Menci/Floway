@@ -1,6 +1,6 @@
 import type { ResponsesFacts } from '../../chat-facts.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import type { OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 import { replaceHttpHeader } from '@floway-dev/provider';
 
 /**
@@ -35,7 +35,7 @@ export const copilotOpenAIResponsesSetInitiatorHeader = defineStage<ResponsesFac
     const payload = facts['request.provider.payload'];
     let headers = facts['request.http.headers'];
 
-    const lastItem: OpenAIResponsesInputItem | undefined = payload.input.at(-1);
+    const lastItem: CanonicalOpenAIResponsesInputItem | undefined = payload.input.at(-1);
     const role = lastItem === undefined ? undefined : (lastItem as { role?: unknown }).role;
     const initiator: 'user' | 'agent' = lastItem !== undefined
     && (role === undefined || role === null || role === '' || role === 'assistant')

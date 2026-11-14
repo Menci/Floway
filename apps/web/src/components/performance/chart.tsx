@@ -12,6 +12,7 @@ import { ChartCalloutTable } from '../charts/callout-table';
 import { chartTickValues, formatAxisDate, formatCalloutTitle } from '../charts/dashboard-time';
 import { useChartFrame } from '../charts/frame-styles';
 import { ChartHost } from '../charts/host';
+import { FluentChartPointMarkers } from '../charts/point-markers';
 import { ChartSection } from '../charts/section';
 import type { ChartSeries } from '../charts/series-legends';
 import { visibleSeriesData } from '../charts/series-selection';
@@ -31,8 +32,8 @@ const labelledOnLogAxis = (value: number): boolean => {
 // The per-series highlight circle would contradict the callout table, so it
 // loses its paint rather than its box: Fluent anchors the callout to that
 // circle's bounding rect, which `display` would collapse onto the origin. The
-// marker sizing in the shared chart frame holds in every state, because the
-// pointer is answered at an x position rather than at one series' point.
+// Static markers are sized by the shared point-marker adapter; the pointer is
+// answered at an x position rather than at one series' point.
 //
 // The x axis draws its ticks at the plot's full height so they double as
 // gridlines, so hit testing has to pass through them or a pointer crossing one
@@ -55,7 +56,9 @@ function PerformanceChart({ chart, hidden }: { chart: PerformancePlot; hidden: S
   const chartStyles = usePerformanceChartStyles();
   const chartRootStyles = useChartFrame();
   const locale = useLocale();
-  const formatter = chart.metric === 'ttft' ? formatDuration : formatTokenRate;
+  const formatter = chart.metric === 'ttft'
+    ? (value: number) => formatDuration(value, locale)
+    : formatTokenRate;
   const entryByLegend = useMemo(() => new Map(chart.entries.map(entry => [entry.legend, entry])), [chart.entries]);
   const visibleData = useMemo(() => visibleSeriesData(chart.entries, chart.data, hidden), [chart.data, chart.entries, hidden]);
   const values = visibleData.lineChartData?.flatMap(series => series.data.map(point => point.y).filter((value): value is number => typeof value === 'number' && value > 0)) ?? [];
@@ -66,11 +69,14 @@ function PerformanceChart({ chart, hidden }: { chart: PerformancePlot; hidden: S
         data={props}
         details={chart.details.get(props.x instanceof Date ? props.x.getTime() : Number(props.x))}
         entryByLegend={entryByLegend}
-        title={formatCalloutTitle(props.x, labelByTime, chart.range, locale)}
-      />, [chart.details, chart.range, entryByLegend, labelByTime, locale]);
+        title={formatCalloutTitle(props.x, labelByTime, locale)}
+      />, [chart.details, entryByLegend, labelByTime, locale]);
 
   return <ChartHost className={chartStyles.root} emptyText={t('dashboard.performance.empty')} hasData={Boolean(visibleData.lineChartData?.length)}>
-    {({ size }) => <LineChart styles={chartRootStyles} customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} enablePerfOptimization height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-Math.max(0, size.height - chartMargins.top - chartMargins.bottom)} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" />}
+    {({ element, size }) => <>
+      <LineChart styles={chartRootStyles} customDateTimeFormatter={formatAxisDate} data={visibleData} enablePerfOptimization height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-Math.max(0, size.height - chartMargins.top - chartMargins.bottom)} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" />
+      <FluentChartPointMarkers data={visibleData} element={element} form="line" />
+    </>}
   </ChartHost>;
 }
 
@@ -81,6 +87,7 @@ function PerformanceChartCallout({ data, details, entryByLegend, title }: {
   title: string;
 }) {
   const { t } = useTranslation();
+  const locale = useLocale();
   // The chart keeps its hover state across a range or metric switch and can ask
   // for a callout carrying legends from the replaced dataset; such a row is
   // dropped rather than substituted.
@@ -95,7 +102,7 @@ function PerformanceChartCallout({ data, details, entryByLegend, title }: {
         color: item.color,
         key: entry.id,
         label: entry.label,
-        values: [formatDuration(point?.ttft ?? null), formatTokenRate(point?.outputSpeed ?? null)],
+        values: [formatDuration(point?.ttft ?? null, locale), formatTokenRate(point?.outputSpeed ?? null)],
       }];
     });
 

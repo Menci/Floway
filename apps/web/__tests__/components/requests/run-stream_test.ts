@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { clientStreamOf } from '../../../src/components/requests/run-stream';
-import { encodeRun, streamFact, toNdjson } from '@floway-dev/pipeline';
+import { encodeRun, streamFact, toNdjson } from '@floway-dev/pipeline/browser';
 
 for (const collected of [true, false]) {
   for (const ended of [true, false]) {

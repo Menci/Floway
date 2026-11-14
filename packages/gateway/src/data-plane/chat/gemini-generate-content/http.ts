@@ -1,4 +1,4 @@
-// `/v1beta/models/:modelAction`, whose three actions are each served through a pipeline.
+// `/v1/models/:modelAction` and `/v1beta/models/:modelAction`, whose three actions are each served through a pipeline.
 // `:generateContent` and `:streamGenerateContent` are one chain; `:countTokens` is a second
 // operation over the same protocol and is a chain of its own rather than another wire under
 // the first.
@@ -15,7 +15,7 @@ import { finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
 import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/store.ts';
 import { openChatPrologue } from '../prologue.ts';
 import { move } from '@floway-dev/pipeline';
-import type { GeminiGenerateContentContent, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiCountTokensPayload, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 
 interface GeminiGenerateContentModelAction {
   readonly model: string;
@@ -23,11 +23,11 @@ interface GeminiGenerateContentModelAction {
 }
 
 // The Gemini generateContent wire API encodes both the model id and the action in one path
-// segment (e.g. `models/gemini-2.5-pro:streamGenerateContent`). The Hono route
-// captures everything after `/v1beta/models/` in a single `modelAction` param;
-// we split on the trailing `:` here so each entry sees just the action and
-// the resolved model id (with a leading `models/` prefix tolerated, as Google
-// SDKs send it).
+// segment (e.g. `models/gemini-2.5-pro:streamGenerateContent`). Both the
+// `v1` and `v1beta` routes capture everything after `/models/` in a single
+// `modelAction` param; we split on the trailing `:` here so each entry sees
+// just the action and the resolved model id (with a leading `models/` prefix
+// tolerated, as Google SDKs send it).
 /** A refusal about the route itself. It is answered before a model is resolved, so there is no
  *  attempt to record and nothing for a run to hold beyond the refusal. */
 const unknownAction = (message: string): Response => geminiGenerateContentErrorResponse(404, message);
@@ -43,14 +43,16 @@ const parseGeminiGenerateContentModelAction = (modelAction: string | undefined):
 // `generateContentRequest` envelope (Google's SDK shape). Normalize both to a
 // single `GeminiGenerateContentPayload` for the rest of the chain.
 const parseGeminiGenerateContentCountTokensPayload = (body: unknown): GeminiGenerateContentPayload => {
-  const shape = (body ?? {}) as { contents?: GeminiGenerateContentContent[]; generateContentRequest?: GeminiGenerateContentPayload };
-  return shape.generateContentRequest ?? { contents: shape.contents };
+  const shape = body as GeminiCountTokensPayload;
+  if (shape.generateContentRequest !== undefined) return shape.generateContentRequest;
+  return { contents: shape.contents ?? [] };
 };
 
-// Single entry for `/v1beta/models/:modelAction`. Splits the model and action
-// once, then dispatches to the matching sub-handler. Keeping the parse here
-// means the sub-handlers see a validated `(model, action)` pair and never
-// need to re-emit "Unknown Gemini model action" on already-validated input.
+// Single entry for `/v1/models/:modelAction` and `/v1beta/models/:modelAction`.
+// Splits the model and action once, then dispatches to the matching
+// sub-handler. Keeping the parse here means the sub-handlers see a validated
+// `(model, action)` pair and never need to re-emit "Unknown Gemini model
+// action" on already-validated input.
 export const geminiGenerateContentHttp = async (c: AuthedContext): Promise<Response> => {
   const parsed = parseGeminiGenerateContentModelAction(c.req.param('modelAction'));
   if (parsed instanceof Response) return parsed;

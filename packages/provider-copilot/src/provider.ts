@@ -5,9 +5,10 @@ import { fetchCopilotModels } from './fetch-models.ts';
 import { emptyKnownModels, mergeKnownModels, projectKnownModels } from './known-models.ts';
 import { mergeCopilotVariants } from './merge-variants.ts';
 import { copilotVariantIndex } from './model-variants.ts';
-import { rawModelSupportsEndpoint } from './operation-model.ts';
+import { copilotDecisionTarget, rawModelSupportsEndpoint } from './operation-model.ts';
 import { createCopilotPipelines } from './pipelines.ts';
 import { pricingForCopilotPublicModelId } from './pricing.ts';
+import { runCopilotScheduledTask } from './scheduled.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import type { CopilotRawModel } from './types.ts';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
@@ -55,7 +56,21 @@ const copilotModelEndpoints = (rawModels: readonly CopilotRawModel[]): ModelEndp
     return { openaiChatCompletions: {} };
   }
 
-  return rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiEmbeddings')) ? { openaiEmbeddings: {} } : {};
+  if (rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiEmbeddings'))) return { openaiEmbeddings: {} };
+  // Image models are their own family too, but unlike the chat collapse above
+  // they advertise two independently routable surfaces: the gateway serves
+  // `/v1/images/generations` and `/v1/images/edits` as separate inbound routes,
+  // so a model that declares both must carry both keys. Copilot's live
+  // `gpt-image-2.5-flare` entry lists both paths and serves real requests on
+  // each, and declaring only one would make the other route reject the model.
+  const imageEndpoints: ModelEndpoints = {
+    ...(rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiImagesGenerations')) ? { openaiImagesGenerations: {} } : {}),
+    ...(rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiImagesEdits')) ? { openaiImagesEdits: {} } : {}),
+  };
+  if (Object.keys(imageEndpoints).length > 0) return imageEndpoints;
+  // A decision model is a family of one: no other endpoint family shares its
+  // row, so this branch never competes with the chat/embeddings collapse above.
+  return rawModels.some(model => rawModelSupportsEndpoint(model, 'decision')) ? { decision: {} } : {};
 };
 
 const finalizeCopilotModels = (
@@ -80,6 +95,7 @@ const finalizeCopilotModels = (
       kind: kindForEndpoints(endpoints),
       endpoints,
       providerData: { rawModels: variants } satisfies CopilotProviderData,
+      ...(endpoints.decision ? { decisionTarget: copilotDecisionTarget(variants) } : {}),
       ...(pricing ? { pricing } : {}),
       ...((mergedModel.owned_by?.toLowerCase() === 'openai' || /^(?:gpt-|o[134](?:-|$)|codex-)/.test(mergedModel.id))
         ? { opaqueBlobCompatibilityScope: { bindToUpstream: true, key: 'openai' } }
@@ -109,6 +125,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
   const upstreamConfig = { id: copilot.id, githubHost: copilot.config.githubHost, githubToken: copilot.config.githubToken };
 
   const instance: ProviderInstance = {
+    runScheduledTask: options => runCopilotScheduledTask(record, options),
     getProvidedModels: async fetcher => {
       const fresh = await getProviderRepo().upstreams.getById(copilot.id);
       if (!fresh) throw new Error(`Copilot upstream ${copilot.id} disappeared mid-request`);

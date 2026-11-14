@@ -4,7 +4,7 @@ import type { Chat } from '../facts.ts';
 import { withCacheBucketsFolded, type CacheBucketNames } from '../shared/cache-buckets.ts';
 import { answerWithFrames, rewritingEvents } from '../shared/frames.ts';
 import { defineStage, transform, move } from '@floway-dev/pipeline';
-import type { OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 /**
  * Restores OpenAI's inclusive input-token contract on an upstream that reports the cache
@@ -46,7 +46,7 @@ export const normalizeExclusiveCachedTokensForOpenAIResponses = defineStage<
       response: facts => {
         const declaredExclusive = attempt.flags.includes('usage-exclusive-cached-tokens');
         const identity = `${attempt.upstreamId}/${attempt.modelId}`;
-        const answer = answerWithFrames<OpenAIResponsesStreamEvent>(
+        const answer = answerWithFrames<OpenAIResponsesStreamEventEx>(
           facts['response.chat.openaiResponses'],
           frames => rewritingEvents(frames, event => foldOpenAIResponsesUsage(event, declaredExclusive, identity)),
         );
@@ -66,15 +66,15 @@ const OPENAI_RESPONSES_CACHE_BUCKETS: CacheBucketNames = {
 };
 
 const foldOpenAIResponsesUsage = (
-  event: OpenAIResponsesStreamEvent,
+  event: OpenAIResponsesStreamEventEx,
   declaredExclusive: boolean,
   identity: string,
-): OpenAIResponsesStreamEvent => {
+): OpenAIResponsesStreamEventEx => {
   if (!('response' in event)) return event;
   const response = asJsonObject(event.response);
   const usage = asJsonObject(response?.usage);
   if (response === null || usage === null) return event;
   const folded = withCacheBucketsFolded(usage, OPENAI_RESPONSES_CACHE_BUCKETS, declaredExclusive, identity);
   if (folded === usage) return event;
-  return { ...event, response: { ...response, usage: folded } as JsonObject } as unknown as OpenAIResponsesStreamEvent;
+  return { ...event, response: { ...response, usage: folded } as JsonObject } as unknown as OpenAIResponsesStreamEventEx;
 };

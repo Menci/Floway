@@ -3,10 +3,11 @@ import { isEqual, uniqWith } from 'es-toolkit';
 import { internalModelFromProviderModel } from './catalog.ts';
 import { readUpstreamModelsSnapshotAndScheduleRefresh } from './models-cache.ts';
 import { listModelProviders, type GatewayProvider } from './registry.ts';
+import { checkMany } from '../../access-control/check.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { createModelsRefreshScheduler, type ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { ModelAliasRecord } from '../../repo/types.ts';
+import type { ModelAliasRecord, User } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelKind } from '@floway-dev/protocols/common';
 import type { Fetcher, ModelCandidate } from '@floway-dev/provider';
@@ -22,7 +23,7 @@ import type { Fetcher, ModelCandidate } from '@floway-dev/provider';
 // twice and both go through.
 //
 // `kind` is threaded down here so a wrong-kind catalog entry never becomes
-// a candidate. `sawAnyId` is true whenever the lookup id appeared in the
+// a candidate. `sawModel` is true whenever the lookup id appeared in the
 // catalog regardless of kind, so the caller can distinguish
 // "id is unknown to this upstream" from "id exists but wrong kind".
 const enumerateOneUpstreamCandidates = (
@@ -33,7 +34,7 @@ const enumerateOneUpstreamCandidates = (
     fetcher: Fetcher;
     scheduleRefresh: ModelsRefreshScheduler;
   },
-): { candidates: ModelCandidate[]; sawAnyId: boolean; modelsError: boolean } => {
+): { candidates: ModelCandidate[]; sawModel: boolean; modelsError: boolean } => {
   const { fetcher, scheduleRefresh } = context;
   const cfg = provider.modelPrefix;
   const lookupIds: string[] = [];
@@ -45,110 +46,84 @@ const enumerateOneUpstreamCandidates = (
       else if (form === 'prefixed' && modelId.startsWith(cfg.prefix)) lookupIds.push(modelId.slice(cfg.prefix.length));
     }
   }
-  if (lookupIds.length === 0) return { candidates: [], sawAnyId: false, modelsError: false };
+  if (lookupIds.length === 0) return { candidates: [], sawModel: false, modelsError: false };
 
   const snapshot = readUpstreamModelsSnapshotAndScheduleRefresh(provider, scheduleRefresh);
   const disabled = new Set(provider.disabledPublicModelIds);
   const candidates: ModelCandidate[] = [];
-  let sawAnyId = false;
+  let sawModel = false;
   for (const lookupId of lookupIds) {
     const match = snapshot.models.find(m => m.id === lookupId && !disabled.has(m.id));
     if (!match) continue;
-    sawAnyId = true;
+    sawModel = true;
     if (match.kind === kind) {
       candidates.push({ provider, model: internalModelFromProviderModel(match, provider.upstreamId), fetcher });
     }
   }
-  return { candidates, sawAnyId, modelsError: snapshot.lastError !== null };
+  return { candidates, sawModel, modelsError: snapshot.lastError !== null };
 };
 
-// Walk every visible upstream in configured order. Snapshot reads never wait
+// Fisher-Yates ordering is shared by the two independent routing axes:
+// alias targets and the non-empty upstream candidate groups produced for one
+// concrete model. Keeping the calls independent lets each alias target choose
+// its own upstream order without introducing request-scoped routing state.
+const shuffled = <T>(items: readonly T[]): T[] => {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+};
+
+// Walk configured upstreams permitted by Model.Use for this ID. Snapshot reads never wait
 // for upstream model-list I/O; cold and stale rows submit background refresh.
 // Scheduling failures propagate as internal errors rather than being reported
 // as persisted model-list failures for an upstream.
 //
-// `sawAnyId` aggregates the per-upstream signal: true when at least one
-// upstream's catalog carried the inbound id under any kind. The caller
-// uses it to decide whether to retry with a stripped dated suffix (no
-// point retrying if the id matched but only under the wrong kind — the
-// suffix strip cannot change kind).
-export const enumerateRealModelCandidates = (
+// `sawModel` aggregates only permitted catalogs, regardless of kind. Denied
+// entries do not disclose model existence through this signal.
+export const enumerateRealModelCandidates = async (
+  subject: User,
   modelId: string,
   kind: ModelKind,
   providers: readonly GatewayProvider[],
   context: {
     fetcherForUpstream: (upstreamId: string) => Fetcher;
+    randomizeUpstreams: boolean;
     scheduleRefresh: ModelsRefreshScheduler;
   },
-): {
+): Promise<{
   readonly candidates: readonly ModelCandidate[];
-  readonly sawAnyId: boolean;
+  readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
-} => {
-  const { fetcherForUpstream, scheduleRefresh } = context;
+}> => {
+  const { fetcherForUpstream, randomizeUpstreams, scheduleRefresh } = context;
+  const allowed = await checkMany(subject, providers.map(provider => ({
+    target: { kind: 'upstreamModel' as const, upstreamId: provider.upstreamId, model: { kind: 'exact' as const, value: modelId } },
+    requirement: { permission: 'Model.Use' as const },
+  })));
   const failedUpstreams: string[] = [];
-  const candidates: ModelCandidate[] = [];
-  let sawAnyId = false;
-  for (const provider of providers) {
+  const candidateGroups: ModelCandidate[][] = [];
+  let sawModel = false;
+  for (let index = 0; index < providers.length; index++) {
+    if (!allowed[index]) continue;
+    const provider = providers[index]!;
     const result = enumerateOneUpstreamCandidates(provider, modelId, kind, {
       fetcher: fetcherForUpstream(provider.upstreamId),
       scheduleRefresh,
     });
-    candidates.push(...result.candidates);
-    sawAnyId = sawAnyId || result.sawAnyId;
+    if (result.candidates.length > 0) candidateGroups.push(result.candidates);
+    sawModel = sawModel || result.sawModel;
     if (result.modelsError) failedUpstreams.push(provider.name);
   }
-  return { candidates, sawAnyId, failedUpstreams };
+  const orderedGroups = randomizeUpstreams ? shuffled(candidateGroups) : candidateGroups;
+  return { candidates: orderedGroups.flat(), sawModel, failedUpstreams };
 };
 
-// Vendor clients sometimes pin a model id to its release date
-// (`claude-sonnet-4-5-20250929`) even though the gateway's merged catalog
-// only carries the undated alias. When the inbound id matches no catalog
-// entry, strip an 8-digit `-YYYYMMDD` suffix and try once more — failed
-// providers carrying a recorded catalog-refresh error across the two snapshot
-// lookups dedupe into one `failedUpstreams` list.
-const DATED_SUFFIX = /-\d{8}$/;
-
-// Real-catalog resolution with the dated-suffix retry baked in. Used both
-// directly (when we already hold the provider list) and by
-// `enumerateModelCandidates` below, which lists providers and then delegates
-// here — once for each alias target when the inbound id names an alias.
-const resolveRealCandidates = (
-  modelId: string,
-  kind: ModelKind,
-  providers: readonly GatewayProvider[],
-  context: Parameters<typeof enumerateRealModelCandidates>[3],
-): {
-  readonly candidates: readonly ModelCandidate[];
-  readonly sawModel: boolean;
-  readonly failedUpstreams: readonly string[];
-} => {
-  const first = enumerateRealModelCandidates(modelId, kind, providers, context);
-  if (first.candidates.length > 0 || first.sawAnyId || !DATED_SUFFIX.test(modelId)) {
-    return { candidates: first.candidates, sawModel: first.sawAnyId, failedUpstreams: first.failedUpstreams };
-  }
-  const stripped = modelId.replace(DATED_SUFFIX, '');
-  const second = enumerateRealModelCandidates(stripped, kind, providers, context);
-  return {
-    candidates: second.candidates,
-    sawModel: second.sawAnyId,
-    failedUpstreams: [...new Set([...first.failedUpstreams, ...second.failedUpstreams])],
-  };
-};
-
-// Target order for an alias walk: `first-available` yields declaration
-// order; `random` shuffles so the outer walk distributes uniformly across
-// targets. Within a single target's real-catalog walk the per-upstream
-// order is always preserved (registry enumeration order); shuffling
-// applies to the target list, not to a target's candidates.
 const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['targets'][number][] => {
   if (alias.selection === 'first-available') return alias.targets;
-  const shuffled = [...alias.targets];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
+  return shuffled(alias.targets);
 };
 
 // Per-request model resolution. Two-branch chain:
@@ -166,12 +141,10 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
 //   2. Otherwise (no alias match at all) run the real-catalog resolver
 //      directly on the inbound id.
 //
-// The real-catalog resolver walks every visible upstream, filters by kind
-// inside the walk (so wrong-kind entries never become candidates), and
-// retries once with an eight-digit dated suffix stripped when the id
-// matched nothing at all. `sawModel` reports whether the id was known to
-// any upstream regardless of kind, so the caller can distinguish "model
-// missing" (404) from "model wrong kind" (400).
+// The real-catalog resolver applies Model.Use before reading each catalog,
+// then filters by kind. `sawModel` tracks non-disabled addressable matches in
+// permitted catalogs. With no candidates, false keeps hidden/missing IDs at 404;
+// true identifies wrong-kind matches (400).
 //
 // Endpoint-level narrowing — picking the chat target protocol from
 // `model.endpoints`, or checking the specific `openaiImagesEdits` /
@@ -186,10 +159,12 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
 // whose first target matches its own name) resolves to the real model on
 // the first pass; alias names never re-enter the alias layer.
 export const enumerateModelCandidates = async ({
-  upstreamIds, model, kind, scheduler, runtimeLocation,
+  subject, upstreamIds, randomizeUpstreams, model, kind, scheduler, runtimeLocation,
 }: {
+  subject: User;
   // null = unrestricted; empty list = no providers visible.
   upstreamIds: readonly string[] | null;
+  randomizeUpstreams: boolean;
   model: string;
   kind: ModelKind;
   scheduler: BackgroundScheduler;
@@ -202,16 +177,20 @@ export const enumerateModelCandidates = async ({
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const createFetcherForUpstream = await createPerRequestFetcher(runtimeLocation);
-  const providers = await listModelProviders(upstreamIds);
+  const upstreams = await getRepo().upstreams.list();
+  const [createFetcherForUpstream, listedProviders] = await Promise.all([
+    createPerRequestFetcher(runtimeLocation, upstreams),
+    listModelProviders(upstreamIds, upstreams),
+  ]);
   const resolutionContext = {
     fetcherForUpstream: createFetcherForUpstream,
+    randomizeUpstreams,
     scheduleRefresh: createModelsRefreshScheduler(runtimeLocation, scheduler),
   };
 
   const alias = await getRepo().modelAliases.getByName(model);
   if (alias === null) {
-    return resolveRealCandidates(model, kind, providers, resolutionContext);
+    return await enumerateRealModelCandidates(subject, model, kind, listedProviders, resolutionContext);
   }
 
   // Walk every target, tag each returned candidate with the target's rule
@@ -220,12 +199,12 @@ export const enumerateModelCandidates = async ({
   // (model, upstream) stay as distinct entries so the operator can pin the
   // same physical binding under two rule variants.
   const aggregatedFailed = new Set<string>();
-  let sawAny = false;
+  let sawModel = false;
   const flat: ModelCandidate[] = [];
   for (const target of orderAliasTargets(alias)) {
-    const result = resolveRealCandidates(target.target_model_id, kind, providers, resolutionContext);
+    const result = await enumerateRealModelCandidates(subject, target.target_model_id, kind, listedProviders, resolutionContext);
     for (const name of result.failedUpstreams) aggregatedFailed.add(name);
-    if (result.sawModel) sawAny = true;
+    if (result.sawModel) sawModel = true;
     for (const candidate of result.candidates) {
       flat.push({ ...candidate, rules: target.rules });
     }
@@ -236,7 +215,7 @@ export const enumerateModelCandidates = async ({
     && isEqual(candidate.rules, existing.rules));
   return {
     candidates: deduped,
-    sawModel: sawAny,
+    sawModel,
     failedUpstreams: [...aggregatedFailed],
   };
 };

@@ -1,6 +1,6 @@
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
-import { captureExtras, eventFrame, withIndexesChanged, withKeysChanged, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiGenerateContentCandidate, GeminiGenerateContentPart, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
+import { captureExtras, eventFrame, mapKeepingIdentity, withIndexesChanged, withKeysChanged, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiGenerateContentCandidate, GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_KEYS } from '@floway-dev/protocols/gemini-generate-content';
 
 // Gemini generateContent pays one upstream event of TTFT/inter-event latency. Within one event
@@ -30,11 +30,6 @@ export const wrapGeminiGenerateContentAffinityEgress = async function* (
   options: AffinityEgressOptions,
 ): AsyncGenerator<ProtocolFrame<GeminiGenerateContentStreamEvent>> {
   const anchoredCandidates = new Set<number>();
-  // The one event held back, and what the pass that produced it decided about emitting it.
-  // Both used to be recorded against the event object — the verdict in a `WeakSet`, the
-  // rewrites by assignment — which only works while an event can be written in place. Nothing
-  // here is written in place any more, so a pass hands back new events and the verdict travels
-  // beside the one it is about rather than being looked up by identity.
   let pending: PendingEvent | undefined;
   const iterator = frames[Symbol.asyncIterator]();
   let sourceCompleted = false;
@@ -111,22 +106,34 @@ const flushPending = async (
   return pass.current.suppressed ? undefined : pass.current.event;
 };
 
-/** What one relocation hands on: the pair as it now stands, and whether either side was left
- *  with no Parts at all — which is the pair's own statement that the candidate should not be
- *  emitted. This used to be a `WeakSet` of the candidates a relocation emptied; a rebuilt
- *  candidate is a different object, so the verdict is carried rather than looked up. */
+/** A candidate that carries Parts. Only these take part in signature relocation; a candidate
+ *  without content passes through untouched. */
+type CandidateWithParts = GeminiGenerateContentCandidate & {
+  readonly index: number;
+  readonly content: GeminiGenerateContentContent & { parts: GeminiGenerateContentPart[] };
+};
+
+const hasContentParts = (candidate: GeminiGenerateContentCandidate): candidate is CandidateWithParts =>
+  candidate.index !== undefined && candidate.content?.parts !== undefined;
+
+/** ProtoJSON omits a field holding its default value, so a candidate without `index` is
+ *  candidate 0; the window pairs candidates by index, so it is stated explicitly.
+ *  https://protobuf.dev/programming-guides/json/#json-options */
+const withExplicitIndexes = (candidates: readonly GeminiGenerateContentCandidate[]): readonly GeminiGenerateContentCandidate[] =>
+  mapKeepingIdentity(candidates, candidate => candidate.index === undefined ? { ...candidate, index: 0 } : candidate);
+
 interface CandidatePair {
-  readonly current: GeminiGenerateContentCandidate;
-  readonly next: GeminiGenerateContentCandidate | undefined;
+  readonly current: CandidateWithParts;
+  readonly next: CandidateWithParts | undefined;
   readonly currentRemoved: boolean;
   readonly nextRemoved: boolean;
 }
 
 /** A candidate with different Parts, or the same candidate where they did not change. */
 const withParts = (
-  candidate: GeminiGenerateContentCandidate,
+  candidate: CandidateWithParts,
   parts: readonly GeminiGenerateContentPart[],
-): GeminiGenerateContentCandidate =>
+): CandidateWithParts =>
   parts === candidate.content.parts
     ? candidate
     : { ...candidate, content: { ...candidate.content, parts: parts as GeminiGenerateContentPart[] } };
@@ -162,16 +169,18 @@ const passOverEventPair = async (
 
   // The two arrays under construction. Their elements are replaced, never written into: what
   // goes back is whatever the rules built, and an untouched candidate goes back as itself.
-  const builtCurrent = [...(current.candidates ?? [])];
-  const builtNext = nextEvent === undefined ? undefined : [...(nextEvent.candidates ?? [])];
+  const builtCurrent = [...withExplicitIndexes(current.candidates ?? [])];
+  const builtNext = nextEvent === undefined ? undefined : [...withExplicitIndexes(nextEvent.candidates ?? [])];
   const removedCurrent = new Set<number>();
   const removedNext = new Set<number>();
 
   for (let position = 0; position < builtCurrent.length; position += 1) {
-    const nextPosition = builtNext?.findIndex(entry => entry.index === builtCurrent[position].index) ?? -1;
+    const held = builtCurrent[position];
+    if (!hasContentParts(held)) continue;
+    const nextPosition = builtNext?.findIndex(entry => entry.index === held.index && hasContentParts(entry)) ?? -1;
     const relocated = relocateContinuationSignature(relocateSignatureOnlyBackward(relocateSignatureOnlyForward({
-      current: normalizeElementSignatures(builtCurrent[position]),
-      next: nextPosition >= 0 ? normalizeElementSignatures(builtNext![nextPosition]) : undefined,
+      current: normalizeElementSignatures(held),
+      next: nextPosition >= 0 ? normalizeElementSignatures(builtNext![nextPosition] as CandidateWithParts) : undefined,
       currentRemoved: false,
       nextRemoved: false,
     })));
@@ -260,7 +269,7 @@ const passOverEventPair = async (
 
 /** Every signature a logical element carries, collapsed onto that element's first
  *  content-bearing Part, and the signature-only Parts that leaves behind dropped. */
-const normalizeElementSignatures = (candidate: GeminiGenerateContentCandidate): GeminiGenerateContentCandidate => {
+const normalizeElementSignatures = (candidate: CandidateWithParts): CandidateWithParts => {
   const parts = candidate.content.parts;
   const carriedSignature = new Set(parts.flatMap((part, index) => part.thoughtSignature === undefined ? [] : [index]));
   // The groups are index lists read off the Parts as they arrived, and collapsing a signature
@@ -467,25 +476,25 @@ const withoutEventMetadata = (event: GeminiGenerateContentResult): GeminiGenerat
 
 /** The same fold one level down, over a candidate's non-standard keys. */
 const mergedCandidateExtras = (
-  earlier: GeminiGenerateContentCandidate,
-  later: GeminiGenerateContentCandidate,
-  target: GeminiGenerateContentCandidate,
-): GeminiGenerateContentCandidate => {
+  earlier: CandidateWithParts,
+  later: CandidateWithParts,
+  target: CandidateWithParts,
+): CandidateWithParts => {
   const extras: Record<string, unknown> = {};
   captureExtras(earlier as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, extras);
   captureExtras(later as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, extras);
   const known = Object.fromEntries(
     Object.entries(target).filter(([key]) => GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS.has(key as keyof GeminiGenerateContentCandidate)),
   );
-  return { ...known, ...extras } as GeminiGenerateContentCandidate;
+  return { ...known, ...extras } as CandidateWithParts;
 };
 
 /** `next` had everything taken out of it, so what it was saying about the turn is said by
  *  `current` instead. */
 const withCandidateMetadataFrom = (
-  current: GeminiGenerateContentCandidate,
-  next: GeminiGenerateContentCandidate,
-): GeminiGenerateContentCandidate => {
+  current: CandidateWithParts,
+  next: CandidateWithParts,
+): CandidateWithParts => {
   const merged = mergedCandidateExtras(current, next, current);
   return withKeysChanged(merged, {
     ...(next.content.role !== undefined ? { content: { ...merged.content, role: next.content.role } } : {}),
@@ -495,9 +504,9 @@ const withCandidateMetadataFrom = (
 
 /** The same, in the other direction: `current` was emptied into `next`. */
 const withForwardedCandidateMetadata = (
-  current: GeminiGenerateContentCandidate,
-  next: GeminiGenerateContentCandidate,
-): GeminiGenerateContentCandidate => {
+  current: CandidateWithParts,
+  next: CandidateWithParts,
+): CandidateWithParts => {
   const merged = mergedCandidateExtras(current, next, next);
   return next.content.role === undefined && current.content.role !== undefined
     ? withKeysChanged(merged, { content: { ...merged.content, role: current.content.role } })

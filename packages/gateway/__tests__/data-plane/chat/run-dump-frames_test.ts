@@ -72,8 +72,8 @@ const framesRecordedBy = async (turn: (apiKey: string) => Promise<Response>): Pr
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
 
   const response = await turn(apiKey.key);
-  assertEquals(response.status, 200);
-  await response.text();
+  const body = await response.text();
+  assertEquals(response.status, 200, body);
 
   await flushAsyncWork();
   await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
@@ -164,8 +164,8 @@ const compactionTurn = async (apiKey: string): Promise<Response> =>
     // Copilot has no compaction endpoint of its own: it replays the protocol over `/responses`
     // with the trigger appended and `stream: false`, so the answer here is one JSON body.
     async request => {
-      const body = await request.json() as { input: unknown[] };
-      return Array.isArray(body.input) && (body.input[0] as { role?: string })?.role === 'system' ? sseOpenAIResponsesResponse({
+      const body = await request.json() as { input: unknown[]; stream: boolean };
+      return body.stream ? sseOpenAIResponsesResponse({
         id: 'replay', object: 'response', model: 'gpt-compact-frames', status: 'completed',
         output: [{ type: 'message', id: 'replay_msg', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: HISTORY, annotations: [] }] }],
         error: null, incomplete_details: null, usage: { input_tokens: 2, output_tokens: 1, total_tokens: 3 },

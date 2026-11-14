@@ -3,6 +3,7 @@ import { assertClaudeCodeUpstreamRecord } from './config.ts';
 import { CLAUDE_CODE_DEFAULT_FLAGS } from './defaults.ts';
 import { buildClaudeCodeCatalog, fetchClaudeCodeModelsList } from './models.ts';
 import { createClaudeCodePipelines } from './pipelines.ts';
+import { runClaudeCodeScheduledTask } from './scheduled.ts';
 import { assertClaudeCodeUpstreamState } from './state.ts';
 import {
   getProviderRepo,
@@ -35,6 +36,7 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
   const enabledFlags = resolveEffectiveFlags([CLAUDE_CODE_DEFAULT_FLAGS, record.flagOverrides]);
 
   const instance: ProviderInstance = {
+    runScheduledTask: options => runClaudeCodeScheduledTask(record, options),
     // Catalog refresh mints an access token and hits /v1/models on every
     // dispatcher poll. `ensureClaudeCodeAccessToken` flips the row to
     // `refresh_failed` and throws `ClaudeCodeOAuthSessionTerminatedError`

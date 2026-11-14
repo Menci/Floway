@@ -6,7 +6,7 @@ export const PUBLIC_DATA_PLANE_ROUTES = {
   anthropicMessages: { method: 'POST', paths: ['/v1/messages', '/messages'] },
   anthropicMessagesCountTokens: { method: 'POST', paths: ['/v1/messages/count_tokens', '/messages/count_tokens'] },
   openaiResponsesWebSocket: { method: 'GET', paths: ['/v1/responses', '/responses'] },
-  geminiGenerateContentAction: { method: 'POST', paths: ['/v1beta/models/:modelAction{.+}'] },
+  geminiGenerateContentAction: { method: 'POST', paths: ['/v1/models/:modelAction{.+}', '/v1beta/models/:modelAction{.+}'] },
   codexAlphaSearch: { method: 'POST', paths: ['/azure-api.codex/alpha/search'] },
   codexOpenAIResponses: { method: 'POST', paths: ['/azure-api.codex/responses'] },
   codexOpenAIResponsesCompact: { method: 'POST', paths: ['/azure-api.codex/responses/compact'] },
@@ -14,9 +14,8 @@ export const PUBLIC_DATA_PLANE_ROUTES = {
   codexOpenAIImagesGenerations: { method: 'POST', paths: ['/azure-api.codex/images/generations'] },
   codexOpenAIImagesEdits: { method: 'POST', paths: ['/azure-api.codex/images/edits'] },
   codexModels: { method: 'GET', paths: ['/azure-api.codex/models'] },
-  models: { method: 'GET', paths: ['/v1/models', '/models'] },
-  geminiModels: { method: 'GET', paths: ['/v1beta/models'] },
-  geminiModel: { method: 'GET', paths: ['/v1beta/models/:modelId{.+}'] },
+  models: { method: 'GET', paths: ['/v1/models', '/models', '/v1beta/models'] },
+  geminiModel: { method: 'GET', paths: ['/v1beta/models/:modelId{.+}', '/v1/models/:modelId{.+}'] },
   openaiEmbeddings: { method: 'POST', paths: ['/v1/embeddings', '/embeddings'] },
   openaiCompletions: { method: 'POST', paths: ['/v1/completions', '/completions'] },
   openaiImagesGenerations: { method: 'POST', paths: ['/v1/images/generations', '/images/generations'] },
@@ -26,6 +25,8 @@ export const PUBLIC_DATA_PLANE_ROUTES = {
   cohereV2Rerank: { method: 'POST', paths: ['/v2/rerank'] },
   jinaV1Rerank: { method: 'POST', paths: ['/jina/v1/rerank'] },
   voyageV1Rerank: { method: 'POST', paths: ['/voyage/v1/rerank'] },
+  typesafeSystemOne: { method: 'POST', paths: ['/v1/systemone'] },
+  openAiDecisions: { method: 'POST', paths: ['/v1/decisions'] },
 } as const;
 
 export type PublicDataPlaneRouteId = keyof typeof PUBLIC_DATA_PLANE_ROUTES;

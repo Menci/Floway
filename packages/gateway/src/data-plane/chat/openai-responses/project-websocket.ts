@@ -1,12 +1,12 @@
+import { internalStreamFailure } from './errors.ts';
 import type { Fields, OpenAIResponsesServeEntry, OpenAIResponsesServeExit } from './facts.ts';
+import type { OpenAIResponsesWebSocketInterruption, OpenAIResponsesWebSocketServices } from './interrupt-websocket.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../shared/sse.ts';
-import type { ChatServices } from '../services.ts';
 import { bindClientRelease, withClientVerdict } from '../shared/client-stream.ts';
 import { recordStream, streamReferenceOf } from '@floway-dev/dump';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, isOpenAIResponsesTerminalEvent, type ClientOpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import { toInternalDebugError } from '@floway-dev/provider';
 
 // Our implementor slug prefixes the keep-alive's wire type; the spec reserves
 // every unprefixed type for itself, gives `acme:trace_event` as the form, and
@@ -100,7 +100,7 @@ export const projectOpenAIResponsesWebSocket = defineStage<
   Pick<OpenAIResponsesWebSocketEntry, 'ingress.chat.openaiResponses.eventId'>,
   Fields<'response.chat.openaiResponses.rendered' | 'response.chat.openaiResponses.streamedUsage' | 'response.http.status' | 'response.chat.clientFrames'> & Pick<OpenAIResponsesWebSocketEntry, 'ingress.chat.openaiResponses.eventId'>,
   Pick<OpenAIResponsesWebSocketExit, 'response.chat.openaiResponses.websocket'> & Fields<'response.chat.openaiResponses.streamedUsage' | 'response.chat.clientFrames'>,
-  ChatServices
+  OpenAIResponsesWebSocketServices
 >({
   name: 'projectOpenAIResponsesWebSocket',
   through: {
@@ -115,10 +115,14 @@ export const projectOpenAIResponsesWebSocket = defineStage<
     const back = await next(facts);
     const { 'response.chat.openaiResponses.rendered': rendered, ...rest } = back;
     const eventId = back['ingress.chat.openaiResponses.eventId'];
+    const turn = use.openaiResponsesWebSocketTurn;
+    // An interrupt stops the upstream through the same abort controller a closing socket does,
+    // and only the close ends what the client is sent.
+    const cancelled = (): boolean => use.gateway.abortSignal?.aborted === true && turn.interruption === undefined;
     let started = false;
     const verdict = Promise.withResolvers<boolean>();
-    const packet = (event: Record<string, unknown>, recorded = true): OpenAIResponsesWebSocketPacket => {
-      const payload = eventId === undefined ? event : { ...event, event_id: eventId };
+    const packet = (event: Record<string, unknown>, recorded = true, packetEventId = eventId): OpenAIResponsesWebSocketPacket => {
+      const payload = packetEventId === undefined ? event : { ...event, event_id: packetEventId };
       const text = JSON.stringify(payload);
       return { text, frame: recorded ? eventFrame(payload) : null };
     };
@@ -134,16 +138,28 @@ export const projectOpenAIResponsesWebSocket = defineStage<
           const iterator = (rendered as AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>)[Symbol.asyncIterator]();
           const sequence = createDownstreamSequence();
           let pendingNext = pendingWsFrameResult(iterator.next());
+          // Raced ahead of the frame: an interrupt arriving while a frame is also ready is
+          // acknowledged before anything the interrupt itself caused can go out.
+          let pendingInterrupt: Promise<WsFrameRaceResult> = turn.interrupted.then(interruption => ({ type: 'interrupt', interruption }));
           let terminalEvent: ClientOpenAIResponsesStreamEvent | undefined;
           let streamed = false;
           let exhausted = false;
           try {
             while (true) {
-              if (use.gateway.abortSignal?.aborted) return;
-              const next = await nextFrameOrKeepAlive(pendingNext);
+              if (cancelled()) return;
+              const next = await nextFrameOrKeepAlive(pendingInterrupt, pendingNext);
               if (next.type === 'keep-alive') {
                 if (!streamed) continue;
                 yield packet({ type: KEEP_ALIVE_EVENT_TYPE, sequence_number: sequence.take() }, false);
+                continue;
+              }
+              if (next.type === 'interrupt') {
+                pendingInterrupt = new Promise(() => {});
+                yield packet({
+                  type: 'response.interrupt.accepted',
+                  response_id: next.interruption.responseId,
+                  sequence_number: sequence.take(),
+                }, true, next.interruption.eventId);
                 continue;
               }
               if (next.type === 'next-error') throw next.error;
@@ -156,20 +172,24 @@ export const projectOpenAIResponsesWebSocket = defineStage<
               // A terminal follows committed item/snapshot writes. Hold it until source
               // exhaustion, so a follow-up starts only after all work behind it completed.
               if (isOpenAIResponsesTerminalEvent(event)) { terminalEvent = event; continue; }
+              if (event.type === 'response.created') turn.announce(event.response.id);
               yield packet(sequence.renumber(event) as unknown as Record<string, unknown>);
               streamed = true;
             }
           } finally {
             if (!exhausted) await iterator.return?.();
           }
-          if (terminalEvent === undefined) throw new Error(OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE);
-          yield packet(sequence.renumber(terminalEvent) as unknown as Record<string, unknown>);
+          // A stream that failed through its own `error` event has already told the client so,
+          // and has no terminal event to follow it.
+          if (terminalEvent === undefined && !failed) throw new Error(OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE);
+          if (terminalEvent !== undefined) yield packet(sequence.renumber(terminalEvent) as unknown as Record<string, unknown>);
+          turn.end();
         }
         completed = true;
       } catch (error) {
         failed = true;
         use.gateway.dump?.failed(error);
-        if (!use.gateway.abortSignal?.aborted) yield packet({ type: 'error', status: 500, error: { ...toInternalDebugError(error), code: 'internal_error' } });
+        if (!cancelled()) yield packet({ type: 'error', status: 500, error: openaiResponsesWebSocketInternalError(error) });
         completed = true;
       } finally {
         verdict.resolve(failed || !completed);
@@ -190,9 +210,17 @@ export const projectOpenAIResponsesWebSocket = defineStage<
   },
 });
 
+/** A gateway fault as the `error` envelope's object, with its diagnostics under the
+ *  provider-extension field. */
+export const openaiResponsesWebSocketInternalError = (error: unknown): Record<string, unknown> => {
+  const failure = internalStreamFailure(error);
+  return { type: failure.code, ...failure };
+};
+
 type WsFrameRaceResult =
   | { type: 'frame'; result: IteratorResult<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> }
   | { type: 'next-error'; error: unknown }
+  | { type: 'interrupt'; interruption: OpenAIResponsesWebSocketInterruption }
   | { type: 'keep-alive' };
 
 const pendingWsFrameResult = (pendingNext: Promise<IteratorResult<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>>): Promise<WsFrameRaceResult> =>
@@ -209,13 +237,13 @@ const pendingWsFrameResult = (pendingNext: Promise<IteratorResult<ProtocolFrame<
 // is ~70 bytes, and the earliest unprotected idle teardown seen on that same
 // path was 215.8 s, so an interval chosen for economy would spend a real
 // margin against a stochastic teardown to save nothing.
-const nextFrameOrKeepAlive = async (pendingFrame: Promise<WsFrameRaceResult>): Promise<WsFrameRaceResult> => {
+const nextFrameOrKeepAlive = async (pendingInterrupt: Promise<WsFrameRaceResult>, pendingFrame: Promise<WsFrameRaceResult>): Promise<WsFrameRaceResult> => {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const keepAlive = new Promise<WsFrameRaceResult>(resolve => {
     timeoutId = setTimeout(() => resolve({ type: 'keep-alive' }), DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
   });
   try {
-    return await Promise.race([pendingFrame, keepAlive]);
+    return await Promise.race([pendingInterrupt, pendingFrame, keepAlive]);
   } finally {
     if (timeoutId !== undefined) clearTimeout(timeoutId);
   }

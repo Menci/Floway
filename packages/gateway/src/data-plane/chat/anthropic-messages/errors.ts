@@ -1,4 +1,6 @@
+import { inputErrorFields, type InputErrorDetails } from '../shared/errors.ts';
 import { generateAnthropicId } from '@floway-dev/protocols/anthropic-messages';
+import { internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
 
 // Anthropic's own error envelope. The byte shape matches Anthropic-direct:
 // `{type:'error', error:{type, message}, request_id}` with `request_id` at the
@@ -26,4 +28,21 @@ const anthropicErrorTypeForStatus = (status: number): string => {
   case 529: return 'overloaded_error';
   default: return status >= 500 ? 'api_error' : 'invalid_request_error';
   }
+};
+
+/** A gateway fault in this protocol's envelope, with its diagnostics under the
+ *  provider-extension field. A stream that fails carries the same object as its `error` event. */
+export const internalAnthropicMessagesError = (error: unknown) => {
+  const debug = toInternalDebugError(error, 'anthropicMessages');
+  return { type: 'error' as const, error: { type: debug.type, message: debug.message, provider_specific_fields: internalDebugErrorFields(debug) } };
+};
+
+/** Caller input the selected target cannot carry, naming the field at fault. */
+export const anthropicMessagesInputError = (error: InputErrorDetails): Record<string, unknown> => {
+  const fields = inputErrorFields(error);
+  return {
+    type: 'error',
+    error: { type: 'invalid_request_error', message: error.message, ...(fields === undefined ? {} : { provider_specific_fields: fields }) },
+    request_id: generateAnthropicId('req'),
+  };
 };

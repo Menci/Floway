@@ -1,5 +1,5 @@
 import { completeUsage } from './response-resource.ts';
-import type { ClientOpenAIResponsesCompaction, OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
+import type { ClientOpenAIResponsesCompaction, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 
 // `Usage` requires the three totals, and this resource's slot has no `null`
 // alternative, so an upstream that reported no token counts — `usage` absent,
@@ -33,7 +33,7 @@ const missingUsage = (): never => {
 // dropping a field a client may already read is a user-visible removal with
 // nothing to gain.
 export const completeOpenAIResponsesCompaction = (
-  upstream: OpenAIResponsesResult,
+  upstream: OpenAIResponsesResultEx,
   createdAt: number,
 ): ClientOpenAIResponsesCompaction => ({
   ...upstream,

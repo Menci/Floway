@@ -1,19 +1,20 @@
 import type { AzureUpstreamConfig } from '../config.ts';
-import { azureAnthropicBaseUrl, azureOpenAiV1BaseUrl } from '../endpoint.ts';
+import { azureAnthropicBaseUrl, azureOpenAiV1BaseUrl, azureResourceRootUrl } from '../endpoint.ts';
 import { type HttpRequestFacts } from '@floway-dev/http/pipeline';
 import { multipartBody, type HttpBody, type HttpBodyEncoding } from '@floway-dev/http/request-content';
 import { defineStage, move, secret } from '@floway-dev/pipeline';
+import { DEFAULT_DECISION_PATHS, serializeDecisionRequest } from '@floway-dev/protocols/decision';
 import { toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { joinBaseAndPath, mergeHttpHeaders, prepareOpenAIImagesEditsBody, withHttpContentType, type ProviderOperationPayloads, type ProviderRequest, type ProviderResponse, type ProviderServices } from '@floway-dev/provider';
 
-type AzureOperation = 'openaiChatCompletions' | 'openaiResponses' | 'openaiResponsesCompact' | 'anthropicMessages' | 'anthropicMessagesCountTokens' | 'openaiCompletions' | 'openaiEmbeddings' | 'openaiImagesGenerations' | 'openaiImagesEdits' | 'openaiAudioTranscriptions';
+type AzureOperation = 'openaiChatCompletions' | 'openaiResponses' | 'openaiResponsesCompact' | 'anthropicMessages' | 'anthropicMessagesCountTokens' | 'openaiCompletions' | 'openaiEmbeddings' | 'openaiImagesGenerations' | 'openaiImagesEdits' | 'openaiAudioTranscriptions' | 'decision';
 
 interface AzureHttpFacts extends HttpRequestFacts {
   'request.provider.modelKey': string;
   'request.azure.deployment': string;
 }
 
-const PATHS: Record<Exclude<AzureOperation, 'openaiAudioTranscriptions'>, string> = {
+const PATHS: Record<Exclude<AzureOperation, 'openaiAudioTranscriptions' | 'decision'>, string> = {
   openaiChatCompletions: '/chat/completions',
   openaiResponses: '/responses',
   openaiResponsesCompact: '/responses/compact',
@@ -27,7 +28,7 @@ const PATHS: Record<Exclude<AzureOperation, 'openaiAudioTranscriptions'>, string
 
 export const prepareAzureRequest = <O extends AzureOperation>(config: AzureUpstreamConfig, operation: O) => {
   const prepare = defineStage<ProviderRequest<ProviderOperationPayloads[O]> & { 'request.provider.anthropicBeta'?: readonly string[]; 'request.provider.responsesAction': 'generate' | 'compact' }, AzureHttpFacts, ProviderResponse, ProviderResponse, ProviderServices>({
-    name: `prepareAzure${operation.replace(/^openai/, 'OpenAI').replace(/^alpha/, 'Alpha').replace(/^rerank/, 'Rerank')}`,
+    name: `prepareAzure${operation.replace(/^openai/, 'OpenAI').replace(/^alpha/, 'Alpha').replace(/^rerank/, 'Rerank').replace(/^decision/, 'Decision')}`,
     through: {
       request: {
         needs: [...(operation === 'openaiResponses' || operation === 'openaiResponsesCompact' ? ['request.provider.responsesAction' as const] : []), 'request.provider.model', 'request.provider.payload', 'request.http.callId', 'request.http.headers', ...(operation === 'anthropicMessages' || operation === 'anthropicMessagesCountTokens' ? ['request.provider.anthropicBeta' as const] : [])],
@@ -52,11 +53,18 @@ export const prepareAzureRequest = <O extends AzureOperation>(config: AzureUpstr
         url.hash = '';
         // https://github.com/Azure/azure-rest-api-specs/blob/928047803788f7377fa003a26ba2bdc2e0fcccc0/specification/cognitiveservices/OpenAI.Inference/routes/audio_transcription.tsp#L19-L49
         url.searchParams.set('api-version', '2025-04-01-preview');
+      } else if (operation === 'decision') {
+        const target = model.decisionTarget;
+        if (target === undefined) throw new Error(`Decision model ${model.id} has no outbound target`);
+        // The decision contract is resource-scoped, so the path is absolute from the resource
+        // host rather than relative to the OpenAI v1 base.
+        url = new URL(joinBaseAndPath(azureResourceRootUrl(config.endpoint), target.path ?? DEFAULT_DECISION_PATHS[target.protocol]));
+        body = serializeDecisionRequest(target.protocol, deployment, payload as ProviderOperationPayloads['decision']);
       } else {
         const baseUrl = anthropic ? azureAnthropicBaseUrl(config.endpoint) : azureOpenAiV1BaseUrl(config.endpoint);
         const path = operation === 'openaiResponses' || operation === 'openaiResponsesCompact'
           ? PATHS[facts['request.provider.responsesAction'] === 'compact' ? 'openaiResponsesCompact' : 'openaiResponses']
-          : PATHS[operation as Exclude<AzureOperation, 'openaiAudioTranscriptions'>];
+          : PATHS[operation as Exclude<AzureOperation, 'openaiAudioTranscriptions' | 'decision'>];
         url = new URL(joinBaseAndPath(baseUrl, path));
         if (operation === 'openaiImagesEdits') {
           const prepared = await prepareOpenAIImagesEditsBody(payload as ProviderOperationPayloads['openaiImagesEdits'], deployment);

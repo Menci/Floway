@@ -2,9 +2,9 @@ import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { UsageOverviewGroupBy } from '../../repo/types.ts';
 import type { tokenUsageOverviewQuery } from '../schemas.ts';
-import { createTelemetryBucket } from '../shared/telemetry-bucket.ts';
-import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
+import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata, telemetryUpstreamMetadata } from '../shared/telemetry-overview.ts';
 import type { TokenUsageOverviewResponse } from '../usage-types.ts';
+import { createTelemetryBucket, type TelemetryBucketGranularity, usageUpstreamFromDimensionValue } from '@floway-dev/protocols/common';
 
 type Ctx = CtxWithQuery<typeof tokenUsageOverviewQuery>;
 
@@ -19,7 +19,7 @@ interface UsageOverviewParams {
   start: string;
   end: string;
   groupBy: UsageOverviewGroupBy;
-  bucket: 'hour' | '4h' | '8h' | 'day' | 'all';
+  bucket: TelemetryBucketGranularity;
   timeZone?: string;
   timezoneOffsetMinutes: number;
   filters: UsageFilters;
@@ -52,12 +52,14 @@ export const tokenUsageOverview = async (c: Ctx) => {
   const { start, end, groupBy, bucket, timezoneOffsetMinutes, filters } = params.value;
   const repo = getRepo();
   const identity = await loadTelemetryOverviewIdentity(c);
-  const identityError = telemetryIdentityError(identity, groupBy, filters.userId, filters.keyId);
+  const identityError = telemetryIdentityError(identity, filters.keyId);
   if (identityError !== null) return c.json({ error: identityError.error }, identityError.status);
 
   const overview = await repo.usage.queryOverview({
     actorUserId: identity.actor.id,
     isAdmin: identity.actor.isAdmin,
+    visibleUserIds: [...identity.visibleUserIds],
+    visibleUpstreams: [...identity.visibleUpstreams],
     start,
     end,
     groupBy,
@@ -69,14 +71,24 @@ export const tokenUsageOverview = async (c: Ctx) => {
     },
     bucketForHour: createTelemetryBucket({
       bucket,
+      start,
       timeZone: params.value.timeZone,
       timezoneOffsetMinutes,
     }),
   });
-  const metadata = telemetryIdentityMetadata(identity);
+  const metadata = telemetryIdentityMetadata(identity, overview.dimensionValues.userIds);
+  const revealedUpstreamIds = overview.dimensionValues.upstreams.flatMap(value => {
+    const upstreamId = usageUpstreamFromDimensionValue(value);
+    return upstreamId === null ? [] : [upstreamId];
+  });
 
   return c.json({
     ...overview,
     ...metadata,
+    // The same user set the response already names: User.Audit targets plus
+    // users revealed by visible upstream rows. The dashboard uses this to
+    // choose the search-usage view, so it must not disagree with `users`.
+    auditableUserIds: metadata.users.map(user => user.id),
+    upstreams: telemetryUpstreamMetadata(identity, revealedUpstreamIds),
   } satisfies TokenUsageOverviewResponse);
 };

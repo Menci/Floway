@@ -17,7 +17,7 @@ const supportsOneMillionContext = (model: CopilotRawModel): boolean => {
   // Trust id-level intent first: Copilot has been observed to report
   // claude-opus-4.7-1m-internal with max_context_window_tokens=200000 even
   // though the variant exists specifically for the 1M-context surface. The
-  // explicit-number check used to short-circuit and hide that signal.
+  // id-level intent takes precedence over the reported limit.
   if (/-1m(?:-|$)/.test(model.id)) return true;
 
   const limits = model.capabilities?.limits;

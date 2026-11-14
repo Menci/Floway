@@ -1,4 +1,4 @@
-import { userToAdminWire } from './wire.ts';
+import { userToAdminWire, userToDirectoryWire } from './wire.ts';
 import { notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type AuthedContext, sessionIdFromContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
@@ -8,37 +8,58 @@ import type { ApiKey, User } from '../../repo/types.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import { generateServerSecret } from '../../shared/server-secret.ts';
-import type { changeOwnPasswordBody, createUserBody, updateUserBody } from '../schemas.ts';
-import { loadKnownUpstreamIds, unknownUpstreamIdsError } from '../shared/upstream-ids.ts';
+import type { changeOwnPasswordBody, createUserBody, updateOwnPreferencesBody, updateUserBody } from '../schemas.ts';
+import { defaultUserPreferences } from '@floway-dev/protocols/common';
 
 const parseUserId = (raw: string): number | null => {
   const n = Number(raw);
   return Number.isInteger(n) && n >= 1 ? n : null;
 };
 
+const unknownGroupsError = async (ids: readonly number[] | undefined): Promise<string | null> => {
+  if (ids === undefined) return null;
+  const known = new Set((await getRepo().groups.list()).map(group => group.id));
+  const missing = ids.filter(id => !known.has(id));
+  return missing.length === 0 ? null : `Unknown group ids: ${missing.join(', ')}`;
+};
+
 export const listUsers = async (c: AuthedContext) => {
-  const [users, knownUpstreamIds] = await Promise.all([getRepo().users.list(), loadKnownUpstreamIds()]);
-  return c.json(users.map(user => userToAdminWire(user, knownUpstreamIds)));
+  const repo = getRepo();
+  const users = await repo.users.list();
+  const [groupIdsByUser, preferenceRows] = await Promise.all([
+    repo.groups.listIdsByUserIds(users.map(user => user.id)),
+    repo.userPreferences.listAll(),
+  ]);
+  const preferencesByUser = new Map(preferenceRows.map(row => [row.userId, row.preferences]));
+  return c.json(users.map(user => userToAdminWire(user, groupIdsByUser.get(user.id)!, preferencesByUser.get(user.id) ?? defaultUserPreferences)));
+};
+
+export const getUserDirectory = async (c: AuthedContext) => {
+  const repo = getRepo();
+  const [directory, preferenceRows] = await Promise.all([repo.readUserDirectory(), repo.userPreferences.listAll()]);
+  const preferencesByUser = new Map(preferenceRows.map(row => [row.userId, row.preferences]));
+  const groupIdsByUser = new Map(directory.users.map(user => [user.id, [] as number[]]));
+  for (const membership of directory.memberships) groupIdsByUser.get(membership.userId)!.push(membership.groupId);
+  return c.json({
+    users: directory.users.map(user => userToDirectoryWire(user, preferencesByUser.get(user.id) ?? defaultUserPreferences)),
+    groups: directory.groups,
+    memberships: directory.memberships,
+  });
 };
 
 export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   const body = c.req.valid('json');
   const repo = getRepo();
+  const groupError = await unknownGroupsError(body.groupIds);
+  if (groupError) return c.json({ error: groupError }, 400);
 
   if (await repo.users.findByUsername(body.username)) {
     return c.json({ error: 'That username is already taken (usernames are case-insensitive).' }, 400);
   }
-  const knownUpstreamIds = await loadKnownUpstreamIds();
-  if (body.upstreamIds !== undefined) {
-    const upstreamErr = unknownUpstreamIdsError(body.upstreamIds, knownUpstreamIds);
-    if (upstreamErr) return c.json({ error: upstreamErr }, 400);
-  }
-
   const user = await repo.users.createNewUser({
     username: body.username,
     passwordHash: await hashPassword(body.password),
     isAdmin: body.isAdmin ?? false,
-    upstreamIds: body.upstreamIds ?? null,
     createdAt: new Date().toISOString(),
     deletedAt: null,
   });
@@ -51,13 +72,25 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
     serverSecret: generateServerSecret(),
     createdAt: new Date().toISOString(),
     upstreamIds: null,
+    randomizeUpstreams: false,
     deletedAt: null,
     dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: 0,
   };
-  await repo.apiKeys.save(defaultKey);
+  await Promise.all([
+    repo.apiKeys.save(defaultKey),
+    repo.accessRecords.save({
+      principal: { kind: 'user', id: user.id },
+      scope: { kind: 'upstreams' },
+      sortOrder: 0,
+      values: { 'Model.Use': true },
+    }),
+  ]);
+  if (body.groupIds !== undefined) await repo.groups.replaceUserGroups(user.id, body.groupIds);
 
-  return c.json({ user: userToAdminWire(user, knownUpstreamIds) }, 201);
+  return c.json({
+    user: userToAdminWire(user, await repo.groups.listIdsByUserId(user.id), await repo.userPreferences.get(user.id)),
+  }, 201);
 };
 
 export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
@@ -69,6 +102,8 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
 
   const existing = await repo.users.getById(id);
   if (!existing) return c.json({ error: 'user not found' }, 404);
+  const groupError = await unknownGroupsError(body.groupIds);
+  if (groupError) return c.json({ error: groupError }, 400);
 
   if (id === SEED_ADMIN_USER_ID && body.isAdmin === false) return c.json({ error: 'user 1 cannot be demoted' }, 400);
   if (id === actorId && body.isAdmin === false) {
@@ -78,19 +113,12 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     const dup = await repo.users.findByUsername(body.username);
     if (dup && dup.id !== id) return c.json({ error: 'username taken' }, 400);
   }
-  const knownUpstreamIds = await loadKnownUpstreamIds();
-  if (body.upstreamIds !== undefined) {
-    const err = unknownUpstreamIdsError(body.upstreamIds, knownUpstreamIds);
-    if (err) return c.json({ error: err }, 400);
-  }
-
   const overrides: Partial<User> = {};
   if (body.username !== undefined) overrides.username = body.username;
   if (body.password !== undefined) overrides.passwordHash = await hashPassword(body.password);
   if (body.isAdmin !== undefined) overrides.isAdmin = body.isAdmin;
-  if (body.upstreamIds !== undefined) overrides.upstreamIds = body.upstreamIds;
   const next: User = { ...existing, ...overrides };
-  await repo.users.save(next);
+  await repo.users.save(next, body.groupIds);
 
   if (body.password !== undefined) {
     const sessionId = sessionIdFromContext(c);
@@ -98,7 +126,7 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     else await repo.sessions.deleteByUserId(id);
   }
 
-  return c.json(userToAdminWire(next, knownUpstreamIds));
+  return c.json(userToAdminWire(next, await repo.groups.listIdsByUserId(id), await repo.userPreferences.get(id)));
 };
 
 export const deleteUser = async (c: AuthedContext) => {
@@ -119,9 +147,28 @@ export const deleteUser = async (c: AuthedContext) => {
 
   await repo.apiKeys.softDeleteByUserId(id);
   await repo.sessions.deleteByUserId(id);
+  await repo.groups.deleteMembershipsByUserId(id);
+  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id });
   const ok = await repo.users.softDelete(id);
   if (!ok) return c.json({ error: 'user not found' }, 404);
   return c.json({ ok: true });
+};
+
+export const updateOwnPreferences = async (c: CtxWithJson<typeof updateOwnPreferencesBody>) => {
+  const sessionId = sessionIdFromContext(c);
+  if (!sessionId) {
+    return c.json({ error: 'Preferences require a logged-in dashboard session' }, 401);
+  }
+  const userId = userFromContext(c).id;
+  const repo = getRepo();
+  const current = await repo.userPreferences.get(userId);
+  const body = c.req.valid('json');
+  const next = {
+    quotaDisplay: body.quotaDisplay ?? current.quotaDisplay,
+    language: body.language === undefined ? current.language : body.language,
+  };
+  await repo.userPreferences.save(userId, next);
+  return c.json({ preferences: next });
 };
 
 export const changeOwnPassword = async (c: CtxWithJson<typeof changeOwnPasswordBody>) => {

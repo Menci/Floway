@@ -31,6 +31,7 @@ const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
     kind: 'azure',
     name: 'Azure Resource',
     enabled: true,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 0,
     createdAt: '2026-05-21T00:00:00.000Z',
     updatedAt: '2026-05-21T00:00:00.000Z',
@@ -435,6 +436,7 @@ test('createAzureProvider exposes image models and routes generations with api-v
     kind: 'azure',
     name: 'azure-images',
     enabled: true,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 0,
     createdAt: '2026-05-25T00:00:00Z',
     updatedAt: '2026-05-25T00:00:00Z',
@@ -478,12 +480,13 @@ test('createAzureProvider exposes image models and routes generations with api-v
   assertEquals(observedBody?.prompt, 'hello');
 });
 
-test('createAzureProvider callOpenAIImagesEdits posts multipart with model replaced by upstream model id and api-version=preview', async () => {
+test('createAzureProvider openaiImagesEdits pipeline posts multipart with model replaced by upstream model id and api-version=preview', async () => {
   const record: UpstreamRecord = {
     id: 'az-image',
     kind: 'azure',
     name: 'azure-images',
     enabled: true,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 0,
     createdAt: '2026-05-25T00:00:00Z',
     updatedAt: '2026-05-25T00:00:00Z',
@@ -531,7 +534,7 @@ test('createAzureProvider callOpenAIImagesEdits posts multipart with model repla
   assertEquals(observedForm?.get('prompt'), 'replace sky');
 });
 
-test('createAzureProvider callOpenAIAudioTranscriptions selects the deployment in the URL', async () => {
+test('createAzureProvider openaiAudioTranscriptions pipeline selects the deployment in the URL', async () => {
   const record = azureRecord({
     config: {
       endpoint: 'https://example.openai.azure.com',
@@ -565,7 +568,7 @@ test('createAzureProvider callOpenAIAudioTranscriptions selects the deployment i
   assertEquals(observedForm?.get('response_format'), 'vtt');
 });
 
-test('createAzureProvider callOpenAIAudioTranscriptions reduces a Foundry endpoint to the deployment route', async () => {
+test('createAzureProvider openaiAudioTranscriptions pipeline reduces a Foundry endpoint to the deployment route', async () => {
   const record = azureRecord({
     config: {
       endpoint: 'https://example.services.ai.azure.com/api/projects/prod',

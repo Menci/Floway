@@ -1,6 +1,7 @@
 import { wrapOpenAIResponsesClientEgress } from './client-output.ts';
-import { internalErrorEnvelope } from './errors.ts';
+import { internalErrorEnvelope, internalStreamFailure, openaiResponsesErrorHttpStatus } from './errors.ts';
 import { OPENAI_RESPONSES_STREAMED_USAGE, type OpenAIResponsesStreamFraming, type Fields } from './facts.ts';
+import { OPENAI_RESPONSES_REASONING_INCLUDED_HEADER, OPENAI_RESPONSES_REASONING_INCLUDED_VALUE } from './response-headers.ts';
 import { isFailure, renderFailure, mintedErrorEnvelope } from '../../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
@@ -8,8 +9,7 @@ import { bindClientRelease, collectClientFrames, framedClientStream, withClientV
 import { recordStream } from '@floway-dev/dump';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectOpenAIResponsesProtocolEventsToResult, openaiResponsesProtocolFrameToSSEFrame, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesStreamEvent, type ClientOpenAIResponsesStreamEvent, type ClientResponseResource } from '@floway-dev/protocols/openai-responses';
-import { toInternalDebugError } from '@floway-dev/provider';
+import { collectOpenAIResponsesProtocolEventsToResult, isOpenAIResponsesErrorEvent, openaiResponsesProtocolFrameToSSEFrame, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesStreamEventEx, type ClientOpenAIResponsesStreamEvent, type ClientResponseResource } from '@floway-dev/protocols/openai-responses';
 
 /**
  * The outermost edge. What reaches it is usually a stream — the upstream speaks SSE whatever
@@ -54,6 +54,12 @@ export const emitOpenAIResponses = (framing: OpenAIResponsesStreamFraming) => de
     // nothing hands the same array on, so the record shows no change where none happened.
     const forwardable = headers.filter(([name]) => isForwardableUpstreamHeader(name));
     const forClient = forwardable.length === headers.length ? headers : move(forwardable);
+    // A successful answer declares that its usage already counts reasoning; a failure says
+    // nothing about usage and goes out without the declaration.
+    const reasoningIncluded = () => move([
+      ...forwardable.filter(([name]) => name.toLowerCase() !== OPENAI_RESPONSES_REASONING_INCLUDED_HEADER),
+      [OPENAI_RESPONSES_REASONING_INCLUDED_HEADER, OPENAI_RESPONSES_REASONING_INCLUDED_VALUE],
+    ] as const);
 
     if (isFailure(answer)) {
       const failure = renderFailure(answer, mintedErrorEnvelope);
@@ -85,7 +91,7 @@ export const emitOpenAIResponses = (framing: OpenAIResponsesStreamFraming) => de
     // so a client that did not ask to stream is answered with the object the persisted frames
     // add up to.
     const egress = wrapOpenAIResponsesClientEgress(
-      answer.frames as AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
+      answer.frames as AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
       use.gateway,
       client,
     );
@@ -97,13 +103,27 @@ export const emitOpenAIResponses = (framing: OpenAIResponsesStreamFraming) => de
         return {
           ...rest,
           'response.chat.clientFrames': move(frames),
-          'response.http.headers': forClient,
+          'response.http.headers': reasoningIncluded(),
           'response.chat.openaiResponses.rendered': move(
             await collectClientFrames(frames, collectOpenAIResponsesProtocolEventsToResult) as unknown as Record<string, unknown>,
           ),
           'response.http.status': back['response.http.status'],
         };
       } catch (error) {
+        // A stream that ended on its own `error` event is the upstream's answer, not a fault of
+        // this gateway's: the client that did not stream is sent that event, with the status
+        // its classification stands for.
+        if (error instanceof Error && isOpenAIResponsesErrorEvent(error.cause)) {
+          const { sequence_number: _sequenceNumber, ...body } = error.cause;
+          return {
+            ...rest,
+            'response.chat.clientFrames': move(frames),
+            'response.http.headers': forClient,
+            'response.chat.openaiResponses.rendered': move(body as Record<string, unknown>),
+            'response.http.status': openaiResponsesErrorHttpStatus(error.cause),
+            [OPENAI_RESPONSES_STREAMED_USAGE]: move(withClientVerdict(back[OPENAI_RESPONSES_STREAMED_USAGE], Promise.resolve(true))),
+          };
+        }
         // Nothing has gone out yet, so the fault is still a status. A turn the gateway could
         // not finish — the snapshot the next turn would read, most often — is not one it can
         // answer, and the client is told what broke rather than handed the half that arrived.
@@ -146,7 +166,7 @@ export const emitOpenAIResponses = (framing: OpenAIResponsesStreamFraming) => de
     return {
       ...rest,
       'response.chat.clientFrames': move(completed.frames),
-      'response.http.headers': forClient,
+      'response.http.headers': reasoningIncluded(),
       'response.chat.openaiResponses.rendered': move(completed.rendered),
       'response.http.status': back['response.http.status'],
       [OPENAI_RESPONSES_STREAMED_USAGE]: move(withClientVerdict(back[OPENAI_RESPONSES_STREAMED_USAGE], completed.failed)),
@@ -160,30 +180,12 @@ export const emitOpenAIResponses = (framing: OpenAIResponsesStreamFraming) => de
  *  https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L170-L177
  *  https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/core/streaming.ts#L69-L71
  *  https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/_streaming.py#L87-L98 */
-const streamErrorEvent = (error: unknown): ClientOpenAIResponsesStreamEvent => {
-  const debug = toInternalDebugError(error);
-  return {
-    type: 'error',
-    error: {
-      message: debug.message,
-      code: debug.type,
-      name: debug.name,
-      stack: debug.stack,
-      cause: debug.cause,
-      target_api: debug.target_api,
-    },
-  } as unknown as ClientOpenAIResponsesStreamEvent;
-};
+const streamErrorEvent = (error: unknown): ClientOpenAIResponsesStreamEvent => ({ type: 'error', error: internalStreamFailure(error) });
 
 /** "Any error incurred while streaming will be followed by a `response.failed` event."
  *  https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L430 */
-const streamFailedEvent = (announced: ClientResponseResource, error: unknown): ClientOpenAIResponsesStreamEvent => {
-  const debug = toInternalDebugError(error);
-  return {
-    type: 'response.failed',
-    response: { ...announced, status: 'failed', error: { code: debug.type, message: debug.message } },
-  } as ClientOpenAIResponsesStreamEvent;
-};
+const streamFailedEvent = (announced: ClientResponseResource, error: unknown): ClientOpenAIResponsesStreamEvent =>
+  ({ type: 'response.failed', response: { ...announced, status: 'failed', error: internalStreamFailure(error) } });
 
 const completeEventStream = (
   frames: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>,

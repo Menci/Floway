@@ -36,7 +36,7 @@ export const copilotAnthropicMessagesSetInteractionIdHeader = defineStage<Messag
     const payload = facts['request.provider.payload'];
     let headers = facts['request.http.headers'];
 
-    const { sessionId } = parseUserIdMetadata(payload.metadata?.user_id);
+    const { sessionId } = parseUserIdMetadata(payload.metadata?.user_id ?? undefined);
     if (sessionId) {
       headers = replaceHttpHeader(headers, 'x-interaction-id', await sessionUuid(sessionId));
     }

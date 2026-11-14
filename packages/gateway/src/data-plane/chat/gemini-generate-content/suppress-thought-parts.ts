@@ -70,6 +70,7 @@ const withoutThoughtParts = async function* (
     }
 
     const candidates = frame.event.candidates?.flatMap(candidate => {
+      if (candidate.content?.parts === undefined) return [candidate];
       const parts = candidate.content.parts.filter(part => part.thought !== true);
       if (!parts.length && candidate.finishReason === undefined) return [];
       return [{ ...candidate, content: { ...candidate.content, parts } }];

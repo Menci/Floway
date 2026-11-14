@@ -2,7 +2,7 @@ import { ProviderBadge } from './provider-badge';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { HUE_RAIL_GRADIENT } from '../../lib/hue';
-import type { UpstreamProviderKind } from '@floway-dev/provider/model';
+import type { UpstreamProviderKind } from '@floway-dev/provider/browser';
 
 const { Button, ColorSlider, Popover, PopoverSurface, PopoverTrigger, makeStyles } = fluentComponents;
 
@@ -12,10 +12,11 @@ const useStyles = makeStyles({
   slider: { width: '100%' },
 });
 
-export function HuePicker({ hue, kind, onChange }: {
+export function HuePicker({ hue, kind, onChange, readOnly = false }: {
   hue: number;
   kind: UpstreamProviderKind;
   onChange: (hue: number) => void;
+  readOnly?: boolean;
 }) {
   const { t } = useTranslation();
   const styles = useStyles();
@@ -27,6 +28,7 @@ export function HuePicker({ hue, kind, onChange }: {
           appearance="transparent"
           aria-label={`${t('dashboard.upstreamEditor.hue.label')}: ${hue}`}
           className="!min-w-0 !p-0"
+          disabled={readOnly}
         >
           <ProviderBadge upstream={{ hue, kind }} />
         </Button>
@@ -43,7 +45,7 @@ export function HuePicker({ hue, kind, onChange }: {
           // colour under it.
           rail={{ style: { backgroundImage: HUE_RAIL_GRADIENT } }}
           // The rail's own maximum is 360°, which is 0° under another name.
-          onChange={(_, data) => onChange(Math.round(data.color.h) % 360)}
+          onChange={readOnly ? undefined : (_, data) => onChange(Math.round(data.color.h) % 360)}
         />
       </PopoverSurface>
     </Popover>

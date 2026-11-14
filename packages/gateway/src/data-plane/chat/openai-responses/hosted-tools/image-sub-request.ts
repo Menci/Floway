@@ -1,6 +1,6 @@
 import { imageGenerationSubRequestPipeline } from './image-sub-request/pipeline.ts';
 import type { ImageGenerationRequest } from './image-sub-request/request.ts';
-import type { HostedToolLifecycleEvent, HostedToolTerminal } from './types.ts';
+import type { HostedToolLifecycleEvent, HostedToolSlotResult } from './types.ts';
 import { prologueFor } from '../../../pipeline/serve.ts';
 import type { GatewayCtx, AttemptState } from '../../../shared/gateway-ctx.ts';
 import { run, move } from '@floway-dev/pipeline';
@@ -16,7 +16,7 @@ export const runImageGenerationSubRequest = async (
   parent: GatewayCtx,
   request: ImageGenerationRequest,
 ): Promise<{
-  readonly lifecycle: AsyncGenerator<HostedToolLifecycleEvent, HostedToolTerminal>;
+  readonly lifecycle: AsyncGenerator<HostedToolLifecycleEvent, HostedToolSlotResult>;
   readonly drain: () => Promise<void>;
 }> => {
   const path = request.action === 'edit' ? '/images/edits' : '/images/generations';

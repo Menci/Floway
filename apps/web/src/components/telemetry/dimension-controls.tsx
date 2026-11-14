@@ -25,7 +25,7 @@ export function TelemetryGroupByField<Key extends string>({
   onGroupByChange,
 }: {
   disabled: boolean;
-  dimensions: readonly TelemetryDimension<Key>[];
+  dimensions: readonly Pick<TelemetryDimension<Key>, 'key' | 'groupLabel'>[];
   groupBy: Key;
   groupByAdornment?: ReactNode;
   groupByLabel: string;
@@ -84,45 +84,4 @@ export function TelemetryFilterFields<Key extends string>({
         />
       </Field>)}
   </>;
-}
-
-export function TelemetryDimensionControls<Key extends string>({
-  disabled,
-  dimensions,
-  filters,
-  groupBy,
-  groupByAdornment,
-  groupByLabel,
-  onFilterChange,
-  onGroupByChange,
-  selectedLabel,
-}: {
-  disabled: boolean;
-  dimensions: readonly TelemetryDimension<Key>[];
-  filters: Record<Key, readonly string[]>;
-  groupBy: Key;
-  groupByAdornment?: ReactNode;
-  groupByLabel: string;
-  onFilterChange: (key: Key, values: string[]) => void;
-  onGroupByChange: (key: Key) => void;
-  selectedLabel: (count: number) => string;
-}) {
-  return <div className="flex items-end gap-3 min-w-0 flex-wrap">
-    <TelemetryGroupByField
-      disabled={disabled}
-      dimensions={dimensions}
-      groupBy={groupBy}
-      groupByAdornment={groupByAdornment}
-      groupByLabel={groupByLabel}
-      onGroupByChange={onGroupByChange}
-    />
-    <TelemetryFilterFields
-      disabled={disabled}
-      dimensions={dimensions}
-      filters={filters}
-      groupBy={groupBy}
-      onFilterChange={onFilterChange}
-      selectedLabel={selectedLabel}
-    />
-  </div>;
 }

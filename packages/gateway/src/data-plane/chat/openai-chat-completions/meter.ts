@@ -2,7 +2,6 @@ import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { meterChatWire } from '../meter.ts';
 import { billableUsageFromOpenAIChatCompletionsEvent } from './usage.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
-import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatUsageMeasurement, type ChatBillableUsage } from '../shared/usage.ts';
 import { defer, type Deferred } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -22,7 +21,6 @@ export const meterUsage = (streamedUsage: string) => meterChatWire({
 const meterOpenAIChatCompletions = (
   source: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
   identity: TelemetryModelIdentity,
-  attempt: { firstOutputTokenAt: number | null },
 ): { readonly frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>; readonly outcome: Deferred<StreamOutcome> } => {
   const completion = Promise.withResolvers<StreamOutcome>();
   const outcome = defer(completion.promise);
@@ -42,11 +40,6 @@ const meterOpenAIChatCompletions = (
     };
     try {
       for await (const frame of source) {
-        // Time to first token is measured where the token is, which is the only place that
-        // knows a frame carries generated content rather than the envelope around it.
-        if (attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, 'openaiChatCompletions')) {
-          attempt.firstOutputTokenAt = performance.now();
-        }
         if (frame.type === 'event') {
           const usage = billableUsageFromOpenAIChatCompletionsEvent(frame.event);
           if (usage !== null) reported = usage;

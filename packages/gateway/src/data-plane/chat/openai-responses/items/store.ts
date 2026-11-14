@@ -3,7 +3,7 @@ import { getRepo } from '../../../../repo/index.ts';
 import { assertSameStoredOpenAIResponsesItem, cloneStoredOpenAIResponsesItem, cloneStoredOpenAIResponsesSnapshot, compareOpenAIResponsesItemsByFreshness, scopedOpenAIResponsesKey } from '../../../../repo/openai-responses-clone.ts';
 import { quantizeOpenAIResponsesRefreshedAt, openaiResponsesStateCutoff } from '../../../../repo/openai-responses-retention.ts';
 import type { ApiKey, Repo, StoredOpenAIResponsesItem, StoredOpenAIResponsesSnapshot } from '../../../../repo/types.ts';
-import type { OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 
 interface OpenAIResponsesStatefulItemLookup {
   readonly apiKeyId: string;
@@ -31,17 +31,11 @@ export interface OpenAIResponsesStatefulStore {
   readonly apiKeyId: string;
   readonly writesState: boolean;
   loadSnapshot(id: string): Promise<StoredOpenAIResponsesSnapshot | null>;
-  loadInputItems(sourceItems: readonly OpenAIResponsesInputItem[], inputItemsToStage: readonly OpenAIResponsesInputItem[]): Promise<void>;
+  loadInputItems(sourceItems: readonly CanonicalOpenAIResponsesInputItem[], inputItemsToStage: readonly CanonicalOpenAIResponsesInputItem[]): Promise<void>;
   getItemById(id: string): StoredOpenAIResponsesItem | undefined;
-  stageInputItems(items: readonly OpenAIResponsesInputItem[]): Promise<void>;
+  stageInputItems(items: readonly CanonicalOpenAIResponsesInputItem[]): Promise<void>;
   persistOutputItem(row: StoredOpenAIResponsesItem): Promise<void>;
   commitSnapshot(responseId: string, mode: OpenAIResponsesSnapshotMode, outputItemIds: readonly string[]): Promise<void>;
-  // Per-attempt transient state. `beginAttempt` reseeds the private-payload
-  // scratchpad from hydrated items; a hosted tool can add server-only state
-  // during the turn and output capture persists it with the exact wire item.
-  beginAttempt(privatePayloads: ReadonlyMap<string, unknown>): void;
-  registerPrivatePayload(id: string, privatePayload: unknown): void;
-  getPrivatePayload(id: string): unknown;
 }
 
 export class LayeredOpenAIResponsesStatefulStore implements OpenAIResponsesStatefulStore {
@@ -50,8 +44,7 @@ export class LayeredOpenAIResponsesStatefulStore implements OpenAIResponsesState
   private readonly stagedInputItemIds: string[] = [];
   private previousSnapshotItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
-  private readonly privatePayloads = new Map<string, unknown>();
-  private readonly inputItemHashes = new WeakMap<OpenAIResponsesInputItem, string>();
+  private readonly inputItemHashes = new WeakMap<CanonicalOpenAIResponsesInputItem, string>();
 
   constructor(private readonly options: LayeredOpenAIResponsesStatefulStoreOptions) {}
 
@@ -90,8 +83,8 @@ export class LayeredOpenAIResponsesStatefulStore implements OpenAIResponsesState
   }
 
   async loadInputItems(
-    sourceItems: readonly OpenAIResponsesInputItem[],
-    inputItemsToStage: readonly OpenAIResponsesInputItem[],
+    sourceItems: readonly CanonicalOpenAIResponsesInputItem[],
+    inputItemsToStage: readonly CanonicalOpenAIResponsesInputItem[],
   ): Promise<void> {
     const ids = new Set<string>();
     for (const item of sourceItems) {
@@ -118,7 +111,7 @@ export class LayeredOpenAIResponsesStatefulStore implements OpenAIResponsesState
     return row === undefined ? undefined : cloneStoredOpenAIResponsesItem(row);
   }
 
-  async stageInputItems(items: readonly OpenAIResponsesInputItem[]): Promise<void> {
+  async stageInputItems(items: readonly CanonicalOpenAIResponsesInputItem[]): Promise<void> {
     if (!this.writesState) return;
     for (const item of items) await this.stageInputItem(item);
   }
@@ -163,24 +156,6 @@ export class LayeredOpenAIResponsesStatefulStore implements OpenAIResponsesState
     await Promise.all(this.options.writes.map(write => write.insertSnapshot(snapshot)));
   }
 
-  // The scratchpad holds what it was handed. These three used to copy on the way in and again
-  // on the way out, so that a caller writing into a payload could not reach the store's own —
-  // but the payloads arriving here came out of the record and are frozen, and the one reader
-  // splices a sub-object of them into an array rather than writing to it. Copying bought
-  // isolation from a write nothing performs, at a deep copy per stored item per attempt.
-  beginAttempt(privatePayloads: ReadonlyMap<string, unknown>): void {
-    this.privatePayloads.clear();
-    for (const [id, payload] of privatePayloads) this.privatePayloads.set(id, payload);
-  }
-
-  registerPrivatePayload(id: string, privatePayload: unknown): void {
-    if (privatePayload !== undefined) this.privatePayloads.set(id, privatePayload);
-  }
-
-  getPrivatePayload(id: string): unknown {
-    return this.privatePayloads.get(id);
-  }
-
   private async loadItems(query: { ids: readonly string[]; itemHashes: readonly string[] }): Promise<void> {
     let ids = query.ids.filter(id => !this.loadedItems.has(id));
     for (const backing of this.options.reads) {
@@ -191,7 +166,7 @@ export class LayeredOpenAIResponsesStatefulStore implements OpenAIResponsesState
     }
   }
 
-  private async stageInputItem(item: OpenAIResponsesInputItem): Promise<void> {
+  private async stageInputItem(item: CanonicalOpenAIResponsesInputItem): Promise<void> {
     if (item.type === 'compaction_trigger') return;
     if (item.type === 'item_reference') {
       const row = this.loadedItems.get(item.id);
@@ -238,7 +213,7 @@ export class LayeredOpenAIResponsesStatefulStore implements OpenAIResponsesState
     this.rememberItem(row);
   }
 
-  private async hashInputItem(item: OpenAIResponsesInputItem): Promise<string> {
+  private async hashInputItem(item: CanonicalOpenAIResponsesInputItem): Promise<string> {
     const cached = this.inputItemHashes.get(item);
     if (cached !== undefined) return cached;
     const hash = await hashOpenAIResponsesItem(item);
@@ -398,12 +373,7 @@ export const createOpenAIResponsesHttpStore = (apiKey: OpenAIResponsesStatePolic
   });
 };
 
-// Non-OpenAI-Responses sources (Anthropic Messages / Gemini generateContent / OpenAI Chat Completions) never persist
-// OpenAI Responses items, even when translation enters an OpenAI Responses attempt — but the
-// hosted-tool stage still runs there, and its request-private payload
-// scratchpad lives on the store. So they get a store with no backing: it holds
-// per-attempt state in memory and reads/writes nothing durable, keeping the
-// store present on every chat ctx.
+// Translated source protocols do not own Responses item persistence.
 export const createNonOpenAIResponsesSourceStore = (apiKeyId: string): OpenAIResponsesStatefulStore =>
   new LayeredOpenAIResponsesStatefulStore({ apiKeyId, reads: [], writes: [] });
 

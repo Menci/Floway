@@ -1,7 +1,7 @@
 import type { MessagesFacts } from '../../chat-facts.ts';
 import { copilotRawModelId } from '../../model-name.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent, AnthropicMessagesThinkingDisplay } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, AnthropicMessagesThinkingDisplay } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ProviderChatResponse, ProviderChatServices } from '@floway-dev/provider';
 
@@ -23,7 +23,8 @@ const isClaudeVersionAtLeast = (model: string, major: number, minor: number): bo
 };
 
 export const resolveAnthropicMessagesDownstreamThinkingDisplay = (ctx: { payload: AnthropicMessagesPayload }): AnthropicMessagesThinkingDisplay | undefined => {
-  const display = ctx.payload.thinking?.display;
+  const thinking = ctx.payload.thinking;
+  const display = thinking?.type === 'enabled' || thinking?.type === 'adaptive' ? thinking.display : undefined;
   if (display !== undefined) {
     // Request JSON is not runtime-validated before boundary stages; leave
     // unknown display values untouched so upstream, not this workaround, owns
@@ -34,7 +35,7 @@ export const resolveAnthropicMessagesDownstreamThinkingDisplay = (ctx: { payload
   return isClaudeVersionAtLeast(ctx.payload.model, 4, 7) ? 'omitted' : 'summarized';
 };
 
-const omitThinkingTextFromProtocolFrame = (frame: ProtocolFrame<AnthropicMessagesStreamEvent>): ProtocolFrame<AnthropicMessagesStreamEvent> | undefined => {
+const omitThinkingTextFromProtocolFrame = (frame: ProtocolFrame<AnthropicMessagesStreamEventEx>): ProtocolFrame<AnthropicMessagesStreamEventEx> | undefined => {
   if (frame.type === 'done') return frame;
 
   const { event } = frame;
@@ -55,7 +56,7 @@ const omitThinkingTextFromProtocolFrame = (frame: ProtocolFrame<AnthropicMessage
   return frame;
 };
 
-const omitThinkingTextFromProtocolFrames = async function* (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+const omitThinkingTextFromProtocolFrames = async function* (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   for await (const frame of frames) {
     const omitted = omitThinkingTextFromProtocolFrame(frame);
     if (omitted) yield omitted;
@@ -101,7 +102,7 @@ export const copilotAnthropicMessagesThinkingDisplay = defineStage<MessagesFacts
     let payload = facts['request.provider.payload'];
     const display = resolveAnthropicMessagesDownstreamThinkingDisplay({ payload });
     const thinking = payload.thinking;
-    const active = !!thinking && thinking.type !== 'disabled';
+    const active = thinking?.type === 'enabled' || thinking?.type === 'adaptive';
     const stamp = active && display === 'omitted';
     if (active && display !== undefined && display !== 'full') payload = { ...payload, thinking: { ...thinking, display: 'summarized' } };
     const back = await next(move({ ...facts, 'request.provider.payload': payload }));

@@ -6,6 +6,7 @@ import { CODEX_DEFAULT_FLAGS } from './defaults.ts';
 import { codexImageProviderModel, codexPlanSupportsImages, codexRawToProviderModel, fetchCodexCatalog } from './models.ts';
 import { createCodexPipelines } from './pipelines.ts';
 import { assertCodexUpstreamState, findCodexAccountIndex, persistCodexRefreshTokenRotation, persistCodexTerminalState } from './state.ts';
+import { runCodexScheduledTask } from './usage-probe.ts';
 import { getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Provider, type UpstreamRecord } from '@floway-dev/provider';
 
 // https://github.com/openai/codex/blob/c607da9f371bb66a41cc772c6ddf1989d28137d3/codex-rs/codex-api/src/requests/headers.rs#L5-L12
@@ -69,6 +70,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
   };
 
   const instance: ProviderInstance = {
+    runScheduledTask: options => runCodexScheduledTask(record, options),
     getProvidedModels: async fetcher => {
       // A model-list refresh is the first thing a brand-new Codex upstream
       // does, and it is the only place outside the data plane that mints an

@@ -17,6 +17,7 @@ const apiKey = (dumpRetentionSeconds: number | null): ApiKey => ({
   serverSecret: '11'.repeat(32),
   createdAt: '2026-01-01T00:00:00.000Z',
   upstreamIds: null,
+  randomizeUpstreams: false,
   deletedAt: null,
   dumpRetentionSeconds,
   openaiResponsesRetentionSeconds: 0,

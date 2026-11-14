@@ -1,7 +1,7 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
-import { fetchCopilotUsage, parseCopilotQuotaHeaders, projectCopilotSeat, projectCopilotUsageResponse, type CopilotUsageResponse } from '../src/quota.ts';
-import { directFetcher } from '@floway-dev/provider';
+import { fetchCopilotUsage, parseCopilotQuotaHeaders, projectCopilotSeat, projectCopilotUsageResponse, putCopilotQuota, type CopilotUsageResponse } from '../src/quota.ts';
+import { directFetcher, initProviderRepo } from '@floway-dev/provider';
 import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
 const NOW = new Date('2026-08-01T19:42:34.000Z');
@@ -205,6 +205,25 @@ test('both quota sources report an unparseable reset instant as none', () => {
     NOW,
   );
   assertEquals(fromHeaders?.reset_at, null);
+});
+
+test('putCopilotQuota rejects malformed entitlement before writing state or metrics', async () => {
+  const saveState = vi.fn();
+  const recordUpstreamMetric = vi.fn();
+  initProviderRepo(() => ({
+    recordUpstreamMetric,
+    upstreams: { getById: vi.fn(), saveState },
+  }));
+
+  await expect(putCopilotQuota('copilot', {
+    observed_at: NOW.toISOString(),
+    reset_at: null,
+    quotas: {
+      malformed: { entitlement: -2, quota_remaining: 0, percent_remaining: 0, overage_count: 0, overage_permitted: false, unlimited: false },
+    },
+  })).rejects.toThrow(TypeError);
+  expect(saveState).not.toHaveBeenCalled();
+  expect(recordUpstreamMetric).not.toHaveBeenCalled();
 });
 
 test('the seat projection keeps both identifiers as the endpoint reported them', () => {

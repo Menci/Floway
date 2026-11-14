@@ -2,7 +2,7 @@ import type { RunDump } from '../../../dump/run-sink.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { recordStream, streamReferenceOf } from '@floway-dev/dump';
 import { defer, setRelease, type Owned, type Deferred } from '@floway-dev/pipeline';
-import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame, SseFrame, SseRawFrame } from '@floway-dev/protocols/common';
 
 // Collectors stop at the protocol terminal. Keep that stop local to the fold so the same
 // recorded cursor can still prove source exhaustion and publish its stream.end marker.
@@ -18,12 +18,12 @@ export const collectClientFrames = async <Frame, Result>(
 
 export const framedClientStream = <Frame extends ProtocolFrame<unknown>>(
   source: AsyncIterable<Frame>,
-  render: (frame: Frame) => SseFrame,
+  render: (frame: Frame) => SseFrame | SseRawFrame,
   errorFrames: (error: unknown) => readonly Frame[],
   dump: RunDump | null,
 ): {
   readonly frames: AsyncIterable<Frame>;
-  readonly rendered: AsyncIterable<SseFrame>;
+  readonly rendered: AsyncIterable<SseFrame | SseRawFrame>;
   readonly failed: Promise<boolean>;
   readonly release: () => Promise<void>;
 } => {

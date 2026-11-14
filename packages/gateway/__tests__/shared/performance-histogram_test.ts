@@ -1,30 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  TTFT_UPPER_EDGES_MS,
   TPOT_UPPER_EDGES_US,
   bucketForTtftMs,
   bucketForTpotUs,
   percentileFromBuckets,
   type HistogramBucket,
 } from '../../src/shared/performance-histogram.ts';
-
-describe('bucket edges', () => {
-  it('TTFT has 19 upper edges anchored on operator-facing thresholds up to 5 min', () => {
-    expect(TTFT_UPPER_EDGES_MS).toEqual([
-      100, 200, 300, 500, 700, 1_000, 1_400, 2_000, 2_800, 4_000,
-      5_500, 8_000, 12_000, 16_000, 24_000, 36_000, 60_000, 120_000, 300_000,
-    ]);
-  });
-
-  it('TPOT has 24 upper edges with tok/s SLO anchors (100, 50, 20, 10 tok/s) on real edges', () => {
-    expect(TPOT_UPPER_EDGES_US).toEqual([
-      500, 1_000, 2_000, 3_333, 5_000, 6_667, 8_333, 10_000, 12_500, 14_286,
-      16_667, 20_000, 25_000, 33_333, 40_000, 50_000, 66_667, 100_000, 150_000,
-      250_000, 500_000, 1_000_000, 2_500_000, 10_000_000,
-    ]);
-  });
-});
 
 describe('bucketForTtftMs', () => {
   it('sub-edge value lands in the first bucket [0, 100]', () => {

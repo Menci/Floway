@@ -1,4 +1,4 @@
-import { ProhibitedRegular, ShieldKeyhole24Regular } from '@fluentui/react-icons';
+import { ShieldKeyhole24Regular } from '@fluentui/react-icons';
 import { useCallback, useId, useMemo } from 'react';
 
 import { ProviderBadge } from './provider-badge';
@@ -29,8 +29,8 @@ interface UpstreamAccessRow {
   modelCount: number | null;
   name: string;
   selected: boolean;
+  unavailable: boolean;
   upstream: { hue: number; kind: UpstreamOption['kind'] };
-  upstreamEnabled: boolean;
 }
 
 export function UpstreamAccessControl({
@@ -87,11 +87,8 @@ export function UpstreamAccessControl({
     >
       <div className="grid gap-3 min-w-0">
         <ScrollArea axes="horizontal" className="min-w-0">
-          {/* The minimum only decides when the region starts scrolling: the two
-              sized columns plus enough room for a provider chip to stay
-              readable. */}
-          <Table aria-label={t('dashboard.upstreamAccess.tableLabel')} className="min-w-[344px]">
-            <TableColumns widths={['80px', null, '120px']} />
+          <Table aria-label={t('dashboard.upstreamAccess.tableLabel')} className="min-w-[344px] whitespace-nowrap" style={{ tableLayout: 'auto' }}>
+            <TableColumns widths={['80px', '100%', null]} />
             <TableHeader><TableRow>
               <TableHeaderCell>{t('dashboard.upstreamAccess.enabled')}</TableHeaderCell>
               <TableHeaderCell>{t('dashboard.upstreamAccess.upstream')}</TableHeaderCell>
@@ -131,8 +128,7 @@ function AccessRow({ disabled, index, onToggle, reorder, row }: {
       <ReorderHandle {...reorder.handleProps(index)} label={t('dashboard.upstreams.actions.reorder', { name: row.name })} />
     </div></TableCell>
     <TableCell><ProviderBadge label={row.name} upstream={row.upstream} /></TableCell>
-    <TableCell><span className="inline-flex items-center gap-1.5 min-w-0">
-      {!row.upstreamEnabled && <ProhibitedRegular className="block flex-none text-fui-fg2" aria-label={t('dashboard.upstreamAccess.upstreamDisabled')} />}
+    <TableCell><span className="whitespace-nowrap tabular-nums">
       {row.modelCount === null
         ? t('dashboard.upstreamAccess.modelCountUnknown')
         : t('dashboard.upstreamAccess.modelCount', { count: row.modelCount })}
@@ -160,16 +156,23 @@ const accessRows = (
     modelCount: upstream.enabled ? (modelCounts.get(upstream.id) ?? 0) : upstream.cachedModelCount,
     name: upstream.name,
     selected: isSelected,
+    unavailable: false,
     upstream: { hue: upstream.hue, kind: upstream.kind },
-    upstreamEnabled: upstream.enabled,
   });
-  // Selected first, in the order the cap states, then the rest. An id absent
-  // from `available` has none: the control plane serves a cap already projected
-  // through what the principal can reach, so every id here resolves.
+  // Selected first, in the order the cap states, then the rest. A saved id
+  // that is no longer in the caller's addressable surface stays visible so the
+  // owner can remove or reorder it instead of silently persisting a hidden cap.
   return [
-    ...ids.flatMap(id => {
+    ...ids.flatMap((id): UpstreamAccessRow[] => {
       const upstream = byId.get(id);
-      return upstream ? [rowFor(upstream, true)] : [];
+      return upstream ? [rowFor(upstream, true)] : [{
+        id,
+        modelCount: null,
+        name: id,
+        selected: true,
+        unavailable: true,
+        upstream: { hue: 0, kind: 'custom' },
+      }];
     }),
     ...available.filter(upstream => !selected.has(upstream.id)).map(upstream => rowFor(upstream, false)),
   ];

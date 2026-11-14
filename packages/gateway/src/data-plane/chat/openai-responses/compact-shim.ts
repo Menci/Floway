@@ -15,26 +15,34 @@
 //     `encrypted_content` decodes as our base64url-JSON marker, and replace each inline with
 //     the items it originally encoded — so a turn that echoes back a synthesized compaction
 //     is sent the summarized history rather than a blob.
-//   - `summarizationTurnFor`: the turn a compaction is simulated with. A role=system message
-//     carrying the SUMMARIZATION_PROMPT (vendored from openai/codex) at the head of the
-//     history, any `compaction_trigger` items stripped, a terminal user message appended
-//     where the history ends on a non-user item (Anthropic Messages rejects assistant
-//     prefill), and `store: false` so the ephemeral summarization turn does not pollute the
-//     upstream's conversation history. The caller's `instructions` field flows through
+//   - `cacheSharingSummarizationTurnFor`: the turn a compaction is first simulated with. Any
+//     `compaction_trigger` items are stripped, the caller's system / tools / history prefix
+//     is kept byte for byte, and one user-role summarization request is appended, with
+//     `store: false`. This is the cache-sharing shape current coding agents use: an upstream
+//     can read the prompt cache the ordinary agent turn wrote and process only the appended
+//     instruction. Tools stay declared because changing their schemas would invalidate that
+//     prefix; the instruction forbids calling them, and a tool-only answer has no summary text.
+//   - `summarizationTurnFor`: the compatibility turn a compaction falls back to once when the
+//     cache-sharing answer carried no text. A role=system message carrying the
+//     SUMMARIZATION_PROMPT (vendored from openai/codex) at the head of the history, the
+//     trigger stripped, a terminal user reminder appended (Anthropic Messages rejects
+//     assistant prefill), and `store: false`. The caller's `instructions` field flows through
 //     untouched — native `/responses/compact` keeps SUMMARIZATION_PROMPT as a system-role
 //     prompt AND forwards the caller's instructions as a developer-role message alongside,
 //     and we mirror that shape.
 //   - `summaryTextFrom` and `buildCompactionEnvelope`: the summary the turn produced, and the
 //     synthetic `response.compaction` envelope carrying it as a blob only this gateway reads.
 //
-// Foreign-upstream blobs (opaque strings that fail base64url+JSON decoding or fail the
-// array-of-objects-with-string-types schema below) round-trip untouched, so the operator can
-// selectively turn the flag off for the codex / copilot / azure / custom upstreams that
-// answer compact themselves.
+// The `openai-responses-compact-shim` flag is on by default for every provider; operators
+// turn it off for Responses targets that answer compact requests themselves — natively
+// through `/responses/compact` (codex / azure / custom), or by replaying `RemoteCompactionV2`
+// over `/responses` (copilot). Foreign-upstream blobs (opaque strings that fail
+// base64url+JSON decoding or fail the array-of-objects-with-string-types schema below)
+// round-trip untouched for exactly those upstreams.
 
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../shared/json-helpers.ts';
-import { isOpenAIResponsesCompactionItem, type OpenAIResponsesInputItem, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesCompactionItem, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 // The two vendored constants below (SUMMARIZATION_PROMPT and SUMMARY_PREFIX)
 // are the compactor system prompt and the handoff prefix openai/codex ships
@@ -97,6 +105,14 @@ const SUMMARIZATION_PROMPT
 // accept the drift rather than cap output and risk truncating summaries
 // that long tasks legitimately need.
 
+// Cache-aligned compactors keep the ordinary system / tools / history prefix
+// and append one user instruction that forbids tool use. The tools stay on the
+// wire for prefix identity; compaction accepts only assistant text.
+// - https://github.com/anomalyco/opencode/blob/a34961825be13a31daa76f33a8b47efcd198cfef/packages/core/src/session/compaction.ts#L272-L309
+// - https://github.com/microsoft/vscode-copilot-chat/blob/5863f5a7088958050792b5dccbe8b46c6e13eccc/src/extension/prompts/node/agent/summarizedConversationHistory.tsx#L1086-L1106
+const CACHE_SHARING_SUMMARIZATION_PROMPT
+  = `${SUMMARIZATION_PROMPT}\n\nDo not call any tools while writing this summary; respond with text only.`;
+
 // Vendored from openai/codex (Apache-2.0):
 // https://github.com/openai/codex/blob/ba2b67f9cda954bcdda43c2a65ac58e807b996bd/codex-rs/prompts/templates/compact/summary_prefix.md
 //
@@ -128,7 +144,7 @@ export const EXACT_REPEAT_SUFFIX = 'Output only the exact summary text, with no 
 // Structural validator: a shim payload is an array of input-item objects each
 // carrying a `type` field. Strict enough that a foreign opaque blob can't
 // accidentally decode + parse + validate.
-const isShimCompactionPayload = (value: unknown): value is OpenAIResponsesInputItem[] =>
+const isShimCompactionPayload = (value: unknown): value is CanonicalOpenAIResponsesInputItem[] =>
   Array.isArray(value) && value.every(item =>
     isJsonObject(item) && typeof (item as { type?: unknown }).type === 'string');
 
@@ -144,10 +160,10 @@ export const encodeShimCompactionPayload = (text: string): string =>
     type: 'message',
     role: 'user',
     content: [{ type: 'input_text', text }],
-  } satisfies OpenAIResponsesInputItem]);
+  } satisfies CanonicalOpenAIResponsesInputItem]);
 
 export const expandShimCompactionItems = (payload: CanonicalOpenAIResponsesPayload): CanonicalOpenAIResponsesPayload => {
-  const rewritten: OpenAIResponsesInputItem[] = [];
+  const rewritten: CanonicalOpenAIResponsesInputItem[] = [];
   let changed = false;
   for (const item of payload.input) {
     if (!isOpenAIResponsesCompactionItem(item)) {
@@ -174,7 +190,7 @@ export const expandShimCompactionItems = (payload: CanonicalOpenAIResponsesPaylo
 
 // ── Outbound summarization ────────────────────────────────────────────────────
 
-export const summaryTextFrom = (items: readonly OpenAIResponsesOutputItem[]): string => {
+export const summaryTextFrom = (items: readonly OpenAIResponsesOutputItemEx[]): string => {
   const parts: string[] = [];
   for (const item of items) {
     if (item.type !== 'message') continue;
@@ -185,25 +201,18 @@ export const summaryTextFrom = (items: readonly OpenAIResponsesOutputItem[]): st
   return parts.join('');
 };
 
-export const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: OpenAIResponsesResult): OpenAIResponsesResult => {
+export const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: OpenAIResponsesResultEx): OpenAIResponsesResultEx => {
   // The prefix lives inside the blob so it round-trips atomically with the
   // summary — a downstream LLM sees `${SUMMARY_PREFIX}\n${summaryText}` in
   // one message and reads it as "another LLM's handoff", not as the human
   // speaking. Encoding the prefix here rather than at expand-time keeps the
   // envelope's semantics complete regardless of who decodes it.
-  const summaryItem: OpenAIResponsesInputItem = {
+  const summaryItem: CanonicalOpenAIResponsesInputItem = {
     type: 'message',
     role: 'user',
     content: [{ type: 'input_text', text: `${SUMMARY_PREFIX}\n${summaryText}` }],
   };
   const encryptedContent = encodeBase64UrlJson([summaryItem]);
-
-  // Drop the SDK-only `output_text` alias that some upstreams emit — its
-  // value is the upstream's summary plaintext, which has no place on a
-  // synthesized `response.compaction` envelope whose `output` carries only
-  // an opaque compaction item. Same destructure precedent at
-  // `protocols/openai-responses/from-result.ts:14`.
-  const { output_text: _droppedOutputText, ...upstreamBase } = upstream;
 
   // `status`, `incomplete_details`, and `error` flow through verbatim from
   // the spread: a summarization turn that hit `max_output_tokens` returns
@@ -211,8 +220,9 @@ export const buildCompactionEnvelope = (cmpId: string, summaryText: string, upst
   // upstream-side failure returns `status: 'failed'` with `error` populated.
   // Synthesizing `status: 'completed'` would have the envelope confidently
   // lie about the underlying turn's outcome.
+  const { output_text: _outputText, ...fields } = upstream as OpenAIResponsesResultEx & { output_text?: unknown };
   return {
-    ...upstreamBase,
+    ...fields,
     id: `resp_compact_shim_${crypto.randomUUID()}`,
     object: 'response.compaction',
     output: [
@@ -221,15 +231,25 @@ export const buildCompactionEnvelope = (cmpId: string, summaryText: string, upst
         id: cmpId,
         encrypted_content: encryptedContent,
       },
-    ] as unknown as OpenAIResponsesResult['output'],
+    ] as unknown as OpenAIResponsesResultEx['output'],
   };
 };
 
-// The turn a compaction is simulated with: the compactor's own prompt, the
-// history that is being compacted, and a nudge to produce the summary now.
-// Exported because the pipeline's compaction chain sends the same turn — one
-// definition is what keeps the simulated compaction identical whichever entry
-// asked for it.
+// The cache-sharing turn: the history that is being compacted, unchanged, and one
+// user request for the summary.
+export const cacheSharingSummarizationTurnFor = (payload: CanonicalOpenAIResponsesPayload): CanonicalOpenAIResponsesPayload => ({
+  ...payload,
+  input: [
+    ...payload.input.filter(item => item.type !== 'compaction_trigger'),
+    { type: 'message', role: 'user', content: [{ type: 'input_text', text: CACHE_SHARING_SUMMARIZATION_PROMPT }] },
+  ],
+  // Do not persist the ephemeral summarization turn in the upstream's
+  // conversation history.
+  store: false,
+});
+
+// The compatibility turn: the compactor's own prompt, the history that is being
+// compacted, and a nudge to produce the summary now.
 export const summarizationTurnFor = (payload: CanonicalOpenAIResponsesPayload): CanonicalOpenAIResponsesPayload => {
   // Strip compaction_trigger so the upstream sees a plain generate turn
   // against SUMMARIZATION_PROMPT.
@@ -252,7 +272,7 @@ export const summarizationTurnFor = (payload: CanonicalOpenAIResponsesPayload): 
   // reminder; on non-Claude upstreams the wrapper is a benign opaque tag
   // they ignore. See https://github.com/anthropics/claude-code/issues/52018
   // (the report on system-reminder semantics) for the convention's reach.
-  const terminalUserMessage: OpenAIResponsesInputItem = {
+  const terminalUserMessage: CanonicalOpenAIResponsesInputItem = {
     type: 'message',
     role: 'user',
     content: [{ type: 'input_text', text: '<system-reminder>Produce the handoff summary now per the instructions above.</system-reminder>' }],
@@ -283,7 +303,7 @@ export const summarizationTurnFor = (payload: CanonicalOpenAIResponsesPayload): 
   // layers onto a single top-level system slot. That's a strict native
   // capability gap, not a shim regression — nothing this layer can do
   // preserves the split once we cross into a protocol that lacks it.
-  const compactorSystemMessage: OpenAIResponsesInputItem = {
+  const compactorSystemMessage: CanonicalOpenAIResponsesInputItem = {
     type: 'message',
     role: 'system',
     content: [{ type: 'input_text', text: SUMMARIZATION_PROMPT }],
@@ -302,10 +322,10 @@ export const summarizationTurnFor = (payload: CanonicalOpenAIResponsesPayload): 
 // silently discards the conversation.
 export const EMPTY_SUMMARY_MESSAGE = 'OpenAI Responses compact shim: the summarization turn closed no assistant text to summarize';
 
-export const containsCompactionTrigger = (input: readonly OpenAIResponsesInputItem[]): boolean =>
+export const containsCompactionTrigger = (input: readonly CanonicalOpenAIResponsesInputItem[]): boolean =>
   input.some(item => item.type === 'compaction_trigger');
 
-type ResponseUsage = NonNullable<OpenAIResponsesResult['usage']>;
+type ResponseUsage = NonNullable<OpenAIResponsesResultEx['usage']>;
 
 export const sumResponseUsage = (left: ResponseUsage | null | undefined, right: ResponseUsage | null | undefined): ResponseUsage | undefined => {
   if (left == null) return right ?? undefined;

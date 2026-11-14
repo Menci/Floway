@@ -1,6 +1,7 @@
 import type { ChatServices } from './services.ts';
 import type { RequestKey, ChatWire } from './wire.ts';
 import type { AttemptSelector } from '../pipeline/facts.ts';
+import { upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { defineStage, type Use } from '@floway-dev/pipeline';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { ChatTargetApi, ModelCandidate } from '@floway-dev/provider';
@@ -51,6 +52,7 @@ export const dialChatWire = (wiring: ChatWiring) => defineStage<
   execute: async (facts, next, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
     const target = wiring.pick(candidate.model.endpoints);
+    use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'chat');
     await use.log.debug('dialling', { upstream: facts['route.attempt'].upstreamId, wire: target });
     return await next(facts, wiring.wire(target, candidate, use));
   },

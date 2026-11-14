@@ -1,4 +1,5 @@
 import { wrapOpenAIChatCompletionsAffinityEgress } from './affinity/egress.ts';
+import { internalOpenAIChatCompletionsError } from './errors.ts';
 import type { Fields } from './facts.ts';
 import { isFailure, renderFailure, mintedErrorEnvelope } from '../../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
@@ -9,7 +10,6 @@ import { recordStream } from '@floway-dev/dump';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { eventFrame, isOpenAIUsageOnlyEventShape, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIChatCompletionsProtocolEventsToResult, openaiChatCompletionsProtocolFrameToSSEFrame, type OpenAIChatCompletionsStreamEvent, type ClientOpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { toInternalDebugError } from '@floway-dev/provider';
 
 /**
  * The outermost edge. A chat answer is always a stream by the time it reaches here — the
@@ -92,7 +92,7 @@ export const emitOpenAIChatCompletions = defineStage<
     const completed = framedClientStream<ProtocolFrame<ClientOpenAIChatCompletionsStreamEvent>>(
       clientFrames(egress, back['ingress.chat.openaiChatCompletions.wantsUsageChunk']),
       frame => openaiChatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk: true }),
-      error => [eventFrame({ error: toInternalDebugError(error, 'openaiChatCompletions') })],
+      error => [eventFrame(internalOpenAIChatCompletionsError(error))],
       use.gateway.dump,
     );
     bindClientRelease(back, completed.release);

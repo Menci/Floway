@@ -1,6 +1,6 @@
 import type { ResponsesFacts } from '../../chat-facts.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import type { OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 import { replaceHttpHeader } from '@floway-dev/provider';
 
 /**
@@ -14,7 +14,7 @@ import { replaceHttpHeader } from '@floway-dev/provider';
  * - https://github.com/caozhiyuan/copilot-api/blob/cd0d0182eb4b9bf68a3376dc79728afa7f42ce07/src/lib/api-config.ts#L248-L258
  * - https://github.com/caozhiyuan/copilot-api/blob/cd8207cb70ede07771bf37a04accfbf2af76d980/src/routes/responses/utils.ts#L176-L201
  */
-const itemHasImage = (item: OpenAIResponsesInputItem): boolean => {
+const itemHasImage = (item: CanonicalOpenAIResponsesInputItem): boolean => {
   const content = item.type === 'message'
     ? item.content
     : item.type === 'function_call_output' || item.type === 'custom_tool_call_output' ? item.output : undefined;

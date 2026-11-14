@@ -18,6 +18,7 @@ const buildCustomUpstream = (options: BuildOptions = {}): UpstreamRecord => ({
   kind: 'custom',
   name: 'Custom Provider',
   enabled: true,
+  usageRefreshIntervalMinutes: 0,
   sortOrder: 0,
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-06-01T00:00:00.000Z',
@@ -478,7 +479,7 @@ test('Custom provider falls back to `name` when display_name is missing (loose O
   );
 });
 
-test('Custom provider callOpenAIImagesGenerations posts JSON with model re-injected', async () => {
+test('Custom provider openaiImagesGenerations pipeline posts JSON with model re-injected', async () => {
   let forwarded: { url: string; body: { model?: unknown; prompt?: unknown } } | undefined;
   await withMockedFetch(
     async request => {

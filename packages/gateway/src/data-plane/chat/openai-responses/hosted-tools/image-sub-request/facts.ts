@@ -1,6 +1,6 @@
 import type { ImageGenerationRequest } from './request.ts';
 import type { OpenAIImagesFacts } from '../../../../openai-images/facts.ts';
-import type { HostedToolLifecycleEvent, HostedToolTerminal } from '../types.ts';
+import type { HostedToolLifecycleEvent, HostedToolSlotResult } from '../types.ts';
 import type { Deferred } from '@floway-dev/pipeline';
 
 export type ImageLifecycleOutcome = { readonly kind: 'released' } | { readonly kind: 'exception'; readonly error: unknown };
@@ -8,7 +8,7 @@ export type ImageLifecycleOutcome = { readonly kind: 'released' } | { readonly k
 export interface ImageSubRequestFacts extends OpenAIImagesFacts {
   'request.imageGeneration.canonical': ImageGenerationRequest;
   'response.imageGeneration.lifecycleOutcome': Deferred<ImageLifecycleOutcome>;
-  'response.imageGeneration.lifecycle': AsyncGenerator<HostedToolLifecycleEvent, HostedToolTerminal>;
+  'response.imageGeneration.lifecycle': AsyncGenerator<HostedToolLifecycleEvent, HostedToolSlotResult>;
 }
 
 export type Fields<K extends keyof ImageSubRequestFacts> = { [P in K]: ImageSubRequestFacts[P] };

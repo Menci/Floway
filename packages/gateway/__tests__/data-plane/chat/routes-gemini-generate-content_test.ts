@@ -7,13 +7,14 @@
 // gets its own protocol back" has to hold for whichever wire the picker landed on.
 //
 // Gemini generateContent also ends a turn differently from either OpenAI-shaped protocol: there is no
-// sentinel, and the last frame is the one whose candidate states a `finishReason`.
+// sentinel; candidates report finishReason before any trailing usage or metadata.
 
 import { expect, test } from 'vitest';
 
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
 import { copilotModels, parseSSEText, requestAppWithWarmModels as requestApp, setupAppTest, sseOpenAIChatCompletionsResponse, sseAnthropicMessagesResponse } from '../../test-utils/app.ts';
 import { flushBackground } from '../../test-utils/background-tracker.ts';
+import type { GeminiGenerateContentResult } from '@floway-dev/protocols/gemini-generate-content';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const ANSWER = 'hello from copilot';
@@ -57,15 +58,8 @@ const post = async (apiKey: string, modelAction: string): Promise<Response> =>
     body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] }),
   });
 
-interface GeminiGenerateContentEvent {
-  readonly candidates?: readonly {
-    readonly content: { readonly parts: readonly { readonly text?: string }[] };
-    readonly finishReason?: string;
-  }[];
-}
-
-const geminiGenerateContentText = (event: GeminiGenerateContentEvent): string =>
-  (event.candidates ?? []).flatMap(candidate => candidate.content.parts.map(part => part.text ?? '')).join('');
+const geminiGenerateContentText = (event: GeminiGenerateContentResult): string =>
+  (event.candidates ?? []).flatMap(candidate => candidate.content?.parts?.map(part => part.text ?? '') ?? []).join('');
 
 test('a streaming turn reaches the client as Gemini generateContent SSE, ending on the frame that states a finish reason', async () => {
   const { apiKey } = await setupAppTest();
@@ -91,12 +85,14 @@ test('a streaming turn reaches the client as Gemini generateContent SSE, ending 
   expect(frames.length > 0).toBe(true);
   // One JSON object per `data:` line, and no sentinel — Gemini generateContent has none to write, so a `[DONE]`
   // here would be a frame no Google client can parse.
-  const events = frames.map(frame => JSON.parse(frame.data) as GeminiGenerateContentEvent);
+  const events = frames.map(frame => JSON.parse(frame.data) as GeminiGenerateContentResult);
   for (const frame of frames) expect(frame.event).toBe('message');
   expect(events.map(geminiGenerateContentText).join('')).toBe(ANSWER);
   // The turn's end is stated on the frames the client is handed, not on the wire below them.
-  expect(events.at(-1)?.candidates?.[0]?.finishReason).toBe('STOP');
-  expect(events.slice(0, -1).every(event => event.candidates?.[0]?.finishReason === undefined)).toBe(true);
+  const finishedAt = events.findIndex(event => event.candidates?.[0]?.finishReason === 'STOP');
+  expect(finishedAt).toBeGreaterThanOrEqual(0);
+  expect(events.slice(0, finishedAt).every(event => event.candidates?.[0]?.finishReason === undefined)).toBe(true);
+  expect(events.slice(finishedAt + 1).some(event => 'usageMetadata' in event)).toBe(true);
 });
 
 test('a non-streaming turn reaches the client as one assembled Gemini generateContent body', async () => {
@@ -111,7 +107,7 @@ test('a non-streaming turn reaches the client as one assembled Gemini generateCo
   expect(response.status).toBe(200);
   expect(response.headers.get('content-type')?.split(';')[0]).toBe('application/json');
 
-  const body = await response.json() as GeminiGenerateContentEvent & { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
+  const body = await response.json() as GeminiGenerateContentResult & { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
   expect(body.candidates).toHaveLength(1);
   expect(body.candidates?.[0].finishReason).toBe('STOP');
   expect(geminiGenerateContentText(body)).toBe(ANSWER);
@@ -223,7 +219,7 @@ test('a turn dialled over the Anthropic Messages wire still answers the client i
   );
 
   expect(response.status).toBe(200);
-  const body = await response.json() as GeminiGenerateContentEvent;
+  const body = await response.json() as GeminiGenerateContentResult;
   expect(body.candidates).toHaveLength(1);
   expect(body.candidates?.[0].finishReason).toBe('STOP');
   expect(geminiGenerateContentText(body)).toBe(ANSWER);

@@ -3,7 +3,7 @@ import { defineStage, move } from '@floway-dev/pipeline';
 import type {
   AnthropicMessagesAssistantInputContentBlock,
   AnthropicMessagesPayload,
-  AnthropicMessagesTextBlock,
+  AnthropicMessagesTextBlockParam,
   AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
 
@@ -22,7 +22,7 @@ import type {
  * block already carries its own `cache_control`, leave it alone — an explicit
  * marker wins over the auto-apply. Sub-field extensions (`scope`, `ttl`)
  * carried in the ported value are cleaned up by
- * `withCacheControlExtensionsStripped`, which runs immediately after.
+ * `copilotAnthropicMessagesStripCacheControlExtensions`, which runs immediately after.
  *
  * References:
  * - https://github.com/anthropics/anthropic-sdk-typescript/blob/a53f60d59ca904f3e79296586642aac3ce68ae02/src/resources/messages/messages.ts#L2909-L2913
@@ -77,7 +77,7 @@ export const copilotAnthropicMessagesApplyTopLevelCacheControl = defineStage<Mes
       messages: payload.messages.map((message, m): AnthropicMessagesPayload['messages'][number] => {
         if (m !== site.message) return message;
         if (site.block === 'whole') {
-          const block: AnthropicMessagesTextBlock = { type: 'text', text: message.content as string, cache_control: topLevel };
+          const block: AnthropicMessagesTextBlockParam = { type: 'text', text: message.content as string, cache_control: topLevel };
           return { ...message, content: [block] } as AnthropicMessagesPayload['messages'][number];
         }
         const content = message.content as readonly CacheableBlock[];

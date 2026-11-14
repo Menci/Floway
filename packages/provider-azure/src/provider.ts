@@ -8,6 +8,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
   const azure = assertAzureUpstreamRecord(record);
 
   const instance: ProviderInstance = {
+    runScheduledTask: async () => {},
     getProvidedModels() {
       return Promise.resolve(azure.config.models.map(model => {
         const effective = resolveEffectiveFlags([AZURE_DEFAULT_FLAGS, azure.flagOverrides, model.flagOverrides]);
@@ -25,6 +26,9 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
           providerData: { upstreamModelId: model.upstreamModelId },
           enabledFlags: effective,
           opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
+          // A Foundry decision deployment answers the System One contract; the
+          // dialect is not the operator's to choose.
+          ...(kind === 'decision' ? { decisionTarget: { protocol: 'typesafe-systemone' as const } } : {}),
         };
       }));
     },

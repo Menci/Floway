@@ -5,14 +5,14 @@ import { pricingForClaudeCodeModelKey } from '../src/pricing.ts';
 import { createClaudeCodeProvider } from '../src/provider.ts';
 import type { ClaudeCodeAccessTokenEntry, ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from '../src/state.ts';
 import { getFailureFacts, type Event } from '@floway-dev/pipeline';
-import type { AnthropicMessagesPayload, AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
 import { initProviderRepo, type FlagId, type AnthropicMessagesUpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 import { collectChatProviderPipeline, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, readJsonRequest } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc_provider';
 
 type WireAnthropicMessagesPayload = AnthropicMessagesPayload & {
-  system: AnthropicMessagesTextBlock[];
+  system: AnthropicMessagesTextBlockParam[];
   metadata: { user_id: string };
 };
 
@@ -52,6 +52,7 @@ const makeRecord = (state: ClaudeCodeUpstreamState): UpstreamRecord => ({
   kind: 'claude-code',
   name: 'CC',
   enabled: true,
+  usageRefreshIntervalMinutes: 0,
   sortOrder: 0,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -70,6 +71,7 @@ let currentRecord: UpstreamRecord;
 beforeEach(() => {
   currentRecord = makeRecord({ accounts: [{ ...activeAccount }] });
   initProviderRepo(() => ({
+    recordUpstreamMetric: async () => {},
     upstreams: {
       getById: async () => currentRecord,
       saveState: async (_id, mutate) => {
@@ -94,7 +96,7 @@ const sseResponse = (): Response => new Response(
 const cliClientCallOpts = (overrides: Partial<AnthropicMessagesUpstreamCallOptions> = {}): AnthropicMessagesUpstreamCallOptions => ({
   ...noopAnthropicMessagesUpstreamCallOptions(),
   headers: new Headers({
-    'user-agent': 'claude-cli/2.1.181 (external, cli)',
+    'user-agent': 'claude-cli/2.1.280 (external, cli)',
     'x-app': 'cli',
     'anthropic-version': '2023-06-01',
   }),
@@ -158,6 +160,7 @@ describe('createClaudeCodeProvider — factory surface', () => {
     for (const m of models) {
       expect(m.enabledFlags.has('strip-billing-attribution')).toBe(false);
       expect(m.enabledFlags.has('openai-responses-compact-shim')).toBe(true);
+      expect(m.enabledFlags.has('rewrite-disallowed-mid-conv-system-to-user')).toBe(true);
     }
   });
 
@@ -299,7 +302,7 @@ describe('createClaudeCodeProvider — Messages operation stages', () => {
     // Whitelisted inbound headers reach the wire so the operator's CC
     // fingerprint stays end-to-end consistent (sub2api allowedHeaders).
     const wireHeaders = new Headers(init.headers);
-    expect(wireHeaders.get('user-agent')).toBe('claude-cli/2.1.181 (external, cli)');
+    expect(wireHeaders.get('user-agent')).toBe('claude-cli/2.1.280 (external, cli)');
     expect(wireHeaders.get('x-app')).toBe('cli');
     expect(wireHeaders.get('anthropic-beta')).toBe('oauth-2025-04-20');
     expect(wireHeaders.get('anthropic-version')).toBe('2023-06-01');
@@ -315,7 +318,7 @@ describe('createClaudeCodeProvider — Messages operation stages', () => {
       sonnetProviderModel,
       { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
       undefined,
-      { ...noopAnthropicMessagesUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.181' }) });
+      { ...noopAnthropicMessagesUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.280' }) });
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
     const body = await readJsonRequest(init) as WireAnthropicMessagesPayload;

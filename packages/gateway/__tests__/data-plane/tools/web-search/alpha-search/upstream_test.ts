@@ -1,4 +1,4 @@
-import { test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { providerEntry } from '../../../../../src/data-plane/pipeline/provider-entry.ts';
 import { mockGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
@@ -20,14 +20,23 @@ vi.mock('../../../../../src/data-plane/providers/resolution.ts', async importOri
   };
 });
 
-const { resolveAlphaSearchCandidate } = await import('../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts');
+const { AlphaSearchModelNotFoundError, resolveAlphaSearchCandidate } = await import('../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts');
+const { enumerateModelCandidates } = await import('../../../../../src/data-plane/providers/resolution.ts');
+
+const context: Parameters<typeof resolveAlphaSearchCandidate>[0] = {
+  config: { upstreamId: 'search-upstream', model: 'search-model' },
+  subject: { id: 1, username: 'admin', passwordHash: null, isAdmin: true, createdAt: '', deletedAt: null },
+  upstreamIds: null,
+  scheduler: promise => { void promise; },
+  runtimeLocation: 'TEST',
+};
 
 const dispatcherFor = async (kind: 'codex' | 'custom', inboundHeaderAllowlist: readonly InboundHeaderMatcher[] = []) => {
   let observedHeaders: Headers | undefined;
   const base = stubModelCandidate();
   const provider = {
     ...base.provider,
-    upstreamId: 'search-upstream',
+    upstreamId: context.config.upstreamId,
     kind,
     inboundHeaderAllowlist,
     pipelines: {
@@ -39,12 +48,7 @@ const dispatcherFor = async (kind: 'codex' | 'custom', inboundHeaderAllowlist: r
     instance: stubProvider(),
   };
   resolvedCandidate = stubModelCandidate({ provider });
-  const dispatcher = await resolveAlphaSearchCandidate({
-    config: { upstreamId: provider.upstreamId, model: 'search-model' },
-    upstreamIds: null,
-    scheduler: promise => { void promise; },
-    runtimeLocation: 'TEST',
-  });
+  const dispatcher = await resolveAlphaSearchCandidate(context);
   return {
     dispatcher: async (body: Record<string, unknown>, _signal: AbortSignal | undefined, headers: Headers) => {
       const pipeline = dispatcher.provider.pipelines.alphaSearch;
@@ -55,6 +59,29 @@ const dispatcherFor = async (kind: 'codex' | 'custom', inboundHeaderAllowlist: r
     }, observedHeaders: () => observedHeaders,
   };
 };
+
+test('Alpha Search reports a missing model when the selection has no permitted candidate', async () => {
+  resolvedCandidate = undefined;
+  await expect(resolveAlphaSearchCandidate(context)).rejects.toBeInstanceOf(AlphaSearchModelNotFoundError);
+});
+
+test('Alpha Search does not resolve a model outside the API key upstream scope', async () => {
+  vi.mocked(enumerateModelCandidates).mockClear();
+  await expect(resolveAlphaSearchCandidate({ ...context, upstreamIds: [] })).rejects.toBeInstanceOf(AlphaSearchModelNotFoundError);
+  expect(enumerateModelCandidates).not.toHaveBeenCalled();
+});
+
+test('Alpha Search preserves unexpected resolution failures', async () => {
+  const failure = new Error('resolution failed');
+  vi.mocked(enumerateModelCandidates).mockRejectedValueOnce(failure);
+  await expect(resolveAlphaSearchCandidate(context)).rejects.toBe(failure);
+});
+
+test('Alpha Search rejects unsupported providers as configuration failures', async () => {
+  const candidate = stubModelCandidate();
+  resolvedCandidate = { ...candidate, provider: { ...candidate.provider, upstreamId: context.config.upstreamId, kind: 'copilot' } };
+  await expect(resolveAlphaSearchCandidate(context)).rejects.toThrow('Selected upstream does not support OpenAI search passthrough');
+});
 
 test('Codex Alpha Search receives only its declared turn metadata', async () => {
   const { dispatcher, observedHeaders } = await dispatcherFor('codex', ['x-codex-turn-metadata']);

@@ -37,10 +37,12 @@ const checks = {
       throw new Error(`Durable Object probe returned HTTP ${response.status}`);
     }
   },
-  LOG_STREAM_DO: async env => {
+  LOG_STREAM_DO: async (env) => {
     const id = env.LOG_STREAM_DO.idFromName(PROBE_KEY);
     const response = await env.LOG_STREAM_DO.get(id).fetch(new Request('https://deployment-probe.internal/'));
-    if (!response.ok || await response.text() !== 'Hello World') throw new Error(`LogStream probe returned HTTP ${response.status}`);
+    if (!response.ok || await response.text() !== 'Hello World') {
+      throw new Error(`LogStream probe returned HTTP ${response.status}`);
+    }
   },
 };
 

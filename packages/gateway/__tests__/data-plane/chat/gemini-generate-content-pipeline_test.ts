@@ -14,7 +14,7 @@ import { chatFixtureHttpServices, stubChatProviderPipelines } from '../../test-u
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
-import { GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, type GeminiGenerateContentPayload, type GeminiGenerateContentResult } from '@floway-dev/protocols/gemini-generate-content';
+import { type GeminiGenerateContentPayload, type GeminiGenerateContentResult } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { directFetcher, type ModelCandidate } from '@floway-dev/provider';
 import { type StubChatProviderCall, type ProviderStreamResult } from '@floway-dev/test-utils';
@@ -181,7 +181,7 @@ const withoutCarrier = (event: GeminiGenerateContentResult): GeminiGenerateConte
       ...candidate,
       content: {
         ...candidate.content,
-        parts: candidate.content.parts.map(({ thoughtSignature: _carried, ...part }) => part),
+        parts: candidate.content?.parts?.map(({ thoughtSignature: _carried, ...part }) => part),
       },
     })),
   }),
@@ -190,7 +190,7 @@ const withoutCarrier = (event: GeminiGenerateContentResult): GeminiGenerateConte
 /** Every piece of this turn's own state the client was handed back. */
 const affinityCarriers = (events: readonly GeminiGenerateContentResult[]): readonly string[] =>
   events.flatMap(event => (event.candidates ?? []).flatMap(candidate =>
-    candidate.content.parts.flatMap(part => part.thoughtSignature ?? [])));
+    candidate.content?.parts?.flatMap(part => part.thoughtSignature ?? []) ?? []));
 
 describe('the Gemini generateContent pipeline', () => {
   it('assembles, and asks its caller only for what the descending stages need', () => {
@@ -214,13 +214,13 @@ describe('the Gemini generateContent pipeline', () => {
 
     // The answer comes back before the drain runs, which is what lets a streaming family
     // hand its stream on: the frames are still there to read.
-    expect((await collect(facts['response.chat.geminiGenerateContent.rendered']))
-      .map(frame => withoutCarrier(JSON.parse(frame.data) as GeminiGenerateContentResult))).toEqual([
-      { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'he' }] } }] },
-      {
-        candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'llo' }] }, finishReason: 'STOP' }],
-        usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 7, totalTokenCount: 12 },
-      },
+    const frames = (await collect(facts['response.chat.geminiGenerateContent.rendered']))
+      .map(frame => withoutCarrier(JSON.parse(frame.data) as GeminiGenerateContentResult));
+    expect(frames).toEqual([
+      { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'he' }] } }], modelVersion: 'gemini-2.5-pro', responseId: 'chatcmpl_1' },
+      { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'llo' }] } }], modelVersion: 'gemini-2.5-pro', responseId: 'chatcmpl_1' },
+      { candidates: [{ index: 0, content: { parts: undefined }, finishReason: 'STOP' }], modelVersion: 'gemini-2.5-pro', responseId: 'chatcmpl_1' },
+      { usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 7, totalTokenCount: 12 }, modelVersion: 'gemini-2.5-pro', responseId: 'chatcmpl_1' },
     ]);
     // What went out is the translated turn, addressed to the candidate's own id — which the
     // ending then strips, because the provider re-stamps what it resolved upstream.
@@ -269,6 +269,7 @@ describe('the Gemini generateContent pipeline', () => {
     expect(withoutCarrier(facts['response.chat.geminiGenerateContent.rendered'] as GeminiGenerateContentResult)).toEqual({
       candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'he' }, { text: 'llo' }] }, finishReason: 'STOP' }],
       usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 7, totalTokenCount: 12 },
+      modelVersion: 'gemini-2.5-pro', responseId: 'chatcmpl_1',
     });
     expect(facts['response.http.status']).toBe(200);
     await drain();
@@ -405,7 +406,7 @@ describe('the Gemini generateContent pipeline', () => {
     const { facts, drain } = await serve(entryFacts());
 
     const frames = await collect(facts['response.chat.geminiGenerateContent.rendered']);
-    expect(JSON.parse(frames.at(-1)!.data)).toMatchObject({ error: { code: 500, status: 'INTERNAL', message: GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE } });
+    expect(JSON.parse(frames.at(-1)!.data)).toMatchObject({ error: { code: 500, status: 'INTERNAL', message: 'ChatCompletions choice 0 ended without finish_reason' } });
     await drain();
   });
 });

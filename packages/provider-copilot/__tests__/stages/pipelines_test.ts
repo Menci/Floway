@@ -4,14 +4,15 @@ import { clearInProcessCopilotTokenCache } from '../../src/auth.ts';
 import { createCopilotPipelines } from '../../src/pipelines.ts';
 import { emptyCopilotUpstreamState } from '../../src/state.ts';
 import { move, run } from '@floway-dev/pipeline';
+import { isOpenAIResponsesCompactionItem } from '@floway-dev/protocols/openai-responses';
 import { initProviderRepo, providerModelFacts, type ProviderChatServices, type ProviderOperationRequest, type UpstreamRecord } from '@floway-dev/provider';
 import { jsonResponse, noopUpstreamCallOptions, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 const auth = { id: 'up_pipeline', githubHost: 'github.com', githubToken: 'test-token' };
 const setup = (): void => {
   clearInProcessCopilotTokenCache();
-  const upstream: UpstreamRecord = { id: auth.id, kind: 'copilot', name: 'Test', enabled: true, sortOrder: 0, createdAt: '', updatedAt: '', config: {}, state: { ...emptyCopilotUpstreamState(), copilotToken: { token: 'access-token', expiresAt: 4102444800, baseUrl: 'https://copilot.example' } }, flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [], modelPrefix: null, modelsCache: null, hue: 210 };
-  initProviderRepo(() => ({ upstreams: { getById: async () => upstream, saveState: async () => {} } }));
+  const upstream: UpstreamRecord = { id: auth.id, kind: 'copilot', name: 'Test', enabled: true, usageRefreshIntervalMinutes: 0, sortOrder: 0, createdAt: '', updatedAt: '', config: {}, state: { ...emptyCopilotUpstreamState(), copilotToken: { token: 'access-token', expiresAt: 4102444800, baseUrl: 'https://copilot.example' } }, flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [], modelPrefix: null, modelsCache: null, hue: 210 };
+  initProviderRepo(() => ({ upstreams: { getById: async () => upstream, saveState: async () => {} }, recordUpstreamMetric: async () => {} }));
 };
 const services: ProviderChatServices = { httpCall: () => ({ ...noopUpstreamCallOptions(), signal: undefined }), recordProtocolFrames: frames => frames };
 
@@ -29,8 +30,9 @@ test('Copilot compaction runs vendor request stages and normalizes the generated
   await withMockedFetch(async request => {
     expect(request.url).toBe('https://copilot.example/responses');
     expect(request.headers.get('authorization')).toBe('Bearer access-token');
+    expect(request.headers.get('content-type')).toBe('application/json');
     const body = await request.json() as Record<string, unknown>;
-    expect(body).toMatchObject({ model: 'gpt-5.4', store: false, stream: false, tools: [{ type: 'namespace', description: 'Tools in the tools namespace.' }] });
+    expect(body).toMatchObject({ model: 'gpt-5.4', store: true, stream: false, tools: [{ type: 'namespace', description: 'Tools in the tools namespace.' }] });
     expect(body).not.toHaveProperty('service_tier');
     expect(body.input).toEqual([{ type: 'message', role: 'user', content: 'hello' }, { type: 'compaction_trigger' }]);
     return jsonResponse({ id: 'response', object: 'response', output: [{ type: 'compaction', id: 'upstream-compaction-id', encrypted_content: 'opaque' }] });
@@ -40,8 +42,10 @@ test('Copilot compaction runs vendor request stages and normalizes the generated
     if (output === null || !('kind' in output) || output.kind !== 'value') throw new Error('Expected compact value');
     expect(output.body.object).toBe('response.compaction');
     expect(output.body.output).toHaveLength(2);
-    expect(output.body.output[1]).toMatchObject({ type: 'compaction' });
-    expect(output.body.output[1].id).not.toBe('upstream-compaction-id');
+    const compaction = output.body.output[1];
+    if (!isOpenAIResponsesCompactionItem(compaction)) throw new Error('Expected compaction item');
+    expect(compaction.type).toBe('compaction');
+    expect(compaction.id).not.toBe('upstream-compaction-id');
     expect(executed.facts['response.provider.called']).toBe(true);
     expect(executed.facts['response.provider.modelKey']).toBe('gpt-5.4');
     expect(input['request.provider.payload'].store).toBe(true);

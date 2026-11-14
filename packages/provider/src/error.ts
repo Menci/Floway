@@ -12,6 +12,13 @@ export interface InternalDebugError {
   target_api?: string;
 }
 
+export const internalDebugErrorFields = (error: InternalDebugError): Pick<InternalDebugError, 'name' | 'stack' | 'cause' | 'target_api'> => ({
+  name: error.name,
+  stack: error.stack,
+  cause: error.cause,
+  target_api: error.target_api,
+});
+
 const serializeCause = (cause: unknown): unknown => {
   if (!(cause instanceof Error)) return cause;
 

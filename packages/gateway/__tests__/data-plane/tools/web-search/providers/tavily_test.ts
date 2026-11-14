@@ -62,6 +62,24 @@ test('createTavilyWebSearchProvider forwards maxResults when set', async () => {
   );
 });
 
+test('createTavilyWebSearchProvider maps recencyDays to a publish-date window', async () => {
+  for (const [days, expected] of [[1, 'day'], [3, 'week'], [10, 'month'], [400, 'year']] as const) {
+    let request: Request | undefined;
+    await withMockedFetch(
+      incoming => {
+        request = incoming;
+        return jsonResponse({ results: [] });
+      },
+      async () => {
+        const provider = createTavilyWebSearchProvider('tvly-test');
+        await provider.search({ query: 'React', recencyDays: days });
+        const body = JSON.parse(await request!.text());
+        assertEquals(body.time_range, expected);
+      },
+    );
+  }
+});
+
 test('createTavilyWebSearchProvider rejects blank and overlong queries before fetch', async () => {
   let called = false;
 

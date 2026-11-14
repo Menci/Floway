@@ -1,7 +1,7 @@
-import type { Fields } from './facts.ts';
-import type { ChatServices } from '../services.ts';
 import { isClaudeCodeProbe, probeFrames } from './claude-code-probe.ts';
+import type { Fields } from './facts.ts';
 import { telemetryModelIdentity } from '../../shared/telemetry/attribution.ts';
+import type { ChatServices } from '../services.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { providerModelOf } from '@floway-dev/provider';
 

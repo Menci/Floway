@@ -2,8 +2,7 @@ import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
 import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
-import type { RerankProtocol, RerankTarget } from '@floway-dev/protocols/common';
-import { DEFAULT_RERANK_PATHS } from '@floway-dev/protocols/rerank';
+import { type RerankProtocol, type RerankTarget, DEFAULT_RERANK_PATHS } from '@floway-dev/protocols/browser';
 
 const { Field, Option } = fluentComponents;
 

@@ -40,6 +40,7 @@ const apiKey = (id: string, userId: number): ApiKey => ({
   serverSecret: String(userId).padStart(2, '0').repeat(32),
   createdAt: '2026-01-01T00:00:00.000Z',
   upstreamIds: null,
+  randomizeUpstreams: false,
   deletedAt: null,
   dumpRetentionSeconds: null,
   openaiResponsesRetentionSeconds: 0,
@@ -307,6 +308,8 @@ test('SQL usage overview matches the in-memory oracle across filters, facets, ax
   const options: UsageOverviewQueryOptions = {
     actorUserId: 1,
     isAdmin: true,
+    visibleUserIds: [],
+    visibleUpstreams: [],
     start: '2026-11-01T05',
     end: '2026-11-01T08',
     groupBy: 'model',
@@ -316,28 +319,28 @@ test('SQL usage overview matches the in-memory oracle across filters, facets, ax
       : '2026-11-01T02',
   };
 
-  for (const groupBy of ['model', 'upstream', 'userId', 'keyId'] as const) {
-    const unfiltered = {
-      ...options,
-      groupBy,
-      filters: { keyIds: [], userIds: [], models: [], upstreams: [] },
-    };
-    assertEquals(
-      await sql.usage.queryOverview(unfiltered),
-      await memory.usage.queryOverview(unfiltered),
-    );
-  }
-
-  for (const filters of [
-    { keyIds: [], userIds: [0], models: [], upstreams: [] },
-    { keyIds: ['key-1'], userIds: [1], models: ['model-a'], upstreams: ['none'] },
-    { keyIds: [], userIds: [], models: ['missing'], upstreams: [] },
-  ]) {
-    const filtered = { ...options, filters };
-    assertEquals(
-      await sql.usage.queryOverview(filtered),
-      await memory.usage.queryOverview(filtered),
-    );
+  for (const bucketForHour of [options.bucketForHour, (hour: string) => hour, () => 'all-hours']) {
+    for (const actor of [
+      { actorUserId: 1, isAdmin: true, visibleUserIds: [], visibleUpstreams: [] },
+      { actorUserId: 2, isAdmin: false, visibleUserIds: [2], visibleUpstreams: [] },
+      { actorUserId: 2, isAdmin: false, visibleUserIds: [1, 2], visibleUpstreams: [] },
+      { actorUserId: 2, isAdmin: false, visibleUserIds: [], visibleUpstreams: ['none'] },
+    ]) {
+      for (const groupBy of ['model', 'upstream', 'userId', 'keyId'] as const) {
+        for (const filters of [
+          { keyIds: [], userIds: [], models: [], upstreams: [] },
+          { keyIds: [], userIds: [0], models: [], upstreams: [] },
+          { keyIds: ['key-1'], userIds: [1], models: ['model-a'], upstreams: ['none'] },
+          { keyIds: [], userIds: [], models: ['missing'], upstreams: [] },
+        ]) {
+          const queryOptions = { ...options, ...actor, groupBy, bucketForHour, filters };
+          assertEquals(
+            await sql.usage.queryOverview(queryOptions),
+            await memory.usage.queryOverview(queryOptions),
+          );
+        }
+      }
+    }
   }
 
   const expected = await memory.usage.queryOverview(options);
@@ -378,6 +381,8 @@ test('SQL usage overview preserves request-only and metric-only storage identiti
   const overview = await repo.usage.queryOverview({
     actorUserId: 1,
     isAdmin: true,
+    visibleUserIds: [],
+    visibleUpstreams: [],
     start: '2026-07-12T00',
     end: '2026-07-12T01',
     groupBy: 'model',
@@ -411,6 +416,8 @@ test('SQL usage overview validates scoped metric rows before dashboard filters',
   await assertRejects(() => repo.usage.queryOverview({
     actorUserId: 1,
     isAdmin: true,
+    visibleUserIds: [],
+    visibleUpstreams: [],
     start: '2026-07-12T00',
     end: '2026-07-12T01',
     groupBy: 'model',
@@ -430,6 +437,8 @@ test('SQL usage overview uses key-hour indexes for an actor-scoped aggregate', a
   await repo.usage.queryOverview({
     actorUserId: 1,
     isAdmin: true,
+    visibleUserIds: [],
+    visibleUpstreams: [],
     start: '2026-07-12T00',
     end: '2026-07-12T01',
     groupBy: 'keyId',
@@ -464,6 +473,8 @@ test('SQL usage overview returns grouped term cardinality rather than raw storag
   const overview = await repo.usage.queryOverview({
     actorUserId: 1,
     isAdmin: true,
+    visibleUserIds: [],
+    visibleUpstreams: [],
     start: '2026-07-12T00',
     end: '2026-07-12T01',
     groupBy: 'model',

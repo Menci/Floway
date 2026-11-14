@@ -13,7 +13,7 @@ import {
   type PricingCoordinateValue,
   type PricingSelector,
   type PricingThresholdOperator,
-} from '@floway-dev/protocols/common';
+} from '@floway-dev/protocols/browser';
 
 export interface PricingField {
   readonly metric: BillingMetric;
@@ -41,6 +41,8 @@ export const PRICING_FIELDS_BY_KIND: Record<ModelKind, readonly PricingField[]> 
   image: tokenPricingFields('input_tokens', 'input_image_tokens', 'output_tokens', 'output_image_tokens'),
   transcription: [tokenPricingField('input_tokens'), tokenPricingField('input_audio_tokens'), PRICING_FIELD_BY_METRIC.input_audio_seconds, tokenPricingField('output_tokens')],
   rerank: [tokenPricingField('input_tokens'), PRICING_FIELD_BY_METRIC.rerank_searches],
+  // Decision models bill input tokens only; output tokens are free.
+  decision: tokenPricingFields('input_tokens'),
 };
 
 export interface PricingThresholdDraft {

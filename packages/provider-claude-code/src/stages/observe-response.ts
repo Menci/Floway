@@ -10,7 +10,7 @@ type Observed = ProviderResponse & { 'response.claudeCode.background': Deferred<
 export const observeClaudeCodeResponse = (upstreamId: string) => defineStage<ClaudeCodeHttpRequest, ClaudeCodeHttpRequest, ProviderResponse, Observed>({
   name: 'observeClaudeCodeResponse',
   through: {
-    request: { needs: [], consumes: [], provides: [] },
+    request: { needs: ['request.provider.modelKey'], consumes: [], provides: [] },
     response: { needs: ['response.http.exchange', 'response.http.body'], consumes: ['response.http.exchange', 'response.http.body'], provides: ['response.http.exchange', 'response.http.body', 'response.claudeCode.background', 'response.claudeCode.failureBody'] },
   },
   execute: async (facts, next, use) => {
@@ -21,7 +21,7 @@ export const observeClaudeCodeResponse = (upstreamId: string) => defineStage<Cla
     const response = exchangeResponse(exchange);
     if (response.ok || response.status === 429) {
       const quota = parseClaudeCodeQuotaHeaders(response.headers);
-      if (Object.keys(quota.raw).length > 0) tasks.push(persistQuotaSnapshot(upstreamId, quota, use.log.info));
+      if (Object.keys(quota.raw).length > 0) tasks.push(persistQuotaSnapshot(upstreamId, facts['request.provider.modelKey'], quota, use.log.info));
     }
     let failureBody: unknown = null;
     let retained = exchange;

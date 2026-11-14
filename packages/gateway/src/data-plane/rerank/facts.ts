@@ -16,7 +16,7 @@ export interface RerankFacts extends GatewayFacts {
   'response.rerank.targetProtocol': RerankProtocol;
   /** What the client is actually sent, in its own protocol. The edge provides it, so a
    *  dump shows the bytes the client received rather than the gateway's canonical form. */
-  'response.rerank.rendered': Record<string, unknown>;
+  'response.rerank.rendered': object;
 }
 
 export type Fields<K extends keyof RerankFacts> = { [P in K]: RerankFacts[P] };

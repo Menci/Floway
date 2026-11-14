@@ -10,19 +10,19 @@ import { eventsOf, installDumpStubs } from '../../dump/test-fixtures.ts';
 import { flushBackground, trackBackground } from '../../test-utils/background-tracker.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { compose, createRunReader, defineStage, move, run, type DumpEvent } from '@floway-dev/pipeline';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
-const key: ApiKey = { id: 'client-key', userId: 1, name: 'Client key', key: 'client-key', serverSecret: '00'.repeat(32), createdAt: '2026-01-01T00:00:00Z', upstreamIds: null, deletedAt: null, dumpRetentionSeconds: 3600, openaiResponsesRetentionSeconds: 0 };
+const key: ApiKey = { id: 'client-key', userId: 1, name: 'Client key', key: 'client-key', serverSecret: '00'.repeat(32), createdAt: '2026-01-01T00:00:00Z', upstreamIds: null, randomizeUpstreams: false, deletedAt: null, dumpRetentionSeconds: 3600, openaiResponsesRetentionSeconds: 0 };
 const usage: OpenAIChatCompletionsStreamEvent = { id: 'chat', object: 'chat.completion.chunk', created: 1, model: 'model', choices: [], usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 } };
 const chat: OpenAIChatCompletionsStreamEvent = { id: 'chat', object: 'chat.completion.chunk', created: 1, model: 'model', choices: [{ index: 0, delta: { content: 'answer' }, finish_reason: 'stop' }] };
-const citation: AnthropicMessagesStreamEvent = {
+const citation: AnthropicMessagesStreamEventEx = {
   type: 'content_block_start', index: 0,
   content_block: {
     type: 'text', text: 'answer',
-    citations: [{ type: 'search_result_location', url: 'https://example.com/source', title: 'Source', search_result_index: 0, start_block_index: 0, end_block_index: 1 }],
+    citations: [{ type: 'search_result_location', source: 'https://example.com/source', cited_text: 'answer', title: 'Source', search_result_index: 0, start_block_index: 0, end_block_index: 1 }],
   },
 };
 const gemini: GeminiGenerateContentStreamEvent = { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'answer' }] }, finishReason: 'STOP' }] };
@@ -43,10 +43,10 @@ const cases = [
     name: 'Anthropic citations and transport terminator', emit: emitAnthropicMessages,
     entry: { 'ingress.chat.anthropicMessages.wantsStream': true },
     response: 'response.chat.anthropicMessages', rendered: 'response.chat.anthropicMessages.rendered',
-    upstream: [eventFrame(citation), eventFrame<AnthropicMessagesStreamEvent>({ type: 'content_block_stop', index: 0 }), eventFrame<AnthropicMessagesStreamEvent>({ type: 'message_stop' }), doneFrame()],
+    upstream: [eventFrame(citation), eventFrame<AnthropicMessagesStreamEventEx>({ type: 'content_block_stop', index: 0 }), eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_stop' }), doneFrame()],
     verify: (events: unknown[]) => {
       expect(events).not.toContain('[DONE]');
-      expect(events).toContainEqual({ ...citation, index: 1, content_block: { type: 'text', text: 'answer', citations: [{ type: 'search_result_location', source: 'https://example.com/source', title: 'Source', search_result_index: 0, start_block_index: 0, end_block_index: 1 }] } });
+      expect(events).toContainEqual({ ...citation, index: 1, content_block: { type: 'text', text: 'answer', citations: [{ type: 'search_result_location', source: 'https://example.com/source', cited_text: 'answer', title: 'Source', search_result_index: 0, start_block_index: 0, end_block_index: 1 }] } });
     },
   },
   {

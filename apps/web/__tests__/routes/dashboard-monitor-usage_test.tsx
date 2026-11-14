@@ -21,7 +21,6 @@ const usageRecord = { bucket, group: 'gpt-5', requests: 1, metrics: { input_toke
 const loaderData = {
   currentUserId: '1',
   error: null,
-  isAdmin: true,
   loadedAt,
   search: { records: [], keys: [] },
   state: {
@@ -44,12 +43,14 @@ const loaderData = {
     },
     dimensionValues: { models: ['gpt-5'], upstreams: ['upstream:up-1'], userIds: [2], keyIds: ['key-2'] },
     users: [{ id: 1, username: 'admin' }, { id: 2, username: 'Alice' }],
+    auditableUserIds: [1, 2],
+    upstreams: [{ id: 'up-1', name: 'Copilot seat', hue: 210 }],
     keys: [{ id: 'key-2', name: 'Alice key', createdAt: '2026-08-01T00:00:00.000Z' }],
   },
 };
 
 const renderPage = (data: Parameters<typeof DashboardMonitorUsage>[0]['loaderData']) => {
-  const user = { id: 1, username: 'admin', isAdmin: true, upstreamIds: null };
+  const user = { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } };
   const router = createMemoryRouter([{
     path: '/',
     Component: () => <Outlet context={{ user }} />,
@@ -61,7 +62,7 @@ const renderPage = (data: Parameters<typeof DashboardMonitorUsage>[0]['loaderDat
   return renderInApp(<RouterProvider router={router} />);
 };
 
-const stubUsageGateway = (upstreamOptions: () => Response = () => Response.json([{ id: 'up-1', name: 'Copilot seat', kind: 'copilot', enabled: true, hue: 210, cachedModelCount: 1 }])) => {
+const stubUsageGateway = () => {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
     if (path === '/api/token-usage/overview') return Response.json({
@@ -69,15 +70,34 @@ const stubUsageGateway = (upstreamOptions: () => Response = () => Response.json(
       axes: { none: [], model: [], upstream: [], userId: [], keyId: [] },
       dimensionValues: { models: ['gpt-5'], upstreams: ['upstream:up-1'], userIds: [2], keyIds: ['key-2'] },
       users: [{ id: 1, username: 'admin' }, { id: 2, username: 'Alice' }],
+      auditableUserIds: [1, 2],
+      upstreams: [{ id: 'up-1', name: 'Copilot seat', hue: 210 }],
       keys: [{ id: 'key-2', name: 'Alice key', createdAt: '2026-08-01T00:00:00.000Z' }],
     });
     if (path === '/api/search-usage') return Response.json({ view: 'all-by-user', records: [], users: [] });
-    if (path === '/api/upstream-options') return upstreamOptions();
     throw new Error(`Unexpected request to ${path}`);
   }));
 };
 
 describe('usage dimension controls', () => {
+  it('shows auditable users even when they have no usage in the selected window', () => {
+    renderPage({
+      ...loaderData,
+      currentUserId: '2',
+      usage: {
+        ...loaderData.usage,
+        dimensionValues: { ...loaderData.usage.dimensionValues, userIds: [2] },
+        users: [{ id: 2, username: 'Alice' }, { id: 5, username: 'Dana' }],
+      },
+    });
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Group by' }));
+    expect(screen.getByRole('option', { name: 'By User' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('combobox', { name: 'User' }));
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Alice' })).toBeTruthy();
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Dana' })).toBeTruthy();
+  });
+
   it('matches the Performance dimension and range controls', () => {
     renderPage(loaderData);
 
@@ -91,7 +111,7 @@ describe('usage dimension controls', () => {
     expect(screen.getByText('30 Days')).toBeTruthy();
     const controlsRow = screen.getByRole('group', { name: 'Group by' }).parentElement?.parentElement;
     const range = screen.getByRole('radiogroup', { name: 'Usage range' });
-    expect(range.parentElement?.parentElement).toBe(controlsRow);
+    expect(controlsRow?.contains(range)).toBe(true);
     expect(controlsRow?.nextElementSibling?.contains(screen.getByRole('combobox', { name: 'Upstream' }))).toBe(true);
     expect(screen.getByRole('heading', { level: 2, name: 'By Model' })).toBeTruthy();
   });
@@ -186,7 +206,7 @@ describe('usage dimension controls', () => {
   it('loads the overview contract and derives Search scope from the actor', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'admin-session',
-      user: { id: 1, username: 'admin', isAdmin: true, upstreamIds: null },
+      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } },
     });
     stubUsageGateway();
 
@@ -197,19 +217,46 @@ describe('usage dimension controls', () => {
     expect(data.upstreams).toEqual([{ id: 'up-1', name: 'Copilot seat', hue: 210 }]);
   });
 
-  it('keeps token charts available when upstream names fail to load', async () => {
+  it('reads upstream labels from the overview response', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'admin-session',
-      user: { id: 1, username: 'admin', isAdmin: true, upstreamIds: null },
+      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } },
     });
-    stubUsageGateway(() => Response.json({ error: 'Unavailable' }, { status: 500 }));
+    stubUsageGateway();
 
     const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/usage') } as never);
     renderPage(data);
 
-    expect(data.upstreams).toEqual([]);
+    expect(data.upstreams).toEqual([{ id: 'up-1', name: 'Copilot seat', hue: 210 }]);
     expect(screen.getByRole('heading', { level: 2, name: 'By Model' })).toBeTruthy();
-    expect(screen.getByText('Unavailable')).toBeTruthy();
+  });
+
+  it('keeps self-only Search usage grouped by API key', async () => {
+    useAuthStore.getState().primeFromLogin({
+      token: 'operator-session',
+      user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining', language: null } },
+    });
+    let requestedView: string | null = null;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
+      if (url.pathname === '/api/token-usage/overview') return Response.json({
+        series: [],
+        axes: { none: [], model: [], upstream: [], userId: [], keyId: [] },
+        dimensionValues: { models: [], upstreams: [], userIds: [], keyIds: [] },
+        users: [{ id: 2, username: 'operator' }],
+        auditableUserIds: [2],
+        upstreams: [],
+        keys: [],
+      });
+      if (url.pathname === '/api/search-usage') {
+        requestedView = url.searchParams.get('view');
+        return Response.json({ view: 'self-by-key', records: [], keys: [] });
+      }
+      throw new Error(`Unexpected request to ${url.pathname}`);
+    }));
+
+    await clientLoader({ request: new Request('http://localhost/dashboard/monitor/usage') } as never);
+    expect(requestedView).toBe('self-by-key');
   });
 
   it('retries a failed grouping when the operator selects it again', async () => {
@@ -231,11 +278,12 @@ describe('usage dimension controls', () => {
           axes: { none: [], model: [], upstream: [], userId: [], keyId: [] },
           dimensionValues: loaderData.usage.dimensionValues,
           users: loaderData.usage.users,
+          auditableUserIds: loaderData.usage.auditableUserIds,
+          upstreams: loaderData.usage.upstreams,
           keys: loaderData.usage.keys,
         });
       }
       if (url.pathname === '/api/search-usage') return Response.json({ view: 'all-by-user', records: [], users: [] });
-      if (url.pathname === '/api/upstream-options') return Response.json([{ id: 'up-1', name: 'Copilot seat', hue: 210 }]);
       throw new Error(`Unexpected request to ${url.pathname}`);
     }));
     renderPage(loaderData);

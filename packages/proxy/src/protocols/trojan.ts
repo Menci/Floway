@@ -1,27 +1,30 @@
 // Trojan client.
 //
-// We do BOTH the outer TLS (to the Trojan server) and the inner TLS (to the
-// upstream HTTPS) in userspace, because workerd's outer TLS implementation
-// splits the first application-data write into two TLS records (~4 bytes +
-// rest). sing-box's trojan inbound reads the 56-byte key with `conn.Read`,
-// which short-reads on the 4-byte first record and rejects with
-// "bad request size: fallback disabled". Doing the outer TLS in userspace
-// gives us full control of record framing.
+// The request header (56-byte hex(SHA-224(password)) + CRLF + SOCKS-like
+// address) MUST reach the peer inside a single TLS record. sing-box's inbound
+// reads the key with `conn.Read`, which returns at most one record's payload,
+// and a short read rejects with "bad request size" when no fallback is
+// configured. We surface the header as `prefix` on the dial result so every
+// wrapper that consumes the post-trojan stream writes it ahead of its own
+// first bytes.
 //
-// The Trojan request header (56-byte hex(SHA-224(password)) + CRLF + SOCKS-
-// like address) MUST land in the same record as the first follow-up bytes
-// from whichever wrapper consumes the post-trojan stream. We surface the
-// header as `prefix` on the DialResult so whoever owns the next write
-// folds it in.
+// The record boundary is also why workerd cannot serve the outer leg
+// natively: its first application-data write is split across two records
+// (~4 bytes then the rest), which is exactly the short read the inbound
+// rejects. Node keeps a small write in a single record, so both legs there run
+// natively with the header delivered intact.
+//
+// Spec: https://trojan-gfw.github.io/trojan/protocol
 
 import { sha224 } from '@noble/hashes/sha2.js';
 
-import { encodeAtypAddress, utf8Bytes } from '../bytes.ts';
+import { encodeAtypAddress } from '../bytes.ts';
+import { ProxyDialError } from '../dial-error.ts';
 import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../dial-target.ts';
-import { ProxyDialError } from '../errors.ts';
+import { utf8Bytes } from '../encoding.ts';
 import type { TrojanProxyConfig } from '../proxy-config.ts';
-import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
-import { userspaceTls, type TlsStream } from '@floway-dev/http';
+import type { DialOptions, DialResult, DialedSocket, DialTarget } from '../types.ts';
+import type { DuplexStream } from '@floway-dev/http';
 
 export const dialTrojan = async (
   config: TrojanProxyConfig,
@@ -33,7 +36,7 @@ export const dialTrojan = async (
   const socket = await connectOrDialError(options.socketDial, config.host, config.port, { signal: options.signal });
 
   try {
-    return await dialTrojanInner(socket, config, target, options.signal);
+    return await dialTrojanInner(socket, config, target, options);
   } catch (err) {
     void socket.close().catch(() => {});
     throw err;
@@ -44,28 +47,26 @@ const dialTrojanInner = async (
   socket: DialedSocket,
   config: TrojanProxyConfig,
   target: DialTarget,
-  signal: AbortSignal | undefined,
+  options: DialOptions,
 ): Promise<DialResult> => {
-  let outerTls: TlsStream;
+  let outerTls: DuplexStream;
   try {
-    outerTls = await userspaceTls(socket, {
+    outerTls = await options.socketDial.startTls(socket, {
       host: config.sni ?? config.host,
       // Operator escape hatch for self-signed trojan-server leaves (the
-      // trojan-go reference inbound runs self-signed by default); the
-      // wrapper chain-validates otherwise.
+      // trojan-go reference inbound runs self-signed by default); the upgrade
+      // chain-validates otherwise.
       insecure: config.allowInsecure,
-      signal,
+      signal: options.signal,
     });
   } catch (cause) {
     throw new ProxyDialError('outer tls handshake to trojan server failed', 'outer-tls', { cause });
   }
 
-  const header = buildTrojanRequestHeader(config.password, target);
-
   return {
     readable: outerTls.readable,
     writable: outerTls.writable,
-    prefix: header,
+    prefix: buildTrojanRequestHeader(config.password, target),
   };
 };
 

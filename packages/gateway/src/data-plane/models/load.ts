@@ -1,6 +1,7 @@
 import type { ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
-import type { ModelAliasesRepo } from '../../repo/types.ts';
-import { enumerateAddressableModelIds, listedRealModels } from '../shared/listing/addressable.ts';
+import { getRepo } from '../../repo/index.ts';
+import type { ModelAliasesRepo, User } from '../../repo/types.ts';
+import { enumerateAddressableModelIds, listedRealModels, type AddressableIdEntry } from '../shared/listing/addressable.ts';
 import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import type { InternalModel } from '@floway-dev/provider';
@@ -41,27 +42,45 @@ export const toPublicModel = (model: InternalModel): PublicModel => {
   return info;
 };
 
+export interface ModelListingCatalog {
+  readonly callerAddressable: readonly AddressableIdEntry[];
+  readonly gatewayAddressable: readonly AddressableIdEntry[];
+  readonly realModels: readonly InternalModel[];
+  readonly aliases: Awaited<ReturnType<ModelAliasesRepo['list']>>;
+}
+
+export const loadModelListingCatalog = async (
+  subject: User,
+  upstreamFilter: readonly string[] | null,
+  scheduleRefresh: ModelsRefreshScheduler,
+  aliasRepo: ModelAliasesRepo,
+): Promise<ModelListingCatalog> => {
+  const gatewaySubject = subject.isAdmin ? subject : { ...subject, isAdmin: true };
+  const [upstreams, aliases] = await Promise.all([getRepo().upstreams.list(), aliasRepo.list()]);
+  const [callerAddressable, gatewayAddressable] = await Promise.all([
+    enumerateAddressableModelIds(subject, upstreamFilter, scheduleRefresh, upstreams),
+    subject.isAdmin && upstreamFilter === null
+      ? Promise.resolve(null)
+      : enumerateAddressableModelIds(gatewaySubject, null, scheduleRefresh, upstreams),
+  ]);
+  return {
+    callerAddressable,
+    gatewayAddressable: gatewayAddressable ?? callerAddressable,
+    realModels: listedRealModels(callerAddressable),
+    aliases,
+  };
+};
+
 export const loadModels = async (
+  subject: User,
   upstreamFilter: readonly string[] | null,
   scheduleRefresh: ModelsRefreshScheduler,
   aliasRepo: ModelAliasesRepo,
 ): Promise<PublicModelsResponse> => {
-  // Data-plane responses always narrow `aliasedFrom.targets` to the
-  // caller's reachable set (and never expose typo'd / removed target
-  // ids), but the alias's metadata is still computed gateway-wide so
-  // every caller sees the same numbers.
-  const [callerAddressable, gatewayAddressable, aliases] = await Promise.all([
-    enumerateAddressableModelIds(upstreamFilter, scheduleRefresh),
-    upstreamFilter === null
-      ? Promise.resolve(null)
-      : enumerateAddressableModelIds(null, scheduleRefresh),
-    aliasRepo.list(),
-  ]);
-  const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;
-  const realModels = listedRealModels(callerAddressable);
+  const { callerAddressable, gatewayAddressable, realModels, aliases } = await loadModelListingCatalog(subject, upstreamFilter, scheduleRefresh, aliasRepo);
   const merged = mergeAliasesIntoModels({
     realModels,
-    gatewayAddressableModelIds,
+    gatewayAddressableModelIds: gatewayAddressable,
     callerAddressableModelIds: callerAddressable,
     aliases,
     narrowTargets: true,

@@ -10,9 +10,11 @@
 
 import type { Context } from 'hono';
 
+import { createOpenAIResponsesWebSocketTurn, type OpenAIResponsesWebSocketServices, type OpenAIResponsesWebSocketTurn } from './interrupt-websocket.ts';
 import { createOpenAIResponsesWsSession, type OpenAIResponsesStatefulStore } from './items/store.ts';
 import { openaiResponsesWebSocketPipeline } from './pipeline.ts';
-import type { OpenAIResponsesWebSocketExit } from './project-websocket.ts';
+import { openaiResponsesWebSocketInternalError, type OpenAIResponsesWebSocketExit } from './project-websocket.ts';
+import { OPENAI_RESPONSES_REASONING_INCLUDED_HEADER, OPENAI_RESPONSES_REASONING_INCLUDED_VALUE } from './response-headers.ts';
 import { openRunDump } from '../../../dump/run-sink.ts';
 import type { RunDump } from '../../../dump/run-sink.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
@@ -27,9 +29,7 @@ import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gat
 import { SourceStreamState } from '../shared/source-stream-state.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesRequestPayload } from '@floway-dev/protocols/openai-responses';
-import { toInternalDebugError } from '@floway-dev/provider';
-import { canonicalizeOpenAIResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
+import { canonicalizeOpenAIResponsesPayload, isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 
 interface WorkerWebSocket extends WebSocket {
   accept(): void;
@@ -72,10 +72,12 @@ declare const WebSocketPair: {
 // `response.create`; the nested `response` envelope of Realtime-style clients
 // is an extension we also accept, and prefer when present.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L99-L115
-type OpenAIResponsesWebSocketClientEvent = Partial<OpenAIResponsesRequestPayload> & {
+type OpenAIResponsesWebSocketClientEvent = Partial<OpenAIResponsesRequestPayloadEx> & {
   type: string;
   event_id?: string;
-  response?: Partial<OpenAIResponsesRequestPayload>;
+  response_id?: string;
+  mode?: string;
+  response?: Partial<OpenAIResponsesRequestPayloadEx>;
   [key: string]: unknown;
 };
 
@@ -85,6 +87,7 @@ export const openaiResponsesWebSocket = async (c: AuthedContext): Promise<Respon
   }
 
   const events = createOpenAIResponsesWebSocketEvents(c);
+  c.header(OPENAI_RESPONSES_REASONING_INCLUDED_HEADER, OPENAI_RESPONSES_REASONING_INCLUDED_VALUE);
   if (_responsesWebSocketUpgradeResolver !== null) {
     return await _responsesWebSocketUpgradeResolver(c, events);
   }
@@ -110,6 +113,8 @@ const createOpenAIResponsesWebSocketEvents = (c: AuthedContext): OpenAIResponses
   const session = createOpenAIResponsesWsSession();
   let closed = false;
   let activeAbortController: AbortController | undefined;
+  let activeTurn: OpenAIResponsesWebSocketTurn | undefined;
+  const terminalResponseIds = new Set<string>();
   let queue = Promise.resolve();
 
   // ── Session-scoped BackgroundScheduler ──────────────────────────────────
@@ -164,25 +169,90 @@ const createOpenAIResponsesWebSocketEvents = (c: AuthedContext): OpenAIResponses
     onClose: closeActiveRequest,
     onError: closeActiveRequest,
     onMessage: (event, socket) => {
+      // An interrupt targets the turn the queue is running, so it cannot wait behind it.
+      const control = parseControlMessage(event.data);
+      if (control !== undefined) {
+        sessionScheduler(handleInterruptMessage(c, socket, control, authenticatedRawKey, () => activeTurn, terminalResponseIds));
+        return;
+      }
       queue = queue
         .then(async () => {
           if (closed) return;
           const abortController = new AbortController();
+          const turn = createOpenAIResponsesWebSocketTurn(abortController);
           activeAbortController = abortController;
+          activeTurn = turn;
           try {
-            await handleClientMessage(c, socket, session, event.data, authenticatedRawKey, abortController, () => closed, sessionScheduler);
+            await handleClientMessage(c, socket, session, event.data, authenticatedRawKey, abortController, turn, () => closed, sessionScheduler);
           } finally {
             if (activeAbortController === abortController) activeAbortController = undefined;
+            if (activeTurn === turn) activeTurn = undefined;
+            if (turn.ended && turn.responseId !== undefined) terminalResponseIds.add(turn.responseId);
           }
         })
         // WS-specific top-level: Hono's onError never runs for callbacks fired off
         // an open socket, so we serialize the error inline as the spec's
         // WebSocket error envelope. (HTTP entries let onError handle the same case.)
         .catch(error => {
-          if (!closed) sendError(socket, 500, serverErrorEnvelope(error));
+          if (!closed) sendError(socket, 500, openaiResponsesWebSocketInternalError(error));
         });
     },
   };
+};
+
+const parseControlMessage = (data: unknown): OpenAIResponsesWebSocketClientEvent | undefined => {
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(wsDataToBytes(data))) as unknown;
+    if (!parsed || typeof parsed !== 'object' || (parsed as { type?: unknown }).type !== 'response.interrupt') return undefined;
+    return parsed as OpenAIResponsesWebSocketClientEvent;
+  } catch {
+    return undefined;
+  }
+};
+
+// Codex sends this control frame only after `response.created`, targeting the
+// observed response ID and requesting `discard_partial_items`.
+// https://github.com/openai/codex/blob/12de0e395d3313bc564190d983cb4f5acf0be713/codex-rs/codex-api/src/endpoint/responses_websocket.rs#L688-L704
+const handleInterruptMessage = async (
+  c: AuthedContext,
+  socket: OpenAIResponsesWebSocketSocket,
+  message: OpenAIResponsesWebSocketClientEvent,
+  authenticatedRawKey: string,
+  activeTurn: () => OpenAIResponsesWebSocketTurn | undefined,
+  terminalResponseIds: ReadonlySet<string>,
+): Promise<void> => {
+  const eventId = typeof message.event_id === 'string' ? message.event_id : undefined;
+  if (!(await authenticateApiKey(c, authenticatedRawKey))) {
+    sendError(socket, 401, {
+      type: 'authentication_error',
+      code: 'invalid_api_key',
+      message: 'Invalid API key.',
+    }, eventId);
+    return;
+  }
+  const responseId = message.response_id;
+  if (typeof responseId !== 'string' || responseId.length === 0 || message.mode !== 'discard_partial_items') {
+    sendError(socket, 400, {
+      type: 'invalid_request_error',
+      code: 'invalid_request_error',
+      message: "response.interrupt requires response_id and mode='discard_partial_items'.",
+    }, eventId);
+    return;
+  }
+  // A duplicate, or one that crossed the turn's end on the wire, changes nothing. A turn that
+  // broke off without ending is not one, and its response is no longer active.
+  if (terminalResponseIds.has(responseId)) return;
+  const turn = activeTurn();
+  if (turn?.responseId !== responseId) {
+    sendError(socket, 400, {
+      type: 'invalid_request_error',
+      code: 'response_not_found',
+      message: 'The response to interrupt is not active on this connection.',
+    }, eventId);
+    return;
+  }
+  if (turn.interruption !== undefined || turn.ended) return;
+  turn.interrupt({ responseId, eventId });
 };
 
 interface OpenAIResponsesWsTurnFailure {
@@ -209,10 +279,11 @@ const openOpenAIResponsesWebSocketTurn = (
     readonly body: RequestBody;
     readonly headers: Ingress['headers'];
     readonly downstreamAbortController: AbortController;
+    readonly turn: OpenAIResponsesWebSocketTurn;
     readonly backgroundScheduler: BackgroundScheduler;
     readonly store: (apiKey: ApiKey, requestStartedAt: number) => OpenAIResponsesStatefulStore;
   },
-): ChatPrologue => {
+): ChatPrologue & { readonly services: OpenAIResponsesWebSocketServices } => {
   // The frame is this turn's request body, so an operator reading the dashboard sees the
   // exact `response.create` that opened it, under its own `WS /v1/responses` row rather than
   // under the upgrade that carried it.
@@ -242,6 +313,7 @@ const openOpenAIResponsesWebSocketTurn = (
       ...base.services,
       gateway,
       selectAffinity: candidate => { gateway.affinity.select(candidate); },
+      openaiResponsesWebSocketTurn: turn.turn,
     },
   };
 };
@@ -253,10 +325,12 @@ const handleClientMessage = async (
   data: unknown,
   authenticatedRawKey: string,
   downstreamAbortController: AbortController,
+  turn: OpenAIResponsesWebSocketTurn,
   isClosed: () => boolean,
   backgroundScheduler: BackgroundScheduler,
 ): Promise<void> => {
   const signal = downstreamAbortController.signal;
+  const cancelled = (): boolean => (signal.aborted && turn.interruption === undefined) || isClosed();
   let eventId: string | undefined;
   let ctx: ChatGatewayCtx | undefined;
   let previousResponseId: string | undefined;
@@ -318,7 +392,11 @@ const handleClientMessage = async (
     const source = message.response && typeof message.response === 'object'
       ? message.response
       : Object.fromEntries(Object.entries(message).filter(([key]) => key !== 'type' && key !== 'event_id'));
-    const payload = openaiResponsesPayloadFromClientSource(source);
+    const payload = canonicalizeOpenAIResponsesPayload({ ...source, stream: true });
+    if (!('input' in payload)) {
+      turnFailure.fail(400, { type: 'invalid_request_error', code: payload.error.code ?? 'invalid_request_error', message: payload.error.message, param: payload.error.param });
+      return;
+    }
     previousResponseId = payload.previous_response_id ?? undefined;
 
     const prologue = openOpenAIResponsesWebSocketTurn(c, {
@@ -329,6 +407,7 @@ const handleClientMessage = async (
       // turn to carry it carries in the frame body instead.
       headers: [...c.req.raw.headers],
       downstreamAbortController,
+      turn,
       backgroundScheduler,
       store: (apiKey, requestStartedAt) => session.createStore(apiKey, requestStartedAt, payload.store ?? undefined),
     });
@@ -349,18 +428,9 @@ const handleClientMessage = async (
     );
     prologue.runDump?.afterRun(drain);
 
-    await respondOpenAIResponsesWebSocket({ socket, signal, isClosed, prologue, facts, drain, turnFailure });
+    await respondOpenAIResponsesWebSocket({ socket, cancelled, prologue, facts, drain, turnFailure });
   } catch (error) {
-    if (signal.aborted || isClosed()) return;
-    if (error instanceof TranslatorInputError) {
-      turnFailure.fail(400, {
-        type: 'invalid_request_error',
-        code: error.code ?? 'invalid_request_error',
-        message: error.message,
-        param: error.param,
-      });
-      return;
-    }
+    if (cancelled()) return;
     if (error instanceof WebSocketClientMessageError) {
       turnFailure.fail(400, {
         type: 'invalid_request_error',
@@ -369,7 +439,7 @@ const handleClientMessage = async (
       });
       return;
     }
-    turnFailure.fail(500, serverErrorEnvelope(error));
+    turnFailure.fail(500, openaiResponsesWebSocketInternalError(error));
     if (ctx !== undefined) {
       ctx.dump?.failed(error);
       ctx.dump?.finalize(500, 0);
@@ -393,26 +463,21 @@ const validateClientMessage = (parsed: unknown): OpenAIResponsesWebSocketClientE
   return parsed as OpenAIResponsesWebSocketClientEvent;
 };
 
-// The transport always streams, whatever the client sent.
-const openaiResponsesPayloadFromClientSource = (source: object): CanonicalOpenAIResponsesPayload =>
-  ({ ...canonicalizeOpenAIResponsesPayload(source as OpenAIResponsesRequestPayload), stream: true });
-
 const respondOpenAIResponsesWebSocket = async (input: {
   readonly socket: OpenAIResponsesWebSocketSocket;
-  readonly signal: AbortSignal;
-  readonly isClosed: () => boolean;
+  readonly cancelled: () => boolean;
   readonly prologue: ChatPrologue;
   readonly facts: OpenAIResponsesWebSocketExit;
   readonly drain: () => Promise<void>;
   readonly turnFailure: OpenAIResponsesWsTurnFailure;
 }): Promise<void> => {
-  const { socket, signal, isClosed, prologue, facts, drain, turnFailure } = input;
+  const { socket, cancelled, prologue, facts, drain, turnFailure } = input;
   const ctx = prologue.gateway;
   const state = new SourceStreamState();
   let completion: StreamCompletion = 'error';
   try {
     for await (const packet of facts['response.chat.openaiResponses.websocket']) {
-      if (signal.aborted || isClosed() || !sendText(socket, packet.text, ctx.dump)) { completion = 'cancel'; return; }
+      if (cancelled() || !sendText(socket, packet.text, ctx.dump)) { completion = 'cancel'; return; }
       if (packet.frame?.type !== 'event') continue;
       const event = packet.frame.event;
       if (event.type === 'error' || event.type === 'response.failed') state.failed = true;
@@ -423,17 +488,17 @@ const respondOpenAIResponsesWebSocket = async (input: {
     await drain();
     const failed = state.failedAfter(completion);
     if (failed) {
+      // `fail` cannot carry the eviction for every failed turn: one that streamed an `error`
+      // notification or `response.failed` answered the client with an event rather than an
+      // error envelope, and one the client abandoned before the terminal event answered with
+      // nothing at all. Both settle here. For the abandoned turn the eviction is inert — the
+      // connection-local cache dies with the socket.
       turnFailure.evict();
       ctx.dump?.failed(`openai-responses ws turn failed (completion=${completion}, source-failed=${state.failed})`, { fallback: true });
     }
     ctx.dump?.finalize(failed ? 500 : facts['response.http.status'], 0);
   }
 };
-
-const serverErrorEnvelope = (error: unknown): Record<string, unknown> => ({
-  ...toInternalDebugError(error),
-  code: 'internal_error',
-});
 
 // "WebSocket failures MUST be sent as a JSON `error` envelope with a `status`
 // code and an `error.code`."
@@ -470,5 +535,3 @@ const sendText = (socket: OpenAIResponsesWebSocketSocket, text: string, dump?: R
   dump?.recordSentPayloadBytes(UTF8_ENCODER.encode(text).byteLength);
   return true;
 };
-
-export { KEEP_ALIVE_EVENT_TYPE } from './project-websocket.ts';

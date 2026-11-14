@@ -1,10 +1,33 @@
 import type { OpenAICompletionsChoice, OpenAICompletionsResult, OpenAICompletionsStreamEvent, OpenAICompletionsUsage } from './index.ts';
+import { isJsonObject } from '../common/json.ts';
 
 // Fold a /v1/completions streaming chunk sequence back into the
 // single-shot envelope used by the dashboard's dump renderer. The
 // dashboard also surfaces the raw frame stream alongside the reassembled
 // result, so unknown choice / chunk fields fall on the floor here by
 // design — the forensic view is the raw stream.
+
+// These four fields carry per-token arrays, including absolute text offsets.
+// https://github.com/openai/openai-node/blob/7423ac3e9351c46300cd094479cded5551a72eb4/src/resources/completions.ts
+const LOGPROB_ARRAY_KEYS = ['tokens', 'token_logprobs', 'top_logprobs', 'text_offset'] as const;
+
+const accumulateLogprobs = (current: unknown, incoming: unknown): unknown => {
+  if (incoming == null) return current ?? incoming;
+  if (!isJsonObject(incoming)) return incoming;
+  const previous = isJsonObject(current) ? current : {};
+  const result = { ...previous, ...incoming };
+  for (const key of LOGPROB_ARRAY_KEYS) {
+    const existing = previous[key];
+    const next = incoming[key];
+    if (Array.isArray(existing)) {
+      if (Array.isArray(next)) existing.push(...next);
+      result[key] = existing;
+    } else if (Array.isArray(next)) {
+      result[key] = [...next];
+    }
+  }
+  return result;
+};
 
 export const reassembleOpenAICompletionsEvents = async (chunks: AsyncIterable<OpenAICompletionsStreamEvent>): Promise<OpenAICompletionsResult> => {
   let id = '';
@@ -41,7 +64,7 @@ export const reassembleOpenAICompletionsEvents = async (chunks: AsyncIterable<Op
       const accumulator = choices.get(choice.index) ?? { text: '', finishReason: null, logprobs: undefined };
       if (choice.text !== undefined) accumulator.text += choice.text;
       if (choice.finish_reason) accumulator.finishReason = choice.finish_reason;
-      if (choice.logprobs !== undefined) accumulator.logprobs = choice.logprobs;
+      if (choice.logprobs !== undefined) accumulator.logprobs = accumulateLogprobs(accumulator.logprobs, choice.logprobs);
       choices.set(choice.index, accumulator);
     }
   }

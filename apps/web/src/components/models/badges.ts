@@ -1,7 +1,7 @@
 import type { CatalogIndex } from './catalog-index';
 import { reachableTargets } from './reachability';
 import type { ControlPlaneModel } from '../../api/types';
-import { ALIAS_RULE_BADGE_FIELDS, formatAliasRuleBadges, type AliasRuleBadge, type AliasRuleBadgeField, type AliasTarget } from '@floway-dev/protocols/common';
+import { ALIAS_RULE_BADGE_FIELDS, formatAliasRuleBadges, type AliasRuleBadge, type AliasRuleBadgeField, type AliasTarget } from '@floway-dev/protocols/browser';
 
 export type ModelBadge =
   | { key: string; kind: 'limit'; limit: 'context' | 'prompt' | 'output'; value: string }

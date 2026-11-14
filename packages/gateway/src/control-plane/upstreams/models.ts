@@ -1,7 +1,8 @@
 import { modelsCacheStatus, reshapeModelForDashboard } from './models-cache-projection.ts';
 import { upstreamErrorMessage as errorMessage } from './shared.ts';
+import { fullUpstreamActionError, resolveUpstreamEditLevel } from '../../access-control/upstream-edit.ts';
 import { discoverDraftModels, isModelsRefreshConfigurationError, modelsRefreshErrorMessage, modelsRefreshTarget, refreshModelsExplicit } from '../../execution/models-refresh.ts';
-import type { AuthedContext } from '../../middleware/auth.ts';
+import { type AuthedContext, userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
@@ -18,6 +19,8 @@ const malformedConfigResponse = (error: unknown): boolean =>
 // the draft's model catalog.
 export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) => {
   const { record } = c.req.valid('json');
+  const accessError = await fullUpstreamActionError(userFromContext(c), record.id);
+  if (accessError) return c.json({ error: accessError.error }, accessError.status);
   const kind = record.kind;
   if (kind !== 'custom' && kind !== 'ollama') {
     return c.json({ error: { message: `Draft model discovery requires custom or ollama: ${kind}`, type: 'invalid_request_error' } }, 400);
@@ -27,6 +30,7 @@ export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) =>
     kind,
     name: record.name ?? 'draft',
     enabled: record.enabled ?? true,
+    usageRefreshIntervalMinutes: record.usage_refresh_interval_minutes ?? 0,
     sortOrder: record.sort_order ?? 0,
     createdAt: record.created_at ?? '',
     updatedAt: record.updated_at ?? '',
@@ -60,6 +64,9 @@ export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) =>
 // an edit that wins before discovery begins.
 export const fetchSavedModels = async (c: AuthedContext<'/:id/list-models'>) => {
   const id = c.req.param('id');
+  if (await resolveUpstreamEditLevel(userFromContext(c), id) === 'off') {
+    return c.json({ error: 'Upstream not found' }, 404);
+  }
   const record = await getRepo().upstreams.getById(id);
   if (record === null) return c.json({ error: 'Upstream not found' }, 404);
   const target = modelsRefreshTarget(record);

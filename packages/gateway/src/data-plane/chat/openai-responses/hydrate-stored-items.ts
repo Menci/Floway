@@ -44,7 +44,7 @@ const refuseStoredItems = (
  */
 export const hydrateStoredItems = defineStage<
   Fields<'request.chat.openaiResponses'>,
-  Fields<'request.chat.openaiResponses' | 'request.chat.openaiResponses.privatePayloads'>,
+  Fields<'request.chat.openaiResponses'>,
   Record<string, never>,
   Record<string, never>,
   Fields<'response.chat.openaiResponses' | 'response.chat.openaiResponses.streamedUsage' | 'response.usage.billable' | 'response.http.headers' | 'response.http.body' | 'response.http.status'>,
@@ -55,7 +55,7 @@ export const hydrateStoredItems = defineStage<
     request: {
       needs: ['request.chat.openaiResponses'],
       consumes: [],
-      provides: ['request.chat.openaiResponses', 'request.chat.openaiResponses.privatePayloads'],
+      provides: ['request.chat.openaiResponses'],
     },
     response: { needs: [], consumes: [], provides: [] },
   },
@@ -91,7 +91,7 @@ export const hydrateStoredItems = defineStage<
     // read by item hash as well, so a body repeated verbatim finds the row it already made.
     await store.loadInputItems(expanded.input, asked.input);
 
-    let hydrated: ReturnType<typeof hydrateOpenAIResponsesPayload>;
+    let hydrated: CanonicalOpenAIResponsesPayload;
     try {
       hydrated = hydrateOpenAIResponsesPayload(expanded, store);
     } catch (error) {
@@ -109,8 +109,7 @@ export const hydrateStoredItems = defineStage<
 
     return await next({
       ...facts,
-      'request.chat.openaiResponses': move(hydrated.payload),
-      'request.chat.openaiResponses.privatePayloads': move([...hydrated.privatePayloads]),
+      'request.chat.openaiResponses': move(hydrated),
     });
   },
 });

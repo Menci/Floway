@@ -1,13 +1,13 @@
 import { test } from 'vitest';
 
 import { copilotAnthropicMessagesNormalizeAnthropicBeta } from '../../../src/stages/anthropic-messages/normalize-anthropic-beta.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { applyProviderStage, type AnthropicMessagesProbe, eventResult, type ExecuteResult } from '@floway-dev/test-utils';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
-  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>> =>
+  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {})(), testTelemetryModelIdentity));
 
 const invocation = (
   payload: AnthropicMessagesPayload & { context_management?: unknown },
@@ -47,7 +47,7 @@ test('synthesizes interleaved thinking only when the caller supplied no beta int
 });
 
 test('does not synthesize interleaved thinking for adaptive thinking', async () => {
-  const ctx = invocation({ ...baseBody, thinking: { type: 'adaptive', budget_tokens: 1024 } });
+  const ctx = invocation({ ...baseBody, thinking: { type: 'adaptive' } });
   await applyProviderStage(copilotAnthropicMessagesNormalizeAnthropicBeta, ctx, okEvents);
   assertEquals(ctx.anthropicBeta, []);
 });

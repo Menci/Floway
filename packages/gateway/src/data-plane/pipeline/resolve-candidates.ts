@@ -52,7 +52,9 @@ export const resolveCandidates = <Refusal extends object>(narrowing: Narrowing<R
   execute: async (facts, next, use) => {
     const model = facts['serve.model'];
     const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
+      subject: use.gateway.user,
       upstreamIds: use.gateway.upstreamIds,
+      randomizeUpstreams: use.gateway.randomizeUpstreams,
       model,
       kind: narrowing.kind,
       scheduler: use.gateway.backgroundScheduler,

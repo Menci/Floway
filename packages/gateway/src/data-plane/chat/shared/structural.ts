@@ -1,4 +1,3 @@
-
 /** Removing a field inside a value is the same move as removing a fact, and a value that
  *  carried none of them comes back by identity so the rule costs nothing where it does not
  *  apply. */

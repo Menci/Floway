@@ -17,10 +17,11 @@
 
 import { z } from 'zod';
 
+import { accessPrincipalSchema, accessRecordInputSchema, accessTargetScopeSchema } from '../access-control/schemas.ts';
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
-import { kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, tokenUsageUnattributedUserId } from '@floway-dev/protocols/common';
+import { isTelemetryBucketGranularity, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, QUOTA_DISPLAYS, RERANK_PROTOCOLS, SUPPORTED_LANGUAGES, tokenUsageUnattributedUserId, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire, UPSTREAM_HUE_DEGREES } from '@floway-dev/provider';
 
 // --- shared atoms ---
@@ -57,6 +58,7 @@ const modelEndpointsSchema = z.object({
   openaiImagesEdits: z.object({}).optional(),
   openaiAudioTranscriptions: z.object({}).optional(),
   rerank: z.object({}).optional(),
+  decision: z.object({}).optional(),
 });
 
 const priceSchema = z.string().transform((value, ctx) => {
@@ -247,28 +249,60 @@ export const USERNAME_PATTERN = /^[a-zA-Z0-9_.\-]{1,64}$/;
 
 const usernameSchema = z.string().regex(USERNAME_PATTERN, 'username must be 1-64 chars of [A-Za-z0-9_.-]');
 
-// null leaves this level unrestricted; an empty list grants no upstreams.
-const upstreamIdsValueSchema = z.array(z.string().min(1))
-  .refine(arr => new Set(arr).size === arr.length, { message: 'upstreamIds contains duplicates' })
-  .nullable();
-
 export const createUserBody = z.object({
   username: usernameSchema,
   password: passwordSchema,
   isAdmin: z.boolean().optional(),
-  upstreamIds: upstreamIdsValueSchema.optional(),
+  groupIds: z.array(z.number().int().positive()).optional(),
 });
 
 export const updateUserBody = z.object({
   username: usernameSchema.optional(),
   password: passwordSchema.optional(),
   isAdmin: z.boolean().optional(),
-  upstreamIds: upstreamIdsValueSchema.optional(),
+  groupIds: z.array(z.number().int().positive()).optional(),
 });
+
+const groupMemberIdsSchema = z.array(z.number().int().positive())
+  .refine(ids => new Set(ids).size === ids.length, { message: 'memberIds contains duplicates' });
+
+export const createGroupBody = z.object({
+  name: z.string().trim().min(1).max(64),
+  hue: z.number().int().min(0).max(359),
+  memberIds: groupMemberIdsSchema.optional(),
+});
+
+export const updateGroupBody = z.object({
+  name: z.string().trim().min(1).max(64).optional(),
+  hue: z.number().int().min(0).max(359).optional(),
+  memberIds: groupMemberIdsSchema.optional(),
+}).refine(body => body.name !== undefined || body.hue !== undefined || body.memberIds !== undefined, { message: 'Provide a name, hue, or memberIds to update.' });
+
+export const accessRecordBody = accessRecordInputSchema;
+
+export const resolveAccessBody = z.object({
+  principal: accessPrincipalSchema,
+  scope: accessTargetScopeSchema,
+  excludeRecordId: z.number().int().positive().optional(),
+}).strict();
+
+export const reorderAccessRecordsBody = z.object({
+  expectedIds: z.array(z.number().int().positive()).min(2),
+  ids: z.array(z.number().int().positive()).min(2),
+}).strict().refine(({ expectedIds, ids }) => new Set(expectedIds).size === expectedIds.length
+  && new Set(ids).size === ids.length && expectedIds.length === ids.length && ids.every(id => expectedIds.includes(id)),
+{ message: 'Reordering must preserve exactly the same rule IDs.' });
 
 export const changeOwnPasswordBody = z.object({
   currentPassword: passwordSchema,
   newPassword: passwordSchema,
+});
+
+export const updateOwnPreferencesBody = z.object({
+  quotaDisplay: z.enum(QUOTA_DISPLAYS).optional(),
+  language: z.enum(SUPPORTED_LANGUAGES).nullable().optional(),
+}).refine(body => body.quotaDisplay !== undefined || body.language !== undefined, {
+  error: 'Provide quotaDisplay or language',
 });
 
 // --- api keys ---
@@ -296,9 +330,13 @@ const keySourceShape = {
   custom_key: z.string().max(CUSTOM_API_KEY_MAX_LENGTH).optional(),
 };
 
+const apiKeyUpstreamIdsSchema = z.array(z.string().min(1))
+  .refine(ids => new Set(ids).size === ids.length, { message: 'upstream_ids contains duplicates' }).nullable().optional();
+
 export const createKeyBody = z.object({
   name: z.string().min(1),
-  upstream_ids: upstreamIdsValueSchema.optional(),
+  upstream_ids: apiKeyUpstreamIdsSchema,
+  randomize_upstreams: z.boolean().optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
   responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
   ...keySourceShape,
@@ -308,7 +346,8 @@ export const rotateKeyBody = z.object(keySourceShape);
 
 export const updateKeyBody = z.object({
   name: z.string().min(1).optional(),
-  upstream_ids: upstreamIdsValueSchema.optional(),
+  upstream_ids: apiKeyUpstreamIdsSchema,
+  randomize_upstreams: z.boolean().optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
   responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
 });
@@ -349,7 +388,8 @@ const upstreamHueSchema = z.number().int().min(0).max(UPSTREAM_HUE_DEGREES - 1);
 const upstreamBaseFields = {
   name: z.string().min(1),
   enabled: z.boolean().optional(),
-  sort_order: z.number().int().optional(),
+  usage_refresh_interval_minutes: z.number().int().nonnegative().optional(),
+  sort_order: z.never({ error: 'New upstreams always append after the current order.' }).optional(),
   flag_overrides: flagOverridesSchema.optional(),
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
   proxy_fallback_list: proxyFallbackListSchema.optional(),
@@ -358,9 +398,7 @@ const upstreamBaseFields = {
 };
 
 // Create accepts a discriminated union on `kind` for per-provider config
-// validation. `enabled` and `sort_order` are optional — the handler
-// defaults them to `true` and to one past the current max sort order
-// when omitted.
+// validation. New upstreams always append after the current order.
 export const createUpstreamBody = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('custom'), ...upstreamBaseFields, config: customConfigSchema }),
   z.object({ kind: z.literal('azure'), ...upstreamBaseFields, config: azureConfigSchema }),
@@ -388,7 +426,8 @@ export const updateUpstreamBody = z.object({
   kind: z.enum(['custom', 'azure', 'copilot', 'codex', 'claude-code', 'ollama']).optional(),
   name: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
-  sort_order: z.number().int().optional(),
+  usage_refresh_interval_minutes: z.number().int().nonnegative().optional(),
+  sort_order: z.never({ error: 'Use the upstream reorder endpoint to change sort_order.' }).optional(),
   flag_overrides: flagOverridesSchema.optional(),
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
   proxy_fallback_list: proxyFallbackListSchema.optional(),
@@ -402,6 +441,14 @@ export const updateUpstreamBody = z.object({
   // primitives / arrays / null from reaching the handler as `config`.
   config: z.record(z.string(), z.unknown()).optional(),
 });
+
+export const reorderUpstreamsBody = z.object({
+  expectedIds: z.array(z.string().min(1)).min(2),
+  ids: z.array(z.string().min(1)).min(2),
+}).strict().refine(({ expectedIds, ids }) => new Set(expectedIds).size === expectedIds.length
+  && new Set(ids).size === ids.length && expectedIds.length === ids.length && ids.every(id => expectedIds.includes(id))
+  && ids.some((id, index) => id !== expectedIds[index]),
+{ message: 'Reordering must change the order while preserving exactly the same upstream IDs.' });
 
 // Shared envelope for the record-body action contract used by every
 // action endpoint (OAuth exchange/refresh, quota, probe, draft preview,
@@ -524,6 +571,7 @@ export const previewModelsBody = z.object({
     proxy_fallback_list: proxyFallbackListSchema,
     name: z.string().optional(),
     enabled: z.boolean().optional(),
+    usage_refresh_interval_minutes: z.number().int().nonnegative().optional(),
     sort_order: z.number().int().optional(),
     created_at: z.string().optional(),
     updated_at: z.string().optional(),
@@ -593,6 +641,9 @@ export const testProxyBody = z.object({
 export const resetBackoffBody = z.object({
   upstream_id: z.string().min(1).optional(),
 });
+
+export const proxyOptionsQuery = z.object({ upstream_id: z.string().min(1) });
+export const upstreamOptionsQuery = z.object({ view: z.enum(['key', 'audit', 'all']).optional() });
 
 // --- search config ---
 
@@ -735,10 +786,23 @@ const aliasBodyRulesRefinement = (
 export const createAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinement);
 export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinement);
 
+// --- site settings ---
+
+export const SITE_NAME_MAX_LENGTH = 64;
+
+// An absent or blank name is the operator clearing the override; the built-in
+// default lives in the dashboard, not in the database.
+export const siteSettingsBody = z.object({
+  site_name: z.string()
+    .max(SITE_NAME_MAX_LENGTH, { error: `site_name must be at most ${SITE_NAME_MAX_LENGTH} characters` })
+    .nullish()
+    .transform(value => value == null || value.trim() === '' ? null : value.trim()),
+});
+
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(20, { error: 'version must be 20 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(25, { error: 'version must be 25 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });
@@ -810,7 +874,7 @@ const filterTokenUsageOverviewUserId = z.union([
 const telemetryOverviewQuery = {
   start: z.string().optional(),
   end: z.string().optional(),
-  bucket: z.enum(['hour', '4h', '8h', 'day', 'all']).optional(),
+  bucket: z.custom<TelemetryBucketGranularity>(isTelemetryBucketGranularity, 'Invalid telemetry bucket granularity').optional(),
   timezone: z.string().optional(),
   timezone_offset_minutes: z.string().optional(),
   // Cross-cutting filters applied to raw records before aggregation. Values
@@ -835,3 +899,10 @@ export const performanceQuery = z.object({
   filter_operation: filterValues(z.string()),
   filter_runtime_location: filterValues(z.string()),
 });
+
+export const upstreamMetricsQuery = z.object({
+  upstream_id: z.string().min(1),
+  start: z.string().regex(/^-?\d+$/).transform(Number).pipe(z.number().int()),
+  end: z.string().regex(/^-?\d+$/).transform(Number).pipe(z.number().int()),
+  step: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().positive()),
+}).refine(query => query.end > query.start, { message: 'Metrics interval end must be later than start' });

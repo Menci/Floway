@@ -11,8 +11,8 @@ import {
 import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard';
 import { requireDashboardSession } from './guards';
+import { revalidateOnPathnameChange } from './revalidation';
 import type { AuthUser } from '../api/auth';
-import { LanguageSelector } from '../components/language-selector';
 import { FlowayLogo } from '../components/logo';
 import { usePageFrames } from '../components/page-frames';
 import { Sidebar } from '../components/sidebar/nav';
@@ -33,12 +33,14 @@ export interface DashboardOutletContext {
 
 export async function clientLoader() {
   requireDashboardSession();
-  const user = await useAuthStore.getState().initialize();
+  const user = await useAuthStore.getState().refresh();
   if (user) return null;
   const error = useAuthStore.getState().error;
   if (error) throw new Error(error.message, { cause: error });
   throw redirect('/');
 }
+
+export const shouldRevalidate = revalidateOnPathnameChange;
 
 // The signed-in check is its own component so everything below takes a user
 // rather than a user-or-null: a hook cannot run behind a condition.
@@ -112,9 +114,6 @@ function DashboardShell({ user }: { user: AuthUser }) {
             onClick={() => setNavigationOpen(true)}
           />
           <FlowayLogo />
-          <div className="ml-auto flex items-center gap-2">
-            <LanguageSelector />
-          </div>
         </header>
         <div className="grid grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] min-h-0">
           {frames.map(frame => <div

@@ -31,6 +31,7 @@ import { fetchOllamaCatalog, type OllamaCatalog } from './fetch-models.ts';
 import { createOllamaPipelines } from './pipelines.ts';
 import { pricingForOllamaModelKey } from './pricing.ts';
 import { readOllamaUpstreamState } from './state.ts';
+import { runOllamaScheduledTask } from './usage-probe.ts';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { publicModelId, resolveEffectiveFlags, type FlagId, type ProviderInstance, type Provider, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
 
@@ -39,6 +40,9 @@ import { publicModelId, resolveEffectiveFlags, type FlagId, type ProviderInstanc
 // kind/endpoints projection — the others are request-time signals.
 const CHAT_ENDPOINTS: ModelEndpoints = { openaiCompletions: {}, openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} };
 const EMBEDDING_ENDPOINTS: ModelEndpoints = { openaiEmbeddings: {} };
+// Ollama serves decision models over the System One contract.
+// https://docs.ollama.com/capabilities/decision
+const DECISION_ENDPOINTS: ModelEndpoints = { decision: {} };
 
 const finalizeOllamaModels = (
   catalog: OllamaCatalog,
@@ -46,7 +50,9 @@ const finalizeOllamaModels = (
 ): ProviderModel[] => {
   const models: ProviderModel[] = [];
   for (const raw of catalog.data) {
-    const endpoints = raw.capabilities.has('embedding') ? EMBEDDING_ENDPOINTS : CHAT_ENDPOINTS;
+    const endpoints = raw.capabilities.has('embedding')
+      ? EMBEDDING_ENDPOINTS
+      : raw.capabilities.has('decision') ? DECISION_ENDPOINTS : CHAT_ENDPOINTS;
     const limits: ProviderModel['limits'] = {};
     if (raw.contextLength !== undefined) limits.max_context_window_tokens = raw.contextLength;
     const model: ProviderModel = {
@@ -59,6 +65,7 @@ const finalizeOllamaModels = (
       providerData: raw.id,
       enabledFlags,
       opaqueBlobCompatibilityScope: { bindToUpstream: true },
+      ...(endpoints.decision ? { decisionTarget: { protocol: 'typesafe-systemone' as const } } : {}),
     };
     if (raw.modifiedAt !== undefined) model.created = raw.modifiedAt;
     const pricing = pricingForOllamaModelKey(raw.id);
@@ -90,6 +97,9 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       providerData: model.upstreamModelId,
       enabledFlags,
       opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
+      // Ollama serves every decision model over System One; the dialect is not
+      // the operator's to choose.
+      ...(kind === 'decision' ? { decisionTarget: { protocol: 'typesafe-systemone' as const } } : {}),
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
     const pricing = model.pricing ?? pricingForOllamaModelKey(model.upstreamModelId);
@@ -98,6 +108,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     return internal;
   });
   const instance: ProviderInstance = {
+    runScheduledTask: options => runOllamaScheduledTask(record, options),
     getProvidedModels: async fetcher => {
       const catalog = await fetchOllamaCatalog(config, fetcher);
       const auto = finalizeOllamaModels(

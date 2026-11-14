@@ -1,5 +1,5 @@
 import { notifyDisabledBestEffort } from '../../dump/registry.ts';
-import { type AuthedContext, userFromContext, userUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import { type AuthedContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey } from '../../repo/types.ts';
@@ -7,7 +7,7 @@ import { CUSTOM_API_KEY_MAX_LENGTH, generateApiKeyToken, type KeySource } from '
 import { generateServerSecret } from '../../shared/server-secret.ts';
 import type { createKeyBody, rotateKeyBody, updateKeyBody } from '../schemas.ts';
 import { ownedKeyForUser } from '../shared/owned-key.ts';
-import { loadKnownUpstreamIds, pruneUnreachableUpstreamIds, reachableUpstreamIds, unknownUpstreamIdsError } from '../shared/upstream-ids.ts';
+import { loadKnownUpstreamIds, pruneUnknownUpstreamIds, unknownUpstreamIdsError } from '../shared/upstream-ids.ts';
 
 const GENERATED_KEY_RETRIES = 5;
 
@@ -21,16 +21,14 @@ type KeyWriteResult = { ok: true; key: ApiKey } | KeyWriteError;
 
 const keyWriteError = (status: KeyWriteError['status'], error: string): KeyWriteError => ({ ok: false, status, error });
 
-// The set is what this key's owner can reach, not the whole catalog: a grant
-// their cap no longer covers routes nothing, so serving it would put a row in
-// the dashboard that resolves to no upstream.
-const apiKeyToJson = (key: ApiKey, reachable: ReadonlySet<string>) => ({
+const apiKeyToJson = (key: ApiKey, knownUpstreamIds: ReadonlySet<string>) => ({
   id: key.id,
   name: key.name,
   key: key.key,
   created_at: key.createdAt,
   last_used_at: key.lastUsedAt ?? null,
-  upstream_ids: pruneUnreachableUpstreamIds(key.upstreamIds, reachable),
+  upstream_ids: pruneUnknownUpstreamIds(key.upstreamIds, knownUpstreamIds),
+  randomize_upstreams: key.randomizeUpstreams,
   dump_retention_seconds: key.dumpRetentionSeconds,
   responses_retention_seconds: key.openaiResponsesRetentionSeconds,
 });
@@ -101,29 +99,10 @@ const writeKeyForRequest = async (
   return await saveGeneratedKey(template);
 };
 
-const validateUpstreamIdsAgainstUserCap = (
-  c: AuthedContext,
-  proposed: readonly string[] | null,
-  knownUpstreamIds: ReadonlySet<string>,
-): string | null => {
-  const unknownUpstreamError = unknownUpstreamIdsError(proposed, knownUpstreamIds);
-  if (unknownUpstreamError !== null) return unknownUpstreamError;
-  if (proposed === null) return null;
-
-  const userCap = userUpstreamIdsFromContext(c);
-  if (userCap === null) return null;
-  const userSet = new Set(userCap);
-  const blocked = proposed.filter(id => !userSet.has(id));
-  return blocked.length
-    ? `Some selected upstreams aren't available to your account: ${blocked.join(', ')}`
-    : null;
-};
-
 export const listKeys = async (c: AuthedContext) => {
   const userId = userFromContext(c).id;
   const [keys, knownUpstreamIds] = await Promise.all([getRepo().apiKeys.listByUserId(userId), loadKnownUpstreamIds()]);
-  const reachable = reachableUpstreamIds(knownUpstreamIds, userUpstreamIdsFromContext(c));
-  return c.json(keys.map(key => apiKeyToJson(key, reachable)));
+  return c.json(keys.map(key => apiKeyToJson(key, knownUpstreamIds)));
 };
 
 export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
@@ -131,7 +110,7 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
   const body = c.req.valid('json');
 
   const knownUpstreamIds = await loadKnownUpstreamIds();
-  const upstreamErr = validateUpstreamIdsAgainstUserCap(c, body.upstream_ids ?? null, knownUpstreamIds);
+  const upstreamErr = unknownUpstreamIdsError(body.upstream_ids ?? null, knownUpstreamIds);
   if (upstreamErr) return c.json({ error: upstreamErr }, 400);
 
   const template = {
@@ -141,6 +120,7 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
     serverSecret: generateServerSecret(),
     createdAt: new Date().toISOString(),
     upstreamIds: body.upstream_ids ?? null,
+    randomizeUpstreams: body.randomize_upstreams ?? false,
     deletedAt: null,
     dumpRetentionSeconds: body.dump_retention_seconds ?? null,
     openaiResponsesRetentionSeconds: body.responses_retention_seconds ?? 0,
@@ -148,7 +128,7 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
 
   const result = await writeKeyForRequest(template, body);
   if (!result.ok) return c.json({ error: result.error }, result.status);
-  return c.json(apiKeyToJson(result.key, reachableUpstreamIds(knownUpstreamIds, userUpstreamIdsFromContext(c))), 201);
+  return c.json(apiKeyToJson(result.key, knownUpstreamIds), 201);
 };
 
 export const deleteKey = async (c: AuthedContext) => {
@@ -170,15 +150,15 @@ export const rotateKey = async (c: CtxWithJson<typeof rotateKeyBody>) => {
 
   const result = await writeKeyForRequest(owned, c.req.valid('json'));
   if (!result.ok) return c.json({ error: result.error }, result.status);
-  return c.json(apiKeyToJson(result.key, reachableUpstreamIds(await loadKnownUpstreamIds(), userUpstreamIdsFromContext(c))));
+  return c.json(apiKeyToJson(result.key, await loadKnownUpstreamIds()));
 };
 
 export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
   const id = c.req.param('id')!;
   const body = c.req.valid('json');
 
-  if (body.name === undefined && body.upstream_ids === undefined && body.dump_retention_seconds === undefined && body.responses_retention_seconds === undefined) {
-    return c.json({ error: 'Provide a new name, upstream selection, dump retention, or Stateful OpenAI Responses retention to update.' }, 400);
+  if (body.name === undefined && body.upstream_ids === undefined && body.randomize_upstreams === undefined && body.dump_retention_seconds === undefined && body.responses_retention_seconds === undefined) {
+    return c.json({ error: 'Provide a new name, upstream selection, upstream order, dump retention, or Stateful OpenAI Responses retention to update.' }, 400);
   }
 
   const owned = await ownedKeyForUser(c, id);
@@ -186,13 +166,14 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
 
   const knownUpstreamIds = await loadKnownUpstreamIds();
   if (body.upstream_ids !== undefined) {
-    const err = validateUpstreamIdsAgainstUserCap(c, body.upstream_ids, knownUpstreamIds);
+    const err = unknownUpstreamIdsError(body.upstream_ids, knownUpstreamIds);
     if (err) return c.json({ error: err }, 400);
   }
 
   const updated = await getRepo().apiKeys.update(id, {
     ...(body.name !== undefined ? { name: body.name } : {}),
     ...(body.upstream_ids !== undefined ? { upstreamIds: body.upstream_ids } : {}),
+    ...(body.randomize_upstreams !== undefined ? { randomizeUpstreams: body.randomize_upstreams } : {}),
     ...(body.dump_retention_seconds !== undefined ? { dumpRetentionSeconds: body.dump_retention_seconds } : {}),
     ...(body.responses_retention_seconds !== undefined ? { openaiResponsesRetentionSeconds: body.responses_retention_seconds } : {}),
   });
@@ -204,5 +185,5 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
     if (next === null && previous !== null) await notifyDisabledBestEffort(id, 'updateKey retention disable');
   }
 
-  return c.json(apiKeyToJson(updated, reachableUpstreamIds(knownUpstreamIds, userUpstreamIdsFromContext(c))));
+  return c.json(apiKeyToJson(updated, knownUpstreamIds));
 };

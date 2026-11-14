@@ -36,9 +36,9 @@ import type { AttemptSelector } from '../../src/data-plane/pipeline/facts.ts';
 import { compose, defineStage, move, run } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentPayload, GeminiGenerateContentPart, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesInputItem, OpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesPayload, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 /** What an attempt is, to a stage that only reads flags. The selector carries them as data,
  *  so nothing here needs the live candidate the resolver kept. */
@@ -759,11 +759,11 @@ describe('the Gemini generateContent rules', () => {
         contents: [{
           role: 'user',
           parts: [
-            { text: 'hi', fileData: { mimeType: 'text/plain', fileUri: 'u' } },
+            { text: 'hi', fileData: { mimeType: 'text/plain', fileUri: 'u' } } as unknown as GeminiGenerateContentPart,
             { fileData: { mimeType: 'text/plain', fileUri: 'u' } },
           ],
         }],
-        systemInstruction: { parts: [{ text: 'sys', codeExecutionResult: {} }] },
+        systemInstruction: { parts: [{ text: 'sys', codeExecutionResult: { outcome: 'OUTCOME_OK' } } as unknown as GeminiGenerateContentPart] },
       } satisfies GeminiGenerateContentPayload,
     });
     const after = down['request.chat.geminiGenerateContent'] as GeminiGenerateContentPayload;
@@ -782,6 +782,7 @@ describe('the Gemini generateContent rules', () => {
   it('keeps a tool group only for its function declarations', async () => {
     const { down } = await runStage(stripUnsupportedToolsFromGeminiGenerateContent, 'response.chat.geminiGenerateContent', {
       'request.chat.geminiGenerateContent': {
+        contents: [],
         tools: [{ functionDeclarations: [{ name: 'f' }], googleSearch: {} }, { codeExecution: {} }],
       } satisfies GeminiGenerateContentPayload,
     });
@@ -790,14 +791,14 @@ describe('the Gemini generateContent rules', () => {
 
   it('removes the tool list itself when no group declared a function', async () => {
     const { down } = await runStage(stripUnsupportedToolsFromGeminiGenerateContent, 'response.chat.geminiGenerateContent', {
-      'request.chat.geminiGenerateContent': { tools: [{ googleSearch: {} }] } satisfies GeminiGenerateContentPayload,
+      'request.chat.geminiGenerateContent': { contents: [], tools: [{ googleSearch: {} }] } satisfies GeminiGenerateContentPayload,
     });
     // An empty tool list is a different request from no tools at all.
     expect('tools' in (down['request.chat.geminiGenerateContent'] as GeminiGenerateContentPayload)).toBe(false);
   });
 
   it('hands a payload whose groups only declare functions back by identity', async () => {
-    const original: GeminiGenerateContentPayload = { tools: [{ functionDeclarations: [{ name: 'f' }] }] };
+    const original: GeminiGenerateContentPayload = { contents: [], tools: [{ functionDeclarations: [{ name: 'f' }] }] };
     const { down } = await runStage(stripUnsupportedToolsFromGeminiGenerateContent, 'response.chat.geminiGenerateContent', {
       'request.chat.geminiGenerateContent': original,
     });
@@ -806,7 +807,7 @@ describe('the Gemini generateContent rules', () => {
 
   it('removes the safety settings, and leaves a payload that carries none alone', async () => {
     const { down } = await runStage(stripSafetySettingsFromGeminiGenerateContent, 'response.chat.geminiGenerateContent', {
-      'request.chat.geminiGenerateContent': { safetySettings: [{ category: 'c', threshold: 't' }] } satisfies GeminiGenerateContentPayload,
+      'request.chat.geminiGenerateContent': { contents: [], safetySettings: [{ category: 'c', threshold: 't' }] } satisfies GeminiGenerateContentPayload,
     });
     expect('safetySettings' in (down['request.chat.geminiGenerateContent'] as GeminiGenerateContentPayload)).toBe(false);
 
@@ -829,14 +830,14 @@ describe('the Gemini generateContent rules', () => {
       }),
     ]);
     const { up } = await runStage(suppressThoughtPartsFromGeminiGenerateContent, 'response.chat.geminiGenerateContent', {
-      'request.chat.geminiGenerateContent': {} satisfies GeminiGenerateContentPayload,
+      'request.chat.geminiGenerateContent': { contents: [] } satisfies GeminiGenerateContentPayload,
     }, answer);
     const frames = await drain<GeminiGenerateContentStreamEvent>(up['response.chat.geminiGenerateContent']);
     // The first event was pure thought and had not finished, so it is nothing at all and
     // never reaches the client; the second keeps only what the caller asked for.
     expect(frames).toHaveLength(1);
     const event = (frames[0] as { event: Extract<GeminiGenerateContentStreamEvent, { candidates?: unknown }> }).event;
-    expect(event.candidates?.[0]?.content.parts).toEqual([{ text: 'the answer' }]);
+    expect(event.candidates?.[0]?.content?.parts).toEqual([{ text: 'the answer' }]);
   });
 
   // The opt-in is something the client sent, so it is read on the way down and used on the
@@ -846,7 +847,7 @@ describe('the Gemini generateContent rules', () => {
       eventFrame({ candidates: [{ index: 0, content: { parts: [{ text: 'pondering', thought: true }] }, finishReason: 'STOP' }] }),
     ]);
     const { up } = await runStage(suppressThoughtPartsFromGeminiGenerateContent, 'response.chat.geminiGenerateContent', {
-      'request.chat.geminiGenerateContent': { generationConfig: { thinkingConfig: { includeThoughts: true } } } satisfies GeminiGenerateContentPayload,
+      'request.chat.geminiGenerateContent': { contents: [], generationConfig: { thinkingConfig: { includeThoughts: true } } } satisfies GeminiGenerateContentPayload,
     }, answer);
     expect(up['response.chat.geminiGenerateContent']).toBe(answer);
   });
@@ -854,7 +855,7 @@ describe('the Gemini generateContent rules', () => {
   it('leaves an answer that is not a stream alone, by identity', async () => {
     const answer = { kind: 'value' as const, body: null };
     const { up } = await runStage(suppressThoughtPartsFromGeminiGenerateContent, 'response.chat.geminiGenerateContent', {
-      'request.chat.geminiGenerateContent': {} satisfies GeminiGenerateContentPayload,
+      'request.chat.geminiGenerateContent': { contents: [] } satisfies GeminiGenerateContentPayload,
     }, answer);
     expect(up['response.chat.geminiGenerateContent']).toBe(answer);
   });
@@ -862,7 +863,7 @@ describe('the Gemini generateContent rules', () => {
 
 describe('the OpenAI Responses rules', () => {
   const rolesOf = (down: Record<string, unknown>): unknown[] =>
-    ((down['request.chat.openaiResponses'] as OpenAIResponsesPayload).input as OpenAIResponsesInputItem[])
+    ((down['request.chat.openaiResponses'] as OpenAIResponsesPayload).input as CanonicalOpenAIResponsesInputItem[])
       .map(item => (item as { role?: unknown }).role);
 
   it('rewrites the roles its flags name, in the settled order', async () => {
@@ -939,11 +940,11 @@ describe('the OpenAI Responses rules', () => {
   it('folds the cache buckets into the input total when the totals witness it', async () => {
     // 100 + 50 + 10 = 160 reaches the stated total and 100 + 10 does not, so the upstream
     // reports the buckets outside the input count whatever anyone flagged.
-    const answer = streamOf<OpenAIResponsesStreamEvent>([usageEvent({ input_tokens: 100, output_tokens: 10, total_tokens: 160, input_tokens_details: { cached_tokens: 50 } })]);
+    const answer = streamOf<OpenAIResponsesStreamEventEx>([usageEvent({ input_tokens: 100, output_tokens: 10, total_tokens: 160, input_tokens_details: { cached_tokens: 50 } })]);
     const { up } = await runStage(normalizeExclusiveCachedTokensForOpenAIResponses, 'response.chat.openaiResponses', {
       'route.attempt': attemptWith(),
     }, answer);
-    const frames = await drain<OpenAIResponsesStreamEvent>(up['response.chat.openaiResponses']);
+    const frames = await drain<OpenAIResponsesStreamEventEx>(up['response.chat.openaiResponses']);
     expect(usageOf(frames[0]!)).toMatchObject({ input_tokens: 150, output_tokens: 10 });
   });
 
@@ -951,11 +952,11 @@ describe('the OpenAI Responses rules', () => {
   // input rather than the gate — and it arrives on the attempt this stage read on the way
   // down, so this is also what proves the closure carries it to the way back.
   it('folds on the flag alone when the response states no total', async () => {
-    const answer = streamOf<OpenAIResponsesStreamEvent>([usageEvent({ input_tokens: 100, output_tokens: 10, input_tokens_details: { cached_tokens: 50, cache_write_tokens: 5 } })]);
+    const answer = streamOf<OpenAIResponsesStreamEventEx>([usageEvent({ input_tokens: 100, output_tokens: 10, input_tokens_details: { cached_tokens: 50, cache_write_tokens: 5 } })]);
     const { up } = await runStage(normalizeExclusiveCachedTokensForOpenAIResponses, 'response.chat.openaiResponses', {
       'route.attempt': attemptWith('usage-exclusive-cached-tokens'),
     }, answer);
-    const frames = await drain<OpenAIResponsesStreamEvent>(up['response.chat.openaiResponses']);
+    const frames = await drain<OpenAIResponsesStreamEventEx>(up['response.chat.openaiResponses']);
     expect(usageOf(frames[0]!)).toMatchObject({ input_tokens: 155 });
   });
 
@@ -963,8 +964,8 @@ describe('the OpenAI Responses rules', () => {
     const frame = usageEvent({ input_tokens: 100, output_tokens: 10, total_tokens: 110, input_tokens_details: { cached_tokens: 50 } });
     const { up } = await runStage(normalizeExclusiveCachedTokensForOpenAIResponses, 'response.chat.openaiResponses', {
       'route.attempt': attemptWith(),
-    }, streamOf<OpenAIResponsesStreamEvent>([frame]));
-    const frames = await drain<OpenAIResponsesStreamEvent>(up['response.chat.openaiResponses']);
+    }, streamOf<OpenAIResponsesStreamEventEx>([frame]));
+    const frames = await drain<OpenAIResponsesStreamEventEx>(up['response.chat.openaiResponses']);
     expect(frames[0]).toBe(frame);
   });
 
@@ -1022,10 +1023,10 @@ describe('the OpenAI Responses rules', () => {
 
 /** A lifecycle envelope carrying nothing but the counts under test. Every event that carries
  *  a response resource repeats the whole resource, which is why the rewrite is per event. */
-const usageEvent = (usage: Record<string, unknown>): ProtocolFrame<OpenAIResponsesStreamEvent> =>
-  eventFrame({ type: 'response.completed', sequence_number: 0, response: { usage } } as unknown as OpenAIResponsesStreamEvent);
+const usageEvent = (usage: Record<string, unknown>): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+  eventFrame({ type: 'response.completed', sequence_number: 0, response: { usage } } as unknown as OpenAIResponsesStreamEventEx);
 
-const usageOf = (frame: ProtocolFrame<OpenAIResponsesStreamEvent>): Record<string, unknown> =>
+const usageOf = (frame: ProtocolFrame<OpenAIResponsesStreamEventEx>): Record<string, unknown> =>
   (frame as { event: { response: { usage: Record<string, unknown> } } }).event.response.usage;
 
 // Each array below is the order a family's chain runs these rules in, and running it is what
@@ -1069,7 +1070,7 @@ describe('a family\'s rule array, in the order its chain runs it', () => {
       suppressThoughtPartsFromGeminiGenerateContent,
     ], {
       'request.chat.geminiGenerateContent': {
-        contents: [{ role: 'user', parts: [{ text: 'hi', fileData: { mimeType: 'text/plain', fileUri: 'u' } }] }],
+        contents: [{ role: 'user', parts: [{ text: 'hi', fileData: { mimeType: 'text/plain', fileUri: 'u' } } as unknown as GeminiGenerateContentPart] }],
         tools: [{ googleSearch: {} }],
         safetySettings: [{ category: 'c', threshold: 't' }],
       } satisfies GeminiGenerateContentPayload,
@@ -1080,14 +1081,14 @@ describe('a family\'s rule array, in the order its chain runs it', () => {
     expect('safetySettings' in after).toBe(false);
     const frames = await drain<GeminiGenerateContentStreamEvent>(up['response.chat.geminiGenerateContent']);
     const event = (frames[0] as { event: Extract<GeminiGenerateContentStreamEvent, { candidates?: unknown }> }).event;
-    expect(event.candidates?.[0]?.content.parts).toEqual([{ text: 'the answer' }]);
+    expect(event.candidates?.[0]?.content?.parts).toEqual([{ text: 'the answer' }]);
   });
 
   // The one ordering between stages rather than inside one: the sentinel is the gateway's
   // canonical form, and a vendor normalizer can only put it on the wire in the vendor's shape
   // because it runs after the stage that wrote it.
   it('assembles and runs the OpenAI Responses array, the vendor normalizers last', async () => {
-    const answer = streamOf<OpenAIResponsesStreamEvent>([usageEvent({ input_tokens: 100, output_tokens: 10, total_tokens: 160, input_tokens_details: { cached_tokens: 50 } })]);
+    const answer = streamOf<OpenAIResponsesStreamEventEx>([usageEvent({ input_tokens: 100, output_tokens: 10, total_tokens: 160, input_tokens_details: { cached_tokens: 50 } })]);
     const { down, up } = await runChain('response.chat.openaiResponses', [
       disableReasoningOnForcedToolChoiceForOpenAIResponses,
       applyRoleCompatibilityToOpenAIResponses,
@@ -1114,7 +1115,7 @@ describe('a family\'s rule array, in the order its chain runs it', () => {
     // The sentinel this chain wrote reached DeepSeek's normalizer and left in DeepSeek's shape.
     expect('reasoning' in after).toBe(false);
     expect(after.thinking).toEqual({ type: 'disabled' });
-    const frames = await drain<OpenAIResponsesStreamEvent>(up['response.chat.openaiResponses']);
+    const frames = await drain<OpenAIResponsesStreamEventEx>(up['response.chat.openaiResponses']);
     expect(usageOf(frames[0]!)).toMatchObject({ input_tokens: 150 });
   });
 
@@ -1171,7 +1172,7 @@ describe('a family\'s rule array, in the order its chain runs it', () => {
 });
 
 const rolesOfPayload = (payload: Record<string, unknown>): unknown[] =>
-  (payload.input as OpenAIResponsesInputItem[]).map(item => (item as { role?: unknown }).role);
+  (payload.input as CanonicalOpenAIResponsesInputItem[]).map(item => (item as { role?: unknown }).role);
 
 describe('empty-tools choice normalization', () => {
   it.each([

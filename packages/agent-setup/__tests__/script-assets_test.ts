@@ -16,7 +16,6 @@ import {
   SETUP_POWERSHELL_COMMON_OUTPUT,
   SETUP_POWERSHELL_COMMON_PLATFORM,
   SETUP_POWERSHELL_COMMON_PROCESS,
-  SETUP_SCRIPT_SOURCE_FRAGMENTS,
 } from '../src/script-assets.generated.ts';
 import { assert, assertEquals } from '@floway-dev/test-utils';
 
@@ -50,17 +49,17 @@ const POWERSHELL_COMMON_SECTIONS: readonly Section[] = [
   { file: 'installers/powershell/common/json-document.ps1', source: SETUP_POWERSHELL_COMMON_JSON_DOCUMENT, append: '\n' },
   { file: 'installers/powershell/common/main.ps1', source: SETUP_POWERSHELL_COMMON_MAIN, end: '# --- run' },
   { file: 'installers/powershell/common/managed-file.ps1', source: SETUP_POWERSHELL_COMMON_MANAGED_FILE, end: '# Rollback retains' },
-  { file: 'installers/powershell/common/process.ps1', source: SETUP_POWERSHELL_COMMON_PROCESS, end: '# Run a fixed package-manager' },
+  { file: 'installers/powershell/common/process.ps1', source: SETUP_POWERSHELL_COMMON_PROCESS, end: '# Inherit stdout/stderr' },
   { file: 'installers/powershell/common/platform.ps1', source: SETUP_POWERSHELL_COMMON_PLATFORM, start: 'function Get-SetupPlatform', append: '\n' },
   {
     file: 'installers/powershell/common/process.ps1',
     source: SETUP_POWERSHELL_COMMON_PROCESS,
-    start: '# Run a fixed package-manager',
-    end: '# Run a child process with captured output',
+    start: '# Inherit stdout/stderr',
+    end: '# Captured commands are noninteractive',
   },
   { file: 'installers/powershell/common/cli.ps1', source: SETUP_POWERSHELL_COMMON_CLI, append: '\n' },
   { file: 'installers/powershell/common/managed-file.ps1', source: SETUP_POWERSHELL_COMMON_MANAGED_FILE, start: '# Rollback retains', append: '\n' },
-  { file: 'installers/powershell/common/process.ps1', source: SETUP_POWERSHELL_COMMON_PROCESS, start: '# Run a child process with captured output' },
+  { file: 'installers/powershell/common/process.ps1', source: SETUP_POWERSHELL_COMMON_PROCESS, start: '# Captured commands are noninteractive' },
   { file: 'installers/powershell/common/main.ps1', source: SETUP_POWERSHELL_COMMON_MAIN, start: '# --- run' },
 ];
 
@@ -83,13 +82,6 @@ const sliceOf = (section: Section): string => {
   assert(end !== -1, `${section.file} does not contain the end boundary ${JSON.stringify(section.end)}`);
   return section.source.slice(start, end);
 };
-
-test('generated installer sources match the checked-in canonical fragments byte for byte', async () => {
-  const { readFile } = await import('node:fs/promises');
-  for (const [file, generated] of SETUP_SCRIPT_SOURCE_FRAGMENTS) {
-    assertEquals(generated, await readFile(new URL(`../${file}`, import.meta.url), 'utf8'));
-  }
-});
 
 test.each(PLATFORM_COMMONS)('the prejoined $platform common body is exactly its declared section tiling', ({ prejoined, sections }) => {
   assertEquals(sections.map(section => sliceOf(section) + (section.append ?? '')).join(''), prejoined);

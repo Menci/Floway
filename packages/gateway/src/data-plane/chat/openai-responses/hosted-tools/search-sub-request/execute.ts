@@ -6,7 +6,7 @@ import { spentBody } from '../../../../pipeline/upstream-body.ts';
 import { upstreamPerformanceContext } from '../../../../shared/telemetry/attribution.ts';
 import { executeAlphaSearch } from '../../../../tools/web-search/alpha-search/execution.ts';
 import type { AlphaSearchDispatcher } from '../../../../tools/web-search/alpha-search/upstream.ts';
-import { assertLocalWebSearchSupport, executeOperationToIr, parseWebSearchOperations, runBackendSearchMulti, schemaErrorIr, startBatchFetch, UnsupportedLocalWebSearchFeatureError, unsupportedLocalWebSearchFeatureIr, type WebSearchCallIR, type WebSearchOperation } from '../../../../tools/web-search/operations.ts';
+import { assertLocalWebSearchSupport, executeOperationToIr, isSearchResponseLength, parseWebSearchOperations, runBackendSearchMulti, schemaErrorIr, startBatchFetch, UnsupportedLocalWebSearchFeatureError, unsupportedLocalWebSearchFeatureIr, type WebSearchCallIR, type WebSearchOperation } from '../../../../tools/web-search/operations.ts';
 import { exchangeResponse } from '@floway-dev/http/pipeline';
 import { defineStage, move } from '@floway-dev/pipeline';
 import type { OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
@@ -96,7 +96,11 @@ const execute = async (request: WebSearchRequest, runtime: WebSearchRuntime, dis
     }
     throw error;
   }
-  const session = { ...runtime.session, filters: request.filters, includeSearchActionSources: request.includeSearchActionSources };
+  const responseLength = isSearchResponseLength(commands.response_length) ? commands.response_length : undefined;
+  const session = {
+    ...runtime.session, filters: request.filters, includeSearchActionSources: request.includeSearchActionSources,
+    ...(responseLength === undefined ? {} : { responseLength }),
+  };
   if (parsed.ops.length > 1 && parsed.ops.every(op => op.kind === 'search' && op.error === undefined)) {
     return await runBackendSearchMulti(parsed.ops as Extract<WebSearchOperation, { kind: 'search' }>[], session);
   }

@@ -24,6 +24,7 @@ const apiKey = (id: string, now: number, secretDigit: number): ApiKey => ({
   serverSecret: String(secretDigit).repeat(64),
   createdAt: new Date(now).toISOString(),
   upstreamIds: null,
+  randomizeUpstreams: false,
   deletedAt: null,
   dumpRetentionSeconds: 3600,
   openaiResponsesRetentionSeconds: 0,

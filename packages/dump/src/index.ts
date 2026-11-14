@@ -4,3 +4,4 @@ export * from './codec.ts';
 export * from './recorder.ts';
 export * from './stream.ts';
 export * from './wire.ts';
+export * from './redact.ts';

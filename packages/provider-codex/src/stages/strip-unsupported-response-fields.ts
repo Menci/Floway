@@ -25,8 +25,12 @@ const CODEX_UNSUPPORTED_BODY_FIELDS = [
   'stream_options',
 ] as const;
 
+const isUnsupportedField = (key: string): boolean => (CODEX_UNSUPPORTED_BODY_FIELDS as readonly string[]).includes(key);
+
 export const supportedResponsesPayload = <P extends Omit<CanonicalOpenAIResponsesPayload, 'model'>>(payload: P): P =>
-  Object.fromEntries(Object.entries(payload).filter(([key]) => !(CODEX_UNSUPPORTED_BODY_FIELDS as readonly string[]).includes(key))) as P;
+  Object.keys(payload).some(isUnsupportedField)
+    ? Object.fromEntries(Object.entries(payload).filter(([key]) => !isUnsupportedField(key))) as P
+    : payload;
 
 export const stripCodexUnsupportedFields = defineStage<Request, Request, ProviderChatResponse<'openaiResponses'>, ProviderChatResponse<'openaiResponses'>, ProviderChatServices>({
   name: 'stripCodexUnsupportedFields',

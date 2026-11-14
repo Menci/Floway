@@ -1,6 +1,7 @@
 import { applyRoleCompatibilityToOpenAIResponses } from './apply-role-compatibility.ts';
 import { callOpenAIResponsesUpstream } from './call-upstream.ts';
 import { disableReasoningOnForcedToolChoiceForOpenAIResponses } from './disable-reasoning-on-forced-tool-choice.ts';
+import { forceStoreFalseForOpenAIResponses } from './force-store-false.ts';
 import { meterUsage } from './meter.ts';
 import { normalizeAssistantContentForOpenAIResponses } from './normalize-assistant-content.ts';
 import { normalizeEmptyToolsForOpenAIResponses } from './normalize-empty-tools-tool-choice.ts';
@@ -29,6 +30,7 @@ export const openaiResponsesWireRules: readonly Stage[] = [
   disableReasoningOnForcedToolChoiceForOpenAIResponses,
   applyRoleCompatibilityToOpenAIResponses,
   stripPromptCacheKeyForOpenAIResponses,
+  forceStoreFalseForOpenAIResponses,
   normalizeExclusiveCachedTokensForOpenAIResponses,
   vendorDeepSeekNormalizeForOpenAIResponses,
   vendorQwenNormalizeForOpenAIResponses,

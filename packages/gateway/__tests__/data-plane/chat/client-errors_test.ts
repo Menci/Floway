@@ -18,7 +18,7 @@ import { compose, createRunReader, defineStage, move, defer, type DumpEvent } fr
 import { eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import { testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const key: ApiKey = { id: 'client-key', userId: 1, name: 'Client key', key: 'client-key', serverSecret: '00'.repeat(32), createdAt: '2026-01-01T00:00:00Z', upstreamIds: null, deletedAt: null, dumpRetentionSeconds: 3600, openaiResponsesRetentionSeconds: 0 };
+const key: ApiKey = { id: 'client-key', userId: 1, name: 'Client key', key: 'client-key', serverSecret: '00'.repeat(32), createdAt: '2026-01-01T00:00:00Z', upstreamIds: null, randomizeUpstreams: false, deletedAt: null, dumpRetentionSeconds: 3600, openaiResponsesRetentionSeconds: 0 };
 const fixtures = [
   { protocol: 'openaiChatCompletions', emit: emitOpenAIChatCompletions, meter: meterChat, initial: { id: 'chat', object: 'chat.completion.chunk', created: 1, model: 'model', choices: [{ index: 0, delta: { content: 'partial' }, finish_reason: null }] } },
   { protocol: 'anthropicMessages', emit: emitAnthropicMessages, meter: meterAnthropic, initial: { type: 'content_block_start', index: 0, content_block: { type: 'text', text: 'partial' } } },
@@ -74,10 +74,13 @@ for (const fixture of fixtures) for (const failureAt of ['read', 'render'] as co
     expect(completed).toBe(true);
     expect(logged).not.toHaveBeenCalled();
     logged.mockRestore();
-    const actual = body.split('\n').filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6)) as { error?: { message?: string; cause?: { message: string } } });
+    const actual = body.split('\n').filter(line => line.startsWith('data: ') || line.startsWith('{')).map(line => JSON.parse(line.startsWith('data: ') ? line.slice(6) : line) as { error?: { message?: string; provider_specific_fields?: { cause?: { message: string } }; details?: { value?: { cause?: { message: string } } }[] } });
     const error = actual.find(event => event.error !== undefined)?.error;
     expect(error?.message).toBe(failureAt === 'read' ? fault.message : 'Do not know how to serialize a BigInt');
-    if (failureAt === 'read') expect(error?.cause?.message).toBe('socket reset');
+    if (failureAt === 'read') {
+      const cause = fixture.protocol === 'geminiGenerateContent' ? error?.details?.find(detail => detail.value)?.value?.cause : error?.provider_specific_fields?.cause;
+      expect(cause?.message).toBe('socket reset');
+    }
     expect(body).not.toContain('[DONE]');
     expect(body).not.toContain('impossibleJson');
     const record = stubs.stored[0]!.record;

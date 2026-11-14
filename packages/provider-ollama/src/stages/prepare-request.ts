@@ -1,18 +1,19 @@
 import type { OllamaUpstreamConfig } from '../config.ts';
 import type { HttpRequestFacts } from '@floway-dev/http/pipeline';
-import { multipartBody } from '@floway-dev/http/request-content';
+import { multipartBody, type HttpBody } from '@floway-dev/http/request-content';
 import { defineStage, move, secret } from '@floway-dev/pipeline';
+import { DEFAULT_DECISION_PATHS, serializeDecisionRequest } from '@floway-dev/protocols/decision';
 import { toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { joinBaseAndPath, mergeHttpHeaders, withHttpContentType, type ProviderOperationPayloads, type ProviderRequest, type ProviderResponse, type ProviderServices } from '@floway-dev/provider';
 
-type OllamaOperation = 'openaiChatCompletions' | 'openaiResponses' | 'openaiResponsesCompact' | 'anthropicMessages' | 'anthropicMessagesCountTokens' | 'openaiCompletions' | 'openaiEmbeddings' | 'openaiAudioTranscriptions';
+type OllamaOperation = 'openaiChatCompletions' | 'openaiResponses' | 'openaiResponsesCompact' | 'anthropicMessages' | 'anthropicMessagesCountTokens' | 'openaiCompletions' | 'openaiEmbeddings' | 'openaiAudioTranscriptions' | 'decision';
 
 interface OllamaHttpFacts extends HttpRequestFacts {
   'request.provider.modelKey': string;
   'request.ollama.modelKey': string;
 }
 
-const PATHS: Record<OllamaOperation, string> = {
+const PATHS: Record<Exclude<OllamaOperation, 'decision'>, string> = {
   openaiChatCompletions: '/v1/chat/completions',
   openaiResponses: '/v1/responses',
   openaiResponsesCompact: '/v1/responses/compact',
@@ -26,7 +27,7 @@ const PATHS: Record<OllamaOperation, string> = {
 
 export const prepareOllamaRequest = <O extends OllamaOperation>(config: OllamaUpstreamConfig, operation: O) => {
   const prepare = defineStage<ProviderRequest<ProviderOperationPayloads[O]> & { 'request.provider.anthropicBeta'?: readonly string[]; 'request.provider.responsesAction': 'generate' | 'compact' }, OllamaHttpFacts, ProviderResponse, ProviderResponse, ProviderServices>({
-    name: `prepareOllama${operation.replace(/^openai/, 'OpenAI').replace(/^alpha/, 'Alpha').replace(/^rerank/, 'Rerank')}`,
+    name: `prepareOllama${operation.replace(/^openai/, 'OpenAI').replace(/^alpha/, 'Alpha').replace(/^rerank/, 'Rerank').replace(/^decision/, 'Decision')}`,
     through: {
       request: {
         needs: [...(operation === 'openaiResponses' || operation === 'openaiResponsesCompact' ? ['request.provider.responsesAction' as const] : []), 'request.provider.model', 'request.provider.payload', 'request.http.callId', 'request.http.headers', ...(operation === 'anthropicMessages' || operation === 'anthropicMessagesCountTokens' ? ['request.provider.anthropicBeta' as const] : [])],
@@ -39,11 +40,23 @@ export const prepareOllamaRequest = <O extends OllamaOperation>(config: OllamaUp
       const { 'request.provider.model': model, 'request.provider.payload': payload, ...rest } = facts;
       const modelKey = model.providerData as string;
       const encoding = operation === 'openaiAudioTranscriptions' ? 'multipart' as const : 'json' as const;
-      const body = operation === 'openaiAudioTranscriptions'
-        ? multipartBody((payload as ProviderOperationPayloads['openaiAudioTranscriptions']).entries.map(entry => entry.name === 'model' ? { ...entry, value: modelKey } : entry))
-        : (operation === 'openaiResponses' || operation === 'openaiResponsesCompact') && facts['request.provider.responsesAction'] === 'compact'
+      const responses = operation === 'openaiResponses' || operation === 'openaiResponsesCompact';
+      const compact = responses && facts['request.provider.responsesAction'] === 'compact';
+      let path: string;
+      let body: HttpBody;
+      if (operation === 'decision') {
+        const target = model.decisionTarget;
+        if (target === undefined) throw new Error(`Decision model ${model.id} has no outbound target`);
+        path = target.path ?? DEFAULT_DECISION_PATHS[target.protocol];
+        body = serializeDecisionRequest(target.protocol, modelKey, payload as ProviderOperationPayloads['decision']);
+      } else {
+        path = responses ? PATHS[compact ? 'openaiResponsesCompact' : 'openaiResponses'] : PATHS[operation as Exclude<OllamaOperation, 'decision'>];
+        body = operation === 'openaiAudioTranscriptions'
+          ? multipartBody((payload as ProviderOperationPayloads['openaiAudioTranscriptions']).entries.map(entry => entry.name === 'model' ? { ...entry, value: modelKey } : entry))
+          : compact
             ? { ...toCompactPayloadShape(payload as ProviderOperationPayloads['openaiResponsesCompact']), model: modelKey }
             : { ...payload, ...(operation === 'openaiChatCompletions' || operation === 'openaiResponses' || operation === 'openaiResponsesCompact' || operation === 'anthropicMessages' ? { stream: true } : {}), model: modelKey };
+      }
       const base = config.apiKey ? [['Authorization', secret(`Bearer ${config.apiKey}`)] as const] : [];
       let headers = mergeHttpHeaders(withHttpContentType(base, body, encoding), facts['request.http.headers']);
       if (operation === 'anthropicMessages' || operation === 'anthropicMessagesCountTokens') {
@@ -55,7 +68,7 @@ export const prepareOllamaRequest = <O extends OllamaOperation>(config: OllamaUp
         ...rest,
         'request.provider.modelKey': modelKey,
         'request.ollama.modelKey': modelKey,
-        'request.http.url': joinBaseAndPath(config.baseUrl, ((operation === 'openaiResponses' || operation === 'openaiResponsesCompact') ? PATHS[facts['request.provider.responsesAction'] === 'compact' ? 'openaiResponsesCompact' : 'openaiResponses'] : PATHS[operation])),
+        'request.http.url': joinBaseAndPath(config.baseUrl, path),
         'request.http.method': 'POST',
         'request.http.headers': headers,
         'request.http.body': body,

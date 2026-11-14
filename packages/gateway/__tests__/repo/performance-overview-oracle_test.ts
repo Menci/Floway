@@ -1,16 +1,13 @@
 import { test } from 'vitest';
 
 import { aggregatePerformanceForDisplay } from './performance-overview-oracle.ts';
-import { createTelemetryBucket, type TelemetryBucketGranularity } from '../../src/control-plane/shared/telemetry-bucket.ts';
 import type { PerformanceDisplayRecord, PerformanceTelemetryRecord } from '../../src/repo/types.ts';
+import { createTelemetryBucket, type TelemetryBucketOptions } from '@floway-dev/protocols/common';
 import { assertEquals } from '@floway-dev/test-utils';
 
-interface AggregateOptions {
-  bucket: TelemetryBucketGranularity;
+type AggregateOptions = TelemetryBucketOptions & {
   groupBy: import('../../src/repo/types.ts').PerformanceGroupBy;
-  timeZone?: string;
-  timezoneOffsetMinutes: number;
-}
+};
 
 // The oracle is multi-axis; every case focuses on a single axis, so unwrap it
 // through a one-axis map to keep the test surface flat.

@@ -49,29 +49,9 @@ const overviewHoursSql = (scoped: boolean) => `/* performance-overview-hours */
   GROUP BY performance_summary.hour
   ORDER BY performance_summary.hour`;
 
-type PerformanceBreakdownAxis = Exclude<PerformanceOverviewAxis, 'series'>;
-
-interface PerformanceBreakdownSql {
-  axis: PerformanceBreakdownAxis;
-  group: (source: string) => string;
-  where?: (source: string) => string;
-}
-
-// workerd caps every compound SELECT at five terms. Build a tree of bounded
-// compounds so adding future Performance dimensions cannot cross that limit.
-// https://github.com/cloudflare/workerd/blob/c16efad94a926dff547d3e3d853feae4fc8988a6/src/workerd/util/sqlite.c%2B%2B#L1382-L1384
-const D1_COMPOUND_SELECT_LIMIT = 5;
-const boundedUnionAll = (terms: readonly string[]): string => {
-  if (terms.length === 0) throw new Error('A compound SELECT requires at least one term');
-  if (terms.length <= D1_COMPOUND_SELECT_LIMIT) return terms.join('\n  UNION ALL\n');
-  const groups: string[] = [];
-  for (let index = 0; index < terms.length; index += D1_COMPOUND_SELECT_LIMIT) {
-    groups.push(`SELECT * FROM (\n${boundedUnionAll(terms.slice(index, index + D1_COMPOUND_SELECT_LIMIT))}\n  )`);
-  }
-  return boundedUnionAll(groups);
-};
-
-const seriesGroupSql = (source: string) => `CASE settings.series_group_by
+const overviewGroupingSql = "CASE WHEN axes.axis = 'series' THEN settings.series_group_by ELSE axes.axis END";
+const overviewGroupSql = (source: string, grouping = overviewGroupingSql) => `CASE ${grouping}
+  WHEN 'none' THEN 'all'
   WHEN 'keyId' THEN ${source}.key_id
   WHEN 'userId' THEN CAST(${source}.user_id AS TEXT)
   WHEN 'model' THEN ${source}.model
@@ -79,152 +59,75 @@ const seriesGroupSql = (source: string) => `CASE settings.series_group_by
   WHEN 'operation' THEN ${source}.operation
   WHEN 'runtimeLocation' THEN ${source}.runtime_location
 END`;
-const seriesWhereSql = (source: string) =>
-  `settings.series_group_by != 'userId' OR ${source}.user_id IS NOT NULL`;
+const overviewWhereSql = (source: string) => `(axes.owned_only = 0 OR ${source}.owned = 1)
+    AND (${overviewGroupingSql} != 'userId' OR ${source}.user_id IS NOT NULL)`;
 
-const performanceBreakdownSql: readonly PerformanceBreakdownSql[] = [
-  { axis: 'none', group: () => "'all'" },
-  { axis: 'keyId', group: source => `${source}.key_id`, where: source => `${source}.owned = 1` },
-  {
-    axis: 'userId',
-    group: source => `CAST(${source}.user_id AS TEXT)`,
-    where: source => `settings.is_admin = 1 AND ${source}.user_id IS NOT NULL`,
-  },
-  { axis: 'model', group: source => `${source}.model` },
-  { axis: 'upstream', group: source => `${source}.upstream` },
-  { axis: 'operation', group: source => `${source}.operation` },
-  { axis: 'runtimeLocation', group: source => `${source}.runtime_location` },
-];
-
-const summarySeriesSql = `
+const summaryAggregateSql = `
   SELECT
-    'series' AS axis,
-    bucket_map.bucket,
-    ${seriesGroupSql('filtered_summary')} AS group_value,
-    SUM(filtered_summary.requests) AS requests,
-    SUM(filtered_summary.errors_with_output) + SUM(filtered_summary.errors_no_output) AS errors,
-    SUM(filtered_summary.ttft_samples_ok) + SUM(filtered_summary.errors_with_output) AS ttft_samples,
-    SUM(filtered_summary.tpot_samples) AS tpot_samples,
-    SUM(filtered_summary.neutral) AS neutral
-  FROM filtered_summary
+    axes.axis,
+    CASE WHEN axes.axis = 'series' THEN summary_cube.time_bucket ELSE 'all' END AS bucket,
+    ${overviewGroupSql('summary_cube')} AS group_value,
+    SUM(summary_cube.requests) AS requests,
+    SUM(summary_cube.errors_with_output) + SUM(summary_cube.errors_no_output) AS errors,
+    SUM(summary_cube.ttft_samples_ok) + SUM(summary_cube.errors_with_output) AS ttft_samples,
+    SUM(summary_cube.tpot_samples) AS tpot_samples,
+    SUM(summary_cube.neutral) AS neutral
+  FROM summary_cube
+  CROSS JOIN axes
   CROSS JOIN settings
-  JOIN bucket_map ON bucket_map.hour = filtered_summary.hour
-  WHERE ${seriesWhereSql('filtered_summary')}
-  GROUP BY bucket_map.bucket, group_value`;
+  WHERE ${overviewWhereSql('summary_cube')}
+  GROUP BY axes.axis, bucket, group_value`;
 
-const summaryBreakdownSql = performanceBreakdownSql.map(({ axis, group, where }) => {
-  const source = 'summary_cube';
-  const groupSql = group(source);
-  return `
+const histogramAggregateSql = `
   SELECT
-    '${axis}' AS axis,
-    'all' AS bucket,
-    ${groupSql} AS group_value,
-    SUM(${source}.requests) AS requests,
-    SUM(${source}.errors_with_output) + SUM(${source}.errors_no_output) AS errors,
-    SUM(${source}.ttft_samples_ok) + SUM(${source}.errors_with_output) AS ttft_samples,
-    SUM(${source}.tpot_samples) AS tpot_samples,
-    SUM(${source}.neutral) AS neutral
-  FROM ${source}
+    axes.axis,
+    CASE WHEN axes.axis = 'series' THEN histogram_cube.time_bucket ELSE 'all' END AS bucket,
+    ${overviewGroupSql('histogram_cube')} AS group_value,
+    histogram_cube.metric,
+    histogram_cube.lower,
+    MAX(histogram_cube.upper) AS upper,
+    SUM(histogram_cube.count) AS count
+  FROM histogram_cube
+  CROSS JOIN axes
   CROSS JOIN settings
-  ${where === undefined ? '' : `WHERE ${where(source)}`}
-  GROUP BY ${groupSql}`;
-});
+  WHERE ${overviewWhereSql('histogram_cube')}
+  GROUP BY axes.axis, bucket, group_value, histogram_cube.metric, histogram_cube.lower`;
 
-const summaryAggregateSql = boundedUnionAll([summarySeriesSql, ...summaryBreakdownSql]);
-
-const histogramSeriesSql = `
-  SELECT
-    'series' AS axis,
-    bucket_map.bucket,
-    ${seriesGroupSql('filtered_histogram')} AS group_value,
-    filtered_histogram.metric,
-    filtered_histogram.lower,
-    MAX(filtered_histogram.upper) AS upper,
-    SUM(filtered_histogram.count) AS count
-  FROM filtered_histogram
-  CROSS JOIN settings
-  JOIN bucket_map ON bucket_map.hour = filtered_histogram.hour
-  WHERE ${seriesWhereSql('filtered_histogram')}
-  GROUP BY bucket_map.bucket, group_value, filtered_histogram.metric, filtered_histogram.lower`;
-
-const histogramBreakdownSql = performanceBreakdownSql.map(({ axis, group, where }) => {
-  const source = 'histogram_cube';
-  const groupSql = group(source);
-  return `
-  SELECT
-    '${axis}' AS axis,
-    'all' AS bucket,
-    ${groupSql} AS group_value,
-    ${source}.metric,
-    ${source}.lower,
-    MAX(${source}.upper) AS upper,
-    SUM(${source}.count) AS count
-  FROM ${source}
-  CROSS JOIN settings
-  ${where === undefined ? '' : `WHERE ${where(source)}`}
-  GROUP BY ${groupSql}, ${source}.metric, ${source}.lower`;
-});
-
-const histogramAggregateSql = boundedUnionAll([histogramSeriesSql, ...histogramBreakdownSql]);
-
-const facetRowsSql = boundedUnionAll(performanceBreakdownSql
-  .filter(({ axis }) => axis !== 'none')
-  .map(({ axis, group, where }) => {
-    const source = 'scoped_summary';
-    const groupSql = group(source);
-    return `SELECT 'facet' AS row_kind, NULL AS axis, NULL AS bucket, NULL AS group_value,
-    '${axis}' AS dimension, ${groupSql} AS facet_value,
+const facetRowsSql = `SELECT 'facet' AS row_kind, NULL AS axis, NULL AS bucket, NULL AS group_value,
+    axes.axis AS dimension, ${overviewGroupSql('authorized_summary', 'axes.axis')} AS facet_value,
     NULL AS requests_text, NULL AS errors_text, NULL AS ttft_samples_text,
     NULL AS tpot_samples_text, NULL AS neutral_text,
     NULL AS ttft_ms_p50, NULL AS ttft_ms_p95, NULL AS ttft_ms_p99,
     NULL AS tpot_us_p50, NULL AS tpot_us_p95, NULL AS tpot_us_p99
-  FROM ${source}
-  CROSS JOIN settings
-  ${where === undefined ? '' : `WHERE ${where(source)}`}
-  GROUP BY ${groupSql}`;
-  }));
+  FROM authorized_summary
+  CROSS JOIN axes
+  WHERE axes.axis NOT IN ('none', 'series')
+    AND (axes.owned_only = 0 OR authorized_summary.owned = 1)
+    AND (axes.axis != 'userId' OR authorized_summary.user_id IS NOT NULL)
+  GROUP BY dimension, facet_value`;
 
 const performanceCubeDimensions = [
   'key_id', 'user_id', 'owned', 'model', 'upstream', 'operation', 'runtime_location',
 ] as const;
 const performanceCubeCoordinateSql = performanceCubeDimensions.join(', ');
 
+// CTE references expand before materialization; one cube scan across axis rows
+// keeps adding dimensions from copying the entire filtered source tree.
+// https://github.com/sqlite/sqlite/blob/version-3.54.1/src/select.c#L5672-L5682
 const overviewSql = (scoped: boolean) => `/* performance-overview */
 WITH
-settings(actor_user_id, is_admin, series_group_by) AS (
-  VALUES (?, ?, ?)
+settings(
+  actor_user_id, is_admin, series_group_by,
+  models_json, upstreams_json, operations_json, runtimes_json,
+  users_json, keys_json, visible_users_json, visible_upstreams_json
+) AS (
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ),
-model_filter(value) AS MATERIALIZED (
-  SELECT CAST(value AS TEXT) FROM json_each(?)
-),
-upstream_filter(value) AS MATERIALIZED (
-  SELECT CAST(value AS TEXT) FROM json_each(?)
-),
-operation_filter(value) AS MATERIALIZED (
-  SELECT CAST(value AS TEXT) FROM json_each(?)
-),
-runtime_filter(value) AS MATERIALIZED (
-  SELECT CAST(value AS TEXT) FROM json_each(?)
-),
-user_filter(value) AS MATERIALIZED (
-  SELECT CAST(value AS INTEGER) FROM json_each(?)
-),
-key_filter(value) AS MATERIALIZED (
-  SELECT CAST(value AS TEXT) FROM json_each(?)
+axes(axis, owned_only) AS (
+  VALUES ${[...overviewAxes].map(axis => `('${axis}', ${axis === 'keyId' ? 1 : 0})`).join(', ')}
 ),
 bucket_map(hour, bucket) AS MATERIALIZED (
   SELECT key, CAST(value AS TEXT) FROM json_each(?)
-),
-scoped_summary AS MATERIALIZED (
-  SELECT
-    performance_summary.*,
-    api_keys.user_id,
-    CASE WHEN api_keys.user_id = settings.actor_user_id THEN 1 ELSE 0 END AS owned
-  FROM performance_summary
-  CROSS JOIN settings
-  LEFT JOIN api_keys ON api_keys.id = performance_summary.key_id
-  WHERE ${scopedRange('performance_summary', scoped)}
 ),
 orphan_buckets AS MATERIALIZED (
   SELECT 1 AS present
@@ -240,16 +143,32 @@ orphan_buckets AS MATERIALIZED (
     AND performance_summary.hour IS NULL
   LIMIT 1
 ),
+authorized_summary AS MATERIALIZED (
+  SELECT
+    performance_summary.*,
+    api_keys.user_id,
+    CASE WHEN api_keys.user_id = settings.actor_user_id THEN 1 ELSE 0 END AS owned
+  FROM performance_summary
+  CROSS JOIN settings
+  LEFT JOIN api_keys ON api_keys.id = performance_summary.key_id
+  WHERE ${scoped ? 'api_keys.user_id = ? AND performance_summary.hour >= ? AND performance_summary.hour < ?' : scopedRange('performance_summary', false)}
+    AND (
+      settings.is_admin = 1
+      OR api_keys.user_id IN (SELECT CAST(value AS INTEGER) FROM json_each(settings.visible_users_json))
+      OR performance_summary.upstream IN (SELECT CAST(value AS TEXT) FROM json_each(settings.visible_upstreams_json))
+    )
+),
 filtered_summary AS MATERIALIZED (
-  SELECT *
-  FROM scoped_summary
+  SELECT authorized_summary.*
+  FROM authorized_summary
+  CROSS JOIN settings
   WHERE
-    (NOT EXISTS (SELECT 1 FROM model_filter) OR model IN (SELECT value FROM model_filter))
-    AND (NOT EXISTS (SELECT 1 FROM upstream_filter) OR upstream IN (SELECT value FROM upstream_filter))
-    AND (NOT EXISTS (SELECT 1 FROM operation_filter) OR operation IN (SELECT value FROM operation_filter))
-    AND (NOT EXISTS (SELECT 1 FROM runtime_filter) OR runtime_location IN (SELECT value FROM runtime_filter))
-    AND (NOT EXISTS (SELECT 1 FROM user_filter) OR user_id IN (SELECT value FROM user_filter))
-    AND (NOT EXISTS (SELECT 1 FROM key_filter) OR key_id IN (SELECT value FROM key_filter))
+    (json_array_length(settings.models_json) = 0 OR model IN (SELECT CAST(value AS TEXT) FROM json_each(settings.models_json)))
+    AND (json_array_length(settings.upstreams_json) = 0 OR upstream IN (SELECT CAST(value AS TEXT) FROM json_each(settings.upstreams_json)))
+    AND (json_array_length(settings.operations_json) = 0 OR operation IN (SELECT CAST(value AS TEXT) FROM json_each(settings.operations_json)))
+    AND (json_array_length(settings.runtimes_json) = 0 OR runtime_location IN (SELECT CAST(value AS TEXT) FROM json_each(settings.runtimes_json)))
+    AND (json_array_length(settings.users_json) = 0 OR user_id IN (SELECT CAST(value AS INTEGER) FROM json_each(settings.users_json)))
+    AND (json_array_length(settings.keys_json) = 0 OR key_id IN (SELECT CAST(value AS TEXT) FROM json_each(settings.keys_json)))
 ),
 filtered_histogram AS MATERIALIZED (
   SELECT
@@ -269,6 +188,7 @@ filtered_histogram AS MATERIALIZED (
 ),
 summary_cube AS MATERIALIZED (
   SELECT
+    bucket_map.bucket AS time_bucket,
     ${performanceCubeCoordinateSql},
     SUM(requests) AS requests,
     SUM(ttft_samples_ok) AS ttft_samples_ok,
@@ -277,14 +197,17 @@ summary_cube AS MATERIALIZED (
     SUM(neutral) AS neutral,
     SUM(tpot_samples) AS tpot_samples
   FROM filtered_summary
-  GROUP BY ${performanceCubeCoordinateSql}
+  JOIN bucket_map ON bucket_map.hour = filtered_summary.hour
+  GROUP BY bucket_map.bucket, ${performanceCubeCoordinateSql}
 ),
 histogram_cube AS MATERIALIZED (
   SELECT
+    bucket_map.bucket AS time_bucket,
     ${performanceCubeCoordinateSql},
     metric, lower, MAX(upper) AS upper, SUM(count) AS count
   FROM filtered_histogram
-  GROUP BY ${performanceCubeCoordinateSql}, metric, lower
+  JOIN bucket_map ON bucket_map.hour = filtered_histogram.hour
+  GROUP BY bucket_map.bucket, ${performanceCubeCoordinateSql}, metric, lower
 ),
 summary_aggregates AS MATERIALIZED (
   ${summaryAggregateSql}
@@ -348,8 +271,9 @@ percentile_values AS MATERIALIZED (
     MAX(CASE WHEN metric = 'tpot_us' AND label = 'p99' THEN value END) AS tpot_us_p99
   FROM selected_percentiles
   GROUP BY axis, bucket, group_value
-),
-aggregate_rows AS (
+)
+${facetRowsSql}
+UNION ALL
   SELECT
     'aggregate' AS row_kind,
     summary_aggregates.axis,
@@ -370,11 +294,7 @@ aggregate_rows AS (
     percentile_values.tpot_us_p99
   FROM summary_aggregates
   LEFT JOIN percentile_values USING (axis, bucket, group_value)
-),
-facet_rows AS (
-  ${facetRowsSql}
-),
-orphan_rows AS (
+UNION ALL
   SELECT 'orphan' AS row_kind,
     NULL AS axis, NULL AS bucket, NULL AS group_value, NULL AS dimension, NULL AS facet_value,
     NULL AS requests_text, NULL AS errors_text, NULL AS ttft_samples_text,
@@ -382,8 +302,7 @@ orphan_rows AS (
     NULL AS ttft_ms_p50, NULL AS ttft_ms_p95, NULL AS ttft_ms_p99,
     NULL AS tpot_us_p50, NULL AS tpot_us_p95, NULL AS tpot_us_p99
   FROM orphan_buckets
-),
-invalid_histogram_rows AS (
+UNION ALL
   SELECT 'invalid_histogram' AS row_kind,
     NULL AS axis, NULL AS bucket, NULL AS group_value, NULL AS dimension, NULL AS facet_value,
     NULL AS requests_text, NULL AS errors_text, NULL AS ttft_samples_text,
@@ -391,8 +310,7 @@ invalid_histogram_rows AS (
     NULL AS ttft_ms_p50, NULL AS ttft_ms_p95, NULL AS ttft_ms_p99,
     NULL AS tpot_us_p50, NULL AS tpot_us_p95, NULL AS tpot_us_p99
   FROM invalid_histogram_bounds
-),
-missing_hour_rows AS (
+UNION ALL
   SELECT 'missing_hour' AS row_kind,
     NULL AS axis, NULL AS bucket, NULL AS group_value, NULL AS dimension, hour AS facet_value,
     NULL AS requests_text, NULL AS errors_text, NULL AS ttft_samples_text,
@@ -402,15 +320,6 @@ missing_hour_rows AS (
   FROM filtered_summary
   WHERE NOT EXISTS (SELECT 1 FROM bucket_map WHERE bucket_map.hour = filtered_summary.hour)
   GROUP BY hour
-),
-wire AS (
-  SELECT * FROM facet_rows
-  UNION ALL SELECT * FROM aggregate_rows
-  UNION ALL SELECT * FROM orphan_rows
-  UNION ALL SELECT * FROM invalid_histogram_rows
-  UNION ALL SELECT * FROM missing_hour_rows
-)
-SELECT * FROM wire
 ORDER BY row_kind, dimension, facet_value, axis, bucket, group_value`;
 
 const safeInteger = (value: string | null, label: string): number => {
@@ -495,9 +404,6 @@ export const querySqlPerformanceOverview = async (
   db: SqlDatabase,
   opts: PerformanceOverviewQueryOptions,
 ): Promise<PerformanceOverviewResult> => {
-  if (!opts.isAdmin && (opts.groupBy === 'userId' || opts.filters.userIds.length > 0)) {
-    throw new Error('Performance user attribution requires administrator privileges');
-  }
   const scoped = opts.groupBy === 'keyId';
   const range = rangeBinds(opts, scoped);
   const { results: hours } = await db.prepare(overviewHoursSql(scoped))
@@ -515,6 +421,8 @@ export const querySqlPerformanceOverview = async (
       JSON.stringify(opts.filters.runtimeLocations),
       JSON.stringify(opts.filters.userIds),
       JSON.stringify(opts.filters.keyIds),
+      JSON.stringify(opts.visibleUserIds),
+      JSON.stringify(opts.visibleUpstreams),
       JSON.stringify(buckets),
       ...range,
       ...range,

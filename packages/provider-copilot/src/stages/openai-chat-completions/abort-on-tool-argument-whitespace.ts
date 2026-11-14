@@ -1,4 +1,3 @@
-
 import { checkWhitespaceOverflow } from '../../tool-argument-whitespace.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';

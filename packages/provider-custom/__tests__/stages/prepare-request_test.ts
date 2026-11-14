@@ -13,6 +13,7 @@ const baseRecord: UpstreamRecord = {
   kind: 'custom',
   name: 'Test Custom',
   enabled: true,
+  usageRefreshIntervalMinutes: 0,
   sortOrder: 0,
   createdAt: '2026-04-29T00:00:00.000Z',
   updatedAt: '2026-04-29T00:00:00.000Z',
@@ -248,7 +249,7 @@ test('authStyle "none" sends neither Authorization nor x-api-key', async () => {
   assertEquals(anthropicVersion, null);
 });
 
-test('Custom provider callOpenAIImagesEdits forwards multipart body with model field appended', async () => {
+test('Custom provider openaiImagesEdits pipeline forwards multipart body with model field appended', async () => {
   const record: UpstreamRecord = {
     ...baseRecord,
     config: {
@@ -290,7 +291,7 @@ test('Custom provider callOpenAIImagesEdits forwards multipart body with model f
   assertEquals(forwarded.form.get('image') instanceof File, true);
 });
 
-test('Custom provider callOpenAIAudioTranscriptions preserves multipart entries and honors the path override', async () => {
+test('Custom provider openaiAudioTranscriptions pipeline preserves multipart entries and honors the path override', async () => {
   const record: UpstreamRecord = {
     ...baseRecord,
     config: {

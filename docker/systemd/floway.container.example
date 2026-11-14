@@ -10,7 +10,6 @@ HealthTimeout=5s
 Image=ghcr.io/menci/floway-server:latest
 Mount=type=volume,source=floway-data.volume,destination=/data
 Notify=healthy
-Pod=floway.pod
 PublishPort=8788:8788
 
 # Auto-update

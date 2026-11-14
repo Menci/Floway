@@ -21,7 +21,7 @@ describe('pipeline settlement', () => {
     const background = (work: Promise<unknown>) => { pending.push(work); };
     const key = {
       id: 'key_test', userId: 1, name: 'Test key', key: 'raw-key', serverSecret: '11'.repeat(32),
-      createdAt: '2026-01-01T00:00:00.000Z', upstreamIds: null, deletedAt: null,
+      createdAt: '2026-01-01T00:00:00.000Z', upstreamIds: null, randomizeUpstreams: false, deletedAt: null,
       dumpRetentionSeconds: 3600, openaiResponsesRetentionSeconds: 0,
     };
     const recordUsage = vi.spyOn(repo.usage, 'record');

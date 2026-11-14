@@ -1,4 +1,4 @@
-import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesResult, openaiResponsesResultToEvents, type OpenAIResponsesStreamEvent } from './index.ts';
+import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesResultEx, openaiResponsesResultToEvents, type OpenAIResponsesStreamEventEx } from './index.ts';
 import { parseTargetStreamFrames } from '../common/parse-events.ts';
 import { parseSSEStream } from '../common/parse-sse.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
@@ -7,22 +7,21 @@ export interface ParseOpenAIResponsesStreamOptions {
   signal?: AbortSignal;
 }
 
-// Deny-list: anything that is not a wrapper (`response.queued` /
-// `response.created` / `response.in_progress`) and not terminal is treated as
-// content-bearing. Future OpenAI Responses event types fall through as structured by
-// default, which is safer than missing an allow-list entry and incorrectly
-// triggering the fast-path expansion below.
+// Lifecycle wrappers, resource terminals, and error notifications carry no
+// content deltas. Unknown event types count as structured content so a new
+// content event cannot accidentally trigger duplicate fast-path expansion.
 const isStructuredOpenAIResponsesEvent = (event: { type: string }): boolean =>
   event.type !== 'response.queued'
   && event.type !== 'response.created'
   && event.type !== 'response.in_progress'
-  && !isOpenAIResponsesTerminalEvent(event as OpenAIResponsesStreamEvent);
+  && event.type !== 'error'
+  && !isOpenAIResponsesTerminalEvent(event as OpenAIResponsesStreamEventEx);
 
 // Some OpenAI Responses upstreams emit the event type only via the SSE `event:`
 // header and leave it off the JSON body; re-attach it so downstream sees a
 // consistent shape.
-const projectSseJsonEvent = (event: OpenAIResponsesStreamEvent, eventName: string | undefined): OpenAIResponsesStreamEvent =>
-  eventName && !(event as { type?: string }).type ? ({ ...event, type: eventName } as OpenAIResponsesStreamEvent) : event;
+const projectSseJsonEvent = (event: OpenAIResponsesStreamEventEx, eventName: string | undefined): OpenAIResponsesStreamEventEx =>
+  eventName && !(event as { type?: string }).type ? ({ ...event, type: eventName } as OpenAIResponsesStreamEventEx) : event;
 
 // Per OpenAI Responses spec every stream event carries a monotonic
 // `sequence_number`, but probes / fast-path completions on Copilot omit it
@@ -33,12 +32,12 @@ const projectSseJsonEvent = (event: OpenAIResponsesStreamEvent, eventName: strin
 // without colliding.
 const sequencer = () => {
   let next = 0;
-  return (event: OpenAIResponsesStreamEvent): OpenAIResponsesStreamEvent => {
+  return (event: OpenAIResponsesStreamEventEx): OpenAIResponsesStreamEventEx => {
     if (event.sequence_number !== undefined) {
       if (event.sequence_number >= next) next = event.sequence_number + 1;
       return event;
     }
-    const stamped: OpenAIResponsesStreamEvent = { ...event, sequence_number: next };
+    const stamped: OpenAIResponsesStreamEventEx = { ...event, sequence_number: next };
     next++;
     return stamped;
   };
@@ -49,18 +48,17 @@ const sequencer = () => {
 // a terminal `response.completed` / `response.incomplete` / `response.failed`,
 // skipping every content-bearing structured event. This parser expands the
 // terminal in place via `openaiResponsesResultToEvents` so downstream consumers
-// always observe one canonical full event sequence. `error` terminals carry
-// no `response` payload, so we cannot expand them; they continue to surface
-// as their original frame for downstream handlers.
+// always observe one canonical full event sequence. Error notifications pass
+// through before the terminal response and do not suppress its expansion.
 export const parseOpenAIResponsesStream = (
   body: ReadableStream<Uint8Array>,
   options: ParseOpenAIResponsesStreamOptions = {},
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> => (async function* () {
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> => (async function* () {
   let sawStructured = false;
-  const sentWrapperTypes = new Set<OpenAIResponsesStreamEvent['type']>();
+  const sentWrapperTypes = new Set<OpenAIResponsesStreamEventEx['type']>();
   const stamp = sequencer();
 
-  for await (const frame of parseTargetStreamFrames<OpenAIResponsesStreamEvent>(parseSSEStream(body, options), {
+  for await (const frame of parseTargetStreamFrames<OpenAIResponsesStreamEventEx>(parseSSEStream(body, options), {
     protocol: 'OpenAI Responses',
     malformedJsonEventName: 'response',
   })) {
@@ -87,9 +85,9 @@ export const parseOpenAIResponsesStream = (
       // synthesize only the missing item/content events plus terminal.
       // `openaiResponsesResultToEvents` numbers from 0; re-stamp each frame
       // through the per-stream sequencer so they continue the same sequence.
-      for (const expanded of openaiResponsesResultToEvents((event as { response: OpenAIResponsesResult }).response)) {
+      for (const expanded of openaiResponsesResultToEvents((event as { response: OpenAIResponsesResultEx }).response)) {
         if (sentWrapperTypes.has(expanded.event.type)) continue;
-        const restamped = { ...expanded.event, sequence_number: undefined } as OpenAIResponsesStreamEvent;
+        const restamped = { ...expanded.event, sequence_number: undefined } as OpenAIResponsesStreamEventEx;
         yield eventFrame(stamp(restamped));
       }
       sawStructured = true;

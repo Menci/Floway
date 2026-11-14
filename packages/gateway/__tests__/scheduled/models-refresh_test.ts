@@ -13,6 +13,7 @@ const custom = (id: string, enabled: boolean): UpstreamRecord => ({
   id,
   kind: 'custom',
   name: id,
+  usageRefreshIntervalMinutes: 0,
   enabled,
   sortOrder: 0,
   createdAt: '2026-08-01T00:00:00.000Z',
@@ -105,8 +106,10 @@ test('scheduled refresh skips recent catalogs and fetches catalogs older than te
 test('one malformed upstream does not prevent later refreshes from being scheduled', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
-  await saveUpstreamForTest(repo.upstreams, { ...custom('malformed', true), config: null });
-  await saveUpstreamForTest(repo.upstreams, custom('healthy', true));
+  // The scheduler visits upstreams in repository order, so the malformed row
+  // has to sort first explicitly instead of relying on insertion order.
+  await saveUpstreamForTest(repo.upstreams, { ...custom('malformed', true), sortOrder: 0, config: null });
+  await saveUpstreamForTest(repo.upstreams, { ...custom('healthy', true), sortOrder: 1 });
   const background: Promise<unknown>[] = [];
   const error = vi.spyOn(console, 'error').mockImplementation(() => {});
 

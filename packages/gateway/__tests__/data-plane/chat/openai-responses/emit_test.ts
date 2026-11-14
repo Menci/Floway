@@ -13,12 +13,12 @@ import { flushBackground, trackBackground } from '../../../test-utils/background
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { compose, createRunReader, defineStage, move, run, type DumpEvent } from '@floway-dev/pipeline';
 import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
-import type { ClientOpenAIResponsesStreamEvent, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { ClientOpenAIResponsesStreamEvent, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const key: ApiKey = {
   id: 'key_emit', userId: 1, name: 'Emitter key', key: 'emitter-key', serverSecret: '11'.repeat(32),
-  createdAt: '2026-01-01T00:00:00.000Z', upstreamIds: null, deletedAt: null,
+  createdAt: '2026-01-01T00:00:00.000Z', upstreamIds: null, randomizeUpstreams: false, deletedAt: null,
   dumpRetentionSeconds: 3600, openaiResponsesRetentionSeconds: 0,
 };
 
@@ -48,7 +48,7 @@ for (const failureAt of ['before-response', 'upstream-stream', 'snapshot', 'rend
       vi.spyOn(store, 'commitSnapshot').mockRejectedValue(fault);
     }
     const gateway = mockChatGatewayCtx({ dump, wantsStream: true, backgroundScheduler: trackBackground, attempt: { timing, telemetry: undefined }, ...(store === undefined ? {} : { store }) });
-    const upstream = (async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+    const upstream = (async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
       if (announced) {
         yield {
           type: 'event', event: {
@@ -121,7 +121,7 @@ for (const failureAt of ['before-response', 'upstream-stream', 'snapshot', 'rend
     expect(frames.filter(frame => frame.type === 'event').map(frame => frame.event.type)).toEqual(expectedEvents);
     const error = frames.find(frame => frame.type === 'event' && frame.event.type === 'error');
     expect(error).toMatchObject({ event: { error: { message: failureAt === 'render' ? 'Do not know how to serialize a BigInt' : fault.message } } });
-    if (failureAt !== 'render') expect(error).toMatchObject({ event: { error: { cause: { message: 'socket reset' } } } });
+    if (failureAt !== 'render') expect(error).toMatchObject({ event: { error: { provider_specific_fields: { cause: { message: 'socket reset' } } } } });
     if (announced) {
       const created = frames[0] as ProtocolFrame<Extract<ClientOpenAIResponsesStreamEvent, { type: 'response.created' }>>;
       if (created.type !== 'event') throw new Error('announced response has no creation event');

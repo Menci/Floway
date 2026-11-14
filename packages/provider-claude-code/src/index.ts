@@ -23,3 +23,5 @@ export * from './system-blocks.ts';
 export * from './pricing.ts';
 export * from './backend.ts';
 export * from './provider.ts';
+
+export { claudeCodeProbeMetrics } from './upstream-metrics.ts';

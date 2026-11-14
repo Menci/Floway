@@ -3,6 +3,7 @@ import { emitAlphaSearch } from './emit.ts';
 import { executeSearchOperations } from './execute-operations.ts';
 import type { SearchExecution, Fields } from './facts.ts';
 import { parseSearchOperations } from './parse-operations.ts';
+import { resolveSearchUpstream } from './resolve-upstream.ts';
 import { serializeClientJson } from '../pipeline/serialize-client-json.ts';
 import { writeSettlement } from '../pipeline/settlement.ts';
 import { compose, type Pipeline } from '@floway-dev/pipeline';
@@ -18,5 +19,5 @@ export const searchServePipeline = (execution: SearchExecution): Pipeline<
   emitAlphaSearch,
   ...(execution.kind === 'local'
     ? [parseSearchOperations, executeSearchOperations]
-    : [callSearchUpstream(execution)]),
+    : [resolveSearchUpstream(execution), callSearchUpstream]),
 ]);

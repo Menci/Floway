@@ -3,7 +3,7 @@ import type { AuthenticatedChatFacts, CopilotChatHttpFacts } from '../chat-facts
 import { COMPACTION_TRIGGER } from '../compaction.ts';
 import { defineStage, isSecret, move, secret, type Secret } from '@floway-dev/pipeline';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
-import type { ChatProviderOperation, ProviderResponse, ProviderServices } from '@floway-dev/provider';
+import { withHttpContentType, type ChatProviderOperation, type ProviderResponse, type ProviderServices } from '@floway-dev/provider';
 
 export const prepareCopilotChatRequest = (operation: ChatProviderOperation) => defineStage<AuthenticatedChatFacts, CopilotChatHttpFacts, ProviderResponse, ProviderResponse, ProviderServices>({
   name: `prepareCopilot${operation}`,
@@ -23,6 +23,6 @@ export const prepareCopilotChatRequest = (operation: ChatProviderOperation) => d
     const path = operation === 'openaiChatCompletions' ? '/chat/completions' : operation === 'anthropicMessages' ? '/v1/messages' : operation === 'anthropicMessagesCountTokens' ? '/v1/messages/count_tokens' : '/responses';
     const compact = 'request.provider.responsesAction' in facts && facts['request.provider.responsesAction'] === 'compact';
     const body = { ...payload, model: facts['request.provider.modelKey'], ...(operation === 'anthropicMessagesCountTokens' ? {} : { stream: !compact }), ...(compact ? { input: [...(payload as CanonicalOpenAIResponsesPayload).input, COMPACTION_TRIGGER] } : {}) };
-    return move({ ...await next(move({ ...rest, 'request.http.url': `${session.baseUrl}${path}`, 'request.http.method': 'POST', 'request.http.headers': headers, 'request.http.body': body, 'request.http.encoding': 'json' })) });
+    return move({ ...await next(move({ ...rest, 'request.http.url': `${session.baseUrl}${path}`, 'request.http.method': 'POST', 'request.http.headers': withHttpContentType(headers, body, 'json'), 'request.http.body': body, 'request.http.encoding': 'json' })) });
   },
 });

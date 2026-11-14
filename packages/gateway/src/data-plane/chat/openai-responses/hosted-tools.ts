@@ -20,7 +20,7 @@
 // size that a later turn need not share — so the run settles one row per call rather than one
 // row whose rate is a guess.
 
-import { buildErrorFromRefusal, consumeTurnStreaming, createMergeState, materializeAccumulatedOutput, materializeHostedToolItems, resolveHostedToolName, rewriteHostedToolChoice, rewriteHostedDeclarations, hostedToolChoiceToRestore, historicalClientCallableUsesName, isForcedHostedToolChoice, sumUsage, synthesizeTerminalEnvelope, transformHostedToolItems } from './hosted-tools/shared.ts';
+import { consumeTurnStreaming, createMergeState, errorEventFromRefusal, expandHostedToolHistory, materializeAccumulatedOutput, materializeHostedToolItems, resolveHostedToolName, responseErrorFromEvent, rewriteHostedToolChoice, rewriteHostedDeclarations, hostedToolChoiceToRestore, historicalClientCallableUsesName, isForcedHostedToolChoice, sumUsage, synthesizeTerminalEnvelope } from './hosted-tools/shared.ts';
 import { type ActiveHostedTool, type MergeState, type HostedToolDispatcher, type HostedToolRewrite, type HostedToolLoopState, type HostedToolRegistration, type HostedToolPrepareResult, type TurnSummary } from './hosted-tools/types.ts';
 import type { BillableEntity, Failure } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
@@ -28,17 +28,18 @@ import { providerCalls } from '../../pipeline/provider-usage.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
 import type { ChatAnswer, ChatFacts } from '../facts.ts';
 import type { ChatServices } from '../services.ts';
+import { SidecarDomain } from '../shared/sidecar-codec.ts';
 import { defer, defineStage, getFailureFacts, move, setRelease, type Owned, type Deferred } from '@floway-dev/pipeline';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
+  CanonicalOpenAIResponsesInputItem,
   CanonicalOpenAIResponsesPayload,
-  OpenAIResponsesInputItem,
-  OpenAIResponsesResult,
-  OpenAIResponsesStreamEvent,
+  OpenAIResponsesStreamEventEx,
   OpenAIResponsesToolChoice,
   OpenAIResponsesHostedTool,
 } from '@floway-dev/protocols/openai-responses';
-import type { ChatTargetApi, ModelCandidate, OpenAIResponsesInvocation } from '@floway-dev/provider';
+import { internalDebugErrorFields, toInternalDebugError, type ChatTargetApi, type ModelCandidate, type OpenAIResponsesInvocation } from '@floway-dev/provider';
+import type { SidecarCodec } from '@floway-dev/translate';
 
 type R<K extends keyof ChatFacts> = { [P in K]: ChatFacts[P] };
 
@@ -52,7 +53,7 @@ type Answered = R<'response.chat.openaiResponses' | 'response.usage.billable' | 
 /** One descent, as the loop reads it: the frames it is to splice, and what that call will turn
  *  out to have been billable for once they run out. */
 interface Turn {
-  readonly frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>;
+  readonly frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>;
   readonly usage: Deferred<StreamOutcome> | null;
 }
 
@@ -205,14 +206,16 @@ export const hostedTools = (
       }) as never;
     }
     const { active } = prepared;
-    if (active.length === 0) return await next(facts);
 
     const rewrittenToolChoice = rewriteHostedToolChoice(invocation.payload.tool_choice, active);
     if (rewrittenToolChoice !== invocation.payload.tool_choice) {
       invocation.payload = { ...invocation.payload, tool_choice: rewrittenToolChoice };
     }
+    // Replay carriers are consumed even when no registration is active: they are this gateway's
+    // own reasoning items, which no upstream can read.
+    const codec = use.gateway.sidecarCodecFactory.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall);
     const canonicalInput = invocation.payload.input;
-    const nextInput = transformHostedToolItems(canonicalInput, active);
+    const nextInput = await expandHostedToolHistory(canonicalInput, active, codec);
     if (nextInput !== canonicalInput) invocation.payload = { ...invocation.payload, input: nextInput };
 
     const hostedActive = active.filter(
@@ -220,7 +223,9 @@ export const hostedTools = (
     );
     // A registration that only rewrote history has nothing to execute, so the turn is an
     // ordinary one — dialled with the body it wrote and read by nobody here.
-    if (hostedActive.length === 0) return await descend(next, facts, invocation.payload);
+    if (hostedActive.length === 0) {
+      return invocation.payload === facts['request.chat.openaiResponses'] ? await next(facts) : await descend(next, facts, invocation.payload);
+    }
 
     const dispatchers = new Map<string, HostedToolDispatcher>();
     for (const entry of hostedActive) dispatchers.set(entry.toolName, entry.hosted.dispatcher);
@@ -266,7 +271,7 @@ export const hostedTools = (
       started = true;
       yield* spliceTurns({
         next, facts, invocation, merge, loopState, demoteForcedHostedToolChoiceAfterFirstTurn,
-        first, dispatchers, store: use.gateway.store, canonicalInput, active, billed, settle,
+        first, dispatchers, codec, canonicalInput, active, billed, settle,
         streamedUsage: wiring.streamedUsage, candidate,
         reportFailure: error => { use.gateway.dump?.failed(error); }, observeBody,
       });
@@ -299,7 +304,7 @@ const turnOf = (back: Answered, streamedUsage: string): Turn | null => {
   const answer = back['response.chat.openaiResponses'] as ChatAnswer;
   if (isFailure(answer) || answer.kind !== 'stream') return null;
   return {
-    frames: answer.frames as AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
+    frames: answer.frames as AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
     usage: back[streamedUsage] as Deferred<StreamOutcome> | null,
   };
 };
@@ -314,11 +319,11 @@ const accumulate = async (billed: BillableEntity[], turn: Turn): Promise<boolean
 };
 
 async function* consumeBilledTurn(
-  frames: AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>, TurnSummary>,
+  frames: AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>, TurnSummary>,
   turn: Turn,
   billed: BillableEntity[],
   failed: (value: boolean) => void,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>, TurnSummary> {
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>, TurnSummary> {
   try {
     return yield* frames;
   } finally {
@@ -335,8 +340,8 @@ async function* spliceTurns(args: {
   demoteForcedHostedToolChoiceAfterFirstTurn: boolean;
   first: Turn;
   dispatchers: ReadonlyMap<string, HostedToolDispatcher>;
-  store: ChatServices['gateway']['store'];
-  canonicalInput: OpenAIResponsesInputItem[];
+  codec: SidecarCodec;
+  canonicalInput: CanonicalOpenAIResponsesInputItem[];
   active: readonly ActiveHostedTool[];
   billed: BillableEntity[];
   settle: (outcome: StreamOutcome) => void;
@@ -344,8 +349,8 @@ async function* spliceTurns(args: {
   candidate: ModelCandidate;
   reportFailure: (error: unknown) => void;
   observeBody: (back: Answered) => void;
-}): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
-  const { invocation, merge, loopState, demoteForcedHostedToolChoiceAfterFirstTurn, dispatchers, store, active, billed, settle } = args;
+}): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+  const { invocation, merge, loopState, demoteForcedHostedToolChoiceAfterFirstTurn, dispatchers, codec, active, billed, settle } = args;
   const baseInput = args.canonicalInput;
   let failed = false;
   try {
@@ -353,33 +358,36 @@ async function* spliceTurns(args: {
     merge.accumulatedUsage = sumUsage(merge.accumulatedUsage, currentTurn.turnUsage);
     for (;;) {
       const turn = currentTurn;
-      const executedHostedTools = turn.dispatched.length > 0;
 
       if (turn.terminalStatus.kind === 'failed') {
         failed = true;
-        if (executedHostedTools) yield* materializeHostedToolItems(turn.dispatched, merge, store);
+        if (turn.sawHostedToolCall) yield* materializeHostedToolItems(turn.dispatchedSlots, merge, codec);
         yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: turn.terminalStatus.response.error }, active);
         return;
       }
       if (turn.terminalStatus.kind === 'incomplete') {
-        if (executedHostedTools) yield* materializeHostedToolItems(turn.dispatched, merge, store);
+        if (turn.sawHostedToolCall) yield* materializeHostedToolItems(turn.dispatchedSlots, merge, codec);
         yield synthesizeTerminalEnvelope(merge, { kind: 'incomplete', incompleteDetails: turn.terminalStatus.response.incomplete_details }, active);
+        return;
+      }
+      // The upstream's error event has already been relayed, and it is the stream's end: no
+      // response resource follows it, so none is synthesized.
+      if (turn.terminalStatus.kind === 'error') {
+        failed = true;
+        if (turn.sawHostedToolCall) yield* materializeHostedToolItems(turn.dispatchedSlots, merge, codec);
         return;
       }
       if (turn.terminalStatus.kind === 'bare-error-pre-shell') {
         failed = true;
-        yield synthesizeTerminalEnvelope(merge, {
-          kind: 'failed',
-          error: { code: turn.terminalStatus.error.code, message: turn.terminalStatus.error.message },
-        }, active);
+        yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: turn.terminalStatus.error }, active);
         return;
       }
-      if (!executedHostedTools && !turn.sawClientToolCall) {
+      if (!turn.sawHostedToolCall && !turn.sawClientToolCall) {
         yield synthesizeTerminalEnvelope(merge, { kind: 'completed' }, active);
         return;
       }
 
-      yield* materializeHostedToolItems(turn.dispatched, merge, store);
+      yield* materializeHostedToolItems(turn.dispatchedSlots, merge, codec);
       if (turn.sawClientToolCall) {
         yield synthesizeTerminalEnvelope(merge, { kind: 'completed' }, active);
         return;
@@ -392,12 +400,12 @@ async function* spliceTurns(args: {
       // output/input naming.
       const nextCanonicalInput = [
         ...baseInput,
-        ...materializeAccumulatedOutput(merge).map(item => item as OpenAIResponsesInputItem),
+        ...materializeAccumulatedOutput(merge).map(item => item as CanonicalOpenAIResponsesInputItem),
       ];
       const { max_tool_calls: _spent, ...withoutCap } = invocation.payload;
       invocation.payload = {
         ...withoutCap,
-        input: transformHostedToolItems(nextCanonicalInput, active),
+        input: await expandHostedToolHistory(nextCanonicalInput, active, codec),
         ...(loopState.remainingToolCalls === undefined ? {} : { max_tool_calls: Math.max(0, loopState.remainingToolCalls) }),
         ...(demoteForcedHostedToolChoiceAfterFirstTurn ? { tool_choice: typeof withoutCap.tool_choice === 'object' && withoutCap.tool_choice?.type === 'allowed_tools' ? { ...withoutCap.tool_choice, mode: 'auto' as const } : 'auto' as const } : {}),
       };
@@ -416,7 +424,9 @@ async function* spliceTurns(args: {
       if (nextTurn === null) {
         failed = true;
         billed.push(...back['response.usage.billable']);
-        yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: errorOf(back) }, active);
+        const event = { ...errorEventFromRefusal(refusalOf(back)), sequence_number: merge.sequenceNumber++ };
+        yield eventFrame(event);
+        yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: responseErrorFromEvent(event) }, active);
         return;
       }
       currentTurn = yield* consumeBilledTurn(consumeTurnStreaming(nextTurn.frames, merge, false, dispatchers, loopState, active), nextTurn, billed, value => { failed ||= value; });
@@ -426,23 +436,25 @@ async function* spliceTurns(args: {
     failed = true;
     args.reportFailure(error);
     if (merge.lastSeenModel === null) throw error;
-    yield synthesizeTerminalEnvelope(merge, {
-      kind: 'failed',
-      error: {
-        code: 'server_error',
-        message: `Upstream stream failed mid-response: ${error instanceof Error ? error.message : String(error)}`,
-      },
-    }, active);
+    const event = {
+      type: 'error' as const,
+      code: 'server_error',
+      message: `Upstream stream failed mid-response: ${error instanceof Error ? error.message : String(error)}`,
+      param: null,
+      provider_specific_fields: internalDebugErrorFields(toInternalDebugError(error)),
+      sequence_number: merge.sequenceNumber++,
+    };
+    yield eventFrame(event);
+    yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: responseErrorFromEvent(event) }, active);
   } finally {
     settle({ billable: billed, failed });
   }
 }
 
-/** A descent that did not answer with a stream, as the error the synthesized envelope carries.
- *  A compaction reaches here only if a client asked one to run tools, which no client does. */
-const errorOf = (back: Answered): NonNullable<OpenAIResponsesResult['error']> => {
+/** A descent that did not answer with a stream. A compaction reaches here only if a client asked
+ *  one to run tools, which no client does. */
+const refusalOf = (back: Answered): Failure => {
   const answer = back['response.chat.openaiResponses'] as ChatAnswer;
-  return isFailure(answer)
-    ? buildErrorFromRefusal(answer.status, answer.message)
-    : { code: 'server_error', message: 'the upstream answered a hosted-tool turn with a compaction' };
+  if (!isFailure(answer)) throw new Error('The upstream answered a hosted-tool turn with a compaction');
+  return answer;
 };

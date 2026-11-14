@@ -10,6 +10,12 @@
  *  which of the carried targets went missing. */
 export type ChatServeFailure = { readonly kind: 'routing-unavailable'; readonly message: string };
 
+export interface InputErrorDetails {
+  readonly message: string;
+  readonly param?: string;
+  readonly code?: string;
+}
+
 class ChatServeFailureError<TFailure extends { readonly kind: string }> extends Error {
   readonly failure: TFailure;
 
@@ -25,3 +31,11 @@ export const throwChatServeFailure = <TFailure extends { readonly kind: string }
 
 export const tryCatchChatServeFailure = <TFailure extends { readonly kind: string } = ChatServeFailure>(error: unknown): TFailure | null =>
   error instanceof ChatServeFailureError ? error.failure as TFailure : null;
+
+export const inputErrorFields = (error: InputErrorDetails): Record<string, unknown> | undefined => {
+  const fields = {
+    ...(error.param === undefined ? {} : { param: error.param }),
+    ...(error.code === undefined ? {} : { code: error.code }),
+  };
+  return Object.keys(fields).length === 0 ? undefined : fields;
+};

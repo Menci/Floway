@@ -12,7 +12,7 @@ import { test } from 'vitest';
 import { applyRulesToUpstreamOpenAIChatCompletions, applyRulesToUpstreamAnthropicMessages, applyRulesToUpstreamOpenAIResponses } from '../../../../src/data-plane/chat/shared/alias-rules.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const ccPayload = (overrides: Partial<OpenAIChatCompletionsPayload> = {}): OpenAIChatCompletionsPayload => ({
@@ -21,7 +21,7 @@ const ccPayload = (overrides: Partial<OpenAIChatCompletionsPayload> = {}): OpenA
   ...overrides,
 });
 
-const resPayload = (overrides: Partial<OpenAIResponsesPayload> = {}): OpenAIResponsesPayload => ({
+const resPayload = (overrides: Partial<OpenAIResponsesPayloadEx> = {}): OpenAIResponsesPayloadEx => ({
   model: 'gpt-5.4',
   input: 'hi',
   ...overrides,
@@ -136,7 +136,7 @@ test('anthropic-messages: empty rules leave the payload unchanged', () => {
   const body = msgPayload({ output_config: { effort: 'high' }, thinking: { type: 'enabled', budget_tokens: 512 }, speed: 'fast' });
   const applied = applyRulesToUpstreamAnthropicMessages(body, {});
   assertEquals(applied.output_config?.effort, 'high');
-  assertEquals(applied.thinking?.budget_tokens, 512);
+  assertEquals((applied.thinking !== undefined && 'budget_tokens' in applied.thinking ? applied.thinking.budget_tokens : undefined), 512);
   assertEquals(applied.speed, 'fast');
 });
 
@@ -147,7 +147,7 @@ test('anthropic-messages: effort lands on output_config, budget+adaptive land on
   });
   assertEquals(applied.output_config?.effort, 'high');
   assertEquals(applied.thinking?.type, 'enabled');
-  assertEquals(applied.thinking?.budget_tokens, 2048);
+  assertEquals((applied.thinking !== undefined && 'budget_tokens' in applied.thinking ? applied.thinking.budget_tokens : undefined), 2048);
 });
 
 test('anthropic-messages: verbosity has no Anthropic-shaped slot — silently dropped', () => {
@@ -156,17 +156,22 @@ test('anthropic-messages: verbosity has no Anthropic-shaped slot — silently dr
   assertEquals('verbosity' in applied, false);
 });
 
-test('anthropic-messages: summary=concise|detailed collapses onto thinking.display=summarized (enables thinking)', () => {
-  const body = msgPayload();
+test('anthropic-messages: summary updates display without changing enabled thinking', () => {
+  const body = msgPayload({ thinking: { type: 'enabled', budget_tokens: 2048 } });
   const applied = applyRulesToUpstreamAnthropicMessages(body, { reasoning: { summary: 'concise' } });
-  assertEquals(applied.thinking?.type, 'enabled');
-  assertEquals(applied.thinking?.display, 'summarized');
+  assertEquals(applied.thinking, { type: 'enabled', budget_tokens: 2048, display: 'summarized' });
 });
 
 test('anthropic-messages: summary=omitted collapses onto thinking.display=omitted', () => {
   const body = msgPayload();
-  const applied = applyRulesToUpstreamAnthropicMessages(body, { reasoning: { summary: 'omitted' } });
-  assertEquals(applied.thinking?.display, 'omitted');
+  const applied = applyRulesToUpstreamAnthropicMessages({ ...body, thinking: { type: 'adaptive' } }, { reasoning: { summary: 'omitted' } });
+  assertEquals(applied.thinking, { type: 'adaptive', display: 'omitted' });
+});
+
+test.each([undefined, { type: 'disabled' }, { type: 'between_tools' }] as const)('anthropic-messages: display-only rules preserve inactive thinking %j', thinking => {
+  const body = msgPayload(thinking === undefined ? {} : { thinking });
+  const applied = applyRulesToUpstreamAnthropicMessages(body, { reasoning: { summary: 'detailed' } });
+  assertEquals(applied.thinking, thinking);
 });
 
 test('anthropic-messages: summary=auto is a no-op (Anthropic default takes over)', () => {
@@ -228,7 +233,7 @@ test('anthropic-messages: alias rules overwrite existing thinking + output_confi
   const body = msgPayload({ output_config: { effort: 'low' }, thinking: { type: 'enabled', budget_tokens: 100 } });
   const applied = applyRulesToUpstreamAnthropicMessages(body, { reasoning: { effort: 'xhigh', budget_tokens: 9999 } });
   assertEquals(applied.output_config?.effort, 'xhigh');
-  assertEquals(applied.thinking?.budget_tokens, 9999);
+  assertEquals((applied.thinking !== undefined && 'budget_tokens' in applied.thinking ? applied.thinking.budget_tokens : undefined), 9999);
 });
 
 // ── The frozen payload every overlay is actually handed ──

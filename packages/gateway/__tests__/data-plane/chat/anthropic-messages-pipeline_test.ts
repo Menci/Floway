@@ -15,7 +15,7 @@ import { initRepo } from '../../../src/repo/index.ts';
 import { chatFixtureHttpServices, stubChatProviderPipelines } from '../../test-utils/chat-provider-pipelines.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
-import { ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { SseFrame } from '@floway-dev/protocols/common';
 import { directFetcher, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate } from '@floway-dev/provider';
 import { type StubChatProviderCall, type ProviderStreamResult } from '@floway-dev/test-utils';
@@ -87,12 +87,12 @@ const turn = (...text: readonly string[]): readonly unknown[] =>
 const truncatedTurn = (...text: readonly string[]): readonly unknown[] =>
   turn(...text).filter(event => event !== messageStop);
 
-const stream = (events: readonly unknown[]): ProviderStreamResult<AnthropicMessagesStreamEvent> => ({
+const stream = (events: readonly unknown[]): ProviderStreamResult<AnthropicMessagesStreamEventEx> => ({
   ok: true,
   modelKey: 'claude-model-key',
   headers: new Headers({ 'x-request-id': 'req-1', 'content-length': '99' }),
   events: (async function* () {
-    for (const event of events) yield { type: 'event' as const, event: event as AnthropicMessagesStreamEvent };
+    for (const event of events) yield { type: 'event' as const, event: event as AnthropicMessagesStreamEventEx };
     yield { type: 'done' as const };
   })(),
 });

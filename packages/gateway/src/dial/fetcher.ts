@@ -2,7 +2,7 @@ import type { ProxyEntry } from './proxy-catalog.ts';
 import { createReplayableRequest, type ReplayableRequest } from './replayable-request.ts';
 import { DIRECT_CONNECT_ID, DIRECT_FETCH_ID, entryMatchesColo, isDirectFallbackId } from '../repo/proxy-fallback-list.ts';
 import type { Repo } from '../repo/types.ts';
-import type { HttpRequest } from '@floway-dev/http';
+import type { HttpContentDecoders, HttpRequest } from '@floway-dev/http';
 import type { SocketDial } from '@floway-dev/platform';
 import type { Fetcher, FetchInit, ProxyFallbackEntry } from '@floway-dev/provider';
 import { isAbortError } from '@floway-dev/provider';
@@ -42,6 +42,7 @@ interface CreateFetcherInput {
    * installed SocketDial impl.
    */
   socketDial: () => SocketDial;
+  contentDecoders?: () => HttpContentDecoders;
 }
 
 // Two-pass dial strategy. First pass walks the fallback list skipping any
@@ -178,7 +179,7 @@ const tryOne = async (
       return await input.runDirectConnect(
         prepared.target,
         prepared.request,
-        { socketDial: directSocketDial, signal: request.signal },
+        { socketDial: directSocketDial, signal: request.signal, contentDecoders: input.contentDecoders?.() },
       );
     }
     const config = input.proxyById.get(id);
@@ -198,6 +199,7 @@ const tryOne = async (
     // in-flight handshake instead of waiting for the per-proxy deadline.
     const options: RunProxiedRequestOptions = {
       socketDial: input.socketDial(),
+      contentDecoders: input.contentDecoders?.(),
       signal: request.signal,
     };
     if (config.dialTimeoutMs !== null) options.dialTimeoutMs = config.dialTimeoutMs;
