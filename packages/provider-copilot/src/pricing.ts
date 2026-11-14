@@ -40,9 +40,21 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   // Fast lane. The live Copilot catalog already exposes this exact public id.
   // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
   // https://platform.claude.com/docs/en/models/sonnet-5-5/overview
-  ['claude-sonnet-5-5', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' })],
+  ['claude-sonnet-5-5', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '10' })],
   ['claude-sonnet-5', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' })],
   [/^claude-sonnet-4(-[56])?$/, tokenBasePricing({ input_tokens: '3', input_cache_read_tokens: '0.3', input_cache_write_tokens: '3.75', output_tokens: '15' })],
+  // GitHub bills Haiku 5.5 at Anthropic's provider list price, with the whole
+  // request entering the long-context band above 100,000 input tokens.
+  // https://github.blog/changelog/2026-10-07-claude-haiku-5-5-in-github-copilot/
+  // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
+  // https://platform.claude.com/docs/en/models/haiku-5-5/overview
+  ['claude-haiku-5-5', modelPricing(
+    tokenPricingEntry({ input_tokens: '0.1', input_cache_read_tokens: '0.01', input_cache_write_tokens: '0.125', output_tokens: '0.5' }),
+    tokenPricingEntry(
+      { input_tokens: '0.5', input_cache_read_tokens: '0.05', input_cache_write_tokens: '0.625', output_tokens: '2.5' },
+      { inputTokens: { operator: 'gt', value: 100000 } },
+    ),
+  )],
   ['claude-haiku-4-5', tokenBasePricing({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', output_tokens: '5' })],
   // Fable 5.1 keeps Fable 5's input/output rates and cuts cache reads to
   // 0.025×. GitHub lists no separate Fast lane.
@@ -60,6 +72,17 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
     tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '15' }, { inputTokens: { operator: 'gt', value: 272000 } }),
     tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' }, { serviceTier: 'priority' }),
     tokenPricingEntry({ input_tokens: '8', input_cache_read_tokens: '0.4', input_cache_write_tokens: '10', output_tokens: '30' }, { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
+  // GPT-6.1 Terra reached Copilot's catalog with OpenAI's standard and
+  // long-context bands quoted in credits, and no `-fast` sibling, so the
+  // accelerated lane the vendor sells stays out of this table the same way the
+  // base-only Opus 5.5 row keeps its Fast mode out.
+  // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
+  // https://developers.openai.com/api/docs/models/gpt-6.1-terra
+  // https://developers.openai.com/api/docs/pricing
+  ['gpt-6.1-terra', modelPricing(
+    tokenPricingEntry({ input_tokens: '1', input_cache_read_tokens: '0.05', input_cache_write_tokens: '1.25', output_tokens: '5' }),
+    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '7.5' }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
   // Two Copilot accounts began returning GPT-6 Astra on 2026-09-05 and served
   // a real `/responses` request as `model: "gpt-6-astra"` with
@@ -184,6 +207,21 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   // https://github.com/github/docs/blob/f067ad0f9840f1b4afb5a801a77f74ef70951189/data/tables/copilot/model-release-status.yml
   // https://cloud.google.com/vertex-ai/generative-ai/pricing
   [/^gemini-3\.[678]-flash$/, tokenBasePricing({ input_tokens: '0.75', input_cache_read_tokens: '0.075', output_tokens: '3.75' })],
+  // Gemini 4 Argon reached Copilot GA on 2026-10-13, billed at Google's list
+  // price. Google runs the same promotional card in both places — $2.00 input,
+  // $0.10 cached input, $10.00 output — through 2026-11-30, doubling on
+  // 2026-12-01; recheck then. GitHub quotes it as a single Default tier and
+  // models.dev agrees on all three rates. Two properties separate it from the
+  // 3.x Gemini rows above: Google lists one band for its 1M-token window
+  // instead of repricing above 200k, and its only caching is implicit, so
+  // there is no cache-write rate to quote. Google sells Batch/Flex/Priority
+  // lanes too, but with no published `serviceTier` coordinate for Copilot this
+  // entry stays Base-only.
+  // https://github.blog/changelog/2026-10-13-gemini-4-argon-in-github-copilot/
+  // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
+  // https://ai.google.dev/gemini-api/docs/pricing#gemini-4-argon
+  // https://github.com/anomalyco/models.dev/blob/03312cc3c02d44bac48abd405d181fcc9c85881d/models/google/gemini-4-argon.toml
+  ['gemini-4-argon', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.1', output_tokens: '10' })],
   // xAI reprices the whole request at 2× once the prompt reaches 200k tokens.
   // Cached-read is xAI's own published $0.30/$0.60; Copilot's catalog and
   // LiteLLM both carry $0.50/$1.00 for that metric, which the vendor contradicts.
@@ -220,6 +258,27 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   // https://github.com/microsoft/vscode/blob/5582533430f001c356c9eb45d2de5faae08e7481/src/vs/platform/agentHost/common/agentModelPricing.ts
   ['mai-code-1.1-flash', tokenBasePricing({ input_tokens: '0.2', input_cache_read_tokens: '0.02', input_cache_write_tokens: '0.25', output_tokens: '1.2' })],
   [/^mai-code-1-flash/, tokenBasePricing({ input_tokens: '0.75', input_cache_read_tokens: '0.075', output_tokens: '4.5' })],
+  // MAI-Code-2.x1 is preview-gated to Business and Enterprise and quotes a
+  // cache-read rate but no cache-write rate, so the entry carries the metrics
+  // Copilot actually prices. MAI-Code-2-Flash quotes zero across every metric,
+  // and microsoft-decision-1 has no token metrics at all: like
+  // `trajectory-compaction` below, neither gets a rule, because a promotional
+  // zero is Copilot's charge rather than a rate these entries can record.
+  // https://github.com/microsoft/vscode/blob/5582533430f001c356c9eb45d2de5faae08e7481/src/vs/platform/agentHost/common/agentModelPricing.ts
+  ['mai-code-2', tokenBasePricing({ input_tokens: '1', input_cache_read_tokens: '0.05', output_tokens: '5' })],
+  // GPT Image 2.5 Flare is a preview-gated image model. OpenAI bills its text
+  // and image input separately and prices output only in image tokens; the
+  // cached image rate has no `BILLING_METRICS` member, so the entry records
+  // the text cache rate alone, exactly as the Codex image model does.
+  // https://developers.openai.com/api/docs/pricing#image-generation
+  ['gpt-image-2.5-flare', modelPricing(
+    tokenPricingEntry({
+      input_tokens: '5',
+      input_cache_read_tokens: '1.25',
+      input_image_tokens: '8',
+      output_image_tokens: '30',
+    }),
+  )],
   [/^text-embedding-3-small/, tokenBasePricing({ input_tokens: '0.02', output_tokens: '0' })],
   ['text-embedding-ada-002', tokenBasePricing({ input_tokens: '0.1', output_tokens: '0' })],
   // No rule for `trajectory-compaction`, and none is coming: Copilot quotes

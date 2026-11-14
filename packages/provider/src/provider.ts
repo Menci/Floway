@@ -3,6 +3,7 @@ import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { ProviderModel, UpstreamModelsCache, UpstreamProviderKind, UpstreamRecord } from './model.ts';
 import type { Fetcher } from './options.ts';
 import type { ProviderPipelines } from './pipeline.ts';
+import type { ProviderScheduledOptions } from './scheduled.ts';
 
 // The dispatched action can change independently of the source endpoint's original intent.
 export type OpenAIResponsesAction = 'generate' | 'compact';
@@ -71,6 +72,9 @@ export interface AnthropicMessagesUpstreamCallOptions extends UpstreamCallOption
 }
 
 export interface ProviderInstance {
+  runScheduledTask(options: ProviderScheduledOptions): Promise<void>;
+  // Catalog refresh fetches a single resource and never enters the per-request
+  // latency budget, so it takes the per-upstream fetcher directly.
   getProvidedModels(fetcher: Fetcher): Promise<readonly ProviderModel[]>;
 }
 

@@ -10,14 +10,22 @@
 import { runAnthropicMessagesWebSearchTool } from '../../../../src/data-plane/chat/anthropic-messages/web-search-tool.ts';
 import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gateway-ctx.ts';
 import { compose, defineStage, move, run } from '@floway-dev/pipeline';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { AnthropicMessagesInvocation, ModelCandidate } from '@floway-dev/provider';
+import type { ChatTargetApi, ModelCandidate } from '@floway-dev/provider';
 import { type ExecuteResult } from '@floway-dev/test-utils';
 
 const ANSWER = 'response.chat.anthropicMessages';
 
-type Result = ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>;
+type Result = ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>;
+
+/** The turn a test drives: the client's body, the candidate the attempt resolves to, and the wire
+ *  that candidate is reached on. */
+export interface WebSearchTurn {
+  payload: AnthropicMessagesPayload;
+  readonly candidate: ModelCandidate;
+  readonly targetApi: ChatTargetApi;
+}
 
 /** A scripted refusal as the failure value a chain carries. */
 const failureOf = (result: Exclude<Result, { type: 'events' }>) => ({
@@ -29,7 +37,7 @@ const failureOf = (result: Exclude<Result, { type: 'events' }>) => ({
 const resultOf = (facts: Record<string, unknown>): Result => {
   const answer = facts[ANSWER] as { status?: number; message?: string; body?: unknown; kind?: string; frames?: unknown };
   if (answer.kind === 'stream') {
-    return { type: 'events', events: answer.frames as AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>, modelIdentity: undefined } as unknown as Result;
+    return { type: 'events', events: answer.frames as AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>, modelIdentity: undefined } as unknown as Result;
   }
   return {
     type: 'api-error',
@@ -41,7 +49,7 @@ const resultOf = (facts: Record<string, unknown>): Result => {
 };
 
 export const driveWebSearchStage = async (
-  invocation: AnthropicMessagesInvocation,
+  invocation: WebSearchTurn,
   gatewayCtx: ChatGatewayCtx,
   dial: () => Promise<Result>,
 ): Promise<Result> => {

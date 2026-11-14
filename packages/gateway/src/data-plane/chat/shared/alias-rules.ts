@@ -16,7 +16,7 @@
 import type { AnthropicMessagesPayload, AnthropicMessagesThinkingDisplay } from '@floway-dev/protocols/anthropic-messages';
 import { isFastServiceTier, type AliasRules } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 
 type Reasoning = NonNullable<AliasRules['reasoning']>;
 
@@ -34,7 +34,7 @@ export const applyRulesToUpstreamOpenAIChatCompletions = <T extends OpenAIChatCo
   } as T;
 };
 
-export const applyRulesToUpstreamOpenAIResponses = <T extends OpenAIResponsesPayload>(body: T, rules: AliasRules): T => {
+export const applyRulesToUpstreamOpenAIResponses = <T extends OpenAIResponsesPayloadEx>(body: T, rules: AliasRules): T => {
   // `budget_tokens` and `adaptive` have no native OpenAI Responses slot; drop silently.
   const { effort, summary } = reasoningOf(rules);
   return {
@@ -66,13 +66,8 @@ export const applyRulesToUpstreamAnthropicMessages = <T extends AnthropicMessage
   } as T;
   if (rules.serviceTier === undefined) return reasoned;
 
-  // The cross-protocol bridge in translate maps `speed: 'fast'` ↔
-  // `service_tier: 'fast'`; on a native Anthropic Messages target the alias rule
-  // `serviceTier: 'fast'` lands on `speed` so the upstream sees Fast Mode
-  // through its native field. Other tier values pass through on
-  // `service_tier` since Anthropic Messages's native enum (`auto`/`standard_only`)
-  // doesn't model them. Whichever branch we take, the sibling field is gone
-  // so the upstream never sees two tiers in conflict.
+  // Floway maps both accelerated-lane aliases to native Messages Fast Mode.
+  // Clear the sibling field so tier and speed cannot specify conflicting lanes.
   const { speed: _speed, service_tier: _serviceTier, ...tierless } = reasoned;
   return (isFastServiceTier(rules.serviceTier)
     ? { ...tierless, speed: 'fast' }
@@ -91,13 +86,12 @@ const anthropicMessagesThinking = (
   if (adaptive === true) {
     // Adaptive auto-determines the budget; a client-set `budget_tokens` goes, so the alias
     // rule's mode is not accompanied by a sibling budget the operator didn't ask for.
-    const { budget_tokens: _drop, ...priorThinking } = prior ?? {};
+    const priorThinking = prior?.type === 'enabled' ? { display: prior.display } : prior;
     return { ...priorThinking, type: 'adaptive', ...displayPart };
   }
   if (budget_tokens !== undefined) return { ...prior, type: 'enabled', budget_tokens, ...displayPart };
-  // Anthropic discards `thinking.display` unless a mode is set; default
-  // to the enabled variant so the summary hint reaches the wire.
-  if (display !== undefined) return { ...prior, type: 'enabled', ...displayPart };
+  // A display hint applies to a thinking mode the request already set.
+  if (display !== undefined && (prior?.type === 'enabled' || prior?.type === 'adaptive')) return { ...prior, ...displayPart };
   return undefined;
 };
 

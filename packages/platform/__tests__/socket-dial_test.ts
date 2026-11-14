@@ -15,6 +15,7 @@ describe('SocketDial singleton', () => {
       connect: async () => {
         throw new Error('stub');
       },
+      startTls: async () => { throw new Error('stub'); },
     });
   });
 
@@ -30,6 +31,7 @@ describe('SocketDial singleton', () => {
         writable: new WritableStream(),
         close: async () => {},
       }),
+      startTls: async transport => transport,
     };
     initSocketDial(fake);
     expect(getSocketDial()).toBe(fake);

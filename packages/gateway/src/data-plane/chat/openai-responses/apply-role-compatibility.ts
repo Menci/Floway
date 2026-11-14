@@ -2,7 +2,7 @@ import type { Chat } from '../facts.ts';
 import { rolesFor, roleRewriter } from '../shared/role-compatibility.ts';
 import { mapKeepingIdentity } from '../shared/structural.ts';
 import { defineStage, transform, move } from '@floway-dev/pipeline';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 
 // ── OpenAI Responses ──────────────────────────────────────────────────────────────────────
 
@@ -38,13 +38,15 @@ export const applyRoleCompatibilityToOpenAIResponses = defineStage<
       // runs on the canonical form the entry normalized it to, which is the one a wire takes.
       const payload = facts['request.chat.openaiResponses'] as CanonicalOpenAIResponsesPayload;
       const nextRole = roleRewriter(rewrite);
-      const input = mapKeepingIdentity(payload.input, (item): OpenAIResponsesInputItem => {
+      const input = mapKeepingIdentity(payload.input, (item): CanonicalOpenAIResponsesInputItem => {
         if (item.type !== 'message') {
           nextRole(undefined);
           return item;
         }
         const role = nextRole(item.role);
-        return role === item.role ? item : { ...item, role };
+        if (role === item.role) return item;
+        if (item.role !== 'system' && item.role !== 'developer') throw new Error(`Unexpected role rewrite: ${item.role} to ${role}`);
+        return { ...item, role: role as 'system' | 'developer' | 'user' };
       });
       return input === payload.input
         ? facts

@@ -10,28 +10,29 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   'anthropic-messages-web-search-shim': true,
   'openai-responses-web-search-shim': true,
   'openai-responses-image-generation-shim': true,
-  // Copilot has no native compact endpoint. The provider replays
-  // `RemoteCompactionV2` through `/responses` with `stream: false` and a
-  // trailing `compaction_trigger`, so this default leaves the gateway compact
-  // shim off. The shim still engages on its own whenever an OpenAI Responses request
-  // lands on a Copilot Anthropic Messages or OpenAI Chat Completions target, neither of which
-  // has a compaction wire.
-  'openai-responses-compact-shim': false,
-  'openai-responses-compact-decrypt': true,
+  'openai-responses-compact-shim': true,
+  'openai-responses-compact-decrypt': false,
   // Copilot reserves collaboration's encrypted schema; use an ordinary namespace.
   // https://github.com/Menci/Floway/pull/273
   'openai-responses-collaboration-shim': true,
+  'openai-responses-agent-message-shim': false,
+  'serialize-stream-items': false,
   'disable-reasoning-on-forced-tool-choice': false,
   'empty-tools-tool-choice-none': false,
   // Upstream default is off; Claude models below 4.8 flip it on via the
   // per-model default. See `defaultFlagsForCopilotModel` for the empirical
   // basis.
   'rewrite-mid-conv-system-to-user': false,
+  'rewrite-disallowed-mid-conv-system-to-user': false,
   'rewrite-developer-to-system': false,
   'rewrite-system-to-developer': false,
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
   'usage-exclusive-cached-tokens': false,
+  // Copilot's `/responses` rejects `store: true` with
+  // `400 {"error":{"message":"store is not
+  // supported","code":"unsupported_value","param":"store"}}`.
+  'openai-responses-store-false': true,
 };
 
 // True when the model id names a Claude release Copilot can serve an inline
@@ -142,13 +143,17 @@ const supportsInlineSystem = (id: string): boolean => {
   return major > 4 || (major === 4 && minor >= 8);
 };
 
-// Per-model default flag deltas for Copilot. Only Claude models below
-// 4.8 opt into `rewrite-mid-conv-system-to-user`; every other flag
-// inherits from `COPILOT_DEFAULT_FLAGS`. Upstream-wide operator overrides
-// are applied before this provider-enforced per-model delta, so the technical
-// requirement for affected Claude models remains authoritative.
+// Per-model default flag deltas for Copilot. Every Claude model normalizes
+// invalid inline-system placement; models below 4.8 additionally rewrite all
+// inline system messages because their serving backends do not support the
+// role. Non-Claude models inherit both flags from `COPILOT_DEFAULT_FLAGS`.
+// Upstream-wide operator overrides are applied before this provider-enforced
+// per-model delta, so these technical requirements remain authoritative.
 export const defaultFlagsForCopilotModel = (model: Omit<ProviderModel, 'enabledFlags'>): FlagOverrides => {
   if (!model.id.startsWith('claude-')) return {};
-  if (supportsInlineSystem(model.id)) return {};
-  return { 'rewrite-mid-conv-system-to-user': true };
+  if (supportsInlineSystem(model.id)) return { 'rewrite-disallowed-mid-conv-system-to-user': true };
+  return {
+    'rewrite-disallowed-mid-conv-system-to-user': true,
+    'rewrite-mid-conv-system-to-user': true,
+  };
 };

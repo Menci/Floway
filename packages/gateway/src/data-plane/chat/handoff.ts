@@ -2,8 +2,8 @@ import type { ChatFacts, ChatAnswer } from './facts.ts';
 import type { RequestKey } from './wire.ts';
 import { isFailure } from '../pipeline/facts.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { TranslatorInputError, type TranslateTripResult } from '@floway-dev/translate';
+import { upstreamErrorMessage, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { TranslateInputError, TranslateTrip } from '@floway-dev/translate';
 
 type ResponseKey = Extract<keyof ChatFacts, `response.chat.${string}`>;
 
@@ -21,7 +21,11 @@ export interface Handoff<Source extends RequestKey, Target extends RequestKey, T
    *  so leaving it open would make the frames coming off the wire unassignable to it; what the
    *  closure produces goes straight to the source's response key, which no declaration here
    *  looks inside. */
-  readonly trip: (source: ChatFacts[Source]) => Promise<TranslateTripResult<ChatFacts[Target], unknown, TargetEvent>>;
+  readonly trip: (source: ChatFacts[Source]) => Promise<TranslateTrip<ChatFacts[Target], unknown, TargetEvent> | TranslateInputError>;
+  /** The source protocol's own envelope for a request the target protocol cannot carry. The
+   *  translator names the field at fault; only the source family knows how its clients read
+   *  that, so the family supplies the wording. */
+  readonly refuseInput: (error: TranslateInputError) => Record<string, unknown>;
 }
 
 /**
@@ -39,22 +43,22 @@ export interface Handoff<Source extends RequestKey, Target extends RequestKey, T
  * No envelope is written. Each family renders a failure in its own protocol at its own edge,
  * which is the only place that knows what that protocol's clients read.
  */
-const refuseTranslation = (response: ResponseKey, message: string): Record<string, unknown> => ({
+const refuseTranslation = (response: ResponseKey, error: TranslateInputError, envelope: Record<string, unknown>): Record<string, unknown> => ({
   'response.usage.billable': [],
   'response.http.headers': [],
   'response.http.body': null, 'response.http.status': 400,
   [`${response}.streamedUsage`]: null,
-  [response]: { status: 400, message },
+  [response]: { status: 400, message: error.message, envelope },
 });
 
 /**
  * Translates on the way down and back on the way up.
  *
- * An upstream refusal gets the pair's own rewrite where it has one: the canonical case is a
- * context-window error becoming the Anthropic `prompt is too long:` shape that Claude Code
- * reads for auto-compaction. Where a pair declares no rewrite, the status and the sentence go up
- * and the object they arrived in does not — it is the target protocol's, and the client is not
- * reading that one.
+ * An upstream refusal the pair recognizes is restated in the source protocol, with the status
+ * its classification implies: the canonical case is a context-window error becoming the
+ * Anthropic `prompt is too long:` shape that Claude Code reads for auto-compaction. Where the
+ * pair recognizes nothing, the status and the sentence go up and the object they arrived in
+ * does not — it is the target protocol's, and the client is not reading that one.
  *
  * It carries the `return` trait too, because a body the target protocol cannot represent is
  * answered here rather than dialled.
@@ -87,25 +91,24 @@ export const handOff = <Source extends RequestKey, Target extends RequestKey, Ta
       // is handed what actually came back rather than a synthesized set.
       needs: [handoff.to.response, 'response.http.headers', 'response.http.body'],
       consumes: [handoff.to.response],
-      provides: [handoff.from.response],
+      provides: [handoff.from.response, 'response.http.headers'],
     },
   },
   execute: async (facts, next) => {
     const record = facts as Record<string, unknown>;
     const { [handoff.from.request]: source, ...down } = record;
 
-    let trip;
-    try {
-      trip = await handoff.trip(source as ChatFacts[Source]);
-    } catch (error) {
+    // A translation only answers with a stream, so the upstream is always asked for one;
+    // whether the client wanted a stream is decided at the source family's edge. A source
+    // protocol whose request states no stream field ignores the key.
+    const trip = await handoff.trip({ ...(source as object), stream: true } as ChatFacts[Source]);
+    if (trip.type === 'input-error') {
       // Input this target protocol cannot represent is the client's fault, and the translator
       // is what knows which part of the body was at fault. Answering rather than throwing is
       // also what keeps it a *candidate's* verdict: the same body may translate cleanly for
       // the next candidate, whose wire is a different protocol, and failover re-runs the
-      // suffix to find out. Anything else raised down here is a fault of this gateway's and
-      // rides up as one.
-      if (!(error instanceof TranslatorInputError)) throw error;
-      return move({ ...down, ...refuseTranslation(handoff.from.response, error.message) }) as never;
+      // suffix to find out.
+      return move({ ...down, ...refuseTranslation(handoff.from.response, trip, handoff.refuseInput(trip)) }) as never;
     }
 
     const back = await next({ ...down, [handoff.to.request]: move(trip.target) } as never) as Record<string, unknown>;
@@ -113,14 +116,12 @@ export const handOff = <Source extends RequestKey, Target extends RequestKey, Ta
     const answer = answered as ChatAnswer;
 
     if (isFailure(answer)) {
-      // The pair works on the upstream's own bytes, which is what `message` holds: a refusal
-      // is read as text and parsed only for whoever wants the object.
-      const rewritten = trip.apiError?.({
-        status: answer.status,
-        headers: new Headers((up['response.http.headers'] as readonly (readonly [string, string])[]).map(([name, value]): [string, string] => [name, value])),
-        body: new TextEncoder().encode(answer.message),
-      });
-      // A pair that declares no rewrite has nothing that can carry the refusal across, so what
+      const restated = trip.error(
+        answer.status,
+        new Headers((up['response.http.headers'] as readonly (readonly [string, string])[]).map(([name, value]): [string, string] => [name, value])),
+        new TextEncoder().encode(answer.body === undefined ? answer.message : JSON.stringify(answer.body)),
+      );
+      // A refusal the pair does not recognize has nothing that can carry it across, so what
       // crosses is the status and the sentence and not the object they came in. The object is
       // the *target* protocol's envelope — an OpenAI `{error:{type,code}}` where the client is
       // reading Anthropic, or anything at all where the client is Gemini generateContent and reads
@@ -129,19 +130,17 @@ export const handOff = <Source extends RequestKey, Target extends RequestKey, Ta
       //
       // Nothing is lost to the record: the target's failure was already written at the target's
       // own key, with its body, before this stage consumed it.
-      if (rewritten === undefined) {
+      if (restated === undefined) {
         const { body: _foreign, envelope: _foreignEnvelope, ...carried } = answer;
         return { ...up, [handoff.from.response]: move(carried) } as never;
       }
-      const text = new TextDecoder().decode(rewritten.body);
-      let parsed: unknown;
-      try { parsed = JSON.parse(text) as unknown; } catch { parsed = undefined; }
       return {
         ...up,
+        'response.http.headers': move([...restated.headers]),
         [handoff.from.response]: move({
-          status: rewritten.status,
-          message: text,
-          ...(parsed === undefined ? {} : { body: parsed }),
+          status: restated.status,
+          message: upstreamErrorMessage(restated.body) ?? answer.message,
+          body: restated.body,
         }),
       } as never;
     }

@@ -44,7 +44,7 @@ export interface Failure {
    *  carries more than a status and a sentence — which field was at fault, which code names
    *  the condition — and only whoever refused knows those, so it is written where the refusal
    *  is made rather than derived from the status where it is rendered. */
-  readonly envelope?: Record<string, unknown>;
+  readonly envelope?: object;
 }
 
 export const isFailure = (value: unknown): value is Failure =>
@@ -54,7 +54,7 @@ export const isFailure = (value: unknown): value is Failure =>
  *  decision: a Google-RPC envelope states its code inside the body, so a status chosen apart
  *  from the envelope is a second answer to the same question. */
 export interface RenderedFailure {
-  readonly body: Record<string, unknown>;
+  readonly body: object;
   readonly status: number;
 }
 

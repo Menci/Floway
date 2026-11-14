@@ -2,7 +2,7 @@ import type { ChartProps } from '@fluentui/react-charts';
 
 import type { ChartBucket, DashboardRange } from '../charts/dashboard-time';
 import type { ChartSeries } from '../charts/series-legends';
-import type { BillingMetric, DecimalString } from '@floway-dev/protocols/common';
+import type { BillingMetric, DecimalString } from '@floway-dev/protocols/browser';
 
 export type SearchUsageView = 'all-by-user' | 'self-by-key';
 export type UsageRange = DashboardRange;
@@ -30,6 +30,8 @@ export interface UsageOverviewResponse {
     upstreams: string[];
   };
   users: Array<{ id: number; username: string }>;
+  auditableUserIds: number[];
+  upstreams: UsageUpstream[];
   keys: Array<{ id: string; name: string; createdAt: string }>;
 }
 

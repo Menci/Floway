@@ -2,13 +2,14 @@ import { hydrateStoredItems } from './hydrate-stored-items.ts';
 import { failover } from '../../pipeline/failover.ts';
 import { materializeAttempt } from '../materialize-attempt.ts';
 import { resolveChatCandidates } from '../resolve-candidates.ts';
+import { lowerOpenAIResponsesAgentMessages } from './agent-message-shim.ts';
 import { answerOpenAIResponsesWebSocketWarmup } from './answer-websocket-warmup.ts';
-import { beginStoredAttempt } from './begin-stored-attempt.ts';
 import { projectOpenAIResponsesCollaboration } from './collaboration-shim.ts';
 import { asksForCompaction } from './compaction-policy.ts';
 import { emitOpenAIResponses } from './emit.ts';
 import { expandShimCompactions } from './expand-compactions.ts';
 import { OPENAI_RESPONSES_STREAMED_USAGE, type OpenAIResponsesServeEntry, type OpenAIResponsesServeExit } from './facts.ts';
+import { interruptOpenAIResponsesWebSocket } from './interrupt-websocket.ts';
 import { projectOpenAIResponsesWebSocket, type OpenAIResponsesWebSocketEntry, type OpenAIResponsesWebSocketExit } from './project-websocket.ts';
 import { serializeClientJson } from '../../pipeline/serialize-client-json.ts';
 import { composeChat as compose } from '../compose.ts';
@@ -37,6 +38,7 @@ export const openaiResponsesWebSocketPipeline = (): Pipeline<OpenAIResponsesWebS
     writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, OPENAI_RESPONSES_STREAMED_USAGE),
     projectOpenAIResponsesWebSocket,
     emitOpenAIResponses('events'),
+    interruptOpenAIResponsesWebSocket,
     ...openaiResponsesModelStages(true),
   ]);
 
@@ -49,8 +51,10 @@ const openaiResponsesModelStages = (warmup: boolean): readonly Stage[] => [
     pendingUsage: OPENAI_RESPONSES_STREAMED_USAGE,
   }),
   materializeAttempt('request.chat.openaiResponses'),
-  beginStoredAttempt,
   ...warmup ? [answerOpenAIResponsesWebSocketWarmup] : [],
+  // Ahead of every rewrite and of the translation the dial performs, so none of them sees
+  // the item.
+  lowerOpenAIResponsesAgentMessages,
   expandShimCompactions,
   projectOpenAIResponsesCollaboration,
   summarizeForCompaction(asksForCompaction),

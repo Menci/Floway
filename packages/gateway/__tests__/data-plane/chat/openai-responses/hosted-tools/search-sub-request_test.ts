@@ -13,7 +13,7 @@ import { flushBackground, trackBackground } from '../../../../test-utils/backgro
 import { mockGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { createRunReader, type DumpEvent } from '@floway-dev/pipeline';
 
-const apiKey: ApiKey = { id: 'search-key', userId: 1, name: 'Search key', key: 'floway-search-key', serverSecret: '00'.repeat(32), createdAt: '2026-01-01T00:00:00Z', upstreamIds: null, deletedAt: null, dumpRetentionSeconds: 3600, openaiResponsesRetentionSeconds: 0 };
+const apiKey: ApiKey = { id: 'search-key', userId: 1, name: 'Search key', key: 'floway-search-key', serverSecret: '00'.repeat(32), createdAt: '2026-01-01T00:00:00Z', upstreamIds: null, randomizeUpstreams: false, deletedAt: null, dumpRetentionSeconds: 3600, openaiResponsesRetentionSeconds: 0 };
 const request: WebSearchRequest = {
   commands: { search_query: [{ q: 'pipeline streams' }] }, toolName: 'web_search', iterationCount: 1,
   filters: { allowedDomains: ['example.com'], maxResults: 20 }, includeSearchActionSources: true,

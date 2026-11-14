@@ -18,6 +18,7 @@ const baseRecord: UpstreamRecord = {
   kind: 'codex',
   name: 'Codex Plus',
   enabled: true,
+  usageRefreshIntervalMinutes: 0,
   sortOrder: 0,
   createdAt: '2026-06-05T00:00:00.000Z',
   updatedAt: '2026-06-05T00:00:00.000Z',
@@ -49,7 +50,7 @@ beforeEach(() => {
   repo = createUpstreamStateRepoStub(() => current, state => {
     current = { ...current!, state: state as CodexUpstreamState };
   });
-  initProviderRepo(() => ({ upstreams: repo }));
+  initProviderRepo(() => ({ recordUpstreamMetric: async () => {}, upstreams: repo }));
 });
 
 afterEach(() => vi.restoreAllMocks());
@@ -154,7 +155,7 @@ describe('createCodexProvider', () => {
       expect(result.frames.filter(frame => frame.type === 'event').map(frame => frame.event.type)).toEqual(['response.created', 'response.in_progress', 'response.completed']);
       const exchange = result.facts['response.http.exchange'];
       if (exchange.type !== 'response') throw new Error('Expected response');
-      expect(exchange.headers.some(([name]) => name === CODEX_RESPONSES_LITE_HEADER)).toBe(false);
+      expect(exchange.headers).toContainEqual([CODEX_RESPONSES_LITE_HEADER, 'true']);
       expect(exchange.headers).toContainEqual(['content-type', 'text/event-stream']);
     } else expect(output.body).toMatchObject({ object: 'response.compaction' });
   });
@@ -421,7 +422,7 @@ describe('createCodexProvider', () => {
     ]);
   });
 
-  test.each(['generate', 'compact'] as const)('%s retains the full Standard body through stages before private Lite encoding', async action => {
+  test.each(['generate', 'compact'] as const)('%s preserves Lite input items and skips the default top-level instruction', async action => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => action === 'generate'
       ? sseResponse()
       : new Response(JSON.stringify({ id: 'cmp_1', object: 'response.compaction', output: [] })));
@@ -450,17 +451,32 @@ describe('createCodexProvider', () => {
     expect(wire.input).toEqual([
       {
         type: 'additional_tools', role: 'developer', id: expect.stringMatching(/^at_/),
-        tools: [{ type: 'namespace', name: 'functions', description: '', tools: [{ type: 'custom', name: 'patch' }, tool] }],
+        tools: [{ type: 'namespace', name: 'functions', description: '', tools: [{ type: 'custom', name: 'patch' }] }],
       },
-      {
-        type: 'message', role: 'developer', id: expect.stringMatching(/^msg_/),
-        content: [{ type: 'input_text', text: "You're a helpful assistant." }],
-        internal_chat_message_metadata_passthrough: { content_item_kinds: ['model.base_instructions'] },
-      },
-      ...input.slice(1),
+      ...input,
     ]);
     expect(input).toHaveLength(3);
     expect(options.headers.get(CODEX_RESPONSES_LITE_HEADER)).toBe('true');
+  });
+
+  test('forwards an already encoded Lite prefix without generating another one', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    const provider = createCodexProvider(baseRecord);
+    const model = stubProviderModel({ id: 'future-lite', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite: true } });
+    const input = [
+      { type: 'additional_tools' as const, role: 'developer' as const, id: 'at_caller', tools: [{ type: 'namespace' as const, name: 'functions', description: '', tools: [{ type: 'function' as const, name: 'lookup', parameters: { type: 'object' } }] }] },
+      { type: 'message' as const, role: 'developer' as const, id: 'msg_caller', content: [{ type: 'input_text' as const, text: 'Caller base instructions' }], internal_chat_message_metadata_passthrough: { content_item_kinds: ['model.base_instructions'] } },
+      { type: 'message' as const, role: 'user' as const, content: 'Look up this entry.' },
+    ];
+    const result = await collectChatProviderPipeline(provider, 'openaiResponses', model, { input, instructions: '' }, undefined, noopUpstreamCallOptions());
+
+    expect(result.output).not.toBeNull();
+    const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
+    if (init === undefined) throw new Error('expected a Codex upstream request');
+    const wire = await readJsonRequest(init) as Record<string, unknown>;
+    expect(wire.input).toEqual(input);
+    expect(wire).not.toHaveProperty('instructions');
+    expect(new Headers(init.headers).get(CODEX_RESPONSES_LITE_HEADER)).toBe('true');
   });
 
   test('callOpenAIResponses re-reads state per request (operator re-import takes effect)', async () => {

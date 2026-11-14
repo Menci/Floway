@@ -1,5 +1,5 @@
 // Active quota probe against Anthropic's `GET /api/oauth/usage` endpoint.
-// Real `@anthropic-ai/claude-code@2.1.181` calls this endpoint directly
+// Real `@anthropic-ai/claude-code@2.1.280` calls this endpoint directly
 // (binary string `fetchUtilization: GET /api/oauth/usage`); mirroring the
 // behavior gives operators a clean snapshot of the rate-limit windows
 // without burning a model call. The endpoint requires only the OAuth
@@ -20,15 +20,14 @@
 // a strict parser would reject a perfectly usable new field as malformed.
 
 import { CLAUDE_CODE_OAUTH_USER_AGENT, CLAUDE_CODE_USAGE_PROBE_URL } from './constants.ts';
-import type { Fetcher } from '@floway-dev/provider';
+import { readClaudeCodeUpstreamState, type ClaudeCodeUpstreamState } from './state.ts';
+import { claudeCodeProbeMetrics } from './upstream-metrics.ts';
+import { getProviderRepo, recordUpstreamMetrics, type Fetcher } from '@floway-dev/provider';
 
 export interface ClaudeCodeUsageProbeResult {
   // Stamped by the caller onto its persisted slot so the dashboard can show staleness.
   fetched_at: string;
-  // The upstream's body verbatim. We surface as `unknown` because the
-  // shape evolves with the CLI version; the dashboard renders by walking
-  // the known field names and ignores anything it doesn't understand.
-  body: unknown;
+  body: Record<string, unknown>;
 }
 
 export const fetchClaudeCodeUsageProbe = async (
@@ -64,10 +63,28 @@ export const fetchClaudeCodeUsageProbe = async (
       { cause: cause as Error },
     );
   }
-  if (typeof parsed !== 'object' || parsed === null) {
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new Error(
       `Claude Code /api/oauth/usage returned a non-object body (${response.status})`,
     );
   }
-  return { fetched_at: new Date().toISOString(), body: parsed };
+  return { fetched_at: new Date().toISOString(), body: parsed as Record<string, unknown> };
+};
+
+export const mergeClaudeCodeUsageProbe = (state: ClaudeCodeUpstreamState, probe: ClaudeCodeUsageProbeResult): ClaudeCodeUpstreamState => {
+  const fetchedAt = Date.parse(probe.fetched_at);
+  const previous = state.accounts[0].usageProbeSnapshot;
+  if (previous !== null && previous.fetchedAt > fetchedAt) return state;
+  return {
+    ...state,
+    accounts: state.accounts.map((account, index) => index === 0
+      ? { ...account, usageProbeSnapshot: { fetchedAt, data: probe.body } }
+      : account),
+  };
+};
+
+export const persistClaudeCodeUsageProbe = async (upstreamId: string, probe: ClaudeCodeUsageProbeResult): Promise<void> => {
+  await getProviderRepo().upstreams.saveState(upstreamId, current =>
+    mergeClaudeCodeUsageProbe(readClaudeCodeUpstreamState(current), probe));
+  await recordUpstreamMetrics(upstreamId, claudeCodeProbeMetrics(probe.body), Date.parse(probe.fetched_at));
 };

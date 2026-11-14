@@ -1,14 +1,14 @@
 import { test } from 'vitest';
 
 import { backfillRequiredFields } from '../../src/stages/backfill-required-fields.ts';
-import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProviderModel } from '@floway-dev/provider';
 import { type AnthropicMessagesProbe, type ProviderStreamResult } from '@floway-dev/test-utils';
 import { applyProviderStage, assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 type ClaudeCodeStageProbe = AnthropicMessagesProbe & { upstreamId: string };
 
-const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> =>
+const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
 
 const invocation = (payload: AnthropicMessagesPayload, model: ProviderModel = stubProviderModel({ endpoints: { anthropicMessages: {} } })): ClaudeCodeStageProbe => ({
@@ -23,7 +23,7 @@ const invocation = (payload: AnthropicMessagesPayload, model: ProviderModel = st
 // client actually sends: AnthropicMessagesPayload's type says max_tokens is required,
 // but the bug exists precisely because clients (cline, aider, etc.) omit it.
 
-test('backfills max_tokens from ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS when both payload and model limits are silent', async () => {
+test('backfills max_tokens to the 32768 gateway policy when both payload and model limits are silent', async () => {
   const ctx = invocation({
     model: 'claude-sonnet-4-5-20250929',
     messages: [{ role: 'user', content: 'hi' }],
@@ -32,7 +32,7 @@ test('backfills max_tokens from ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS when both
 
   await applyProviderStage(backfillRequiredFields, ctx, okEvents, { 'request.claudeCode.shaped': false });
 
-  assertEquals(ctx.payload.max_tokens, ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS);
+  assertEquals(ctx.payload.max_tokens, 32768);
 });
 
 test('prefers model.limits.max_output_tokens over the gateway fallback when set', async () => {

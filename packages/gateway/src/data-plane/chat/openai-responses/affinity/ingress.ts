@@ -12,7 +12,7 @@ import {
 } from '../../shared/affinity/index.ts';
 import { isOpenAIResponsesCompactShimItem } from '../compact-shim.ts';
 import { withIndexesChanged, withKeysChanged } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 import type { ModelCandidate } from '@floway-dev/provider';
 
 interface OpenAIResponsesBlobLocation {
@@ -44,22 +44,22 @@ interface OpenAIResponsesBlobCandidateProjection {
 }
 
 const canonicalItemType = (itemType: string): string =>
-  itemType === 'compaction_summary' ? 'compaction' : itemType;
+  itemType === 'compaction' || itemType === 'compaction_summary' || itemType === 'context_compaction' ? 'compaction' : itemType;
 
 const carrierDomain = (itemType: string, slot: string): string =>
   `openai-responses.${canonicalItemType(itemType)}.${slot}`;
 
-const itemInheritsRequiredTarget = (item: OpenAIResponsesInputItem): boolean =>
+const itemInheritsRequiredTarget = (item: CanonicalOpenAIResponsesInputItem): boolean =>
   !isOpenAIResponsesCompactShimItem(item)
-  && ['compaction', 'compaction_summary', 'program', 'program_output'].includes(item.type);
+  && ['compaction', 'compaction_summary', 'context_compaction', 'program', 'program_output'].includes(item.type);
 
-const blobRequiresOriginalTarget = (item: OpenAIResponsesInputItem, decoded: DecodedAffinityBlob): boolean =>
-  item.type === 'context_compaction'
+const blobRequiresOriginalTarget = (item: CanonicalOpenAIResponsesInputItem, decoded: DecodedAffinityBlob): boolean =>
+  item.type === 'compaction' || item.type === 'compaction_summary' || item.type === 'context_compaction'
     ? decoded.kind === 'owned' && decoded.value !== undefined
     : itemInheritsRequiredTarget(item);
 
 const opaqueBlobLocations = async (
-  items: readonly OpenAIResponsesInputItem[],
+  items: readonly CanonicalOpenAIResponsesInputItem[],
   codec: AffinityCodec,
 ): Promise<OpenAIResponsesBlobLocation[]> => {
   const locations: OpenAIResponsesBlobLocation[] = [];
@@ -97,7 +97,7 @@ const opaqueBlobLocations = async (
 };
 
 const analyzeOpenAIResponsesRequest = (
-  items: readonly OpenAIResponsesInputItem[],
+  items: readonly CanonicalOpenAIResponsesInputItem[],
   locations: readonly OpenAIResponsesBlobLocation[],
 ): OpenAIResponsesRequestAnalysis => {
   const locationsByItem = Map.groupBy(locations, location => location.itemIndex);
@@ -141,7 +141,7 @@ const materializeOpenAIResponsesPayload = (
   // Rebuilt the way its three sibling families are: an item no projection touches rides through
   // by identity, and what one candidate is owed differs from the next by the slots a projection
   // actually spoke about.
-  const input = payload.input.flatMap((item, itemIndex): OpenAIResponsesInputItem[] => {
+  const input = payload.input.flatMap((item, itemIndex): CanonicalOpenAIResponsesInputItem[] => {
     const projections = projectionsByItem.get(itemIndex);
     if (projections === undefined) return [item];
     if (projections === null) return [];
@@ -153,7 +153,7 @@ const materializeOpenAIResponsesPayload = (
     const rewritten = withKeysChanged(item, slots);
     if (item.type !== 'agent_message') return [rewritten];
 
-    const content = (rewritten as Extract<OpenAIResponsesInputItem, { type: 'agent_message' }>).content;
+    const content = (rewritten as Extract<CanonicalOpenAIResponsesInputItem, { type: 'agent_message' }>).content;
     const nested = new Map(projections.flatMap(({ location, projection }) =>
       location.contentIndex === undefined
         ? []

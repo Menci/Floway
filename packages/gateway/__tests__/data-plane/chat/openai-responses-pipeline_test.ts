@@ -21,9 +21,9 @@ import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../src/shared/ba
 import { chatFixtureHttpServices, stubChatProviderPipelines } from '../../test-utils/chat-provider-pipelines.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run, type Deferred } from '@floway-dev/pipeline';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ModelEndpoints, SseFrame } from '@floway-dev/protocols/common';
-import { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesCompactionResult, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, type CanonicalOpenAIResponsesPayload, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { directFetcher, type FlagId, type ModelCandidate } from '@floway-dev/provider';
 import { type StubChatProviderCall, type ProviderOpenAIResponsesResult, type ProviderStreamResult } from '@floway-dev/test-utils';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
@@ -46,7 +46,7 @@ let live: readonly ModelCandidate[] = [];
 const candidate = (
   calls: {
     callOpenAIResponses?: StubChatProviderCall<'openaiResponses'>;
-    callAnthropicMessages?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
+    callAnthropicMessages?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
   },
   overrides: { upstreamId?: string; endpoints?: ModelEndpoints; enabledFlags?: ReadonlySet<FlagId> } = {},
 ): ModelCandidate => {
@@ -78,7 +78,7 @@ const resolves = (candidates: readonly ModelCandidate[]): void => {
   vi.mocked(enumerateModelCandidates).mockResolvedValue({ candidates, sawModel: true, failedUpstreams: [] } as never);
 };
 
-const delta = (text: string): OpenAIResponsesStreamEvent => ({
+const delta = (text: string): OpenAIResponsesStreamEventEx => ({
   type: 'response.output_text.delta',
   sequence_number: 1,
   item_id: 'msg_1',
@@ -87,7 +87,7 @@ const delta = (text: string): OpenAIResponsesStreamEvent => ({
   delta: text,
 });
 
-const result = (text: string, usage?: OpenAIResponsesResult['usage']): OpenAIResponsesResult => ({
+const result = (text: string, usage?: OpenAIResponsesResultEx['usage']): OpenAIResponsesResultEx => ({
   id: 'resp_1',
   object: 'response',
   model: 'responses-model',
@@ -101,7 +101,7 @@ const result = (text: string, usage?: OpenAIResponsesResult['usage']): OpenAIRes
   ...(usage === undefined ? {} : { usage }),
 });
 
-const completed = (text: string, usage?: OpenAIResponsesResult['usage']): OpenAIResponsesStreamEvent => ({
+const completed = (text: string, usage?: OpenAIResponsesResultEx['usage']): OpenAIResponsesStreamEventEx => ({
   type: 'response.completed',
   sequence_number: 2,
   response: result(text, usage),
@@ -109,7 +109,7 @@ const completed = (text: string, usage?: OpenAIResponsesResult['usage']): OpenAI
 
 // The upstream's own stream, as the provider hands it up: typed frames, and the `done` frame
 // its SSE transport ended on.
-const stream = (...events: readonly OpenAIResponsesStreamEvent[]): ProviderOpenAIResponsesResult => ({
+const stream = (...events: readonly OpenAIResponsesStreamEventEx[]): ProviderOpenAIResponsesResult => ({
   action: 'generate',
   ok: true,
   modelKey: 'responses-model-key',
@@ -123,7 +123,7 @@ const stream = (...events: readonly OpenAIResponsesStreamEvent[]): ProviderOpenA
 /** One assistant message over the Anthropic Messages wire, which is the only way an Anthropic Messages-only
  *  candidate can be reached: the turn crosses into that protocol and comes back translated. */
 const anthropicMessagesTurn = (text: string, seen: { body?: Record<string, unknown> } = {}) =>
-  async (_model: unknown, body: unknown): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
+  async (_model: unknown, body: unknown): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
     seen.body = body as Record<string, unknown>;
     const events: unknown[] = [
       {
@@ -142,7 +142,7 @@ const anthropicMessagesTurn = (text: string, seen: { body?: Record<string, unkno
     return {
       ok: true, modelKey: 'responses-model-key', headers: new Headers(),
       events: (async function* () {
-        for (const event of events) yield { type: 'event' as const, event: event as AnthropicMessagesStreamEvent };
+        for (const event of events) yield { type: 'event' as const, event: event as AnthropicMessagesStreamEventEx };
         yield { type: 'done' as const };
       })(),
     };
@@ -202,10 +202,10 @@ const drain = async (rendered: unknown): Promise<SseFrame[]> => {
 // The carrier the edge writes back is a reasoning item holding this turn's own state. The
 // message this turn answers with cannot hold it, so the carrier gets an output slot of its
 // own at the head of the answer: two frames, and a slot in every snapshot that follows them.
-const isCarrierItem = (item: OpenAIResponsesOutputItem): boolean => item.type === 'reasoning';
+const isCarrierItem = (item: OpenAIResponsesOutputItemEx): boolean => item.type === 'reasoning';
 
 /** The turn's own answer, with the carrier's item taken back out. */
-const withoutCarrierItem = (response: OpenAIResponsesResult): OpenAIResponsesResult =>
+const withoutCarrierItem = (response: OpenAIResponsesResultEx): OpenAIResponsesResultEx =>
   ({ ...response, output: response.output.filter(item => !isCarrierItem(item)) });
 
 /** The turn's own frames. The two sequence numbers the carrier's frames spent stay spent —
@@ -213,7 +213,7 @@ const withoutCarrierItem = (response: OpenAIResponsesResult): OpenAIResponsesRes
 const withoutCarrier = (frames: readonly SseFrame[]): readonly SseFrame[] =>
   frames.flatMap(frame => {
     if (frame.data === '[DONE]') return [frame];
-    const event = JSON.parse(frame.data) as OpenAIResponsesStreamEvent;
+    const event = JSON.parse(frame.data) as OpenAIResponsesStreamEventEx;
     if (
       (event.type === 'response.output_item.added' || event.type === 'response.output_item.done')
       && isCarrierItem(event.item)
@@ -348,7 +348,7 @@ describe('the responses chain', () => {
     // The terminal event is the upstream's, restated: the membrane at the edge stamps the
     // envelope id this gateway minted for the turn and completes the resource to what the
     // schema requires of it, so the deltas ride through untouched and this one does not.
-    const terminal = JSON.parse(frames[2]!.data) as { sequence_number: number; response: OpenAIResponsesResult };
+    const terminal = JSON.parse(frames[2]!.data) as { sequence_number: number; response: OpenAIResponsesResultEx };
     // The carrier's own two frames went out ahead of it under two sequence numbers of their
     // own, so the terminal event is numbered where they left it.
     expect(terminal.sequence_number).toBe(4);
@@ -369,7 +369,7 @@ describe('the responses chain', () => {
     const { facts } = await serveWith(gateway, true);
     const frames = await drain(facts['response.chat.openaiResponses.rendered']);
     const answered = frames.find(frame => frame.event === 'response.completed');
-    const carrier = (JSON.parse(answered!.data) as { readonly response: OpenAIResponsesResult }).response.output
+    const carrier = (JSON.parse(answered!.data) as { readonly response: OpenAIResponsesResultEx }).response.output
       .filter(item => item.type === 'reasoning');
 
     expect(carrier).toHaveLength(1);
@@ -417,7 +417,7 @@ describe('the responses chain', () => {
         completed('hi', {
           input_tokens: 479, output_tokens: 373, total_tokens: 14164,
           input_tokens_details: { cached_tokens: 13312 },
-        } as OpenAIResponsesResult['usage']),
+        } as OpenAIResponsesResultEx['usage']),
       ),
     })]);
 
@@ -425,7 +425,7 @@ describe('the responses chain', () => {
     const frames = withoutCarrier(await drain(facts['response.chat.openaiResponses.rendered']));
     const terminal = frames
       .filter(frame => frame.event === 'response.completed')
-      .map(frame => JSON.parse(frame.data) as { response: OpenAIResponsesResult });
+      .map(frame => JSON.parse(frame.data) as { response: OpenAIResponsesResultEx });
 
     // What the client was shown: the cached prefix folded back into the input total.
     expect(terminal[0]!.response.usage).toMatchObject({ input_tokens: 13791, output_tokens: 373 });
@@ -498,7 +498,7 @@ describe('the responses chain', () => {
     const { facts } = await serve(false);
 
     expect(facts['response.http.status']).toBe(200);
-    const answered = withoutCarrierItem(facts['response.chat.openaiResponses.rendered'] as unknown as OpenAIResponsesResult);
+    const answered = withoutCarrierItem(facts['response.chat.openaiResponses.rendered'] as unknown as OpenAIResponsesResultEx);
     expect(answered).toMatchObject({
       status: 'completed',
       output: [{ content: [{ type: 'output_text', text: 'hello' }] }],
@@ -510,7 +510,7 @@ describe('the responses chain', () => {
 
   // Native compaction counts pass through the same normalization and metering as generation.
   it('serves an upstream that answered with one envelope as that envelope', async () => {
-    const compaction: OpenAIResponsesCompactionResult = {
+    const compaction: OpenAIResponsesCompactionResultEx = {
       id: 'resp_compact_1',
       object: 'response.compaction',
       output: [{
@@ -577,20 +577,11 @@ describe('the responses chain', () => {
     expect(facts['response.http.status']).toBe(200);
   });
 
-  // A provider owns the body it is dialled with and shapes it in place, down to nested nodes —
-  // Copilot marks individual items for caching, and its Anthropic Messages boundary writes into a nested
-  // field — while the record that body is built from is deep-frozen. A dial that handed over a
-  // shallow copy satisfies every type in the system and throws at the first nested write,
-  // answering the client with a 502 raised where nothing can explain it.
-  // The record is frozen all the way down, and nothing copies it on the way out — a provider
-  // shapes the body it sends by rebuilding, which every boundary rule here does. A rule that
-  // reached into a child instead would throw, and this is what says so rather than leaving it
-  // to be discovered as a 502 from the one place that cannot explain it.
   it('hands the provider a body no one can write into', async () => {
     let refused: unknown;
     resolves([candidate({
       callOpenAIResponses: async (_model, body) => {
-        const item = (body as { input: Record<string, unknown>[] }).input[0]!;
+        const item = body.input[0]! as Extract<CanonicalOpenAIResponsesInputItem, { type: 'message' }> & { copilot_cache_control?: { type: string } };
         try { item.copilot_cache_control = { type: 'ephemeral' }; } catch (error) { refused = error; }
         return stream(completed('hi'));
       },
@@ -653,7 +644,7 @@ describe('the responses chain', () => {
 
     expect(sent).toMatchObject({ input: [{ type: 'message', role: 'user', content: 'hi' }] });
     expect(JSON.stringify(sent)).not.toContain('CONTEXT CHECKPOINT COMPACTION');
-    const answered = withoutCarrierItem(facts['response.chat.openaiResponses.rendered'] as unknown as OpenAIResponsesResult);
+    const answered = withoutCarrierItem(facts['response.chat.openaiResponses.rendered'] as unknown as OpenAIResponsesResultEx);
     expect(answered.object).toBe('response');
     expect(answered).toMatchObject({ output: [{ content: [{ type: 'output_text', text: 'hello' }] }] });
   });
@@ -663,7 +654,7 @@ describe('the responses chain', () => {
   // the upstream's own — its id, and a blob only it can read.
   it('sends a turn that asked for a compaction on unchanged, where the shim is not engaged', async () => {
     let sent: Record<string, unknown> | undefined;
-    const upstreamCompaction: OpenAIResponsesCompactionResult = {
+    const upstreamCompaction: OpenAIResponsesCompactionResultEx = {
       id: 'resp_upstream_compaction',
       object: 'response.compaction',
       output: [{ type: 'compaction', id: 'cmp_1', encrypted_content: 'OPAQUE_NATIVE_BLOB' } as unknown as never],

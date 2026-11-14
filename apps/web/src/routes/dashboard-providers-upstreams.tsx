@@ -3,19 +3,22 @@ import {
   ChevronDownRegular,
   CopyRegular,
   DeleteRegular,
+  DataTrendingRegular,
   EditRegular,
   ProhibitedRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router';
 
 import { type TFunction, useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-providers-upstreams';
-import { requireDashboardAdmin } from './guards';
+import { useDashboardOutletContext } from './dashboard';
+import { requireDashboardUser } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import { api, callApi } from '../api/client';
-import type { ControlPlaneModel, UpstreamRecord } from '../api/types';
+import type { ControlPlaneModel, ListedUpstreamRecord } from '../api/types';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
@@ -24,7 +27,7 @@ import { moveItem, ReorderHandle, useReorderList } from '../components/ui/reorde
 import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
 import { RouteMenuItem } from '../components/ui/route-menu-item';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { TABLE_ACTIONS_WIDTH, TableActions, TableCentredCell, TableCentredHeader, TableTrailingHeader } from '../components/ui/table-actions';
+import { TABLE_ACTIONS_WITH_LEADING_WIDTH, TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../components/ui/table-actions';
 import { TableColumns } from '../components/ui/table-columns';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { TruncationTooltip } from '../components/ui/truncation-tooltip';
@@ -36,11 +39,13 @@ import { planLabel } from '../components/upstreams/codex-account';
 import { MODEL_ERROR_TOOLTIP_LENGTH, modelErrorExcerpt } from '../components/upstreams/model-error';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { UpstreamSignals } from '../components/upstreams/signals';
+import { UpstreamTelemetryRow, loadUpstreamTelemetry, type UpstreamTelemetryData, type UpstreamTelemetryQuery } from '../components/upstreams/telemetry';
 import { fluentComponents } from '../fluent';
 import { dateTime } from '../lib/format-time';
 import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
-import { ALL_PROVIDER_KINDS, type UpstreamProviderKind } from '@floway-dev/provider/model';
+import { usageUpstreamDimensionValue } from '@floway-dev/protocols/browser';
+import { ALL_PROVIDER_KINDS, type UpstreamProviderKind } from '@floway-dev/provider/browser';
 
 const {
   Menu,
@@ -58,11 +63,12 @@ const {
   TableRow,
   Text,
   Tooltip,
+  switchClassNames,
 } = fluentComponents;
 
 interface LoaderData {
   /** `null` when the fetch failed, not the same as none configured. */
-  upstreams: UpstreamRecord[] | null;
+  upstreams: ListedUpstreamRecord[] | null;
   models: ControlPlaneModel[] | null;
   loadError: string | null;
   modelsError: string | null;
@@ -77,8 +83,9 @@ interface ReorderPlan {
   from: number;
   to: number;
   movedId: string;
-  next: UpstreamRecord[];
-  writes: UpstreamRecord[];
+  expectedIds: string[];
+  ids: string[];
+  next: ListedUpstreamRecord[];
 }
 
 const PROVIDER_MENU_ORDER: readonly UpstreamProviderKind[] = [
@@ -99,8 +106,8 @@ const providers = ALL_PROVIDER_KINDS.toSorted((a, b) => menuRank(a) - menuRank(b
 
 // Both affordances that open a record — the row's name and its edit button —
 // address it from here, so the two cannot come apart.
-const upstreamEditorPath = (record: UpstreamRecord) => `/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`;
-const upstreamCopyPath = (record: UpstreamRecord) => `/dashboard/providers/upstreams/${encodeURIComponent(record.id)}/copy`;
+const upstreamEditorPath = (record: ListedUpstreamRecord) => `/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`;
+const upstreamCopyPath = (record: ListedUpstreamRecord) => `/dashboard/providers/upstreams/${encodeURIComponent(record.id)}/copy`;
 
 const loadPageData = async (signal?: AbortSignal): Promise<LoaderData> => {
   const [upstreamsResult, modelsResult] = await Promise.all([
@@ -119,7 +126,7 @@ const loadPageData = async (signal?: AbortSignal): Promise<LoaderData> => {
 };
 
 export async function clientLoader(): Promise<LoaderData> {
-  await requireDashboardAdmin();
+  await requireDashboardUser();
   return await loadPageData();
 }
 
@@ -129,6 +136,13 @@ export const shouldRevalidate = revalidateOnPathnameChange;
 
 export default function DashboardProvidersUpstreams({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
+  const { user } = useDashboardOutletContext();
+  const [initialQuery] = useState<UpstreamTelemetryQuery>({ upstreamId: null, range: 'today', groupBy: 'model', filters: { model: [], upstream: [], userId: [], keyId: [] } });
+  const queryRef = useRef(initialQuery);
+  const loadedQueryRef = useRef(initialQuery);
+  const [telemetry, setTelemetry] = useState<UpstreamTelemetryData | null>(null);
+  const [editingRange, setEditingRange] = useState(false);
+  const [immediateCollapse, setImmediateCollapse] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const rewrite = useEntryRewrite();
@@ -147,7 +161,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   // column derive a live count for an upstream the listing has not been told
   // about yet -- a warning beside a zero, for as long as the round trip takes.
   const [pendingEnabled, setPendingEnabled] = useState<{ id: string; enabled: boolean } | null>(null);
-  const deleteDialog = useDialogInvocation<UpstreamRecord>();
+  const deleteDialog = useDialogInvocation<ListedUpstreamRecord>();
   const [deleteError, setDeleteError] = useState<string | null>(null);
   // `move` words its own failure differently when the resync behind it also
   // failed, and it has to read that outcome after awaiting rather than out of a
@@ -158,7 +172,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   // accepted, then commit `next` in the same render that removes the preview.
   const pendingReorder = useRef<ReorderPlan | null>(null);
 
-  const openDeleteDialog = (record: UpstreamRecord) => {
+  const openDeleteDialog = (record: ListedUpstreamRecord) => {
     setDeleteError(null);
     deleteDialog.open(record);
   };
@@ -184,34 +198,59 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     return () => handle.settle();
   }, [mutationKind, t, toasts]);
 
-  const { poll, refresh: reload, refreshing } = useRefresh(useCallback(async (signal: AbortSignal) => {
-    const next = await loadPageData(signal);
+  const { cancel, poll, refresh: reload, refreshing } = useRefresh(useCallback(async (signal: AbortSignal) => {
+    const requested = queryRef.current;
+    const [next, readings] = await Promise.all([
+      loadPageData(signal),
+      requested.upstreamId === null ? Promise.resolve(null) : loadUpstreamTelemetry(requested, Date.now(), signal),
+    ]);
     if (signal.aborted) return;
-    // A failed fetch is not an empty list. Each half keeps what it last had and
-    // the message bars carry the reason, so a blip on an unattended poll cannot
-    // empty a table nobody is watching -- the two other polling pages hold their
-    // data the same way.
     setData(current => ({
-      // A poll cannot replace the index space an in-flight gesture was measured
-      // against. Success commits its plan; failure clears it before resyncing.
       upstreams: pendingReorder.current === null ? next.upstreams ?? current.upstreams : current.upstreams,
       models: next.models ?? current.models,
       loadError: next.loadError,
       modelsError: next.modelsError,
     }));
     lastLoadError.current = next.loadError;
+    if (next.loadError !== null) { queryRef.current = loadedQueryRef.current; return; }
+    if (requested.upstreamId !== null && !next.upstreams!.some(record => record.id === requested.upstreamId)) {
+      queryRef.current = loadedQueryRef.current = { ...requested, upstreamId: null };
+      setTelemetry(null);
+      return;
+    }
+    if (readings !== null) {
+      if (readings.error) { setPageError(readings.error.message); queryRef.current = loadedQueryRef.current; return; }
+      setTelemetry(readings.data);
+    }
+    loadedQueryRef.current = requested;
   }, []));
 
-  // The rows carry live readings -- quota windows, model-cache freshness -- that
-  // the data plane refreshes without anyone here asking.
-  usePollWhileVisible(poll);
-
-  // Reordering owns its gesture until the write and settle both finish, so the
-  // hook can lock another move without flashing every unrelated control into a
-  // disabled visual state. Other mutations and explicit refreshes still disable
-  // the whole surface as before.
   const reorderBusy = mutation !== null || refreshing;
-  const surfaceBusy = (mutation !== null && mutation.kind !== 'reorder') || refreshing;
+  const surfaceBusy = refreshing;
+  usePollWhileVisible(poll, 60_000, !editingRange && !reorderBusy);
+
+  const closeTelemetry = (immediate: boolean) => {
+    cancel();
+    queryRef.current = loadedQueryRef.current = { ...loadedQueryRef.current, upstreamId: null };
+    setImmediateCollapse(immediate);
+    setEditingRange(false);
+    setTelemetry(null);
+  };
+  const toggleTelemetry = (record: ListedUpstreamRecord) => {
+    setPageError(null);
+    if (telemetry?.query.upstreamId === record.id) { closeTelemetry(false); return; }
+    setImmediateCollapse(false);
+    queryRef.current = {
+      ...loadedQueryRef.current, upstreamId: record.id,
+      groupBy: 'model', filters: { model: [], upstream: [usageUpstreamDimensionValue(record.id)], userId: [], keyId: [] },
+    };
+    void reload();
+  };
+  const changeTelemetryQuery = (next: UpstreamTelemetryQuery) => {
+    setPageError(null);
+    queryRef.current = next;
+    void reload();
+  };
 
   const handleRefresh = async () => {
     setPageError(null);
@@ -220,7 +259,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     handle.settle();
   };
 
-  const setEnabled = async (record: UpstreamRecord, enabled: boolean) => {
+  const setEnabled = async (record: ListedUpstreamRecord, enabled: boolean) => {
     if (data.upstreams === null) return;
     setMutation({ kind: 'toggle', id: record.id });
     setPageError(null);
@@ -239,29 +278,24 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     setMutation(null);
   };
 
-  // A drag lands on any position, so the two records a step used to swap are
-  // now a span, and a span cannot be reordered by trading the values it already
-  // holds: `compareUpstreams` breaks a tie on creation time, and two records
-  // sharing a sort_order would land wherever that says rather than where the
-  // operator dropped them. The whole list is renumbered to its positions
-  // instead, which leaves no tie for the next drag to inherit, and only the
-  // records whose number actually changed are written.
+  // The server validates the complete Full-access segment and atomically maps
+  // its reordered IDs back onto the segment's existing sort-order slots.
   const move = async (from: number, to: number) => {
     const snapshot = data.upstreams;
     const plan = snapshot === null ? null : planReorder(snapshot, from, to);
     if (plan === null) return;
 
+    closeTelemetry(true);
     setMutation({ kind: 'reorder', id: plan.movedId });
     setPageError(null);
     setData(current => ({ ...current, upstreams: plan.next }));
 
-    const results = await Promise.all(plan.writes.map(record => patchUpstream(record.id, { sort_order: record.sort_order })));
-    const error = results.find(result => result.error)?.error;
-    if (error) {
+    const result = await reorderUpstreams(plan);
+    if (result.error) {
       setData(current => ({ ...current, upstreams: snapshot }));
       await reload();
       setPageError(t('dashboard.upstreams.errors.reorder', {
-        message: error.message,
+        message: result.error.message,
         sync: lastLoadError.current !== null ? t('dashboard.upstreams.errors.syncFailed') : '',
       }));
       setMutation(null);
@@ -281,9 +315,8 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     pendingReorder.current = plan;
     setMutation({ kind: 'reorder', id: plan.movedId });
     setPageError(null);
-    const results = await Promise.all(plan.writes.map(record => patchUpstream(record.id, { sort_order: record.sort_order })));
-    const error = results.find(result => result.error)?.error;
-    if (error) throw new Error(error.message, { cause: error });
+    const result = await reorderUpstreams(plan);
+    if (result.error) throw new Error(result.error.message, { cause: result.error });
   };
 
   const commitDroppedMove = (from: number, to: number) => {
@@ -313,7 +346,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     setMutation(null);
   };
 
-  const deleteUpstream = async (record: UpstreamRecord) => {
+  const deleteUpstream = async (record: ListedUpstreamRecord) => {
     setMutation({ kind: 'delete', id: record.id });
     setDeleteError(null);
     const handle = toasts.start(t('dashboard.upstreams.toast.delete.pending', { name: record.name }));
@@ -332,9 +365,9 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   };
 
   return (
-    <section className="dashboard-page">
+    <section aria-busy={surfaceBusy} className="dashboard-page">
       <DashboardPageHeader
-        actions={<ResourceListActions
+        actions={user.isAdmin ? <ResourceListActions
           createLabel={t('dashboard.upstreams.actions.create')}
           createTrailingIcon={<ChevronDownRegular className="ml-1.5" />}
           createTrigger={button => (
@@ -363,6 +396,11 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
           onRefresh={() => void handleRefresh()}
           refreshLabel={t('dashboard.upstreams.actions.refresh')}
           refreshing={refreshing}
+        /> : <ResourceListActions
+          disabled={surfaceBusy}
+          onRefresh={() => void handleRefresh()}
+          refreshLabel={t('dashboard.upstreams.actions.refresh')}
+          refreshing={refreshing}
         />}
         description={t('dashboard.pages.upstreams')}
         title={t('dashboard.nav.upstreams')}
@@ -384,10 +422,19 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
         </OutcomeMessageBar>
       )}
 
-      <ResourceListPanel rowHeight="56px">
+      <ResourceListPanel inert={surfaceBusy} rowHeight="56px">
         <UpstreamsTable
+          administrator={user.isAdmin}
           data={data}
-          busy={surfaceBusy}
+          busy={mutation !== null || refreshing}
+          currentUserId={String(user.id)}
+          telemetry={telemetry}
+          expandedId={telemetry?.query.upstreamId ?? null}
+          immediateCollapse={immediateCollapse}
+          onDragStart={() => flushSync(() => closeTelemetry(true))}
+          onTelemetry={toggleTelemetry}
+          onTelemetryQueryChange={changeTelemetryQuery}
+          onRangeEditingChange={setEditingRange}
           mutation={mutation}
           onDelete={openDeleteDialog}
           onDrop={persistDroppedMove}
@@ -418,7 +465,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 // The row's two lines are what the upstream says about itself: who it connects
 // as, and whatever live readings its provider publishes. The name is not among
 // them -- it names the badge, which is also what opens the record.
-function UpstreamDetailsCell({ record }: { record: UpstreamRecord }) {
+function UpstreamDetailsCell({ record }: { record: ListedUpstreamRecord }) {
   const { t } = useTranslation();
   const summary = upstreamSummary(record, t);
 
@@ -443,6 +490,7 @@ function UpstreamDetailsCell({ record }: { record: UpstreamRecord }) {
 }
 
 function UpstreamsTable({
+  administrator,
   busy,
   data,
   mutation,
@@ -453,22 +501,31 @@ function UpstreamsTable({
   onToggle,
   pendingEnabled,
   reorderBusy,
+  currentUserId, telemetry, expandedId, immediateCollapse, onDragStart, onTelemetry, onTelemetryQueryChange, onRangeEditingChange,
 }: {
+  administrator: boolean;
   busy: boolean;
   data: LoaderData;
   mutation: Mutation | null;
-  onDelete: (record: UpstreamRecord) => void;
+  onDelete: (record: ListedUpstreamRecord) => void;
   onDrop: (from: number, to: number) => Promise<void>;
   onDropError: (error: unknown, from: number, to: number) => void | Promise<void>;
   onMove: (from: number, to: number) => void;
-  onToggle: (record: UpstreamRecord, enabled: boolean) => void;
+  onToggle: (record: ListedUpstreamRecord, enabled: boolean) => void;
   pendingEnabled: { id: string; enabled: boolean } | null;
   reorderBusy: boolean;
+  currentUserId: string;
+  telemetry: UpstreamTelemetryData | null;
+  expandedId: string | null;
+  immediateCollapse: boolean;
+  onDragStart: () => void;
+  onTelemetry: (record: ListedUpstreamRecord) => void;
+  onTelemetryQueryChange: (query: UpstreamTelemetryQuery) => void;
+  onRangeEditingChange: (editing: boolean) => void;
 }) {
   const { t } = useTranslation();
   const upstreams = data.upstreams;
   const modelCounts = useMemo(() => buildModelCounts(upstreams ?? [], data.models), [data.models, upstreams]);
-  const reorder = useReorderList({ busy: reorderBusy, length: upstreams?.length ?? 0, onDrop, onDropError, onReorder: onMove });
 
   // A failed fetch is not an empty list: the message bar carries the reason.
   if (upstreams === null) return null;
@@ -479,7 +536,7 @@ function UpstreamsTable({
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
       <Table aria-label={t('dashboard.upstreams.table.title')} className="min-w-[900px]">
-        <TableColumns widths={['96px', '200px', null, '140px', '90px', TABLE_ACTIONS_WIDTH]} />
+        <TableColumns widths={['96px', '200px', null, '140px', '90px', TABLE_ACTIONS_WITH_LEADING_WIDTH]} />
         <TableHeader>
           <TableRow>
             <TableHeaderCell>{t('dashboard.upstreams.table.priority')}</TableHeaderCell>
@@ -487,73 +544,139 @@ function UpstreamsTable({
             <TableHeaderCell>{t('dashboard.upstreams.table.details')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.upstreams.table.models')}</TableHeaderCell>
             <TableCentredHeader>{t('dashboard.upstreams.table.enabled')}</TableCentredHeader>
-            <TableTrailingHeader>{t('dashboard.upstreams.table.actions')}</TableTrailingHeader>
+            <TableActionsHeader />
           </TableRow>
         </TableHeader>
-        <TableBody {...reorder.listProps()}>
-          {upstreams.map((record, index) => {
-            const deleting = mutation?.kind === 'delete' && mutation.id === record.id;
-            return <TableRow key={record.id} {...reorder.itemProps(index)}>
-              <TableCell>
-                <div className="inline-flex items-center gap-1">
-                  {/* The rank travels with the row a gesture is moving, so the
-                      column reads as the order the drop will commit. */}
-                  <Text className="text-fui-fg3 min-w-[22px] text-center">{reorder.position(index) + 1}</Text>
-                  <ReorderHandle
-                    {...reorder.handleProps(index)}
-                    label={t('dashboard.upstreams.actions.reorder', { name: record.name })}
-                  />
-                </div>
-              </TableCell>
-              <TableCell className="overflow-hidden">
-                <ProviderBadge
-                  label={record.name}
-                  to={upstreamEditorPath(record)}
-                  upstream={record}
-                />
-              </TableCell>
-              <TableCell className="overflow-hidden"><UpstreamDetailsCell record={record} /></TableCell>
-              <TableCell>
-                <ModelStatus count={modelCounts.get(record.id)!} record={record} />
-              </TableCell>
-              <TableCentredCell>
-                <Switch
-                  aria-label={t('dashboard.upstreams.actions.toggle', { name: record.name })}
-                  checked={pendingEnabled?.id === record.id ? pendingEnabled.enabled : record.enabled}
-                  disabled={busy}
-                  onChange={(_, detail) => onToggle(record, detail.checked)}
-                />
-              </TableCentredCell>
-              <TableCell>
-                <TableActions>
-                  <TooltipIconButton
-                    disabled={busy}
-                    icon={<EditRegular />}
-                    label={t('dashboard.upstreams.actions.editNamed', { name: record.name })}
-                    to={upstreamEditorPath(record)}
-                  />
-                  <TooltipIconButton
-                    disabled={busy}
-                    icon={<CopyRegular />}
-                    label={t('dashboard.upstreams.actions.copyNamed', { name: record.name })}
-                    to={upstreamCopyPath(record)}
-                  />
-                  <TooltipIconButton
-                    danger
-                    disabled={busy && !deleting}
-                    disabledFocusable={deleting}
-                    icon={deleting ? <Spinner size="tiny" /> : <DeleteRegular />}
-                    label={t('dashboard.upstreams.actions.deleteNamed', { name: record.name })}
-                    onClick={() => onDelete(record)}
-                  />
-                </TableActions>
-              </TableCell>
-            </TableRow>;
-          })}
-        </TableBody>
+        {upstreamSegments(upstreams).map(segment => <UpstreamSegment
+          administrator={administrator}
+          busy={busy}
+          currentUserId={currentUserId}
+          expandedId={expandedId}
+          immediateCollapse={immediateCollapse}
+          key={segment.key}
+          modelCounts={modelCounts}
+          mutation={mutation}
+          onDelete={onDelete}
+          onDragStart={onDragStart}
+          onDrop={onDrop}
+          onDropError={onDropError}
+          onMove={onMove}
+          onRangeEditingChange={onRangeEditingChange}
+          onTelemetry={onTelemetry}
+          onTelemetryQueryChange={onTelemetryQueryChange}
+          onToggle={onToggle}
+          pendingEnabled={pendingEnabled}
+          reorderBusy={reorderBusy}
+          segment={segment}
+          telemetry={telemetry}
+        />)}
       </Table>
     </ScrollArea>
   );
+}
+
+interface UpstreamSegment { key: string; records: ListedUpstreamRecord[]; movable: boolean; rankBase: number }
+
+const upstreamSegments = (upstreams: readonly ListedUpstreamRecord[]): UpstreamSegment[] => {
+  const segments: UpstreamSegment[] = [];
+  for (const [index, record] of upstreams.entries()) {
+    const movable = record.editLevel === 'full' && record.reorderGroup !== null;
+    const previous = segments.at(-1);
+    if ((movable && previous?.key === `full:${record.reorderGroup}`) || (!movable && previous?.movable === false)) {
+      previous.records.push(record);
+    } else {
+      segments.push({ key: movable ? `full:${record.reorderGroup}` : `locked:${record.id}`, movable, records: [record], rankBase: index });
+    }
+  }
+  return segments;
+};
+
+function UpstreamSegment({
+  administrator, busy, currentUserId, expandedId, immediateCollapse, modelCounts, mutation, onDelete, onDragStart, onDrop, onDropError, onMove,
+  onRangeEditingChange, onTelemetry, onTelemetryQueryChange, onToggle, pendingEnabled, reorderBusy, segment, telemetry,
+}: {
+  administrator: boolean;
+  busy: boolean;
+  currentUserId: string;
+  expandedId: string | null;
+  immediateCollapse: boolean;
+  modelCounts: ReadonlyMap<string, number | null>;
+  mutation: Mutation | null;
+  onDelete: (record: ListedUpstreamRecord) => void;
+  onDragStart: () => void;
+  onDrop: (from: number, to: number) => Promise<void>;
+  onDropError: (error: unknown, from: number, to: number) => void | Promise<void>;
+  onMove: (from: number, to: number) => void;
+  onRangeEditingChange: (editing: boolean) => void;
+  onTelemetry: (record: ListedUpstreamRecord) => void;
+  onTelemetryQueryChange: (query: UpstreamTelemetryQuery) => void;
+  onToggle: (record: ListedUpstreamRecord, enabled: boolean) => void;
+  pendingEnabled: { id: string; enabled: boolean } | null;
+  reorderBusy: boolean;
+  segment: UpstreamSegment;
+  telemetry: UpstreamTelemetryData | null;
+}) {
+  const { t } = useTranslation();
+  const reorder = useReorderList({
+    busy: reorderBusy, disabled: !segment.movable, grabOnly: segment.records.length === 1, length: segment.records.length,
+    onDragStart,
+    onDrop: async (from, to) => {
+      await onDrop(segment.rankBase + from, segment.rankBase + to);
+    },
+    onDropError: (error, from, to) => {
+      return onDropError(error, segment.rankBase + from, segment.rankBase + to);
+    },
+    onReorder: (from, to) => {
+      onMove(segment.rankBase + from, segment.rankBase + to);
+    },
+  });
+  return <TableBody {...reorder.listProps()} data-upstream-segment={segment.key}>
+    {segment.records.map((record, index) => {
+      const deleting = mutation?.kind === 'delete' && mutation.id === record.id;
+      const canAudit = administrator || record.audit;
+      const canEdit = administrator || record.editLevel !== 'off';
+      const canFullEdit = administrator || record.editLevel === 'full';
+      return <Fragment key={record.id}><TableRow {...reorder.itemProps(index)}
+        aria-controls={canAudit ? `upstream-telemetry-${encodeURIComponent(record.id)}` : undefined} aria-expanded={canAudit ? expandedId === record.id : undefined}
+        aria-label={canAudit ? t('dashboard.upstreams.actions.metricsNamed', { name: record.name }) : undefined} tabIndex={canAudit && !busy ? 0 : undefined}
+        onClickCapture={event => {
+          const target = event.target as Element;
+          if (!canAudit || busy || !event.currentTarget.contains(target) || target.closest(`a, button, .${switchClassNames.root}`) || !window.getSelection()!.isCollapsed) return;
+          onTelemetry(record);
+        }} onKeyDown={event => {
+          if (!canAudit || busy || event.target !== event.currentTarget) return;
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onTelemetry(record); }
+        }}>
+        <TableCell>
+          <div className="inline-flex items-center gap-1">
+            <Text className="text-fui-fg3 min-w-[22px] text-center">{segment.rankBase + reorder.position(index) + 1}</Text>
+            <ReorderHandle {...reorder.handleProps(segment.movable ? index : -1)} label={t('dashboard.upstreams.actions.reorder', { name: record.name })} />
+          </div>
+        </TableCell>
+        <TableCell className="overflow-hidden">
+          <ProviderBadge label={record.name} to={canAudit || canEdit ? upstreamEditorPath(record) : undefined} upstream={record} />
+        </TableCell>
+        <TableCell className="overflow-hidden"><UpstreamDetailsCell record={record} /></TableCell>
+        <TableCell><ModelStatus count={modelCounts.get(record.id)!} record={record} /></TableCell>
+        <TableCentredCell>
+          <Switch aria-label={t('dashboard.upstreams.actions.toggle', { name: record.name })} checked={pendingEnabled?.id === record.id ? pendingEnabled.enabled : record.enabled}
+            disabled={busy || !canFullEdit} onChange={(_, detail) => onToggle(record, detail.checked)} />
+        </TableCentredCell>
+        <TableCell>
+          <TableActions leading={<TooltipIconButton aria-controls={canAudit ? `upstream-telemetry-${encodeURIComponent(record.id)}` : undefined} aria-expanded={canAudit ? expandedId === record.id : undefined}
+            disabled={reorderBusy || !canAudit} icon={<DataTrendingRegular />} label={t('dashboard.upstreams.actions.metricsNamed', { name: record.name })} onClick={() => onTelemetry(record)} />}>
+            <TooltipIconButton disabled={busy} icon={<EditRegular />} label={t('dashboard.upstreams.actions.editNamed', { name: record.name })} to={upstreamEditorPath(record)} />
+            {administrator && <TooltipIconButton disabled={busy} icon={<CopyRegular />} label={t('dashboard.upstreams.actions.copyNamed', { name: record.name })} to={upstreamCopyPath(record)} />}
+            {administrator && <TooltipIconButton danger disabled={busy && !deleting} disabledFocusable={deleting} icon={deleting ? <Spinner size="tiny" /> : <DeleteRegular />}
+              label={t('dashboard.upstreams.actions.deleteNamed', { name: record.name })} onClick={() => onDelete(record)} />}
+          </TableActions>
+        </TableCell>
+      </TableRow>
+      {canAudit && <UpstreamTelemetryRow immediateCollapse={immediateCollapse} busy={busy} currentUserId={currentUserId} data={expandedId === record.id ? telemetry : null} record={record}
+        onQueryChange={onTelemetryQueryChange} onRangeEditingChange={onRangeEditingChange} />}
+      </Fragment>;
+    })}
+  </TableBody>;
 }
 
 function ModelStatus({
@@ -561,7 +684,7 @@ function ModelStatus({
   record,
 }: {
   count: number | null;
-  record: UpstreamRecord;
+  record: ListedUpstreamRecord;
 }) {
   const { t } = useTranslation();
   const locale = useLocale();
@@ -589,7 +712,7 @@ function ModelStatus({
           : healthy
             ? <CheckmarkCircleRegular className="block flex-none text-[var(--colorPaletteGreenForeground1)]" fontSize={18} aria-label={t('dashboard.upstreams.cache.ready')} />
             : <WarningRegular className="block flex-none text-[var(--colorPaletteDarkOrangeForeground1)]" fontSize={18} aria-label={t(`dashboard.upstreams.cache.${cacheStatus}`)} />}
-        <Text size={300} wrap={false}>
+        <Text size={300} className="tabular-nums" wrap={false}>
           {count === null
             ? t('dashboard.upstreams.models.unavailable')
             : t('dashboard.upstreams.models.count', { count })}
@@ -599,27 +722,42 @@ function ModelStatus({
   );
 }
 
-const patchUpstream = (id: string, body: { enabled?: boolean; sort_order?: number }) =>
+const patchUpstream = (id: string, body: { enabled: boolean }) =>
   callApi(() => api.api.upstreams[':id'].$patch({ param: { id }, json: body }));
 
-const compareUpstreams = (a: UpstreamRecord, b: UpstreamRecord) =>
+const reorderUpstreams = (plan: ReorderPlan) => callApi(() => api.api.upstreams.reorder.$post({
+  json: { expectedIds: plan.expectedIds, ids: plan.ids },
+}));
+
+const compareUpstreams = (a: ListedUpstreamRecord, b: ListedUpstreamRecord) =>
   a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id);
 
-const planReorder = (snapshot: readonly UpstreamRecord[], from: number, to: number): ReorderPlan | null => {
+export const planReorder = (snapshot: readonly ListedUpstreamRecord[], from: number, to: number): ReorderPlan | null => {
   if (from === to || from < 0 || from >= snapshot.length || to < 0 || to >= snapshot.length) return null;
-  const stored = new Map(snapshot.map(record => [record.id, record.sort_order]));
-  const next = moveItem(snapshot, from, to).map((record, index) => ({ ...record, sort_order: index }));
+  const reorderGroup = snapshot[from]!.reorderGroup;
+  if (reorderGroup === null || snapshot[from]!.editLevel !== 'full' || snapshot[to]!.reorderGroup !== reorderGroup) return null;
+  const segmentStart = snapshot.slice(0, from).findLastIndex(record => record.reorderGroup !== reorderGroup) + 1;
+  const segmentEnd = snapshot.findIndex((record, index) => index > from && record.reorderGroup !== reorderGroup);
+  const end = segmentEnd < 0 ? snapshot.length : segmentEnd;
+  if (to < segmentStart || to >= end) return null;
+  const segment = snapshot.slice(segmentStart, end);
+  const slots = segment.map(record => record.sort_order).toSorted((left, right) => left - right);
+  const reordered = moveItem(segment, from - segmentStart, to - segmentStart);
+  const next = snapshot.map((record, index) => index >= segmentStart && index < end
+    ? { ...reordered[index - segmentStart]!, sort_order: slots[index - segmentStart]! }
+    : record);
   return {
     from,
     to,
     movedId: snapshot[from].id,
+    expectedIds: segment.map(record => record.id),
+    ids: reordered.map(record => record.id),
     next,
-    writes: next.filter(record => stored.get(record.id) !== record.sort_order),
   };
 };
 
 const buildModelCounts = (
-  upstreams: UpstreamRecord[],
+  upstreams: ListedUpstreamRecord[],
   models: ControlPlaneModel[] | null,
 ): Map<string, number | null> => {
   const byId = new Map(upstreams.map(record => [record.id, record]));
@@ -630,10 +768,14 @@ const buildModelCounts = (
       if (record) listed.set(record.id, listed.get(record.id)! + 1);
     }
   }
-  const countFor = (record: UpstreamRecord): number | null => {
+  const countFor = (record: ListedUpstreamRecord): number | null => {
     // Azure's catalog is the operator's own configured list, so it is known
     // without the listing.
     if (record.kind === 'azure') return record.config.models.length;
+    // The live catalog is filtered by Model.Use. Auditors still see the size
+    // of the catalog the upstream stored while it was on, without gaining the
+    // catalog rows themselves.
+    if (!record.modelUse) return record.modelsCache.modelCount;
     // The model registry builds providers from enabled upstreams only, so the
     // listing has nothing to say about a disabled upstream: the size of the
     // catalog it stored while it was on is the count instead, and null when it
@@ -648,7 +790,7 @@ const buildModelCounts = (
 // Who the upstream connects as. A subscription names an account; an endpoint
 // the operator configured names itself. A codex account appends its plan,
 // through the same label the signals line uses, so the two lines agree.
-const upstreamSummary = (record: UpstreamRecord, t: TFunction): string => {
+const upstreamSummary = (record: ListedUpstreamRecord, t: TFunction): string => {
   switch (record.kind) {
   case 'custom': return record.config.baseUrl;
   case 'azure': return record.config.endpoint;

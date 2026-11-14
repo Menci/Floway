@@ -30,13 +30,18 @@ export const tooltipCss = `
 
    The shadow's derivation is recorded at the token in ../tokens.ts. It is
    written as a filter because that is the property Fluent spends here, and a
-   box-shadow would leave both painted. */
+   box-shadow would leave both painted.
+
+   The template's ContentPresenter carries TextWrapping=Wrap, so a line break in a
+   tooltip's content breaks the line rather than collapsing back into the run.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToolTip_themeresources.xaml#L56 */
 .fui-Tooltip__content.fui-Tooltip__content {
   border-color: var(--winui-surface-stroke-flyout);
   background-color: var(--winui-acrylic-in-app-fill-default);
   color: var(--winui-text-fill-primary);
   padding: 6px 9px 8px 9px;
   max-width: 320px;
+  white-space: pre-line;
   filter: drop-shadow(0 4px 9px var(--winui-tooltip-shadow-color));
 }
 

@@ -15,7 +15,7 @@ import {
   type CodexResponsesLiteRequest,
 } from './responses-lite.ts';
 import type { CodexAccessTokenEntry, CodexAccountCredential } from './state.ts';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 import { toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import type { ProviderModel, UpstreamCallOptions } from '@floway-dev/provider';
 
@@ -227,8 +227,8 @@ const deriveSessionIdFromInput = (body: CodexOpenAIResponsesBody): string | null
   return sha256JsonUuid(seed, `${instructions}`);
 };
 
-const seedUpToFirstUserMessage = (input: readonly OpenAIResponsesInputItem[]): readonly OpenAIResponsesInputItem[] | null => {
-  const collected: OpenAIResponsesInputItem[] = [];
+const seedUpToFirstUserMessage = (input: readonly CanonicalOpenAIResponsesInputItem[]): readonly CanonicalOpenAIResponsesInputItem[] | null => {
+  const collected: CanonicalOpenAIResponsesInputItem[] = [];
   for (const item of input) {
     collected.push(item);
     if (isUserMessageItem(item)) return collected;
@@ -236,7 +236,7 @@ const seedUpToFirstUserMessage = (input: readonly OpenAIResponsesInputItem[]): r
   return null;
 };
 
-const isUserMessageItem = (item: OpenAIResponsesInputItem): boolean =>
+const isUserMessageItem = (item: CanonicalOpenAIResponsesInputItem): boolean =>
   item.type === 'message' && item.role === 'user';
 
 const buildCodexTurnMetadata = (
@@ -300,14 +300,15 @@ const buildCodexClientMetadata = (identity: CodexRequestIdentity, turnMetadataJs
 export interface PreparedCodexResponsesRequest {
   identity: CodexRequestIdentity;
   turnMetadataJson: CodexTurnMetadataJson;
-  lite?: CodexResponsesLiteRequest;
+  responsesLite: boolean;
+  movedFields: CodexResponsesLiteRequest['movedFields'];
   body: Record<string, unknown>;
 }
 
 export const prepareCodexResponsesContent = (
   opts: CodexResponsesContentInput,
   action: 'generate' | 'compact',
-): Omit<PreparedCodexResponsesRequest, 'body'> & { body: Record<string, unknown> } => {
+): PreparedCodexResponsesRequest => {
   const clientMetadata = { ...clientCodexClientMetadata(opts.body) };
   delete clientMetadata[CODEX_RESPONSES_LITE_CLIENT_METADATA_KEY];
   const clientTurnMetadata = callerTurnMetadata(opts, clientMetadata);
@@ -319,14 +320,14 @@ export const prepareCodexResponsesContent = (
       : { requestKind: 'turn' };
   const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
   const standard = { ...opts.body, client_metadata: clientMetadata };
-  const lite = codexModelUsesResponsesLite(opts.model)
-    ? encodeCodexResponsesLiteRequest(standard, identity.threadId)
-    : undefined;
-  const wire = lite?.body ?? standard;
+  const responsesLite = codexModelUsesResponsesLite(opts.model);
+  const encoded = responsesLite ? encodeCodexResponsesLiteRequest(standard, identity.threadId) : undefined;
+  const wire = encoded?.body ?? standard;
   return {
     identity,
     turnMetadataJson,
-    lite,
+    responsesLite,
+    movedFields: encoded?.movedFields ?? {},
     body: action === 'compact'
       ? buildCodexOpenAIResponsesCompactBody(wire, opts.model.id)
       : buildCodexOpenAIResponsesBody(wire, opts.model.id, identity, turnMetadataJson.body),
@@ -358,8 +359,8 @@ const buildCodexOpenAIResponsesBody = (
 };
 
 // Codex's private compact endpoint accepts these create-only fields in addition
-// to the public compact payload. Encode before projecting so relocated tool
-// and instruction carriers reach the wire.
+// to the public compact payload. Encode before projecting so tool and
+// instruction carriers reach the wire.
 // https://github.com/openai/codex/blob/3d2ee51ca2d5db578f328aa75e20aa22c0197c9a/codex-rs/core/src/client.rs#L651-L678
 const CODEX_COMPACT_EXTENSION_FIELDS = ['tools', 'parallel_tool_calls', 'reasoning', 'text'] as const;
 

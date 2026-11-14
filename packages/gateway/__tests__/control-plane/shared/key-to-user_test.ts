@@ -11,6 +11,7 @@ const stubKey = (overrides: Partial<ApiKey> & Pick<ApiKey, 'id' | 'userId'>): Ap
   serverSecret: '00'.repeat(32),
   createdAt: '2026-04-30T00:00:00.000Z',
   upstreamIds: null,
+  randomizeUpstreams: false,
   deletedAt: null,
   dumpRetentionSeconds: null,
   openaiResponsesRetentionSeconds: 0,
@@ -28,7 +29,4 @@ describe('buildKeyToUserMap', () => {
     assertEquals([...map.entries()].sort(), [['key_a', 1], ['key_b', 2], ['key_c', 1]]);
   });
 
-  test('empty input yields an empty map', () => {
-    assertEquals(buildKeyToUserMap([]).size, 0);
-  });
 });

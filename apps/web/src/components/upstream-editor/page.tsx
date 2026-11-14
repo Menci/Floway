@@ -50,6 +50,10 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const rewrite = useEntryRewrite();
   const toasts = useOutcomeToasts();
   const [record, setRecord] = useState(data.record);
+  const editLevel = data.editLevel;
+  // Audit-only access is a read of the record's configuration, not an edit at
+  // level `off`; the editor has to withdraw every mutation control either way.
+  const readOnly = editLevel === 'off' && data.audit;
   // Two provider patches can be in flight at once -- refreshing a credential
   // and probing a quota are separate buttons, neither disabling the other -- so
   // the second one's continuation holds the render the first was dispatched
@@ -75,6 +79,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const schema = useMemo(() => z.object({
     name: z.string().trim().min(1, 'dashboard.upstreamEditor.validation.name'),
     enabled: z.boolean(),
+    usageRefreshIntervalMinutes: z.number({ error: 'dashboard.upstreamEditor.usageRefresh.invalid' }).int('dashboard.upstreamEditor.usageRefresh.invalid').nonnegative('dashboard.upstreamEditor.usageRefresh.invalid'),
     hue: z.number(),
     proxyFallbackList: z.any(),
     modelPrefix: z.any(),
@@ -159,9 +164,13 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     setModelsError(null);
     const saved = savedFetchAfterSave.current;
     savedFetchAfterSave.current = null;
+    // A models-level editor can only change catalog settings that do not
+    // affect how discovery talks to the provider, so its refresh always reads
+    // the persisted connection. Draft previews exist for the admin create flow
+    // and for Full editors previewing unsaved connection changes.
     const catalog = saved !== null
       ? await fetchSavedModelCatalog(saved, { signal })
-      : isPersisted(record) && !discoveryInputsDirty
+      : isPersisted(record) && (editLevel === 'models' || !discoveryInputsDirty)
         ? await fetchSavedModelCatalog(record, { signal })
         : await previewDraftModelCatalog(record, getValues(), { signal });
     if (signal.aborted) return;
@@ -170,7 +179,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       setDiscovered(catalog.discovered);
     } else if (catalog.modelsCache?.fetchedAt === null) setDiscovered(null);
     if (catalog.modelsCache) updateRecord({ ...recordRef.current, modelsCache: catalog.modelsCache } as UpstreamRecord);
-  }, [discoveryInputsDirty, getValues, record, updateRecord]));
+  }, [discoveryInputsDirty, editLevel, getValues, record, updateRecord]));
 
   const requestModels = () => {
     if (saving) return;
@@ -224,10 +233,8 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       // the create branch's toast outlives the navigation that follows it.
       const handle = toasts.start(t('dashboard.upstreamEditor.toast.saving', { name: values.name }));
       const result = data.mode === 'create'
-        ? await callApi(() => api.api.upstreams.$post({
-            json: createBody(record, values, data.preserveCredentials === true ? { preserveStoredSecret: true } : undefined),
-          }))
-        : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
+        ? await callApi(() => api.api.upstreams.$post({ json: createBody(record, values) }))
+        : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values, editLevel === 'full' ? 'full' : 'models') }));
       if (result.error) { handle.settle(); setSaving(false); setSaveError(result.error.message); return; }
       const saved: UpstreamRecord = result.data;
       if (invalidatesPendingFetch) cancelModelsRefresh();
@@ -264,7 +271,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
             change, keeping the button live for the press that surfaces the
             field's own error. */}
         <div className="ml-auto flex items-center gap-2">
-          <Button appearance="primary" disabled={data.mode === 'edit' && !hasUnsavedChanges} disabledFocusable={saving} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} onClick={() => void submitForm()}>{t('dashboard.upstreamEditor.actions.save')}</Button>
+          {!readOnly && <Button appearance="primary" disabled={data.mode === 'edit' && !hasUnsavedChanges} disabledFocusable={saving} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} onClick={() => void submitForm()}>{t('dashboard.upstreamEditor.actions.save')}</Button>}
         </div>
       </header>
       {saveError && <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>}
@@ -275,13 +282,14 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
             discovered={discovered ?? []}
             onPatch={applyProviderPatch}
             onRefreshModels={requestModels}
+            editLevel={editLevel}
             proxies={data.proxies}
             record={record}
             runtime={data.runtime}
           />
         </Panel>
         <Panel className="min-h-0 min-w-0 overflow-hidden" padding="flush">
-          <UpstreamWorkspace record={record} discovered={discovered ?? []} modelsLoading={modelsLoading} modelsError={modelsError} modelsYamlDraft={modelsYamlDraft} onModelsYamlDraftChange={setModelsYamlDraft} onRefreshModels={requestModels} />
+          <UpstreamWorkspace editLevel={editLevel} record={record} discovered={discovered ?? []} modelsLoading={modelsLoading} modelsError={modelsError} modelsYamlDraft={modelsYamlDraft} onModelsYamlDraftChange={setModelsYamlDraft} onRefreshModels={requestModels} />
         </Panel>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { resolveAnthropicMessagesDownstreamThinkingDisplay, copilotAnthropicMessagesThinkingDisplay } from '../../../src/stages/anthropic-messages/promote-thinking-display.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { applyProviderStage, type AnthropicMessagesProbe, type ExecuteResult, eventResult } from '@floway-dev/test-utils';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -29,7 +29,7 @@ const makeCtx = (
   model: stubProviderModel({ endpoints: { anthropicMessages: {} } }),
 });
 
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> => Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>> => Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {})(), testTelemetryModelIdentity));
 
 test('resolveAnthropicMessagesDownstreamThinkingDisplay exposes 4.7+ omitted by default and older Claude as summarized', () => {
   assertEquals(resolveAnthropicMessagesDownstreamThinkingDisplay(makeCtx({ type: 'adaptive' })), 'omitted');
@@ -94,7 +94,7 @@ test('copilotAnthropicMessagesThinkingDisplay sends summarized upstream when thi
       },
     }));
 
-  assertEquals(ctx.payload.thinking?.display, 'summarized');
+  assertEquals((ctx.payload.thinking !== undefined && 'display' in ctx.payload.thinking ? ctx.payload.thinking.display : undefined), 'summarized');
 });
 
 test('copilotAnthropicMessagesThinkingDisplay overrides omitted but preserves full', async () => {
@@ -104,8 +104,8 @@ test('copilotAnthropicMessagesThinkingDisplay overrides omitted but preserves fu
   await applyProviderStage(copilotAnthropicMessagesThinkingDisplay, omittedCtx, okEvents);
   await applyProviderStage(copilotAnthropicMessagesThinkingDisplay, fullCtx, okEvents);
 
-  assertEquals(omittedCtx.payload.thinking?.display, 'summarized');
-  assertEquals(fullCtx.payload.thinking?.display, 'full');
+  assertEquals((omittedCtx.payload.thinking !== undefined && 'display' in omittedCtx.payload.thinking ? omittedCtx.payload.thinking.display : undefined), 'summarized');
+  assertEquals((fullCtx.payload.thinking !== undefined && 'display' in fullCtx.payload.thinking ? fullCtx.payload.thinking.display : undefined), 'full');
 });
 
 test('copilotAnthropicMessagesThinkingDisplay leaves disabled or absent thinking untouched', async () => {
@@ -134,23 +134,23 @@ test('copilotAnthropicMessagesThinkingDisplay simulates omitted display on proto
   const result = await applyProviderStage(copilotAnthropicMessagesThinkingDisplay, ctx, () =>
     Promise.resolve(
       eventResult(
-        (async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
-          yield eventFrame<AnthropicMessagesStreamEvent>({
+        (async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
+          yield eventFrame<AnthropicMessagesStreamEventEx>({
             type: 'content_block_start',
             index: 0,
-            content_block: { type: 'thinking', thinking: 'summary prefix' },
+            content_block: { signature: '', type: 'thinking', thinking: 'summary prefix' },
           });
-          yield eventFrame<AnthropicMessagesStreamEvent>({
+          yield eventFrame<AnthropicMessagesStreamEventEx>({
             type: 'content_block_delta',
             index: 0,
             delta: { type: 'thinking_delta', thinking: 'summary body' },
           });
-          yield eventFrame<AnthropicMessagesStreamEvent>({
+          yield eventFrame<AnthropicMessagesStreamEventEx>({
             type: 'content_block_delta',
             index: 0,
             delta: { type: 'signature_delta', signature: 'sig_unchanged' },
           });
-          yield eventFrame<AnthropicMessagesStreamEvent>({
+          yield eventFrame<AnthropicMessagesStreamEventEx>({
             type: 'content_block_stop',
             index: 0,
           });
@@ -164,17 +164,17 @@ test('copilotAnthropicMessagesThinkingDisplay simulates omitted display on proto
   if (result.type !== 'events') throw new Error('expected events');
 
   assertEquals(await collect(result.events), [
-    eventFrame<AnthropicMessagesStreamEvent>({
+    eventFrame<AnthropicMessagesStreamEventEx>({
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'thinking', thinking: '' },
+      content_block: { signature: '', type: 'thinking', thinking: '' },
     }),
-    eventFrame<AnthropicMessagesStreamEvent>({
+    eventFrame<AnthropicMessagesStreamEventEx>({
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'signature_delta', signature: 'sig_unchanged' },
     }),
-    eventFrame<AnthropicMessagesStreamEvent>({
+    eventFrame<AnthropicMessagesStreamEventEx>({
       type: 'content_block_stop',
       index: 0,
     }),

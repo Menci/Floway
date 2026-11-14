@@ -14,9 +14,9 @@ import {
   collectOpenAIResponsesProtocolEventsToResult,
   isOpenAIResponsesCompactionItem,
   type CanonicalOpenAIResponsesPayload,
-  type OpenAIResponsesOutputItem,
-  type OpenAIResponsesResult,
-  type OpenAIResponsesStreamEvent,
+  type OpenAIResponsesOutputItemEx,
+  type OpenAIResponsesResultEx,
+  type OpenAIResponsesStreamEventEx,
 } from '@floway-dev/protocols/openai-responses';
 
 type Request = Pick<ChatFacts, 'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers' | 'ingress.chat.sourceProtocol' | 'serve.usage.prior'>;
@@ -47,11 +47,11 @@ export const decryptNativeCompaction = (spec: {
 
     const billed: BillableEntity[] = [];
     let failed = false;
-    const collect = async (back: Answer): Promise<OpenAIResponsesResult> => {
+    const collect = async (back: Answer): Promise<OpenAIResponsesResultEx> => {
       const response = back['response.chat.openaiResponses'] as Exclude<ChatAnswer, import('../../pipeline/facts.ts').Failure>;
       try {
-        if (response.kind === 'value') return response.body as OpenAIResponsesResult;
-        return await collectOpenAIResponsesProtocolEventsToResult(response.frames as AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>);
+        if (response.kind === 'value') return response.body as OpenAIResponsesResultEx;
+        return await collectOpenAIResponsesProtocolEventsToResult(response.frames as AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>);
       } finally {
         const pending = back[spec.streamedUsage] as Deferred<StreamOutcome> | null;
         if (pending === null) billed.push(...back['response.usage.billable']);
@@ -73,9 +73,9 @@ export const decryptNativeCompaction = (spec: {
       const native = await collect(initial);
       let usage = native.usage;
       let sawCompaction = false;
-      const output: OpenAIResponsesOutputItem[] = [];
+      const output: OpenAIResponsesOutputItemEx[] = [];
       for (const item of native.output) {
-        if (!isOpenAIResponsesCompactionItem(item)) { output.push(item); continue; }
+        if (!isOpenAIResponsesCompactionItem(item) || typeof item.encrypted_content !== 'string') { output.push(item); continue; }
         sawCompaction = true;
         use.gateway.abortSignal?.throwIfAborted();
         const replayPayload: CanonicalOpenAIResponsesPayload = {

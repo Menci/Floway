@@ -1,17 +1,15 @@
 import type { RecordedClientStream } from './run-stream';
 import { errorMessage } from '../../lib/error-message';
-import { collectAnthropicMessagesProtocolEventsToResult } from '@floway-dev/protocols/anthropic-messages';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import {
+  collectAnthropicMessagesProtocolEventsToResult,
   collectGeminiGenerateContentProtocolEventsToResult,
-  type GeminiGenerateContentStreamEvent,
-} from '@floway-dev/protocols/gemini-generate-content';
-import { collectOpenAIChatCompletionsProtocolEventsToResult } from '@floway-dev/protocols/openai-chat-completions';
-import {
+  collectOpenAIChatCompletionsProtocolEventsToResult,
+  collectOpenAIResponsesProtocolEventsToResult,
   reassembleOpenAICompletionsEvents,
+  type GeminiGenerateContentStreamEvent,
   type OpenAICompletionsStreamEvent,
-} from '@floway-dev/protocols/openai-completions';
-import { collectOpenAIResponsesProtocolEventsToResult } from '@floway-dev/protocols/openai-responses';
+  type ProtocolFrame,
+} from '@floway-dev/protocols/browser';
 
 export type CollectKind = 'openai-completions' | 'openai-chat-completions' | 'anthropic-messages' | 'openai-responses' | 'gemini-generate-content';
 
@@ -26,7 +24,11 @@ export const detectCollectKind = (path: string): CollectKind | null => {
   if (path.includes('/responses')) return 'openai-responses';
   if (path.includes('/chat/completions')) return 'openai-chat-completions';
   if (path.includes('/completions')) return 'openai-completions';
-  if (path.includes('/v1beta/') || path.includes(':generateContent')) return 'gemini-generate-content';
+  // A Gemini turn carries its action in the model path segment
+  // (`…:generateContent`), optionally followed by `?alt=sse`. The listing
+  // paths end at `/models`, so the action name discriminates regardless of
+  // whether the turn arrived under `v1` or `v1beta`.
+  if (/:(?:generateContent|streamGenerateContent|countTokens)(?:\?|$)/.test(path)) return 'gemini-generate-content';
   return null;
 };
 

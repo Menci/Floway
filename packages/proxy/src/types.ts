@@ -5,6 +5,8 @@
 // SNI, ALPN, and HTTP-shaped concerns live one layer up in the
 // orchestrator (runProxiedRequest).
 
+import type { DuplexStream, HttpContentDecoders } from '@floway-dev/http';
+
 /** Pure transport target: where the proxy should land us. */
 export interface DialTarget {
   /**
@@ -40,8 +42,10 @@ export interface DialTarget {
  *   - **Domain fronting**: `host` and `sni` point at the front
  *     (e.g. a CDN edge), the HTTP request's `Host:` carries the real
  *     upstream name.
- *   - **Dial-by-IP**: `host` is a literal IP, `sni` and `verifyHost`
- *     are the cert's hostname.
+ *   - **Direct IP identity**: `host` is a literal IP; omitted `sni` and
+ *     `verifyHost` make TLS omit `server_name` and verify its IP SAN.
+ *   - **Dial-by-IP for a DNS identity**: `host` is a literal IP while `sni`
+ *     and `verifyHost` are the certificate's hostname.
  *   - **SNI hiding**: `sni` is benign, `verifyHost` is internal.
  */
 export interface ProxyRequestTarget extends DialTarget {
@@ -49,14 +53,16 @@ export interface ProxyRequestTarget extends DialTarget {
   tls: boolean;
 
   /**
-   * TLS ClientHello `server_name` extension value. Defaults to `host`.
-   * If `host` is an IP, set this explicitly — IPs in SNI are invalid.
+   * TLS peer identity. DNS names are sent in the ClientHello `server_name`
+   * extension; IP literals automatically omit that extension. Defaults to
+   * `host`.
    */
   sni?: string;
 
   /**
-   * Hostname the upstream's certificate chain must prove. Defaults to
-   * `sni` (which itself defaults to `host`).
+   * Reference identity the upstream certificate chain must prove. IP
+   * literals match only `iPAddress` SANs. Defaults to `sni` (which itself
+   * defaults to `host`).
    */
   verifyHost?: string;
 
@@ -64,8 +70,31 @@ export interface ProxyRequestTarget extends DialTarget {
   alpn?: string[];
 }
 
+// Structurally identical to @floway-dev/platform's TlsUpgradeOptions; kept
+// duplicated for the same reason as SocketDialOptions below.
+export interface TlsUpgradeOptions {
+  /** TLS peer identity; also the certificate identity unless `verifyHost` is set. */
+  host: string;
+  /** Reference identity the certificate chain must prove. Defaults to `host`. */
+  verifyHost?: string;
+  /** ALPN protocols to offer, in preference order. */
+  alpn?: string[];
+  /** Accept any peer certificate. Self-signed proxy leaves only. */
+  insecure?: boolean;
+  /** Bytes to write to the transport before the handshake starts. */
+  prefix?: Uint8Array;
+  /** Cancellation, honoured during and after the handshake. */
+  signal?: AbortSignal;
+}
+
 export interface SocketDial {
   connect(host: string, port: number, opts?: SocketDialOptions): Promise<DialedSocket>;
+  /**
+   * Wrap an established duplex in TLS with the runtime's own implementation
+   * where it has one. Kept separate from `connect` because a dial can be
+   * plain TCP and still need TLS afterwards (HTTP CONNECT, SOCKS5).
+   */
+  startTls(transport: DuplexStream, opts: TlsUpgradeOptions): Promise<DuplexStream>;
 }
 
 export interface DialedSocket {
@@ -96,6 +125,8 @@ export interface DialResult {
 }
 
 export interface DialOptions {
+  /** Runtime response codecs used by the HTTP request runners after dialing. */
+  contentDecoders?: HttpContentDecoders;
   /** Caller-supplied cancellation, threaded through every dial leg. */
   signal?: AbortSignal;
   /** Per-call dial-stage deadline override (ms). Falls back to
@@ -103,7 +134,8 @@ export interface DialOptions {
   dialTimeoutMs?: number;
   /**
    * Platform-injected byte-stream dial primitive: a `connect` that opens a
-   * duplex to a host:port and can also wrap it in the runtime's native TLS.
+   * duplex to a host:port and a `startTls` that upgrades an established
+   * duplex with the runtime's own TLS where it has one.
    * Required — every dialer needs to open at least one connection.
    */
   socketDial: SocketDial;

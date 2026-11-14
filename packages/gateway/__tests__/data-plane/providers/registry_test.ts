@@ -16,6 +16,7 @@ test('listModelProviders creates enabled provider instances with upstream row id
     kind: 'azure',
     name: 'Azure Resource',
     enabled: true,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 2,
     createdAt: '2026-05-21T00:00:00.000Z',
     updatedAt: '2026-05-21T00:00:00.000Z',
@@ -38,7 +39,7 @@ test('listModelProviders creates enabled provider instances with upstream row id
     state: null,
   });
   await saveUpstreamForTest(repo.upstreams, buildCopilotUpstreamRecord(githubAccount, { id: 'up_copilot', name: 'Copilot Row', sortOrder: 3 }));
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_disabled', enabled: false, sortOrder: 0 }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_disabled', enabled: false, usageRefreshIntervalMinutes: 0, sortOrder: 0 }));
 
   const providers = await listModelProviders(null);
   assertEquals(providers.map(provider => provider.upstreamId), ['up_custom', 'up_azure', 'up_copilot']);
@@ -67,8 +68,8 @@ test('listModelProviders honors a per-key whitelist with custom order', async ()
 });
 
 test('listModelProviders silently drops disabled upstreams from a whitelist', async () => {
-  // A per-user cap legitimately references an upstream the operator just
-  // disabled; the cap survives that transition without surfacing an error.
+  // A key whitelist can reference an upstream the operator just disabled;
+  // the stored preference survives that transition without surfacing an error.
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_a', name: 'A', sortOrder: 10 }));

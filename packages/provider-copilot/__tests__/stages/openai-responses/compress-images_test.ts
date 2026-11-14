@@ -3,12 +3,12 @@ import { expect, test } from 'vitest';
 import { copilotOpenAIResponsesCompressImages } from '../../../src/stages/openai-responses/compress-images.ts';
 import { type ImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesInputImage, OpenAIResponsesInputItem, OpenAIResponsesStreamEvent, OpenAIResponsesToolOutputContent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesAssistantInputContent, OpenAIResponsesInputImage, CanonicalOpenAIResponsesInputItem, OpenAIResponsesStreamEventEx, OpenAIResponsesToolOutputContent } from '@floway-dev/protocols/openai-responses';
 import { applyProviderStage, type OpenAIResponsesProbe, type ExecuteResult, eventResult } from '@floway-dev/test-utils';
 import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> =>
-  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> =>
+  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {})(), testTelemetryModelIdentity));
 
 const fixedProcessor: ImageProcessor = {
   compressToWebp: () => Promise.resolve(new Uint8Array([1, 2, 3])),
@@ -22,19 +22,19 @@ const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesPr
 });
 
 const contentContainers = {
-  message: (content: OpenAIResponsesInputContent[]): OpenAIResponsesInputItem => ({ type: 'message', role: 'user', content }),
-  function_output: (output: OpenAIResponsesToolOutputContent[]): OpenAIResponsesInputItem => ({ type: 'function_call_output', call_id: 'call_function', output }),
-  custom_output: (output: OpenAIResponsesToolOutputContent[]): OpenAIResponsesInputItem => ({ type: 'custom_tool_call_output', call_id: 'call_custom', output }),
+  message: (content: OpenAIResponsesInputContent[]): CanonicalOpenAIResponsesInputItem => ({ type: 'message', role: 'user', content }),
+  function_output: (output: OpenAIResponsesToolOutputContent[]): CanonicalOpenAIResponsesInputItem => ({ type: 'function_call_output', call_id: 'call_function', output }),
+  custom_output: (output: OpenAIResponsesToolOutputContent[]): CanonicalOpenAIResponsesInputItem => ({ type: 'custom_tool_call_output', call_id: 'call_custom', output }),
 };
 
-const imageUrlOf = (item: OpenAIResponsesInputItem): string | null | undefined => {
+const imageUrlOf = (item: CanonicalOpenAIResponsesInputItem): string | null | undefined => {
   const content = item.type === 'message'
     ? item.content
     : item.type === 'function_call_output' || item.type === 'custom_tool_call_output' ? item.output : undefined;
   return Array.isArray(content) ? content.find(part => part.type === 'input_image')?.image_url : undefined;
 };
 
-const contentOf = (item: OpenAIResponsesInputItem): string | OpenAIResponsesInputContent[] | undefined =>
+const contentOf = (item: CanonicalOpenAIResponsesInputItem): string | OpenAIResponsesAssistantInputContent[] | undefined =>
   item.type === 'message'
     ? item.content
     : item.type === 'function_call_output' || item.type === 'custom_tool_call_output' ? item.output : undefined;
@@ -44,7 +44,7 @@ test.each(Object.entries(contentContainers))('compresses inline images in %s', a
   const textPart = { type: 'input_text' as const, text: 'look' };
   const imagePart: OpenAIResponsesInputImage = { type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'auto' };
   const sourceItem = wrap([textPart, imagePart]);
-  const untouchedItem: OpenAIResponsesInputItem = { type: 'function_call', call_id: 'call_unchanged', name: 'noop', arguments: '{}', status: 'completed' };
+  const untouchedItem: CanonicalOpenAIResponsesInputItem = { type: 'function_call', call_id: 'call_unchanged', name: 'noop', arguments: '{}', status: 'completed' };
   const payload: CanonicalOpenAIResponsesPayload = {
     model: 'gpt-test',
     input: [sourceItem, untouchedItem],
@@ -161,7 +161,7 @@ test('reuses its compressed image when the same attempt payload is retried', asy
   expect(() => { image.image_url = 'data:image/png;base64,BBBB'; }).toThrow();
   ctx.payload = {
     ...ctx.payload, input: ctx.payload.input.map((candidate, index) => index === 0
-      ? { ...item, content: content.map((part, partIndex) => partIndex === 0 ? { ...part, image_url: 'data:image/png;base64,BBBB' } : part) }
+      ? { ...item, content: content.map((part, partIndex) => partIndex === 0 ? { ...part, image_url: 'data:image/png;base64,BBBB' } : part) } as CanonicalOpenAIResponsesInputItem
       : candidate),
   };
   await applyProviderStage(copilotOpenAIResponsesCompressImages, ctx, okEvents);

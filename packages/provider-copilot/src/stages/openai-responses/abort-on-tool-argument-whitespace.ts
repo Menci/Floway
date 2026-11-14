@@ -1,8 +1,7 @@
-
 import { checkWhitespaceOverflow } from '../../tool-argument-whitespace.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { ProviderChatResponse, ProviderChatServices } from '@floway-dev/provider';
 
 /**
@@ -25,15 +24,15 @@ import type { ProviderChatResponse, ProviderChatServices } from '@floway-dev/pro
  */
 const ABORT_MESSAGE = 'Tool call arguments contained excessive whitespace, indicating a degenerate response.';
 
-const isArgumentsDelta = (event: OpenAIResponsesStreamEvent): event is OpenAIResponsesStreamEvent & { type: 'response.function_call_arguments.delta'; output_index: number; delta: string } =>
+const isArgumentsDelta = (event: OpenAIResponsesStreamEventEx): event is OpenAIResponsesStreamEventEx & { type: 'response.function_call_arguments.delta'; output_index: number; delta: string } =>
   event.type === 'response.function_call_arguments.delta';
 
-const errorEvent = (): OpenAIResponsesStreamEvent =>
+const errorEvent = (): OpenAIResponsesStreamEventEx =>
   ({
     type: 'error',
     message: ABORT_MESSAGE,
     code: 'api_error',
-  }) as OpenAIResponsesStreamEvent;
+  }) as OpenAIResponsesStreamEventEx;
 
 export const copilotOpenAIResponsesAbortToolWhitespace = defineStage<object, object, ProviderChatResponse<'openaiResponses'>, ProviderChatResponse<'openaiResponses'>, ProviderChatServices>({
   name: 'copilotOpenAIResponsesAbortToolWhitespace',
@@ -44,7 +43,7 @@ export const copilotOpenAIResponsesAbortToolWhitespace = defineStage<object, obj
     if (output === null || !('kind' in output) || output.kind !== 'stream') return move({ ...back });
     return move({
       ...back, 'response.provider.output': {
-        ...output, frames: use.recordProtocolFrames((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+        ...output, frames: use.recordProtocolFrames((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
           const whitespaceByIndex = new Map<number, number>();
 
           for await (const frame of output.frames) {

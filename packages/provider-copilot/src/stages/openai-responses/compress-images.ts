@@ -2,7 +2,7 @@ import type { ResponsesFacts } from '../../chat-facts.ts';
 import { memoizedDataUrlCompressor } from '../../image-compression.ts';
 import { targetSizeForOpenAIResponsesChat } from '../../image-size.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesInputImage, OpenAIResponsesToolOutputContent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem, CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesInputImage, OpenAIResponsesOutputRefusal, OpenAIResponsesToolOutputContent } from '@floway-dev/protocols/openai-responses';
 import { type ProviderModelFacts } from '@floway-dev/provider';
 import { isBase64ImageDataUrl } from '@floway-dev/provider';
 
@@ -35,7 +35,7 @@ const compressInlineImages = async (payload: CanonicalOpenAIResponsesPayload, mo
       compressedUrls.set(target.part, await compress(target.imageUrl));
     }),
   );
-  const hasCompressedImage = (part: OpenAIResponsesInputContent): part is CompressibleImagePart =>
+  const hasCompressedImage = (part: OpenAIResponsesInputContent | OpenAIResponsesOutputRefusal): part is CompressibleImagePart =>
     part.type === 'input_image' && compressedUrls.has(part as CompressibleImagePart);
   const rewriteImage = (part: CompressibleImagePart): CompressibleImagePart => {
     const imageUrl = compressedUrls.get(part);
@@ -44,7 +44,7 @@ const compressInlineImages = async (payload: CanonicalOpenAIResponsesPayload, mo
     compressedImageUrls.set(rewritten, imageUrl);
     return rewritten;
   };
-  const rewriteParts = <TPart extends OpenAIResponsesInputContent | OpenAIResponsesToolOutputContent>(parts: TPart[]): TPart[] =>
+  const rewriteParts = <TPart extends OpenAIResponsesInputContent | OpenAIResponsesOutputRefusal | OpenAIResponsesToolOutputContent>(parts: TPart[]): TPart[] =>
     parts.map(part => hasCompressedImage(part) ? rewriteImage(part) as TPart : part);
 
   return {
@@ -52,7 +52,7 @@ const compressInlineImages = async (payload: CanonicalOpenAIResponsesPayload, mo
     input: payload.input.map(item => {
       if (item.type === 'message' && Array.isArray(item.content)) {
         return item.content.some(hasCompressedImage)
-          ? { ...item, content: rewriteParts(item.content) }
+          ? { ...item, content: rewriteParts(item.content) } as CanonicalOpenAIResponsesInputItem
           : item;
       }
       if ((item.type === 'function_call_output' || item.type === 'custom_tool_call_output') && Array.isArray(item.output)) {

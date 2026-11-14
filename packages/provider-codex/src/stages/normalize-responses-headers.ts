@@ -1,4 +1,3 @@
-import { CODEX_RESPONSES_LITE_HEADER } from '../constants.ts';
 import type { CodexResponsesHttpFacts } from './prepare-responses.ts';
 import type { HttpResponseFacts } from '@floway-dev/http/pipeline';
 import { defineStage, move } from '@floway-dev/pipeline';
@@ -17,12 +16,8 @@ export const normalizeCodexResponsesHeaders = defineStage<CodexResponsesHttpFact
     const exchange = back['response.http.exchange'];
     if (back['response.provider.responsesAction'] === 'compact' || exchange.type !== 'response' || exchange.status < 200 || exchange.status >= 300) return move({ ...back });
     const contentType = exchange.headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1];
-    const headers = exchange.headers.filter(([name]) => name.toLowerCase() !== CODEX_RESPONSES_LITE_HEADER);
-    if (!isEventStreamMediaType(contentType)) {
-      const normalized = headers.filter(([name]) => name.toLowerCase() !== 'content-type');
-      normalized.push(['content-type', 'text/event-stream']);
-      return move({ ...back, 'response.http.exchange': { ...exchange, headers: normalized } });
-    }
+    if (isEventStreamMediaType(contentType)) return move({ ...back });
+    const headers = [...exchange.headers.filter(([name]) => name.toLowerCase() !== 'content-type'), ['content-type', 'text/event-stream'] as const];
     return move({ ...back, 'response.http.exchange': { ...exchange, headers } });
   },
 });

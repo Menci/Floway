@@ -9,6 +9,7 @@ const baseRecord: UpstreamRecord = {
   kind: 'azure',
   name: 'Azure Resource',
   enabled: true,
+  usageRefreshIntervalMinutes: 0,
   sortOrder: 0,
   createdAt: '2026-05-21T00:00:00.000Z',
   updatedAt: '2026-05-21T00:00:00.000Z',
@@ -343,5 +344,25 @@ test('assertAzureUpstreamRecord rejects model.pricing with non-number input_cach
       }),
     Error,
     'pricing.entries[0].rates.input_cache_read_tokens must be a decimal string',
+  );
+});
+
+test('assertAzureUpstreamRecord rejects an operator-authored decision target', () => {
+  assertThrows(
+    () => assertAzureUpstreamRecord({
+      ...baseRecord,
+      config: {
+        endpoint: 'https://example.openai.azure.com',
+        apiKey: 'key',
+        models: [{
+          upstreamModelId: 'decision-1',
+          kind: 'decision',
+          endpoints: { decision: {} },
+          decisionTarget: { protocol: 'typesafe-systemone' },
+        }],
+      },
+    }),
+    Error,
+    'decision target is not configurable on this upstream',
   );
 });

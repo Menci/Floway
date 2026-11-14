@@ -1,5 +1,5 @@
 import { wrapAnthropicMessagesAffinityEgress } from './affinity/egress.ts';
-import { renderAnthropicMessagesError } from './errors.ts';
+import { internalAnthropicMessagesError, renderAnthropicMessagesError } from './errors.ts';
 import type { Fields } from './facts.ts';
 import { isFailure, renderFailure, mintedAs } from '../../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
@@ -8,9 +8,8 @@ import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { bindClientRelease, collectClientFrames, framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
 import { recordStream } from '@floway-dev/dump';
 import { defineStage, move } from '@floway-dev/pipeline';
-import { collectAnthropicMessagesProtocolEventsToResult, anthropicMessagesEventToSsePayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, sseFrame, type EventFrame, type ProtocolFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
-import { toInternalDebugError } from '@floway-dev/provider';
 
 /**
  * The outermost edge. An Anthropic Messages answer is always a stream by the time it reaches here —
@@ -72,7 +71,7 @@ export const emitAnthropicMessages = defineStage<
     // affinity the resolver read on the way down, and it has to sit here because it rewrites
     // the frames — below the fold, and there would be nothing left to rewrite.
     const egress = wrapAnthropicMessagesAffinityEgress(
-      answer.frames as AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
+      answer.frames as AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
       affinityEgressOptions(use.gateway),
     );
     if (!back['ingress.chat.anthropicMessages.wantsStream']) {
@@ -90,7 +89,7 @@ export const emitAnthropicMessages = defineStage<
     const completed = framedClientStream(
       clientFrames(egress),
       frame => sseFrame(JSON.stringify(frame.event), frame.event.type),
-      error => [eventFrame({ type: 'error' as const, error: toInternalDebugError(error, 'anthropicMessages') })],
+      error => [eventFrame(internalAnthropicMessagesError(error))],
       use.gateway.dump,
     );
     bindClientRelease(back, completed.release);
@@ -105,14 +104,11 @@ export const emitAnthropicMessages = defineStage<
   },
 });
 
-type ClientEvent = ReturnType<typeof anthropicMessagesEventToSsePayload>;
-
-// SSE citations have their wire spelling before recording; the protocol's synthetic done
-// frame has no Anthropic client form. Nonstream reassembly retains its canonical events.
-const clientFrames = (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>): AsyncIterable<EventFrame<ClientEvent>> => ({
+// The protocol's synthetic done frame has no Anthropic client form.
+const clientFrames = (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>): AsyncIterable<EventFrame<AnthropicMessagesStreamEventEx>> => ({
   [Symbol.asyncIterator]: () => (async function* () {
     for await (const frame of frames) {
-      if (frame.type === 'event') yield eventFrame(anthropicMessagesEventToSsePayload(frame.event));
+      if (frame.type === 'event') yield frame;
     }
   })(),
 });

@@ -1,19 +1,24 @@
-// All OpenAI-compatible model-list paths terminate here. The request path is
-// deliberately absent from catalog selection: Codex and Claude Code identify
-// their private discovery formats through User-Agent, while every other caller
-// receives Floway's public OpenAI/Anthropic superset.
+// All model-list paths terminate here, `/v1beta/models` included: the request
+// path is deliberately absent from catalog selection. Codex, Claude Code, Pi,
+// OMP, TypeSafe, and Gemini identify their private discovery formats through
+// the client's own telemetry headers, while every other caller receives
+// Floway's public OpenAI/Anthropic superset.
 
-import type { Context } from 'hono';
-
+import { isGeminiClient } from './gemini-client.ts';
+import { serveGeminiModels } from './gemini.ts';
 import { loadModels } from './load.ts';
+import { isOmpUserAgent, toOmpCatalog } from './omp-catalog.ts';
+import { isPiUserAgent, toPiCatalog } from './pi-catalog.ts';
 import { createModelsRefreshScheduler } from '../../execution/models-refresh.ts';
-import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import { type AuthedContext, effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { isCodexUserAgent } from '../codex/catalog.ts';
 import { loadCodexCatalog } from '../codex/models.ts';
+import { agentSetupProviderSchema, InvalidAgentSetupEndpointError, normalizeAgentSetupEndpoint } from '@floway-dev/agent-setup';
 import type { PublicModelsResponse } from '@floway-dev/protocols/common';
+import { toInternalDebugError } from '@floway-dev/provider';
 
 // Anthropic's official /v1/models shape — `{data, first_id, has_more,
 // last_id}` with `ModelInfo` rows — served to Claude Code CLI's `/model`
@@ -70,29 +75,78 @@ const toClaudeCodeCatalog = (response: PublicModelsResponse) => {
 const isClaudeCodeUserAgent = (userAgent: string | undefined): boolean =>
   userAgent?.startsWith('claude-code/') ?? false;
 
-export const serveModels = async (c: Context): Promise<Response> => {
+// Both official TypeSafe SDKs (`typesafe-sdk`, `@typesafe-ai/sdk`) parse
+// `/v1/models` as `{ models: [{ name, description, release_date }] }` with all
+// three required, and they identify themselves as `typesafe-sdk/<version>`.
+// Every other caller gets the OpenAI/Anthropic superset.
+//
+// `release_date` must be `YYYY-MM-DD`. A model the catalog gives no date keeps
+// the epoch, the same least-lossy sentinel the Claude Code catalog uses: it
+// cannot be mistaken for a real release and is stable across fetches.
+// https://github.com/typesafe-ai/typesafe-sdk/blob/main/src/_schemas/models.py
+// https://github.com/typesafe-ai/typesafe-typescript/blob/main/src/types.ts
+const toTypeSafeCatalog = (response: PublicModelsResponse) => ({
+  models: response.data.map(model => ({
+    name: model.id,
+    description: model.display_name,
+    release_date: model.created_at?.slice(0, 10) ?? '1970-01-01',
+  })),
+});
+
+const isTypeSafeUserAgent = (userAgent: string | undefined): boolean =>
+  userAgent?.startsWith('typesafe-sdk/') ?? false;
+
+export const serveModels = async (c: AuthedContext): Promise<Response> => {
+  // Gemini SDKs parse `{ models: [{ name: 'models/…' }] }` and nothing else,
+  // so they get the Gemini projection of the same catalog every other caller
+  // reads through this route. The handler owns its own error envelopes, so it
+  // runs ahead of the OpenAI-shaped error paths below.
+  if (isGeminiClient(c.req.raw.headers)) return await serveGeminiModels(c);
   try {
     const userAgent = c.req.header('user-agent');
+    const suppliedEndpoint = (isPiUserAgent(userAgent) || isOmpUserAgent(userAgent)) ? c.req.query('endpoint') : undefined;
+    // We use the configured public endpoint so reverse-proxy Host rewrites
+    // cannot redirect native inference to an internal origin.
+    const configuredEndpoint = suppliedEndpoint === undefined ? undefined : normalizeAgentSetupEndpoint(suppliedEndpoint);
+    const suppliedProvider = (isPiUserAgent(userAgent) || isOmpUserAgent(userAgent)) ? c.req.query('provider') : undefined;
+    const providerResult = agentSetupProviderSchema.safeParse(suppliedProvider ?? 'floway');
+    if (!providerResult.success) return Response.json({ error: { type: 'invalid_request_error', message: 'Invalid provider identifier' } }, { status: 400 });
+    const provider = providerResult.data;
     const runtimeLocation = getRuntimeLocation(c.req.raw);
     const upstreamIds = effectiveUpstreamIdsFromContext(c);
     const scheduleRefresh = createModelsRefreshScheduler(runtimeLocation, backgroundSchedulerFromContext(c));
 
     if (isCodexUserAgent(userAgent)) {
-      return Response.json(await loadCodexCatalog(userAgent, upstreamIds, scheduleRefresh));
+      return Response.json(await loadCodexCatalog(userFromContext(c), userAgent, upstreamIds, scheduleRefresh));
     }
 
-    const publicCatalog = await loadModels(upstreamIds, scheduleRefresh, getRepo().modelAliases);
-    // The Claude Code CLI's model discovery request identifies itself with
-    // a `claude-code/<version>` User-Agent (built from the CLI's `n_()`
-    // helper — verified in the v2.1.206 binary). The CLI's other request
-    // paths use the Anthropic SDK's `claude-cli/*` UA, so match on the
-    // discovery UA specifically. Every other caller (OpenAI SDKs,
-    // Anthropic SDKs, dashboards) receives the standard PublicModel
-    // superset.
+    const publicCatalog = await loadModels(userFromContext(c), upstreamIds, scheduleRefresh, getRepo().modelAliases);
+    if (isPiUserAgent(userAgent)) {
+      const endpoint = new URL(c.req.url);
+      endpoint.search = '';
+      endpoint.pathname = endpoint.pathname.replace(/\/(?:v1\/)?models$/, '/v1');
+      const baseUrl = configuredEndpoint !== undefined ? `${configuredEndpoint}/v1` : endpoint.toString().replace(/\/$/, '');
+      return Response.json(toPiCatalog(publicCatalog.data, baseUrl, provider));
+    }
+
+    if (isOmpUserAgent(userAgent)) {
+      const url = new URL(c.req.url);
+      const root = url.pathname.replace(/\/(?:v1\/)?models$/, '');
+      return Response.json(toOmpCatalog(publicCatalog, configuredEndpoint ?? `${url.origin}${root}`, provider));
+    }
+
+    if (isTypeSafeUserAgent(userAgent)) return Response.json(toTypeSafeCatalog(publicCatalog));
+
+    // Model discovery uses claude-code/<version>; inference uses claude-cli/*.
+    // Match the discovery UA when selecting Claude Code's catalog format.
     return Response.json(isClaudeCodeUserAgent(userAgent)
       ? toClaudeCodeCatalog(publicCatalog)
       : publicCatalog);
   } catch (e) {
+    if (e instanceof InvalidAgentSetupEndpointError) {
+      return Response.json({ error: { message: e.message, type: 'invalid_request_error' } }, { status: 400 });
+    }
+    if (isPiUserAgent(c.req.header('user-agent')) || isOmpUserAgent(c.req.header('user-agent'))) return Response.json({ error: toInternalDebugError(e) }, { status: 502 });
     const message = e instanceof Error ? e.message : String(e);
     return Response.json({ error: { message, type: 'api_error' } }, { status: 502 });
   }

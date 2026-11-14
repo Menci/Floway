@@ -20,15 +20,15 @@
 // the rest of the workspace happens to call — a root export with no in-repo
 // consumer is deliberate public API, not dead surface.
 
-export type { DuplexStream, Fetcher, FetchInit, HttpHeaderLines, HttpRequest, RawHttpResponse, ReplayableBody } from './types.ts';
+export type { DuplexStream, Fetcher, FetchInit, HttpContentDecoders, HttpHeaderLines, HttpRequest, RawHttpResponse, ReplayableBody } from './types.ts';
 export { isReplayableBody } from './request-body.ts';
 
 export { fetchOnStream } from './fetch-on-stream.ts';
 export { parseHttpResponse, toWebResponse } from './parser.ts';
 export { decodeChunked } from './chunked.ts';
 
-export { userspaceTls, addTrustedRootCAs } from './tls.ts';
-export type { UserspaceTlsOptions, TlsStream } from './tls.ts';
+export { userspaceTls } from './tls.ts';
+export type { CheckServerIdentity, PeerCertificateIdentity, UserspaceTlsOptions, TlsStream } from './tls.ts';
 
 export { wsUpgradeAndFrame } from './ws-upgrade.ts';
 export type { WsUpgradeOptions } from './ws-upgrade.ts';

@@ -1,27 +1,36 @@
 import { openaiChatCompletionsErrorPayloadMessage } from './errors.ts';
-import type { OpenAIChatCompletionsChoiceNonStreaming, OpenAIChatCompletionsDelta, OpenAIChatCompletionsResult, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsToolCall } from './index.ts';
+import type { OpenAIChatCompletionsChoiceNonStreaming, OpenAIChatCompletionsChoiceNonStreamingEx, OpenAIChatCompletionsDelta, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsAssistantOutputMessageEx, OpenAIChatCompletionsResultEx, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsToolCall, OpenAIChatCompletionsAudio, OpenAIChatCompletionsLogprobs } from './index.ts';
+import { isJsonObject } from '../common/json.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
 // Field-fidelity contract: every field an upstream emits must reach the
 // non-streaming result. Known streaming fields use their protocol semantics;
 // unknown fields fall through to captureExtras so future extensions survive.
-const KNOWN_DELTA_KEYS = new Set(['content', 'role', 'reasoning_text', 'reasoning_opaque', 'reasoning_items', 'refusal', 'tool_calls']);
-const KNOWN_CHOICE_KEYS = new Set(['index', 'delta', 'finish_reason']);
+const KNOWN_DELTA_KEYS = new Set(['audio', 'function_call', 'content', 'role', 'reasoning_text', 'reasoning_opaque', 'reasoning_items', 'reasoning_details', 'refusal', 'tool_calls']);
+const KNOWN_TOOL_CALL_KEYS = new Set(['index', 'id', 'type', 'function', 'custom']);
+const KNOWN_CHOICE_KEYS = new Set(['index', 'delta', 'finish_reason', 'logprobs']);
 const KNOWN_CHUNK_KEYS = new Set(['id', 'object', 'created', 'model', 'choices', 'usage', 'system_fingerprint', 'service_tier']);
 
 interface ToolCallAccumulator {
   id: string;
   name: string;
   arguments: string;
+  type: 'function' | 'custom';
+  extras: Record<string, unknown>;
+  thoughtSignature?: string;
 }
 
 interface ChoiceAccumulator {
   readonly index: number;
   content: string;
   reasoningText: string;
+  audio?: Partial<OpenAIChatCompletionsAudio>;
+  functionCall?: { name: string; arguments: string };
+  logprobs?: OpenAIChatCompletionsLogprobs;
   reasoningOpaque?: string;
   refusal?: string;
-  readonly reasoningItems: OpenAIChatCompletionsReasoningItem[];
+  readonly reasoningItems: unknown[];
+  reasoningDetails?: unknown;
   finishReason: OpenAIChatCompletionsChoiceNonStreaming['finish_reason'];
   readonly toolCalls: Map<number, ToolCallAccumulator>;
   readonly choiceExtras: Record<string, unknown>;
@@ -44,53 +53,140 @@ const accumulateToolCalls = (choice: ChoiceAccumulator, value: OpenAIChatComplet
 
   for (const toolCall of value) {
     const fn = toolCall.function;
-    const current = choice.toolCalls.get(toolCall.index) ?? { id: '', name: '', arguments: '' };
+    const custom = toolCall.custom;
+    const current: ToolCallAccumulator = choice.toolCalls.get(toolCall.index) ?? { id: '', name: '', arguments: '', type: 'function', extras: {} };
     if (toolCall.id !== undefined) current.id = toolCall.id;
-    if (fn?.name !== undefined) current.name = fn.name;
+    // A later fragment may repeat `name: ""`; an empty name never renames an open call.
+    if (fn?.name !== undefined && fn.name !== '') current.name = fn.name;
     if (fn?.arguments !== undefined) current.arguments += fn.arguments;
+    if (custom?.name !== undefined && custom.name !== '') current.name = custom.name;
+    if (custom?.input !== undefined) current.arguments += custom.input;
+    if (toolCall.type !== undefined) current.type = toolCall.type;
+    const previousProviderFields = current.extras.provider_specific_fields;
+    for (const [key, value] of Object.entries(toolCall)) {
+      if (!KNOWN_TOOL_CALL_KEYS.has(key)) current.extras[key] = value;
+    }
+    const providerFields = current.extras.provider_specific_fields;
+    if (previousProviderFields !== providerFields && isJsonObject(previousProviderFields) && isJsonObject(providerFields)) current.extras.provider_specific_fields = { ...previousProviderFields, ...providerFields };
+    const extraContent = current.extras.extra_content;
+    if (isJsonObject(extraContent) && isJsonObject(extraContent.google) && typeof extraContent.google.thought_signature === 'string' && extraContent.google.thought_signature !== '') current.thoughtSignature ??= extraContent.google.thought_signature;
     choice.toolCalls.set(toolCall.index, current);
   }
+};
+
+// OpenRouter streams text/summary fragments with repeated indices; encrypted
+// entries are complete opaque blocks and must remain separate.
+// https://github.com/OpenRouterTeam/ai-sdk-provider/blob/e96af18b188cd2df507a2ecdc8b0976856e1f3a0/src/chat/index.ts#L774-L819
+const accumulateReasoningDetails = (current: unknown, incoming: unknown): unknown => {
+  if (!Array.isArray(incoming)) return incoming;
+  const details: unknown[] = Array.isArray(current) ? current : [];
+  for (const detail of incoming) {
+    const previous = details.at(-1);
+    if (!isJsonObject(previous) || !isJsonObject(detail)
+      || previous.type !== detail.type
+      || detail.type !== 'reasoning.text' && detail.type !== 'reasoning.summary'
+      || ['id', 'index', 'format'].some(key => previous[key] != null && detail[key] != null && previous[key] !== detail[key])) {
+      details.push(detail);
+      continue;
+    }
+    const field = detail.type === 'reasoning.text' ? 'text' : 'summary';
+    const previousText = previous[field];
+    const text = detail[field];
+    if (previousText != null && typeof previousText !== 'string' || text != null && typeof text !== 'string') {
+      details.push(detail);
+      continue;
+    }
+    const merged = { ...previous, ...detail };
+    if (typeof previousText === 'string') merged[field] = typeof text === 'string' ? previousText + text : previousText;
+    for (const key of ['id', 'index', 'format']) if (previous[key] != null && detail[key] == null) merged[key] = previous[key];
+    if (detail.type === 'reasoning.text' && typeof previous.signature === 'string' && previous.signature !== '') merged.signature = previous.signature;
+    details[details.length - 1] = merged;
+  }
+  return details;
 };
 
 const finalizedToolCalls = (choice: ChoiceAccumulator): OpenAIChatCompletionsToolCall[] =>
   [...choice.toolCalls.entries()]
     .toSorted(([left], [right]) => left - right)
-    .map(([, toolCall]) => ({
-      id: toolCall.id,
-      type: 'function',
-      function: { name: toolCall.name, arguments: toolCall.arguments },
-    }));
+    .map(([, toolCall]): OpenAIChatCompletionsToolCall => {
+      // The proxy retains the first complete signature; LiteLLM provider fields merge by key.
+      // https://github.com/john-raymon/gemini-thought-signature-proxy/blob/5db2d9dc50f18bd4381f4032da9ec5df3de93611/src/extract.ts#L193-L215
+      // https://github.com/BerriAI/litellm/blob/cad87a900fbe8b99eba258e6ebb23f58225a8002/litellm/litellm_core_utils/streaming_chunk_builder_utils.py#L572-L598
+      const extraContent = toolCall.extras.extra_content;
+      if (toolCall.thoughtSignature !== undefined && isJsonObject(extraContent)) {
+        toolCall.extras.extra_content = { ...extraContent, google: { ...(isJsonObject(extraContent.google) ? extraContent.google : {}), thought_signature: toolCall.thoughtSignature } };
+      }
+      return {
+        ...toolCall.extras,
+        id: toolCall.id,
+        ...(toolCall.type === 'custom'
+          ? { type: 'custom', custom: { name: toolCall.name, input: toolCall.arguments } }
+          : { type: 'function', function: { name: toolCall.name, arguments: toolCall.arguments } }),
+      };
+    });
 
-const finalizeChoice = (choice: ChoiceAccumulator): OpenAIChatCompletionsChoiceNonStreaming => {
-  const toolCalls = finalizedToolCalls(choice);
-  return {
-    index: choice.index,
-    message: {
-      role: 'assistant',
-      content: choice.content || null,
-      ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
-      ...(choice.reasoningText ? { reasoning_text: choice.reasoningText } : {}),
-      ...(choice.reasoningOpaque !== undefined ? { reasoning_opaque: choice.reasoningOpaque } : {}),
-      ...(choice.reasoningItems.length > 0 ? { reasoning_items: choice.reasoningItems } : {}),
-      ...(choice.refusal !== undefined ? { refusal: choice.refusal } : {}),
-      ...choice.messageExtras,
-    },
-    finish_reason: choice.finishReason,
-    ...choice.choiceExtras,
-  } as OpenAIChatCompletionsChoiceNonStreaming;
+// Native audio chunks concatenate data/transcript and finish with an expiry-only delta.
+// https://github.com/openai/openai-node/blob/7423ac3e9351c46300cd094479cded5551a72eb4/src/lib/ChatCompletionStream.ts#L1975-L2020
+const accumulateAudio = (choice: ChoiceAccumulator, delta: OpenAIChatCompletionsDelta['audio']): void => {
+  if (delta == null) return;
+  const audio = choice.audio ??= {};
+  if (delta.id !== undefined) audio.id = delta.id;
+  if (delta.expires_at !== undefined) audio.expires_at = delta.expires_at;
+  if (delta.data !== undefined) audio.data = (audio.data ?? '') + delta.data;
+  if (delta.transcript !== undefined) audio.transcript = (audio.transcript ?? '') + delta.transcript;
 };
 
-export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterable<OpenAIChatCompletionsStreamEvent>): Promise<OpenAIChatCompletionsResult> {
+const completeAudio = (audio: Partial<OpenAIChatCompletionsAudio>): OpenAIChatCompletionsAudio => {
+  if (audio.id === undefined || audio.data === undefined || audio.transcript === undefined || audio.expires_at === undefined) throw new TypeError('Upstream Chat Completions audio ended without its complete metadata.');
+  return audio as OpenAIChatCompletionsAudio;
+};
+
+const finalizeChoice = (choice: ChoiceAccumulator): OpenAIChatCompletionsChoiceNonStreamingEx => {
+  const toolCalls = finalizedToolCalls(choice);
+  const message: OpenAIChatCompletionsAssistantOutputMessageEx = {
+    role: 'assistant',
+    content: choice.content || null,
+    refusal: choice.refusal ?? null,
+    ...(choice.audio === undefined ? {} : { audio: completeAudio(choice.audio) }),
+    ...(choice.functionCall === undefined ? {} : { function_call: choice.functionCall }),
+    ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+    ...(choice.reasoningText ? { reasoning_text: choice.reasoningText } : {}),
+    ...(choice.reasoningOpaque !== undefined ? { reasoning_opaque: choice.reasoningOpaque } : {}),
+    ...(choice.reasoningItems.length > 0 ? { reasoning_items: choice.reasoningItems } : {}),
+    ...(choice.reasoningDetails === undefined ? {} : { reasoning_details: choice.reasoningDetails }),
+    ...choice.messageExtras,
+  };
+  return {
+    index: choice.index,
+    logprobs: choice.logprobs ?? null,
+    message,
+    finish_reason: choice.finishReason,
+    ...choice.choiceExtras,
+  };
+};
+
+export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterable<OpenAIChatCompletionsStreamEvent>): Promise<OpenAIChatCompletionsResultEx> {
+  const accumulator = createOpenAIChatCompletionsEventAccumulator();
+  for await (const chunk of chunks) accumulator.accept(chunk);
+  return accumulator.result();
+}
+
+export interface OpenAIChatCompletionsEventAccumulator {
+  accept: (chunk: OpenAIChatCompletionsStreamEvent) => void;
+  result: () => OpenAIChatCompletionsResultEx;
+}
+
+export const createOpenAIChatCompletionsEventAccumulator = (): OpenAIChatCompletionsEventAccumulator => {
   let id = '';
   let model = '';
   let created = 0;
   let systemFingerprint: string | undefined;
-  let serviceTier: OpenAIChatCompletionsResult['service_tier'];
-  let lastUsage: OpenAIChatCompletionsResult['usage'] | undefined;
+  let serviceTier: OpenAIChatCompletionsResultEx['service_tier'];
+  let lastUsage: OpenAIChatCompletionsResultEx['usage'] | undefined;
   const choices = new Map<number, ChoiceAccumulator>();
   const chunkExtras: Record<string, unknown> = {};
 
-  for await (const chunk of chunks) {
+  const accept = (chunk: OpenAIChatCompletionsStreamEvent): void => {
     const errorMessage = openaiChatCompletionsErrorPayloadMessage(chunk);
     if (errorMessage) throw new Error(`Upstream OpenAI Chat Completions SSE error: ${errorMessage}`);
 
@@ -113,21 +209,31 @@ export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterabl
       choices.set(streamed.index, choice);
       captureExtras(streamed as unknown as Record<string, unknown>, KNOWN_CHOICE_KEYS, choice.choiceExtras);
 
-      const delta = streamed.delta;
+      const delta = streamed.delta as OpenAIChatCompletionsAssistantDeltaEx;
       captureExtras(delta as unknown as Record<string, unknown>, KNOWN_DELTA_KEYS, choice.messageExtras);
       if (typeof delta.content === 'string') choice.content += delta.content;
       if (typeof delta.reasoning_text === 'string') choice.reasoningText += delta.reasoning_text;
       if (typeof delta.reasoning_opaque === 'string') choice.reasoningOpaque = delta.reasoning_opaque;
       if (typeof delta.refusal === 'string') choice.refusal = (choice.refusal ?? '') + delta.refusal;
-      if (Array.isArray(delta.reasoning_items)) {
-        choice.reasoningItems.push(...delta.reasoning_items);
+      if (Array.isArray(delta.reasoning_items)) choice.reasoningItems.push(...delta.reasoning_items);
+      if (delta.reasoning_details != null) choice.reasoningDetails = accumulateReasoningDetails(choice.reasoningDetails, delta.reasoning_details);
+      if (delta.function_call !== undefined) {
+        const call = choice.functionCall ??= { name: '', arguments: '' };
+        if (delta.function_call.name !== undefined) call.name = delta.function_call.name;
+        if (delta.function_call.arguments !== undefined) call.arguments += delta.function_call.arguments;
+      }
+      if (streamed.logprobs != null) {
+        const logprobs = choice.logprobs ??= { content: null, refusal: null };
+        if (streamed.logprobs.content != null) (logprobs.content ??= []).push(...streamed.logprobs.content);
+        if (streamed.logprobs.refusal != null) (logprobs.refusal ??= []).push(...streamed.logprobs.refusal);
       }
       accumulateToolCalls(choice, delta.tool_calls);
-      if (streamed.finish_reason !== null) choice.finishReason = streamed.finish_reason;
+      accumulateAudio(choice, delta.audio);
+      if (streamed.finish_reason != null) choice.finishReason = streamed.finish_reason;
     }
-  }
+  };
 
-  return {
+  const result = (): OpenAIChatCompletionsResultEx => ({
     id,
     object: 'chat.completion',
     created,
@@ -137,5 +243,7 @@ export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterabl
     ...(serviceTier ? { service_tier: serviceTier } : {}),
     ...(lastUsage ? { usage: lastUsage } : {}),
     ...chunkExtras,
-  } as OpenAIChatCompletionsResult;
-}
+  });
+
+  return { accept, result };
+};

@@ -17,7 +17,7 @@ import { stubProviderPipeline } from '../../../../test-utils/provider-pipeline.t
 import { createRunReader, getFailureFacts, type DumpEvent } from '@floway-dev/pipeline';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
-const apiKey: ApiKey = { id: 'image-key', userId: 1, name: 'Image key', key: 'floway-image-key', serverSecret: '00'.repeat(32), createdAt: '2026-01-01T00:00:00Z', upstreamIds: null, deletedAt: null, dumpRetentionSeconds: 3600, openaiResponsesRetentionSeconds: 0 };
+const apiKey: ApiKey = { id: 'image-key', userId: 1, name: 'Image key', key: 'floway-image-key', serverSecret: '00'.repeat(32), createdAt: '2026-01-01T00:00:00Z', upstreamIds: null, randomizeUpstreams: false, deletedAt: null, dumpRetentionSeconds: 3600, openaiResponsesRetentionSeconds: 0 };
 afterEach(() => { vi.restoreAllMocks(); });
 
 for (const action of ['generate', 'edit'] as const) for (const consume of [false, true]) {
@@ -74,7 +74,7 @@ for (const action of ['generate', 'edit'] as const) for (const consume of [false
     const entered = eventsOf(record).filter(event => event.type === 'stage.entered').map(event => event.name);
     expect(entered).toEqual(['writeSettlement', 'emitHostedImageGeneration', 'prepareHostedImageGeneration', 'resolveCandidates', 'failover', 'retryRateLimitedImages', 'callOpenAIImagesUpstream', 'stubHttp']);
     const frames = decoded.flatMap(event => event?.frames ?? []);
-    if (consume) expect(frames).toContainEqual({ type: 'event', event: { item: { type: 'image_generation_call', status: 'completed', action, result: 'pixels', revised_prompt: 'draw a tree' }, endEvents: [{ type: 'response.image_generation_call.completed' }] } });
+    if (consume) expect(frames).toContainEqual({ type: 'event', event: { item: { type: 'image_generation_call', status: 'completed', action, result: 'pixels', revised_prompt: 'draw a tree' }, endEvents: [{ type: 'response.image_generation_call.completed' }], replayData: { action, revised_prompt: 'draw a tree' } } });
     else expect(frames).toEqual([]);
     const observations = await repo.usage.listAll();
     expect(observations).toMatchObject([{ model: 'image-model', modelKey: 'backend-image', requests: 1 }]);

@@ -1,6 +1,6 @@
 import type { ClaudeCodePreparedRequest } from '../pipeline-facts.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import type { AnthropicMessagesPayload, AnthropicMessagesMessage, AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesMessage, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
 import type { ProviderChatResponse } from '@floway-dev/provider';
 
 // Synthetic assistant turn that closes the hoisted user/assistant pair so the
@@ -30,7 +30,7 @@ const SYNTHETIC_ACK = 'Understood. I will follow these instructions.';
 // References:
 //   - https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/gateway_service.go#L4480-L4486
 export const hoistUserSystemToMessagesPayload = <P extends Omit<AnthropicMessagesPayload, 'model'>>(payload: P): P => {
-  const system: string | AnthropicMessagesTextBlock[] | undefined = payload.system;
+  const system: string | AnthropicMessagesTextBlockParam[] | undefined = payload.system;
   let captured = '';
   if (typeof system === 'string') {
     captured = system;

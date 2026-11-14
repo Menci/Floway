@@ -6,18 +6,20 @@ import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { dateTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
+import { useUserPreferences } from '../../lib/use-preferences';
 import { SECTION_STACK_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { ResourceListActions } from '../ui/resource-list';
 import { SectionHeader } from '../ui/section-header';
 import { useRefresh } from '../ui/use-refresh';
-import { copilotQuota, type CopilotRecord, readBuckets, shownBuckets } from '../upstreams/copilot-quota';
-import { quotaBarColor } from '../upstreams/subscription-quota';
+import { copilotQuota, copilotQuotaName, type CopilotRecord, formatBucketAmount, readBuckets, shownBuckets } from '../upstreams/copilot-quota';
+import { QuotaProgressRow } from '../upstreams/quota-progress-row';
 
-const { ProgressBar, Text } = fluentComponents;
+const { Text } = fluentComponents;
 
-export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
+export function CopilotQuotaCard({ readOnly = false, record }: { readOnly?: boolean; record: CopilotRecord }) {
   const { t } = useTranslation();
+  const preferences = useUserPreferences();
   const locale = useLocale();
   // A manual refresh is persisted server-side too; the local copy only avoids
   // re-fetching the record to display it. The persisted snapshot is whatever
@@ -49,7 +51,7 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
   const resets = quota?.reset_at == null ? null : shortDate(quota.reset_at, locale);
 
   return <section className={SECTION_STACK_CLASS}>
-    <SectionHeader level={3} title={t('dashboard.upstreamEditor.copilot.quota.title')} actions={
+    <SectionHeader level={3} title={t('dashboard.upstreamEditor.copilot.quota.title')} actions={!readOnly &&
       <ResourceListActions
         appearance="subtle"
         onRefresh={() => void load()}
@@ -58,27 +60,25 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
       />
     } />
 
-    {buckets.map(bucket => <div className="grid gap-1" key={bucket.id}>
-      <div className="flex items-baseline justify-between gap-3">
-        <Text className="capitalize" size={300}>{bucket.label}</Text>
-        {bucket.kind === 'metered'
-          ? <div className="flex items-baseline gap-2">
-              <Text size={200} className="text-fui-fg2">
-                {t('dashboard.upstreamEditor.copilot.quota.used', {
-                  used: bucket.used,
-                  entitlement: bucket.entitlement,
-                })}
-              </Text>
-              <Text size={200} className="text-fui-fg3">
-                {t('dashboard.upstreamEditor.copilot.quota.usedPercent', { percent: bucket.usedPercent })}
-              </Text>
-            </div>
-          : <Text size={200} className="text-fui-fg3">
-              {t(`dashboard.upstreamEditor.copilot.quota.${bucket.kind}`)}
-            </Text>}
-      </div>
-      {bucket.kind === 'metered' && <ProgressBar color={quotaBarColor(bucket.barPercent)} max={100} thickness="large" value={bucket.barPercent ?? undefined} />}
-    </div>)}
+    {buckets.map(bucket => bucket.kind === 'metered'
+      ? <QuotaProgressRow
+          key={bucket.id}
+          label={copilotQuotaName(t, bucket.id, 'allowance')}
+          percent={bucket.usedPercent}
+          quotaDisplay={preferences.quotaDisplay}
+          right={<Text size={200} className="text-fui-fg3 tabular-nums">
+            {t('dashboard.upstreamEditor.copilot.quota.amount', {
+              amount: formatBucketAmount(bucket, preferences.quotaDisplay === 'used' ? bucket.used : bucket.remaining, locale),
+              entitlement: formatBucketAmount(bucket, bucket.entitlement, locale),
+            })}
+          </Text>}
+        />
+      : <div className="grid gap-1" key={bucket.id}>
+          <div className="flex items-baseline justify-between gap-3">
+            <Text size={300}>{copilotQuotaName(t, bucket.id, 'allowance')}</Text>
+            <Text size={200} className="text-fui-fg3">{t(`dashboard.upstreamEditor.copilot.quota.${bucket.kind}`)}</Text>
+          </div>
+        </div>)}
 
     {/* The reset date leads because a narrow row stacks these two, and alone on
         a line it is the one worth reading first. */}

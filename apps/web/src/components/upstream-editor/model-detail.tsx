@@ -3,6 +3,7 @@ import { useEffect, useId, useRef } from 'react';
 
 import type { ModelRow } from './data';
 import { publicModelId } from './data';
+import { DecisionTargetEditor } from './decision-target-editor';
 import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, IMAGE_ENDPOINT_KEYS, shapeForKind } from './endpoints';
 import { FeatureFlagsEditor } from './feature-flags';
 import { type ModelValidationField, modelValidationIssues } from './model-validation';
@@ -13,12 +14,14 @@ import { EditorSection } from './section';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { type TFunction, useTranslation } from '../../i18n/translation';
+import { pruneLimitsForKind } from '../models/limits';
+import { ModelLimitsFields } from '../models/limits-editor';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { MultiselectCombobox, valuesAsOptions } from '../ui/multiselect-combobox';
 import { SectionHeader } from '../ui/section-header';
-import type { UpstreamChatModelConfig, UpstreamModelConfig } from '@floway-dev/provider/model-config';
+import type { UpstreamChatModelConfig, UpstreamModelConfig } from '@floway-dev/provider/browser';
 
 const {
   Button,
@@ -71,9 +74,14 @@ export function ModelDetail({
   const setKind = (kind: UpstreamModelConfig['kind']) => patch({
     kind,
     chat: kind === 'chat' ? row.config.chat : undefined,
+    // Only a chat turn carries an opaque blob, so the scope goes with the kind.
+    opaqueBlobCompatibilityScope: kind === 'chat' ? row.config.opaqueBlobCompatibilityScope : undefined,
     rerankTarget: undefined,
-    ...(kind === 'image' ? { limits: undefined } : {}),
-    ...shapeForKind(kind, row.config),
+    decisionTarget: undefined,
+    // A kind keeps only the limits it can state, so a value the form no longer
+    // shows is not written back as a budget the new kind cannot mean.
+    ...(kind !== row.config.kind ? { limits: pruneLimitsForKind(row.config.limits, kind) } : {}),
+    ...shapeForKind(kind, row.config, record.kind),
   });
 
   const updateLimit = (key: keyof NonNullable<UpstreamModelConfig['limits']>, raw: string) => {
@@ -155,6 +163,9 @@ export function ModelDetail({
                 <Option value="chat">Chat</Option><Option value="embedding">Embedding</Option><Option value="image">Image</Option><Option value="transcription">Transcription</Option>
                 {/* The gateway only accepts a rerank target on a custom upstream, so the kind is offered only where it can be saved. */}
                 {record.kind === 'custom' && <Option value="rerank">Rerank</Option>}
+                {/* Decision models are first-class on custom, Azure, Ollama, Copilot, and
+                    every other upstream that serves a decision dialect. */}
+                <Option value="decision">Decision</Option>
               </Dropdown>
             </Field>
             <Field className="min-w-0" label={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deployment') : t('dashboard.upstreamEditor.models.upstreamId')} validationMessage={upstreamIdError} validationState={upstreamIdError ? 'error' : undefined}>
@@ -166,7 +177,9 @@ export function ModelDetail({
           </div>
         </EditorSection>
 
-        <EditorSection
+        {/* Opaque blobs ride a chat turn's history across models; no other kind
+            carries one. */}
+        {row.config.kind === 'chat' && <EditorSection
           info={<span className="whitespace-pre-line">{t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityHint')}</span>}
           level={3}
           title={t('dashboard.upstreamEditor.models.opaqueBlobCompatibility')}
@@ -188,7 +201,7 @@ export function ModelDetail({
               onChange={(_, data) => updateOpaqueBlobCompatibilityScope({ bindToUpstream: data.checked })}
             />
           </div>
-        </EditorSection>
+        </EditorSection>}
 
         {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <EditorSection error={validationMessage('endpoints')} level={3} title={t('dashboard.upstreamEditor.models.endpoints')}>
           <div className={`${TWO_COLUMN_FORM_CLASS} ${CHECKBOX_LIST_CLASS}`}>
@@ -210,12 +223,19 @@ export function ModelDetail({
           <RerankTargetEditor readOnly={fieldsReadOnly} value={row.config.rerankTarget} onChange={rerankTarget => patch({ rerankTarget })} />
         </EditorSection>}
 
+        {row.config.kind === 'decision' && record.kind === 'custom' && <EditorSection error={validationMessage('decisionTarget')} level={3} title={t('dashboard.upstreamEditor.models.decisionTarget')}>
+          <DecisionTargetEditor readOnly={fieldsReadOnly} value={row.config.decisionTarget ?? { protocol: 'typesafe-systemone' }} onChange={decisionTarget => patch({ decisionTarget })} />
+        </EditorSection>}
+
         {row.config.kind !== 'image' && <EditorSection level={3} title={t('dashboard.upstreamEditor.models.capabilities')}>
-          <div className="grid grid-cols-3 gap-4 max-[760px]:grid-cols-1">
-            <NumberField label={t('dashboard.upstreamEditor.models.contextWindow')} placeholder="e.g. 1050000" readOnly={fieldsReadOnly} value={row.config.limits?.max_context_window_tokens} onChange={raw => updateLimit('max_context_window_tokens', raw)} />
-            <NumberField label={t('dashboard.upstreamEditor.models.promptTokens')} placeholder="e.g. 922000" readOnly={fieldsReadOnly} value={row.config.limits?.max_prompt_tokens} onChange={raw => updateLimit('max_prompt_tokens', raw)} />
-            <NumberField label={t('dashboard.upstreamEditor.models.outputTokens')} placeholder="e.g. 128000" readOnly={fieldsReadOnly} value={row.config.limits?.max_output_tokens} onChange={raw => updateLimit('max_output_tokens', raw)} />
-          </div>
+          <ModelLimitsFields
+            columnGapClass="gap-4"
+            kind={row.config.kind}
+            limits={row.config.limits}
+            onChange={updateLimit}
+            readOnly={fieldsReadOnly}
+            t={t}
+          />
           {row.config.kind === 'chat' && <>
             <div aria-labelledby={imageInputLabelId} className="grid gap-3" role="group">
               <Text id={imageInputLabelId} weight="semibold">{t('dashboard.upstreamEditor.models.imageInput')}</Text>
@@ -310,6 +330,7 @@ const modelKindLabel = (kind: UpstreamModelConfig['kind']): string => {
   case 'image': return 'Image';
   case 'transcription': return 'Transcription';
   case 'rerank': return 'Rerank';
+  case 'decision': return 'Decision';
   }
 };
 

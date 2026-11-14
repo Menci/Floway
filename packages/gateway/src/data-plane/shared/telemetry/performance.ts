@@ -30,11 +30,11 @@ const record = async (op: Promise<void>, label: string): Promise<void> => {
 // `UpstreamCallOptions.wrapUpstreamCall`. Any success without a real upstream
 // call or first-output-token stamp records as neutral; only genuine upstream
 // failures with no output land in a pure zero-output-error bucket. TPOT layers
-// on top only when at least two output tokens streamed — see the per-branch
+// on top only when at least two output tokens are reported — see the per-branch
 // comments below.
 //
-// A failure that produced output tokens (mid-stream failure that streamed
-// tokens before dying) records a partial-output sample: the row bumps
+// A failure after a decode signal with reported output tokens records a
+// partial-output sample: the row bumps
 // `errors_with_output` (and `tpot_samples` when applicable) in a single
 // atomic upsert. The alternative — dropping the TTFT/TPOT reading — would
 // hide upstream instability from the dashboard whenever failures cluster
@@ -71,9 +71,10 @@ export const recordPerformance = (
     scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, success }), 'sample'));
     return;
   }
-  // TPOT is the inter-token generation interval: streamDelta covers only the
-  // (N-1) tokens that arrived AFTER firstOutputTokenAt, so the divisor is
-  // outputTokens - 1. Matches the OpenTelemetry GenAI spec
+  // The first observed decode signal approximates the first sampled token,
+  // including private reasoning without visible text. Estimate the following
+  // inter-token generation interval using outputTokens - 1, following the
+  // OpenTelemetry GenAI spec
   // gen_ai.server.time_per_output_token
   // (https://github.com/open-telemetry/semantic-conventions-genai/blob/953dd22e3cecd3a397d742c349d2435d59c8b771/docs/gen-ai/gen-ai-metrics.md#metric-gen_aiservertime_per_output_token)
   // and Envoy AI Gateway

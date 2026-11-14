@@ -1,4 +1,4 @@
-import { generateAnthropicId, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { createAnthropicMessagesUsage, toAnthropicMessagesUsageDelta, generateAnthropicId, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 // Claude Code answers "is this model usable?" by generating one token against
@@ -92,7 +92,7 @@ export const isClaudeCodeProbe = (payload: AnthropicMessagesPayload, headers: He
 // usage block is load-bearing — the validation path dereferences
 // `usage.input_tokens` / `usage.output_tokens` unconditionally, and a missing
 // `usage` throws inside the CLI and reads as a failed probe.
-export const probeFrames = async function* (model: string): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+export const probeFrames = async function* (model: string): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   yield eventFrame({
     type: 'message_start',
     message: {
@@ -102,11 +102,14 @@ export const probeFrames = async function* (model: string): AsyncGenerator<Proto
       model,
       content: [],
       stop_reason: null,
+      stop_details: null,
+      container: null,
+      diagnostics: null,
       stop_sequence: null,
-      usage: { input_tokens: 0, output_tokens: 0 },
+      usage: createAnthropicMessagesUsage(0, 0),
     },
   });
-  yield eventFrame({ type: 'message_delta', delta: { stop_reason: 'max_tokens', stop_sequence: null }, usage: { output_tokens: 0 } });
+  yield eventFrame({ type: 'message_delta', delta: { container: null, stop_reason: 'max_tokens', stop_details: null, stop_sequence: null }, usage: toAnthropicMessagesUsageDelta(createAnthropicMessagesUsage(0, 0)) });
   yield eventFrame({ type: 'message_stop' });
   yield doneFrame();
 };

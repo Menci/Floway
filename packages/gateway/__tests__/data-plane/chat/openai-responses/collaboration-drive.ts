@@ -2,11 +2,11 @@ import { projectOpenAIResponsesCollaboration } from '../../../../src/data-plane/
 import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gateway-ctx.ts';
 import { compose, defineStage, move, run } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf, type OpenAIResponsesInvocation } from '@floway-dev/provider';
 import { type ExecuteResult } from '@floway-dev/test-utils';
 
-type Result = ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>;
+type Result = ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>;
 
 export const driveCollaborationStage = async (
   invocation: OpenAIResponsesInvocation,
@@ -34,7 +34,7 @@ export const driveCollaborationStage = async (
   }), { gateway } as never);
   if (result === undefined) throw new Error('Collaboration harness did not dispatch');
   if (result.type !== 'events') { await drain(); return result; }
-  const answer = facts['response.chat.openaiResponses'] as { frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> };
+  const answer = facts['response.chat.openaiResponses'] as { frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> };
   if (answer.frames === result.events) { await drain(); return result; }
   return {
     ...result,

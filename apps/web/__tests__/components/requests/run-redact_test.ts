@@ -28,3 +28,11 @@ it('preserves already marked secrets and rejects missing header references', () 
   expect(redactRunHeaders(marked)).toBe(marked);
   expect(() => redactRunHeaders('{"type":"stage.leaved","stageId":1,"facts":{"request.http.headers":{"$":99}}}\n')).toThrow('missing object 99');
 });
+
+it('keeps a header value the server already redacted as it was served', () => {
+  const served = [
+    { type: 'object', fromObjectId: 1, nodes: [[{ $: 2 }], ['set-cookie', '[redacted]']] },
+    { type: 'stage.leaved', stageId: 1, facts: { 'upstream.response.http.headers': { $: 1 } } },
+  ].map(event => `${JSON.stringify(event)}\n`).join('');
+  expect(redactRunHeaders(served)).toBe(served);
+});

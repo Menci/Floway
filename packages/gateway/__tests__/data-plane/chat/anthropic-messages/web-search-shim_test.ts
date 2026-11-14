@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
-import { driveWebSearchStage } from './web-search-drive.ts';
+import { driveWebSearchStage, type WebSearchTurn } from './web-search-drive.ts';
 import * as webSearchShim from '../../../../src/data-plane/chat/anthropic-messages/web-search-shim.ts';
 import {
   decodeWebSearchCitationPayload,
@@ -24,14 +24,13 @@ import type {
   AnthropicMessagesClientTool,
   AnthropicMessagesPayload,
   AnthropicMessagesResult,
-  AnthropicMessagesStreamEvent,
+  AnthropicMessagesStreamEventEx,
   AnthropicMessagesTextBlock,
   AnthropicMessagesToolResultBlock,
   AnthropicMessagesToolResultContentBlock,
   AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
 import { type ProtocolFrame, eventFrame } from '@floway-dev/protocols/common';
-import type { AnthropicMessagesInvocation } from '@floway-dev/provider';
 import { assertEquals, assertExists, assertRejects, stubModelCandidate } from '@floway-dev/test-utils';
 
 const testTelemetryModelIdentity = {
@@ -41,14 +40,13 @@ const testTelemetryModelIdentity = {
   pricing: null,
 };
 
-const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesInvocation => ({
+const invocation = (payload: AnthropicMessagesPayload): WebSearchTurn => ({
   payload,
   candidate: stubModelCandidate({
     model: { endpoints: { anthropicMessages: {} } },
     enabledFlags: new Set(['anthropic-messages-web-search-shim']),
   }),
   targetApi: 'anthropicMessages',
-  headers: new Headers(),
 });
 
 const encodeUnsignedPayload = (payload: unknown): string => btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
@@ -56,13 +54,14 @@ const encodeUnsignedPayload = (payload: unknown): string => btoa(JSON.stringify(
 const makeNativeReplayPayload = (): AnthropicMessagesPayload => ({
   model: 'claude-test',
   max_tokens: 64,
-  tools: [{ type: 'web_search_20260209', max_uses: 2 }],
+  tools: [{ name: 'web_search', type: 'web_search_20260209', max_uses: 2 }],
   messages: [
     { role: 'user', content: 'latest React docs' },
     {
       role: 'assistant',
       content: [
         {
+          caller: { type: 'direct' },
           type: 'server_tool_use',
           id: 'srvtoolu_1',
           name: 'web_search',
@@ -170,11 +169,12 @@ const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   return collected;
 };
 
-const anthropicMessagesResponseToUpstreamFrames = (response: AnthropicMessagesResult): ProtocolFrame<AnthropicMessagesStreamEvent>[] => {
-  const frames: ProtocolFrame<AnthropicMessagesStreamEvent>[] = [
+const anthropicMessagesResponseToUpstreamFrames = (response: AnthropicMessagesResult): ProtocolFrame<AnthropicMessagesStreamEventEx>[] => {
+  const frames: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [
     eventFrame({
       type: 'message_start',
       message: {
+        container: null, diagnostics: null, stop_details: null,
         id: response.id,
         type: response.type,
         role: response.role,
@@ -195,6 +195,7 @@ const anthropicMessagesResponseToUpstreamFrames = (response: AnthropicMessagesRe
       type: 'content_block_start',
       index,
       content_block: {
+        citations: null,
         type: 'text',
         text: '',
         ...(block.citations?.length ? { citations: [] } : {}),
@@ -212,8 +213,8 @@ const anthropicMessagesResponseToUpstreamFrames = (response: AnthropicMessagesRe
   frames.push(
     eventFrame({
       type: 'message_delta',
-      delta: { stop_reason: response.stop_reason, stop_sequence: response.stop_sequence },
-      usage: { output_tokens: response.usage.output_tokens },
+      delta: { container: null, stop_details: null, stop_reason: response.stop_reason, stop_sequence: response.stop_sequence },
+      usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: response.usage.output_tokens },
     }),
     eventFrame({ type: 'message_stop' }),
   );
@@ -327,7 +328,7 @@ test('prepareAnthropicMessagesWebSearchShimRequest rejects duplicate native tool
     model: 'claude-test',
     max_tokens: 64,
     messages: [{ role: 'user', content: 'latest React docs' }],
-    tools: [{ type: 'web_search_20250305' }, { type: 'web_search_20260209' }],
+    tools: [{ name: 'web_search', type: 'web_search_20250305' }, { name: 'web_search', type: 'web_search_20260209' }],
   });
 
   assertEquals(prepared, {
@@ -389,8 +390,8 @@ test('prepareAnthropicMessagesWebSearchShimRequest passes in-array role:"system"
       {
         role: 'system',
         content: [
-          { type: 'text', text: 'paragraph A' },
-          { type: 'text', text: 'paragraph B' },
+          { citations: null, type: 'text', text: 'paragraph A' },
+          { citations: null, type: 'text', text: 'paragraph B' },
         ],
       },
       { role: 'user', content: 'who are you' },
@@ -408,8 +409,8 @@ test('prepareAnthropicMessagesWebSearchShimRequest passes in-array role:"system"
   assertEquals(messages[2], {
     role: 'system',
     content: [
-      { type: 'text', text: 'paragraph A' },
-      { type: 'text', text: 'paragraph B' },
+      { citations: null, type: 'text', text: 'paragraph A' },
+      { citations: null, type: 'text', text: 'paragraph B' },
     ],
   });
 });
@@ -445,6 +446,7 @@ test('prepareAnthropicMessagesWebSearchShimRequest leaves native-looking replay 
         role: 'assistant',
         content: [
           {
+            caller: { type: 'direct' },
             type: 'server_tool_use',
             id: 'srvtoolu_1',
             name: 'web_search',
@@ -482,6 +484,7 @@ test('prepareAnthropicMessagesWebSearchShimRequest passes through foreign native
         role: 'assistant',
         content: [
           {
+            caller: { type: 'direct' },
             type: 'server_tool_use',
             id: 'srvtoolu_foreign',
             name: 'web_search',
@@ -523,6 +526,7 @@ test('prepareAnthropicMessagesWebSearchShimRequest creates a separate user tool_
         role: 'assistant',
         content: [
           {
+            caller: { type: 'direct' },
             type: 'server_tool_use',
             id: 'srvtoolu_1',
             name: 'web_search',
@@ -591,7 +595,7 @@ test('generation and count_tokens prepare identical web-search request payloads'
 
   await driveWebSearchStage(generationInvocation, mockChatGatewayCtx(), () => Promise.resolve({
     type: 'events',
-    events: toAsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>([]),
+    events: toAsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>([]),
     modelIdentity: testTelemetryModelIdentity,
   }));
   // `:countTokens` has no stream to rewrite, so its stage prepares the same request and dials
@@ -609,7 +613,7 @@ test('count_tokens returns a native error response for invalid web-search tools'
     model: 'claude-test',
     max_tokens: 64,
     messages: [{ role: 'user', content: 'search' }],
-    tools: [{ type: 'web_search_20260209' }, { type: 'web_search_20260209' }],
+    tools: [{ name: 'web_search', type: 'web_search_20260209' }, { name: 'web_search', type: 'web_search_20260209' }],
   });
 
   assertEquals(prepared.type, 'invalid-request');
@@ -619,7 +623,7 @@ test('count_tokens returns a native error response for invalid web-search tools'
   );
 });
 
-const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<AnthropicMessagesStreamEvent>[]> => {
+const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<AnthropicMessagesStreamEventEx>[]> => {
   await initDisabledSearchRepo();
 
   const { tools: _tools, ...payload } = makeNativeReplayPayload();
@@ -629,13 +633,14 @@ const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<Anthr
       type: 'events',
       events: toAsyncIterable(
         anthropicMessagesResponseToUpstreamFrames({
+          container: null, diagnostics: null, stop_details: null,
           id: messageId,
           type: 'message',
           role: 'assistant',
           model: 'claude-test',
           stop_reason: 'end_turn',
           stop_sequence: null,
-          usage: { input_tokens: 10, output_tokens: 1 },
+          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 10, output_tokens: 1 },
           content: [
             {
               type: 'text',
@@ -643,7 +648,7 @@ const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<Anthr
               citations: [
                 {
                   type: 'search_result_location',
-                  url: 'https://react.dev',
+                  source: 'https://react.dev',
                   title: 'React',
                   search_result_index: 0,
                   start_block_index: 0,
@@ -677,7 +682,7 @@ test('the web-search stage raises when the request needs a search provider the o
         model: 'claude-test',
         max_tokens: 64,
         messages: [{ role: 'user', content: 'latest React docs' }],
-        tools: [{ type: 'web_search_20260209' }],
+        tools: [{ name: 'web_search', type: 'web_search_20260209' }],
       }), mockChatGatewayCtx(),
       () => Promise.reject(new Error('run should not be called')),
     );
@@ -691,7 +696,7 @@ test('the web-search stage allows replay-only history when the search provider i
   const collected = await runReplayOnlyShim('msg_replay_only');
 
   const events = collected.flatMap(frame => (frame.type === 'event' ? [frame.event] : []));
-  const citationsDelta = events.find((event): event is Extract<AnthropicMessagesStreamEvent, { type: 'content_block_delta' }> => event.type === 'content_block_delta' && event.delta.type === 'citations_delta');
+  const citationsDelta = events.find((event): event is Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_delta' }> => event.type === 'content_block_delta' && event.delta.type === 'citations_delta');
   assertEquals(citationsDelta?.delta.type === 'citations_delta' ? citationsDelta.delta.citation.type : undefined, 'web_search_result_location');
 });
 
@@ -731,9 +736,10 @@ test('the web-search stage emits native-like citation deltas for replay-only his
   });
 });
 
-const upstreamMessageStart = (id = 'msg_upstream'): AnthropicMessagesStreamEvent => ({
+const upstreamMessageStart = (id = 'msg_upstream'): AnthropicMessagesStreamEventEx => ({
   type: 'message_start',
   message: {
+    container: null, diagnostics: null, stop_details: null,
     id,
     type: 'message',
     role: 'assistant',
@@ -741,15 +747,15 @@ const upstreamMessageStart = (id = 'msg_upstream'): AnthropicMessagesStreamEvent
     model: 'claude-test',
     stop_reason: null,
     stop_sequence: null,
-    usage: { input_tokens: 10, output_tokens: 0 },
+    usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 10, output_tokens: 0 },
   },
 });
 
-const upstreamTextBlock = (index: number, text: string, citations?: AnthropicMessagesStreamEvent[]): AnthropicMessagesStreamEvent[] => [
+const upstreamTextBlock = (index: number, text: string, citations?: AnthropicMessagesStreamEventEx[]): AnthropicMessagesStreamEventEx[] => [
   {
     type: 'content_block_start',
     index,
-    content_block: { type: 'text', text: '' },
+    content_block: { citations: null, type: 'text', text: '' },
   },
   ...(text.length > 0
     ? [{
@@ -762,7 +768,7 @@ const upstreamTextBlock = (index: number, text: string, citations?: AnthropicMes
   { type: 'content_block_stop', index },
 ];
 
-const upstreamWebSearchBlock = (index: number, id: string, query: string): AnthropicMessagesStreamEvent[] => [
+const upstreamWebSearchBlock = (index: number, id: string, query: string): AnthropicMessagesStreamEventEx[] => [
   {
     type: 'content_block_start',
     index,
@@ -776,7 +782,7 @@ const upstreamWebSearchBlock = (index: number, id: string, query: string): Anthr
   { type: 'content_block_stop', index },
 ];
 
-const upstreamWebSearchBlockRawJson = (index: number, id: string, rawJson: string): AnthropicMessagesStreamEvent[] => [
+const upstreamWebSearchBlockRawJson = (index: number, id: string, rawJson: string): AnthropicMessagesStreamEventEx[] => [
   {
     type: 'content_block_start',
     index,
@@ -792,7 +798,7 @@ const upstreamWebSearchBlockRawJson = (index: number, id: string, rawJson: strin
   { type: 'content_block_stop', index },
 ];
 
-const upstreamClientToolBlock = (index: number, id: string, name: string, input: Record<string, unknown>): AnthropicMessagesStreamEvent[] => [
+const upstreamClientToolBlock = (index: number, id: string, name: string, input: Record<string, unknown>): AnthropicMessagesStreamEventEx[] => [
   {
     type: 'content_block_start',
     index,
@@ -806,19 +812,19 @@ const upstreamClientToolBlock = (index: number, id: string, name: string, input:
   { type: 'content_block_stop', index },
 ];
 
-const upstreamMessageEnd = (stopReason: NonNullable<AnthropicMessagesResult['stop_reason']> = 'tool_use'): AnthropicMessagesStreamEvent[] => [
+const upstreamMessageEnd = (stopReason: NonNullable<AnthropicMessagesResult['stop_reason']> = 'tool_use'): AnthropicMessagesStreamEventEx[] => [
   {
     type: 'message_delta',
-    delta: { stop_reason: stopReason, stop_sequence: null },
-    usage: { output_tokens: 7 },
+    delta: { container: null, stop_details: null, stop_reason: stopReason, stop_sequence: null },
+    usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 7 },
   },
   { type: 'message_stop' },
 ];
 
 const collectStreamEvents = async (
-  frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
-): Promise<AnthropicMessagesStreamEvent[]> => {
-  const events: AnthropicMessagesStreamEvent[] = [];
+  frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
+): Promise<AnthropicMessagesStreamEventEx[]> => {
+  const events: AnthropicMessagesStreamEventEx[] = [];
   for await (const frame of frames) {
     if (frame.type === 'event') events.push(frame.event);
   }
@@ -826,7 +832,7 @@ const collectStreamEvents = async (
 };
 
 const runStreamingShim = (
-  events: AnthropicMessagesStreamEvent[],
+  events: AnthropicMessagesStreamEventEx[],
   state: AnthropicMessagesWebSearchShimState,
   provider?: ReturnType<typeof activeProvider>,
   reportFailure: (error: unknown) => Promise<void> = async () => {},
@@ -870,6 +876,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative single web search emits se
 
   const hostedToolUse = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'server_tool_use');
   assertEquals(hostedToolUse?.type === 'content_block_start' ? hostedToolUse.content_block : undefined, {
+    caller: { type: 'direct' },
     type: 'server_tool_use',
     id: 'srvtoolu_1',
     name: 'web_search',
@@ -881,7 +888,28 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative single web search emits se
 
   const messageDelta = events.find(event => event.type === 'message_delta');
   assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.delta.stop_reason : undefined, 'pause_turn');
-  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 1 });
+  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 1, web_fetch_requests: 0 });
+});
+
+test('rewriteAnthropicMessagesWebSearchEventsToNative synthesizes usage omitted by vLLM streams', async () => {
+  const messageEndWithoutUsage = {
+    type: 'message_delta',
+    delta: { container: null, stop_details: null, stop_reason: 'tool_use', stop_sequence: null },
+  } as unknown as AnthropicMessagesStreamEventEx;
+  const events = await runStreamingShim(
+    [upstreamMessageStart(), ...upstreamWebSearchBlock(0, 'toolu_1', 'react 19'), messageEndWithoutUsage, { type: 'message_stop' }],
+    activeAnthropicMessagesWebSearchShimState(),
+    activeProvider(fakeProviderOk),
+  );
+  const messageDelta = events.find(event => event.type === 'message_delta');
+  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage : undefined, {
+    input_tokens: null,
+    output_tokens: 0,
+    cache_creation_input_tokens: null,
+    cache_read_input_tokens: null,
+    output_tokens_details: null,
+    server_tool_use: { web_search_requests: 1, web_fetch_requests: 0 },
+  });
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative renumbers indices across two intercepted searches', async () => {
@@ -903,7 +931,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative renumbers indices across t
     })),
   );
 
-  const blockIndexEvents = events.filter(event => event.type === 'content_block_start') as Array<Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }>>;
+  const blockIndexEvents = events.filter(event => event.type === 'content_block_start') as Array<Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }>>;
   assertEquals(blockIndexEvents.map(event => event.index), [0, 1, 2, 3, 4, 5, 6]);
   assertEquals(blockIndexEvents.map(event => event.content_block.type), [
     'text',
@@ -917,7 +945,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative renumbers indices across t
 
   assertEquals(providerCalls, 2);
   const messageDelta = events.find(event => event.type === 'message_delta');
-  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 2 });
+  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 2, web_fetch_requests: 0 });
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative surfaces unavailable when provider throws on second search', async () => {
@@ -937,13 +965,13 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative surfaces unavailable when 
     })),
   );
 
-  const resultBlocks = events.filter(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Array<Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }>>;
+  const resultBlocks = events.filter(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Array<Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }>>;
   assertEquals(resultBlocks.length, 2);
   const secondResult = resultBlocks[1].content_block as { content: unknown };
   assertEquals(secondResult.content, { type: 'web_search_tool_result_error', error_code: 'unavailable' });
 
   const messageDelta = events.find(event => event.type === 'message_delta');
-  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 2 });
+  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 2, web_fetch_requests: 0 });
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative maps provider error result codes through', async () => {
@@ -957,7 +985,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative maps provider error result
     activeProvider(fakeProviderError('too_many_requests')),
   );
 
-  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }> | undefined;
+  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }> | undefined;
   assertEquals((resultBlock?.content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'too_many_requests' });
 });
 
@@ -978,12 +1006,12 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative emits max_uses_exceeded on
   );
 
   assertEquals(providerCalls, 1);
-  const resultBlocks = events.filter(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Array<Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }>>;
+  const resultBlocks = events.filter(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Array<Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }>>;
   assertEquals(resultBlocks.length, 2);
   assertEquals((resultBlocks[1].content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'max_uses_exceeded' });
 
   const messageDelta = events.find(event => event.type === 'message_delta');
-  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 1 });
+  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 1, web_fetch_requests: 0 });
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative honours priorSearchUseCount when computing remaining budget', async () => {
@@ -1020,7 +1048,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative routes blank query to inva
   );
 
   assertEquals(providerCalls, 0);
-  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }> | undefined;
+  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }> | undefined;
   assertEquals((resultBlock?.content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'invalid_tool_input' });
 });
 
@@ -1040,7 +1068,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative routes oversized query to 
   );
 
   assertEquals(providerCalls, 0);
-  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }> | undefined;
+  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }> | undefined;
   assertEquals((resultBlock?.content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'query_too_long' });
 });
 
@@ -1060,7 +1088,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative routes malformed input jso
   );
 
   assertEquals(providerCalls, 0);
-  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }> | undefined;
+  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }> | undefined;
   assertEquals((resultBlock?.content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'invalid_tool_input' });
 });
 
@@ -1076,53 +1104,12 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative keeps client tool_use and 
     activeProvider(fakeProviderOk),
   );
 
-  const blockStarts = events.filter(event => event.type === 'content_block_start') as Array<Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }>>;
+  const blockStarts = events.filter(event => event.type === 'content_block_start') as Array<Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }>>;
   assertEquals(blockStarts.map(event => event.content_block.type), ['server_tool_use', 'web_search_tool_result', 'tool_use']);
   assertEquals(blockStarts.map(event => event.index), [0, 1, 2]);
 
   const messageDelta = events.find(event => event.type === 'message_delta');
   assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.delta.stop_reason : undefined, 'tool_use');
-});
-
-test('rewriteAnthropicMessagesWebSearchEventsToNative rewrites citations carried by text_delta', async () => {
-  const events = await runStreamingShim(
-    [
-      upstreamMessageStart(),
-      {
-        type: 'content_block_start',
-        index: 0,
-        content_block: { type: 'text', text: '' },
-      },
-      {
-        type: 'content_block_delta',
-        index: 0,
-        delta: {
-          type: 'text_delta',
-          text: 'cited',
-          citations: [
-            {
-              type: 'search_result_location',
-              url: 'https://react.dev',
-              title: 'React',
-              search_result_index: 0,
-              start_block_index: 0,
-              end_block_index: 0,
-            },
-          ],
-        },
-      },
-      { type: 'content_block_stop', index: 0 },
-      ...upstreamMessageEnd('end_turn'),
-    ],
-    {
-      mode: 'replay_only',
-      priorSearchUseCount: 0,
-      requestSearchResultOwnership: ['owned'],
-    },
-  );
-
-  const textDelta = events.find(event => event.type === 'content_block_delta' && event.delta.type === 'text_delta') as Extract<AnthropicMessagesStreamEvent, { type: 'content_block_delta' }> | undefined;
-  assertEquals(textDelta?.delta.type === 'text_delta' ? textDelta.delta.citations?.[0]?.type : undefined, 'web_search_result_location');
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative rewrites citations_delta entries', async () => {
@@ -1132,7 +1119,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative rewrites citations_delta e
       {
         type: 'content_block_start',
         index: 0,
-        content_block: { type: 'text', text: '' },
+        content_block: { citations: null, type: 'text', text: '' },
       },
       {
         type: 'content_block_delta',
@@ -1140,8 +1127,9 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative rewrites citations_delta e
         delta: {
           type: 'citations_delta',
           citation: {
+            cited_text: '',
             type: 'search_result_location',
-            url: 'https://react.dev',
+            source: 'https://react.dev',
             title: 'React',
             search_result_index: 0,
             start_block_index: 0,
@@ -1159,7 +1147,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative rewrites citations_delta e
     },
   );
 
-  const citationsDelta = events.find(event => event.type === 'content_block_delta' && event.delta.type === 'citations_delta') as Extract<AnthropicMessagesStreamEvent, { type: 'content_block_delta' }> | undefined;
+  const citationsDelta = events.find(event => event.type === 'content_block_delta' && event.delta.type === 'citations_delta') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_delta' }> | undefined;
   assertEquals(citationsDelta?.delta.type === 'citations_delta' ? citationsDelta.delta.citation.type : undefined, 'web_search_result_location');
 });
 
@@ -1175,8 +1163,9 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative rewrites pre-populated cit
           text: '',
           citations: [
             {
+              cited_text: '',
               type: 'search_result_location',
-              url: 'https://react.dev',
+              source: 'https://react.dev',
               title: 'React',
               search_result_index: 0,
               start_block_index: 0,
@@ -1195,7 +1184,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative rewrites pre-populated cit
     },
   );
 
-  const blockStart = events.find(event => event.type === 'content_block_start') as Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }> | undefined;
+  const blockStart = events.find(event => event.type === 'content_block_start') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }> | undefined;
   assertEquals(blockStart?.content_block.type === 'text' ? blockStart.content_block.citations?.[0]?.type : undefined, 'web_search_result_location');
 });
 
@@ -1206,7 +1195,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative leaves foreign citations u
       {
         type: 'content_block_start',
         index: 0,
-        content_block: { type: 'text', text: '' },
+        content_block: { citations: null, type: 'text', text: '' },
       },
       {
         type: 'content_block_delta',
@@ -1214,8 +1203,9 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative leaves foreign citations u
         delta: {
           type: 'citations_delta',
           citation: {
+            cited_text: '',
             type: 'search_result_location',
-            url: 'https://example.com',
+            source: 'https://example.com',
             title: 'Foreign',
             search_result_index: 0,
             start_block_index: 0,
@@ -1233,7 +1223,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative leaves foreign citations u
     },
   );
 
-  const citationsDelta = events.find(event => event.type === 'content_block_delta' && event.delta.type === 'citations_delta') as Extract<AnthropicMessagesStreamEvent, { type: 'content_block_delta' }> | undefined;
+  const citationsDelta = events.find(event => event.type === 'content_block_delta' && event.delta.type === 'citations_delta') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_delta' }> | undefined;
   assertEquals(citationsDelta?.delta.type === 'citations_delta' ? citationsDelta.delta.citation.type : undefined, 'search_result_location');
 });
 
@@ -1244,8 +1234,8 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative replay-only mode forwards 
       ...upstreamTextBlock(0, 'plain text'),
       {
         type: 'message_delta',
-        delta: { stop_reason: 'end_turn', stop_sequence: null },
-        usage: { output_tokens: 5 },
+        delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null },
+        usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 5 },
       },
       { type: 'message_stop' },
     ],
@@ -1257,8 +1247,8 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative replay-only mode forwards 
   );
 
   const messageDelta = events.find(event => event.type === 'message_delta');
-  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.delta : undefined, { stop_reason: 'end_turn', stop_sequence: null });
-  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage : undefined, { output_tokens: 5 });
+  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.delta : undefined, { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null });
+  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.output_tokens : undefined, 5);
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative forwards upstream error and returns without synthetic terminal', async () => {
@@ -1294,32 +1284,74 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative yields message_stop even w
   assertEquals(events[events.length - 1].type, 'message_stop');
 });
 
-test('rewriteAnthropicMessagesWebSearchEventsToNative throws when upstream interleaves content blocks', async () => {
-  await assertRejects(
-    () =>
-      runStreamingShim(
-        [
-          upstreamMessageStart(),
-          {
-            type: 'content_block_start',
-            index: 0,
-            content_block: { type: 'text', text: '' },
-          },
-          {
-            type: 'content_block_start',
-            index: 1,
-            content_block: { type: 'text', text: '' },
-          },
-        ],
-        {
-          mode: 'replay_only',
-          priorSearchUseCount: 0,
-          requestSearchResultOwnership: [],
-        },
-      ),
-    Error,
-    'interleaved content blocks',
+test('rewriteAnthropicMessagesWebSearchEventsToNative preserves interleaved passthrough blocks', async () => {
+  const events = await runStreamingShim(
+    [
+      upstreamMessageStart(),
+      { type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'answer' } },
+      { type: 'content_block_start', index: 1, content_block: { type: 'redacted_thinking', data: 'sidecar' } },
+      { type: 'content_block_stop', index: 1 },
+      { type: 'content_block_stop', index: 0 },
+      ...upstreamMessageEnd('end_turn'),
+    ],
+    { mode: 'replay_only', priorSearchUseCount: 0, requestSearchResultOwnership: [] },
   );
+  const blocks = events.filter(event => event.type === 'content_block_start' || event.type === 'content_block_delta' || event.type === 'content_block_stop');
+  assertEquals(blocks.map(event => [event.type, event.index]), [
+    ['content_block_start', 0],
+    ['content_block_delta', 0],
+    ['content_block_start', 1],
+    ['content_block_stop', 1],
+    ['content_block_stop', 0],
+  ]);
+});
+
+test('rewriteAnthropicMessagesWebSearchEventsToNative places a deferred sidecar after intercepted search results', async () => {
+  const events = await runStreamingShim(
+    [
+      upstreamMessageStart(),
+      ...upstreamWebSearchBlockRawJson(0, 'toolu_1', '{"query":"react 19"}').slice(0, -1),
+      { type: 'content_block_start', index: 1, content_block: { type: 'redacted_thinking', data: 'sidecar' } },
+      { type: 'content_block_stop', index: 1 },
+      { type: 'content_block_stop', index: 0 },
+      ...upstreamMessageEnd('tool_use'),
+    ],
+    activeAnthropicMessagesWebSearchShimState(),
+    activeProvider(fakeProviderOk),
+  );
+  const starts = events.filter(event => event.type === 'content_block_start');
+  assertEquals(starts.map(event => [event.index, event.content_block.type]), [
+    [0, 'server_tool_use'],
+    [1, 'web_search_tool_result'],
+    [2, 'redacted_thinking'],
+  ]);
+});
+
+test('rewriteAnthropicMessagesWebSearchEventsToNative delays later content until an intercepted search result is complete', async () => {
+  const events = await runStreamingShim(
+    [
+      upstreamMessageStart(),
+      ...upstreamWebSearchBlockRawJson(0, 'toolu_1', '{"query":"react 19"}').slice(0, -1),
+      { type: 'content_block_start', index: 1, content_block: { citations: null, type: 'text', text: '' } },
+      { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'answer' } },
+      { type: 'content_block_stop', index: 1 },
+      { type: 'content_block_stop', index: 0 },
+      ...upstreamMessageEnd('tool_use'),
+    ],
+    activeAnthropicMessagesWebSearchShimState(),
+    activeProvider(fakeProviderOk),
+  );
+  const blocks = events.filter(event => event.type === 'content_block_start' || event.type === 'content_block_delta' || event.type === 'content_block_stop');
+  assertEquals(blocks.map(event => [event.type, event.index]), [
+    ['content_block_start', 0],
+    ['content_block_stop', 0],
+    ['content_block_start', 1],
+    ['content_block_stop', 1],
+    ['content_block_start', 2],
+    ['content_block_delta', 2],
+    ['content_block_stop', 2],
+  ]);
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative requires a provider when mode is active', async () => {
@@ -1358,10 +1390,10 @@ test('the native web-search tool records its original backend error before servi
     const outcome = await run(compose<Record<string, unknown>, Record<string, unknown>>('nativeSearch', [
       runAnthropicMessagesWebSearchTool({ targetOf: () => 'anthropicMessages' }), terminal,
     ]), move({
-      'request.chat.anthropicMessages': { model: 'model', max_tokens: 32, messages: [{ role: 'user', content: 'question' }], tools: [{ type: 'web_search_20260209' }] },
+      'request.chat.anthropicMessages': { model: 'model', max_tokens: 32, messages: [{ role: 'user', content: 'question' }], tools: [{ name: 'web_search', type: 'web_search_20260209' }] },
       'route.attempt': { candidateId: 0, upstreamId: selected.provider.upstreamId, modelId: selected.model.id, flags: ['anthropic-messages-web-search-shim'] },
     }), { gateway: mockChatGatewayCtx(), resolveAttempt: () => selected, dump: async (event: RunEvent) => { logs.push(event); } });
-    const answer = outcome.facts['response.chat.anthropicMessages'] as { frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>> };
+    const answer = outcome.facts['response.chat.anthropicMessages'] as { frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>> };
     const events = await collectStreamEvents(answer.frames);
     expect(events).toContainEqual(expect.objectContaining({ type: 'content_block_start', content_block: expect.objectContaining({ type: 'web_search_tool_result', content: { type: 'web_search_tool_result_error', error_code: 'unavailable' } }) }));
     const entry = logs.find(event => event.type === 'stage.log' && event.level === 'error');

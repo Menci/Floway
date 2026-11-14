@@ -105,6 +105,46 @@ test('readCopilotUpstreamState round-trips a seat verbatim', () => {
   assertEquals(readCopilotUpstreamState(JSON.parse(JSON.stringify(seeded))).seat, seeded.seat);
 });
 
+test('readCopilotUpstreamState rejects a malformed nested quota entitlement', () => {
+  assertThrows(
+    () => readCopilotUpstreamState({
+      knownModels: null,
+      copilotToken: null,
+      quotaSnapshot: {
+        fetchedAt: 1,
+        data: {
+          observed_at: '2026-08-01T00:00:00.000Z',
+          reset_at: null,
+          quotas: { malformed: { entitlement: -2, unlimited: false } },
+        },
+      },
+      seat: null,
+    }),
+    TypeError,
+    'Invalid Copilot quota entitlement',
+  );
+});
+
+test('readCopilotUpstreamState rejects a noncanonical unlimited sentinel', () => {
+  assertThrows(
+    () => readCopilotUpstreamState({
+      knownModels: null,
+      copilotToken: null,
+      quotaSnapshot: {
+        fetchedAt: 1,
+        data: {
+          observed_at: '2026-08-01T00:00:00.000Z',
+          reset_at: null,
+          quotas: { malformed: { entitlement: -1, unlimited: false } },
+        },
+      },
+      seat: null,
+    }),
+    TypeError,
+    'Copilot quota unlimited flag is not canonical',
+  );
+});
+
 // The token entry is a closed key set, and migration 0079 strips the `sku` that
 // used to sit in it, so a row that still carries one must fail loudly rather
 // than be tolerated here.

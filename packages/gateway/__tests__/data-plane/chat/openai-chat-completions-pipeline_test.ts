@@ -73,7 +73,8 @@ const chunk = (text: string): OpenAIChatCompletionsStreamEvent => ({
  *  chunk whose delta holds nothing but `reasoning_opaque`. */
 const affinityCarrier = (frame: SseFrame): string | undefined => {
   if (frame.data === '[DONE]') return undefined;
-  return (JSON.parse(frame.data) as OpenAIChatCompletionsStreamEvent).choices[0]?.delta.reasoning_opaque ?? undefined;
+  const delta = (JSON.parse(frame.data) as OpenAIChatCompletionsStreamEvent).choices[0]?.delta;
+  return delta !== undefined && 'reasoning_opaque' in delta && typeof delta.reasoning_opaque === 'string' ? delta.reasoning_opaque : undefined;
 };
 
 /** A stream that stops without ever saying it ended — what a dropped upstream looks like. */

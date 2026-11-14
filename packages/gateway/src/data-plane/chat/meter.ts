@@ -18,13 +18,14 @@
 
 import type { ChatAnswer, ChatFacts } from './facts.ts';
 import type { ChatServices } from './services.ts';
+import { firstOutputTokenSignal } from './shared/first-output-token.ts';
 import type { BillableEntity } from '../pipeline/facts.ts';
 import { isFailure } from '../pipeline/facts.ts';
 import type { StreamOutcome } from '../pipeline/serve.ts';
 import { streamReferenceOf } from '@floway-dev/dump';
-import { defer, defineStage, move, setRelease, type Owned, type Deferred } from '@floway-dev/pipeline';
+import { defer, defineStage, move, setRelease, type Deferred, type Logger, type Owned } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { TelemetryModelIdentity } from '@floway-dev/provider';
+import type { ChatTargetApi, TelemetryModelIdentity } from '@floway-dev/provider';
 
 type ResponseKey = Extract<keyof ChatFacts, `response.chat.${string}`>;
 
@@ -34,7 +35,6 @@ type ResponseKey = Extract<keyof ChatFacts, `response.chat.${string}`>;
 export type ChatMeterReading<Event> = (
   frames: AsyncIterable<ProtocolFrame<Event>>,
   identity: TelemetryModelIdentity,
-  attempt: { firstOutputTokenAt: number | null },
 ) => { readonly frames: AsyncIterable<ProtocolFrame<Event>>; readonly outcome: Deferred<StreamOutcome> };
 
 /** Credential retries precede the final called entity. Only the final reply has frames
@@ -56,7 +56,7 @@ const attributedTo = (billable: readonly BillableEntity[], wire: string): Teleme
 export const meterChatWire = <Event>(spec: {
   /** The wire this meters, which names the stage — so a dump says which protocol's events the
    *  reading was taken off without the name being written twice. */
-  readonly wire: string;
+  readonly wire: ChatTargetApi;
   /** The answer this wire hands up, whose frames carry the upstream's own usage. */
   readonly answer: ResponseKey;
   /** Where the reading lands. It is the *source* family's key rather than this protocol's,
@@ -88,10 +88,10 @@ export const meterChatWire = <Event>(spec: {
       return move({ ...back, [spec.streamedUsage]: null }) as never;
     }
 
+    const identity = attributedTo(back['response.usage.billable'], spec.wire);
     const metered = spec.read(
-      answer.frames as AsyncIterable<ProtocolFrame<Event>>,
-      attributedTo(back['response.usage.billable'], spec.wire),
-      use.gateway.attempt.timing,
+      stampFirstOutputToken(answer.frames as AsyncIterable<ProtocolFrame<Event>>, spec.wire, use.gateway.attempt.timing, identity, use.log),
+      identity,
     );
     const iterator = metered.frames[Symbol.asyncIterator]();
     // Downstream transforms may stop after a terminal or cancellation. The body owner keeps
@@ -115,3 +115,35 @@ export const meterChatWire = <Event>(spec: {
     }) as never;
   },
 });
+
+/**
+ * Time to first token is measured where the token is: the first frame that carries generated
+ * output, including reasoning and model-selected tool announcements, rather than the envelope
+ * around it. Timing follows ordinary consumption of the stream, so upstream buffering and
+ * downstream backpressure can delay when the first signal is observed.
+ */
+const stampFirstOutputToken = async function* <Event>(
+  frames: AsyncIterable<ProtocolFrame<Event>>,
+  wire: ChatTargetApi,
+  timing: { firstOutputTokenAt: number | null },
+  identity: TelemetryModelIdentity,
+  log: Logger,
+): AsyncGenerator<ProtocolFrame<Event>> {
+  for await (const frame of frames) {
+    if (timing.firstOutputTokenAt === null) {
+      const signal = firstOutputTokenSignal(frame, wire);
+      if (signal !== null) {
+        timing.firstOutputTokenAt = performance.now();
+        if (signal.type === 'runtime-output') {
+          await log.warn('first output timing started from runtime output without an earlier decode signal in this response', {
+            outputType: signal.outputType,
+            upstream: identity.upstream,
+            model: identity.model,
+            modelKey: identity.modelKey,
+          });
+        }
+      }
+    }
+    yield frame;
+  }
+};

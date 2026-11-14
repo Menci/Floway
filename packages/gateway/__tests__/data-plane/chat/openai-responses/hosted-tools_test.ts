@@ -1,12 +1,14 @@
-import { beforeEach, test, vi } from 'vitest';
+import { beforeEach, expect, test, vi } from 'vitest';
 
 import { driveHostedToolStage } from './hosted-tools/drive.ts';
-import { imageGenerationHostedTool } from '../../../../src/data-plane/chat/openai-responses/hosted-tools/image-generation.ts';
+import { inputErrorEnvelope } from '../../../../src/data-plane/chat/openai-responses/errors.ts';
+import { expandImageGenerationCall, imageGenerationHostedTool } from '../../../../src/data-plane/chat/openai-responses/hosted-tools/image-generation.ts';
 import { consumeTurnStreaming, createMergeState, materializeAccumulatedOutput, parseHostedToolArguments, resolveHostedToolName, sumUsage } from '../../../../src/data-plane/chat/openai-responses/hosted-tools/shared.ts';
-import { type InterceptedFunctionCall, type HostedToolResultSlot, type TurnSummary, type UpstreamTerminal } from '../../../../src/data-plane/chat/openai-responses/hosted-tools/types.ts';
-import { FUNCTION_TOOL_NAME, webSearchHostedTool } from '../../../../src/data-plane/chat/openai-responses/hosted-tools/web-search.ts';
+import type { HostedToolHistoryExpansion, HostedToolRegistration, HostedToolResultSlot, InterceptedFunctionCall, TurnSummary, UpstreamTerminal } from '../../../../src/data-plane/chat/openai-responses/hosted-tools/types.ts';
+import { expandWebSearchCall, FUNCTION_TOOL_NAME, webSearchHostedTool } from '../../../../src/data-plane/chat/openai-responses/hosted-tools/web-search.ts';
 import { createNonOpenAIResponsesSourceStore } from '../../../../src/data-plane/chat/openai-responses/items/store.ts';
 import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gateway-ctx.ts';
+import { createSidecarCodecFactory, SidecarDomain } from '../../../../src/data-plane/chat/shared/sidecar-codec.ts';
 import { resolveAlphaSearchCandidate } from '../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts';
 import type { AlphaSearchDispatcher } from '../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../../src/data-plane/tools/web-search/provider.ts';
@@ -27,59 +29,494 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { stubAlphaSearchCandidate } from '../../../test-utils/alpha-search-provider.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
-import { eventFrame } from '@floway-dev/protocols/common';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import { decodeCanonicalBase64, encodeBase64, eventFrame } from '@floway-dev/protocols/common';
 import type { BillableUsage, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type {
   CanonicalOpenAIResponsesPayload,
-  OpenAIResponsesOutputItem,
-  OpenAIResponsesInputItem,
+  OpenAIResponsesOutputItemEx,
+  CanonicalOpenAIResponsesInputItem,
   OpenAIResponsesInputWebSearchCall,
   OpenAIResponsesOutputWebSearchCall,
-  OpenAIResponsesPayload,
-  OpenAIResponsesResult,
-  OpenAIResponsesStreamEvent,
+  OpenAIResponsesPayloadEx,
+  OpenAIResponsesResultEx,
+  OpenAIResponsesStreamEventEx,
   OpenAIResponsesTool,
   OpenAIResponsesToolChoice,
   OpenAIResponsesWebSearchAction,
 } from '@floway-dev/protocols/openai-responses';
 import { type FlagId, type OpenAIResponsesInvocation } from '@floway-dev/provider';
 import { assert, assertEquals, assertFalse, assertRejects, stubModelCandidate, eventResult, type EventResult, type ExecuteResult } from '@floway-dev/test-utils';
-import { translateOpenAIResponsesViaAnthropicMessages, translateOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
+import { routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
 const runHostedWebSearch = driveHostedToolStage([webSearchHostedTool]);
 
-const emptyResult = (id: string, status: OpenAIResponsesResult['status']): OpenAIResponsesResult => ({
+const replaySearch: HostedToolRegistration = () => ({
+  type: 'active', baseToolName: 'web_search',
+  expandHistoryItem: (item, replayData) => item.type === 'web_search_call' ? expandWebSearchCall(item, replayData) : undefined,
+});
+const replayImage: HostedToolRegistration = () => ({ type: 'active', baseToolName: 'image_generation', expandHistoryItem: (item, replay) => item.type === 'image_generation_call' ? expandImageGenerationCall(item, replay) : undefined });
+
+const searchHistory = async (
+  ctx: ChatGatewayCtx,
+  id: string,
+  item: Extract<CanonicalOpenAIResponsesInputItem, { type: 'web_search_call' | 'image_generation_call' }> = { type: 'web_search_call', id, status: 'completed', action: { type: 'search', queries: [id] } },
+): Promise<CanonicalOpenAIResponsesInputItem[]> => {
+  const encoded = await ctx.sidecarCodecFactory.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall).encode({
+    v: 1,
+    type: item.type,
+    functionCall: { type: 'function_call', call_id: id, name: item.type === 'web_search_call' ? 'web_search' : 'image_generation', arguments: '{}', status: 'completed' },
+    data: item.type === 'web_search_call' ? { action: item.action, results: [] } : {
+      action: item.action, revised_prompt: item.revised_prompt, size: item.size, quality: item.quality, output_format: item.output_format, background: item.background,
+    },
+  });
+  return [{ type: 'reasoning', id: `rs_${id}`, summary: [], encrypted_content: encoded }, item];
+};
+
+const historyShape = (items: CanonicalOpenAIResponsesInputItem[]) => items.map(item => item.type === 'function_call' || item.type === 'function_call_output'
+  ? `${item.type}:${item.call_id}` : item.type === 'message' ? `message:${item.role}` : item.type);
+
+const boundSearchItem = {
+  type: 'web_search_call' as const, id: 'ws_bound', status: 'completed' as const,
+  action: { type: 'search' as const, queries: ['original'] },
+  results: [{ type: 'text_result' as const, url: 'https://example.com', title: 'result', snippet: 'original result' }],
+};
+const boundImageItem = {
+  type: 'image_generation_call' as const, id: 'ig_bound', status: 'completed' as const,
+  result: 'aGVsbG8=', revised_prompt: 'original prompt', output_format: 'png' as const, action: 'generate' as const,
+  size: '1024x1024' as const, quality: 'high' as const, background: 'opaque' as const,
+};
+
+test.each([
+  { change: 'search query', original: boundSearchItem, changed: { ...boundSearchItem, action: { type: 'search' as const, queries: ['different'] } } },
+  { change: 'search operation', original: boundSearchItem, changed: { ...boundSearchItem, action: { type: 'open_page' as const, url: 'https://example.com' } } },
+  { change: 'image prompt', original: boundImageItem, changed: { ...boundImageItem, revised_prompt: 'different prompt' } },
+  { change: 'image format', original: boundImageItem, changed: { ...boundImageItem, output_format: 'jpeg' as const } },
+  { change: 'image action', original: boundImageItem, changed: { ...boundImageItem, action: 'edit' as const } },
+  { change: 'image size', original: boundImageItem, changed: { ...boundImageItem, size: '1536x1024' as const } },
+  { change: 'image quality', original: boundImageItem, changed: { ...boundImageItem, quality: 'low' as const } },
+  { change: 'image background', original: boundImageItem, changed: { ...boundImageItem, background: 'transparent' as const } },
+  { change: 'search to image', original: boundSearchItem, changed: boundImageItem },
+  { change: 'image to search', original: boundImageItem, changed: boundSearchItem },
+])('dispatcher rejects the ordinal replay candidate when call inputs change: $change', async ({ original, changed }) => {
+  const ctx = makeGatewayCtx();
+  const [carrier] = await searchHistory(ctx, 'signed_original', original);
+  const inv = makeInvocation({ payload: { input: [carrier, changed] } });
+  await runHostedToolsAndDrain(driveHostedToolStage([replaySearch, replayImage]), inv, ctx, async () => {
+    const calls = inv.payload.input.filter(item => item.type === 'function_call');
+    assertEquals(calls.length, 1);
+    assertFalse(calls[0].call_id === 'signed_original');
+    assertEquals(calls[0].name, changed.type === 'web_search_call' ? 'web_search' : 'image_generation');
+    assertFalse(inv.payload.input.some(item => item.type === 'reasoning'));
+    const output = inv.payload.input.find(item => item.type === 'function_call_output');
+    assert(output?.type === 'function_call_output');
+    assertEquals(output.call_id, calls[0].call_id);
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+});
+
+test.each([
+  { change: 'search results', original: boundSearchItem, changed: { ...boundSearchItem, results: [] } },
+  { change: 'search status', original: boundSearchItem, changed: { ...boundSearchItem, status: 'failed' as const } },
+  { change: 'image bytes', original: boundImageItem, changed: { ...boundImageItem, result: 'b3RoZXI=' } },
+  { change: 'image error', original: boundImageItem, changed: { ...boundImageItem, status: 'failed' as const, result: null, error: { message: 'different', code: 'server_error' } } },
+])('dispatcher retains replay when only call outputs change: $change', async ({ original, changed }) => {
+  const ctx = makeGatewayCtx();
+  const [carrier] = await searchHistory(ctx, 'signed_original', original);
+  const inv = makeInvocation({ payload: { input: [carrier, changed] } });
+  await runHostedToolsAndDrain(driveHostedToolStage([replaySearch, replayImage]), inv, ctx, async () => {
+    assertEquals(inv.payload.input.filter(item => item.type === 'function_call').map(item => item.call_id), ['signed_original']);
+    assertEquals(inv.payload.input.filter(item => item.type === 'function_call_output').map(item => item.call_id), ['signed_original']);
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+});
+
+test('dispatcher input replay checks ignore transport IDs and object key order', async () => {
+  const ctx = makeGatewayCtx();
+  const [carrier] = await searchHistory(ctx, 'original', boundSearchItem);
+  const echoed = { results: boundSearchItem.results, action: boundSearchItem.action, status: boundSearchItem.status, id: 'client-id', type: boundSearchItem.type };
+  const inv = makeInvocation({ payload: { input: [echoed, carrier] } });
+  await runHostedToolsAndDrain(driveHostedToolStage([replaySearch]), inv, ctx, async () => {
+    assertEquals(historyShape(inv.payload.input), ['function_call:original', 'function_call_output:original']);
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+});
+
+test.each(['swapped calls', 'swapped carriers', 'changed first call', 'deleted first call', 'inserted first call'] as const)('dispatcher never searches or compacts replay candidates: %s', async change => {
+  const ctx = makeGatewayCtx();
+  const first = { ...boundSearchItem, id: 'first', action: { type: 'search' as const, queries: ['first'] } };
+  const second = { ...boundSearchItem, id: 'second', action: { type: 'search' as const, queries: ['second'] } };
+  const inserted = { ...boundSearchItem, id: 'inserted', action: { type: 'search' as const, queries: ['inserted'] } };
+  const [firstCarrier] = await searchHistory(ctx, 'first', first);
+  const [secondCarrier] = await searchHistory(ctx, 'second', second);
+  const inputs = {
+    'swapped calls': [firstCarrier, secondCarrier, second, first],
+    'swapped carriers': [secondCarrier, firstCarrier, first, second],
+    'changed first call': [firstCarrier, secondCarrier, inserted, second],
+    'deleted first call': [firstCarrier, secondCarrier, second],
+    'inserted first call': [firstCarrier, secondCarrier, inserted, first, second],
+  };
+  const expected = {
+    'swapped calls': ['fallback', 'fallback'],
+    'swapped carriers': ['fallback', 'fallback'],
+    'changed first call': ['fallback', 'second'],
+    'deleted first call': ['fallback'],
+    'inserted first call': ['fallback', 'fallback', 'fallback'],
+  };
+  const inv = makeInvocation({ payload: { input: inputs[change] } });
+  await runHostedToolsAndDrain(driveHostedToolStage([replaySearch]), inv, ctx, async () => {
+    assertEquals(inv.payload.input.filter(item => item.type === 'function_call').map(item => item.call_id === 'first' || item.call_id === 'second' ? item.call_id : 'fallback'), expected[change]);
+    assertFalse(inv.payload.input.some(item => item.type === 'reasoning'));
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+});
+
+test.each([false, true])('identical public searches retain ordinal-specific original calls and private results (carriers first: %s)', async carriersFirst => {
+  const ctx = makeGatewayCtx();
+  const codec = ctx.sidecarCodecFactory.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall);
+  const calls = ['first', 'second'].map(id => ({ type: boundSearchItem.type, id, status: boundSearchItem.status, action: boundSearchItem.action }));
+  const carriers: CanonicalOpenAIResponsesInputItem[] = await Promise.all(calls.map(async item => ({
+    type: 'reasoning', id: `rs_${item.id}`, summary: [],
+    encrypted_content: await codec.encode({
+      v: 1,
+      type: item.type,
+      functionCall: { type: 'function_call', call_id: item.id, name: 'original_alias', arguments: '{"search_query":[{"q":"original"}]}', status: 'completed' },
+      data: { action: item.action, results: [{ ...boundSearchItem.results[0], snippet: `private ${item.id}` }] },
+    }),
+  })));
+  const inv = makeInvocation({ payload: { input: carriersFirst ? [...carriers, ...calls] : [...calls, ...carriers] } });
+  await runHostedToolsAndDrain(driveHostedToolStage([replaySearch]), inv, ctx, async () => {
+    assertEquals(historyShape(inv.payload.input), ['function_call:first', 'function_call:second', 'function_call_output:first', 'function_call_output:second']);
+    const outputs = inv.payload.input.filter(item => item.type === 'function_call_output');
+    assert(typeof outputs[0].output === 'string' && outputs[0].output.includes('private first'));
+    assert(typeof outputs[1].output === 'string' && outputs[1].output.includes('private second'));
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+});
+
+test.each(['before', 'after', 'interleaved', 'separated'] as const)('hosted history pairs replay sidecars by ordinal within a turn: %s', async layout => {
+  const ctx = makeGatewayCtx();
+  const codec = ctx.sidecarCodecFactory.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall);
+  const decode = vi.spyOn(codec, 'decode');
+  const codecFor = vi.spyOn(ctx.sidecarCodecFactory, 'codecFor').mockReturnValue(codec);
+  const [firstReplay, firstCall] = await searchHistory(ctx, 'first');
+  const secondCall = { type: 'image_generation_call' as const, id: 'public-image', status: 'completed' as const, result: 'aGVsbG8=', revised_prompt: 'second' };
+  const [secondReplay] = await searchHistory(ctx, 'second', secondCall);
+  const native: CanonicalOpenAIResponsesInputItem = { type: 'reasoning', id: 'upstream', summary: [], encrypted_content: 'native-opaque' };
+  const client: CanonicalOpenAIResponsesInputItem = { type: 'custom_tool_call', call_id: 'client', name: 'client', input: 'input' };
+  const layouts = {
+    before: [firstReplay, secondReplay, native, firstCall, client, secondCall],
+    after: [firstCall, client, secondCall, native, firstReplay, secondReplay],
+    interleaved: [firstReplay, firstCall, client, secondReplay, secondCall, native],
+    separated: [firstReplay, firstCall, native, secondCall, client, secondReplay],
+  };
+  const input = layouts[layout];
+  const original = structuredClone(input);
+  const seen: string[] = [];
+  const registration: HostedToolRegistration = () => ({
+    type: 'active', baseToolName: 'hosted',
+    expandHistoryItem: (item, replayData) => {
+      if (item.type !== 'web_search_call' && item.type !== 'image_generation_call') return undefined;
+      assert(replayData !== undefined);
+      assertEquals(Object.keys(replayData), ['data']);
+      seen.push(item.type === 'web_search_call' ? (replayData.data as { action: { queries: string[] } }).action.queries[0] : (replayData.data as { revised_prompt: string }).revised_prompt);
+      return { callSource: 'replay', output: 'result' };
+    },
+  });
+  const inv = makeInvocation({ payload: { input } });
+  await runHostedToolsAndDrain(driveHostedToolStage([registration]), inv, ctx, async () => {
+    assertEquals(seen, ['first', 'second']);
+    assertEquals(inv.payload.input.filter(item => item.type === 'function_call').map(item => item.call_id), ['first', 'second']);
+    assertEquals(inv.payload.input.filter(item => item.type === 'function_call_output').map(item => item.call_id), ['first', 'second']);
+    assertEquals(inv.payload.input.filter(item => item.type === 'reasoning'), [native]);
+    assertEquals(inv.payload.input.filter(item => item.type === 'custom_tool_call'), [client]);
+    assertEquals(decode.mock.calls.map(([value]) => value), input.filter(item => item.type === 'reasoning').map(item => item.encrypted_content));
+    assertEquals(codecFor.mock.calls.at(-1), [SidecarDomain.OpenAIResponsesHostedToolCall]);
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+  assertEquals(input, original);
+});
+
+test.each(['message', 'additional_tools', 'tool_search_output', 'function_call_output'] as const)('hosted replay ordinals reset at the user-side %s boundary', async type => {
+  const ctx = makeGatewayCtx();
+  const [orphan] = await searchHistory(ctx, 'orphan');
+  const [replay, call] = await searchHistory(ctx, 'next');
+  const boundary: CanonicalOpenAIResponsesInputItem = type === 'message' ? { type, role: 'user', content: 'next' }
+    : type === 'additional_tools' ? { type, role: 'developer', tools: [] }
+      : type === 'tool_search_output' ? { type, call_id: 'load', execution: 'client', tools: [] }
+        : { type, call_id: 'client', output: 'result' };
+  const inv = makeInvocation({ payload: { input: [orphan, boundary, call, replay] } });
+  await runHostedToolsAndDrain(driveHostedToolStage([replaySearch]), inv, ctx, async () => {
+    assertEquals(historyShape(inv.payload.input), [type === 'message' ? 'message:user' : type === 'function_call_output' ? 'function_call_output:client' : type, 'function_call:next', 'function_call_output:next']);
+    assertEquals(inv.payload.input[0], boundary);
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+});
+
+test.each(['orphan', 'unowned', 'inactive', 'readable'] as const)('hosted history consumes every recognized replay sidecar: %s', async shape => {
+  const ctx = makeGatewayCtx();
+  const [carrier, call] = await searchHistory(ctx, 'original');
+  assert(carrier.type === 'reasoning');
+  if (shape === 'readable') carrier.summary = [{ type: 'summary_text', text: 'carrier body' }];
+  const inv = makeInvocation({ payload: { input: shape === 'orphan' ? [carrier] : [call, carrier] } });
+  const registration: HostedToolRegistration = () => ({ type: 'active', baseToolName: 'hosted', expandHistoryItem: () => undefined });
+  await runHostedToolsAndDrain(driveHostedToolStage(shape === 'inactive' ? [() => ({ type: 'inactive' })] : shape === 'unowned' ? [registration] : [replaySearch]), inv, ctx, async () => {
+    assertEquals(historyShape(inv.payload.input), shape === 'orphan' ? [] : shape === 'unowned' || shape === 'inactive' ? ['web_search_call'] : ['function_call:original', 'function_call_output:original']);
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+});
+
+test('an unowned replay item does not shift later hosted replay ordinals', async () => {
+  const ctx = makeGatewayCtx();
+  const [firstReplay, firstCall] = await searchHistory(ctx, 'first');
+  const imageCall = { type: 'image_generation_call' as const, id: 'second', status: 'completed' as const, result: 'aGVsbG8=' };
+  const [secondReplay] = await searchHistory(ctx, 'second', imageCall);
+  const inv = makeInvocation({ payload: { input: [firstReplay, firstCall, secondReplay, imageCall] } });
+  await runHostedToolsAndDrain(driveHostedToolStage([replayImage]), inv, ctx, async () => {
+    assertEquals(inv.payload.input.filter(item => item.type === 'function_call').map(item => item.call_id), ['second']);
+    assertEquals(inv.payload.input.filter(item => item.type === 'function_call_output').map(item => item.call_id), ['second']);
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+});
+
+test.each(['key', 'domain', 'tamper', 'foreign'] as const)('hosted history preserves an unusable replay carrier: %s', async change => {
+  const ctx = makeGatewayCtx();
+  const history = await searchHistory(ctx, 'original');
+  const carrier = history[0];
+  assert(carrier.type === 'reasoning' && typeof carrier.encrypted_content === 'string');
+  const decoded = await ctx.sidecarCodecFactory.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall).decode(carrier.encrypted_content);
+  assert(decoded !== undefined);
+  if (change === 'key') carrier.encrypted_content = await createSidecarCodecFactory('other key').codecFor(SidecarDomain.OpenAIResponsesHostedToolCall).encode(decoded);
+  if (change === 'domain') carrier.encrypted_content = await ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn).encode(decoded);
+  if (change === 'tamper') {
+    const bytes = decodeCanonicalBase64(carrier.encrypted_content)!;
+    bytes[0] ^= 1;
+    carrier.encrypted_content = encodeBase64(bytes);
+  }
+  if (change === 'foreign') carrier.encrypted_content = 'opaque upstream reasoning';
+  const inv = makeInvocation({ payload: { input: history } });
+  const registration: HostedToolRegistration = () => ({
+    type: 'active', baseToolName: 'web_search',
+    expandHistoryItem: (item, replayData) => {
+      if (item.type !== 'web_search_call') return undefined;
+      assertEquals(replayData, undefined);
+      return expandWebSearchCall(item, replayData);
+    },
+  });
+  await runHostedToolsAndDrain(driveHostedToolStage([registration]), inv, ctx, async () => {
+    assertEquals(inv.payload.input[0], carrier);
+    const [, call, output] = inv.payload.input;
+    assert(call.type === 'function_call' && output.type === 'function_call_output');
+    assertEquals(output.call_id, call.call_id);
+    assertEquals(inv.payload.input.length, 3);
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+});
+
+test.each([
+  null,
+  {},
+  { v: 2, type: 'web_search_call', functionCall: { type: 'function_call', call_id: 'call', name: 'web_search', arguments: '{}' } },
+  { functionCall: { type: 'function_call', arguments: 1 } },
+  { functionCall: { type: 'function_call', call_id: 'call', name: 'web_search', arguments: '{}' } },
+  { type: 1, functionCall: { type: 'function_call', call_id: 'call', name: 'web_search', arguments: '{}' } },
+  { type: 'web_search_call', functionCall: { type: 'function_call', call_id: 'call', name: 'web_search', arguments: 1 } },
+])('authenticated invalid hosted replay data exposes the producer error: %j', async payload => {
+  const ctx = makeGatewayCtx();
+  const encrypted_content = await ctx.sidecarCodecFactory.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall).encode(payload);
+  const inv = makeInvocation({
+    payload: {
+      input: [
+        { type: 'reasoning', id: 'rs_invalid', summary: [], encrypted_content },
+        { type: 'web_search_call', id: 'original', status: 'completed' },
+      ],
+    },
+  });
+  await assertRejects(
+    () => runHostedToolsAndDrain(driveHostedToolStage([replaySearch]), inv, ctx, async () => { throw new Error('Must fail before upstream'); }),
+    TypeError, 'Invalid hosted-tool replay data',
+  );
+});
+
+test.each(['web_search_call', 'image_generation_call'] as const)('dispatcher restores the complete original call after JSON echo without stored state: %s', async type => {
+  const ctx = makeGatewayCtx();
+  const item = type === 'web_search_call'
+    ? { type, id: 'original', status: 'completed' as const }
+    : { type, id: 'original', status: 'completed' as const, result: 'aGVsbG8=', revised_prompt: 'different prompt' };
+  const functionCall = { type: 'function_call' as const, id: 'fc_original', call_id: 'call_original', name: 'original_alias', arguments: ' { "q": "\\u732b", "n": 9007199254740993 }\n', status: 'completed' as const, extension: { preserved: null } };
+  const data = { output: 'large search result '.repeat(20_000) };
+  const carrier = { type: 'reasoning' as const, id: 'rs_original', summary: [], encrypted_content: await ctx.sidecarCodecFactory.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall).encode({ v: 1, type, functionCall, data }) };
+  const history = JSON.parse(JSON.stringify([carrier, { ...item, id: 'client-reassigned-id' }]));
+  const inv = makeInvocation({ payload: { input: history } });
+  let expanded = false;
+  const registration: HostedToolRegistration = () => ({
+    type: 'active', baseToolName: 'web_search',
+    expandHistoryItem: (value, replayData) => {
+      if (value.type !== type) return undefined;
+      assertEquals(replayData, { data });
+      expanded = true;
+      return { callSource: 'replay', output: 'result' };
+    },
+  });
+  await runHostedToolsAndDrain(driveHostedToolStage([registration]), inv, makeGatewayCtx(), async () => {
+    assertEquals(historyShape(inv.payload.input), ['function_call:call_original', 'function_call_output:call_original']);
+    assertEquals(inv.payload.input[0], functionCall);
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+  assert(expanded);
+});
+
+test('history expansion requires synthesized call data exactly when the call source is synthesized', () => {
+  const synthesizedMissingCall: HostedToolHistoryExpansion = { callSource: 'synthesized', output: '' } as never;
+  const replayWithCall: HostedToolHistoryExpansion = { callSource: 'replay', synthesizedCall: { callId: '', arguments: '' }, output: '' } as never;
+  const replayOnly: HostedToolHistoryExpansion = { callSource: 'replay', output: '' };
+  const synthesized: HostedToolHistoryExpansion = { callSource: 'synthesized', synthesizedCall: { callId: '', arguments: '' }, output: '' };
+  expect([synthesizedMissingCall, replayWithCall, replayOnly, synthesized]).toHaveLength(4);
+});
+
+test('history expansion receives individual items and keeps generated feedback behind parallel calls', async () => {
+  const source: CanonicalOpenAIResponsesInputItem[] = [
+    { type: 'web_search_call', id: 'first' },
+    { type: 'function_call', call_id: 'client', name: 'client', arguments: '{}' },
+    { type: 'web_search_call', id: 'second' },
+    { type: 'additional_tools', role: 'developer', tools: [] },
+    { type: 'message', role: 'assistant', content: 'next turn' },
+  ];
+  const original = structuredClone(source);
+  const seen: CanonicalOpenAIResponsesInputItem[] = [];
+  const registration: HostedToolRegistration = () => ({
+    type: 'active', baseToolName: 'search',
+    expandHistoryItem: item => {
+      seen.push(item);
+      if (item.type !== 'web_search_call') return undefined;
+      assert(typeof item.id === 'string');
+      return { callSource: 'synthesized', synthesizedCall: { callId: item.id, arguments: '{}' }, output: 'result' };
+    },
+  });
+  const inv = makeInvocation({ payload: { input: source } });
+  await runHostedToolsAndDrain(driveHostedToolStage([registration]), inv, makeGatewayCtx(), async () => {
+    assertEquals(seen, [source[0], source[1], source[2], source[4]]);
+    assertEquals(historyShape(inv.payload.input), [
+      'function_call:first', 'function_call:client', 'function_call:second',
+      'function_call_output:first', 'function_call_output:second', 'additional_tools', 'message:assistant',
+    ]);
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+  assertEquals(source, original);
+});
+
+test.each([true, false])('history places mixed hosted results after the call batch and preserves tool inventories (search registration first: %s)', async searchFirst => {
+  const ctx = makeGatewayCtx();
+  const tail: CanonicalOpenAIResponsesInputItem = { type: 'reasoning', id: 'rs_tail', summary: [], encrypted_content: 'opaque' };
+  const additional: CanonicalOpenAIResponsesInputItem = { type: 'additional_tools', role: 'developer', tools: [] };
+  const loaded: CanonicalOpenAIResponsesInputItem = { type: 'tool_search_output', call_id: 'load', execution: 'client', tools: [] };
+  const source: CanonicalOpenAIResponsesInputItem[] = [
+    { type: 'message', role: 'user', content: 'question' },
+    tail,
+    { type: 'message', role: 'assistant', content: 'before calls' },
+    ...await searchHistory(ctx, 'search'),
+    { type: 'image_generation_call', id: 'ig_1', status: 'completed', result: 'aGVsbG8=', output_format: 'png' },
+    additional, loaded,
+    { type: 'message', role: 'user', content: 'next' },
+  ];
+  const original = structuredClone(source);
+  const inv = makeInvocation({ payload: { input: source } });
+  const dispatcher = driveHostedToolStage(searchFirst ? [replaySearch, replayImage] : [replayImage, replaySearch]);
+  await runHostedToolsAndDrain(dispatcher, inv, ctx, async () => {
+    assertEquals(historyShape(inv.payload.input), [
+      'message:user', 'reasoning', 'message:assistant', 'function_call:search', 'function_call:cc_from_ig_1',
+      'function_call_output:search', 'function_call_output:cc_from_ig_1', 'message:user', 'additional_tools', 'tool_search_output', 'message:user',
+    ]);
+    assertEquals(inv.payload.input[1], tail);
+    const image = inv.payload.input[7];
+    assert(image.type === 'message' && Array.isArray(image.content));
+    assertEquals(image.content[1], { type: 'input_image', image_url: 'data:image/png;base64,aGVsbG8=', detail: 'auto' });
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+  assertEquals(source, original);
+});
+
+test.each(['additional_tools', 'tool_search_output'] as const)('history flushes hosted results before the user-side %s boundary', async type => {
+  const ctx = makeGatewayCtx();
+  const inventory: CanonicalOpenAIResponsesInputItem = type === 'additional_tools'
+    ? { type, role: 'developer', tools: [{ type: 'function', name: 'client' }] }
+    : { type, call_id: 'load', execution: 'client', tools: [{ type: 'function', name: 'client' }] };
+  const source: CanonicalOpenAIResponsesInputItem[] = [
+    ...await searchHistory(ctx, 'first'),
+    inventory,
+    { type: 'function_call', call_id: 'client', name: 'client', arguments: '{}' },
+    ...await searchHistory(ctx, 'second'),
+    { type: 'function_call_output', call_id: 'client', output: 'client result' },
+    { type: 'message', role: 'user', content: 'next' },
+  ];
+  const original = structuredClone(source);
+  const inv = makeInvocation({ payload: { input: source } });
+  await runHostedToolsAndDrain(driveHostedToolStage([replaySearch]), inv, ctx, async () => {
+    assertEquals(historyShape(inv.payload.input), [
+      'function_call:first', 'function_call_output:first', type,
+      'function_call:client', 'function_call:second', 'function_call_output:second', 'function_call_output:client', 'message:user',
+    ]);
+    assertEquals(inv.payload.input[2], inventory);
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+  assertEquals(source, original);
+});
+
+test('history preserves original result boundaries while placing parallel hosted results after their assistant turn', async () => {
+  const ctx = makeGatewayCtx();
+  const inv = makeInvocation({
+    payload: {
+      input: [
+        { type: 'reasoning', id: 'rs_first', summary: [], encrypted_content: 'first' },
+        ...await searchHistory(ctx, 'first'),
+        { type: 'function_call', call_id: 'client', name: 'client', arguments: '{}', status: 'completed' },
+        ...await searchHistory(ctx, 'second'),
+        { type: 'function_call_output', call_id: 'client', output: 'client result' },
+        { type: 'reasoning', id: 'rs_second', summary: [], encrypted_content: 'second' },
+        ...await searchHistory(ctx, 'third'),
+      ],
+    },
+  });
+  await runHostedToolsAndDrain(driveHostedToolStage([replaySearch]), inv, ctx, async () => {
+    assertEquals(historyShape(inv.payload.input), [
+      'reasoning', 'function_call:first', 'function_call:client', 'function_call:second',
+      'function_call_output:first', 'function_call_output:second', 'function_call_output:client',
+      'reasoning', 'function_call:third', 'function_call_output:third',
+    ]);
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+});
+
+const emptyResult = (id: string, status: OpenAIResponsesResultEx['status']): OpenAIResponsesResultEx => ({
   id,
   object: 'response',
   model: 'test-model',
   output: [],
-  output_text: '',
   status,
   error: null,
   incomplete_details: null,
 });
 
-const mkResponseCreated = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkResponseCreated = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.created',
     response: emptyResult(responseId, 'in_progress'),
   });
 
-const mkResponseQueued = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkResponseQueued = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.queued',
     response: emptyResult(responseId, 'queued'),
   });
 
-const mkResponseInProgress = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkResponseInProgress = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.in_progress',
     response: emptyResult(responseId, 'in_progress'),
   });
 
-const mkFunctionCallAdded = (outputIndex: number, callId: string, name: string): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkFunctionCallAdded = (outputIndex: number, callId: string, name: string): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.added',
     output_index: outputIndex,
@@ -92,7 +529,7 @@ const mkFunctionCallAdded = (outputIndex: number, callId: string, name: string):
     },
   });
 
-const mkFunctionCallArgsDone = (outputIndex: number, args: string, itemId = `fc_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkFunctionCallArgsDone = (outputIndex: number, args: string, itemId = `fc_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.function_call_arguments.done',
     item_id: itemId,
@@ -100,7 +537,7 @@ const mkFunctionCallArgsDone = (outputIndex: number, args: string, itemId = `fc_
     arguments: args,
   });
 
-const mkFunctionCallDone = (outputIndex: number, callId: string, name: string, args: string): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkFunctionCallDone = (outputIndex: number, callId: string, name: string, args: string): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.done',
     output_index: outputIndex,
@@ -113,7 +550,7 @@ const mkFunctionCallDone = (outputIndex: number, callId: string, name: string, a
     },
   });
 
-const mkCustomToolCallAdded = (outputIndex: number, callId: string, name: string): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkCustomToolCallAdded = (outputIndex: number, callId: string, name: string): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.added',
     output_index: outputIndex,
@@ -125,7 +562,7 @@ const mkCustomToolCallAdded = (outputIndex: number, callId: string, name: string
     },
   });
 
-const mkCustomToolCallInputDone = (outputIndex: number, input: string, itemId = `cti_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkCustomToolCallInputDone = (outputIndex: number, input: string, itemId = `cti_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.custom_tool_call_input.done',
     item_id: itemId,
@@ -133,7 +570,7 @@ const mkCustomToolCallInputDone = (outputIndex: number, input: string, itemId = 
     input,
   });
 
-const mkCustomToolCallDone = (outputIndex: number, callId: string, name: string, input: string): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkCustomToolCallDone = (outputIndex: number, callId: string, name: string, input: string): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.done',
     output_index: outputIndex,
@@ -145,7 +582,7 @@ const mkCustomToolCallDone = (outputIndex: number, callId: string, name: string,
     },
   });
 
-const mkMessageAdded = (outputIndex: number): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkMessageAdded = (outputIndex: number): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.added',
     output_index: outputIndex,
@@ -157,7 +594,7 @@ const mkMessageAdded = (outputIndex: number): ProtocolFrame<OpenAIResponsesStrea
     },
   });
 
-const mkMessageDone = (outputIndex: number, text: string): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkMessageDone = (outputIndex: number, text: string): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.done',
     output_index: outputIndex,
@@ -169,14 +606,14 @@ const mkMessageDone = (outputIndex: number, text: string): ProtocolFrame<OpenAIR
     },
   });
 
-const mkReasoningAdded = (outputIndex: number, reasoningId: string): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkReasoningAdded = (outputIndex: number, reasoningId: string): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.added',
     output_index: outputIndex,
     item: { type: 'reasoning', id: reasoningId, summary: [] },
   });
 
-const mkReasoningDone = (outputIndex: number, reasoningId: string): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkReasoningDone = (outputIndex: number, reasoningId: string): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.done',
     output_index: outputIndex,
@@ -194,10 +631,10 @@ vi.mock('../../../../src/data-plane/tools/web-search/provider.ts');
 vi.mock('../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts');
 
 const mkResponseCompleted = (
-  usage?: OpenAIResponsesResult['usage'],
+  usage?: OpenAIResponsesResultEx['usage'],
   responseId = 'upstream_test',
-): ProtocolFrame<OpenAIResponsesStreamEvent> =>
-  eventFrame<OpenAIResponsesStreamEvent>({
+): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+  eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.completed',
     response: {
       ...emptyResult(responseId, 'completed'),
@@ -208,8 +645,8 @@ const mkResponseCompleted = (
 const mkResponseIncomplete = (
   incompleteDetails?: { reason: string },
   responseId = 'upstream_test',
-): ProtocolFrame<OpenAIResponsesStreamEvent> =>
-  eventFrame<OpenAIResponsesStreamEvent>({
+): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+  eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.incomplete',
     response: {
       ...emptyResult(responseId, 'incomplete'),
@@ -318,7 +755,7 @@ const makeStubDeps = (overrides: DepsOverrides = {}): {
 interface InvocationOverrides {
   targetApi?: 'openaiResponses' | 'anthropicMessages' | 'openaiChatCompletions';
   enabledFlags?: ReadonlySet<FlagId>;
-  payload?: Partial<OpenAIResponsesPayload>;
+  payload?: Partial<OpenAIResponsesPayloadEx>;
 }
 
 const makeInvocation = (overrides: InvocationOverrides = {}): OpenAIResponsesInvocation => ({
@@ -332,6 +769,7 @@ const makeInvocation = (overrides: InvocationOverrides = {}): OpenAIResponsesInv
   targetApi: overrides.targetApi ?? 'openaiChatCompletions',
   payload: {
     model: 'claude-x',
+    stream: true,
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     tools: [{ type: 'web_search' }],
     // Opt the wire item into `results` so most tests can inspect them
@@ -360,24 +798,33 @@ const runHostedToolsAndDrain = async (
   dispatcher: ReturnType<typeof driveHostedToolStage>,
   inv: OpenAIResponsesInvocation,
   gatewayCtx: ChatGatewayCtx,
-  run: () => Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>>,
+  run: () => Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>>,
 ): Promise<{
-  result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>;
-  frames: ProtocolFrame<OpenAIResponsesStreamEvent>[];
+  result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>;
+  frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[];
 }> => {
   const result = await dispatcher(inv, gatewayCtx, run);
-  const frames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = result.type === 'events'
+  const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = result.type === 'events'
     ? await collectFrames(result.events)
     : [];
   return { result, frames };
 };
 
+// A translation's input refusal, as the 400 a dial answers with.
+const inputErrorResult = (error: { message: string; param?: string; code?: string }): ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>> => ({
+  type: 'api-error',
+  source: 'gateway',
+  status: 400,
+  headers: new Headers({ 'content-type': 'application/json' }),
+  body: new TextEncoder().encode(JSON.stringify(inputErrorEnvelope(error))),
+});
+
 // Drive run() N times with one scripted event array per call. Reaches past
 // the scripted length crashes the test — invariant violations stay loud.
-type ScriptedTurn = ProtocolFrame<OpenAIResponsesStreamEvent>[];
+type ScriptedTurn = ProtocolFrame<OpenAIResponsesStreamEventEx>[];
 
 interface ScriptedRun {
-  run: () => Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>>;
+  run: () => Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>>;
   callCount: () => number;
 }
 
@@ -387,10 +834,10 @@ const scriptedRun = (turns: ScriptedTurn[]): ScriptedRun => {
     run: async () => {
       if (i >= turns.length) throw new Error(`unexpected run() call ${i + 1}; only ${turns.length} turn(s) scripted`);
       const frames = turns[i++];
-      const iterable: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const iterable: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         for (const f of frames) yield f;
       })();
-      const result: EventResult<ProtocolFrame<OpenAIResponsesStreamEvent>> = {
+      const result: EventResult<ProtocolFrame<OpenAIResponsesStreamEventEx>> = {
         type: 'events',
         events: iterable,
         modelIdentity: testTelemetryModelIdentity,
@@ -434,12 +881,12 @@ const openCallTurn = (outputIndex: number, callId: string, url: string): Scripte
 const findCallTurn = (outputIndex: number, callId: string, url: string, pattern: string): ScriptedTurn =>
   fcTurn(outputIndex, callId, FUNCTION_TOOL_NAME, JSON.stringify({ find: [{ ref_id: url, pattern }] }));
 
-const eventPayloads = (frames: ProtocolFrame<OpenAIResponsesStreamEvent>[]): OpenAIResponsesStreamEvent[] =>
-  frames.filter(f => f.type === 'event').map(f => (f as { type: 'event'; event: OpenAIResponsesStreamEvent }).event);
+const eventPayloads = (frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): OpenAIResponsesStreamEventEx[] =>
+  frames.filter(f => f.type === 'event').map(f => (f as { type: 'event'; event: OpenAIResponsesStreamEventEx }).event);
 
-const outputItemDoneEvents = (frames: ProtocolFrame<OpenAIResponsesStreamEvent>[]): Array<Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }>> =>
+const outputItemDoneEvents = (frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): Array<Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }>> =>
   eventPayloads(frames)
-    .filter((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }> => e.type === 'response.output_item.done');
+    .filter((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }> => e.type === 'response.output_item.done');
 
 // ── Activation gating ──────────────────────────────────────────────────
 
@@ -590,6 +1037,36 @@ test('dispatcher propagates filters / user_location / search_context_size to bac
   assertEquals(searchCall.userLocation, { city: 'Tokyo', country: 'JP' });
 });
 
+test('dispatcher applies response_length and query-level filters to the backend search', async () => {
+  const { backend } = makeStubDeps();
+  const dispatcher = runHostedWebSearch;
+  const inv = makeInvocation({
+    payload: {
+      tools: [{
+        type: 'web_search',
+        filters: { allowed_domains: ['allowed.com', 'other.com'] },
+        search_context_size: 'high',
+      }],
+    },
+  });
+  const script = scriptedRun([
+    fcTurn(0, 'call_1', FUNCTION_TOOL_NAME, JSON.stringify({
+      search_query: [{ q: 'q1', domains: ['allowed.com', 'blocked.com'], recency: 7 }],
+      response_length: 'short',
+    })),
+    messageTurn('done', 0),
+  ]);
+
+  await runHostedToolsAndDrain(dispatcher, inv, makeGatewayCtx(), script.run);
+
+  assertEquals(backend.calls.length, 1);
+  const searchCall = backend.calls[0].request as WebSearchProviderRequest;
+  assertEquals(searchCall.query, 'q1');
+  assertEquals(searchCall.maxResults, 10);
+  assertEquals(searchCall.allowedDomains, ['allowed.com']);
+  assertEquals(searchCall.recencyDays, 7);
+});
+
 // ── Single-iteration message (no function calls) ───────────────────────
 
 test('dispatcher forwards a single-turn message without backend calls', async () => {
@@ -629,13 +1106,13 @@ test('dispatcher drives one search then a final message in two upstream turns', 
   assertEquals(script.callCount(), 2);
   assertEquals(backend.calls.length, 1);
   assertEquals(backend.calls[0].kind, 'search');
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const tail = input.slice(-2);
   assertEquals(tail[0].type, 'function_call');
   assertEquals(tail[1].type, 'function_call_output');
   assert(tail[0].type === 'function_call');
   // Dispatcher replay preserves the upstream's original dispatcher call
-  // verbatim (call_id, name, jsonrepair-canonical args) so the upstream
+  // verbatim (call_id, name, original arguments) so the upstream
   // model on turn 2 sees its prior assistant turn unchanged.
   assertEquals(tail[0].call_id, 'call_1');
   const events = eventPayloads(frames);
@@ -644,13 +1121,118 @@ test('dispatcher drives one search then a final message in two upstream turns', 
   assertEquals(events[events.length - 1].type, 'response.completed');
 });
 
-test('translated source with a no-backing store still replays private search state across turns', async () => {
+test('public output and internal continuations replay complete assistant/tool turns through the same expansion', async () => {
+  const { backend } = makeStubDeps();
+  const inv = makeInvocation();
+  const ctx = makeGatewayCtx();
+  const inputs: CanonicalOpenAIResponsesInputItem[][] = [];
+  const searchTurn = (id: string): ScriptedTurn => {
+    const tail: OpenAIResponsesOutputItemEx = { type: 'reasoning', id: `rs_${id}`, summary: [], encrypted_content: `opaque_${id}`, status: 'completed' };
+    return [
+      ...searchCallTurn(0, id, id).slice(0, -1),
+      eventFrame({ type: 'response.output_item.added', output_index: 1, item: tail }),
+      eventFrame({ type: 'response.output_item.done', output_index: 1, item: tail }),
+      mkResponseCompleted(),
+    ];
+  };
+  const script = scriptedRun([searchTurn('first'), searchTurn('second'), messageTurn('answer')]);
+  const { frames } = await runHostedToolsAndDrain(runHostedWebSearch, inv, ctx, async () => {
+    inputs.push(structuredClone(inv.payload.input));
+    return await script.run();
+  });
+  assertEquals(script.callCount(), 3);
+  assertEquals(backend.calls.length, 2);
+  const firstTurn = ['reasoning', 'function_call:first', 'function_call_output:first'];
+  const secondTurn = ['reasoning', 'function_call:second', 'function_call_output:second'];
+  assertEquals(historyShape(inputs[1]), ['message:user', ...firstTurn]);
+  assertEquals(historyShape(inputs[2]), ['message:user', ...firstTurn, ...secondTurn]);
+  const output = findResponseCompleted(frames).response.output;
+  assertEquals(output.map(item => item.type), ['reasoning', 'reasoning', 'web_search_call', 'reasoning', 'reasoning', 'web_search_call', 'message']);
+  const next = makeInvocation({
+    payload: {
+      input: [
+        { type: 'message', role: 'user', content: 'hi' },
+        ...JSON.parse(JSON.stringify(output)) as CanonicalOpenAIResponsesInputItem[],
+        { type: 'message', role: 'user', content: 'next' },
+      ],
+    },
+  });
+  await runHostedToolsAndDrain(runHostedWebSearch, next, makeGatewayCtx(), async () => {
+    assertEquals(historyShape(next.payload.input), ['message:user', ...firstTurn, ...secondTurn, 'message:assistant', 'message:user']);
+    return await scriptedRun([messageTurn('followup')]).run();
+  });
+  assertEquals(backend.calls.length, 2);
+});
+
+test.each([true, false].flatMap(hostedFirst => [true, false].map(interleaved => ({ hostedFirst, interleaved }))))('hosted output preserves mixed parallel call order on client replay (hosted first: $hostedFirst, interleaved: $interleaved)', async ({ hostedFirst, interleaved }) => {
+  const { backend } = makeStubDeps();
+  const inv = makeInvocation();
+  const ctx = makeGatewayCtx();
+  const hosted = { type: 'function_call' as const, id: 'fc_hosted', call_id: 'hosted', name: FUNCTION_TOOL_NAME, arguments: '{"search_query":[{"q":"test"}]}', status: 'completed' as const };
+  const client = { type: 'function_call' as const, id: 'fc_client', call_id: 'client', name: 'client_tool', arguments: '{}', status: 'completed' as const };
+  const calls = hostedFirst ? [hosted, client] : [client, hosted];
+  const tail: OpenAIResponsesOutputItemEx = { type: 'reasoning', id: 'rs_tail', summary: [], encrypted_content: 'native' };
+  const events: ScriptedTurn = [mkResponseCreated()];
+  const added = calls.map((item, index) => eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.added', output_index: index, item: { ...item, arguments: '', status: 'in_progress' } }));
+  const done = calls.map((item, index) => eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.done', output_index: index, item }));
+  events.push(...(interleaved ? [...added, ...done.toReversed()] : added.flatMap((frame, index) => [frame, done[index]])));
+  events.push(
+    eventFrame({ type: 'response.output_item.added', output_index: 2, item: tail }),
+    eventFrame({ type: 'response.output_item.done', output_index: 2, item: tail }),
+    mkResponseCompleted(),
+  );
+  const { frames } = await runHostedToolsAndDrain(runHostedWebSearch, inv, ctx, scriptedRun([events]).run);
+  const output = findResponseCompleted(frames).response.output;
+  const hostedIndex = output.findIndex(item => item.type === 'web_search_call');
+  assert(hostedIndex > 0 && output[hostedIndex - 1].type === 'reasoning');
+  assert(output.findIndex(item => item.type === 'reasoning') < output.findIndex(item => item.type === 'web_search_call'));
+  const next = makeInvocation({
+    payload: { input: [...output as CanonicalOpenAIResponsesInputItem[], { type: 'function_call_output', call_id: 'client', output: 'client result' }] },
+  });
+  await runHostedToolsAndDrain(runHostedWebSearch, next, makeGatewayCtx(), async () => {
+    assertEquals(next.payload.input.filter(item => item.type === 'function_call').map(item => item.call_id), calls.map(item => item.call_id));
+    assertEquals(next.payload.input.filter(item => item.type === 'function_call_output').map(item => item.call_id), ['hosted', 'client']);
+    const lastCall = next.payload.input.findLastIndex(item => item.type === 'function_call');
+    const firstResult = next.payload.input.findIndex(item => item.type === 'function_call_output');
+    assert(lastCall < firstResult);
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+  assertEquals(backend.calls.length, 1);
+});
+
+test.each([
+  { raw: ' { "search_query" : [ { "q" : "spaces" } ] }\n', query: 'spaces' },
+  { raw: '{"search_query":[{"q":"\\u5496\\u5561"}]}', query: '\u5496\u5561' },
+  { raw: '{search_query:[{q:"repaired"}]}', query: 'repaired' },
+])('hosted search executes parsed arguments while replaying the original string: $raw', async ({ raw, query }) => {
+  const { backend } = makeStubDeps();
+  const inv = makeInvocation();
+  const ctx = makeGatewayCtx();
+  const script = scriptedRun([fcTurn(0, 'call_raw', FUNCTION_TOOL_NAME, raw), messageTurn('answer')]);
+  const inputs: CanonicalOpenAIResponsesInputItem[][] = [];
+  const { frames } = await runHostedToolsAndDrain(runHostedWebSearch, inv, ctx, async () => {
+    inputs.push(structuredClone(inv.payload.input));
+    return await script.run();
+  });
+  assertEquals(backend.calls.length, 1);
+  assertEquals((backend.calls[0].request as WebSearchProviderRequest).query, query);
+  const restored = inputs[1].find(item => item.type === 'function_call');
+  assert(restored?.type === 'function_call');
+  assertEquals(restored.call_id, 'call_raw');
+  assertEquals(restored.arguments, raw);
+  const output = JSON.parse(JSON.stringify(findResponseCompleted(frames).response.output)) as CanonicalOpenAIResponsesInputItem[];
+  const next = makeInvocation({ payload: { input: [...output, { type: 'message', role: 'user', content: 'next' }] } });
+  await runHostedToolsAndDrain(runHostedWebSearch, next, makeGatewayCtx(), async () => {
+    assertEquals(next.payload.input.find(item => item.type === 'function_call'), restored);
+    return await scriptedRun([messageTurn('done')]).run();
+  });
+  assertEquals(backend.calls.length, 1);
+});
+
+test('translated source with a no-backing store replays signed search data across turns', async () => {
   makeStubDeps();
   const dispatcher = runHostedWebSearch;
   const inv = makeInvocation();
-  // A non-OpenAI-Responses source (Anthropic Messages/Gemini generateContent/OpenAI Chat Completions) translated into an OpenAI Responses
-  // upstream carries a no-backing store, not a persisting one; the dispatcher's
-  // request-private replay must still round-trip within the single request.
   const ctx = mockChatGatewayCtx({ apiKeyId: 'k1', wantsStream: true, store: createNonOpenAIResponsesSourceStore('k1') });
   const script = scriptedRun([
     searchCallTurn(0, 'call_1', 'q1'),
@@ -661,17 +1243,14 @@ test('translated source with a no-backing store still replays private search sta
   assert(result.type === 'events');
   await collectFrames(result.events);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const tail = input.slice(-2);
   assert(tail[0].type === 'function_call');
-  // The preserved `call_id` proves the private payload was found (replay
-  // path 1); a lost payload would synthesize a fresh id and emit the
-  // "results were not preserved" placeholder instead.
   assertEquals(tail[0].call_id, 'call_1');
   assertEquals(tail[1].type, 'function_call_output');
 });
 
-test('synthesized web_search_call ids retain request-private replay state', async () => {
+test('each hosted search has an immediately preceding signed replay item', async () => {
   makeStubDeps();
   const dispatcher = runHostedWebSearch;
   const inv = makeInvocation();
@@ -684,15 +1263,19 @@ test('synthesized web_search_call ids retain request-private replay state', asyn
   const { frames } = await runHostedToolsAndDrain(dispatcher, inv, ctx, script.run);
 
   const doneEvents = outputItemDoneEvents(frames);
-  const wsCallDoneIds = doneEvents.filter(e => e.item.type === 'web_search_call').map(e => e.item.id!);
-  const store = ctx.store;
-  assert(wsCallDoneIds.length > 0, 'expected a synthesized web_search_call');
-  for (const id of wsCallDoneIds) {
-    assert(/^ws_[0-9a-f]{32}$/.test(id));
-    assert(store.getPrivatePayload(id) !== undefined, `expected ${id} to retain private replay state`);
-  }
-  for (const e of doneEvents.filter(e => e.item.type === 'message')) {
-    assertFalse(store.getPrivatePayload(e.item.id!) !== undefined);
+  const hosted = doneEvents.filter(e => e.item.type === 'web_search_call');
+  assertEquals(hosted.length, 1);
+  for (const event of hosted) {
+    const carrier = doneEvents.find(item => item.output_index === event.output_index - 1)?.item;
+    assert(carrier?.type === 'reasoning' && typeof carrier.encrypted_content === 'string');
+    assertEquals(carrier.summary, []);
+    const replay = await ctx.sidecarCodecFactory.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall).decode(carrier.encrypted_content);
+    assertEquals(replay, {
+      v: 1,
+      type: event.item.type,
+      functionCall: { type: 'function_call', call_id: 'call_1', name: 'web_search', arguments: '{"search_query":[{"q":"q1"}]}', status: 'completed' },
+      data: { action: { type: 'search', queries: ['q1'], query: 'q1' }, results: [{ type: 'text_result', url: 'https://example.com/a', title: 'Example A', snippet: 'snippet A' }] },
+    });
   }
 });
 
@@ -769,7 +1352,7 @@ test('iteration cap returns the iteration-cap notice without backend call on cap
   // 30 backend search calls, NOT 31 — the 31st short-circuits via the cap.
   const searchCalls = backend.calls.filter(c => c.kind === 'search');
   assertEquals(searchCalls.length, 30);
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   assert((lastOutput as { output: string }).output.includes('iteration limit (30)'));
@@ -779,7 +1362,7 @@ test('iteration cap returns the iteration-cap notice without backend call on cap
   // call surfaces as the schema-error shape (action.type='search' with
   // the cap diagnostic in queries[0]) rather than the original query —
   // the dispatcher call is rejected before backend dispatch.
-  const wsCallDone = events.filter((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }> =>
+  const wsCallDone = events.filter((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }> =>
     e.type === 'response.output_item.done'
     && (e as { item?: { type?: string } }).item?.type === 'web_search_call');
   assertEquals(wsCallDone.length, 31);
@@ -812,7 +1395,7 @@ const assertAmbiguousCallRejection = async (args: string, backend: { calls: unkn
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   assertEquals(backend.calls.length, 0);
-  const wsCallDone = events.filter((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }> =>
+  const wsCallDone = events.filter((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }> =>
     e.type === 'response.output_item.done'
     && (e as { item?: { type?: string } }).item?.type === 'web_search_call');
   assertEquals(wsCallDone.length, 1);
@@ -880,7 +1463,7 @@ test('multi-`search_query` entries collapse into one web_search_call with a mult
   const events = eventPayloads(await collectFrames(result.events));
 
   // Exactly one wsc on the wire.
-  const wsCallDone = events.filter((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }> =>
+  const wsCallDone = events.filter((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }> =>
     e.type === 'response.output_item.done'
     && (e as { item?: { type?: string } }).item?.type === 'web_search_call');
   assertEquals(wsCallDone.length, 1);
@@ -925,7 +1508,7 @@ test('search returning zero results surfaces the "(no results)" template', async
 
   await runHostedToolsAndDrain(dispatcher, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   assertEquals(
@@ -953,7 +1536,7 @@ test('backend search failure surfaces "Search failed: <message>"', async () => {
 
   await runHostedToolsAndDrain(dispatcher, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
@@ -980,7 +1563,7 @@ test('fetchPage whole-batch failure surfaces the open-page error text', async ()
 
   await runHostedToolsAndDrain(dispatcher, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
@@ -1570,7 +2153,7 @@ test('open blocked by domain filter never calls backend', async () => {
   await runHostedToolsAndDrain(dispatcher, inv, makeGatewayCtx(), script.run);
 
   assertEquals(backend.calls.length, 0);
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
@@ -1644,7 +2227,7 @@ test('find with no matches returns the no-matches text', async () => {
 
   await runHostedToolsAndDrain(dispatcher, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
@@ -1680,7 +2263,7 @@ test('find with matches returns bracketed context', async () => {
 
   await runHostedToolsAndDrain(dispatcher, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
@@ -1717,7 +2300,7 @@ test('truncated page contents append the truncation sentinel', async () => {
 
   await runHostedToolsAndDrain(dispatcher, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
@@ -1760,7 +2343,7 @@ test('multi-turn merge: output_index unique, sequence_number monotonic, response
   assertEquals(seqs[0], 0);
 
   const addedIndices = events
-    .filter((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.added' }> => e.type === 'response.output_item.added')
+    .filter((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }> => e.type === 'response.output_item.added')
     .map(e => e.output_index);
   // Contiguous from 0 — uniqueness alone would not catch a missing slot.
   const sorted = [...addedIndices].sort((a, b) => a - b);
@@ -1774,22 +2357,22 @@ test('multi-turn merge: output_index unique, sequence_number monotonic, response
 // served model — distinct from the client's payload.model so we can
 // prove the dispatcher quotes upstream's served identity rather than the
 // requested literal.
-const mkResponseCreatedWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEvent> =>
-  eventFrame<OpenAIResponsesStreamEvent>({
+const mkResponseCreatedWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+  eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
-    response: { id: responseId, object: 'response', model, output: [], output_text: '', status: 'in_progress', error: null, incomplete_details: null },
+    response: { id: responseId, object: 'response', model, output: [], status: 'in_progress', error: null, incomplete_details: null },
   });
 
-const mkResponseInProgressWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEvent> =>
-  eventFrame<OpenAIResponsesStreamEvent>({
+const mkResponseInProgressWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+  eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.in_progress',
-    response: { id: responseId, object: 'response', model, output: [], output_text: '', status: 'in_progress', error: null, incomplete_details: null },
+    response: { id: responseId, object: 'response', model, output: [], status: 'in_progress', error: null, incomplete_details: null },
   });
 
-const mkResponseCompletedWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEvent> =>
-  eventFrame<OpenAIResponsesStreamEvent>({
+const mkResponseCompletedWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+  eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.completed',
-    response: { id: responseId, object: 'response', model, output: [], output_text: '', status: 'completed', error: null, incomplete_details: null },
+    response: { id: responseId, object: 'response', model, output: [], status: 'completed', error: null, incomplete_details: null },
   });
 
 test('synthesized response.created / completed quote the upstream-reported model, not ctx.payload.model', async () => {
@@ -1826,9 +2409,9 @@ test('synthesized response.created / completed quote the upstream-reported model
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
 
-  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }>;
-  const inProgress = events.find(e => e.type === 'response.in_progress') as Extract<OpenAIResponsesStreamEvent, { type: 'response.in_progress' }>;
-  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }>;
+  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>;
+  const inProgress = events.find(e => e.type === 'response.in_progress') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.in_progress' }>;
+  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }>;
   assertEquals(created.response.model, SERVED_MODEL);
   assertEquals(inProgress.response.model, SERVED_MODEL);
   assertEquals(completed.response.model, SERVED_MODEL);
@@ -1841,10 +2424,10 @@ test('synthesized response.failed (upstream error mid-stream) quotes the upstrea
   const inv = makeInvocation({ payload: { model: 'gpt-5' } });
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     if (runCalls === 1) {
-      const frames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [
+      const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [
         mkResponseCreatedWithModel(SERVED_MODEL),
         mkResponseInProgressWithModel(SERVED_MODEL),
         mkFunctionCallAdded(0, 'call_1', FUNCTION_TOOL_NAME),
@@ -1852,7 +2435,7 @@ test('synthesized response.failed (upstream error mid-stream) quotes the upstrea
         mkFunctionCallDone(0, 'call_1', FUNCTION_TOOL_NAME, JSON.stringify({ search_query: [{ q: 'hi' }] })),
         mkResponseCompletedWithModel(SERVED_MODEL),
       ];
-      const iterable: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const iterable: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         for (const f of frames) yield f;
       })();
       return { type: 'events', events: iterable, modelIdentity: testTelemetryModelIdentity };
@@ -1869,7 +2452,7 @@ test('synthesized response.failed (upstream error mid-stream) quotes the upstrea
   const result = await dispatcher(inv, makeGatewayCtx(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
+  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
   assertEquals(failed.type, 'response.failed');
   assertEquals(failed.response.model, SERVED_MODEL);
 });
@@ -1885,9 +2468,9 @@ test('dispatcher refuses to synthesize a response envelope when upstream respons
   const dispatcher = runHostedWebSearch;
   const inv = makeInvocation({ payload: { model: 'gpt-5' } });
 
-  const modelless = eventFrame<OpenAIResponsesStreamEvent>({
+  const modelless = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
-    response: { id: 'upstream_x', object: 'response', output: [], output_text: '', status: 'in_progress' } as never,
+    response: { id: 'upstream_x', object: 'response', output: [], status: 'in_progress' } as never,
   });
   const script = scriptedRun([[modelless, mkResponseCompleted()]]);
 
@@ -1914,16 +2497,16 @@ test('upstream response.created with no `id` field is tolerated (downstream uses
   const dispatcher = runHostedWebSearch;
   const inv = makeInvocation({ payload: { model: 'gpt-5' } });
 
-  const idless = eventFrame<OpenAIResponsesStreamEvent>({
+  const idless = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
-    response: { model: 'gpt-5', object: 'response', output: [], output_text: '', status: 'in_progress' } as never,
+    response: { model: 'gpt-5', object: 'response', output: [], status: 'in_progress' } as never,
   });
   const script = scriptedRun([[idless, mkResponseCompleted()]]);
 
   const result = await dispatcher(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }>;
+  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>;
   assert(created.response.id.startsWith('resp_hosted_'));
 });
 
@@ -1951,9 +2534,9 @@ test('synthesized response.created / completed quote the once-per-request synthe
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
 
-  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }>;
-  const inProgress = events.find(e => e.type === 'response.in_progress') as Extract<OpenAIResponsesStreamEvent, { type: 'response.in_progress' }>;
-  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }>;
+  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>;
+  const inProgress = events.find(e => e.type === 'response.in_progress') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.in_progress' }>;
+  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }>;
   assert(created.response.id.startsWith('resp_hosted_'));
   assertEquals(inProgress.response.id, created.response.id);
   assertEquals(completed.response.id, created.response.id);
@@ -1993,8 +2576,8 @@ test('synthesized terminal id stays constant across multi-turn upstream id rotat
   const result = await dispatcher(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }>;
-  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }>;
+  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>;
+  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }>;
   assert(created.response.id.startsWith('resp_hosted_'));
   // Same gateway-synthesized id end-to-end; neither upstream turn id
   // leaks downstream.
@@ -2043,7 +2626,7 @@ test('usage accumulates across three iterations', async () => {
   const result = await dispatcher(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const completed = events.find((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }> => e.type === 'response.completed');
+  const completed = events.find((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }> => e.type === 'response.completed');
   assert(completed !== undefined);
   assertEquals(completed.response.usage?.input_tokens, 305);
   assertEquals(completed.response.usage?.output_tokens, 82);
@@ -2085,7 +2668,7 @@ test('usage cached_tokens reported on one turn carries through (last-turn omissi
   const result = await dispatcher(inv, makeGatewayCtx(), scriptedRun([turn1, turn2]).run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const completed = events.find((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }> => e.type === 'response.completed');
+  const completed = events.find((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }> => e.type === 'response.completed');
   assert(completed !== undefined);
   assertEquals(completed.response.usage?.input_tokens, 150);
   assertEquals(completed.response.usage?.output_tokens, 60);
@@ -2123,29 +2706,17 @@ test('usage cached_tokens never reported on any turn is omitted from wire (no fa
   const result = await dispatcher(inv, makeGatewayCtx(), scriptedRun([turn1, turn2]).run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const completed = events.find((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }> => e.type === 'response.completed');
+  const completed = events.find((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }> => e.type === 'response.completed');
   assert(completed !== undefined);
   assertEquals(completed.response.usage?.input_tokens, 150);
   assertEquals(completed.response.usage?.input_tokens_details, undefined);
   assertEquals(completed.response.usage?.output_tokens_details, undefined);
 });
 
-test('next-turn function_call echo always carries the canonical re-stringified dispatcher call args (single shape unified with client-roundtrip)', async () => {
-  // The dispatcher always overwrites the intercepted call's
-  // arguments with the canonical re-stringified form, regardless of
-  // whether the upstream string was already valid JSON. This
-  // unifies the in-session multi-turn echo with the client-roundtrip
-  // pairs produced by `transformInputItemsForWebSearch` (which build args
-  // from structured IR data, not a wire string), so upstream sees
-  // exactly one `arguments` shape regardless of how the pair
-  // re-entered the conversation. Trailing-comma input is the
-  // strongest case — without this rewrite a openai-chat-completions
-  // upstream would 400 on the broken raw string — but the same
-  // canonical form is also used for already-valid input.
-  makeStubDeps();
+test('next-turn echo retains original arguments while execution repairs a trailing comma', async () => {
+  const { backend } = makeStubDeps();
   const dispatcher = runHostedWebSearch;
   const inv = makeInvocation();
-  // Trailing-comma JSON survives jsonrepair but is not valid strict JSON.
   const brokenArgs = '{"search_query":[{"q":"q"}],}';
   const brokenTurn: ScriptedTurn = [
     mkResponseCreated(),
@@ -2159,56 +2730,44 @@ test('next-turn function_call echo always carries the canonical re-stringified d
 
   await runHostedToolsAndDrain(dispatcher, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const fc = input.find(i => i.type === 'function_call') as
     | { type: 'function_call'; arguments: string }
     | undefined;
   assert(fc !== undefined);
-  // Canonical JSON form (JSON.stringify of the parsed object) — no
-  // trailing comma, valid strict JSON.
-  assertEquals(fc.arguments, '{"search_query":[{"q":"q"}]}');
+  assertEquals(fc.arguments, brokenArgs);
+  assertEquals((backend.calls[0].request as WebSearchProviderRequest).query, 'q');
 });
 
-test('upstream sends bare `error` frame BEFORE any response.created: dispatcher throws from the events iterator (no synthetic response.failed with empty identity)', async () => {
-  // A bare `{type:'error'}` arriving before any `response.created`
-  // produces no captured identity (id / model). Synthesizing a
-  // `response.failed` envelope would require those fields. The
-  // synthesizer throws instead of inventing values; the throw
-  // escapes the events generator and is surfaced upward by the
-  // source responder. The unreachable-in-practice path stays
-  // honest about the upstream protocol violation rather than
-  // silently lying about the served identity.
+test('upstream sends an error event before response.created: dispatcher forwards it without inventing a response', async () => {
   makeStubDeps();
   const dispatcher = runHostedWebSearch;
   const inv = makeInvocation();
+  const error = {
+    type: 'error' as const,
+    message: 'upstream dropped before response shell',
+    code: null,
+    param: null,
+  };
   const errorOnlyTurn: ScriptedTurn = [
-    eventFrame<OpenAIResponsesStreamEvent>({
-      type: 'error',
-      message: 'upstream dropped before response shell',
-    }),
+    eventFrame<OpenAIResponsesStreamEventEx>(error),
   ];
   const script = scriptedRun([errorOnlyTurn]);
 
   const result = await dispatcher(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
-  let thrown: unknown = undefined;
-  try {
-    for await (const _ of result.events) { /* drain */ }
-  } catch (e) {
-    thrown = e;
-  }
-  assert(thrown instanceof Error);
+  const events = eventPayloads(await collectFrames(result.events));
+  assertEquals(events.length, 1);
+  const { sequence_number: sequenceNumber, ...forwarded } = events[0] as typeof error & { sequence_number: number };
+  assertEquals(forwarded, error);
+  assertEquals(sequenceNumber, 0);
 });
 
-test('upstream sends bare `error` frame AFTER response.created: dispatcher emits response.failed with synthesized id + last-seen model', async () => {
-  // When model is captured before the bare error arrives, the dispatcher
-  // can synthesize a wire-valid `response.failed` envelope. The
-  // synthesized id is the dispatcher's own (`resp_hosted_<uuid>`), and the
-  // model is the last-seen upstream model.
+test('upstream sends an error event after response.created: dispatcher forwards both events without synthesizing a terminal resource', async () => {
   makeStubDeps();
   const dispatcher = runHostedWebSearch;
   const inv = makeInvocation();
-  const createdWith = eventFrame<OpenAIResponsesStreamEvent>({
+  const createdWith = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
     response: {
       id: 'resp_captured_id_xyz',
@@ -2218,32 +2777,28 @@ test('upstream sends bare `error` frame AFTER response.created: dispatcher emits
       status: 'in_progress',
       error: null,
       incomplete_details: null,
-    } as OpenAIResponsesResult,
+    } as OpenAIResponsesResultEx,
   });
+  const diagnostics = { name: 'UpstreamError', cause: { request_id: 'req_failed' }, target_api: 'openaiResponses' };
   const script = scriptedRun([[
     createdWith,
-    eventFrame<OpenAIResponsesStreamEvent>({
+    eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'error',
       message: 'mid-stream upstream blew up',
       code: 'server_error',
+      provider_specific_fields: diagnostics,
     }),
   ]]);
 
   const result = await dispatcher(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
-  assertEquals(failed.type, 'response.failed');
-  assert(failed.response.id.startsWith('resp_hosted_'));
-  assertEquals(failed.response.model, 'gpt-5.4-2025-01-20');
-  assertEquals(failed.response.status, 'failed');
-  assertEquals(failed.response.error?.message, 'mid-stream upstream blew up');
-  // Upstream-supplied code carries through verbatim.
-  assertEquals(failed.response.error?.code, 'server_error');
-  // No synthetic `type` field — the OpenAPI OpenAIResponsesError schema
-  // defines only `{code, message}` and the bare `error` upstream frame
-  // doesn't carry a `type` to forward.
-  assertFalse('type' in (failed.response.error as object));
+  assertEquals(events.map(event => event.type), ['response.created', 'error']);
+  const error = events[1] as Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>;
+  assert('message' in error);
+  assertEquals(error.message, 'mid-stream upstream blew up');
+  assertEquals(error.code, 'server_error');
+  assert(error.provider_specific_fields === diagnostics);
 });
 
 test('upstream iterator rejects before yielding any frame: dispatcher surfaces the throw through the events iterator', async () => {
@@ -2256,11 +2811,11 @@ test('upstream iterator rejects before yielding any frame: dispatcher surfaces t
   makeStubDeps();
   const dispatcher = runHostedWebSearch;
   const inv = makeInvocation();
-  const failingIterator: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+  const failingIterator: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
     throw new Error('malformed SSE JSON at byte 42');
     yield undefined as never;
   })();
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => ({
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => ({
     type: 'events',
     events: failingIterator,
     modelIdentity: testTelemetryModelIdentity,
@@ -2290,16 +2845,16 @@ test('pathological upstream emitting frames without response.created: dispatcher
   makeStubDeps();
   const dispatcher = runHostedWebSearch;
   const inv = makeInvocation();
-  const noisyIterator: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+  const noisyIterator: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
     for (let i = 0; i < 5; i++) {
-      yield eventFrame<OpenAIResponsesStreamEvent>({
+      yield eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.unknown_future_call.in_progress',
         output_index: i,
         item_id: `unk_${i}`,
-      } as unknown as OpenAIResponsesStreamEvent);
+      } as unknown as OpenAIResponsesStreamEventEx);
     }
   })();
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => ({
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => ({
     type: 'events',
     events: noisyIterator,
     modelIdentity: testTelemetryModelIdentity,
@@ -2317,18 +2872,16 @@ test('pathological upstream emitting frames without response.created: dispatcher
 });
 
 test('turn-1 iterator throws AFTER response.created: synthesizes response.failed with synthesized id + last-seen model', async () => {
-  // After identity (model) is captured, a mid-stream throw is
-  // funneled through the response.failed synthesizer so the
-  // downstream wire mirrors a native upstream's mid-stream drop
-  // instead of escaping uncaught to a gateway internal_error.
   makeStubDeps();
   const dispatcher = runHostedWebSearch;
   const inv = makeInvocation();
-  const failingMidStream: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+  const cause = { socket: 'upstream-1' };
+  const streamError = new Error('connection reset by peer', { cause });
+  const failingMidStream: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
     yield mkResponseCreated('upstream_mid');
-    throw new Error('connection reset by peer');
+    throw streamError;
   })();
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => ({
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => ({
     type: 'events',
     events: failingMidStream,
     modelIdentity: testTelemetryModelIdentity,
@@ -2339,15 +2892,18 @@ test('turn-1 iterator throws AFTER response.created: synthesizes response.failed
   const events = eventPayloads(await collectFrames(result.events));
   const terminal = events[events.length - 1];
   assertEquals(terminal.type, 'response.failed');
-  const failed = terminal as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
+  const failed = terminal as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
   assertEquals(failed.response.status, 'failed');
   assert(failed.response.id.startsWith('resp_hosted_'));
   assertEquals(failed.response.model, 'test-model');
   assertEquals(failed.response.error?.code, 'server_error');
   assert(failed.response.error?.message.includes('connection reset by peer'));
   assert(failed.response.error?.message.includes('Upstream stream failed mid-response'));
-  // No synthetic `type` per the spec OpenAIResponsesError schema (only
-  // `{code, message}`).
+  const diagnostics = failed.response.error?.provider_specific_fields;
+  assertEquals(diagnostics?.name, 'Error');
+  assertEquals(diagnostics?.stack, streamError.stack);
+  assert(diagnostics?.cause === cause);
+  assertFalse('stack' in (failed.response.error as object));
   assertFalse('type' in (failed.response.error as object));
 });
 
@@ -2360,16 +2916,16 @@ test('turn-2 iterator throws: synthesizes response.failed with captured id/model
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     if (runCalls === 1) {
       const turn1 = searchCallTurn(0, 'call_1', 'q1');
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         for (const f of turn1) yield f;
       })();
       return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
     }
-    const failingTurn2: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+    const failingTurn2: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
       yield mkResponseCreated('upstream_test');
       throw new Error('upstream parser exploded');
     })();
@@ -2381,7 +2937,7 @@ test('turn-2 iterator throws: synthesizes response.failed with captured id/model
   const events = eventPayloads(await collectFrames(result.events));
   const terminal = events[events.length - 1];
   assertEquals(terminal.type, 'response.failed');
-  const failed = terminal as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
+  const failed = terminal as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
   assertEquals(failed.response.error?.code, 'server_error');
   assert(failed.response.error?.message.includes('upstream parser exploded'));
   assert(failed.response.error?.message.includes('Upstream stream failed mid-response'));
@@ -2398,10 +2954,10 @@ test('consume-turn finishes without identity AND without bare-error-pre-shell: d
   makeStubDeps();
   const dispatcher = runHostedWebSearch;
   const inv = makeInvocation();
-  const malformed: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+  const malformed: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
     yield mkResponseCompleted();
   })();
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => ({
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => ({
     type: 'events',
     events: malformed,
     modelIdentity: testTelemetryModelIdentity,
@@ -2452,18 +3008,18 @@ test('snapshot pass-through: upstream tools/tool_choice/temperature/parallel_too
     error: null,
     incomplete_details: null,
   };
-  const createdWith = eventFrame<OpenAIResponsesStreamEvent>({
+  const createdWith = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
-    response: upstreamSnapshot as OpenAIResponsesResult,
+    response: upstreamSnapshot as OpenAIResponsesResultEx,
   });
-  const completedWith = eventFrame<OpenAIResponsesStreamEvent>({
+  const completedWith = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.completed',
     response: {
       ...upstreamSnapshot,
       status: 'completed',
       // Native upstreams typically add completed_at on the terminal frame.
       completed_at: 1735689700,
-    } as OpenAIResponsesResult,
+    } as OpenAIResponsesResultEx,
   });
   makeStubDeps();
   const dispatcher = runHostedWebSearch;
@@ -2473,8 +3029,8 @@ test('snapshot pass-through: upstream tools/tool_choice/temperature/parallel_too
   const result = await dispatcher(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }>;
-  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }>;
+  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>;
+  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }>;
 
   // Every preserved field arrives on both the in-progress (response.created)
   // synthesized envelope and the final completed envelope.
@@ -2514,27 +3070,27 @@ test('snapshot pass-through: synthesized response.failed (mid-stream upstream er
     error: null,
     incomplete_details: null,
   };
-  const createdWith = eventFrame<OpenAIResponsesStreamEvent>({
+  const createdWith = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
-    response: upstreamSnapshot as OpenAIResponsesResult,
+    response: upstreamSnapshot as OpenAIResponsesResultEx,
   });
   makeStubDeps();
   const dispatcher = runHostedWebSearch;
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     if (runCalls === 1) {
       const wsArgs = JSON.stringify({ search_query: [{ q: 'q' }] });
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         yield createdWith;
         yield mkFunctionCallAdded(0, 'call_1', FUNCTION_TOOL_NAME);
         yield mkFunctionCallArgsDone(0, wsArgs);
         yield mkFunctionCallDone(0, 'call_1', FUNCTION_TOOL_NAME, wsArgs);
-        yield eventFrame<OpenAIResponsesStreamEvent>({
+        yield eventFrame<OpenAIResponsesStreamEventEx>({
           type: 'response.completed',
-          response: { ...upstreamSnapshot, status: 'completed' } as OpenAIResponsesResult,
+          response: { ...upstreamSnapshot, status: 'completed' } as OpenAIResponsesResultEx,
         });
       })();
       return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
@@ -2551,7 +3107,7 @@ test('snapshot pass-through: synthesized response.failed (mid-stream upstream er
   const result = await dispatcher(inv, makeGatewayCtx(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const failed = events.find(e => e.type === 'response.failed') as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
+  const failed = events.find(e => e.type === 'response.failed') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
   assert(failed !== undefined);
   const r = failed.response as unknown as Record<string, unknown>;
   assertEquals(r.tools, [{ type: 'web_search' }]);
@@ -2576,28 +3132,28 @@ test('snapshot pass-through: snapshot fields like completed_at flow through verb
     error: null,
     incomplete_details: null,
   };
-  const turn1Created = eventFrame<OpenAIResponsesStreamEvent>({
+  const turn1Created = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
-    response: turn1Snapshot as OpenAIResponsesResult,
+    response: turn1Snapshot as OpenAIResponsesResultEx,
   });
-  const turn1Completed = eventFrame<OpenAIResponsesStreamEvent>({
+  const turn1Completed = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.completed',
     response: {
       ...turn1Snapshot,
       status: 'completed',
       completed_at: 1735689700,
-    } as unknown as OpenAIResponsesResult,
+    } as unknown as OpenAIResponsesResultEx,
   });
   makeStubDeps();
   const dispatcher = runHostedWebSearch;
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     if (runCalls === 1) {
       const wsArgs = JSON.stringify({ search_query: [{ q: 'q' }] });
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         yield turn1Created;
         yield mkFunctionCallAdded(0, 'call_1', FUNCTION_TOOL_NAME);
         yield mkFunctionCallArgsDone(0, wsArgs);
@@ -2618,7 +3174,7 @@ test('snapshot pass-through: snapshot fields like completed_at flow through verb
   const result = await dispatcher(inv, makeGatewayCtx(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const failed = events.find(e => e.type === 'response.failed') as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
+  const failed = events.find(e => e.type === 'response.failed') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
   assert(failed !== undefined);
   const r = failed.response as unknown as Record<string, unknown>;
   // Pass-through contract: snapshot's completed_at flows through
@@ -2641,17 +3197,17 @@ test('snapshot strip: emitFinalCompleted re-adds completed_at when upstream supp
     error: null,
     incomplete_details: null,
   };
-  const turn1Created = eventFrame<OpenAIResponsesStreamEvent>({
+  const turn1Created = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
-    response: upstreamSnapshot as OpenAIResponsesResult,
+    response: upstreamSnapshot as OpenAIResponsesResultEx,
   });
-  const turn1Completed = eventFrame<OpenAIResponsesStreamEvent>({
+  const turn1Completed = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.completed',
     response: {
       ...upstreamSnapshot,
       status: 'completed',
       completed_at: 1735689700,
-    } as unknown as OpenAIResponsesResult,
+    } as unknown as OpenAIResponsesResultEx,
   });
   makeStubDeps();
   const dispatcher = runHostedWebSearch;
@@ -2666,7 +3222,7 @@ test('snapshot strip: emitFinalCompleted re-adds completed_at when upstream supp
   const result = await dispatcher(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }>;
+  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }>;
   assert(completed !== undefined);
   const r = completed.response as unknown as Record<string, unknown>;
   assertEquals(r.completed_at, 1735689700);
@@ -2688,17 +3244,17 @@ test('snapshot pass-through: incomplete_details: null on the captured snapshot p
     error: null,
     incomplete_details: null,
   };
-  const turn1Created = eventFrame<OpenAIResponsesStreamEvent>({
+  const turn1Created = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
-    response: upstreamSnapshot as OpenAIResponsesResult,
+    response: upstreamSnapshot as OpenAIResponsesResultEx,
   });
-  const turn1Completed = eventFrame<OpenAIResponsesStreamEvent>({
+  const turn1Completed = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.completed',
     response: {
       ...upstreamSnapshot,
       status: 'completed',
       incomplete_details: null,
-    } as unknown as OpenAIResponsesResult,
+    } as unknown as OpenAIResponsesResultEx,
   });
   makeStubDeps();
   const dispatcher = runHostedWebSearch;
@@ -2713,7 +3269,7 @@ test('snapshot pass-through: incomplete_details: null on the captured snapshot p
   const result = await dispatcher(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }>;
+  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }>;
   assert(completed !== undefined);
   const r = completed.response as unknown as Record<string, unknown>;
   // Field present and explicitly `null` — neither coerced to undefined
@@ -2745,7 +3301,7 @@ test('success-path synth envelopes carry spec-required `error: null` and `incomp
   // Every synthesized envelope (created, in_progress, completed) MUST
   // carry both fields as null.
   for (const frameType of ['response.created', 'response.in_progress', 'response.completed'] as const) {
-    const ev = events.find(e => e.type === frameType) as Extract<OpenAIResponsesStreamEvent, { type: typeof frameType }>;
+    const ev = events.find(e => e.type === frameType) as Extract<OpenAIResponsesStreamEventEx, { type: typeof frameType }>;
     assert(ev !== undefined, `expected ${frameType}`);
     const r = ev.response as unknown as Record<string, unknown>;
     assert('error' in r, `${frameType} missing 'error' key`);
@@ -2757,15 +3313,15 @@ test('success-path synth envelopes carry spec-required `error: null` and `incomp
 
 // ── output_text is never synthesized ─────────────────────────────────
 
-test('dispatcher rebuilds `output_text` on terminal envelopes from the accumulated message items (matches openai-python Response.output_text)', async () => {
+test('dispatcher keeps accumulated message text in output items without a derived wire alias', async () => {
   // SDKs derive `output_text` from the `output` array. Per-turn
   // upstream `output_text` on a terminal frame only describes that
   // one turn, so on multi-turn dispatcher responses the snapshot value
   // would desync from the cross-turn aggregated `output`. The dispatcher
   // rebuilds the alias from `accumulatedOutput` and overrides the
   // snapshot's value on the terminal envelope.
-  const omitOutputText = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEvent> =>
-    eventFrame<OpenAIResponsesStreamEvent>({
+  const omitOutputText = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+    eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'response.completed',
       response: {
         id: responseId,
@@ -2777,8 +3333,8 @@ test('dispatcher rebuilds `output_text` on terminal envelopes from the accumulat
         incomplete_details: null,
       },
     });
-  const omitOutputTextCreated = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEvent> =>
-    eventFrame<OpenAIResponsesStreamEvent>({
+  const omitOutputTextCreated = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+    eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'response.created',
       response: {
         id: responseId,
@@ -2804,9 +3360,9 @@ test('dispatcher rebuilds `output_text` on terminal envelopes from the accumulat
   const result = await dispatcher(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const completed = events.find((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }> => e.type === 'response.completed');
+  const completed = events.find((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }> => e.type === 'response.completed');
   assert(completed !== undefined);
-  assertEquals((completed.response as unknown as { output_text: string }).output_text, 'hi there');
+  assertEquals(Object.hasOwn(completed.response, 'output_text'), false);
 });
 
 test('upstream-emitted `output_text` on in-progress envelopes flows through verbatim from the snapshot', async () => {
@@ -2816,7 +3372,7 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
   // value — terminal envelopes get a separately-rebuilt
   // `output_text` aggregated across turns (covered by the dedicated
   // rebuildOutputText test below).
-  const createdWithStaleText = eventFrame<OpenAIResponsesStreamEvent>({
+  const createdWithStaleText = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
     response: {
       id: 'resp_stale',
@@ -2824,12 +3380,11 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
       model: 'test-model',
       output: [],
       status: 'in_progress',
-      output_text: 'snapshot output_text',
       error: null,
       incomplete_details: null,
-    } as OpenAIResponsesResult,
+    } as OpenAIResponsesResultEx,
   });
-  const inProgressWithStaleText = eventFrame<OpenAIResponsesStreamEvent>({
+  const inProgressWithStaleText = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.in_progress',
     response: {
       id: 'resp_stale',
@@ -2837,12 +3392,11 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
       model: 'test-model',
       output: [],
       status: 'in_progress',
-      output_text: 'snapshot output_text',
       error: null,
       incomplete_details: null,
-    } as OpenAIResponsesResult,
+    } as OpenAIResponsesResultEx,
   });
-  const completedFrame = eventFrame<OpenAIResponsesStreamEvent>({
+  const completedFrame = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.completed',
     response: {
       id: 'resp_stale',
@@ -2854,7 +3408,7 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
       status: 'completed',
       error: null,
       incomplete_details: null,
-    } as OpenAIResponsesResult,
+    } as OpenAIResponsesResultEx,
   });
   makeStubDeps();
   const dispatcher = runHostedWebSearch;
@@ -2870,14 +3424,14 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
   const result = await dispatcher(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const created = events.find((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }> => e.type === 'response.created');
-  const inProgress = events.find((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.in_progress' }> => e.type === 'response.in_progress');
+  const created = events.find((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }> => e.type === 'response.created');
+  const inProgress = events.find((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.in_progress' }> => e.type === 'response.in_progress');
   assert(created !== undefined);
   assert(inProgress !== undefined);
   // Snapshot's output_text flows through verbatim on in-progress
   // envelopes — the dispatcher only overrides id/model/status/output.
-  assertEquals((created.response as unknown as { output_text?: string }).output_text, 'snapshot output_text');
-  assertEquals((inProgress.response as unknown as { output_text?: string }).output_text, 'snapshot output_text');
+  assertEquals(Object.hasOwn(created.response, 'output_text'), false);
+  assertEquals(Object.hasOwn(inProgress.response, 'output_text'), false);
 });
 
 // ── finalMetadata follows the latest turn's modelIdentity ──────────────
@@ -2894,12 +3448,12 @@ test('finalMetadata resolves with the LATEST turn modelIdentity, not turn 1', as
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     const frames = runCalls === 1
       ? searchCallTurn(0, 'call_1', 'q1')
       : messageTurn('done', 0);
-    const iterable: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+    const iterable: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
       for (const f of frames) yield f;
     })();
     return {
@@ -2971,12 +3525,12 @@ test('response.output_item.added for web_search_call omits action (mirrors nativ
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   const wsAdded = events.find(
-    (e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.added' }> =>
+    (e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }> =>
       e.type === 'response.output_item.added'
       && (e.item as { type?: string }).type === 'web_search_call',
   );
   const wsDone = events.find(
-    (e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }> =>
+    (e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }> =>
       e.type === 'response.output_item.done'
       && (e.item as { type?: string }).type === 'web_search_call',
   );
@@ -3015,7 +3569,7 @@ test('open with invalid ref_id: done frame carries action.type="search" with the
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   const wsDone = events.find(
-    (e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }> =>
+    (e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }> =>
       e.type === 'response.output_item.done'
       && (e.item as { type?: string }).type === 'web_search_call',
   );
@@ -3052,7 +3606,7 @@ test('open with valid URL whose fetch fails: done frame carries action.type="ope
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   const wsDone = events.find(
-    (e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }> =>
+    (e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }> =>
       e.type === 'response.output_item.done'
       && (e.item as { type?: string }).type === 'web_search_call',
   );
@@ -3144,10 +3698,6 @@ test('web_search_call results field is populated on the wire when the client opt
 });
 
 test('web_search_call results field is omitted from the wire when the client did not include it (matches native default)', async () => {
-  // When the client omits `include: ["web_search_call.results"]`, the
-  // wire item carries only id/action — same as native. The IR (and
-  // therefore the persisted `payload.private`) still holds the full
-  // results so a later-turn echo can be hydrated.
   makeStubDeps();
   const dispatcher = runHostedWebSearch;
   const inv = makeInvocation({ payload: { include: [] } });
@@ -3189,12 +3739,12 @@ test('mixed-tool: dispatcher call + client function_call exits to client after o
   ];
   const script = scriptedRun([mixedTurn]);
 
-  const originalInputLen = (inv.payload.input as OpenAIResponsesInputItem[]).length;
+  const originalInputLen = (inv.payload.input as CanonicalOpenAIResponsesInputItem[]).length;
   const { frames } = await runHostedToolsAndDrain(dispatcher, inv, makeGatewayCtx(), script.run);
 
   assertEquals(backend.calls.length, 1);
   assertEquals(script.callCount(), 1);
-  assertEquals((inv.payload.input as OpenAIResponsesInputItem[]).length, originalInputLen);
+  assertEquals((inv.payload.input as CanonicalOpenAIResponsesInputItem[]).length, originalInputLen);
 
   const events = eventPayloads(frames);
   const passThroughAdded = events.find(e =>
@@ -3250,12 +3800,12 @@ test('client-only tool turn (no dispatcher call): pass-through function_call fra
   ];
   const script = scriptedRun([clientOnlyTurn]);
 
-  const originalInputLen = (inv.payload.input as OpenAIResponsesInputItem[]).length;
+  const originalInputLen = (inv.payload.input as CanonicalOpenAIResponsesInputItem[]).length;
   const { frames } = await runHostedToolsAndDrain(dispatcher, inv, makeGatewayCtx(), script.run);
   // Loop closes after the single turn — the client drives the next round.
   assertEquals(script.callCount(), 1);
   assertEquals(backend.calls.length, 0);
-  assertEquals((inv.payload.input as OpenAIResponsesInputItem[]).length, originalInputLen);
+  assertEquals((inv.payload.input as CanonicalOpenAIResponsesInputItem[]).length, originalInputLen);
 
   const events = eventPayloads(frames);
   const passThroughAdded = events.find(e =>
@@ -3270,15 +3820,6 @@ test('client-only tool turn (no dispatcher call): pass-through function_call fra
 // ── Input preprocessor: web_search_call items → dispatcher call pair ─────────
 
 test('input preprocessor: each web_search_call item becomes one dispatcher call + function_call_output pair', async () => {
-  // Upstream knows the dispatcher call only as a function tool; a hosted
-  // `web_search_call` item type in its input would be unrecognized. We
-  // translate each echoed item into a function_call + function_call_output
-  // pair that the upstream model can reason over. With no per-item
-  // private payload (this test runs raw through the dispatcher), the
-  // function_call mirrors the wire action shape and the
-  // function_call_output is the placeholder — the dispatcher deliberately
-  // ignores the wire `results` field because gateway-side state is the
-  // only source of truth.
   makeStubDeps();
   const dispatcher = runHostedWebSearch;
   const replayedSearch: OpenAIResponsesInputWebSearchCall = {
@@ -3309,7 +3850,7 @@ test('input preprocessor: each web_search_call item becomes one dispatcher call 
 
   await runHostedToolsAndDrain(dispatcher, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   // Original 2 messages + 2 expanded pairs (2 items each) = 6 items.
   assertEquals(input.length, 6);
   assertEquals(input.map(i => i.type), [
@@ -3356,7 +3897,7 @@ test('input preprocessor: replay-only activation leaves hosted tool_choice uncha
   await runHostedToolsAndDrain(dispatcher, inv, makeGatewayCtx(), script.run);
 
   assertEquals(inv.payload.tool_choice, { type: 'web_search_preview' });
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   assertEquals(input.map(i => i.type), ['message', 'function_call', 'function_call_output']);
 });
 
@@ -3386,7 +3927,7 @@ test('input preprocessor: web_search_call without an action is replaced by a pla
   const script = scriptedRun([messageTurn('done')]);
   await runHostedToolsAndDrain(dispatcher, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   // user message + placeholder function_call + placeholder function_call_output.
   assertEquals(input.length, 3);
   assertEquals(input[0].type, 'message');
@@ -3424,7 +3965,7 @@ test('input preprocessor: web_search_call with empty id has its id synthesized a
   const script = scriptedRun([messageTurn('done')]);
   await runHostedToolsAndDrain(dispatcher, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   // user message + function_call + function_call_output (paired from the
   // echoed web_search_call with synthesized id).
   assertEquals(input.length, 3);
@@ -3454,7 +3995,7 @@ test('input preprocessor: web_search_call without results emits the not-preserve
   const script = scriptedRun([messageTurn('done')]);
   await runHostedToolsAndDrain(dispatcher, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   assertEquals(input.length, 2);
   const fco = input[1] as { output: string };
   assertEquals(fco.output, 'Prior search results were not preserved in the conversation history. Call web_search again if you need them.');
@@ -3524,7 +4065,7 @@ for (const [source, item] of [
     const inv = makeInvocation({
       payload: {
         tools: [{ type: 'web_search' }],
-        input: [{ type: 'message', role: 'user', content: 'Search.' }, item] as OpenAIResponsesInputItem[],
+        input: [{ type: 'message', role: 'user', content: 'Search.' }, item] as CanonicalOpenAIResponsesInputItem[],
       },
     });
     const script = scriptedRun([messageTurn('done')]);
@@ -3649,10 +4190,10 @@ test('dispatcher yields first turn frames BEFORE later turns resolve', async () 
   });
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
       })();
       return {
@@ -3663,7 +4204,7 @@ test('dispatcher yields first turn frames BEFORE later turns resolve', async () 
     }
     if (runCalls === 2) {
       await turn2Gate;
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         for (const f of messageTurn('summary', 0)) yield f;
       })();
       return {
@@ -3723,12 +4264,12 @@ test('turn 1 pure-text response streams BEFORE upstream terminal (no TTFT regres
   const terminalGate = new Promise<void>(resolve => {
     releaseTerminal = resolve;
   });
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
-    const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
+    const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
       yield mkResponseCreated();
       yield mkResponseInProgress();
       yield mkMessageAdded(0);
-      yield eventFrame<OpenAIResponsesStreamEvent>({
+      yield eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.output_text.delta',
         item_id: 'msg_upstream',
         output_index: 0,
@@ -3763,170 +4304,76 @@ test('turn 1 pure-text response streams BEFORE upstream terminal (no TTFT regres
   while (!(await iter.next()).done) { /* drain */ }
 });
 
-test('mid-stream upstream error yields response.failed and closes the SSE stream', async () => {
-  // After turn 1 emits a web_search call, turn 2's run() returns an
-  // upstream-error envelope. The dispatcher must yield a single terminal
-  // response.failed frame and end the iterator — switching the outer
-  // envelope to upstream-error is impossible: the outer envelope shape
-  // is locked once the first frame is yielded.
+test.each([
+  {
+    body: {
+      type: 'error',
+      message: 'You exceeded your current quota.',
+      code: null,
+      param: 'tools',
+      provider_specific_fields: { request_id: 'req_flat', retryable: true },
+    },
+    responseError: null,
+  },
+  {
+    body: {
+      type: 'error',
+      error: {
+        message: 'You exceeded your current quota.',
+        type: 'insufficient_quota',
+        code: 'insufficient_quota',
+        param: null,
+        provider_specific_fields: { request_id: 'req_nested', retryable: true },
+      },
+      trace_id: 'trace_nested',
+    },
+    responseError: {
+      message: 'You exceeded your current quota.',
+      type: 'insufficient_quota',
+      code: 'insufficient_quota',
+      param: null,
+      provider_specific_fields: { request_id: 'req_nested', retryable: true },
+    },
+  },
+] as const)('mid-stream HTTP error body becomes a lossless error event followed by response.failed: $body', async ({ body, responseError }) => {
   makeStubDeps();
   const dispatcher = runHostedWebSearch;
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
       })();
-      return {
-        type: 'events',
-        events: frames,
-        modelIdentity: testTelemetryModelIdentity,
-      };
+      return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
     }
     return {
       type: 'api-error',
       source: 'upstream',
-      status: 503,
+      status: 429,
       headers: new Headers({ 'content-type': 'application/json' }),
-      body: new TextEncoder().encode('{"error":"upstream temporarily unavailable"}'),
+      body: new TextEncoder().encode(JSON.stringify(body)),
     };
   };
 
   const result = await dispatcher(inv, makeGatewayCtx(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
+  const errorIndex = events.findIndex(event => event.type === 'error');
+  assert(errorIndex >= 0);
+  const error = events[errorIndex] as Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>;
+  const { sequence_number: sequenceNumber, ...unstamped } = error;
+  assertEquals(unstamped, body);
+  assertEquals(typeof sequenceNumber, 'number');
 
-  const terminal = events[events.length - 1];
-  assertEquals(terminal.type, 'response.failed');
-  const failedEv = terminal as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
-  assertEquals(failedEv.response.status, 'failed');
-  assert(failedEv.response.error !== undefined);
-  // Pass-through code: the dispatcher quotes upstream's HTTP status
-  // (`upstream_<status>`) when the body has no OpenAI-shaped error
-  // envelope. No normalization to a spec enum value.
-  assertEquals(failedEv.response.error?.code, 'upstream_503');
-  assert(failedEv.response.error?.message.includes('503'));
-  assertFalse(events.some(e => e.type === 'response.completed'));
+  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
+  assertEquals(failed.type, 'response.failed');
+  assertEquals(failed.response.status, 'failed');
+  assertEquals(failed.response.error, responseError);
+  assertFalse(events.some(event => event.type === 'response.completed'));
   assertEquals(runCalls, 2);
-});
-
-test('mid-stream 429 pass-through: code reflects upstream HTTP status (no spec-enum normalization)', async () => {
-  // The dispatcher no longer normalizes upstream error codes to the
-  // OpenAPI `OpenAIResponsesErrorCode` enum. A 429 with no OpenAI-shaped
-  // body falls back to `upstream_429` — the HTTP status is the most
-  // honest signal, and downstream clients pattern-matching on
-  // upstream's actual code see it directly.
-  makeStubDeps();
-  const dispatcher = runHostedWebSearch;
-  const inv = makeInvocation();
-
-  let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
-    runCalls += 1;
-    if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
-        for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
-      })();
-      return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
-    }
-    return {
-      type: 'api-error',
-      source: 'upstream',
-      status: 429,
-      headers: new Headers({ 'content-type': 'text/plain' }),
-      body: new TextEncoder().encode('rate limited'),
-    };
-  };
-
-  const result = await dispatcher(inv, makeGatewayCtx(), run);
-  assert(result.type === 'events');
-  const events = eventPayloads(await collectFrames(result.events));
-  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
-  assertEquals(failed.response.error?.code, 'upstream_429');
-});
-
-test('mid-stream 400 with non-OpenAI body falls back to upstream_400 code (no spec-enum normalization)', async () => {
-  // Without an OpenAI-shaped `error.code` in the body, the dispatcher
-  // synthesizes `upstream_<status>` rather than mapping to a spec
-  // enum value. The body excerpt and status live in `error.message`
-  // so clients still see the upstream detail.
-  makeStubDeps();
-  const dispatcher = runHostedWebSearch;
-  const inv = makeInvocation();
-
-  let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
-    runCalls += 1;
-    if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
-        for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
-      })();
-      return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
-    }
-    return {
-      type: 'api-error',
-      source: 'upstream',
-      status: 400,
-      headers: new Headers({ 'content-type': 'text/plain' }),
-      body: new TextEncoder().encode('bad request'),
-    };
-  };
-
-  const result = await dispatcher(inv, makeGatewayCtx(), run);
-  assert(result.type === 'events');
-  const events = eventPayloads(await collectFrames(result.events));
-  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
-  assertEquals(failed.response.error?.code, 'upstream_400');
-  // The HTTP status is preserved in the diagnostic message so clients
-  // pattern-matching for 4xx see it.
-  assert(failed.response.error?.message.includes('400'));
-  assert(failed.response.error?.message.includes('bad request'));
-  assertFalse('type' in (failed.response.error as object));
-});
-
-test('mid-stream upstream error with OpenAI-shaped JSON body forwards code/type/message verbatim', async () => {
-  // When upstream is OpenAI-compatible and gives us a standard error
-  // envelope, pass it through unchanged so SDKs see the same vocabulary
-  // they'd see hitting upstream directly.
-  makeStubDeps();
-  const dispatcher = runHostedWebSearch;
-  const inv = makeInvocation();
-
-  let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
-    runCalls += 1;
-    if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
-        for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
-      })();
-      return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
-    }
-    return {
-      type: 'api-error',
-      source: 'upstream',
-      status: 429,
-      headers: new Headers({ 'content-type': 'application/json' }),
-      body: new TextEncoder().encode(JSON.stringify({
-        error: {
-          message: 'You exceeded your current quota.',
-          type: 'insufficient_quota',
-          code: 'insufficient_quota',
-          param: null,
-        },
-      })),
-    };
-  };
-
-  const result = await dispatcher(inv, makeGatewayCtx(), run);
-  assert(result.type === 'events');
-  const events = eventPayloads(await collectFrames(result.events));
-  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
-  assertEquals(failed.response.error?.code, 'insufficient_quota');
-  assertEquals(failed.response.error?.type, 'insufficient_quota');
-  assertEquals(failed.response.error?.message, 'You exceeded your current quota.');
 });
 
 test('upstream response.incomplete forwards as response.incomplete with the same incomplete_details.reason', async () => {
@@ -3953,12 +4400,12 @@ test('upstream response.incomplete forwards as response.incomplete with the same
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
 
-  const terminal = events[events.length - 1] as Extract<OpenAIResponsesStreamEvent, { type: 'response.incomplete' }>;
+  const terminal = events[events.length - 1] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.incomplete' }>;
   assertEquals(terminal.type, 'response.incomplete');
   assertEquals(terminal.response.status, 'incomplete');
   assertEquals(terminal.response.incomplete_details, { reason: 'max_output_tokens' });
   assertEquals(terminal.response.output.map(item => item.type), ['message']);
-  assertEquals(terminal.response.output_text, 'partial answer');
+  assertEquals(Object.hasOwn(terminal.response, 'output_text'), false);
   assertFalse(events.some(e => e.type === 'response.completed'));
 });
 
@@ -3987,7 +4434,7 @@ test('upstream response.incomplete WITHOUT incomplete_details forwards as respon
 
   const terminal = events[events.length - 1];
   assertEquals(terminal.type, 'response.incomplete');
-  const incomplete = terminal as Extract<OpenAIResponsesStreamEvent, { type: 'response.incomplete' }>;
+  const incomplete = terminal as Extract<OpenAIResponsesStreamEventEx, { type: 'response.incomplete' }>;
   assertEquals(incomplete.response.incomplete_details, null);
   assertEquals(incomplete.response.output.map(item => item.type), ['message']);
 });
@@ -4012,17 +4459,17 @@ test('upstream response.incomplete after a hosted tool call keeps synthesized to
   const result = await dispatcher(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const terminal = events.at(-1) as Extract<OpenAIResponsesStreamEvent, { type: 'response.incomplete' }>;
+  const terminal = events.at(-1) as Extract<OpenAIResponsesStreamEventEx, { type: 'response.incomplete' }>;
 
   assertEquals(terminal.type, 'response.incomplete');
-  assertEquals(terminal.response.output.map(item => item.type), ['message', 'web_search_call']);
-  assertEquals(terminal.response.output_text, 'partial answer');
+  assertEquals(terminal.response.output.map(item => item.type), ['message', 'reasoning', 'web_search_call']);
+  assertEquals(Object.hasOwn(terminal.response, 'output_text'), false);
   assertEquals(terminal.response.incomplete_details, { reason: 'max_output_tokens' });
 });
 
 // ── function_call_output is plain text on every target ───────────────
 
-const lastFunctionCallOutput = (input: OpenAIResponsesInputItem[]): string => {
+const lastFunctionCallOutput = (input: CanonicalOpenAIResponsesInputItem[]): string => {
   const last = input[input.length - 1];
   assert(last.type === 'function_call_output');
   return (last as { output: string }).output;
@@ -4042,7 +4489,7 @@ test('responses target with flag on: function_call_output is plain-text formatte
 
   await runHostedToolsAndDrain(dispatcher, inv, makeGatewayCtx(), script.run);
 
-  const text = lastFunctionCallOutput(inv.payload.input as OpenAIResponsesInputItem[]);
+  const text = lastFunctionCallOutput(inv.payload.input as CanonicalOpenAIResponsesInputItem[]);
   assert(text.startsWith('Search results for "q1":'));
 });
 
@@ -4086,7 +4533,7 @@ test('responses target with OpenAI passthrough forwards the complete alpha-searc
 
   await runHostedToolsAndDrain(runHostedWebSearch, inv, makeGatewayCtx(), script.run);
 
-  assertEquals(lastFunctionCallOutput(inv.payload.input as OpenAIResponsesInputItem[]), 'alpha output');
+  assertEquals(lastFunctionCallOutput(inv.payload.input as CanonicalOpenAIResponsesInputItem[]), 'alpha output');
   assertEquals(call.mock.calls[0]?.[0].commands, commands);
   assertEquals(call.mock.calls[0]?.[0].settings, {
     user_location: { type: 'approximate', country: 'SG' },
@@ -4094,6 +4541,61 @@ test('responses target with OpenAI passthrough forwards the complete alpha-searc
     allowed_callers: ['direct'],
     external_web_access: 'live',
   });
+});
+
+test('responses target with an unavailable OpenAI passthrough model resolves nothing until a search runs', async () => {
+  makeStubDeps();
+  await getRepo().webSearchConfig.save({
+    provider: 'tavily',
+    tavily: { apiKey: 'test-key' },
+    microsoftWebIq: { apiKey: '' },
+    jina: { apiKey: '' },
+    passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_codex', model: 'gpt-missing' },
+  } satisfies WebSearchConfig);
+  mockResolveAlpha.mockClear();
+  mockResolveAlpha.mockRejectedValue(new Error('Search model not found.'));
+  const inv = makeInvocation({
+    targetApi: 'openaiResponses',
+    enabledFlags: new Set<FlagId>(['openai-responses-web-search-shim']),
+  });
+
+  // A rejected dispatcher promise nobody awaited is an unhandled rejection,
+  // which crashes the Node process.
+  await runHostedToolsAndDrain(runHostedWebSearch, inv, makeGatewayCtx(), scriptedRun([messageTurn('done', 0)]).run);
+
+  assertEquals(mockResolveAlpha.mock.calls.length, 0);
+});
+
+test('responses target preserves a missing-model failure once a search runs', async () => {
+  makeStubDeps();
+  await getRepo().webSearchConfig.save({
+    provider: 'tavily',
+    tavily: { apiKey: 'test-key' },
+    microsoftWebIq: { apiKey: '' },
+    jina: { apiKey: '' },
+    passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_codex', model: 'gpt-missing' },
+  } satisfies WebSearchConfig);
+  const { AlphaSearchModelNotFoundError } = await vi.importActual<typeof import('../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts')>('../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts');
+  const failure = new AlphaSearchModelNotFoundError();
+  mockResolveAlpha.mockClear();
+  mockResolveAlpha.mockRejectedValue(failure);
+  const inv = makeInvocation({
+    targetApi: 'openaiResponses',
+    enabledFlags: new Set<FlagId>(['openai-responses-web-search-shim']),
+  });
+  const script = scriptedRun([
+    fcTurn(0, 'call_missing_search_model', FUNCTION_TOOL_NAME, JSON.stringify({ search_query: [{ q: 'Floway' }] })),
+    messageTurn('done', 0),
+  ]);
+  const { frames } = await runHostedToolsAndDrain(runHostedWebSearch, inv, makeGatewayCtx(), script.run);
+  const failed = eventPayloads(frames).find(event => event.type === 'response.failed');
+  assert(failed !== undefined);
+  assertEquals(failed.response.status, 'failed');
+  assert(failed.response.error?.message.includes('Search model not found.'));
+  assertEquals(failed.response.error?.provider_specific_fields?.name, 'AlphaSearchModelNotFoundError');
+  assertEquals(failed.response.error?.provider_specific_fields?.stack, failure.stack);
+  assertEquals(script.callCount(), 1);
+  assertEquals(mockResolveAlpha.mock.calls.length, 1);
 });
 
 test('local and cascaded Floway unsupported commands produce the same agent-visible error', async () => {
@@ -4110,7 +4612,7 @@ test('local and cascaded Floway unsupported commands produce the same agent-visi
       messageTurn('model repeated the tool error', 0),
     ]);
     await runHostedToolsAndDrain(runHostedWebSearch, inv, makeGatewayCtx(), script.run);
-    return lastFunctionCallOutput(inv.payload.input as OpenAIResponsesInputItem[]);
+    return lastFunctionCallOutput(inv.payload.input as CanonicalOpenAIResponsesInputItem[]);
   };
 
   const localMessage = await runUnsupported();
@@ -4146,7 +4648,7 @@ test('openai-chat-completions target: function_call_output is plain-text formatt
 
   await runHostedToolsAndDrain(dispatcher, inv, makeGatewayCtx(), script.run);
 
-  const text = lastFunctionCallOutput(inv.payload.input as OpenAIResponsesInputItem[]);
+  const text = lastFunctionCallOutput(inv.payload.input as CanonicalOpenAIResponsesInputItem[]);
   assert(text.startsWith('Search results for "q1":'));
 });
 
@@ -4161,7 +4663,7 @@ test('messages target: function_call_output is plain-text formatted search resul
 
   await runHostedToolsAndDrain(dispatcher, inv, makeGatewayCtx(), script.run);
 
-  const text = lastFunctionCallOutput(inv.payload.input as OpenAIResponsesInputItem[]);
+  const text = lastFunctionCallOutput(inv.payload.input as CanonicalOpenAIResponsesInputItem[]);
   assert(text.startsWith('Search results for "q1":'));
 });
 
@@ -4371,10 +4873,10 @@ test('final-turn text deltas stream as they arrive, not buffered until response.
   });
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
       })();
       return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
@@ -4383,11 +4885,11 @@ test('final-turn text deltas stream as they arrive, not buffered until response.
       // Emit message.added + first delta immediately, gate the rest. A
       // buffered implementation would hide the first delta until
       // response.completed.
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         yield mkResponseCreated();
         yield mkResponseInProgress();
         yield mkMessageAdded(0);
-        yield eventFrame<OpenAIResponsesStreamEvent>({
+        yield eventFrame<OpenAIResponsesStreamEventEx>({
           type: 'response.output_text.delta',
           item_id: 'msg_upstream',
           output_index: 0,
@@ -4395,7 +4897,7 @@ test('final-turn text deltas stream as they arrive, not buffered until response.
           delta: 'first',
         });
         await restOfTurn2Gate;
-        yield eventFrame<OpenAIResponsesStreamEvent>({
+        yield eventFrame<OpenAIResponsesStreamEventEx>({
           type: 'response.output_text.delta',
           item_id: 'msg_upstream',
           output_index: 0,
@@ -4420,7 +4922,7 @@ test('final-turn text deltas stream as they arrive, not buffered until response.
     const next = await iter.next();
     if (next.done) break;
     if (next.value.type === 'event' && next.value.event.type === 'response.output_text.delta') {
-      const deltaEv = next.value.event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_text.delta' }>;
+      const deltaEv = next.value.event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_text.delta' }>;
       assertEquals(deltaEv.delta, 'first');
       sawFirstDelta = true;
       break;
@@ -4446,7 +4948,7 @@ test('mixed turn (reasoning + message_partial + function_call) preserves the mes
     mkReasoningAdded(0, 'rs_1'),
     mkReasoningDone(0, 'rs_1'),
     mkMessageAdded(1),
-    eventFrame<OpenAIResponsesStreamEvent>({
+    eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'response.output_text.delta',
       item_id: 'msg_upstream',
       output_index: 1,
@@ -4460,7 +4962,7 @@ test('mixed turn (reasoning + message_partial + function_call) preserves the mes
     mkResponseCompleted(),
   ];
   const script = scriptedRun([mixedTurn, messageTurn('final answer', 0)]);
-  const observedInputs: OpenAIResponsesPayload['input'][] = [];
+  const observedInputs: OpenAIResponsesPayloadEx['input'][] = [];
   const run = async () => {
     observedInputs.push(inv.payload.input);
     return await script.run();
@@ -4585,7 +5087,7 @@ test('lifecycle start frames yield BEFORE backend resolves, giving searching rea
   // searching must arrive but completed / done must NOT.
   let sawSearching = false;
   let sawCompleted = false;
-  const drainedSoFar: OpenAIResponsesStreamEvent[] = [];
+  const drainedSoFar: OpenAIResponsesStreamEventEx[] = [];
   for (let i = 0; i < 64 && !sawSearching; i++) {
     const next = await iter.next();
     if (next.done) break;
@@ -4666,10 +5168,7 @@ test('terminal response.completed.output is in output_index order, not completio
   const terminal = events[events.length - 1];
   assertEquals(terminal.type, 'response.completed');
   const output = (terminal as { response: { output: Array<{ type: string }> } }).response.output;
-  // Two items: dispatcher web_search_call at slot 0, client function_call at slot 1.
-  // Reserved-slot ordering wins even though the client tool finalized
-  // first (no await on the .done path) and the dispatcher call finalized last.
-  assertEquals(output.map(o => o.type), ['web_search_call', 'function_call']);
+  assertEquals(output.map(o => o.type), ['reasoning', 'web_search_call', 'function_call']);
 });
 
 // ── End-to-end protocol-violation paths ──────────────────────────────
@@ -4696,7 +5195,7 @@ test('dispatcher call without output_item.done synthesizes response.failed (no b
   const result = await dispatcher(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const terminal = events[events.length - 1] as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
+  const terminal = events[events.length - 1] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
   assertEquals(terminal.type, 'response.failed');
   assertEquals(terminal.response.error?.code, 'server_error');
   assert(terminal.response.error?.message.includes('without closing dispatcher call items'));
@@ -4797,7 +5296,7 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
 
 // ── consumeTurnStreaming: single-turn stream consumption mechanics ──
 
-const mkFunctionCallArgsDelta = (outputIndex: number, delta: string, itemId = `fc_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkFunctionCallArgsDelta = (outputIndex: number, delta: string, itemId = `fc_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.function_call_arguments.delta',
     item_id: itemId,
@@ -4805,7 +5304,7 @@ const mkFunctionCallArgsDelta = (outputIndex: number, delta: string, itemId = `f
     delta,
   });
 
-const mkCustomToolCallInputDelta = (outputIndex: number, delta: string, itemId = `cti_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkCustomToolCallInputDelta = (outputIndex: number, delta: string, itemId = `cti_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.custom_tool_call_input.delta',
     item_id: itemId,
@@ -4813,11 +5312,11 @@ const mkCustomToolCallInputDelta = (outputIndex: number, delta: string, itemId =
     delta,
   });
 
-const framesOf = (...frames: ProtocolFrame<OpenAIResponsesStreamEvent>[]): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> => (async function* () {
+const framesOf = (...frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> => (async function* () {
   yield* frames;
 })();
 
-const eventTypesOf = (frames: ProtocolFrame<OpenAIResponsesStreamEvent>[]): string[] =>
+const eventTypesOf = (frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): string[] =>
   frames.flatMap(f => (f.type === 'event' ? [f.event.type] : []));
 
 interface DispatchRecord {
@@ -4832,16 +5331,16 @@ const recordingDispatcher = (records: DispatchRecord[]) => ({ intercepted }: { i
 };
 
 type DrainResult = {
-  downstreamFrames: ProtocolFrame<OpenAIResponsesStreamEvent>[];
+  downstreamFrames: ProtocolFrame<OpenAIResponsesStreamEventEx>[];
   summary: TurnSummary;
   records: DispatchRecord[];
 };
 
 const drain = async (
-  iter: AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>, TurnSummary>,
+  iter: AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>, TurnSummary>,
   records: DispatchRecord[],
 ): Promise<DrainResult> => {
-  const downstreamFrames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [];
+  const downstreamFrames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
   let summary: TurnSummary | undefined;
   while (true) {
     const next = await iter.next();
@@ -4872,7 +5371,7 @@ test('parseHostedToolArguments returns empty object for empty args', () => {
 });
 
 const consumeTurn = async (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   state: Parameters<typeof consumeTurnStreaming>[1],
   isFirstTurn: boolean,
 ): Promise<DrainResult> => {
@@ -4891,17 +5390,18 @@ test('consumeTurn forwards a namespaced client call sharing the hosted dispatche
   };
   const result = await consumeTurn(framesOf(
     mkResponseCreated(),
-    eventFrame<OpenAIResponsesStreamEvent>({
+    eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'response.output_item.added', output_index: 0,
       item: { ...call, arguments: '', status: 'in_progress' },
     }),
     mkFunctionCallArgsDone(0, call.arguments, call.id),
-    eventFrame<OpenAIResponsesStreamEvent>({ type: 'response.output_item.done', output_index: 0, item: call }),
+    eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.done', output_index: 0, item: call }),
     mkResponseCompleted(),
   ), createMergeState(), true);
 
   assertEquals(result.records, []);
-  assertEquals(result.summary.dispatched, []);
+  assertEquals(result.summary.dispatchedSlots, []);
+  assertFalse(result.summary.sawHostedToolCall);
   assertEquals(result.summary.sawClientToolCall, true);
   assertEquals(outputItemDoneEvents(result.downstreamFrames).map(event => event.item), [call]);
 });
@@ -4914,18 +5414,19 @@ test('consumeTurn uses the completed call namespace before executing a hosted to
   };
   const result = await consumeTurn(framesOf(
     mkResponseCreated(),
-    eventFrame<OpenAIResponsesStreamEvent>({
+    eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'response.output_item.added', output_index: 0,
       item: { ...completed, namespace: undefined, arguments: '', status: 'in_progress' },
     }),
     mkFunctionCallArgsDelta(0, completed.arguments, completed.id),
     mkFunctionCallArgsDone(0, completed.arguments, completed.id),
-    eventFrame<OpenAIResponsesStreamEvent>({ type: 'response.output_item.done', output_index: 0, item: completed }),
+    eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.done', output_index: 0, item: completed }),
     mkResponseCompleted(),
   ), createMergeState(), true);
 
   assertEquals(result.records, []);
-  assertEquals(result.summary.dispatched, []);
+  assertEquals(result.summary.dispatchedSlots, []);
+  assertFalse(result.summary.sawHostedToolCall);
   assertEquals(result.summary.sawClientToolCall, true);
   assertEquals(outputItemDoneEvents(result.downstreamFrames).map(event => event.item), [completed]);
   assertEquals(eventTypesOf(result.downstreamFrames).filter(type => type.startsWith('response.function_call_arguments.')), [
@@ -4936,14 +5437,14 @@ test('consumeTurn uses the completed call namespace before executing a hosted to
 test('consumeTurn dispatches a hosted call whose added item carried a namespace', async () => {
   const result = await consumeTurn(framesOf(
     mkResponseCreated(),
-    eventFrame<OpenAIResponsesStreamEvent>({
+    eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'response.output_item.added', output_index: 0,
       item: {
         type: 'function_call', id: 'fc_search', call_id: 'call_search', namespace: 'client',
         name: FUNCTION_TOOL_NAME, arguments: '', status: 'in_progress',
       },
     }),
-    eventFrame<OpenAIResponsesStreamEvent>({
+    eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'response.output_item.done', output_index: 0,
       item: {
         type: 'function_call', id: 'fc_search', call_id: 'call_search',
@@ -4953,7 +5454,7 @@ test('consumeTurn dispatches a hosted call whose added item carried a namespace'
     mkResponseCompleted(),
   ), createMergeState(), true);
 
-  assertEquals(result.records.map(record => record.intercepted.name), [FUNCTION_TOOL_NAME]);
+  assertEquals(result.records.map(record => record.intercepted.functionCall.name), [FUNCTION_TOOL_NAME]);
   assertEquals(result.summary.sawClientToolCall, false);
   assertEquals(outputItemDoneEvents(result.downstreamFrames), []);
 });
@@ -4990,7 +5491,7 @@ test('consumeTurn first turn synthesizes response.created with the once-per-requ
   assertEquals(eventTypesOf(result.downstreamFrames), ['response.created', 'response.in_progress']);
   const created = result.downstreamFrames[0];
   assert(created.type === 'event');
-  const createdEv = created.event as Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }>;
+  const createdEv = created.event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>;
   // Downstream id is the gateway-synthesized value (stable cross-turn);
   // upstream's id is captured nowhere and never exposed downstream.
   assertEquals(createdEv.response.id, state.synthesizedResponseId);
@@ -5001,10 +5502,10 @@ test('consumeTurn synthesizes response.created with the upstream-reported model 
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.created',
         response: {
-          id: 'r', object: 'response', model: 'gpt-5.4-2025-01-20', output: [], output_text: '', status: 'in_progress',
+          id: 'r', object: 'response', model: 'gpt-5.4-2025-01-20', output: [], status: 'in_progress',
           error: null, incomplete_details: null,
         },
       }),
@@ -5015,7 +5516,7 @@ test('consumeTurn synthesizes response.created with the upstream-reported model 
   );
   const created = result.downstreamFrames.find(f => f.type === 'event' && f.event.type === 'response.created');
   assert(created?.type === 'event');
-  const ev = created.event as Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }>;
+  const ev = created.event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>;
   assertEquals(ev.response.model, 'gpt-5.4-2025-01-20');
   assertEquals(state.lastSeenModel, 'gpt-5.4-2025-01-20');
 });
@@ -5024,10 +5525,10 @@ test('consumeTurn throws when upstream response.created has no model field (no c
   const state = createMergeState();
   const iter = consumeTurnStreaming(
     framesOf(
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.created',
         response: {
-          id: 'r', object: 'response', output: [], output_text: '', status: 'in_progress',
+          id: 'r', object: 'response', output: [], status: 'in_progress',
           error: null, incomplete_details: null,
         } as never,
       }),
@@ -5054,10 +5555,10 @@ test('consumeTurn captures upstream-reported model and writes it into MergeState
   const state = createMergeState();
   await consumeTurn(
     framesOf(
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.created',
         response: {
-          id: 'r', object: 'response', model: 'gpt-5.5-2025-09-01', output: [], output_text: '', status: 'in_progress',
+          id: 'r', object: 'response', model: 'gpt-5.5-2025-09-01', output: [], status: 'in_progress',
           error: null, incomplete_details: null,
         },
       }),
@@ -5077,10 +5578,10 @@ test('consumeTurn re-captures upstream-reported model when later turns change it
   state.lastSeenModel = 'gpt-5.5-2025-09-01';
   await consumeTurn(
     framesOf(
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.created',
         response: {
-          id: 'r2', object: 'response', model: 'gpt-5.6-2025-12-01', output: [], output_text: '', status: 'in_progress',
+          id: 'r2', object: 'response', model: 'gpt-5.6-2025-12-01', output: [], status: 'in_progress',
           error: null, incomplete_details: null,
         },
       }),
@@ -5102,10 +5603,10 @@ test('consumeTurn does NOT capture upstream response.id (downstream uses the gat
   state.lastSeenModel = 'gpt-5';
   await consumeTurn(
     framesOf(
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.created',
         response: {
-          id: 'resp_turn2_rotated', object: 'response', model: 'gpt-5', output: [], output_text: '', status: 'in_progress',
+          id: 'resp_turn2_rotated', object: 'response', model: 'gpt-5', output: [], status: 'in_progress',
           error: null, incomplete_details: null,
         },
       }),
@@ -5125,10 +5626,10 @@ test('consumeTurn keeps previous upstream-reported model when a later turn omits
   state.lastSeenModel = 'gpt-5.5-2025-09-01';
   await consumeTurn(
     framesOf(
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.created',
         response: {
-          id: 'r2', object: 'response', output: [], output_text: '', status: 'in_progress',
+          id: 'r2', object: 'response', output: [], status: 'in_progress',
           error: null, incomplete_details: null,
         } as never,
       }),
@@ -5170,11 +5671,11 @@ test('consumeTurn intercepts the dispatcher tool and does NOT forward its 4 even
 
   assertEquals(result.records.length, 1);
   assertEquals(result.records[0].intercepted, {
-    callId: 'cc_1',
-    name: FUNCTION_TOOL_NAME,
-    arguments: { search_query: [{ q: 'hello' }] },
+    functionCall: { type: 'function_call', call_id: 'cc_1', name: FUNCTION_TOOL_NAME, arguments: '{"search_query":[{"q":"hello"}]}', status: 'completed' },
+    parsedArguments: { search_query: [{ q: 'hello' }] },
   });
-  assertEquals(result.summary.dispatched.length, 1);
+  assertEquals(result.summary.dispatchedSlots, []);
+  assert(result.summary.sawHostedToolCall);
   const downstreamTypes = eventTypesOf(result.downstreamFrames);
   for (const t of [
     'response.output_item.added',
@@ -5202,8 +5703,42 @@ test('consumeTurn intercepts two dispatcher calls within one turn', async () => 
     true,
   );
   assertEquals(result.records.length, 2);
-  assertEquals(result.records[0].intercepted.arguments, { open: [{ ref_id: 'https://x' }] });
-  assertEquals(result.records[1].intercepted.arguments, { find: [{ ref_id: 'https://x', pattern: 'p' }] });
+  assertEquals(result.records[0].intercepted.parsedArguments, { open: [{ ref_id: 'https://x' }] });
+  assertEquals(result.records[1].intercepted.parsedArguments, { find: [{ ref_id: 'https://x', pattern: 'p' }] });
+});
+
+test('consumeTurn preserves call and slot order in a flat dispatch list', async () => {
+  const dispatcher = ({ intercepted }: { intercepted: InterceptedFunctionCall }): HostedToolResultSlot[] =>
+    [0, 1].map(index => ({
+      id: `${intercepted.functionCall.call_id}_${index}`,
+      startItem: { type: 'web_search_call', status: 'in_progress' },
+      startEvents: [],
+      async *run() {
+        return { item: { type: 'web_search_call', status: 'completed' }, endEvents: [] };
+      },
+    }));
+  const result = await drain(consumeTurnStreaming(
+    framesOf(
+      mkResponseCreated(),
+      mkFunctionCallAdded(0, 'call_a', FUNCTION_TOOL_NAME),
+      mkFunctionCallAdded(1, 'call_b', FUNCTION_TOOL_NAME),
+      mkFunctionCallDone(1, 'call_b', FUNCTION_TOOL_NAME, '{ "q": "b" }'),
+      mkFunctionCallDone(0, 'call_a', FUNCTION_TOOL_NAME, '{ "q": "a" }'),
+      mkResponseCompleted(),
+    ),
+    createMergeState(), true, new Map([[FUNCTION_TOOL_NAME, dispatcher]]), loopState(), [],
+  ), []);
+
+  assert(result.summary.sawHostedToolCall);
+  assertEquals(result.summary.dispatchedSlots.map(({ intercepted, slot, carrierIndex, outputIndex }) => ({
+    callId: intercepted.functionCall.call_id, arguments: intercepted.functionCall.arguments,
+    slotId: slot.id, carrierIndex, outputIndex,
+  })), [
+    { callId: 'call_a', arguments: '{ "q": "a" }', slotId: 'call_a_0', carrierIndex: 0, outputIndex: 1 },
+    { callId: 'call_a', arguments: '{ "q": "a" }', slotId: 'call_a_1', carrierIndex: 2, outputIndex: 3 },
+    { callId: 'call_b', arguments: '{ "q": "b" }', slotId: 'call_b_0', carrierIndex: 4, outputIndex: 5 },
+    { callId: 'call_b', arguments: '{ "q": "b" }', slotId: 'call_b_1', carrierIndex: 6, outputIndex: 7 },
+  ]);
 });
 
 test('consumeTurn synthesizes response.failed when upstream terminates without closing a dispatcher call', async () => {
@@ -5211,7 +5746,7 @@ test('consumeTurn synthesizes response.failed when upstream terminates without c
   // an upstream protocol violation: the model intended a tool call,
   // the gateway accepted the reservation, but the close frame never
   // arrived. Without explicit detection here the reservation is
-  // silently swallowed — the loop sees an empty `dispatched`, treats
+  // silently swallowed — the loop sees no dispatched server-tool call, treats
   // the turn as "no tool call this turn", and emits success on a turn
   // that actually had unfinished tool intent. Promote to a synthesized
   // `response.failed` so the gateway surfaces the violation.
@@ -5235,7 +5770,8 @@ test('consumeTurn synthesizes response.failed when upstream terminates without c
     ),
     records,
   );
-  assertEquals(result.summary.dispatched.length, 0);
+  assertEquals(result.summary.dispatchedSlots, []);
+  assertFalse(result.summary.sawHostedToolCall);
   assertEquals(result.summary.terminalStatus.kind, 'failed');
   const ts = result.summary.terminalStatus as Extract<UpstreamTerminal, { kind: 'failed' }>;
   assert(ts.response.error!.message.includes('without closing dispatcher call items'));
@@ -5257,7 +5793,7 @@ test('consumeTurn dispatches at function_call.done with .done args canonical ove
     state,
     true,
   );
-  assertEquals(result.records[0].intercepted.arguments, { search_query: [{ q: 'x' }] });
+  assertEquals(result.records[0].intercepted.parsedArguments, { search_query: [{ q: 'x' }] });
 });
 
 test('consumeTurn live-forwards client-owned function_calls and sets sawClientToolCall', async () => {
@@ -5265,7 +5801,7 @@ test('consumeTurn live-forwards client-owned function_calls and sets sawClientTo
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.output_item.added',
         output_index: 0,
         item: {
@@ -5297,7 +5833,7 @@ test('consumeTurn live-forwards client-owned function_calls and sets sawClientTo
   const added = result.downstreamFrames.find(f =>
     f.type === 'event' && f.event.type === 'response.output_item.added');
   assert(added?.type === 'event');
-  const addedEv = added.event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.added' }>;
+  const addedEv = added.event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }>;
   assertEquals(addedEv.output_index, 0);
   assertEquals(addedEv.item.type, 'function_call');
   const argsDone = result.downstreamFrames.find(f =>
@@ -5348,7 +5884,7 @@ test('consumeTurn forwards reasoning items with rewritten output_index', async (
   const added = result.downstreamFrames.find(f =>
     f.type === 'event' && f.event.type === 'response.output_item.added');
   assert(added?.type === 'event');
-  const ev = added.event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.added' }>;
+  const ev = added.event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }>;
   assertEquals(ev.output_index, 0);
   assertEquals(ev.item.type, 'reasoning');
   assertEquals(state.accumulatedOutput.size, 1);
@@ -5382,6 +5918,27 @@ test('consumeTurn single iteration ending in message: forwards full message life
   ]);
 });
 
+test.each([
+  ' { "nested" : [true, null, {"n":9007199254740993,"huge":1e309}] }\n',
+  '{"text":"\\u5496\\u5561 \\\\ \\"quoted\\"","__proto__":{"key":"value"}}',
+  '{prompt:"repair me"}',
+])('consumeTurn retains original function call fields and argument tokens: %s', async raw => {
+  const call: OpenAIResponsesOutputItemEx = {
+    type: 'function_call', id: 'fc_raw', call_id: 'call_raw', name: FUNCTION_TOOL_NAME,
+    arguments: raw, status: 'completed', encrypted_function_args: null, caller: { type: 'direct' },
+  };
+  const result = await consumeTurn(framesOf(
+    mkResponseCreated(),
+    eventFrame({ type: 'response.output_item.added', output_index: 0, item: { ...call, arguments: '', status: 'in_progress' } }),
+    eventFrame({ type: 'response.function_call_arguments.delta', output_index: 0, item_id: 'fc_raw', delta: raw }),
+    eventFrame({ type: 'response.output_item.done', output_index: 0, item: call }),
+    mkResponseCompleted(),
+  ), createMergeState(), true);
+  assertEquals(result.records.length, 1);
+  assertEquals(result.records[0].intercepted.functionCall, call);
+  assert(result.records[0].intercepted.parsedArguments !== null);
+});
+
 test('consumeTurn one dispatcher call then message in same turn: FORWARDS the message live (dispatcher call is consumed)', async () => {
   const state = createMergeState();
   const result = await consumeTurn(
@@ -5400,10 +5957,7 @@ test('consumeTurn one dispatcher call then message in same turn: FORWARDS the me
 
   assertEquals(result.records.length, 1);
   assertEquals(state.accumulatedOutput.size, 1);
-  // Recording dispatcher doesn't emit lifecycle frames so the dispatcher's
-  // reserved slot stays empty in accumulatedOutput, but outputIndex was
-  // still bumped. The message therefore lands at index 1.
-  assertEquals(state.accumulatedOutput.get(1)?.type, 'message');
+  assertEquals(state.accumulatedOutput.get(0)?.type, 'message');
   assertEquals(eventTypesOf(result.downstreamFrames), [
     'response.created',
     'response.in_progress',
@@ -5419,21 +5973,21 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
       mkResponseCreated(),
       mkResponseInProgress(),
       mkMessageAdded(0),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.content_part.added',
         item_id: 'msg_upstream',
         output_index: 0,
         content_index: 0,
         part: { type: 'output_text', text: '', annotations: [] },
       }),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.output_text.delta',
         item_id: 'msg_upstream',
         output_index: 0,
         content_index: 0,
         delta: 'hello ',
       }),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.output_text.annotation.added',
         item_id: 'msg_upstream',
         output_index: 0,
@@ -5447,14 +6001,14 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
           end_index: 5,
         },
       }),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.output_text.done',
         item_id: 'msg_upstream',
         output_index: 0,
         content_index: 0,
         text: 'hello world',
       }),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.content_part.done',
         item_id: 'msg_upstream',
         output_index: 0,
@@ -5502,12 +6056,12 @@ test('consumeTurn rewrites any structurally indexed child event without an event
     framesOf(
       mkResponseCreated(),
       mkMessageAdded(0),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.future_child.delta',
         item_id: 'msg_upstream',
         output_index: 0,
         delta: 'future',
-      } as unknown as OpenAIResponsesStreamEvent),
+      } as unknown as OpenAIResponsesStreamEventEx),
       mkMessageDone(0, 'future'),
       mkResponseCompleted(),
     ),
@@ -5533,12 +6087,12 @@ test('consumeTurn swallows future indexed events attached to an intercepted host
     framesOf(
       mkResponseCreated(),
       mkFunctionCallAdded(0, 'cc_1', FUNCTION_TOOL_NAME),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.future_function_call_arguments.delta',
         item_id: 'fc_hidden',
         output_index: 0,
         delta: 'hidden',
-      } as unknown as OpenAIResponsesStreamEvent),
+      } as unknown as OpenAIResponsesStreamEventEx),
       mkFunctionCallDone(0, 'cc_1', FUNCTION_TOOL_NAME, '{"search_query":[{"q":"q"}]}'),
       mkResponseCompleted(),
     ),
@@ -5561,7 +6115,7 @@ test('consumeTurn preserves upstream message item.id (no fabrication) when upstr
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.output_item.added',
         output_index: 0,
         item: {
@@ -5572,7 +6126,7 @@ test('consumeTurn preserves upstream message item.id (no fabrication) when upstr
           id: 'msg_xyz_real_id',
         } as never,
       }),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.output_text.delta',
         item_id: 'msg_xyz_real_id',
         output_index: 0,
@@ -5606,7 +6160,7 @@ test('consumeTurn forwards message text events live even when mixed with an inte
       mkFunctionCallAdded(0, 'cc_1', FUNCTION_TOOL_NAME),
       mkFunctionCallDone(0, 'cc_1', FUNCTION_TOOL_NAME, '{"search_query":[{"q":"q"}]}'),
       mkMessageAdded(1),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.output_text.delta',
         item_id: 'msg_upstream',
         output_index: 1,
@@ -5730,12 +6284,11 @@ test('consumeTurn sets terminalStatus.kind = completed when upstream response.co
 
 test('consumeTurn surfaces upstream response.failed as terminalStatus.failed with the upstream envelope', async () => {
   const state = createMergeState();
-  const failedResponse: OpenAIResponsesResult = {
+  const failedResponse: OpenAIResponsesResultEx = {
     id: 'upstream_x',
     object: 'response',
     model: 'test-model',
     output: [],
-    output_text: '',
     status: 'failed',
     error: { message: 'upstream gave up', type: 'server_error', code: '500' },
     incomplete_details: null,
@@ -5743,7 +6296,7 @@ test('consumeTurn surfaces upstream response.failed as terminalStatus.failed wit
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.failed',
         response: failedResponse,
       }),
@@ -5758,12 +6311,11 @@ test('consumeTurn surfaces upstream response.failed as terminalStatus.failed wit
 
 test('consumeTurn surfaces upstream response.incomplete as terminalStatus.incomplete', async () => {
   const state = createMergeState();
-  const incompleteResponse: OpenAIResponsesResult = {
+  const incompleteResponse: OpenAIResponsesResultEx = {
     id: 'upstream_x',
     object: 'response',
     model: 'test-model',
     output: [],
-    output_text: '',
     status: 'incomplete',
     error: null,
     incomplete_details: null,
@@ -5771,7 +6323,7 @@ test('consumeTurn surfaces upstream response.incomplete as terminalStatus.incomp
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.incomplete',
         response: incompleteResponse,
       }),
@@ -5782,125 +6334,78 @@ test('consumeTurn surfaces upstream response.incomplete as terminalStatus.incomp
   assertEquals(result.summary.terminalStatus.kind, 'incomplete');
 });
 
-test('consumeTurn surfaces bare `error` event as terminalStatus.failed with a synthesized envelope', async () => {
+test.each([
+  { type: 'error' as const, message: 'upstream blew up', code: null, param: 'tools', vendor: { retryable: false } },
+  { type: 'error' as const, message: 'upstream stated an empty code', code: '', param: null },
+])('consumeTurn forwards a standalone error event without rewriting it: $message', async error => {
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEvent>({
-        type: 'error',
-        message: 'upstream blew up',
-        code: 'server_error',
-      }),
+      eventFrame<OpenAIResponsesStreamEventEx>(error),
     ),
     state,
     true,
   );
-  assertEquals(result.summary.terminalStatus.kind, 'failed');
-  const ts = result.summary.terminalStatus as Extract<UpstreamTerminal, { kind: 'failed' }>;
-  assertEquals(ts.response.status, 'failed');
-  assertEquals(ts.response.error?.message, 'upstream blew up');
-  assertEquals(ts.response.error?.code, 'server_error');
-  // Synthesized envelope's id is the gateway-synthesized response id
-  // — upstream's id is not exposed downstream.
-  assertEquals(ts.response.id, state.synthesizedResponseId);
+  assertEquals(result.summary.terminalStatus, { kind: 'error', event: error });
+  const forwarded = eventPayloads(result.downstreamFrames);
+  assertEquals(forwarded.map(event => event.type), ['response.created', 'error']);
+  const { sequence_number: _sequenceNumber, ...forwardedError } = forwarded[1] as typeof error & { sequence_number: number };
+  assertEquals(forwardedError, error);
 });
 
-test('consumeTurn defaults missing `error.code` to spec-defined `server_error` (no synthetic `unknown_upstream_error` literal)', async () => {
-  // A bare upstream `{type: 'error'}` frame without a `code` field
-  // falls back to the OpenAPI `OpenAIResponsesErrorCode` enum value
-  // `'server_error'`. The previous `'unknown_upstream_error'`
-  // synthetic literal is not in the enum and typed SDKs (openai-python
-  // `Literal[...]` with strict Pydantic validation, openai-node
-  // literal union, openai-go `OpenAIResponsesErrorCode string` named type)
-  // reject unknown values at parse time. Reference:
-  // https://github.com/openai/openai-openapi/blob/master/openapi.yaml
+test('consumeTurn keeps an error notification and the following native failed resource', async () => {
   const state = createMergeState();
+  const error = { type: 'error' as const, message: 'upstream blew up', code: null, param: 'tools' };
+  const failed: OpenAIResponsesResultEx = {
+    id: 'upstream_failed', object: 'response', model: 'test-model', output: [], status: 'failed',
+    error: { code: 'rate_limit_exceeded', message: error.message }, incomplete_details: null,
+    usage: { input_tokens: 4, output_tokens: 1, total_tokens: 5 },
+  };
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEvent>({
-        type: 'error',
-        message: 'upstream blew up without a code',
-      }),
+      eventFrame<OpenAIResponsesStreamEventEx>(error),
+      eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.failed', response: failed }),
     ),
     state,
     true,
   );
   const ts = result.summary.terminalStatus as Extract<UpstreamTerminal, { kind: 'failed' }>;
-  assertEquals(ts.response.error?.code, 'server_error');
-  // No synthetic `type` — the spec's OpenAIResponsesError schema defines
-  // only `{code, message}` and the upstream `error` frame doesn't
-  // carry a `type` field on the wire either.
-  assertFalse('type' in (ts.response.error as object));
+  assertEquals(ts.response, failed);
+  assertEquals(result.summary.turnUsage, { input_tokens: 4, output_tokens: 1, total_tokens: 5 });
+  const forwarded = eventPayloads(result.downstreamFrames);
+  assertEquals(forwarded.map(event => event.type), ['response.created', 'error']);
+  const { sequence_number: _sequenceNumber, ...forwardedError } = forwarded.at(-1) as typeof error & { sequence_number: number };
+  assertEquals(forwardedError, error);
 });
 
-test('consumeTurn treats empty-string `error.code` as missing (same fallback as undefined)', async () => {
-  // `??` only handles null/undefined; an explicit `code: ''` would
-  // survive and reach the wire as the synthesized response.failed's
-  // `error.code`, where typed SDKs reject the empty string the same
-  // way they reject any non-enum value. Mirror `parseUpstreamErrorBody`'s
-  // `length > 0` guard for shape parity between the bare-error path
-  // and the upstream-error HTTP body path.
+test('consumeTurn returns a pre-shell error event without inventing a response resource', async () => {
   const state = createMergeState();
+  const error = { type: 'error' as const, message: 'upstream dropped before response shell', code: null, param: null };
   const result = await consumeTurn(
-    framesOf(
-      mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEvent>({
-        type: 'error',
-        message: 'upstream blew up with empty code',
-        code: '',
-      }),
-    ),
+    framesOf(eventFrame<OpenAIResponsesStreamEventEx>(error)),
     state,
     true,
   );
-  const ts = result.summary.terminalStatus as Extract<UpstreamTerminal, { kind: 'failed' }>;
-  assertEquals(ts.response.error?.code, 'server_error');
-});
-
-test('consumeTurn surfaces bare `error` event arriving BEFORE response.created as terminalStatus `bare-error-pre-shell` (no synthesized response)', async () => {
-  // The success-path "no fallback" contract refuses to synthesize a
-  // wire-valid response envelope that lies about the served identity.
-  // The bare-error path's job is the opposite: surface upstream's
-  // failure verbatim. But when the failure happens before any
-  // identity is captured (truncated TLS, transport drop, intermediate
-  // proxy injection), we cannot synthesize a wire-valid
-  // `OpenAIResponsesResult` (id and model are required, not nullable). Use
-  // a distinct terminal status `bare-error-pre-shell` so the dispatcher's
-  // outer loop can short-circuit to a non-events `upstream-error`
-  // result instead of fabricating empty-string identity fields.
-  const state = createMergeState();
-  const result = await consumeTurn(
-    framesOf(
-      eventFrame<OpenAIResponsesStreamEvent>({
-        type: 'error',
-        message: 'upstream dropped before response shell',
-      }),
-    ),
-    state,
-    true,
-  );
-  assertEquals(result.summary.terminalStatus.kind, 'bare-error-pre-shell');
-  const ts = result.summary.terminalStatus as Extract<UpstreamTerminal, { kind: 'bare-error-pre-shell' }>;
-  assertEquals(ts.error.message, 'upstream dropped before response shell');
-  // Spec-defined fallback (no `code` on upstream's error frame). See
-  // the matching test above for the in-shell path; both default to
-  // `server_error` from the `OpenAIResponsesErrorCode` enum.
-  assertEquals(ts.error.code, 'server_error');
+  assertEquals(result.summary.terminalStatus, { kind: 'error', event: error });
+  const forwarded = eventPayloads(result.downstreamFrames);
+  assertEquals(forwarded.length, 1);
+  const { sequence_number: _sequenceNumber, ...forwardedError } = forwarded[0] as typeof error & { sequence_number: number };
+  assertEquals(forwardedError, error);
 });
 
 test('consumeTurnStreaming yields forwarded frames before upstream completes', async () => {
   const state = createMergeState();
 
   let upstreamPullCount = 0;
-  const upstream: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [
+  const upstream: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [
     mkResponseCreated(),
     mkReasoningAdded(0, 'rs_1'),
     mkReasoningDone(0, 'rs_1'),
     mkResponseCompleted(),
   ];
-  const countedFrames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+  const countedFrames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
     for (const f of upstream) {
       upstreamPullCount += 1;
       yield f;
@@ -5926,7 +6431,7 @@ test('consumeTurnStreaming yields forwarded frames before upstream completes', a
   while (!(await iter.next()).done) { /* drain */ }
 });
 
-test('dispatcher start frames yield IN-LINE at function_call.done (dispatcher call slot precedes later items)', async () => {
+test('dispatcher start frames follow assistant content that arrives after the hosted function call', async () => {
   const state = createMergeState();
   let dispatchOrder = 0;
   const records: DispatchRecord[] = [];
@@ -5973,21 +6478,18 @@ test('dispatcher start frames yield IN-LINE at function_call.done (dispatcher ca
     && f.event.item.type === 'message');
   assert(syntheticIdx >= 0);
   assert(messageAddedIdx >= 0);
-  assert(syntheticIdx < messageAddedIdx, `expected dispatcher start frame BEFORE later live items (synth=${syntheticIdx}, msgAdded=${messageAddedIdx})`);
+  assert(messageAddedIdx < syntheticIdx, `expected assistant content before the hosted lifecycle (synth=${syntheticIdx}, msgAdded=${messageAddedIdx})`);
 });
 
-test('dispatcher call output_index is reserved at output_item.added so interleaved items get later indices', async () => {
-  // Reserving at `.added` (rather than `.done`) keeps a client-owned call
-  // item arriving between added and done from stealing the dispatcher's
-  // would-be downstream index.
+test('interleaved non-call progress keeps streaming before the deferred hosted call batch', async () => {
   const state = createMergeState();
   const dispatcher = () => [] as HostedToolResultSlot[];
 
-  const interleaved = eventFrame<OpenAIResponsesStreamEvent>({
+  const interleaved = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.image_generation_call.in_progress',
     output_index: 5,
     item_id: 'ig_x',
-  } as unknown as OpenAIResponsesStreamEvent);
+  } as unknown as OpenAIResponsesStreamEventEx);
 
   const records: DispatchRecord[] = [];
   const result = await drain(
@@ -6011,17 +6513,17 @@ test('dispatcher call output_index is reserved at output_item.added so interleav
   const igForwarded = result.downstreamFrames.find(f =>
     f.type === 'event' && f.event.type === 'response.image_generation_call.in_progress');
   assert(igForwarded?.type === 'event');
-  assertEquals((igForwarded.event as { output_index: number }).output_index, 1);
+  assertEquals((igForwarded.event as { output_index: number }).output_index, 0);
 });
 
 test('consumeTurn live-forwards indexed progress events without hardcoded event-type lists', async () => {
   const state = createMergeState();
-  const inProgress = eventFrame<OpenAIResponsesStreamEvent>({
+  const inProgress = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.image_generation_call.in_progress',
     output_index: 0,
     item_id: 'ig_1',
   });
-  const completed = eventFrame<OpenAIResponsesStreamEvent>({
+  const completed = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.image_generation_call.completed',
     output_index: 0,
     item_id: 'ig_1',
@@ -6048,8 +6550,8 @@ test('consumeTurn swallows keepalive/ping filler frames', async () => {
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEvent>({ type: 'keepalive' } as unknown as OpenAIResponsesStreamEvent),
-      eventFrame<OpenAIResponsesStreamEvent>({ type: 'ping' } as unknown as OpenAIResponsesStreamEvent),
+      eventFrame<OpenAIResponsesStreamEventEx>({ type: 'keepalive' } as unknown as OpenAIResponsesStreamEventEx),
+      eventFrame<OpenAIResponsesStreamEventEx>({ type: 'ping' } as unknown as OpenAIResponsesStreamEventEx),
       mkResponseCompleted(),
     ),
     state,
@@ -6092,9 +6594,9 @@ test('createMergeState starts with empty sparse usage accumulator and a synthesi
 
 test('materializeAccumulatedOutput returns items in output_index order regardless of insertion order', () => {
   const s = createMergeState();
-  const itemA: OpenAIResponsesOutputItem = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'A', annotations: [] }] };
-  const itemB: OpenAIResponsesOutputItem = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
-  const itemC: OpenAIResponsesOutputItem = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'C', annotations: [] }] };
+  const itemA: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'A', annotations: [] }] };
+  const itemB: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
+  const itemC: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'C', annotations: [] }] };
   s.accumulatedOutput.set(2, itemC);
   s.accumulatedOutput.set(0, itemA);
   s.accumulatedOutput.set(1, itemB);
@@ -6107,7 +6609,7 @@ test('materializeAccumulatedOutput returns items in output_index order regardles
 
 test('materializeAccumulatedOutput drops holes in the index sequence (defensive)', () => {
   const s = createMergeState();
-  const itemB: OpenAIResponsesOutputItem = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
+  const itemB: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
   s.accumulatedOutput.set(1, itemB);
   const out = materializeAccumulatedOutput(s);
   assertEquals(out.length, 1);
@@ -6227,7 +6729,7 @@ test('HostedToolResultSlot run() yields nothing and returns the terminal', async
 const mkResponseCreatedWithTools = (
   tools: OpenAIResponsesTool[],
   toolChoice?: OpenAIResponsesToolChoice,
-): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.created',
     response: {
@@ -6240,8 +6742,8 @@ const mkResponseCreatedWithTools = (
 const mkResponseCompletedWithTools = (
   tools: OpenAIResponsesTool[],
   toolChoice?: OpenAIResponsesToolChoice,
-): ProtocolFrame<OpenAIResponsesStreamEvent> =>
-  eventFrame<OpenAIResponsesStreamEvent>({
+): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+  eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.completed',
     response: {
       ...emptyResult('upstream_test', 'completed'),
@@ -6251,8 +6753,8 @@ const mkResponseCompletedWithTools = (
   });
 
 const findResponseCompleted = (
-  frames: ProtocolFrame<OpenAIResponsesStreamEvent>[],
-): Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }> => {
+  frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[],
+): Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }> => {
   for (const f of frames) {
     if (f.type === 'event' && f.event.type === 'response.completed') {
       return f.event;
@@ -6553,7 +7055,7 @@ test('consumeTurn forwards an event carrying no output_index instead of dropping
   const unrecognized = eventFrame({
     type: 'response.some_future_event',
     detail: 'carried through',
-  } as unknown as OpenAIResponsesStreamEvent);
+  } as unknown as OpenAIResponsesStreamEventEx);
 
   const result = await consumeTurn(
     framesOf(mkResponseCreated(), unrecognized, mkResponseCompleted()),
@@ -6607,7 +7109,7 @@ test('helper allocation reserves names across callable scopes, history and searc
     { type: 'function', name: 'web_search_3' },
     { type: 'web_search', name: 'web_search_8' },
   ];
-  const input: OpenAIResponsesInputItem[] = [
+  const input: CanonicalOpenAIResponsesInputItem[] = [
     { type: 'function_call', namespace: 'history', name: 'web_search_4', call_id: 'old', arguments: '{}', status: 'completed' },
     { type: 'tool_search_output', tools: [{ type: 'namespace', name: 'loaded', description: '', tools: [{ type: 'function', name: 'web_search_5' }] }] },
     { type: 'additional_tools', role: 'developer', tools: [{ type: 'custom', name: 'web_search_6' }] },
@@ -6700,31 +7202,34 @@ for (const targetApi of ['openaiChatCompletions', 'anthropicMessages', 'openaiRe
         ]]).run();
       }
       if (targetApi === 'openaiChatCompletions') {
-        const trip = await translateOpenAIResponsesViaOpenAIChatCompletions(inv.payload, { model: 'm' });
+        const trip = await routeOpenAIResponsesViaOpenAIChatCompletions(inv.payload, { sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) });
+        if (trip.type === 'input-error') return inputErrorResult(trip);
         const client = trip.target.tools?.[1];
         assert(client?.type === 'function');
         const events = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
-          yield eventFrame({ id: 'chat', object: 'chat.completion.chunk', created: 0, model: 'm', choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'client', type: 'function', function: { name: client.function.name, arguments: '{}' } }] }, finish_reason: null }] });
-          yield eventFrame({ id: 'chat', object: 'chat.completion.chunk', created: 0, model: 'm', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] });
+          yield eventFrame({ id: 'chat', object: 'chat.completion.chunk', created: 0, model: 'm', choices: [{  index: 0, delta: { tool_calls: [{ index: 0, id: 'client', type: 'function', function: { name: client.function.name, arguments: '{}' } }] }, finish_reason: null }] });
+          yield eventFrame({ id: 'chat', object: 'chat.completion.chunk', created: 0, model: 'm', choices: [{  index: 0, delta: {}, finish_reason: 'tool_calls' }] });
         })();
         return eventResult(trip.events(events), testTelemetryModelIdentity);
       }
-      const trip = await translateOpenAIResponsesViaAnthropicMessages(inv.payload, { model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected image'); } });
-      const name = trip.target.tools?.[1].name;
+      const trip = await routeOpenAIResponsesViaAnthropicMessages(inv.payload, { sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) });
+      if (trip.type === 'input-error') return inputErrorResult(trip);
+      const tool = trip.target.tools?.[1];
+      const name = tool !== undefined && 'name' in tool ? tool.name : undefined;
       assert(typeof name === 'string');
-      const events = (async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
-        yield eventFrame({ type: 'message_start', message: { id: 'msg', type: 'message', role: 'assistant', model: 'm', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } });
+      const events = (async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
+        yield eventFrame({ type: 'message_start', message: { container: null, diagnostics: null, stop_details: null, id: 'msg', type: 'message', role: 'assistant', model: 'm', content: [], stop_reason: null, stop_sequence: null, usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 } } });
         yield eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'client', name, input: {} } });
         yield eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{}' } });
         yield eventFrame({ type: 'content_block_stop', index: 0 });
-        yield eventFrame({ type: 'message_delta', delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 1 } });
+        yield eventFrame({ type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'tool_use', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } });
         yield eventFrame({ type: 'message_stop' });
       })();
       return eventResult(trip.events(events), testTelemetryModelIdentity);
     });
     assertEquals(turns, 1);
     assertEquals(backend.calls, []);
-    assertEquals(findResponseCompleted(frames).response.output.map(item => item.type === 'function_call' ? [item.type, item.name, item.namespace] : [item.type]), [['function_call', FUNCTION_TOOL_NAME, 'functions']]);
+    assertEquals(findResponseCompleted(frames).response.output.map(item => item.type === 'function_call' ? [item.type, item.name, item.namespace] : [item.type]), [['function_call', FUNCTION_TOOL_NAME, 'functions'], ...(targetApi === 'openaiResponses' ? [] : [['reasoning']])]);
   });
 }
 
@@ -6746,7 +7251,7 @@ test('native helper injection allocates past namespace children while retaining 
 
 for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
   for (const mode of ['forced', 'auto', 'required'] as const) {
-    test(`${target} ${mode} helper choice follows a namespace-induced alias and restores its original echo`, async () => {
+    test(`${target} ${mode} helper choice follows a namespace-induced alias and preserves translation constraints`, async () => {
       const { backend } = makeStubDeps();
       const selector = { type: 'function' as const, name: FUNCTION_TOOL_NAME };
       const choice: OpenAIResponsesToolChoice = mode === 'forced' ? selector : { type: 'allowed_tools', mode, tools: [selector] };
@@ -6761,25 +7266,45 @@ for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
       const alias = `${FUNCTION_TOOL_NAME}_2`;
       const script = scriptedRun([fcTurn(0, 'hosted', alias, '{"search_query":[{"q":"hosted"}]}'), messageTurn('done')]);
       const choices: unknown[] = [];
-      const { frames } = await runHostedToolsAndDrain(runHostedWebSearch, inv, makeGatewayCtx(), async () => {
+      const run = async () => {
         choices.push(structuredClone(inv.payload.tool_choice));
         const before = structuredClone(inv.payload);
         const trip = target === 'openaiChatCompletions'
-          ? await translateOpenAIResponsesViaOpenAIChatCompletions(inv.payload, { model: 'm' })
-          : await translateOpenAIResponsesViaAnthropicMessages(inv.payload, { model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected image'); } });
+          ? await routeOpenAIResponsesViaOpenAIChatCompletions(inv.payload, { sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) })
+          : await routeOpenAIResponsesViaAnthropicMessages(inv.payload, { sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) });
+        if (trip.type === 'input-error') return inputErrorResult(trip);
         const wire = JSON.parse(JSON.stringify(trip.target)) as { tools: Array<{ name?: string; function?: { name: string } }> };
-        assert(wire.tools.some(tool => (tool.function?.name ?? tool.name) === alias), 'the translated subset must declare the helper alias');
+        assert(wire.tools.some(tool => (tool.function?.name ?? tool.name) === alias), 'the complete declaration list must retain the helper alias');
         assertEquals(inv.payload, before, 'repeated translation must preserve the outer loop payload');
         return await script.run();
-      });
+      };
+      if (target === 'anthropicMessages' && mode === 'auto') {
+        const { result } = await runHostedToolsAndDrain(runHostedWebSearch, inv, makeGatewayCtx(), run);
+        assert(result.type === 'api-error');
+        assertEquals(result.status, 400);
+        assert(new TextDecoder().decode(result.body).includes('allowed_tools auto subset'));
+        assertEquals(script.callCount(), 0);
+        assertEquals(backend.calls.length, 0);
+        assertEquals(choices, [{ type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: alias }] }]);
+        return;
+      }
+      const { frames } = await runHostedToolsAndDrain(runHostedWebSearch, inv, makeGatewayCtx(), run);
       const renamed = { type: 'function', name: alias };
       assertEquals(choices, mode === 'forced' ? [renamed, 'auto'] : [
         { type: 'allowed_tools', mode, tools: [renamed] },
         { type: 'allowed_tools', mode: 'auto', tools: [renamed] },
       ]);
       assertEquals(choice, original);
-      assertEquals(script.callCount(), 2);
       assertEquals(backend.calls.length, 1);
+      if (target === 'anthropicMessages' && mode === 'required') {
+        assertEquals(script.callCount(), 1);
+        const error = frames.find(frame => frame.type === 'event' && frame.event.type === 'error');
+        expect(error).toMatchObject({ event: { type: 'error', error: { message: expect.stringContaining('allowed_tools auto subset'), code: null } } });
+        const failed = frames.find(frame => frame.type === 'event' && frame.event.type === 'response.failed');
+        expect(failed).toMatchObject({ event: { response: { status: 'failed', error: null } } });
+        return;
+      }
+      assertEquals(script.callCount(), 2);
       assertEquals(findResponseCompleted(frames).response.tool_choice, original);
     });
   }
@@ -6793,7 +7318,7 @@ for (const owner of ['function history', 'custom history', 'additional_tools', '
         { type: 'web_search' },
         { type: 'namespace', name: 'client', description: '', tools: [{ type: 'function', name: FUNCTION_TOOL_NAME }] },
       ];
-      const input: OpenAIResponsesInputItem[] = [{ type: 'message', role: 'user', content: 'Continue.' }];
+      const input: CanonicalOpenAIResponsesInputItem[] = [{ type: 'message', role: 'user', content: 'Continue.' }];
       if (owner === 'function history') {
         input.push({ type: 'function_call', name: FUNCTION_TOOL_NAME, call_id: 'past', arguments: '{}', status: 'completed' });
       } else if (owner === 'custom history') {
@@ -6890,17 +7415,34 @@ test('helper echoes distinguish namespaced functions and rewrite hosted allowed_
   assertEquals(findResponseCompleted(frames).response.tool_choice, choice);
 });
 
-test('an unused hosted web-search declaration starts no Alpha selection work', async () => {
+test('hosted-tool loop preserves internal failure diagnostics on the failed resource', async () => {
   makeStubDeps();
-  await getRepo().webSearchConfig.save({
-    provider: 'tavily', tavily: { apiKey: 'test-key' }, microsoftWebIq: { apiKey: '' }, jina: { apiKey: '' },
-    passthroughOpenAiSearch: { enabled: true, upstreamId: 'outside-key-scope', model: 'gpt-search' },
-  } satisfies WebSearchConfig);
-  mockResolveAlpha.mockRejectedValue(new Error('Selected OpenAI search upstream is outside this API key scope'));
-  const invocation = makeInvocation({ targetApi: 'openaiResponses', enabledFlags: new Set(['openai-responses-web-search-shim']) });
-  const script = scriptedRun([messageTurn('no search requested', 0)]);
-  const result = await runHostedWebSearch(invocation, mockChatGatewayCtx(), script.run);
-  if (result.type !== 'events') throw new Error('Expected an ordinary model response');
-  await collectFrames(result.events);
-  assertEquals(mockResolveAlpha.mock.calls.length, 0);
+  const cause = { operation: 'translated upstream dispatch' };
+  const failure = new TypeError('Cannot translate tool input', { cause });
+  let runCalls = 0;
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
+    runCalls += 1;
+    if (runCalls === 1) return { type: 'events', events: framesOf(...searchCallTurn(0, 'call_1', 'q1')), modelIdentity: testTelemetryModelIdentity };
+    throw failure;
+  };
+  const result = await runHostedWebSearch(makeInvocation(), makeGatewayCtx(), run);
+  assert(result.type === 'events');
+  const events = eventPayloads(await collectFrames(result.events));
+  const error = events.at(-2);
+  const terminal = events.at(-1);
+  assert(error?.type === 'error' && terminal?.type === 'response.failed');
+  assertEquals(runCalls, 2);
+  assertEquals(terminal.response.error?.code, 'server_error');
+  assertEquals(terminal.response.error?.message, `Upstream stream failed mid-response: ${failure.message}`);
+  assertEquals(terminal.response.error?.provider_specific_fields, { name: failure.name, stack: failure.stack, cause, target_api: undefined });
+  assert(terminal.response.error?.provider_specific_fields?.cause === cause);
+  assertFalse('stack' in (terminal.response.error as object));
+});
+
+test('consumeTurn retains namespaced diagnostics before a response shell is announced', async () => {
+  const diagnostics = { name: 'UpstreamError', stack: 'UpstreamError: no response shell', cause: { connection: 'closed' } };
+  const error = { type: 'error' as const, error: { message: 'No response shell', code: 'connection_error', provider_specific_fields: diagnostics } };
+  const result = await consumeTurn(framesOf(eventFrame<OpenAIResponsesStreamEventEx>(error)), createMergeState(), true);
+  assert(result.summary.terminalStatus.kind === 'error');
+  assertEquals(result.summary.terminalStatus.event, error);
 });

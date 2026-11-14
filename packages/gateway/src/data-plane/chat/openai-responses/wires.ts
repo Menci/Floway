@@ -3,15 +3,16 @@ import type { ChatServices } from '../services.ts';
 import type { ChatWire } from '../wire.ts';
 import { decryptNativeCompaction } from './compact-decrypt.ts';
 import { containsCompactionTrigger } from './compact-shim.ts';
+import { inputErrorEnvelope } from './errors.ts';
 import { OPENAI_RESPONSES_STREAMED_USAGE } from './facts.ts';
 import { openaiResponsesWire } from './wire.ts';
 import { anthropicMessagesWire } from '../anthropic-messages/wire.ts';
 import { handOff } from '../handoff.ts';
 import { openaiChatCompletionsWire } from '../openai-chat-completions/wire.ts';
-import { createExternalImageLoader } from '../shared/external-image-loader.ts';
+import { SidecarDomain } from '../shared/sidecar-codec.ts';
 import type { Use } from '@floway-dev/pipeline';
 import type { ChatTargetApi, ModelCandidate } from '@floway-dev/provider';
-import { translateOpenAIResponsesViaAnthropicMessages, translateOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
+import { routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
 /** The three wires `/v1/responses` can be served on. Its own is the bare wire; each translated
  *  one is a handoff and then the target protocol's own wire. */
@@ -27,11 +28,11 @@ export const openaiResponsesWireFor = (target: ChatTargetApi, candidate: ModelCa
       handOff({
         from: { request: 'request.chat.openaiResponses', response: 'response.chat.openaiResponses' },
         to: { request: 'request.chat.anthropicMessages', response: 'response.chat.anthropicMessages' },
-        trip: async payload => await translateOpenAIResponsesViaAnthropicMessages(payload, {
-          model: candidate.model.id,
+        trip: async payload => await routeOpenAIResponsesViaAnthropicMessages(payload, {
+          sidecarCodec: use.gateway.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
           fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
-          loadRemoteImage: createExternalImageLoader(use.gateway.abortSignal),
         }),
+        refuseInput: inputErrorEnvelope,
       }),
       ...anthropicMessagesWire(OPENAI_RESPONSES_STREAMED_USAGE),
     ]);
@@ -40,7 +41,8 @@ export const openaiResponsesWireFor = (target: ChatTargetApi, candidate: ModelCa
       handOff({
         from: { request: 'request.chat.openaiResponses', response: 'response.chat.openaiResponses' },
         to: { request: 'request.chat.openaiChatCompletions', response: 'response.chat.openaiChatCompletions' },
-        trip: async payload => await translateOpenAIResponsesViaOpenAIChatCompletions(payload, { model: candidate.model.id }),
+        trip: async payload => await routeOpenAIResponsesViaOpenAIChatCompletions(payload, { sidecarCodec: use.gateway.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
+        refuseInput: inputErrorEnvelope,
       }),
       ...openaiChatCompletionsWire(OPENAI_RESPONSES_STREAMED_USAGE),
     ]);

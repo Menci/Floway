@@ -1,7 +1,7 @@
 import type { ChatNarrowing } from '../resolve-candidates.ts';
+import { analyzeGeminiGenerateContentAffinity } from './affinity/ingress.ts';
 import type { Fields } from './facts.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
-import { analyzeGeminiGenerateContentAffinity } from './affinity/ingress.ts';
 
 /** `:generateContent` has no wire of its own, so the whole preference list is translated:
  *  OpenAI Chat Completions first, then Anthropic Messages, then OpenAI Responses. */

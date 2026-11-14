@@ -1,3 +1,4 @@
+import { createRunEventRedactor } from './redact.ts';
 import type { DumpMetadata, DumpRunWrite } from './types.ts';
 import { createRunEncoder, streamFact, toNdjson, type Event, type StreamFact } from '@floway-dev/pipeline';
 import { LOG_STREAM_IDLE_MS, type BackgroundScheduler, type LogStream } from '@floway-dev/platform';
@@ -28,6 +29,7 @@ export const runStreamId = (scopeId: string, runId: string): string => `${scopeI
 
 export const createRunRecorder = (ports: RecordingPorts) => {
   const encode = createRunEncoder();
+  const redact = createRunEventRedactor();
   const metadata = Promise.withResolvers<DumpMetadata>();
   const bytes = new TransformStream<Uint8Array, Uint8Array>();
   const writer = bytes.writable.getWriter();
@@ -43,7 +45,7 @@ export const createRunRecorder = (ports: RecordingPorts) => {
   // One event owns its entire object batch; concurrent deferred outcomes cannot overtake it.
   const sink = (event: Event): Promise<void> => {
     const write = tail.then(async () => {
-      const bytes = new TextEncoder().encode(toNdjson(encode(event)));
+      const bytes = new TextEncoder().encode(toNdjson(encode(redact(event))));
       await liveReady;
       for (let offset = 0; offset < bytes.byteLength; offset += CHUNK_BYTES) {
         const chunk = bytes.subarray(offset, offset + CHUNK_BYTES);

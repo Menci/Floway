@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { chatTargetPicker } from '../../../../src/data-plane/chat/shared/target-picker.ts';
 import { enumerateModelCandidates } from '../../../../src/data-plane/providers/resolution.ts';
 import { saveUpstreamForTest } from '../../../repo/upstreams.ts';
-import { setupAppTest, warmModelsForTest } from '../../../test-utils/app.ts';
+import { setupAppTest, testAdminUser, warmModelsForTest } from '../../../test-utils/app.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -18,6 +18,7 @@ const azureUpstream = (id: string, sortOrder: number, modelIds: string[], endpoi
   kind: 'azure',
   name: id,
   enabled: true,
+  usageRefreshIntervalMinutes: 0,
   sortOrder,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -80,7 +81,9 @@ describe('enumerateModelCandidates + chatTargetPicker', () => {
     await warmModelsForTest();
 
     const { candidates } = await enumerateModelCandidates({
+      subject: testAdminUser,
       upstreamIds: null,
+      randomizeUpstreams: false,
       model: 'test-model',
       kind: 'chat',
       scheduler: testScheduler,
@@ -103,7 +106,9 @@ describe('enumerateModelCandidates + chatTargetPicker', () => {
     await warmModelsForTest();
 
     const { candidates } = await enumerateModelCandidates({
+      subject: testAdminUser,
       upstreamIds: null,
+      randomizeUpstreams: false,
       model: 'test-model',
       kind: 'chat',
       scheduler: testScheduler,

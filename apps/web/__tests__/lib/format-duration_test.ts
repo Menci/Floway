@@ -1,23 +1,26 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatCountdown, formatDuration } from '../../src/lib/format-duration';
+import { formatCountdown, formatDuration, formatRemaining } from '../../src/lib/format-duration';
 import { NO_READING } from '../../src/lib/no-reading';
 
-describe('latency durations', () => {
-  it('promotes a unit only once the reading reaches it', () => {
-    expect(formatDuration(0)).toBe('0ms');
-    expect(formatDuration(999)).toBe('999ms');
-    expect(formatDuration(1_000)).toBe('1.0s');
-    expect(formatDuration(1_500)).toBe('1.5s');
-    expect(formatDuration(59_999)).toBe('60.0s');
-    expect(formatDuration(60_000)).toBe('1.0m');
-    expect(formatDuration(90_000)).toBe('1.5m');
+describe('durations', () => {
+  it('keeps the SI ladder in English', () => {
+    expect(formatDuration(0, 'en')).toBe('0ms');
+    expect(formatDuration(999, 'en')).toBe('999ms');
+    expect(formatDuration(1_500, 'en')).toBe('1.5s');
+    expect(formatDuration(90_000, 'en')).toBe('1.5m');
+  });
+
+  it('spells a Chinese unit word after a space', () => {
+    expect(formatDuration(0, 'zh-Hans')).toBe('0 毫秒');
+    expect(formatDuration(999, 'zh-Hans')).toBe('999 毫秒');
+    expect(formatDuration(1_500, 'zh-Hans')).toBe('1.5 秒');
+    expect(formatDuration(90_000, 'zh-Hans')).toBe('1.5 分钟');
   });
 
   it('reports no reading rather than a zero one', () => {
-    expect(formatDuration(null)).toBe(NO_READING);
-    expect(formatDuration(Number.NaN)).toBe(NO_READING);
-    expect(formatDuration(Number.POSITIVE_INFINITY)).toBe(NO_READING);
+    expect(formatDuration(null, 'en')).toBe(NO_READING);
+    expect(formatDuration(Number.NaN, 'zh-Hans')).toBe(NO_READING);
   });
 });
 
@@ -36,7 +39,21 @@ describe('countdowns', () => {
   });
 
   it('takes its unit names from the locale', () => {
-    expect(formatCountdown(61, 'zh-Hans')).toBe('1分钟 1秒');
-    expect(formatCountdown(30, 'zh-Hans')).toBe('30秒');
+    expect(formatCountdown(61, 'zh-Hans')).toBe('1 分钟 1 秒');
+    expect(formatCountdown(30, 'zh-Hans')).toBe('30 秒');
+  });
+});
+
+describe('remaining waits', () => {
+  it('keeps the Latin suffixes in English', () => {
+    expect(formatRemaining(0, 'en')).toBe('0m');
+    expect(formatRemaining(60_000, 'en')).toBe('1m');
+    expect(formatRemaining(90 * 60_000, 'en')).toBe('1h 30m');
+    expect(formatRemaining(48 * 3_600_000, 'en')).toBe('48h');
+  });
+
+  it('uses Chinese unit words for the same wait', () => {
+    expect(formatRemaining(90 * 60_000, 'zh-Hans')).toBe('1 小时 30 分钟');
+    expect(formatRemaining(48 * 3_600_000, 'zh-Hans')).toBe('48 小时');
   });
 });

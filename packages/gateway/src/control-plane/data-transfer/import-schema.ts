@@ -1,12 +1,14 @@
 import { z } from 'zod';
 
+import { accessRecordInputSchema } from '../../access-control/schemas.ts';
+import type { AccessRecordInput } from '../../access-control/types.ts';
 import { parseWebSearchConfigStrict } from '../../data-plane/tools/web-search/config.ts';
 import type { WebSearchConfig } from '../../data-plane/tools/web-search/types.ts';
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { isOpenAIResponsesRetentionSeconds, OPENAI_RESPONSES_RETENTION_MAX_SECONDS, OPENAI_RESPONSES_RETENTION_MIN_SECONDS } from '../../repo/openai-responses-retention.ts';
 import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { SEED_ADMIN_USER_ID } from '../../repo/seed-admin.ts';
-import type { ApiKey, PerformanceMetric, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
+import type { ApiKey, Group, SiteSettings, UpstreamMetricRecord, PerformanceMetric, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { RETENTION_MAX_SECONDS } from '../../shared/retention.ts';
 import { parseServerSecret } from '../../shared/server-secret.ts';
@@ -14,8 +16,8 @@ import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { USERNAME_PATTERN } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
 import { parseUpstreamIdsValue } from '../shared/upstream-ids.ts';
-import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, parseNonNegativeDecimalString, type PricingSelector } from '@floway-dev/protocols/common';
-import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamHue, parseFlagOverridesWire, parsePerformanceOperation, type ProxyFallbackEntry, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
+import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, parseNonNegativeDecimalString, parseUserPreferences, type PricingSelector, type UserPreferences } from '@floway-dev/protocols/common';
+import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamHue, normalizeUpstreamMetricIdentity, parseFlagOverridesWire, parsePerformanceOperation, type ProxyFallbackEntry, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
@@ -33,14 +35,19 @@ export interface SerializedProxy {
 
 export interface ParsedImportData {
   users: User[];
+  userPreferences: Array<{ userId: number; preferences: UserPreferences }>;
+  groups: Array<Group & { memberIds: number[] }>;
+  accessRecords: AccessRecordInput[];
   apiKeys: ApiKey[];
   upstreams: UpstreamRecord[];
   proxies: SerializedProxy[];
   usage: UsageRecord[];
   searchUsage: WebSearchUsageRecord[];
+  upstreamMetrics: UpstreamMetricRecord[];
   performance: PerformanceTelemetryRecord[];
   performanceIncluded: boolean;
   searchConfig: WebSearchConfig;
+  siteSettings: SiteSettings;
 }
 
 export type ImportDataParseResult = { type: 'ok'; data: ParsedImportData } | { type: 'invalid'; error: string };
@@ -156,6 +163,7 @@ const upstreamWireSchema = parsedBy((value): UpstreamRecord => {
     kind,
     name: parseValue(nonEmptyStringSchema('name'), wire.name),
     enabled,
+    usageRefreshIntervalMinutes: parseValue(z.number({ error: 'usage_refresh_interval_minutes must be a nonnegative integer' }).int().nonnegative(), wire.usage_refresh_interval_minutes),
     sortOrder,
     createdAt: parseValue(nonEmptyStringSchema('created_at'), wire.created_at),
     updatedAt: parseValue(nonEmptyStringSchema('updated_at'), wire.updated_at),
@@ -206,6 +214,7 @@ const openaiResponsesRetentionSchema = parsedBy((value): number => {
 const apiKeySchema = parsedBy((value): ApiKey => {
   const wire = parseRecord(value, 'record must be an object');
   const upstreamIds = parseValue(upstreamIdsSchema, wire.upstreamIds);
+  const randomizeUpstreams = parseValue(z.boolean({ error: 'randomizeUpstreams must be a boolean' }), wire.randomizeUpstreams);
   const userId = parseValue(positiveIntegerSchema('userId'), wire.userId);
   const deletedAt = parseValue(nullableStringSchema('deletedAt'), wire.deletedAt);
   const id = parseValue(nonEmptyStringSchema('id'), wire.id);
@@ -227,6 +236,7 @@ const apiKeySchema = parsedBy((value): ApiKey => {
     createdAt,
     ...lastUsedAt,
     upstreamIds,
+    randomizeUpstreams,
     deletedAt,
     dumpRetentionSeconds,
     openaiResponsesRetentionSeconds,
@@ -244,15 +254,23 @@ const userSchema = z.object({
     z.null(),
   ], { error: `passwordHash must be null or start with ${PASSWORD_HASH_SCHEME}$` }),
   isAdmin: z.boolean({ error: 'isAdmin must be a boolean' }),
-  upstreamIds: parsedBy(value => {
-    if (value === undefined) throw new Error('upstreamIds must be present (null or array)');
-    const result = parseUpstreamIdsValue(value);
-    if (!result.ok) throw new Error(result.error);
-    return result.value;
-  }),
   deletedAt: nullableStringSchema('deletedAt'),
   createdAt: nonEmptyStringSchema('createdAt'),
 });
+
+const userPreferencesSchema = z.object({
+  userId: positiveIntegerSchema('userId'),
+  preferences: parsedBy(parseUserPreferences),
+});
+
+const groupTransferSchema = z.object({
+  id: positiveIntegerSchema('id'),
+  name: nonEmptyStringWithError('name must be a non-empty string').max(64, { error: 'name must be 64 characters or fewer' }),
+  hue: z.number().int().min(0).max(359),
+  createdAt: nonEmptyStringSchema('createdAt'),
+  deletedAt: nullableStringSchema('deletedAt'),
+  memberIds: z.array(positiveIntegerSchema('memberIds entries')).refine(ids => new Set(ids).size === ids.length, { error: 'memberIds contains duplicates' }),
+}).strict();
 
 const sequentialArraySchema = <T>(
   schema: z.ZodType<T>,
@@ -455,6 +473,25 @@ const parseCollection = <T>(
   return { type: 'ok', records };
 };
 
+const upstreamMetricWireSchema = z.object({
+  upstreamId: z.string().min(1),
+  name: z.unknown(),
+  labels: z.unknown(),
+  timestamp: z.number().int().nonnegative(),
+  value: z.number(),
+}).strict();
+const upstreamMetricsSchema = parsedBy((value): UpstreamMetricRecord => {
+  const record = parseValue(upstreamMetricWireSchema, value);
+  return { ...record, ...normalizeUpstreamMetricIdentity(record.name, record.labels) };
+});
+
+// A NULL name is the deployment accepting the built-in default, so the import
+// must be able to express it. Trimming matches the write route, which keeps a
+// re-import of an export byte-identical.
+const siteSettingsSchema = z.object({
+  siteName: z.string().max(64).nullable().transform(value => value == null || value.trim() === '' ? null : value.trim()),
+}).strict();
+
 export const parseImportData = (value: unknown): ImportDataParseResult => {
   if (!isRecord(value)) return { type: 'invalid', error: 'data is required' };
 
@@ -477,6 +514,53 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
     return { type: 'invalid', error: 'invalid users: payload must include user 1 (the seed admin)' };
   }
   const userIds = new Set(users.records.map(user => user.id));
+  const userPreferences = parseCollection('userPreferences', userPreferencesSchema, value.userPreferences, {
+    arrayError: 'userPreferences must be an array',
+    optional: true,
+    validateInput: (input, _index, prior) => {
+      try {
+        const wire = parseRecord(input, 'record must be an object');
+        const userId = parseValue(positiveIntegerSchema('userId'), wire.userId);
+        if (!userIds.has(userId)) return `user ${userId} does not match any user in the payload`;
+        return prior.some(candidate => candidate.userId === userId) ? `duplicate preferences for user ${userId}` : null;
+      } catch (cause) {
+        return messageFor(cause);
+      }
+    },
+  });
+  if (userPreferences.type === 'invalid') return userPreferences;
+  const groups = parseCollection('groups', groupTransferSchema, value.groups, {
+    arrayError: 'groups must be an array',
+    validateInput: (input, _index, prior) => {
+      try {
+        const wire = parseRecord(input, 'record must be an object');
+        const id = parseValue(positiveIntegerSchema('id'), wire.id);
+        return prior.some(candidate => candidate.id === id) ? `duplicate group id ${id}` : null;
+      } catch (cause) {
+        return messageFor(cause);
+      }
+    },
+  });
+  if (groups.type === 'invalid') return groups;
+  for (let groupIndex = 0; groupIndex < groups.records.length; groupIndex++) {
+    for (const userId of groups.records[groupIndex].memberIds) {
+      if (!userIds.has(userId)) {
+        return { type: 'invalid', error: `invalid groups at index ${groupIndex}: member user ${userId} does not match any user in the payload` };
+      }
+    }
+  }
+  const groupIds = new Set(groups.records.map(group => group.id));
+  const accessRecords = parseCollection('accessRecords', accessRecordInputSchema, value.accessRecords, {
+    arrayError: 'accessRecords must be an array',
+  });
+  if (accessRecords.type === 'invalid') return accessRecords;
+  for (let index = 0; index < accessRecords.records.length; index++) {
+    const principal = accessRecords.records[index].principal;
+    const exists = principal.kind === 'user' ? userIds.has(principal.id) : groupIds.has(principal.id);
+    if (!exists) {
+      return { type: 'invalid', error: `invalid accessRecords at index ${index}: principal ${principal.kind} ${principal.id} does not match the payload` };
+    }
+  }
   for (let index = 0; index < apiKeys.records.length; index++) {
     if (!userIds.has(apiKeys.records[index].userId)) {
       return { type: 'invalid', error: `invalid apiKeys at index ${index}: user_id ${apiKeys.records[index].userId} does not match any user in the payload` };
@@ -508,12 +592,21 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
 
   const searchUsage = parseCollection('searchUsage', searchUsageSchema, value.searchUsage, { arrayError: 'searchUsage must be an array' });
   if (searchUsage.type === 'invalid') return searchUsage;
+  const upstreamMetrics = parseCollection('upstreamMetrics', upstreamMetricsSchema, value.upstreamMetrics, { arrayError: 'upstreamMetrics must be an array' });
+  if (upstreamMetrics.type === 'invalid') return upstreamMetrics;
 
   let searchConfig: WebSearchConfig;
   try {
     searchConfig = parseWebSearchConfigStrict(value.searchConfig);
   } catch (cause) {
     return { type: 'invalid', error: `invalid searchConfig: ${messageFor(cause)}` };
+  }
+
+  let siteSettings: SiteSettings;
+  try {
+    siteSettings = parseValue(siteSettingsSchema, value.siteSettings);
+  } catch (cause) {
+    return { type: 'invalid', error: `invalid siteSettings: ${messageFor(cause)}` };
   }
 
   if (typeof value.performanceIncluded !== 'boolean') {
@@ -535,14 +628,19 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
     type: 'ok',
     data: {
       users: users.records,
+      userPreferences: userPreferences.records,
+      groups: groups.records,
+      accessRecords: accessRecords.records,
       apiKeys: apiKeys.records,
       upstreams: upstreams.records,
       proxies: proxies.records,
       usage: usage.records,
       searchUsage: searchUsage.records,
+      upstreamMetrics: upstreamMetrics.records,
       performance,
       performanceIncluded: value.performanceIncluded,
       searchConfig,
+      siteSettings,
     },
   };
 };

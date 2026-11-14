@@ -231,11 +231,8 @@ export const selectCss = `
   width: 12px;
 }
 
-/* The clear affordance is Fluent's own -- WinUI's ComboBox has none -- but it sits in
-   the glyph's place, so it takes the colour WinUI gives the buttons inside a text
-   control.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L45
-   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-combobox/library/src/components/Dropdown/useDropdown.tsx#L98-L113 */
+/* Clear glyphs use the text control's button foreground ramp.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L43-L47 */
 .fui-Dropdown__clearButton.fui-Dropdown__clearButton,
 .fui-Combobox__clearIcon.fui-Combobox__clearIcon {
   color: var(--winui-text-fill-secondary);
@@ -274,6 +271,17 @@ export const selectCss = `
 .fui-Combobox__expandIcon.fui-Combobox__expandIcon::after,
 .fui-Combobox__clearIcon.fui-Combobox__clearIcon::after {
   inset-inline-end: -14px;
+}
+
+/* A separate clear action keeps Fluent's arrow visible. Its real button owns
+   the hit area, so the replacement glyph's extension must not cover the arrow.
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Combobox/useComboboxStyles.styles.ts */
+.fui-Combobox:has([data-combobox-clear-action]) {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.fui-Combobox__clearIcon[data-combobox-clear-action]::after {
+  display: none;
 }
 
 /* The drop-down surface. AcrylicInAppFillColorDefaultBrush is taken as the flat
@@ -336,6 +344,20 @@ export const selectCss = `
   border-radius: 3px;
   padding-block: 5px 7px;
   padding-inline: 11px;
+}
+
+/* ComboBoxItem uses system focus visuals with FocusVisualMargin -3. Fluent's
+   active-descendant ring draws only the primary band; complete the pair on
+   its existing pseudo-element and expand it by the combined stroke depth.
+   The list's presenter inset keeps the outer edges inside the flyout.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L605-L614
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L144-L145
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Option/useOptionStyles.styles.ts#L46-L63 */
+.fui-Option.fui-Option[data-activedescendant-focusvisible]:not([aria-disabled='true'])::after {
+  border: var(--winui-focus-visual-primary-thickness) solid var(--winui-focus-stroke-outer);
+  border-radius: calc(3px + var(--winui-focus-visual-depth));
+  box-shadow: inset 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
+  inset: calc(-1 * var(--winui-focus-visual-depth));
 }
 
 /* Item states run on the subtle-fill ramp. A disabled item runs neither state,

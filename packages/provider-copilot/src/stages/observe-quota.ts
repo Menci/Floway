@@ -16,8 +16,18 @@ export const observeCopilotQuota = (upstreamId: string) => {
       const exchange = back['response.http.exchange'];
       const pending: Promise<unknown>[] = [];
       if (exchange.type === 'response') {
-        const snapshot = parseCopilotQuotaHeaders(new Headers(exchange.headers.map(([name, value]): [string, string] => [name, value])), new Date());
-        if (snapshot !== null) pending.push(putCopilotQuota(upstreamId, snapshot));
+        const headers = new Headers(exchange.headers.map(([name, value]): [string, string] => [name, value]));
+        let snapshot;
+        try {
+          snapshot = parseCopilotQuotaHeaders(headers, new Date());
+        } catch (error) {
+          console.warn(`Failed to parse Copilot quota snapshot for ${upstreamId}:`, error);
+        }
+        if (snapshot !== undefined && snapshot !== null) {
+          pending.push(putCopilotQuota(upstreamId, snapshot).catch((error: unknown) => {
+            console.warn(`Failed to persist Copilot quota snapshot for ${upstreamId}:`, error);
+          }));
+        }
       }
       return move({ ...back, 'response.copilot.quota': defer(Promise.all(pending)) });
     },

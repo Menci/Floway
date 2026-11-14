@@ -63,6 +63,7 @@ const withUnsupportedPartFieldsStripped = (payload: GeminiGenerateContentPayload
 };
 
 const stripContentParts = (content: GeminiGenerateContentContent): GeminiGenerateContentContent => {
+  if (content.parts === undefined) return content;
   let changed = false;
   const parts = content.parts.flatMap(part => {
     const stripped = withoutKeys(part, UNSUPPORTED_GEMINI_PART_FIELDS);

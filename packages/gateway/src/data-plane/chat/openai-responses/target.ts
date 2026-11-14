@@ -1,7 +1,7 @@
 import type { ChatNarrowing } from '../resolve-candidates.ts';
+import { analyzeOpenAIResponsesAffinity } from './affinity/ingress.ts';
 import type { Fields } from './facts.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
-import { analyzeOpenAIResponsesAffinity } from './affinity/ingress.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 /** `/v1/responses` prefers its own wire, then the translated Anthropic Messages path, then

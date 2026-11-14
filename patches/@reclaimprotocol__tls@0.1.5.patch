@@ -1,0 +1,689 @@
+diff --git a/lib/crypto/webcrypto.js b/lib/crypto/webcrypto.js
+index 249b580..30e48fb 100644
+--- a/lib/crypto/webcrypto.js
++++ b/lib/crypto/webcrypto.js
+@@ -246,7 +246,7 @@ export const webcryptoCrypto = {
+             case 'ECDSA-SECP256R1-SHA384':
+             case 'ECDSA-SECP384R1-SHA256':
+             case 'ECDSA-SECP384R1-SHA384':
+-                signature = convertASN1toRS(signature);
++                signature = convertASN1toRS(signature, publicKey.algorithm.namedCurve);
+                 verifyArgs = { name: 'ECDSA', hash: getHashAlgorithm(alg) };
+                 break;
+             default:
+@@ -274,24 +274,35 @@ export const webcryptoCrypto = {
+ function toUint8Array(buffer) {
+     return new Uint8Array(buffer);
+ }
+-// mostly from ChatGPT
+-function convertASN1toRS(signatureBytes) {
++function convertASN1toRS(signatureBytes, namedCurve) {
++    // Web Crypto encodes each ECDSA integer to the curve order's byte width,
++    // independently of the signature hash. DER integers can be shorter.
++    // https://www.w3.org/TR/WebCryptoAPI/#ecdsa-operations
++    const byteLength = { 'P-256': 32, 'P-384': 48 }[namedCurve];
++    if (!byteLength) {
++        throw new Error(`Unsupported ECDSA named curve: ${namedCurve}`);
++    }
+     const data = AsnParser.parse(signatureBytes, ECDSASigValue);
+-    const r = cleanBigNum(new Uint8Array(data.r));
+-    const s = cleanBigNum(new Uint8Array(data.s));
++    const r = encodeEcdsaInteger(new Uint8Array(data.r), byteLength);
++    const s = encodeEcdsaInteger(new Uint8Array(data.s), byteLength);
+     return concatenateUint8Arrays([r, s]);
+ }
+-function cleanBigNum(bn) {
+-    if (bn.length > 32 && bn[0] === 0) {
+-        bn = bn.slice(1);
++function encodeEcdsaInteger(bn, byteLength) {
++    if (bn.length === 0 || (bn[0] & 0x80)) {
++        throw new Error('Invalid ECDSA signature integer');
++    }
++    if (bn[0] === 0) {
++        if (bn.length > 1 && !(bn[1] & 0x80)) {
++            throw new Error('Invalid ECDSA signature integer');
++        }
++        bn = bn.subarray(1);
+     }
+-    else if (bn.length < 32) {
+-        bn = concatenateUint8Arrays([
+-            new Uint8Array(32 - bn.length).fill(0),
+-            bn
+-        ]);
++    if (bn.length > byteLength) {
++        throw new Error('ECDSA signature integer exceeds curve size');
+     }
+-    return bn;
++    const result = new Uint8Array(byteLength);
++    result.set(bn, byteLength - bn.length);
++    return result;
+ }
+ function getHashAlgorithm(sig) {
+     if (sig.endsWith('SHA256')) {
+diff --git a/lib/make-tls-client.js b/lib/make-tls-client.js
+index c168ac3..97dea81 100644
+--- a/lib/make-tls-client.js
++++ b/lib/make-tls-client.js
+@@ -16,7 +16,7 @@ import { parseServerHello } from "./utils/parse-server-hello.js";
+ import { getPskFromTicket, parseSessionTicket } from "./utils/session-ticket.js";
+ import { decryptWrappedRecord, encryptWrappedRecord } from "./utils/wrapped-record.js";
+ const RECORD_LENGTH_BYTES = 3;
+-export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, logger: _logger, cipherSuites, namedCurves = SUPPORTED_NAMED_CURVES, supportedProtocolVersions, signatureAlgorithms, applicationLayerProtocols, fetchCertificateBytes, write, onRead, onApplicationData, onSessionTicket, onTlsEnd, onHandshake, onRecvCertificates }) {
++export function makeTLSClient({ host, verifyHost, verifyServerCertificate = true, checkServerIdentity, rootCAs, logger: _logger, cipherSuites, namedCurves = SUPPORTED_NAMED_CURVES, supportedProtocolVersions, signatureAlgorithms, applicationLayerProtocols, fetchCertificateBytes, write, onRead, onApplicationData, onSessionTicket, onTlsEnd, onHandshake, onRecvCertificates, onClientHelloPack, onRecvCertificateVerify, onKeyPairGenerated }) {
+     const logger = _logger || LOGGER;
+     const processor = makeMessageProcessor(logger);
+     const { enqueue: enqueueServerPacket } = makeQueue();
+@@ -40,6 +40,8 @@ export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, l
+     let handshakePacketStream = new Uint8Array();
+     let clientCertificateRequested = false;
+     let certificatesVerified = false;
++    // Set once the caller's identity check has run for the presented chain.
++    let identityChecked = false;
+     const processPacketUnsafe = async ({ type, packet: { content, header } }) => {
+         if (ended) {
+             logger.warn('connection closed, ignoring packet');
+@@ -176,8 +178,15 @@ export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, l
+                         const result = parseCertificates(content, { version: connTlsVersion });
+                         certificates = result.certificates;
+                         logger.debug({ len: certificates.length }, 'parsed certificates');
++                        if (!certificatesVerified && checkServerIdentity && certificates.length) {
++                            // The caller owns the identity check. Running it
++                            // before the chain means a hostname mismatch is
++                            // reported as such rather than as a trust failure.
++                            await checkServerIdentity(verifyHost ?? host, certificates[0]);
++                            identityChecked = true;
++                        }
+                         if (verifyServerCertificate && !certificatesVerified) {
+-                            await verifyCertificateChain(certificates, host, logger, fetchCertificateBytes, rootCAs);
++                            await verifyCertificateChain(certificates, verifyHost ?? host, logger, fetchCertificateBytes, rootCAs, identityChecked);
+                             logger.debug('verified certificate chain');
+                             certificatesVerified = true;
+                         }
+@@ -191,11 +200,29 @@ export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, l
+                             throw new Error('No certificates received');
+                         }
+                         const signatureData = await getSignatureDataTls13(handshakeMsgs.slice(0, -1), cipherSuite);
+-                        await verifyCertificateSignature({
+-                            ...signature,
+-                            publicKey: certificates[0].getPublicKey(),
+-                            signatureData,
+-                        });
++                        // REALITY hook: surfaces the parsed CertificateVerify
++                        // info so the caller can perform a custom signature
++                        // check (e.g. HMAC-SHA512 over the leaf cert pubkey).
++                        // The hook may return false to skip the standard
++                        // signature verification; useful when the cert is
++                        // forged and the server's signature is actually a
++                        // REALITY HMAC tag.
++                        let skipVerify = false;
++                        if (onRecvCertificateVerify) {
++                            const r = await onRecvCertificateVerify({
++                                ...signature,
++                                certificates,
++                                signatureData,
++                            });
++                            if (r === false) skipVerify = true;
++                        }
++                        if (!skipVerify) {
++                            await verifyCertificateSignature({
++                                ...signature,
++                                publicKey: certificates[0].getPublicKey(),
++                                signatureData,
++                            });
++                        }
+                         break;
+                     case SUPPORTED_RECORD_TYPE_MAP.FINISHED:
+                         await processServerFinish(content);
+@@ -253,8 +280,15 @@ export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, l
+                             publicKeyType: keyShare.publicKeyType,
+                         });
+                         logger.debug('verified server key share signature');
++                        if (!certificatesVerified && checkServerIdentity && certificates.length) {
++                            // Same as the TLS 1.3 path: the caller's identity
++                            // check replaces the hostname match in the chain
++                            // walk below.
++                            await checkServerIdentity(verifyHost ?? host, certificates[0]);
++                            identityChecked = true;
++                        }
+                         if (verifyServerCertificate && !certificatesVerified) {
+-                            await verifyCertificateChain(certificates, host, logger, fetchCertificateBytes, rootCAs);
++                            await verifyCertificateChain(certificates, verifyHost ?? host, logger, fetchCertificateBytes, rootCAs, identityChecked);
+                             logger.debug('verified certificate chain');
+                             certificatesVerified = true;
+                         }
+@@ -529,7 +563,17 @@ export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, l
+     }
+     async function getKeyPair(keyType) {
+         const algorithm = SUPPORTED_NAMED_CURVE_MAP[keyType].algorithm;
+-        keyPairs[keyType] ??= await crypto.generateKeyPair(algorithm);
++        if (!keyPairs[keyType]) {
++            keyPairs[keyType] = await crypto.generateKeyPair(algorithm);
++            // REALITY hook: caller may capture or replace the just-generated
++            // keypair. Returning a new keypair from the callback replaces the
++            // cached one, so the same caller-controlled private key is
++            // available for off-band X25519 derivations.
++            if (onKeyPairGenerated) {
++                const replacement = await onKeyPairGenerated(keyType, keyPairs[keyType], algorithm);
++                if (replacement) keyPairs[keyType] = replacement;
++            }
++        }
+         return { algorithm, keyPair: keyPairs[keyType] };
+     }
+     return {
+@@ -571,10 +615,10 @@ export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, l
+             if (handshakeDone) {
+                 throw new Error('Handshake already done');
+             }
+-            sessionId = crypto.randomBytes(32);
++            sessionId = opts?.sessionId || crypto.randomBytes(32);
+             ended = false;
+             clientRandom = opts?.random || crypto.randomBytes(32);
+-            const clientHello = await packClientHello({
++            let clientHello = await packClientHello({
+                 host,
+                 keysToShare: await Promise.all(namedCurves
+                     .map(async (keyType) => {
+@@ -592,6 +636,15 @@ export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, l
+                 signatureAlgorithms,
+                 applicationLayerProtocols,
+             });
++            // REALITY hook: allow caller to mutate the ClientHello bytes
++            // after they're built but before they enter the transcript hash.
++            // The returned bytes (if non-null) replace the original entirely.
++            if (onClientHelloPack) {
++                const mutated = await onClientHelloPack(clientHello, { sessionId, random: clientRandom });
++                if (mutated && mutated !== clientHello) {
++                    clientHello = mutated;
++                }
++            }
+             handshakeMsgs.push(clientHello);
+             if (opts?.psk) {
+                 earlySecret = opts.psk.earlySecret;
+diff --git a/lib/types/x509.d.ts b/lib/types/x509.d.ts
+index 7291581..aa5281b 100644
+--- a/lib/types/x509.d.ts
++++ b/lib/types/x509.d.ts
+@@ -16,6 +16,7 @@ export type X509Certificate<T = any> = {
+     isWithinValidity(): boolean;
+     getSubjectField(key: string): string[];
+     getAlternativeDNSNames(): string[];
++    getAlternativeIPAddresses?(): string[];
+     isIssuer(ofCert: X509Certificate<T>): boolean;
+     getPublicKey(): CertificatePublicKey;
+     /**
+diff --git a/lib/utils/additional-root-cas.js b/lib/utils/additional-root-cas.js
+index 269141c..308bb84 100644
+--- a/lib/utils/additional-root-cas.js
++++ b/lib/utils/additional-root-cas.js
+@@ -13,185 +13,4 @@ else {
+     TLS_ADDITIONAL_ROOT_CA_LIST = [];
+     TLS_INTERMEDIATE_CA_CACHE = {};
+ }
+-TLS_ADDITIONAL_ROOT_CA_LIST.push(`-----BEGIN CERTIFICATE-----
+-MIIFjDCCA3SgAwIBAgIQfx8skC6D0OO2+zvuR4tegDANBgkqhkiG9w0BAQsFADBM
+-MSAwHgYDVQQLExdHbG9iYWxTaWduIFJvb3QgQ0EgLSBSNjETMBEGA1UEChMKR2xv
+-YmFsU2lnbjETMBEGA1UEAxMKR2xvYmFsU2lnbjAeFw0yMzA3MTkwMzQzMjVaFw0y
+-NjA3MTkwMDAwMDBaMFUxCzAJBgNVBAYTAkJFMRkwFwYDVQQKExBHbG9iYWxTaWdu
+-IG52LXNhMSswKQYDVQQDEyJHbG9iYWxTaWduIEdDQyBSNiBBbHBoYVNTTCBDQSAy
+-MDIzMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA00Jvk5ADppO0rgDn
+-j1M14XIb032Aas409JJFAb8cUjipFOth7ySLdaWLe3s63oSs5x3eWwzTpX4BFkzZ
+-bxT1eoJSHfT2M0wZ5QOPcCIjsr+YB8TAvV2yJSyq+emRrN/FtgCSTaWXSJ5jipW8
+-SJ/VAuXPMzuAP2yYpuPcjjQ5GyrssDXgu+FhtYxqyFP7BSvx9jQhh5QV5zhLycua
+-n8n+J0Uw09WRQK6JGQ5HzDZQinkNel+fZZNRG1gE9Qeh+tHBplrkalB1g85qJkPO
+-J7SoEvKsmDkajggk/sSq7NPyzFaa/VBGZiRRG+FkxCBniGD5618PQ4trcwHyMojS
+-FObOHQIDAQABo4IBXzCCAVswDgYDVR0PAQH/BAQDAgGGMB0GA1UdJQQWMBQGCCsG
+-AQUFBwMBBggrBgEFBQcDAjASBgNVHRMBAf8ECDAGAQH/AgEAMB0GA1UdDgQWBBS9
+-BbfzipM8c8t5+g+FEqF3lhiRdDAfBgNVHSMEGDAWgBSubAWjkxPioufi1xzWx/B/
+-yGdToDB7BggrBgEFBQcBAQRvMG0wLgYIKwYBBQUHMAGGImh0dHA6Ly9vY3NwMi5n
+-bG9iYWxzaWduLmNvbS9yb290cjYwOwYIKwYBBQUHMAKGL2h0dHA6Ly9zZWN1cmUu
+-Z2xvYmFsc2lnbi5jb20vY2FjZXJ0L3Jvb3QtcjYuY3J0MDYGA1UdHwQvMC0wK6Ap
+-oCeGJWh0dHA6Ly9jcmwuZ2xvYmFsc2lnbi5jb20vcm9vdC1yNi5jcmwwIQYDVR0g
+-BBowGDAIBgZngQwBAgEwDAYKKwYBBAGgMgoBAzANBgkqhkiG9w0BAQsFAAOCAgEA
+-fMkkMo5g4mn1ft4d4xR2kHzYpDukhC1XYPwfSZN3A9nEBadjdKZMH7iuS1vF8uSc
+-g26/30DRPen2fFRsr662ECyUCR4OfeiiGNdoQvcesM9Xpew3HLQP4qHg+s774hNL
+-vGRD4aKSKwFqLMrcqCw6tEAfX99tFWsD4jzbC6k8tjSLzEl0fTUlfkJaWpvLVkpg
+-9et8tD8d51bymCg5J6J6wcXpmsSGnksBobac1+nXmgB7jQC9edU8Z41FFo87BV3k
+-CtrWWsdkQavObMsXUPl/AO8y/jOuAWz0wyvPnKom+o6W4vKDY6/6XPypNdebOJ6m
+-jyaILp0quoQvhjx87BzENh5s57AIOyIGpS0sDEChVDPzLEfRsH2FJ8/W5woF0nvs
+-BTqfYSCqblQbHeDDtCj7Mlf8JfqaMuqcbE4rMSyfeHyCdZQwnc/r9ujnth691AJh
+-xyYeCM04metJIe7cB6d4dFm+Pd5ervY4x32r0uQ1Q0spy1VjNqUJjussYuXNyMmF
+-HSuLQQ6PrePmH5lcSMQpYKzPoD/RiNVD/PK0O3vuO5vh3o7oKb1FfzoanDsFFTrw
+-0aLOdRW/tmLPWVNVlAb8ad+B80YJsL4HXYnQG8wYAFb8LhwSDyT9v+C1C1lcIHE7
+-nE0AAp9JSHxDYsma9pi4g0Phg3BgOm2euTRzw7R0SzU=
+------END CERTIFICATE-----`, // GlobalSign GCC R6 AlphaSSL CA 2023 intermediate till 2026
+-`-----BEGIN CERTIFICATE-----
+-MIIGGTCCBAGgAwIBAgIQE31TnKp8MamkM3AZaIR6jTANBgkqhkiG9w0BAQwFADCB
+-iDELMAkGA1UEBhMCVVMxEzARBgNVBAgTCk5ldyBKZXJzZXkxFDASBgNVBAcTC0pl
+-cnNleSBDaXR5MR4wHAYDVQQKExVUaGUgVVNFUlRSVVNUIE5ldHdvcmsxLjAsBgNV
+-BAMTJVVTRVJUcnVzdCBSU0EgQ2VydGlmaWNhdGlvbiBBdXRob3JpdHkwHhcNMTgx
+-MTAyMDAwMDAwWhcNMzAxMjMxMjM1OTU5WjCBlTELMAkGA1UEBhMCR0IxGzAZBgNV
+-BAgTEkdyZWF0ZXIgTWFuY2hlc3RlcjEQMA4GA1UEBxMHU2FsZm9yZDEYMBYGA1UE
+-ChMPU2VjdGlnbyBMaW1pdGVkMT0wOwYDVQQDEzRTZWN0aWdvIFJTQSBPcmdhbml6
+-YXRpb24gVmFsaWRhdGlvbiBTZWN1cmUgU2VydmVyIENBMIIBIjANBgkqhkiG9w0B
+-AQEFAAOCAQ8AMIIBCgKCAQEAnJMCRkVKUkiS/FeN+S3qU76zLNXYqKXsW2kDwB0Q
+-9lkz3v4HSKjojHpnSvH1jcM3ZtAykffEnQRgxLVK4oOLp64m1F06XvjRFnG7ir1x
+-on3IzqJgJLBSoDpFUd54k2xiYPHkVpy3O/c8Vdjf1XoxfDV/ElFw4Sy+BKzL+k/h
+-fGVqwECn2XylY4QZ4ffK76q06Fha2ZnjJt+OErK43DOyNtoUHZZYQkBuCyKFHFEi
+-rsTIBkVtkuZntxkj5Ng2a4XQf8dS48+wdQHgibSov4o2TqPgbOuEQc6lL0giE5dQ
+-YkUeCaXMn2xXcEAG2yDoG9bzk4unMp63RBUJ16/9fAEc2wIDAQABo4IBbjCCAWow
+-HwYDVR0jBBgwFoAUU3m/WqorSs9UgOHYm8Cd8rIDZsswHQYDVR0OBBYEFBfZ1iUn
+-Z/kxwklD2TA2RIxsqU/rMA4GA1UdDwEB/wQEAwIBhjASBgNVHRMBAf8ECDAGAQH/
+-AgEAMB0GA1UdJQQWMBQGCCsGAQUFBwMBBggrBgEFBQcDAjAbBgNVHSAEFDASMAYG
+-BFUdIAAwCAYGZ4EMAQICMFAGA1UdHwRJMEcwRaBDoEGGP2h0dHA6Ly9jcmwudXNl
+-cnRydXN0LmNvbS9VU0VSVHJ1c3RSU0FDZXJ0aWZpY2F0aW9uQXV0aG9yaXR5LmNy
+-bDB2BggrBgEFBQcBAQRqMGgwPwYIKwYBBQUHMAKGM2h0dHA6Ly9jcnQudXNlcnRy
+-dXN0LmNvbS9VU0VSVHJ1c3RSU0FBZGRUcnVzdENBLmNydDAlBggrBgEFBQcwAYYZ
+-aHR0cDovL29jc3AudXNlcnRydXN0LmNvbTANBgkqhkiG9w0BAQwFAAOCAgEAThNA
+-lsnD5m5bwOO69Bfhrgkfyb/LDCUW8nNTs3Yat6tIBtbNAHwgRUNFbBZaGxNh10m6
+-pAKkrOjOzi3JKnSj3N6uq9BoNviRrzwB93fVC8+Xq+uH5xWo+jBaYXEgscBDxLmP
+-bYox6xU2JPti1Qucj+lmveZhUZeTth2HvbC1bP6mESkGYTQxMD0gJ3NR0N6Fg9N3
+-OSBGltqnxloWJ4Wyz04PToxcvr44APhL+XJ71PJ616IphdAEutNCLFGIUi7RPSRn
+-R+xVzBv0yjTqJsHe3cQhifa6ezIejpZehEU4z4CqN2mLYBd0FUiRnG3wTqN3yhsc
+-SPr5z0noX0+FCuKPkBurcEya67emP7SsXaRfz+bYipaQ908mgWB2XQ8kd5GzKjGf
+-FlqyXYwcKapInI5v03hAcNt37N3j0VcFcC3mSZiIBYRiBXBWdoY5TtMibx3+bfEO
+-s2LEPMvAhblhHrrhFYBZlAyuBbuMf1a+HNJav5fyakywxnB2sJCNwQs2uRHY1ihc
+-6k/+JLcYCpsM0MF8XPtpvcyiTcaQvKZN8rG61ppnW5YCUtCC+cQKXA0o4D/I+pWV
+-idWkvklsQLI+qGu41SWyxP7x09fn1txDAXYw+zuLXfdKiXyaNb78yvBXAfCNP6CH
+-MntHWpdLgtJmwsQt6j8k9Kf5qLnjatkYYaA7jBU=
+------END CERTIFICATE-----`, //Sectigo RSA Organization Validation Secure Server CA
+-`-----BEGIN CERTIFICATE-----
+-MIII+DCCB+CgAwIBAgIQbAP9+jGpC4MAqlBK9HsanzANBgkqhkiG9w0BAQsFADCB
+-lTELMAkGA1UEBhMCR0IxGzAZBgNVBAgTEkdyZWF0ZXIgTWFuY2hlc3RlcjEQMA4G
+-A1UEBxMHU2FsZm9yZDEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMT0wOwYDVQQD
+-EzRTZWN0aWdvIFJTQSBPcmdhbml6YXRpb24gVmFsaWRhdGlvbiBTZWN1cmUgU2Vy
+-dmVyIENBMB4XDTI0MDgyNjAwMDAwMFoXDTI1MDgyNjIzNTk1OVowXTELMAkGA1UE
+-BhMCVVMxEzARBgNVBAgTCkNhbGlmb3JuaWExHDAaBgNVBAoTE1N0YXRlIG9mIENh
+-bGlmb3JuaWExGzAZBgNVBAMTEmNvbm5lY3QuZGNhLmNhLmdvdjCCAiIwDQYJKoZI
+-hvcNAQEBBQADggIPADCCAgoCggIBALqonPJQIJB5rqVt3lFhVCAWVDaUiHINR/0a
+-BtHeqP2Ue5EsLGwdCNCRrj8ge0bCqQh25UBEmIOrTWU3HcmyBYPG51TPp+T5GER2
+-r8daV5oqSFpVIThArZF58Omwsbv38hkNn1LCdZher/yqbuZJNHZd2Z/h3Xv410us
+-y2EnrALnoKkRUvJ/hfX3Wpn9H+gYILEjwS3Bz4RZbMNnZCmaKFvKdk4hL/5Nyfgi
+-ysHgJIM1jTitd24gilbA9RTLpak7naSxevb0SVa48hywpN8zoeDnOE/QIPGZ3CDJ
+-70zHpZ9/T+soTtnTOAkVR3gCq6ZNshfizV6hqQTIvk6w8Ce7AoHv47EIRDwpb6RD
+-gODEyZJFxR27/lZrXq3yvaiE0ZXkBFjJ6B4N+IuxpKrflRuddv5ObOm9AxunUsCM
+-bhSf+7M8ECKk9j/IPYoKChfhxOyDQPKZSUtHx94+L5Z+7ri01S5ahkVlIY9O7VRz
+-PU3YoqNslBUpAIrRYfjN1ej5FGgo867i5RUB9deFgJ/DMwbT0WN9e5DkVDcREbl4
+-mJDRife0nZW88GgLDgFvvw3aFna+MtvE9BKgnTnPUUB9yiRJryj0i0qkIV30XF62
+-CuNYEn8V24VvRv95wnsT6W758DGY7BspK18XVwL+LiA+GvkMFehhIRW6BBw1Txv9
+-+NYVTTm1AgMBAAGjggR5MIIEdTAfBgNVHSMEGDAWgBQX2dYlJ2f5McJJQ9kwNkSM
+-bKlP6zAdBgNVHQ4EFgQUYXACOqlHJoJQcEG3L0ICy9gYsV4wDgYDVR0PAQH/BAQD
+-AgWgMAwGA1UdEwEB/wQCMAAwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMC
+-MEoGA1UdIARDMEEwNQYMKwYBBAGyMQECAQMEMCUwIwYIKwYBBQUHAgEWF2h0dHBz
+-Oi8vc2VjdGlnby5jb20vQ1BTMAgGBmeBDAECAjBaBgNVHR8EUzBRME+gTaBLhklo
+-dHRwOi8vY3JsLnNlY3RpZ28uY29tL1NlY3RpZ29SU0FPcmdhbml6YXRpb25WYWxp
+-ZGF0aW9uU2VjdXJlU2VydmVyQ0EuY3JsMIGKBggrBgEFBQcBAQR+MHwwVQYIKwYB
+-BQUHMAKGSWh0dHA6Ly9jcnQuc2VjdGlnby5jb20vU2VjdGlnb1JTQU9yZ2FuaXph
+-dGlvblZhbGlkYXRpb25TZWN1cmVTZXJ2ZXJDQS5jcnQwIwYIKwYBBQUHMAGGF2h0
+-dHA6Ly9vY3NwLnNlY3RpZ28uY29tMIIBfgYKKwYBBAHWeQIEAgSCAW4EggFqAWgA
+-dQDd3Mo0ldfhFgXnlTL6x5/4PRxQ39sAOhQSdgosrLvIKgAAAZGPYefYAAAEAwBG
+-MEQCIC3PuRJmsoXOdITZPFofbx+GkT9JlXYA4rFD66SEzQYNAiBFdkL0000FzUHJ
+-A11IglFWjubgpuCz7ct1NqW7nDwxFQB2AA3h8jAr0w3BQGISCepVLvxHdHyx1+kw
+-7w5CHrR+Tqo0AAABkY9h57UAAAQDAEcwRQIhAKN6rHqqCeFQKpBS36UE+z/kTXru
+-A7bI/NrW6k+vZXNBAiBJ1mayfSQJPX3LVpPBNK1kHIXI612M9Tpmrt9prraFlgB3
+-ABLxTjS9U3JMhAYZw48/ehP457Vih4icbTAFhOvlhiY6AAABkY9h57UAAAQDAEgw
+-RgIhALJAVx2+PVTOBjKeEkYLyTChpUyITMx2yJoZ8Zxe4C1nAiEAyKSU0BY4Wu/e
+-du3YZFHbBymWlfsDCPtkUYUXuaZPqrMwggE9BgNVHREEggE0MIIBMIISY29ubmVj
+-dC5kY2EuY2EuZ292ghVjb25uZWN0LXdzLmNhYi5jYS5nb3aCFWNvbm5lY3Qtd3Mu
+-Y2ZiLmNhLmdvdoIlY29ubmVjdC13cy5jb3VydHJlcG9ydGVyc2JvYXJkLmNhLmdv
+-doIVY29ubmVjdC13cy5kY2EuY2EuZ292ghZjb25uZWN0LXdzLmxhdGMuY2EuZ292
+-ghtjb25uZWN0LXdzLnBlc3Rib2FyZC5jYS5nb3aCEmNvbm5lY3QuY2FiLmNhLmdv
+-doISY29ubmVjdC5jZmIuY2EuZ292giJjb25uZWN0LmNvdXJ0cmVwb3J0ZXJzYm9h
+-cmQuY2EuZ292ghNjb25uZWN0LmxhdGMuY2EuZ292ghhjb25uZWN0LnBlc3Rib2Fy
+-ZC5jYS5nb3YwDQYJKoZIhvcNAQELBQADggEBAH8SsgW//ibqOZhMifgDLy2z4srI
+-OwYMaWi0mxRO/6fgCO9BcpvT22vrMZYo3JuaEHtKT0joh5mdsfm/3tttEgnFYV5h
+-gK4xgkZ/BbXoKWi+lmZPvxQJJFoRRg1WPnTvH+S7hUS0JAi4Wzmt7GGKhKnr5Fp3
+-qTMIS9g0NQNGrV9pYqK1AQFzk0BBdemBqzUHLQjJ1k176AlvXP7xjW9Fi/Fdasat
+-dfOtR3XILf1FTAjKGeGS9q2e4h6aZvLmdsDlCiG+YocUpTIOtdiF00zA4MybExyZ
+-pfy9x5+dKWTyekk5jr54LEFQ5kUDJaGZ0KnDuOxhDSpAO/Yb/Z/3ZAk2G0s=
+------END CERTIFICATE-----`, //connect.dca.ca.gov
+-`-----BEGIN CERTIFICATE-----
+-MIIEjTCCA3WgAwIBAgIQDQd4KhM/xvmlcpbhMf/ReTANBgkqhkiG9w0BAQsFADBh
+-MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3
+-d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBH
+-MjAeFw0xNzExMDIxMjIzMzdaFw0yNzExMDIxMjIzMzdaMGAxCzAJBgNVBAYTAlVT
+-MRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5j
+-b20xHzAdBgNVBAMTFkdlb1RydXN0IFRMUyBSU0EgQ0EgRzEwggEiMA0GCSqGSIb3
+-DQEBAQUAA4IBDwAwggEKAoIBAQC+F+jsvikKy/65LWEx/TMkCDIuWegh1Ngwvm4Q
+-yISgP7oU5d79eoySG3vOhC3w/3jEMuipoH1fBtp7m0tTpsYbAhch4XA7rfuD6whU
+-gajeErLVxoiWMPkC/DnUvbgi74BJmdBiuGHQSd7LwsuXpTEGG9fYXcbTVN5SATYq
+-DfbexbYxTMwVJWoVb6lrBEgM3gBBqiiAiy800xu1Nq07JdCIQkBsNpFtZbIZhsDS
+-fzlGWP4wEmBQ3O67c+ZXkFr2DcrXBEtHam80Gp2SNhou2U5U7UesDL/xgLK6/0d7
+-6TnEVMSUVJkZ8VeZr+IUIlvoLrtjLbqugb0T3OYXW+CQU0kBAgMBAAGjggFAMIIB
+-PDAdBgNVHQ4EFgQUlE/UXYvkpOKmgP792PkA76O+AlcwHwYDVR0jBBgwFoAUTiJU
+-IBiV5uNu5g/6+rkS7QYXjzkwDgYDVR0PAQH/BAQDAgGGMB0GA1UdJQQWMBQGCCsG
+-AQUFBwMBBggrBgEFBQcDAjASBgNVHRMBAf8ECDAGAQH/AgEAMDQGCCsGAQUFBwEB
+-BCgwJjAkBggrBgEFBQcwAYYYaHR0cDovL29jc3AuZGlnaWNlcnQuY29tMEIGA1Ud
+-HwQ7MDkwN6A1oDOGMWh0dHA6Ly9jcmwzLmRpZ2ljZXJ0LmNvbS9EaWdpQ2VydEds
+-b2JhbFJvb3RHMi5jcmwwPQYDVR0gBDYwNDAyBgRVHSAAMCowKAYIKwYBBQUHAgEW
+-HGh0dHBzOi8vd3d3LmRpZ2ljZXJ0LmNvbS9DUFMwDQYJKoZIhvcNAQELBQADggEB
+-AIIcBDqC6cWpyGUSXAjjAcYwsK4iiGF7KweG97i1RJz1kwZhRoo6orU1JtBYnjzB
+-c4+/sXmnHJk3mlPyL1xuIAt9sMeC7+vreRIF5wFBC0MCN5sbHwhNN1JzKbifNeP5
+-ozpZdQFmkCo+neBiKR6HqIA+LMTMCMMuv2khGGuPHmtDze4GmEGZtYLyF8EQpa5Y
+-jPuV6k2Cr/N3XxFpT3hRpt/3usU/Zb9wfKPtWpoznZ4/44c1p9rzFcZYrWkj3A+7
+-TNBJE0GmP2fhXhP1D/XVfIW/h0yCJGEiV9Glm/uGOa3DXHlmbAcxSyCRraG+ZBkA
+-7h4SeM6Y8l/7MBRpPCz6l8Y=
+------END CERTIFICATE-----`, //GeoTrust TLS RSA CA G1
+-`-----BEGIN CERTIFICATE-----
+-MIIGTDCCBDSgAwIBAgIQOXpmzCdWNi4NqofKbqvjsTANBgkqhkiG9w0BAQwFADBf
+-MQswCQYDVQQGEwJHQjEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMTYwNAYDVQQD
+-Ey1TZWN0aWdvIFB1YmxpYyBTZXJ2ZXIgQXV0aGVudGljYXRpb24gUm9vdCBSNDYw
+-HhcNMjEwMzIyMDAwMDAwWhcNMzYwMzIxMjM1OTU5WjBgMQswCQYDVQQGEwJHQjEY
+-MBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMTcwNQYDVQQDEy5TZWN0aWdvIFB1Ymxp
+-YyBTZXJ2ZXIgQXV0aGVudGljYXRpb24gQ0EgRFYgUjM2MIIBojANBgkqhkiG9w0B
+-AQEFAAOCAY8AMIIBigKCAYEAljZf2HIz7+SPUPQCQObZYcrxLTHYdf1ZtMRe7Yeq
+-RPSwygz16qJ9cAWtWNTcuICc++p8Dct7zNGxCpqmEtqifO7NvuB5dEVexXn9RFFH
+-12Hm+NtPRQgXIFjx6MSJcNWuVO3XGE57L1mHlcQYj+g4hny90aFh2SCZCDEVkAja
+-EMMfYPKuCjHuuF+bzHFb/9gV8P9+ekcHENF2nR1efGWSKwnfG5RawlkaQDpRtZTm
+-M64TIsv/r7cyFO4nSjs1jLdXYdz5q3a4L0NoabZfbdxVb+CUEHfB0bpulZQtH1Rv
+-38e/lIdP7OTTIlZh6OYL6NhxP8So0/sht/4J9mqIGxRFc0/pC8suja+wcIUna0HB
+-pXKfXTKpzgis+zmXDL06ASJf5E4A2/m+Hp6b84sfPAwQ766rI65mh50S0Di9E3Pn
+-2WcaJc+PILsBmYpgtmgWTR9eV9otfKRUBfzHUHcVgarub/XluEpRlTtZudU5xbFN
+-xx/DgMrXLUAPaI60fZ6wA+PTAgMBAAGjggGBMIIBfTAfBgNVHSMEGDAWgBRWc1hk
+-lfmSGrASKgRieaFAFYghSTAdBgNVHQ4EFgQUaMASFhgOr872h6YyV6NGUV3LBycw
+-DgYDVR0PAQH/BAQDAgGGMBIGA1UdEwEB/wQIMAYBAf8CAQAwHQYDVR0lBBYwFAYI
+-KwYBBQUHAwEGCCsGAQUFBwMCMBsGA1UdIAQUMBIwBgYEVR0gADAIBgZngQwBAgEw
+-VAYDVR0fBE0wSzBJoEegRYZDaHR0cDovL2NybC5zZWN0aWdvLmNvbS9TZWN0aWdv
+-UHVibGljU2VydmVyQXV0aGVudGljYXRpb25Sb290UjQ2LmNybDCBhAYIKwYBBQUH
+-AQEEeDB2ME8GCCsGAQUFBzAChkNodHRwOi8vY3J0LnNlY3RpZ28uY29tL1NlY3Rp
+-Z29QdWJsaWNTZXJ2ZXJBdXRoZW50aWNhdGlvblJvb3RSNDYucDdjMCMGCCsGAQUF
+-BzABhhdodHRwOi8vb2NzcC5zZWN0aWdvLmNvbTANBgkqhkiG9w0BAQwFAAOCAgEA
+-YtOC9Fy+TqECFw40IospI92kLGgoSZGPOSQXMBqmsGWZUQ7rux7cj1du6d9rD6C8
+-ze1B2eQjkrGkIL/OF1s7vSmgYVafsRoZd/IHUrkoQvX8FZwUsmPu7amgBfaY3g+d
+-q1x0jNGKb6I6Bzdl6LgMD9qxp+3i7GQOnd9J8LFSietY6Z4jUBzVoOoz8iAU84OF
+-h2HhAuiPw1ai0VnY38RTI+8kepGWVfGxfBWzwH9uIjeooIeaosVFvE8cmYUB4TSH
+-5dUyD0jHct2+8ceKEtIoFU/FfHq/mDaVnvcDCZXtIgitdMFQdMZaVehmObyhRdDD
+-4NQCs0gaI9AAgFj4L9QtkARzhQLNyRf87Kln+YU0lgCGr9HLg3rGO8q+Y4ppLsOd
+-unQZ6ZxPNGIfOApbPVf5hCe58EZwiWdHIMn9lPP6+F404y8NNugbQixBber+x536
+-WrZhFZLjEkhp7fFXf9r32rNPfb74X/U90Bdy4lzp3+X1ukh1BuMxA/EEhDoTOS3l
+-7ABvc7BYSQubQ2490OcdkIzUh3ZwDrakMVrbaTxUM2p24N6dB+ns2zptWCva6jzW
+-r8IWKIMxzxLPv5Kt3ePKcUdvkBU/smqujSczTzzSjIoR5QqQA6lN1ZRSnuHIWCvh
+-JEltkYnTAH41QJ6SAWO66GrrUESwN/cgZzL4JLEqz1Y=
+------END CERTIFICATE-----` // Sectigo Public Server Authentication CA DV R36
+-);
+ export {};
+diff --git a/lib/utils/client-hello.js b/lib/utils/client-hello.js
+index 8ecb822..fadda3a 100644
+--- a/lib/utils/client-hello.js
++++ b/lib/utils/client-hello.js
+@@ -2,6 +2,7 @@ import { crypto } from "../crypto/index.js";
+ import { getHash } from "../utils/decryption-utils.js";
+ import { SUPPORTED_CIPHER_SUITE_MAP, SUPPORTED_EXTENSION_MAP, SUPPORTED_NAMED_CURVE_MAP, SUPPORTED_RECORD_TYPE_MAP, SUPPORTED_SIGNATURE_ALGS_MAP, TLS_PROTOCOL_VERSION_MAP } from "./constants.js";
+ import { asciiToUint8Array, concatenateUint8Arrays, uint8ArrayToDataView } from "./generics.js";
++import { classifyHostIdentity } from "./ip.js";
+ import { packWith3ByteLength, packWithLength } from "./packets.js";
+ const CLIENT_VERSION = new Uint8Array([0x03, 0x03]);
+ // no compression, as our client won't support it
+@@ -15,9 +16,10 @@ export async function packClientHello({ host, sessionId = crypto.randomBytes(32)
+     const packedSessionId = packWithLength(sessionId).slice(1);
+     const cipherSuiteList = (cipherSuites || Object.keys(SUPPORTED_CIPHER_SUITE_MAP)).map(cipherSuite => SUPPORTED_CIPHER_SUITE_MAP[cipherSuite].identifier);
+     const packedCipherSuites = packWithLength(concatenateUint8Arrays(cipherSuiteList));
++    const identity = classifyHostIdentity(host);
+     const extensionsList = [
+         RENEGOTIATION_INFO,
+-        packServerNameExtension(host),
++        ...(identity.type === 'ip' ? [] : [packServerNameExtension(host)]),
+         packSupportedGroupsExtension(keysToShare.map(k => k.type)),
+         packSessionTicketExtension(),
+         packVersionsExtension(supportedProtocolVersions),
+diff --git a/lib/utils/generics.js b/lib/utils/generics.js
+index 4e2986a..b380375 100644
+--- a/lib/utils/generics.js
++++ b/lib/utils/generics.js
+@@ -1,12 +1,15 @@
+ import { TLS_PROTOCOL_VERSION_MAP } from "./constants.js";
+ /**
+- * Converts a buffer to a hex string with whitespace between each byte
+- * @returns eg. '01 02 03 04'
++ * Converts a buffer to a hex string with whitespace between each byte.
++ * [perf-patch] Reclaim's hot path calls this from logger.trace(...) on every
++ * TLS record (`writeEncryptedPacket`/`writePacket`). JS eagerly evaluates
++ * the args even when trace is a no-op, so a 5 MiB upload pays 320 × 16 KiB
++ * hex-stringification (~75% of total CPU per V8 Inspector flame graph).
++ * Stub it to a `<NN bytes>` summary; the only non-trace caller is the MAC-
++ * mismatch error path, where the summary is still informative.
+  */
+ export function toHexStringWithWhitespace(buff, whitespace = ' ') {
+-    return [...buff]
+-        .map(x => x.toString(16).padStart(2, '0'))
+-        .join(whitespace);
++    return `<${buff.byteLength ?? buff.length ?? 0} bytes>`;
+ }
+ export function xor(a, b) {
+     const result = new Uint8Array(a.length);
+diff --git a/lib/utils/ip.d.ts b/lib/utils/ip.d.ts
+new file mode 100644
+index 0000000..b631a4f
+--- /dev/null
++++ b/lib/utils/ip.d.ts
+@@ -0,0 +1,7 @@
++export declare function classifyHostIdentity(value: string): {
++    type: 'dns';
++    value: string;
++} | {
++    type: 'ip';
++    value: Uint8Array;
++};
+diff --git a/lib/utils/ip.js b/lib/utils/ip.js
+new file mode 100644
+index 0000000..31859d4
+--- /dev/null
++++ b/lib/utils/ip.js
+@@ -0,0 +1,106 @@
++export function classifyHostIdentity(value) {
++    const ip = parseIpLiteral(value);
++    if (ip) {
++        return { type: 'ip', value: ip };
++    }
++    if (!isDnsIdentity(value)) {
++        throw new Error(`Invalid TLS host identity ${value}`);
++    }
++    return { type: 'dns', value };
++}
++function parseIpLiteral(value) {
++    return parseIpv4(value) || parseIpv6(value);
++}
++function isDnsIdentity(value) {
++    if (!value
++        || /\s/.test(value)
++        || value.includes(':')
++        || value.includes('%')
++        || value.startsWith('[')
++        || value.endsWith(']')) {
++        return false;
++    }
++    const labels = value.split('.');
++    return !labels.every(label => (/^(?:[+-]?(?:\d+|0x[0-9a-f]+))?$/i.test(label)));
++}
++function parseIpv4(value) {
++    const components = value.split('.');
++    if (components.length !== 4) {
++        return null;
++    }
++    const result = new Uint8Array(4);
++    for (const [i, component] of components.entries()) {
++        if (!/^\d+$/.test(component)
++            || (component.length > 1 && component[0] === '0')) {
++            return null;
++        }
++        const number = Number(component);
++        if (number > 255) {
++            return null;
++        }
++        result[i] = number;
++    }
++    return result;
++}
++function parseIpv6(value) {
++    if (!value.includes(':') || value.includes('%')) {
++        return null;
++    }
++    const compressionIndex = value.indexOf('::');
++    if (compressionIndex !== value.lastIndexOf('::')) {
++        return null;
++    }
++    const hasCompression = compressionIndex !== -1;
++    const sides = hasCompression ? value.split('::') : [value];
++    const left = parseIpv6Side(sides[0], !hasCompression);
++    const right = hasCompression ? parseIpv6Side(sides[1], true) : [];
++    if (!left || !right) {
++        return null;
++    }
++    const groupCount = left.length + right.length;
++    if ((hasCompression && groupCount >= 8)
++        || (!hasCompression && groupCount !== 8)) {
++        return null;
++    }
++    const groups = hasCompression
++        ? [
++            ...left,
++            ...new Array(8 - groupCount).fill(0),
++            ...right
++        ]
++        : left;
++    const result = new Uint8Array(16);
++    for (const [i, group] of groups.entries()) {
++        result[i * 2] = group >>> 8;
++        result[i * 2 + 1] = group & 0xff;
++    }
++    return result;
++}
++function parseIpv6Side(value, canContainIpv4) {
++    if (!value) {
++        return [];
++    }
++    const components = value.split(':');
++    if (components.some(component => !component)) {
++        return null;
++    }
++    const groups = [];
++    for (const [i, component] of components.entries()) {
++        if (component.includes('.')) {
++            if (!canContainIpv4 || i !== components.length - 1) {
++                return null;
++            }
++            const ipv4 = parseIpv4(component);
++            if (!ipv4) {
++                return null;
++            }
++            groups.push((ipv4[0] << 8) | ipv4[1], (ipv4[2] << 8) | ipv4[3]);
++            continue;
++        }
++        if (!/^[0-9a-f]{1,4}$/i.test(component)) {
++            return null;
++        }
++        groups.push(Number.parseInt(component, 16));
++    }
++    return groups;
++}
+diff --git a/lib/utils/parse-certificate.js b/lib/utils/parse-certificate.js
+index 6948487..cc243e2 100644
+--- a/lib/utils/parse-certificate.js
++++ b/lib/utils/parse-certificate.js
+@@ -3,6 +3,7 @@ import { crypto } from "../crypto/index.js";
+ import { SUPPORTED_NAMED_CURVE_MAP, SUPPORTED_SIGNATURE_ALGS, SUPPORTED_SIGNATURE_ALGS_MAP } from "./constants.js";
+ import { getHash } from "./decryption-utils.js";
+ import { areUint8ArraysEqual, asciiToUint8Array, concatenateUint8Arrays } from "./generics.js";
++import { classifyHostIdentity } from "./ip.js";
+ import { MOZILLA_ROOT_CA_LIST } from "./mozilla-root-cas.js";
+ import { expectReadWithLength, packWithLength } from "./packets.js";
+ import { defaultFetchCertificateBytes, loadX509FromDer, loadX509FromPem } from "./x509.js";
+@@ -103,18 +104,35 @@ export async function getSignatureDataTls12({ clientRandom, serverRandom, curveT
+             .slice(1)
+     ]);
+ }
+-export async function verifyCertificateChain(chain, host, logger, fetchCertificateBytes = defaultFetchCertificateBytes, additionalRootCAs) {
++export async function verifyCertificateChain(chain, host, logger, fetchCertificateBytes = defaultFetchCertificateBytes, additionalRootCAs, skipIdentityCheck = false) {
+     const rootCAs = [
+         ...loadRootCAs(),
+         ...(additionalRootCAs || [])
+     ];
+     const leaf = chain[0];
+-    const commonNames = [
+-        ...leaf.getSubjectField('CN'),
+-        ...leaf.getAlternativeDNSNames()
+-    ];
+-    if (!commonNames.some(cn => matchHostname(host, cn))) {
+-        throw new Error(`Certificate is not for host ${host}`);
++    // A caller that performs the identity check itself has already done so by
++    // the time verification runs, so only chain trust is established here.
++    if (!skipIdentityCheck) {
++        const identity = classifyHostIdentity(host);
++        const matchesIdentity = identity.type === 'ip'
++            ? (leaf.getAlternativeIPAddresses?.() || []).some(value => {
++                let sanIdentity;
++                try {
++                    sanIdentity = classifyHostIdentity(value);
++                }
++                catch {
++                    return false;
++                }
++                return sanIdentity.type === 'ip'
++                    && areUint8ArraysEqual(identity.value, sanIdentity.value);
++            })
++            : [
++                ...leaf.getSubjectField('CN'),
++                ...leaf.getAlternativeDNSNames()
++            ].some(name => matchHostname(host, name));
++        if (!matchesIdentity) {
++            throw new Error(`Certificate is not for host ${host}`);
++        }
+     }
+     const remainingChain = chain.slice(1);
+     let cert = leaf;
+diff --git a/lib/utils/x509.d.ts b/lib/utils/x509.d.ts
+index 92adf6b..e6c4a05 100644
+--- a/lib/utils/x509.d.ts
++++ b/lib/utils/x509.d.ts
+@@ -1,5 +1,9 @@
+ import * as peculiar from '@peculiar/x509';
+ import type { X509Certificate } from '../types/index.ts';
+-export declare function loadX509FromPem(pem: string | Uint8Array): X509Certificate<peculiar.X509Certificate>;
+-export declare function loadX509FromDer(der: Uint8Array): X509Certificate<peculiar.X509Certificate>;
++export declare function loadX509FromPem(pem: string | Uint8Array): X509Certificate<peculiar.X509Certificate> & {
++    getAlternativeIPAddresses(): string[];
++};
++export declare function loadX509FromDer(der: Uint8Array): X509Certificate<peculiar.X509Certificate> & {
++    getAlternativeIPAddresses(): string[];
++};
+ export declare function defaultFetchCertificateBytes(url: string): Promise<Uint8Array<any>>;
+diff --git a/lib/utils/x509.js b/lib/utils/x509.js
+index a9247e6..6617e60 100644
+--- a/lib/utils/x509.js
++++ b/lib/utils/x509.js
+@@ -25,15 +25,10 @@ export function loadX509FromPem(pem) {
+             return cert.subjectName.getField(name);
+         },
+         getAlternativeDNSNames() {
+-            // search for names in SubjectAlternativeNameExtension
+-            const ext = cert.extensions
+-                .find(e => e.type === '2.5.29.17'); //subjectAltName
+-            if (ext instanceof SubjectAlternativeNameExtension) {
+-                return ext.names.items
+-                    .filter(n => n.type === 'dns')
+-                    .map(n => n.value);
+-            }
+-            return [];
++            return getAlternativeNames(cert, 'dns');
++        },
++        getAlternativeIPAddresses() {
++            return getAlternativeNames(cert, 'ip');
+         },
+         isIssuer({ internal: ofCert }) {
+             const issuerName = normalizeDistinguishedName(ofCert.issuerName);
+@@ -94,6 +89,16 @@ function normalizeNameValue(value) {
+         .trim()
+         .replace(/\s+/gu, ' ');
+ }
++function getAlternativeNames(cert, type) {
++    const ext = cert.extensions
++        .find(e => e.type === '2.5.29.17'); //subjectAltName
++    if (ext instanceof SubjectAlternativeNameExtension) {
++        return ext.names.items
++            .filter(n => n.type === type)
++            .map(n => n.value);
++    }
++    return [];
++}
+ function getSigAlgorithm(key, { signatureAlgorithm }) {
+     if (!('name' in signatureAlgorithm)) {
+         throw new Error('Missing signature algorithm name');

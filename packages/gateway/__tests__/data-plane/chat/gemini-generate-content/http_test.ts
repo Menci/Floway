@@ -6,7 +6,7 @@ import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { stubChatProviderPipelines } from '../../../test-utils/chat-provider-pipelines.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ModelCandidate, directFetcher, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -47,6 +47,7 @@ const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
   serverSecret: '00'.repeat(32),
   createdAt: '2026-01-01T00:00:00.000Z',
   upstreamIds: null,
+  randomizeUpstreams: false,
   deletedAt: null,
   dumpRetentionSeconds: null,
   openaiResponsesRetentionSeconds: 0,
@@ -58,7 +59,6 @@ const buildUser = (overrides: Partial<User> = {}): User => ({
   username: 'http_test',
   passwordHash: null,
   isAdmin: false,
-  upstreamIds: null,
   createdAt: '2026-01-01T00:00:00.000Z',
   deletedAt: null,
   ...overrides,
@@ -71,18 +71,20 @@ const makeApp = (): Hono<{ Variables: AuthVars }> => {
     c.set('user', buildUser());
     await next();
   });
-  app.post('/v1beta/models/:modelAction{.+}', geminiGenerateContentHttp);
+  // Both prefix versions carry the same handler; the Gemini wire API defines
+  // the action on the model segment under either one.
+  for (const version of ['v1', 'v1beta']) app.post(`/${version}/models/:modelAction{.+}`, geminiGenerateContentHttp);
   return app;
 };
 
 const makeOpenAIChatCompletionsEvents = (): readonly OpenAIChatCompletionsStreamEvent[] => [
   {
     id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 1, model: 'test-model',
-    choices: [{ index: 0, delta: { content: 'hi' }, finish_reason: null }],
+    choices: [{  index: 0, delta: { content: 'hi' }, finish_reason: null }],
   },
   {
     id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 1, model: 'test-model',
-    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+    choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
   },
 ];
 
@@ -96,7 +98,7 @@ const makeCandidate = (overrides: {
   targetApi?: 'openaiChatCompletions' | 'anthropicMessages' | 'openaiResponses';
   endpoints?: ModelEndpoints;
   callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
-  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
+  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
   callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
@@ -127,19 +129,20 @@ const makeCandidate = (overrides: {
   };
 };
 
-const makeAnthropicMessagesEvents = (): readonly AnthropicMessagesStreamEvent[] => [
+const makeAnthropicMessagesEvents = (): readonly AnthropicMessagesStreamEventEx[] => [
   {
     type: 'message_start',
     message: {
+      container: null, diagnostics: null, stop_details: null,
       id: 'msg_http_m', type: 'message', role: 'assistant', content: [],
       model: 'test-model', stop_reason: null, stop_sequence: null,
-      usage: { input_tokens: 4, output_tokens: 0 },
+      usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 4, output_tokens: 0 },
     },
   },
-  { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+  { type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } },
   { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
   { type: 'content_block_stop', index: 0 },
-  { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } },
+  { type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } },
   { type: 'message_stop' },
 ];
 
@@ -181,6 +184,25 @@ test('POST /v1beta/models/:model:streamGenerateContent streams a Gemini generate
   const text = await response.text();
   assert(text.length > 0);
   assertEquals(callOpenAIChatCompletions.mock.calls.length, 1);
+});
+
+test('POST /v1/models/:model:generateContent serves the same Gemini body as the v1beta prefix', async () => {
+  installRepo();
+  const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+  }));
+  queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
+
+  const response = await makeApp().request('/v1/models/test-model:generateContent', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] }),
+  });
+
+  assertEquals(response.status, 200);
+  assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
+  const body = await response.json() as { candidates?: { content: { parts: { text: string }[] } }[] };
+  assertEquals(body.candidates?.[0]?.content.parts[0]?.text, 'hi');
 });
 
 test('POST /v1beta/models/:model:countTokens returns the Gemini generateContent totalTokens envelope', async () => {
@@ -226,9 +248,78 @@ test('POST /v1beta/models/:model:countTokens accepts the generateContentRequest 
   assertEquals(await response.json(), { totalTokens: 7 });
 });
 
+test.each([
+  { upstreams: ['up_count_only'] },
+  { upstreams: ['up_count_first', 'up_count_last'] },
+])('countTokens records the final translation input failure once for $upstreams', async ({ upstreams }) => {
+  const repo = installRepo();
+  const recordFailure = vi.spyOn(repo.performance, 'recordZeroOutputError');
+  const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => {
+    throw new Error('Unsupported input must fail before the upstream call');
+  });
+  const candidates = upstreams.map(upstream => makeCandidate({ upstream, targetApi: 'anthropicMessages', callAnthropicMessagesCountTokens }));
+  queueCandidates(candidates);
+
+  const response = await makeApp().request('/v1beta/models/test-model:countTokens', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'audio/wav', data: 'AQID' } }] }] }),
+  });
+
+  assertEquals(response.status, 400);
+  const body = await response.json() as { error: { status: string; message: string } };
+  assertEquals(body.error.status, 'INVALID_ARGUMENT');
+  assert(body.error.message.includes('audio/wav'));
+  assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 0);
+  assertEquals(recordFailure.mock.calls.length, 1);
+  assertEquals(recordFailure.mock.calls[0][0].keyId, API_KEY_ID);
+  assertEquals(recordFailure.mock.calls[0][0].upstream, upstreams.at(-1));
+  assertEquals(recordFailure.mock.calls[0][0].model, candidates.at(-1)!.model.id);
+  assertEquals(recordFailure.mock.calls[0][0].operation, 'chat');
+  const rows = await repo.performance.listAll();
+  assertEquals(rows.map(row => ({ requests: row.requests, errors: row.errorsNoOutput, neutral: row.neutral })), [
+    { requests: 1, errors: 1, neutral: 0 },
+  ]);
+});
+
+test('generateContent retries a translation input failure and records the successful candidate', async () => {
+  const repo = installRepo();
+  const recordFailure = vi.spyOn(repo.performance, 'recordZeroOutputError');
+  const recordSuccess = vi.spyOn(repo.performance, 'recordSample');
+  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
+    throw new Error('Unsupported input must fail before the upstream call');
+  });
+  const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+  }));
+  queueCandidates([
+    makeCandidate({ upstream: 'up_messages', targetApi: 'anthropicMessages', callAnthropicMessages }),
+    makeCandidate({ upstream: 'up_chat', targetApi: 'openaiChatCompletions', callOpenAIChatCompletions }),
+  ]);
+
+  const response = await makeApp().request('/v1beta/models/test-model:generateContent', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'audio/wav', data: 'AQID' } }] }] }),
+  });
+
+  assertEquals(response.status, 200);
+  const body = await response.json() as { candidates: unknown[] };
+  assertEquals(body.candidates.length, 1);
+  assertEquals(callAnthropicMessages.mock.calls.length, 0);
+  assertEquals(callOpenAIChatCompletions.mock.calls.length, 1);
+  assertEquals(recordFailure.mock.calls.length, 0);
+  assertEquals(recordSuccess.mock.calls.length, 1);
+  assertEquals(recordSuccess.mock.calls[0][0].upstream, 'up_chat');
+  const rows = await repo.performance.listAll();
+  assertEquals(rows.map(row => ({ requests: row.requests, errors: row.errorsNoOutput, samples: row.ttftSamplesOk })), [
+    { requests: 1, errors: 0, samples: 1 },
+  ]);
+});
+
 test('POST /v1beta/models/:model:generateContent translates through Anthropic Messages target end to end', async () => {
   installRepo();
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => ({
+  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
     ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ targetApi: 'anthropicMessages', callAnthropicMessages })]);

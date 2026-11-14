@@ -1,6 +1,6 @@
 import type { GatewayFacts } from '../../../../pipeline/facts.ts';
 import type { WebSearchCallIR, WebSearchFilters } from '../../../../tools/web-search/operations.ts';
-import type { OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 
 export interface WebSearchRequest {
   commands: Record<string, unknown>;
@@ -9,7 +9,7 @@ export interface WebSearchRequest {
   filters: WebSearchFilters;
   includeSearchActionSources: boolean;
   settings: Record<string, unknown>;
-  input: OpenAIResponsesInputItem[];
+  input: CanonicalOpenAIResponsesInputItem[];
 }
 
 export interface WebSearchSubRequestFacts extends GatewayFacts {

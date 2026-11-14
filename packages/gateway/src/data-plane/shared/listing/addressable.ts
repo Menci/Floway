@@ -11,8 +11,9 @@
 // DTO) read `limits` / `chat` / `endpoints` directly off the entry without
 // a second registry round trip.
 
+import { checkMany } from '../../../access-control/check.ts';
 import type { ModelsRefreshScheduler } from '../../../execution/models-refresh.ts';
-import type { StoredUpstreamRecord } from '../../../repo/types.ts';
+import type { StoredUpstreamRecord, User } from '../../../repo/types.ts';
 import { compareModelIds, getModelsFromProviders, mergeIntoCatalog } from '../../providers/catalog.ts';
 import { MODEL_CATALOG_REVISION } from '../../providers/models-cache.ts';
 import { listModelProviders } from '../../providers/registry.ts';
@@ -52,18 +53,18 @@ export const listedRealModels = (entries: readonly AddressableIdEntry[]): readon
 // `collectProviderModels` does; repeated stale access may submit or join the
 // same separate background refresh trigger.
 export const enumerateAddressableModelIds = async (
+  subject: User,
   upstreamFilter: readonly string[] | null,
   scheduleRefresh: ModelsRefreshScheduler,
   preFetchedUpstreams?: readonly StoredUpstreamRecord[],
 ): Promise<readonly AddressableIdEntry[]> => {
   // Resolve providers once and thread them into the catalog assembly so
   // the upstreams.list() round-trip and provider-instantiation cost is
-  // paid once per call. `getModelsFromProviders` throws the actionable
-  // "no upstream provider configured" message when the provider list is
-  // empty; surface it the same way here so /v1/models keeps its 502 +
-  // hint behavior on a brand-new gateway. `preFetchedUpstreams` avoids
-  // an additional round-trip when the caller has the list already.
+  // paid once per call. An empty provider selection yields an empty
+  // addressable surface. `preFetchedUpstreams` avoids an additional
+  // round-trip when the caller has the list already.
   const providers = await listModelProviders(upstreamFilter, preFetchedUpstreams);
+  if (providers.length === 0 && upstreamFilter !== null) return [];
   const { models: realModels, upstreamsByPublicId } = getModelsFromProviders(providers, scheduleRefresh);
   const byId = new Map(realModels.map(model => [model.id, model] as const));
 
@@ -126,5 +127,37 @@ export const enumerateAddressableModelIds = async (
 
   // Stable id ordering matches the listed surface so consumers can rely on
   // a single comparator across both halves.
-  return entries.sort((a, b) => compareModelIds(a.id, b.id));
+  const checks = entries.flatMap(entry => entry.upstreams.map(upstream => ({
+    entry,
+    upstream,
+    check: {
+      target: { kind: 'upstreamModel' as const, upstreamId: upstream.upstreamId, model: { kind: 'exact' as const, value: entry.id } },
+      requirement: { permission: 'Model.Use' as const },
+    },
+  })));
+  const allowed = await checkMany(subject, checks.map(item => item.check));
+  const allowedByEntry = new Map<AddressableIdEntry, Provider[]>();
+  for (let index = 0; index < checks.length; index++) {
+    if (!allowed[index]) continue;
+    const item = checks[index]!;
+    const current = allowedByEntry.get(item.entry);
+    if (current) current.push(item.upstream);
+    else allowedByEntry.set(item.entry, [item.upstream]);
+  }
+
+  return entries.flatMap(entry => {
+    const allowedUpstreams = allowedByEntry.get(entry);
+    if (!allowedUpstreams?.length) return [];
+    if (entry.model.providerModels === undefined) throw new Error(`Addressable real model ${entry.id} has no providerModels`);
+    const rebuilt = new Map<string, InternalModel>();
+    const rebuiltUpstreams = new Map<string, Provider[]>();
+    for (const upstream of allowedUpstreams) {
+      const providerModel = entry.model.providerModels[upstream.upstreamId];
+      if (providerModel === undefined) throw new Error(`Addressable model ${entry.id} is missing provider data for ${upstream.upstreamId}`);
+      mergeIntoCatalog(rebuilt, rebuiltUpstreams, upstream, providerModel, entry.model.id);
+    }
+    const model = rebuilt.get(entry.model.id);
+    if (model === undefined) throw new Error(`Failed to rebuild authorized model ${entry.id}`);
+    return [{ ...entry, model, upstreams: allowedUpstreams }];
+  }).sort((a, b) => compareModelIds(a.id, b.id));
 };

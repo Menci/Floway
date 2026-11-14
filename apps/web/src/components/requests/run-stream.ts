@@ -1,5 +1,5 @@
-import { createRunReader, type DumpEvent } from '@floway-dev/pipeline';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { createRunReader, type DumpEvent } from '@floway-dev/pipeline/browser';
+import type { ProtocolFrame } from '@floway-dev/protocols/browser';
 
 export interface RecordedClientStream {
   readonly frames: readonly ProtocolFrame<unknown>[];

@@ -5,7 +5,7 @@ import { test } from 'vitest';
 import { writeSSEFrames } from '../../../src/data-plane/shared/sse.ts';
 import { FakeTime } from '../../test-time.ts';
 import { parseSSEStream } from '@floway-dev/protocols/common';
-import { sseCommentFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
+import { sseCommentFrame, type SseFrame, type SseWritableFrame, sseFrame, sseRawFrame } from '@floway-dev/protocols/common';
 import { assertEquals } from '@floway-dev/test-utils';
 
 interface Deferred<T> {
@@ -76,7 +76,7 @@ const waitForIteratorReturn = async (events: ReturnType<typeof createIdleSSEEven
   throw new Error('SSE iterator was not stopped');
 };
 
-const requestSSE = async (events: AsyncIterable<SseFrame>, options: NonNullable<Parameters<typeof writeSSEFrames>[2]>): Promise<Response> => {
+const requestSSE = async (events: AsyncIterable<SseWritableFrame>, options: NonNullable<Parameters<typeof writeSSEFrames>[2]>): Promise<Response> => {
   const app = new Hono();
   app.get('/', c =>
     streamSSE(c, async stream => {
@@ -242,4 +242,14 @@ test('writeSSEFrames aborts a pending upstream SSE reader when the downstream re
     await pendingRead.catch(() => {});
     await cancelResponse?.catch(() => {});
   }
+});
+
+test('writeSSEFrames writes a raw frame without SSE field framing', async () => {
+  const data = JSON.stringify({ error: { code: 500, status: 'INTERNAL', message: 'failure' } });
+  const frames = async function* () {
+    yield sseFrame('{"candidates":[]}');
+    yield sseRawFrame(data);
+  };
+  const response = await requestSSE(frames(), {});
+  assertEquals(await response.text(), `data: {"candidates":[]}\n\n${data}`);
 });

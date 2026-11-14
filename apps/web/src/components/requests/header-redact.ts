@@ -8,6 +8,8 @@ const SENSITIVE_HEADERS = new Set([
   'x-goog-api-key',
 ]);
 
+export const REDACTED_HEADER_VALUE = '[redacted]';
+
 export const isSensitiveHeader = (name: string) => SENSITIVE_HEADERS.has(name.toLowerCase());
 
 export const redactHeaderValue = (value: string): string => {

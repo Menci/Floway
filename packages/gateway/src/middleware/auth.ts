@@ -4,7 +4,8 @@ import { getRepo } from '../repo/index.ts';
 import type { ApiKey, User } from '../repo/types.ts';
 import { getEnvOptional, timingSafeEqual } from '@floway-dev/platform';
 
-const PUBLIC_PATHS = new Set(['/api/health', '/favicon.ico']);
+// The site name is branding the sign-in page needs before anyone authenticates.
+const PUBLIC_PATHS = new Set(['/api/health', '/api/site-settings', '/favicon.ico']);
 const AUTH_VALIDATE_PATHS = new Set(['/auth/login']);
 
 // The three slots auth middleware stamps on every authenticated request. All
@@ -121,20 +122,8 @@ export const userFromContext = (c: AuthedContext): User => {
 
 export const sessionIdFromContext = (c: AuthedContext): string | undefined => c.get('sessionId');
 
-// Per-user upstream cap. null = unrestricted at the user level.
-export const userUpstreamIdsFromContext = (c: AuthedContext): readonly string[] | null =>
-  c.get('user')?.upstreamIds ?? null;
-
-// Effective upstream whitelist for this request: intersect the per-user cap
-// with the per-key whitelist. null = unrestricted. Session-only requests
-// resolve to the per-user cap alone (apiKey is absent). Data-plane reads
-// this to constrain provider/candidate selection.
-export const effectiveUpstreamIdsFromContext = (c: AuthedContext): readonly string[] | null => {
-  const userIds = c.get('user')?.upstreamIds ?? null;
-  const keyIds = c.get('apiKey')?.upstreamIds ?? null;
-  if (userIds === null && keyIds === null) return null;
-  if (userIds === null) return keyIds;
-  if (keyIds === null) return userIds;
-  const userSet = new Set(userIds);
-  return keyIds.filter(id => userSet.has(id));
-};
+// A key can only narrow the subject's Model.Use grants. Sessions carry no key
+// restriction, so null means the access-control resolver may consider every
+// upstream before applying the user's grants.
+export const effectiveUpstreamIdsFromContext = (c: AuthedContext): readonly string[] | null =>
+  c.get('apiKey')?.upstreamIds ?? null;

@@ -1,15 +1,15 @@
 import { wrapGeminiGenerateContentAffinityEgress } from './affinity/egress.ts';
-import { mintGeminiGenerateContentFailure } from './errors.ts';
+import { renderGeminiGenerateContentFailure, mintGeminiGenerateContentInternalFailure } from './errors.ts';
 import type { Fields } from './facts.ts';
-import { isFailure, renderFailure } from '../../pipeline/facts.ts';
+import { isFailure } from '../../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { bindClientRelease, collectClientFrames, framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
 import { recordStream } from '@floway-dev/dump';
 import { defineStage, move } from '@floway-dev/pipeline';
-import { eventFrame, sseFrame, type EventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
+import { eventFrame, type EventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { collectGeminiGenerateContentProtocolEventsToResult, geminiGenerateContentProtocolFrameToSSEFrame, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { toInternalDebugError } from '@floway-dev/provider';
 
 /**
@@ -51,7 +51,7 @@ export const emitGeminiGenerateContent = defineStage<
     const forClient = forwardable.length === headers.length ? headers : move(forwardable);
 
     if (isFailure(answer)) {
-      const failure = renderFailure(answer, mintGeminiGenerateContentFailure);
+      const failure = renderGeminiGenerateContentFailure(answer);
       return {
         ...rest,
         'response.chat.clientFrames': null,
@@ -92,7 +92,7 @@ export const emitGeminiGenerateContent = defineStage<
     }
     const completed = framedClientStream(
       clientFrames(egress),
-      frame => sseFrame(JSON.stringify(frame.event)),
+      frame => geminiGenerateContentProtocolFrameToSSEFrame(frame)!,
       error => [eventFrame(geminiStreamError(error))],
       use.gateway.dump,
     );
@@ -114,8 +114,5 @@ const clientFrames = (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentS
   })(),
 });
 
-const geminiStreamError = (error: unknown): GeminiGenerateContentStreamEvent => {
-  const debug = toInternalDebugError(error, 'geminiGenerateContent');
-  const envelope = mintGeminiGenerateContentFailure({ status: 500, message: debug.message }).body;
-  return { error: { ...(envelope.error as { code: number; message: string; status: string }), ...debug } };
-};
+const geminiStreamError = (error: unknown): GeminiGenerateContentStreamEvent =>
+  mintGeminiGenerateContentInternalFailure(500, toInternalDebugError(error, 'geminiGenerateContent')).body;

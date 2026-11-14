@@ -2,11 +2,10 @@ import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { meterChatWire } from '../meter.ts';
 import { billableUsageFromOpenAIResponsesEvent } from './usage.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
-import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatUsageMeasurement, type ChatBillableUsage } from '../shared/usage.ts';
 import { defer, type Deferred } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { isOpenAIResponsesTerminalEvent, OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesTerminalEvent, OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 export const meterUsage = (streamedUsage: string) => meterChatWire({
@@ -21,10 +20,9 @@ export const meterUsage = (streamedUsage: string) => meterChatWire({
  *  lifecycle envelopes, and only one carrying real counts replaces the running figure, so an
  *  envelope that states none cannot wipe a good reading. */
 const meterOpenAIResponses = (
-  source: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
+  source: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   identity: TelemetryModelIdentity,
-  attempt: { firstOutputTokenAt: number | null },
-): { readonly frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>; readonly outcome: Deferred<StreamOutcome> } => {
+): { readonly frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>; readonly outcome: Deferred<StreamOutcome> } => {
   const completion = Promise.withResolvers<StreamOutcome>();
   const outcome = defer(completion.promise);
   let settled = false;
@@ -44,17 +42,14 @@ const meterOpenAIResponses = (
     };
     try {
       for await (const frame of source) {
-        // Time to first token is measured where the token is, which is the only place that
-        // knows a frame carries generated content rather than the envelope around it.
-        if (attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, 'openaiResponses')) {
-          attempt.firstOutputTokenAt = performance.now();
-        }
         if (frame.type !== 'event') {
           yield frame;
           continue;
         }
         const usage = billableUsageFromOpenAIResponsesEvent(frame.event);
         if (usage !== null) reported = usage;
+        // A standalone `error` event ends a stream that may never send a terminal resource.
+        if (frame.event.type === 'error') failed = true;
         // Read off the frame rather than off having been resumed past it. The stage that
         // stores the turn's items stops reading at the terminal event, so the resumption
         // never comes: what this loop would learn from it is already true when the frame
@@ -62,7 +57,7 @@ const meterOpenAIResponses = (
         // anything downstream asked for another.
         if (isOpenAIResponsesTerminalEvent(frame.event)) {
           sawTerminal = true;
-          failed = frame.event.type === 'response.failed' || frame.event.type === 'error';
+          failed ||= frame.event.type === 'response.failed';
           finish();
         }
         yield frame;
@@ -71,8 +66,10 @@ const meterOpenAIResponses = (
         // open with it; returning here closes the read, which cancels the upstream.
         if (sawTerminal) return;
       }
-      // Frames ran out with no terminal event, which is a turn nobody can answer from: the
-      // response was never stated complete, incomplete or failed.
+      // Frames ran out with no terminal event. After a standalone `error` event that is how the
+      // upstream ended the turn; otherwise it is a turn nobody can answer from: the response was
+      // never stated complete, incomplete or failed.
+      if (failed) return;
       throw new Error(OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE);
     } finally {
       // Reached however the frames ended — the terminal event, a client that stopped

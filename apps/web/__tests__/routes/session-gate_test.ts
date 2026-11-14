@@ -25,7 +25,7 @@ describe('route session gates', () => {
     for (const file of routeFiles(routeConfig)) {
       const source = routeSources[`../../src/${file}`];
       expect(source, file).toBeDefined();
-      expect(source, file).toMatch(/export (?:async )?function clientLoader\b/);
+      expect(source, file).toMatch(/export (?:async )?function clientLoader\b|export const clientLoader\s*=\s*(?:async\s*)?\(/);
     }
   });
 });

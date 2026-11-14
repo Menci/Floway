@@ -2,10 +2,9 @@ import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { meterChatWire } from '../meter.ts';
 import { createAnthropicMessagesBillableUsageReader } from './usage.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
-import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatUsageMeasurement, type ChatBillableUsage } from '../shared/usage.ts';
 import { defer, type Deferred } from '@floway-dev/pipeline';
-import { ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
@@ -21,10 +20,9 @@ export const meterUsage = (streamedUsage: string) => meterChatWire({
  *  `message_start` and output accounting on `message_delta`, so the reader that merges the
  *  two is per-stream state and is made here rather than shared. */
 const meterAnthropicMessages = (
-  source: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
+  source: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
   identity: TelemetryModelIdentity,
-  attempt: { firstOutputTokenAt: number | null },
-): { readonly frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>; readonly outcome: Deferred<StreamOutcome> } => {
+): { readonly frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>; readonly outcome: Deferred<StreamOutcome> } => {
   const completion = Promise.withResolvers<StreamOutcome>();
   const outcome = defer(completion.promise);
   let settled = false;
@@ -45,11 +43,6 @@ const meterAnthropicMessages = (
     };
     try {
       for await (const frame of source) {
-        // Time to first token is measured where the token is, which is the only place that
-        // knows a frame carries generated content rather than the envelope around it.
-        if (attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, 'anthropicMessages')) {
-          attempt.firstOutputTokenAt = performance.now();
-        }
         if (frame.type === 'event') {
           const usage = readBillableUsage(frame.event);
           if (usage !== null) reported = usage;
@@ -81,7 +74,7 @@ const meterAnthropicMessages = (
 /** What ends an Anthropic Messages turn. Anthropic's own stream terminator is an event rather than a
  *  transport sentinel, and a stream that failed mid-turn says so with `error` in place of the
  *  `message_stop` that will now never come. */
-const isAnthropicMessagesTerminalFrame = (frame: ProtocolFrame<AnthropicMessagesStreamEvent>): boolean =>
+const isAnthropicMessagesTerminalFrame = (frame: ProtocolFrame<AnthropicMessagesStreamEventEx>): boolean =>
   frame.type === 'event' && (frame.event.type === 'message_stop' || frame.event.type === 'error');
 
 /** What one attempt is billable for. An upstream that reported nothing leaves no quantities

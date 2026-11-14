@@ -1,7 +1,7 @@
 // Tunable constants exposed to consumers that don't want to pull the dial
 // runtime. Values live here rather than on dialer.ts so importing a
-// constant doesn't drag the protocol runners + userspace TLS stack into
-// the consumer's bundle.
+// constant doesn't drag the protocol runners and TLS stack into the
+// consumer's bundle.
 
 // Hard ceiling on the time the dial layer is allowed to spend before
 // callers should give up on this entry. Covers TCP connect + outer-TLS +

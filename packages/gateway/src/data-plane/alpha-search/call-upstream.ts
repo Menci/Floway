@@ -1,41 +1,13 @@
-import type { PinnedSearchUpstream, Fields } from './facts.ts';
+import type { Fields } from './facts.ts';
 import { parseAlphaSearchResponse } from './protocol.ts';
 import { providerEntry } from '../pipeline/provider-entry.ts';
 import { providerUsage } from '../pipeline/provider-usage.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { dialFailure, spentBody } from '../pipeline/upstream-body.ts';
-import { enumerateModelCandidates } from '../providers/resolution.ts';
-import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { telemetryModelIdentity } from '../shared/telemetry/attribution.ts';
 import { exchangeResponse } from '@floway-dev/http/pipeline';
 import { defineStage, move } from '@floway-dev/pipeline';
-import { type ModelCandidate, type ProviderRequest, type ProviderResponse, type ProviderOperationPayloads } from '@floway-dev/provider';
-
-/**
- * A misconfigured pin is the operator's to see with its stack, the way the gateway surfaces
- * any internal failure. It is not a failure value: a failure value exists so an earlier stage
- * can fail over it, and there is no earlier stage here with anywhere to go.
- */
-const resolvePinnedUpstream = async (pinned: PinnedSearchUpstream, gateway: GatewayCtx): Promise<ModelCandidate> => {
-  if (gateway.upstreamIds !== null && !gateway.upstreamIds.includes(pinned.upstreamId)) {
-    throw new Error('Selected OpenAI search upstream is outside this API key scope');
-  }
-  const { candidates } = await enumerateModelCandidates({
-    upstreamIds: [pinned.upstreamId],
-    model: pinned.model,
-    kind: 'chat',
-    scheduler: gateway.backgroundScheduler,
-    runtimeLocation: gateway.runtimeLocation,
-  });
-  const candidate = candidates.find(value => value.provider.upstreamId === pinned.upstreamId);
-  if (candidate === undefined) {
-    throw new Error(`Selected OpenAI search model ${pinned.model} is unavailable`);
-  }
-  if (candidate.provider.kind !== 'codex' && candidate.provider.kind !== 'custom') {
-    throw new Error('Selected upstream does not support OpenAI search passthrough');
-  }
-  return candidate;
-};
+import { type ProviderRequest, type ProviderResponse, type ProviderOperationPayloads } from '@floway-dev/provider';
 
 /** Codex projects one per-turn metadata snapshot onto several surfaces, and `SearchRequest`
  *  carries no field for it — so on this endpoint the header is the whole of that surface, and
@@ -63,8 +35,8 @@ const asJson = (raw: string): unknown => {
  * what the call is billable for. A failure is a value here as everywhere, even though this
  * family has nothing that fails over it: the edge is what turns one into a status and a body.
  */
-export const callSearchUpstream = (pinned: PinnedSearchUpstream) => defineStage<
-  Fields<'request.search.alphaSearch' | 'ingress.http.headers'>,
+export const callSearchUpstream = defineStage<
+  Fields<'request.search.alphaSearch' | 'ingress.http.headers' | 'route.attempt'>,
   ProviderRequest<ProviderOperationPayloads['alphaSearch']>,
   ProviderResponse,
   Fields<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers' | 'response.http.status' | 'response.http.body'>,
@@ -72,20 +44,19 @@ export const callSearchUpstream = (pinned: PinnedSearchUpstream) => defineStage<
 >({
   name: 'callSearchUpstream',
   into: {
-    request: { needs: ['request.search.alphaSearch', 'ingress.http.headers'], consumes: [], provides: ['request.provider.model', 'request.provider.payload', 'request.http.callId', 'request.http.headers'] },
+    request: { needs: ['request.search.alphaSearch', 'ingress.http.headers', 'route.attempt'], consumes: [], provides: ['request.provider.model', 'request.provider.payload', 'request.http.callId', 'request.http.headers'] },
     response: { needs: ['response.http.exchange', 'response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls', 'response.http.body'], consumes: ['response.http.exchange', 'response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls'], provides: ['response.search.alphaSearch', 'response.usage.billable', 'response.http.headers', 'response.http.status', 'response.http.body'] },
   },
   execute: async (facts, next, use) => {
-    const candidate = await resolvePinnedUpstream(pinned, use.gateway);
+    const candidate = use.resolveAttempt(facts['route.attempt']);
     // The caller's model is dropped: this endpoint is pinned to the operator's model, and the
     // provider stamps that one on the way out.
     // TODO: pin SearchRequest.id to one provider account when Codex upstreams support account
     // pools. The current Codex provider has one active account.
     const { model: _named, ...request } = facts['request.search.alphaSearch'];
-    const selector = use.rememberCandidates([candidate])[0]!;
     const pipeline = candidate.provider.pipelines.alphaSearch;
     if (pipeline === undefined) throw new Error(`Provider ${candidate.provider.kind} has no Alpha Search pipeline`);
-    const back = await next(providerEntry({ ...facts, 'route.attempt': selector }, candidate, request, [...turnMetadataHeaders(facts['ingress.http.headers'])]), pipeline);
+    const back = await next(providerEntry(facts, candidate, request, [...turnMetadataHeaders(facts['ingress.http.headers'])]), pipeline);
     const { 'response.http.exchange': exchange, 'response.provider.modelKey': modelKey, 'response.provider.called': wasCalled, 'response.provider.previousCalls': _previousCalls, ...rest } = back;
     if (exchange.type === 'transportFailure') {
       return move({ ...rest, 'response.search.alphaSearch': dialFailure(exchange.error), 'response.usage.billable': providerUsage(candidate, back, []), 'response.http.headers': [], 'response.http.status': 502 });

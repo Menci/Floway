@@ -84,7 +84,7 @@ test('an actual upstream quantity-formatting fault rejects produced usage with t
   try { await reading; } catch (error) { original = error; }
   expect(original).toBeInstanceOf(TypeError);
   expect((original as Error).message).toContain('Infinity');
-  expect(JSON.parse(sent.at(-1)!.data)).toMatchObject({ error: { name: 'TypeError', message: (original as Error).message } });
+  expect(JSON.parse(sent.at(-1)!.data)).toMatchObject({ error: { provider_specific_fields: { name: 'TypeError' }, message: (original as Error).message } });
   expect(executed.facts['response.usage.billable']).toMatchObject([{ quantities: {} }]);
   expect(calls()).toBe(1);
   let teardown: unknown;

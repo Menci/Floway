@@ -2,25 +2,16 @@
 // six per-dimension breakdown tables, and dropdown menus, all built by the
 // database overview aggregate.
 //
-// The requested breakdown decides the scope. `group_by=keyId` is inherently a
-// question about the actor's own traffic, so it aggregates the actor's keys
-// (active + soft-deleted) alone; every other breakdown — including the `model`
-// default — aggregates all users' rows. Latency is not sensitive on its own, so
-// that cross-user read is open to every user.
-//
-// Per-user attribution is the administrator-only part — the By-User rows, the
-// username listing, the userId dropdown, `group_by=userId`, and
-// `filter_user_id`. A regular user sees the whole picture without learning who
-// produced which row. API-key axes, key metadata, and `filter_key_id` stay
-// scoped to the actor's own keys in every breakdown, so other users' key ids
-// never surface either.
+// Resource and user breakdowns follow the same Audit visibility as token usage.
+// Unfiltered non-key queries retain a global `none` axis as an explicit latency
+// exception. API-key axes and key metadata stay scoped to the actor's own keys.
 
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { PerformanceOverviewGroupBy } from '../../repo/types.ts';
 import type { performanceQuery } from '../schemas.ts';
-import { createTelemetryBucket, type TelemetryBucketGranularity } from '../shared/telemetry-bucket.ts';
-import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
+import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata, telemetryUpstreamMetadata } from '../shared/telemetry-overview.ts';
+import { createTelemetryBucket, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
 
 type Ctx = CtxWithQuery<typeof performanceQuery>;
 
@@ -74,12 +65,14 @@ export const performanceOverview = async (c: Ctx) => {
 
   const repo = getRepo();
   const identity = await loadTelemetryOverviewIdentity(c);
-  const identityError = telemetryIdentityError(identity, groupBy, filters.userId, filters.keyId);
+  const identityError = telemetryIdentityError(identity, filters.keyId);
   if (identityError !== null) return c.json({ error: identityError.error }, identityError.status);
 
-  const overview = await repo.performance.queryOverview({
+  const query = {
     actorUserId: identity.actor.id,
     isAdmin: identity.actor.isAdmin,
+    visibleUserIds: [...identity.visibleUserIds],
+    visibleUpstreams: [...identity.visibleUpstreams],
     start,
     end,
     groupBy,
@@ -93,14 +86,32 @@ export const performanceOverview = async (c: Ctx) => {
     },
     bucketForHour: createTelemetryBucket({
       bucket,
+      start,
       timeZone: params.value.timeZone,
       timezoneOffsetMinutes,
     }),
-  });
-  const metadata = telemetryIdentityMetadata(identity);
+  } as const;
+  const [overview, global] = await Promise.all([
+    repo.performance.queryOverview(query),
+    identity.actor.isAdmin
+      || groupBy === 'keyId'
+      || Object.values(filters).some(values => values.size > 0)
+      ? Promise.resolve(null)
+      : repo.performance.queryOverview({
+          ...query,
+          isAdmin: true,
+          visibleUserIds: [],
+          visibleUpstreams: [],
+          groupBy: 'model',
+          filters: { keyIds: [], userIds: [], models: [], upstreams: [], operations: [], runtimeLocations: [] },
+        }),
+  ]);
+  if (global) overview.axes.none = global.axes.none;
+  const metadata = telemetryIdentityMetadata(identity, overview.dimensionValues.userIds);
 
   return c.json({
     ...overview,
     ...metadata,
+    upstreams: telemetryUpstreamMetadata(identity, overview.dimensionValues.upstreams),
   });
 };

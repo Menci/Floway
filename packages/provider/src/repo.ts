@@ -1,4 +1,5 @@
 import type { UpstreamRecord } from './model.ts';
+import type { UpstreamMetricLabels } from './upstream-metric-identity.ts';
 
 // Slim upstream-state surface for providers that own runtime state (e.g.
 // Codex's rotated tokens). Reached from the data plane as a request runs and
@@ -29,6 +30,7 @@ export class UpstreamGoneError extends Error {
 }
 
 export interface ProviderRepo {
+  recordUpstreamMetric(upstreamId: string, name: string, labels: UpstreamMetricLabels, value: number, timestamp: number): Promise<void>;
   upstreams: UpstreamsRepoSlim;
 }
 

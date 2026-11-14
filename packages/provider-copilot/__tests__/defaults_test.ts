@@ -15,7 +15,11 @@ const model = (id: string): Omit<ProviderModel, 'enabledFlags'> => ({
   limits: {},
 });
 
-const OVERLAY_ON = { 'rewrite-mid-conv-system-to-user': true } as const;
+const DISALLOWED_ONLY = { 'rewrite-disallowed-mid-conv-system-to-user': true } as const;
+const REWRITE_ALL = {
+  'rewrite-disallowed-mid-conv-system-to-user': true,
+  'rewrite-mid-conv-system-to-user': true,
+} as const;
 const OVERLAY_OFF = {} as const;
 
 // Copilot's public model ids arrive here in dash-separated minor form
@@ -26,24 +30,24 @@ const OVERLAY_OFF = {} as const;
 // is the sole gate, so a future `claude-<newfamily>-<N.M>` routes the
 // same way as opus/sonnet/haiku.
 test('defaultFlagsForCopilotModel forces the system rewrite on Claude < 4.8', () => {
-  assertEquals(defaultFlagsForCopilotModel(model('claude-opus-4-7')), OVERLAY_ON);
-  assertEquals(defaultFlagsForCopilotModel(model('claude-sonnet-4-6')), OVERLAY_ON);
-  assertEquals(defaultFlagsForCopilotModel(model('claude-haiku-4-5')), OVERLAY_ON);
-  assertEquals(defaultFlagsForCopilotModel(model('claude-opus-3-5')), OVERLAY_ON);
-  assertEquals(defaultFlagsForCopilotModel(model('claude-newfamily-4-7')), OVERLAY_ON);
+  assertEquals(defaultFlagsForCopilotModel(model('claude-opus-4-7')), REWRITE_ALL);
+  assertEquals(defaultFlagsForCopilotModel(model('claude-sonnet-4-6')), REWRITE_ALL);
+  assertEquals(defaultFlagsForCopilotModel(model('claude-haiku-4-5')), REWRITE_ALL);
+  assertEquals(defaultFlagsForCopilotModel(model('claude-opus-3-5')), REWRITE_ALL);
+  assertEquals(defaultFlagsForCopilotModel(model('claude-newfamily-4-7')), REWRITE_ALL);
 });
 
-test('defaultFlagsForCopilotModel leaves the system rewrite inherited for Claude >= 4.8', () => {
-  assertEquals(defaultFlagsForCopilotModel(model('claude-opus-4-8')), OVERLAY_OFF);
-  assertEquals(defaultFlagsForCopilotModel(model('claude-opus-5-0')), OVERLAY_OFF);
-  assertEquals(defaultFlagsForCopilotModel(model('claude-sonnet-5')), OVERLAY_OFF);
-  assertEquals(defaultFlagsForCopilotModel(model('claude-haiku-6')), OVERLAY_OFF);
-  assertEquals(defaultFlagsForCopilotModel(model('claude-newfamily-5-0')), OVERLAY_OFF);
+test('defaultFlagsForCopilotModel rewrites only invalid placement for Claude >= 4.8', () => {
+  assertEquals(defaultFlagsForCopilotModel(model('claude-opus-4-8')), DISALLOWED_ONLY);
+  assertEquals(defaultFlagsForCopilotModel(model('claude-opus-5-0')), DISALLOWED_ONLY);
+  assertEquals(defaultFlagsForCopilotModel(model('claude-sonnet-5')), DISALLOWED_ONLY);
+  assertEquals(defaultFlagsForCopilotModel(model('claude-haiku-6')), DISALLOWED_ONLY);
+  assertEquals(defaultFlagsForCopilotModel(model('claude-newfamily-5-0')), DISALLOWED_ONLY);
 });
 
 test('defaultFlagsForCopilotModel accepts dotted minor form for forward-compat', () => {
-  assertEquals(defaultFlagsForCopilotModel(model('claude-opus-4.7')), OVERLAY_ON);
-  assertEquals(defaultFlagsForCopilotModel(model('claude-opus-4.8')), OVERLAY_OFF);
+  assertEquals(defaultFlagsForCopilotModel(model('claude-opus-4.7')), REWRITE_ALL);
+  assertEquals(defaultFlagsForCopilotModel(model('claude-opus-4.8')), DISALLOWED_ONLY);
 });
 
 test('defaultFlagsForCopilotModel returns empty for non-Claude ids', () => {
@@ -56,7 +60,7 @@ test('defaultFlagsForCopilotModel falls back to rewrite-on when a Claude id carr
   // Safer than defaulting off — a Claude id we cannot version-parse
   // might route through Vertex, which still rejects inline system turns.
   // Only a positive supportsInlineSystem match (regex + `>= 4.8` version
-  // tuple) flips the overlay to empty.
-  assertEquals(defaultFlagsForCopilotModel(model('claude-opus')), OVERLAY_ON);
-  assertEquals(defaultFlagsForCopilotModel(model('claude-sonnet-4-5-20250929')), OVERLAY_ON);
+  // tuple) narrows the overlay to invalid-placement rewriting.
+  assertEquals(defaultFlagsForCopilotModel(model('claude-opus')), REWRITE_ALL);
+  assertEquals(defaultFlagsForCopilotModel(model('claude-sonnet-4-5-20250929')), REWRITE_ALL);
 });

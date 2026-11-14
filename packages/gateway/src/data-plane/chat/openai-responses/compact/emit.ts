@@ -11,7 +11,7 @@ import { internalErrorEnvelope } from '../errors.ts';
 import { recordStream } from '@floway-dev/dump';
 import { defineStage, move, defer, type Deferred } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectOpenAIResponsesProtocolEventsToResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { collectOpenAIResponsesProtocolEventsToResult, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 /**
  * The outermost edge.
@@ -71,7 +71,7 @@ export const emitOpenAIResponsesCompaction = defineStage<
       // the ids the resource below is assembled under. Reading is what records, and the fold
       // on the next line is the read.
       const frames = recordStream(
-        wrapOpenAIResponsesStatefulOutput(answer.frames as AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>, use.gateway),
+        wrapOpenAIResponsesStatefulOutput(answer.frames as AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>, use.gateway),
         use.gateway.dump,
       );
       const persisted = await collectClientFrames(frames, collectOpenAIResponsesProtocolEventsToResult);

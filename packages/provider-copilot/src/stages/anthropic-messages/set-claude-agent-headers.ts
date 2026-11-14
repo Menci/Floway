@@ -58,7 +58,7 @@ export const copilotAnthropicMessagesSetClaudeAgentHeaders = defineStage<Message
       return move({ ...await next(move({ ...facts, 'request.http.headers': headers })) });
     }
 
-    const { safetyIdentifier, sessionId } = parseUserIdMetadata(payload.metadata?.user_id);
+    const { safetyIdentifier, sessionId } = parseUserIdMetadata(payload.metadata?.user_id ?? undefined);
     if (safetyIdentifier && sessionId) {
       headers = replaceHttpHeader(headers, 'x-interaction-type', 'messages-proxy');
       headers = replaceHttpHeader(headers, 'openai-intent', 'messages-proxy');

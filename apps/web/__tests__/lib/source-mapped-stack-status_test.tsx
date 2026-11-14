@@ -60,9 +60,10 @@ describe('what the error page is told about its trace', () => {
   it('replaces the trace once the maps land', async () => {
     vi.stubEnv('DEV', false);
     renderInApp(<Probe stack={RAW} />);
-    // Waited for rather than drained once: restoring a frame fetches the script and then its
-    // map, and reading each body is a real stream read rather than a microtask, so how many
-    // turns the chain takes is the machine's business and not this test's.
+    // Waited for rather than drained once: the restoration loads its source map library through
+    // a dynamic import, which the test runner serves as module I/O, and then reads the script and
+    // map bodies as real stream reads. None of these is a microtask, so how many turns the chain
+    // takes is the machine's business and not this test's.
     await waitFor(() => expect(read()).toEqual({ status: 'settled', stack: 'Error: boom\n    at handler (/src/first.ts:1:1)' }));
   });
 
@@ -77,7 +78,7 @@ describe('what the error page is told about its trace', () => {
   it('goes back to waiting when a second failure replaces the first', async () => {
     vi.stubEnv('DEV', false);
     const { rerender } = renderInApp(<Probe stack={RAW} />);
-    await settle();
+    await waitFor(() => expect(read().status).toBe('settled'));
     const second = `Error: later\n    at other (${SCRIPT}:1:1)`;
     rerender(<Probe stack={second} />);
     expect(read()).toEqual({ status: 'loading', stack: second });

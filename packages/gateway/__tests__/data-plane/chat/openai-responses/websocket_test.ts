@@ -2,8 +2,10 @@ import type { ExecutionContext } from 'hono';
 import { onTestFinished, test, vi } from 'vitest';
 
 import { app } from '../../../../src/app.ts';
+import { INTERRUPT_UPSTREAM_ABORT_WARNING_MS } from '../../../../src/data-plane/chat/openai-responses/interrupt-websocket.ts';
 import { hashOpenAIResponsesItem } from '../../../../src/data-plane/chat/openai-responses/items/identity.ts';
-import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/openai-responses/websocket.ts';
+import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/openai-responses/project-websocket.ts';
+import { OPENAI_RESPONSES_REASONING_INCLUDED_HEADER } from '../../../../src/data-plane/chat/openai-responses/response-headers.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
@@ -67,7 +69,7 @@ const terminalResponseId = (messages: readonly Record<string, unknown>[]): strin
   return id;
 };
 
-const connectOpenAIResponsesWebSocket = async (apiKey: string, upgradeHeaders: Record<string, string> = {}): Promise<TestWorkerWebSocket> => {
+const connectOpenAIResponsesWebSocketUpgrade = async (apiKey: string, upgradeHeaders: Record<string, string> = {}): Promise<{ client: TestWorkerWebSocket; response: Response }> => {
   await warmModelsForTest();
   const executionCtx = {
     waitUntil: () => {},
@@ -87,8 +89,11 @@ const connectOpenAIResponsesWebSocket = async (apiKey: string, upgradeHeaders: R
   const runtime = activeRuntime();
   const pair = runtime.pairs.at(-1);
   assertExists(pair);
-  return pair.client;
+  return { client: pair.client, response };
 };
+
+const connectOpenAIResponsesWebSocket = async (apiKey: string, upgradeHeaders: Record<string, string> = {}): Promise<TestWorkerWebSocket> =>
+  (await connectOpenAIResponsesWebSocketUpgrade(apiKey, upgradeHeaders)).client;
 
 let currentRuntime: ReturnType<typeof installWorkerWebSocketRuntime> | undefined;
 
@@ -126,7 +131,6 @@ const withSuccessfulOpenAIResponsesUpstream = async <T>(run: () => Promise<T>): 
           model: 'gpt-direct-responses',
           status: 'completed',
           output: [],
-          output_text: 'done',
           usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
         });
       }
@@ -152,6 +156,15 @@ const completeOpenAIResponsesTurn = async (
   await waitForMicrotasks();
 };
 
+test('OpenAI Responses WebSocket handshake declares historical reasoning accounting', async () => {
+  const { apiKey } = await setupAppTest();
+  await withSuccessfulOpenAIResponsesUpstream(async () => await withWorkerWebSocketRuntime(async () => {
+    const { client, response } = await connectOpenAIResponsesWebSocketUpgrade(apiKey.key);
+    assertEquals(response.headers.get(OPENAI_RESPONSES_REASONING_INCLUDED_HEADER), 'true');
+    client.close();
+  }));
+});
+
 test('OpenAI Responses WebSocket forwards stream events, echoes event_id, and ends the turn on the terminal event', async () => {
   const { apiKey } = await setupAppTest();
   await withMockedFetch(
@@ -171,7 +184,6 @@ test('OpenAI Responses WebSocket forwards stream events, echoes event_id, and en
           model: 'gpt-direct-responses',
           status: 'completed',
           output: [],
-          output_text: 'done',
           usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
         });
       }
@@ -424,7 +436,9 @@ test('OpenAI Responses WebSocket reports a failed turn when an output item canno
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
-  const persistence = vi.spyOn(repo.openaiResponsesItems, 'insertMany').mockRejectedValue(new Error('simulated item persistence failure'));
+  const nested = new TypeError('nested persistence'); nested.stack = 'TypeError: nested persistence\n  at database';
+  const failure = new Error('simulated item persistence failure', { cause: nested }); failure.stack = 'Error: simulated item persistence failure\n  at persistence';
+  const persistence = vi.spyOn(repo.openaiResponsesItems, 'insertMany').mockRejectedValue(failure);
   try {
     await withMockedFetch(
       async request => {
@@ -449,7 +463,6 @@ test('OpenAI Responses WebSocket reports a failed turn when an output item canno
               status: 'completed',
               content: [{ type: 'output_text', text: 'done', annotations: [] }],
             }],
-            output_text: 'done',
             usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
           });
         }
@@ -472,12 +485,26 @@ test('OpenAI Responses WebSocket reports a failed turn when an output item canno
         const error = messages.find(message => message.type === 'error') as { status?: unknown; error?: { message?: unknown } } | undefined;
         assertExists(error);
         assertEquals(error.status, 500);
-        assertEquals(error.error?.message, 'simulated item persistence failure');
+        assertEquals(error.error, { type: 'internal_error', code: 'internal_error', message: 'simulated item persistence failure', provider_specific_fields: { name: 'Error', stack: failure.stack, cause: { name: 'TypeError', message: 'nested persistence', stack: nested.stack } } });
+        assertEquals((error as Record<string, unknown>).event_id, 'evt_persist_failure');
         assert(!messages.some(message => message.type === 'response.output_item.done'));
         assert(!messages.some(isTerminalResponseEvent));
         await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
         assertEquals(recordedClientEvents(dumps.stored[0]?.record), messages);
         assertEquals(dumps.stored[0]?.record.meta.error, { kind: 'failed', reason: 'simulated item persistence failure' });
+
+        // The turn broke off without a terminal event, so its response is gone rather than ended.
+        const created = messages.find(message => message.type === 'response.created') as { response: { id: string } } | undefined;
+        assertExists(created);
+        const late = waitForMessages(client, replies => replies.length === 1);
+        client.send(JSON.stringify({ type: 'response.interrupt', event_id: 'evt_late_interrupt', response_id: created.response.id, mode: 'discard_partial_items' }));
+        const [reply] = await late;
+        assertEquals(reply, {
+          type: 'error',
+          status: 400,
+          error: { type: 'invalid_request_error', code: 'response_not_found', message: 'The response to interrupt is not active on this connection.' },
+          event_id: 'evt_late_interrupt',
+        });
       }),
     );
   } finally {
@@ -593,9 +620,8 @@ test('OpenAI Responses WebSocket keep-alive waits for the first event and takes 
           model: 'gpt-direct-responses',
           status: 'completed',
           output: [reasoning],
-          output_text: 'done',
         };
-        const inProgress = { ...response, status: 'in_progress', output: [], output_text: '' };
+        const inProgress = { ...response, status: 'in_progress', output: [] };
         enqueueSseEvent('response.created', { type: 'response.created', response: inProgress, sequence_number: 0 });
         assert(
           await drainFramesUntil(() => messages.length >= 1),
@@ -655,6 +681,242 @@ test('OpenAI Responses WebSocket returns OpenAI-style error envelopes for unsupp
         message: "Unsupported WebSocket event type 'session.update'.",
       },
     }]);
+  }));
+});
+
+test('OpenAI Responses WebSocket interrupts an active turn and continues from its completed items', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const encoder = new TextEncoder();
+  const upstreamBodies: Record<string, unknown>[] = [];
+  let resolveUpstreamAborted!: () => void;
+  const upstreamAborted = new Promise<void>(resolve => { resolveUpstreamAborted = resolve; });
+  let resolveFollowUp!: () => void;
+  const releaseFollowUp = new Promise<void>(resolve => { resolveFollowUp = resolve; });
+  const kept = {
+    id: 'msg_kept',
+    type: 'message',
+    role: 'assistant',
+    status: 'completed',
+    content: [{ type: 'output_text', text: 'finished', annotations: [] }],
+  };
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        upstreamBodies.push(JSON.parse(await request.clone().text()) as Record<string, unknown>);
+        if (upstreamBodies.length > 1) {
+          const completed = {
+            id: 'resp_follow_up',
+            object: 'response',
+            model: 'gpt-direct-responses',
+            status: 'completed',
+            output: [],
+            error: null,
+            incomplete_details: null,
+            usage: { input_tokens: 7, output_tokens: 1, total_tokens: 8 },
+          };
+          return new Response(new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(encoder.encode(`event: response.created\ndata: ${JSON.stringify({
+                type: 'response.created', response: { ...completed, status: 'in_progress' }, sequence_number: 0,
+              })}\n\n`));
+              void releaseFollowUp.then(() => {
+                controller.enqueue(encoder.encode(`event: response.completed\ndata: ${JSON.stringify({
+                  type: 'response.completed', response: completed, sequence_number: 1,
+                })}\n\n`));
+                controller.close();
+              });
+            },
+          }), { headers: { 'content-type': 'text/event-stream' } });
+        }
+        return new Response(new ReadableStream<Uint8Array>({
+          start(controller) {
+            const events = [
+              {
+                type: 'response.created',
+                response: {
+                  id: 'resp_upstream_active',
+                  object: 'response',
+                  model: 'gpt-direct-responses',
+                  status: 'in_progress',
+                  output: [],
+                  error: null,
+                  incomplete_details: null,
+                },
+              },
+              { type: 'response.output_item.added', output_index: 0, item: kept },
+              { type: 'response.output_item.done', output_index: 0, item: kept },
+              { type: 'response.output_item.added', output_index: 1, item: { id: 'rs_partial', type: 'reasoning', summary: [] } },
+            ];
+            events.forEach((event, sequence_number) => {
+              controller.enqueue(encoder.encode(`event: ${event.type}\ndata: ${JSON.stringify({ ...event, sequence_number })}\n\n`));
+            });
+            request.signal.addEventListener('abort', () => {
+              resolveUpstreamAborted();
+              controller.error(request.signal.reason);
+            }, { once: true });
+          },
+        }), { headers: { 'content-type': 'text/event-stream' } });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
+      const started = waitForMessages(client, messages => messages.length === 6);
+      client.send(JSON.stringify({
+        type: 'response.create',
+        event_id: 'evt_create',
+        response: { model: 'gpt-direct-responses', input: 'start', store: false },
+      }));
+      const initial = await started;
+      assertEquals(initial.map(message => message.type), [
+        'response.created',
+        'response.output_item.added',
+        'response.output_item.done',
+        'response.output_item.added',
+        'response.output_item.done',
+        'response.output_item.added',
+      ]);
+      const responseId = (initial[0].response as { id: string }).id;
+      const keptClientItem = initial[4].item;
+      const partialClientItemId = ((initial[5].item as { id: string }).id);
+
+      const invalidMode = waitForMessages(client, messages => messages.length === 1);
+      client.send(JSON.stringify({ type: 'response.interrupt', response_id: responseId, mode: 'keep_partial_items' }));
+      assertEquals((await invalidMode)[0].status, 400);
+
+      const wrongResponse = waitForMessages(client, messages => messages.length === 1);
+      client.send(JSON.stringify({ type: 'response.interrupt', response_id: 'resp_wrong', mode: 'discard_partial_items' }));
+      assertEquals(((await wrongResponse)[0].error as { code: string }).code, 'response_not_found');
+
+      const interrupted = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
+      client.send(JSON.stringify({
+        type: 'response.interrupt',
+        event_id: 'evt_interrupt',
+        response_id: responseId,
+        mode: 'discard_partial_items',
+      }));
+      const interruptEvents = await interrupted;
+      assertEquals(interruptEvents.map(message => [message.type, message.sequence_number]), [
+        ['response.interrupt.accepted', 6],
+        ['response.output_item.interrupted', 7],
+        ['response.incomplete', 8],
+      ]);
+      assertEquals(interruptEvents[0].event_id, 'evt_interrupt');
+      assertEquals(interruptEvents[1].item_id, partialClientItemId);
+      assertEquals(interruptEvents[1].event_id, 'evt_create');
+      const incomplete = interruptEvents[2].response as { id: string; status: string; output: unknown[]; incomplete_details: unknown };
+      assertEquals(incomplete.id, responseId);
+      assertEquals(incomplete.status, 'incomplete');
+      assertEquals(incomplete.output.some(item => (item as { id?: unknown }).id === (keptClientItem as { id: string }).id), true);
+      assertEquals(incomplete.incomplete_details, { reason: 'interrupted' });
+      await upstreamAborted;
+
+      const followUp = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
+      const followUpStarted = waitForMessages(client, messages => messages.some(message => message.type === 'response.created'));
+      client.send(JSON.stringify({
+        type: 'response.create',
+        response: {
+          model: 'gpt-direct-responses',
+          previous_response_id: responseId,
+          input: 'change direction',
+          store: false,
+        },
+      }));
+      await followUpStarted;
+      client.send(JSON.stringify({ type: 'response.interrupt', response_id: responseId, mode: 'discard_partial_items' }));
+      await waitForMicrotasks();
+      resolveFollowUp();
+      const followUpEvents = await followUp;
+      assert(!followUpEvents.some(message => message.type === 'error'), JSON.stringify(followUpEvents));
+      assertEquals(followUpEvents.at(-1)?.type, 'response.completed');
+      assertEquals(upstreamBodies.length, 2);
+      assertStringIncludes(JSON.stringify(upstreamBodies[1].input), 'finished');
+    }),
+  );
+
+  // The client stopped the upstream on purpose, so neither turn counts against it.
+  await flushAsyncWork();
+  const performance = (await repo.performance.listAll()).filter(row => row.keyId === apiKey.id);
+  assertEquals(performance.reduce((total, row) => total + row.requests, 0), 2);
+  assertEquals(performance.reduce((total, row) => total + row.errorsWithOutput + row.errorsNoOutput, 0), 0);
+});
+
+test('OpenAI Responses WebSocket warns while an interrupted upstream iterator is still stopping', async () => {
+  const { apiKey } = await setupAppTest();
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  onTestFinished(() => warning.mockRestore());
+  let releaseUpstream!: () => void;
+  const upstreamReleased = new Promise<void>(resolve => { releaseUpstream = resolve; });
+  const encoder = new TextEncoder();
+
+  await withMockedFetch(async request => {
+    const url = new URL(request.url);
+    if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+    if (url.pathname === '/copilot_internal/v2/token') {
+      return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+    }
+    if (url.pathname === '/models') {
+      return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+    }
+    if (url.pathname === '/responses') {
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(`event: response.created\ndata: ${JSON.stringify({
+            type: 'response.created',
+            sequence_number: 0,
+            response: {
+              id: 'resp_upstream_waiting',
+              object: 'response',
+              model: 'gpt-direct-responses',
+              status: 'in_progress',
+              output: [],
+              error: null,
+              incomplete_details: null,
+            },
+          })}\n\n`));
+        },
+        cancel: async () => await upstreamReleased,
+      }), { headers: { 'content-type': 'text/event-stream' } });
+    }
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => await withWorkerWebSocketRuntime(async () => {
+    const client = await connectOpenAIResponsesWebSocket(apiKey.key);
+    const created = waitForMessages(client, messages => messages.some(message => message.type === 'response.created'));
+    client.send(JSON.stringify({
+      type: 'response.create',
+      response: { model: 'gpt-direct-responses', input: 'start', store: false },
+    }));
+    const createdEvents = await created;
+    const responseId = (createdEvents.find(message => message.type === 'response.created')!.response as { id: string }).id;
+    const time = new FakeTime(Date.now());
+    onTestFinished(() => time.restore());
+
+    const accepted = waitForMessages(client, messages => messages.some(message => message.type === 'response.interrupt.accepted'));
+    client.send(JSON.stringify({
+      type: 'response.interrupt',
+      response_id: responseId,
+      mode: 'discard_partial_items',
+    }));
+    await accepted;
+
+    await time.tickAsync(INTERRUPT_UPSTREAM_ABORT_WARNING_MS);
+    const warningCalls = [...warning.mock.calls];
+    const terminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
+    releaseUpstream();
+    assertEquals((await terminal).at(-1)?.type, 'response.incomplete');
+    assertEquals(warningCalls, [[
+      'Floway: Responses WebSocket interrupt is still waiting for the upstream stream to stop after abort',
+      { responseId, model: 'gpt-direct-responses', waitedMs: INTERRUPT_UPSTREAM_ABORT_WARNING_MS },
+    ]]);
   }));
 });
 
@@ -844,7 +1106,6 @@ test('OpenAI Responses WebSocket store:false keeps session snapshots without dur
           object: 'response',
           model: 'gpt-direct-responses',
           status: 'completed',
-          output_text: `answer ${turn}`,
           output: [{
             id: `assistant_ws_store_false_${turn}`,
             type: 'message',
@@ -957,7 +1218,6 @@ test('OpenAI Responses WebSocket answers a Codex generate:false prewarm locally 
           object: 'response',
           model: 'gpt-direct-responses',
           status: 'completed',
-          output_text: 'answer',
           output: [{
             id: 'assistant_ws_after_prewarm',
             type: 'message',
@@ -1052,7 +1312,6 @@ test('OpenAI Responses WebSocket evicts a failed continuation target so the next
           object: 'response',
           model: 'gpt-direct-responses',
           status: 'completed',
-          output_text: 'answer',
           output: [{
             id: `assistant_ws_evict_${responseCalls}`,
             type: 'message',
@@ -1130,6 +1389,7 @@ test('OpenAI Responses WebSocket evicts a failed continuation target so the next
 test('OpenAI Responses WebSocket evicts a continuation that failed through a streamed terminal event', async () => {
   const { apiKey } = await setupAppTest();
   let responseCalls = 0;
+  const upstreamError = { type: 'error', sequence_number: 1, code: null, param: 'tools', message: 'the upstream gave up mid-turn', vendor: { retryable: false } };
 
   await withMockedFetch(
     async request => {
@@ -1150,13 +1410,13 @@ test('OpenAI Responses WebSocket evicts a continuation that failed through a str
             model: 'gpt-direct-responses',
             status: 'failed',
             output: [],
-            output_text: '',
             error: { code: 'server_error', message: 'the upstream gave up mid-turn' },
             incomplete_details: null,
           };
           return sseResponse([
             { event: 'response.created', data: { type: 'response.created', response: { ...failing, status: 'in_progress', error: null }, sequence_number: 0 } },
-            { event: 'response.failed', data: { type: 'response.failed', response: failing, sequence_number: 1 } },
+            { event: 'error', data: upstreamError },
+            { event: 'response.failed', data: { type: 'response.failed', response: failing, sequence_number: 2 } },
             { data: '[DONE]' },
           ]);
         }
@@ -1165,7 +1425,6 @@ test('OpenAI Responses WebSocket evicts a continuation that failed through a str
           object: 'response',
           model: 'gpt-direct-responses',
           status: 'completed',
-          output_text: 'answer',
           output: [{
             id: `assistant_ws_evict_streamed_${responseCalls}`,
             type: 'message',
@@ -1198,6 +1457,10 @@ test('OpenAI Responses WebSocket evicts a continuation that failed through a str
         },
       }));
       const failedMessages = await failedTurn;
+      assertEquals(failedMessages.map(message => message.type), ['response.created', 'error', 'response.in_progress', 'response.failed']);
+      assertEquals(failedMessages[1], { ...upstreamError, event_id: 'evt_streamed_failure' });
+      assertEquals(failedMessages.map(message => message.sequence_number), [0, 1, 2, 3]);
+      assert(failedMessages.every(message => message.event_id === 'evt_streamed_failure'));
       assertEquals(failedMessages.at(-1)?.type, 'response.failed');
 
       const evicted = waitForMessages(client, messages => messages.some(message => message.type === 'error'));
@@ -1228,6 +1491,66 @@ test('OpenAI Responses WebSocket evicts a continuation that failed through a str
   );
 });
 
+test.each([
+  { type: 'error', code: null, param: null, message: 'native failure', vendor: { detail: 'flat' } },
+  { type: 'error', error: { code: 'vendor_failure', param: 'tools', message: 'native failure', vendor: { detail: 'nested' } }, trace: 'native-trace' },
+].flatMap(error => [false, true].map(announced => ({ error, announced }))))('OpenAI Responses WebSocket preserves a standalone upstream error and accepts the next turn %j', async ({ error, announced }) => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+  let responseCalls = 0;
+  const nativeError = { ...error, sequence_number: announced ? 1 : 0 };
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        responseCalls += 1;
+        if (responseCalls === 1) return sseResponse([
+          ...(announced ? [{ event: 'response.created', data: { type: 'response.created', sequence_number: 0, response: { id: 'resp_error', object: 'response', model: 'gpt-direct-responses', status: 'in_progress', output: [], error: null, incomplete_details: null } } }] : []),
+          { event: 'error', data: nativeError },
+          { data: '[DONE]' },
+        ]);
+        return sseOpenAIResponsesResponse({ id: 'resp_after_error', object: 'response', model: 'gpt-direct-responses', status: 'completed', output: [] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
+      const raw = recordRawMessages(client);
+      try {
+        const received = waitForMessages(client, messages => messages.some(message => message.type === 'error'));
+        client.send(JSON.stringify({ type: 'response.create', event_id: 'evt_standalone', response: { model: 'gpt-direct-responses', input: 'hello' } }));
+        const messages = await received;
+        assertEquals(messages.map(message => message.type), announced ? ['response.created', 'error'] : ['error']);
+        assertEquals(messages.at(-1), { ...nativeError, event_id: 'evt_standalone' });
+        await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+        assertEquals(raw.messages.map(message => JSON.parse(message)), messages);
+        assertEquals(dumps.stored[0]?.record.meta.responseBytes, raw.messages.reduce((total, message) => total + new TextEncoder().encode(message).byteLength, 0));
+        const nextTurn = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
+        if (announced) {
+          const created = messages[0] as { response: { id: string } };
+          client.send(JSON.stringify({ type: 'response.interrupt', event_id: 'evt_late_interrupt', response_id: created.response.id, mode: 'discard_partial_items' }));
+        }
+        client.send(JSON.stringify({ type: 'response.create', event_id: 'evt_after_error', response: { model: 'gpt-direct-responses', input: 'next turn' } }));
+        assert((await nextTurn).every(message => message.event_id === 'evt_after_error'));
+        assertEquals(responseCalls, 2);
+        // A turn's record lands after its drain, so the next variant's stub must not receive it.
+        await vi.waitFor(() => assertEquals(dumps.stored.length, 2));
+      } finally {
+        raw.stop();
+        client.close();
+      }
+    }),
+  );
+});
+
 test('OpenAI Responses WebSocket store:true durable snapshots can chain through local session cache', async () => {
   const { apiKey, repo } = await setupAppTest();
   let turn = 0;
@@ -1251,7 +1574,6 @@ test('OpenAI Responses WebSocket store:true durable snapshots can chain through 
           object: 'response',
           model: 'gpt-direct-responses',
           status: 'completed',
-          output_text: `answer ${turn}`,
           output: [{
             id: `assistant_ws_durable_${turn}`,
             type: 'message',
@@ -1326,7 +1648,6 @@ test('OpenAI Responses WebSocket makes a done reasoning item reusable from a fre
             model: 'gpt-direct-responses',
             status: 'in_progress',
             output: [],
-            output_text: '',
             error: null,
             incomplete_details: null,
           };
@@ -1345,7 +1666,6 @@ test('OpenAI Responses WebSocket makes a done reasoning item reusable from a fre
           model: 'gpt-direct-responses',
           status: 'completed',
           output: [],
-          output_text: 'ok',
           error: null,
           incomplete_details: null,
         });
@@ -1418,7 +1738,6 @@ test('OpenAI Responses WebSocket session-level store: second message resolves pr
           object: 'response',
           model: 'gpt-direct-responses',
           status: 'completed',
-          output_text: `turn ${turn}`,
           output: [{
             id: `assistant_session_${turn}`,
             type: 'message',
@@ -1539,7 +1858,6 @@ test('OpenAI Responses WebSocket aborts the in-flight OpenAI Responses request w
               model: 'gpt-direct-responses',
               status: 'completed',
               output: [],
-              output_text: '',
             }));
           }, { once: true });
         });
@@ -1608,6 +1926,9 @@ test('OpenAI Responses WebSocket outer catch records a failed perf sample attrib
       assertEquals(errorMessage.type, 'error');
       assertEquals(errorMessage.status, 500);
       assertEquals(errorMessage.event_id, 'evt_throw');
+      const { provider_specific_fields: diagnostics, ...error } = errorMessage.error as Record<string, unknown>;
+      assertEquals(error, { type: 'internal_error', code: 'internal_error', message: 'simulated mid-attempt provider throw' });
+      assertEquals((diagnostics as { name?: unknown }).name, 'Error');
     }),
   );
 
@@ -1663,7 +1984,6 @@ test('OpenAI Responses WebSocket dispatches each Codex turn with the metadata bl
           object: 'response',
           model: 'gpt-5.4',
           status: 'completed',
-          output_text: `answer ${turn}`,
           output: [{
             id: `assistant_codex_ws_${turn}`,
             type: 'message',
@@ -1745,6 +2065,66 @@ test('OpenAI Responses WebSocket dispatches each Codex turn with the metadata bl
       assertEquals(second.turn_id, 'turn-2');
       assertEquals(second.turn_started_at_unix_ms, 1700000000002);
       assertEquals((upstreamBodies[1].client_metadata as Record<string, string>)['x-codex-window-id'], 'codex-thread:1');
+    }),
+  );
+});
+
+test('OpenAI Responses WebSocket replays Codex Lite input items without rebuilding their prefix', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveUpstreamForTest(repo.upstreams, buildCodexUpstreamRecord());
+  const upstreamBodies: Record<string, unknown>[] = [];
+  const prefix = [
+    { type: 'additional_tools', role: 'developer', id: 'at_ws_lite', tools: [{ type: 'namespace', name: 'functions', description: '', tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object' } }] }] },
+    { type: 'message', role: 'developer', id: 'msg_ws_lite', content: [{ type: 'input_text', text: 'Caller base instructions' }], internal_chat_message_metadata_passthrough: { content_item_kinds: ['model.base_instructions'] } },
+  ];
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') return jsonResponse(copilotModels([]));
+      if (url.pathname === '/backend-api/codex/models') {
+        return jsonResponse({ models: [{ slug: 'gpt-5.4', display_name: 'gpt-5.4', visibility: 'list', context_window: 272000, max_context_window: 1000000, use_responses_lite: true }] });
+      }
+      if (url.pathname === '/backend-api/codex/responses') {
+        upstreamBodies.push(JSON.parse(await request.text()) as Record<string, unknown>);
+        const turn = upstreamBodies.length;
+        return sseOpenAIResponsesResponse({
+          id: `resp_ws_lite_${turn}`, object: 'response', model: 'gpt-5.4', status: 'completed',
+          output: [{ id: `msg_ws_lite_output_${turn}`, type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: `answer ${turn}`, annotations: [] }] }],
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const socket = await connectOpenAIResponsesWebSocket(apiKey.key);
+      const send = async (input: unknown[], previousResponseId?: string): Promise<string> => {
+        const terminal = waitForMessages(socket, messages => messages.some(isTerminalResponseEvent));
+        socket.send(JSON.stringify({
+          type: 'response.create', response: {
+            model: 'gpt-5.4', input, store: false,
+            ...(previousResponseId === undefined ? {} : { previous_response_id: previousResponseId }),
+            client_metadata: { ws_request_header_x_openai_internal_codex_responses_lite: 'true' },
+          },
+        }));
+        return terminalResponseId(await terminal);
+      };
+
+      const firstId = await send([...prefix, { role: 'user', content: 'First turn' }]);
+      await send([{ role: 'user', content: 'Second turn' }], firstId);
+
+      assertEquals(upstreamBodies.length, 2);
+      const firstInput = upstreamBodies[0]?.input as unknown[];
+      const secondInput = upstreamBodies[1]?.input as unknown[];
+      assertEquals(firstInput.slice(0, prefix.length), prefix);
+      assertEquals(secondInput.slice(0, prefix.length), prefix);
+      assertEquals(firstInput.filter(item => (item as { type?: string }).type === 'additional_tools').length, 1);
+      assertEquals(secondInput.filter(item => (item as { type?: string }).type === 'additional_tools').length, 1);
+      assertEquals(upstreamBodies[0]?.instructions, undefined);
+      assertEquals(upstreamBodies[1]?.instructions, undefined);
     }),
   );
 });

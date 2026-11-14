@@ -1,8 +1,5 @@
 export type {
-  OpenAIChatCompletionsInvocation,
-  GeminiGenerateContentInvocation,
   ChatTargetApi,
-  AnthropicMessagesInvocation,
   ModelCandidate,
   OpenAIResponsesInvocation,
 } from './invocation.ts';
@@ -15,7 +12,7 @@ export { observeProviderCall, observeProviderResponsesCall } from './stages/obse
 export { mergeHttpHeaders, replaceHttpHeader, withHttpContentType } from './http-headers.ts';
 
 export type { InternalDebugError } from './error.ts';
-export { toInternalDebugError } from './error.ts';
+export { internalDebugErrorFields, toInternalDebugError } from './error.ts';
 
 export type {
   InternalAliasedFrom,
@@ -46,6 +43,13 @@ export { headersForAnthropicMessagesCall } from './anthropic-messages.ts';
 export type { OpenAIImagesEditsRequest, OpenAIImagesEditsSource } from './images.ts';
 export { prepareOpenAIImagesEditsBody, serializeOpenAIImagesEditsJsonPayload } from './images.ts';
 export type { OpenAIAudioTranscriptionFormEntry, OpenAIAudioTranscriptionRequest } from './audio.ts';
+
+export { formatUpstreamMetricIdentity, groupUpstreamMetricSamples, quotaPercentDisplay, recordUpstreamMetric, recordUpstreamMetrics, resolveUpstreamMetricDisplaySeries, upstreamMetricAxisPriority } from './upstream-metrics.ts';
+export type { GroupedUpstreamMetricSamples, UpstreamMetrics, UpstreamMetricDisplay, UpstreamMetricDisplayOptions, UpstreamMetricDisplaySeries, UpstreamMetricLabelKey, UpstreamMetricObservation, UpstreamMetricSample, UpstreamMetricUnit } from './upstream-metrics.ts';
+export { normalizeUpstreamMetricIdentity, upstreamMetricIdentityKey } from './upstream-metric-identity.ts';
+export type { UpstreamMetricIdentity, UpstreamMetricLabels, UpstreamMetricLabelValue } from './upstream-metric-identity.ts';
+export { runScheduledUsageRefresh } from './scheduled.ts';
+export type { ProviderScheduledOptions } from './scheduled.ts';
 
 export type { ProviderRepo, UpstreamsRepoSlim } from './repo.ts';
 export { getProviderRepo, initProviderRepo, UpstreamGoneError } from './repo.ts';

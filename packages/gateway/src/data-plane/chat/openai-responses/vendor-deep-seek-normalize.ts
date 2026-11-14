@@ -1,6 +1,6 @@
 import type { Chat } from '../facts.ts';
 import { defineStage, transform, move } from '@floway-dev/pipeline';
-import type { OpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 /** DeepSeek says "no reasoning" with a top-level `thinking: { type: 'disabled' }` rather than
  *  with the canonical sentinel, so the sentinel is put into its wire form here — last among
@@ -40,4 +40,4 @@ export const vendorDeepSeekNormalizeForOpenAIResponses = defineStage<
 
 /** Neither field is an OpenAI Responses field, so each is declared beside the vendor that reads it
  *  rather than widening the protocol's own request type. */
-type OpenAIResponsesPayloadWithDeepSeekThinking = Omit<OpenAIResponsesPayload, 'reasoning'> & { thinking: { type: 'disabled' } };
+type OpenAIResponsesPayloadWithDeepSeekThinking = Omit<CanonicalOpenAIResponsesPayload, 'reasoning'> & { thinking: { type: 'disabled' } };

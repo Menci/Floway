@@ -72,15 +72,11 @@ export const controlPlaneModels = async (c: CtxWithQuery<typeof modelsQuery>) =>
     const { aliases: aliasesValue, include_unlisted: includeUnlistedValue } = c.req.valid('query');
     const includeAliases = aliasesValue !== 'false';
     const includeUnlisted = includeUnlistedValue === 'true';
-    // Admin sessions see the entire gateway: editor surfaces (alias edit,
-    // upstream edit) need to configure models on upstreams the admin may
-    // have self-restricted out of their own data-plane access, and the
-    // dashboard filters the result client-side for surfaces that should
-    // respect the restriction (Models page, playground). Non-admin
-    // sessions stay scoped to their effective `upstreamIds` so the
-    // dashboard cannot leak models from upstreams their account has no
-    // data-plane access to.
-    const isAdmin = userFromContext(c).isAdmin;
+    // Admin sessions see the entire gateway for editor surfaces. Non-admin
+    // sessions receive only model/upstream pairs allowed by Model.Use.
+    const subject = userFromContext(c);
+    const isAdmin = subject.isAdmin;
+    const gatewayMetadataSubject = isAdmin ? subject : { ...subject, isAdmin: true };
     const upstreamScope = isAdmin ? null : effectiveUpstreamIdsFromContext(c);
     // Fetch the upstream list once at the request boundary and thread it into
     // catalog enumeration and the hue join.
@@ -93,10 +89,10 @@ export const controlPlaneModels = async (c: CtxWithQuery<typeof modelsQuery>) =>
     // sees the same numbers for the same alias). For admin the two are
     // the same, so skip the second fetch.
     const [callerAddressable, gatewayAddressable, aliases] = await Promise.all([
-      enumerateAddressableModelIds(upstreamScope, scheduleRefresh, upstreamRows),
+      enumerateAddressableModelIds(subject, upstreamScope, scheduleRefresh, upstreamRows),
       isAdmin
         ? Promise.resolve(null)
-        : enumerateAddressableModelIds(null, scheduleRefresh, upstreamRows),
+        : enumerateAddressableModelIds(gatewayMetadataSubject, null, scheduleRefresh, upstreamRows),
       includeAliases ? getRepo().modelAliases.list() : Promise.resolve([]),
     ]);
     const hueByUpstream = new Map<string, number>(upstreamRows.map(row => [row.id, row.hue]));
@@ -143,13 +139,6 @@ export const controlPlaneModels = async (c: CtxWithQuery<typeof modelsQuery>) =>
     };
     return c.json(response);
   } catch (e: unknown) {
-    // Empty-upstreams is a domain state, not an error, on the dashboard:
-    // /v1/models still surfaces it as a 502 (remote clients need to know
-    // the gateway is unconfigured), but the Models tab renders an empty
-    // grid inline.
-    if (e instanceof Error && e.message.startsWith('No upstream provider configured')) {
-      return c.json({ object: 'list', has_more: false, first_id: null, last_id: null, data: [] });
-    }
     return c.json({ error: { message: e instanceof Error ? e.message : String(e), type: 'api_error' } }, 502);
   }
 };

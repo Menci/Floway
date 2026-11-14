@@ -20,7 +20,7 @@ export const analyzeGeminiGenerateContentAffinity = async (
   const locations: GeminiGenerateContentBlobLocation[] = [];
   for (const [contentIndex, content] of (payload.contents ?? []).entries()) {
     if (content.role !== 'model') continue;
-    for (const [partIndex, part] of content.parts.entries()) {
+    for (const [partIndex, part] of (content.parts ?? []).entries()) {
       if (typeof part.thoughtSignature !== 'string') continue;
       locations.push({ contentIndex, partIndex, decoded: await codec.unwrap(part.thoughtSignature, 'gemini-generate-content.part.thoughtSignature') });
     }
@@ -42,7 +42,7 @@ export const analyzeGeminiGenerateContentAffinity = async (
           const content = contents[contentIndex];
           const replacements = new Map<number, GeminiGenerateContentPart | null>();
           for (const { location, projection } of contentProjections) {
-            const part = content.parts[location.partIndex];
+            const part = content.parts![location.partIndex];
             if (location.decoded.kind === 'foreign') continue;
             if (projection.kind === 'preserve') {
               replacements.set(location.partIndex, { ...part, thoughtSignature: projection.value });
@@ -51,7 +51,7 @@ export const analyzeGeminiGenerateContentAffinity = async (
               replacements.set(location.partIndex, hasPartContent(replacement) ? replacement : null);
             }
           }
-          const parts = withIndexesChanged(content.parts, replacements);
+          const parts = withIndexesChanged(content.parts!, replacements);
           if (parts.length === 0) emptiedByAffinity.add(contentIndex);
           rewritten.set(contentIndex, withKeysChanged(content, { parts }));
         }

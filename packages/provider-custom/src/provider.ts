@@ -80,7 +80,7 @@ const finalizeCustomModels = (
     // A catalog kind alone cannot choose between the six incompatible rerank
     // wires. The auto row remains visible in the dashboard's fetch result, but
     // only a manual row with rerankTarget enters the routable provider catalog.
-    if (rawModel.kind === 'rerank') continue;
+    if (rawModel.kind === 'rerank' || rawModel.kind === 'decision') continue;
     const endpoints = autoModelEndpoints(rawModel, configuredEndpoints);
     const kind = kindForEndpoints(endpoints);
     models.push({
@@ -121,6 +121,7 @@ export const projectCustomModels = (
       enabledFlags,
       opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
       ...(model.rerankTarget ? { rerankTarget: model.rerankTarget } : {}),
+      ...(model.decisionTarget ? { decisionTarget: model.decisionTarget } : {}),
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
     if (model.pricing) internal.pricing = model.pricing;
@@ -147,6 +148,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
   const { config } = assertCustomUpstreamRecord(record);
 
   const instance: ProviderInstance = {
+    runScheduledTask: async () => {},
     getProvidedModels: async fetcher => {
       if (!config.modelsFetch.enabled) return projectCustomModels(record);
       const response = await fetchCustomModels(config, fetcher);

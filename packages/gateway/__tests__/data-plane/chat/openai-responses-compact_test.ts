@@ -18,9 +18,9 @@ import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../src/shared/ba
 import { chatFixtureHttpServices, stubChatProviderPipelines } from '../../test-utils/chat-provider-pipelines.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResult, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResultEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { directFetcher, type FlagId, type ModelCandidate } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult } from '@floway-dev/test-utils';
 
@@ -34,7 +34,7 @@ let live: readonly ModelCandidate[] = [];
 const candidate = (
   calls: {
     callOpenAIResponses?: (model: unknown, body: unknown, action: unknown) => Promise<ProviderOpenAIResponsesResult>;
-    callAnthropicMessages?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
+    callAnthropicMessages?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
   },
   overrides: { upstreamId?: string; endpoints?: ModelEndpoints; enabledFlags?: ReadonlySet<FlagId> } = {},
 ): ModelCandidate => {
@@ -70,7 +70,7 @@ const USAGE = { input_tokens: 12, output_tokens: 3, total_tokens: 15 };
 
 /** What a native compaction upstream answers with: `CompactResource` states no `status`, no
  *  `model` and no `error`. */
-const compaction = (overrides: Partial<OpenAIResponsesCompactionResult> = {}): OpenAIResponsesCompactionResult => ({
+const compaction = (overrides: Partial<OpenAIResponsesCompactionResultEx> = {}): OpenAIResponsesCompactionResultEx => ({
   id: 'resp_upstream_compaction',
   object: 'response.compaction',
   output: [{ type: 'compaction', id: 'cmp_1', encrypted_content: 'OPAQUE_NATIVE_BLOB' } as unknown as never],
@@ -80,7 +80,7 @@ const compaction = (overrides: Partial<OpenAIResponsesCompactionResult> = {}): O
 
 const compacts = (
   seen: { body?: Record<string, unknown>; action?: unknown },
-  overrides: Partial<OpenAIResponsesCompactionResult> = {},
+  overrides: Partial<OpenAIResponsesCompactionResultEx> = {},
 ) => async (_model: unknown, body: unknown, action: unknown): Promise<ProviderOpenAIResponsesResult> => {
   seen.body = body as Record<string, unknown>;
   seen.action = action;
@@ -92,7 +92,7 @@ const generates = (text: string, seen: { body?: Record<string, unknown>; action?
   async (_model: unknown, body: unknown, action: unknown): Promise<ProviderOpenAIResponsesResult> => {
     seen.body = body as Record<string, unknown>;
     seen.action = action;
-    const response: OpenAIResponsesResult = {
+    const response: OpenAIResponsesResultEx = {
       id: 'resp_summary',
       object: 'response',
       model: 'responses-model',
@@ -108,7 +108,7 @@ const generates = (text: string, seen: { body?: Record<string, unknown>; action?
     return {
       action: 'generate', ok: true, modelKey: 'responses-model-key', headers: new Headers(),
       events: (async function* () {
-        yield { type: 'event' as const, event: { type: 'response.completed', sequence_number: 0, response } as OpenAIResponsesStreamEvent };
+        yield { type: 'event' as const, event: { type: 'response.completed', sequence_number: 0, response } as OpenAIResponsesStreamEventEx };
         yield { type: 'done' as const };
       })(),
     };
@@ -117,7 +117,7 @@ const generates = (text: string, seen: { body?: Record<string, unknown>; action?
 /** The same turn over the Anthropic Messages wire, which is the only way an Anthropic Messages-only candidate can
  *  be reached: the compaction crosses into that protocol and its frames come back translated. */
 const anthropicMessagesTurn = (text: string, seen: { body?: Record<string, unknown> } = {}) =>
-  async (_model: unknown, body: unknown): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
+  async (_model: unknown, body: unknown): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
     seen.body = body as Record<string, unknown>;
     const events: unknown[] = [
       {
@@ -136,7 +136,7 @@ const anthropicMessagesTurn = (text: string, seen: { body?: Record<string, unkno
     return {
       ok: true, modelKey: 'responses-model-key', headers: new Headers(),
       events: (async function* () {
-        for (const event of events) yield { type: 'event' as const, event: event as AnthropicMessagesStreamEvent };
+        for (const event of events) yield { type: 'event' as const, event: event as AnthropicMessagesStreamEventEx };
         yield { type: 'done' as const };
       })(),
     };
@@ -325,9 +325,9 @@ describe('the responses compaction chain', () => {
 
     const { facts } = await compact();
 
-    expect(tried).toEqual(['mute', 'talkative']);
+    expect(tried).toEqual(['mute', 'mute', 'talkative']);
     const outcome = settlements.at(-1) as { billable: Array<{ identity: { upstream: string }; quantities: Record<string, string> }> };
-    expect(outcome.billable.map(entity => [entity.identity.upstream, entity.quantities.input_tokens])).toEqual([['up_mute', '12'], ['up_talkative', '12']]);
+    expect(outcome.billable.map(entity => [entity.identity.upstream, entity.quantities.input_tokens])).toEqual([['up_mute', '12'], ['up_mute', '12'], ['up_talkative', '12']]);
     expect(facts['response.http.status']).toBe(200);
     expect(rendered(facts).object).toBe('response.compaction');
   });
@@ -375,7 +375,7 @@ describe('the responses compaction chain', () => {
   // the upstream actually ran — and a compaction that surfaced as failed belongs in the error
   // column rather than masquerading as a success.
   it('settles a compaction whose turn failed as a failure', async () => {
-    resolves([candidate({ callOpenAIResponses: compacts({}, { status: 'failed' } as Partial<OpenAIResponsesCompactionResult>) })]);
+    resolves([candidate({ callOpenAIResponses: compacts({}, { status: 'failed' } as Partial<OpenAIResponsesCompactionResultEx>) })]);
 
     await compact();
 
@@ -480,7 +480,7 @@ describe('native compaction decryption', () => {
         : {
             action: 'generate', ok: true, modelKey: 'responses-model-key', headers: new Headers(), events: (async function* () {
               try {
-                yield { type: 'event' as const, event: { type: 'response.in_progress', sequence_number: 0, response: { id: 'replay', object: 'response', model: 'responses-model', status: 'in_progress', output: [], error: null, incomplete_details: null, usage: { input_tokens: 7, output_tokens: 2, total_tokens: 9 } } } as OpenAIResponsesStreamEvent };
+                yield { type: 'event' as const, event: { type: 'response.in_progress', sequence_number: 0, response: { id: 'replay', object: 'response', model: 'responses-model', status: 'in_progress', output: [], error: null, incomplete_details: null, usage: { input_tokens: 7, output_tokens: 2, total_tokens: 9 } } } as OpenAIResponsesStreamEventEx };
                 throw broken;
               } finally { released = true; }
             })(),

@@ -40,7 +40,10 @@ const modelContents = async (
   };
   const result = await reassembleGeminiGenerateContentEvents(events());
   if (result.candidates === undefined) throw new Error('Expected reassembled Gemini generateContent candidates');
-  return result.candidates.map(reassembled => reassembled.content);
+  return result.candidates.map(reassembled => {
+    if (reassembled.content === undefined) throw new Error('Expected model Content in this replay fixture');
+    return reassembled.content;
+  });
 };
 
 test('a carrier a real codec emits on thoughtSignature decodes on the next turn', async () => {

@@ -53,7 +53,9 @@ export const resolveChatCandidates = <Refusal extends object, RequestKey extends
   execute: async (facts, next, use) => {
     const model = facts['serve.model'];
     const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
+      subject: use.gateway.user,
       upstreamIds: use.gateway.upstreamIds,
+      randomizeUpstreams: use.gateway.randomizeUpstreams,
       model,
       kind: 'chat',
       scheduler: use.gateway.backgroundScheduler,

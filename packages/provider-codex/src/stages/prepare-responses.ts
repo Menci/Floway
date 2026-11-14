@@ -7,7 +7,7 @@ import type { ProviderChatResponse, ProviderChatServices } from '@floway-dev/pro
 
 export interface CodexResponsesHttpFacts extends CodexHttpFacts {
   'request.provider.responsesAction': 'generate' | 'compact';
-  'request.codex.responsesLite': CodexResponsesLiteRequest | null;
+  'request.codex.movedResponsesFields': CodexResponsesLiteRequest['movedFields'];
 }
 
 export const prepareCodexResponsesHttp = <O extends 'openaiResponses' | 'openaiResponsesCompact'>() => defineStage<CodexAuthenticatedFacts<O> & Pick<CodexResponsesHttpFacts, 'request.provider.responsesAction'> & CodexPreparedResponsesFacts, CodexResponsesHttpFacts, ProviderChatResponse<O>, ProviderChatResponse<O>, ProviderChatServices>({
@@ -16,7 +16,7 @@ export const prepareCodexResponsesHttp = <O extends 'openaiResponses' | 'openaiR
     request: {
       needs: ['request.provider.model', 'request.provider.payload', 'request.http.headers', 'request.http.callId', 'request.codex.account', 'request.codex.accessToken', 'request.codex.plan', 'request.provider.responsesAction', 'request.codex.responsesPrepared'],
       consumes: ['request.provider.model', 'request.provider.payload', 'request.http.headers', 'request.codex.responsesPrepared'],
-      provides: ['request.http.url', 'request.http.method', 'request.http.headers', 'request.http.body', 'request.http.encoding', 'request.codex.model', 'request.codex.modelKey', 'request.provider.modelKey', 'request.provider.responsesAction', 'request.codex.responsesLite'],
+      provides: ['request.http.url', 'request.http.method', 'request.http.headers', 'request.http.body', 'request.http.encoding', 'request.codex.model', 'request.codex.modelKey', 'request.provider.modelKey', 'request.provider.responsesAction', 'request.codex.movedResponsesFields'],
     },
     response: { needs: [], consumes: [], provides: [] },
   },
@@ -30,11 +30,11 @@ export const prepareCodexResponsesHttp = <O extends 'openaiResponses' | 'openaiR
       ['session-id', identity.sessionId], ['thread-id', identity.threadId], ['x-client-request-id', identity.clientRequestId],
       ['x-codex-window-id', identity.windowId], ['x-codex-turn-metadata', prepared.turnMetadataJson.header],
     ];
-    if (prepared.lite !== undefined) headers.push([CODEX_RESPONSES_LITE_HEADER, 'true']);
+    if (prepared.responsesLite) headers.push([CODEX_RESPONSES_LITE_HEADER, 'true']);
     return move({
       ...await next(move({
         ...rest, 'request.codex.model': model, 'request.codex.modelKey': model.id, 'request.provider.modelKey': model.id,
-        'request.provider.responsesAction': action, 'request.codex.responsesLite': prepared.lite ?? null,
+        'request.provider.responsesAction': action, 'request.codex.movedResponsesFields': prepared.movedFields,
         'request.http.url': `${CODEX_BACKEND_BASE}${action === 'compact' ? CODEX_OPENAI_RESPONSES_COMPACT_PATH : CODEX_OPENAI_RESPONSES_PATH}`,
         'request.http.method': 'POST', 'request.http.headers': headers, 'request.http.body': prepared.body, 'request.http.encoding': 'json' as const,
       })),

@@ -1,6 +1,6 @@
 import type { Chat } from '../facts.ts';
 import { defineStage, transform, move } from '@floway-dev/pipeline';
-import type { OpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 /** Qwen says the same thing with a top-level `enable_thinking: false`.
  *  https://www.alibabacloud.com/help/en/model-studio/deep-thinking */
@@ -36,4 +36,4 @@ export const vendorQwenNormalizeForOpenAIResponses = defineStage<
   })),
 });
 
-type OpenAIResponsesPayloadWithQwenThinking = Omit<OpenAIResponsesPayload, 'reasoning'> & { enable_thinking: false };
+type OpenAIResponsesPayloadWithQwenThinking = Omit<CanonicalOpenAIResponsesPayload, 'reasoning'> & { enable_thinking: false };

@@ -10,13 +10,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-playground';
-import { useDashboardOutletContext } from './dashboard';
 import { requireDashboardSession } from './guards';
 import { api, callApi } from '../api/client';
 import type { ApiKey, ControlPlaneModel } from '../api/types';
 import { indexCatalog } from '../components/models/catalog-index';
 import { ModelInfoBadges } from '../components/models/info-badges';
-import { effectiveUpstreamCap, reachableModels } from '../components/models/reachability';
+import { reachableModels } from '../components/models/reachability';
 import { bingAccentForeground, bingAccentForegroundHover } from '../components/playground/bing-chat-tokens';
 import { PlaygroundComposer } from '../components/playground/composer';
 import { PlaygroundEditDialog, type PlaygroundMessageDraft } from '../components/playground/edit-dialog';
@@ -28,6 +27,7 @@ import {
   generationOptions,
   parseCustomJson,
   playgroundApis,
+  playgroundApisFor,
   supportsImageInput,
   type PlaygroundApi,
   type PlaygroundMessage,
@@ -146,7 +146,6 @@ const randomId = () => crypto.randomUUID();
 
 export default function DashboardPlayground({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
-  const { user } = useDashboardOutletContext();
   const s = useStyles();
   const [playgroundApi, setPlaygroundApi] = useState<PlaygroundApi>('openaiResponses');
   const [keyId, setKeyId] = useState(loaderData.keys?.[0]?.id ?? '');
@@ -173,15 +172,9 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const narrow = useMediaQuery('(max-width: 1100px)');
 
   const selectedKey = loaderData.keys?.find(key => key.id === keyId) ?? null;
-  const cap = useMemo(
-    () => effectiveUpstreamCap(selectedKey?.upstream_ids ?? null, user.upstreamIds),
-    [selectedKey, user.upstreamIds],
-  );
+  const cap = selectedKey?.upstream_ids ?? null;
   const catalog = useMemo(() => indexCatalog(loaderData.models), [loaderData.models]);
-  const models = useMemo(
-    () => reachableModels(loaderData.models ?? [], cap, model => model.kind === 'chat'),
-    [cap, loaderData.models],
-  );
+  const models = reachableModels(loaderData.models ?? [], cap, model => model.kind === 'chat' && playgroundApisFor(model).length > 0);
   const selectedModel = models.find(model => model.id === publicModelId) ?? models[0] ?? null;
   const imageEnabled = supportsImageInput(selectedModel);
   const effortOptions = selectedModel?.chat?.reasoning?.effort?.supported ?? [];
@@ -274,7 +267,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           return current.map(message => message.id === assistantId ? { ...message, text } : message);
         });
       };
-      for await (const delta of streamPlaygroundText({
+      const stream = streamPlaygroundText({
         api: playgroundApi,
         apiKey: sendTarget.apiKey.key,
         model: sendTarget.model.id,
@@ -283,14 +276,26 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
         options: generationOptions(playgroundApi, reasoningEffort || undefined, defaultMaxOutputTokens(sendTarget.model)),
         signal: controller.signal,
         fetchImpl: wireFetch,
-      })) {
-        assistantText += delta;
+      });
+      let assistantOutput: PlaygroundMessage['assistantOutput'];
+      while (true) {
+        const next = await stream.next();
+        if (next.done) {
+          assistantOutput = next.value ?? undefined;
+          break;
+        }
+        assistantText += next.value;
         renderFrame ??= requestAnimationFrame(commitAssistantText);
       }
       if (renderFrame !== null) cancelAnimationFrame(renderFrame);
-      if (assistantText) commitAssistantText();
-      else if (!controller.signal.aborted) {
-        setMessages(current => [...current, { id: assistantId, role: 'assistant', text: t('dashboard.playground.emptyResponse') }]);
+      if (!controller.signal.aborted) {
+        const text = assistantText || t('dashboard.playground.emptyResponse');
+        setMessages(current => {
+          const existing = current.findIndex(message => message.id === assistantId);
+          const assistantMessage: PlaygroundMessage = { id: assistantId, role: 'assistant', text, ...(assistantOutput && { assistantOutput }) };
+          if (existing < 0) return [...current, assistantMessage];
+          return current.map(message => message.id === assistantId ? assistantMessage : message);
+        });
       }
     } catch (error) {
       if (!isAbortError(error) && !controller.signal.aborted) {
@@ -321,7 +326,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
       const index = current.findIndex(message => message.id === id);
       if (index < 0) return current;
       return current.slice(0, index + 1).map(message => message.id === id
-        ? { ...message, text: draft.text.trim(), ...(message.role === 'user' && draft.imageUrl.trim() ? { imageUrl: draft.imageUrl.trim() } : { imageUrl: undefined }) }
+        ? { ...message, text: draft.text.trim(), assistantOutput: undefined, ...(message.role === 'user' && draft.imageUrl.trim() ? { imageUrl: draft.imageUrl.trim() } : { imageUrl: undefined }) }
         : message);
     });
     editDialog.close();

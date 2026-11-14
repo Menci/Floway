@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { RequestDetailPanel } from '../../../src/components/requests/detail';
 import { renderInApp } from '../../render';
-import type { DumpRecord } from '@floway-dev/dump/types';
-import { encodeRun, toNdjson } from '@floway-dev/pipeline';
+import type { DumpRecord } from '@floway-dev/dump/browser';
+import { encodeRun, toNdjson } from '@floway-dev/pipeline/browser';
 
 vi.mock('../../../src/components/ui/body-editor', () => ({ default: ({ text }: { text: string }) => <pre data-testid="body-content">{text}</pre> }));
 

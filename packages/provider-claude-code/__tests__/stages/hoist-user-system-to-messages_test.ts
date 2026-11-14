@@ -1,13 +1,13 @@
 import { test } from 'vitest';
 
 import { hoistUserSystemToMessages } from '../../src/stages/hoist-user-system-to-messages.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type AnthropicMessagesProbe, type ProviderStreamResult } from '@floway-dev/test-utils';
 import { applyProviderStage, assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 type ClaudeCodeStageProbe = AnthropicMessagesProbe & { upstreamId: string };
 
-const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> =>
+const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
 
 const invocation = (payload: AnthropicMessagesPayload): ClaudeCodeStageProbe => ({

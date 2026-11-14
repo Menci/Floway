@@ -1,31 +1,31 @@
+import { renderFailure, type Failure, type RenderedFailure } from '../../pipeline/facts.ts';
+import { inputErrorFields, type InputErrorDetails } from '../shared/errors.ts';
+import { geminiGenerateContentStatusForHttpStatus, type GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
+import { internalDebugErrorFields, type InternalDebugError } from '@floway-dev/provider';
+
 // Google RPC Status envelope, used by Gemini's `error` channel everywhere
 // (HTTP body, SSE-tunnelled error event).
 
-/**
- * What a Gemini generateContent client is sent when this gateway is the one refusing: the
- * envelope, and the status it is sent with.
- *
- * `error.status` is the Google-RPC name and clients read it, so the shape is the protocol's
- * rather than the gateway's — an OpenAI-shaped envelope would leave that field undefined.
- *
- * The two are decided together because the envelope states its code as well as naming it, and
- * this protocol has a name for only nine codes: everything else is `INTERNAL`, which belongs
- * to 500 alone. Minting from some other status would say two different things about one
- * failure — `code: 418` beside `status: "INTERNAL"`, sent as a 418 — so a status this protocol
- * cannot name is sent as the one that name belongs to. Deciding them apart is what let that
- * disagreement exist, which is why nothing here renders an envelope without also saying what
- * to send it with.
- *
- * A forwarded upstream body and a refusal's own envelope keep their status untouched: they
- * already say what they mean, and neither is this gateway's to reword.
- */
-export const mintGeminiGenerateContentFailure = (failure: { readonly status: number; readonly message: string }): {
-  readonly body: Record<string, unknown>;
+/** A synthesized Google RPC envelope uses 500 when the original HTTP code has no named
+ *  counterpart. The source edge applies the same rule to translated envelopes. */
+export const mintGeminiGenerateContentFailure = (failure: {
+  readonly status: number;
+  readonly message: string;
+  readonly details?: readonly Record<string, unknown>[];
+}): {
+  readonly body: GeminiGenerateContentErrorResponse;
   readonly status: number;
 } => {
-  const status = geminiGenerateContentStatusForHttpStatus(failure.status) === 'INTERNAL' ? 500 : failure.status;
+  const status = statusName(failure.status) === 'INTERNAL' ? 500 : failure.status;
   return {
-    body: { error: { code: status, message: failure.message, status: geminiGenerateContentStatusForHttpStatus(status) } },
+    body: {
+      error: {
+        code: status,
+        message: failure.message,
+        status: statusName(status),
+        ...(failure.details === undefined ? {} : { details: [...failure.details] }),
+      },
+    },
     status,
   };
 };
@@ -36,27 +36,53 @@ export const geminiGenerateContentErrorResponse = (status: number, message: stri
   return Response.json(failure.body, { status: failure.status });
 };
 
+// ProtoJSON Any encodes the well-known Struct's arbitrary JSON under value.
+// https://protobuf.dev/programming-guides/json/#any
+// https://github.com/googleapis/googleapis/blob/e09e85d32ca349e1b205514a412817a7692595c6/google/rpc/error_details.proto#L97-L104
+const structDetail = (value: Record<string, unknown>) => ({ '@type': 'type.googleapis.com/google.protobuf.Struct', value });
+
+/** A gateway fault with its diagnostics: the stack as DebugInfo and the remaining fields as a
+ *  Struct, which is where Google RPC carries detail a client may log. */
+export const mintGeminiGenerateContentInternalFailure = (status: number, error: InternalDebugError) => {
+  const { stack, ...fields } = internalDebugErrorFields(error);
+  return mintGeminiGenerateContentFailure({
+    status,
+    message: error.message,
+    details: [
+      ...(stack === undefined ? [] : [{ '@type': 'type.googleapis.com/google.rpc.DebugInfo', stackEntries: stack.split('\n') }]),
+      structDetail({ type: error.type, ...fields }),
+    ],
+  });
+};
+
+/** A request this protocol cannot carry to the selected target, with the field it names. */
+export const mintGeminiGenerateContentInputFailure = (error: InputErrorDetails) => {
+  const fields = inputErrorFields(error);
+  return mintGeminiGenerateContentFailure({ status: 400, message: error.message, ...(fields === undefined ? {} : { details: [structDetail(fields)] }) });
+};
+
 /** The Google-RPC name for an HTTP status. Private, because a caller holding only the name
  *  can write an envelope whose code contradicts it — which is the whole reason the two are
  *  minted together above. */
-const geminiGenerateContentStatusForHttpStatus = (status: number): string => {
+const statusName = (status: number): string => {
   switch (status) {
   case 400:
-    return 'INVALID_ARGUMENT';
   case 401:
-    return 'UNAUTHENTICATED';
   case 403:
-    return 'PERMISSION_DENIED';
   case 404:
-    return 'NOT_FOUND';
   case 429:
-    return 'RESOURCE_EXHAUSTED';
   case 500:
-    return 'INTERNAL';
   case 502:
   case 503:
-    return 'UNAVAILABLE';
+    return geminiGenerateContentStatusForHttpStatus(status)!;
   default:
     return 'INTERNAL';
   }
+};
+
+export const renderGeminiGenerateContentFailure = (failure: Failure): RenderedFailure => {
+  const rendered = renderFailure(failure, mintGeminiGenerateContentFailure);
+  const body = rendered.body as GeminiGenerateContentErrorResponse;
+  if (statusName(rendered.status) !== 'INTERNAL' || rendered.status === 500) return rendered;
+  return { body: { ...body, error: { ...body.error, code: 500, status: 'INTERNAL' } }, status: 500 };
 };

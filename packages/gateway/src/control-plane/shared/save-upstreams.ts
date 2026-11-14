@@ -18,6 +18,12 @@ export const saveUpstream = async ({ previous, next }: UpstreamChange): Promise<
   return saved;
 };
 
+export const appendUpstream = async (next: UpstreamRecord): Promise<StoredUpstreamRecord> => {
+  const saved = await getRepo().upstreams.insertAtEndForModels(next);
+  if (saved === null) throw new HTTPException(409, { message: `Upstream ${next.id} changed concurrently` });
+  return saved;
+};
+
 export const saveUpstreams = async (changes: readonly UpstreamChange[]): Promise<void> => {
   for (const change of changes) await saveUpstream(change);
 };

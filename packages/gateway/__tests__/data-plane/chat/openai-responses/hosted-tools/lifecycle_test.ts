@@ -9,21 +9,21 @@ import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { isReplayableBody } from '@floway-dev/http';
 import { compose, move, run, type Deferred } from '@floway-dev/pipeline';
 import type { SseFrame } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { createCustomPipelines } from '@floway-dev/provider-custom';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
 const key = 'response.chat.openaiResponses.streamedUsage';
 const payload: CanonicalOpenAIResponsesPayload = { model: 'model', input: [], tools: [{ type: 'web_search' }] };
-const shell = (status: OpenAIResponsesResult['status'], input: number, output: number): OpenAIResponsesResult => ({ id: 'upstream', object: 'response', model: 'model', output: [], status, error: null, incomplete_details: null, usage: { input_tokens: input, output_tokens: output, total_tokens: input + output } });
-const first: OpenAIResponsesStreamEvent[] = [
+const shell = (status: OpenAIResponsesResultEx['status'], input: number, output: number): OpenAIResponsesResultEx => ({ id: 'upstream', object: 'response', model: 'model', output: [], status, error: null, incomplete_details: null, usage: { input_tokens: input, output_tokens: output, total_tokens: input + output } });
+const first: OpenAIResponsesStreamEventEx[] = [
   { type: 'response.created', response: shell('in_progress', 0, 0) },
   { type: 'response.output_item.added', output_index: 0, item: { type: 'function_call', id: 'tool', call_id: 'call', name: 'test_search', arguments: '', status: 'in_progress' } },
   { type: 'response.output_item.done', output_index: 0, item: { type: 'function_call', id: 'tool', call_id: 'call', name: 'test_search', arguments: '{}', status: 'completed' } },
   { type: 'response.completed', response: shell('completed', 3, 2) },
 ];
-const second: OpenAIResponsesStreamEvent[] = [
+const second: OpenAIResponsesStreamEventEx[] = [
   { type: 'response.created', response: shell('in_progress', 0, 0) },
   { type: 'response.output_text.delta', output_index: 0, item_id: 'message', content_index: 0, delta: 'partial' },
   { type: 'response.completed', response: shell('completed', 4, 3) },
@@ -35,7 +35,7 @@ for (const client of ['unread', 'partial-before-tool', 'partial-second', 'comple
   const registration: HostedToolRegistration = () => ({
     type: 'active', baseToolName: 'test_search', hosted: {
       hostedTypes: ['web_search'],
-      canonicalize: tool => tool.type === 'web_search' ? tool : undefined,
+      recognizeHostedTool: tool => tool.type === 'web_search' ? tool : undefined,
       buildFunctionTool: (_tool, name) => ({ type: 'function', name, description: 'Search', parameters: { type: 'object' }, strict: false }),
       dispatcher: () => {
         tools += 1;

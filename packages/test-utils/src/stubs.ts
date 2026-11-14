@@ -70,6 +70,7 @@ export const mockPerfTelemetryContext = (overrides: Partial<PerformanceTelemetry
 });
 
 export const stubProvider = (overrides: Partial<ProviderInstance> = {}): ProviderInstance => ({
+  runScheduledTask: overrides.runScheduledTask ?? (() => Promise.resolve()),
   getProvidedModels: overrides.getProvidedModels ?? (() => Promise.resolve([])),
 });
 

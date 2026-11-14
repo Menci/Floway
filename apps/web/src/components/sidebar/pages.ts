@@ -11,6 +11,7 @@ import {
   PersonKey20Color,
   SearchSparkle20Color,
   ShareAndroid20Color,
+  Settings20Color,
   TextEditStyle20Color,
 } from '@fluentui/react-icons';
 import type { FluentIcon } from '@fluentui/react-icons';
@@ -20,6 +21,8 @@ export interface DashboardPage {
   labelKey: string;
   icon: FluentIcon;
   adminOnly?: boolean;
+  permissions?: boolean;
+  upstreams?: boolean;
 }
 
 export interface NavGroup {
@@ -46,7 +49,7 @@ export const navGroups: NavGroup[] = [
   {
     labelKey: 'dashboard.groups.providers',
     items: [
-      { to: '/dashboard/providers/upstreams', labelKey: 'dashboard.nav.upstreams', icon: Cloud20Color, adminOnly: true },
+      { to: '/dashboard/providers/upstreams', labelKey: 'dashboard.nav.upstreams', icon: Cloud20Color, upstreams: true },
       { to: '/dashboard/providers/search', labelKey: 'dashboard.nav.search', icon: SearchSparkle20Color, adminOnly: true },
       { to: '/dashboard/providers/proxy', labelKey: 'dashboard.nav.proxy', icon: ShareAndroid20Color, adminOnly: true },
       { to: '/dashboard/providers/model-aliases', labelKey: 'dashboard.nav.modelAliases', icon: TextEditStyle20Color, adminOnly: true },
@@ -69,10 +72,11 @@ export const navGroups: NavGroup[] = [
   },
   {
     labelKey: 'dashboard.groups.admin',
-    adminOnly: true,
     items: [
-      { to: '/dashboard/admin/users', labelKey: 'dashboard.nav.users', icon: People20Color },
-      { to: '/dashboard/admin/backup-restore', labelKey: 'dashboard.nav.backupRestore', icon: Database20Color },
+      { to: '/dashboard/admin/users', labelKey: 'dashboard.nav.users', icon: People20Color, adminOnly: true },
+      { to: '/dashboard/admin/permissions', labelKey: 'dashboard.nav.permissions', icon: PersonKey20Color, permissions: true },
+      { to: '/dashboard/admin/backup-restore', labelKey: 'dashboard.nav.backupRestore', icon: Database20Color, adminOnly: true },
+      { to: '/dashboard/admin/site-settings', labelKey: 'dashboard.nav.siteSettings', icon: Settings20Color, adminOnly: true },
     ],
   },
 ];

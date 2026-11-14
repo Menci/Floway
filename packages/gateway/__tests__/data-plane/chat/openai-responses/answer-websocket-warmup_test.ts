@@ -4,7 +4,7 @@ import { answerOpenAIResponsesWebSocketWarmup } from '../../../../src/data-plane
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { compose, defineStage, move, run } from '@floway-dev/pipeline';
 import { doneFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
 const exercise = async (generate: boolean | null | undefined) => {
@@ -25,8 +25,8 @@ const exercise = async (generate: boolean | null | undefined) => {
     'request.chat.openaiResponses': payload,
     'route.attempt': { candidateId: 0, upstreamId: candidate.provider.upstreamId, modelId: candidate.model.id, flags: [] },
   }), { gateway, resolveAttempt: () => candidate, selectAffinity } as never);
-  const answer = outcome.facts['response.chat.openaiResponses'] as { frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> };
-  const frames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [];
+  const answer = outcome.facts['response.chat.openaiResponses'] as { frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> };
+  const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
   for await (const frame of answer.frames) frames.push(frame);
   await outcome.drain();
   return { frames, dial, selectAffinity, candidate, gateway, facts: outcome.facts };

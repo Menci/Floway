@@ -20,7 +20,7 @@ import { mapKeepingIdentity, withKeysChanged } from '@floway-dev/protocols/commo
  * caching still primes on slots that do honour the marker.
  *
  * The top-level `cache_control` field is handled by
- * `withTopLevelCacheControlApplied`, which runs first and either ports it
+ * `copilotAnthropicMessagesApplyTopLevelCacheControl`, which runs first and either ports it
  * onto the last cacheable block (where this stage cleans it) or
  * deletes it when no cacheable block exists.
  *

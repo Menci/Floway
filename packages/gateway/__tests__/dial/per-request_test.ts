@@ -11,6 +11,9 @@ const stubSocketDial: SocketDial = {
   connect: async () => {
     throw new Error('stub: per-request_test should not reach a real dial');
   },
+  startTls: async () => {
+    throw new Error('stub: per-request_test should not reach a real dial');
+  },
 };
 
 const COPILOT_CONFIG = {
@@ -24,6 +27,7 @@ const upstream = (id: string, proxyFallbackList: ProxyFallbackEntry[]) => ({
   kind: 'copilot' as const,
   name: id,
   enabled: true,
+  usageRefreshIntervalMinutes: 0,
   sortOrder: 0,
   createdAt: '2026-06-01T00:00:00Z',
   updatedAt: '2026-06-01T00:00:00Z',

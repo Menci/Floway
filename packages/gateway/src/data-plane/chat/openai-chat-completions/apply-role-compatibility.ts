@@ -51,6 +51,8 @@ const rewriteOpenAIChatCompletionsRoles = (messages: OpenAIChatCompletionsMessag
   const nextRole = roleRewriter(rewrite);
   return mapKeepingIdentity(messages, message => {
     const role = nextRole(message.role);
-    return role === message.role ? message : { ...message, role };
+    if (role === message.role) return message;
+    if (message.role !== 'system' && message.role !== 'developer') throw new Error(`Unexpected role rewrite: ${message.role} to ${role}`);
+    return { ...message, role: role as 'system' | 'developer' | 'user' };
   });
 };

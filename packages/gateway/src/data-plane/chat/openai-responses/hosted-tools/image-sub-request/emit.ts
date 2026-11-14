@@ -3,7 +3,7 @@ import { errorFromBody, extractEcho, imageTerminal, isRetryableImageError, proje
 import type { RunDump } from '../../../../../dump/run-sink.ts';
 import { isFailure } from '../../../../pipeline/facts.ts';
 import type { GatewayServices } from '../../../../pipeline/services.ts';
-import type { HostedToolLifecycleEvent, HostedToolTerminal } from '../types.ts';
+import type { HostedToolLifecycleEvent, HostedToolSlotResult } from '../types.ts';
 import { streamReferenceOf } from '@floway-dev/dump';
 import { defineStage, move, own, defer } from '@floway-dev/pipeline';
 import { eventFrame } from '@floway-dev/protocols/common';
@@ -28,7 +28,7 @@ export const emitHostedImageGeneration = defineStage<
     const back = await next(facts);
     const { 'response.openaiImages.canonical': answer, ...rest } = back;
     const request = facts['request.imageGeneration.canonical'];
-    const lifecycle = (async function* (): AsyncGenerator<HostedToolLifecycleEvent, HostedToolTerminal> {
+    const lifecycle = (async function* (): AsyncGenerator<HostedToolLifecycleEvent, HostedToolSlotResult> {
       let outcome: ImageOutcome;
       if (isFailure(answer)) {
         const error = answer.body === undefined
@@ -109,7 +109,7 @@ const imageOutcome = (answer: CanonicalOpenAIImagesResponse): ImageOutcome => {
     : { ok: true, b64, echo: extractEcho(answer.raw) };
 };
 
-const recordLifecycle = (source: AsyncGenerator<HostedToolLifecycleEvent, HostedToolTerminal>, dump: RunDump | null): AsyncGenerator<HostedToolLifecycleEvent, HostedToolTerminal> => {
+const recordLifecycle = (source: AsyncGenerator<HostedToolLifecycleEvent, HostedToolSlotResult>, dump: RunDump | null): AsyncGenerator<HostedToolLifecycleEvent, HostedToolSlotResult> => {
   if (dump === null) return source;
   const recording = dump.openStream();
   const generator = (async function* () {

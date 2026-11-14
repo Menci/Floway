@@ -1,0 +1,128 @@
+import { readFileSync } from 'node:fs';
+import { basename } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+import { findRunnerViolations, isExpandedTrapList, parseTargets, trapToken, type RunnerFacts } from '../src/verification-scope.ts';
+
+const runnerEnv = {
+  GITHUB_ACTIONS: 'true',
+  CI: 'true',
+  RUNNER_ENVIRONMENT: 'github-hosted',
+  RUNNER_OS: 'Linux',
+  GITHUB_JOB: 'verify',
+  GITHUB_WORKFLOW_REF: 'Menci/Floway/.github/workflows/verify.yaml@refs/heads/main',
+};
+
+const runner: RunnerFacts = {
+  platform: 'linux',
+  username: 'runner',
+  home: '/home/runner',
+  osReleaseId: 'ubuntu',
+  env: runnerEnv,
+};
+
+describe('findRunnerViolations', () => {
+  it('accepts the GitHub-hosted Ubuntu runner that runs Verify', () => {
+    expect(findRunnerViolations(runner)).toEqual([]);
+  });
+
+  it('rejects a developer machine even when every runner variable is declared', () => {
+    expect(findRunnerViolations({
+      ...runner,
+      platform: 'darwin',
+      username: 'menci',
+      home: '/Users/menci',
+      osReleaseId: undefined,
+    })).toEqual([
+      'process.platform is darwin, not linux',
+      'the user is menci, not runner',
+      'the home directory is /Users/menci, not /home/runner',
+      '/etc/os-release reports ID=nothing, not ubuntu',
+    ]);
+  });
+
+  it('rejects a self-hosted runner', () => {
+    expect(findRunnerViolations({
+      ...runner,
+      env: { ...runnerEnv, RUNNER_ENVIRONMENT: 'self-hosted' },
+    })).toEqual(['RUNNER_ENVIRONMENT is self-hosted, not github-hosted']);
+  });
+
+  it('rejects another workflow on a GitHub-hosted runner', () => {
+    expect(findRunnerViolations({
+      ...runner,
+      env: { ...runnerEnv, GITHUB_WORKFLOW_REF: 'Menci/Floway/.github/workflows/build.yaml@refs/heads/main' },
+    })).toEqual(['GITHUB_WORKFLOW_REF is Menci/Floway/.github/workflows/build.yaml@refs/heads/main, not the verify workflow']);
+  });
+
+  it('accepts any job inside Verify, which spreads its suite across jobs', () => {
+    for (const job of ['verify', 'test', 'test-installers']) {
+      expect(findRunnerViolations({ ...runner, env: { ...runnerEnv, GITHUB_JOB: job } })).toEqual([]);
+    }
+  });
+
+  it('rejects a non-Ubuntu Linux host', () => {
+    expect(findRunnerViolations({ ...runner, osReleaseId: 'debian' }))
+      .toEqual(['/etc/os-release reports ID=debian, not ubuntu']);
+  });
+});
+
+describe('parseTargets', () => {
+  const valueOptions = new Set(['--project', '--reporter']);
+  const subcommands = new Set(['run']);
+
+  it('keeps only positional targets', () => {
+    expect(parseTargets(['run', 'a_test.ts', '--project', 'x', 'b_test.ts'], valueOptions, subcommands))
+      .toEqual(['a_test.ts', 'b_test.ts']);
+  });
+
+  it('drops the subcommand and standalone flags', () => {
+    expect(parseTargets(['run', '--changed', 'a_test.ts'], valueOptions, subcommands))
+      .toEqual(['a_test.ts']);
+  });
+});
+
+describe('the trap that detects an expanded glob', () => {
+  const trap = 'packages/http/__tests__/lantern_test.ts';
+  const otherTrap = 'packages/proxy/__tests__/yarrow_test.ts';
+  const real = 'packages/http/__tests__/parser_test.ts';
+
+  it('gives every trap an unrelated filename and its own token', async () => {
+    const { execFileSync } = await import('node:child_process');
+    const found = execFileSync(
+      'find', ['packages', 'apps', 'tools', '-name', '*_test.ts', '-not', '-path', '*/node_modules/*'],
+      { encoding: 'utf8' },
+    ).trim().split('\n').filter(Boolean);
+
+    const traps = found.filter(path => readFileSync(path, 'utf8').includes(trapToken(basename(path))));
+    const names = traps.map(path => basename(path, '_test.ts'));
+
+    expect(traps.length).toBeGreaterThanOrEqual(19);
+    expect(traps).toContain(trap);
+    expect(traps).toContain('packages/gateway/__tests__/repo/kestrel_test.ts');
+    // No shared prefix or suffix, so one `-name` or `grep -v` cannot remove two.
+    expect(new Set(names).size).toBe(names.length);
+    for (const a of names) {
+      for (const b of names) {
+        if (a !== b) expect(a.includes(b) || b.includes(a)).toBe(false);
+      }
+    }
+  });
+
+  it('recognizes a glob that expanded to traps and real files together', () => {
+    expect(isExpandedTrapList([real, trap])).toBe(true);
+  });
+
+  it('allows a list of traps alone, which runs nothing worth hiding', () => {
+    expect(isExpandedTrapList([trap, otherTrap])).toBe(false);
+  });
+
+  it('allows naming one trap directly, so the trap body stays verifiable', () => {
+    expect(isExpandedTrapList([trap])).toBe(false);
+  });
+
+  it('allows an ordinary list of test files', () => {
+    expect(isExpandedTrapList([real])).toBe(false);
+  });
+});

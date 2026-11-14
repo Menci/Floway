@@ -10,8 +10,8 @@ const compactText = 'Your task is to create a detailed summary of the conversati
 
 test('Claude Code compact intent, identity and interaction metadata reach the final Copilot wire in stage order', async () => {
   clearInProcessCopilotTokenCache();
-  const record: UpstreamRecord = { id: 'up_header_stages', kind: 'copilot', name: 'Test', enabled: true, sortOrder: 0, createdAt: '', updatedAt: '', config: { githubHost: 'github.com', githubToken: 'test-token', user: { id: 1, login: 'test', name: null, avatar_url: '' } }, state: { ...emptyCopilotUpstreamState(), copilotToken: { token: 'access-token', expiresAt: 4102444800, baseUrl: 'https://copilot.example' } }, flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [], modelPrefix: null, modelsCache: null, hue: 210 };
-  initProviderRepo(() => ({ upstreams: { getById: async () => record, saveState: async () => {} } }));
+  const record: UpstreamRecord = { id: 'up_header_stages', kind: 'copilot', name: 'Test', enabled: true, usageRefreshIntervalMinutes: 0, sortOrder: 0, createdAt: '', updatedAt: '', config: { githubHost: 'github.com', githubToken: 'test-token', user: { id: 1, login: 'test', name: null, avatar_url: '' } }, state: { ...emptyCopilotUpstreamState(), copilotToken: { token: 'access-token', expiresAt: 4102444800, baseUrl: 'https://copilot.example' } }, flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [], modelPrefix: null, modelsCache: null, hue: 210 };
+  initProviderRepo(() => ({ upstreams: { getById: async () => record, saveState: async () => {} }, recordUpstreamMetric: async () => {} }));
   const provider = createCopilotProvider(record);
   const model = stubProviderModel({ id: 'claude-test', providerData: { rawModels: [{ id: 'claude-test', supported_endpoints: ['/v1/messages'] }] } });
   let observed: Headers | undefined;

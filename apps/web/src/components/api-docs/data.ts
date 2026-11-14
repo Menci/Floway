@@ -1,6 +1,6 @@
-import { PUBLIC_DATA_PLANE_ROUTES, type PublicDataPlaneRouteId } from '@floway-dev/protocols/common';
+import { PUBLIC_DATA_PLANE_ROUTES, type PublicDataPlaneRouteId } from '@floway-dev/protocols/browser';
 
-export type ApiDocsGroup = 'models' | 'generation' | 'media' | 'rerank' | 'search';
+export type ApiDocsGroup = 'models' | 'generation' | 'media' | 'rerank' | 'decision' | 'search';
 
 export interface ApiDocsEndpoint<Name extends string = string> {
   docs: string;
@@ -23,15 +23,22 @@ const endpoint = <const Name extends string>(
 };
 
 const geminiGenerateContentActionPath = (action: string) =>
-  PUBLIC_DATA_PLANE_ROUTES.geminiGenerateContentAction.paths[0].replace(':modelAction{.+}', `{model}:${action}`);
+  PUBLIC_DATA_PLANE_ROUTES.geminiGenerateContentAction.paths
+    .map(path => path.replace(':modelAction{.+}', `{model}:${action}`))
+    .join(', ');
+
+const geminiModelPath = PUBLIC_DATA_PLANE_ROUTES.geminiModel.paths
+  .map(path => path.replace(':modelId{.+}', '{model}'))
+  .join(', ');
 
 export const authCurlExample = (origin: string) =>
   `curl "${origin}/v1/models" -H "Authorization: Bearer $FLOWAY_API_KEY"`;
 
 export const apiDocsEndpoints = [
-  endpoint('models', { group: 'models', name: 'openAiModels', docs: `${openAi}/models/list` }),
-  endpoint('geminiModels', { group: 'models', name: 'geminiModels', docs: 'https://ai.google.dev/api/models' }),
-  endpoint('geminiModel', { group: 'models', name: 'geminiModel', docs: 'https://ai.google.dev/api/models', path: PUBLIC_DATA_PLANE_ROUTES.geminiModel.paths[0].replace(':modelId{.+}', '{model}') }),
+  // One listing endpoint serves two shapes: the OpenAI/Anthropic superset for
+  // every caller, and Gemini's `{ models }` for clients that identify as Gemini.
+  endpoint('models', { group: 'models', name: 'modelList', docs: `${openAi}/models/list` }),
+  endpoint('geminiModel', { group: 'models', name: 'geminiModel', docs: 'https://ai.google.dev/api/models', path: geminiModelPath }),
 
   endpoint('openaiCompletions', { group: 'generation', name: 'openAiCompletions', docs: `${openAi}/completions/create` }),
   endpoint('openaiChatCompletions', { group: 'generation', name: 'openAiChat', docs: `${openAi}/chat/create` }),
@@ -53,6 +60,9 @@ export const apiDocsEndpoints = [
   endpoint('cohereV2Rerank', { group: 'rerank', name: 'cohereV2Rerank', docs: 'https://docs.cohere.com/v2/reference/rerank' }),
   endpoint('jinaV1Rerank', { group: 'rerank', name: 'jinaRerank', docs: 'https://jina.ai/reranker' }),
   endpoint('voyageV1Rerank', { group: 'rerank', name: 'voyageRerank', docs: 'https://docs.voyageai.com/reference/reranker-api' }),
+
+  endpoint('typesafeSystemOne', { group: 'decision', name: 'typesafeSystemOne', docs: 'https://docs.typesafe.ai/api' }),
+  endpoint('openAiDecisions', { group: 'decision', name: 'openAiDecisions', docs: 'https://developers.openai.com/api/docs/guides/decisions' }),
 
   endpoint('alphaSearch', { group: 'search', name: 'codexSearch', docs: codexSearchDocs }),
 ] satisfies readonly ApiDocsEndpoint[];

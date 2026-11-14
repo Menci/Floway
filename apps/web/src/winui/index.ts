@@ -1,6 +1,8 @@
 import { accordionCss } from './controls/accordion.css';
+import { avatarCss } from './controls/avatar.css';
 import { badgeTagCss } from './controls/badge-tag.css';
 import { buttonCss } from './controls/button.css';
+import { calendarRangeCss } from './controls/calendar-range.css';
 import { cardCss } from './controls/card.css';
 import { choiceCss } from './controls/choice.css';
 import { colorPickerCss } from './controls/color-picker.css';
@@ -13,12 +15,16 @@ import { messageBarCss } from './controls/message-bar.css';
 import { navCss } from './controls/nav.css';
 import { popoverCss } from './controls/popover.css';
 import { progressCss } from './controls/progress.css';
+import { scopeExpressionCss } from './controls/scope-expression.css';
 import { scrollbarCss } from './controls/scrollbar.css';
 import { selectCss } from './controls/select.css';
 import { switchCss } from './controls/switch.css';
 import { tableCss } from './controls/table.css';
 import { tabsCss } from './controls/tabs.css';
+import { tagPickerCss } from './controls/tag-picker.css';
+import { telemetryRangeCss } from './controls/telemetry-range.css';
 import { textInputCss } from './controls/text-input.css';
+import { textTrimCss } from './controls/text-trim.css';
 import { textCss } from './controls/text.css';
 import { toastCss } from './controls/toast.css';
 import { toolbarCss } from './controls/toolbar.css';
@@ -34,9 +40,11 @@ export const winuiCss = [
   pageTransitionCss,
   focusRectCss,
   accordionCss,
+  avatarCss,
   badgeTagCss,
   buttonCss,
   cardCss,
+  calendarRangeCss,
   choiceCss,
   colorPickerCss,
   dialogCss,
@@ -49,13 +57,17 @@ export const winuiCss = [
   popoverCss,
   progressCss,
   scrollbarCss,
+  scopeExpressionCss,
   selectCss,
   switchCss,
   tableCss,
   tabsCss,
+  tagPickerCss,
   textInputCss,
+  textTrimCss,
   textCss,
   toastCss,
+  telemetryRangeCss,
   toolbarCss,
   tooltipCss,
 ].join('\n');

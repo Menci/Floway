@@ -3,14 +3,16 @@ import type { InferRequestType } from 'hono/client';
 import { PATH_OVERRIDE_PATHS } from './endpoints';
 import { api, callApi } from '../../api/client';
 import type {
-  ProxyRecord,
   ProviderModelsFailureResponse,
   UpstreamRecord,
   UpstreamRecordEnvelope,
 } from '../../api/types';
-import type { UpstreamProviderKind } from '@floway-dev/provider/model';
-import type { UpstreamModelConfig } from '@floway-dev/provider/model-config';
-import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
+import {
+  type UpstreamProviderKind,
+  type UpstreamModelConfig,
+  MODEL_PREFIX_MAX_LENGTH,
+  MODEL_PREFIX_REGEX,
+} from '@floway-dev/provider/browser';
 
 type CreateUpstreamBody = InferRequestType<typeof api.api.upstreams.$post>['json'];
 type UpdateUpstreamBody = InferRequestType<typeof api.api.upstreams[':id']['$patch']>['json'];
@@ -21,18 +23,17 @@ export interface RuntimeInfo {
 }
 
 export interface EditorAuxData {
-  proxies: ProxyRecord[];
+  proxies: Array<{ id: string; name: string }>;
   runtime: RuntimeInfo;
 }
 
+export type UpstreamEditLevel = 'off' | 'models' | 'full';
+
 interface UpstreamEditorLoaderDataBase extends EditorAuxData {
+  audit?: boolean;
+  editLevel: UpstreamEditLevel;
   record: UpstreamRecord;
   discovered: UpstreamModelConfig[] | null;
-  // For providers whose credential is an API key, the editor can keep that
-  // stored key when the form's blank secret field is left alone; OAuth
-  // providers do not copy their tokens and start from the blueprint
-  // credential shape instead.
-  preserveCredentials?: boolean;
 }
 
 export type UpstreamEditorLoaderData = UpstreamEditorLoaderDataBase & (
@@ -64,6 +65,7 @@ export interface ModelRow {
 export interface UpstreamEditorValues {
   name: string;
   enabled: boolean;
+  usageRefreshIntervalMinutes: number;
   hue: UpstreamRecord['hue'];
   proxyFallbackList: UpstreamRecord['proxy_fallback_list'];
   modelPrefix: UpstreamRecord['model_prefix'];
@@ -83,15 +85,19 @@ export const providerDefaultName: Record<UpstreamProviderKind, string> = {
   ollama: 'Ollama',
 };
 
-export const loadEditorAux = async (): Promise<EditorAuxData> => {
-  const [proxies, runtime] = await Promise.all([
-    callApi(() => api.api.proxies.$get()),
-    callApi(() => api.api['runtime-info'].$get()),
-  ]);
-  if (proxies.error) throw new Error(proxies.error.message);
+// Proxy names are part of an upstream's readable configuration, so every
+// editor loads them; only changing the fallback list needs Full.
+export const loadEditorAux = async (upstreamId?: string): Promise<EditorAuxData> => {
+  const runtimePromise = callApi(() => api.api['runtime-info'].$get());
+  const result = upstreamId === undefined
+    ? await callApi(() => api.api.proxies.$get())
+    : await callApi(() => api.api['proxy-options'].$get({ query: { upstream_id: upstreamId } }));
+  if (result.error) throw new Error(result.error.message);
+  const proxies = result.data.map(proxy => ({ id: proxy.id, name: proxy.name }));
+  const runtime = await runtimePromise;
   if (runtime.error) throw new Error(runtime.error.message);
   return {
-    proxies: proxies.data,
+    proxies,
     runtime: runtime.data,
   };
 };
@@ -114,6 +120,15 @@ export const canFetchModelCatalog = (record: UpstreamRecord, config: UpstreamEdi
     return isPersisted(record);
   }
 };
+
+// Turning a listed model on or off is a catalog edit rather than a structural
+// one: an editor who may change the catalog may set it, and only an audit-only
+// editor may not. The sidebar's disabled-models combobox and the workspace's
+// per-row switch are two presentations of that one field, so both read this
+// predicate instead of deriving read-only flags of their own -- each derived
+// from a different restriction (connection editability on one side, catalog
+// ownership on the other) and the two drifted apart.
+export const modelsEditable = (editLevel: UpstreamEditLevel): boolean => editLevel !== 'off';
 
 // Manual entries exist only for the kinds whose stored config carries a model
 // list. For the rest the catalog is the provider's, and the editor can only
@@ -176,16 +191,26 @@ export const fetchSavedModelCatalog = async (
 // writes the key into the edited values even when nothing filled it in, and
 // dirtiness is decided by comparing those values against the ones the form
 // opened with -- key by key, so a key one side lacks entirely reads as an edit.
-// An optional field therefore opens with its key already present and empty, and
-// every optional field the editor registers needs that seed.
+// An optional field therefore opens with its key already present -- at the
+// stored value when there is one, and undefined otherwise -- and every
+// optional field the editor registers needs that seed.
 const withRegisteredKey = <T extends object, K extends keyof T>(key: K, value: T): T =>
   ({ [key]: undefined, ...value }) as T;
 
+// The API key input registers `config.apiKey` for every kind that renders it,
+// so the form opens with that key present. Seeding an empty string for a config
+// that stores none is what makes a key typed and then deleted read as the state
+// the form opened in; the stored string itself is what the input displays.
+const withApiKeyField = <T extends object>(config: T): T & { apiKey: string } =>
+  ({ ...structuredClone(config), apiKey: (config as { apiKey?: string | null }).apiKey ?? '' });
+
 export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues => {
+  // Kinds whose credential is an API key render a registered field for it, so
+  // the value the editor opens with is the one the operator can see and edit.
+  // The input masks it; nothing about the stored record is withheld.
   const config: UpstreamRecord['config'] = record.kind === 'custom'
     ? {
-        ...structuredClone(record.config),
-        apiKey: '',
+        ...withApiKeyField(record.config),
         // The override fields register the whole map, so the edited value
         // carries every listed path whether or not the stored config does.
         // Seeding the blanks keeps the saved state and the edited state the
@@ -198,15 +223,14 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
         ],
         modelsFetch: withRegisteredKey('endpoint', structuredClone(record.config.modelsFetch)),
       }
-    : record.kind === 'azure'
-      ? { ...structuredClone(record.config), apiKey: '' }
-      : record.kind === 'ollama'
-        ? { ...structuredClone(record.config), apiKey: '' }
-        : structuredClone(record.config);
+    : record.kind === 'azure' || record.kind === 'ollama'
+      ? withApiKeyField(record.config)
+      : structuredClone(record.config);
   const manualModels = manualModelsSupported(record) ? structuredClone(record.config.models) : [];
   return {
     name: record.name,
     enabled: record.enabled,
+    usageRefreshIntervalMinutes: record.usage_refresh_interval_minutes,
     hue: record.hue,
     proxyFallbackList: structuredClone(record.proxy_fallback_list).map(entry => withRegisteredKey('colos', entry)),
     modelPrefix: structuredClone(record.model_prefix),
@@ -220,19 +244,15 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
 
 // The editor holds one flat form model for every provider kind, so the config
 // is assembled structurally and only becomes a specific union member here.
-const configFromValues = (
-  record: UpstreamRecord,
-  values: UpstreamEditorValues,
-  options: { preserveStoredSecret?: boolean } = {},
-): UpstreamRecord['config'] => {
+const configFromValues = (record: UpstreamRecord, values: UpstreamEditorValues): UpstreamRecord['config'] => {
   const config = structuredClone(values.config) as unknown as Record<string, unknown>;
   if (manualModelsSupported(record)) {
     config.models = structuredClone(values.manualModels);
-    const apiKey = typeof config.apiKey === 'string' ? config.apiKey.trim() : '';
-    if (apiKey) config.apiKey = apiKey;
-    else if (options.preserveStoredSecret && 'apiKey' in record.config && record.config.apiKey) {
-      config.apiKey = record.config.apiKey;
-    } else delete config.apiKey;
+    // The input carries the stored key, so an emptied field is the operator
+    // clearing it. Sending the empty value lets the provider reject a required
+    // credential and an optional one drop it; a missing key here would instead
+    // leave the stored one in place through the patch merge.
+    if (typeof config.apiKey === 'string') config.apiKey = config.apiKey.trim();
   }
   if (record.kind === 'custom') {
     const custom = config as Record<string, unknown>;
@@ -258,8 +278,9 @@ export const previewRecord = (record: UpstreamRecord, values: UpstreamEditorValu
     ...record,
     name: values.name.trim(),
     enabled: values.enabled,
+    usage_refresh_interval_minutes: values.usageRefreshIntervalMinutes,
     hue: values.hue,
-    config: configFromValues(record, values, { preserveStoredSecret: true }),
+    config: configFromValues(record, values),
     state: values.state,
     proxy_fallback_list: values.proxyFallbackList,
     model_prefix: values.modelPrefix,
@@ -270,27 +291,40 @@ export const previewRecord = (record: UpstreamRecord, values: UpstreamEditorValu
 
 // `sort_order` is left out: the server appends a new upstream after the last
 // one when the field is absent, and the list page owns reordering afterwards.
-export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues, options?: { preserveStoredSecret?: boolean }): CreateUpstreamBody => {
+export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues): CreateUpstreamBody => {
   return {
     kind: record.kind,
     name: values.name.trim(),
     enabled: values.enabled,
+    usage_refresh_interval_minutes: values.usageRefreshIntervalMinutes,
     hue: values.hue,
     flag_overrides: values.flagOverrides,
     disabled_public_model_ids: values.disabledPublicModelIds,
     proxy_fallback_list: values.proxyFallbackList,
     model_prefix: values.modelPrefix,
-    config: configFromValues(record, values, options),
+    config: configFromValues(record, values),
     ...((record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code')
       ? { state: values.state }
       : {}),
   } as CreateUpstreamBody;
 };
 
-export const updateBody = (record: UpstreamRecord, values: UpstreamEditorValues): UpdateUpstreamBody => {
+export const updateBody = (record: UpstreamRecord, values: UpstreamEditorValues, editLevel: 'models' | 'full'): UpdateUpstreamBody => {
+  if (editLevel === 'models') {
+    const config = manualModelsSupported(record)
+      ? record.kind === 'custom'
+        ? { models: structuredClone(values.manualModels), modelsFetch: { enabled: (values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).modelsFetch.enabled } }
+        : { models: structuredClone(values.manualModels) }
+      : undefined;
+    return {
+      disabled_public_model_ids: values.disabledPublicModelIds,
+      ...(config === undefined ? {} : { config }),
+    } as UpdateUpstreamBody;
+  }
   return {
     name: values.name.trim(),
     enabled: values.enabled,
+    usage_refresh_interval_minutes: values.usageRefreshIntervalMinutes,
     hue: values.hue,
     flag_overrides: values.flagOverrides,
     disabled_public_model_ids: values.disabledPublicModelIds,

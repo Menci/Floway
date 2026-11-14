@@ -6,14 +6,14 @@ import { assertEquals } from '@floway-dev/test-utils';
 
 type Facts = { 'request.provider.payload': CanonicalOpenAIResponsesPayload; 'request.provider.responsesAction': 'generate' | 'compact' };
 
-vi.mock('../../../src/stages/openai-responses/force-store-false.ts', () => ({
-  copilotOpenAIResponsesForceStoreFalse: defineStage<Facts, Facts, object, object>({
+vi.mock('../../../src/stages/openai-responses/strip-service-tier.ts', () => ({
+  copilotOpenAIResponsesStripServiceTier: defineStage<Facts, Facts, object, object>({
     name: 'pivotCompactToGenerate',
     through: {
-      request: { needs: ['request.provider.payload', 'request.provider.responsesAction'], consumes: ['request.provider.payload', 'request.provider.responsesAction'], provides: ['request.provider.payload', 'request.provider.responsesAction'] },
+      request: { needs: ['request.provider.responsesAction'], consumes: ['request.provider.responsesAction'], provides: ['request.provider.responsesAction'] },
       response: { needs: [], consumes: [], provides: [] },
     },
-    execute: async (facts, next) => move({ ...await next(move({ ...facts, 'request.provider.payload': { ...facts['request.provider.payload'], store: false }, 'request.provider.responsesAction': 'generate' })) }),
+    execute: async (facts, next) => move({ ...await next(move({ ...facts, 'request.provider.responsesAction': 'generate' })) }),
   }),
 }));
 
@@ -31,6 +31,7 @@ test('Copilot dispatch and decoding follow the action changed by a stage (compac
     kind: 'copilot',
     name: 'Copilot (pivot tester)',
     enabled: true,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 0,
     createdAt: '2026-03-15T00:00:00.000Z',
     updatedAt: '2026-03-15T00:00:00.000Z',
@@ -48,6 +49,7 @@ test('Copilot dispatch and decoding follow the action changed by a stage (compac
     },
   };
   initProviderRepo(() => ({
+    recordUpstreamMetric: async () => {},
     upstreams: {
       getById: async () => upstream,
       saveState: async () => {},

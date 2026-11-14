@@ -25,3 +25,22 @@ test('existing model caches without Custom discovery remain readable', () => {
   const cache: UpstreamModelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 100, models: [], lastError: null };
   expect(decodeUpstreamModelsCache(encodeUpstreamModelsCache(cache), 'up_existing')).toEqual(cache);
 });
+
+test('stored model cache round-trips a decision target', () => {
+  const cache: UpstreamModelsCache = {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 100,
+    models: [{
+      id: 'decision-1',
+      upstreamModelId: 'decision-1',
+      kind: 'decision',
+      limits: {},
+      endpoints: { decision: {} },
+      opaqueBlobCompatibilityScope: { bindToUpstream: true },
+      enabledFlags: new Set(),
+      decisionTarget: { protocol: 'typesafe-systemone', path: '/providers/microsoft/v1/systemone' },
+    }],
+    lastError: null,
+  };
+  expect(decodeUpstreamModelsCache(encodeUpstreamModelsCache(cache), 'up_azure')).toEqual(cache);
+});

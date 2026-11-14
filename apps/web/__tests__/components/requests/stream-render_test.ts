@@ -1,10 +1,9 @@
 import { expect, test } from 'vitest';
 
 import { clientStreamOf } from '../../../src/components/requests/run-stream';
-import { collectStream } from '../../../src/components/requests/stream-render';
-import { encodeRun, streamFact, toNdjson, type Event } from '@floway-dev/pipeline';
-import { anthropicMessagesEventToSsePayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { collectStream, detectCollectKind } from '../../../src/components/requests/stream-render';
+import { encodeRun, streamFact, toNdjson, type Event } from '@floway-dev/pipeline/browser';
+import { eventFrame, type AnthropicMessagesStreamEventEx, type ProtocolFrame } from '@floway-dev/protocols/browser';
 
 const recorded = (frames: readonly ProtocolFrame<unknown>[], ended: boolean) => {
   const events: Event[] = [
@@ -33,23 +32,35 @@ for (const terminal of [false, true]) {
   });
 }
 
+test('recognizes a Gemini turn under either prefix', () => {
+  expect(detectCollectKind('/v1beta/models/gemini-2.5-pro:generateContent')).toBe('gemini-generate-content');
+  expect(detectCollectKind('/v1/models/gemini-2.5-pro:generateContent')).toBe('gemini-generate-content');
+  expect(detectCollectKind('/v1/models/gemini-2.5-pro:streamGenerateContent?alt=sse')).toBe('gemini-generate-content');
+  expect(detectCollectKind('/v1/models/gemini-2.5-pro:countTokens')).toBe('gemini-generate-content');
+});
+
+test('leaves the model listing and unrelated paths alone', () => {
+  expect(detectCollectKind('/v1/models')).toBeNull();
+  expect(detectCollectKind('/v1beta/models')).toBeNull();
+  expect(detectCollectKind('/v1/models/gemini-2.5-pro')).toBeNull();
+});
+
 test('separates an ended protocol error from a truncated recording', async () => {
   const stream = recorded([eventFrame({ type: 'error', error: { type: 'api_error', message: 'upstream failed' } })], true);
   expect(await collectStream('anthropic-messages', stream)).toMatchObject({ result: null, error: expect.stringContaining('upstream failed'), truncated: false });
 });
 
-test('collects final Anthropic citation wire fields into the canonical result', async () => {
-  const citation = { type: 'search_result_location' as const, url: 'https://example.com/source', title: 'Reference', search_result_index: 0, start_block_index: 0, end_block_index: 1, cited_text: 'evidence' };
-  const events: AnthropicMessagesStreamEvent[] = [
-    { type: 'message_start', message: { id: 'msg-1', type: 'message', role: 'assistant', content: [], model: 'm', stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } },
+test('collects Anthropic citations from the recorded client stream', async () => {
+  const citation = { type: 'search_result_location' as const, source: 'https://example.com/source', title: 'Reference', search_result_index: 0, start_block_index: 0, end_block_index: 1, cited_text: 'evidence' };
+  const events: AnthropicMessagesStreamEventEx[] = [
+    { type: 'message_start', message: { id: 'msg-1', type: 'message', role: 'assistant', content: [], model: 'm', stop_reason: null, stop_sequence: null, stop_details: null, container: null, usage: { input_tokens: 1, output_tokens: 0, cache_creation_input_tokens: null, cache_read_input_tokens: null, cache_creation: null, inference_geo: null, service_tier: null, server_tool_use: null, output_tokens_details: null } } },
     { type: 'content_block_start', index: 0, content_block: { type: 'text', text: 'answer', citations: [citation] } },
     { type: 'content_block_delta', index: 0, delta: { type: 'citations_delta', citation } },
     { type: 'content_block_stop', index: 0 },
-    { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } },
+    { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null, stop_details: null, container: null }, usage: { output_tokens: 1, input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, server_tool_use: null, output_tokens_details: null } },
     { type: 'message_stop' },
   ];
-  const wire = events.map(event => eventFrame(anthropicMessagesEventToSsePayload(event)));
-  const stream = recorded(wire, true);
+  const stream = recorded(events.map(event => eventFrame(event)), true);
   expect(await collectStream('anthropic-messages', stream)).toMatchObject({ result: { content: [{ type: 'text', text: 'answer', citations: [citation, citation] }] }, error: null, truncated: false });
 });
 

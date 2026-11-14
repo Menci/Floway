@@ -1,5 +1,5 @@
 import type { ChatBillableUsage } from '../shared/usage.ts';
-import { mergeAnthropicMessagesUsageSnapshot, anthropicMessagesUsageSnapshot, splitAnthropicMessagesCacheCreationTokens, type AnthropicMessagesStreamEvent, type AnthropicMessagesUsageSnapshot } from '@floway-dev/protocols/anthropic-messages';
+import { mergeAnthropicMessagesUsageSnapshot, anthropicMessagesUsageSnapshot, splitAnthropicMessagesCacheCreationTokens, type AnthropicMessagesStreamEventEx, type AnthropicMessagesUsageSnapshot } from '@floway-dev/protocols/anthropic-messages';
 import { billableServiceTier } from '@floway-dev/protocols/common';
 
 // Anthropic reports `input_tokens` exclusive of both cache buckets already,
@@ -20,14 +20,12 @@ export const billableUsageFromAnthropicMessagesUsage = (usage: AnthropicMessages
 
 // Anthropic reports input accounting on `message_start` and output accounting
 // on `message_delta`, so the running figure is merged across both.
-export const createAnthropicMessagesBillableUsageReader = (): (event: AnthropicMessagesStreamEvent) => ChatBillableUsage | null => {
+export const createAnthropicMessagesBillableUsageReader = (): (event: AnthropicMessagesStreamEventEx) => ChatBillableUsage | null => {
   let merged = anthropicMessagesUsageSnapshot();
   return event => {
-    const usage = event.type === 'message_start' ? event.message.usage
-      : event.type === 'message_delta' ? event.usage
-        : undefined;
-    if (usage === undefined) return null;
-    merged = mergeAnthropicMessagesUsageSnapshot(merged, usage);
+    if (event.type === 'message_start') merged = anthropicMessagesUsageSnapshot(event.message.usage);
+    else if (event.type === 'message_delta' && event.usage !== undefined) merged = mergeAnthropicMessagesUsageSnapshot(merged, event.usage);
+    else return null;
     return billableUsageFromAnthropicMessagesUsage(merged);
   };
 };

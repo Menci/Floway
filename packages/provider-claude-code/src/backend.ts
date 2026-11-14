@@ -1,13 +1,14 @@
-import { logWarn, logInfo, type LogFields } from './log.ts';
+import { logWarn, type LogFields } from './log.ts';
 import { type ClaudeCodeQuotaSnapshot } from './quota.ts';
 import {
   readClaudeCodeUpstreamState,
   replaceSoleAccount,
   type ClaudeCodeAccountCredential,
 } from './state.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { claudeCodeQuotaMetrics } from './upstream-metrics.ts';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { getProviderRepo } from '@floway-dev/provider';
+import { getProviderRepo, recordUpstreamMetrics } from '@floway-dev/provider';
 
 export const ANTHROPIC_MESSAGES_ENDPOINT = 'https://api.anthropic.com/v1/messages?beta=true';
 export const STREAM_DIAGNOSTIC_FRAME_LIMIT = 3;
@@ -19,10 +20,8 @@ export const synthetic503 = (message: string): Response =>
     { status: 503, headers: { 'content-type': 'application/json' } },
   );
 
-export const synthetic429 = (message: string, retryAtIso: string | null, now: Date): Response => {
-  const retryAfterSeconds = retryAtIso === null
-    ? 60
-    : Math.max(0, Math.ceil((new Date(retryAtIso).getTime() - now.getTime()) / 1000));
+export const synthetic429 = (message: string, retryAtIso: string, now: Date): Response => {
+  const retryAfterSeconds = Math.max(0, Math.ceil((new Date(retryAtIso).getTime() - now.getTime()) / 1000));
   return new Response(
     JSON.stringify({ error: { type: 'claude_code_rate_limited', message, retry_at: retryAtIso } }),
     {
@@ -38,7 +37,7 @@ export interface StreamDiagnosticFrame {
 }
 
 export const observedClaudeCodeMessagesStream = async function* (
-  events: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
+  events: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
   options: {
     upstreamId: string;
     model: string;
@@ -48,7 +47,7 @@ export const observedClaudeCodeMessagesStream = async function* (
     rawFrameCount: () => number;
     warn: (message: string, fields: Readonly<Record<string, unknown>>) => Promise<void>;
   },
-): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   let terminalEvent: 'message_stop' | 'error' | null = null;
   let streamError: unknown;
   try {
@@ -83,38 +82,7 @@ export const observedClaudeCodeMessagesStream = async function* (
   }
 };
 
-// `anthropic-ratelimit-unified-status: rejected` paired with a future
-// `unified-reset` timestamp means the upstream's primary plan window is
-// exhausted and a fresh request would 429 right away; short-circuit at
-// the gate so we don't burn an OAuth refresh on a request that has no
-// chance.
-//
-// Note 1: `overage.status: rejected` (typically paired with
-// `overage-disabled-reason: out_of_credits`) is NOT a short-circuit
-// signal. It only reports that the account has no extra-usage credits
-// to spill into once the primary window runs out — which is the steady
-// state for any plan-tier account that hasn't bought extra credits, so
-// blocking on it would refuse every request to such accounts. The
-// primary `status` already reflects whether the upstream will actually
-// reject the next request.
-//
-// Note 2: a primary `status: rejected` WITHOUT a `reset` is treated as
-// non-gating. Sub2api `ratelimit_service.go:953-961` flags this exact
-// shape as "likely not a real rate limit" (e.g. an "Extra usage required"
-// body sentinel) and passes it through verbatim — without a reset we'd
-// otherwise lock the account out indefinitely because the next request
-// never fires to refresh the snapshot.
-export const isRateLimitedNow = (
-  snapshot: ClaudeCodeQuotaSnapshot | null,
-  now: Date,
-): snapshot is ClaudeCodeQuotaSnapshot => {
-  if (!snapshot) return false;
-  if (snapshot.status !== 'rejected') return false;
-  if (!snapshot.reset) return false;
-  return new Date(snapshot.reset).getTime() > now.getTime();
-};
-
-export const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuotaSnapshot, info: (message: string, fields: LogFields) => void | Promise<void> = logInfo): Promise<void> => {
+export const persistQuotaSnapshot = async (upstreamId: string, modelId: string, snapshot: ClaudeCodeQuotaSnapshot, info: (message: string, fields: LogFields) => void | Promise<void>): Promise<void> => {
   // Stamped before the write: the mutator is replayed on a lost race and must
   // return the same document each time, and this records when the snapshot was
   // observed rather than which attempt landed it.
@@ -128,9 +96,10 @@ export const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeC
     previousAccount = state.accounts[0];
     return replaceSoleAccount(state, account => ({
       ...account,
-      quotaSnapshot: { fetchedAt, data: snapshot },
+      quotaSnapshot: { fetchedAt, modelId, data: snapshot },
     }));
   });
+  await recordUpstreamMetrics(upstreamId, claudeCodeQuotaMetrics(snapshot), fetchedAt);
   const priorStatus = previousAccount.quotaSnapshot === null ? null : previousAccount.quotaSnapshot.data.status;
   // Emit only on transition. Persisting every response would flood the log
   // with one event per request; the dashboard already reads the snapshot
@@ -144,6 +113,7 @@ export const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeC
       to_status: snapshot.status,
       reset_at_iso: snapshot.reset,
       representative_claim: snapshot.representativeClaim,
+      model: modelId,
     });
   }
 };

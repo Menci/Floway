@@ -3,7 +3,7 @@ import type { Chat } from '../facts.ts';
 import { answerWithFrames, rewritingEvents } from '../shared/frames.ts';
 import { withoutKeys, mapKeepingIdentity } from '../shared/structural.ts';
 import { defineStage, transform, move } from '@floway-dev/pipeline';
-import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsReasoningItem } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsReasoningItem } from '@floway-dev/protocols/openai-chat-completions';
 
 // ── OpenAI Chat Completions vendor dialects ───────────────────────────────────────────────
 //
@@ -85,7 +85,7 @@ const deepSeekOutbound = (payload: OpenAIChatCompletionsPayload): OpenAIChatComp
     ? { ...withoutKeys(payload, ['reasoning_effort']), thinking: { type: 'disabled' } } satisfies OpenAIChatCompletionsPayloadWithDeepSeekThinking
     : payload;
   const withResponseFormat = withThinking.response_format?.type === 'json_schema'
-    ? { ...withThinking, response_format: { type: 'json_object' } }
+    ? { ...withThinking, response_format: { type: 'json_object' as const } }
     : withThinking;
   const messages = mapKeepingIdentity(withResponseFormat.messages, deepSeekAssistantReasoning);
   return messages === withResponseFormat.messages ? withResponseFormat : { ...withResponseFormat, messages };
@@ -95,11 +95,13 @@ const deepSeekOutbound = (payload: OpenAIChatCompletionsPayload): OpenAIChatComp
  *  signature for cross-turn replay and DeepSeek does not accept it, so it goes with the two
  *  fields that are projected onto `reasoning_content`. */
 const deepSeekAssistantReasoning = (message: OpenAIChatCompletionsMessage): OpenAIChatCompletionsMessage => {
-  const stripped = withoutKeys(message, ['reasoning_text', 'reasoning_opaque', 'reasoning_items']);
+  if (message.role !== 'assistant') return message;
+  const assistant = message as OpenAIChatCompletionsAssistantMessage & { reasoning_text?: string | null; reasoning_opaque?: string | null; reasoning_items?: OpenAIChatCompletionsReasoningItem[] | null };
+  const stripped = withoutKeys(assistant, ['reasoning_text', 'reasoning_opaque', 'reasoning_items']);
   if (stripped === message) return message;
-  const text = typeof message.reasoning_text === 'string'
-    ? message.reasoning_text
-    : deepSeekReasoningFromItems(message.reasoning_items);
+  const text = typeof assistant.reasoning_text === 'string'
+    ? assistant.reasoning_text
+    : deepSeekReasoningFromItems(assistant.reasoning_items);
   if (text === undefined) return stripped;
   const projected: OpenAIChatCompletionsMessageWithDeepSeekReasoning = { ...stripped, reasoning_content: text };
   return projected;
@@ -119,7 +121,7 @@ const deepSeekInboundDeltas = (chunk: OpenAIChatCompletionsStreamEvent): OpenAIC
     const stripped = withoutKeys(delta, ['reasoning_content']);
     return {
       ...choice,
-      delta: delta.reasoning_text === undefined ? { ...stripped, reasoning_text: delta.reasoning_content } : stripped,
+      delta: !('reasoning_text' in delta) || delta.reasoning_text === undefined ? { ...stripped, reasoning_text: delta.reasoning_content } : stripped,
     };
   });
   return choices === chunk.choices ? chunk : { ...chunk, choices };
@@ -149,7 +151,7 @@ const deepSeekInboundUsage = (chunk: OpenAIChatCompletionsStreamEvent): OpenAICh
 type OpenAIChatCompletionsPayloadWithDeepSeekThinking = Omit<OpenAIChatCompletionsPayload, 'reasoning_effort'> & { thinking: { type: string } };
 
 type OpenAIChatCompletionsMessageWithDeepSeekReasoning =
-  Omit<OpenAIChatCompletionsMessage, 'reasoning_text' | 'reasoning_opaque' | 'reasoning_items'> & { reasoning_content: string };
+  OpenAIChatCompletionsAssistantMessage & { reasoning_content: string };
 
 type OpenAIChatCompletionsDeltaWithDeepSeekReasoning =
   OpenAIChatCompletionsStreamEvent['choices'][number]['delta'] & { reasoning_content?: unknown };

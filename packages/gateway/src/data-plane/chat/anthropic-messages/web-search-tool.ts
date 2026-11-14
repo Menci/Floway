@@ -13,7 +13,7 @@
 import type { Fields } from './facts.ts';
 import {
   anthropicMessagesWebSearchInvalidRequestBody,
-  prepareAnthropicMessagesWebSearchInvocation,
+  prepareAnthropicMessagesWebSearchTurn,
   resolveActiveAnthropicMessagesWebSearchProvider,
   rewriteAnthropicMessagesWebSearchEventsToNative,
 } from './web-search-shim.ts';
@@ -22,7 +22,7 @@ import { isFailure } from '../../pipeline/facts.ts';
 import type { ChatAnswer, ChatFacts } from '../facts.ts';
 import type { ChatServices } from '../services.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ChatTargetApi, ModelCandidate } from '@floway-dev/provider';
 
@@ -74,16 +74,7 @@ export const runAnthropicMessagesWebSearchTool = (wiring: WebSearchWiring) => de
   },
   execute: async (facts, next, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
-    // The stage's own view of the turn, which is what the preparation reads and shapes. It is
-    // built here and handed nowhere, so the payload it ends up holding is what descends.
-    const invocation = {
-      payload: facts['request.chat.anthropicMessages'],
-      candidate,
-      targetApi: wiring.targetOf(candidate),
-      headers: new Headers(),
-    };
-
-    const prepared = prepareAnthropicMessagesWebSearchInvocation(invocation);
+    const prepared = prepareAnthropicMessagesWebSearchTurn(facts['request.chat.anthropicMessages'], candidate, wiring.targetOf(candidate));
     if (prepared.type === 'inactive') return await next(facts);
     if (prepared.type === 'invalid-request') {
       await use.log.debug('refusing a web-search declaration this gateway cannot execute');
@@ -105,7 +96,7 @@ export const runAnthropicMessagesWebSearchTool = (wiring: WebSearchWiring) => de
 
     const back = await next(move({
       ...facts,
-      'request.chat.anthropicMessages': move(invocation.payload as AnthropicMessagesPayload),
+      'request.chat.anthropicMessages': prepared.payload,
     })) as Answered;
 
     const answer = back['response.chat.anthropicMessages'] as ChatAnswer;
@@ -116,7 +107,7 @@ export const runAnthropicMessagesWebSearchTool = (wiring: WebSearchWiring) => de
         kind: 'stream' as const,
         frames: {
           [Symbol.asyncIterator]: () => rewriteAnthropicMessagesWebSearchEventsToNative(
-            answer.frames as AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
+            answer.frames as AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
             prepared.state,
             backend,
             async error => { await use.log.error('web search failed', { error }); },

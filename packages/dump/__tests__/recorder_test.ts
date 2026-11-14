@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import { eventsOf, metadata, recordingFixture } from './fixtures.ts';
 import type { StoredDumpRecord } from '../src/index.ts';
-import { compose, createRunReader, defer, defineStage, move, run } from '@floway-dev/pipeline';
+import { compose, createRunReader, defer, defineStage, move, run, secret } from '@floway-dev/pipeline';
 
 test('a native pipeline round-trips facts, shared frame values and deferred outcomes through one object space', async () => {
   const { recorder, records: written } = recordingFixture();
@@ -195,4 +195,36 @@ test('large concurrent event batches retain shared identity and exact multibyte 
   const events = eventsOf(records[0]!);
   expect(events.filter(event => event.type === 'stage.entered').map(event => event.name)).toEqual(['first', 'second']);
   expect(events.filter(event => event.type === 'object')).toHaveLength(1);
+});
+
+test('durable and live batches redact upstream credentials before encoding and preserve shared header identity', async () => {
+  const { recorder, records, live } = recordingFixture();
+  const names = ['api-key', 'Authorization', 'cookie', 'proxy-authorization', 'set-cookie', 'x-api-key', 'x-goog-api-key'];
+  const credentials = names.map(name => `${name}-operator-credential-${'long'.repeat(1024)}`);
+  const trace = ['x-request-id', 'visible-trace'] as const;
+  const headers = move([...names.map((name, index) => [name, credentials[index]] as const), trace, ['authorization', secret('marked-upstream-secret')] as const]);
+  const untouched = move({ model: 'm', input: [] });
+  await recorder.sink({ type: 'stage.entered', stageId: 1, name: 'headers', parentStageId: null, facts: move({ 'request.http.headers': headers, payload: untouched }) });
+  await recorder.sink({ type: 'stage.leaved', stageId: 1, facts: move({ 'response.http.headers': headers, 'response.http.exchange': { type: 'response', headers }, payload: untouched }) });
+  await recorder.finish(async () => metadata());
+  const stream = await live.get('recorded-run');
+  if (stream === null) throw new Error('Finished live stream must remain readable');
+  const chunks: Uint8Array[] = [];
+  for await (const bytes of stream.read(0, new AbortController().signal)) chunks.push(bytes);
+  const bytes = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0));
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  expect(bytes).toEqual(records[0].events);
+  const encoded = new TextDecoder().decode(bytes);
+  for (const credential of [...credentials, 'marked-upstream-secret']) expect(encoded).not.toContain(credential);
+  expect(headers.slice(0, names.length).map(entry => entry[1])).toEqual(credentials);
+  const read = createRunReader();
+  const facts = eventsOf(records[0]).map(event => read(event)?.facts).filter(value => value !== undefined);
+  const requestHeaders = facts[0]!['request.http.headers'] as readonly (readonly [string, unknown])[];
+  const responseHeaders = facts[1]!['response.http.headers'];
+  expect(requestHeaders.slice(0, names.length).map(entry => entry[1])).toEqual(names.map(() => '[redacted]'));
+  expect(requestHeaders[names.length]).toEqual(trace);
+  expect(responseHeaders).toBe(requestHeaders);
+  expect((facts[1]!['response.http.exchange'] as { headers: unknown }).headers).toBe(requestHeaders);
+  expect(facts[1]!.payload).toBe(facts[0]!.payload);
 });

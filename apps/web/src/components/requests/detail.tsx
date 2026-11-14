@@ -11,13 +11,14 @@ import type { CollectedStream } from './stream-render';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { formatDuration } from '../../lib/format-duration';
+import { useLocale } from '../../lib/use-locale';
 import { EmptyStateLine } from '../ui/empty-state';
 import { Dropdown } from '../ui/fluent-form-controls';
 import { HttpStatusBadge } from '../ui/http-badge';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { PANEL_BAND_CLASS } from '../ui/panel';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
-import type { DumpMetadata, DumpRecord } from '@floway-dev/dump/types';
+import type { DumpMetadata, DumpRecord } from '@floway-dev/dump/browser';
 
 const BodyEditor = lazy(() => import('../ui/body-editor'));
 const { Option, Spinner, Text, Tooltip } = fluentComponents;
@@ -41,16 +42,17 @@ export function RequestDetailPanel({ collected, error, record, recordId, retainL
 
 function RecordTiming({ meta }: { meta: DumpMetadata }) {
   const { t } = useTranslation();
+  const locale = useLocale();
   return <>
-    <Tooltip content={t('dashboard.requests.duration', { value: meta.durationMs })} relationship="description">
+    <Tooltip content={t('dashboard.requests.duration', { value: formatDuration(meta.durationMs, locale) })} relationship="description">
       <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
-        <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatDuration(meta.durationMs)}</Text>
+        <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(meta.durationMs, locale)}</Text>
       </span>
     </Tooltip>
     {meta.ttftMs != null && (
-      <Tooltip content={t('dashboard.requests.ttft', { value: meta.ttftMs })} relationship="description">
+      <Tooltip content={t('dashboard.requests.ttft', { value: formatDuration(meta.ttftMs, locale) })} relationship="description">
         <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
-          <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatDuration(meta.ttftMs)}</Text>
+          <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(meta.ttftMs, locale)}</Text>
         </span>
       </Tooltip>
     )}

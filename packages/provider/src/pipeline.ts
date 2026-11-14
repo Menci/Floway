@@ -4,13 +4,14 @@ import type { OpenAIImagesEditsRequest } from './images.ts';
 import type { ProviderModel } from './model.ts';
 import type { HttpResponseFacts, HttpHeaders, HttpServices } from '@floway-dev/http/pipeline';
 import type { Pipeline } from '@floway-dev/pipeline';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
+import type { CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAICompletionsPayload } from '@floway-dev/protocols/openai-completions';
 import type { OpenAIEmbeddingsPayload } from '@floway-dev/protocols/openai-embeddings';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { CanonicalRerankRequest } from '@floway-dev/protocols/rerank';
 
 export interface ProviderOperationPayloads {
@@ -26,6 +27,7 @@ export interface ProviderOperationPayloads {
   openaiImagesEdits: OpenAIImagesEditsRequest;
   openaiAudioTranscriptions: OpenAIAudioTranscriptionRequest;
   rerank: CanonicalRerankRequest;
+  decision: CanonicalDecisionRequest;
 }
 
 export type ProviderOperation = keyof ProviderOperationPayloads;
@@ -76,9 +78,9 @@ export interface AnthropicMessagesCountTokensBody {
 
 export interface ProviderOperationOutputs {
   openaiChatCompletions: ProviderStreamOutput<OpenAIChatCompletionsStreamEvent>;
-  openaiResponses: ProviderStreamOutput<OpenAIResponsesStreamEvent> | ProviderValueOutput<OpenAIResponsesCompactionResult>;
-  openaiResponsesCompact: ProviderStreamOutput<OpenAIResponsesStreamEvent> | ProviderValueOutput<OpenAIResponsesCompactionResult>;
-  anthropicMessages: ProviderStreamOutput<AnthropicMessagesStreamEvent>;
+  openaiResponses: ProviderStreamOutput<OpenAIResponsesStreamEventEx> | ProviderValueOutput<OpenAIResponsesCompactionResultEx>;
+  openaiResponsesCompact: ProviderStreamOutput<OpenAIResponsesStreamEventEx> | ProviderValueOutput<OpenAIResponsesCompactionResultEx>;
+  anthropicMessages: ProviderStreamOutput<AnthropicMessagesStreamEventEx>;
   anthropicMessagesCountTokens: ProviderValueOutput<AnthropicMessagesCountTokensBody>;
 }
 

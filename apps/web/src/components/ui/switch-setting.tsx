@@ -9,14 +9,15 @@ const { InfoButton } = fluentComponents;
 // Switch rather than inside its label, because a Switch injects `htmlFor` into
 // that label: a button placed there toggles the switch instead of opening its
 // own popover, which is also why `infoLabelSlot` is not usable here.
-export function SwitchSetting({ checked, description, label, onChange }: {
+export function SwitchSetting({ checked, description, disabled, label, onChange }: {
   checked: boolean;
   description: InfoButtonProps['info'];
+  disabled?: boolean;
   label: string;
   onChange: (checked: boolean) => void;
 }) {
   return <span className="inline-flex items-center gap-1">
-    <Switch checked={checked} label={label} onChange={(_, data) => onChange(data.checked)} />
+    <Switch checked={checked} disabled={disabled} label={label} onChange={(_, data) => onChange(data.checked)} />
     <InfoButton info={description} />
   </span>;
 }

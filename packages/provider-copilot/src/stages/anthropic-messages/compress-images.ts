@@ -39,10 +39,10 @@ const collectImageBlocks = (messages: AnthropicMessagesMessage[]): AnthropicMess
   for (const message of messages) {
     if (!Array.isArray(message.content)) continue;
     for (const block of message.content) {
-      if (block.type === 'image') blocks.push(block);
+      if (block.type === 'image' && block.source.type === 'base64') blocks.push(block);
       else if (block.type === 'tool_result' && Array.isArray(block.content)) {
         for (const inner of block.content) {
-          if (inner.type === 'image') blocks.push(inner);
+          if (inner.type === 'image' && inner.source.type === 'base64') blocks.push(inner);
         }
       }
     }
@@ -60,6 +60,7 @@ const compressInlineImages = async (payload: AnthropicMessagesPayload, model: Pr
   const compressedData = new Map<AnthropicMessagesImageBlock, string>();
   await Promise.all(
     blocks.map(async block => {
+      if (block.source.type !== 'base64') throw new Error('Image compressor received a non-base64 source');
       compressedData.set(block, await compress(block.source.data));
     }),
   );
@@ -76,7 +77,7 @@ const compressInlineImages = async (payload: AnthropicMessagesPayload, model: Pr
     if (data === undefined) throw new Error('Missing compressed Anthropic Messages image data');
     return {
       ...block,
-      source: { ...block.source, media_type: 'image/webp', data },
+      source: { type: 'base64', media_type: 'image/webp', data },
     };
   };
   const rewriteUserContent = (content: AnthropicMessagesUserContentBlock[]): AnthropicMessagesUserContentBlock[] =>

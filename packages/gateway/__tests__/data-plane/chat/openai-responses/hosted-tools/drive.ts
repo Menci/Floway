@@ -14,17 +14,18 @@ import type { ChatGatewayCtx } from '../../../../../src/data-plane/chat/shared/g
 import type { Failure } from '../../../../../src/data-plane/pipeline/facts.ts';
 import { mintedErrorEnvelope, renderFailure } from '../../../../../src/data-plane/pipeline/facts.ts';
 import type { StreamOutcome } from '../../../../../src/data-plane/pipeline/serve.ts';
+import { readUpstreamBody } from '../../../../../src/data-plane/pipeline/upstream-body.ts';
 import { tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../../../../../src/data-plane/shared/telemetry/usage.ts';
 import { compose, defer, defineStage, move, run, type Deferred } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { ModelCandidate, OpenAIResponsesInvocation } from '@floway-dev/provider';
 import { type EventResultMetadata, type ExecuteResult } from '@floway-dev/test-utils';
 
 const ANSWER = 'response.chat.openaiResponses';
 const STREAMED_USAGE = 'response.chat.openaiResponses.streamedUsage';
 
-type Result = ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>;
+type Result = ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>;
 
 /** What a scripted turn will have billed, as the wire's meter would have handed it up: one
  *  entity naming the model that answered, carrying what it reported. A turn that reports
@@ -42,12 +43,14 @@ const readingOf = (result: Extract<Result, { type: 'events' }>) => defer(
     }),
 );
 
-/** A scripted refusal as the failure value a chain carries. An internal error has no body of
- *  its own, so what travels is the sentence it raised. */
-const failureOf = (result: Exclude<Result, { type: 'events' }>) => ({
-  status: result.type === 'internal-error' ? 500 : result.status,
-  message: result.type === 'internal-error' ? result.error.message : new TextDecoder().decode(result.body),
-});
+/** A scripted refusal as the failure value a chain carries, read the way a provider's answer is:
+ *  the upstream's own body travels when it parses. An internal error has no body of its own, so
+ *  what travels is the sentence it raised. */
+const failureOf = async (result: Exclude<Result, { type: 'events' }>): Promise<Failure> => {
+  if (result.type === 'internal-error') return { status: 500, message: result.error.message };
+  const body = await readUpstreamBody(new Response(result.body.slice()));
+  return { status: result.status, message: body.text, ...('json' in body ? { body: body.json } : {}) };
+};
 
 /** What the run answered with, in the shape the assertions read. A refusal is rendered the way
  *  the edge renders one — through the same three tiers — so a test reads the bytes a client
@@ -55,7 +58,7 @@ const failureOf = (result: Exclude<Result, { type: 'events' }>) => ({
 const resultOf = (facts: Record<string, unknown>): Result => {
   const answer = facts[ANSWER] as { status?: number; message?: string; kind?: string; frames?: unknown };
   if (answer.kind === 'stream') {
-    return { type: 'events', events: answer.frames as AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>, modelIdentity: undefined } as unknown as Result;
+    return { type: 'events', events: answer.frames as AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>, modelIdentity: undefined } as unknown as Result;
   }
   const rendered = renderFailure(answer as Failure, mintedErrorEnvelope);
   return {
@@ -81,7 +84,7 @@ export const driveHostedToolStage = (registrations: readonly HostedToolRegistrat
         const result = await dial();
         const answered = result.type === 'events'
           ? { [ANSWER]: { kind: 'stream' as const, frames: result.events }, [STREAMED_USAGE]: readingOf(result) }
-          : { [ANSWER]: failureOf(result), [STREAMED_USAGE]: null };
+          : { [ANSWER]: await failureOf(result), [STREAMED_USAGE]: null };
         return move({
           ...facts,
           ...answered,

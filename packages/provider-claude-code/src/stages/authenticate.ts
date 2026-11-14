@@ -1,7 +1,8 @@
 import { ensureClaudeCodeAccessToken } from '../access-token.ts';
 import { ClaudeCodeOAuthSessionTerminatedError } from '../auth/oauth.ts';
-import { isRateLimitedNow, synthetic429, synthetic503 } from '../backend.ts';
+import { synthetic429, synthetic503 } from '../backend.ts';
 import type { ClaudeCodeAuthenticatedRequest, ClaudeCodePreparedRequest } from '../pipeline-facts.ts';
+import { claudeCodeRateLimitedUntil } from '../quota.ts';
 import { readClaudeCodeUpstreamState } from '../state.ts';
 import { takeHttpResponse } from '@floway-dev/http/pipeline';
 import { defineStage, move, secret } from '@floway-dev/pipeline';
@@ -31,9 +32,10 @@ export const authenticateClaudeCode = (upstreamId: string) => defineStage<Claude
       });
     };
     if (account.state !== 'active') return reply(synthetic503(`Claude Code account is ${account.state}: ${account.stateMessage}`));
+    // A cached quota deadline avoids refreshing credentials for a deferred request.
     const now = new Date();
-    const quota = account.quotaSnapshot === null ? null : account.quotaSnapshot.data;
-    if (isRateLimitedNow(quota, now)) return reply(synthetic429(quota.reset ? `Claude Code upstream rate-limited until ${quota.reset}` : 'Claude Code upstream rate-limited', quota.reset, now));
+    const resetIso = claudeCodeRateLimitedUntil(account.quotaSnapshot, now.getTime(), facts['request.provider.modelKey']);
+    if (resetIso !== null) return reply(synthetic429(`Claude Code upstream rate-limited until ${resetIso}`, resetIso, now));
     const call = use.httpCall(facts['request.http.callId']);
     let access;
     try {

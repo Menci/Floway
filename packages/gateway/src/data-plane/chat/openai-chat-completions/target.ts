@@ -1,7 +1,7 @@
 import type { ChatNarrowing } from '../resolve-candidates.ts';
+import { analyzeOpenAIChatCompletionsAffinity } from './affinity/ingress.ts';
 import type { Fields } from './facts.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
-import { analyzeOpenAIChatCompletionsAffinity } from './affinity/ingress.ts';
 
 /** `/v1/chat/completions` prefers its own wire, then the translated Anthropic Messages path,
  *  then the translated OpenAI Responses path. */

@@ -1,9 +1,8 @@
 import type { OpenAIResponsesFacts } from './facts.ts';
 import { syntheticEventsFromResult } from './items/output.ts';
 import { telemetryModelIdentity } from '../../shared/telemetry/attribution.ts';
-import type { ChatServices } from '../services.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf } from '@floway-dev/provider';
 
 type Request = Pick<OpenAIResponsesFacts, 'request.chat.openaiResponses' | 'route.attempt'>;
@@ -13,7 +12,7 @@ const provides = ['response.chat.openaiResponses', 'response.chat.openaiResponse
 // Codex continues from the response id of its WebSocket prewarm. The source chain has
 // already staged its input; normal client egress commits that snapshot without inference.
 // https://github.com/openai/codex/blob/6989c6548b3737f108e2bb5ae1171b1d2032e30c/codex-rs/core/src/client.rs#L2181-L2184
-export const answerOpenAIResponsesWebSocketWarmup = defineStage<Request, Request, Response, Response, Response, ChatServices>({
+export const answerOpenAIResponsesWebSocketWarmup = defineStage<Request, Request, Response, Response, Response, import('../services.ts').ChatServices>({
   name: 'answerOpenAIResponsesWebSocketWarmup',
   through: {
     request: { needs: ['request.chat.openaiResponses', 'route.attempt'], consumes: [], provides: [] },
@@ -26,7 +25,7 @@ export const answerOpenAIResponsesWebSocketWarmup = defineStage<Request, Request
     const candidate = use.resolveAttempt(facts['route.attempt']);
     use.selectAffinity(candidate);
     use.gateway.dump?.success(telemetryModelIdentity(candidate, providerModelOf(candidate).id), null);
-    const response: OpenAIResponsesResult = {
+    const response: OpenAIResponsesResultEx = {
       id: '', object: 'response', model: candidate.model.id, status: 'completed',
       output: [], error: null, incomplete_details: null,
       usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },

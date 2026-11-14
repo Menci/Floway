@@ -2,7 +2,6 @@ import { failover } from '../../pipeline/failover.ts';
 import { resolveChatCandidates } from '../resolve-candidates.ts';
 import { OPENAI_RESPONSES_STREAMED_USAGE } from './facts.ts';
 import { materializeAttempt } from '../materialize-attempt.ts';
-import { beginStoredAttempt } from './begin-stored-attempt.ts';
 import { projectOpenAIResponsesCollaboration } from './collaboration-shim.ts';
 import { composeChat as compose } from '../compose.ts';
 import { dialOpenAIResponsesCompaction } from './compact/dial.ts';
@@ -33,7 +32,6 @@ export const openaiResponsesCompactPipeline = (): Pipeline<OpenAIResponsesCompac
       pendingUsage: OPENAI_RESPONSES_STREAMED_USAGE,
     }),
     materializeAttempt('request.chat.openaiResponses'),
-    beginStoredAttempt,
     expandShimCompactions,
     projectOpenAIResponsesCollaboration,
     // A compaction declares no hosted tool of its own, so what this does here is the other half

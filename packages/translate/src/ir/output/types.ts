@@ -1,0 +1,173 @@
+import type { IRAbsent } from './absent.ts';
+import type { TextRange } from '../../shared/text-range.ts';
+import type { JSONValueOf } from '../common/json.ts';
+
+// All
+export type IROutputValue = JSONValueOf<IRAbsent>;
+
+// All
+export type IROutput = {
+  readonly choices: readonly IROutputChoice[]; // All
+  readonly model?: string; // All
+  readonly service_tier?: string; // All
+  readonly usage?: IROutputUsage; // All
+};
+
+// All
+type IROutputChoice = {
+  readonly items: readonly IROutputItem[]; // All
+  readonly refusal_details?: IROutputRefusalDetails; // All
+  readonly logprobs?: readonly IROutputLogprobGroup[] | null; // ChatCompletions, Responses, GenerateContent
+};
+
+// All
+type IROutputRefusalDetails = {
+  readonly category: string | null; // Messages, Responses
+  readonly explanation: string | null; // All
+};
+
+// All
+export type IROutputItem = IROutputMessageItem | IROutputReasoningItem | IROutputFunctionCallItem | IROutputCustomToolCallItem;
+
+// All
+export type IROutputMessageItem = {
+  readonly type: 'message'; // All
+  readonly content: readonly IROutputContentPart[]; // All
+};
+
+// All
+type IROutputContentPart = IROutputTextPart | IROutputRefusalPart | IROutputImagePart | IROutputAudioPart;
+
+// All
+type IROutputTextPart = {
+  readonly type: 'text'; // All
+  readonly text: string; // All
+  readonly annotations?: readonly IROutputSourceCitation[] | null; // All
+};
+
+// All
+type IROutputRefusalPart = {
+  readonly type: 'refusal'; // All
+  readonly refusal: string; // All
+};
+
+// All
+export type IROutputReasoningItem = {
+  readonly type: 'reasoning'; // All
+  readonly summary?: readonly string[]; // All
+  readonly content?: readonly string[]; // All
+};
+
+// All
+type IROutputFunctionCallItem = {
+  readonly type: 'function_call'; // All
+  readonly call_id?: string | IRAbsent; // All
+  readonly name: string; // All
+  readonly namespace?: string | null; // ChatCompletions, Responses, Messages
+  readonly arguments: string; // All
+};
+
+// ChatCompletions, Responses, Messages
+type IROutputCustomToolCallItem = {
+  readonly type: 'custom_tool_call'; // ChatCompletions, Responses, Messages
+  readonly call_id?: string | IRAbsent; // ChatCompletions, Responses, Messages
+  readonly name: string; // ChatCompletions, Responses, Messages
+  readonly namespace?: string | null; // ChatCompletions, Responses, Messages
+  readonly input: string; // ChatCompletions, Responses, Messages
+};
+
+// Responses, GenerateContent
+type IROutputImagePart = {
+  readonly type: 'image'; // Responses, GenerateContent
+  readonly image: IROutputImage; // Responses, GenerateContent
+};
+
+// Responses, GenerateContent
+type IROutputImage = {
+  readonly data: string; // Responses, GenerateContent
+  readonly media_type?: string; // Responses, GenerateContent
+};
+
+// ChatCompletions, Responses, GenerateContent
+export type IROutputAudioPart = {
+  readonly type: 'audio'; // ChatCompletions, Responses, GenerateContent
+  readonly audio: IROutputAudio; // ChatCompletions, Responses, GenerateContent
+};
+
+// ChatCompletions, Responses, GenerateContent
+type IROutputAudio = {
+  readonly data?: string; // ChatCompletions, Responses, GenerateContent
+  readonly transcript?: string; // ChatCompletions, Responses, GenerateContent
+  // No current upstream reader produces it; reserved for a GenerateContent upstream.
+  readonly media_type?: string; // GenerateContent
+};
+
+// All
+export type IROutputSourceCitation = {
+  readonly type: 'source_citation'; // All
+  readonly source_label?: string | null; // All
+  readonly source_text?: string; // Messages, GenerateContent
+  readonly source_page_range?: IROutputSourcePageRange; // Messages, GenerateContent
+  readonly output_text_range?: TextRange; // ChatCompletions, Responses, GenerateContent
+} & (
+  | {
+    readonly source_kind: 'url' | 'document' | 'search_result'; // All
+    readonly source: string; // All
+  }
+  | {
+    readonly source_kind: 'document' | 'search_result'; // Messages, GenerateContent
+    readonly source?: null; // Messages, GenerateContent
+    readonly source_text: string; // Messages, GenerateContent
+  }
+);
+
+// Messages, GenerateContent
+type IROutputSourcePageRange = {
+  readonly start_one_based: number; // Messages, GenerateContent
+  readonly end_one_based_exclusive: number; // Messages
+};
+
+// ChatCompletions, Responses, GenerateContent
+type IROutputLogprobGroup = IROutputChoiceLogprobs | IROutputTextPartLogprobs;
+
+// Reserved for a GenerateContent upstream: the current upstream readers only produce text-part logprobs.
+// ChatCompletions, GenerateContent
+type IROutputChoiceLogprobs = {
+  readonly scope: 'choice'; // ChatCompletions, GenerateContent
+  readonly tokens: readonly IROutputTokenLogprob[]; // ChatCompletions, GenerateContent
+};
+
+// ChatCompletions, Responses
+type IROutputTextPartLogprobs = {
+  readonly scope: 'text_part'; // ChatCompletions, Responses
+  readonly item_index: number; // ChatCompletions, Responses
+  readonly content_index: number; // ChatCompletions, Responses
+  readonly tokens: readonly IROutputTokenLogprob[]; // ChatCompletions, Responses
+};
+
+// ChatCompletions, Responses, GenerateContent
+export type IROutputTokenLogprob = IROutputTokenLogprobAlternative & {
+  readonly top_logprobs?: readonly IROutputTokenLogprobAlternative[]; // ChatCompletions, Responses, GenerateContent
+};
+
+// ChatCompletions, Responses, GenerateContent
+type IROutputTokenLogprobAlternative = {
+  readonly token: string; // ChatCompletions, Responses, GenerateContent
+  readonly logprob: number; // ChatCompletions, Responses, GenerateContent
+  readonly bytes?: readonly number[] | null; // ChatCompletions, Responses
+};
+
+// All
+export type IROutputUsage = {
+  readonly input_tokens_inclusive?: number; // All
+  readonly output_tokens_inclusive?: number; // All
+  readonly total_tokens?: number; // ChatCompletions, Responses, GenerateContent
+  readonly cached_input_tokens?: number; // All
+  readonly cache_creation_input_tokens?: number; // ChatCompletions, Responses, Messages
+  readonly reasoning_tokens?: number; // All
+  readonly input_audio_tokens?: number; // ChatCompletions, Responses, GenerateContent
+  readonly input_image_tokens?: number; // ChatCompletions, Responses, GenerateContent
+  readonly input_text_tokens?: number; // ChatCompletions, Responses, GenerateContent
+  readonly output_audio_tokens?: number; // ChatCompletions, Responses, GenerateContent
+  readonly output_text_tokens?: number; // ChatCompletions, Responses, GenerateContent
+};

@@ -1,7 +1,7 @@
 import type { ResponsesFacts } from '../chat-facts.ts';
 import { compactionResponse } from '../compaction.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import type { OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 import type { ProviderChatResponse } from '@floway-dev/provider';
 
 export const reshapeCopilotCompaction = defineStage<ResponsesFacts, ResponsesFacts, ProviderChatResponse<'openaiResponsesCompact'>, ProviderChatResponse<'openaiResponsesCompact'>>({
@@ -14,6 +14,6 @@ export const reshapeCopilotCompaction = defineStage<ResponsesFacts, ResponsesFac
     const back = await next(move({ ...facts }));
     const output = back['response.provider.output'];
     if (output === null || !('kind' in output) || output.kind !== 'value') return move({ ...back });
-    return move({ ...back, 'response.provider.output': { ...output, body: compactionResponse(facts['request.provider.payload'].input, output.body as unknown as OpenAIResponsesResult) } });
+    return move({ ...back, 'response.provider.output': { ...output, body: compactionResponse(facts['request.provider.payload'].input, output.body as unknown as OpenAIResponsesResultEx) } });
   },
 });

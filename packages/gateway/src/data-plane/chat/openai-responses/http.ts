@@ -8,6 +8,7 @@
 // answered by the chain on both routes rather than caught as a throw on either.
 
 import { openaiResponsesCompactPipeline } from './compact.ts';
+import { inputErrorEnvelope } from './errors.ts';
 import { createOpenAIResponsesHttpStore } from './items/store.ts';
 import { openaiResponsesServePipeline } from './pipeline.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
@@ -15,8 +16,7 @@ import { isFrames, openPrologue, readIngress, serveThrough, type Ingress } from 
 import { finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
 import { openChatPrologue } from '../prologue.ts';
 import { move } from '@floway-dev/pipeline';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesRequestPayload } from '@floway-dev/protocols/openai-responses';
-import { canonicalizeOpenAIResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
+import { canonicalizeOpenAIResponsesPayload, type CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 /** The read, as a value rather than a throw, because a pipelined entry decides what to do
  *  about a body it could not read before it opens a run rather than after one unwound.
@@ -28,43 +28,22 @@ import { canonicalizeOpenAIResponsesPayload, TranslatorInputError } from '@flowa
 const readRequest = (bytes: Uint8Array):
   | { type: 'ok'; payload: CanonicalOpenAIResponsesPayload }
   | { type: 'invalid'; message: string; param?: string; code?: string } => {
+  let body: unknown;
   try {
-    return { type: 'ok', payload: canonicalizeOpenAIResponsesPayload(JSON.parse(new TextDecoder().decode(bytes)) as OpenAIResponsesRequestPayload) };
+    body = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
   } catch (error) {
-    if (!(error instanceof TranslatorInputError)) {
-      return { type: 'invalid', message: error instanceof Error ? error.message : String(error) };
-    }
-    return {
-      type: 'invalid',
-      message: error.message,
-      ...(error.param === undefined ? {} : { param: error.param }),
-      ...(error.code === undefined ? {} : { code: error.code }),
-    };
+    return { type: 'invalid', message: error instanceof Error ? error.message : String(error) };
   }
+  const payload = canonicalizeOpenAIResponsesPayload(body);
+  return 'error' in payload ? { type: 'invalid', ...payload.error } : { type: 'ok', payload };
 };
-
-/** The rejection, as this protocol's clients read one. A reader that named neither field
- *  still fills both slots, because the envelope declares them and `input` is where a body
- *  this endpoint could not read went wrong. */
-const invalidRequestResponse = (invalid: { message: string; param?: string; code?: string }): Response =>
-  Response.json(
-    {
-      error: {
-        message: invalid.message,
-        type: 'invalid_request_error',
-        param: invalid.param ?? 'input',
-        code: invalid.code ?? null,
-      },
-    },
-    { status: 400 },
-  );
 
 /** A request the gateway refused before it reached a pipeline: there is no model to resolve
  *  and no attempt to make, so there is nothing for a run to record beyond the refusal. */
 const refuse = (c: AuthedContext, ingress: Ingress, invalid: { message: string; param?: string; code?: string }): Response => {
   const refused = openPrologue(c, ingress, { wantsStream: false });
   refused.gateway.dump?.error('gateway');
-  return finalizeGatewayResponse(refused.gateway, invalidRequestResponse(invalid));
+  return finalizeGatewayResponse(refused.gateway, Response.json(inputErrorEnvelope(invalid), { status: 400 }));
 };
 
 export const openaiResponsesHttp = {
