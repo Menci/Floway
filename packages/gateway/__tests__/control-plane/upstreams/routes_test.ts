@@ -181,23 +181,23 @@ test('POST /api/upstreams creates Copilot upstream rows with redacted GitHub tok
 // claude-code blueprints carry `{accounts: []}` and their asserters
 // reject null on purpose.
 
-test('POST /api/upstreams rejects a codex create with null state', async () => {
+test('POST /api/upstreams rejects a ChatGPT create with null state', async () => {
   const { adminSession } = await setupAppTest();
 
   // Two-step setup: exchange returns a valid config+state patch, then we
   // POST /api/upstreams with the config intact but a null state to prove
   // the create-time state reader rejects it (before the state-hardening
   // fix a client bypassing the exchange could persist this).
-  const exchange = await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
-    record: blueprintEnvelope('codex'),
-    json: codexJsonImport().json,
+  const exchange = await requestApp('/api/upstreams/chatgpt/import/exchange', authed(adminSession, {
+    record: blueprintEnvelope('chatgpt'),
+    json: chatgptJsonImport().json,
   }));
   assertEquals(exchange.status, 200);
   const { patch } = (await exchange.json()) as { patch: { config: unknown; state: unknown } };
 
   const resp = await requestApp('/api/upstreams', authed(adminSession, {
-    kind: 'codex',
-    name: 'Codex',
+    kind: 'chatgpt',
+    name: 'ChatGPT',
     hue: 210,
     config: patch.config,
     state: null,
@@ -205,7 +205,7 @@ test('POST /api/upstreams rejects a codex create with null state', async () => {
   }));
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: string };
-  assertEquals(body.error.toLowerCase().includes('invalid state for codex'), true);
+  assertEquals(body.error.toLowerCase().includes('invalid state for chatgpt'), true);
 });
 
 test('POST /api/upstreams rejects a claude-code create with null state', async () => {
@@ -1031,10 +1031,10 @@ test('POST /api/upstreams/preview-models without an id still serves draft previe
   );
 });
 
-// --- Codex routes ---
+// --- ChatGPT routes ---
 //
 // The auth.json import path lets us drive the OAuth ingestion deterministically
-// without mocking the token-exchange roundtrip: parseCodexTokenClaims decodes
+// without mocking the token-exchange roundtrip: parseChatGPTTokenClaims decodes
 // the id_token JWT directly. Build a fake JWT that carries the identity claims
 // the production parser requires.
 const encodeBase64Url = (input: string): string =>
@@ -1056,7 +1056,7 @@ const fakeIdToken = (claims: Record<string, unknown>): string => {
 
 // The `~/.codex/auth.json` envelope, which the import path detects by its
 // `tokens` key and exposes as a single selectable source.
-const codexJsonImport = (overrides: Record<string, unknown> = {}) => ({
+const chatgptJsonImport = (overrides: Record<string, unknown> = {}) => ({
   json: {
     raw_json: JSON.stringify({
       tokens: {
@@ -1070,30 +1070,30 @@ const codexJsonImport = (overrides: Record<string, unknown> = {}) => ({
   },
 });
 
-// Two-step create flow: (1) exchange endpoint yields a codex config+state
+// Two-step create flow: (1) exchange endpoint yields a ChatGPT config+state
 // patch from the fake auth.json blob, (2) POST /api/upstreams persists the
 // merged draft. Mirrors the SPA editor's exchange-then-save flow so tests
-// touching subsequent codex actions see the same row a real user would
+// touching subsequent ChatGPT actions see the same row a real user would
 // have.
-const createCodexUpstreamViaExchange = async (adminSession: string, overrides: Record<string, unknown> = {}): Promise<{ id: string }> => {
-  const exchange = await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
-    record: blueprintEnvelope('codex'),
-    json: codexJsonImport(overrides).json,
+const createChatGPTUpstreamViaExchange = async (adminSession: string, overrides: Record<string, unknown> = {}): Promise<{ id: string }> => {
+  const exchange = await requestApp('/api/upstreams/chatgpt/import/exchange', authed(adminSession, {
+    record: blueprintEnvelope('chatgpt'),
+    json: chatgptJsonImport(overrides).json,
   }));
-  if (exchange.status !== 200) throw new Error(`codex exchange failed: ${exchange.status} ${await exchange.text()}`);
+  if (exchange.status !== 200) throw new Error(`ChatGPT exchange failed: ${exchange.status} ${await exchange.text()}`);
   const { patch } = (await exchange.json()) as { patch: { config: unknown; state: unknown } };
   const create = await withMockedFetch(
     () => jsonResponse({ error: 'forbidden' }, 403),
     () => requestApp('/api/upstreams', authed(adminSession, {
-      kind: 'codex',
-      name: 'ChatGPT Codex',
+      kind: 'chatgpt',
+      name: 'ChatGPT',
       hue: 210,
       config: patch.config,
       state: patch.state,
       proxy_fallback_list: MOCKED_FETCH_EGRESS,
     })),
   );
-  if (create.status !== 201) throw new Error(`codex create failed: ${create.status} ${await create.text()}`);
+  if (create.status !== 201) throw new Error(`ChatGPT create failed: ${create.status} ${await create.text()}`);
   return (await create.json()) as { id: string };
 };
 
@@ -1108,12 +1108,12 @@ const getRefreshIdentity = async (repo: { upstreams: { getById: (id: string) => 
   return modelsRefreshIdentity(record);
 };
 
-test('POST /api/upstreams/codex/oauth/authorize-url stamps SPA-provided challenge + state into the auth.openai.com URL', async () => {
+test('POST /api/upstreams/chatgpt/oauth/authorize-url stamps SPA-provided challenge + state into the auth.openai.com URL', async () => {
   const { adminSession } = await setupAppTest();
 
   const resp = await requestApp(
-    '/api/upstreams/codex/oauth/authorize-url',
-    authed(adminSession, { record: blueprintEnvelope('codex'), challenge: 'TEST_CHALLENGE', state: 'TEST_STATE' }),
+    '/api/upstreams/chatgpt/oauth/authorize-url',
+    authed(adminSession, { record: blueprintEnvelope('chatgpt'), challenge: 'TEST_CHALLENGE', state: 'TEST_STATE' }),
   );
   assertEquals(resp.status, 200);
   const body = (await resp.json()) as { authorize_url: string };
@@ -1124,16 +1124,16 @@ test('POST /api/upstreams/codex/oauth/authorize-url stamps SPA-provided challeng
   assertEquals(url.searchParams.get('state'), 'TEST_STATE');
 });
 
-test('POST /api/upstreams/codex/import/exchange in create state (callback) returns a codex config+state patch from the SPA-supplied verifier', async () => {
+test('POST /api/upstreams/chatgpt/import/exchange in create state (callback) returns a ChatGPT config+state patch from the SPA-supplied verifier', async () => {
   const { adminSession } = await setupAppTest();
 
   await withMockedFetch(
     () => jsonResponse({ access_token: 'at_cb', refresh_token: 'rt_cb', id_token: fakeIdToken({}), expires_in: 600 }),
     async () => {
       const resp = await requestApp(
-        '/api/upstreams/codex/import/exchange',
+        '/api/upstreams/chatgpt/import/exchange',
         authed(adminSession, {
-          record: blueprintEnvelope('codex'),
+          record: blueprintEnvelope('chatgpt'),
           callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' },
         }),
       );
@@ -1147,12 +1147,12 @@ test('POST /api/upstreams/codex/import/exchange in create state (callback) retur
   );
 });
 
-test('POST /api/upstreams/codex/import/exchange in create state (json) returns a codex config+state patch derived from the JWT', async () => {
+test('POST /api/upstreams/chatgpt/import/exchange in create state (json) returns a ChatGPT config+state patch derived from the JWT', async () => {
   const { adminSession } = await setupAppTest();
 
-  const resp = await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
-    record: blueprintEnvelope('codex'),
-    json: codexJsonImport().json,
+  const resp = await requestApp('/api/upstreams/chatgpt/import/exchange', authed(adminSession, {
+    record: blueprintEnvelope('chatgpt'),
+    json: chatgptJsonImport().json,
   }));
   assertEquals(resp.status, 200);
   const body = (await resp.json()) as { patch: { config: JsonObject; state: JsonObject } };
@@ -1163,7 +1163,7 @@ test('POST /api/upstreams/codex/import/exchange in create state (json) returns a
   assertEquals(body.patch.state.accounts[0].refresh_token, 'rt_test');
 });
 
-test('POST /api/upstreams/codex/import/exchange imports a root account JSON object', async () => {
+test('POST /api/upstreams/chatgpt/import/exchange imports a root account JSON object', async () => {
   const { adminSession } = await setupAppTest();
   const raw = JSON.stringify({
     name: 'Primary',
@@ -1177,8 +1177,8 @@ test('POST /api/upstreams/codex/import/exchange imports a root account JSON obje
     },
   });
 
-  const resp = await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
-    record: blueprintEnvelope('codex'),
+  const resp = await requestApp('/api/upstreams/chatgpt/import/exchange', authed(adminSession, {
+    record: blueprintEnvelope('chatgpt'),
     json: { raw_json: raw, source_index: 0 },
   }));
   assertEquals(resp.status, 200);
@@ -1188,14 +1188,14 @@ test('POST /api/upstreams/codex/import/exchange imports a root account JSON obje
   assertEquals(body.patch.state.accounts[0].refresh_token, 'refresh-root');
 });
 
-test('POST /api/upstreams/codex/import/exchange imports a manual access-only credential without reaching the network', async () => {
+test('POST /api/upstreams/chatgpt/import/exchange imports a manual access-only credential without reaching the network', async () => {
   const { adminSession } = await setupAppTest();
 
   await withMockedFetch(
     () => { throw new Error('manual import must not fetch'); },
     async () => {
-      const resp = await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
-        record: blueprintEnvelope('codex'),
+      const resp = await requestApp('/api/upstreams/chatgpt/import/exchange', authed(adminSession, {
+        record: blueprintEnvelope('chatgpt'),
         manual: { access_token: 'opaque' },
       }));
       assertEquals(resp.status, 200);
@@ -1208,14 +1208,14 @@ test('POST /api/upstreams/codex/import/exchange imports a manual access-only cre
   );
 });
 
-test('POST /api/upstreams/codex/import/exchange accepts optional manual email and plan for an opaque credential', async () => {
+test('POST /api/upstreams/chatgpt/import/exchange accepts optional manual email and plan for an opaque credential', async () => {
   const { adminSession } = await setupAppTest();
 
   await withMockedFetch(
     () => { throw new Error('manual import must not fetch'); },
     async () => {
-      const resp = await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
-        record: blueprintEnvelope('codex'),
+      const resp = await requestApp('/api/upstreams/chatgpt/import/exchange', authed(adminSession, {
+        record: blueprintEnvelope('chatgpt'),
         manual: {
           access_token: 'opaque',
           account_id: 'acc_manual',
@@ -1232,7 +1232,7 @@ test('POST /api/upstreams/codex/import/exchange accepts optional manual email an
   );
 });
 
-test('POST /api/upstreams/codex/import/preview lists selectable candidates and no credential material', async () => {
+test('POST /api/upstreams/chatgpt/import/preview lists selectable candidates and no credential material', async () => {
   const { adminSession } = await setupAppTest();
   const raw = JSON.stringify({
     accounts: [
@@ -1253,7 +1253,7 @@ test('POST /api/upstreams/codex/import/preview lists selectable candidates and n
   await withMockedFetch(
     () => { throw new Error('preview must not fetch'); },
     async () => {
-      const resp = await requestApp('/api/upstreams/codex/import/preview', authed(adminSession, { raw_json: raw }));
+      const resp = await requestApp('/api/upstreams/chatgpt/import/preview', authed(adminSession, { raw_json: raw }));
       assertEquals(resp.status, 200);
       const body = (await resp.json()) as { candidates: unknown };
       assertEquals(body.candidates, [{
@@ -1274,7 +1274,7 @@ test('POST /api/upstreams/codex/import/preview lists selectable candidates and n
   );
 });
 
-test('POST /api/upstreams/codex/import/exchange re-parses and imports the selected JSON source index', async () => {
+test('POST /api/upstreams/chatgpt/import/exchange re-parses and imports the selected JSON source index', async () => {
   const { adminSession } = await setupAppTest();
   const raw = JSON.stringify({
     data: {
@@ -1284,8 +1284,8 @@ test('POST /api/upstreams/codex/import/exchange re-parses and imports the select
       ],
     },
   });
-  const resp = await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
-    record: blueprintEnvelope('codex'),
+  const resp = await requestApp('/api/upstreams/chatgpt/import/exchange', authed(adminSession, {
+    record: blueprintEnvelope('chatgpt'),
     json: { raw_json: raw, source_index: 1 },
   }));
   assertEquals(resp.status, 200);
@@ -1295,16 +1295,16 @@ test('POST /api/upstreams/codex/import/exchange re-parses and imports the select
   assertEquals(body.patch.state.accounts[0].accessToken.token, 'second');
 });
 
-test('POST /api/upstreams/codex/import/exchange in edit state persists the patch to the stored row', async () => {
+test('POST /api/upstreams/chatgpt/import/exchange in edit state persists the patch to the stored row', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const initial = await createCodexUpstreamViaExchange(adminSession);
+  const initial = await createChatGPTUpstreamViaExchange(adminSession);
   // Re-import with a rotated refresh_token to prove the exchange overwrites
   // config + state on the existing row rather than appending an account.
-  await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
+  await requestApp('/api/upstreams/chatgpt/import/exchange', authed(adminSession, {
     record: envelopeFromRecord(await getRecord(repo, initial.id)),
-    json: codexJsonImport({
+    json: chatgptJsonImport({
       tokens: { access_token: 'at_v2', refresh_token: 'rt_v2', id_token: fakeIdToken({}) },
     }).json,
   }));
@@ -1314,11 +1314,11 @@ test('POST /api/upstreams/codex/import/exchange in edit state persists the patch
   assertEquals(storedState.accounts[0].refresh_token, 'rt_v2');
 });
 
-test('POST /api/upstreams/codex/import/exchange rejects when no import source is supplied', async () => {
+test('POST /api/upstreams/chatgpt/import/exchange rejects when no import source is supplied', async () => {
   const { adminSession } = await setupAppTest();
 
-  const resp = await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
-    record: blueprintEnvelope('codex'),
+  const resp = await requestApp('/api/upstreams/chatgpt/import/exchange', authed(adminSession, {
+    record: blueprintEnvelope('chatgpt'),
   }));
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: { issues?: Array<{ message: string }> } | string };
@@ -1326,22 +1326,22 @@ test('POST /api/upstreams/codex/import/exchange rejects when no import source is
   assertEquals(JSON.stringify(body).includes('Provide exactly one of json, callback, or manual'), true);
 });
 
-test('POST /api/upstreams/codex/oauth/refresh rejects a non-codex record with 400', async () => {
+test('POST /api/upstreams/chatgpt/oauth/refresh rejects a non-ChatGPT record with 400', async () => {
   const { adminSession } = await setupAppTest();
 
-  const resp = await requestApp('/api/upstreams/codex/oauth/refresh', authed(adminSession, {
+  const resp = await requestApp('/api/upstreams/chatgpt/oauth/refresh', authed(adminSession, {
     record: blueprintEnvelope('custom', { config: customConfig }),
   }));
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: string };
-  assertEquals(body.error.toLowerCase().includes('codex'), true);
+  assertEquals(body.error.toLowerCase().includes('chatgpt'), true);
 });
 
-test('POST /api/upstreams/codex/oauth/refresh rejects a record in a terminal state with 400', async () => {
+test('POST /api/upstreams/chatgpt/oauth/refresh rejects a record in a terminal state with 400', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const created = await createCodexUpstreamViaExchange(adminSession);
+  const created = await createChatGPTUpstreamViaExchange(adminSession);
   const stored = await repo.upstreams.getById(created.id);
   const storedState = stored!.state as { accounts: Array<Record<string, unknown>> };
   await saveUpstreamForTest(repo.upstreams, {
@@ -1349,7 +1349,7 @@ test('POST /api/upstreams/codex/oauth/refresh rejects a record in a terminal sta
     state: { accounts: storedState.accounts.map(a => ({ ...a, state: 'session_terminated' })) },
   });
 
-  const resp = await requestApp('/api/upstreams/codex/oauth/refresh', authed(adminSession, {
+  const resp = await requestApp('/api/upstreams/chatgpt/oauth/refresh', authed(adminSession, {
     record: envelopeFromRecord(await getRecord(repo, created.id)),
   }));
   assertEquals(resp.status, 400);
@@ -1357,10 +1357,10 @@ test('POST /api/upstreams/codex/oauth/refresh rejects a record in a terminal sta
   assertEquals(body.error.includes('session_terminated'), true);
 });
 
-test('POST /api/upstreams/codex/oauth/refresh rejects an access-only credential before touching proxy or OAuth', async () => {
+test('POST /api/upstreams/chatgpt/oauth/refresh rejects an access-only credential before touching proxy or OAuth', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  const created = await createCodexUpstreamViaExchange(adminSession);
+  const created = await createChatGPTUpstreamViaExchange(adminSession);
   const stored = await getRecord(repo, created.id);
   const state = stored.state as { accounts: Array<Record<string, unknown>> };
   await saveUpstreamForTest(repo.upstreams, {
@@ -1371,7 +1371,7 @@ test('POST /api/upstreams/codex/oauth/refresh rejects an access-only credential 
   await withMockedFetch(
     () => { throw new Error('access-only refresh must not fetch'); },
     async () => {
-      const resp = await requestApp('/api/upstreams/codex/oauth/refresh', authed(adminSession, {
+      const resp = await requestApp('/api/upstreams/chatgpt/oauth/refresh', authed(adminSession, {
         record: envelopeFromRecord(await getRecord(repo, created.id)),
       }));
       assertEquals(resp.status, 400);
@@ -1381,11 +1381,11 @@ test('POST /api/upstreams/codex/oauth/refresh rejects an access-only credential 
   );
 });
 
-test('POST /api/upstreams/codex/oauth/refresh rotates the refresh token and persists to the row when the record has an id', async () => {
+test('POST /api/upstreams/chatgpt/oauth/refresh rotates the refresh token and persists to the row when the record has an id', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const created = await createCodexUpstreamViaExchange(adminSession);
+  const created = await createChatGPTUpstreamViaExchange(adminSession);
 
   await withMockedFetch(
     () => jsonResponse({
@@ -1395,7 +1395,7 @@ test('POST /api/upstreams/codex/oauth/refresh rotates the refresh token and pers
       expires_in: 3600,
     }),
     async () => {
-      const resp = await requestApp('/api/upstreams/codex/oauth/refresh', authed(adminSession, {
+      const resp = await requestApp('/api/upstreams/chatgpt/oauth/refresh', authed(adminSession, {
         record: envelopeFromRecord(await getRecord(repo, created.id)),
       }));
       assertEquals(resp.status, 200);
@@ -1409,11 +1409,11 @@ test('POST /api/upstreams/codex/oauth/refresh rotates the refresh token and pers
   assertEquals(storedState.accounts[0].refresh_token, 'rt_rotated');
 });
 
-test('POST /api/upstreams/codex/oauth/refresh flips the row to refresh_failed when OAuth rejects the refresh_token', async () => {
+test('POST /api/upstreams/chatgpt/oauth/refresh flips the row to refresh_failed when OAuth rejects the refresh_token', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const created = await createCodexUpstreamViaExchange(adminSession);
+  const created = await createChatGPTUpstreamViaExchange(adminSession);
 
   await withMockedFetch(
     () => new Response(
@@ -1421,7 +1421,7 @@ test('POST /api/upstreams/codex/oauth/refresh flips the row to refresh_failed wh
       { status: 400, headers: { 'content-type': 'application/json' } },
     ),
     async () => {
-      const resp = await requestApp('/api/upstreams/codex/oauth/refresh', authed(adminSession, {
+      const resp = await requestApp('/api/upstreams/chatgpt/oauth/refresh', authed(adminSession, {
         record: envelopeFromRecord(await getRecord(repo, created.id)),
       }));
       // 400, not 502: the upstream answered — it's the stored credential
@@ -1439,10 +1439,10 @@ test('POST /api/upstreams/codex/oauth/refresh flips the row to refresh_failed wh
   assertEquals(typeof storedState.accounts[0].state_message, 'string');
 });
 
-test('POST /api/upstreams/codex/reset-credits lists earned reset cards for the stored account', async () => {
+test('POST /api/upstreams/chatgpt/reset-credits lists earned reset cards for the stored account', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  const created = await createCodexUpstreamViaExchange(adminSession, { tokens: { access_token: 'at_test', refresh_token: 'rt_test', id_token: fakeIdToken({}), expires_at: '2100-01-01T00:00:00Z' } });
+  const created = await createChatGPTUpstreamViaExchange(adminSession, { tokens: { access_token: 'at_test', refresh_token: 'rt_test', id_token: fakeIdToken({}), expires_at: '2100-01-01T00:00:00Z' } });
 
   await withMockedFetch(
     request => {
@@ -1459,7 +1459,7 @@ test('POST /api/upstreams/codex/reset-credits lists earned reset cards for the s
       });
     },
     async () => {
-      const resp = await requestApp('/api/upstreams/codex/reset-credits', authed(adminSession, {
+      const resp = await requestApp('/api/upstreams/chatgpt/reset-credits', authed(adminSession, {
         record: envelopeFromRecord(await getRecord(repo, created.id)),
       }));
       assertEquals(resp.status, 200);
@@ -1470,10 +1470,10 @@ test('POST /api/upstreams/codex/reset-credits lists earned reset cards for the s
   );
 });
 
-test('POST /api/upstreams/codex/reset-credits refreshes once after a definite upstream 401', async () => {
+test('POST /api/upstreams/chatgpt/reset-credits refreshes once after a definite upstream 401', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  const created = await createCodexUpstreamViaExchange(adminSession);
+  const created = await createChatGPTUpstreamViaExchange(adminSession);
   let listAttempts = 0;
 
   await withMockedFetch(
@@ -1491,10 +1491,10 @@ test('POST /api/upstreams/codex/reset-credits refreshes once after a definite up
           id_token: fakeIdToken({}), expires_in: 3600,
         });
       }
-      throw new Error(`unexpected Codex request to ${path}`);
+      throw new Error(`unexpected ChatGPT request to ${path}`);
     },
     async () => {
-      const resp = await requestApp('/api/upstreams/codex/reset-credits', authed(adminSession, {
+      const resp = await requestApp('/api/upstreams/chatgpt/reset-credits', authed(adminSession, {
         record: envelopeFromRecord(await getRecord(repo, created.id)),
       }));
       assertEquals(resp.status, 200);
@@ -1506,10 +1506,10 @@ test('POST /api/upstreams/codex/reset-credits refreshes once after a definite up
   assertEquals(updatedState.accounts[0].refresh_token, 'rt_rotated');
 });
 
-test('POST /api/upstreams/codex/reset-credits/consume sends the stable key and invalidates stale quota', async () => {
+test('POST /api/upstreams/chatgpt/reset-credits/consume sends the stable key and invalidates stale quota', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  const created = await createCodexUpstreamViaExchange(adminSession, { tokens: { access_token: 'at_test', refresh_token: 'rt_test', id_token: fakeIdToken({}), expires_at: '2100-01-01T00:00:00Z' } });
+  const created = await createChatGPTUpstreamViaExchange(adminSession, { tokens: { access_token: 'at_test', refresh_token: 'rt_test', id_token: fakeIdToken({}), expires_at: '2100-01-01T00:00:00Z' } });
   const stored = await getRecord(repo, created.id);
   const state = stored.state as { accounts: Array<Record<string, unknown>> };
   await repo.upstreams.saveState(created.id, current => ({
@@ -1534,7 +1534,7 @@ test('POST /api/upstreams/codex/reset-credits/consume sends the stable key and i
       return jsonResponse({ available_count: 0, credits: [] });
     },
     async () => {
-      const resp = await requestApp('/api/upstreams/codex/reset-credits/consume', authed(adminSession, {
+      const resp = await requestApp('/api/upstreams/chatgpt/reset-credits/consume', authed(adminSession, {
         record: envelopeFromRecord(await getRecord(repo, created.id)),
         credit_id: 'credit-1',
         idempotency_key: 'redeem-stable',
@@ -1721,10 +1721,10 @@ test('PATCH /api/upstreams rejects config edits on a claude-code row', async () 
   assertEquals(body.error.toLowerCase().includes('claude-code'), true);
 });
 
-test('PATCH /api/upstreams accepts Codex display metadata edits', async () => {
+test('PATCH /api/upstreams accepts ChatGPT display metadata edits', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  const created = await createCodexUpstreamViaExchange(adminSession);
+  const created = await createChatGPTUpstreamViaExchange(adminSession);
 
   const patch = await requestApp(`/api/upstreams/${created.id}`, {
     method: 'PATCH',
@@ -1743,10 +1743,10 @@ test('PATCH /api/upstreams accepts Codex display metadata edits', async () => {
   });
 });
 
-test('PATCH /api/upstreams rejects Codex account ID changes', async () => {
+test('PATCH /api/upstreams rejects ChatGPT account ID changes', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  const created = await createCodexUpstreamViaExchange(adminSession);
+  const created = await createChatGPTUpstreamViaExchange(adminSession);
 
   const patch = await requestApp(`/api/upstreams/${created.id}`, {
     method: 'PATCH',
@@ -2032,15 +2032,15 @@ test('POST /api/upstreams/claude-code/oauth/refresh honors the record.proxy_fall
   assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
 });
 
-test('POST /api/upstreams/codex/oauth/refresh honors the record.proxy_fallback_list over the persisted list', async () => {
+test('POST /api/upstreams/chatgpt/oauth/refresh honors the record.proxy_fallback_list over the persisted list', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const created = await createCodexUpstreamViaExchange(adminSession);
+  const created = await createChatGPTUpstreamViaExchange(adminSession);
 
   const envelope = envelopeFromRecord(await getRecord(repo, created.id));
   envelope.proxy_fallback_list = [{ id: 'p_unknown' }];
-  const resp = await requestApp('/api/upstreams/codex/oauth/refresh', authed(adminSession, { record: envelope }));
+  const resp = await requestApp('/api/upstreams/chatgpt/oauth/refresh', authed(adminSession, { record: envelope }));
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: string };
   assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
@@ -2118,13 +2118,13 @@ test('POST /api/upstreams/claude-code/oauth/exchange rejects a record.proxy_fall
 // Only the callback source talks to auth.openai.com, so it is the only one
 // whose egress chain has to resolve. A pasted document is parsed locally and
 // must import even when the draft names a proxy that no longer exists.
-test('POST /api/upstreams/codex/import/exchange rejects a record.proxy_fallback_list referencing an unknown proxy id on the callback source', async () => {
+test('POST /api/upstreams/chatgpt/import/exchange rejects a record.proxy_fallback_list referencing an unknown proxy id on the callback source', async () => {
   const { adminSession } = await setupAppTest();
 
   const resp = await requestApp(
-    '/api/upstreams/codex/import/exchange',
+    '/api/upstreams/chatgpt/import/exchange',
     authed(adminSession, {
-      record: blueprintEnvelope('codex', { proxy_fallback_list: [{ id: 'p_unknown' }] }),
+      record: blueprintEnvelope('chatgpt', { proxy_fallback_list: [{ id: 'p_unknown' }] }),
       callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' },
     }),
   );
@@ -2133,14 +2133,14 @@ test('POST /api/upstreams/codex/import/exchange rejects a record.proxy_fallback_
   assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
 });
 
-test('POST /api/upstreams/codex/import/exchange imports a pasted document without resolving egress', async () => {
+test('POST /api/upstreams/chatgpt/import/exchange imports a pasted document without resolving egress', async () => {
   const { adminSession } = await setupAppTest();
 
   const resp = await requestApp(
-    '/api/upstreams/codex/import/exchange',
+    '/api/upstreams/chatgpt/import/exchange',
     authed(adminSession, {
-      record: blueprintEnvelope('codex', { proxy_fallback_list: [{ id: 'p_unknown' }] }),
-      ...codexJsonImport(),
+      record: blueprintEnvelope('chatgpt', { proxy_fallback_list: [{ id: 'p_unknown' }] }),
+      ...chatgptJsonImport(),
     }),
   );
   assertEquals(resp.status, 200);
@@ -2303,16 +2303,16 @@ test('POST /api/upstreams/claude-code/setup-token/exchange in edit state replace
   assertEquals(storedState.accounts[0].accessToken?.token, 'st_v2');
 });
 
-test('POST /api/upstreams/codex/oauth/refresh resolves an empty record.proxy_fallback_list to direct-connect egress', async () => {
+test('POST /api/upstreams/chatgpt/oauth/refresh resolves an empty record.proxy_fallback_list to direct-connect egress', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const created = await createCodexUpstreamViaExchange(adminSession);
+  const created = await createChatGPTUpstreamViaExchange(adminSession);
 
   // Same boundary as the claude-code case: an empty list is accepted as
   // "no policy" and resolves to direct-connect, rather than being rejected
   // as an unknown proxy id.
-  const resp = await requestApp('/api/upstreams/codex/oauth/refresh', authed(adminSession, {
+  const resp = await requestApp('/api/upstreams/chatgpt/oauth/refresh', authed(adminSession, {
     record: { ...envelopeFromRecord(await getRecord(repo, created.id)), proxy_fallback_list: [] },
   }));
   assertEquals(resp.status, 502);
@@ -2529,19 +2529,19 @@ test('spec invariant (3): POST /api/upstreams/copilot/quota ignores record.flag_
   assertEquals(stored?.flagOverrides, originalFlags);
 });
 
-test('spec invariant (3): POST /api/upstreams/codex/import/exchange (edit state) ignores record.name mutation', async () => {
+test('spec invariant (3): POST /api/upstreams/chatgpt/import/exchange (edit state) ignores record.name mutation', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const created = await createCodexUpstreamViaExchange(adminSession);
+  const created = await createChatGPTUpstreamViaExchange(adminSession);
   const record = await getRecord(repo, created.id);
   const originalName = record.name;
   const envelope = envelopeFromRecord(record);
   envelope.name = 'Mutated';
 
-  const resp = await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
+  const resp = await requestApp('/api/upstreams/chatgpt/import/exchange', authed(adminSession, {
     record: envelope,
-    json: codexJsonImport({
+    json: chatgptJsonImport({
       tokens: { access_token: 'at_v2', refresh_token: 'rt_v2', id_token: fakeIdToken({}) },
     }).json,
   }));
@@ -2551,11 +2551,11 @@ test('spec invariant (3): POST /api/upstreams/codex/import/exchange (edit state)
   assertEquals(stored?.name, originalName);
 });
 
-test('spec invariant (3): POST /api/upstreams/codex/oauth/refresh ignores record.sort_order mutation', async () => {
+test('spec invariant (3): POST /api/upstreams/chatgpt/oauth/refresh ignores record.sort_order mutation', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const created = await createCodexUpstreamViaExchange(adminSession);
+  const created = await createChatGPTUpstreamViaExchange(adminSession);
   const record = await getRecord(repo, created.id);
   const originalSortOrder = record.sortOrder;
   const envelope = envelopeFromRecord(record);
@@ -2564,7 +2564,7 @@ test('spec invariant (3): POST /api/upstreams/codex/oauth/refresh ignores record
   await withMockedFetch(
     () => jsonResponse({ access_token: 'at_rotated', refresh_token: 'rt_rotated', id_token: fakeIdToken({}), expires_in: 3600 }),
     async () => {
-      const resp = await requestApp('/api/upstreams/codex/oauth/refresh', authed(adminSession, { record: envelope }));
+      const resp = await requestApp('/api/upstreams/chatgpt/oauth/refresh', authed(adminSession, { record: envelope }));
       assertEquals(resp.status, 200);
     },
   );
@@ -2727,7 +2727,7 @@ test('POST /api/upstreams/preview-models never writes the matching saved row', a
 
 test('GET /api/upstreams/blueprint round-trips a shape-complete blank for every kind', async () => {
   const { adminSession } = await setupAppTest();
-  const kinds: UpstreamProviderKind[] = ['copilot', 'custom', 'azure', 'codex', 'claude-code', 'ollama'];
+  const kinds: UpstreamProviderKind[] = ['copilot', 'custom', 'azure', 'chatgpt', 'claude-code', 'ollama'];
   for (const kind of kinds) {
     const resp = await requestApp(`/api/upstreams/blueprint?kind=${kind}`, { headers: { 'x-floway-session': adminSession } });
     assertEquals(resp.status, 200);
@@ -2767,7 +2767,7 @@ test('GET /api/upstreams/blueprint serves the record a new upstream starts as wi
   // `flag_defaults` on the wire is the whole point of the blueprint;
   // assert it lands on every kind so the dashboard's "Inherit → on/off"
   // pill has data to render before Save.
-  for (const kind of ['copilot', 'custom', 'azure', 'codex', 'claude-code', 'ollama']) {
+  for (const kind of ['copilot', 'custom', 'azure', 'chatgpt', 'claude-code', 'ollama']) {
     const preview = (await (await requestApp(`/api/upstreams/blueprint?kind=${kind}`, { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
     assertEquals(typeof preview.flag_defaults['strip-billing-attribution'], 'boolean');
   }
@@ -2786,11 +2786,11 @@ test('GET /api/upstreams/blueprint serves the record a new upstream starts as wi
   assertEquals(ccPreview.flag_defaults['rewrite-disallowed-mid-conv-system-to-user'], true);
 });
 
-test('GET /api/upstreams/:id returns the full record with fresh Codex quota for the edit page', async () => {
+test('GET /api/upstreams/:id returns the full record with fresh ChatGPT quota for the edit page', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const created = await createCodexUpstreamViaExchange(adminSession);
+  const created = await createChatGPTUpstreamViaExchange(adminSession);
   const stored = await getRecord(repo, created.id);
   const quota = {
     observed_at: new Date().toISOString(),
@@ -2808,17 +2808,17 @@ test('GET /api/upstreams/:id returns the full record with fresh Codex quota for 
   assertEquals(resp.status, 200);
   const body = (await resp.json()) as JsonObject;
   assertEquals(body.id, created.id);
-  assertEquals(body.codex_quota, { premium: quota });
+  assertEquals(body.chatgpt_quota, { premium: quota });
   // Unredacted: the refresh_token secret is present verbatim, not projected
   // as the list-view's `refresh_token_set` boolean.
   assertEquals(body.state.accounts[0].refresh_token, 'rt_test');
   assertEquals('refresh_token_set' in body.state.accounts[0], false);
 });
 
-test('GET upstream list and detail repair legacy Codex expiry per family without rewriting state', async () => {
+test('GET upstream list and detail repair legacy ChatGPT expiry per family without rewriting state', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  const created = await createCodexUpstreamViaExchange(adminSession);
+  const created = await createChatGPTUpstreamViaExchange(adminSession);
   const stored = await getRecord(repo, created.id);
   const primary = {
     observed_at: '2026-06-05T00:00:00.000Z',
@@ -2843,7 +2843,7 @@ test('GET upstream list and detail repair legacy Codex expiry per family without
     assertEquals(resp.status, 200);
     const json = await resp.json() as JsonObject;
     const body = path === '/api/upstreams' ? (json as JsonObject[]).find(item => item.id === created.id) : json;
-    assertEquals(body?.codex_quota, {
+    assertEquals(body?.chatgpt_quota, {
       primary: { ...primary, ratelimited_until: primary.primary_reset_after_at },
       secondary,
       successful,
@@ -2852,19 +2852,19 @@ test('GET upstream list and detail repair legacy Codex expiry per family without
   assertEquals((await getRecord(repo, created.id)).state, state);
 });
 
-test('GET /api/upstreams/:id returns null Codex quota when no fresh snapshot exists', async () => {
+test('GET /api/upstreams/:id returns null ChatGPT quota when no fresh snapshot exists', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const created = await createCodexUpstreamViaExchange(adminSession);
+  const created = await createChatGPTUpstreamViaExchange(adminSession);
   const resp = await requestApp(`/api/upstreams/${created.id}`, { headers: { 'x-floway-session': adminSession } });
   assertEquals(resp.status, 200);
   const body = (await resp.json()) as JsonObject;
-  assertEquals('codex_quota' in body, true);
-  assertEquals(body.codex_quota, null);
+  assertEquals('chatgpt_quota' in body, true);
+  assertEquals(body.chatgpt_quota, null);
 });
 
-test('GET /api/upstreams/:id omits Codex quota from non-Codex responses', async () => {
+test('GET /api/upstreams/:id omits ChatGPT quota from non-ChatGPT responses', async () => {
   const { adminSession } = await setupAppTest();
   const createdResp = await requestApp('/api/upstreams', authed(adminSession, createBody()));
   assertEquals(createdResp.status, 201);
@@ -2873,7 +2873,7 @@ test('GET /api/upstreams/:id omits Codex quota from non-Codex responses', async 
   const resp = await requestApp(`/api/upstreams/${created.id}`, { headers: { 'x-floway-session': adminSession } });
   assertEquals(resp.status, 200);
   const body = (await resp.json()) as JsonObject;
-  assertEquals('codex_quota' in body, false);
+  assertEquals('chatgpt_quota' in body, false);
 });
 
 test('GET /api/upstreams/:id returns 404 for an unknown id', async () => {
@@ -3051,11 +3051,11 @@ test('POST /api/upstreams/copilot/quota remaps upstream 401 to 502 and passes up
 // terminal flip) surfaces the terminal error. These endpoint-level tests
 // pin that inherited contract.
 
-test('POST /api/upstreams/codex/oauth/refresh recovers as success when a sibling rotated the refresh token mid-flight', async () => {
+test('POST /api/upstreams/chatgpt/oauth/refresh recovers as success when a sibling rotated the refresh token mid-flight', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const created = await createCodexUpstreamViaExchange(adminSession);
+  const created = await createChatGPTUpstreamViaExchange(adminSession);
   const siblingExpiresAt = Date.now() + 3_600_000;
 
   await withMockedFetch(
@@ -3088,7 +3088,7 @@ test('POST /api/upstreams/codex/oauth/refresh recovers as success when a sibling
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resp = await requestApp('/api/upstreams/codex/oauth/refresh', authed(adminSession, {
+      const resp = await requestApp('/api/upstreams/chatgpt/oauth/refresh', authed(adminSession, {
         record: envelopeFromRecord(await getRecord(repo, created.id)),
       }));
       assertEquals(resp.status, 200);
@@ -3102,11 +3102,11 @@ test('POST /api/upstreams/codex/oauth/refresh recovers as success when a sibling
   assertEquals(storedState.accounts[0].accessToken?.token, 'at_sibling_rotated');
 });
 
-test('POST /api/upstreams/codex/oauth/refresh surfaces terminal error when a sibling flipped the account to refresh_failed mid-flight', async () => {
+test('POST /api/upstreams/chatgpt/oauth/refresh surfaces terminal error when a sibling flipped the account to refresh_failed mid-flight', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const created = await createCodexUpstreamViaExchange(adminSession);
+  const created = await createChatGPTUpstreamViaExchange(adminSession);
 
   await withMockedFetch(
     async (request: Request) => {
@@ -3136,7 +3136,7 @@ test('POST /api/upstreams/codex/oauth/refresh surfaces terminal error when a sib
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resp = await requestApp('/api/upstreams/codex/oauth/refresh', authed(adminSession, {
+      const resp = await requestApp('/api/upstreams/chatgpt/oauth/refresh', authed(adminSession, {
         record: envelopeFromRecord(await getRecord(repo, created.id)),
       }));
       assertEquals(resp.status, 400);

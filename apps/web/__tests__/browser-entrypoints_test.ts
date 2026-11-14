@@ -51,7 +51,7 @@ test('browser entrypoints exclude backend modules even without tree-shaking', as
   expect(modules.size).toBeGreaterThan(packages.length);
   expect(entryExports.get('gateway')).toEqual([]);
   expect([...modules].filter(id =>
-    (/\/packages\/(gateway|platform|http|provider-(azure|codex|claude-code|copilot|ollama))\//.test(id)
+    (/\/packages\/(gateway|platform|http|provider-(azure|chatgpt|claude-code|copilot|ollama))\//.test(id)
       && !id.endsWith('/gateway/src/browser.ts'))
     || /\/apps\/platform-(node|cloudflare)\//.test(id))).toEqual([]);
   expect([...modules].filter(id =>

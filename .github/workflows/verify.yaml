@@ -114,7 +114,7 @@ jobs:
           - name: lint (gateway)
             targets: packages/gateway
           - name: lint (other packages)
-            targets: eslint.config.ts vitest.config.ts packages/agent-setup packages/dump packages/http packages/interceptor packages/pipeline packages/platform packages/protocols packages/provider packages/provider-azure packages/provider-claude-code packages/provider-codex packages/provider-copilot packages/provider-custom packages/provider-ollama packages/proxy packages/test-utils packages/translate scripts tools
+            targets: eslint.config.ts vitest.config.ts packages/agent-setup packages/dump packages/http packages/interceptor packages/pipeline packages/platform packages/protocols packages/provider packages/provider-azure packages/provider-claude-code packages/provider-chatgpt packages/provider-copilot packages/provider-custom packages/provider-ollama packages/proxy packages/test-utils packages/translate scripts tools
     name: ${{ matrix.name }}
     steps:
       - name: Checkout

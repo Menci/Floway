@@ -11,15 +11,15 @@ import { createAlias, deleteAlias, listAliases, updateAlias } from './model-alia
 import { controlPlaneModels } from './models/routes.ts';
 import { performanceOverview } from './performance/routes.ts';
 import { createProxy, deleteProxy, listAllBackoffs, listProxies, listProxyBackoffs, listProxyOptions, resetProxyBackoffs, testProxy, updateProxy } from './proxies/routes.ts';
-import { accessRecordBody, upstreamMetricsQuery, upstreamOptionsQuery, authLoginBody, changeOwnPasswordBody, updateOwnPreferencesBody, claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexImportExchangeBody, codexImportPreviewBody, codexOAuthAuthorizeUrlBody, codexOAuthRefreshBody, codexRateLimitResetConsumeBody, codexRateLimitResetCreditsBody, copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody, createAliasBody, createGroupBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, importBody, modelsQuery, ollamaUsageBody, performanceQuery, previewModelsBody, proxyOptionsQuery, resetBackoffBody, reorderAccessRecordsBody, reorderUpstreamsBody, resolveAccessBody, rotateKeyBody, siteSettingsBody, testProxyBody, tokenUsageOverviewQuery, tokenUsageQuery, updateAliasBody, updateGroupBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody, webSearchConfigSchema, webSearchUsageQuery } from './schemas.ts';
+import { accessRecordBody, upstreamMetricsQuery, upstreamOptionsQuery, authLoginBody, changeOwnPasswordBody, updateOwnPreferencesBody, claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, chatgptImportExchangeBody, chatgptImportPreviewBody, chatgptOAuthAuthorizeUrlBody, chatgptOAuthRefreshBody, chatgptRateLimitResetConsumeBody, chatgptRateLimitResetCreditsBody, copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody, createAliasBody, createGroupBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, importBody, modelsQuery, ollamaUsageBody, performanceQuery, previewModelsBody, proxyOptionsQuery, resetBackoffBody, reorderAccessRecordsBody, reorderUpstreamsBody, resolveAccessBody, rotateKeyBody, siteSettingsBody, testProxyBody, tokenUsageOverviewQuery, tokenUsageQuery, updateAliasBody, updateGroupBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody, webSearchConfigSchema, webSearchUsageQuery } from './schemas.ts';
 import { getWebSearchConfigRoute, putWebSearchConfigRoute, testWebSearchConfigRoute } from './search-config/routes.ts';
 import { webSearchUsage } from './search-usage/routes.ts';
 import { getSiteSettings, putSiteSettings } from './site-settings/routes.ts';
 import { tokenUsageOverview } from './token-usage/overview.ts';
 import { tokenUsage } from './token-usage/routes.ts';
 import { upstreamMetrics } from './upstream-metrics/routes.ts';
+import { chatgptImportExchange, chatgptImportPreview, chatgptOAuthAuthorizeUrl, chatgptOAuthRefresh, chatgptRateLimitResetConsume, chatgptRateLimitResetCredits } from './upstreams/chatgpt.ts';
 import { claudeCodeOAuthAuthorizeUrl, claudeCodeOAuthExchange, claudeCodeOAuthRefresh, claudeCodeProbe, claudeCodeSetupTokenAuthorizeUrl, claudeCodeSetupTokenExchange } from './upstreams/claude-code.ts';
-import { codexImportExchange, codexImportPreview, codexOAuthAuthorizeUrl, codexOAuthRefresh, codexRateLimitResetConsume, codexRateLimitResetCredits } from './upstreams/codex.ts';
 import { copilotOAuthDeviceLoginPoll, copilotOAuthDeviceLoginStart, copilotQuota } from './upstreams/copilot.ts';
 import { fetchSavedModels, previewModels } from './upstreams/models.ts';
 import { ollamaUsage } from './upstreams/ollama.ts';
@@ -72,13 +72,13 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
   .post('/api/upstreams/copilot/oauth/device-login/start', zValidator('json', copilotOAuthDeviceLoginStartBody), copilotOAuthDeviceLoginStart)
   .post('/api/upstreams/copilot/oauth/device-login/poll', zValidator('json', copilotOAuthDeviceLoginPollBody), copilotOAuthDeviceLoginPoll)
   .post('/api/upstreams/copilot/quota', zValidator('json', copilotQuotaBody), copilotQuota)
-  .post('/api/upstreams/codex/import/preview', zValidator('json', codexImportPreviewBody), codexImportPreview)
+  .post('/api/upstreams/chatgpt/import/preview', zValidator('json', chatgptImportPreviewBody), chatgptImportPreview)
   .post('/api/upstreams/preview-models', zValidator('json', previewModelsBody), previewModels)
-  .post('/api/upstreams/codex/import/exchange', zValidator('json', codexImportExchangeBody), codexImportExchange)
-  .post('/api/upstreams/codex/oauth/authorize-url', zValidator('json', codexOAuthAuthorizeUrlBody), codexOAuthAuthorizeUrl)
-  .post('/api/upstreams/codex/oauth/refresh', zValidator('json', codexOAuthRefreshBody), codexOAuthRefresh)
-  .post('/api/upstreams/codex/reset-credits', zValidator('json', codexRateLimitResetCreditsBody), codexRateLimitResetCredits)
-  .post('/api/upstreams/codex/reset-credits/consume', zValidator('json', codexRateLimitResetConsumeBody), codexRateLimitResetConsume)
+  .post('/api/upstreams/chatgpt/import/exchange', zValidator('json', chatgptImportExchangeBody), chatgptImportExchange)
+  .post('/api/upstreams/chatgpt/oauth/authorize-url', zValidator('json', chatgptOAuthAuthorizeUrlBody), chatgptOAuthAuthorizeUrl)
+  .post('/api/upstreams/chatgpt/oauth/refresh', zValidator('json', chatgptOAuthRefreshBody), chatgptOAuthRefresh)
+  .post('/api/upstreams/chatgpt/reset-credits', zValidator('json', chatgptRateLimitResetCreditsBody), chatgptRateLimitResetCredits)
+  .post('/api/upstreams/chatgpt/reset-credits/consume', zValidator('json', chatgptRateLimitResetConsumeBody), chatgptRateLimitResetConsume)
   .post('/api/upstreams/claude-code/oauth/authorize-url', zValidator('json', claudeCodeOAuthAuthorizeUrlBody), claudeCodeOAuthAuthorizeUrl)
   .post('/api/upstreams/claude-code/oauth/exchange', zValidator('json', claudeCodeOAuthExchangeBody), claudeCodeOAuthExchange)
   .post('/api/upstreams/claude-code/oauth/refresh', zValidator('json', claudeCodeOAuthRefreshBody), claudeCodeOAuthRefresh)

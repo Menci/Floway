@@ -1,0 +1,32 @@
+import type { FlagDefaults } from '@floway-dev/provider';
+
+export const CHATGPT_DEFAULT_FLAGS: FlagDefaults = {
+  'vendor-deepseek': false,
+  'vendor-qwen': false,
+  'vendor-kimi': false,
+  'anthropic-messages-web-search-shim': false,
+  'openai-responses-web-search-shim': false,
+  'openai-responses-image-generation-shim': false,
+  'openai-responses-compact-shim': true,
+  'openai-responses-compact-decrypt': false,
+  'openai-responses-collaboration-shim': true,
+  'openai-responses-agent-message-shim': false,
+  'serialize-stream-items': false,
+  'disable-reasoning-on-forced-tool-choice': false,
+  'empty-tools-tool-choice-none': false,
+  'rewrite-mid-conv-system-to-user': false,
+  'rewrite-disallowed-mid-conv-system-to-user': false,
+  'rewrite-developer-to-system': false,
+  // Codex's OpenAI Responses Lite wire carries base instructions as leading developer
+  // messages. Use the same representation for system-role input.
+  // https://github.com/openai/codex/blob/1f17e7512f0e47625f2cad416f14870688a99814/codex-rs/core/src/client.rs#L829-L849
+  'rewrite-system-to-developer': true,
+  'strip-billing-attribution': true,
+  'strip-prompt-cache-key': false,
+  'usage-exclusive-cached-tokens': false,
+  // Do not turn on stateless on OpenAI's official servers.
+  // Intermediate results of server tools like `web_search` are stored only on
+  // the server side. Therefore, turning on stateless mode would cause models to
+  // lose web search results across turns.
+  'openai-responses-store-false': false,
+};

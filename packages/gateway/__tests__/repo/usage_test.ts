@@ -23,7 +23,7 @@ const longPricing: PriceVector = { input_tokens: '0.00001', input_cache_read_tok
 const record = (overrides: Partial<UsageRecord>): UsageRecord => ({
   keyId: 'key-1',
   model: 'gpt-5.6-sol',
-  upstream: 'up_codex',
+  upstream: 'up_chatgpt',
   modelKey: 'gpt-5.6-sol',
   hour: '2026-07-12T00',
   pricingSelector: {},

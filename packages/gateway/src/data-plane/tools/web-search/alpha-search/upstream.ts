@@ -43,14 +43,14 @@ export const resolveAlphaSearchDispatcher = async ({
   if (candidate === undefined) {
     throw new AlphaSearchModelNotFoundError();
   }
-  if (candidate.provider.kind !== 'codex' && candidate.provider.kind !== 'custom') {
+  if (candidate.provider.kind !== 'chatgpt' && candidate.provider.kind !== 'custom') {
     throw new Error('Selected upstream does not support OpenAI search passthrough');
   }
 
   return async (body, signal, headers) => {
     const { model: _callerModel, ...request } = body;
-    // TODO: pin SearchRequest.id to one provider account when Codex upstreams
-    // support account pools. The current Codex provider has one active account.
+    // TODO: pin SearchRequest.id to one provider account when ChatGPT upstreams
+    // support account pools. The current ChatGPT provider has one active account.
     const result = await candidate.provider.instance.callAlphaSearch(
       providerModelOf(candidate),
       request,

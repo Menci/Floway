@@ -169,12 +169,12 @@ importers:
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../../packages/provider
+      '@floway-dev/provider-chatgpt':
+        specifier: workspace:*
+        version: link:../../packages/provider-chatgpt
       '@floway-dev/provider-claude-code':
         specifier: workspace:*
         version: link:../../packages/provider-claude-code
-      '@floway-dev/provider-codex':
-        specifier: workspace:*
-        version: link:../../packages/provider-codex
       '@floway-dev/provider-copilot':
         specifier: workspace:*
         version: link:../../packages/provider-copilot
@@ -411,12 +411,12 @@ importers:
       '@floway-dev/provider-azure':
         specifier: workspace:*
         version: link:../provider-azure
+      '@floway-dev/provider-chatgpt':
+        specifier: workspace:*
+        version: link:../provider-chatgpt
       '@floway-dev/provider-claude-code':
         specifier: workspace:*
         version: link:../provider-claude-code
-      '@floway-dev/provider-codex':
-        specifier: workspace:*
-        version: link:../provider-codex
       '@floway-dev/provider-copilot':
         specifier: workspace:*
         version: link:../provider-copilot
@@ -580,6 +580,25 @@ importers:
         specifier: workspace:*
         version: link:../test-utils
 
+  packages/provider-chatgpt:
+    dependencies:
+      '@floway-dev/interceptor':
+        specifier: workspace:*
+        version: link:../interceptor
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
+      '@floway-dev/provider':
+        specifier: workspace:*
+        version: link:../provider
+      uuid:
+        specifier: ^14.0.1
+        version: 14.0.1
+    devDependencies:
+      '@floway-dev/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
+
   packages/provider-claude-code:
     dependencies:
       '@floway-dev/interceptor':
@@ -594,25 +613,6 @@ importers:
       '@noble/hashes':
         specifier: ^2.2.0
         version: 2.2.0
-      uuid:
-        specifier: ^14.0.1
-        version: 14.0.1
-    devDependencies:
-      '@floway-dev/test-utils':
-        specifier: workspace:*
-        version: link:../test-utils
-
-  packages/provider-codex:
-    dependencies:
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
-      '@floway-dev/protocols':
-        specifier: workspace:*
-        version: link:../protocols
-      '@floway-dev/provider':
-        specifier: workspace:*
-        version: link:../provider
       uuid:
         specifier: ^14.0.1
         version: 14.0.1
@@ -726,12 +726,12 @@ importers:
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../packages/provider
+      '@floway-dev/provider-chatgpt':
+        specifier: workspace:*
+        version: link:../packages/provider-chatgpt
       '@floway-dev/provider-claude-code':
         specifier: workspace:*
         version: link:../packages/provider-claude-code
-      '@floway-dev/provider-codex':
-        specifier: workspace:*
-        version: link:../packages/provider-codex
       '@floway-dev/provider-copilot':
         specifier: workspace:*
         version: link:../packages/provider-copilot
