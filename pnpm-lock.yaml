@@ -92,6 +92,9 @@ importers:
 
   apps/platform-cloudflare:
     dependencies:
+      '@floway-dev/dump':
+        specifier: workspace:*
+        version: link:../../packages/dump
       '@floway-dev/gateway':
         specifier: workspace:*
         version: link:../../packages/gateway
@@ -111,6 +114,9 @@ importers:
 
   apps/platform-node:
     dependencies:
+      '@floway-dev/dump':
+        specifier: workspace:*
+        version: link:../../packages/dump
       '@floway-dev/gateway':
         specifier: workspace:*
         version: link:../../packages/gateway
@@ -361,11 +367,32 @@ importers:
         specifier: ^22
         version: 22.19.19
 
+  packages/dump:
+    dependencies:
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
+      '@floway-dev/platform':
+        specifier: workspace:*
+        version: link:../platform
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
+      '@floway-dev/provider':
+        specifier: workspace:*
+        version: link:../provider
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
   packages/gateway:
     dependencies:
       '@floway-dev/agent-setup':
         specifier: workspace:*
         version: link:../agent-setup
+      '@floway-dev/dump':
+        specifier: workspace:*
+        version: link:../dump
       '@floway-dev/http':
         specifier: workspace:*
         version: link:../http
@@ -467,6 +494,15 @@ importers:
       '@floway-dev/test-utils':
         specifier: workspace:*
         version: link:../test-utils
+
+  packages/pipeline:
+    dependencies:
+      '@noble/hashes':
+        specifier: ^2.2.0
+        version: 2.2.0
+      '@scure/base':
+        specifier: ^2.2.0
+        version: 2.2.0
 
   packages/platform:
     dependencies:
@@ -4128,6 +4164,7 @@ packages:
   image-size@2.0.2:
     resolution: {integrity: sha512-IRqXKlaXwgSMAMtpNzZa1ZAe8m+Sa1770Dhk8VkSsP9LS+iHD62Zd8FQKs8fbPiagBE7BzoFX23cxFnwshpV6w==}
     engines: {node: '>=16.x'}
+    deprecated: Use latest 2.x please
     hasBin: true
 
   imask@7.6.1:

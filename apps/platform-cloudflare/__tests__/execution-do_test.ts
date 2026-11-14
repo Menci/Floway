@@ -23,6 +23,14 @@ class FakeWebSocket implements WebSocket {
 
   readonly sent: string[] = [];
   closed: { code: number; reason: string } | null = null;
+  private attachment: unknown = null;
+
+  serializeAttachment(value: unknown): void {
+    this.attachment = value;
+  }
+  deserializeAttachment(): unknown {
+    return this.attachment;
+  }
 
   send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
     // Broadcast protocol payloads are text; reject binary test input loudly.
@@ -37,7 +45,9 @@ class FakeWebSocket implements WebSocket {
 }
 
 class FakeState {
+  async blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T> { return await callback(); }
   readonly sockets: FakeWebSocket[] = [];
+  readonly storage = null as unknown as DurableObjectStorage;
   readonly exports = {
     ExecutionOperationEntrypoint: {
       fetch: async (_request: Request) => new Response('executed'),

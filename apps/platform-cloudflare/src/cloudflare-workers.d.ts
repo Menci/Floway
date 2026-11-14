@@ -23,9 +23,10 @@ declare module 'cloudflare:workers' {
   }
 }
 
-// The runtime surface used for hibernatable WebSockets and the loopback
-// WorkerEntrypoint that executes database-owning operations outside the DO.
+// Hibernatable WebSockets and log segments live in the actors; database-owning
+// operations execute through the loopback WorkerEntrypoint outside the DO.
 interface DurableObjectState {
+  blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T>;
   readonly exports: {
     readonly ExecutionOperationEntrypoint: {
       fetch(request: Request): Promise<Response>;
@@ -33,6 +34,21 @@ interface DurableObjectState {
   };
   acceptWebSocket(server: WebSocket): void;
   getWebSockets(): WebSocket[];
+  readonly storage: DurableObjectStorage;
+}
+
+interface DurableObjectStorage {
+  readonly sql: SqlStorage;
+  getAlarm(): Promise<number | null>;
+  setAlarm(scheduledTime: number): Promise<void>;
+  deleteAlarm(): Promise<void>;
+  deleteAll(): Promise<void>;
+}
+
+// `exec` is synchronous, which is what lets an append read the current length, slice off what
+// is already stored and write the remainder inside one JavaScript turn.
+interface SqlStorage {
+  exec<T = Record<string, unknown>>(query: string, ...bindings: unknown[]): Iterable<T> & { one(): T };
 }
 
 // Cloudflare extends Web Crypto with a constant-time comparison primitive.
