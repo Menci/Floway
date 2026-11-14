@@ -7,27 +7,11 @@ import type {
   StoredDumpResponseBody,
   StoredDumpUpstreamResponse,
 } from './types.ts';
+import { redactRunCredentials, redactSensitiveHeaders } from '@floway-dev/dump';
 import { encodeBase64, isTextualMediaType } from '@floway-dev/protocols/common';
 
 const contentTypeOf = (headers: ReadonlyArray<readonly [string, string]>): string =>
   headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? '';
-
-const SENSITIVE_HEADERS = new Set([
-  'api-key',
-  'authorization',
-  'cookie',
-  'proxy-authorization',
-  'set-cookie',
-  'x-api-key',
-  'x-goog-api-key',
-]);
-
-const REDACTED_HEADER_VALUE = '[redacted]';
-
-// The owner of a key may read the dump, but the upstream credentials in it
-// belong to an operator who granted Model.Use, not to that key owner.
-const redactSensitiveHeaders = (headers: ReadonlyArray<readonly [string, string]>): Array<[string, string]> =>
-  headers.map(([name, value]) => [name, SENSITIVE_HEADERS.has(name.toLowerCase()) ? REDACTED_HEADER_VALUE : value]);
 
 // Wire encoding decision: textual content-types try UTF-8 first and fall
 // back to base64 when the bytes do not decode cleanly (a content-type
@@ -68,7 +52,7 @@ export const dumpRecordToWire = (record: StoredDumpRecord): DumpRecord => {
     return {
       shape: 'run',
       meta: record.meta,
-      events: new TextDecoder('utf-8', { fatal: true }).decode(record.events),
+      events: redactRunCredentials(new TextDecoder('utf-8', { fatal: true }).decode(record.events)),
     };
   }
   return {

@@ -1,4 +1,4 @@
-import { isSensitiveHeader, redactHeaderValue } from './header-redact';
+import { isSensitiveHeader, REDACTED_HEADER_VALUE, redactHeaderValue } from './header-redact';
 import type { DumpEvent } from '@floway-dev/pipeline/browser';
 
 // Header values can be shared string nodes. Redacting only the tuple would
@@ -48,6 +48,7 @@ export const redactRunHeaders = (ndjson: string): string => {
           if (typeof secret === 'object' && secret !== null && '$secret' in secret) continue;
           throw new Error(`Run export has invalid header value at ${key}`);
         }
+        if (secret === REDACTED_HEADER_VALUE) continue;
         const redacted = redactHeaderValue(secret);
         if (id === null) pair[1] = redacted;
         else {
