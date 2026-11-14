@@ -22,7 +22,7 @@ const base = (id: string, kind: UpstreamRecord['kind'], config: unknown, state: 
 const copilot = (id = 'copilot') => base(id, 'copilot', {
   githubHost: 'github.com', githubToken: 'github', user: { login: 'tester', avatar_url: '', name: null, id: 1 },
 }, null);
-const codex = () => base('codex', 'codex', {
+const chatgpt = () => base('chatgpt', 'chatgpt', {
   accounts: [{ email: 'test@example.com', chatgptAccountId: 'account', chatgptUserId: null, planType: 'plus' }],
 }, { accounts: [{ chatgptAccountId: 'account', refresh_token: null, state: 'active', state_updated_at: new Date(NOW).toISOString(), openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: access, quotaSnapshot: null }] });
 const claude = (setupToken = false) => base('claude', 'claude-code', {
@@ -41,7 +41,7 @@ beforeEach(async () => {
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 test('Floway dispatches every provider and persists read-only subscription probes', async () => {
-  for (const record of [copilot(), codex(), claude(), ollama(), base('custom', 'custom', { baseUrl: 'https://custom.example', authStyle: 'none', endpoints: {}, ingressHeadersRules: [], modelsFetch: { enabled: false }, models: [] }, null), base('azure', 'azure', { endpoint: 'https://test.openai.azure.com', apiKey: 'key', models: [{ upstreamModelId: 'model', endpoints: { openaiChatCompletions: {} } }] }, null)]) {
+  for (const record of [copilot(), chatgpt(), claude(), ollama(), base('custom', 'custom', { baseUrl: 'https://custom.example', authStyle: 'none', endpoints: {}, ingressHeadersRules: [], modelsFetch: { enabled: false }, models: [] }, null), base('azure', 'azure', { endpoint: 'https://test.openai.azure.com', apiKey: 'key', models: [{ upstreamModelId: 'model', endpoints: { openaiChatCompletions: {} } }] }, null)]) {
     await repo.upstreams.insertForModels(record);
   }
   mocks.fetch.mockImplementation(async (url, init) => {
@@ -59,7 +59,7 @@ test('Floway dispatches every provider and persists read-only subscription probe
   });
   await runUpstreamScheduledTasks('TEST');
   expect(mocks.fetch).toHaveBeenCalledTimes(5);
-  expect((await repo.upstreams.getById('codex'))?.state).toMatchObject({ accounts: [{ quotaSnapshot: { codex: { data: { primary_used_percent: 25, primary_window_minutes: 300 } }, images: { data: { secondary_used_percent: 50, secondary_window_minutes: 10080 } } } }] });
+  expect((await repo.upstreams.getById('chatgpt'))?.state).toMatchObject({ accounts: [{ quotaSnapshot: { codex: { data: { primary_used_percent: 25, primary_window_minutes: 300 } }, images: { data: { secondary_used_percent: 50, secondary_window_minutes: 10080 } } } }] });
   expect((await repo.upstreams.getById('copilot'))?.state).toMatchObject({ quotaSnapshot: { fetchedAt: NOW } });
   expect((await repo.upstreams.getById('claude'))?.state).toMatchObject({ accounts: [{ usageProbeSnapshot: { fetchedAt: NOW, data: { five_hour: { utilization: 10 } } } }] });
   expect((await repo.upstreams.getById('ollama'))?.state).toMatchObject({ usageProbe: { observation: { fetchedAt: NOW, data: { usage: usageBody(), balance: balanceBody() } } } });
@@ -88,13 +88,13 @@ test('a failed refresh keeps the previous usage observation', async () => {
 });
 
 test('a usage endpoint auth failure preserves inference credential health and other upstreams still run', async () => {
-  await repo.upstreams.insertForModels(codex());
+  await repo.upstreams.insertForModels(chatgpt());
   await repo.upstreams.insertForModels(ollama());
   mocks.fetch.mockImplementation(async url => new URL(url).hostname === 'chatgpt.com'
     ? new Response('usage scope denied', { status: 403 })
     : Response.json(new URL(url).pathname === '/api/usage' ? usageBody() : balanceBody()));
   await expect(runUpstreamScheduledTasks('TEST')).rejects.toThrow();
-  expect((await repo.upstreams.getById('codex'))?.state).toMatchObject({ accounts: [{ state: 'active' }] });
+  expect((await repo.upstreams.getById('chatgpt'))?.state).toMatchObject({ accounts: [{ state: 'active' }] });
   expect((await repo.upstreams.getById('ollama'))?.state).toMatchObject({ usageProbe: { observation: { fetchedAt: NOW } } });
 });
 
@@ -134,8 +134,8 @@ test('Ollama scheduled and request-time refreshes update the same usage and bala
   expect(mocks.fetch).toHaveBeenCalledTimes(4);
 });
 
-test('a fresh Codex bucket does not suppress a stale sibling bucket', async () => {
-  const record = codex();
+test('a fresh ChatGPT bucket does not suppress a stale sibling bucket', async () => {
+  const record = chatgpt();
   await repo.upstreams.insertForModels(record);
   await repo.upstreams.saveState(record.id, current => {
     const state = current as { accounts: Array<Record<string, unknown>> };

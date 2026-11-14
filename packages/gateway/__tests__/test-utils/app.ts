@@ -98,16 +98,16 @@ export const buildCopilotUpstreamRecord = (githubAccount: CopilotAccountFixture,
   };
 };
 
-export const buildCodexUpstreamRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
+export const buildChatGPTUpstreamRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const config = {
-    accounts: [{ email: 'codex@example.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'plus' }],
+    accounts: [{ email: 'chatgpt@example.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'plus' }],
   };
   const { config: overrideConfig, ...rest } = overrides;
 
   return {
-    id: 'up_codex',
-    kind: 'codex',
-    name: 'Codex',
+    id: 'up_chatgpt',
+    kind: 'chatgpt',
+    name: 'ChatGPT',
     enabled: true,
     usageRefreshIntervalMinutes: 0,
     sortOrder: 200,
@@ -121,7 +121,7 @@ export const buildCodexUpstreamRecord = (overrides: Partial<UpstreamRecord> = {}
         state: 'active',
         state_updated_at: TEST_UPSTREAM_TIMESTAMP,
         openaiDeviceId: '11111111-2222-4333-8444-555555555555',
-        accessToken: { token: 'codex-access-token', expiresAt: Date.parse('2100-01-01T00:00:00.000Z'), refreshedAt: TEST_UPSTREAM_TIMESTAMP },
+        accessToken: { token: 'chatgpt-access-token', expiresAt: Date.parse('2100-01-01T00:00:00.000Z'), refreshedAt: TEST_UPSTREAM_TIMESTAMP },
         quotaSnapshot: null,
       }],
     },
@@ -136,7 +136,7 @@ export const buildCodexUpstreamRecord = (overrides: Partial<UpstreamRecord> = {}
   };
 };
 
-export function codexModels(models: Array<{ slug: string; display_name?: string }>) {
+export function chatgptModels(models: Array<{ slug: string; display_name?: string }>) {
   return {
     models: models.map(model => ({
       slug: model.slug,

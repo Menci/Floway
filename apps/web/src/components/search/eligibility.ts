@@ -7,5 +7,5 @@ export const servesChatFor = (model: ControlPlaneModel, upstreamId: string) =>
 
 export const eligibleSearchUpstreams = (upstreams: readonly UpstreamRecord[], models: readonly ControlPlaneModel[]) =>
   upstreams.filter(upstream => upstream.enabled
-    && (upstream.kind === 'codex' || upstream.kind === 'custom')
+    && (upstream.kind === 'chatgpt' || upstream.kind === 'custom')
     && models.some(model => servesChatFor(model, upstream.id)));

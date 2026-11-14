@@ -27,7 +27,7 @@ const context: Parameters<typeof resolveAlphaSearchDispatcher>[0] = {
   runtimeLocation: 'TEST',
 };
 
-const dispatcherFor = async (kind: 'codex' | 'custom', inboundHeaderAllowlist: readonly InboundHeaderMatcher[] = []) => {
+const dispatcherFor = async (kind: 'chatgpt' | 'custom', inboundHeaderAllowlist: readonly InboundHeaderMatcher[] = []) => {
   let observedHeaders: Headers | undefined;
   const base = stubModelCandidate();
   const provider = {
@@ -70,8 +70,8 @@ test('Alpha Search rejects unsupported providers as configuration failures', asy
   await expect(resolveAlphaSearchDispatcher(context)).rejects.toThrow('Selected upstream does not support OpenAI search passthrough');
 });
 
-test('Codex Alpha Search receives only its declared turn metadata', async () => {
-  const { dispatcher, observedHeaders } = await dispatcherFor('codex', ['x-codex-turn-metadata']);
+test('ChatGPT Alpha Search receives only its declared turn metadata', async () => {
+  const { dispatcher, observedHeaders } = await dispatcherFor('chatgpt', ['x-codex-turn-metadata']);
   await dispatcher({}, undefined, new Headers({
     authorization: 'Bearer secret',
     'x-codex-turn-metadata': '{"turn_id":"turn-1"}',

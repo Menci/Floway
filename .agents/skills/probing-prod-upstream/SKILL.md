@@ -21,7 +21,7 @@ and non-production fixtures only.
 refresh token and leave production holding an invalid predecessor, interrupting
 production token renewal. This is a production continuity constraint. Do not
 extract refresh tokens, invoke refresh endpoints, call automatic-refresh helpers
-(including `ensureCodexAccessToken` and `ensureClaudeCodeAccessToken`), or route
+(including `ensureChatGPTAccessToken` and `ensureClaudeCodeAccessToken`), or route
 through a gateway operation that may trigger renewal. For providers with
 refresh-token renewal, use the existing access token. If it is missing, expired,
 or rejected, stop probing that account and report the blocker; let production
@@ -110,7 +110,7 @@ Do not import a provider entrypoint that can renew tokens or persist state.
 
 - **Copilot:** follow [the Copilot access reference](references/copilot.md) for
   PAT exchange, token-advertised endpoints, and Copilot Chat headers.
-- **Codex / Claude Code:** use the selected account's persisted
+- **ChatGPT / Claude Code:** use the selected account's persisted
   `state_json.accounts[].accessToken.token` and its expiry. Read `fetch.ts` and
   the protocol transport for headers and endpoints; join the credential to the
   configured account identity. All refresh-token paths remain forbidden.

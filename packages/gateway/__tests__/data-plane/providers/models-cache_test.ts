@@ -6,7 +6,7 @@ import { InvalidProxyConfigurationError } from '../../../src/dial/per-request.ts
 import { createModelsRefreshScheduler, discoverDraftModels, modelsRefreshTarget, refreshModels, refreshModelsExplicit } from '../../../src/execution/models-refresh.ts';
 import { modelsRefreshIdentity, seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { buildCodexUpstreamRecord, buildCustomUpstreamRecord, setupAppTest } from '../../test-utils/app.ts';
+import { buildChatGPTUpstreamRecord, buildCustomUpstreamRecord, setupAppTest } from '../../test-utils/app.ts';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import { jsonResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -387,17 +387,17 @@ test('model discovery redacts userinfo from a URL construction failure', async (
   expect(message).not.toContain('user:secret');
 });
 
-test('Codex OAuth failure cannot echo a refresh token into the model error', async () => {
+test('ChatGPT OAuth failure cannot echo a refresh token into the model error', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  const codex = buildCodexUpstreamRecord();
-  const state = codex.state as { accounts: Array<Record<string, unknown>> };
+  const chatgpt = buildChatGPTUpstreamRecord();
+  const state = chatgpt.state as { accounts: Array<Record<string, unknown>> };
   await saveUpstreamForTest(repo.upstreams, {
-    ...codex,
+    ...chatgpt,
     state: { accounts: state.accounts.map(account => ({ ...account, accessToken: null })) },
   });
-  const record = await repo.upstreams.getById(codex.id);
-  if (record === null) throw new Error('Codex upstream missing');
+  const record = await repo.upstreams.getById(chatgpt.id);
+  if (record === null) throw new Error('ChatGPT upstream missing');
   await withMockedFetch(
     async request => {
       expect(new URL(request.url).pathname).toBe('/oauth/token');
@@ -414,17 +414,17 @@ test('Codex OAuth failure cannot echo a refresh token into the model error', asy
   expect(message).not.toContain('rt_v1');
 });
 
-test('Codex OAuth failure redacts a form-encoded refresh token echo', async () => {
+test('ChatGPT OAuth failure redacts a form-encoded refresh token echo', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  const codex = buildCodexUpstreamRecord();
-  const state = codex.state as { accounts: Array<Record<string, unknown>> };
+  const chatgpt = buildChatGPTUpstreamRecord();
+  const state = chatgpt.state as { accounts: Array<Record<string, unknown>> };
   await saveUpstreamForTest(repo.upstreams, {
-    ...codex,
+    ...chatgpt,
     state: { accounts: state.accounts.map(account => ({ ...account, refresh_token: 'rt with spaces', accessToken: null })) },
   });
-  const record = await repo.upstreams.getById(codex.id);
-  if (record === null) throw new Error('Codex upstream missing');
+  const record = await repo.upstreams.getById(chatgpt.id);
+  if (record === null) throw new Error('ChatGPT upstream missing');
   await withMockedFetch(
     async request => new Response(`denied ${await request.text()}`, { status: 503 }),
     async () => {
@@ -468,21 +468,21 @@ test('Claude Code OAuth failure cannot echo a refresh token into the model error
   expect(message).not.toContain('claude-refresh-token');
 });
 
-test('a malformed Codex catalog cannot echo its bearer token in a parser error', async () => {
+test('a malformed ChatGPT catalog cannot echo its bearer token in a parser error', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await saveUpstreamForTest(repo.upstreams, buildCodexUpstreamRecord());
-  const record = await repo.upstreams.getById('up_codex');
-  if (record === null) throw new Error('Codex upstream missing');
+  await saveUpstreamForTest(repo.upstreams, buildChatGPTUpstreamRecord());
+  const record = await repo.upstreams.getById('up_chatgpt');
+  if (record === null) throw new Error('ChatGPT upstream missing');
   await withMockedFetch(
-    () => jsonResponse({ models: [{ slug: 'codex-access-token' }] }),
+    () => jsonResponse({ models: [{ slug: 'chatgpt-access-token' }] }),
     async () => {
       await expect(refreshModelsExplicit(modelsRefreshTarget(record), 'TEST')).rejects.toThrow('model entry [REDACTED] missing display_name');
     },
   );
   const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
   expect(message).toContain('[REDACTED]');
-  expect(message).not.toContain('codex-access-token');
+  expect(message).not.toContain('chatgpt-access-token');
 });
 
 test('automatic proxy configuration failures are recorded and backed off', async () => {

@@ -35,7 +35,7 @@ import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefresh } from '../components/ui/use-refresh';
 import { shortAccountId } from '../components/upstreams/account-id';
-import { planLabel } from '../components/upstreams/codex-account';
+import { planLabel } from '../components/upstreams/chatgpt-account';
 import { MODEL_ERROR_TOOLTIP_LENGTH, modelErrorExcerpt } from '../components/upstreams/model-error';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { UpstreamSignals } from '../components/upstreams/signals';
@@ -92,7 +92,7 @@ const PROVIDER_MENU_ORDER: readonly UpstreamProviderKind[] = [
   'custom',
   'azure',
   'copilot',
-  'codex',
+  'chatgpt',
   'claude-code',
   'ollama',
 ];
@@ -788,7 +788,7 @@ const buildModelCounts = (
 };
 
 // Who the upstream connects as. A subscription names an account; an endpoint
-// the operator configured names itself. A codex account appends its plan,
+// the operator configured names itself. A ChatGPT account appends its plan,
 // through the same label the signals line uses, so the two lines agree.
 const upstreamSummary = (record: ListedUpstreamRecord, t: TFunction): string => {
   switch (record.kind) {
@@ -799,7 +799,7 @@ const upstreamSummary = (record: ListedUpstreamRecord, t: TFunction): string => 
   // so its address is the whole identity.
   case 'ollama': return record.state?.account?.email ?? (record.config.baseUrl || t('dashboard.upstreams.summary.ollama'));
   case 'copilot': return record.config.user.login ? `${record.config.githubHost}/${record.config.user.login}` : t('dashboard.upstreams.summary.copilot');
-  case 'codex': {
+  case 'chatgpt': {
     const account = record.config.accounts[0];
     if (!account) return t('dashboard.upstreams.summary.noAccount');
     const identity = account.email

@@ -53,8 +53,8 @@ const copyableRecord = (source: UpstreamRecord, name: string, hue: number): Upst
       },
       state: null,
     };
-  case 'codex':
-    return { ...base, kind: 'codex', config: { accounts: [] }, state: { accounts: [] } };
+  case 'chatgpt':
+    return { ...base, kind: 'chatgpt', config: { accounts: [] }, state: { accounts: [] } };
   case 'claude-code':
     return { ...base, kind: 'claude-code', config: { accounts: [] }, state: { accounts: [] } };
   }
